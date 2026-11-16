@@ -2843,6 +2843,7 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                         rx: "RX".into(),
                         role: SerialRole::Gps,
                         framing: framing.clone(),
+                        negotiated: None,
                         kernel_hz: kernel,
                         brr,
                         actual_millibaud: aethelgard_ir::serial::actual_millibaud(kernel, brr),

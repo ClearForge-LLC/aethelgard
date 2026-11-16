@@ -836,11 +836,13 @@ fn full_document() -> serde_json::Value {
         {"label": "CONSOLE", "peripheral": null,
          "tx": {"net": "CONSOLE_TX", "pin": null}, "rx": {"net": "CONSOLE_RX", "pin": null},
          "role": "console",
-         "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false}},
+         "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
+         "negotiated": null},
         {"label": "SBUS", "peripheral": "USART2",
          "tx": {"net": "SBUS_TX", "pin": "PD5"}, "rx": {"net": "SBUS_RX", "pin": "PD6"},
          "role": "rc_sbus",
-         "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true}}
+         "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true},
+         "negotiated": null}
     ]);
     // Each serial line leaves the board at a connector.
     for (reference, port) in [("J7", "CONSOLE"), ("J8", "SBUS")] {

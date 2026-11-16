@@ -5911,6 +5911,7 @@ mod tests {
                         SerialRole::Gps
                     },
                     framing: framing.clone(),
+                    negotiated: None,
                     kernel_hz: kernel,
                     brr,
                     actual_millibaud: serial::actual_millibaud(kernel, brr),

@@ -115,19 +115,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `main`'s now (the boot image `a03116d6…6b64`). The boot image again with
 /// `CR1.FIFOEN` (the PM's ruling on adversarial pass 2, H1): it was
 /// `224dfd8a…f501`, and with `USART1.CR1.FIFOEN` dropped from its
-/// unobservable list it still is exactly.
+/// unobservable list it still is exactly. Re-taken for the port's required
+/// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
+/// hashed document, the three moved digests were `72acc1b5…bbc1`,
+/// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
+/// alone moved them); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "72acc1b54ec7c32115b99f511147c5324ca4ea1309a8804162dfaf3a6700bbc1",
+        "1564c3949380f353dba9d3e450ca705ea9fb5d7942bf99d0e859d8bf15113474",
     ),
     (
         "platform",
-        "6b61b7613454477ce3fc397623945c8beecc6a5ada0b40e3de99bb6d3e45b403",
+        "0a8e3b2b7944e4e0247ec79a3c6e0e6226e6c854c15ea38cc72a39d44a169734",
     ),
     (
         "platform faulted",
-        "2716e538bf3499b686baabaaa931a497aea746282bf4e37954e147c380e34530",
+        "a93b7c450e978e59dc3c583d1a9c8de0e61d653a519a8bf3d829f2a4017d1fd4",
     ),
     (
         "boot image",

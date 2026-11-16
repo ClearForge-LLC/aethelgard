@@ -106,6 +106,7 @@ fn insert_ports(solved: &mut SolvedTopology, ports: &[Port]) {
                 rx: rx_net,
                 role: *role,
                 framing: f.clone(),
+                negotiated: None,
                 kernel_hz: kernel,
                 brr,
                 actual_millibaud: serial::actual_millibaud(kernel, brr),

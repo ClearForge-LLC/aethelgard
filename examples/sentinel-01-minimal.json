@@ -205,7 +205,8 @@
         "parity": "none",
         "stop_bits": 1,
         "inverted": false
-      }
+      },
+      "negotiated": null
     }
   ]
 }

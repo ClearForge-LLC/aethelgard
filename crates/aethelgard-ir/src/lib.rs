@@ -1221,6 +1221,22 @@ pub enum IrValidationError {
         role: &'static str,
         field: &'static str,
         required: String,
+        citation: String,
+    },
+    #[error(
+        "serial port `{id}` has role `{role}` and declares `negotiated`: only an `rc_crsf` port's baud is negotiated (CRSF frame 0x70); declare null"
+    )]
+    SerialNegotiatedOffCrsf { id: String, role: &'static str },
+    #[error(
+        "serial port `{id}` declares `negotiated` with an empty `source`: cite where the negotiated rate comes from"
+    )]
+    SerialNegotiatedSourceEmpty { id: String },
+    #[error(
+        "serial port `{id}` declares `negotiated` at {baud}, a cited CRSF baud, not a negotiated one ({citation}); declare null"
+    )]
+    SerialNegotiatedAtCitedBaud {
+        id: String,
+        baud: u32,
         citation: &'static str,
     },
     #[error(
@@ -1438,6 +1454,9 @@ impl IrValidationError {
             Self::SerialPeripheralTwice { .. } => "SerialPeripheralTwice",
             Self::SerialFramingShape { .. } => "SerialFramingShape",
             Self::SerialFramingContradictsRole { .. } => "SerialFramingContradictsRole",
+            Self::SerialNegotiatedOffCrsf { .. } => "SerialNegotiatedOffCrsf",
+            Self::SerialNegotiatedSourceEmpty { .. } => "SerialNegotiatedSourceEmpty",
+            Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::TimerShared { .. } => "TimerShared",
@@ -1559,6 +1578,9 @@ impl IrValidationError {
             | Self::SerialPeripheralTwice { id, .. }
             | Self::SerialFramingShape { id, .. }
             | Self::SerialFramingContradictsRole { id, .. }
+            | Self::SerialNegotiatedOffCrsf { id, .. }
+            | Self::SerialNegotiatedSourceEmpty { id }
+            | Self::SerialNegotiatedAtCitedBaud { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,

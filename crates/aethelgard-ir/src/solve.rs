@@ -535,6 +535,7 @@ fn solved_port(
         rx: declared.rx.net.clone(),
         role: declared.role,
         framing: declared.framing.clone(),
+        negotiated: declared.negotiated.clone(),
         kernel_hz: kernel,
         brr,
         actual_millibaud: serial::actual_millibaud(kernel, brr),

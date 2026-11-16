@@ -6,7 +6,8 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::serial::{
-    CRSF_SOURCE, PERIPHERALS, SolvedSerialPort, check_silicon, solve_brr, tolerance, within,
+    CRSF_ELRS_SOURCE, CRSF_SOURCE, PERIPHERALS, SolvedSerialPort, check_silicon, solve_brr,
+    tolerance, within,
 };
 use aethelgard_ir::{
     Framing, IrValidationError, Parity, Pin, PinSource, PinTable, SerialRole, SolveError,
@@ -82,7 +83,8 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
            "tx": {"net": format!("{label}_TX"), "pin": tx},
            "rx": {"net": format!("{label}_RX"), "pin": rx},
            "role": "console",
-           "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false}})
+           "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
+           "negotiated": null})
 }
 
 /// A specification holding `ports`, each port's TX and RX on pins 1 and 2 of
@@ -336,32 +338,133 @@ fn crsf(edit: fn(&mut Value)) -> Value {
     let mut p = port("RC", None, None, None);
     p["role"] = json!("rc_crsf");
     p["framing"]["baud"] = json!(420000);
-    edit(&mut p["framing"]);
+    edit(&mut p);
     p
 }
 
+/// The PR #152 ruling on §9 Q1: an `rc_crsf` port's baud is one of an
+/// enumerated set, each cited (416666, TBS; 420000, ExpressLRS and
+/// Betaflight), or a rate the port declares `negotiated` with its source
+/// (frame 0x70). Anything else is refused by name, 432000 among them; the
+/// declaration is refused off `rc_crsf`, with an empty source, and at a cited
+/// baud; a framing that contradicts TBS's text is refused citing it.
 #[test]
-fn a_crsf_port_that_contradicts_tbs_s_text_is_refused_with_the_citation() {
-    assert_eq!(spec(vec![crsf(|_| {})]).validate(), Ok(()));
-    assert_eq!(
-        spec(vec![crsf(|f| f["baud"] = json!(416666))]).validate(),
-        Ok(())
+fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refused() {
+    let negotiated = |p: &mut Value| {
+        p["framing"]["baud"] = json!(432000);
+        p["negotiated"] =
+            json!({"source": "the receiver's CRSF 0x70 speed proposal, vendor manual §4"});
+    };
+    for edit in [
+        (|_: &mut Value| {}) as Edit,
+        |p| p["framing"]["baud"] = json!(416666),
+        negotiated,
+    ] {
+        let p = crsf(edit);
+        assert_eq!(spec(vec![p.clone()]).validate(), Ok(()), "{p}");
+        // The declaration reaches the solved port.
+        let t = solved(spec_json(vec![p.clone()]));
+        assert_eq!(
+            t.serial_ports["RC"].negotiated,
+            serde_json::from_value(p["negotiated"].clone()).unwrap()
+        );
+        assert_eq!(t.validate(), Ok(()));
+    }
+    // The solved topology is held to the same: a negotiated port's
+    // declaration dropped, or its source emptied, disagrees with it.
+    let good = solved(spec_json(vec![crsf(negotiated)]));
+    for edit in [
+        (|p: &mut SolvedSerialPort| p.negotiated = None) as fn(&mut SolvedSerialPort),
+        |p| p.negotiated.as_mut().unwrap().source = String::new(),
+    ] {
+        let mut t = good.clone();
+        edit(t.serial_ports.get_mut("RC").unwrap());
+        let e = t.validate().unwrap_err();
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("SerialPortMismatch", Some("RC")),
+            "{e}"
+        );
+    }
+    // A rate neither cited nor declared negotiated: refused, citing every source.
+    let e = refused_ports(vec![crsf(|p| p["framing"]["baud"] = json!(432000))]);
+    assert!(
+        matches!(&e, IrValidationError::SerialFramingContradictsRole {
+            id, role: "rc_crsf", field: "baud", required, citation
+        } if id == "RC" && required.contains("not 432000")
+            && citation.contains(CRSF_SOURCE) && citation.contains(CRSF_ELRS_SOURCE)),
+        "{e}"
     );
-    let cases: [(Edit, &str); 4] = [
-        (|f| f["baud"] = json!(400000), "baud"),
-        (|f| f["parity"] = json!("even"), "framing"),
-        (|f| f["stop_bits"] = json!(2), "framing"),
-        (|f| f["inverted"] = json!(true), "inverted"),
+    // A framing TBS's text contradicts, negotiated or not.
+    let cases: [(Edit, &str); 5] = [
+        (|p| p["framing"]["baud"] = json!(400000), "baud"),
+        (
+            |p| {
+                p["framing"]["baud"] = json!(400000);
+                p["negotiated"] = json!({"source": "s"});
+            },
+            "baud",
+        ),
+        (|p| p["framing"]["parity"] = json!("even"), "framing"),
+        (|p| p["framing"]["stop_bits"] = json!(2), "framing"),
+        (|p| p["framing"]["inverted"] = json!(true), "inverted"),
     ];
     for (edit, field) in cases {
         let e = refused_ports(vec![crsf(edit)]);
         assert!(
             matches!(&e, IrValidationError::SerialFramingContradictsRole {
                 id, role: "rc_crsf", field: f, citation, ..
-            } if id == "RC" && *f == field && *citation == CRSF_SOURCE),
+            } if id == "RC" && *f == field && citation == CRSF_SOURCE),
             "{field}: {e}"
         );
     }
+    // The declaration itself, each refusal by name.
+    let declared: [(Edit, &str); 4] = [
+        (
+            |p| {
+                p["role"] = json!("console");
+                p["framing"]["baud"] = json!(115200);
+                p["negotiated"] = json!({"source": "s"});
+            },
+            "SerialNegotiatedOffCrsf",
+        ),
+        (
+            |p| {
+                p["framing"]["baud"] = json!(432000);
+                p["negotiated"] = json!({"source": " "});
+            },
+            "SerialNegotiatedSourceEmpty",
+        ),
+        (
+            |p| p["negotiated"] = json!({"source": "s"}),
+            "SerialNegotiatedAtCitedBaud",
+        ),
+        (
+            |p| {
+                p["framing"]["baud"] = json!(416666);
+                p["negotiated"] = json!({"source": "s"});
+            },
+            "SerialNegotiatedAtCitedBaud",
+        ),
+    ];
+    for (edit, kind) in declared {
+        let e = refused_ports(vec![crsf(edit)]);
+        assert_eq!((e.kind(), e.id()), (kind, Some("RC")), "{e}");
+    }
+    // The key is required, and its object takes only `source`.
+    let mut missing = spec_json(vec![crsf(|_| {})]);
+    missing["serial_ports"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("negotiated");
+    let e = serde_json::from_value::<Specification>(missing).unwrap_err();
+    assert!(e.to_string().contains("missing field `negotiated`"), "{e}");
+    let extra = spec_json(vec![crsf(|p| {
+        p["framing"]["baud"] = json!(432000);
+        p["negotiated"] = json!({"source": "s", "baud": 432000});
+    })]);
+    let e = serde_json::from_value::<Specification>(extra).unwrap_err();
+    assert!(e.to_string().contains("unknown field `baud`"), "{e}");
     // SBUS has no vendor-published source: its usual framing, and any other,
     // stands as declared.
     let mut sbus = port("SB", None, None, None);
@@ -684,6 +787,7 @@ fn a_null_port_takes_the_first_usart_with_free_pins_and_its_solved_brr() {
                 stop_bits: 1,
                 inverted: false
             },
+            negotiated: None,
             kernel_hz: 64_000_000,
             brr: 556,
             actual_millibaud: 115_107_913,
@@ -957,6 +1061,7 @@ fn adversarial_2_no_baud_a_brr_reaches_fails_the_tolerance_on_the_reset_clock() 
                     rx: "R".into(),
                     role: SerialRole::Console,
                     framing,
+                    negotiated: None,
                     kernel_hz: k,
                     brr,
                     actual_millibaud: 0,

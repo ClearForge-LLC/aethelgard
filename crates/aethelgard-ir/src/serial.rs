@@ -125,7 +125,8 @@ impl Framing {
 }
 
 /// One declared serial port. Every key is required (`INV-06`): `peripheral`
-/// and each signal's `pin` are `null` for the solver to choose.
+/// and each signal's `pin` are `null` for the solver to choose, and
+/// `negotiated` is `null` unless the port's baud is a negotiated one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SerialPort {
@@ -136,6 +137,18 @@ pub struct SerialPort {
     pub rx: Signal,
     pub role: SerialRole,
     pub framing: Framing,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub negotiated: Option<Negotiated>,
+}
+
+/// A declaration that a port's baud is a rate the two ends negotiate, not
+/// one of the rates [`CRSF_BAUDS`] cites: CRSF's frame 0x70, "CRSF Protocol
+/// Speed Proposal" ([`CRSF_SOURCE`]). Only an `rc_crsf` port may carry it,
+/// and `source` cites where the rate comes from; it is not empty.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Negotiated {
+    pub source: String,
 }
 
 /// The USARTs and UARTs a port may use (the work order's list): LPUART1 is
@@ -297,6 +310,9 @@ pub struct SolvedSerialPort {
     pub rx: String,
     pub role: SerialRole,
     pub framing: Framing,
+    /// The port's [`Negotiated`] declaration, copied by `solve`.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub negotiated: Option<Negotiated>,
     /// The kernel clock [`kernel_hz`] gives on the topology's clock.
     pub kernel_hz: u64,
     /// `USART_BRR` as the firmware writes it.
@@ -306,7 +322,7 @@ pub struct SolvedSerialPort {
     pub error_ppm: i64,
 }
 
-crate::object_only!(Framing, SerialPort, SolvedSerialPort);
+crate::object_only!(Framing, SerialPort, Negotiated, SolvedSerialPort);
 
 /// What [`check_silicon`] found for one port.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -362,21 +378,40 @@ pub const CRSF_MIN_BAUD: u32 = 416_666;
 /// TBS's CRSF specification as held (`AET-WO-4300b` FEEDBACK §0).
 pub const CRSF_SOURCE: &str = "TBS CRSF Protocol, github.com/tbs-fpv/tbs-crsf-spec crsf.md at a73f7dc5 (sha256 58293cef…f918), Hardware: Dual-Wire Full-Duplex UART";
 
-/// Where a declared framing contradicts the role's published framing, the
-/// field and what the source requires; `None` when it does not, or when the
-/// role has no published framing (SBUS has no vendor-published source; the
-/// console, MAVLink and GPS roles declare their own).
-pub fn contradiction(role: SerialRole, framing: &Framing) -> Option<(&'static str, String)> {
+/// The default CRSF baud of ExpressLRS receivers and of Betaflight, as held
+/// (`AET-WO-4300b` FEEDBACK §9 Q1, ruled on PR #152).
+pub const CRSF_ELRS_SOURCE: &str = "ExpressLRS src/lib/OPTIONS/options.cpp at f8700cab (sha256 d9421141…df25) L197, a receiver's `rcvr-uart-baud` default 420000; Betaflight src/main/rx/crsf_protocol.h at 09b90997 (sha256 757f4d5b…851e) L36, `CRSF_BAUDRATE 420000`";
+
+/// The CRSF bauds a port may declare without `negotiated`, each with its
+/// source (ruled on PR #152, comment 6903399822): TBS's default and the
+/// default ExpressLRS and Betaflight receivers run. Any other baud is
+/// declared [`Negotiated`], or refused.
+pub const CRSF_BAUDS: [(u32, &str); 2] = [(416_666, CRSF_SOURCE), (420_000, CRSF_ELRS_SOURCE)];
+
+/// Where a declared framing contradicts the role's published framing: the
+/// field, what the sources require, and the citation; `None` when it does
+/// not, or when the role has no published framing (SBUS has no
+/// vendor-published source; the console, MAVLink and GPS roles declare their
+/// own). An `rc_crsf` port is 8N1, not inverted, at no less than
+/// [`CRSF_MIN_BAUD`], and at a baud of [`CRSF_BAUDS`] unless `negotiated`
+/// (the port declares its baud [`Negotiated`]).
+pub fn contradiction(
+    role: SerialRole,
+    framing: &Framing,
+    negotiated: bool,
+) -> Option<(&'static str, String, String)> {
     if role != SerialRole::RcCrsf {
         return None;
     }
+    let tbs = || CRSF_SOURCE.to_owned();
     if framing.data_bits != 8 || framing.parity != Parity::None || framing.stop_bits != 1 {
-        return Some(("framing", format!("8N1, not {}", framing.short())));
+        return Some(("framing", format!("8N1, not {}", framing.short()), tbs()));
     }
     if framing.inverted {
         return Some((
             "inverted",
             "false: only non-inverted UART is supported on a dual-wire port".to_owned(),
+            tbs(),
         ));
     }
     if framing.baud < CRSF_MIN_BAUD {
@@ -386,16 +421,61 @@ pub fn contradiction(role: SerialRole, framing: &Framing) -> Option<(&'static st
                 "at least {CRSF_MIN_BAUD} (the default, negotiable higher), not {}",
                 framing.baud
             ),
+            tbs(),
+        ));
+    }
+    if !negotiated && !CRSF_BAUDS.iter().any(|(b, _)| *b == framing.baud) {
+        return Some((
+            "baud",
+            format!(
+                "416666 or 420000, or a rate the port declares `negotiated` with its source (frame 0x70), not {}",
+                framing.baud
+            ),
+            format!("{CRSF_SOURCE}; {CRSF_ELRS_SOURCE}"),
         ));
     }
     None
 }
 
+/// What is wrong with a port's [`Negotiated`] declaration, if anything: it
+/// is on a role other than `rc_crsf`, its source is empty, or the baud it
+/// calls negotiated is one [`CRSF_BAUDS`] cites. `None` for `null`.
+fn negotiated_error(
+    label: &str,
+    role: SerialRole,
+    framing: &Framing,
+    negotiated: Option<&Negotiated>,
+) -> Option<IrValidationError> {
+    let n = negotiated?;
+    let id = label.to_owned();
+    if role != SerialRole::RcCrsf {
+        return Some(IrValidationError::SerialNegotiatedOffCrsf {
+            id,
+            role: role.name(),
+        });
+    }
+    if n.source.trim().is_empty() {
+        return Some(IrValidationError::SerialNegotiatedSourceEmpty { id });
+    }
+    CRSF_BAUDS
+        .iter()
+        .find(|(b, _)| *b == framing.baud)
+        .map(
+            |(baud, citation)| IrValidationError::SerialNegotiatedAtCitedBaud {
+                id,
+                baud: *baud,
+                citation,
+            },
+        )
+}
+
 /// Step 13c of [`crate::Specification::validate`], each port in document
 /// order: a label unique with case folded; a peripheral that is `null` or one
 /// of [`PERIPHERALS`] exactly (`LPUART1`, in any case, refused by its own
-/// name), and not another port's; the framing's shape; and no contradiction
-/// of the role's published framing ([`contradiction`]). The nets are step 11's
+/// name), and not another port's; the framing's shape; a `negotiated`
+/// declaration only on an `rc_crsf` port, with a source, at a baud
+/// [`CRSF_BAUDS`] does not cite; and no contradiction of the role's
+/// published framing ([`contradiction`]). The nets are step 11's
 /// and a constraint on one step 14's.
 pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
     use IrValidationError as E;
@@ -439,13 +519,23 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
                 rule,
             });
         }
-        if let Some((field, required)) = contradiction(port.role, &port.framing) {
+        if let Some(e) = negotiated_error(
+            &port.label,
+            port.role,
+            &port.framing,
+            port.negotiated.as_ref(),
+        ) {
+            return Err(e);
+        }
+        if let Some((field, required, citation)) =
+            contradiction(port.role, &port.framing, port.negotiated.is_some())
+        {
             return Err(E::SerialFramingContradictsRole {
                 id: id(),
                 role: port.role.name(),
                 field,
                 required,
-                citation: CRSF_SOURCE,
+                citation,
             });
         }
     }
@@ -538,7 +628,8 @@ pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidat
             || !indices.insert(port.index)
             || !peripherals.insert(p)
             || shape_error(f).is_some()
-            || contradiction(port.role, f).is_some()
+            || negotiated_error(label, port.role, f, port.negotiated.as_ref()).is_some()
+            || contradiction(port.role, f, port.negotiated.is_some()).is_some()
             || !solved
         {
             return Err(mismatch(label));
@@ -632,32 +723,40 @@ mod tests {
     }
 
     #[test]
-    fn crsf_refuses_what_the_text_makes_unambiguous() {
+    fn crsf_accepts_its_cited_bauds_and_a_negotiated_one_and_refuses_the_rest() {
+        let crsf = |f: Framing, negotiated| {
+            contradiction(SerialRole::RcCrsf, &f, negotiated).map(|(k, _, c)| (k, c))
+        };
+        let tbs = CRSF_SOURCE.to_owned();
+        // The two cited bauds, and a negotiated one.
+        assert_eq!(crsf(framing(420_000, 8, Parity::None, 1), false), None);
+        assert_eq!(crsf(framing(416_666, 8, Parity::None, 1), false), None);
+        assert_eq!(crsf(framing(432_000, 8, Parity::None, 1), true), None);
+        // Any other baud not declared negotiated is refused, citing both.
+        let (field, citation) = crsf(framing(432_000, 8, Parity::None, 1), false).unwrap();
+        assert_eq!(field, "baud");
+        assert!(citation.contains(CRSF_SOURCE) && citation.contains(CRSF_ELRS_SOURCE));
+        // Below TBS's default, even negotiated.
+        for negotiated in [false, true] {
+            assert_eq!(
+                crsf(framing(400_000, 8, Parity::None, 1), negotiated),
+                Some(("baud", tbs.clone()))
+            );
+        }
         assert_eq!(
-            contradiction(SerialRole::RcCrsf, &framing(420_000, 8, Parity::None, 1)),
-            None
+            crsf(framing(420_000, 8, Parity::Even, 1), false),
+            Some(("framing", tbs.clone()))
         );
         assert_eq!(
-            contradiction(SerialRole::RcCrsf, &framing(416_666, 8, Parity::None, 1)),
-            None
-        );
-        let refused = |f: Framing| contradiction(SerialRole::RcCrsf, &f).map(|(k, _)| k);
-        assert_eq!(refused(framing(400_000, 8, Parity::None, 1)), Some("baud"));
-        assert_eq!(
-            refused(framing(420_000, 8, Parity::Even, 1)),
-            Some("framing")
-        );
-        assert_eq!(
-            refused(framing(420_000, 8, Parity::None, 2)),
-            Some("framing")
+            crsf(framing(420_000, 8, Parity::None, 2), false),
+            Some(("framing", tbs.clone()))
         );
         let mut inv = framing(420_000, 8, Parity::None, 1);
         inv.inverted = true;
-        assert_eq!(refused(inv), Some("inverted"));
+        assert_eq!(crsf(inv, false), Some(("inverted", tbs)));
         // SBUS has no vendor-published source: nothing is refused on its behalf.
-        let mut sbus = framing(115_200, 7, Parity::Odd, 1);
-        sbus.inverted = false;
-        assert_eq!(contradiction(SerialRole::RcSbus, &sbus), None);
+        let sbus = framing(115_200, 7, Parity::Odd, 1);
+        assert_eq!(contradiction(SerialRole::RcSbus, &sbus, false), None);
     }
 
     #[test]
@@ -671,6 +770,7 @@ mod tests {
             rx: "R".into(),
             role: SerialRole::Console,
             framing: framing(115_200, 8, Parity::None, 1),
+            negotiated: None,
             kernel_hz: 64_000_000,
             brr: 556,
             actual_millibaud: 0,

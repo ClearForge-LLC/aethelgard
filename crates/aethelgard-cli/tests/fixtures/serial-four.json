@@ -327,7 +327,8 @@
         "parity": "none",
         "stop_bits": 1,
         "inverted": false
-      }
+      },
+      "negotiated": null
     },
     {
       "label": "GPS",
@@ -347,7 +348,8 @@
         "parity": "none",
         "stop_bits": 1,
         "inverted": false
-      }
+      },
+      "negotiated": null
     },
     {
       "label": "CRSF",
@@ -367,7 +369,8 @@
         "parity": "none",
         "stop_bits": 1,
         "inverted": false
-      }
+      },
+      "negotiated": null
     },
     {
       "label": "SBUS",
@@ -387,7 +390,8 @@
         "parity": "even",
         "stop_bits": 2,
         "inverted": true
-      }
+      },
+      "negotiated": null
     }
   ]
 }
