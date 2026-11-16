@@ -26,8 +26,8 @@ use std::collections::BTreeMap;
 use aethelgard_ir::{PinTable, SolvedTopology};
 
 use super::{
-    BoardError, Facts, I2C_MODES, Kind, Plan, Role, clock_fields, spi_code, timer_writes,
-    usart_values,
+    BoardError, Facts, I2C_MODES, Kind, Plan, Role, clock_fields, port_pupdr, spi_code,
+    timer_writes, usart_values,
 };
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
@@ -175,10 +175,10 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             },
         );
     }
-    // Each port: its whole `OTYPER` (`split`), then each pin's fields, as
-    // `into_*` writes them, then a GPIO output's `BSRR` set.
+    // Each port: its whole `OTYPER` and `PUPDR` (`split`), then each pin's
+    // fields, as `into_*` writes them, then a GPIO output's `BSRR` set.
     let gp = &facts.gpio;
-    let [mw, _, sw, pw, aw] = gp.widths;
+    let [mw, _, sw, _, aw] = gp.widths;
     let field_mask = |width: u32, pos: u32| ((1u32 << width) - 1) << pos;
     for port in &plan.ports {
         let inst = format!("GPIO{port}");
@@ -197,11 +197,19 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             gp.otyper,
             whole(otyper),
         );
+        add(
+            "GPIO",
+            &inst,
+            "PUPDR",
+            "GPIO_PUPDR",
+            gp.pupdr,
+            whole(port_pupdr(plan, facts, *port)),
+        );
     }
     for (pin, p) in &plan.pins {
         let inst = format!("GPIO{}", p.port);
         let pf = &facts.pins[pin];
-        let (mode, _, ospeed, pupd) = p.policy();
+        let (mode, _, ospeed, _) = p.policy();
         let changed = |width: u32, pos: u32, value: u32| Write::Changed {
             mask: field_mask(width, pos),
             value: value << pos,
@@ -213,14 +221,6 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             "GPIO_OSPEEDR",
             gp.ospeedr,
             changed(sw, pf.ospeedr, ospeed),
-        );
-        add(
-            "GPIO",
-            &inst,
-            "PUPDR",
-            "GPIO_PUPDR",
-            gp.pupdr,
-            changed(pw, pf.pupdr, pupd),
         );
         if p.role == Role::Output {
             add(

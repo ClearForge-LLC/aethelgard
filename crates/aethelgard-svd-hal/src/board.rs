@@ -731,6 +731,26 @@ enum Role {
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
 
+/// `PUPDR` `10`, pull-down (RM0433 Rev 9 §11.4.4, p. 542), on every motor
+/// output: from reset until `start_outputs` the pin is first analog, then an
+/// alternate function the timer does not yet drive (`MOE`/`CCxE` clear), so
+/// it would float; the pull holds it low (the architect's ruling on Q-G,
+/// `AET-WO-4230`). The generator's own copy; the oracle takes the rule's,
+/// `aethelgard_ir::silicon::motor_output_pupd`.
+const MOTOR_PULL: u32 = 0b10;
+
+/// A port's `PUPDR` at reset (RM0433 Rev 9 §11.4.4, p. 542): `0x6400_0000`
+/// in port A (PA13 pull-up, PA14 pull-down, PA15 pull-up) and `0x0000_0100`
+/// in port B (PB4 pull-up), the debug port's pulls; 0 in every other port.
+/// `split` keeps every unsolved pin's field at it.
+fn pupdr_reset(port: char) -> u32 {
+    match port {
+        'A' => 0x6400_0000,
+        'B' => 0x0000_0100,
+        _ => 0,
+    }
+}
+
 /// `SPI_CFG1.DSIZE` for 8-bit frames: the frame's bits less one (RM0433
 /// §50.11.3). The generator's policy: every SPI part this crate reads takes
 /// bytes.
@@ -769,13 +789,14 @@ impl Role {
     /// The generator's policy for a role: (mode, output type, pull). I2C is
     /// open-drain with no internal pull (the specification requires an
     /// external pull-up); SPI is push-pull; a GPIO output is push-pull and
-    /// starts high (an inactive chip select); a timer channel and a USART's TX
-    /// and RX are push-pull with no internal pull. The speed is [`Role::scope`]'s.
+    /// starts high (an inactive chip select); a timer channel is push-pull,
+    /// pulled down ([`MOTOR_PULL`]); a USART's TX and RX are push-pull with no
+    /// internal pull. The speed is [`Role::scope`]'s.
     fn policy(self) -> (u32, u32, u32) {
         match self {
             Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00),
             Self::SpiSck | Self::SpiMosi | Self::SpiMiso => (MODE_AF, 0, 0b00),
-            Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, 0b00),
+            Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, MOTOR_PULL),
             Self::UsartTx | Self::UsartRx => (MODE_AF, 0, 0b00),
             Self::Output => (MODE_OUTPUT, 0, 0b00),
         }
@@ -2484,9 +2505,10 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for (pin, p) in &plan.pins {
         let pf = &facts.pins[pin];
         let g = &facts.gpio;
-        // `OTYPER` is the port's, written whole by `split` (`AET-WO-4230` D5).
-        let (mode, _, ospeed, pupd) = p.policy();
-        let [mw, _, sw, pw, aw] = g.widths;
+        // `OTYPER` and `PUPDR` are the port's, written whole by `split`
+        // (`AET-WO-4230` D5, R5).
+        let (mode, _, ospeed, _) = p.policy();
+        let [mw, _, sw, _, aw] = g.widths;
         let block = port_type(p.port);
         let what = match &p.peripheral {
             Some(periph) => format!("`{periph}_{}` on AF{}", p.role.signal(), p.af),
@@ -2519,7 +2541,6 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             );
         };
         field(w, g.ospeedr, pf.ospeedr, sw, ospeed);
-        field(w, g.pupdr, pf.pupdr, pw, pupd);
         if p.role == Role::Output {
             let _ = writeln!(
                 w,
@@ -2586,12 +2607,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "}}\n\
              \n\
              impl {t}<Clocked> {{\n    \
-                 /// The port's pins, once its whole `OTYPER` is written: each solved pin's\n    \
-                 /// output type, and every other pin's its reset value, 0.\n    \
+                 /// The port's pins, once its whole `OTYPER` and `PUPDR` are written: each\n    \
+                 /// solved pin's output type and pull, and every other pin's its reset\n    \
+                 /// value (the debug port's pulls on ports A and B).\n    \
                  pub fn split<R: Registers>(self, r: &mut R) -> {t}Pins {{\n        \
                      r.write(TOKEN, Block::{t}, {off:#04x}, {otyper:#010x});\n        \
+                     r.write(TOKEN, Block::{t}, {pupd_off:#04x}, {pupdr:#010x});\n        \
                      {t}Pins {{",
             off = facts.gpio.otyper,
+            pupd_off = facts.gpio.pupdr,
+            pupdr = port_pupdr(plan, facts, *port),
         );
         for pin in &pins {
             let _ = writeln!(
@@ -3352,6 +3377,53 @@ fn oracle_otyper(plan: &Plan, port: char) -> u32 {
         .fold(0, |word, p| word | (1 << p.index))
 }
 
+/// The port's whole `PUPDR` as `split` writes it (`AET-WO-4230` R5, D5): the
+/// port's reset word ([`pupdr_reset`]), each solved pin's field replaced by
+/// its role's pull ([`Role::policy`]).
+fn port_pupdr(plan: &Plan, facts: &Facts, port: char) -> u32 {
+    let pw = facts.gpio.widths[3];
+    plan.pins
+        .iter()
+        .filter(|(_, p)| p.port == port)
+        .fold(pupdr_reset(port), |word, (pin, p)| {
+            let pos = facts.pins[pin].pupdr;
+            (word & !(((1u32 << pw) - 1) << pos)) | (p.policy().3 << pos)
+        })
+}
+
+/// The oracle's whole `PUPDR` of `port` (`AET-WO-4230` R5), from neither
+/// [`Role::policy`] nor [`port_pupdr`]: `PUPDRn` is bits `2n+1:2n` (RM0433
+/// Rev 9 §11.4.4, p. 542). A pin of a timer, a motor output, takes the
+/// independent rule's pull (`aethelgard_ir::silicon::motor_output_pupd`, the
+/// architect's ruling on Q-G); every other solved pin none, `00`; every other
+/// pin of the port its reset value.
+///
+/// belt-and-suspenders: the reset words restate [`pupdr_reset`]'s on purpose,
+/// read again from the page; the oracle must not take what the crate under
+/// proof writes (`INV-07`).
+fn oracle_pupdr(plan: &Plan, port: char) -> u32 {
+    let reset: u32 = match port {
+        'A' => 0x6400_0000,
+        'B' => 0x0000_0100,
+        _ => 0,
+    };
+    plan.pins
+        .values()
+        .filter(|p| p.port == port)
+        .fold(reset, |word, p| {
+            let motor = p
+                .peripheral
+                .as_deref()
+                .is_some_and(|n| n.starts_with("TIM"));
+            let pull = if motor {
+                silicon::motor_output_pupd()
+            } else {
+                0
+            };
+            (word & !(0b11 << (2 * p.index))) | (pull << (2 * p.index))
+        })
+}
+
 /// A field's mask, as the oracle computes it.
 fn oracle_mask(width: u32, pos: u32) -> u32 {
     ((1u32 << width) - 1) << pos
@@ -3570,7 +3642,7 @@ fn parts(plan: &Plan) -> Vec<Scope> {
 /// oracle is, never from `emit_lib`'s writes (`INV-07`).
 fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
     let g = &facts.gpio;
-    let [mw, _, sw, pw, aw] = g.widths;
+    let [mw, _, sw, _, aw] = g.widths;
     let mut fp = Footprint::new();
     let mut add = |variant: String, offset: u32, mask: u32| {
         *fp.entry((variant, offset)).or_default() |= mask;
@@ -3587,8 +3659,10 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
         Action::Port(p) => {
             let (v, o, m) = gate(&facts.ports[p].gate);
             add(v, o, m);
-            // `split` writes the port's whole `OTYPER` (`AET-WO-4230` D5).
+            // `split` writes the port's whole `OTYPER` and `PUPDR`
+            // (`AET-WO-4230` D5, R5).
             add(port_type(*p), g.otyper, !0);
+            add(port_type(*p), g.pupdr, !0);
         }
         Action::Clock(name) => {
             let (v, o, m) = gate(&facts.peripherals[name].gate);
@@ -3604,7 +3678,6 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
             let t = port_type(p.port);
             add(t.clone(), g.moder, oracle_mask(mw, pf.moder));
             add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
-            add(t.clone(), g.pupdr, oracle_mask(pw, pf.pupdr));
             if p.role == Role::Output {
                 level(&mut add, pin);
             } else {
@@ -4060,16 +4133,22 @@ fn emit_schedule(
         );
     }
     // `OTYPER` is written whole, never read (`AET-WO-4230` D5): Renode 1.17.0
-    // does not store `OT`, so a read-modify-write of it diverges.
+    // does not store `OT`, so a read-modify-write of it diverges. `PUPDR` is
+    // written whole too (R5): no pin read-modify-writes it.
     for port in &scope.ports {
         let _ = writeln!(
             w,
             "        kani::assert(\n            \
                  !(block == Block::{t} && offset == {otyper:#04x}),\n            \
                  \"{t} OTYPER was read\",\n        \
+             );\n        \
+             kani::assert(\n            \
+                 !(block == Block::{t} && offset == {pupdr:#04x}),\n            \
+                 \"{t} PUPDR was read\",\n        \
              );",
             t = port_type(*port),
             otyper = g.otyper,
+            pupdr = g.pupdr,
         );
     }
     // The configuration registers are written whole, never read (`AET-WO-4230`
@@ -4236,9 +4315,14 @@ fn emit_schedule(
             w,
             "        if block == Block::{t} && offset == {otyper:#04x} {{\n            \
                  kani::assert(value == {word:#010x}, \"{t} OTYPER is not the solved word, whole\");\n        \
+             }}\n        \
+             if block == Block::{t} && offset == {pupdr:#04x} {{\n            \
+                 kani::assert(value == {pull:#010x}, \"{t} PUPDR is not the solved word, whole\");\n        \
              }}",
             otyper = g.otyper,
             word = oracle_otyper(plan, *port),
+            pupdr = g.pupdr,
+            pull = oracle_pupdr(plan, *port),
         );
         let _ = writeln!(
             w,
@@ -4258,7 +4342,7 @@ fn emit_schedule(
         });
         for (pin, p) in &own {
             let pf = &facts.pins[*pin];
-            let (mode, _, ospeed, pupd) = p.policy();
+            let (mode, _, ospeed, _) = p.policy();
             let mmask = oracle_mask(mw, pf.moder);
             let ot = 1u32 << p.index;
             let mut ready = vec![
@@ -4277,7 +4361,7 @@ fn emit_schedule(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.pupdr / 4,
                     oracle_mask(pw, pf.pupdr),
-                    pupd << pf.pupdr
+                    oracle_pupdr(plan, *port) & oracle_mask(pw, pf.pupdr)
                 ),
             ];
             if p.role == Role::Output {
@@ -4390,7 +4474,7 @@ fn emit_schedule(
         let field = port_field(*port);
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
         let mut own: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
-        let [mw, _, sw, pw, aw] = g.widths;
+        let [mw, _, sw, _, aw] = g.widths;
         let mut touched: BTreeSet<u32> = BTreeSet::new();
         // A USART's pins are not configured by the schedule: their fields
         // are held unchanged with the unsolved pins' (`AET-WO-4300b`).
@@ -4400,11 +4484,10 @@ fn emit_schedule(
             .filter(|(_, p)| p.port == *port && !p.role.is_serial())
         {
             let pf = &facts.pins[pin];
-            let (mode, _, ospeed, pupd) = p.policy();
+            let (mode, _, ospeed, _) = p.policy();
             let fields = |acc: &mut BTreeMap<u32, (u32, u32)>| {
                 expect_field(acc, g.moder, pf.moder, mw, mode);
                 expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
-                expect_field(acc, g.pupdr, pf.pupdr, pw, pupd);
                 if p.role != Role::Output {
                     expect_field(acc, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
                 }
@@ -4417,15 +4500,20 @@ fn emit_schedule(
                 touched.insert(g.bsrr);
             }
         }
-        // `OTYPER`: the whole solved word, every pin's, whatever it held.
+        // `OTYPER` and `PUPDR`: the whole solved words, every pin's, whatever
+        // they held.
         let _ = writeln!(
             w,
-            "    kani::assert(after.{field}[{i}] == {word:#010x}, \"{t} OTYPER is not the solved word\");",
+            "    kani::assert(after.{field}[{i}] == {word:#010x}, \"{t} OTYPER is not the solved word\");\n    \
+             kani::assert(after.{field}[{j}] == {pull:#010x}, \"{t} PUPDR is not the solved word\");",
             i = g.otyper / 4,
             t = port_type(*port),
             word = oracle_otyper(plan, *port),
+            j = g.pupdr / 4,
+            pull = oracle_pupdr(plan, *port),
         );
         touched.insert(g.otyper);
+        touched.insert(g.pupdr);
         for (reg, (mask, _)) in &expect {
             let i = reg / 4;
             let t = port_type(*port);
@@ -5404,19 +5492,18 @@ fn emit_usart_proof(
          }}",
         n = facts.rcc_words
     );
-    // Each pin's port: its whole `OTYPER` the solved word, the pin's other
+    // Each pin's port: its whole `OTYPER` and `PUPDR` the solved words, the pin's other
     // fields solved, every other field unchanged.
-    let [mw, _, sw, pw, aw] = g.widths;
+    let [mw, _, sw, _, aw] = g.widths;
     for port in &ports {
         let field = port_field(*port);
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
         for pin in pins.iter().filter(|p| plan.pins[**p].port == *port) {
             let p = &plan.pins[*pin];
             let pf = &facts.pins[*pin];
-            let (mode, _, ospeed, pupd) = p.policy();
+            let (mode, _, ospeed, _) = p.policy();
             expect_field(&mut expect, g.moder, pf.moder, mw, mode);
             expect_field(&mut expect, g.ospeedr, pf.ospeedr, sw, ospeed);
-            expect_field(&mut expect, g.pupdr, pf.pupdr, pw, pupd);
             expect_field(&mut expect, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
         }
         for i in 0..g.words {
@@ -5425,6 +5512,14 @@ fn emit_usart_proof(
                     body,
                     "    kani::assert(spy.img.{field}[{i}] == {word:#010x}, \"{t}: {field} OTYPER is not the solved word\");",
                     word = oracle_otyper(plan, *port),
+                );
+                continue;
+            }
+            if i * 4 == g.pupdr {
+                let _ = writeln!(
+                    body,
+                    "    kani::assert(spy.img.{field}[{i}] == {word:#010x}, \"{t}: {field} PUPDR is not the solved word\");",
+                    word = oracle_pupdr(plan, *port),
                 );
                 continue;
             }
@@ -6358,6 +6453,45 @@ mod tests {
             "kani::assert(value == 0x000000c0, \"GpioB OTYPER is not the solved word, whole\");"
         ));
         assert!(proofs.contains("\"GpioB OTYPER was read\""));
+    }
+
+    /// `AET-WO-4230` R5: each port's `PUPDR` is written once, whole, by
+    /// `split`, beside `OTYPER`, and never read-modify-written by a pin; the
+    /// word keeps the debug port's reset pulls (RM0433 Rev 9 §11.4.4, p. 542:
+    /// port A `0x6400_0000`, port B `0x0000_0100`) and gives no solved pin of
+    /// this board a pull. The harness holds the final word to the oracle's.
+    #[test]
+    fn pupdr_is_written_whole_by_split_and_keeps_the_debug_pulls() {
+        let s = solved();
+        let plan = Plan::new("b", &s, &table()).unwrap();
+        assert_eq!(oracle_pupdr(&plan, 'A'), 0x6400_0000);
+        assert_eq!(oracle_pupdr(&plan, 'B'), 0x0000_0100);
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        assert!(
+            lib.contains(
+                "    pub fn split<R: Registers>(self, r: &mut R) -> GpioBPins {\n        \
+                 r.write(TOKEN, Block::GpioB, 0x04, 0x000000c0);\n        \
+                 r.write(TOKEN, Block::GpioB, 0x0c, 0x00000100);\n"
+            ),
+            "{lib}"
+        );
+        assert!(lib.contains("r.write(TOKEN, Block::GpioA, 0x0c, 0x64000000);\n"));
+        for port in ["GpioA", "GpioB"] {
+            assert_eq!(
+                lib.matches(&format!("Block::{port}, 0x0c")).count(),
+                1,
+                "{port}"
+            );
+        }
+        let proofs = &files["src/proofs.rs"];
+        assert!(proofs.contains(
+            "kani::assert(after.gpiob[3] == 0x00000100, \"GpioB PUPDR is not the solved word\");"
+        ));
+        assert!(proofs.contains(
+            "kani::assert(value == 0x64000000, \"GpioA PUPDR is not the solved word, whole\");"
+        ));
+        assert!(proofs.contains("\"GpioA PUPDR was read\""));
     }
 
     /// `AET-WO-4230` D6: every board that reads the reset clock checks

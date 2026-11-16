@@ -389,3 +389,29 @@ fn an_output_no_unit_owns_is_proved_in_the_gpio_part() {
     );
     assert!(!body.contains("enable_gpioa"), "{body}");
 }
+
+/// `AET-WO-4230` R5 (the architect's ruling on Q-G): every motor-output pin
+/// is pulled down, `PUPDR` `10`, from port A's first init: `split` writes the
+/// whole word, the debug port's reset pulls (`0x6400_0000`, RM0433 Rev 9
+/// §11.4.4, p. 542) and `10` at PA8..PA11 (bits 23:16, `0x00AA_0000`); no
+/// pin method writes `PUPDR` any more, and the proofs hold the word whole.
+#[test]
+fn motor_pins_are_pulled_down_from_the_first_port_init() {
+    for name in ["motors-pwm", "motors-dshot600"] {
+        let files = generated(name);
+        let board = &files["src/board.rs"];
+        let split = item(board, "impl GpioA<Clocked> {");
+        assert!(
+            split.contains("r.write(TOKEN, Block::GpioA, 0x0c, 0x64aa0000);"),
+            "{name}: {split}"
+        );
+        assert_eq!(board.matches("Block::GpioA, 0x0c").count(), 1, "{name}");
+        let proofs = &files["src/proofs.rs"];
+        assert!(
+            proofs.contains(
+                "kani::assert(value == 0x64aa0000, \"GpioA PUPDR is not the solved word, whole\");"
+            ),
+            "{name}"
+        );
+    }
+}
