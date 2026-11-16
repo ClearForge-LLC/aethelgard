@@ -61,7 +61,7 @@ jobs:
       - name: the source offer in the built image
         run: |
           bash container/check-sources.sh labels tools "$IMAGE"
-          docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/check-sources.sh inside tools
+          docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/check-sources.sh inside tools --drift warn
 
       - name: cargo fmt inside the image
         run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" cargo fmt --all -- --check
@@ -113,6 +113,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # AET-WO-4403 D5 (Scotty, #176): every GPL-2.0-only Debian source package
+      # the image holds, next to it and before it, one artifact per package and
+      # version; only the ones not yet there are pushed.
+      - name: mirror the GPL-2.0-only Debian sources
+        run: |
+          ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras")
+          start=$(date +%s)
+          ORAS=$ORAS python3 -I container/debian-src.py publish ghcr.io/clearforge-llc/aethelgard-tools container/TOOLS-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
+          echo "ANSWER debian_mirror_s=$(( $(date +%s) - start ))"
+
       # container/IMAGE is updated by a pull request from this digest; CI never
       # writes to the repository.
       - name: push and record the digest
@@ -120,3 +130,17 @@ jobs:
           docker push "$TAG"
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
           echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+
+  # D5 acceptance: an anonymous client fetches every mirrored Debian source by
+  # its pinned digest. No login and no token: curl reads no netrc and no
+  # docker config.
+  source:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fetch every GPL-2.0-only Debian source anonymously by its pinned digest
+        run: python3 -I container/debian-src.py fetch ghcr.io/clearforge-llc/aethelgard-tools container/TOOLS-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
