@@ -394,3 +394,18 @@ Measured in both published images, rebuilt RUN-free with the new offer and table
 - Both tables and the 18 fixtures are regenerated, and `test-debian-src.sh` passes.
 
 **Gates.** Since the cargo gates passed on this branch at `ccdecb6`, only `container/` and FEEDBACK have changed; no crate changed. All four container suites pass, and so does `check-pins.sh` on all three Dockerfiles.
+
+**CI on `7773004`, all green [measured]:**
+- **`ardupilot-image` run 43960888563:** the fresh build's 29 flagged packages are all in the table, with no drift. `source` fetched the GCC mirror anonymously on the PR. `ANSWER debian_rehearsal bytes=77086 s=1`.
+- **`tools-image` run 43960888564:** 84 of 84 in the table, no drift.
+- **`ci` run 43960888546:** green. Shard times (main's plan; no test or `ci/` change):
+  - shard 0: 20:26
+  - shard 1: 29:11
+  - shard 2: 26:38
+  - shard 3: 22:39
+  - shard 4: 30:20
+  - shard 5: 22:50
+  - shard 6: 24:04
+  - shard 7: 30:30
+- **`main` `d6410b8` (docs #183) is merged in;** docs only.
+- **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge (D1(a)). Q3's re-pin PR follows that merge.
