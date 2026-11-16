@@ -146,6 +146,7 @@ fn spec(
     let json = serde_json::json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
+        "acknowledge_unwitnessed": [],
         "net_classes": [],
         "diff_pairs": [],
         "power": null,

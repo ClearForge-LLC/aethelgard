@@ -133,18 +133,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `4230` renumbered to 11), which changes no generator: the three moved with
 /// the specification's sha256 alone (`4fe0b873…27c4`, `efe40970…ff4b`,
 /// `f2de05af…b9ea` before); the boot image did not move.
+/// Moved again by `AET-WO-4230` round 2 (`acknowledge_unwitnessed` and each
+/// port's `peer_deviation_source` in the hashed document), which changes no
+/// generator: the three moved with the specification's sha256 alone
+/// (`2f7d00e8…df67`, `87f7aa19…ed24`, `61e7224b…bb06` before); the boot image
+/// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "2f7d00e82b352e937dd525517cdc5770156c3d63165ad98289ad2f8c11c1df67",
+        "0ae37256a4f4fc99af42d5d85149b53ed0afec1a37a47a3cba8642059fe57df4",
     ),
     (
         "platform",
-        "87f7aa19b7a965d0b6c77eac6e41dc4f51bfffacb2ed67264ba6969f0073ed24",
+        "ee09ef30a44294b3127437e7ce8f68ac8e304755a0c3b1c160343acb511f29f1",
     ),
     (
         "platform faulted",
-        "61e7224bffa4a1d3e86b9863f4614bbdb29140829147d759c5868c007a91bb06",
+        "d0e7995a7ae068539fcda0a58175495446a1b60e71d9715874f662d30e0ecda3",
     ),
     (
         "boot image",
