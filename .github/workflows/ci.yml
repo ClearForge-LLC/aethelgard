@@ -316,7 +316,9 @@ jobs:
       # AET-WO-4300g in board_tier2.rs (the reference passes the support gate
       # on KiCad's own netlist; a VDD capacitor moved off its pin fails it by
       # that role) and 1 from AET-WO-1310 (merged into that branch, PR #160).
-      TIER2_MIN: "157"
+      # 158: plus 1 from AET-WO-1603 in twin_tier2.rs (a witness line sent through
+      # every firmware channel never reaches the judge).
+      TIER2_MIN: "158"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

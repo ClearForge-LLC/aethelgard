@@ -384,3 +384,361 @@ fn build_refuses_an_existing_output_a_dependency_and_a_crate_without_firmware() 
     assert_eq!(v["error"]["kind"], "NotABoardCrate");
     assert!(!out.exists());
 }
+
+/// Copies the board crate in `from` to `to`, then applies `change`.
+fn variant(from: &Path, to: &Path, change: impl Fn(&Path)) -> PathBuf {
+    for (rel, bytes) in tree(from) {
+        let p = to.join(rel);
+        fs::create_dir_all(p.parent().unwrap()).unwrap();
+        fs::write(p, bytes).unwrap();
+    }
+    change(to);
+    to.to_path_buf()
+}
+
+fn put(path: PathBuf, text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(path, text).unwrap();
+}
+
+fn append(path: PathBuf, text: &str) {
+    let mut t = fs::read_to_string(&path).unwrap();
+    t.push_str(text);
+    fs::write(path, t).unwrap();
+}
+
+/// A pre-flight case: its label, the change to the board crate, and the
+/// refusal's kind and `id`.
+type Case = (&'static str, Box<dyn Fn(&Path)>, &'static str, &'static str);
+
+/// AET-WO-1603 §1.2: `build` and `prove` refuse by name, before any tool is
+/// looked for, what cargo or rustup would run or take from a crate: a proc
+/// macro, a build script, a path dependency outside the crate, a Cargo
+/// configuration other than the generated one, and a toolchain file, each
+/// wherever it is in the crate (FEEDBACK §3, M1-M14). The generated crate
+/// passes: the first thing missing is a tool.
+#[test]
+fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
+    let dir = reference("preflight");
+    let board = dir.join("board");
+    let out = dir.join("fw.elf");
+    let build = |c: &Path| run(&["build", "--crate", s(c), "--out", s(&out)], true);
+    let prove = |c: &Path| run(&["prove", "--crate", s(c), "--harness", "h"], true);
+    for (code, v) in [build(&board), prove(&board)] {
+        assert_eq!(code, Some(4), "{v}");
+        assert_eq!(v["error"]["kind"], "ToolMissing", "{v}");
+    }
+    const PM: &str = "[package]\nname = \"pm\"\nversion = \"0.0.0\"\nedition = \"2024\"\n";
+    let cases: Vec<Case> = vec![
+        (
+            "proc-macro",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[lib]\nproc-macro = true\n"),
+                )
+            }),
+            "CrateHasProcMacro",
+            "pm/Cargo.toml",
+        ),
+        (
+            "proc-macro-underscore-inline",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("lib = {{ proc_macro = true }}\n{PM}"),
+                )
+            }),
+            "CrateHasProcMacro",
+            "pm/Cargo.toml",
+        ),
+        (
+            "proc-macro-escaped-key",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[lib]\n\"proc\\u002dmacro\" = true\n"),
+                )
+            }),
+            "CrateHasProcMacro",
+            "pm/Cargo.toml",
+        ),
+        (
+            "proc-macro-crate-type",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[lib]\ncrate-type = [\"proc-macro\"]\n"),
+                )
+            }),
+            "CrateHasProcMacro",
+            "pm/Cargo.toml",
+        ),
+        (
+            "proc-macro-crate-type-root",
+            Box::new(|c| {
+                append(
+                    c.join("Cargo.toml"),
+                    "\n[lib]\ncrate_type = [\"rlib\", \"proc-macro\"]\n",
+                )
+            }),
+            "CrateHasProcMacro",
+            "Cargo.toml",
+        ),
+        (
+            "cargo-features",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("Cargo.toml"),
+                    format!("cargo-features = [\"profile-rustflags\"]\n{t}"),
+                )
+                .unwrap();
+            }),
+            "CargoFeaturesRefused",
+            "Cargo.toml",
+        ),
+        (
+            "project-build-script",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &PM.replace("[package]", "[project]").replace("2024", "2021"),
+                );
+                put(c.join("pm/build.rs"), "fn main() {}\n");
+            }),
+            "CrateHasBuildScript",
+            "pm/Cargo.toml",
+        ),
+        (
+            "package-workspace-outside",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("firmware/Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("firmware/Cargo.toml"),
+                    t.replacen("[package]\n", "[package]\nworkspace = \"../..\"\n", 1),
+                )
+                .unwrap();
+            }),
+            "WorkspaceAboveCrate",
+            "firmware/Cargo.toml",
+        ),
+        (
+            "workspace-member-outside",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[workspace]\nmembers = [\"../../x\"]\n"),
+                )
+            }),
+            "CrateHasDependency",
+            "pm/Cargo.toml",
+        ),
+        (
+            "build-script",
+            Box::new(|c| put(c.join("firmware/build.rs"), "fn main() {}\n")),
+            "CrateHasBuildScript",
+            "firmware/Cargo.toml",
+        ),
+        (
+            "build-script-named",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("Cargo.toml"),
+                    t.replacen("[package]\n", "[package]\nbuild = \"gen.rs\"\n", 1),
+                )
+                .unwrap();
+            }),
+            "CrateHasBuildScript",
+            "Cargo.toml",
+        ),
+        (
+            "path-outside",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("firmware/Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("firmware/Cargo.toml"),
+                    t.replacen(
+                        "[dependencies]\n",
+                        "[dependencies]\nx = { path = \"/etc\" }\n",
+                        1,
+                    ),
+                )
+                .unwrap();
+            }),
+            "CrateHasDependency",
+            "firmware/Cargo.toml",
+        ),
+        (
+            "patch-outside",
+            Box::new(|c| {
+                append(
+                    c.join("Cargo.toml"),
+                    "\n[patch.crates-io]\ny = { path = \"..\" }\n",
+                )
+            }),
+            "CrateHasDependency",
+            "Cargo.toml",
+        ),
+        (
+            "config-linker",
+            Box::new(|c| {
+                append(
+                    c.join("firmware/.cargo/config.toml"),
+                    "linker = \"/bin/false\"\n",
+                )
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-build-key",
+            Box::new(|c| {
+                let p = c.join("firmware/.cargo/config.toml");
+                let t = fs::read_to_string(&p).unwrap();
+                fs::write(
+                    &p,
+                    t.replacen("[build]\n", "[build]\nrustc-wrapper = \"/bin/false\"\n", 1),
+                )
+                .unwrap();
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-env-table",
+            Box::new(|c| {
+                append(
+                    c.join("firmware/.cargo/config.toml"),
+                    "\n[env]\nX = \"1\"\n",
+                )
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-rustflags",
+            Box::new(|c| {
+                let p = c.join("firmware/.cargo/config.toml");
+                let t = fs::read_to_string(&p).unwrap();
+                fs::write(
+                    &p,
+                    t.replacen(
+                        "\"link-arg=-Tlink.x\"]",
+                        "\"link-arg=-Tlink.x\", \"-C\", \"link-arg=--x\"]",
+                        1,
+                    ),
+                )
+                .unwrap();
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-unparsable",
+            Box::new(|c| append(c.join("firmware/.cargo/config.toml"), "\nnot toml [[\n")),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-root",
+            Box::new(|c| put(c.join(".cargo/config.toml"), "[build]\n")),
+            "CargoConfigRefused",
+            ".cargo/config.toml",
+        ),
+        (
+            "config-legacy",
+            Box::new(|c| put(c.join("firmware/.cargo/config"), "[build]\n")),
+            "CargoConfigRefused",
+            "firmware/.cargo/config",
+        ),
+        (
+            "toolchain",
+            Box::new(|c| {
+                put(
+                    c.join("firmware/rust-toolchain.toml"),
+                    "[toolchain]\nchannel = \"nightly\"\n",
+                )
+            }),
+            "ToolchainFileRefused",
+            "firmware/rust-toolchain.toml",
+        ),
+        (
+            "toolchain-legacy",
+            Box::new(|c| put(c.join("rust-toolchain"), "nightly\n")),
+            "ToolchainFileRefused",
+            "rust-toolchain",
+        ),
+    ];
+    for (label, change, kind, id) in &cases {
+        let c = variant(&board, &dir.join(label), change);
+        for (code, v) in [build(&c), prove(&c)] {
+            assert_eq!(code, Some(3), "{label}: {v}");
+            assert_eq!(v["error"]["kind"], *kind, "{label}: {v}");
+            assert_eq!(v["error"]["id"], *id, "{label}: {v}");
+        }
+        assert!(!out.exists(), "{label}");
+    }
+}
+
+/// AET-WO-1603 §1.2 (M11, M12): a Cargo configuration or a `Cargo.toml` in a
+/// parent of the scratch directory is refused by its absolute path before
+/// any tool; cargo would read it, or fail on it.
+#[test]
+fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
+    use std::os::unix::fs::DirBuilderExt;
+    let dir = reference("above");
+    let board = dir.join("board");
+    // Under the CLI's own base, whose ancestors no one else can write
+    // (`AET-WO-1601` §1.4).
+    // (`AET-WO-1601` §1.4); as root, searchable by the tool uid, as
+    // `common::private_tmp` makes it.
+    let (base, mode) = if rustix::process::geteuid().is_root() {
+        (PathBuf::from("/var/lib/aethelgard"), 0o711)
+    } else {
+        (
+            PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cache/aethelgard"),
+            0o700,
+        )
+    };
+    for (rel, kind) in [
+        (".cargo/config.toml", "CargoConfigRefused"),
+        ("rust-toolchain.toml", "ToolchainFileRefused"),
+        ("Cargo.toml", "WorkspaceAboveCrate"),
+    ] {
+        let parent = base.join(format!("tests-{}-above-{kind}", std::process::id()));
+        let _ = fs::remove_dir_all(&parent);
+        let tmp = parent.join("tmp");
+        fs::DirBuilder::new()
+            .recursive(true)
+            .mode(mode)
+            .create(&tmp)
+            .unwrap();
+        put(parent.join(rel), "[build]\n");
+        for args in [
+            vec![
+                "build",
+                "--crate",
+                s(&board),
+                "--out",
+                "/nonexistent/fw.elf",
+            ],
+            vec!["prove", "--crate", s(&board), "--harness", "h"],
+        ] {
+            let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+                .args(&args)
+                .current_dir(root())
+                .env("PATH", "")
+                .env("TMPDIR", &tmp)
+                .stdin(Stdio::null())
+                .output()
+                .unwrap();
+            let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+            assert_eq!(out.status.code(), Some(3), "{rel}: {v}");
+            assert_eq!(v["error"]["kind"], kind, "{rel}: {v}");
+            assert_eq!(v["error"]["id"], s(&parent.join(rel)), "{rel}: {v}");
+        }
+        fs::remove_dir_all(&parent).unwrap();
+    }
+}

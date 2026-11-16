@@ -6,7 +6,8 @@
 //! the real sandbox, so the results are what a hostile tool would get.
 //!
 //! A board with a `mode=channels` line asks instead for AET-WO-1600's
-//! non-socket channels and the capability state (`channels()`).
+//! non-socket channels and the capability state (`channels()`); one with
+//! `mode=devices`, for which device nodes open (`devices()`, AET-WO-1603 §1.5).
 
 #![forbid(unsafe_code)]
 
@@ -61,6 +62,9 @@ fn main() {
             &report_path(&args),
             &channels(Path::new(board_path), victim),
         );
+    }
+    if board.lines().any(|l| l == "mode=devices") {
+        report(&report_path(&args), &devices());
     }
     let target = |key: &str| {
         board
@@ -129,7 +133,7 @@ fn helper(program: &str, args: &[&str]) -> (String, String) {
     if !Path::new(program).exists() {
         return (format!("missing:{program}"), String::new());
     }
-    // Not Stdio::null: Landlock gives this tool no /dev/null.
+    // Stdin piped and closed at once, so the helper never waits on it.
     match Command::new(program)
         .args(args)
         .stdin(Stdio::piped())
@@ -152,6 +156,46 @@ fn helper(program: &str, args: &[&str]) -> (String, String) {
             String::new(),
         ),
     }
+}
+
+/// AET-WO-1603 §1.5: `/dev/null` read and written, a child started with
+/// `Stdio::null()` (which opens it), and every other device node a tool could
+/// try, each opened for reading.
+fn devices() -> Vec<(&'static str, String)> {
+    use std::fs::OpenOptions;
+    let mut v = vec![
+        ("null_read", result(File::open("/dev/null"))),
+        (
+            "null_write",
+            result(OpenOptions::new().write(true).open("/dev/null")),
+        ),
+        (
+            "null_stdio",
+            result(
+                Command::new("/usr/bin/true")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .status(),
+            ),
+        ),
+    ];
+    // Each by its path, so the test can tell a node the environment lacks.
+    for path in [
+        "/dev/zero",
+        "/dev/full",
+        "/dev/random",
+        "/dev/urandom",
+        "/dev/tty",
+        "/dev/ptmx",
+        "/dev/kmsg",
+        "/dev/mem",
+    ] {
+        v.push((path, result(File::open(path))));
+    }
+    let shm = "/dev/shm/aethelgard-1603-probe";
+    v.push((shm, result(File::create(shm))));
+    v
 }
 
 /// `ipcmk`, then `ipcrm` of what it made, so a host keeps nothing.

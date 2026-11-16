@@ -129,6 +129,12 @@ pub enum Refusal {
     Elf { kind: &'static str, message: String },
     #[error("hwdef.h {name}: {message}")]
     Header { name: String, message: String },
+    /// One of the 33 macros is named inside a conditional region the reader
+    /// cannot evaluate exactly (`AET-WO-1603` §1.4).
+    #[error(
+        "hwdef.h {name}: named at line {line} inside a conditional other than exactly `#if 0` or `#if 1`, which the cross-check does not evaluate"
+    )]
+    Conditional { name: String, line: usize },
     #[error(
         "GPIO{port}_{register} is {elf:#010x} in the ELF and {header:#010x} in hwdef.h: two decodes of one image disagree"
     )]
@@ -152,6 +158,7 @@ impl Refusal {
         match self {
             Self::Elf { kind, .. } | Self::Allow { kind, .. } => kind,
             Self::Header { .. } => "MalformedHeader",
+            Self::Conditional { .. } => "HwdefConditionalUnsupported",
             Self::DecodesDisagree { .. } => "DecodesDisagree",
             Self::UnsupportedPart { .. } => "UnsupportedPart",
             Self::InvalidPin { .. } => "InvalidPin",
@@ -161,7 +168,7 @@ impl Refusal {
     /// What `error.id` names: the macro, the register, the pin or the net.
     pub fn id(&self) -> Option<String> {
         match self {
-            Self::Header { name, .. } => Some(name.clone()),
+            Self::Header { name, .. } | Self::Conditional { name, .. } => Some(name.clone()),
             Self::DecodesDisagree { port, register, .. } => Some(format!("GPIO{port}_{register}")),
             Self::InvalidPin { net, .. } => Some(net.clone()),
             Self::UnsupportedPart { part } => Some(part.clone()),

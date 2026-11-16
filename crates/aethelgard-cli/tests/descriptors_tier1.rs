@@ -2,9 +2,11 @@
 //! B2): a descriptor above 2 without close-on-exec would reach the tool, a
 //! channel no sandbox layer sees, so the trampoline refuses the call.
 
+#[path = "common/stub.rs"]
+mod stub;
+
 use std::fs;
 use std::net::TcpListener;
-use std::os::unix::fs::PermissionsExt;
 use std::process::{Command, Stdio};
 
 use serde_json::Value;
@@ -44,12 +46,10 @@ fn an_inherited_socket_refuses_the_call_and_the_tool_never_runs() {
     fs::create_dir_all(&toolbox).unwrap();
     let ran = dir.join("tool-ran");
     let stub = toolbox.join("kicad-cli");
-    fs::write(
+    stub::write_executable(
         &stub,
         format!("#!/bin/sh\n: > '{}'\necho 10.0.7\n", ran.display()),
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let board = dir.join("b.kicad_pcb");
     fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();

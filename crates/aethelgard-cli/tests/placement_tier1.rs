@@ -2,9 +2,11 @@
 //! KiCad (`AET-WO-1301` §1.5, tier 1). What KiCad's parity check says about
 //! the board is tier 2 (`with_tools.rs`).
 
+#[path = "common/stub.rs"]
+mod stub;
+
 use std::collections::BTreeMap;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -384,8 +386,7 @@ exit 0
 "#
     );
     let stub = tb.join("kicad-cli");
-    fs::write(&stub, script).unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    stub::write_executable(&stub, script);
     tb
 }
 

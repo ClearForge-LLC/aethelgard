@@ -3957,6 +3957,26 @@ mod tests {
         assert!(!is_log_line("[00:00:00.010040000] WARNING sysbus: x"));
     }
 
+    /// `AET-WO-1603` §1.3: output a firmware reaches is tagged by its source,
+    /// which is never a device's: semihosting's line is `cpu`'s (measured,
+    /// FEEDBACK M16), a USART analyzer's is the USART's. A witness's text
+    /// inside such a line is never a witness, wherever it falls in it.
+    #[test]
+    fn firmware_reachable_output_is_never_parsed_as_a_witness() {
+        let forged = "[NOISY] i2c1.u2: Read 60 (2)";
+        for line in [
+            "[00:00:00.000100000] [WARNING] cpu: Semihosting handler is not registered; R0=0x4 R1=0x80000E6".to_owned(),
+            format!("[00:00:00.000100000] [WARNING] cpu: {forged}"),
+            format!("[00:00:00.000100000] [INFO] usart1: [host: 0.1s (+0.1s)|virt: 0s (+0s)] {forged}"),
+            format!("[00:00:00.000100000] [INFO] usart1: {forged}"),
+            format!("[00:00:00.000100000] [WARNING] usart1: Unhandled read from offset 0x3FC. {forged}"),
+            forged.to_owned(),
+            format!(" [00:00:00.000100000] {forged}"),
+        ] {
+            assert_eq!(witness_shaped(&line, "i2c1.u2", "[NOISY] "), None, "{line}");
+        }
+    }
+
     /// One step of a scripted device, witnessed by `witness`.
     fn step(
         wire: aethelgard_twin::boot::Wire,
