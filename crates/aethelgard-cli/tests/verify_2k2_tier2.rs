@@ -449,14 +449,24 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "FR-4",
         "plated via, drilled 0.3 mm",
         "3f89077c",
-        // The flash is `nrnd`, acknowledged, and its lifecycle held
-        // (`AET-WO-4211`): the banner line, and no unheld line.
-        "## Lifecycle",
-        "- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs",
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }
-    assert!(!notes.contains("not held"), "{notes}");
+    // The flash is `nrnd`, acknowledged, and its lifecycle held
+    // (`AET-WO-4211`): the lifecycle section is its one banner line, with no
+    // unheld line (`verify`'s `lifecycle_unheld`).
+    let lifecycle = notes
+        .split_once("## Lifecycle\n")
+        .and_then(|(_, rest)| rest.split_once("\n## "))
+        .map(|(section, _)| section)
+        .expect("FAB-NOTES.md has a lifecycle section");
+    let lines: Vec<&str> = lifecycle.lines().filter(|l| l.starts_with("- ")).collect();
+    assert_eq!(lines.len(), 1, "{lifecycle}");
+    assert!(
+        lines[0]
+            .starts_with("- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs"),
+        "{lifecycle}"
+    );
     // The notes describe every other file, and only those.
     let described: Vec<&str> = notes
         .lines()
