@@ -6,12 +6,18 @@
 #
 # KiCad 10.0.7, official image, index digest; Debian 13 (trixie), amd64 only.
 # It already carries ngspice and libngspice0 44.2+ds-1 and ca-certificates.
+# Its vendor, url and authors labels describe KiCad's image, not this one, so
+# the LABEL below replaces them; a Dockerfile cannot delete an inherited label,
+# so authors is set empty (AET-WO-4403 D6, ruled on #176).
 FROM kicad/kicad:10.0.7@sha256:3224d1bf143185ecc1bd3a1082a36f37f0f4e59d707983a16515a845e3737fc6
 
 LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelgard" \
       org.opencontainers.image.description="Aethelgard tools: KiCad, Renode, ngspice, Kani, Rust" \
       org.opencontainers.image.licenses="GPL-3.0-or-later AND CC-BY-SA-4.0" \
-      org.opencontainers.image.documentation="https://github.com/ClearForge-LLC/aethelgard/blob/main/container/TOOLS-SOURCES.md"
+      org.opencontainers.image.documentation="https://github.com/ClearForge-LLC/aethelgard/blob/main/container/TOOLS-SOURCES.md" \
+      org.opencontainers.image.vendor="ClearForge LLC" \
+      org.opencontainers.image.url="https://github.com/ClearForge-LLC/aethelgard" \
+      org.opencontainers.image.authors=""
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \

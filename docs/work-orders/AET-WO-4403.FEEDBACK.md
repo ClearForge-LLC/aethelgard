@@ -200,3 +200,15 @@ Reduction pass (diff): −4 net in the last commit · 1 duplicate removed (the e
 - **(c) Another route you name.**
 
 Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9525`.
+
+## 9. Rulings on #176 (architect, 2026-11-16 18:50 UTC), and D6 built
+
+- **D1: (a), merge then prove.** `RUL-15` is unchanged. The first acceptance clause is met by `main`'s first run after merge, with the anonymous re-fetch inside `publish` and then `source`. The re-pin follow-up runs `source` on pull requests.
+- **D2: accepted.** KiCad itself is named in `TOOLS-SOURCES.md`; `KICAD-LICENSE.md` stays byte-identical to the crate's copy.
+- **D4: accepted for now.** A backlog row is to mirror GtkSharp's source at `964cb9c`.
+- **D6: built in this PR.**
+  - **Vendor and url:** the tools image now says `vendor=ClearForge LLC` and `url=https://github.com/ClearForge-LLC/aethelgard`.
+  - **Authors:** `authors` is set empty. A Dockerfile has no instruction that deletes an inherited label, so "drop" is as close as an empty value comes, and the key stays in `docker inspect`.
+  - **The check:** `check-sources.sh labels tools` now requires all three, on every build and on the image `publish` pushes.
+  - **Measured on Furnace:** a RUN-free build of the pinned tools image plus the new `LABEL` passed. The same build with `vendor=KiCad` was refused: "vendor label is [KiCad], not [ClearForge LLC]".
+- **D3 (the "How long" wording) and D5 (the GPLv2 Debian mirror) wait for Scotty.** Untouched until the architect's next note.

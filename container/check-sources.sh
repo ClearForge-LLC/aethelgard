@@ -5,8 +5,9 @@
 # dpkg database) and the document is judged against them, never the reverse.
 #
 #   check-sources.sh labels KIND IMAGE [REF]   on the host: the image's
-#       licences label is KIND's, and its documentation label is this
-#       repository's container/<KIND>-SOURCES.md at REF (default main).
+#       licences label is KIND's, its documentation label is this
+#       repository's container/<KIND>-SOURCES.md at REF (default main), and
+#       the tools image no longer carries its base's vendor, url and authors.
 #   check-sources.sh inside KIND               inside the image, with this
 #       directory at /container: /SOURCES.md is container/<KIND>-SOURCES.md
 #       byte for byte, /SOURCES-debian.tsv is the image's dpkg database, and
@@ -32,6 +33,13 @@ if [ "$mode" = labels ]; then
   [ "$got" = "$want" ] || die "$img: documentation label is [$got], not [$want]"
   got=$(label "$img" licenses)
   [ "$got" = "$licences" ] || die "$img: licenses label is [$got], not [$licences]"
+  if [ "$kind" = tools ]; then
+    # D6 (ruled on #176): not the base image's KiCad vendor, url and authors.
+    for kv in 'vendor=ClearForge LLC' 'url=https://github.com/ClearForge-LLC/aethelgard' 'authors='; do
+      got=$(label "$img" "${kv%%=*}")
+      [ "$got" = "${kv#*=}" ] || die "$img: ${kv%%=*} label is [$got], not [${kv#*=}]"
+    done
+  fi
   echo "ok   $img labels: documentation $want; licenses $licences"
   exit 0
 fi
