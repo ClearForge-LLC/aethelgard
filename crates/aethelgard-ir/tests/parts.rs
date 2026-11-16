@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "b418b47ce601fd5ddbf6b8ee85d514c23b4c0e8b9ef59e35b9f1f18e65ea33b8";
+const PARTS_SHA256: &str = "6429c287b9073c983d3a88f5320b368ed1104b2428e7c32bf9d240b46dc47b7f";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -206,8 +206,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_3_4_and_6() {
-    for version in [2, 3, 4, 6] {
+fn refuses_schema_version_2_3_4_5_and_7() {
+    for version in [2, 3, 4, 5, 7] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -501,7 +501,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 5, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 6, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -714,15 +714,17 @@ fn the_two_parts_of_our_own_make_their_cited_scripts() {
         assert!(!p.stand_in, "{part}");
         assert_eq!(p.pin_capacitance_femtofarads, None, "{part}: D10");
     }
-    // The stand-ins answer at once and wait for nothing.
-    for part in ["ICM20948", "ICP10111"] {
-        assert!(
-            t.get(part)
-                .unwrap()
-                .steps()
-                .iter()
-                .all(|s| s.settle_us == 0)
-        );
+    // The stand-ins wait their start-up too (`AET-WO-4230` §1.9): twice the
+    // typical figure, the datasheets print no maximum.
+    for (part, wait) in [("ICM20948", 40_000), ("ICP10111", 340)] {
+        let waits: Vec<u32> = t
+            .get(part)
+            .unwrap()
+            .steps()
+            .iter()
+            .map(|s| s.settle_us)
+            .collect();
+        assert_eq!(waits, [0, wait, 0], "{part}");
     }
 }
 
@@ -739,7 +741,7 @@ fn refuses_a_malformed_schema_4_script() {
             p["script"]["configure"]["settle_us"] = 0.into()
         }),
         ("BMP581", "settle_us", |p| {
-            p["script"]["configure"]["settle_us"] = 30_001.into()
+            p["script"]["configure"]["settle_us"] = 40_001.into()
         }),
         ("BMP581", "settle_us", |p| {
             p["script"]["configure"]
@@ -974,4 +976,157 @@ fn an_overflowing_channel_or_an_active_stand_in_is_refused() {
     assert_refused(&err, Some("ICM20948"), "16-bit word");
     let err = refused_entry("ICP10111", |p| p["lifecycle"] = "active".into());
     assert_refused(&err, Some("ICP10111"), "stand_in");
+}
+
+// ---- schema 6 (`AET-WO-4230` §1.9): the waits, statically ----------------------
+
+/// Parses the embedded table after `mutate` edits the entry for `name`'s
+/// `script.configure`.
+fn configure_refused(
+    name: &str,
+    mutate: impl FnOnce(&mut Value),
+) -> aethelgard_ir::IrValidationError {
+    refused_entry(name, |p| mutate(&mut p["script"]["configure"]))
+}
+
+#[test]
+fn a_settle_below_the_cited_maximum_is_refused_and_the_maximum_itself_passes() {
+    // BMP581: 4000 + 1050 + 1050 = 6100 us max.
+    let err = configure_refused("BMP581", |c| c["settle_us"] = 6_099.into());
+    assert_refused(&err, Some("BMP581"), "SettleBelowStartUp");
+    assert_refused(&err, Some("BMP581"), "6099, below 6100");
+    let mut doc = embedded();
+    doc.pointer_mut(&at("BMP581")).unwrap()["script"]["configure"]["settle_us"] = 6_100.into();
+    let t = parse_parts(&doc.to_string()).unwrap();
+    assert_eq!(
+        t.get("BMP581").unwrap().script.as_ref().unwrap().settle_us,
+        Some(6_100)
+    );
+}
+
+#[test]
+fn a_maximum_outranks_a_typical_figure() {
+    // A cited maximum binds even where twice the typical would be less.
+    let err = configure_refused("BMP581", |c| {
+        c["start_up"]["max_us"] = 9_000.into();
+        c["start_up"]["typ_us"] = 1_000.into();
+        c["settle_us"] = 8_999.into();
+    });
+    assert_refused(&err, Some("BMP581"), "SettleBelowStartUp");
+    assert_refused(&err, Some("BMP581"), "cited start-up maximum");
+}
+
+#[test]
+fn a_settle_below_twice_a_typical_only_figure_is_refused_by_its_named_condition() {
+    // ICM42688P: 10,000 us typ, no maximum: 20,000 us is the least.
+    let err = configure_refused("ICM42688P", |c| c["settle_us"] = 19_999.into());
+    assert_refused(&err, Some("ICM42688P"), "SettleBelowStartUp");
+    assert_refused(
+        &err,
+        Some("ICM42688P"),
+        "settle covers twice the typical-only start-up",
+    );
+    let mut doc = embedded();
+    doc.pointer_mut(&at("ICM42688P")).unwrap()["script"]["configure"]["settle_us"] = 20_000.into();
+    parse_parts(&doc.to_string()).unwrap();
+}
+
+#[test]
+fn a_null_settle_beside_a_start_up_figure_is_refused_even_on_a_stand_in() {
+    for part in ["ICM20948", "ICP10111"] {
+        let err = configure_refused(part, |c| c["settle_us"] = Value::Null);
+        assert_refused(&err, Some(part), "SettleBelowStartUp");
+        assert_refused(&err, Some(part), "null beside a cited start-up");
+    }
+}
+
+#[test]
+fn a_stand_in_with_no_printed_start_up_may_carry_both_null_and_no_other_part_may() {
+    let both_null = |c: &mut Value| {
+        c["start_up"]["max_us"] = Value::Null;
+        c["start_up"]["typ_us"] = Value::Null;
+    };
+    for (part, wait) in [("ICM20948", Value::Null), ("ICP10111", 1.into())] {
+        let mut doc = embedded();
+        let c = &mut doc.pointer_mut(&at(part)).unwrap()["script"]["configure"];
+        both_null(c);
+        c["settle_us"] = wait;
+        parse_parts(&doc.to_string()).unwrap();
+    }
+    let err = configure_refused("BMP581", both_null);
+    assert_refused(&err, Some("BMP581"), "neither max_us nor typ_us");
+}
+
+#[test]
+fn a_malformed_start_up_is_refused() {
+    type Mutate = fn(&mut Value);
+    let cases: [(&str, Mutate); 6] = [
+        ("start_up", |c| {
+            c.as_object_mut().unwrap().remove("start_up");
+        }),
+        ("max_us", |c| {
+            c["start_up"].as_object_mut().unwrap().remove("max_us");
+        }),
+        ("max_us", |c| c["start_up"]["max_us"] = 0.into()),
+        ("typ_us 7000 above max_us 6100", |c| {
+            c["start_up"]["typ_us"] = 7_000.into()
+        }),
+        ("condition", |c| c["start_up"]["condition"] = "".into()),
+        ("extra", |c| c["start_up"]["extra"] = 1.into()),
+    ];
+    for (field, mutate) in cases {
+        let err = configure_refused("BMP581", mutate);
+        assert_refused(&err, Some("BMP581"), field);
+    }
+}
+
+#[test]
+fn a_start_up_and_its_citation_come_together() {
+    let err = refused_entry("BMP581", |p| p["citations"]["start_up"] = Value::Null);
+    assert_refused(&err, Some("BMP581"), "citations.start_up");
+    let err = refused_entry("BMP581", |p| {
+        p["citations"].as_object_mut().unwrap().remove("start_up");
+    });
+    assert_refused(&err, Some("BMP581"), "start_up");
+    let err = refused_entry("BME280", |p| {
+        p["citations"]["start_up"] = p["citations"]["bus"].clone()
+    });
+    assert_refused(&err, Some("BME280"), "citations.start_up");
+}
+
+#[test]
+fn every_shipped_script_row_cites_its_start_up_and_its_wait_covers_it() {
+    let t = table().unwrap();
+    let mut seen = Vec::new();
+    for p in t.parts() {
+        let Some(script) = &p.script else {
+            assert!(p.citations.start_up.is_none(), "{}", p.part);
+            continue;
+        };
+        let (need, _) = script.start_up.required_settle().unwrap_or_else(|| {
+            panic!(
+                "{}: the shipped table prints a start-up for every script",
+                p.part
+            )
+        });
+        let settle = script
+            .settle_us
+            .unwrap_or_else(|| panic!("{}: no wait", p.part));
+        assert!(settle >= need, "{}: {settle} < {need}", p.part);
+        assert!(
+            matches!(p.citations.start_up.as_ref().unwrap().held, Held::Sha256(_)),
+            "{}",
+            p.part
+        );
+        seen.push((p.part.as_str(), need, settle));
+    }
+    assert_eq!(
+        seen,
+        [
+            ("BMP581", 6_100, 10_000),
+            ("ICM20948", 40_000, 40_000),
+            ("ICM42688P", 20_000, 20_000),
+            ("ICP10111", 340, 340),
+        ]
+    );
 }

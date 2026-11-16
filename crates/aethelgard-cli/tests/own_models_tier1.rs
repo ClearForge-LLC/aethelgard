@@ -21,7 +21,7 @@ const OWN: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json";
 /// The firmware waits each part's cited time after its last configuration
 /// write and before its data read, sized at 64 cycles a microsecond: the
 /// BMP581's 10 ms after its one write, the ICM-42688-P's 20 ms after its
-/// third. A board with no wait in its scripts is unchanged.
+/// third. A board with no script is unchanged.
 #[test]
 fn the_firmware_waits_each_cited_time_before_the_data_read() {
     let (_, files) = board(OWN);
@@ -38,13 +38,14 @@ fn the_firmware_waits_each_cited_time_before_the_data_read() {
     assert!(at("&[0x50, 0x66]") < at("&[0x4e, 0x03]"));
     assert!(at("&[0x4e, 0x03]") < at("settle(1280000);"));
     assert!(at("settle(1280000);") < at("&[0x9d]"));
-    for spec in [
-        "examples/sentinel-01-minimal.json",
-        "crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json",
-    ] {
-        let (_, files) = board(spec);
-        assert!(!files["firmware/src/main.rs"].contains("settle"), "{spec}");
-    }
+    let (_, files) = board("examples/sentinel-01-minimal.json");
+    assert!(!files["firmware/src/main.rs"].contains("settle"));
+    // The stand-ins wait too (`AET-WO-4230` §1.9, `SettleBelowStartUp`): twice
+    // their typical-only start-ups, 40 ms (two ICM-20948) and 340 us.
+    let (_, files) = board("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
+    let main = &files["firmware/src/main.rs"];
+    assert_eq!(main.matches("settle(2560000);").count(), 2, "{main}");
+    assert_eq!(main.matches("settle(21760);").count(), 1, "{main}");
 }
 
 /// The emitted platform names both models' pins, and its devices are

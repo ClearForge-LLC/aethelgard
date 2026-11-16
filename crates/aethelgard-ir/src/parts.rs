@@ -51,8 +51,12 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// `script` (`AET-WO-4210`). Version 4 made `script.configure` a list of
 /// writes with a `settle_us`, and gave a channel its `bytes` and `order`
 /// (`AET-WO-4220`). Version 5 added `spi_output_delay_max_ns`, an SPI part's
-/// output valid time, with its citation (`AET-WO-4300d2` K6).
-pub const PARTS_SCHEMA_VERSION: u32 = 5;
+/// output valid time, with its citation (`AET-WO-4300d2` K6). Version 6 gave
+/// every script a structured `configure.start_up` (a cited maximum and/or
+/// typical start-up time with the condition it is the start-up of, and its
+/// `citations.start_up`), against which `settle_us` is checked at load
+/// (`AET-WO-4230` §1.9, `SettleBelowStartUp`).
+pub const PARTS_SCHEMA_VERSION: u32 = 6;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +95,7 @@ pub const MAX_CONFIGURE: usize = 4;
 /// an iteration), so Renode, at 100 MIPS and a few instructions an
 /// iteration, takes longer; the boot's 100 ms must hold it with the rest of
 /// the script (`AET-WO-4220`).
-pub const MAX_SETTLE_US: u32 = 30_000;
+pub const MAX_SETTLE_US: u32 = 40_000;
 
 /// The highest SPI clock an entry may state: no part in the table comes near
 /// it, and anything above is a typo.
@@ -264,10 +268,44 @@ pub struct Script {
     /// in microseconds, cited to the datasheet's start-up and conversion
     /// times; `None` only for a stand-in whose model answers at once.
     pub settle_us: Option<u32>,
+    /// The start-up of the configured state that `settle_us` must cover
+    /// (`AET-WO-4230` §1.9).
+    pub start_up: StartUp,
     /// The bytes the data read writes first (a register or a command).
     pub data: Vec<u8>,
     /// The words it reads back, in order.
     pub channels: Vec<Channel>,
+}
+
+/// The datasheet's start-up of a script's configured state: the time from the
+/// last configuration write until the first data read is valid, as printed.
+/// At least one of `max_us` and `typ_us` is set unless the part is a stand-in
+/// whose datasheet prints none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartUp {
+    pub max_us: Option<u32>,
+    pub typ_us: Option<u32>,
+    /// What the figure is the start-up of.
+    pub condition: String,
+}
+
+/// The condition a typical-only start-up is judged under (the verify ledger
+/// shows it with the row).
+pub const SETTLE_TWICE_TYPICAL: &str = "settle covers twice the typical-only start-up";
+/// The condition a cited start-up maximum is judged under.
+pub const SETTLE_COVERS_MAXIMUM: &str = "settle covers the cited start-up maximum";
+
+impl StartUp {
+    /// The least `settle_us` that passes and the named condition it passes
+    /// under: the maximum when one is cited, else twice the typical figure;
+    /// `None` when the datasheet prints neither.
+    pub fn required_settle(&self) -> Option<(u32, &'static str)> {
+        match (self.max_us, self.typ_us) {
+            (Some(max), _) => Some((max, SETTLE_COVERS_MAXIMUM)),
+            (None, Some(typ)) => Some((typ.saturating_mul(2), SETTLE_TWICE_TYPICAL)),
+            (None, None) => None,
+        }
+    }
 }
 
 /// Which step of a device's script.
@@ -357,6 +395,7 @@ pub struct Citations {
     pub spi_output_delay: Option<Citation>,
     pub lifecycle: Citation,
     pub configure: Option<Citation>,
+    pub start_up: Option<Citation>,
     pub data: Option<Citation>,
 }
 
@@ -377,6 +416,7 @@ impl Citations {
         );
         v.push(("lifecycle", &self.lifecycle));
         v.extend(self.configure.as_ref().map(|c| ("configure", c)));
+        v.extend(self.start_up.as_ref().map(|c| ("start_up", c)));
         v.extend(self.data.as_ref().map(|c| ("data", c)));
         v
     }
@@ -560,6 +600,19 @@ struct RawConfigure {
     /// Required: `null` says the model answers at once (a stand-in only).
     #[serde(deserialize_with = "Option::deserialize")]
     settle_us: Option<u32>,
+    start_up: RawStartUp,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawStartUp {
+    /// Required: `null` says the datasheet prints no maximum.
+    #[serde(deserialize_with = "Option::deserialize")]
+    max_us: Option<u32>,
+    /// Required: `null` says the datasheet prints no typical figure.
+    #[serde(deserialize_with = "Option::deserialize")]
+    typ_us: Option<u32>,
+    condition: String,
 }
 
 #[derive(Deserialize)]
@@ -647,6 +700,9 @@ struct RawCitations {
     /// Required: `null` exactly when `script` is.
     #[serde(deserialize_with = "Option::deserialize")]
     configure: Option<RawCitation>,
+    /// Required: `null` exactly when `script` is.
+    #[serde(deserialize_with = "Option::deserialize")]
+    start_up: Option<RawCitation>,
     #[serde(deserialize_with = "Option::deserialize")]
     data: Option<RawCitation>,
 }
@@ -853,6 +909,7 @@ fn script(raw: &RawScript, stand_in: bool) -> Result<Script, String> {
         }
         _ => {}
     }
+    let start_up = start_up(&raw.configure.start_up, settle_us, stand_in)?;
     let data = bytes(&raw.data.write, "script.data.write")?;
     if raw.data.channels.is_empty() {
         return Err("`script.data.channels` is empty".to_owned());
@@ -873,9 +930,50 @@ fn script(raw: &RawScript, stand_in: bool) -> Result<Script, String> {
     Ok(Script {
         configure,
         settle_us,
+        start_up,
         data,
         channels,
     })
+}
+
+/// `SettleBelowStartUp` (`AET-WO-4230` §1.9): the cited start-up, and the
+/// wait that must cover it: `settle_us` at least the maximum when one is
+/// cited, else at least twice the typical figure. A null wait beside a figure
+/// is refused the same way.
+fn start_up(raw: &RawStartUp, settle_us: Option<u32>, stand_in: bool) -> Result<StartUp, String> {
+    text(&raw.condition, "script.configure.start_up.condition", 256)?;
+    for (name, v) in [("max_us", raw.max_us), ("typ_us", raw.typ_us)] {
+        if v.is_some_and(|us| us == 0) {
+            return Err(format!(
+                "`script.configure.start_up.{name}` is 0, not null or a positive time"
+            ));
+        }
+    }
+    if let (Some(max), Some(typ)) = (raw.max_us, raw.typ_us)
+        && typ > max
+    {
+        return Err(format!(
+            "`script.configure.start_up` has typ_us {typ} above max_us {max}"
+        ));
+    }
+    let start_up = StartUp {
+        max_us: raw.max_us,
+        typ_us: raw.typ_us,
+        condition: raw.condition.clone(),
+    };
+    match (start_up.required_settle(), settle_us) {
+        (None, _) if !stand_in => Err(
+            "`script.configure.start_up` holds neither max_us nor typ_us, which only a twin stand-in whose datasheet prints none may".to_owned(),
+        ),
+        (None, _) => Ok(start_up),
+        (Some((need, why)), None) => Err(format!(
+            "SettleBelowStartUp: `script.configure.settle_us` is null beside a cited start-up of {need} us ({why})"
+        )),
+        (Some((need, why)), Some(us)) if us < need => Err(format!(
+            "SettleBelowStartUp: `script.configure.settle_us` is {us}, below {need} ({why})"
+        )),
+        (Some(_), Some(_)) => Ok(start_up),
+    }
 }
 
 /// A citation present exactly when its value group is.
@@ -1055,6 +1153,7 @@ fn part(raw: RawPart) -> Result<Part, String> {
         )?,
         lifecycle: citation(c.lifecycle, "lifecycle")?,
         configure: paired(c.configure, script.is_some(), "configure", "script")?,
+        start_up: paired(c.start_up, script.is_some(), "start_up", "script")?,
         data: paired(c.data, script.is_some(), "data", "script")?,
     };
     Ok(Part {
