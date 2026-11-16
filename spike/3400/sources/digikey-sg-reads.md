@@ -18,3 +18,11 @@ AN2606 (https://www.st.com/resource/en/application_note/an2606-stm32-microcontro
 - https://www.digikey.sg/en/products/result?keywords=SN74LXC8T245PWR : 2.41000 / 1.77200, "All prices are in SGD", Active.
 - https://sigrok.org/wiki/Openbench_Logic_Sniffer : 32 probes; infobox 200MHz, text "up to 100MHz signals" (the page is inconsistent); USB ACM; short commands reset 0x00, run 0x01, ID 0x02, XON 0x11, XOFF 0x13; long 0xc0-0xce trigger, 0x80 divider, 0x81 read & delay count, 0x82 flags.
 - RM0433 Rev 9 text: L20852 GPIO registers "accessed as 32-bit words, half-words or bytes"; chapter 47 (I2C, L76288-78755) contains no "monitor", "listen", "sniff" or "promiscuous".
+
+## Second round of checks (builder, after the advisor's review)
+- Pin XML re-read with a real XML parser (`xml.etree`). The earlier regex read past self-closing `<Pin/>` elements: it put ULPI_STP on NRST and D5 on VCAP. With the parser, all twelve ULPI signals are as research-W-silicon says (STP PC0, D5 PB12). ETH and USB FS are as stated; FDCAN1 also has PB8/PB9. There are 114 I/O pins, not the 100 the regex counted.
+- DS12117 Rev 10 text, L37300-37320 (Table 194, rev V): master 80/100 (SPI1-3), 50 (SPI4-6); slave receiver 100; slave transmitter/full duplex 31 (2.7-3.6 V), 29 (1.62-3.6 V) MHz. As adopted.
+- ES0392 Rev 16 text L284 and L1395: "2.2.27 Ethernet MII mode is not available on packages with PC2_C/PC3_C pins", A A A. As adopted.
+- digikey.sg STM32H753ZIT6: "$29.15000", one price, region Singapore/SGD, no status shown.
+- Second fabs: pcbgogo.com/pcb-price.html 404; eurocircuits.com/pcb-price-calculator/ 404; seeedstudio.com/fusion_pcb.html, calculator placeholders only, "will come back to you with a price in 2 working days".
+- W2 rate: WebSearch "STM32H7 logic analyzer DMA GPIO IDR timer sample rate MHz SUMP firmware" (standard, 2026-11-16) found no cited H7 timer-DMA capture rate.
