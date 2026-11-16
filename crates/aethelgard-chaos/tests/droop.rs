@@ -1340,12 +1340,14 @@ fn a_killed_boot_has_no_observation_and_every_release_counts_as_unrecovered() {
     r.remove(k_obs(&r));
     let b = index(&r, |x| matches!(x, Record::BootObserved { .. }));
     r[b] = boot(None);
+    // Killed at a bound, which the verdict names (`AET-WO-3201` B2).
     set_verdict(
         &mut r,
         &[
             (RESET_FINDING, "info", 1),
             (UNRECOVERED_FINDING, "error", 1),
             (BELOW_TOLERANCE_FINDING, "info", 1),
+            ("wall_bound_exceeded", "error", 1),
         ],
     );
     let Record::Scenario {
@@ -1357,15 +1359,20 @@ fn a_killed_boot_has_no_observation_and_every_release_counts_as_unrecovered() {
         panic!()
     };
     *expect_pass = false;
-    *expect_findings = vec![UNRECOVERED_FINDING.into()];
+    *expect_findings = vec![UNRECOVERED_FINDING.into(), "wall_bound_exceeded".into()];
     r[1] = Record::ExpectedCounts {
         counts: vec![(UNRECOVERED_FINDING.into(), 1)],
     };
     let s = judged(&r).unwrap();
     assert!(!s.pass && s.matched);
-    assert_eq!(s.failing_kinds, [UNRECOVERED_FINDING]);
+    assert_eq!(
+        s.failing_kinds,
+        [UNRECOVERED_FINDING, "wall_bound_exceeded"]
+    );
     // The same killed boot, claimed recovered, is refused.
-    set_verdict(&mut r, &RECOVERED_FINDINGS);
+    let mut recovered = RECOVERED_FINDINGS.to_vec();
+    recovered.push(("wall_bound_exceeded", "error", 1));
+    set_verdict(&mut r, &recovered);
     assert_eq!(refused(&r), MSG_COUNTS);
 }
 
@@ -1380,6 +1387,7 @@ fn a_killed_boot_that_holds_an_observation_is_refused() {
             (RESET_FINDING, "info", 1),
             (UNRECOVERED_FINDING, "error", 1),
             (BELOW_TOLERANCE_FINDING, "info", 1),
+            ("wall_bound_exceeded", "error", 1),
         ],
     );
     assert_eq!(refused(&r), MSG_NO_READ);
@@ -1546,6 +1554,24 @@ fn run_with_check() -> Vec<Record> {
             devices: vec![("U2".into(), 0x76)],
         },
     );
+    // Each line measured, healthy (`AET-WO-3201` B1).
+    for (k, net) in ["I2C_SCL", "I2C_SDA"].into_iter().enumerate() {
+        r.insert(
+            solved + 2 + k,
+            Record::RiseComputed {
+                bus: "SENSORS".into(),
+                net: net.into(),
+                rise_30_70_ps: 150_000,
+                complete: true,
+                ceiling_ps: 300_000,
+                exceeds: false,
+                window: aethelgard_chaos::record::Window {
+                    deck_hz: 400_000,
+                    declared_hz: 400_000,
+                },
+            },
+        );
+    }
     let o = index(&r, |x| matches!(x, Record::FirmwareObserved { .. }));
     if let Record::FirmwareObserved { witness, .. } = &mut r[o] {
         *witness = Some(lines());

@@ -13,7 +13,7 @@ use aethelgard_chaos::campaign::{self, run_id};
 use aethelgard_chaos::record::{BusLine, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use aethelgard_evolve::propose::{self, BusFacts, Input, MODEL_SLOT, Outcome, Rules};
-use aethelgard_evolve::{Attribution, Domain, EventRef, Evidence, Rule, attribute, view};
+use aethelgard_evolve::{Attribution, Domain, EventRef, Evidence, Rule, View, attribute, view};
 
 const DEV: &str = "spi1.spi1mux.u4";
 const MUX: &str = "spi1.spi1mux";
@@ -639,11 +639,112 @@ fn a_data_step_found_absent_is_electrical_e2_by_that_steps_witness() {
         data_check,
         spi_witness(Some(flash_ok()), vec![]),
         data_witness,
-        verdict(&BOTH),
+        verdict(&DATA),
     ]);
     let a = attributed(&r);
     let (c, w) = (at(&r, 21) + 1, at(&r, 22) + 1);
     assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E2), "{a:?}");
     assert_eq!(a.evidence, vec![ev(w, 22)]);
     assert_eq!(a.symptoms, vec![ev(c, 21), ev(w, 22)]);
+    // The data step's mismatch dressed as an identity mismatch (`AET-WO-4210`
+    // F-B10): it selects no event, and the data read's is unexplained.
+    let n = r.len() - 1;
+    r[n] = verdict(&BOTH);
+    let a = attribute(&archived(&r)).unwrap();
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert!(
+        a.unexplained.contains(&"spi_identity_mismatch".to_owned()),
+        "{a:?}"
+    );
+    assert!(a.unexplained.contains(&format!("event {c}")), "{a:?}");
+}
+
+/// A data step's mismatch, named by its step (`AET-WO-4210` F-B10).
+const DATA: [(&str, u64); 2] = [("spi_data_mismatch", 1), ("spi_transaction_unwitnessed", 1)];
+
+/// `AET-WO-4210` F-B5: a read of 5 to 8 bytes is shown whole. A data step
+/// of 6 bytes claimed with nothing logged or routed (S3): the witness's
+/// `read` field holds its solved value and its mask in 64 bits, where they
+/// were cut to the low 32; it is what the generator report prints.
+#[test]
+fn a_six_byte_read_is_shown_in_64_bits() {
+    let value: u64 = 0x0102_0304_0506;
+    let mut data_check = spi_check("ok", Some(value));
+    let mut data_witness = spi_witness(Some(vec![]), vec![]);
+    if let Record::SpiCheck {
+        step,
+        width,
+        expected,
+        mask,
+        ..
+    } = &mut data_check
+    {
+        (*step, *width, *expected, *mask) = ("data".into(), 6, value, 0xFFFF_FFFF_FFFF);
+    }
+    if let Record::SpiWitness { step, .. } = &mut data_witness {
+        *step = "data".into();
+    }
+    let mut r = base();
+    r.extend([
+        spi_check("ok", Some(EXPECTED_ID)),
+        data_check,
+        spi_witness(Some(flash_ok()), vec![]),
+        data_witness,
+        verdict(&[("spi_transaction_unwitnessed", 1)]),
+    ]);
+    let run = archived(&r);
+    let a = attribute(&run).unwrap();
+    assert_eq!(a.rule, Rule::S3, "{a:?}");
+    let w = a.evidence.iter().find(|e| e.kind == 22).unwrap();
+    let View::Fields { fields, .. } = view(&run).unwrap().event(*w).unwrap().view else {
+        panic!()
+    };
+    let read: Vec<(u64, u64, Option<u64>, bool)> = fields
+        .iter()
+        .filter(|f| f.register.ends_with(".read"))
+        .map(|f| (f.mask, f.solved, f.observed, f.wrong))
+        .collect();
+    assert_eq!(read, [(u64::MAX, value, Some(value), true)]);
+}
+
+/// `AET-WO-4210` F-B10: a configuration step reads nothing, so a value in
+/// its record is a mismatch of that step: named `spi_configure_mismatch` it
+/// is explained, and named as the identity's it is unexplained.
+#[test]
+fn a_configure_steps_mismatch_is_named_by_its_step() {
+    let mut cfg_check = spi_check("ok", Some(0x1));
+    if let Record::SpiCheck {
+        step,
+        width,
+        expected,
+        mask,
+        write,
+        ..
+    } = &mut cfg_check
+    {
+        (*step, *width, *expected, *mask) = ("configure".into(), 0, 0, 0);
+        *write = vec![0x06];
+    }
+    let mut cfg_witness = spi_witness(Some(flash_ok()), vec![]);
+    if let Record::SpiWitness { step, .. } = &mut cfg_witness {
+        *step = "configure".into();
+    }
+    let mut r = base();
+    r.extend([
+        spi_check("ok", Some(EXPECTED_ID)),
+        cfg_check,
+        spi_witness(Some(flash_ok()), vec![]),
+        cfg_witness,
+        verdict(&[("spi_configure_mismatch", 1)]),
+    ]);
+    let a = attribute(&archived(&r)).unwrap();
+    assert_ne!(a.rule, Rule::I1, "{a:?}");
+    let n = r.len() - 1;
+    r[n] = verdict(&[("spi_identity_mismatch", 1)]);
+    let a = attribute(&archived(&r)).unwrap();
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert!(
+        a.unexplained.contains(&"spi_identity_mismatch".to_owned()),
+        "{a:?}"
+    );
 }

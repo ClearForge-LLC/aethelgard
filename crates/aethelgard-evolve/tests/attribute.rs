@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use aethelgard_chaos::campaign::{self, run_id};
 use aethelgard_chaos::record::{BusLine, Line, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
-use aethelgard_evolve::{Attribution, Domain, Rule, attribute};
+use aethelgard_evolve::{AttributeError, Attribution, Domain, Rule, attribute};
 
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
     Reading {
@@ -275,6 +275,48 @@ fn archived(records: &[Record]) -> Replayed {
     run
 }
 
+const UNBOUND: &str =
+    "a solved line has no computed rise, stuck-high record or held-low fault, or more than one";
+const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
+
+/// Why `attribute` refuses `records`: a rule `replay` judges by.
+fn refused(records: &[Record]) -> &'static str {
+    match attribute(&archived(records)) {
+        Err(AttributeError::NotACampaignRun(why)) => why,
+        other => panic!("expected a refusal, got {other:?}"),
+    }
+}
+
+/// `AET-WO-4210` F-B10: an identity read's mismatch named as a data or
+/// configuration step's selects nothing, and the run is `I1`; named as its
+/// own step's, it is decided as before.
+#[test]
+fn an_identity_mismatch_dressed_as_another_steps_is_unexplained() {
+    let mut r = healthy();
+    replace(&mut r, is_check, check("ok", 0x61));
+    replace(&mut r, is_verdict, verdict(&[("i2c_identity_mismatch", 1)]));
+    assert_ne!(attributed(&r).rule, Rule::I1);
+    for dressed in ["i2c_data_mismatch", "i2c_configure_mismatch"] {
+        replace(&mut r, is_verdict, verdict(&[(dressed, 1)]));
+        let a = attributed(&r);
+        assert_eq!(a.rule, Rule::I1, "{dressed}: {a:?}");
+        assert!(a.unexplained.contains(&dressed.to_owned()), "{a:?}");
+    }
+}
+
+/// `AET-WO-3201` B2: a boot word missing that no finding names. It was
+/// `I1`; `replay` now refuses it by name.
+#[test]
+fn a_boot_word_missing_unnamed_is_refused() {
+    let mut r = healthy();
+    replace(
+        &mut r,
+        |x| matches!(x, Record::BootObserved { .. }),
+        boot(0),
+    );
+    assert_eq!(refused(&r), BOOT_WORD);
+}
+
 fn attributed(records: &[Record]) -> Attribution {
     let run = archived(records);
     let a = attribute(&run).unwrap();
@@ -371,24 +413,24 @@ fn a_txis_timeout_with_nothing_logged_is_indeterminate_not_software() {
     assert_eq!(kinds(&a.evidence), [7, 7]);
 }
 
+/// A line of a solved bus with no computed rise. It was `I2`; since
+/// `AET-WO-3201` B1, `replay` refuses it, so it is never attributed.
 #[test]
-fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_indeterminate() {
+fn no_rise_measured_on_a_line_of_the_symptoms_bus_is_refused() {
     let mut r = healthy();
     wrong_register(&mut r);
     r.retain(|x| !matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"));
-    let a = attributed(&r);
-    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I2));
-    assert_eq!(kinds(&a.evidence), [15]);
+    assert_eq!(refused(&r), UNBOUND);
 }
 
-/// §5.3: removing all the electrical evidence never concludes either half.
+/// §5.3: removing all the electrical evidence never concludes either half:
+/// since `AET-WO-3201` B1, the run is refused.
 #[test]
 fn removing_every_rise_never_turns_a_software_run_electrical_or_keeps_it_software() {
     let mut r = healthy();
     wrong_register(&mut r);
     r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
-    let a = attributed(&r);
-    assert_eq!(a.domain, Domain::Indeterminate);
+    assert_eq!(refused(&r), UNBOUND);
 }
 
 /// A second bus, OTHER on I2C2, with no device, faulted past its ceiling.
@@ -679,9 +721,10 @@ fn a_missing_boot_word_is_software_on_healthy_buses_and_never_by_elimination() {
     let a = attributed(&r);
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S2));
     assert_eq!(kinds(&a.evidence), [7, 7, 10]);
-    // With no bus measured, nothing says the electrical layer is healthy.
+    // With no bus measured, nothing says the electrical layer is healthy,
+    // and `replay` refuses the run (`AET-WO-3201` B1).
     r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
-    assert_eq!(attributed(&r).rule, Rule::I2);
+    assert_eq!(refused(&r), UNBOUND);
     // With a faulted bus, the boot is not on it: the fault is elsewhere.
     let mut r = healthy();
     replace(
@@ -958,22 +1001,22 @@ fn a7_the_mode_a_pin_must_hold_is_kind_15s_not_the_readings() {
     assert_eq!((a.rule, kinds(&a.evidence)), (Rule::S1, vec![7, 7, 11]));
 }
 
+/// A10: one event never explains a finding counted at two failing
+/// severities. Since `AET-WO-3201` B3 a verdict has one failing severity,
+/// `error`, so the second count cannot be archived at all.
 #[test]
 fn a10_one_event_never_explains_a_finding_counted_at_two_severities() {
-    let mut r = healthy();
-    wrong_register(&mut r);
-    replace(
-        &mut r,
-        is_verdict,
-        Record::Verdict {
-            pass: false,
-            findings: vec![
-                ("i2c_timeout".into(), "error".into(), 1),
-                ("i2c_timeout".into(), "warning".into(), 1),
-            ],
-        },
+    let two = Record::Verdict {
+        pass: false,
+        findings: vec![
+            ("i2c_timeout".into(), "error".into(), 1),
+            ("i2c_timeout".into(), "warning".into(), 1),
+        ],
+    };
+    assert_eq!(
+        two.check().unwrap_err(),
+        "a finding is not a kind, a severity of error or info, and a count above 0"
     );
-    assert_eq!(attributed(&r).rule, Rule::I1);
 }
 
 #[test]
@@ -1231,12 +1274,13 @@ fn each_finding_selects_only_the_events_that_show_it() {
         replace(&mut r, is_verdict, verdict(&[(kind, 1)]));
         assert_eq!(attributed(&r).rule, Rule::I1, "{kind}");
     }
-    // A boot word claimed missing that is there, and a halt claimed of a full run.
+    // A boot word claimed missing that is there is refused by `replay`
+    // (`AET-WO-3201` B2); a halt claimed of a full run is unexplained.
     let mut r = healthy();
-    for kind in ["boot_word_missing", "cpu_halted"] {
-        replace(&mut r, is_verdict, verdict(&[(kind, 1)]));
-        assert_eq!(attributed(&r).rule, Rule::I1, "{kind}");
-    }
+    replace(&mut r, is_verdict, verdict(&[("boot_word_missing", 1)]));
+    assert_eq!(refused(&r), BOOT_WORD);
+    replace(&mut r, is_verdict, verdict(&[("cpu_halted", 1)]));
+    assert_eq!(attributed(&r).rule, Rule::I1);
     // A real halt is board software.
     let mut r = healthy();
     replace(
@@ -1335,10 +1379,24 @@ fn the_fault_on_the_second_bus_is_elsewhere_for_the_first() {
 
 #[test]
 fn the_lowest_indeterminate_rule_names_the_run_with_only_its_evidence() {
-    // AUX unmeasured (I2 for U5); SENSORS healthy with U2's right-address
+    // AUX on a port the header lacks (I2 for U5; unmeasured, it is refused
+    // since `AET-WO-3201` B1); SENSORS healthy with U2's right-address
     // timeout (I4): the run is I2, with AUX's kind 15 alone.
     let mut r = healthy();
-    add_aux(&mut r, false);
+    let at = find(&r, |x| matches!(x, Record::I2cBusSolved { .. }));
+    r.insert(
+        at,
+        solved(
+            "AUX",
+            "I2C2",
+            ["A_SCL", "A_SDA"],
+            ["PZ0", "PZ1"],
+            &[("U5", 0x40)],
+        ),
+    );
+    let i = find(&r, |x| matches!(x, Record::RiseComputed { .. }));
+    r.insert(i, rise("AUX", "A_SCL", 186_402));
+    r.insert(i + 1, rise("AUX", "A_SDA", 186_402));
     u5_read(&mut r, "timeout_txis", &[]);
     replace(&mut r, is_check, check("timeout_txis", 0));
     replace(
@@ -1404,10 +1462,8 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
             "register",
             Box::new(|r| set_register(r, "GPIOA.MODER", |g| g.observed = Some(0))),
         ),
-        (
-            "boot word",
-            Box::new(|r| replace(r, |x| matches!(x, Record::BootObserved { .. }), boot(0))),
-        ),
+        // A boot word missing with no finding is refused by `replay`
+        // since `AET-WO-3201` B2 (`a_boot_word_missing_unnamed_is_refused`).
         (
             "halted",
             Box::new(|r| {
@@ -1521,11 +1577,11 @@ fn every_rule_is_found_by_its_id_and_nothing_else_is() {
     }
     let mut ids: Vec<&str> = Rule::ALL.iter().map(|r| r.id()).collect();
     ids.dedup();
-    // Fourteen since `AET-WO-4300b` added `S5` and `I6` (twelve since
-    // `AET-WO-4300a` added `S4`, eleven since `AET-WO-4200` added `E2` and
-    // `S3`).
-    assert_eq!(ids.len(), 14, "fourteen rules, fourteen distinct ids");
-    for other in ["", "e1", "S6", "I7", "I0", "N1 "] {
+    // Fifteen since `AET-WO-3201` added `I7` (fourteen since `AET-WO-4300b`
+    // added `S5` and `I6`, twelve since `AET-WO-4300a` added `S4`, eleven
+    // since `AET-WO-4200` added `E2` and `S3`).
+    assert_eq!(ids.len(), 15, "fifteen rules, fifteen distinct ids");
+    for other in ["", "e1", "S6", "I8", "I0", "N1 ", "i7"] {
         assert_eq!(Rule::from_id(other), None, "`{other}` names no rule");
     }
 }
