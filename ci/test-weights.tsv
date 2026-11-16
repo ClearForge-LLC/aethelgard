@@ -10,6 +10,7 @@
 # board_tier2's a_missing_clock_enable_fails and a_vacuous_harness_fails moved to the SPI setup harness after that run (e13174f): each weighed at
 # max(its in-image time on 6e8ce74 times 1.5, 10 s) = 10 s (measured 4.18 s and 3.57 s, libtest's `finished in`, alone, pinned image on Furnace).
 # twin_tier2's every_bit_the_reference_writes_is_covered_by_a_ledger_row (this branch; was a 5 s estimate): its `ok` less twin_tier2's `Running`, 31.045, an upper bound.
+# AET-WO-4230 follow-up refit (2026-11-16), rule 5, from normal runs 43889629997 (9b989a0) and 43895706619 (fdfd2b8), both green: every CPU-heavy test above at its worst in-shard time over the two runs, kept where 43875567562's row is larger and its code unchanged (lowered, code changed: board_tier2's a_missing_clock_enable_fails and a_vacuous_harness_fails, from the 10 s floor; twin_tier2's every_bit_...); each test with no row that measured 0.5 s or more gets one at its worst `ok` less its binary's `Running` over the two runs, an upper bound (144 rows); other rows and the four AET-WO-1310 estimates (all above their measured bounds) kept.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.494
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	1.390
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.493
@@ -44,30 +45,56 @@ tests/attribute.rs	each_finding_selects_only_the_events_that_show_it	3.181
 tests/attribute.rs	each_part_of_a_sound_witness_is_required	2.312
 tests/attribute.rs	every_kind_of_failing_event_the_verdict_omits_is_unexplained	1.807
 tests/attribute.rs	every_witness_line_is_evidence_within_its_width	2.563
+tests/attribute.rs	a15_the_evidence_is_the_named_rules_alone	0.660
+tests/attribute.rs	a5_a_witness_whose_lines_are_not_its_devices_is_no_evidence	0.630
+tests/attribute.rs	a_brown_out_word_or_a_flash_access_is_software_on_healthy_buses	2.159
+tests/attribute.rs	a_fault_on_another_bus_is_indeterminate_because_the_fault_is_elsewhere	0.599
+tests/attribute.rs	a_field_the_reading_covers_only_in_part_is_no_evidence	0.731
+tests/attribute.rs	a_finding_no_archived_event_shows_is_indeterminate_and_named	0.550
+tests/attribute.rs	a_gate_two_buses_own_is_on_the_board_and_owned_so_indeterminate	0.703
+tests/attribute.rs	a_locked_access_beside_only_a_gpio_mismatch_is_unexplained	0.627
+tests/attribute.rs	a_locked_access_with_no_clock_gate_left_off_is_unexplained	0.712
+tests/attribute.rs	an_electrical_bus_and_a_software_bus_in_one_run_are_indeterminate_never_averaged	1.190
+tests/attribute.rs	an_identity_mismatch_dressed_as_another_steps_is_unexplained	1.651
+tests/attribute.rs	an_unexplained_finding_names_no_evidence_beside_a_decided_symptom	1.933
+tests/attribute.rs	a_register_wrong_inside_and_outside_a_buss_fields_is_on_the_board	0.543
+tests/attribute.rs	a_register_wrong_on_the_second_bus_is_that_buss_alone	0.725
+tests/attribute.rs	a_timeout_claimed_as_an_invalid_record_is_unexplained	0.865
+tests/attribute.rs	a_txis_timeout_with_nothing_logged_is_indeterminate_not_software	1.005
+tests/attribute.rs	a_witness_agreeing_with_a_wrong_register_leaves_no_software_evidence	0.914
+tests/attribute.rs	a_witness_on_a_faulted_bus_stays_masked_when_the_run_is_indeterminate	0.712
+tests/attribute.rs	a_wrong_alternate_function_on_scl_is_software_by_its_register	1.359
+tests/attribute.rs	every_rule_is_found_by_its_id_and_nothing_else_is	0.917
+tests/attribute.rs	i5_lists_both_halves_and_the_masked_witness	1.410
+tests/attribute.rs	no_rise_measured_on_a_line_of_the_symptoms_bus_is_refused	0.971
+tests/attribute.rs	the_fault_on_the_second_bus_is_elsewhere_for_the_first	1.277
+tests/attribute.rs	the_healthy_run_passes_and_is_none	0.931
+tests/attribute.rs	the_lowest_indeterminate_rule_names_the_run_with_only_its_evidence	1.393
+tests/attribute.rs	the_same_wrong_register_on_a_faulted_bus_is_electrical_with_the_witness_masked	1.416
 tests/board.rs	a_hand_edited_harness_fails_the_comparison	1.964
 tests/board.rs	the_committed_board_crate_is_exactly_the_generated_one	1.985
 tests/board.rs	the_firmware_follows_the_judges_boot_contract	2.149
 tests/board.rs	the_firmware_follows_the_judges_record_layout	2.209
 tests/board.rs	two_generations_are_byte_identical	3.906
 tests/board_tier2.rs	a_cargo_configuration_another_uid_plants_in_tmp_is_not_read	0.669
-tests/board_tier2.rs	against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies	820.454
-tests/board_tier2.rs	a_missing_clock_enable_fails	10.000
+tests/board_tier2.rs	against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies	821.721
+tests/board_tier2.rs	a_missing_clock_enable_fails	5.698
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.757
-tests/board_tier2.rs	a_vacuous_harness_fails	10.000
-tests/board_tier2.rs	a_write_past_the_block_fails	338.775
-tests/board_tier2.rs	a_wrong_alternate_function_fails	330.311
+tests/board_tier2.rs	a_vacuous_harness_fails	5.323
+tests/board_tier2.rs	a_write_past_the_block_fails	350.648
+tests/board_tier2.rs	a_wrong_alternate_function_fails	347.983
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.431
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.523
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	560.336
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	46.596
 tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	952.852
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	17.182
-tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	17.497
+tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	19.070
 tests/board_tier2.rs	the_generated_board_proves	443.547
 tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	38.198
 tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	67.309
 tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	6.877
-tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	4.788
+tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.987
 tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	5.495
 tests/board_ui.rs	misuse_does_not_compile_and_the_driver_does	51.039
 tests/boot_tier1.rs	a_boot_past_a_dshot_board_s_window_is_refused_by_name	1.512
@@ -117,6 +144,11 @@ tests/boot_tier1.rs	the_virtual_time_is_an_integer_unit_up_to_100_ms	5.975
 tests/boot_tier1.rs	the_witness_is_not_judged_for_a_record_that_claims_nothing	3.132
 tests/boot_tier1.rs	three_agreeing_witnesses_pass	3.335
 tests/boot_tier1.rs	two_devices_witness_their_own_reads_in_either_order	8.980
+tests/boot_tier1.rs	a_brown_out_word_that_is_not_the_declared_level_fails_naming_both	38.397
+tests/boot_tier1.rs	an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot	10.997
+tests/boot_tier1.rs	the_boot_flags_come_together_or_not_at_all	13.565
+tests/boot_tier1.rs	the_flash_controller_is_read_once_and_never_written_or_the_boot_fails	27.218
+tests/boot_tier1.rs	word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both	15.382
 tests/bounds.rs	replay_is_linear_in_events	0.805
 tests/bounds.rs	the_crafted_16_8_mb_event_is_refused	1.106
 tests/campaign_tier1.rs	a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1	6.948
@@ -162,6 +194,12 @@ tests/campaign_tier1.rs	the_47k_reference_scenario_fails_as_declared_and_replays
 tests/campaign_tier1.rs	the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings	2.658
 tests/campaign_tier1.rs	the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it	9.432
 tests/campaign_tier1.rs	the_same_campaign_into_a_fresh_archive_gives_the_same_hash	4.502
+tests/campaign_tier1.rs	an_unknown_override_key_is_refused	5.680
+tests/campaign_tier1.rs	a_synthetic_run_is_not_a_campaign_run	6.726
+tests/campaign_tier1.rs	a_zero_pull_up_is_refused_as_an_invalid_specification	6.001
+tests/campaign_tier1.rs	replay_s_serial_frame_and_lengths_are_the_twin_s	7.154
+tests/campaign_tier1.rs	the_droop_scenarios_carry_only_identifiers_the_base_set_admits	10.810
+tests/campaign_tier1.rs	the_same_scenario_file_twice_is_a_duplicate	10.182
 tests/classes_tier1.rs	a_part_on_each_edge_is_routed_and_read_back_where_kicad_puts_it	2.366
 tests/classes_tier1.rs	extract_bounds_a_classed_line_at_its_own_width	1.864
 tests/classes_tier1.rs	the_pair_judge_refuses_each_breakage	1.991
@@ -170,6 +208,7 @@ tests/connectors_tier1.rs	extract_counts_each_connectors_declared_budget_and_no_
 tests/connectors_tier1.rs	the_fixture_emits_its_connectors_at_the_bottom_edge	3.383
 tests/connectors_tier1.rs	the_fixture_passes_check_speeds_and_generate	4.414
 tests/connectors_tier1.rs	without_connectors_the_board_has_no_connector_footprint	1.254
+tests/connectors_tier1.rs	a_board_draws_exactly_its_declared_connectors	0.860
 tests/emit_tier1.rs	an_out_that_cannot_hold_the_files_is_refused	2.223
 tests/emit_tier1.rs	a_solved_pin_is_drawn_by_its_package_position	1.241
 tests/emit_tier1.rs	emit_writes_the_schematic_and_bom_and_two_runs_are_byte_identical	3.012
@@ -198,21 +237,28 @@ tests/fab_tier1.rs	an_unusable_fab_out_is_refused_before_any_gate_and_left_untou
 tests/fab_tier1.rs	a_rail_or_bus_no_fault_kind_reaches_is_named	2.078
 tests/fab_tier1.rs	a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other	4.286
 tests/fab_tier1.rs	a_tree_that_differs_writes_no_package_and_says_so	3.170
+tests/fab_tier1.rs	a_new_field_in_an_acknowledged_register_is_refused_on_the_fab_path	2.972
+tests/fab_tier1.rs	an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one	4.362
+tests/fab_tier1.rs	the_acknowledged_reference_passes_the_check_before_any_gate	2.657
 tests/generate_tier1.rs	build_refuses_an_existing_output_a_dependency_and_a_crate_without_firmware	1.521
 tests/generate_tier1.rs	generate_reproduces_the_committed_board_and_emits_files_byte_for_byte	3.308
 tests/generate_tier1.rs	two_generations_are_identical_and_a_used_directory_is_refused_untouched	9.843
 tests/generate_tier1.rs	verify_against_fails_on_one_changed_byte_in_any_file_naming_it	31.422
 tests/generate_tier1.rs	verify_against_refuses_another_specifications_tree_and_a_hand_written_harness	7.048
 tests/generate_tier1.rs	verify_refuses_a_scenario_whose_base_is_not_the_specification	1.996
+tests/generate_tier1.rs	a_configuration_above_the_scratch_directory_is_refused_by_name	1.532
+tests/generate_tier1.rs	build_and_prove_refuse_what_cargo_would_run_before_any_tool	1.698
 tests/lifecycle_tier1.rs	a_cli_without_the_variable_outlives_the_thread_that_started_it	1.043
 tests/lifecycle_tier1.rs	a_guardian_removes_its_directory_though_a_writer_races_it	5.515
 tests/lifecycle_tier1.rs	a_guardian_started_before_its_directory_removes_it_when_its_parent_dies	0.668
 tests/lifecycle_tier1.rs	a_guardian_waits_for_its_directory_and_exits_0_when_its_parent_removes_it	0.651
 tests/lifecycle_tier1.rs	a_missing_or_malformed_cli_pid_is_refused_with_64	0.671
+tests/lifecycle_tier1.rs	a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing	0.505
 tests/mcp_tier1.rs	a_client_that_disconnects_mid_call_leaves_nothing_after_the_grace	5.116
 tests/mcp_tier1.rs	an_immediate_cancel_storm_leaves_no_process_and_no_directory	3.160
 tests/mcp_tier1.rs	servers_sigkilled_while_calls_start_leave_nothing	5.421
 tests/mcp_tier1.rs	the_server_outlives_the_thread_that_started_it	0.602
+tests/mcp_tier1.rs	lists_the_five_tools_and_completes_two_calls	0.560
 tests/models_tier2.rs	a_model_that_does_not_compile_prints_the_load_error_and_exits_0	4.013
 tests/models_tier2.rs	an_access_the_datasheets_forbid_warns	4.549
 tests/models_tier2.rs	ardupilot_s_probe_and_init_pass_against_our_models	5.024
@@ -221,6 +267,7 @@ tests/models_tier2.rs	our_models_answer_their_datasheets_reset_values	3.759
 tests/models_tier2.rs	our_models_round_half_away_from_zero	5.115
 tests/models_tier2.rs	the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write	5.100
 tests/motor_platform.rs	the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route	0.514
+tests/motor_platform.rs	the_expected_image_holds_the_timer_s_stored_fields_and_names_its_tags	0.524
 tests/motor.rs	adversarial_h3_a_channel_s_register_is_its_own_output_s_alone	0.833
 tests/order_2203.rs	out_of_order_devices_keep_the_specification_order	1.171
 tests/placement_tier1.rs	check_drc_runs_parity_against_a_copy_of_the_schematic_beside_the_board	1.929
@@ -242,6 +289,9 @@ tests/propose.rs	a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_caus
 tests/propose.rs	every_seeded_pull_up_and_the_220_pf_case_propose_by_the_same_rule	1.826
 tests/propose.rs	no_proposer_may_propose_for_a_run_that_is_not_electrical_or_below_a_floor	2.928
 tests/propose.rs	the_first_proposer_that_answers_wins_and_none_answering_is_the_model_slot	1.550
+tests/propose.rs	a_held_low_line_has_no_rule_and_names_the_model_slot	0.640
+tests/propose.rs	a_wrong_register_is_a_firmware_generator_report_with_no_change	0.673
+tests/propose.rs	the_view_joins_a_register_only_by_its_name_address_and_covered_fields	0.798
 tests/routing_tier1.rs	every_nets_copper_is_connected	1.501
 tests/routing_tier1.rs	every_pad_is_left_straight_out_of_its_field	1.508
 tests/routing_tier1.rs	every_pair_of_copper_items_keeps_the_clearance	1.143
@@ -249,8 +299,12 @@ tests/routing_tier1.rs	no_copper_touches_an_unconnected_pad	1.529
 tests/routing_tier1.rs	the_routed_board_is_byte_identical_and_a_function_of_its_pads	4.306
 tests/routing_tier1.rs	the_routers_judges_refuse_orphan_and_relabelled_copper	1.510
 tests/serial_ports.rs	regeneration_is_byte_identical	0.656
+tests/serial_ports.rs	serial_pins_take_00_with_their_own_reason	0.522
+tests/serial_ports.rs	what_the_generator_cannot_write_is_refused	0.599
 tests/serial.rs	a_failing_write_judgement_or_an_unrouted_send_is_software_s5	1.086
 tests/serial.rs	a_usart_register_or_its_clock_gate_is_the_port_s_own_evidence	0.659
+tests/serial.rs	no_register_evidence_is_never_a_guess	0.640
+tests/serial.rs	the_console_s_rx_on_the_wrong_alternate_function_is_software_s5	0.580
 tests/solve_cli.rs	a_power_tree_solves_into_the_topology_and_emits_its_board	2.245
 tests/speeds_tier1.rs	a_specification_with_no_spi_bus_judges_nothing_and_says_so	1.073
 tests/speeds_tier1.rs	the_four_layer_fixture_and_d1_hold_on_every_in_scope_line	1.377
@@ -259,10 +313,13 @@ tests/spi_devices.rs	every_chip_select_is_driven_before_its_bus_starts_and_trans
 tests/spi_platform.rs	an_absent_device_leaves_its_model_but_keeps_the_mux_and_the_wiring	0.870
 tests/spi_platform.rs	an_absent_reference_that_is_no_spi_device_is_refused	0.857
 tests/spi_platform.rs	two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both	0.621
+tests/spi_platform.rs	an_unmodelled_spi_part_is_commented_listed_and_reported_never_wired_to_a_model	0.953
+tests/spi_platform.rs	the_reference_wires_one_mux_one_chip_select_and_the_flash_in_order	0.680
 tests/stackups_tier1.rs	check_drc_with_spec_refuses_a_board_that_is_not_the_declared_one	1.878
 tests/stackups_tier1.rs	d1_routes_at_four_layers_and_at_two	6.250
 tests/stackups_tier1.rs	the_old_and_new_paths_agree_on_the_reference	1.195
 tests/stackups_tier1.rs	the_reader_refuses_a_board_that_disagrees_with_the_specification	2.126
+tests/stackups_tier1.rs	the_declared_rules_are_the_ones_routed	0.546
 tests/strict_tier1.rs	dup_thickness_is_refused_by_check_drc_naming_the_path	1.583
 tests/strict_tier1.rs	every_corpus_file_is_refused_or_reaches_its_gate_as_stated	7.649
 tests/strict_tier1.rs	the_corpus_is_1305s_and_its_schematic_counterparts_by_class	1.552
@@ -272,6 +329,14 @@ tests/tools_tier1.rs	crate_exactly_at_the_byte_cap_is_accepted	0.604
 tests/tools_tier1.rs	crate_over_the_byte_cap_is_input_too_large	0.546
 tests/tools_tier1.rs	crate_over_the_file_cap_is_input_too_large	0.910
 tests/tools_tier1.rs	many_files_each_under_the_cap_but_over_it_together_are_refused	0.549
+tests/tools_tier1.rs	a_daemon_in_its_own_session_does_not_outlive_the_call	1.398
+tests/tools_tier1.rs	a_stub_written_while_other_threads_fork_always_execs	1.103
+tests/tools_tier1.rs	board_file_exactly_at_the_byte_cap_is_accepted	0.603
+tests/tools_tier1.rs	prove_hash_changes_with_a_file_name	0.566
+tests/tools_tier1.rs	prove_pass_with_two_cover_summaries_is_tool_error	0.506
+tests/tools_tier1.rs	prove_without_cargo_is_tool_missing	0.510
+tests/tools_tier1.rs	renode_version_printing_nothing_is_tool_unusable	0.537
+tests/tools_tier1.rs	simulate_with_a_cpu_and_no_error_passes	0.595
 tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.156
 tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	6.597
 tests/twin_tier2.rs	a_device_named_for_a_renode_instance_or_keyword_breaks_the_load	3.497
@@ -315,7 +380,7 @@ tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	4.940
 tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	5.959
 tests/twin_tier2.rs	a_tdr_store_with_ue_clear_sends_no_pattern	7.153
 tests/twin_tier2.rs	a_value_one_bit_off_fails_as_an_identity_mismatch	4.586
-tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	31.045
+tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	27.186
 tests/twin_tier2.rs	kani_proves_every_part_of_both_motor_fixtures	374.148
 tests/twin_tier2.rs	kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check	54.064
 tests/twin_tier2.rs	motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af	5.791
@@ -338,12 +403,14 @@ tests/twin_tier2.rs	the_reference_firmware_boots_and_two_boots_agree	10.123
 tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	7.595
 tests/twin_tier2.rs	the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed	5.763
 tests/twin_tier2.rs	without_the_cited_wait_each_data_read_answers_its_reset_value	7.916
+tests/twin_tier2.rs	adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails	15.926
+tests/twin_tier2.rs	renode_s_files_are_the_pinned_ones_and_declare_the_stock_table	27.189
 tests/uid_boundary_tier1.rs	the_emitted_schematic_names_no_sheet	1.216
-tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	996.634
+tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	1096.013
 tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	1191.963
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	2.915
-tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	5.401
-tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	5.460
+tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.017
+tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	5.572
 tests/with_tools.rs	a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule	2.307
 tests/with_tools.rs	a_track_that_is_not_its_class_width_fails_drc_by_the_gates_rule	3.208
 tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	22.827
@@ -358,7 +425,7 @@ tests/with_tools.rs	mcp_check_drc_passes_the_clean_board_and_fails_the_violation
 tests/with_tools.rs	mcp_prove_fails_the_seeded_overflow_without_is_error	0.412
 tests/with_tools.rs	mcp_simulate_loads_the_nucleo_board	3.363
 tests/with_tools.rs	p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding	15.183
-tests/with_tools.rs	parity_fails_a_board_that_does_not_match_its_schematic	6.408
+tests/with_tools.rs	parity_fails_a_board_that_does_not_match_its_schematic	6.573
 tests/with_tools.rs	prove_fails_the_seeded_overflow	0.512
 tests/with_tools.rs	prove_leaves_the_crate_untouched	0.405
 tests/with_tools.rs	prove_of_an_unresolvable_dependency_names_the_package	12.068
@@ -371,6 +438,7 @@ tests/with_tools.rs	the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is
 tests/with_tools.rs	the_emitted_reference_schematic_passes_erc	3.720
 tests/with_tools.rs	the_through_hole_and_thermal_fixtures_pass_drc_by_the_gates_rules	5.496
 tests/with_tools.rs	with_a_token_free_setup_the_project_step_is_load_bearing	2.310
+tests/with_tools.rs	drc_clean_board_passes	0.531
 unittests src/lib.rs	analog::tests::a_faulted_bus_declares_no_device_and_names_them	1.327
 unittests src/lib.rs	board::tests::a_motor_board_with_serial_ports_splits_with_no_usart_action	0.543
 unittests src/lib.rs	board::tests::the_solved_ceiling_admits_only_the_modes_at_or_under_it	0.678
@@ -384,6 +452,28 @@ unittests src/lib.rs	tests::the_console_adds_its_usart_its_pins_and_its_gate	0.7
 unittests src/lib.rs	tests::the_emitted_header_names_each_own_model_s_pin	0.579
 unittests src/lib.rs	tests::the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word	0.513
 unittests src/lib.rs	tests::two_emissions_are_byte_identical	0.596
+unittests src/lib.rs	board::tests::the_reset_clock_reads_the_domain_3_fields_only_for_their_peripheral	0.653
+unittests src/lib.rs	cmsis::tests::interrupts_and_region_sizes_come_out_of_the_header	0.514
+unittests src/lib.rs	pcb::tests::every_uuid_on_the_board_is_distinct	0.618
+unittests src/lib.rs	platform::tests::a_reserved_name_is_the_topology_s_refusal_not_the_emitter_s	0.772
+unittests src/lib.rs	serial::tests::adversarial_3_adv3_2_a_read_of_a_configuration_word_is_named	0.587
+unittests src/lib.rs	serial::tests::adversarial_f1_f2_f3_the_writes_are_judged_at_ue_and_after	0.969
+unittests src/lib.rs	serial::tests::a_pin_is_routed_only_in_af_mode_on_its_af	0.788
+unittests src/lib.rs	serial::tests::the_frame_is_the_domain_s_hash_and_moves_with_firmware_and_label	0.789
+unittests src/lib.rs	serial::tests::the_framing_needs_its_tags_and_no_other	0.716
+unittests src/lib.rs	serial::tests::the_rcc_takes_each_solved_spi_select_once_before_the_spi_clock	0.556
+unittests src/lib.rs	tests::a_pin_above_seven_lands_in_afrh	0.812
+unittests src/lib.rs	tests::each_identity_read_carries_the_models_log_lines_of_its_device	0.819
+unittests src/lib.rs	tests::every_read_on_a_bus_is_witnessed_by_its_own_device	0.973
+unittests src/lib.rs	tests::no_devices_means_no_reads_and_nothing_unmodelled	1.892
+unittests src/lib.rs	tests::parity_and_two_stop_bits_reach_cr1_and_cr2	0.821
+unittests src/lib.rs	tests::the_flash_controller_is_read_once_and_never_written	1.897
+unittests src/lib.rs	tests::the_platform_presents_the_declared_brown_out_level	2.900
+unittests src/lib.rs	tests::the_reference_image_is_the_one_the_spike_read_back	0.917
+unittests src/lib.rs	tests::the_reference_platform_adds_spi1_and_names_every_solved_peripheral	1.664
+unittests src/lib.rs	tests::what_cannot_be_lowered_is_refused	1.074
+unittests src/lib.rs	timer::tests::an_observer_name_is_the_pin_s	1.674
+unittests src/lib.rs	timer::tests::the_model_s_tick_is_4_ns	0.720
 unittests src/main.rs	elf::tests::every_shape_outside_elf32_le_arm_exec_is_refused	1.532
 unittests src/main.rs	elf::tests::file_bytes_over_the_boot_word_are_refused	0.679
 unittests src/main.rs	elf::tests::overlapping_segments_are_refused_by_their_memory_not_their_file_bytes	0.530
@@ -395,8 +485,66 @@ unittests src/main.rs	renode::tests::a_serial_port_failing_silicon_s_check_is_na
 unittests src/main.rs	renode::tests::a_serial_witness_is_read_from_its_capture_pins_and_log	1.419
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.734
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	1.965
+unittests src/main.rs	elf::tests::a_segment_outside_flash_and_ram_is_refused	0.592
+unittests src/main.rs	renode::tests::a_droop_boot_runs_the_measured_recipe_at_the_schedules_times	1.033
+unittests src/main.rs	renode::tests::adversarial_1_store_made_edges_fail_and_a_single_pulse_is_too_few	0.816
+unittests src/main.rs	renode::tests::a_mismatch_is_named_by_its_step	0.815
+unittests src/main.rs	renode::tests::a_probe_is_read_only_between_its_own_whole_line_markers	1.043
+unittests src/main.rs	renode::tests::a_read_left_unset_by_a_short_window_is_named	0.512
+unittests src/main.rs	renode::tests::a_timed_out_read_is_named_without_the_boot_word	1.152
+unittests src/main.rs	renode::tests::models_of_our_own_are_included_before_the_platform_loads	1.246
+unittests src/main.rs	renode::tests::the_frames_bytes_go_in_a_character_apart_rounded_up_to_a_quantum	2.720
+unittests src/main.rs	run::tests::an_unavailable_line_is_sandbox_unavailable_naming_its_layer	1.153
+unittests src/main.rs	run::tests::not_found_with_the_directory_absent_returns_0_on_the_first_call	2.034
+unittests src/main.rs	run::tests::uid_boundary_holds_only_when_all_three_conditions_do	1.173
+unittests src/main.rs	said::tests::cargo_joins_every_error_line_and_renode_takes_the_first	1.173
+unittests src/main.rs	said::tests::cargo_style_needs_the_prefix_and_renode_style_the_substring	2.035
+unittests src/main.rs	speeds::tests::a_line_is_judged_at_its_controller_s_fastest_achieved_rate	1.252
+unittests src/main.rs	tree::tests::the_crate_hash_is_the_copied_crates	1.249
+unittests src/main.rs	verify::tests::a_silicon_rule_that_does_not_hold_fails_the_verdict_by_name	1.250
+unittests src/main.rs	verify::tests::each_gate_names_the_uid_boundary_its_own_verdict_reports	2.231
+unittests src/main.rs	verify::tests::only_an_unmutated_electrical_case_of_the_seeded_set_is_a_detection	0.519
+tests/motor_outputs.rs	motor_pins_are_pulled_down_from_the_first_port_init	0.575
+tests/own_models_tier1.rs	the_firmware_waits_once_for_the_largest_cited_time_before_any_data_read	0.542
+tests/own_models_tier1.rs	the_platform_pins_both_models_and_the_proofs_bound_the_data_read	0.612
+tests/silicon_words.rs	every_fixture_s_controllers_are_written_the_rule_s_words	2.467
+tests/silicon_words.rs	every_fixture_s_schedule_starts_each_i2c_bus_at_the_rule_s_mode	3.294
+tests/validate_cli.rs	a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify	4.308
+tests/ledger_tier1.rs	a_motor_output_s_pull_down_is_the_independent_rule_s	2.145
+tests/ledger_tier1.rs	a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale	0.653
+tests/ledger_tier1.rs	every_specification_that_solves_has_a_ledger	9.396
+tests/ledger_tier1.rs	sentinel_02_s_scripted_devices_give_their_waits_and_model_rows	0.581
+tests/ledger_tier1.rs	the_families_the_work_order_names_are_classed_as_ruled	0.788
+tests/ledger_tier1.rs	the_reference_acknowledges_every_unwitnessed_row_by_register_and_class	0.784
+tests/ledger_tier1.rs	the_reference_has_a_row_for_every_listed_field_and_no_other	0.984
+tests/ledger_tier1.rs	verify_s_verdict_carries_the_ledger_and_the_silicon_findings	24.468
+tests/register_fields.rs	a_field_dropped_from_the_list_fails_the_check	1.385
+tests/register_fields.rs	every_write_of_the_reference_and_the_motor_board_has_its_rows	1.566
+tests/spi.rs	a_data_step_found_absent_is_electrical_e2_by_that_steps_witness	0.606
+tests/spi.rs	another_parts_chip_select_held_is_software_s3	0.638
+tests/spi.rs	e2_has_no_rule_and_no_proposal	0.636
+tests/support_tier1.rs	a_10_nf_capacitor_fails	1.509
+tests/support_tier1.rs	a_capacitor_moved_off_its_pin_fails_and_an_unbounded_one_does_not	8.251
+tests/support_tier1.rs	a_capacitor_on_another_pins_net_fails	1.417
+tests/support_tier1.rs	a_capacitor_whose_ground_side_is_on_another_net_fails	1.563
+tests/support_tier1.rs	a_connector_that_cannot_program_the_part_fails	1.525
+tests/support_tier1.rs	a_ground_or_powered_pin_off_its_net_fails	2.146
+tests/support_tier1.rs	a_not_connected_connector_pin_on_a_net_fails	1.572
+tests/support_tier1.rs	an_unjudgeable_netlist_is_refused	1.246
+tests/support_tier1.rs	an_unpopulated_or_mislabelled_capacitor_serves_no_role	1.249
+tests/support_tier1.rs	a_powered_group_out_of_its_range_fails	2.345
+tests/support_tier1.rs	a_removed_per_pin_capacitor_fails	1.824
+tests/support_tier1.rs	a_reset_vcap_or_debug_net_that_is_not_its_own_fails	1.255
+tests/support_tier1.rs	a_source_pin_off_the_supply_fails	1.495
+tests/support_tier1.rs	a_strap_or_a_supply_pin_off_its_net_fails	2.384
+tests/support_tier1.rs	one_capacitor_serves_one_pin	3.162
+tests/support_tier1.rs	the_reference_passes_the_support_gate	1.234
 # AET-WO-1310: Furnace, each alone (tier 1 on the host, tier 2 in the pinned image), times 2.8.
 tests/power_board_tier1.rs	the_crossing_is_drawn_and_its_limits_are_refused_by_name	52.800
+tests/power_board_tier1.rs	the_nets_validate_reserves_are_the_emitters_own	1.978
 tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	3.400
 tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
 tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
+# AET-WO-4230 follow-up: against_fab_tier2 split out of ci/colocate.tsv. Each test alone runs the shared --fab-out verify, then its own --against-fab verify, one at a time: 2 x 579 s, the worst single verify of the block in runs 43889629997 and 43895706619 (510-579 s; an upper bound).
+tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	1158.000
+tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	1158.000
