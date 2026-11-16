@@ -2887,6 +2887,52 @@ impl SolvedTopology {
         Ok(())
     }
 
+    /// Sets `spi_controllers` and `i2c_timings` to what `solve` derives for
+    /// the SPI and I2C peripherals of `assignments`, from `clock` and, for
+    /// SPI, the lowest `rate_hz` of each controller's lines in `spi_lines`;
+    /// a peripheral it derives nothing for is left out, which `validate`
+    /// then refuses. For a topology edited by hand, as a test builds one
+    /// (`AET-WO-4230`); `solve` fills both itself.
+    pub fn derive_controllers(&mut self) {
+        (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
+    }
+
+    /// What [`SolvedTopology::derive_controllers`] sets.
+    fn derived_controllers(
+        &self,
+    ) -> (
+        BTreeMap<String, SolvedSpiController>,
+        BTreeMap<String, SolvedI2cTiming>,
+    ) {
+        let mut spi = BTreeMap::new();
+        let mut i2c = BTreeMap::new();
+        for a in self.assignments.values() {
+            let p = a.peripheral.as_str();
+            if p.starts_with("SPI") {
+                let declared = self
+                    .spi_lines
+                    .iter()
+                    .filter(|(net, _)| {
+                        self.assignments
+                            .get(*net)
+                            .is_some_and(|a| a.peripheral == p)
+                    })
+                    .map(|(_, l)| l.rate_hz)
+                    .min();
+                if let Some(c) =
+                    declared.and_then(|d| solve::spi_controller(p, &self.clock, p, d).ok())
+                {
+                    spi.insert(p.to_owned(), c);
+                }
+            } else if p.starts_with("I2C")
+                && let Some(t) = solve::i2c_timing(&self.clock, p)
+            {
+                i2c.insert(p.to_owned(), t);
+            }
+        }
+        (spi, i2c)
+    }
+
     /// `bor_level` is 0 to 3; `spi_controllers` and `i2c_timings` hold
     /// exactly the SPI and I2C peripherals of `assignments`, each with what
     /// `solve` derives from `clock` and, for SPI, the lowest `rate_hz` of the
@@ -2907,40 +2953,38 @@ impl SolvedTopology {
                 .filter(|p| p.starts_with(prefix))
                 .collect()
         };
+        let (want_spi, want_i2c) = self.derived_controllers();
+        // Every SPI peripheral of `assignments` has an entry, no other key
+        // has one, and each is what `solve` derives.
+        let spi_keys: BTreeSet<&str> = self.spi_controllers.keys().map(String::as_str).collect();
         let spi = on("SPI");
-        let have: BTreeSet<&str> = self.spi_controllers.keys().map(String::as_str).collect();
-        if let Some(p) = spi.symmetric_difference(&have).next() {
-            return Err(E::SpiControllerMismatch {
-                id: (*p).to_owned(),
-            });
+        if let Some(p) = spi
+            .symmetric_difference(&spi_keys)
+            .next()
+            .copied()
+            .or_else(|| {
+                let (have, want) = (&self.spi_controllers, &want_spi);
+                have.keys()
+                    .map(String::as_str)
+                    .find(|p| have.get(*p) != want.get(*p))
+            })
+        {
+            return Err(E::SpiControllerMismatch { id: p.to_owned() });
         }
-        for (p, c) in &self.spi_controllers {
-            let declared = self
-                .spi_lines
-                .iter()
-                .filter(|(net, _)| {
-                    self.assignments
-                        .get(*net)
-                        .is_some_and(|a| a.peripheral == *p)
-                })
-                .map(|(_, l)| l.rate_hz)
-                .min();
-            let solved = declared.and_then(|d| solve::spi_controller(p, &self.clock, p, d).ok());
-            if solved.as_ref() != Some(c) {
-                return Err(E::SpiControllerMismatch { id: p.clone() });
-            }
-        }
+        let i2c_keys: BTreeSet<&str> = self.i2c_timings.keys().map(String::as_str).collect();
         let i2c = on("I2C");
-        let have: BTreeSet<&str> = self.i2c_timings.keys().map(String::as_str).collect();
-        if let Some(p) = i2c.symmetric_difference(&have).next() {
-            return Err(E::I2cTimingMismatch {
-                id: (*p).to_owned(),
-            });
-        }
-        for (p, t) in &self.i2c_timings {
-            if solve::i2c_timing(&self.clock, p).as_ref() != Some(t) {
-                return Err(E::I2cTimingMismatch { id: p.clone() });
-            }
+        if let Some(p) = i2c
+            .symmetric_difference(&i2c_keys)
+            .next()
+            .copied()
+            .or_else(|| {
+                let (have, want) = (&self.i2c_timings, &want_i2c);
+                have.keys()
+                    .map(String::as_str)
+                    .find(|p| have.get(*p) != want.get(*p))
+            })
+        {
+            return Err(E::I2cTimingMismatch { id: p.to_owned() });
         }
         Ok(())
     }
