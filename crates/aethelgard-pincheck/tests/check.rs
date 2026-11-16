@@ -535,3 +535,33 @@ fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
     // CRLF line ends are line ends.
     assert_eq!(header::read(&text.replace('\n', "\r\n")).unwrap(), real);
 }
+
+/// AET-WO-1603 adversarial A3 and A8: what the reader does not model is
+/// refused, never read: a byte outside printable ASCII and tab (a lone CR,
+/// which GCC takes as a line end; U+00A0 and U+0085, which Rust trims and GCC
+/// keeps), a trigraph, a C++ raw string, `__has_include`'s header-name, and
+/// another file or line number (`#include`, `#line`). A comment spanning
+/// lines is one space, so what follows its end continues the line it began
+/// on: a `#if 0` there is no directive.
+#[test]
+fn what_the_reader_does_not_model_is_refused() {
+    let text = common::header(&step_g_words());
+    let real = header::read(&text).unwrap();
+    for bad in [
+        "// x\r#if 0\n",
+        "#define N\u{a0}1\n",
+        "#define N\u{85}1\n",
+        "// ??/\n",
+        "#define S R\"(x)\"\n",
+        "#if __has_include(<a.h>)\n#endif\n",
+        "#include <hal.h>\n",
+        "#line 10\n",
+        "#define T 1\x0c\n",
+    ] {
+        let e = header::read(&format!("{bad}{text}")).unwrap_err();
+        assert_eq!(e.kind(), "MalformedHeader", "{bad:?}: {e}");
+        assert_eq!(e.id().as_deref(), Some("line 1"), "{bad:?}: {e}");
+    }
+    let joined = format!("#define X /*\n*/ #if 0\n{text}");
+    assert_eq!(header::read(&joined).unwrap(), real);
+}

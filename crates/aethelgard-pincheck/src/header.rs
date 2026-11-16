@@ -74,7 +74,31 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
     for (i, raw) in text.split('\n').enumerate() {
         let (start, mut acc) = open.take().unwrap_or((i + 1, String::new()));
         let line = raw.strip_suffix('\r').unwrap_or(raw);
-        let trimmed = line.trim_end_matches([' ', '\t', '\r']);
+        // What the reader does not model is refused, never read
+        // (adversarial A3): a byte outside printable ASCII and tab (a lone CR
+        // ends a line for GCC, and Rust trims Unicode blanks GCC keeps), a
+        // trigraph, a C++ raw string, and `__has_include`'s header-name.
+        if let Some(c) = line
+            .chars()
+            .find(|&c| c != '\t' && !(' '..='~').contains(&c))
+        {
+            return malformed(
+                i + 1,
+                format!("the character {c:?}: hwdef.h is printable ASCII, tabs and line ends"),
+            );
+        }
+        if let Some(what) = ["??", "R\"", "__has_include"]
+            .into_iter()
+            .find(|w| line.contains(w))
+        {
+            return malformed(
+                i + 1,
+                format!(
+                    "`{what}`: a trigraph, raw string or header-name the reader does not model"
+                ),
+            );
+        }
+        let trimmed = line.trim_end_matches([' ', '\t']);
         if trimmed.len() < line.len() && trimmed.ends_with('\\') {
             return malformed(
                 i + 1,
@@ -96,10 +120,15 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
         return malformed(start, "a continuation runs past the end of the file");
     }
     // Strip comments; a string or character literal ends at its line's end.
+    // A comment is one space, so a line a comment spans continues to its
+    // end: whatever follows `*/` belongs to the line the comment began on.
     let mut in_block: Option<usize> = None;
+    let mut pending: Option<(usize, String)> = None;
     let mut stripped = Vec::with_capacity(spliced.len());
-    for (n, line) in spliced {
-        let mut out = String::with_capacity(line.len());
+    for (line_n, line) in spliced {
+        let (n, mut out) = pending
+            .take()
+            .unwrap_or_else(|| (line_n, String::with_capacity(line.len())));
         let mut quote: Option<char> = None;
         let mut chars = line.chars().peekable();
         while let Some(c) = chars.next() {
@@ -136,7 +165,11 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
                 }
             }
         }
-        stripped.push((n, out));
+        if in_block.is_some() {
+            pending = Some((n, out));
+        } else {
+            stripped.push((n, out));
+        }
     }
     if let Some(n) = in_block {
         return malformed(n, "a comment is never closed");
@@ -208,6 +241,11 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
                     seen_else: kind == "else",
                 });
                 here
+            }
+            // Another file, or another line number, is a view the reader
+            // does not follow (adversarial A8).
+            Some((kind @ ("include" | "include_next" | "import" | "line"), _)) => {
+                return malformed(n, format!("#{kind}: the reader reads this file alone"));
             }
             _ => state(&groups),
         };
