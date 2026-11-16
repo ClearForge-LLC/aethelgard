@@ -117,10 +117,12 @@ The adversary worked on a frozen copy (`~/.cache/aet-1311/adv/wt`), host probes 
 
 ## 9. Merges, CI on the head, and close: READY
 
-- **Merged `main` twice, each a merge commit:** `5a8892d` (`AET-WO-1206`) as `43e5a90`, clean; then `de841da` (`AET-WO-1603`, TIER2_MIN 158) as `fe7fff8`, with one conflict in `ci.yml`'s TIER2_MIN history, resolved keeping both lines: **TIER2_MIN 159** (main's 158 + this work order's 1), counted from the listing (159 tier-2 tests) and confirmed by CI's canary. The §4 line "157 → 158" was this branch's before the second merge.
-- **After each merge** [measured]: the gates (fmt, clippy with and without `with-tools`, `cargo test --workspace`: 1 813 then 1 821 passed, 0 failed) and byte identity against that `main` (`5a8892d`, then `de841da`): every emitted artifact and exit code identical.
+- **Merged `main` three times, each a merge commit:** `5a8892d` (`AET-WO-1206`) as `43e5a90`, clean; `de841da` (`AET-WO-1603`, TIER2_MIN 158) as `fe7fff8`, with one conflict in `ci.yml`'s TIER2_MIN history, resolved keeping both lines; `02f9b6d` (`AET-WO-3201`, TIER2_MIN still 158) as `5b71ef4`, clean. **TIER2_MIN 159** (main's 158 + this work order's 1), counted from the listing (159 tier-2 tests, after each merge) and confirmed by CI's canary on `fe7fff8`. The §4 line "157 → 158" was this branch's before the second merge.
+- **After each merge** [measured]: the gates (fmt, clippy with and without `with-tools`, `cargo test --workspace`: 1 813, 1 821, then 1 837 passed, 0 failed) and byte identity against that `main` (`5a8892d`, `de841da`, `02f9b6d`): every emitted artifact and exit code identical.
 - **CI on `fe7fff8`** (run 43862970829), all jobs green. The plan: 8 shards × 1 060 s, balanced. The canary: `tier2_tests_passed=159 floor=159`; 2 002 tests passed across the shards. Shard times (the 20-minute line is a target): 0 15m26s, 1 24m12s, 2 19m22s, 3 20m22s, 4 14m51s, 5 17m19s, 6 20m16s, 7 20m22s. The slowest was shard 1, by 3.8 min; on the previous run (`321ff6d`, run 43856998024) it was shard 2, by 1.4 min. No shard was slowest on two runs in a row, so the refit rule does not fire.
 - **Disk:** the adversary's and the mutation worktrees and every target directory removed; `~/.cache/aet-1311` keeps the tools, logs, emit hashes, the release binaries and the adversary's inputs cited above (216 MB).
 - **Title and body** for the architect: `~/.cache/aet-1311/pr-title-body.md`.
+
+- **The head** (`5b71ef4` plus this commit) differs from `fe7fff8` by `main`'s `02f9b6d` and this section; its own CI run follows this push.
 
 AET-WO-1311 READY: every §7.1 row closed or shown closed, each new guard mutation-killed, the adversarial pass's in-fence findings fixed, every emitted byte identical; CI green on `fe7fff8`.
