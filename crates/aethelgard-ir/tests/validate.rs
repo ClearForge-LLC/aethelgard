@@ -472,21 +472,13 @@ fn refuses_tolerance_out_of_range() {
         assert_eq!(err.id(), Some("VDD_3V3"));
     }
     for value in [1, 500] {
-        let mut spec = valid();
-        spec.voltage_domains[0].tolerance_permille = value;
         // At 500 permille the rail spans 1650 to 4950 mV, outside every
         // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`) and
         // DS12117 Table 149's bands for an SPI bus on it
         // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
         // tolerance's own range is under test here, so the board has no
-        // device (a part with no row is refused, `AET-WO-1206` §1.8) and no
-        // SPI bus.
-        devs(&mut spec).i2c.clear();
-        devs(&mut spec).spi.clear();
-        spec.spi_buses.clear();
-        spec.net_constraints
-            .retain(|c| !c.net_name.starts_with("SPI_"));
-        assert_eq!(spec.validate(), Ok(()));
+        // device and no SPI bus.
+        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
     }
 }
 
