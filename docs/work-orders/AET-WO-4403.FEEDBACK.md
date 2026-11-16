@@ -344,3 +344,16 @@ All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv5/` and `rehea
   - shard 6: 26:11
   - shard 7: 25:28
 - **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge, as D1(a) ruled.
+
+## D5.8 Rulings on D5.3–D5.5 (architect, PR #181, 2026-11-16 21:30 UTC), and their build
+
+- **The wording edit: accepted.**
+- **F-D5a: accepted as is,** as a known gap. The mirror is content-addressed, so a manifest present at the pinned digest names exactly those layers. The full anonymous fetch is `source`, right after `publish`.
+- **Q1, drift: fail closed only where we convey.** A table that misses a package the image flags refuses `main`'s `publish` before any push. On pull requests it is a warning annotation and an `ANSWER debian_drift …` line. `debian-src.py check` stays fail-closed everywhere. The root fix, pinning apt to a snapshot timestamp, joins `4401` Q3's backlog row.
+- **Q2, LGPL-2.x-only: include it.** Only "-only" variants count; "or later" can be taken under LGPLv3 / GPLv3 §6(d), whose third-party-server route `SOURCES.md` gives. The stop is lifted to 1.25 GB for this PR.
+- **Q3:** both pins are re-pinned in `wo/aet-4403-repin` after this merges.
+
+**Predictions for Q2, before measuring** (all **[inferred]**, from the first classifier's LGPL-2-only count at D5.2):
+- **ArduPilot image:** at most 1 more source package, about 0.7 MB.
+- **Tools image:** at most 15 more, about 156 MB. Fewer if some are already flagged by free text.
+- **Total:** at most about 1.10 GB, under 1.25 GB.
