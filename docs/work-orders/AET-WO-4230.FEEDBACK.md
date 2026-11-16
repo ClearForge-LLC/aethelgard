@@ -389,3 +389,7 @@ What held under attack:
 - **The CLAUDE.md gates on `da6b76a`:** `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`, and again with the CLI's `with-tools`; `cargo test --workspace` (1,934 passed, 0 failed). All green.
 - **The READY commit** is this FEEDBACK only. Its own CI run is the head's, and the PR's final state rests on it.
 - **Disk:** every subagent worktree and every build target this work order created is removed. `~/.cache/aet-4230` keeps the evidence FEEDBACK cites (592 MB).
+- **Run 43889629997 on `9b989a0`** (the first READY commit): every job green, and `engine-image` and `ardupilot-image` too.
+  - Shards 23.1, 20.4, 32.7, 22.6, 24.4, 22.5, 24.6, 19.9 minutes; mean 23.8.
+  - Shard 2 was the slowest on this run and the previous one, but on the previous run by only 0.1 minutes, so the refit rule (by more than 3 minutes on two consecutive runs) is not triggered.
+- **The architect asked (14:58 UTC)** for `main` (docs #172, `docs/roadmap.md` only) to be merged before READY. It is merged, and this commit re-signals READY on top of it.
