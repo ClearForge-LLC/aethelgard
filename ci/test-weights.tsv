@@ -305,3 +305,9 @@ tests/models_tier2.rs	a_model_that_does_not_compile_prints_the_load_error_and_ex
 tests/twin_tier2.rs	the_fixture_s_campaign_archives_each_configuration_and_replays	12.000
 tests/models_tier2.rs	the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write	4.000
 tests/models_tier2.rs	an_access_the_datasheets_forbid_warns	4.000
+# AET-WO-1310: Furnace, each alone (tier 1 on the host, tier 2 in the pinned image), times 2.8.
+tests/power_board_tier1.rs	the_crossing_is_drawn_and_its_limits_are_refused_by_name	52.800
+tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	3.400
+tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
+tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
+tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	31.800
