@@ -7,6 +7,6 @@ fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let b = rcc.enable_gpiob(&mut r, board.gpiob).split();
+    let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
     let _sck = b.pb6.into_spi1_sck(&mut r);
 }

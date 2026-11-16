@@ -365,7 +365,7 @@ fn the_configuration_takes_the_clock_token_and_only_its_own_pins() {
     // The clock check covers the USART kernel clock selections.
     let rcc = item(board, "impl Rcc {");
     assert!(rcc.contains("        let d2ccip2r = r.read(TOKEN, Block::Rcc, 0x054);\n"));
-    assert!(rcc.contains("&& d2ccip2r & 0x0000003f == 0 {"));
+    assert!(rcc.contains("&& d2ccip2r & 0x0000303f == 0 {"));
     // No timer: no `Running`.
     assert!(!board.contains("pub struct Running;"));
 }
@@ -392,9 +392,14 @@ fn serial_pins_take_00_with_their_own_reason() {
     assert!(pa2.contains(
         "pub fn into_usart2_tx<R: Registers>(self, r: &mut R) -> PA2<AlternateFunction<7>> {"
     ));
-    // OTYPER push-pull, OSPEEDR 00, PUPDR none, AFRL AF7, MODER AF.
+    // OSPEEDR 00, PUPDR none, AFRL AF7, MODER AF; push-pull is the port's
+    // whole OTYPER, which `split` writes and no pin touches (`AET-WO-4230`).
+    assert!(!pa2.contains("Block::GpioA, 0x04"), "{pa2}");
+    assert!(
+        item(board, "impl GpioA<Clocked> {")
+            .contains("        r.write(TOKEN, Block::GpioA, 0x04, 0x00000000);\n")
+    );
     for line in [
-        "r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000004);",
         "r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00000030);",
         "r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000030);",
         "r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x00000f00) | 0x00000700);",
@@ -408,19 +413,20 @@ fn serial_pins_take_00_with_their_own_reason() {
     );
 }
 
-/// The firmware's order: the clock gate, the pins, the reset clock or park,
-/// the configuration, the pattern, the identity reads, the boot word, the
-/// echo, the park; and after the echo nothing names a USART.
+/// The firmware's order: the reset clock or park (first, before any write:
+/// `AET-WO-4230` D6), the clock gate, the pins, the configuration, the
+/// pattern, the identity reads, the boot word, the echo, the park; and after
+/// the echo nothing names a USART.
 #[test]
 fn the_console_firmware_runs_in_the_contract_s_order() {
     let (solved, table) = console();
     let main = &generate(&solved, &table)["firmware/src/main.rs"];
     let at = |s: &str| main.find(s).unwrap_or_else(|| panic!("{s}\n{main}"));
     let order = [
+        at("    let Ok(clock) = rcc.reset_clock(&mut r) else {\n"),
         at("    let usart2 = rcc.enable_usart2(&mut r, usart2);\n"),
         at("    let pa2 = gpioa.pa2.into_usart2_tx(&mut r);\n"),
         at("    let pa3 = gpioa.pa3.into_usart2_rx(&mut r);\n"),
-        at("    let Ok(clock) = rcc.reset_clock(&mut r) else {\n"),
         at("    let mut usart2 = usart2.configure(&mut r, &clock, pa2, pa3);\n"),
         at(
             "    for &byte in [0x63, 0x6f, 0x6e, 0x73, 0x6f, 0x6c, 0x65].iter().chain(PATTERN_TAIL.iter()) {\n        \
@@ -497,7 +503,7 @@ fn a_board_with_timers_and_a_port_reads_the_clock_once_first() {
     let board = &files["src/board.rs"];
     assert!(board.contains("pub struct Running;"));
     assert!(board.contains(
-        "/// The clock tree is the reset clock the timers' values and the USARTs' `BRR`\n"
+        "/// The clock tree is the reset clock this board's values were solved for: HSI\n"
     ));
 }
 
@@ -622,7 +628,9 @@ fn what_the_generator_cannot_write_is_refused() {
 /// `tests/board.rs` still passed against the committed `boards/sentinel-01`
 /// of `5833b9c` (no serial port), which that test compares byte for byte, so
 /// these are the digests of the generator before any serial code. A reference
-/// without serial ports must not move.
+/// without serial ports must not move. Re-taken at `AET-WO-4230`, which moves
+/// every board on purpose (the reset clock read first and taken by I2C and
+/// SPI, `OTYPER` written whole, the enables read back, the SPI `EOT` wait).
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -650,11 +658,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "d1b9b36fb3125e753f34893951b4bfc404e5e61586fe25b422921a461920b454",
+        "ef0defc6c7f97a57e0c09754912e19e0a4bbe9046ce64433f4abf109f2da9b84",
     ),
     (
         "src/board.rs",
-        "ee844f02bc6d63068259297a37fae071703a96baddbabe33c5a38930b982a7b0",
+        "716e9a6a3c81e01579d67730814225b4f4e33912271b7d13c03ae4007c18dfa7",
     ),
     (
         "src/lib.rs",
@@ -662,7 +670,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "aa93328998cd1efca7b075b125d4d4359f118bec79ae20d61c661205b265aa8c",
+        "683ee840e69f79596e51c73a096b7ecaed5ad9f35d23038b12410233557a3782",
     ),
 ];
 

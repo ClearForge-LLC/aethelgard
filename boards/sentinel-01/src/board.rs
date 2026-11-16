@@ -121,9 +121,11 @@ pub struct Gated;
 pub struct Clocked;
 pub struct Enabled<S>(PhantomData<S>);
 
-/// The clock tree is the reset clock the USARTs' `BRR` were solved for: HSI at
-/// 64 MHz, every prescaler 1, `TIMPRE` 0, and each USART's kernel clock its APB
-/// clock. Only [`Rcc::reset_clock`] makes one.
+/// The clock tree is the reset clock this board's values were solved for: HSI
+/// at 64 MHz, every prescaler 1, `TIMPRE` 0, and every kernel clock selection at
+/// its reset value. Only [`Rcc::reset_clock`] makes one: read it first, before any
+/// write, and never again, since Renode 1.17.0 stores no selection and a later
+/// read would see 0 where silicon sees what the bring-up selected.
 pub struct ResetClock {
     _private: (),
 }
@@ -205,6 +207,9 @@ pub enum SpiError {
     Length,
     /// `SR.RXP` never rose: a frame's byte did not arrive.
     Rxp,
+    /// `SR.EOT` never rose after the last frame: the transfer did not end
+    /// (RM0433 Rev 9 §50.4.12, p. 2177, step 1 of disabling a master).
+    Eot,
 }
 
 /// One 8-bit frame: `byte` out through `TXDR`, a wait of at most `spins` reads of
@@ -250,7 +255,6 @@ pub struct PA0<M> {
 
 impl PA0<Unconfigured> {
     pub fn into_output<R: Registers>(self, r: &mut R) -> PA0<Output> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000001);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00000003);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000003);
         r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
@@ -275,7 +279,6 @@ pub struct PA10<M> {
 
 impl PA10<Unconfigured> {
     pub fn into_usart1_rx<R: Registers>(self, r: &mut R) -> PA10<AlternateFunction<7>> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000400);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00300000);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00300000);
         r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000700);
@@ -291,7 +294,6 @@ pub struct PA5<M> {
 
 impl PA5<Unconfigured> {
     pub fn into_spi1_sck<R: Registers>(self, r: &mut R) -> PA5<AlternateFunction<5>> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000020);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x00000c00) | 0x00000400);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000c00);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x00f00000) | 0x00500000);
@@ -307,7 +309,6 @@ pub struct PA6<M> {
 
 impl PA6<Unconfigured> {
     pub fn into_spi1_miso<R: Registers>(self, r: &mut R) -> PA6<AlternateFunction<5>> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000040);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x0f000000) | 0x05000000);
@@ -323,7 +324,6 @@ pub struct PA7<M> {
 
 impl PA7<Unconfigured> {
     pub fn into_spi1_mosi<R: Registers>(self, r: &mut R) -> PA7<AlternateFunction<5>> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000080);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x0000c000) | 0x00004000);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x0000c000);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0xf0000000) | 0x50000000);
@@ -339,7 +339,6 @@ pub struct PA9<M> {
 
 impl PA9<Unconfigured> {
     pub fn into_usart1_tx<R: Registers>(self, r: &mut R) -> PA9<AlternateFunction<7>> {
-        r.modify(TOKEN, Block::GpioA, 0x04, |v| v & !0x00000200);
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x000c0000);
         r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x000c0000);
         r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x000000f0) | 0x00000070);
@@ -355,7 +354,6 @@ pub struct PB6<M> {
 
 impl PB6<Unconfigured> {
     pub fn into_i2c1_scl<R: Registers>(self, r: &mut R) -> PB6<AlternateFunction<4>> {
-        r.modify(TOKEN, Block::GpioB, 0x04, |v| (v & !0x00000040) | 0x00000040);
         r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0x0f000000) | 0x04000000);
@@ -371,7 +369,6 @@ pub struct PB7<M> {
 
 impl PB7<Unconfigured> {
     pub fn into_i2c1_sda<R: Registers>(self, r: &mut R) -> PB7<AlternateFunction<4>> {
-        r.modify(TOKEN, Block::GpioB, 0x04, |v| (v & !0x00000080) | 0x00000080);
         r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x0000c000);
         r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x0000c000);
         r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0xf0000000) | 0x40000000);
@@ -396,7 +393,10 @@ pub struct GpioAPins {
 }
 
 impl GpioA<Clocked> {
-    pub fn split(self) -> GpioAPins {
+    /// The port's pins, once its whole `OTYPER` is written: each solved pin's
+    /// output type, and every other pin's its reset value, 0.
+    pub fn split<R: Registers>(self, r: &mut R) -> GpioAPins {
+        r.write(TOKEN, Block::GpioA, 0x04, 0x00000000);
         GpioAPins {
             pa0: PA0 { _mode: PhantomData },
             pa10: PA10 { _mode: PhantomData },
@@ -420,7 +420,10 @@ pub struct GpioBPins {
 }
 
 impl GpioB<Clocked> {
-    pub fn split(self) -> GpioBPins {
+    /// The port's pins, once its whole `OTYPER` is written: each solved pin's
+    /// output type, and every other pin's its reset value, 0.
+    pub fn split<R: Registers>(self, r: &mut R) -> GpioBPins {
+        r.write(TOKEN, Block::GpioB, 0x04, 0x000000c0);
         GpioBPins {
             pb6: PB6 { _mode: PhantomData },
             pb7: PB7 { _mode: PhantomData },
@@ -434,9 +437,11 @@ pub struct I2c1<S> {
 }
 
 impl I2c1<Clocked> {
+    /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.
     pub fn init<S: i2c1_speed::AtMostCeiling, R: Registers>(
         self,
         r: &mut R,
+        _clock: &ResetClock,
         _scl: PB6<AlternateFunction<4>>,
         _sda: PB7<AlternateFunction<4>>,
     ) -> I2c1<Enabled<S>> {
@@ -552,9 +557,11 @@ impl Spi1<Clocked> {
     /// driven high first (deselected), whatever firmware did with it before. The
     /// baud rate, clock polarity and phase, and slave-select management are not
     /// solved yet: they stay at reset (Renode 1.17.0 does not model them).
+    /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.
     pub fn init<R: Registers>(
         self,
         r: &mut R,
+        _clock: &ResetClock,
         _sck: PA5<AlternateFunction<5>>,
         _mosi: PA7<AlternateFunction<5>>,
         _miso: PA6<AlternateFunction<5>>,
@@ -626,10 +633,24 @@ impl Spi1<Enabled<()>> {
                 got += 1;
             }
         }
+        // A master is disabled only once `EOT` is set (RM0433 Rev 9 §50.4.12,
+        // p. 2177, step 1), and `EOTC` clears it.
+        let mut ended = fail;
+        let mut n = 0;
+        while !ended && n < spins {
+            ended = r.read(TOKEN, Block::Spi1, 0x14) & 0x00000008 != 0;
+            n += 1;
+        }
         r.write(TOKEN, Block::Spi1, 0x18, 0x00000008);
         r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
         r.write(TOKEN, port, 0x18, deselect);
-        if fail { Err(SpiError::Rxp) } else { Ok(got) }
+        if fail {
+            Err(SpiError::Rxp)
+        } else if !ended {
+            Err(SpiError::Eot)
+        } else {
+            Ok(got)
+        }
     }
 }
 
@@ -691,50 +712,77 @@ pub struct Rcc {
 }
 
 impl Rcc {
-    /// `RCC_AHB4ENR` bit 0.
+    /// `RCC_AHB4ENR` bit 0. Then the register read back, so the write is not
+    /// pending in a write buffer, and a dummy read of the block, which takes the
+    /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
+    /// and d).
     pub fn enable_gpioa<R: Registers>(&mut self, r: &mut R, _gated: GpioA<Gated>) -> GpioA<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000001);
+        let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
+        let _ = r.read(TOKEN, Block::GpioA, 0x00);
         GpioA { _state: PhantomData }
     }
 
-    /// `RCC_AHB4ENR` bit 1.
+    /// `RCC_AHB4ENR` bit 1. Then the register read back, so the write is not
+    /// pending in a write buffer, and a dummy read of the block, which takes the
+    /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
+    /// and d).
     pub fn enable_gpiob<R: Registers>(&mut self, r: &mut R, _gated: GpioB<Gated>) -> GpioB<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000002);
+        let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
+        let _ = r.read(TOKEN, Block::GpioB, 0x00);
         GpioB { _state: PhantomData }
     }
 
-    /// `RCC_APB1LENR` bit 21.
+    /// `RCC_APB1LENR` bit 21. Then the register read back, so the write is not
+    /// pending in a write buffer, and a dummy read of the block, which takes the
+    /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
+    /// and d).
     pub fn enable_i2c1<R: Registers>(&mut self, r: &mut R, _gated: I2c1<Gated>) -> I2c1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e8, |v| v | 0x00200000);
+        let _ = r.read(TOKEN, Block::Rcc, 0x0e8);
+        let _ = r.read(TOKEN, Block::I2c1, 0x00);
         I2c1 { _state: PhantomData }
     }
 
-    /// `RCC_APB2ENR` bit 12.
+    /// `RCC_APB2ENR` bit 12. Then the register read back, so the write is not
+    /// pending in a write buffer, and a dummy read of the block, which takes the
+    /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
+    /// and d).
     pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>) -> Spi1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);
+        let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
+        let _ = r.read(TOKEN, Block::Spi1, 0x00);
         Spi1 { _state: PhantomData }
     }
 
-    /// `RCC_APB2ENR` bit 4.
+    /// `RCC_APB2ENR` bit 4. Then the register read back, so the write is not
+    /// pending in a write buffer (RM0433 Rev 9 §8.5.10, p. 372, step b).
     pub fn enable_usart1<R: Registers>(&mut self, r: &mut R, _gated: Usart1<Gated>) -> Usart1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000010);
+        let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
         Usart1 { _state: PhantomData }
     }
 
     /// A [`ResetClock`], when each of these fields holds 0, its reset value
-    /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.9, §8.7.21). Reads the five registers and writes nothing.
+    /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.10, §8.7.19–8.7.22). Reads the seven registers
+    /// and writes nothing.
     /// - `RCC_CR`: `HSIDIV`.
     /// - `RCC_CFGR`: `SWS`, `TIMPRE`.
     /// - `RCC_D1CFGR`: `D1CPRE`, `D1PPRE`, `HPRE`.
     /// - `RCC_D2CFGR`: `D2PPRE1`, `D2PPRE2`.
-    /// - `RCC_D2CCIP2R`: `USART16SEL`, `USART28SEL`.
+    /// - `RCC_D1CCIPR`: `CKPERSEL`.
+    /// - `RCC_D2CCIP1R`: `SPI123SEL`, `SPI45SEL`.
+    /// - `RCC_D2CCIP2R`: `USART16SEL`, `USART28SEL`, `I2C123SEL`.
     pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {
         let cr = r.read(TOKEN, Block::Rcc, 0x000);
         let cfgr = r.read(TOKEN, Block::Rcc, 0x010);
         let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);
         let d2cfgr = r.read(TOKEN, Block::Rcc, 0x01c);
+        let d1ccipr = r.read(TOKEN, Block::Rcc, 0x04c);
+        let d2ccip1r = r.read(TOKEN, Block::Rcc, 0x050);
         let d2ccip2r = r.read(TOKEN, Block::Rcc, 0x054);
-        if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d2ccip2r & 0x0000003f == 0 {
+        if cr & 0x00000018 == 0 && cfgr & 0x00008038 == 0 && d1cfgr & 0x00000f7f == 0 && d2cfgr & 0x00000770 == 0 && d1ccipr & 0x30000000 == 0 && d2ccip1r & 0x00077000 == 0 && d2ccip2r & 0x0000303f == 0 {
             Ok(ResetClock { _private: () })
         } else {
             Err(NotResetClock)
