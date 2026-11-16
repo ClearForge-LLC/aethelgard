@@ -2847,11 +2847,20 @@ fn port_injections(
     boot_word: Option<(usize, u64)>,
 ) -> Vec<PortInjection> {
     use crate::anchor::Hook;
+    /// One `INJECT` line: its position, the byte's index, its anchor and
+    /// count, and the mux read with the first.
+    struct Byte {
+        line: usize,
+        index: usize,
+        anchor: u64,
+        count: u64,
+        mux: Option<(u32, u32)>,
+    }
     let ports = plan.port_hooks();
     let frame = aethelgard_twin::serial::FRAME_LEN;
     (0..plan.serial.len())
         .map(|k| {
-            let bytes: Vec<(usize, usize, u64, u64, Option<(u32, u32)>)> = hooks
+            let bytes: Vec<Byte> = hooks
                 .iter()
                 .filter_map(|(i, h)| match h {
                     Hook::Inject {
@@ -2860,7 +2869,13 @@ fn port_injections(
                         anchor,
                         count,
                         mux,
-                    } if *port == k => Some((*i, *byte, *anchor, *count, *mux)),
+                    } if *port == k => Some(Byte {
+                        line: *i,
+                        index: *byte,
+                        anchor: *anchor,
+                        count: *count,
+                        mux: *mux,
+                    }),
                     _ => None,
                 })
                 .collect();
@@ -2893,17 +2908,17 @@ fn port_injections(
                     ..Default::default()
                 };
             }
-            let anchor = bytes[0].2;
+            let anchor = bytes[0].anchor;
             let one_frame = bytes.iter().enumerate().all(|(j, b)| {
-                b.1 == j
-                    && b.2 == anchor
-                    && b.3
+                b.index == j
+                    && b.anchor == anchor
+                    && b.count
                         == anchor
                             + crate::anchor::instructions(
                                 aethelgard_twin::boot::QUANTUM_NS + j as u64 * p.spacing_ns,
                             )
             }) && bytes.len() <= frame
-                && bytes[0].4.is_some();
+                && bytes[0].mux.is_some();
             if !one_frame {
                 return PortInjection {
                     why: Some(format!(
@@ -2914,10 +2929,10 @@ fn port_injections(
                 };
             }
             PortInjection {
-                at_ns: Some(crate::anchor::instant(start_ns, bytes[0].3)),
+                at_ns: Some(crate::anchor::instant(start_ns, bytes[0].count)),
                 bytes: bytes.len(),
-                mux: bytes[0].4,
-                line: Some(bytes[0].0),
+                mux: bytes[0].mux,
+                line: Some(bytes[0].line),
                 why: (bytes.len() < frame).then(|| {
                     format!(
                         "{} of its {frame} bytes went in before the boot's end",
@@ -4412,7 +4427,7 @@ mod tests {
             j[1]
         );
         // No boot word observed: nothing went in, by name.
-        let j = read(&log[1..1].to_vec());
+        let j = read(&log[1..1]);
         assert!(
             j[0].why
                 .as_deref()
