@@ -1304,7 +1304,7 @@ pub fn verify(
             board: &board_sha256,
             spec: &spec_sha256,
             harnesses: harnesses.clone(),
-            boot_time: format!("{}ns", aethelgard_twin::boot::window(&topology).0),
+            boot_time: format!("{}ns", aethelgard_twin::boot::MAX_VIRTUAL_NS),
         },
         &expected,
     ) {

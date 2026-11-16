@@ -72,6 +72,12 @@ pub struct Verdict {
     /// each release, each its own record with its source.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub droop: Option<DroopReport>,
+    /// `simulate --firmware` only: the boot's peak tree RSS, as the reaper's
+    /// memory bound sampled it, and its share of the bound (`AET-WO-2302`
+    /// D6). A sample, so it differs run to run: kept apart from `boot`, from
+    /// every finding and from the campaign's archive.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub memory: Option<MemoryReport>,
     pub findings: Vec<Finding>,
     /// `simulate --firmware` only: each tool that judged the boot and the
     /// version it reported, for a campaign's archive header (`AET-WO-2205`
@@ -113,6 +119,42 @@ impl From<aethelgard_eda::route::PairReport> for PairRecord {
             uncoupled_max_nm: aethelgard_eda::route::PAIR_BREAKOUT_NM,
         }
     }
+}
+
+/// A boot's peak tree RSS and its share of the reaper's bound
+/// (`AET-WO-2302` D6), in thousandths, rounded down.
+#[derive(Serialize)]
+pub struct MemoryReport {
+    pub peak_rss_kib: u64,
+    pub bound_kib: u64,
+    pub share_permille: u64,
+}
+
+impl MemoryReport {
+    pub fn of(peak_rss_kib: u64, bound_kib: u64) -> Self {
+        MemoryReport {
+            peak_rss_kib,
+            bound_kib,
+            share_permille: peak_rss_kib.saturating_mul(1000) / bound_kib.max(1),
+        }
+    }
+}
+
+/// The residual every verdict of a board with a DShot output names
+/// (`AET-WO-2302` D2, accepted): the judge clears `CEN` at the end of the
+/// output's window.
+pub const DSHOT_STOP_RESIDUAL: &str = "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact";
+
+/// One judge's stop (`AET-WO-2302` D2): a DShot timer at its window's end,
+/// its solved registers as the stop read them back, and `CR1` after it
+/// cleared `CEN`. Kind 30 archives it.
+#[derive(Serialize)]
+pub struct StopReport {
+    pub timer: String,
+    pub anchor_ns: u64,
+    pub at_ns: u64,
+    pub read_back: Vec<RegisterReport>,
+    pub cr1_after: Option<String>,
 }
 
 /// A droop's records, as `campaign` archives them (kinds 16 to 19).
@@ -195,8 +237,8 @@ pub struct Boot {
     pub specification_sha256: String,
     pub seed: u32,
     pub virtual_time_ns: u64,
-    /// The constant that bounds this board's boot: `MAX_VIRTUAL_NS`, or
-    /// `DSHOT_WINDOW_NS` for a board with a DShot output (`AET-WO-4300a` D1).
+    /// The constant that bounds the boot: `MAX_VIRTUAL_NS` on every board
+    /// (`AET-WO-2302`); each witness's own window is in its entry.
     pub window: &'static str,
     /// `null` until Renode has read it, as is every `observed` below.
     pub mips: Option<u64>,
@@ -234,6 +276,20 @@ pub struct Boot {
     /// reports as before.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub serial: Vec<SerialReport>,
+    /// The instant of the boot word's write in the boot the judge reads, as
+    /// the CLI's hook observed it (`AET-WO-2302`): the serial frames go in
+    /// one quantum after it. `null` until Renode has run, or when none was
+    /// observed.
+    pub boot_word_ns: Option<u64>,
+    /// Each judge's stop (`AET-WO-2302` D2), absent from the JSON on a board
+    /// without a DShot output.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub stops: Vec<StopReport>,
+    /// What the twin cannot show of this board, each named
+    /// ([`DSHOT_STOP_RESIDUAL`] on every board with a DShot output); absent
+    /// when none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub residuals: Vec<&'static str>,
     /// The firmware's executable segments, `[start, end)` at their physical
     /// address, that the judge placed `pc` against: kind 10 archives them
     /// (`AET-WO-2205` §1.5). Not part of the verdict's JSON.
@@ -336,6 +392,12 @@ pub struct SerialTwinReport {
     pub cut: Option<usize>,
     /// The frame's bytes that came back after them.
     pub echoed: Option<usize>,
+    /// The first frame byte's instant: one quantum after the boot word for
+    /// the first port, after the port before's last echoed byte for each
+    /// later one (`AET-WO-2302` D4); and the frame's bytes that went in.
+    /// `null` when none went in.
+    pub injected_ns: Option<u64>,
+    pub injected_bytes: Option<usize>,
     /// The capture's length, and whether anything in it was not a pattern
     /// or the frame.
     pub capture_bytes: Option<usize>,
@@ -404,6 +466,8 @@ impl SerialReport {
                 patterns: c.map(|c| c.patterns),
                 cut: c.map(|c| c.cut),
                 echoed: c.map(|c| c.echoed),
+                injected_ns: w.and_then(|w| w.injected_ns),
+                injected_bytes: w.map(|w| w.injected),
                 capture_bytes: c.map(|c| c.len),
                 stray: c.map(|c| c.stray),
                 echo: w.map(|w| w.echo),
@@ -439,7 +503,14 @@ pub struct TwinReport {
     pub high_ns: u64,
     pub grain_ns: u64,
     pub quantum_ns: u64,
-    /// `null` until Renode has run, as every field below.
+    /// The window's anchor (its timer's first `CEN` rise in the boot the
+    /// judge reads) and end: `DSHOT_WINDOW_NS` after it for DShot, the
+    /// boot's end for PWM (`AET-WO-2302`). `null` until Renode has run, as
+    /// every field below; the anchor `null` too when none was observed.
+    pub anchor_ns: Option<u64>,
+    /// Edges before the anchor and after the window's end, each named.
+    pub edges_before: Option<u64>,
+    pub edges_after: Option<u64>,
     pub status: Option<&'static str>,
     pub rises: Option<u64>,
     pub falls: Option<u64>,
@@ -471,6 +542,9 @@ impl MotorReport {
                 high_ns: o.high_ns,
                 grain_ns: crate::renode::STAMP_GRAIN_NS,
                 quantum_ns: aethelgard_twin::boot::QUANTUM_NS,
+                anchor_ns: w.and_then(|w| w.anchor_ns),
+                edges_before: w.map(|w| w.edges_before),
+                edges_after: w.map(|w| w.edges_after),
                 status: w.map(|w| w.status),
                 rises: w.map(|w| w.rises),
                 falls: w.map(|w| w.falls),
@@ -844,6 +918,7 @@ impl Verdict {
             analog: None,
             faults: None,
             droop: None,
+            memory: None,
             findings,
             tools: Vec::new(),
         }

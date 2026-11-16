@@ -1424,6 +1424,25 @@ pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
 /// `info`: the witness fit the model's sequence with every edge on the grid.
 pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
 
+/// The anchors' findings the boot judge gives (`AET-WO-2302`, ruled (a-i)):
+/// each motor timer's window anchors at its first `CEN` rise in the boot
+/// the judge reads, which must be observed (edges with none:
+/// `unanchored`), once, after the boot's last device step's witness and
+/// before its boot word; a DShot window must end inside the run, its stop
+/// must run and read back the solved registers; and no edge may fall
+/// before its anchor or after its window.
+pub const MOTOR_ANCHOR_UNOBSERVED_FINDING: &str = "motor_anchor_unobserved";
+pub const MOTOR_ANCHOR_REPEATED_FINDING: &str = "motor_anchor_repeated";
+pub const MOTOR_ANCHOR_ORDER_FINDING: &str = "motor_anchor_out_of_order";
+pub const MOTOR_WINDOW_PAST_RUN_FINDING: &str = "motor_window_past_run";
+pub const MOTOR_EDGE_BEFORE_FINDING: &str = "motor_edge_before_anchor";
+pub const MOTOR_EDGE_AFTER_FINDING: &str = "motor_edge_after_window";
+pub const JUDGE_STOP_MISSING_FINDING: &str = "judge_stop_missing";
+pub const JUDGE_STOP_MISMATCH_FINDING: &str = "judge_stop_mismatch";
+/// The ports' summed wire time from one quantum after the boot word, past
+/// the run's end (`AET-WO-2302` D4): known only after the run.
+pub const SERIAL_WIRE_PAST_RUN_FINDING: &str = "serial_wire_past_run";
+
 /// The serial port findings the boot judge gives (`AET-WO-4300b`): the
 /// silicon check of a port's `BRR` and framing, and the twin's witness of its
 /// pattern, its echo, its capture and its tags.

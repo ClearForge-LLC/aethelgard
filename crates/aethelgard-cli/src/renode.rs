@@ -320,9 +320,6 @@ pub struct BootPlan<'a> {
     pub models: &'a [std::path::PathBuf],
     pub firmware: &'a std::path::Path,
     pub virtual_ns: u64,
-    /// The board's window (`aethelgard_twin::boot::window`): shorter than
-    /// `MAX_VIRTUAL_NS` for a board with a DShot output (`AET-WO-4300a` D1).
-    pub window_ns: u64,
     pub boot_word: u32,
     /// Where the part boots from: `FLASH_BANK1_BASE`, the header's `FLASH_BASE`.
     pub vector_table: u32,
@@ -356,12 +353,6 @@ const PROBE_END: &str = "AETHELGARD-PROBE-END-";
 /// The sentinel at each release, numbered as the probes are: the log lines
 /// from it to the probe's `BEGIN` are the recovered boot's (`AET-WO-2204`).
 const RELEASE: &str = "AETHELGARD-RELEASE-";
-/// The sentinels around the reads at the injection instant (`AET-WO-4300b`):
-/// each port's RX pin's `MODER` and `AFR`, then nothing else; each matched
-/// as a whole line, once.
-const INJECT_BEGIN: &str = "AETHELGARD-INJECT-BEGIN";
-const INJECT_END: &str = "AETHELGARD-INJECT-END";
-
 fn run_for(ns: u64) -> String {
     format!(
         "emulation RunFor \"{}.{:09}\"",
@@ -388,47 +379,101 @@ impl BootPlan<'_> {
         aethelgard_twin::boot::MIPS * self.virtual_ns.saturating_sub(ran_from) / 1000
     }
 
-    /// The instant the serial frames are injected (`AET-WO-4300b`): one
-    /// quantum after the last boot's start, which is 0, or a rendered
-    /// release plus its nudge. `None` without a serial port, or when the last
-    /// reset is never released: no boot follows it to receive a frame.
+    /// The start of the boot the judge reads: 0, or the last rendered
+    /// release plus its nudge (`AET-WO-2301` F5; measured again in
+    /// `AET-WO-2302`: a hook's count restarts there). `None` when the last
+    /// reset is never released: no boot follows it.
+    pub fn last_start(&self) -> Option<u64> {
+        match self.resets.last() {
+            None => Some(0),
+            Some(power::Reset {
+                released_ns: Some(at),
+                ..
+            }) => Some(at + power::NUDGE_NS),
+            Some(_) => None,
+        }
+    }
+
+    /// The earliest instant the serial frames can go in (`AET-WO-4300b`,
+    /// `AET-WO-2302` D4): one quantum after the last boot's start, since its
+    /// boot word comes no earlier. The frames go in one quantum after the
+    /// boot word itself, which only the run shows; `main.rs` refuses before
+    /// the boot only what no boot word can save. `None` without a serial
+    /// port, or without a last boot.
     pub fn injection_ns(&self) -> Option<u64> {
         if self.serial.is_empty() {
             return None;
         }
-        let start = match self.resets.last() {
-            None => 0,
-            Some(power::Reset {
-                released_ns: Some(at),
-                ..
-            }) => at + power::NUDGE_NS,
-            Some(_) => return None,
-        };
-        Some(aethelgard_twin::serial::injection_ns(start))
+        self.last_start().map(aethelgard_twin::serial::injection_ns)
     }
 
-    /// The instant the last frame byte of any port goes in: each port's
-    /// bytes one [`Serial::spacing_ns`] apart from [`Self::injection_ns`]
-    /// (adversarial pass 4, ADV4-2). `None` without an injection, or where a
-    /// port's spacing cannot be computed.
-    pub fn last_byte_ns(&self) -> Option<u64> {
-        let at = self.injection_ns()?;
-        self.serial.iter().try_fold(at, |end, s| {
-            let last = aethelgard_twin::serial::last_byte_ns(at, s.spacing_ns?)?;
-            Some(end.max(last))
-        })
+    /// Each motor timer as the composition hooks it (`AET-WO-2302`), in
+    /// ascending number: its `CR1` and solved registers from the image
+    /// (`INV-07`), its outputs' observers, and whether it is DShot. A timer
+    /// whose `CR1` the image does not hold is not hooked, and its outputs
+    /// fail closed on an anchor never observed.
+    pub fn timer_hooks(&self) -> Vec<crate::anchor::TimerHook> {
+        let mut timers: Vec<u32> = self.motors.iter().map(|m| m.observer.timer).collect();
+        timers.sort_unstable();
+        timers.dedup();
+        timers
+            .into_iter()
+            .filter_map(|n| {
+                let prefix = format!("TIM{n}.");
+                let cr1 = self.image.registers.iter().find(|r| r.name == format!("TIM{n}.CR1"))?.address;
+                Some(crate::anchor::TimerHook {
+                    timer: n,
+                    cr1,
+                    registers: self
+                        .image
+                        .registers
+                        .iter()
+                        .filter(|r| r.name.starts_with(&prefix))
+                        .map(|r| r.address)
+                        .collect(),
+                    observers: self
+                        .motors
+                        .iter()
+                        .filter(|m| m.observer.timer == n)
+                        .map(|m| m.observer.source.clone())
+                        .collect(),
+                    dshot: self
+                        .motors
+                        .iter()
+                        .any(|m| m.observer.timer == n && m.observer.protocol.bit_rate().is_some()),
+                })
+            })
+            .collect()
     }
 
-    /// The instant the frames actually start to go in: [`Self::injection_ns`]
-    /// when this boot holds every port's last byte and the quantum after it,
-    /// in which the firmware echoes it. A `--for` shorter than that is not
-    /// cut to fit: nothing is injected, and the echo fails closed by name
-    /// ([`serial_findings_of`]). A board whose window cannot hold it is
-    /// refused before the boot (`main.rs`).
-    pub fn injected_ns(&self) -> Option<u64> {
-        let last = self.last_byte_ns()?;
-        self.injection_ns()
-            .filter(|_| aethelgard_twin::serial::fits(last, self.virtual_ns))
+    /// Each serial port as the composition injects it, in the
+    /// specification's order; none when a port's spacing cannot be computed
+    /// (`main.rs` refuses such a board before the boot).
+    pub fn port_hooks(&self) -> Vec<crate::anchor::PortHook> {
+        self.serial
+            .iter()
+            .map(|p| {
+                Some(crate::anchor::PortHook {
+                    renode: p.port.renode,
+                    tdr: p.tdr_at,
+                    rx: (p.rx.moder.1, p.rx.afr.1),
+                    frame: p.frame,
+                    spacing_ns: p.spacing_ns?,
+                })
+            })
+            .collect::<Option<Vec<_>>>()
+            .unwrap_or_default()
+    }
+
+    /// The hooks on the boot word and on each port's `TDR` but the last
+    /// (`AET-WO-2302` D4), added once, before the boot the judge reads: a
+    /// hook on RAM is not fired again after `machine Reset`, and added again
+    /// it fires twice (measured, build probes P3 and P4).
+    fn boot_hooks(&self) -> Vec<String> {
+        let ports = self.port_hooks();
+        let mut c = vec![crate::anchor::boot_word_hook(self.boot_word, &ports)];
+        c.extend((0..ports.len()).filter_map(|k| crate::anchor::echo_hook(k, &ports, self.boot_word)));
+        c
     }
 
     /// Before the first `RunFor`, with a serial port: Renode's access log on
@@ -478,51 +523,6 @@ impl BootPlan<'_> {
             out.push(aethelgard_twin::serial::RCC_RENODE);
         }
         out
-    }
-
-    /// The injection as monitor commands at their instants, in time order,
-    /// none without one ([`Self::injected_ns`]): at the injection instant the
-    /// reads of each port's RX pin's mux, then each port's frame written into
-    /// its USART byte by byte (`UARTBase.WriteChar`), byte `k` at the
-    /// injection plus `k` of the port's spacings (adversarial pass 4,
-    /// ADV4-2): the ports interleave by time, in the specification's order
-    /// at one instant, and the caller runs to each instant before its
-    /// commands. The RX pins are read once, at the first byte: the interval
-    /// rule ([`aethelgard_twin::serial::judge_pins`]) holds each one from
-    /// before the injection to the end, through every later byte.
-    fn injection_events(&self) -> Vec<(u64, Vec<String>)> {
-        let Some(at) = self.injected_ns() else {
-            return Vec::new();
-        };
-        let mut reads = vec![format!("echo \"{INJECT_BEGIN}\"")];
-        for p in self.serial {
-            for at in [p.rx.moder.1, p.rx.afr.1] {
-                reads.push(format!("sysbus ReadDoubleWord {at:#010x}"));
-            }
-        }
-        reads.push(format!("echo \"{INJECT_END}\""));
-        let mut bytes: Vec<(u64, usize, String)> = Vec::new();
-        for (n, p) in self.serial.iter().enumerate() {
-            // `injected_ns` holds only when every spacing is known.
-            let spacing = p.spacing_ns.unwrap_or_default();
-            for (k, b) in (0u64..).zip(p.frame) {
-                bytes.push((
-                    at + k * spacing,
-                    n,
-                    format!("sysbus.{} WriteChar {b:#04x}", p.port.renode),
-                ));
-            }
-        }
-        // Stable: at one instant, the ports in order, each byte once.
-        bytes.sort_by_key(|b| (b.0, b.1));
-        let mut events: Vec<(u64, Vec<String>)> = vec![(at, reads)];
-        for (t, _, c) in bytes {
-            match events.last_mut() {
-                Some(last) if last.0 == t => last.1.push(c),
-                _ => events.push((t, vec![c])),
-            }
-        }
-        events
     }
 
     /// Every read, in order, as the monitor command and what it reads.
@@ -601,6 +601,10 @@ impl BootPlan<'_> {
         c.push(self.vtor());
         c.push("cpu IsHalted true".to_owned());
         c.extend(self.rearm());
+        // An earlier boot's stop silenced its timer's observers, and the
+        // level outlives the reset (measured, build probe P3): the next
+        // boot's edges are logged as the first boot's were.
+        c.extend(self.observer_levels());
         c
     }
 
@@ -685,11 +689,16 @@ impl BootPlan<'_> {
                 }
             }
         }
-        // Each motor output's observer (`AET-WO-4300a`).
-        for m in self.motors {
-            c.push(format!("logLevel -1 sysbus.{}", m.observer.source));
-        }
+        c.extend(self.observer_levels());
         c
+    }
+
+    /// Each motor output's observer at `Noisy` (`AET-WO-4300a`).
+    fn observer_levels(&self) -> Vec<String> {
+        self.motors
+            .iter()
+            .map(|m| format!("logLevel -1 sysbus.{}", m.observer.source))
+            .collect()
     }
 
     /// The stimulus of each data read whose device the platform declares,
@@ -713,32 +722,28 @@ impl BootPlan<'_> {
 
     /// The droop's schedule as monitor commands, from virtual time 0 to the
     /// run's end: each reset asserted at its time, released at its time with
-    /// the nudge, and probed at the recovery bound (ruled D1, D4).
+    /// the nudge, and probed at the recovery bound (ruled D1, D4). The boot
+    /// word's and the ports' hooks go in at the last reset's release, before
+    /// the core runs again: that boot is the one the judge reads, and the
+    /// only one injected, as before (`AET-WO-2302`).
     fn droop_schedule(&self) -> Vec<String> {
         let mut c = Vec::new();
         let mut now = 0u64;
-        // The frames' bytes go in at their instants, wherever they fall
-        // between the schedule's own, before a schedule command at the same
-        // instant (`AET-WO-4300b`).
-        let mut inject = self.injection_events().into_iter().peekable();
         let mut at = |c: &mut Vec<String>, t: u64| {
-            while let Some((i, commands)) = inject.next_if(|e| e.0 <= t) {
-                if i > now {
-                    c.push(run_for(i - now));
-                    now = i;
-                }
-                c.extend(commands);
-            }
             if t > now {
                 c.push(run_for(t - now));
                 now = t;
             }
         };
+        let last = self.resets.len().saturating_sub(1);
         for (k, r) in self.resets.iter().enumerate() {
             at(&mut c, r.asserted_ns);
             c.extend(self.assert_reset());
             let Some(release) = r.released_ns else { break };
             at(&mut c, release);
+            if k == last {
+                c.extend(self.boot_hooks());
+            }
             c.push("cpu IsHalted false".to_owned());
             c.push(format!("echo \"{RELEASE}{k}\""));
             // The nudge (F5): the release takes effect at its end.
@@ -754,12 +759,14 @@ impl BootPlan<'_> {
     }
 
     /// The monitor commands: a fixed seed, the platform, the firmware, the
-    /// cold RCC, each modelled device's log level, a fixed virtual time, then
-    /// the reads between sentinels, then the listing. Both paths are this
-    /// CLI's own copies. With a droop, the fixed virtual time is the droop's
-    /// schedule instead. The console's level is never changed: with
-    /// [`config`]'s synchronous logging, `BEGIN` is the boundary between the
-    /// run's log and the judge's (`AET-WO-2204` D4).
+    /// cold RCC, each modelled device's log level, each motor timer's hook
+    /// (`AET-WO-2302`), a fixed virtual time, then the reads between
+    /// sentinels, then the listing. Both paths are this CLI's own copies.
+    /// Without a droop, the boot word's and the ports' hooks go in before
+    /// the run; with one, the fixed virtual time is the droop's schedule,
+    /// which adds them at the last release. The console's level is never
+    /// changed: with [`config`]'s synchronous logging, `BEGIN` is the
+    /// boundary between the run's log and the judge's (`AET-WO-2204` D4).
     pub fn commands(&self) -> String {
         let mut c = vec![
             format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -781,16 +788,10 @@ impl BootPlan<'_> {
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
         c.extend(self.stimuli());
+        c.extend(self.timer_hooks().iter().map(crate::anchor::timer_hook));
         if self.resets.is_empty() {
-            let mut now = 0u64;
-            for (t, commands) in self.injection_events() {
-                if t > now {
-                    c.push(run_for(t - now));
-                    now = t;
-                }
-                c.extend(commands);
-            }
-            c.push(run_for(self.virtual_ns.saturating_sub(now)));
+            c.extend(self.boot_hooks());
+            c.push(run_for(self.virtual_ns));
         } else {
             c.extend(self.droop_schedule());
         }
@@ -866,6 +867,17 @@ pub struct Observed {
     /// attribution's evidence, never a witness (`AET-WO-4200` D4). Empty for
     /// an I2C check.
     pub unrouted: Vec<Vec<String>>,
+    /// The instant of the boot word's write the hook observed in the boot
+    /// the judge reads (`AET-WO-2302`): the serial frames' anchor.
+    pub boot_word_ns: Option<u64>,
+    /// What the judge expects each image register to hold at the end: the
+    /// image's value, but `CEN` cleared in a DShot timer's `CR1` whose stop
+    /// ran, the judge's own act (`AET-WO-2302` D2).
+    pub register_expected: Vec<u32>,
+    /// Each hooked timer's anchor and stop (`AET-WO-2302`).
+    pub timers: Vec<TimerWitness>,
+    /// Each port's injection (`AET-WO-2302` D4).
+    pub injections: Vec<PortInjection>,
 }
 
 /// The words of a check's record in RAM, in the order the judge reads them:
@@ -1133,6 +1145,9 @@ pub struct Serial {
     /// What the bring-up writes, from the topology and the header, against
     /// which the access log's writes are judged.
     pub bringup: aethelgard_twin::serial::Bringup,
+    /// `TDR`'s address, from the header: the hook that counts the port's
+    /// echo watches it (`AET-WO-2302` D4).
+    pub tdr_at: u32,
     /// What the RCC's writes may be: its enable registers alone, never
     /// clearing the gate of the port's USART or of its pins' GPIO ports.
     pub rcc: aethelgard_twin::serial::RccRule,
@@ -1149,6 +1164,11 @@ pub fn serials(
         .into_iter()
         .zip(topology.serial_ports_in_order())
         .map(|(port, (_, solved, _, _))| {
+            let bringup = aethelgard_twin::serial::Bringup::of(&port.framing, solved.brr)?;
+            let tdr_at = aethelgard_svd_hal::cmsis::register_facts()
+                .and_then(|f| f.base(&port.peripheral))
+                .map_err(aethelgard_twin::TwinError::from)?
+                + bringup.tdr;
             Ok(Serial {
                 role: solved.role,
                 pattern: aethelgard_twin::serial::pattern(&port.label),
@@ -1160,7 +1180,8 @@ pub fn serials(
                 tx: aethelgard_twin::serial::PinMux::of(&port.tx, port.tx_af)?,
                 rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
                 silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
-                bringup: aethelgard_twin::serial::Bringup::of(&port.framing, solved.brr)?,
+                bringup,
+                tdr_at,
                 rcc: aethelgard_twin::serial::rcc_rule(
                     topology,
                     &port.peripheral,
@@ -1192,6 +1213,12 @@ pub struct SerialWitness {
     /// The capture file's bytes; `None` when Renode left none.
     pub bytes: Option<Vec<u8>>,
     pub capture: Option<aethelgard_twin::serial::Capture>,
+    /// The first frame byte's instant, one quantum after the boot word for
+    /// the first port and after the port before's last echoed byte for each
+    /// later one (`AET-WO-2302` D4); `None` when no frame went in.
+    pub injected_ns: Option<u64>,
+    /// The frame's bytes that went in.
+    pub injected: usize,
     /// The RX pin's `MODER` and `AFR` at the injection instant; `None` when
     /// no frame was injected.
     pub rx_at_injection: Option<(u32, u32)>,
@@ -1305,15 +1332,13 @@ pub fn static_serial_findings(serial: &[Serial]) -> Vec<Finding> {
 }
 
 /// One port's witness findings, once the boot reached its fixed point.
-/// `releases` is the boots the droop rendered after the first; `short` the
-/// boot's length, the injection instant and the frames' last byte's
-/// ([`BootPlan::last_byte_ns`]) it does not hold, when no frame went in for
-/// that reason.
+/// `releases` is the boots the droop rendered after the first; `why` why
+/// no whole frame went in, when one did not ([`PortInjection::why`]).
 fn serial_findings_of(
     s: &Serial,
     w: &SerialWitness,
     releases: usize,
-    short: Option<(u64, u64, Option<u64>)>,
+    why: Option<&str>,
 ) -> Vec<Finding> {
     use aethelgard_chaos::campaign::{
         SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING, SERIAL_TAG_FINDING,
@@ -1445,20 +1470,16 @@ fn serial_findings_of(
         )),
         _ => out.push(Finding::plain(
             SERIAL_ECHO_FINDING,
-            match short {
-                Some((virtual_ns, at, last)) => format!(
-                    "{who}: no frame went in: the boot of {virtual_ns} ns ends before the injection at {at} ns, {} and the {} ns after it, so its echo cannot be witnessed",
-                    last.map_or_else(
-                        || "a frame whose spacing cannot be computed".to_owned(),
-                        |l| format!("the frames' last byte at {l} ns (one character apart, rounded up to a quantum)")
-                    ),
-                    aethelgard_twin::boot::QUANTUM_NS
+            match (why, w.injected_ns) {
+                (Some(why), None) => format!(
+                    "{who}: no frame went in: {why}, so its echo cannot be witnessed"
                 ),
-                None => format!(
-                    "{who}: {} of the frame's {} bytes ({}) came back",
+                (why, _) => format!(
+                    "{who}: {} of the frame's {} bytes ({}) came back{}",
                     c.echoed,
                     aethelgard_twin::serial::FRAME_LEN,
-                    hex_bytes(&s.frame)
+                    hex_bytes(&s.frame),
+                    why.map(|w| format!("; {w}")).unwrap_or_default()
                 ),
             },
         )),
@@ -1485,7 +1506,8 @@ pub const STAMP_GRAIN_NS: u64 = 1000 / aethelgard_twin::boot::MIPS;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MotorWitness {
     /// `witnessed`, `static_only`, `unwitnessed`, `unreadable`, `mismatch`,
-    /// `batched` or `stopped`.
+    /// `batched`, `stopped`, or `unanchored` (edges with no anchor observed,
+    /// `AET-WO-2302`).
     pub status: &'static str,
     pub rises: u64,
     pub falls: u64,
@@ -1507,6 +1529,13 @@ pub struct MotorWitness {
     /// Consecutive edges with one stamp: a timer the core touched while it
     /// ran (FEEDBACK M1).
     pub batched: u64,
+    /// The window's anchor: its timer's first `CEN` rise in the boot the
+    /// judge reads (`AET-WO-2302`); `None` when none was observed.
+    pub anchor_ns: Option<u64>,
+    /// Edges before the anchor, and after the window's end, in that boot:
+    /// never judged, each named.
+    pub edges_before: u64,
+    pub edges_after: u64,
 }
 
 /// The observer's edges, `(stamp, rising)`, in the log's order; `None` when
@@ -1554,6 +1583,9 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
         span_ns: None,
         off_grid: 0,
         batched: 0,
+        anchor_ns: None,
+        edges_before: 0,
+        edges_after: 0,
     };
     let Some(edges) = edges else {
         return w;
@@ -1642,11 +1674,12 @@ pub fn static_motor_findings(motors: &[Motor]) -> Vec<Finding> {
 }
 
 /// One motor output's witness finding, once the boot reached its fixed
-/// point (as an identity record is judged only then).
-/// `window_ns` is the board's window (`aethelgard_twin::boot::window`), not
-/// the boot's own length: a boot shorter than its board's window says
-/// nothing about what a full one could show.
-fn witness_findings_of(m: &Motor, w: &MotorWitness, window_ns: u64) -> Vec<Finding> {
+/// point (as an identity record is judged only then), inside its own window
+/// (`AET-WO-2302`): from its anchor, or the boot's start without one, to
+/// its end. An output with edges and no anchor is the anchor's finding
+/// ([`anchor_findings`]).
+fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
+    let window_ns = w.end_ns.saturating_sub(w.anchor_ns.unwrap_or(0));
     let o = &m.observer;
     let who = motor_who(o);
     let mut out = Vec::new();
@@ -1681,7 +1714,7 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness, window_ns: u64) -> Vec<Findi
                 // (`AET-WO-4300a` D1, adversarial F5): name it when they cannot.
                 if 2 * o.period_ns > window_ns {
                     format!(
-                        "; the board's window of {window_ns} ns is shorter than two of its periods ({} ns), so no boot of this board can show one",
+                        "; its window of {window_ns} ns is shorter than two of its periods ({} ns), so it cannot show one",
                         2 * o.period_ns
                     )
                 } else {
@@ -1689,6 +1722,7 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness, window_ns: u64) -> Vec<Findi
                 }
             ),
         )),
+        "unanchored" => {}
         "stopped" => out.push(Finding::plain(
             aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
             format!(
@@ -1922,56 +1956,12 @@ pub fn judge_boot(
     let releases = sentinels(&lines[..begin], RELEASE, released).map_err(untrusted)?;
     let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, released).map_err(untrusted)?;
     let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
-    // The reads at the injection instant (`AET-WO-4300b`): one block, before
-    // the reads, when a frame was injected; none otherwise.
-    let injected = usize::from(plan.injected_ns().is_some());
-    let exact = |want: &str| -> Vec<usize> { (0..begin).filter(|&i| lines[i] == want).collect() };
-    let (inject_begins, inject_ends) = (exact(INJECT_BEGIN), exact(INJECT_END));
-    let inject_block = match (inject_begins.as_slice(), inject_ends.as_slice()) {
-        ([], []) if injected == 0 => None,
-        ([b], [e]) if injected == 1 && b < e => Some((*b, *e)),
-        _ => {
-            return Err(untrusted(format!(
-                "renode printed {} `{INJECT_BEGIN}` and {} `{INJECT_END}` markers before the reads, not {injected} of each in order",
-                inject_begins.len(),
-                inject_ends.len()
-            )));
-        }
-    };
     let in_probe = |i: usize| {
         probe_begins
             .iter()
             .zip(&probe_ends)
-            .chain(inject_block.as_ref().map(|(b, e)| (b, e)))
             .any(|(&b, &e)| b <= i && i <= e)
     };
-    let mut injection_words = Vec::new();
-    if let Some((b, e)) = inject_block {
-        for line in &lines[b + 1..e] {
-            match value(line) {
-                Some(v) => injection_words.push(u32::try_from(v).map_err(|_| {
-                    untrusted(format!(
-                        "`{}` at the injection is not a word",
-                        line.escape_debug()
-                    ))
-                })?),
-                None if is_log_line(line) => {}
-                None => {
-                    return Err(untrusted(format!(
-                        "`{}` at the injection is neither a read nor a whole log line",
-                        line.escape_debug()
-                    )));
-                }
-            }
-        }
-        if injection_words.len() != 2 * plan.serial.len() {
-            return Err(untrusted(format!(
-                "renode printed {} values at the injection, not the {} reads",
-                injection_words.len(),
-                2 * plan.serial.len()
-            )));
-        }
-    }
     // Every log line the run caused: with synchronous logging, all of them
     // are on the console before `RunFor` returns, so before `BEGIN`.
     let run_log: Vec<&str> = (0..begin)
@@ -1983,6 +1973,49 @@ pub fn judge_boot(
         .filter(|&i| !in_probe(i))
         .map(|i| lines[i])
         .collect();
+    // Its start, which places every hook's count (`AET-WO-2302`): 0, or the
+    // last released reset's release plus the nudge.
+    let start_ns = plan
+        .resets
+        .iter()
+        .rev()
+        .find_map(|r| r.released_ns)
+        .map_or(0, |at| at + power::NUDGE_NS);
+    // Its lines of ours, each read whole; past the filter's budget a line may
+    // have been dropped, so none is read: every anchor and injection is then
+    // unreadable, never absent (`AET-WO-2204` D2's rule).
+    let hooks = (out.dropped_log_lines == 0)
+        .then(|| hooks_of(&last_boot, start_ns))
+        .transpose()
+        .map_err(untrusted)?;
+    let boot_word_hook = hooks.as_deref().and_then(|h| {
+        h.iter().find_map(|(i, x)| match x {
+            crate::anchor::Hook::BootWord {
+                value,
+                before,
+                count,
+            } if *value == aethelgard_twin::boot::BOOT_MAGIC
+                && *before != aethelgard_twin::boot::BOOT_MAGIC =>
+            {
+                Some((*i, *count))
+            }
+            _ => None,
+        })
+    });
+    let timers = hooks
+        .as_deref()
+        .map(|h| timer_witnesses(plan, h, start_ns, plan.virtual_ns))
+        .unwrap_or_default();
+    let injections = match hooks.as_deref() {
+        Some(h) => port_injections(plan, h, start_ns, boot_word_hook),
+        None => vec![
+            PortInjection {
+                why: Some("Renode's log could not be read whole".to_owned()),
+                ..Default::default()
+            };
+            plan.serial.len()
+        ],
+    };
 
     // Between the sentinels: the reads, each a bare value, and whole log
     // lines the judge's own reads caused, which are never the firmware's
@@ -2056,9 +2089,14 @@ pub fn judge_boot(
             .map(|m| {
                 let edges = (out.dropped_log_lines == 0)
                     .then(|| observer_edges(&m.observer.source, &last_boot));
-                witness_motor(m, edges, plan.virtual_ns)
+                let timer = timers.iter().find(|t| t.timer == m.observer.timer);
+                witness_motor_in(m, edges, timer, plan.virtual_ns)
             })
             .collect(),
+        boot_word_ns: boot_word_hook.map(|(_, c)| crate::anchor::instant(start_ns, c)),
+        register_expected: plan.image.registers.iter().map(|r| r.value).collect(),
+        timers: timers.clone(),
+        injections: injections.clone(),
     };
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -2109,26 +2147,25 @@ pub fn judge_boot(
         })
         .flatten()
         .map(|b| plan.image.brown_out.judge_accesses(&b, observed.brown_out));
-    // How many of the last boot's accesses precede the injection: the RX
-    // pin's words there are rebuilt from them (adversarial pass 2, A2).
-    let last_start = releases.last().map_or(0, |&r| r + 1);
-    let inject_at = inject_block
-        .filter(|&(b, _)| b >= last_start)
-        .and_then(|(b, _)| {
-            let before: Vec<&str> = (last_start..b)
-                .filter(|&i| !in_probe(i))
-                .map(|i| lines[i])
-                .collect();
-            access_boots(&[before], &plan.logged_sources())
+    // How many of the last boot's accesses precede each port's injection:
+    // the RX pin's words there are rebuilt from them (adversarial pass 2,
+    // A2), each port's at its own first byte (`AET-WO-2302` D4).
+    let inject_at: Vec<Option<usize>> = injections
+        .iter()
+        .map(|j| {
+            j.line
+                .filter(|_| j.at_ns.is_some())
+                .and_then(|l| access_boots(&[last_boot[..l].to_vec()], &plan.logged_sources()))
+                .map(|v| v[0].len())
         })
-        .map(|v| v[0].len());
+        .collect();
     observed.serial = serial_witnesses(
         plan,
         &observed.registers,
-        &injection_words,
+        &injections,
         capture,
         accesses.as_deref(),
-        inject_at,
+        &inject_at,
     );
     let (cpus, peripherals) = listing(&lines[end + 1..]);
     if cpus.is_empty() {
@@ -2272,14 +2309,41 @@ pub fn judge_boot(
     // `SYST_CSR_ARMED`, 0x00010003 (`ENABLE`, `TICKINT`, `COUNTFLAG`), since
     // Renode reads `CLKSOURCE` as 1 whatever is written (`NVIC.cs` L1040 at
     // `066a7f13`), and `NVIC.ISER0`-`4` whole: nothing armed, nothing counted
-    // (`AET-WO-4210` D-B1, accepted).
-    for (r, &got) in plan.image.registers.iter().zip(&observed.registers) {
-        if got & r.mask != r.value {
+    // (`AET-WO-4210` D-B1, accepted). A DShot timer whose stop ran ends
+    // with `CEN` cleared, the judge's own act (`AET-WO-2302` D2); what it
+    // held at the window's end is the stop's read-back, judged apart.
+    for t in &observed.timers {
+        let stopped = t
+            .stop
+            .as_ref()
+            .is_some_and(|s| s.cleared.is_some_and(|c| c & 1 == 0));
+        let cr1 = format!("TIM{}.CR1", t.timer);
+        if let Some(i) = plan.image.registers.iter().position(|r| r.name == cr1)
+            && stopped
+        {
+            observed.register_expected[i] &= !1;
+        }
+    }
+    for ((r, &got), &want) in plan
+        .image
+        .registers
+        .iter()
+        .zip(&observed.registers)
+        .zip(&observed.register_expected)
+    {
+        if got & r.mask != want {
             findings.push(Finding::plain(
                 "register_mismatch",
                 format!(
-                    "{} at {:#010x} reads {got:#010x}; under mask {:#010x} it must be {:#010x}",
-                    r.name, r.address, r.mask, r.value
+                    "{} at {:#010x} reads {got:#010x}; under mask {:#010x} it must be {want:#010x}{}",
+                    r.name,
+                    r.address,
+                    r.mask,
+                    if want == r.value {
+                        ""
+                    } else {
+                        " (CEN cleared by the judge's stop at its window's end)"
+                    }
                 ),
             ));
         }
@@ -2303,21 +2367,31 @@ pub fn judge_boot(
         }
         findings.extend(witness_findings(checks, &observed));
     } else {
-        findings.extend(reads_outside_window(
-            checks,
-            &observed.records,
-            plan.virtual_ns,
-            plan.window_ns,
-        ));
         findings.extend(timeouts_without_the_boot_word(checks, &observed.records));
     }
     // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
     // silicon from the topology alone, the twin's witness the model's
     // conventions, never blended (`4300` D3). The witness is read only once
-    // the firmware reached its fixed point, as an identity record is.
+    // the firmware reached its fixed point, as an identity record is; each
+    // inside its own window, anchored at its timer's `CEN` and bounded by
+    // the judge (`AET-WO-2302`).
     if booted {
         for (m, w) in plan.motors.iter().zip(&observed.motors) {
-            findings.extend(witness_findings_of(m, w, plan.window_ns));
+            findings.extend(witness_findings_of(m, w));
+        }
+        if hooks.is_some() {
+            let last_device = checks
+                .iter()
+                .flat_map(|c| own_lines(c, &last_boot))
+                .map(|(i, _)| i)
+                .max();
+            findings.extend(anchor_findings(
+                plan,
+                &observed.timers,
+                &observed.motors,
+                last_device,
+                boot_word_hook,
+            ));
         }
     }
     // The serial ports (`AET-WO-4300b`): a capture directory holding what
@@ -2331,12 +2405,38 @@ pub fn judge_boot(
             .iter()
             .filter(|r| r.released_ns.is_some())
             .count();
-        let short = match (plan.injection_ns(), plan.injected_ns()) {
-            (Some(at), None) => Some((plan.virtual_ns, at, plan.last_byte_ns())),
-            _ => None,
-        };
-        for (s, w) in plan.serial.iter().zip(&observed.serial) {
-            findings.extend(serial_findings_of(s, w, releases, short));
+        for ((s, w), j) in plan
+            .serial
+            .iter()
+            .zip(&observed.serial)
+            .zip(&observed.injections)
+        {
+            findings.extend(serial_findings_of(s, w, releases, j.why.as_deref()));
+        }
+        // The ports' wire time from the frames' anchor, the boot word's
+        // quantum, summed in the specification's order, inside the run: known
+        // only now (`AET-WO-2302` D4).
+        if let Some(bw) = observed.boot_word_ns
+            && let Some((s, times, end)) = wire_past_window(
+                plan.serial,
+                bw + aethelgard_twin::boot::QUANTUM_NS,
+                plan.virtual_ns,
+            )
+        {
+            findings.push(Finding::plain(
+                aethelgard_chaos::campaign::SERIAL_WIRE_PAST_RUN_FINDING,
+                format!(
+                    "{}: the ports' wire time through it, {}, from one quantum after the boot word at {bw} ns, passes the boot's end at {} ns",
+                    serial_who(s),
+                    match (times, end) {
+                        (Some((char_ns, wire, sum)), Some(end)) => format!(
+                            "its own {wire} ns ({char_ns} ns a character) of {sum} ns in all, ending at {end} ns"
+                        ),
+                        _ => "which its baud cannot give".to_owned(),
+                    },
+                    plan.virtual_ns
+                ),
+            ));
         }
     }
     for d in &plan.image.identity.unmodelled {
@@ -2356,6 +2456,465 @@ pub fn judge_boot(
         Some(Machine { cpus, peripherals }),
         Some(observed),
     ))
+}
+
+/// Each line of ours in `boot` ([`crate::anchor`]), with its position in
+/// `boot`, each count placed at its stamp: an instruction count's instant is
+/// `start_ns` plus 10 ns an instruction, and its line is stamped at or before
+/// it, inside one quantum (measured: a hook's line up to 60 ns early, an
+/// action's exact). Anything else is refused, never read past: a line of
+/// ours not exactly one of its shapes, or a count the boot's start does not
+/// place at its stamp (`AET-WO-2302`).
+fn hooks_of(boot: &[&str], start_ns: u64) -> Result<Vec<(usize, crate::anchor::Hook)>, String> {
+    let mut out = Vec::new();
+    for (i, line) in boot.iter().enumerate() {
+        let Some((stamp, body)) = log_stamped(line) else {
+            continue;
+        };
+        let Some(hook) = crate::anchor::parse(body) else {
+            continue;
+        };
+        let hook = hook.ok_or_else(|| {
+            format!(
+                "`{}` is the CLI's hook line in no shape it writes",
+                body.escape_debug()
+            )
+        })?;
+        let at = crate::anchor::instant(start_ns, hook.count());
+        if stamp > at || at - stamp >= aethelgard_twin::boot::QUANTUM_NS {
+            return Err(format!(
+                "`{}`: its count places it at {at} ns in a boot started at {start_ns} ns, but it is stamped {stamp} ns",
+                body.escape_debug()
+            ));
+        }
+        out.push((i, hook));
+    }
+    Ok(out)
+}
+
+/// What the hooks showed of one motor timer in the boot the judge reads
+/// (`AET-WO-2302`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TimerWitness {
+    /// `1` for `TIM1`.
+    pub timer: u32,
+    pub dshot: bool,
+    /// The first write that set `CEN` over a word without it: its position
+    /// among the boot's lines, its count and its instant.
+    pub anchor: Option<(usize, u64, u64)>,
+    /// Every such rise's count, the anchor's first.
+    pub rises: Vec<u64>,
+    /// The anchor's window's end: `DSHOT_WINDOW_NS` after it for DShot, the
+    /// boot's end for PWM.
+    pub end_ns: Option<u64>,
+    /// The judge's stop for the anchor, as it logged it; `None` when it did
+    /// not run in this boot (or the timer is PWM).
+    pub stop: Option<StopSeen>,
+    /// Stops this boot logged as stale: an earlier boot's, which did nothing.
+    pub stale: usize,
+}
+
+/// One judge's stop: its instant, the timer's solved registers it read back
+/// (in the image's order), and `CR1` after it cleared `CEN` (`None` when the
+/// clearing line is missing).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StopSeen {
+    pub at_ns: u64,
+    pub words: Vec<u32>,
+    pub cleared: Option<u32>,
+}
+
+/// Each hooked timer's witness from `hooks` (the boot's lines of ours) in a
+/// boot that started at `start_ns` and ends at `end_ns`.
+fn timer_witnesses(
+    plan: &BootPlan<'_>,
+    hooks: &[(usize, crate::anchor::Hook)],
+    start_ns: u64,
+    end_ns: u64,
+) -> Vec<TimerWitness> {
+    use crate::anchor::{Hook, Stale};
+    let window = crate::anchor::instructions(aethelgard_twin::boot::DSHOT_WINDOW_NS);
+    plan.timer_hooks()
+        .into_iter()
+        .map(|t| {
+            let rises: Vec<(usize, u64)> = hooks
+                .iter()
+                .filter_map(|(i, h)| match h {
+                    Hook::Cr1 {
+                        timer,
+                        value,
+                        before,
+                        count,
+                    } if *timer == t.timer && value & 1 == 1 && before & 1 == 0 => {
+                        Some((*i, *count))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let anchor = rises
+                .first()
+                .map(|&(i, c)| (i, c, crate::anchor::instant(start_ns, c)));
+            let window_end = anchor.map(|(_, _, at)| match t.dshot {
+                true => at + aethelgard_twin::boot::DSHOT_WINDOW_NS,
+                false => end_ns,
+            });
+            let stop = anchor.filter(|_| t.dshot).and_then(|(_, a, _)| {
+                let due = a + window;
+                let words = hooks.iter().find_map(|(_, h)| match h {
+                    Hook::Stop {
+                        timer,
+                        anchor,
+                        count,
+                        words,
+                    } if *timer == t.timer && *anchor == a && *count == due => Some(words.clone()),
+                    _ => None,
+                })?;
+                let cleared = hooks.iter().find_map(|(_, h)| match h {
+                    Hook::Cleared {
+                        timer,
+                        anchor,
+                        count,
+                        cr1,
+                    } if *timer == t.timer && *anchor == a && *count == due => Some(*cr1),
+                    _ => None,
+                });
+                Some(StopSeen {
+                    at_ns: crate::anchor::instant(start_ns, due),
+                    words,
+                    cleared,
+                })
+            });
+            let stale = hooks
+                .iter()
+                .filter(|(_, h)| {
+                    matches!(h, Hook::Stale { what: Stale::Stop { timer }, .. } if *timer == t.timer)
+                })
+                .count();
+            TimerWitness {
+                timer: t.timer,
+                dshot: t.dshot,
+                anchor,
+                rises: rises.iter().map(|r| r.1).collect(),
+                end_ns: window_end,
+                stop,
+                stale,
+            }
+        })
+        .collect()
+}
+
+/// One output's witness inside its timer's window (`AET-WO-2302`): the
+/// edges from its anchor to its window's end are judged as before
+/// ([`witness_motor`]); edges before the anchor or after the end are
+/// counted, and named by the caller, never judged and never dropped
+/// silently. Edges with no anchor observed are `unanchored`.
+fn witness_motor_in(
+    m: &Motor,
+    edges: Option<Option<Vec<(u64, bool)>>>,
+    timer: Option<&TimerWitness>,
+    run_end_ns: u64,
+) -> MotorWitness {
+    let anchor = timer.and_then(|t| t.anchor.map(|a| a.2));
+    let end = timer.and_then(|t| t.end_ns).unwrap_or(run_end_ns);
+    let Some(Some(all)) = edges else {
+        let mut w = witness_motor(m, edges, end);
+        w.anchor_ns = anchor;
+        return w;
+    };
+    let Some(at) = anchor else {
+        let mut w = witness_motor(m, Some(Some(Vec::new())), end);
+        if !all.is_empty() {
+            w.status = "unanchored";
+            w.rises = all.iter().filter(|e| e.1).count() as u64;
+            w.falls = all.len() as u64 - w.rises;
+            w.off_grid = all
+                .iter()
+                .filter(|e| e.0 % aethelgard_twin::boot::QUANTUM_NS != 0)
+                .count() as u64;
+        }
+        return w;
+    };
+    let before = all.iter().filter(|e| e.0 < at).count() as u64;
+    let after = all.iter().filter(|e| e.0 > end).count() as u64;
+    let inside: Vec<(u64, bool)> = all
+        .into_iter()
+        .filter(|e| e.0 >= at && e.0 <= end)
+        .collect();
+    let mut w = witness_motor(m, Some(Some(inside)), end);
+    w.anchor_ns = Some(at);
+    w.edges_before = before;
+    w.edges_after = after;
+    w
+}
+
+/// Each timer's findings and each output's window findings, once the boot
+/// reached its fixed point (`AET-WO-2302`, the anchors' bounds, per boot,
+/// the last boot's): the anchor after the boot's last device step's
+/// witness and before its boot word, observed once, a DShot window inside
+/// the run and its stop run, and every edge inside its window. `last_device`
+/// is the last device witness line's position, `boot_word` the boot word's.
+fn anchor_findings(
+    plan: &BootPlan<'_>,
+    timers: &[TimerWitness],
+    witnesses: &[MotorWitness],
+    last_device: Option<usize>,
+    boot_word: Option<(usize, u64)>,
+) -> Vec<Finding> {
+    use aethelgard_chaos::campaign::{
+        JUDGE_STOP_MISMATCH_FINDING, JUDGE_STOP_MISSING_FINDING, MOTOR_ANCHOR_ORDER_FINDING,
+        MOTOR_ANCHOR_REPEATED_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING,
+        MOTOR_EDGE_AFTER_FINDING, MOTOR_EDGE_BEFORE_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING,
+    };
+    let mut out = Vec::new();
+    for t in timers {
+        let name = format!("TIM{}", t.timer);
+        let Some((at, count, at_ns)) = t.anchor else {
+            continue;
+        };
+        if t.rises.len() > 1 {
+            out.push(Finding::plain(
+                MOTOR_ANCHOR_REPEATED_FINDING,
+                format!(
+                    "{name}: CEN rose {} times in the boot the judge reads (at instructions {}); a timer starts once, and its window anchors at the first",
+                    t.rises.len(),
+                    t.rises
+                        .iter()
+                        .map(u64::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            ));
+        }
+        let order = match (last_device, boot_word) {
+            (_, None) => Some("no write of the boot word was observed by its hook".to_owned()),
+            (_, Some((b, _))) if at > b => {
+                Some("after the boot word, which the bring-up writes last".to_owned())
+            }
+            (Some(d), _) if at < d => Some(
+                "before the last device step's witness, which the bring-up completes first"
+                    .to_owned(),
+            ),
+            _ => None,
+        };
+        if let Some(why) = order {
+            out.push(Finding::plain(
+                MOTOR_ANCHOR_ORDER_FINDING,
+                format!(
+                    "{name}: CEN rose at instruction {count} ({at_ns} ns), {why}: the anchor cannot be bounded"
+                ),
+            ));
+        }
+        if !t.dshot {
+            continue;
+        }
+        let end = at_ns + aethelgard_twin::boot::DSHOT_WINDOW_NS;
+        if end > plan.virtual_ns {
+            out.push(Finding::plain(
+                MOTOR_WINDOW_PAST_RUN_FINDING,
+                format!(
+                    "{name}: its DShot window from its anchor at {at_ns} ns ends at {end} ns, past the boot's end at {} ns (DSHOT_WINDOW_NS {} ns)",
+                    plan.virtual_ns,
+                    aethelgard_twin::boot::DSHOT_WINDOW_NS
+                ),
+            ));
+            continue;
+        }
+        match &t.stop {
+            None => out.push(Finding::plain(
+                JUDGE_STOP_MISSING_FINDING,
+                format!(
+                    "{name}: the judge's stop due at {end} ns (its anchor plus DSHOT_WINDOW_NS) did not run in the boot the judge reads{}",
+                    if t.stale > 0 {
+                        format!("; {} stale stop(s) of an earlier boot did nothing", t.stale)
+                    } else {
+                        String::new()
+                    }
+                ),
+            )),
+            Some(s) if s.cleared.is_none_or(|c| c & 1 != 0) => out.push(Finding::plain(
+                JUDGE_STOP_MISSING_FINDING,
+                format!(
+                    "{name}: the judge's stop at {} ns read the timer back but did not leave CEN cleared ({})",
+                    s.at_ns,
+                    s.cleared
+                        .map_or_else(|| "no read after it".to_owned(), |c| format!("CR1 {c:#010x}"))
+                ),
+            )),
+            Some(s) => {
+                let prefix = format!("TIM{}.", t.timer);
+                let regs: Vec<&aethelgard_twin::boot::Register> = plan
+                    .image
+                    .registers
+                    .iter()
+                    .filter(|r| r.name.starts_with(&prefix))
+                    .collect();
+                if regs.len() != s.words.len() {
+                    out.push(Finding::plain(
+                        JUDGE_STOP_MISMATCH_FINDING,
+                        format!(
+                            "{name}: the judge's stop at {} ns read {} words back, not the timer's {} solved registers",
+                            s.at_ns,
+                            s.words.len(),
+                            regs.len()
+                        ),
+                    ));
+                }
+                for (r, &got) in regs.iter().zip(&s.words) {
+                    if got & r.mask != r.value {
+                        out.push(Finding::plain(
+                            JUDGE_STOP_MISMATCH_FINDING,
+                            format!(
+                                "{} at {:#010x} reads {got:#010x} at the judge's stop ({} ns, the window's end); under mask {:#010x} it must be {:#010x}",
+                                r.name, r.address, s.at_ns, r.mask, r.value
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    for (m, w) in plan.motors.iter().zip(witnesses) {
+        let who = motor_who(&m.observer);
+        if w.status == "unanchored" {
+            out.push(Finding::plain(
+                MOTOR_ANCHOR_UNOBSERVED_FINDING,
+                format!(
+                    "{who}: the observer logged {} rises and {} falls, but no word write of TIM{}.CR1 set CEN in the boot the judge reads, so the output's window has no anchor (a write narrower than a word is not observed)",
+                    w.rises, w.falls, m.observer.timer
+                ),
+            ));
+        }
+        if w.edges_before > 0 {
+            out.push(Finding::plain(
+                MOTOR_EDGE_BEFORE_FINDING,
+                format!(
+                    "{who}: {} edge(s) before its timer's anchor at {} ns, in the same boot",
+                    w.edges_before,
+                    w.anchor_ns.unwrap_or_default()
+                ),
+            ));
+        }
+        if w.edges_after > 0 {
+            out.push(Finding::plain(
+                MOTOR_EDGE_AFTER_FINDING,
+                format!(
+                    "{who}: {} edge(s) after its window's end at {} ns, where the judge's stop silenced and stopped the timer",
+                    w.edges_after, w.end_ns
+                ),
+            ));
+        }
+    }
+    out
+}
+
+/// What the injection of one port showed (`AET-WO-2302` D4).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct PortInjection {
+    /// The first byte's instant; `None` when no byte went in, or the bytes
+    /// that did are not one frame.
+    pub at_ns: Option<u64>,
+    /// The frame's bytes that went in, in order from the first.
+    pub bytes: usize,
+    /// The RX pin's `MODER` and `AFR`, read with the first byte.
+    pub mux: Option<(u32, u32)>,
+    /// The first byte's line among the boot's lines.
+    pub line: Option<usize>,
+    /// Why no whole frame went in, for the echo's finding.
+    pub why: Option<String>,
+}
+
+/// Each port's injection from `hooks`, in a boot that started at `start_ns`:
+/// port 0's anchored at the boot word, port `k`'s at port `k - 1`'s
+/// `FRAME_LEN`-th echoed byte, each byte at its due count. Bytes that are
+/// not exactly one frame in order (a boot word written twice) are no
+/// injection, and say why.
+fn port_injections(
+    plan: &BootPlan<'_>,
+    hooks: &[(usize, crate::anchor::Hook)],
+    start_ns: u64,
+    boot_word: Option<(usize, u64)>,
+) -> Vec<PortInjection> {
+    use crate::anchor::Hook;
+    let ports = plan.port_hooks();
+    let frame = aethelgard_twin::serial::FRAME_LEN;
+    (0..plan.serial.len())
+        .map(|k| {
+            let bytes: Vec<(usize, usize, u64, u64, Option<(u32, u32)>)> = hooks
+                .iter()
+                .filter_map(|(i, h)| match h {
+                    Hook::Inject {
+                        port,
+                        byte,
+                        anchor,
+                        count,
+                        mux,
+                    } if *port == k => Some((*i, *byte, *anchor, *count, *mux)),
+                    _ => None,
+                })
+                .collect();
+            let echoed = hooks
+                .iter()
+                .filter_map(|(_, h)| match h {
+                    Hook::Echo { port, n, .. } if k > 0 && *port == k - 1 => Some(*n),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            let Some(p) = ports.get(k) else {
+                return PortInjection {
+                    why: Some("its frame's spacing cannot be computed".to_owned()),
+                    ..Default::default()
+                };
+            };
+            if bytes.is_empty() {
+                let why = match (k, boot_word) {
+                    (0, None) => "no write of the boot word was observed by its hook".to_owned(),
+                    (0, Some(_)) => "the boot ended before the boot word's quantum".to_owned(),
+                    _ if echoed < frame as u64 => format!(
+                        "port {} before it echoed {echoed} of its {frame} bytes, and each port goes in only once the one before it has echoed its whole frame",
+                        k - 1
+                    ),
+                    _ => "the boot ended before its quantum after the port before it".to_owned(),
+                };
+                return PortInjection {
+                    why: Some(why),
+                    ..Default::default()
+                };
+            }
+            let anchor = bytes[0].2;
+            let one_frame = bytes.iter().enumerate().all(|(j, b)| {
+                b.1 == j
+                    && b.2 == anchor
+                    && b.3
+                        == anchor
+                            + crate::anchor::instructions(
+                                aethelgard_twin::boot::QUANTUM_NS + j as u64 * p.spacing_ns,
+                            )
+            }) && bytes.len() <= frame
+                && bytes[0].4.is_some();
+            if !one_frame {
+                return PortInjection {
+                    why: Some(format!(
+                        "{} byte writes went in that are not one frame in order from one anchor (the boot word written over another word more than once?)",
+                        bytes.len()
+                    )),
+                    ..Default::default()
+                };
+            }
+            PortInjection {
+                at_ns: Some(crate::anchor::instant(start_ns, bytes[0].3)),
+                bytes: bytes.len(),
+                mux: bytes[0].4,
+                line: Some(bytes[0].0),
+                why: (bytes.len() < frame).then(|| {
+                    format!(
+                        "{} of its {frame} bytes went in before the boot's end",
+                        bytes.len()
+                    )
+                }),
+            }
+        })
+        .collect()
 }
 
 /// The brown-out word's finding and the flash controller's, from what the
@@ -2441,20 +3000,21 @@ fn access_boots(
 }
 
 /// Each port's witness from what the run left: its capture file, its RX
-/// pin's mux at the injection, its TX pin's at the end (among the image's
-/// reads) and at the first `TDR` write of each boot, and the writes of each
-/// boot ([`access_boots`]; `None` when the log could not be read whole): its
+/// pin's mux at its injection (`injection`, read by the first byte's
+/// action), its TX pin's at the end (among the image's reads) and at the
+/// first `TDR` write of each boot, and the writes of each boot
+/// ([`access_boots`]; `None` when the log could not be read whole): its
 /// USART's against the bring-up, the RCC's against its rule (enable registers only), its pins'
 /// beyond their mux (`inject_at`: how many of the last boot's accesses
-/// precede the injection). The echo is `not_judged` until the caller knows
-/// the boot word; [`judge_boot`] sets it.
+/// precede each port's injection). The echo is `not_judged` until the
+/// caller knows the boot word; [`judge_boot`] sets it.
 fn serial_witnesses(
     plan: &BootPlan<'_>,
     registers: &[u32],
-    injection: &[u32],
+    injection: &[PortInjection],
     capture: &Captured,
     boots: Option<&[Vec<aethelgard_twin::serial::Access>]>,
-    inject_at: Option<usize>,
+    inject_at: &[Option<usize>],
 ) -> Vec<SerialWitness> {
     let image = |address: u32| {
         plan.image
@@ -2476,9 +3036,16 @@ fn serial_witnesses(
             let parsed = bytes
                 .as_deref()
                 .map(|b| aethelgard_twin::serial::parse(b, &s.pattern, &s.frame));
-            let rx_at_injection = injection.get(2 * k..2 * k + 2).map(|w| (w[0], w[1]));
+            let rx_at_injection = injection
+                .get(k)
+                .filter(|j| j.at_ns.is_some())
+                .and_then(|j| j.mux);
             let tx_at_end = image(s.tx.moder.1).zip(image(s.tx.afr.1));
-            let at = inject_at.filter(|_| rx_at_injection.is_some());
+            let at = inject_at
+                .get(k)
+                .copied()
+                .flatten()
+                .filter(|_| rx_at_injection.is_some());
             let rx_after_solved =
                 boots.and_then(|b| aethelgard_twin::serial::rx_changed_after_solved(&s.rx, b));
             let tx_after_solved =
@@ -2520,6 +3087,8 @@ fn serial_witnesses(
             SerialWitness {
                 bytes,
                 capture: parsed,
+                injected_ns: injection.get(k).and_then(|j| j.at_ns),
+                injected: injection.get(k).map_or(0, |j| j.bytes),
                 rx_at_injection,
                 tx_at_end,
                 tx_at_send,
@@ -2658,41 +3227,6 @@ fn witness_finding(
             ),
         )),
     }
-}
-
-/// On a board whose window is shorter than `MAX_VIRTUAL_NS` (a DShot board,
-/// `AET-WO-4300a` D1, ruled (a)), every declared identity read whose record
-/// is still unset when the window ends did not complete inside it, and is
-/// named; the run already fails on its missing boot word. A record the
-/// firmware wrote, however it reads, is not named here.
-fn reads_outside_window(
-    checks: &[aethelgard_twin::boot::StepCheck],
-    records: &[(u32, u64)],
-    boot_ns: u64,
-    window_ns: u64,
-) -> Vec<Finding> {
-    if window_ns >= aethelgard_twin::boot::MAX_VIRTUAL_NS {
-        return Vec::new();
-    }
-    checks
-        .iter()
-        .zip(records)
-        .filter(|(_, r)| r.0 == aethelgard_twin::boot::RECORD_UNSET)
-        .map(|(c, _)| {
-            // A script's later steps say which step (`AET-WO-4210`).
-            let what = match c.step {
-                aethelgard_ir::parts::StepKind::Identity => "its identity read".to_owned(),
-                _ => format!("its {} step's read", c.label),
-            };
-            Finding::plain(
-                aethelgard_chaos::campaign::OUTSIDE_WINDOW_FINDING,
-                format!(
-                    "{}: {what} did not complete inside this boot of {boot_ns} ns (a board with a DShot output boots inside its window of {window_ns} ns, AET-WO-4300a D1)",
-                    who(c)
-                ),
-            )
-        })
-        .collect()
 }
 
 /// With no boot word, each read whose record says its wait expired is still

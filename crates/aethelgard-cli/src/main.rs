@@ -5,6 +5,7 @@
 #![forbid(unsafe_code)]
 
 mod analog;
+mod anchor;
 mod campaign;
 mod elf;
 mod extract;
@@ -167,8 +168,8 @@ enum Command {
         #[arg(long, requires = "firmware")]
         spec: Option<PathBuf>,
         /// The virtual time the boot runs: an integer with ns, us or ms, at
-        /// most 100ms and at most the board's window (2ms for a board with a
-        /// DShot output), a whole number of 10 ns instructions. Needs --firmware.
+        /// most 100ms on every board, a whole number of 10 ns instructions.
+        /// Needs --firmware.
         #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
         for_time: Option<u64>,
     },
@@ -1306,8 +1307,6 @@ struct Ready {
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
-    /// The constant that bounds `virtual_ns` for this board (`AET-WO-4300a` D1).
-    window: &'static str,
     topology: aethelgard_ir::SolvedTopology,
     scenario: String,
     held: Vec<campaign::HeldLow>,
@@ -1366,18 +1365,6 @@ fn ready(
             ),
         ));
     }
-    // `AET-WO-4300a` D1: a board with a DShot output boots inside its own
-    // shorter window, refused by name past it, never cut short.
-    let (window_ns, window) = aethelgard_twin::boot::window(&boot.topology);
-    if boot.virtual_ns > window_ns {
-        return Err(run::Stop::refused(
-            "BootPastWindow",
-            format!(
-                "a boot of {} ns is past this board's {window} of {window_ns} ns (a board with a DShot output boots inside it, AET-WO-4300a D1)",
-                boot.virtual_ns
-            ),
-        ));
-    }
     let firmware = input::file(&boot.firmware, &scratch.tool.join("firmware.elf"))?;
     let bytes = fs::read(&firmware.copy)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
@@ -1387,11 +1374,11 @@ fn ready(
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
     // `AET-WO-4300b`: each port's frame is derived from the firmware's own
-    // sha256 and injected one quantum after the last boot's start. Undrooped,
-    // that is 200 us with the quantum after it, inside every window; a
-    // rendered release moves it, so `simulate` checks it against the window
-    // once the rail is solved. A `--for` shorter than the instant injects
-    // nothing and fails closed on the echo, by name.
+    // sha256. It goes in one quantum after the last boot's boot word, port
+    // after port (`AET-WO-2302` D4), by the CLI's own hooks; the boot word's
+    // instant is known only after the run, so `simulate` refuses before it
+    // only what no boot word can save, from the earliest instant, and the
+    // judge names the rest after it.
     let sha = aethelgard_twin::serial::sha256_bytes(&firmware.sha256).ok_or_else(|| {
         run::Stop::unreadable(format!(
             "the firmware's sha256 `{}` is not hex",
@@ -1420,7 +1407,6 @@ fn ready(
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
-            window,
             topology: boot.topology,
             scenario: boot.scenario,
             held: boot.held,
@@ -1432,7 +1418,7 @@ fn ready(
 
 /// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
 /// firmware needs the quantum after it to echo them, all inside the board's
-/// window (`aethelgard_twin::boot::window`), named by `window`. The frames'
+/// window, `MAX_VIRTUAL_NS`, named by `window`. The frames'
 /// later bytes, paced a character apart (adversarial pass 4, ADV4-2), are
 /// the wire budget's ([`serial_wire_fits`]), which holds them all.
 fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), run::Stop> {
@@ -1442,7 +1428,7 @@ fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), ru
     Err(run::Stop::refused(
         "SerialInjectionPastWindow",
         format!(
-            "the serial frames go in at {injection_ns} ns and the firmware echoes them in the {} ns after, past this board's {window} of {window_ns} ns (AET-WO-4300b)",
+            "the serial frames go in at {injection_ns} ns and the firmware echoes them in the {} ns after, past {window} of {window_ns} ns from the earliest boot word (AET-WO-4300b, AET-WO-2302)",
             aethelgard_twin::boot::QUANTUM_NS
         ),
     ))
@@ -1467,7 +1453,7 @@ fn serial_wire_fits(
     Err(run::Stop::refused(
         "SerialWireTimePastWindow",
         format!(
-            "serial port `{}` ({}, {}): {}, from the injection at {injection_ns} ns, past this board's {window} of {window_ns} ns (AET-WO-4300b)",
+            "serial port `{}` ({}, {}): {}, from the earliest injection at {injection_ns} ns, past {window} of {window_ns} ns (AET-WO-4300b, AET-WO-2302)",
             s.port.label,
             s.port.peripheral,
             aethelgard_twin::serial::describe(&s.port.framing),
@@ -1677,7 +1663,6 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             models: &models,
             firmware: &r.firmware.copy,
             virtual_ns: r.virtual_ns,
-            window_ns: aethelgard_twin::boot::window(&r.topology).0,
             boot_word: r.boot_word,
             vector_table: r.vector_table,
             image: &r.image,
@@ -1691,16 +1676,19 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             serial: &r.serial,
             capture: r.capture.as_deref(),
         });
-    // A rendered release moves the injection (`AET-WO-4300b`): one whose
-    // instant and the quantum after it pass the board's window is refused by
-    // name before the boot runs, never cut short (the ruling's amendment 3).
+    // A rendered release moves the injection (`AET-WO-4300b`): when even
+    // its earliest instant, one quantum after the last boot's start, and the
+    // ports' wire time from it pass `MAX_VIRTUAL_NS`, no boot word can save
+    // it, and it is refused by name before the boot runs, never cut short
+    // (the ruling's amendment 3). The real instant is the judge's
+    // (`serial_wire_past_run`, `AET-WO-2302`).
     if let (Some(i), Some(r)) = (
         plan.as_ref().and_then(renode::BootPlan::injection_ns),
         &ready,
     ) {
-        let (window_ns, window) = aethelgard_twin::boot::window(&r.topology);
-        serial_fits(i, window_ns, window)?;
-        serial_wire_fits(&r.serial, i, window_ns, window)?;
+        let max = aethelgard_twin::boot::MAX_VIRTUAL_NS;
+        serial_fits(i, max, aethelgard_twin::boot::WINDOW)?;
+        serial_wire_fits(&r.serial, i, max, aethelgard_twin::boot::WINDOW)?;
     }
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
@@ -1793,6 +1781,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     v.machine = machine;
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         v.boot = Some(boot_report(r, plan, observed.as_ref()));
+        v.memory = out
+            .peak_rss_kib
+            .map(|k| verdict::MemoryReport::of(k, renode::BOOT_BOUNDS.rss_kib));
     }
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.
@@ -1972,7 +1963,7 @@ fn boot_report(
         specification_sha256: r.specification_sha256.clone(),
         seed: aethelgard_twin::boot::SEED,
         virtual_time_ns: r.virtual_ns,
-        window: r.window,
+        window: aethelgard_twin::boot::WINDOW,
         mips: observed.map(|o| o.mips),
         instructions: verdict::Expected {
             expected: plan.instructions(),
@@ -2001,7 +1992,11 @@ fn boot_report(
                 name: reg.name.clone(),
                 address: word(reg.address),
                 mask: word(reg.mask),
-                expected: word(reg.value),
+                expected: word(
+                    observed
+                        .and_then(|o| o.register_expected.get(i).copied())
+                        .unwrap_or(reg.value),
+                ),
                 observed: observed.map(|o| word(o.registers[i])),
             })
             .collect(),
@@ -2096,6 +2091,45 @@ fn boot_report(
             .iter()
             .enumerate()
             .map(|(i, s)| verdict::SerialReport::new(s, observed.map(|o| &o.serial[i])))
+            .collect(),
+        boot_word_ns: observed.and_then(|o| o.boot_word_ns),
+        stops: observed
+            .map(|o| {
+                o.timers
+                    .iter()
+                    .filter_map(|t| Some((t, t.anchor?, t.stop.as_ref()?)))
+                    .map(|(t, (_, _, anchor_ns), s)| {
+                        let prefix = format!("TIM{}.", t.timer);
+                        verdict::StopReport {
+                            timer: format!("TIM{}", t.timer),
+                            anchor_ns,
+                            at_ns: s.at_ns,
+                            read_back: r
+                                .image
+                                .registers
+                                .iter()
+                                .filter(|reg| reg.name.starts_with(&prefix))
+                                .zip(s.words.iter().map(Some).chain(std::iter::repeat(None)))
+                                .map(|(reg, got)| verdict::RegisterReport {
+                                    name: reg.name.clone(),
+                                    address: word(reg.address),
+                                    mask: word(reg.mask),
+                                    expected: word(reg.value),
+                                    observed: got.map(|&g| word(g)),
+                                })
+                                .collect(),
+                            cr1_after: s.cleared.map(word),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
+        residuals: plan
+            .motors
+            .iter()
+            .any(|m| m.observer.protocol.bit_rate().is_some())
+            .then_some(verdict::DSHOT_STOP_RESIDUAL)
+            .into_iter()
             .collect(),
         executable: plan.executable.to_vec(),
     }

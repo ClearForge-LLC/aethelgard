@@ -39,7 +39,8 @@ struct Prepared {
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
-    /// The board's window and the constant that states it (`AET-WO-4300a` D1).
+    /// The boot's length and the constant that states it: `MAX_VIRTUAL_NS`
+    /// on every board (`AET-WO-2302`).
     window: (u64, &'static str),
 }
 
@@ -233,7 +234,10 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         None => None,
     };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
-    let window = aethelgard_twin::boot::window(&topology);
+    let window = (
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+        aethelgard_twin::boot::WINDOW,
+    );
     Ok(Prepared {
         path: path.to_path_buf(),
         base_sha256: digest(&base),
@@ -298,9 +302,8 @@ fn resolve_droop(
         droop,
         domain.nominal_millivolts,
         decoupling_picofarads,
-        // A droop past the board's window is refused with its time, never
-        // cut short (`AET-WO-4300a` D1).
-        aethelgard_twin::boot::window(topology).0,
+        // A droop past the boot is refused with its time, never cut short.
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
     )?;
     Ok(crate::analog::Rail {
         droop: droop.clone(),
