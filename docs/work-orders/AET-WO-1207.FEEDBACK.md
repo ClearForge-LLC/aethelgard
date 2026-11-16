@@ -98,7 +98,12 @@ Harness: `~/.cache/aet-1207/tools/` (`verdicts.sh`, `probe.py`, `reach.py`). The
 
 ### 4.1 Verdicts and bytes (measured: `~/.cache/aet-1207/v-base` against `v-new`)
 - **All 23 specifications** give byte-identical `validate`, `solve` and `generate` stdout and exit codes, and an identical sha256 for every generated file. That is 153 of 153 records, with the 15 generating specifications' 210 files among them.
-- **The baseline binary is `1178ca8`; the new one is `7b403a4`.**
+- **The baseline binary is `1178ca8`.** The new binary was measured twice: at `7b403a4` (`v-new`) and again at `55b258b` (`v-new2`), after the reduction and the adversarial fix. Both gave 153 of 153.
+
+### 4.1a The other commands that read a specification (measured: `~/.cache/aet-1207/sub/`)
+- **The five pinned specifications,** through every other subcommand that takes one, on both binaries: `emit --file`, `check speeds --spec`, `verify --spec`, `extract --spec` (with the reference's routed board). All print byte-identical bytes, each the moved refusal with `solve`'s `claimants`.
+- **`validate` on stdin** changes as `validate --file` does: the moved refusal now, where it printed `ok` or `UnwitnessedAcknowledgementStale` before.
+- **Not run:** `campaign` (§5), and `mcp`, which serves the same subcommands.
 
 ### 4.2 Tier-1 tests, each committed first with the behaviour before (`4c61fad`)
 - **`aet_1207_validate_refuses_what_solve_refused_byte_for_byte`** (cli `reserved_references_tier1.rs`). It has five rows: the rise time, SCK, MOSI, the rail at 1600 mV with no device, and at 3800 mV with a lone TMP117. Each holds the bytes `1178ca8` printed from `solve` and `generate`, which they still print.
@@ -122,8 +127,8 @@ Harness: `~/.cache/aet-1207/tools/` (`verdicts.sh`, `probe.py`, `reach.py`). The
 - **`cli/src/extract.rs:120`'s comment** still says "`solve` refused a line with no constraint (`MissingBusConstraint`, `MissingSpiConstraint`)". It is outside the fence, and true in substance (the refusal now comes from `validate` inside `solve`): F4.
 
 ### 4.5 Mutation (diff-sized: one mutant per guard this work order adds or changes)
-- **Method:** 13 mutants, one at a time, against `aethelgard-ir` (every test), cli `reserved_references_tier1`, and svd-hal `the_cfg2_word_drives_the_spi_mode_validate_judges`. Harness and logs: `~/.cache/aet-1207/mut/`.
-- **Result:** all 13 killed, each by a test failure (none by compilation) [measured].
+- **Method:** 13 mutants, one at a time, run first at `7b403a4` and again at `bc9d039` (after the reduction, the adversarial fix and the merge), against `aethelgard-ir` (every test), cli `reserved_references_tier1`, and svd-hal `the_cfg2_word_drives_the_spi_mode_validate_judges`. Harness and logs: `~/.cache/aet-1207/mut/`.
+- **Result:** all 13 killed, each by a test failure [measured]. No mutant log holds `could not compile`, so none was killed by compilation. Both runs gave the same table.
 
 | Mutant | Killed by |
 |---|---|
@@ -147,6 +152,7 @@ Harness: `~/.cache/aet-1207/tools/` (`verdicts.sh`, `probe.py`, `reach.py`). The
   - For the three moved refusals, it now prints the refusal itself: `Specification::validate` refuses before the ledger is built. This is the intended move.
   - The others still print `UnwitnessedAcknowledgementStale`, as on `main`: `BusTooFast`, `PullUpBelowSinkFloor`, `BusCapacitanceOverLimit` (F1).
 - **A doubly faulty specification may report a different first refusal.** Step 21 now runs before `solve`'s electrical checks. The adversarial pass measured 54 of 258 multi-fault rows (§6 D) where `generate` used to print `BusTooFast`, `PullUpBelowSinkFloor` or `BusCapacitanceOverLimit` first and now prints `MissingSpiConstraint` or `SupplyOutsideSpeedTable`.
+  - **The per-bus case** is measured on `d3-24-i2c-12-spi` (`~/.cache/aet-1207/twobus/`), with `BusTooFast` on bus `B0` and a 1001 ns line on `B2`. Baseline `solve` printed `BusTooFast` (`B0`), from `i2c_ceilings`, which interleaves the two per bus. `validate` and `solve` now print `RiseTimeTooSlow` (`B2`).
   - Among the three moved kinds the order is `solve`'s: rise time, then supply, then the SPI line.
   - New `validate` and new `generate` agree.
 - **`campaign` over a base specification with one of the three** [read: `campaign.rs:361-364`, not run, since it needs a firmware ELF]. The refusal now comes from `parse_spec`, with campaign's "scenario `<name>`, base: " prefix, where before it came from `solve_spec` without one. Kind, `id` and `claimants` are unchanged. This is the shift `1206` §5 recorded for `MissingBusConstraint`. No scenario override can produce one of the three (§1).
@@ -155,7 +161,7 @@ Harness: `~/.cache/aet-1207/tools/` (`verdicts.sh`, `probe.py`, `reach.py`). The
 
 ## 6. Adversarial pass (targeted)
 
-**What ran.** Two parts, at `7b403a4`.
+**What ran.** Two parts, at `7b403a4`. After it came the reduction (test-only), the Windows-message fix and the docs merge. The corpus differential (153 of 153), the subcommand check (§4.1a) and the mutants were rerun on the final code; the 8,609-specification differential was not.
 - **The CLI differential.** A fresh subagent was given both binaries and the work order's claims, not this document. It generated 8,609 specifications over the reference, `sentinel-02-power`, `motors-pwm`, `serial-four` and `d3-24-i2c-12-spi`, and ran `validate` and `solve` on both binaries for each, and `generate` for 2,156. Harness, specifications and report: `~/.cache/aet-1207/adv/` (`harness.py`, `specs/`, `results.json`, `REPORT.md`).
 - **The library path and the `modes` forms.** Run here (`adv/library-path.txt`, `adv/modes-forms.txt`).
 
@@ -214,11 +220,20 @@ Reduction pass (diff): −9 lines net in the pass (the build itself deleted 65 l
 | F6 | §6's split-on-touch names `ir/src/lib.rs`, touched here (+133 −19 lines: four variants, step 21, the SPI device check). **Declined:** a split is a change of its own, outside this fence, and `4211` (#173) has open hunks in `ir` (`parts.rs`, possibly the two `Lifecycle` enums), which a split would turn into a rewrite. This work order's code went beside the code it extends, as `1206` F8 did | roadmap §6 | read | declined with that reason | no |
 | F7 | `SpiModeNotDriven` is latent: no row today lacks mode 0, so no CLI specification reaches it. It guards the next row; the unit test reaches it through a mutated table, and its mutant is killed | `parts.rs` tests | measured | as built | no |
 
+**Forks for the architect to confirm** (each beyond the work order's literal list, made for the reason given):
+- **`schematic_power::spelled` deleted.** That file is outside the named fence (`schematic.rs`, `spelled` only). It was the power tree's part of the list `spelled_nets` replaces, and nothing else read it.
+- **`names::spelled_nets` made `pub`,** so eda reads the one list.
+- **The mode judgement also runs on the topology** (`SolvedTopology::validate`'s part limits, `RUL-16`), because it lives in the one SPI part check.
+- **The Windows rule's message** lists `com0` and `lpt0`, so it changes for every Windows name (adversarial E).
+- **The ir README:** step 21, `SpiModeNotDriven`, the solve table, and the stale "smaller" corrected to "larger".
+- **`refuses_tolerance_out_of_range` changed** (§4.3).
+
 **Peers told:** `4211` (inbox, 18:40 UTC): where this branch's `parts.rs` hunks sit (the constant above `pub enum Bus`, the test at the end of the test module), and that the test builds its expected message from the W25Q64JVxIQ row's own citation.
 
 ## 9. Where everything ran, and the gates
 
 - **Where:** host cargo in a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, with `memory.swap.max` read back as 0). The differentials and the adversarial harness ran in a 16 GiB, swap-0 scope. No container, Renode or KiCad was started.
+- **Tier 2 here:** `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` is clean, so the tier-2 tests compile [measured]. None sets a rise time above 1000 ns, removes an SPI line's constraint, or moves the MCU rail; their net edits are consistent renames [read: grep over the `with-tools` test files]. CI's tier-2 run is the measurement.
 - **This work order adds no tier-2 test,** so `TIER2_MIN` is `main`'s, 160. Its new tests are tier 1, in existing binaries (`validate`, `solve`, `reserved_references_tier1`, and the `ir` and `svd-hal` unit tests), so it adds no `ci/` weight.
 - **Gates on the final tree** (`687026b`, after merging `origin/main` at `311398d`, docs only) [measured]:
   - `cargo fmt --all -- --check`: clean;
