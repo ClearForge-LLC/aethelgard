@@ -543,7 +543,8 @@ fn runs(name: &str, mask: u32) -> Vec<(String, u32)> {
 /// (the architect's ruling on Q-F: Renode 1.17.0 reads the flag 0 whatever,
 /// so the wait would park every twin boot). The row is the dependency the
 /// firmware takes on silicon having set it; its value is 1. A GPIO port alone
-/// does not list it: the ports are on AHB4, in D3 (RM0433 Rev 9 Table 8).
+/// does not list it: the ports are on AHB4, in D3 (RM0433 Rev 9 Table 8,
+/// p. 132, rendered).
 fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<FieldUse>, BoardError> {
     let mut out = Vec::new();
     if plan.needs_clock() {
