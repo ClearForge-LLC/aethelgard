@@ -227,14 +227,23 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
 §0 (committed before any run, so unedited) calls Q1 "§6 Q1"; it is here.
 
 - **Q1, CRSF's baud.** TBS's dual-wire text gives 416666 8N1 as the default, "negotiable higher" by frame 0x70. The fixture's 420000 validates as a higher rate; any baud from 416666 up validates (pass 1 F10: 432000 too, never negotiated). Accept, refuse what is not 416666 exactly, or require a declared negotiated rate?
+  - **Ruled (PR #152, comment 6903399822):** an enumerated set, each rate cited. **Built:** `serial::CRSF_BAUDS` holds 416666 (TBS, `CRSF_SOURCE`) and 420000 (`CRSF_ELRS_SOURCE`: ExpressLRS `src/lib/OPTIONS/options.cpp` at `f8700cab` L197, the receiver's `rcvr-uart-baud` default; Betaflight `src/main/rx/crsf_protocol.h` at `09b90997` L36, `CRSF_BAUDRATE 420000`; both held by sha256 in `~/.cache/aet-4300b/ds/PROVENANCE.md`). Any other baud needs the port's new required key `negotiated`, `{"source": …}` (frame 0x70), and is otherwise refused (`SerialFramingContradictsRole`, field `baud`, citing both sources; 432000 is refused). `negotiated` is refused off `rc_crsf`, with an empty source, and at a cited baud (`SerialNegotiatedOffCrsf`, `SerialNegotiatedSourceEmpty`, `SerialNegotiatedAtCitedBaud`); TBS's floor of 416666 still holds for a negotiated rate. `solve` copies the declaration to the solved port, and `SolvedTopology::validate` re-checks it. Every fixture gained `"negotiated": null`; the four-port fixture keeps CRSF at 420000. One tier-1 test (`aethelgard-ir/tests/serial.rs::a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refused`); each new guard mutated once and killed (`~/.cache/aet-4300b/round5/irmut/`).
 - **Q2, the pin mux is the judge's.** Renode wires no USART to a pin, so the judge models it: the RX pin's state at the injection, the TX pin's at every `TDR` write, from the access log. Accept as the reading of "the echo is missing" for `serial_rx_dead` (the frame reaches Renode's USART; the judge does not count it)?
+  - **Ruled (PR #152, comment 6903399822):** accepted.
 - **Q3, the tolerance check.** It judges the solved baud's quantization error alone against RM0433's whole budget (DTRA + DQUANT + DREC + DTCL + DWU), as the work order says; at 64 MHz no solvable `BRR` fails it (§5), so WO §5.2's tolerance-edge attack cannot fail a solved port. Should the check reserve part of the budget for the HSI's own deviation and the remote transmitter (pass 1 F6), which would make it bite?
+  - **Ruled (PR #152, comment 6903399822):** accepted as built here. `AET-WO-4230` §1.8 owns the HSI's deviation in the `BRR` check, and its amendment adds the remote transmitter as a declared term (416666 against 420000 is 0.8 %). Nothing in this PR.
 - **Q4, short windows.** With the wire budget, a DShot board (2 ms) holds a 115200 console only if its last release is before about 75.6 µs, and never a 57600 MAVLINK; `4220`'s settle spins (10–20 ms) are not in the budget, so such a board would fail closed on the echo, not be refused by name. Sentinel-02 needs both DShot and serial ports: a longer window for serial boards, or a serial-only boot beside the DShot one?
+  - **Ruled (PR #152, comment 6903399822):** accepted as a residual: it fails closed. It goes to a new twin-window work order before `4500`, with `4220` F-B1's settle spins, which also decides a serial-only boot for Sentinel-02. Nothing in this PR.
 - **Q5, rounding.** `BRR` is the nearest whole `USARTDIV`, half up (pass 1 F7), not the least baud error; they differ only at `BRR` 16–17, where no declared baud sits today.
+  - **Ruled (PR #152, comment 6903399822):** accepted. **Built:** named in `serial::solve_brr`'s doc comment. **Correction:** "only at `BRR` 16–17" is wrong. The two differ when `USARTDIV`'s fraction lies in `[1/2 − 1/(4·BRR + 2), 1/2)`, where the least error is `BRR + 1`. On 64 MHz, computed over every whole baud from 977 to 4,000,000, some baud falls there at every `BRR` from 16 to 265 and at a few up to 2606. No declared baud does: 115200, 57600, 420000, 416666, 100000 and 9600 give `USARTDIV` fractions .56, .11, .38, .60, .00 and .67. The doc comment states this.
 - **Q6, spelling.** Peripherals are upper case (`USART1`), as the specification's I2C and SPI peripherals are; the work order wrote `usart1`. `LPUART1` is refused in any case (pass 1 F14).
+  - **Ruled (PR #152, comment 6903399822):** accepted; `LPUART1` stays refused.
 - **Q8, campaign coverage (`3303`, PR #155).** The architect ruled that a declared bus needs a seeded fault the campaign survives or detects by its named mechanism, and that a serial port is covered by `serial_rx_dead` failing as named. #152 has no campaign override kind for a serial port: its fault is a seeded firmware mutant, so `3303`'s `stress()` has nothing to map. Whoever merges second adds `Target::Serial` with the seeded case as its mechanism (coordinated by inbox).
+  - **Ruled (PR #152, comment 6903399822):** not in this PR. `main`'s row ("no fault kind yet: serial") stays non-blocking; mapping `serial_rx_dead`'s seeded case onto campaign coverage goes to the twin-window work order.
 - **Q9, the twin-detection oracle (pass 3, ADV3-3).** Any bit Renode does not store reads 0 (enumerated in §10). A firmware may read one, learn it runs in the twin, and behave otherwise on silicon; the judge sees only what the twin does. The USART's configuration words are closed by refusing their reads; the GPIO `OTYPER` cannot be (the generated HAL read-modify-writes it), nor the I2C and SPI words below. Close by model changes (a Renode model that stores the bits) or generator changes (whole-word writes, no reads), or accept as a residual of the twin, with the Kani harnesses and byte-identical regeneration as the guard for generated firmware?
+  - **Ruled (PR #152, comment 6903399822):** closed for generated firmware by the generator: `AET-WO-4230` is amended so the generator writes whole words from the solved values (`OTYPER`, the I2C `CR1`/`TIMINGR` fields, the SPI `CR1`/`CFG1`/`CFG2` fields §10 lists), each an `ignored-by-model` row in the witness ledger; for firmware not generated here (ArduPilot), a residual the verdict names. Nothing in this PR; §10's enumeration stays for `4230`.
 - **Q7, the reference's console connector.** An explicit SM04B map (TX, RX, null, GND): DS-009 DEBUG MINI cannot validate until SWD is declared. Accept, or wait for Sentinel-02's SWD?
+  - **Ruled (PR #152, comment 6903399822):** accepted. DS-009 DEBUG MINI becomes possible once SWD is declared; `4300g` brings the programming path.
 
 ## 10. Residuals, named
 
@@ -242,7 +251,7 @@ F6, F7, F10, F14 and F15 are questions or notes (§9). Each fix has a test that 
 - The twin renders no wire time and no overrun: Renode's USART queues every injected byte. The static budget and `FIFOEN` cover the bring-up's frame; a faster or longer peer stream is not judged.
 - A firmware that stops mid-pattern in an earlier boot reads exactly like a reset cut (C2's parser); accepted.
 - The capture can be computed by anyone holding the ELF; the defence against a host-filled capture is the fresh directory the CLI owns and the access log of the writes that made the bytes.
-- `~/.cache/aet-2301` (Renode source, RM0433 text) was removed by someone else at 16:13 UTC; the datasheets survive in `~/.cache/aet-ds/rescued/aet-2301/ds/`. Citations of Renode's lines in §0 were read before then.
+- `~/.cache/aet-2301` (Renode source, RM0433 text) was removed at 16:13 UTC by the architect's disk cleanup (ruled on PR #152, comment 6903399822). Nothing is lost for good: the datasheets are in `~/.cache/aet-ds/rescued/aet-2301/ds/`; RM0433 and DS12117 text is held in `~/.cache/aet-4300b/evidence/fix2/` and `~/.cache/aet-4300d-build/txt/`; Renode's source can be fetched again at the pinned 1.17.0 tag. Citations of Renode's lines in §0 were read before then.
 
 ## 11. Reduction pass (diff)
 
@@ -290,6 +299,27 @@ The 20-minute clause cannot be met reliably with 8 shards, by the rule as writte
 - (d) a clause measured over runs rather than one run, given `main`'s own 14.3–20.8 min on one code.
 
 The refit's weights stay committed, since they are this rule's measurement; the architect may prefer the old ones until (a) to (d) is ruled.
+
+### Q10 ruled (PR #152, comment 6903399822): (b) and (d); the plan measured
+
+- **The ruling.** (b): `ci/shard.sh assign` plans every shard's test step at or under 1,006 s, a CPU-heavy test weighted at its worst in-shard time over runs 43771580225 (`719c57f`) and 43774296207 (`cb07f59`). (d): the head's final run is green; a shard over 20 minutes while the plan holds gets one re-run of the same head, and a shard over on both runs needs a refit. (c), splitting the long `verify` tests, goes to the backlog for when (b) cannot plan under 1,006 s; (a), a ninth shard, is Scotty's.
+- **How the in-shard times were read** (each tools-shard job log, its timestamps; `~/.cache/aet-4300b/round5/inshard.awk`, samples in `inshard.tsv`):
+  - a test behind a binary's lock (`board_tier2`'s 14 `ONE_AT_A_TIME` tests, `verify_2k2_tier2`'s two): its `test NAME ... ok` timestamp minus the previous lock-holder's in that binary, or minus the binary's `Running` line for the first;
+  - any other CPU-heavy test (`board_tier2`'s four lock-free tests, `twin_tier2`'s `kani_*` and `an_aborted_machine_returns_inside_the_bound_as_cpu_aborted`, `with_tools`' eight prove-running tests): its `ok` timestamp minus its binary's `Running` line, an upper bound;
+  - a colocated block: its binary's libtest `finished in`.
+  Every such test ran in at least one of the two runs (both ran one plan), so none kept its alone weight.
+- **What it gives.** Among the largest moves (alone → worst in-shard): `verify_binds_the_reference…` 584 → 651 s, `four_layer_fixture…` 468 → 609 s, `kani_proves_every_part_of_both_motor_fixtures` 276 → 374 s, `every_admitted_identifier…` 280 → 357 s, `verify_fab_out…` 647 → 564 s; the blocks 726 s (`attribute_seeded`, was 873), 860 s (`against_fab_tier2`), 278 s (`verify_47k_tier2`), 71 s (`campaign_tier2`).
+- **No 8-shard plan holds at or under 1,006 s, by construction.** 1,006 s was the alone weights' mean, and the in-shard weights total about 8,368 s against 8 × 1,006 = 8,048 s. `assign 8` over run 43774296207's entries (1,904, guard ok) plans:
+  - A, the blocks at their worst over the two ruled runs: 1,046 s on every shard;
+  - B, the blocks at their worst over these and the refit's two runs (`attribute_seeded` 873): 1,065–1,066 s;
+  - most favourable, `twin_tier2`'s three shard-7 tests counted at the binary's 374 s, not 374 + 54 + 53: 1,032 s;
+  - with 9 shards: 930 s (A) or 947 s (B).
+  So no weights or rule text are committed; the next step, (c) or (a), is the architect's and Scotty's. `ci/SHARDS` stays 8.
+- **Shard 7's timing test** (`twin_tier2::an_aborted_machine_returns_inside_the_bound_as_cpu_aborted`, 35.13 s against `30 + 5` on `cb07f59`): the slack is `30 + 30`, with the ruling's comment: the test claims the machine returns instead of hanging, not that the bound is precise. Mutants in the pinned image, one container, the test alone (`~/.cache/aet-4300b/round5/mut/`):
+  - none: pass in 15.5 s;
+  - `BOOT_BOUNDS.wall` 30 s → 3,600 s: **still passes, in 16.0 s**: Renode's RSS reaches the 1 GiB cap first (about 55 MB/s from about 400 MB), and the reaper kills it at the memory bound, still reported `cpu_aborted`;
+  - the wall bound and the memory cap both removed (3,600 s, 1 TiB): **red**, running past 60 s; the 8 GiB container scope ended it at 148 s.
+  So the test holds the claim "returns" against the loss of both bounds; the 30 s wall bound alone is covered by `boot_tier1`'s stub that sleeps 60 s.
 
 ### For §8
 
