@@ -375,3 +375,17 @@ What held under attack:
 - `D2CKRDY` is not polled (Q-F);
 - the ledger's values are re-derived from the generator's plan, not read from its text (adversarial F5);
 - the oracle's register offsets come from ST's header as svd-hal parses it (adversarial F6).
+
+## 19. CI and the gates at READY
+
+- **Run 43883348284 on `780f9b5`** (the refit head, before 4402's docs-and-container merge): every job green, as were `engine-image` and `ardupilot-image`.
+  - Shard minutes 26.7, 19.7, 27.9, 21.6, 27.6, 25.9, 27.8, 27.8.
+  - **Mean 25.6; the slowest is 9 % over it.**
+  - The plan (§18) is balanced at 1,390 s per shard.
+  - Every shard was over the 20-minute target and under the 45-minute hang guard: a measurement, not a gate (Scotty, 04:35).
+- **Run 43875567562 on `2bb9ee4`:** also green; it was the refit's data.
+- **`main` merged a last time** (`da6b76a`, 4402: container, workflow, spike deletions, comments). One conflict, in `twin/src/tests.rs`: our presentation assertion was kept with `main`'s new citation wording.
+- **`TIER2_MIN` 160:** recounted in the image on `da6b76a`, exact (`twin_tier2` 68, `with_tools` 31, `board_tier2` 20, `attribute_seeded` 11, `campaign_tier2` 9, `models_tier2` 7, and the rest).
+- **The CLAUDE.md gates on `da6b76a`:** `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets -- -D warnings`, and again with the CLI's `with-tools`; `cargo test --workspace` (1,934 passed, 0 failed). All green.
+- **The READY commit** is this FEEDBACK only. Its own CI run is the head's, and the PR's final state rests on it.
+- **Disk:** every subagent worktree and every build target this work order created is removed. `~/.cache/aet-4230` keeps the evidence FEEDBACK cites (592 MB).
