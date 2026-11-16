@@ -1,5 +1,5 @@
 # Sentinel-01, hand-written as the generator would emit it from
-# spike/4400/sentinel-01.topology.json (specification sha256 a277c933...).
+# the topology solved from specification sha256 a277c933439524885deb931b2b930555b74aa94aefbee7b34c83ddef73aa1196.
 # Tags: [T] emitted from the SolvedTopology today; [S] in the Specification only
 # (RUL-16 forbids reading it there); [N] in neither.
 

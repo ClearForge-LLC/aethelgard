@@ -21,6 +21,9 @@ on:
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"
+      - "container/check-ardupilot-pin.sh"
+      - "container/test-check-ardupilot-pin.sh"
+      - "container/fixtures/ardupilot-pin/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -35,6 +38,9 @@ on:
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"
+      - "container/check-ardupilot-pin.sh"
+      - "container/test-check-ardupilot-pin.sh"
+      - "container/fixtures/ardupilot-pin/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -64,6 +70,11 @@ jobs:
       # its named refusals, and the three real Dockerfiles must still pass.
       - name: check-pins against its fixtures
         run: bash container/test-check-pins.sh
+
+      # AET-WO-4402: each malformed pin has a fixture refused by name, and the
+      # committed pin passes.
+      - name: check-ardupilot-pin against its fixtures
+        run: bash container/test-check-ardupilot-pin.sh
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -111,10 +122,7 @@ jobs:
       # INV-06: a missing or malformed pin fails here by name.
       - name: read the pin
         run: |
-          [ -r container/ARDUPILOT-IMAGE ] || { echo "container/ARDUPILOT-IMAGE missing or unreadable" >&2; exit 1; }
-          pin=$(cat container/ARDUPILOT-IMAGE)
-          [[ "$pin" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]] \
-            || { echo "container/ARDUPILOT-IMAGE is not ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:<64 hex>: $pin" >&2; exit 1; }
+          pin=$(bash container/check-ardupilot-pin.sh container/ARDUPILOT-IMAGE)
           echo "PIN=$pin" >> "$GITHUB_ENV"
 
       - name: pull the published image by its digest
