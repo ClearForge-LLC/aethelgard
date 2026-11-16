@@ -325,35 +325,28 @@ fn aet_1206_one_error_set_keeps_solves_bytes() {
     for (label, edit, expected) in pins {
         let (code, out) = run_file("solve", &format!("1206-f1-{label}"), edit);
         assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
-        // `validate` alone does not solve, so it still passes these, for a
-        // specification that acknowledges nothing.
+        // `AET-WO-1208` §1.3: `validate` refuses each with `solve`'s bytes
+        // (step 21), with or without acknowledgements. Before, it passed a
+        // specification that acknowledged nothing, and refused the
+        // reference's acknowledgements as `UnwitnessedAcknowledgementStale`
+        // (`AET-WO-4230` R1: no ledger for a topology that does not solve).
         let (code, out) = run_file("validate", &format!("1206-f1v-{label}"), |s| {
             edit(s);
             s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
         });
-        assert_eq!(code, Some(0), "{label}: {out}");
-        // `AET-WO-4230` R1: the reference's acknowledgements stand only for a
-        // witness ledger, which a topology that does not solve has none of,
-        // so `validate` refuses them as stale, by that name, never by the
-        // bus refusal `solve` makes.
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
         let (code, out) = run_file("validate", &format!("1206-f1a-{label}"), edit);
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(code, Some(2), "{label}: {out}");
-        assert_eq!(
-            v["error"]["kind"], "UnwitnessedAcknowledgementStale",
-            "{label}: {out}"
-        );
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
     }
 }
 
-/// `AET-WO-1206` §1.6: eda's `UnsupportedAddress` is kept. `validate`
-/// refuses a strap the part does not offer (`I2cAddressNotOffered`, step
-/// 14), so `generate` never reaches it; a library caller of
-/// `aethelgard_eda::schematic::emit` handing it a deserialized, unvalidated
-/// specification does, so the emitter still refuses rather than draw a strap
-/// the part cannot take.
+/// `AET-WO-1206` §1.6, then `AET-WO-1208` §1.4: `validate` refuses a strap
+/// the part does not offer (`I2cAddressNotOffered`, step 14). A library
+/// caller of `aethelgard_eda::schematic::emit` handing it a deserialized,
+/// unvalidated specification reached eda's own `UnsupportedAddress` until
+/// `1208`; the emitter now validates first and returns `validate`'s refusal.
 #[test]
-fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
+fn aet_1206_a_library_caller_s_bad_strap_is_refused_by_validate_first() {
     use aethelgard_ir::Specification;
     let mut v: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     let valid: Specification = serde_json::from_value(v.clone()).unwrap();
@@ -362,9 +355,14 @@ fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
     for (index, part, address) in [(0, "BME280", 0x50), (1, "TMP117", 0x50)] {
         v["i2c_devices"][index]["address"] = address.into();
         let spec: Specification = serde_json::from_value(v.clone()).unwrap();
-        assert_eq!(spec.validate().unwrap_err().kind(), "I2cAddressNotOffered");
+        let refused = spec.validate().unwrap_err();
+        assert_eq!(refused.kind(), "I2cAddressNotOffered");
         let e = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap_err();
-        assert_eq!(e.kind(), "UnsupportedAddress", "{part}: {e}");
+        assert_eq!(
+            e,
+            aethelgard_eda::schematic::EmitError::InvalidSpecification(refused),
+            "{part}"
+        );
         v = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     }
 }
@@ -484,28 +482,246 @@ fn emit_renamed(
     aethelgard_eda::schematic::emit(&spec, &solved, &table)
 }
 
-/// `AET-WO-1207` §1.4 (`1206` F1): the emitter holds its own nets against
-/// every net the specification spells, serial and motor nets included, so a
-/// library caller of `schematic::emit` naming one for an emitter net is
-/// refused (`validate` refuses it too; `generate` never gets there). Before
-/// (`4c61fad`), each of these emitted a board, the net shorted to the MCU's
-/// own (`U1_VCAP1` on a UART pin) or to ground.
+/// [`emit_renamed`], with the refusal `validate` makes of the renamed
+/// specification.
+fn emit_renamed_both(
+    spec: &str,
+    old: &str,
+    new: &str,
+) -> (
+    aethelgard_ir::IrValidationError,
+    Result<aethelgard_eda::schematic::Emission, aethelgard_eda::schematic::EmitError>,
+) {
+    let mut v: Value = serde_json::from_slice(&fs::read(root().join(spec)).unwrap()).unwrap();
+    rename(&mut v, old, new);
+    let renamed: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+    (
+        renamed.validate().unwrap_err(),
+        emit_renamed(spec, old, new),
+    )
+}
+
+/// `AET-WO-1207` §1.4 (`1206` F1), then `AET-WO-1208` §1.4: a library
+/// caller of `schematic::emit` naming a serial or motor net for an emitter
+/// net is refused by `validate`'s refusal (the emitter validates first).
+/// Before `1207` (`4c61fad`), each of these emitted a board, the net shorted
+/// to the MCU's own (`U1_VCAP1` on a UART pin) or to ground; under `1207` the
+/// emitter's own `ReservedName` refused them.
 #[test]
 fn aet_1207_the_emitter_refuses_a_serial_or_motor_net_named_for_its_own() {
-    const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
-    for (spec, old, new, id) in [
-        (SPEC, "CONSOLE_TX", "U1_VCAP1", "U1_VCAP1"),
-        (SPEC, "CONSOLE_RX", "gnd", "GND and gnd"),
-        (MOTORS, "MOTOR1", "U1_VCAP2", "U1_VCAP2"),
-        (MOTORS, "MOTOR2", "GND", "GND"),
+    for (spec, old, new, kind, id) in [
+        (SPEC, "CONSOLE_TX", "U1_VCAP1", "ReservedName", "U1_VCAP1"),
+        (SPEC, "CONSOLE_RX", "gnd", "NetShadowsDomain", "gnd"),
+        (MOTORS, "MOTOR1", "U1_VCAP2", "ReservedName", "U1_VCAP2"),
+        (MOTORS, "MOTOR2", "GND", "NetShadowsDomain", "GND"),
     ] {
-        let Err(e) = emit_renamed(spec, old, new) else {
+        let (refused, emitted) = emit_renamed_both(spec, old, new);
+        let Err(e) = emitted else {
             panic!("{old} -> {new}: emitted a board");
         };
-        assert_eq!(
-            (e.kind(), e.id()),
-            ("ReservedName", Some(id)),
-            "{old} -> {new}: {e}"
+        assert_eq!((e.kind(), e.id()), (kind, Some(id)), "{old} -> {new}: {e}");
+        assert_eq!(e.to_string(), refused.to_string(), "{old} -> {new}");
+    }
+}
+
+/// `<args…> <spec>` on `base` with `edit` applied, from the repository root
+/// with an empty `PATH`: the exit code and stdout exactly as printed, and
+/// whether `out` (when `args` writes one) exists afterwards.
+fn run_on(
+    base: &str,
+    args: &[&str],
+    label: &str,
+    edit: impl FnOnce(&mut Value),
+) -> (Option<i32>, String, bool) {
+    let dir = scratch(label);
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(base)).unwrap()).unwrap();
+    edit(&mut spec);
+    let path = dir.join("spec.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let out = dir.join("out");
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
+    cmd.args(args).arg(&path);
+    if args[0] == "generate" {
+        cmd.arg("--out").arg(&out);
+    }
+    let run = cmd
+        .current_dir(root())
+        .env("PATH", "")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    (
+        run.status.code(),
+        String::from_utf8(run.stdout).unwrap(),
+        out.exists(),
+    )
+}
+
+const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
+
+/// A base, an edit, and the bytes `solve` and `generate` refuse it with.
+type PinnedOn = (&'static str, &'static str, fn(&mut Value), &'static str);
+
+/// `AET-WO-1208` §1.3 (`1207` F1): the motor and serial refusals `solve`
+/// made from the specification and the reset clock alone, each with the
+/// bytes the binary at `d539bb1` printed from `solve`, `generate`, `emit`,
+/// `check speeds`, `verify` and `extract`.
+fn aet_1208_pins() -> [PinnedOn; 4] {
+    [
+        (
+            "motor-rate",
+            MOTORS,
+            |s| s["motor_outputs"][0]["pwm"]["rate_hz"] = 1.into(),
+            r#"{"ok":false,"error":{"kind":"MotorTiming","id":"MOTOR1","claimants":["MOTOR1"],"message":"motor output `MOTOR1`: its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)"}}"#,
+        ),
+        (
+            "serial-brr",
+            SPEC,
+            |s| s["serial_ports"][0]["framing"]["baud"] = 300.into(),
+            r#"{"ok":false,"error":{"kind":"SerialBaudOutOfRange","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: 300 baud needs a BRR outside 16 to 0xFFFF on a 64000000 Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"}}"#,
+        ),
+        (
+            "serial-tolerance",
+            SPEC,
+            |s| s["serial_ports"][0]["peer_deviation_ppm"] = 50_000.into(),
+            r#"{"ok":false,"error":{"kind":"SerialBaudTolerance","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: the worst-case baud error, 76673 ppm (the receiver's 26673: quantization 800 with HSI at 25894; plus the peer's declared 50000), is not below the receiver's tolerance of 33300 ppm (RM0433 Rev 9 §48.5.8, Tables 406 and 407, column OVER8 = 0, ONEBIT = 0, Table 407, M = 00)"}}"#,
+        ),
+        // The adversarial pass's 3a: 2.6 V ± 10 % at 1 MHz. At the maximum,
+        // 2860 mV, Fast-mode Plus takes the 8 mA row and the floor is 308
+        // ohms; at the nominal, 2600 mV, the 4 mA row gives 550, which
+        // `solve`'s own topology check refused and `validate` passed until
+        // step 21 judged the nominal too (`d539bb1` and `7c9bb8f` alike).
+        (
+            "pull-up-nominal",
+            SPEC,
+            |s| {
+                mcu_rail(s, 2600);
+                s["voltage_domains"][0]["tolerance_permille"] = 100.into();
+                s["i2c_buses"][0]["speed_hz"] = 1_000_000.into();
+                s["i2c_buses"][0]["pull_up_ohms"] = 308.into();
+                for c in s["net_constraints"].as_array_mut().unwrap() {
+                    c["max_rise_time_nanoseconds"] = 1.into();
+                    c["max_capacitance_femtofarads"] = 1000.into();
+                }
+            },
+            r#"{"ok":false,"error":{"kind":"PullUpBelowSinkFloor","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` has a pull-up of 308 ohms, below the 550 ohm floor its rail and mode set (UM10204 sink current)"}}"#,
+        ),
+    ]
+}
+
+/// `AET-WO-1208` §1.3: `validate` refuses each with the bytes `solve` and
+/// `generate` printed, which they still print, with or without the base's
+/// acknowledgements. Before (`bb72efc`), `validate` passed each that
+/// acknowledged nothing.
+#[test]
+fn aet_1208_validate_refuses_what_solve_refused_byte_for_byte() {
+    for (label, base, edit, expected) in aet_1208_pins() {
+        for args in [
+            &["solve", "--file"][..],
+            &["generate", "--spec"],
+            &["validate", "--file"],
+        ] {
+            let (code, out, created) =
+                run_on(base, args, &format!("1208-{}-{label}", args[0]), edit);
+            assert_eq!(
+                (code, out.trim_end()),
+                (Some(2), expected),
+                "{label} {args:?}"
+            );
+            assert!(!created, "{label}: generate created its output directory");
+        }
+        let (code, out, _) = run_on(
+            base,
+            &["validate", "--file"],
+            &format!("1208-v-{label}"),
+            |s| {
+                edit(s);
+                s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+            },
         );
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
+    }
+}
+
+/// The reference with its MCU rail at `millivolts` (tolerance 0.1 %), and
+/// only a TMP117 (1.8 to 5.5 V) on it: no SPI bus, no other device, nothing
+/// acknowledged. `1207`'s measured board (`~/.cache/aet-1207/reach4/`).
+fn mcu_rail(s: &mut Value, millivolts: u32) {
+    s["voltage_domains"][0]["nominal_millivolts"] = millivolts.into();
+    s["voltage_domains"][0]["tolerance_permille"] = 1.into();
+    s["spi_buses"] = Value::Array(Vec::new());
+    s["spi_devices"] = Value::Array(Vec::new());
+    s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+    s["accept_lifecycle"] = Value::Array(Vec::new());
+    for net in ["SPI_SCK", "SPI_MOSI", "SPI_MISO", "FLASH_CS"] {
+        unconstrain(s, net);
+    }
+    s["i2c_devices"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| d["part"] == "TMP117");
+}
+
+/// `AET-WO-1208` §1.2 (`1207` F2), by the architect's ruling on PR #182
+/// (F1/F5): an MCU rail of 5.0 V is outside the MCU row's operating range,
+/// DS12117 Table 111's 1.62 to 3.6 V. With no power tree, step 22 judges it
+/// by step 16's consumer rule, so `validate` and `generate` refuse it as
+/// `DomainOutsideConsumer`, citing Table 111 and the BOR level's Table 115
+/// row, before writing anything. Before (`bb72efc`), both passed and
+/// `generate` wrote a board.
+#[test]
+fn aet_1208_the_mcu_rail_is_judged_against_its_row() {
+    let expected = r#"{"ok":false,"error":{"kind":"DomainOutsideConsumer","id":"VDD_3V3","message":"DomainOutsideConsumer: `VDD_3V3`: the domain's 4995 to 5005 mV is not inside STM32H753ZITx (MCU)'s 1620 to 3600 mV with its minimum above the consumer's floor of 2680 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032; VBOR3 falling max ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 212, Table 115, VBOR3 falling max 2.68 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
+    let edit = |s: &mut Value| mcu_rail(s, 5000);
+    for args in [&["validate", "--file"][..], &["generate", "--spec"]] {
+        let (code, out, created) = run_on(SPEC, args, &format!("1208-mcu-{}", args[0]), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{args:?}");
+        assert!(!created, "generate created its output directory");
+    }
+}
+
+/// `AET-WO-1208` §1.4 (`1207` F3), option (a): `schematic::emit` calls
+/// `Specification::validate` first, so a library caller naming a serial or
+/// motor net for a domain or another spelled net gets `validate`'s refusal,
+/// by kind, `id` and message. Before (`bb72efc`), the emitter held its own
+/// nets against the spelled ones, never the spelled ones against each
+/// other, and each of these emitted a shorted board.
+#[test]
+fn aet_1208_the_emitter_draws_only_what_validate_passes() {
+    for (spec, old, new, kind) in [
+        (SPEC, "CONSOLE_TX", "VDD_3V3", "NetShadowsDomain"),
+        (SPEC, "CONSOLE_TX", "I2C_SDA", "DuplicateNetName"),
+        (MOTORS, "MOTOR3", "MOTOR4", "DuplicateNetName"),
+    ] {
+        let (refused, emitted) = emit_renamed_both(spec, old, new);
+        assert_eq!(refused.kind(), kind, "{old} -> {new}");
+        assert_eq!(
+            emitted.err(),
+            Some(aethelgard_eda::schematic::EmitError::InvalidSpecification(
+                refused
+            )),
+            "{old} -> {new}"
+        );
+    }
+}
+
+/// `AET-WO-1208` F1 (the architect's ruling on PR #182): an MCU rail of
+/// 1.9 V ± 1 % with `bor_level` 3, whose VBOR3 falls at up to 2.68 V
+/// (DS12117 Table 115), would hold the MCU in reset. With no power tree,
+/// step 22 refuses it by step 16's consumer rule, from `validate` and from
+/// `generate` before it writes anything. Before (`88ca5b0`), both passed and
+/// `generate` wrote a board (`~/.cache/aet-1208/reach/bor3-1900-nospi.json`).
+#[test]
+fn aet_1208_a_rail_below_the_bor_floor_is_refused() {
+    let expected = r#"{"ok":false,"error":{"kind":"DomainOutsideConsumer","id":"VDD_3V3","message":"DomainOutsideConsumer: `VDD_3V3`: the domain's 1881 to 1919 mV is not inside STM32H753ZITx (MCU)'s 1620 to 3600 mV with its minimum above the consumer's floor of 2680 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032; VBOR3 falling max ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 212, Table 115, VBOR3 falling max 2.68 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
+    let edit = |s: &mut Value| {
+        mcu_rail(s, 1900);
+        s["voltage_domains"][0]["tolerance_permille"] = 10.into();
+        s["mcu"]["bor_level"] = 3.into();
+    };
+    for args in [&["validate", "--file"][..], &["generate", "--spec"]] {
+        let (code, out, created) = run_on(SPEC, args, &format!("1208-bor-{}", args[0]), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{args:?}");
+        assert!(!created, "generate created its output directory");
     }
 }

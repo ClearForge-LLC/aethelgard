@@ -50,6 +50,10 @@ const C_FOOTPRINT: &str = "Capacitor_SMD:C_0402_1005Metric";
 pub enum EmitError {
     #[error(transparent)]
     Library(#[from] LibraryError),
+    /// The specification fails [`Specification::validate`] (`AET-WO-1208`
+    /// F3): the emitter draws only what `validate` passes, whoever calls it.
+    #[error(transparent)]
+    InvalidSpecification(aethelgard_ir::IrValidationError),
     #[error("`{reference}` is a `{part}`, which has no vendored model; known: {known}")]
     UnknownPart {
         reference: String,
@@ -92,6 +96,7 @@ impl EmitError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::Library(_) => "LibraryCorrupt",
+            Self::InvalidSpecification(e) => e.kind(),
             Self::UnknownPart { .. } => "UnknownPart",
             Self::UnsupportedAddress { .. } => "UnsupportedAddress",
             Self::PowerNotDrawable { .. } => "PowerNotDrawable",
@@ -107,6 +112,7 @@ impl EmitError {
 
     pub fn id(&self) -> Option<&str> {
         match self {
+            Self::InvalidSpecification(e) => e.id(),
             Self::UnknownPart { reference, .. }
             | Self::UnsupportedAddress { reference, .. }
             | Self::PowerNotDrawable { reference, .. }
@@ -549,6 +555,7 @@ pub fn emit_moved(
     table: &PinTable,
     moves: &[crate::pcb::Move],
 ) -> Result<Emission, EmitError> {
+    spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
     let stack = crate::stack::Stack::of(spec);
     Ok(Emission {
