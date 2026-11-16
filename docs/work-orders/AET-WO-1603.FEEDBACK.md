@@ -147,3 +147,14 @@ One mutant per guard this work order adds, each against the suite that pins it (
 - **Tier 2 touched here (measured, the image):** `twin_tier2::a_witness_line_…` pass (3.7 s); `board_tier2::build_gives_one_sha256_at_two_paths`, `prove_with_spec…`; `with_tools` `prove_*` (7); `channels_tier1` (7).
 - **CLAUDE.md gates (measured, Furnace):** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace` (110 test binaries, exit 0).
 - Reduction pass (diff): −30 net · 2 duplicates removed (the pre-flight's own directory walk, now `input::walk`; the stub copier, now the one writer) · 0 dead paths removed · 1 protected kept (the post-crate build-script check, labelled) · 1 finding (the generated configuration in two places, §7).
+
+## 10. CI (the head before this commit, d29e17e: run 43852274902, green)
+
+- **Plan:** balanced: all eight shards planned at 1,059 s, none above the mean (`ci/shard.sh plan`).
+- **Tier 2:** `tier2_tests_passed=158 floor=158`, exact; all tests `tools_total_passed=1975`.
+- **Shard times (head run):** 0: 15:16 · 1: 21:45 · 2: 21:48 · 3: 14:26 · 4: 16:56 · 5: 15:41 · 6: 23:29 · 7: 16:28. Shard 6 was the slowest on both of this branch's runs (21:08 on dc92fc3, where shard 3 failed on the test fixed in 2f249f5), by 0:42 and 1:41, under the 3-minute refit trigger; reported, not refitted (roadmap §6).
+- `engine-image` and `ardupilot-image` green on the same head: the four CI boards' real `hwdef.h` (seed-pin and seed-af included) pass the new reader.
+
+## 11. SIGNAL
+
+**STOPPED, §7, for a ruling on D1** (§2): §1.2 as written refuses `firmware/.cargo/config.toml`, which `generate` writes into every board crate (R1). Everything is built with that one file allow-listed by its exact keys; the generated crate passes, every other configuration is refused. If D1 is accepted as built, nothing further is owed. Measured: no caller-crate route escaped the sandbox, and no forgery reached `pass` (§3).
