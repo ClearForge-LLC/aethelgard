@@ -280,10 +280,16 @@ fn a_pad_the_grid_reaches_gets_no_escape() {
 /// (clearance + width + clearance, 600 µm) it escapes down the channel's
 /// centreline; 1 nm narrower it does not, and the board is refused.
 fn sealed(gap: i64) -> Board {
+    pocket(gap, false)
+}
+
+/// [`sealed`]'s board; with `pair`, the pad above it is on its net too and the
+/// far partner is gone, so the net is the two pads in one pocket.
+fn pocket(gap: i64, pair: bool) -> Board {
     let o = (50 * MM + 43_822, 50 * MM);
     let mut ic = Vec::new();
     for (i, y) in [-625_000, 0, 625_000].iter().enumerate() {
-        let net = (i == 1).then(|| "N".to_owned());
+        let net = (i == 1 || (pair && i == 0)).then(|| "N".to_owned());
         ic.push(pad(
             &(i + 4).to_string(),
             net,
@@ -298,7 +304,21 @@ fn sealed(gap: i64) -> Board {
         ));
     }
     let edge = o.0 + 187_500;
-    let wall = rect((edge + gap + 250_000, o.1), 500_000, 900_000);
+    // The wall in front of the pad; with `pair`, in front of both pads.
+    let wall = match pair {
+        false => rect((edge + gap + 250_000, o.1), 500_000, 900_000),
+        true => rect((edge + gap + 250_000, o.1 - 312_500), 500_000, 2_300_000),
+    };
+    // With `pair`, a pad with no net above the two closes the pocket's top,
+    // as the one below closes its bottom.
+    if pair {
+        ic.push(pad(
+            "7",
+            None,
+            rect((o.0, o.1 - 1_250_000), 375_000, 375_000),
+            0,
+        ));
+    }
     let yard = Rect {
         x0: o.0 - 3 * MM - 400_000,
         y0: o.1 - 1_000_000,
@@ -330,17 +350,38 @@ fn sealed(gap: i64) -> Board {
             Part {
                 reference: "P1".into(),
                 rotation: 0,
-                pads: vec![pad(
-                    "1",
-                    Some("N".into()),
-                    rect((o.0 + 6 * MM, o.1 + 4 * MM), 400_000, 400_000),
-                    0,
-                )],
+                pads: if pair {
+                    vec![]
+                } else {
+                    vec![pad(
+                        "1",
+                        Some("N".into()),
+                        rect((o.0 + 6 * MM, o.1 + 4 * MM), 400_000, 400_000),
+                        0,
+                    )]
+                },
                 courtyard: vec![],
                 keepouts: vec![],
             },
         ],
         stack: stack(),
+    }
+}
+
+/// A pocket that holds two terminals of the pad's net is not sealed: they
+/// join on the grid, as they would without escapes, and no channel escape is
+/// laid.
+#[test]
+fn a_pocket_with_two_terminals_of_one_net_routes_on_the_grid() {
+    let b = pocket(600_000, true);
+    let r = judged(&b);
+    assert!(!r.segments.is_empty());
+    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
+    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
+    for s in &r.segments {
+        for (x, y) in [s.start, s.end] {
+            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
+        }
     }
 }
 
@@ -447,4 +488,74 @@ fn a_fully_wired_qfn_routes_at_every_residue() {
             }
         }
     }
+}
+
+/// An escape never takes a reached pad's way out (the grid's own margin, not
+/// the bare clearance). Pads 150 µm wide at 0.4 mm: pad A's grid terminal is
+/// 5 µm off its centre, away from B, and B (no grid node) would escape on
+/// its centreline 405 µm from A's terminal: inside a grid track's reach
+/// (410 µm), though clear of the bare clearance (400 µm). B gets no escape
+/// and is the pad the router names; A keeps its node.
+#[test]
+fn an_escape_never_takes_a_reached_pads_way_out() {
+    let g = 50 * MM; // a grid line (the outline's corner is on the grid)
+    let a = g + 5_000;
+    let pads = vec![
+        pad("0", None, rect((g, a - 400_000), 550_000, 150_000), 0),
+        pad("1", Some("A".into()), rect((g, a), 550_000, 150_000), 0),
+        pad(
+            "2",
+            Some("B".into()),
+            rect((g, a + 400_000), 550_000, 150_000),
+            0,
+        ),
+        pad("3", None, rect((g, a + 800_000), 550_000, 150_000), 0),
+        pad(
+            "4",
+            None,
+            rect((g + 3 * MM, a - 400_000), 550_000, 150_000),
+            0,
+        ),
+        pad(
+            "5",
+            None,
+            rect((g + 3 * MM, a + 800_000), 550_000, 150_000),
+            0,
+        ),
+    ];
+    let partner = |r: &str, net: &str, y: i64| Part {
+        reference: r.into(),
+        rotation: 0,
+        pads: vec![pad(
+            "1",
+            Some(net.into()),
+            rect((g - 4 * MM, y), 400_000, 400_000),
+            0,
+        )],
+        courtyard: vec![],
+        keepouts: vec![],
+    };
+    let b = Board {
+        outline: Rect {
+            x0: g - 10 * MM,
+            y0: g - 10 * MM,
+            x1: g + 10 * MM,
+            y1: g + 10 * MM,
+        },
+        parts: vec![
+            Part {
+                reference: "U1".into(),
+                rotation: 0,
+                pads,
+                courtyard: vec![],
+                keepouts: vec![],
+            },
+            partner("PA", "A", g - 2 * MM),
+            partner("PB", "B", g + 3 * MM),
+        ],
+        stack: stack(),
+    };
+    let e = route::route(&b).unwrap_err();
+    assert_eq!(e.net, "B", "{e:?}");
+    assert!(e.why.contains("U1 pad 2"), "{e:?}");
 }
