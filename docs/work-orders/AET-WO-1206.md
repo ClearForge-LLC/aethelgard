@@ -63,3 +63,17 @@
 - **§1.1 finds an existing specification a new rule would refuse.**
 - **The emitter's reserved references depend on the solve** in a way `validate` cannot know without solving.
 - **Keeping the JSON byte-identical would need two error types to stay apart.**
+
+## 8. Amendments
+
+**2026-11-16, from the Grok review (`docs/reviews/2026-11-16-grok.md`), sent to the builder's inbox the same morning:**
+- **§1.7, the I2C ceiling uses the worse line.**
+  - `solve.rs` `i2c_ceilings` takes `min` of the two lines' declared rise times, then maps the result to a mode with `electrical::ceiling_hz`. So SDA at 1000 ns beside SCL at 120 ns solves at 1 MHz.
+  - It must take `max`, with unequal-line tests at every mode boundary.
+  - If any existing solve changes, that is a §7 stop.
+- **§1.8, a part with no `parts.json` row.**
+  - `validate` and `solve` skip it, and only `generate` refuses it (`UnknownPart`).
+  - `validate` refuses it by name.
+  - Measure first: list every example, fixture and scenario that uses such a part.
+- **Not in scope:** a pull-up maximum (`AET-WO-1202` withdrew R×C deliberately). The floor at the domain maximum is `AET-WO-4230`'s §1.5.
+
