@@ -166,3 +166,20 @@ The five assertions that fail there are the adversary's pins of the old behaviou
 - `verify.rs` holds `"spi_identity_mismatch"` literals.
 
 Reduction pass (diff): +1 net in source (measured, `git diff --numstat`; rustfmt spreads the merged arm over more lines, so the cut is copies, not lines), plus the 42-line test · 3 duplicates removed · 0 dead paths removed · 3 protected kept · 3 findings above
+
+## The new seeded cases, measured (tier 2 at `1d9c93d`, `~/.cache/aet-3201/t2/head2`)
+
+- **`trap-indeterminate-leave-390p`** (`cap-390p-sda-2k2` × `leave-firmware`):
+  - Findings: `analog_rise_exceeds_ceiling`, `i2c_timeout`, `pc_outside_firmware`.
+  - Answer: **`I3`**, evidence exactly `[6,7] [7,9]`: the faulted SDA rise and the fault. The healthy SCL rise `[5,7]` is a symptom, never `I3`'s evidence. **P7 held**, index for index.
+  - Masked: none. `propose` gives `no_proposal`.
+- **`identity-late-dshot`** (`scenarios/motors/dshot600.json` × `identity-late`, on the DShot fixture's board):
+  - Findings: `boot_word_missing`, `identity_read_outside_window`, `register_mismatch` (TIM1, never started).
+  - Answer: **`I7`**, evidence exactly the two unset records `[49,12] [51,21]`, nothing unexplained.
+  - **The revised P6 held:** S2 for the boot word and S4 for the timer's registers decide too, and `I7`, the only indeterminate rule, names the run. Before this work order the run was `I1`, as `4300a` P12 measured.
+- **The evidence mutant only the new trap kills (measured).** M1, "board-scope `I3` evidence plus every rise", was built into a scratch copy of evolve and run with `attribute` over the archived `leave-firmware` runs (`~/.cache/aet-3201/m1-mutant.txt`):
+  - the 47 kΩ trap gives `[5,7] [6,7] [7,9]`, exactly its manifest, so it cannot see M1;
+  - the 390 pF trap gives `[5,7] [6,7] [7,9]` against its manifest's `[6,7] [7,9]`, so clause 1 fails;
+  - the 2.2 kΩ `leave-firmware` run stays `S2`.
+- Every other case's answer, evidence and masked list are unchanged (clause 1 failed only on the placeholder indices of the new I7 case, before they were filled in from this run).
+- `TIER2_MIN` is unchanged: no tier-2 test function was added; both cases ride the seeded block.
