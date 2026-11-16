@@ -81,24 +81,6 @@ The PM worked single-threaded on the merges and the gates, and handed disjoint c
 
 `main` was merged once (`0570ffe`, 4300d3's specification 10), and this branch renumbered to specification 11.
 
-## 5. Decisions taken inside the work order (each with its source)
-
-- **Values live in the topology; rules are separate code (D1).** The solver writes each new register value into the solved topology. The generator copies it, and `aethelgard-ir::silicon` judges it with its own RM0433 constants, sharing no function with the solver or the generator. The Kani oracle takes the SPI words, the select word and I2C `CR1` from `silicon`; `TIMINGR` is the topology's word, which `silicon::check_i2c` judged.
-- **The HSI worst case binds every HSI-derived value (Amendment 1).** DS12117 Rev 10 Table 36/133, the −40…TJmax row (junction temperature is bounded by no declaration): −25,894 / +14,984 ppm. A tight `TIMINGR` synthesized at the nominal 64 MHz broke UM10204's minima at +1.5 %, so minima are judged at the fastest kernel and maxima at the slowest. SPI's `MBR` is chosen against the fastest kernel: 1 MHz gives `MBR` 6 (500 kHz nominal), not 5.
-- **SPI kernels:** SPI1–3 `per_ck` (`SPI123SEL` = `100`, `per_ck` = `hsi_ker_ck` at `CKPERSEL` reset); SPI4/5 and SPI6 `hsi_ker_ck` (`011`), since `per_ck` is not among their choices. The select is written whole once, after `ResetClock`, before the first SPI gate.
-- **`CFG1` keeps `CRCSIZE` at reset (`0x0007_0007`, RM0433 p.2218–2219).** Contract D4's "every other field 0" was wrong at source.
-- **The SPI below-range refusal is at `fast >> 8` = 253,746 Hz**, so that no declared speed falls between a refusal and an `MBR`.
-- **The shortest `tSYNC` is two kernel cycles each, with no `tAF` credit** (RM0433 Tables 391–393 notes 2–4, pp.1983–1984). This is more conservative than §1.4's "including the filter delays"; `tAF` enters only the `SDADEL` bounds.
-- **Fm+'s data-valid maximum is reported, not gated.** At DS12117's `tAF` max of 260 ns it cannot be met at any `PRESC`, and RM0433 p.1958 says it "can be violated when NOSTRETCH = 0", which ours is. No fixture declares Fm+.
-- **Fm+ takes 8 mA (4 mA below a 2.7 V maximum rail).** ST's open pin data carries no pad type (contract D8; DS12117 Table 50 p.139, §6.3.32 p.188), so there is no `FT_f` check and no `SYSCFG_PMCR` write.
-- **The serial check takes the worse of the HSI's two extremes,** not the one that adds by sign, which understates. It reports quantization, HSI, receiver, peer, worst case and margin.
-- **The SPI bring-up order is `CR1` (`SSI`), then `CFG1`, then `CFG2`.** `CFG` writes are allowed only with `SPE` 0 (§50.11.1 p.2216), and `SSI` must already be high when `MASTER|SSM` land (§50.5.2 p.2184).
-- **ES0392 §2.22.6:** the erratum gives no figure. The delay is `ceil(2^(MBR+1) × fast core / slow kernel)` reads of `SR` (5 at `MBR` 1), in rounds of 16 (a plain 267-iteration loop exhausted Kani's 8 GiB). It is sized, not witnessed.
-- **RCC enable delay (A16):** read back each `*ENR` (RM0433 §8.5.10 step b), and do a dummy read of the block on GPIO, I2C and SPI (step d). TIM and USART blocks are never read, by their proofs: a residual.
-- **The waits run at the fastest HSI:** `settle` spins are `ceil(µs × 64,958,976 / 10⁶)`.
-- **The serial judge's RCC rule now requires each solved select word,** written whole once, before its controller's SPI gate. A superset value, a second write or a late write is refused.
-- **The factory word:** RM0433 Table 21 (p.177) gives `0x0006_AAF0`. Renode's image is `0x0406_AAF0`, so contract D10's figure was Renode's. `FAB-NOTES` programs `BOR_LEV` into the word read from `OPTSR_CUR`, keeping `RDP` and the reserved bits as read.
-
 ## 4. Runs and results beside the predictions
 
 | # | Prediction | Result | Label |
@@ -124,6 +106,24 @@ The PM worked single-threaded on the merges and the gates, and handed disjoint c
 | `verify_2k2_tier2` | Every gate of the reference passed. The test expected six harnesses where there are now seven (the flash read): fixed in `86eb013` |
 | `verify_47k_tier2` | 2 of 2 |
 | `against_fab_tier2` | 2 of 2 |
+
+## 5. Decisions taken inside the work order (each with its source)
+
+- **Values live in the topology; rules are separate code (D1).** The solver writes each new register value into the solved topology. The generator copies it, and `aethelgard-ir::silicon` judges it with its own RM0433 constants, sharing no function with the solver or the generator. The Kani oracle takes the SPI words, the select word and I2C `CR1` from `silicon`; `TIMINGR` is the topology's word, which `silicon::check_i2c` judged.
+- **The HSI worst case binds every HSI-derived value (Amendment 1).** DS12117 Rev 10 Table 36/133, the −40…TJmax row (junction temperature is bounded by no declaration): −25,894 / +14,984 ppm. A tight `TIMINGR` synthesized at the nominal 64 MHz broke UM10204's minima at +1.5 %, so minima are judged at the fastest kernel and maxima at the slowest. SPI's `MBR` is chosen against the fastest kernel: 1 MHz gives `MBR` 6 (500 kHz nominal), not 5.
+- **SPI kernels:** SPI1–3 `per_ck` (`SPI123SEL` = `100`, `per_ck` = `hsi_ker_ck` at `CKPERSEL` reset); SPI4/5 and SPI6 `hsi_ker_ck` (`011`), since `per_ck` is not among their choices. The select is written whole once, after `ResetClock`, before the first SPI gate.
+- **`CFG1` keeps `CRCSIZE` at reset (`0x0007_0007`, RM0433 p.2218–2219).** Contract D4's "every other field 0" was wrong at source.
+- **The SPI below-range refusal is at `fast >> 8` = 253,746 Hz**, so that no declared speed falls between a refusal and an `MBR`.
+- **The shortest `tSYNC` is two kernel cycles each, with no `tAF` credit** (RM0433 Tables 391–393 notes 2–4, pp.1983–1984). This is more conservative than §1.4's "including the filter delays"; `tAF` enters only the `SDADEL` bounds.
+- **Fm+'s data-valid maximum is reported, not gated.** At DS12117's `tAF` max of 260 ns it cannot be met at any `PRESC`, and RM0433 p.1958 says it "can be violated when NOSTRETCH = 0", which ours is. No fixture declares Fm+.
+- **Fm+ takes 8 mA (4 mA below a 2.7 V maximum rail).** ST's open pin data carries no pad type (contract D8; DS12117 Table 50 p.139, §6.3.32 p.188), so there is no `FT_f` check and no `SYSCFG_PMCR` write.
+- **The serial check takes the worse of the HSI's two extremes,** not the one that adds by sign, which understates. It reports quantization, HSI, receiver, peer, worst case and margin.
+- **The SPI bring-up order is `CR1` (`SSI`), then `CFG1`, then `CFG2`.** `CFG` writes are allowed only with `SPE` 0 (§50.11.1 p.2216), and `SSI` must already be high when `MASTER|SSM` land (§50.5.2 p.2184).
+- **ES0392 §2.22.6:** the erratum gives no figure. The delay is `ceil(2^(MBR+1) × fast core / slow kernel)` reads of `SR` (5 at `MBR` 1), in rounds of 16 (a plain 267-iteration loop exhausted Kani's 8 GiB). It is sized, not witnessed.
+- **RCC enable delay (A16):** read back each `*ENR` (RM0433 §8.5.10 step b), and do a dummy read of the block on GPIO, I2C and SPI (step d). TIM and USART blocks are never read, by their proofs: a residual.
+- **The waits run at the fastest HSI:** `settle` spins are `ceil(µs × 64,958,976 / 10⁶)`.
+- **The serial judge's RCC rule now requires each solved select word,** written whole once, before its controller's SPI gate. A superset value, a second write or a late write is refused.
+- **The factory word:** RM0433 Table 21 (p.177) gives `0x0006_AAF0`. Renode's image is `0x0406_AAF0`, so contract D10's figure was Renode's. `FAB-NOTES` programs `BOR_LEV` into the word read from `OPTSR_CUR`, keeping `RDP` and the reserved bits as read.
 
 ## 6. Mutants, both ways (WO §2, §5.1, §5.2)
 
@@ -271,3 +271,65 @@ After the ruling:
 - refit the shards;
 - run the full adversarial pass (fresh subagent, read-only) and the reduction pass;
 - then READY.
+
+---
+
+# Round 2: after the architect's ruling (PR #161, comment 6911424608)
+
+## 14. The ruling, as built
+
+| Q | Ruled | Built (slice, commit) |
+|---|---|---|
+| Form | per register and class | `acknowledge_unwitnessed` in the specification (R2-ir `7601a9d`):<br>• `register`, `class`, exact `fields`, `reason` held to `board::source`<br>• five shape refusals at `validate`<br>• `UnwitnessedAcknowledgementStale` at the CLI's `validate` and `verify`<br>• `UnwitnessedFieldNotAcknowledged` at `--fab-out` and `--against-fab`, naming every row, before any gate<br>• acknowledged rows printed `acknowledged: true` with their reason (R2-cli `80ea1b9`) |
+| — | the reference acknowledged | **27 entries, 164 fields**: the ruling's 26 plus `RCC.CR` (`D2CKRDY`, Q-F). 15 `same-source`, 11 `ignored-by-model`, 1 `silicon-only`, each reason written by hand. `four-layer` (the other `--fab-out` fixture): 22 entries, 117 fields |
+| Q-A | 5,000 ppm accepted as declared | `peer_deviation_source` (`cited` only on CRSF at its cited spread; `PeerDeviationNotCited`); the verdict's `declared_peers` names every declared figure |
+| Q-B | the 416666 refusal stays | unchanged; the fixture runs 420000 |
+| Q-C | report only | unchanged |
+| Q-D | `AFCNTR` = 1 on every master | `silicon::spi_words`' `CFG2` = `0x8440_0000` (RM0433 §50.11.4 p.2221); the generator composes it; the oracle takes the rule's word. Mutant (AFCNTR cleared) killed by Kani (31 s) |
+| Q-E | one wait, the largest start-up | the bring-up runs every scripted device's identity and configure steps, then ONE `settle` of the largest `settle_us` (40 ms at the fastest HSI: 2,598,360 spins on `imu-baro-1v8`), then every data step. The twin judge's records follow (R2-gen `be55705`). **`imu-baro-1v8`'s boot word is written at 78.1 ms of virtual time** (measured, bisecting `--for` in 100 µs steps), inside the 100 ms window, so the stop did not fire. **Decision for the architect to confirm (adversarial F4):** the wait sits after the last configure write, not at reset, because each cited start-up counts from the write that wakes the part (ICM20948 "from sleep mode"; BMP581 from leaving DEEP STANDBY); it satisfies "elapsed since reset" a fortiori |
+| Q-F | `D2CKRDY` not polled | `register_fields` lists `RCC.CR.D2CKRDY` as a reset dependency of a D2 peripheral (RM0433 Table 8 p.133); the ledger classes it `ignored-by-model` (`STM32H7_RCC.cs` L175) and gives it a bench row |
+| Q-G | the motor pull-down | `PUPDR` is written whole per port in `split`, beside `OTYPER`: `motors-pwm` GpioA `0x64aa0000` (PA8–PA11 `10`). Pins no longer read-modify-write `PUPDR`. **Decision:** an unused pin keeps its reset pull (RM0433 p.542: the debug pins' `0x6400_0000` / `0x0000_0100`), so SWD keeps its pulls. Motor-pin rows are `independent-rule` through `silicon::motor_output_pupd`, and the ledger refuses a disagreement (`LedgerRuleDisagrees`) |
+| Q-H | an independent `BRR` inequality | `silicon::check_brr`: `2·\|BRR·baud − f_ck\| ≤ baud`, `BRR ≥ 16`, `BRR ≤ 0xFFFF` (RM0433 §48.5.7 pp.2034–2035). After the adversarial pass (F1) it takes its kernel from `silicon::usart_kernel_hz` (§8.7.21 pp.416–417) and requires the topology's to equal it, which departs from the contract's three arguments, and says so. `generate` refuses a failure (`SiliconRuleFails`) |
+| Q-I | register fields only | the `WAIT` and `MODEL` rows moved out of the ledger into the verdict's `twin_limits` (never acknowledged, never blocking a package); there are no `PIN_C` rows |
+| Q-J | three `OPTSR` values | FAB-NOTES' step and the residual cite bench `0x1BC6_AAF0`, RM0433 Table 21 `0x0006_AAF0` and Renode `0x0406_AAF0`; read-modify-write of the word as read is the only procedure; no UM2237 |
+| Q-K | refit, job limit 45 | `ci.yml` tools `timeout-minutes` 45 (`0ab99be`); the refit is in §17 |
+
+Also fixed: `serial.rs` cited §48.8.5 for "BRR ≥ 16". The quote is §48.5.7's note, p.2035.
+
+## 15. Decisions taken in round 2
+
+- **`validate` solves when acknowledgements are present** (the stale check needs the ledger). 1206's test, which asserts that `validate` does not report a bus refusal, now runs its edits with `acknowledge_unwitnessed` emptied. The merge added an assertion that, with the reference's entries, `validate` refuses by `UnwitnessedAcknowledgementStale`, never by the bus refusal (M2). The test's input changed; its intent is kept.
+- **A specification with entries that does not solve** is refused as stale at its first entry.
+- **The stale check runs only at `validate` and `verify`.** `solve`, `generate`, `emit` and `simulate` accept a stale specification.
+- **`flash_controller_access` carries word 1's mismatch** (adversarial F2) as a note naming both words, so kind 10's record shape and trace 12 are unchanged.
+
+## 16. The adversarial pass (fresh Opus, read-only, on `1f2a39a`; `~/.cache/aet-4230/adv/findings.md`)
+
+| # | Sev | Finding | Fix (R3-fix) |
+|---|---|---|---|
+| F1 | medium | `check_brr` took the USART kernel from the solver (`port.kernel_hz`). The adversary's mutant halved it (32 MHz, `BRR` 278, 230,400 baud on silicon) and `validate` passed | `silicon::usart_kernel_hz`, its own derivation; the mutant is now refused at `generate` and `verify` (`4ffe526`) |
+| F2 | medium | the boot record's word 1 was never compared with the value the flash read returned; a firmware forging word 1 passed | the judge requires word 1 to equal the read's value in all 32 bits; the adversary's test ported as `boot_tier1::word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both` (`328439c`) |
+| F3 | low | the I2C start mode came from the generator's own table, the oracle used the same list, and Renode stores no `TIMINGR`. The adversary's mutant (start in Fm+) passed Kani (229.7 s) | `silicon::i2c_start_mode`; the oracle's start branch expects the topology's word for the rule's mode, and the mutant now fails Kani (243.7 s) and tier 1 (`9442e52`) |
+| F4 | low | the Q-E wait's placement was not recorded | recorded in §14, for the architect to confirm |
+| F5 | low | the ledger's values are re-derived, not read from the emitted text | half fixed: the start-mode copy is replaced by the rule. A residual: `register_fields`' test checks bit coverage, not values |
+| F6 | low | the oracle's register offsets and the I2C enable bit come from svd-hal's parse of ST's header | a caveat: vendor facts, not generator arithmetic |
+
+What held under attack:
+- every acknowledgement forgery (a dropped field or entry, the wrong class, an extra field, an entry for an `independent-rule` row, an empty reason, a lower-case register, a duplicate, a new field in an acknowledged register) is refused by name before any gate;
+- `--fab-out` and `--against-fab` are the only package routes;
+- a solver mutant doubling the SPI speed is caught by `validate`'s re-derivation;
+- the ledger's completeness holds on all 14 fixture specifications;
+- `silicon.rs` imports only IR types.
+
+## 17. Merges, versions, mutants (round 2)
+
+- **`main` merged three times:**
+  - `831c124`: 4300g, 1310, 4401, 1206; this branch takes **specification 12**, since 4300g took 11;
+  - `386d053`: 1603;
+  - `399c1bb` and `2bb9ee4`: 3201, the docs reconcile, 1311.
+  Topology 8, parts 6, power parts 3 (`main`'s), trace 12. **`TIER2_MIN` 160**, counted in the image (`main`'s 159 plus C2's completeness test).
+- **Mutants:** R2-ir 21, R2-gen 13 (the `PUPDR` footprint mutant was caught only by Kani), R2-cli 10 (M7 first survived, killed after `1fe9df3`), R3-fix 3 plus the adversary's two. All killed. Tables are under `~/.cache/aet-4230/{r2ir,r2gen,r2cli,r3fix}/mutants.md`.
+- **Kani on the reference:** 7/7, 219–268 s. `every_valid_sequence` grew from 186 s to 236 s.
+- **The reference's ledger: 289 rows:**
+  - by class: 67 `independent-rule`, 58 `observed`, 83 `same-source`, 80 `ignored-by-model`, 1 `silicon-only`;
+  - 164 fields acknowledged; 0 unacknowledged.
