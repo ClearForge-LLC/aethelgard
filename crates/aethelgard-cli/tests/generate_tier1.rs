@@ -464,6 +464,77 @@ fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
             "pm/Cargo.toml",
         ),
         (
+            "proc-macro-crate-type",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[lib]\ncrate-type = [\"proc-macro\"]\n"),
+                )
+            }),
+            "CrateHasProcMacro",
+            "pm/Cargo.toml",
+        ),
+        (
+            "proc-macro-crate-type-root",
+            Box::new(|c| {
+                append(
+                    c.join("Cargo.toml"),
+                    "\n[lib]\ncrate_type = [\"rlib\", \"proc-macro\"]\n",
+                )
+            }),
+            "CrateHasProcMacro",
+            "Cargo.toml",
+        ),
+        (
+            "cargo-features",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("Cargo.toml"),
+                    format!("cargo-features = [\"profile-rustflags\"]\n{t}"),
+                )
+                .unwrap();
+            }),
+            "CargoFeaturesRefused",
+            "Cargo.toml",
+        ),
+        (
+            "project-build-script",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &PM.replace("[package]", "[project]").replace("2024", "2021"),
+                );
+                put(c.join("pm/build.rs"), "fn main() {}\n");
+            }),
+            "CrateHasBuildScript",
+            "pm/Cargo.toml",
+        ),
+        (
+            "package-workspace-outside",
+            Box::new(|c| {
+                let t = fs::read_to_string(c.join("firmware/Cargo.toml")).unwrap();
+                fs::write(
+                    c.join("firmware/Cargo.toml"),
+                    t.replacen("[package]\n", "[package]\nworkspace = \"../..\"\n", 1),
+                )
+                .unwrap();
+            }),
+            "WorkspaceAboveCrate",
+            "firmware/Cargo.toml",
+        ),
+        (
+            "workspace-member-outside",
+            Box::new(|c| {
+                put(
+                    c.join("pm/Cargo.toml"),
+                    &format!("{PM}[workspace]\nmembers = [\"../../x\"]\n"),
+                )
+            }),
+            "CrateHasDependency",
+            "pm/Cargo.toml",
+        ),
+        (
             "build-script",
             Box::new(|c| put(c.join("firmware/build.rs"), "fn main() {}\n")),
             "CrateHasBuildScript",

@@ -175,7 +175,21 @@ fn dependency_tables(m: &toml::Table) -> Vec<&toml::Table> {
     out
 }
 
-/// One manifest of the copy: no proc macro, no build script, and no path
+/// Refuses `path`, named by `key` in `manifest`, unless it resolves inside
+/// `root` (`WorkspaceAboveCrate`, adversarial A6).
+fn inside(root: &Path, manifest: &Path, dir: &Path, key: &str, path: &str) -> Result<(), Stop> {
+    match fs::canonicalize(dir.join(path)) {
+        Ok(resolved) if resolved.starts_with(root) => Ok(()),
+        _ => Err(preflight_refused(
+            "WorkspaceAboveCrate",
+            root,
+            manifest,
+            &format!("names `{key} = \"{path}\"`, which is not inside the crate"),
+        )),
+    }
+}
+
+/// One manifest of the copy: no unstable cargo features, no proc macro, no build script, and no path
 /// dependency resolving outside `root`.
 fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
     let dir = manifest.parent().unwrap_or(root);
@@ -190,11 +204,32 @@ fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
                 "is not a TOML manifest",
             )
         })?;
+    if m.contains_key("cargo-features") {
+        return Err(preflight_refused(
+            "CargoFeaturesRefused",
+            root,
+            manifest,
+            "names unstable cargo features, which a nightly cargo (Kani's) would take",
+        ));
+    }
+    // A proc macro by flag, or by crate type, which cargo accepts with only
+    // a warning (adversarial A1).
     let lib = m.get("lib").and_then(toml::Value::as_table);
     if lib.is_some_and(|l| {
         ["proc-macro", "proc_macro"]
             .iter()
             .any(|k| l.get(*k).and_then(toml::Value::as_bool) == Some(true))
+            || ["crate-type", "crate_type"].iter().any(|k| {
+                l.get(*k)
+                    .and_then(toml::Value::as_array)
+                    .is_some_and(|types| {
+                        types.iter().any(|t| {
+                            t.as_str().is_some_and(|t| {
+                                t.replace('_', "-").eq_ignore_ascii_case("proc-macro")
+                            })
+                        })
+                    })
+            })
     }) {
         return Err(preflight_refused(
             "CrateHasProcMacro",
@@ -203,7 +238,15 @@ fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
             "is a proc-macro crate, whose code cargo would run at build time; a board crate has none (RUL-04)",
         ));
     }
-    if let Some(package) = m.get("package").and_then(toml::Value::as_table) {
+    // `[project]` is `[package]`'s old name, still read by editions before
+    // 2024 (adversarial A2).
+    for package in ["package", "project"]
+        .iter()
+        .filter_map(|k| m.get(*k).and_then(toml::Value::as_table))
+    {
+        if let Some(workspace) = package.get("workspace").and_then(toml::Value::as_str) {
+            inside(root, manifest, dir, "package.workspace", workspace)?;
+        }
         let script = match package.get("build") {
             Some(toml::Value::Boolean(false)) => None,
             Some(toml::Value::String(s)) => Some(dir.join(s)),
@@ -218,6 +261,32 @@ fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
                 &format!(
                     "has a build script ({}), which cargo would run; a board crate has none (RUL-04)",
                     script.strip_prefix(root).unwrap_or(&script).display()
+                ),
+            ));
+        }
+    }
+    let members = m
+        .get("workspace")
+        .and_then(toml::Value::as_table)
+        .into_iter()
+        .flat_map(|w| ["members", "default-members", "exclude"].map(|k| w.get(k)))
+        .flatten()
+        .filter_map(toml::Value::as_array)
+        .flatten();
+    for member in members {
+        let path = member.as_str().unwrap_or("");
+        if path.is_empty()
+            || Path::new(path).is_absolute()
+            || Path::new(path)
+                .components()
+                .any(|c| c == std::path::Component::ParentDir)
+        {
+            return Err(preflight_refused(
+                "CrateHasDependency",
+                root,
+                manifest,
+                &format!(
+                    "names the workspace member `{path}`, which may be outside the crate; a board crate has no dependencies (RUL-04)"
                 ),
             ));
         }
@@ -253,8 +322,10 @@ fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
 /// cargo invocation, each being code cargo or rustup would run, or a setting
 /// they would take, before anything else judges the crate (FEEDBACK §3):
 ///
-/// - in any manifest of `copy`: a proc-macro crate, a build script, or a
-///   path dependency resolving outside the copy;
+/// - in any manifest of `copy`: unstable `cargo-features`; a proc-macro
+///   crate (by flag or crate type); a build script (`[package]` or its old
+///   name `[project]`); a path dependency, workspace member or
+///   `package.workspace` that may resolve outside the copy;
 /// - in `copy`: a `.cargo/config` or `.cargo/config.toml` other than the
 ///   generated one, exactly; a `rust-toolchain` or `rust-toolchain.toml`;
 /// - in every ancestor of `cwd` above the copy, up to `/`: any of those
