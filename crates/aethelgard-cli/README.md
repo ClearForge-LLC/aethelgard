@@ -315,7 +315,7 @@ The reader removes a stray `\r` at either end of a line, matches each marker as 
 **The I2C identity reads** (`AET-WO-2202`). The specification's I2C devices are placed on the peripheral their bus was solved to (`SolvedTopology::i2c_devices`, `AET-WO-2203`). For each device whose part has a Renode 1.17.0 model (today the BME280, `I2C.BME280`) the emitted platform declares the model at its bus and address, and the reference firmware reads the part's identity register once, through the board crate's bounded `transfer`, before it writes the boot word.
 - **The record.** Each read leaves two words after the boot word, in device order: a status (`0x22020000` OK, or the wait that expired: `…01` TXIS, `…02` TC, `…03` RXNE, `…04` STOPF), then the bytes read, first byte most significant. Before the run the judge writes `0xFFFFFFFF` to every record word, as it does the boot word, so a record the firmware never wrote reads as that fill.
 - **The expectation** is the part table in `aethelgard-ir` (`parts::identity`: BME280 register `0xD0`, `0x60`; TMP117 register `0x0F`, `0x0117`), never anything the firmware wrote.
-- **Findings:** `i2c_identity_mismatch` (status OK, another value), `i2c_timeout` (naming the wait), `i2c_record_invalid` (a record no transfer writes: the fill, or another word). A record is judged only once the boot word is set; before that `boot_word_missing` already says the run failed.
+- **Findings:** `i2c_identity_mismatch` (status OK, another value), `i2c_timeout` (naming the wait), `i2c_record_invalid` (a record no transfer writes: the fill, or another word). A script's later steps name a mismatch by their step, `i2c_configure_mismatch` or `i2c_data_mismatch` (`AET-WO-4210` F-B10), and SPI's likewise. A record is judged once the boot word is set. Before that, `boot_word_missing` already says the run failed, and only a timed-out record is named, as `i2c_timeout`: the record is the firmware's own (`AET-WO-3201`, `3100` F15). On a DShot board's short window, a record still at the fill is `identity_read_outside_window`.
 - **`device_unmodelled`** has severity `info`: the device's part has no model in the twin (the TMP117 has none in Renode 1.17.0), so its identity was not read. It is reported on every boot and does not make the verdict `fail`; it also appears in the platform's header comment.
 
 - **The witness** (`AET-WO-2204` D1, replacing `AET-WO-2202`'s controller `CR2`/`TXDR`, which a plain store sets). The record is the firmware's account; the witness is what Renode itself logs when the controller runs the read on the device's model: for the BME280, `[NOISY] i2c1.u2: Write D0` then `[NOISY] i2c1.u2: Read 60`. The expected lines come from the part table and the emitter (the device's path is the controller's stock name, then the reference lower-cased), never from the firmware. For every record whose status is OK the judge requires exactly those lines from the device, matched as the whole text after the host timestamp, in order: so each read on a bus is witnessed, not only the last. Each device is judged by its own steps, never across devices, so two devices' transactions may interleave (`AET-WO-4210`, `2204` A4). A difference is `i2c_transaction_unwitnessed` (naming the device and the step, what Renode logged and what was expected); a model with no known witness format for the step is `i2c_witness_unavailable`. A device's `[ERROR]` line is one of its lines too: it fails the step it falls in by name, whatever the record says, as `i2c_step_error` or `spi_step_error` (naming the step and the line), beside the run's `renode_error_log`; on I2C it counts toward no step's expected lines and goes to the step under way (`AET-WO-4210` D-A1, ruled). Past the output filter's 8 MiB budget a line may have been dropped, so every read is unwitnessed, never passed. **Named residual** (adversarial A3): a static pass means the right device returned the table's value during the run, not that the record was derived from that read (a firmware that writes the record first and transfers after passes; the droop's probe does check the order). The verdict's `boot.i2c_witness` lists, per read, `device`, `expected`, `observed` and `absent` (the addresses the controller found no device at, kept for attribution, never judged).
@@ -493,13 +493,14 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `analog_line_stuck_high` | kind 8 |
 | `i2c_line_held_low` | kind 9 caused by `scenario.line_held_low` |
 | `i2c_timeout`, `i2c_record_invalid` | kind 12 whose status is a `timeout_…`, or `invalid` |
-| `i2c_identity_mismatch` | kind 12 whose status is `ok` and whose value is not the part table's |
+| `i2c_identity_mismatch`, `i2c_configure_mismatch`, `i2c_data_mismatch` | kind 12 of that step whose status is `ok` and whose value is not the part table's (SPI's likewise, kind 21) |
+| `identity_read_outside_window` | kind 12 or 21 still at the judge's fill (status `invalid`, every value word `0xFFFFFFFF`), in a boot read without its boot word on a short window (a DShot output's) |
 | `i2c_transaction_unwitnessed` | kind 13 whose read's status is `ok` and whose observed lines are not exactly its expected ones |
 | `register_mismatch` | kind 11 that differs from its expectation under its mask |
 | `boot_word_missing`, `cpu_halted` | kind 10 without the boot word, or with fewer instructions than expected |
 | `locked_peripheral_access` | kind 11 in RCC with an expected enable bit clear, at least one: the same fact, archived (the count is not compared, since the judge reports one finding for any number of accesses) |
-| `motor_output_unwitnessed` | each kind 26 whose status is `unwitnessed` or `unreadable` (`AET-WO-4300a`) |
-| `motor_timing_mismatch` | each kind 26 whose status is `mismatch` or `batched` |
+| `motor_output_unwitnessed` | each kind 26 whose status is `unwitnessed` or `unreadable` (`AET-WO-4300a`), once the boot word is set, as the judge names it |
+| `motor_timing_mismatch` | each kind 26 whose status is `mismatch` or `batched`, once the boot word is set |
 | `motor_timing_static_mismatch` | each kind 25 whose check does not hold |
 | anything else (`renode_error_log` and the `i2c_step_error`/`spi_step_error` beside it, a reaper bound, `pc_outside_firmware`: executable segments are not archived) | none: unexplained |
 
@@ -524,7 +525,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
 | `E1` | electrical | the symptom's bus has a kind 7 past its ceiling, a kind 8 or a kind 9; its software evidence goes to `masked` | 7, 8, 9 |
-| `I2` | indeterminate | the symptom's bus is not computed healthy (a line with no computed rise, or a bus the header cannot join) | 15 |
+| `I2` | indeterminate | the symptom's bus is not computed healthy (a bus the header cannot join; a line with no computed rise is refused by `replay` since `AET-WO-3201`) | 15 |
 | `S1` | software | the symptom's bus is computed healthy and has software evidence | 7, 11, 13 |
 | `I3` | indeterminate | the symptom's bus is computed healthy with no software evidence, and another bus is faulted | 7, 8, 9 |
 | `I4` | indeterminate | computed healthy, no software evidence, and no fault anywhere | 7 |
@@ -553,6 +554,8 @@ For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `seria
 
 A witness or framing check is evidence only when it failed. `serial_capture_forged` may count more than the witnesses show: a foreign file in the capture directory names no port.
 
+A read still at the judge's fill when a short window ended (`identity_read_outside_window`, `AET-WO-4300a` D1 and Q7) is decided by that record, rule `I7` (indeterminate; evidence kinds 12, 21): the read did not complete inside the window, and the record cannot say whether the bus or the firmware was too slow.
+
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
 **The run.**
@@ -564,11 +567,12 @@ For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bu
 
 Software is never concluded by eliminating electrical, nor electrical by eliminating software.
 
-**The seeded set** is `scenarios/sentinel-01/seeded/cases.json` (schema version 3). It holds 25 failing cases (11 electrical, 14 software), one indeterminate case and two passing ones. Every mutant names the specification whose generated board it patches (`spec`, required since version 3, `AET-WO-4300a` Q4); the motor case, `motor-output-dead` (`AET-WO-4300a`, rule `S4`), patches the PWM fixture's board, which is not committed; the serial case, `serial-rx-dead` (`AET-WO-4300b`, rule `S5`), puts the console's RX pin (PA10) on AF8 in the reference board. Each case states the exact `[index, kind]` events `attribute` must name as `evidence` and as `masked`, and the test asserts them exactly (`AET-WO-2205` §1.6). Each evidence kind must be one of `aethelgard_evolve::Rule::evidence_kinds` for the case's rule. The indices move when the trace gains records: whoever moves them re-derives them from `attribute` and explains each changed row in their FEEDBACK.
+**The seeded set** is `scenarios/sentinel-01/seeded/cases.json` (schema version 3). It holds 25 failing cases (11 electrical, 14 software), three indeterminate cases and two passing ones. Every mutant names the specification whose generated board it patches (`spec`, required since version 3, `AET-WO-4300a` Q4); the motor case, `motor-output-dead` (`AET-WO-4300a`, rule `S4`), patches the PWM fixture's board, which is not committed; the serial case, `serial-rx-dead` (`AET-WO-4300b`, rule `S5`), puts the console's RX pin (PA10) on AF8 in the reference board. Each case states the exact `[index, kind]` events `attribute` must name as `evidence` and as `masked`, and the test asserts them exactly (`AET-WO-2205` §1.6). Each evidence kind must be one of `aethelgard_evolve::Rule::evidence_kinds` for the case's rule. The indices move when the trace gains records: whoever moves them re-derives them from `attribute` and explains each changed row in their FEEDBACK.
 - The electrical cases are scenarios run against the generated firmware.
 - The software cases are named exact-once patches of `boards/sentinel-01`, built from a scratch copy by `tests/attribute_seeded.rs`. A patch that matches zero or two times fails that test, and so does a generator change.
 - The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (computed inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
-- The indeterminate trap, `trap-indeterminate-leave-47k`: a core that leaves the firmware after its boot word (`leave-firmware`, `software S2` at 2.2 kΩ), on the 47 kΩ bus fault (`electrical E1` alone). Two real causes: it is `I3`, evidence exactly the bus fault's `3:7 4:7 5:9`, and `propose` refuses to mutate (`INV-05`).
+- The indeterminate trap, `trap-indeterminate-leave-47k`: a core that leaves the firmware after its boot word (`leave-firmware`, `software S2` at 2.2 kΩ), on the 47 kΩ bus fault (`electrical E1` alone). Two real causes: it is `I3`, evidence exactly the bus fault's, and `propose` refuses to mutate (`INV-05`). The same mutant on `cap-390p-sda-2k2` (one line faulted, one healthy) is the second shape, `trap-indeterminate-leave-390p`: `I3`'s evidence is the faulted line's rise and the fault, never the healthy line's rise (`AET-WO-3201`, `2205` pass 2 M1).
+- The window case, `identity-late-dshot` (`AET-WO-3201`): on the DShot fixture's 2 ms window, a firmware that spins before its identity reads leaves both records unset on a healthy bus. It is `I7`, evidence exactly the two unset records.
 
 ## `propose`
 
@@ -594,7 +598,7 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
 | `E2` | no rule: a device absent behind its chip select is a board fault no value change fixes |
 | `S1`, `S2`, `S3`, `S4`, `S5` | a generator report, with no specification change |
-| `N1`, `I1` to `I6` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
+| `N1`, `I1` to `I7` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
 **Sizing a pull-up.** The binding line is the one with the least `ceiling / rise`, which is the slowest line when the ceilings are equal. `R_target = R_now × ceiling × 0.8 / rise`, rounded down; the 0.8 is headroom for a ±5 % resistor tolerance and a capacitance spread the run did not measure. The value is the largest E12 value at or below `R_target`. If it is below `Rp_min`, the floor, nothing is proposed, never a value below it. The predicted rise is the binding line's rise scaled by the new value over the old, rounded up (the rise is linear in R × C, `docs/architecture.md` §2.18). Every rise is computed from declared values (`RUL-19`).
 

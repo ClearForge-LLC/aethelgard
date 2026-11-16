@@ -189,6 +189,21 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         ("indeterminate", "I3"),
         "a core leaving the firmware beside the 47k bus fault is the indeterminate I3 trap"
     );
+    // `AET-WO-3201` (`2205` pass 2, M1): the same trap on a second shape,
+    // one line faulted and one healthy, so a healthy line's rise is never
+    // `I3`'s evidence.
+    assert_eq!(
+        trap(case("seeded/cap-390p-sda-2k2.json", Some("leave-firmware"))),
+        ("indeterminate", "I3"),
+        "a core leaving the firmware beside the one-line 390 pF fault is the second I3 trap"
+    );
+    // `AET-WO-3201` (`4300a` Q7): a read left unset by a short window is
+    // decided by its record.
+    assert_eq!(
+        trap(case("motors/dshot600.json", Some("identity-late"))),
+        ("indeterminate", "I7"),
+        "identity reads that start after the DShot window are the I7 case"
+    );
     for c in &m.cases {
         assert_eq!(
             c.findings.is_empty(),

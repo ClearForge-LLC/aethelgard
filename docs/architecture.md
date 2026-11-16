@@ -545,6 +545,18 @@ The `aethelgard` binary is the only part that executes external programs, and it
 2. **A guardian.** It is started with the temporary directory and removes it if the CLI dies first.
 3. **A reaper.** It runs in its own process group and is registered as a child subreaper. It starts a Landlock trampoline in a second group, which confines itself and becomes the tool. When the tool ends, or the CLI dies by any signal, the reaper kills the tool's group and every remaining descendant.
 4. **An empty environment,** apart from `HOME` and `TMPDIR`, which point at the temporary directory. Kani alone also gets `KANI_HOME`, `RUSTUP_HOME`, `PATH` and `CARGO_TARGET_DIR`; Renode also gets `DOTNET_EnableDiagnostics` (corrected 2026-11-12, review A8.5). `build` (`AET-WO-3301` F10) gets `RUSTUP_HOME`, `PATH`, `CARGO_TARGET_DIR` and the caller's `RUSTUP_TOOLCHAIN`. stdin is `/dev/null`.
+   *Amended 2026-11-16 (`AET-WO-1603`, PR #165):*
+   - Every tool may read and write `/dev/null`, and no other device. Landlock grants that one file, so `Stdio::null()` works inside the sandbox; `/dev/zero` and `/dev/urandom` stay `EACCES`.
+   - `build` and `prove` pre-flight the copied crate before any tool is looked for. They refuse by name:
+     - a proc macro (a flag, or a `crate-type`);
+     - a build script (under `[package]` or `[project]`);
+     - `cargo-features`;
+     - a path dependency, patch, replace or workspace path that leaves the copy;
+     - any Cargo configuration but the one `generate` writes, matched by its exact keys;
+     - a toolchain file;
+     - any of those, or a workspace `Cargo.toml`, in a directory above the copy.
+
+     cargo reads ancestor configurations and workspace roots, so the walk goes up to `/`.
 5. **A uid boundary when the CLI runs as root** (`AET-WO-1601`, ruled on PR #96). The trampoline empties the bounding set, clears groups and becomes uid 65534, gid 65533, before Landlock and seccomp, and reads every id back; a failure is exit 4, `SandboxUnavailable`, never a run as root. The copy is root's, 0444; the tool's directory is root's, group 65533, mode 1770. `RLIMIT_FSIZE` is 64 MiB; a tool that reaches it ends as exit 5. Every verdict's `sandbox.uid_boundary` is `true` only when the tool ran under that uid, the CLI's user namespace is the initial one, and every path the tool may read beyond the system set is root's and writable by no other uid or group but root's; otherwise `false`, and `uid_boundary_unmet` names the first condition that failed (`tool_uid`, `user_namespace` or `toolchain`). The tools image is built to meet the third (`AET-WO-1602`, `container/smoke.sh` check 10).
 6. **Landlock's filesystem rights through ABI V3 are required.** Below that floor the call refuses with exit 4, `SandboxUnavailable`, and there is no flag or variable that runs a tool unconfined. TCP rules (ABI V4 and later) and signal and abstract-socket scoping (ABI V6 and later) are applied where the kernel has them, and reported in the verdict as `sandbox.tcp_confined` and `sandbox.scoped`.
 
@@ -671,6 +683,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-15 | §2 notes, §4 | The DShot boot window (`4300a`); `RUL-03`'s note on the through-hole join token (`1309` D3) | PR #145, PR #146 |
 | 2026-11-15 | §4 | `RUL-03` amended: keepouts in vendored footprints admitted and judged | PR #149, comment 6896284309 |
 | 2026-11-15 | §2.23–§2.25, §3, §4 | §2.23–§2.25 moved out of §3, where they had been placed; §3 lists nine members (review 2, D4). `RUL-20` added: when a fact counts as judged | `docs/reviews/2026-11-15-mythos-5-2.response.md` |
+| 2026-11-16 | §6 | The sandbox's step 4: `/dev/null` for every tool, and the pre-flight before tools (`AET-WO-1603`, ruled on PR #165, comment 6915000480) | PR #165 |
 
 New sections continue the sequence and never reuse a number.
 

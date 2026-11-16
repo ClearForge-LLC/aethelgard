@@ -106,7 +106,7 @@ pub struct Expectation {
     /// (`AET-WO-2205` §1.5).
     pub what: String,
     pub address: Option<u32>,
-    pub mask: Option<u32>,
+    pub mask: Option<u64>,
     pub solved: u64,
     pub observed: Option<u64>,
 }
@@ -373,8 +373,8 @@ fn report(input: &Input) -> Outcome {
             what: f.register.clone(),
             address: Some(f.address),
             mask: Some(f.mask),
-            solved: f.solved.into(),
-            observed: f.observed.map(u64::from),
+            solved: f.solved,
+            observed: f.observed,
         };
         let found: Vec<Expectation> = match &e.view {
             // A rise, or a motor output's or serial port's witness, is a

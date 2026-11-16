@@ -438,7 +438,7 @@ fn propose_answers_the_dead_output_with_a_generator_report_of_its_af_field() {
     let Outcome::GeneratorReport(report) = &ans.outcome else {
         panic!("{:?}", ans.outcome)
     };
-    let what: Vec<(&str, u32, u64, Option<u64>)> = report
+    let what: Vec<(&str, u64, u64, Option<u64>)> = report
         .expectations
         .iter()
         .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))
@@ -561,4 +561,179 @@ fn a_failing_static_check_is_never_software_whatever_else_is_wrong() {
         "{a:?}"
     );
     assert_eq!(named(&r, &a), ["kind 25"]);
+}
+
+/// `AET-WO-3201`, `AET-WO-4300a` Q7: the motor run made a DShot board's
+/// (2 ms window) whose boot was read without its boot word, with U2's
+/// identity record still as the judge filled it, and `findings` beside
+/// `boot_word_missing`.
+fn late_dshot(findings: &[(&str, u64)]) -> Vec<Record> {
+    let mut all = vec![("boot_word_missing", 1)];
+    all.extend(findings);
+    let mut r = run(&Wrong::default(), "unwitnessed", true, &all);
+    for x in &mut r {
+        match x {
+            Record::MotorOutputSolved {
+                protocol,
+                psc,
+                arr,
+                ccr,
+                pwm,
+                ..
+            } => {
+                (*protocol, *psc, *arr, *ccr, *pwm) = ("dshot600".into(), 0, 106, 40, None);
+            }
+            Record::MotorTimingCheck {
+                period_ps,
+                high_ps,
+                nominal_period_ps,
+                nominal_high_ps,
+                ..
+            } => {
+                (*period_ps, *high_ps) = (1_671_875, 625_000);
+                (*nominal_period_ps, *nominal_high_ps) = (1_666_666, 624_999);
+            }
+            Record::MotorWitness {
+                period_ns,
+                high_ns,
+                end_ns,
+                ..
+            } => (*period_ns, *high_ns, *end_ns) = (424, 160, 2_000_000),
+            Record::BootObserved {
+                boot_word,
+                instructions_expected,
+                instructions_observed,
+                ..
+            } => {
+                boot_word.observed = Some(0);
+                (*instructions_expected, *instructions_observed) = (200_000, Some(200_000));
+            }
+            Record::I2cCheck {
+                status, observed, ..
+            } => (*status, *observed) = (Some("invalid".into()), Some(0xFFFF_FFFF)),
+            _ => {}
+        }
+    }
+    r
+}
+
+/// Q7: `identity_read_outside_window` is decided by the unset record, I7,
+/// with that record as its evidence. Before, no rule selected it: `I1`.
+#[test]
+fn a_read_still_unset_when_the_short_window_ends_is_i7_by_its_record() {
+    let r = late_dshot(&[("identity_read_outside_window", 1)]);
+    let a = attributed(&r);
+    let check = r
+        .iter()
+        .position(|x| matches!(x, Record::I2cCheck { .. }))
+        .unwrap() as u64;
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I7),
+        "{a:?}"
+    );
+    assert_eq!(
+        a.evidence,
+        [aethelgard_evolve::EventRef {
+            index: check,
+            kind: 12
+        }]
+    );
+    // Proposes nothing (`INV-05`).
+    assert!(Rule::I7.domain() == Domain::Indeterminate);
+}
+
+/// The selection is exact: the record must be the judge's fill, the boot
+/// unbooted and the window short, or the finding is unexplained (`I1`).
+#[test]
+fn a_late_read_is_only_the_unset_record_of_an_unbooted_short_window() {
+    let finding = [("identity_read_outside_window", 1)];
+    // The record's value written: not the fill, so not the judge's unset
+    // record, and the finding is unexplained.
+    let mut r = late_dshot(&finding);
+    for x in &mut r {
+        if let Record::I2cCheck { observed, .. } = x {
+            *observed = Some(0);
+        }
+    }
+    let a = attribute(&archived(&r)).unwrap();
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    // The finding counted twice for one record.
+    let r = late_dshot(&[("identity_read_outside_window", 2)]);
+    assert!(attribute(&archived(&r)).is_err());
+    // The unset record of a booted DShot run is the judge's
+    // `i2c_record_invalid`, never this rule.
+    let mut r = late_dshot(&[]);
+    for x in &mut r {
+        if let Record::BootObserved { boot_word, .. } = x {
+            boot_word.observed = Some(boot_word.expected);
+        }
+    }
+    let n = r.len() - 1;
+    r[n] = Record::Verdict {
+        pass: false,
+        findings: vec![
+            ("device_unmodelled".into(), "info".into(), 1),
+            ("i2c_record_invalid".into(), "error".into(), 1),
+            (MOTOR_UNWITNESSED_FINDING.into(), "error".into(), 1),
+        ],
+    };
+    if let Record::Scenario {
+        expect_findings, ..
+    } = &mut r[0]
+    {
+        *expect_findings = vec![
+            "i2c_record_invalid".into(),
+            MOTOR_UNWITNESSED_FINDING.into(),
+        ];
+    }
+    // The record is decided on its healthy bus (I4, its rises), beside the
+    // dead output's I4: never `Window`.
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I4, "{a:?}");
+    assert_eq!(
+        a.evidence.iter().filter(|e| e.kind == 7).count(),
+        2,
+        "the record's own decision names its bus's rises: {a:?}"
+    );
+    // A boot word written after the window, with the finding beside it:
+    // `replay` refuses the run.
+    let n = r.len() - 1;
+    r[n] = Record::Verdict {
+        pass: false,
+        findings: vec![
+            ("device_unmodelled".into(), "info".into(), 1),
+            ("identity_read_outside_window".into(), "error".into(), 1),
+            (MOTOR_UNWITNESSED_FINDING.into(), "error".into(), 1),
+        ],
+    };
+    assert!(attribute(&archived(&r)).is_err());
+}
+
+/// The same unset record on the PWM board's long window, unbooted, claimed
+/// as invalid: the judge never judges a record before the boot word, so
+/// `replay` refuses the verdict (adversarial F2), and it is never `I7`.
+#[test]
+fn an_unset_record_on_the_long_window_is_never_i7() {
+    let mut r = run(
+        &Wrong::default(),
+        "unwitnessed",
+        true,
+        &[("boot_word_missing", 1), ("i2c_record_invalid", 1)],
+    );
+    for x in &mut r {
+        match x {
+            Record::BootObserved { boot_word, .. } => boot_word.observed = Some(0),
+            Record::I2cCheck {
+                status, observed, ..
+            } => (*status, *observed) = (Some("invalid".into()), Some(0xFFFF_FFFF)),
+            _ => {}
+        }
+    }
+    assert!(matches!(
+        attribute(&archived(&r)),
+        Err(aethelgard_evolve::AttributeError::NotACampaignRun(
+            "the verdict judges an identity read's record of a boot without its boot word"
+        ))
+    ));
 }

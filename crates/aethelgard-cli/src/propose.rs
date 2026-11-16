@@ -188,12 +188,18 @@ struct Proposed {
 
 /// The solved facts of each bus, from the verified topology: the pull-up and
 /// rail both lines carry, and the floor at that rail and the bus's declared
-/// `speed_hz`, the speed `solve` judges the floor at. Never the topology's
-/// `i2c_ceilings`, which is the fastest speed the rise ceiling allows, not
-/// the bus's own (adversarial B1).
+/// speed, which the topology carries in `i2c_speeds` (`RUL-16`; the
+/// `1205` review), the speed `solve` judges the floor at. Never the
+/// topology's `i2c_ceilings`, which is the fastest speed the rise ceiling
+/// allows, not the bus's own (adversarial B1). The specification gives only
+/// the bus's domain, whose maximum rail the floor is judged at.
 fn facts(spec: &Specification, t: &SolvedTopology) -> Result<BTreeMap<String, BusFacts>, String> {
     let mut out: BTreeMap<String, BusFacts> = BTreeMap::new();
     for (net, a) in &t.analog_lines {
+        let speed = *t
+            .i2c_speeds
+            .get(&a.bus)
+            .ok_or_else(|| format!("bus `{}` declares no speed in the solved topology", a.bus))?;
         let bus = spec
             .i2c_buses
             .iter()
@@ -209,7 +215,7 @@ fn facts(spec: &Specification, t: &SolvedTopology) -> Result<BTreeMap<String, Bu
         let f = BusFacts {
             pull_up_ohms: a.pull_up_ohms,
             domain_millivolts: a.domain_millivolts,
-            floor_ohms: i2c_pull_up_floor_ohms(bus.speed_hz, maximum),
+            floor_ohms: i2c_pull_up_floor_ohms(speed, maximum),
         };
         if *out.entry(a.bus.clone()).or_insert(f) != f {
             return Err(format!(
@@ -228,52 +234,6 @@ fn pretty<T: Serialize>(v: &T) -> Result<Vec<u8>, ExitCode> {
     })?;
     bytes.push(b'\n');
     Ok(bytes)
-}
-
-/// Write `files` into `out`, which must be absent or an empty directory. The
-/// directory is opened once without following a symlink, and every file is
-/// created new inside it, never followed or replaced.
-fn write_out(out: &Path, files: &[(&'static str, Vec<u8>)]) -> Result<(), ExitCode> {
-    use rustix::fs::{Mode, OFlags};
-    let unwritable = |m: String| mismatch("UnwritableOutput", m);
-    match fs::symlink_metadata(out) {
-        Ok(meta) if meta.is_dir() => {
-            let mut entries = fs::read_dir(out)
-                .map_err(|e| unwritable(format!("cannot read {}: {e}", out.display())))?;
-            if entries.next().is_some() {
-                return Err(unwritable(format!(
-                    "{} is not empty: propose writes only into an empty or absent directory",
-                    out.display()
-                )));
-            }
-        }
-        Ok(_) => {
-            return Err(unwritable(format!(
-                "{} exists and is not a directory",
-                out.display()
-            )));
-        }
-        Err(_) => fs::create_dir_all(out)
-            .map_err(|e| unwritable(format!("cannot create {}: {e}", out.display())))?,
-    }
-    let dir = rustix::fs::open(
-        out,
-        OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-        Mode::empty(),
-    )
-    .map_err(|e| unwritable(format!("cannot open {}: {e}", out.display())))?;
-    for (name, bytes) in files {
-        let fd = rustix::fs::openat(
-            &dir,
-            *name,
-            OFlags::WRONLY | OFlags::CREATE | OFlags::EXCL | OFlags::NOFOLLOW | OFlags::CLOEXEC,
-            Mode::from_raw_mode(0o644),
-        )
-        .map_err(|e| unwritable(format!("cannot create {name} in {}: {e}", out.display())))?;
-        std::io::Write::write_all(&mut fs::File::from(fd), bytes)
-            .map_err(|e| unwritable(format!("cannot write {name} in {}: {e}", out.display())))?;
-    }
-    Ok(())
 }
 
 /// Whether `out` resolves outside the run directory `dir`, judged at its
@@ -479,7 +439,10 @@ fn run(dir: &Path, scenario_path: &Path, out: &Path) -> Result<ExitCode, ExitCod
             ),
         ));
     }
-    write_out(out, &files)?;
+    // The one write discipline (`AET-WO-3301` R2): `out` empty or absent,
+    // every file created new under a descriptor of it.
+    crate::tree::write(out, files.iter().map(|(name, bytes)| (*name, bytes)))
+        .map_err(|s| refuse(s.kind, s.id.as_deref(), s.message, s.code))?;
 
     let (outcome, code) = match answer.outcome {
         Outcome::Proposal(_) => ("proposal", ExitCode::SUCCESS),

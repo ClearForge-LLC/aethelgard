@@ -110,11 +110,17 @@ pub enum Rule {
     /// framing check failed, which is the topology's (`AET-WO-4300b`): never
     /// software by elimination.
     I6,
+    /// The symptom is a read whose record is still as the judge filled it
+    /// when a short window ended, in a boot without its boot word
+    /// (`identity_read_outside_window`, `AET-WO-4300a` D1 and Q7): the read
+    /// did not complete inside the window, and the unset record cannot say
+    /// whether the bus or the firmware was too slow. The record decides it.
+    I7,
 }
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 14] = [
+    pub const ALL: [Rule; 15] = [
         Self::E1,
         Self::E2,
         Self::S1,
@@ -129,6 +135,7 @@ impl Rule {
         Self::I4,
         Self::I5,
         Self::I6,
+        Self::I7,
     ];
 
     /// The rule whose [`id`](Self::id) is `id`, so a reader of an attribution
@@ -153,6 +160,7 @@ impl Rule {
             Self::I4 => "I4",
             Self::I5 => "I5",
             Self::I6 => "I6",
+            Self::I7 => "I7",
         }
     }
 
@@ -181,6 +189,7 @@ impl Rule {
             Self::I4 => &[7, 25, 26],
             Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29],
             Self::I6 => &[28, 29],
+            Self::I7 => &[12, 21],
         }
     }
 }
@@ -215,14 +224,15 @@ pub struct Attribution {
 /// observed under the same mask, and whether attribution counts it as
 /// evidence. `register` is named as the ST header names it (`RCC.APB1LENR`,
 /// `GPIOB.AFRL`), `boot_word`, or a witness's `i2c1.u2.address`, `.Write`
-/// or `.Read`.
+/// or `.Read`. The values are 64-bit, so a read of up to 8 bytes shows
+/// whole (`AET-WO-4210` F-B5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub register: String,
     pub address: u32,
-    pub mask: u32,
-    pub solved: u32,
-    pub observed: Option<u32>,
+    pub mask: u64,
+    pub solved: u64,
+    pub observed: Option<u64>,
     pub wrong: bool,
 }
 
@@ -484,6 +494,9 @@ enum Scope<'a> {
     /// A serial port's failing static framing check (kind 28): the
     /// topology's, never the firmware's.
     SerialStatic(usize),
+    /// A read's record left unset when a short window ended, by its index
+    /// (`AET-WO-4300a` Q7): neither the bus's nor the firmware's.
+    Window(usize),
     Board,
 }
 
@@ -495,6 +508,9 @@ struct Run<'a> {
     rcc: (u32, u32),
     /// The boot word is set: the judge read the serial witnesses and tags.
     booted: bool,
+    /// The boot was read without its boot word on a short window: the
+    /// judge named each record still unset (`AET-WO-4300a` D1).
+    late: bool,
     /// The resets the run rendered and released.
     releases: u64,
 }
@@ -539,20 +555,25 @@ fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> b
 }
 
 /// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 25] = [
+const PER_EVENT: [&str; 30] = [
     campaign::PAST_CEILING_FINDING,
     campaign::STUCK_HIGH_FINDING,
     campaign::HELD_LOW_FINDING,
     "i2c_timeout",
     "i2c_record_invalid",
     "i2c_identity_mismatch",
+    "i2c_configure_mismatch",
+    "i2c_data_mismatch",
     "i2c_transaction_unwitnessed",
     "spi_timeout",
     "spi_record_invalid",
     "spi_identity_mismatch",
+    "spi_configure_mismatch",
+    "spi_data_mismatch",
     "spi_transaction_unwitnessed",
+    campaign::OUTSIDE_WINDOW_FINDING,
     "register_mismatch",
-    "boot_word_missing",
+    campaign::BOOT_WORD_FINDING,
     "cpu_halted",
     "locked_peripheral_access",
     campaign::BROWN_OUT_FINDING,
@@ -637,7 +658,7 @@ impl<'a> Run<'a> {
                 .and_then(|h| u32::from_str_radix(h, 16).ok())
         });
         let claimed = status.as_deref() == Some("ok");
-        let at = |name: &str, mask: u32, solved: u32, observed: Option<u32>, wrong: bool| Field {
+        let at = |name: &str, mask: u64, solved: u64, observed: Option<u64>, wrong: bool| Field {
             register: format!("{device}.{name}"),
             address: u32::from(*address),
             mask,
@@ -646,23 +667,24 @@ impl<'a> Run<'a> {
             wrong,
         };
         let mut fields = vec![
-            at("select", 0xFF, u32::from(*address), None, unselected),
+            at("select", 0xFF, u64::from(*address), None, unselected),
             at(
                 "command",
                 0xFF,
-                u32::from(command),
-                decoded,
+                u64::from(command),
+                decoded.map(u64::from),
                 (!observed.is_empty() && observed != expected)
                     || decoded.is_some_and(|d| d != u32::from(command)),
             ),
         ];
         // A configure step reads nothing back.
         if *width > 0 {
+            // The whole read, past 32 bits for a read of 5 to 8 bytes.
             fields.push(at(
                 "read",
-                u32::MAX,
-                *value as u32,
-                value_read.map(|v| v as u32),
+                record_words(*width),
+                *value,
+                *value_read,
                 claimed && observed.is_empty() && unrouted.is_empty(),
             ));
         }
@@ -766,6 +788,28 @@ impl<'a> Run<'a> {
             .collect()
     }
 
+    /// A read (kind 12 or 21) whose record is still unset at the end of a
+    /// boot read without its boot word on a short window: what the judge
+    /// names `identity_read_outside_window`.
+    fn outside_window(&self, r: &Record) -> bool {
+        self.late
+            && match r {
+                Record::I2cCheck {
+                    width,
+                    status,
+                    observed,
+                    ..
+                }
+                | Record::SpiCheck {
+                    width,
+                    status,
+                    observed,
+                    ..
+                } => unset_record(*width, status.as_deref(), *observed),
+                _ => false,
+            }
+    }
+
     /// A device's witness on bus `b` disagrees with its solved read
     /// (`AET-WO-2204`): the model logged a write of another register, or
     /// returned another value, so the bus reached the device and the firmware
@@ -839,17 +883,17 @@ impl<'a> Run<'a> {
         let read = logged(observed, "Read").map(|(v, _)| v);
         let width_mask = |n: usize| {
             if n >= 4 {
-                u32::MAX
+                u64::from(u32::MAX)
             } else {
-                (1u32 << (8 * n)) - 1
+                (1u64 << (8 * n)) - 1
             }
         };
-        let at = |name: &str, mask: u32, solved: u64, got: Option<u64>| Field {
+        let at = |name: &str, mask: u64, solved: u64, got: Option<u64>| Field {
             register: format!("{device}.{name}"),
             address: u32::from(*address),
             mask,
-            solved: solved as u32,
-            observed: got.map(|g| g as u32 & mask),
+            solved,
+            observed: got.map(|g| g & mask),
             wrong: silent || got.is_some_and(|g| g != solved),
         };
         let elsewhere = absent.iter().copied().find(|a| a != address);
@@ -858,8 +902,8 @@ impl<'a> Run<'a> {
                 register: format!("{device}.address"),
                 address: u32::from(*address),
                 mask: 0x7F,
-                solved: u32::from(*address),
-                observed: elsewhere.map(u32::from),
+                solved: u64::from(*address),
+                observed: elsewhere.map(u64::from),
                 wrong: elsewhere.is_some(),
             },
             at("Write", width_mask(write.len()), reg_want.0, reg),
@@ -1052,7 +1096,7 @@ impl<'a> Run<'a> {
             } => l == label && !holds,
             Record::MotorWitness {
                 label: l, status, ..
-            } => l == label && !PASSING_WITNESS.contains(&status.as_str()),
+            } => self.booted && l == label && !PASSING_WITNESS.contains(&status.as_str()),
             _ => false,
         })
     }
@@ -1085,6 +1129,7 @@ impl<'a> Run<'a> {
 
     fn scope(&self, i: usize) -> Option<Scope<'a>> {
         Some(match &self.records[i] {
+            r if self.outside_window(r) => Scope::Window(i),
             Record::RiseComputed { bus, .. }
             | Record::LineStuckHigh { bus, .. }
             | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?, None),
@@ -1155,9 +1200,19 @@ impl<'a> Run<'a> {
             ),
             "i2c_timeout" => self.indices(|r| status_is(r, &|s| s.starts_with("timeout_"))),
             "i2c_record_invalid" => self.indices(|r| status_is(r, &|s| s == "invalid")),
-            "i2c_identity_mismatch" => self.indices(|r| {
-                matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, .. }
-                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed))
+            // A read's mismatch is named by its bus and step (`AET-WO-4210`
+            // F-B10): kind 12 is I2C's, kind 21 SPI's.
+            "i2c_identity_mismatch"
+            | "i2c_configure_mismatch"
+            | "i2c_data_mismatch"
+            | "spi_identity_mismatch"
+            | "spi_configure_mismatch"
+            | "spi_data_mismatch" => self.indices(|r| {
+                matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, step, .. }
+                    | Record::SpiCheck { status: Some(s), expected, mask, width, observed, step, .. }
+                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed)
+                        && mismatch_kind(if r.kind() == 12 { "i2c" } else { "spi" }, step).as_deref()
+                            == Some(kind))
             }),
             "i2c_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::I2cWitness {
@@ -1179,10 +1234,7 @@ impl<'a> Run<'a> {
             "spi_record_invalid" => self.indices(
                 |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s == "invalid"),
             ),
-            "spi_identity_mismatch" => self.indices(|r| {
-                matches!(r, Record::SpiCheck { status: Some(s), expected, mask, width, observed, .. }
-                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed))
-            }),
+            campaign::OUTSIDE_WINDOW_FINDING => self.indices(|r| self.outside_window(r)),
             "spi_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::SpiWitness {
                     reference,
@@ -1200,12 +1252,16 @@ impl<'a> Run<'a> {
             campaign::MOTOR_STATIC_FINDING => {
                 self.indices(|r| matches!(r, Record::MotorTimingCheck { holds: false, .. }))
             }
+            // A witness is judged once the boot word is set, as `check_run`
+            // binds it; before it, it shows nothing (`AET-WO-3201`).
             campaign::MOTOR_UNWITNESSED_FINDING => self.indices(|r| {
-                matches!(r, Record::MotorWitness { status, .. }
+                self.booted
+                    && matches!(r, Record::MotorWitness { status, .. }
                     if status == "unwitnessed" || status == "unreadable")
             }),
             campaign::MOTOR_MISMATCH_FINDING => self.indices(|r| {
-                matches!(r, Record::MotorWitness { status, .. }
+                self.booted
+                    && matches!(r, Record::MotorWitness { status, .. }
                     if status == "mismatch" || status == "batched" || status == "stopped")
             }),
             campaign::SERIAL_STATIC_FINDING => {
@@ -1226,9 +1282,11 @@ impl<'a> Run<'a> {
             "register_mismatch" => self.indices(
                 |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
             ),
-            "boot_word_missing" => self.indices(|r| {
+            // A boot that was read, as `check_run` binds the finding; an
+            // unread one names why it read nothing instead (adversarial F3).
+            campaign::BOOT_WORD_FINDING => self.indices(|r| {
                 matches!(r, Record::BootObserved { boot_word, .. }
-                    if boot_word.observed != Some(boot_word.expected))
+                    if boot_word.observed.is_some_and(|o| o != boot_word.expected))
             }),
             campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
             campaign::BROWN_OUT_FINDING => self.indices(brown_out_failed),
@@ -1334,6 +1392,7 @@ impl<'a> Run<'a> {
                     (Rule::S5, [software, witness].concat(), vec![])
                 }
             }
+            Scope::Window(i) => (Rule::I7, vec![i], vec![]),
             Scope::Board if !faulted.is_empty() => (Rule::I3, faults_of(&faulted), vec![]),
             Scope::Board => {
                 let unmeasured: Vec<usize> = all.clone().filter(|&b| !self.healthy(b)).collect();
@@ -1405,6 +1464,37 @@ fn flash_access_failed(r: &Record) -> bool {
     matches!(r, Record::BootObserved { boot_word, flash_access, .. }
         if boot_word.observed == Some(boot_word.expected)
             && flash_access.as_deref() != Some(&[]))
+}
+
+/// The finding a read's mismatch is named by, from its step: `{bus}_identity_mismatch`,
+/// `{bus}_configure_mismatch` or `{bus}_data_mismatch` (`AET-WO-4210`
+/// F-B10), as the judge names it from the part's step.
+fn mismatch_kind(bus: &str, step: &str) -> Option<String> {
+    let step = match aethelgard_chaos::record::step_index(step)? {
+        0 => "identity",
+        1..=4 => "configure",
+        _ => "data",
+    };
+    Some(format!("{bus}_{step}_mismatch"))
+}
+
+/// Whether a read's record is as the judge filled it before the core ran:
+/// status `invalid` and every value word the fill.
+// belt-and-suspenders: `aethelgard_twin::boot::{RECORD_UNSET, value_words}`
+// state the fill and the word count; evolve reads an archive without the
+// twin, so it states them again.
+fn unset_record(width: u8, status: Option<&str>, observed: Option<u64>) -> bool {
+    status == Some("invalid") && observed == Some(record_words(width))
+}
+
+/// Every bit of a read record's value words: one word for a read of up to
+/// 4 bytes, two for 5 to 8.
+fn record_words(width: u8) -> u64 {
+    if width > 4 {
+        u64::MAX
+    } else {
+        u64::from(u32::MAX)
+    }
 }
 
 /// The run, judged by exactly the rules `replay` applies after its reader
@@ -1509,6 +1599,13 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         serial,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
         booted,
+        // belt-and-suspenders: `check_run` already refuses the finding off
+        // a short window; this states the judge's rule where it is used.
+        late: !booted
+            && campaign::short_window(records)
+            && records.iter().any(|r| {
+                matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some())
+            }),
         releases: campaign::released(records),
     };
     Ok((state, summary.pass))
@@ -1568,9 +1665,9 @@ impl RunView<'_> {
                 boot_word: Field {
                     register: "boot_word".to_owned(),
                     address: boot_word.address,
-                    mask: boot_word.mask,
-                    solved: boot_word.expected,
-                    observed: boot_word.observed,
+                    mask: boot_word.mask.into(),
+                    solved: boot_word.expected.into(),
+                    observed: boot_word.observed.map(u64::from),
                     wrong: boot_word.observed != Some(boot_word.expected),
                 },
                 instructions_expected: *instructions_expected,
@@ -1599,9 +1696,9 @@ impl RunView<'_> {
                     .map(|o| Field {
                         register: o.name.clone(),
                         address: o.address,
-                        mask: o.mask,
-                        solved: o.want,
-                        observed: reading.observed.map(|v| v & o.mask),
+                        mask: o.mask.into(),
+                        solved: o.want.into(),
+                        observed: reading.observed.map(|v| u64::from(v & o.mask)),
                         wrong: wrong(o, name, reading),
                     })
                     .collect();
@@ -1618,9 +1715,9 @@ impl RunView<'_> {
                     fields.push(Field {
                         register: name.clone(),
                         address: reading.address,
-                        mask: timer,
-                        solved: reading.expected & timer,
-                        observed: reading.observed.map(|v| v & timer),
+                        mask: timer.into(),
+                        solved: (reading.expected & timer).into(),
+                        observed: reading.observed.map(|v| u64::from(v & timer)),
                         wrong: true,
                     });
                 }
@@ -1630,9 +1727,9 @@ impl RunView<'_> {
                     fields.push(Field {
                         register: name.clone(),
                         address: reading.address,
-                        mask: usart,
-                        solved: reading.expected & usart,
-                        observed: reading.observed.map(|v| v & usart),
+                        mask: usart.into(),
+                        solved: (reading.expected & usart).into(),
+                        observed: reading.observed.map(|v| u64::from(v & usart)),
                         wrong: true,
                     });
                 }
@@ -1641,9 +1738,9 @@ impl RunView<'_> {
                     fields.push(Field {
                         register: name.clone(),
                         address: reading.address,
-                        mask: unowned,
-                        solved: reading.expected & unowned,
-                        observed: reading.observed.map(|v| v & unowned),
+                        mask: unowned.into(),
+                        solved: (reading.expected & unowned).into(),
+                        observed: reading.observed.map(|v| u64::from(v & unowned)),
                         wrong: true,
                     });
                 }

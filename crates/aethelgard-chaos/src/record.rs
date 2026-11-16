@@ -57,6 +57,11 @@ pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
     "not_judged",
 ];
 
+/// A finding's severities in a campaign verdict (kind 14), closed
+/// (`AET-WO-3201` B3): the judge writes `error` or `info`, and KiCad's
+/// `warning` never reaches a campaign. Checked exactly, so another case or
+/// whitespace is refused, on write and on read; the bytes are unchanged.
+pub const SEVERITIES: [&str; 2] = ["error", "info"];
 /// The injected frame's length, and the bytes each port's pattern adds to
 /// its label (`00 FE 7F 80 FF`).
 // belt-and-suspenders: `aethelgard_twin::serial::{FRAME_LEN, PATTERN_TAIL}`
@@ -1970,9 +1975,9 @@ impl Record {
                     .all(|w| (&w[0].0, &w[0].1) < (&w[1].0, &w[1].1));
                 if !findings
                     .iter()
-                    .all(|(k, s, n)| name_ok(k) && name_ok(s) && *n > 0)
+                    .all(|(k, s, n)| name_ok(k) && SEVERITIES.contains(&s.as_str()) && *n > 0)
                 {
-                    Err("a finding is not a kind, a severity and a count above 0")
+                    Err("a finding is not a kind, a severity of error or info, and a count above 0")
                 } else if !pairs_sorted {
                     Err("findings are not sorted and unique by kind and severity")
                 } else if *pass != findings.iter().all(|(_, s, _)| s == "info") {

@@ -76,6 +76,49 @@ pub fn brown_out_fails(r: &record::Reading) -> bool {
         .is_some_and(|o| o == RECORD_UNSET || o & r.mask != r.expected)
 }
 
+/// The boot judge's finding for a boot that was read and whose boot word is
+/// not the firmware's, made once (`AET-WO-3201` B2).
+pub const BOOT_WORD_FINDING: &str = "boot_word_missing";
+/// The findings of a boot that read nothing, one of which the judge names
+/// (`AET-WO-3201` B2): killed at a bound (the CLI's `renode::bounded`), or a
+/// platform or firmware that did not load (`renode::judge_boot`; adversarial
+/// pass, F1).
+pub const UNREAD_FINDINGS: [&str; 5] = [
+    "cpu_aborted",
+    "firmware_load_error",
+    "memory_cap_exceeded",
+    "platform_load_error",
+    "wall_bound_exceeded",
+];
+/// The identity reads' findings the judge makes only once the boot word is
+/// set (`renode::judge_boot`): a record is judged at the fixed point, and
+/// before it only a timeout or a read outside the window is named
+/// (`AET-WO-3201`; adversarial pass, F2).
+pub const BOOTED_READ_FINDINGS: [&str; 10] = [
+    "i2c_configure_mismatch",
+    "i2c_data_mismatch",
+    "i2c_identity_mismatch",
+    "i2c_record_invalid",
+    "i2c_transaction_unwitnessed",
+    "spi_configure_mismatch",
+    "spi_data_mismatch",
+    "spi_identity_mismatch",
+    "spi_record_invalid",
+    "spi_transaction_unwitnessed",
+];
+/// The boot judge's finding for an identity read whose record is still
+/// unset when a short window ends, made only when the boot word is not set
+/// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule).
+pub const OUTSIDE_WINDOW_FINDING: &str = "identity_read_outside_window";
+
+/// Whether the board's boots run the short window: a board with a DShot
+/// output (`AET-WO-4300a` D1).
+pub fn short_window(records: &[Record]) -> bool {
+    records.iter().any(
+        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
+    )
+}
+
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioError {
@@ -793,10 +836,18 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             _ => {}
         }
     }
-    let held_buses: BTreeSet<&str> = overrides
+    // Each held-low override's net: its line of its solved bus, SCL first
+    // (`AET-WO-3201` B1: the fault binds that line, and no other).
+    let held_nets: BTreeSet<(&str, &str)> = overrides
         .iter()
         .filter_map(|o| match o {
-            Override::LineHeldLow { bus, .. } => Some(bus.as_str()),
+            Override::LineHeldLow { bus, line } => records.iter().find_map(|r| match r {
+                Record::I2cBusSolved { bus: b, lines, .. } if b == bus => {
+                    let net = &lines[usize::from(matches!(line, Line::Sda))].net;
+                    Some((bus.as_str(), net.as_str()))
+                }
+                _ => None,
+            }),
             _ => None,
         })
         .collect();
@@ -810,7 +861,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             continue;
         };
         if from.iter().any(|f| f == HELD_LOW) {
-            if from.len() != 1 || nets.len() != 1 || !held_buses.contains(bus.as_str()) {
+            if from.len() != 1
+                || nets.len() != 1
+                || !held_nets.contains(&(bus.as_str(), nets[0].as_str()))
+            {
                 return Err("a held-low fault names no held-low override of its bus");
             }
             held_faults += 1;
@@ -835,6 +889,34 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     }
     if held_faults > 0 {
         needed.insert(HELD_LOW_FINDING, held_faults);
+    }
+    // Each line of each solved bus is bound by exactly one record: its
+    // computed rise (kind 7), its stuck-high record (kind 8), or, for a
+    // line a scenario holds low, which the analog pass never measures, its
+    // held-low fault (kind 9). A run that dropped a line's measurement is
+    // refused here, never replayed as a pass (`AET-WO-3201` B1).
+    for r in records {
+        let Record::I2cBusSolved { bus, lines, .. } = r else {
+            continue;
+        };
+        for line in lines {
+            let bound = records
+                .iter()
+                .filter(|x| match x {
+                    Record::RiseComputed { bus: b, net, .. }
+                    | Record::LineStuckHigh { bus: b, net, .. } => b == bus && *net == line.net,
+                    Record::BusFault {
+                        bus: b, from, nets, ..
+                    } => b == bus && from.iter().any(|f| f == HELD_LOW) && nets.contains(&line.net),
+                    _ => false,
+                })
+                .count();
+            if bound != 1 {
+                return Err(
+                    "a solved line has no computed rise, stuck-high record or held-low fault, or more than one",
+                );
+            }
+        }
     }
     let count = |kind: &str| -> u64 {
         findings
@@ -902,6 +984,54 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                 "the verdict's brown-out and flash controller findings do not match the boot's",
             );
         }
+    }
+    // The boot word as the judge names it (`AET-WO-3201` B2): a boot that
+    // was read names `boot_word_missing` exactly when its word is not the
+    // firmware's, as an error; a boot that read nothing was killed at a
+    // bound or did not load, and names why, once (adversarial F1).
+    let read = records.iter().any(
+        |r| matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some()),
+    );
+    let missing = u64::from(read && !booted);
+    if any_severity(BOOT_WORD_FINDING) != missing || count(BOOT_WORD_FINDING) != missing {
+        return Err("the verdict's boot_word_missing does not match the boot word");
+    }
+    let unread: u64 = UNREAD_FINDINGS.iter().map(|k| any_severity(k)).sum();
+    let unread_failing: u64 = UNREAD_FINDINGS.iter().map(|k| count(k)).sum();
+    if unread != u64::from(!read) || unread_failing != unread {
+        return Err(
+            "a boot that read nothing does not name once why (a bound or a load error), or a read one does",
+        );
+    }
+    // A record is judged only at the fixed point: without the boot word, no
+    // finding of a record's value, validity or witness (adversarial F2), as
+    // for the motor outputs and serial ports below.
+    if !booted && BOOTED_READ_FINDINGS.iter().any(|k| any_severity(k) > 0) {
+        return Err("the verdict judges an identity read's record of a boot without its boot word");
+    }
+    // An identity read outside the window (`AET-WO-4300a` D1) is named only
+    // of a boot that was read without its boot word on a short window, at
+    // most once per record archived as `invalid`: the judge names a record
+    // whose status word is still its fill, which the archive keeps only as
+    // `invalid`.
+    let unset = records
+        .iter()
+        .filter(|r| {
+            matches!(r, Record::I2cCheck { status: Some(s), .. } | Record::SpiCheck { status: Some(s), .. }
+                if s == "invalid")
+        })
+        .count() as u64;
+    let outside = if read && !booted && short_window(records) {
+        unset
+    } else {
+        0
+    };
+    if any_severity(OUTSIDE_WINDOW_FINDING) > outside
+        || count(OUTSIDE_WINDOW_FINDING) != any_severity(OUTSIDE_WINDOW_FINDING)
+    {
+        return Err(
+            "the verdict names identity_read_outside_window for no invalid record of an unbooted short window",
+        );
     }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,
@@ -1719,9 +1849,7 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     // every witness ends at it. Kind 10's instruction count is not tied to
     // it: a droop's boot counts from the last reset's release (third
     // adversarial review, F1).
-    let window = if solved.values().any(
-        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
-    ) {
+    let window = if short_window(records) {
         TWIN_DSHOT_WINDOW_NS
     } else {
         TWIN_MAX_VIRTUAL_NS

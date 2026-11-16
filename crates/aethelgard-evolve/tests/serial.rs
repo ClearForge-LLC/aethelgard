@@ -773,7 +773,7 @@ fn propose_answers_the_dead_rx_with_a_generator_report_of_its_af_field() {
     let Outcome::GeneratorReport(report) = &ans.outcome else {
         panic!("{:?}", ans.outcome)
     };
-    let what: Vec<(&str, u32, u64, Option<u64>)> = report
+    let what: Vec<(&str, u64, u64, Option<u64>)> = report
         .expectations
         .iter()
         .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))

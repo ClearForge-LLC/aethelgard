@@ -56,7 +56,7 @@ pub fn write<K: AsRef<str>, V: AsRef<[u8]>>(
         let name = entry.file_name().to_bytes();
         if name != b"." && name != b".." {
             return Err(unwritable(format!(
-                "{} is not empty: generate writes only into an empty or absent directory",
+                "{} is not empty: output is written only into an empty or absent directory",
                 out.display()
             )));
         }

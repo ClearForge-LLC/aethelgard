@@ -589,8 +589,10 @@ fn a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule(
     }
 }
 
+/// A line with no rise beside one past its ceiling sized nothing; since
+/// `AET-WO-3201` B1 `replay` refuses the run, so nothing reaches `propose`.
 #[test]
-fn a_line_with_no_rise_beside_one_past_its_ceiling_sizes_nothing() {
+fn a_line_with_no_rise_beside_one_past_its_ceiling_is_refused() {
     let mut r = healthy(47_000);
     rises(&mut r, 3_982_301, 3_982_301);
     r.retain(|x| !is_rise_on("I2C_SDA")(x));
@@ -601,9 +603,7 @@ fn a_line_with_no_rise_beside_one_past_its_ceiling_sizes_nothing() {
         |x| matches!(x, Record::Verdict { .. }),
         verdict(&[("analog_rise_exceeds_ceiling", 1), ("i2c_timeout", 1)]),
     );
-    let (a, answer) = ask(&r, 47_000);
-    assert_eq!(a.rule, Rule::E1);
-    assert_eq!(no_proposal(&answer).0, MODEL_SLOT);
+    assert_eq!(refused(&r), UNBOUND);
 }
 
 #[test]
@@ -753,7 +753,8 @@ fn an_indeterminate_or_passing_run_proposes_nothing_and_names_its_rule() {
         reason.contains("I4") && reason.contains("indeterminate"),
         "{reason}"
     );
-    // I2: the faulted bus's rises dropped, so nothing is measured.
+    // The faulted bus's rises dropped, so nothing is measured: it was I2,
+    // and `replay` now refuses it (`AET-WO-3201` B1).
     let mut r = healthy(47_000);
     rises(&mut r, 3_982_301, 3_982_301);
     r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
@@ -762,9 +763,18 @@ fn an_indeterminate_or_passing_run_proposes_nothing_and_names_its_rule() {
         |x| matches!(x, Record::Verdict { .. }),
         verdict(&[("i2c_timeout", 1)]),
     );
-    let (a, answer) = ask(&r, 47_000);
-    assert_eq!(a.rule, Rule::I2);
-    assert!(no_proposal(&answer).0.contains("I2"));
+    assert_eq!(refused(&r), UNBOUND);
+}
+
+const UNBOUND: &str =
+    "a solved line has no computed rise, stuck-high record or held-low fault, or more than one";
+
+/// Why `attribute` refuses `records`: a rule `replay` judges by.
+fn refused(records: &[Record]) -> &'static str {
+    match attribute(&archived(records)) {
+        Err(aethelgard_evolve::AttributeError::NotACampaignRun(why)) => why,
+        other => panic!("expected a refusal, got {other:?}"),
+    }
 }
 
 /// A proposer that answers whatever it is built with.
@@ -1252,7 +1262,7 @@ fn boot_ev(word_ok: bool, observed: Option<u64>) -> Evidence {
             boot_word: aethelgard_evolve::Field {
                 register: "boot_word".into(),
                 address: 0x2000_0000,
-                mask: u32::MAX,
+                mask: u64::from(u32::MAX),
                 solved: 0x2100_B007,
                 observed: Some(if word_ok { 0x2100_B007 } else { 0 }),
                 wrong: !word_ok,
@@ -1383,7 +1393,11 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
     replace(
         &mut r,
         |x| matches!(x, Record::Verdict { .. }),
-        verdict(&[("analog_rise_exceeds_ceiling", 1), ("i2c_timeout", 1)]),
+        verdict(&[
+            ("analog_rise_exceeds_ceiling", 1),
+            ("boot_word_missing", 1),
+            ("i2c_timeout", 1),
+        ]),
     );
     let run = archived(&r);
     let v = view(&run).unwrap();

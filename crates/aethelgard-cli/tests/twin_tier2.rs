@@ -3092,9 +3092,13 @@ fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
             ("U5".into(), "data".into(), "0x0".into()),
         ]
     );
+    // Each data read's mismatch is named by its step (`AET-WO-3201`, `4210`
+    // F-B10), never as an identity mismatch: the identities read right.
     let k = kinds(&v);
-    assert!(k.contains(&"i2c_identity_mismatch"), "{k:?}");
-    assert!(k.contains(&"spi_identity_mismatch"), "{k:?}");
+    assert!(k.contains(&"i2c_data_mismatch"), "{k:?}");
+    assert!(k.contains(&"spi_data_mismatch"), "{k:?}");
+    assert!(!k.contains(&"i2c_identity_mismatch"), "{k:?}");
+    assert!(!k.contains(&"spi_identity_mismatch"), "{k:?}");
 }
 
 /// `AET-WO-4220` PB1, D6: the emitted platform loads with its models of our
