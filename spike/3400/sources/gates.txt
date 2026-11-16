@@ -1,4 +1,10 @@
-gates on 53bb75b (tree of the merge minus docs), 2026-11-16T22:12:35Z
+gates on d324028 (the merge of ecc8d01; the spike changes no crate), 2026-11-16
+fmt=0
+clippy=0
+test=0
+tests: 1947 passed, 0 failed, 0 ignored, 117 result lines (cargo test --workspace)
+
+earlier, on 53bb75b (base 3dcd242):
 fmt=0
 clippy=0
 test=0

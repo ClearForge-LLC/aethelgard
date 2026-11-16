@@ -15,7 +15,7 @@ Labels used throughout: **[measured]** (run here, output in `spike/3400/results/
 - **Most of the test features cannot be expressed** [read at source, measured by probe]. Test points, jumpers, shunts, a BOOT0 header, a reset switch, input capture, `MCO`, USB, FDCAN and the flight sensors' footprints each need an engine work order (§7).
 - **One gap on `main` matters for ordering Sentinel-01** (F1): the emitter does not draw `power.input.hot_plug`, the bulk capacitor that `BatteryInputUndamped` credits. It also gives that capacitor's reference, `C1`, to a 100 nF decoupler. This is a known backlog row (4300d3 D5, roadmap §7.1 L635, "before `4500`"). With Sentinel-01 first, its deadline moves before Sentinel-01's order.
 - **Recommendation, short:** order V5's content plus three small engine work orders: test points, BOOT0/reset, and the hot-plug draw. Unhold `4220b` for Sentinel-01. Take J1 (the witness fixture) as the job after bring-up, not J2. §7 has the table.
-- **Gates** (`spike/3400/sources/gates.txt`), on `53bb75b`, whose tree is the head's minus the docs-only merge of `d6410b8`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 0, with 1942 passed and 0 failed.
+- **Gates** (`spike/3400/sources/gates.txt`), on `d324028`, the merge of `main` at `ecc8d01`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 0, with 1947 passed and 0 failed. Earlier, on `53bb75b`: the same, with 1942 passed.
 
 ## 1. Predictions (committed before any variant was run)
 
@@ -124,7 +124,7 @@ Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area 
 
 ## 3. S2: the variants, measured
 
-Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every step's stdout, exit and stderr are in `spike/3400/results/<v>/`. Host: release CLI from `3dcd242`. KiCad steps ran the same binary inside the pinned tools image (`container/IMAGE`, `c69ff9bc…`) under `~/bin/capped-run`. Caps were read back as memory.max 8 GiB, memory.swap.max 0 and pids.max 8192 (each `*.stderr`). Inside rootless podman the sandbox reports `uid_boundary: false` (`user_namespace`), as in every local tier-2 run.
+Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every step's stdout, exit and stderr are in `spike/3400/results/<v>/`. Host: release CLI from `3dcd242`, then from the merge of `ecc8d01` (below). KiCad steps ran the same binary inside the pinned tools image (`container/IMAGE`, `c69ff9bc…`) under `~/bin/capped-run`. Caps were read back as memory.max 8 GiB, memory.swap.max 0 and pids.max 8192 (each `*.stderr`). Inside rootless podman the sandbox reports `uid_boundary: false` (`user_namespace`), as in every local tier-2 run.
 
 | Variant | Adds (on top of the previous) | validate | generate | emit | erc | drc --spec | drc + parity | support | extract | Outline (mm) | Parts | Router: segments / track / vias / rip-ups |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -141,6 +141,7 @@ Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every
 - `generate`'s `kicad/` equals `emit`'s three files byte for byte for V0–V7. `generate` of V0 reproduces `boards/sentinel-01/**` (`diff -rq` empty) [measured].
 - The router's numbers come from `route::route` on each emitted board (`9-rename.txt`, first two lines). Each unrenamed reroute equals the emitted copper.
 - The variants V6 and V7 were added after the advisor's review, to measure F1's LDO and the nearest F2 proxy; V0–V5's files were unchanged by the rebuild.
+- **Rerun after `main` moved to `ecc8d01` (AET-WO-1208: validate's MCU rail rule, emit validates first).** Merged, the CLI rebuilt, every variant and probe rerun. Every exit and every verdict JSON is byte-identical to the run on `3dcd242`; only the stderr's scope names differ. So the emitted boards, and with them the renaming results, stand (`results/*/3-emit.json` hashes compared).
 - **First runs, kept in `spike/3400/sources/first-runs/`:**
   - With the motors solved free, the solver moved the console from PA9/PA10 to PB14/PB15, because TIM1 took PA8–PA11. That left the bootloader's USART1 pins and made V0's GPIOA acknowledgements stale (`validate` exit 2, `UnwitnessedAcknowledgementStale`).
   - Pinning the console where V0 solved it fixed both, except PUPD8 and PUPD11: motor pins are pulled down from the first GPIO initialisation (`4230`'s ruling), so they leave the same-source row. Those two names were removed from V0's entry; nothing new is acknowledged.
