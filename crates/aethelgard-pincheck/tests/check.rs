@@ -425,6 +425,12 @@ fn a_definition_inside_a_conditional_is_evaluated_exactly_or_refused() {
         def.replace("INPUT(0U)", "OUTPUT(0U)")
     );
     assert_eq!(header::read(&decoy).unwrap(), real);
+    // An `#elif 0` is dead even after a branch the reader cannot evaluate.
+    let elif0 = format!(
+        "#ifdef X\n#elif 0\n{}#endif\n{text}",
+        def.replace("INPUT(0U)", "OUTPUT(0U)")
+    );
+    assert_eq!(header::read(&elif0).unwrap(), real);
     // Dead after a taken branch, whatever its own condition says.
     let after = refused(&wrapped("#if 1\n#else", "#endif"));
     assert_eq!(after.id().as_deref(), Some("VAL_GPIOA_MODER"));
@@ -472,6 +478,10 @@ fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
     let text = common::header(&step_g_words());
     let real = header::read(&text).unwrap();
     let refused = |t: &str| header::read(t).unwrap_err();
+    // A name in a comment is no mention; a directive in a line comment is no
+    // directive.
+    let noted = format!("// VAL_GPIOA_MODER is below. #if 0\n{text}");
+    assert_eq!(header::read(&noted).unwrap(), real);
     // In a block comment: no region opens.
     assert_eq!(
         header::read(&format!("/*\n#if 0\n*/\n{text}")).unwrap(),

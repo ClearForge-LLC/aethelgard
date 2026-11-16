@@ -522,6 +522,49 @@ fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
             "firmware/.cargo/config.toml",
         ),
         (
+            "config-build-key",
+            Box::new(|c| {
+                let p = c.join("firmware/.cargo/config.toml");
+                let t = fs::read_to_string(&p).unwrap();
+                fs::write(
+                    &p,
+                    t.replacen("[build]\n", "[build]\nrustc-wrapper = \"/bin/false\"\n", 1),
+                )
+                .unwrap();
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-env-table",
+            Box::new(|c| {
+                append(
+                    c.join("firmware/.cargo/config.toml"),
+                    "\n[env]\nX = \"1\"\n",
+                )
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
+            "config-rustflags",
+            Box::new(|c| {
+                let p = c.join("firmware/.cargo/config.toml");
+                let t = fs::read_to_string(&p).unwrap();
+                fs::write(
+                    &p,
+                    t.replacen(
+                        "\"link-arg=-Tlink.x\"]",
+                        "\"link-arg=-Tlink.x\", \"-C\", \"link-arg=--x\"]",
+                        1,
+                    ),
+                )
+                .unwrap();
+            }),
+            "CargoConfigRefused",
+            "firmware/.cargo/config.toml",
+        ),
+        (
             "config-unparsable",
             Box::new(|c| append(c.join("firmware/.cargo/config.toml"), "\nnot toml [[\n")),
             "CargoConfigRefused",
