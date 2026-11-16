@@ -357,6 +357,11 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - a job after bring-up: a witness fixture for later boards, a DroneCAN node, or both.
 
   It says whether `4220b` gains Sentinel-01 as a consumer.
+
+  **Amended by Scotty, 2026-11-16 22:30 UTC (the work order's §0):**
+  - The board's job is the witness board. It is an all-purpose instrumented board with its own logic analyzer, bus sniffer and stimulus, built to cut future bench time.
+  - The spike also measures four layers.
+  - It prices three paths: the lean two-layer probe now with the loaded board later as Sentinel-03; the loaded board at two layers; or the loaded board at four layers.
 - **Held until the first scar is ratified (Scotty, 2026-11-16, the Grok review's decision 3):** `4400b` (its GCC mirror carved out as `4403`), `4400c`, `4500`, and `4220b`, whose only consumer is Sentinel-02. None is running.
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars. **Ruled 2026-11-15:** four copper layers (Scotty, `4300d2` D4); no 1.8 V domain, because every chosen sensor takes 3.3 V I/O (review B5; `4220` P2.1, F14), while the power fixture keeps its LDO and translator as test coverage; every precondition of `AET-WO-3303` and `4230` holds before anything is ordered. **Ruled by Scotty 2026-11-15: Sentinel-02 is an indoor drone for now.**
   - Position from optical flow with a downward rangefinder, so it needs no GPS.
@@ -779,6 +784,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-15 | §5, §6, §7.1 | `AET-WO-4220` build merged (#151) and its board path split to `AET-WO-4220b`; `4230` amended (the waits' static check, ledger rows); §6 gains the independent review at every phase gate from P4 on (Scotty); backlog rows for the DShot window against the sensor waits and for `SPI_MAX_FRAMES` | comment 6898233775; Scotty, 2026-11-15 |
 | 2026-11-15 | §5, §7.1 | `AET-WO-1310` written (router escape for sub-grid pads, before `4220b`); `4300d2`'s close ruled; `3303` D1 ruled (detected faults cover, `3301` §3.2 reversed); 3303's backlog rows | comments 6899426595, 6899438039 |
 | 2026-11-16 | §5, §7.1 | `AET-WO-1207` merged (#178); its rows closed; `AET-WO-1208` written from its F1–F3 | PR #178 |
+| 2026-11-16 | §5 | `AET-WO-3400` amended (§0): the witness board is the job; four layers are measured; a cost spike prices the lean probe, the loaded board at two layers and the loaded board at four. `RUL-21` (images) ruled. `AET-WO-1208` merged (#182, `ecc8d01`) | Scotty, 2026-11-16 22:30 UTC |
 | 2026-11-16 | §3, §5 | Sentinel-01 scoped: a full instrumented test board, carrying the flight controller's subsystems, on two layers, with a job after bring-up. `AET-WO-3400` written. `4403` merged (#176, `938b7f4`); its anonymous fetch is proven on `main`'s publish (run 43944349355). Docs #180 merged (`3dcd242`) | Scotty, 2026-11-16 |
 | 2026-11-16 | §6 | The specification freeze lifted: the first scar is ratified into northstar §2 | Scotty, 2026-11-16 |
 | 2026-11-16 | §5, §7.1 | `AET-WO-4211` merged (#173) and the `4230` CI refit (#177); `4211`'s rows closed and its F2, F7 recorded; rows from `2302`'s spike ruling (D2, D6) and `4403`'s D4 | PR #175 comment 6923968111; PR #176 comment 6925530375 |
