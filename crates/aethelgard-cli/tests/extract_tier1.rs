@@ -160,9 +160,13 @@ fn the_reference_passes_with_every_term() {
     // and SCK is shorter (7.375 mm); were [4_371, 3_038, 1_563, 8_000,
     // 16_972] and [4_209, 0, 1_563, 8_000, 13_772]. Measured: J1 at the edge
     // with no console net moves no term, and no I2C term moves.
+    // AET-WO-4300g, merged after 4300b and 1310: with the MCU's support
+    // network and 1310's escapes on the board, SCK and MOSI moved again; were
+    // [2_933, 3_038, 1_563, 8_000, 15_534] and [4_966, 3_038, 1_563, 8_000,
+    // 17_567].
     let (sck, mosi) = (&lines[2], &lines[3]);
-    assert_eq!(terms(sck), [2_933, 3_038, 1_563, 8_000, 15_534]);
-    assert_eq!(terms(mosi), [4_966, 3_038, 1_563, 8_000, 17_567]);
+    assert_eq!(terms(sck), [3_897, 3_038, 1_563, 8_000, 16_498]);
+    assert_eq!(terms(mosi), [4_422, 3_038, 1_563, 8_000, 17_023]);
     for (line, net, signal, pin, driver) in [
         (sck, "SPI_SCK", "SCK", "U4.6", "U1.41"),
         (mosi, "SPI_MOSI", "MOSI", "U4.5", "U1.43"),
@@ -198,16 +202,17 @@ fn a_declared_spi_bound_below_the_bound_fails_and_at_it_passes() {
             }
         }
     };
-    // AET-WO-4300b: SCK's bound with the console routed (was 16_972).
-    let spec = spec_with("sck-under", |v| set(v, 15_533));
+    // AET-WO-4300b: SCK's bound with the console routed (was 16_972); with
+    // AET-WO-4300g's network and 1310's escapes (was 15_534).
+    let spec = spec_with("sck-under", |v| set(v, 16_497));
     let (code, v) = extract("sck-under", reference(), spec.to_str().unwrap());
     assert_eq!(code, 1, "{v}");
     assert_eq!(
         v["findings"][0]["message"],
-        "`SPI_SCK`: bound 15534 fF (trace 2933, vias 3038, pads 1563, pins 8000) exceeds the declared 15533 fF"
+        "`SPI_SCK`: bound 16498 fF (trace 3897, vias 3038, pads 1563, pins 8000) exceeds the declared 16497 fF"
     );
     assert_eq!(v["findings"].as_array().unwrap().len(), 1);
-    let spec = spec_with("sck-at", |v| set(v, 15_534));
+    let spec = spec_with("sck-at", |v| set(v, 16_498));
     let (code, v) = extract("sck-at", reference(), spec.to_str().unwrap());
     assert_eq!(code, 0, "{v}");
 }

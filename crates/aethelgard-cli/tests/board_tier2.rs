@@ -1290,7 +1290,7 @@ fn the_full_power_fixture_routes_and_passes_every_gate_it_reaches() {
 
 /// `AET-WO-4300g` §1.5, on KiCad's own netlist: the reference's schematic,
 /// exported by `kicad-cli sch export netlist` in the sandbox, passes the
-/// support gate with every role in its bound, J1 the programming path and J2
+/// support gate with every role in its bound, J2 the programming path and J3
 /// the source. Then the board with one VDD capacitor moved 25 mm off its pin
 /// (the schematic unchanged) fails it, by that role and by nothing else.
 #[test]
@@ -1329,8 +1329,8 @@ fn the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails() {
     let roles = s["roles"].as_array().unwrap();
     assert_eq!(roles.len(), 19, "{v}");
     assert!(roles.iter().all(|x| x["verdict"] == "pass"), "{v}");
-    assert_eq!(s["programming"]["connector"], "J1", "{v}");
-    assert_eq!(s["supply_source"], "J2 pin 1", "{v}");
+    assert_eq!(s["programming"]["connector"], "J2", "{v}");
+    assert_eq!(s["supply_source"], "J3 pin 1", "{v}");
     let moved_part = roles
         .iter()
         .find(|x| x["role"] == "vdd_bypass" && x["pin"] == "52")

@@ -137,8 +137,8 @@ fn the_reference_passes_the_support_gate() {
     }
     assert_eq!(r.straps.len(), 4);
     let p = r.programming.as_ref().unwrap();
-    assert_eq!((p.connector.as_str(), p.nrst), ("J1", false));
-    assert_eq!(r.supply_source.as_deref(), Some("J2 pin 1"));
+    assert_eq!((p.connector.as_str(), p.nrst), ("J2", false));
+    assert_eq!(r.supply_source.as_deref(), Some("J3 pin 1"));
     assert!(
         r.conditions
             .iter()
@@ -259,8 +259,8 @@ fn a_connector_that_cannot_program_the_part_fails() {
     let (spec, pads, board, _) = passing();
     let mut swapped = pads.clone();
     let (four, five) = (
-        ("J1".to_owned(), "4".to_owned()),
-        ("J1".to_owned(), "5".to_owned()),
+        ("J2".to_owned(), "4".to_owned()),
+        ("J2".to_owned(), "5".to_owned()),
     );
     let (a, b) = (swapped.1[&four].clone(), swapped.1[&five].clone());
     swapped.1.insert(four, b);
@@ -275,7 +275,7 @@ fn a_connector_that_cannot_program_the_part_fails() {
         ]
     );
     let mut no_ground = pads.clone();
-    no_ground.1.remove(&("J1".to_owned(), "6".to_owned()));
+    no_ground.1.remove(&("J2".to_owned(), "6".to_owned()));
     let k = kinds(&judge(&spec, &no_ground, &board));
     assert_eq!(k, ["connector_pin_off_net", "no_programming_path"]);
 }
@@ -284,7 +284,7 @@ fn a_connector_that_cannot_program_the_part_fails() {
 #[test]
 fn a_source_pin_off_the_supply_fails() {
     let (spec, mut pads, board, _) = passing();
-    pads.1.remove(&("J2".to_owned(), "1".to_owned()));
+    pads.1.remove(&("J3".to_owned(), "1".to_owned()));
     let k = kinds(&judge(&spec, &pads, &board));
     assert_eq!(k, ["connector_pin_off_net", "supply_source_off_net"]);
 }
@@ -520,7 +520,7 @@ fn an_unpopulated_or_mislabelled_capacitor_serves_no_role() {
 #[test]
 fn a_not_connected_connector_pin_on_a_net_fails() {
     let (spec, mut pads, board, _) = passing();
-    pads.1.insert(("J1".into(), "2".into()), "/SWCLK".into());
+    pads.1.insert(("J2".into(), "2".into()), "/SWCLK".into());
     let k = kinds(&judge(&spec, &pads, &board));
     assert!(k.contains(&"connector_pin_off_net"), "{k:?}");
 }
