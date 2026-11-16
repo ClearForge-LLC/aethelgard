@@ -1957,7 +1957,9 @@ fn f2_a_late_dshot_anchor_fails_by_name() {
 /// The raw-register code adversarial pass 1's mutants use (`AET-WO-2302`):
 /// a word write and read, a 16-bit store and a spin of `n` iterations.
 const RAW_ADV: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn rd(a: u32) -> u32 { unsafe { core::ptr::read_volatile(a as *const u32) } }\nfn wr16(a: u32, v: u16) { unsafe { core::ptr::write_volatile(a as *mut u16, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
-/// The generated firmware's write of its boot word.
+/// The generated firmware's start of its outputs and write of its boot
+/// word.
+const START: &str = "    let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);";
 const BOOT_WORD: &str =
     "    unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };";
 
@@ -2037,6 +2039,92 @@ fn h1c_a_dma_restart_after_the_window_fails_by_name() {
     let (code, v) = dshot_mutant("h1c-dma-restart", |_| {}, &[(BOOT_WORD, &body)]);
     assert_eq!(code, Some(1), "{v}");
     edges_after_window("h1c", &v);
+}
+
+/// A `WFI` before the outputs start, woken by SysTick 1 ms later with
+/// interrupts masked (adversarial pass 1, A8): the core's instruction count
+/// lags its time from there on.
+fn wfi_before_start() -> String {
+    format!(
+        "    unsafe {{ core::arch::asm!(\"cpsid i\") }};\n    wr(0xE000_E014, 100_000);\n    wr(0xE000_E018, 0);\n    wr(0xE000_E010, 7);\n    unsafe {{ core::arch::asm!(\"wfi\") }};\n    wr(0xE000_E010, 0);\n    wr(0xE000_ED04, 1 << 25);\n    unsafe {{ core::arch::asm!(\"cpsie i\") }};\n{START}"
+    )
+}
+
+/// Adversarial pass 1, M1 (A8b): a core that sleeps before its outputs
+/// start and never writes its boot word lags its time, so each line of the
+/// CLI's hooks lags its stamp. That was an error of the tool (exit 5), so a
+/// firmware could abort a campaign; it is the verdict's `cpu_halted` again,
+/// with `boot_word_missing`, as before `AET-WO-2302`, naming the line. Its
+/// campaign run replays: the records' window and stop agree at the stamps.
+#[test]
+fn m1_a_core_that_slept_without_its_boot_word_is_cpu_halted() {
+    let body = wfi_before_start();
+    let (platform, spec, elf) = motor_board(
+        "motors-dshot600",
+        "m1-wfi-no-boot-word",
+        |_| {},
+        |d| {
+            edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+            edit(d, "src/main.rs", START, &body);
+            edit(d, "src/main.rs", BOOT_WORD, "");
+        },
+    );
+    let (code, v) = boot_on("m1 wfi, no boot word", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"cpu_halted") && k.contains(&"boot_word_missing"),
+        "{v}"
+    );
+    let halted = message(&v, "cpu_halted");
+    assert!(
+        halted.contains("AETHELGARD-CR1 1 81 0")
+            && halted.contains("the core slept or stopped before it"),
+        "{halted}"
+    );
+    let archive =
+        std::env::temp_dir().join(format!("aet-2302-t2-{}-m1-archive", std::process::id()));
+    let _ = fs::remove_dir_all(&archive);
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .args([
+            "campaign",
+            "--scenarios",
+            "scenarios/motors/dshot600.json",
+            "--firmware",
+        ])
+        .arg(&elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    answer(&format!(
+        "campaign m1: exit={:?} {stdout}",
+        out.status.code()
+    ));
+    let line: Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
+    assert_eq!(line["verdict"], "fail", "{line}");
+    let (code, replayed) = aethelgard(&["replay", "--archive", line["run"].as_str().unwrap()]);
+    assert_eq!(code, Some(0), "{replayed}");
+    let _ = fs::remove_dir_all(&archive);
+}
+
+/// Adversarial pass 1, A8: the same sleep with the boot word written. The
+/// boot word set while the core executed fewer instructions than the run
+/// holds is exit 5 by `AET-WO-2100`'s ruled A10, unchanged; no line of the
+/// CLI's hooks is the cause any more.
+#[test]
+fn m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement() {
+    let (code, v) = dshot_mutant("m1-wfi", |_| {}, &[(START, &wfi_before_start())]);
+    assert_eq!(code, Some(5), "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.starts_with("the boot word is set but the core executed"),
+        "{m}"
+    );
+    assert!(!m.contains("AETHELGARD-"), "{m}");
 }
 
 /// The raw-register code the forgeries put where the outputs start: a

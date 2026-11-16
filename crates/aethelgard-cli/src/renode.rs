@@ -1985,30 +1985,33 @@ pub fn judge_boot(
     // Its lines of ours, each read whole; past the filter's budget a line may
     // have been dropped, so none is read: every anchor and injection is then
     // unreadable, never absent (`AET-WO-2204` D2's rule).
-    let hooks = (out.dropped_log_lines == 0)
+    // A line its count does not place at its stamp is the core's sleep
+    // (adversarial pass 1, M1): `cpu_halted`, never an error of the tool.
+    let (hooks, slept) = match (out.dropped_log_lines == 0)
         .then(|| hooks_of(&last_boot, start_ns))
         .transpose()
-        .map_err(untrusted)?;
+        .map_err(untrusted)?
+    {
+        Some((h, slept)) => (Some(h), slept),
+        None => (None, None),
+    };
     let boot_word_hook = hooks.as_deref().and_then(|h| {
-        h.iter().find_map(|(i, x)| match x {
-            crate::anchor::Hook::BootWord {
-                value,
-                before,
-                count,
-            } if *value == aethelgard_twin::boot::BOOT_MAGIC
-                && *before != aethelgard_twin::boot::BOOT_MAGIC =>
+        h.iter().find_map(|(i, x, ns)| match x {
+            crate::anchor::Hook::BootWord { value, before, .. }
+                if *value == aethelgard_twin::boot::BOOT_MAGIC
+                    && *before != aethelgard_twin::boot::BOOT_MAGIC =>
             {
-                Some((*i, *count))
+                Some((*i, *ns))
             }
             _ => None,
         })
     });
     let timers = hooks
         .as_deref()
-        .map(|h| timer_witnesses(plan, h, start_ns, plan.virtual_ns))
+        .map(|h| timer_witnesses(plan, h, plan.virtual_ns))
         .unwrap_or_default();
     let injections = match hooks.as_deref() {
-        Some(h) => port_injections(plan, h, start_ns, boot_word_hook),
+        Some(h) => port_injections(plan, h, boot_word_hook),
         None => vec![
             PortInjection {
                 why: Some("Renode's log could not be read whole".to_owned()),
@@ -2094,7 +2097,7 @@ pub fn judge_boot(
                 witness_motor_in(m, edges, timer, plan.virtual_ns)
             })
             .collect(),
-        boot_word_ns: boot_word_hook.map(|(_, c)| crate::anchor::instant(start_ns, c)),
+        boot_word_ns: boot_word_hook.map(|(_, ns)| ns),
         register_expected: plan.image.registers.iter().map(|r| r.value).collect(),
         timers: timers.clone(),
         injections: injections.clone(),
@@ -2247,11 +2250,20 @@ pub fn judge_boot(
             ),
         ));
     }
-    if halted {
+    // One `cpu_halted`: the core executed fewer instructions than the run
+    // holds, or a line of ours shows it lagging its time (it slept, `WFI`):
+    // what a hook or action anchored there is then judged at its stamp, and
+    // an action whose count was due falls stale and fails by its own name
+    // (adversarial pass 1, M1).
+    if halted || slept.is_some() {
+        let lag = slept
+            .as_deref()
+            .map(|s| format!("; {s}: the core slept or stopped before it"))
+            .unwrap_or_default();
         findings.push(Finding::plain(
             "cpu_halted",
             format!(
-                "the core executed {} of the run's {expected} instructions",
+                "the core executed {} of the run's {expected} instructions{lag}",
                 observed.instructions
             ),
         ));
@@ -2438,17 +2450,24 @@ pub fn judge_boot(
     ))
 }
 
+/// One line of ours in the boot the judge reads: its position among the
+/// boot's lines, what it says, and its instant.
+type Seen = (usize, crate::anchor::Hook, u64);
+
 /// Each line of ours in `boot` ([`crate::anchor`]), with its position in
-/// `boot`, each count placed at its stamp: an instruction count's instant is
-/// `start_ns` plus 10 ns an instruction. A scheduled action's line (a stop,
-/// its `CEN` cleared, an injected byte, a stale action) is stamped exactly
+/// `boot` and its instant: its count placed in a boot started at
+/// `start_ns`, 10 ns an instruction. A scheduled action's line (a stop, its
+/// `CEN` cleared, an injected byte, a stale action) is stamped exactly
 /// there, as every probe measured it; a hook's line at or before it, inside
-/// one quantum (measured up to 60 ns early). Anything else is refused, never
-/// read past: a line of ours not exactly one of its shapes, or a count the
-/// boot's start does not place at its stamp (`AET-WO-2302`; the PM's
-/// decision on S1's open question 3).
-fn hooks_of(boot: &[&str], start_ns: u64) -> Result<Vec<(usize, crate::anchor::Hook)>, String> {
+/// one quantum (measured up to 60 ns early). A line of ours not exactly one
+/// of its shapes is refused, never read past (exit 5). A count that does
+/// not place at its stamp is the core's: it executed fewer instructions
+/// than its time held (it slept, `WFI`), so the line's instant is its
+/// stamp, and the first such line is returned beside, for `cpu_halted`
+/// (adversarial pass 1, M1; before it, exit 5).
+fn hooks_of(boot: &[&str], start_ns: u64) -> Result<(Vec<Seen>, Option<String>), String> {
     let mut out = Vec::new();
+    let mut slept = None;
     for (i, line) in boot.iter().enumerate() {
         let Some((stamp, body)) = log_stamped(line) else {
             continue;
@@ -2468,15 +2487,15 @@ fn hooks_of(boot: &[&str], start_ns: u64) -> Result<Vec<(usize, crate::anchor::H
         } else {
             stamp <= at && at - stamp < aethelgard_twin::boot::QUANTUM_NS
         };
-        if !placed {
-            return Err(format!(
+        if !placed && slept.is_none() {
+            slept = Some(format!(
                 "`{}`: its count places it at {at} ns in a boot started at {start_ns} ns, but it is stamped {stamp} ns",
                 body.escape_debug()
             ));
         }
-        out.push((i, hook));
+        out.push((i, hook, if placed { at } else { stamp }));
     }
-    Ok(out)
+    Ok((out, slept))
 }
 
 /// What the hooks showed of one motor timer in the boot the judge reads
@@ -2512,42 +2531,37 @@ pub struct StopSeen {
 }
 
 /// Each hooked timer's witness from `hooks` (the boot's lines of ours) in a
-/// boot that started at `start_ns` and ends at `end_ns`.
-fn timer_witnesses(
-    plan: &BootPlan<'_>,
-    hooks: &[(usize, crate::anchor::Hook)],
-    start_ns: u64,
-    end_ns: u64,
-) -> Vec<TimerWitness> {
+/// boot that ends at `end_ns`. A DShot stop's instant is its window's end,
+/// its anchor's plus `DSHOT_WINDOW_NS`: the count it ran at is exactly its
+/// anchor's plus the window's, which the stale check holds.
+fn timer_witnesses(plan: &BootPlan<'_>, hooks: &[Seen], end_ns: u64) -> Vec<TimerWitness> {
     use crate::anchor::{Hook, Stale};
     let window = crate::anchor::instructions(aethelgard_twin::boot::DSHOT_WINDOW_NS);
     plan.timer_hooks()
         .into_iter()
         .map(|t| {
-            let rises: Vec<(usize, u64)> = hooks
+            let rises: Vec<(usize, u64, u64)> = hooks
                 .iter()
-                .filter_map(|(i, h)| match h {
+                .filter_map(|(i, h, ns)| match h {
                     Hook::Cr1 {
                         timer,
                         value,
                         before,
                         count,
                     } if *timer == t.timer && value & 1 == 1 && before & 1 == 0 => {
-                        Some((*i, *count))
+                        Some((*i, *count, *ns))
                     }
                     _ => None,
                 })
                 .collect();
-            let anchor = rises
-                .first()
-                .map(|&(i, c)| (i, c, crate::anchor::instant(start_ns, c)));
+            let anchor = rises.first().copied();
             let window_end = anchor.map(|(_, _, at)| match t.dshot {
                 true => at + aethelgard_twin::boot::DSHOT_WINDOW_NS,
                 false => end_ns,
             });
-            let stop = anchor.filter(|_| t.dshot).and_then(|(_, a, _)| {
+            let stop = anchor.filter(|_| t.dshot).and_then(|(_, a, at)| {
                 let due = a + window;
-                let words = hooks.iter().find_map(|(_, h)| match h {
+                let words = hooks.iter().find_map(|(_, h, _)| match h {
                     Hook::Stop {
                         timer,
                         anchor,
@@ -2556,7 +2570,7 @@ fn timer_witnesses(
                     } if *timer == t.timer && *anchor == a && *count == due => Some(words.clone()),
                     _ => None,
                 })?;
-                let cleared = hooks.iter().find_map(|(_, h)| match h {
+                let cleared = hooks.iter().find_map(|(_, h, _)| match h {
                     Hook::Cleared {
                         timer,
                         anchor,
@@ -2566,14 +2580,14 @@ fn timer_witnesses(
                     _ => None,
                 });
                 Some(StopSeen {
-                    at_ns: crate::anchor::instant(start_ns, due),
+                    at_ns: at + aethelgard_twin::boot::DSHOT_WINDOW_NS,
                     words,
                     cleared,
                 })
             });
             let stale = hooks
                 .iter()
-                .filter(|(_, h)| {
+                .filter(|(_, h, _)| {
                     matches!(h, Hook::Stale { what: Stale::Stop { timer }, .. } if *timer == t.timer)
                 })
                 .count();
@@ -2845,8 +2859,7 @@ pub struct PortInjection {
 /// are no injection, and say why.
 fn port_injections(
     plan: &BootPlan<'_>,
-    hooks: &[(usize, crate::anchor::Hook)],
-    start_ns: u64,
+    hooks: &[Seen],
     boot_word: Option<(usize, u64)>,
 ) -> Vec<PortInjection> {
     use crate::anchor::Hook;
@@ -2857,6 +2870,7 @@ fn port_injections(
         index: usize,
         anchor: u64,
         count: u64,
+        ns: u64,
         mux: Option<(u32, u32)>,
     }
     let ports = plan.port_hooks();
@@ -2865,7 +2879,7 @@ fn port_injections(
         .map(|k| {
             let bytes: Vec<Byte> = hooks
                 .iter()
-                .filter_map(|(i, h)| match h {
+                .filter_map(|(i, h, ns)| match h {
                     Hook::Inject {
                         port,
                         byte,
@@ -2877,6 +2891,7 @@ fn port_injections(
                         index: *byte,
                         anchor: *anchor,
                         count: *count,
+                        ns: *ns,
                         mux: *mux,
                     }),
                     _ => None,
@@ -2893,7 +2908,7 @@ fn port_injections(
             let before = (0..k).rev().find(|&j| !ports[j].open);
             let echoed = hooks
                 .iter()
-                .filter_map(|(_, h)| match h {
+                .filter_map(|(_, h, _)| match h {
                     Hook::Echo { port, n, .. } if Some(*port) == before => Some(*n),
                     _ => None,
                 })
@@ -2943,7 +2958,7 @@ fn port_injections(
                 };
             }
             PortInjection {
-                at_ns: Some(crate::anchor::instant(start_ns, bytes[0].count)),
+                at_ns: Some(bytes[0].ns),
                 bytes: bytes.len(),
                 mux: bytes[0].mux,
                 line: Some(bytes[0].line),
@@ -4089,7 +4104,9 @@ mod tests {
     }
 
     /// The judge's anchor findings on `log`, a boot started at `start_ns`
-    /// and read to 100 ms, and the output's witness.
+    /// and read to 100 ms, and the output's witness; a line of ours its
+    /// count does not place at its stamp adds `cpu_halted`, as the judge's
+    /// boot does.
     fn judge_anchors(
         log: &[String],
         start_ns: u64,
@@ -4100,8 +4117,8 @@ mod tests {
             ..plan(&image, &[])
         };
         let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-        let hooks = hooks_of(&lines, start_ns)?;
-        let timers = timer_witnesses(&p, &hooks, start_ns, p.virtual_ns);
+        let (hooks, slept) = hooks_of(&lines, start_ns)?;
+        let timers = timer_witnesses(&p, &hooks, p.virtual_ns);
         let w = witness_motor_in(
             &motors[0],
             Some(observer_edges(&motors[0].observer.source, &lines)),
@@ -4115,15 +4132,19 @@ mod tests {
             .flat_map(|c| own_lines(c, &lines))
             .map(|(i, _)| i)
             .max();
-        let bw = hooks.iter().find_map(|(i, h)| match h {
-            crate::anchor::Hook::BootWord {
-                value,
-                before,
-                count,
-            } if *value == aethelgard_twin::boot::BOOT_MAGIC && *before == 0 => Some((*i, *count)),
+        let bw = hooks.iter().find_map(|(i, h, ns)| match h {
+            crate::anchor::Hook::BootWord { value, before, .. }
+                if *value == aethelgard_twin::boot::BOOT_MAGIC && *before == 0 =>
+            {
+                Some((*i, *ns))
+            }
             _ => None,
         });
-        let mut f = witness_findings_of(&motors[0], &w);
+        let mut f: Vec<Finding> = slept
+            .into_iter()
+            .map(|s| Finding::plain("cpu_halted", s))
+            .collect();
+        f.extend(witness_findings_of(&motors[0], &w));
         f.extend(anchor_findings(
             &p,
             &timers,
@@ -4351,10 +4372,19 @@ mod tests {
         );
     }
 
-    /// Every line of ours is read whole: one in no shape it writes, or whose
-    /// count its boot's start does not place at its stamp, is refused.
+    /// Every line of ours is read whole: one in no shape it writes is
+    /// refused (exit 5). One whose count its boot's start does not place at
+    /// its stamp is the core's lag, not the tool's: `cpu_halted`, naming the
+    /// line, never an error (adversarial pass 1, M1).
     #[test]
-    fn a_hook_line_out_of_shape_or_out_of_place_is_refused() {
+    fn a_hook_line_out_of_shape_is_refused_and_one_out_of_place_is_cpu_halted() {
+        let halted = |log: &[String], start: u64| -> Vec<String> {
+            let (f, _) = judge_anchors(log, start).unwrap();
+            f.into_iter()
+                .filter(|f| f.kind == "cpu_halted")
+                .map(|f| f.message)
+                .collect()
+        };
         let mut log = dshot_log();
         log[2] = at(30_620, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0");
         assert!(
@@ -4365,20 +4395,26 @@ mod tests {
         );
         let mut log = dshot_log();
         log[2] = at(130_620, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 3067");
+        let h = halted(&log, 0);
+        assert_eq!(h.len(), 1, "{h:?}");
+        assert!(h[0].contains("stamped 130620 ns"), "{h:?}");
+        // Its anchor falls back to its stamp: the edges from 30 670 ns are
+        // then before it, named, never judged.
+        let (f, w) = judge_anchors(&log, 0).unwrap();
+        assert_eq!(w.anchor_ns, Some(130_620));
         assert!(
-            judge_anchors(&log, 0)
-                .err()
-                .unwrap()
-                .contains("stamped 130620 ns")
+            kinds_of(&f).contains(&"motor_edge_before_anchor"),
+            "{:?}",
+            messages(&f)
         );
         // The same boot read from the wrong start.
-        assert!(judge_anchors(&dshot_log(), 100_000).is_err());
+        assert_eq!(halted(&dshot_log(), 100_000).len(), 1);
         // A hook's line may be stamped up to a quantum early (the `CR1`
         // line above is 50 ns early); a scheduled action's line is exact
         // (the PM's decision on S1's open question 3): one grain early or
         // late, a stop, its clearing, a stale stop or an injected byte is
-        // refused.
-        assert!(judge_anchors(&dshot_log(), 0).is_ok());
+        // the core's lag.
+        assert_eq!(halted(&dshot_log(), 0), Vec::<String>::new());
         let n = dshot_log().len();
         for (i, ns, body) in [
             (n - 2, 2_030_660, "STOP 2 3067 203067 81 81"),
@@ -4389,8 +4425,11 @@ mod tests {
         ] {
             let mut log = dshot_log();
             log[i] = at(ns, &format!("[WARNING] sysbus: AETHELGARD-{body}"));
-            let e = judge_anchors(&log, 0).err().unwrap_or_default();
-            assert!(e.contains(&format!("stamped {ns} ns")), "{body}: {e}");
+            let h = halted(&log, 0);
+            assert!(
+                h.len() == 1 && h[0].contains(&format!("stamped {ns} ns")),
+                "{body}: {h:?}"
+            );
         }
         let mut log = dshot_log();
         log[n - 1] = at(
@@ -4401,9 +4440,51 @@ mod tests {
             2_030_660,
             "[WARNING] sysbus: AETHELGARD-INJECT 0 1 3075 203066",
         );
-        assert!(
-            judge_anchors(&log, 0).is_ok(),
+        assert_eq!(
+            halted(&log, 0),
+            Vec::<String>::new(),
             "exact action lines of any shape are read"
+        );
+    }
+
+    /// Adversarial pass 1, M1: a core that slept (`WFI`) before its timer's
+    /// `CEN` lags its time by the sleep. Every line of ours after it is
+    /// placed at its stamp: the anchor, the stop that ran at its due count,
+    /// and the window between them are consistent (the stop's instant is
+    /// the window's end), the one finding is `cpu_halted`. A sleep inside
+    /// the window makes the stop stale: it does nothing and fails by name.
+    #[test]
+    fn a_core_that_slept_is_cpu_halted_and_its_anchors_fall_back_to_their_stamps() {
+        let lag = 1_000_000u64;
+        let shift = |log: &[String], from: u64, by: u64| -> Vec<String> {
+            log.iter()
+                .map(|l| match log_stamped(l) {
+                    Some((ns, body)) if ns >= from => at(ns + by, body),
+                    _ => l.clone(),
+                })
+                .collect()
+        };
+        // Everything from the anchor on is 1 ms later than its count.
+        let slept = shift(&dshot_log(), 30_000, lag);
+        let (f, w) = judge_anchors(&slept, 0).unwrap();
+        assert_eq!(kinds_of(&f), ["cpu_halted"], "{:?}", messages(&f));
+        assert_eq!(w.status, "witnessed");
+        assert_eq!(w.anchor_ns, Some(30_620 + lag));
+        assert_eq!(w.end_ns, 30_620 + lag + 2_000_000);
+        // A sleep between the anchor and its stop: the stop's count is not
+        // its due one, so it logged itself stale and did nothing.
+        let mut log = shift(&dshot_log(), 1_000_000, lag);
+        let n = log.len();
+        log[n - 2] = at(
+            2_030_670 + lag,
+            "[WARNING] sysbus: AETHELGARD-STALE STOP 2 3067 103067",
+        );
+        log.pop();
+        let (f, _) = judge_anchors(&log, 0).unwrap();
+        let k = kinds_of(&f);
+        assert!(
+            k.contains(&"cpu_halted") && k.contains(&"judge_stop_missing"),
+            "{k:?}"
         );
     }
 
@@ -4438,12 +4519,13 @@ mod tests {
         }
         let read = |log: &[String]| {
             let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let hooks = hooks_of(&lines, 0).unwrap();
-            let bw = hooks.iter().find_map(|(i, h)| match h {
-                crate::anchor::Hook::BootWord { count, .. } => Some((*i, *count)),
+            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
+            assert_eq!(slept, None);
+            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
+                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
                 _ => None,
             });
-            port_injections(&p, &hooks, 0, bw)
+            port_injections(&p, &hooks, bw)
         };
         let j = read(&log);
         assert_eq!(
@@ -4537,12 +4619,13 @@ mod tests {
         let read = |serial: &[Serial], log: &[String]| {
             let p = serial_plan(&image, &[], serial);
             let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let hooks = hooks_of(&lines, 0).unwrap();
-            let bw = hooks.iter().find_map(|(i, h)| match h {
-                crate::anchor::Hook::BootWord { count, .. } => Some((*i, *count)),
+            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
+            assert_eq!(slept, None);
+            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
+                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
                 _ => None,
             });
-            port_injections(&p, &hooks, 0, bw)
+            port_injections(&p, &hooks, bw)
                 .into_iter()
                 .map(|j| (j.at_ns, j.bytes, j.why))
                 .collect::<Vec<_>>()
