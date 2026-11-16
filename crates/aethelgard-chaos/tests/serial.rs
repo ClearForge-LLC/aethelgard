@@ -11,7 +11,8 @@ use aethelgard_chaos::campaign::{
     released, run_id, serial_witness_findings,
 };
 use aethelgard_chaos::record::{
-    Reading, Record, SerialCapture, SerialFraming, SerialTags, serial_frame,
+    MAX_SERIAL_UNEXPECTED, MAX_SERIAL_UNEXPECTED_BYTES, Reading, Record, SerialCapture,
+    SerialFraming, SerialTags, serial_frame,
 };
 use aethelgard_chaos::{Event, Header, TraceWriter, replay_dir};
 use sha2::{Digest, Sha256};
@@ -1246,6 +1247,31 @@ fn adversarial_4_a_pin_unrouted_once_solved_is_never_witnessed() {
         &[(SERIAL_TAG_FINDING, 1), (SERIAL_PATTERN_FINDING, 1)]
     )));
     assert!(!ok(&judged(tx, &[(SERIAL_TAG_FINDING, 1)])));
+    // Kind 28 at its most, 16 texts of 128 bytes, fits one archived event
+    // and replays whole.
+    let most = edit(|r| {
+        if let Record::SerialFramingCheck { tags: Some(t), .. } = &mut r[CHECK_CONSOLE] {
+            t.unexpected = vec!["x".repeat(MAX_SERIAL_UNEXPECTED_BYTES); MAX_SERIAL_UNEXPECTED];
+        }
+    });
+    assert_eq!(most[CHECK_CONSOLE].check(), Ok(()));
+    let events: Vec<Event> = most
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, record)| Event::Record {
+            timestamp: i as u64,
+            record,
+        })
+        .collect();
+    let (dir, _) = write_run("serial-kind-28-at-its-most", 9, &events);
+    assert_eq!(replay_dir(&dir).unwrap().state.records, most);
+    let over = edit(|r| {
+        if let Record::SerialFramingCheck { tags: Some(t), .. } = &mut r[CHECK_CONSOLE] {
+            t.unexpected = vec!["x".repeat(MAX_SERIAL_UNEXPECTED_BYTES + 1)];
+        }
+    });
+    assert!(over[CHECK_CONSOLE].check().is_err());
     // `not_counted` on a pin routed at the injection, with tags that hold.
     let forged = edit(|r| {
         set_witness(r, WITNESS_CONSOLE, |_, e, _, _| *e = "not_counted".into());

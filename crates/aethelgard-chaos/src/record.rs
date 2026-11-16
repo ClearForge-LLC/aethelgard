@@ -47,7 +47,7 @@ pub const SERIAL_TAGS: [&str; 4] = ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV"
 /// What kind 29's `echo` may say (`AET-WO-4300b`): the frame came back
 /// whole with the RX pin on its AF from the injection on; did not come back;
 /// came back in part; came back with the RX pin off its AF at the injection
-/// or taken off it after (adversarial pass 4, ADV4-4); or was not judged,
+/// or changed after it was solved (adversarial pass 4, ADV4-4); or was not judged,
 /// because the boot word was never set.
 pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
     "witnessed",
@@ -574,10 +574,10 @@ pub enum Record {
     /// in), the TX pin's at the end (as kind 11 reads its registers), and
     /// the TX pin's at the first `TDR` write of each boot, rebuilt from the
     /// access log: the first boot's that is not routed, else the first that
-    /// left the AF after a boot's first `TDR` write, else the last's (absent
+    /// left the AF after it was solved, else the last's (absent
     /// when no boot wrote `TDR`, a boot's could not be rebuilt, or the log
     /// could not be read whole; adversarial F4, pass 4 ADV4-4). The echo is
-    /// `not_counted` too when the RX pin left its AF after the injection,
+    /// `not_counted` too when the RX pin changed after it was solved,
     /// which kind 28's tags name. Archived after kind 28, once Renode has
     /// run.
     SerialWitness {

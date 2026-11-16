@@ -1597,7 +1597,7 @@ fn serial_silicon(port: &Record, check: &Record) -> bool {
 /// judged without the boot word; else the whole frame after the patterns
 /// with the RX pin read is witnessed when that pin was on its AF and not
 /// counted otherwise, or not counted when kind 28 `check`'s tags were read
-/// and failed (the interval rule unrouted the pin after the injection);
+/// and failed (the interval rule named the RX pin changed after it was solved);
 /// some of it is partial; anything else is missing.
 fn serial_echo(port: &Record, check: &Record, witness: &Record, booted: bool) -> bool {
     let (

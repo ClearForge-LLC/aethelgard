@@ -2546,7 +2546,7 @@ fn adv_5_a_pattern_on_a_usart_no_port_names_is_forged() {
 /// sampled at the first `TDR` write alone, routed here, and the interval
 /// rule fails it: once solved, PA9's fields never change in the boot. Since
 /// pass 4 (ADV4-4) the witness says so too: `tx_at_send` is PA9's mux when
-/// it left AF7 after that write, and the pattern does not count.
+/// it left AF7 once solved, and the pattern does not count.
 #[test]
 fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     let elf = adv_reference(
@@ -2580,8 +2580,9 @@ fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     assert!(
         messages(&v, "serial_pattern_missing")
             .iter()
-            .any(|m| m
-                .contains("after a boot's first TDR write the TX pin went to PA9 MODER 0b00, AF7")),
+            .any(|m| m.contains(
+                "after it was solved the TX pin went to PA9 MODER 0b00, AF7, not MODER 0b10 on AF7"
+            )),
         "{v}"
     );
 }
@@ -2688,7 +2689,8 @@ fn adv2_3_a_software_reset_at_start_fails() {
 /// ADV2-4 (held): one unaligned 32-bit `STR` at `GPIOA + 0x22`, over AFRH's
 /// low half (PA9's AFSEL to 0), the pattern, then AFRH written back whole:
 /// the rebuild cannot apply it, so the TX pin is not routed at its sends;
-/// since pass 3 the interval rule names both pins of the word too.
+/// since pass 3 the interval rule names both pins of the word too, and
+/// since pass 4 (ADV4-4) the RX pin changed once solved is never witnessed.
 #[test]
 fn adv2_4_an_unaligned_store_into_afrh_fails() {
     let elf = adv_reference(
@@ -2710,9 +2712,14 @@ fn adv2_4_an_unaligned_store_into_afrh_fails() {
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(
         kinds(&v),
-        ["serial_tag_mismatch", "serial_pattern_missing"],
+        [
+            "serial_tag_mismatch",
+            "serial_pattern_missing",
+            "serial_echo_missing"
+        ],
         "{v}"
     );
+    assert_eq!(serial(&v)[0]["twin"]["echo"], "not_counted", "{v}");
     assert!(
         unexpected(&v)
             .iter()
@@ -2952,7 +2959,7 @@ fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
     assert!(
         messages(&v, "serial_echo_missing")
             .iter()
-            .any(|m| m.contains("after the injection the RX pin went to PA10 MODER 0b00, AF7")),
+            .any(|m| m.contains("after it was solved the RX pin went to PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00")),
         "{v}"
     );
     assert_eq!(
