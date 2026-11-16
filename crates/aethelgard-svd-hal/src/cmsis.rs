@@ -410,6 +410,88 @@ impl RegisterFacts {
         Ok((pos, width))
     }
 
+    /// Every field of register `prefix` (`SPI_CFG1`, `GPIO_MODER`): each
+    /// `<prefix>_<NAME>_Pos` whose `<prefix>_<NAME>_Msk` is
+    /// `(<literal> << <prefix>_<NAME>_Pos)`, as (name, position, mask), in
+    /// position order. A field whose mask overlaps one of fewer bits is an
+    /// alias of it and is left out: `USART_CR1_M` of `M0` and `M1`, and the
+    /// `TIM_CCMRx` input-capture names of the output-compare bits; so is a
+    /// mask that names another field's (`RCC_APB1LENR_HDMICECEN`). A register
+    /// with no field, a mask of another shape, or two fields of equal size that
+    /// overlap is refused.
+    pub fn fields_of(&self, prefix: &str) -> Result<Vec<(String, u32, u32)>, RegisterError> {
+        let head = format!("{prefix}_");
+        let mut all: Vec<(String, u32, u32)> = Vec::new();
+        for key in self.defines.keys() {
+            let Some(name) = key
+                .strip_prefix(head.as_str())
+                .and_then(|k| k.strip_suffix("_Pos"))
+            else {
+                continue;
+            };
+            let pos_name = format!("{prefix}_{name}_Pos");
+            let msk_name = format!("{prefix}_{name}_Msk");
+            let pos = self.position(&pos_name)?;
+            let values = self
+                .defines
+                .get(&msk_name)
+                .ok_or_else(|| RegisterError::Undefined {
+                    name: msk_name.clone(),
+                })?;
+            let [value] = values.as_slice() else {
+                return malformed(format!("`{msk_name}` is defined {} times", values.len()));
+            };
+            let shape = || {
+                malformed(format!(
+                    "`{msk_name}` is `{value}`, not `(<literal> << {pos_name})`"
+                ))
+            };
+            // A mask that is another field's of the register is its alias
+            // (`RCC_APB1LENR_HDMICECEN_Msk` is `RCC_APB1LENR_CECEN_Msk`).
+            let bare = unwrap_parens(value);
+            if bare.starts_with(head.as_str()) && bare.ends_with("_Msk") && identifier(bare) {
+                continue;
+            }
+            let Some((bits, by)) = bare.split_once("<<") else {
+                return shape();
+            };
+            let Some(bits) = literal(unwrap_parens(bits)).filter(|v| *v != 0) else {
+                return shape();
+            };
+            if unwrap_parens(by) != pos_name {
+                return shape();
+            }
+            let mask = u32::try_from(bits << pos)
+                .ok()
+                .filter(|m| m >> pos == u32::try_from(bits).unwrap_or(0))
+                .ok_or_else(|| RegisterError::MalformedSource {
+                    detail: format!("`{msk_name}` ends past bit 31"),
+                })?;
+            all.push((name.to_owned(), pos, mask));
+        }
+        if all.is_empty() {
+            return Err(RegisterError::Undefined {
+                name: format!("{prefix}_*_Pos"),
+            });
+        }
+        all.sort_by(|a, b| (a.2.count_ones(), a.1, &a.0).cmp(&(b.2.count_ones(), b.1, &b.0)));
+        let mut kept: Vec<(String, u32, u32)> = Vec::new();
+        for (name, pos, mask) in all {
+            if let Some(other) = kept.iter().find(|k| k.2 & mask != 0) {
+                if other.2.count_ones() == mask.count_ones() {
+                    return malformed(format!(
+                        "`{prefix}_{name}` and `{prefix}_{}` overlap and neither is the smaller",
+                        other.0
+                    ));
+                }
+                continue;
+            }
+            kept.push((name, pos, mask));
+        }
+        kept.sort_by_key(|k| k.1);
+        Ok(kept)
+    }
+
     /// The interrupt number of `name` (`SPI1` for `SPI1_IRQn`, `I2C1_EV` for
     /// `I2C1_EV_IRQn`): its one line inside the `IRQn_Type` enum.
     pub fn irq(&self, name: &str) -> Result<u32, RegisterError> {

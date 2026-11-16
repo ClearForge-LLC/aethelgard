@@ -19,7 +19,8 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use super::{
-    BoardError, I2C_MODES, Kind, Plan, Role, Speeds, method, pin_field, port_field, type_name,
+    BoardError, I2C_MODES, Kind, Plan, RESET_HZ, Role, Speeds, hsi_fastest, method, pin_field,
+    port_field, type_name,
 };
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
@@ -32,8 +33,11 @@ pub const BOOT_MAGIC: u32 = 0x2100_B007;
 // belt-and-suspenders: the judge holds its own copy of the record layout and
 // the statuses (`aethelgard_twin::boot`), so what a record must hold never
 // comes from the generator (`INV-07`); tests/board.rs checks that they agree.
-/// The first record's place after the boot word, in bytes.
-pub const RECORD_OFFSET: u32 = 4;
+/// The first record's place, in bytes: after the boot word (word 0) and the
+/// brown-out word (word 1, `FLASH_OPTSR_CUR` as read; `AET-WO-4230` D10).
+pub const RECORD_OFFSET: u32 = 8;
+/// The brown-out word's place, in words.
+const OPTSR_WORD: u32 = 1;
 /// One record: the status word, then the value word.
 pub const RECORD_BYTES: u32 = 8;
 /// What a failed or impossible transfer leaves in a record, as the judge's fill.
@@ -304,9 +308,15 @@ struct Read {
     settle_us: u32,
 }
 
-/// The core clock the wait is sized for: the reset clock, HSI at 64 MHz
-/// (`AET-WO-4300a` Q2, ruled), with no PLL.
-const CORE_HZ_PER_US: u32 = 64;
+/// The spins of [`settle`] that make at least `us` microseconds on silicon:
+/// one per cycle of the core at its fastest, the reset clock's HSI at
+/// [`hsi_fastest`] (`AET-WO-4230` §1.9, amendment 1), rounded up.
+fn settle_spins(us: u32) -> u64 {
+    (u128::from(us) * u128::from(hsi_fastest(RESET_HZ)))
+        .div_ceil(1_000_000)
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
 
 // belt-and-suspenders: the judge holds its own copy of the record layout
 // (`aethelgard_twin::boot::value_words`), because its expectations are never
@@ -440,12 +450,16 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         n_words += 1 + r.words() as usize;
     }
     let boot_static = if reads.is_empty() {
-        "static mut AETHELGARD_BOOT: u32 = 0;".to_owned()
+        format!(
+            "// The boot word, then the brown-out word (`aethelgard_twin::boot`). One\n\
+             // array, so the first word is the boot word whatever the linker orders.\n\
+             static mut AETHELGARD_BOOT: [u32; {n_words}] = [0; {n_words}];"
+        )
     } else {
         format!(
-            "// The boot word, then one record per identity read: the status, then the\n\
-             // value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array, so the first\n\
-             // word is the boot word whatever the linker orders.\n\
+            "// The boot word, the brown-out word, then one record per identity read: the\n\
+             // status, then the value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array,\n\
+             // so the first word is the boot word whatever the linker orders.\n\
              static mut AETHELGARD_BOOT: [u32; {n_words}] = [0; {n_words}];"
         )
     };
@@ -518,8 +532,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     // a script states one, so every other board's firmware is unchanged.
     let records = if reads.iter().any(|r| r.settle_us > 0) {
         format!(
-            "{records}/// Waits at least `spins` cycles of the {CORE_HZ_PER_US} MHz reset clock (AET-WO-4220):\n\
-             /// each iteration is a volatile load the compiler keeps, at least one cycle.\n\
+            "{records}/// Waits at least `spins` core cycles (AET-WO-4220): each iteration is a volatile\n\
+             /// load the compiler keeps, at least one cycle. The counts are sized at HSI's\n\
+             /// fastest, {fast} Hz (DS12117 Rev 10 Table 36; AET-WO-4230 amendment 1).\n\
              fn settle(spins: u32) {{\n    \
              let boot = (&raw const AETHELGARD_BOOT).cast::<u32>();\n    \
              for _ in 0..spins {{\n        \
@@ -527,7 +542,8 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
              let _ = unsafe {{ boot.read_volatile() }};\n    \
              }}\n\
              }}\n\
-             \n"
+             \n",
+            fast = hsi_fastest(RESET_HZ),
         )
     } else {
         records
@@ -548,11 +564,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             tail = tail.join(", "),
         )
     };
-    let boot_ptr = if reads.is_empty() {
-        "(&raw mut AETHELGARD_BOOT)"
-    } else {
-        "(&raw mut AETHELGARD_BOOT).cast::<u32>()"
-    };
+    let boot_ptr = "(&raw mut AETHELGARD_BOOT).cast::<u32>()";
     let _ = write!(
         s,
         "#![no_std]\n\
@@ -637,7 +649,8 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          // the only `Mmio`.\n    \
          let mut r = unsafe {{ Mmio::new() }};\n    \
          let Some(Board {{\n        \
-         mut rcc,\n",
+         mut rcc,\n        \
+         flash,\n",
         imports = imports.join(", "),
         magic = BOOT_MAGIC,
         boot_static = boot_static,
@@ -669,6 +682,22 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     if plan.needs_clock() {
         s.push_str(CLOCK_CHECK);
     }
+    // The brown-out word (`AET-WO-4230` §1.6, D10): `FLASH_OPTSR_CUR`, read
+    // once and kept as read, before any write to the hardware.
+    let _ = writeln!(
+        s,
+        "    // Word {OPTSR_WORD}: `FLASH_OPTSR_CUR` as read, once, for the judge's `BOR_LEV`.\n    \
+         let optsr = flash.option_status(&mut r);\n    \
+         // SAFETY: a word of the array above that only this line writes.\n    \
+         unsafe {{ {boot_ptr}.add({OPTSR_WORD}).write_volatile(optsr) }};"
+    );
+    // Each SPI controller's kernel clock, before any SPI clock enable.
+    let kernels = if plan.spi.is_empty() {
+        ""
+    } else {
+        s.push_str("    let kernels = rcc.select_spi_kernels(&mut r, &clock);\n");
+        ", &kernels"
+    };
     for port in &plan.ports {
         let f = port_field(*port);
         let _ = writeln!(
@@ -678,7 +707,12 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     for name in plan.peripherals.keys() {
         let f = name.to_ascii_lowercase();
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+        let k = if plan.spi.contains_key(name) {
+            kernels
+        } else {
+            ""
+        };
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}{k});");
     }
     for n in plan.timers.keys() {
         let _ = writeln!(s, "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n});");
@@ -820,8 +854,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 "    // The part's cited wait before its data read (AET-WO-4220), {us} us.\n    \
                  settle({spins});",
                 us = read.settle_us,
-                // `MAX_SETTLE_US` x 64 fits u32 (`aethelgard_ir::parts`).
-                spins = read.settle_us.saturating_mul(CORE_HZ_PER_US),
+                spins = settle_spins(read.settle_us),
             );
         }
     }

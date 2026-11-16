@@ -636,7 +636,9 @@ fn what_the_generator_cannot_write_is_refused() {
 /// these are the digests of the generator before any serial code. A reference
 /// without serial ports must not move. Re-taken at `AET-WO-4230`, which moves
 /// every board on purpose (the reset clock read first and taken by I2C and
-/// SPI, `OTYPER` written whole, the enables read back, the SPI `EOT` wait).
+/// SPI, `OTYPER` written whole, the enables read back, the SPI `EOT` wait;
+/// then the solved SPI and I2C words written whole, the kernel selection, the
+/// erratum delay and the brown-out word).
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -664,11 +666,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "ef0defc6c7f97a57e0c09754912e19e0a4bbe9046ce64433f4abf109f2da9b84",
+        "bf17a4eeb6e2b49656212e8f5f2dfb7441835a894f6350f540d8b933e4986e94",
     ),
     (
         "src/board.rs",
-        "716e9a6a3c81e01579d67730814225b4f4e33912271b7d13c03ae4007c18dfa7",
+        "9d34e02a3e247a372906b5c49dc804412210b1ef438bc850c331752cb4eacbf7",
     ),
     (
         "src/lib.rs",
@@ -676,7 +678,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "683ee840e69f79596e51c73a096b7ecaed5ad9f35d23038b12410233557a3782",
+        "7ffcb0bf6bb7e2fa8ff26846b2c5ea5a63cc1ffb94486e99c8ce498eebd4c252",
     ),
 ];
 

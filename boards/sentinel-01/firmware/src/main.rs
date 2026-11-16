@@ -23,10 +23,10 @@ const BOOT_MAGIC: u32 = 0x2100b007;
 /// The observable word: the first word of RAM (`link.x`, `.aethelgard_boot`).
 #[unsafe(link_section = ".aethelgard_boot")]
 #[unsafe(no_mangle)]
-// The boot word, then one record per identity read: the status, then the
-// value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array, so the first
-// word is the boot word whatever the linker orders.
-static mut AETHELGARD_BOOT: [u32; 5] = [0; 5];
+// The boot word, the brown-out word, then one record per identity read: the
+// status, then the value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array,
+// so the first word is the boot word whatever the linker orders.
+static mut AETHELGARD_BOOT: [u32; 6] = [0; 6];
 
 /// What a record holds when the read finished: the judge's constants,
 /// `aethelgard_twin::boot::STATUS_*`.
@@ -46,8 +46,8 @@ fn record(index: usize, status: u32, value: u32) {
     // SAFETY: two words of the array above, which `link.x` placed in RAM; the
     // only code that writes them.
     unsafe {
-        base.add(1 + 2 * index).write_volatile(status);
-        base.add(2 + 2 * index).write_volatile(value);
+        base.add(2 + 2 * index).write_volatile(status);
+        base.add(3 + 2 * index).write_volatile(value);
     }
 }
 
@@ -122,6 +122,7 @@ extern "C" fn main() -> ! {
     let mut r = unsafe { Mmio::new() };
     let Some(Board {
         mut rcc,
+        flash,
         gpioa,
         gpiob,
         i2c1,
@@ -141,10 +142,15 @@ extern "C" fn main() -> ! {
             core::hint::spin_loop();
         }
     };
+    // Word 1: `FLASH_OPTSR_CUR` as read, once, for the judge's `BOR_LEV`.
+    let optsr = flash.option_status(&mut r);
+    // SAFETY: a word of the array above that only this line writes.
+    unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().add(1).write_volatile(optsr) };
+    let kernels = rcc.select_spi_kernels(&mut r, &clock);
     let gpioa = rcc.enable_gpioa(&mut r, gpioa).split(&mut r);
     let gpiob = rcc.enable_gpiob(&mut r, gpiob).split(&mut r);
     let i2c1 = rcc.enable_i2c1(&mut r, i2c1);
-    let spi1 = rcc.enable_spi1(&mut r, spi1);
+    let spi1 = rcc.enable_spi1(&mut r, spi1, &kernels);
     let usart1 = rcc.enable_usart1(&mut r, usart1);
     let pa0 = gpioa.pa0.into_output(&mut r);
     let pa10 = gpioa.pa10.into_usart1_rx(&mut r);

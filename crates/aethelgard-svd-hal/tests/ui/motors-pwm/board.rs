@@ -21,6 +21,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Block {
     Rcc,
+    Flash,
     GpioA,
     GpioB,
     I2c1,
@@ -81,6 +82,7 @@ pub mod mmio {
     const fn base(block: Block) -> usize {
         match block {
             Block::Rcc => 0x58024400,
+            Block::Flash => 0x52002000,
             Block::GpioA => 0x58020000,
             Block::GpioB => 0x58020400,
             Block::I2c1 => 0x40005400,
@@ -139,8 +141,17 @@ pub struct ResetClock {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct NotResetClock;
 
-/// `I2C1` bus speeds. `TIMINGR` values are placeholders for a 64 MHz kernel
-/// clock: clock-tree solving is out of scope.
+/// The SPI controllers' kernel clocks selected, each the solved topology's
+/// (`AET-WO-4230` §1.1). Only [`Rcc::select_spi_kernels`] makes one, from a
+/// [`ResetClock`]; every SPI clock enable takes it, so no SPI controller is
+/// clocked before its kernel clock is selected.
+pub struct SpiKernels {
+    _private: (),
+}
+
+/// `I2C1` bus speeds. Each mode's `TIMINGR` is the solved topology's
+/// (`AET-WO-4230` §1.4: RM0433 Rev 9 §47.4.9 at the kernel clock, judged by
+/// `aethelgard_ir::silicon::check_i2c` before this crate was generated).
 pub mod i2c1_speed {
     mod sealed {
         pub trait Sealed {}
@@ -158,12 +169,12 @@ pub mod i2c1_speed {
 
     impl sealed::Sealed for Standard100k {}
     impl AtMostCeiling for Standard100k {
-        const TIMINGR: u32 = 0x10707dbc;
+        const TIMINGR: u32 = 0x50d32a40;
     }
 
     impl sealed::Sealed for Fast400k {}
     impl AtMostCeiling for Fast400k {
-        const TIMINGR: u32 = 0x00602173;
+        const TIMINGR: u32 = 0x10c7123c;
     }
 }
 
@@ -231,6 +242,27 @@ fn spi_frame<R: Registers>(r: &mut R, block: Block, byte: u8, spins: u32) -> Opt
         n += 1;
     }
     None
+}
+
+/// 16 reads of `SR`, one round of the delay between `EOT` and `SPE` = 0 that
+/// ES0392 Rev 16 §2.22.6 asks for, written out so that no proof unwinds them.
+fn spi_sr_round<R: Registers>(r: &mut R, block: Block) {
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
 }
 
 /// `PA0`, net `FLASH_CS`: a GPIO output.
@@ -457,6 +489,9 @@ pub struct I2c1<S> {
 
 impl I2c1<Clocked> {
     /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.
+    /// `CR1` is written whole, the solved word with `PE` clear, then `TIMINGR`,
+    /// then `CR1` with `PE`; none is read (`AET-WO-4230` D5: Renode 1.17.0
+    /// stores few `CR1` fields and no `TIMINGR`).
     pub fn init<S: i2c1_speed::AtMostCeiling, R: Registers>(
         self,
         r: &mut R,
@@ -464,9 +499,9 @@ impl I2c1<Clocked> {
         _scl: PB6<AlternateFunction<4>>,
         _sda: PB7<AlternateFunction<4>>,
     ) -> I2c1<Enabled<S>> {
-        r.modify(TOKEN, Block::I2c1, 0x00, |v| v & !0x00000001);
+        r.write(TOKEN, Block::I2c1, 0x00, 0x00000000);
         r.write(TOKEN, Block::I2c1, 0x10, S::TIMINGR);
-        r.modify(TOKEN, Block::I2c1, 0x00, |v| v | 0x00000001);
+        r.write(TOKEN, Block::I2c1, 0x00, 0x00000001);
         I2c1 { _state: PhantomData }
     }
 }
@@ -571,12 +606,17 @@ pub enum Spi1Device {
 }
 
 impl Spi1<Clocked> {
-    /// Master mode, 8-bit frames, and the peripheral left disabled: each
-    /// transfer enables it and disables it again. Every chip select of the bus is
-    /// driven high first (deselected), whatever firmware did with it before. The
-    /// baud rate, clock polarity and phase, and slave-select management are not
-    /// solved yet: they stay at reset (Renode 1.17.0 does not model them).
-    /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.
+    /// Master mode with software slave select, 8-bit frames, mode 0, the solved
+    /// baud rate (`MBR` 1: the 64000000 Hz kernel over 4), and the peripheral
+    /// left disabled: each transfer enables it and disables it again.
+    /// Every chip select of the bus is driven high first (deselected), whatever
+    /// firmware did with it before.
+    /// `CR1` (`SSI`, `SPE` clear), `CFG1` and `CFG2` are written whole, in that
+    /// order, and none is read (`AET-WO-4230` D5): the configuration registers
+    /// change only while `SPE` is 0 (RM0433 Rev 9 §50.11.1, p. 2216), and `SSI`
+    /// is high before `MASTER` and `SSM` are, so no mode fault can arise
+    /// (§50.5.2, p. 2184). Only with a [`ResetClock`]: its kernel clock is the
+    /// reset clock's.
     pub fn init<R: Registers>(
         self,
         r: &mut R,
@@ -587,9 +627,9 @@ impl Spi1<Clocked> {
         _selects: Spi1Selects,
     ) -> Spi1<Enabled<()>> {
         r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
-        r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
-        r.modify(TOKEN, Block::Spi1, 0x08, |v| (v & !0x0000001f) | 0x00000007);
-        r.modify(TOKEN, Block::Spi1, 0x0c, |v| v | 0x00400000);
+        r.write(TOKEN, Block::Spi1, 0x00, 0x00001000);
+        r.write(TOKEN, Block::Spi1, 0x08, 0x10070007);
+        r.write(TOKEN, Block::Spi1, 0x0c, 0x04400000);
         Spi1 { _state: PhantomData }
     }
 }
@@ -630,8 +670,8 @@ impl Spi1<Enabled<()>> {
         };
         r.write(TOKEN, Block::Spi1, 0x04, frames);
         r.write(TOKEN, port, 0x18, select);
-        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000001);
-        r.modify(TOKEN, Block::Spi1, 0x00, |v| v | 0x00000200);
+        r.write(TOKEN, Block::Spi1, 0x00, 0x00001001);
+        r.write(TOKEN, Block::Spi1, 0x00, 0x00001201);
         let mut fail = false;
         for &byte in write {
             if spi_frame(r, Block::Spi1, byte, spins).is_none() {
@@ -660,8 +700,18 @@ impl Spi1<Enabled<()>> {
             ended = r.read(TOKEN, Block::Spi1, 0x14) & 0x00000008 != 0;
             n += 1;
         }
+        // ES0392 Rev 16 §2.22.6: at least one SCK period between `EOT` and
+        // `SPE` = 0, 5 reads of `SR` at the fastest core clock, as 1 of
+        // [`spi_sr_round`].
+        if ended && !fail {
+            let mut k = 0;
+            while k < 1 {
+                spi_sr_round(r, Block::Spi1);
+                k += 1;
+            }
+        }
         r.write(TOKEN, Block::Spi1, 0x18, 0x00000008);
-        r.modify(TOKEN, Block::Spi1, 0x00, |v| v & !0x00000001);
+        r.write(TOKEN, Block::Spi1, 0x00, 0x00001000);
         r.write(TOKEN, port, 0x18, deselect);
         if fail {
             Err(SpiError::Rxp)
@@ -750,7 +800,8 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>) -> Spi1<Clocked> {
+    /// Only once its kernel clock is selected ([`SpiKernels`]).
+    pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _kernels: &SpiKernels) -> Spi1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);
         let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
         let _ = r.read(TOKEN, Block::Spi1, 0x00);
@@ -789,11 +840,36 @@ impl Rcc {
             Err(NotResetClock)
         }
     }
+
+    /// Selects each solved SPI controller's kernel clock, every select register
+    /// written whole, every other field at its reset value, 0 (RM0433 Rev 9
+    /// §8.7.20, §8.7.22), and none read: Renode 1.17.0 stores no selection.
+    /// - `SPI1`: `per_ck` (HSI at `CKPERSEL`'s reset), 64000000 Hz.
+    pub fn select_spi_kernels<R: Registers>(&mut self, r: &mut R, _clock: &ResetClock) -> SpiKernels {
+        r.write(TOKEN, Block::Rcc, 0x050, 0x00004000); // D2CCIP1R
+        SpiKernels { _private: () }
+    }
+}
+
+/// The flash controller's registers: only `FLASH_OPTSR_CUR`, read once.
+pub struct Flash {
+    _private: (),
+}
+
+impl Flash {
+    /// `FLASH_OPTSR_CUR`, read once, whole: its `BOR_LEV` (bits 3:2) is the
+    /// brown-out level the option bytes hold (RM0433 Rev 9 §4.9.8, p. 212;
+    /// `AET-WO-4230` §1.6). The firmware writes nothing to the flash controller:
+    /// programming the option bytes is a factory step.
+    pub fn option_status<R: Registers>(self, r: &mut R) -> u32 {
+        r.read(TOKEN, Block::Flash, 0x1c)
+    }
 }
 
 /// Everything on the board, once per program.
 pub struct Board {
     pub rcc: Rcc,
+    pub flash: Flash,
     pub gpioa: GpioA<Gated>,
     pub gpiob: GpioB<Gated>,
     pub i2c1: I2c1<Gated>,
@@ -812,6 +888,7 @@ impl Board {
         }
         Some(Board {
             rcc: Rcc { _private: () },
+            flash: Flash { _private: () },
             gpioa: GpioA { _state: PhantomData },
             gpiob: GpioB { _state: PhantomData },
             i2c1: I2c1 { _state: PhantomData },
