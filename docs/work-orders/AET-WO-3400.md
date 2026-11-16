@@ -33,6 +33,50 @@
 > - firmware for the board's later job;
 > - an order.
 
+## 0. Amendment (Scotty, 2026-11-16 22:30 UTC, while the spike runs)
+
+**The board's job is J1: the witness board.**
+- Sentinel-01 is an all-purpose instrumented board, built to cut future bench time. It measures other boards and itself.
+- It can behave as whatever a reading needs: a sensor, a bus controller, a radio receiver, or an ESC.
+- It still carries the Sentinel-02 checks wanted before Sentinel-02's design is committed.
+- J2 stays a cheap candidate, and J3 a note.
+
+**New S1 rows, the witness's hardware.** Measure each like the others.
+
+| # | Candidate | What to settle |
+|---|---|---|
+| W1 | A probe header | Channel count, input protection, level translation for 1.8, 3.3 and 5 V targets, a ground per channel or per pair |
+| W2 | Logic-analyzer capture: timer-paced DMA from a GPIO port's input register | The sample rate for 8 and 16 channels (measured on the Nucleo if you can, else cited and labelled), and the buffer depth in SRAM |
+| W3 | The host link | USB full speed (on chip, 12 Mbit/s), USB high speed through an external ULPI PHY, or Ethernet RMII (on-chip MAC, external PHY, 100 Mbit/s). Each with its pins, parts, layer cost and streaming rate |
+| W4 | Protocol capture by peripheral | SPI and USART receive-only, timer input capture for PWM and DShot. Also why I2C is sniffed through the analyzer path: the I2C peripheral cannot listen without taking part |
+| W5 | Stimulus | Driving a bus as its controller or as a device: an I2C target, an SPI peripheral, a CRSF source, a DShot reader |
+| W6 | Host software | Speak a logic-analyzer protocol that sigrok's PulseView already reads (SUMP/OLS, for example), so its protocol decoders work from the first day. Say which one, cited |
+
+**S2 measures four layers too.** Run the same variants at `copper_layers: 4` (S-P-P-S, as `4100` built). Scotty ruled two layers for the original probe. Whether the loaded board goes to four is now his decision, made with numbers.
+
+**S4, the cost (new).** Price three configurations:
+- **(a) the lean probe:** today's Sentinel-01 as `main` emits it, at two layers;
+- **(b) the loaded board at two layers:** the largest variant that passes;
+- **(c) the loaded board at four layers.**
+
+For each one, record:
+- the board outline and area;
+- fabrication for 5 and for 10 boards at two named fabricators, from their published price pages, dated;
+- assembly: setup, per-part-type fees, and through-hole work;
+- the BOM per board, each line with its source and date;
+- the engine work orders needed before it can be ordered, each with a size;
+- a calendar estimate to the order.
+
+**Sourcing rules:**
+- A price page Furnace cannot reach goes on a list for Scotty, who fetches it.
+- Never estimate a price without a source.
+- Label every figure measured, read at source, or inferred.
+
+**S3's decision table adds a recommendation** among three paths, with the reason in what each teaches before Sentinel-02 and when:
+- (a) now, then the loaded board as a separate **Sentinel-03**;
+- (b);
+- (c).
+
 ## 1. Spike
 
 Probes under `spike/3400/`. **Predictions go into FEEDBACK before any run.**
@@ -125,5 +169,5 @@ On the measurements only:
 ## 7. Flag-and-stop conditions
 
 - **Today's Sentinel-01 does not pass S2's commands on `main`.**
-- **No variant with all *must* rows routes on two layers.** Stop with the largest that does and what failed. Scotty ruled two layers, so four is his call, not yours.
+- *Amended 2026-11-16 (§0):* a loaded board that does not route on two layers no longer stops the spike. It is reported beside the four-layer result, and S4 prices both.
 - **A candidate needs a credential or a purchase to measure.**
