@@ -279,10 +279,24 @@ pub struct Capacitor {
     pub rated_picofarads: Limit,
     pub rated_millivolts: Limit,
     pub dielectric: Dielectric,
-    /// The maker's typical capacitance under DC bias, `(mV, pF)`, voltage
-    /// rising: a screen, never a bound (`AET-WO-4300d3` §1.3). Empty where
-    /// no figure is held.
-    pub dc_bias: Vec<(i64, Limit)>,
+    /// The maker's typical DC-bias curve, where one is held: a screen,
+    /// never a bound (`AET-WO-4300d3` §1.3, the amendment on PR #158).
+    pub dc_bias: Option<DcBiasCurve>,
+}
+
+/// A maker's DC-bias curve: the capacitance change at each voltage, read
+/// from the maker's chart, with the part's tolerance and its dielectric's
+/// temperature limit, which compose with it by product, worst case. Between
+/// points it is interpolated linearly; past its last point it is never
+/// extrapolated.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DcBiasCurve {
+    /// `(mV, change in per mille)`, voltage rising from 0 mV.
+    pub points: Vec<(i64, i64)>,
+    pub at: At,
+    /// The tolerance's and the temperature limit's worst loss, per mille.
+    pub tolerance_permille: Limit,
+    pub temperature_permille: Limit,
 }
 
 /// An aluminium electrolytic or polymer capacitor that damps a battery
@@ -453,19 +467,18 @@ pub struct ExternalRule {
     pub effective_min_picofarads: Option<EffectiveMin>,
 }
 
-/// A role's effective minimum, and what a shortfall found only under the
-/// declared derating does: refuse, where the regulator's own datasheet states
-/// that derating, or be reported, until a maker's DC-bias figure is held for
-/// the part (ruled D2 (c) on PR #158).
+/// A role's effective minimum, and what a shortfall does: refuse, or be
+/// reported by name, not blocking (ruled D2 (c) on PR #158: the buck's input,
+/// whose enforcement and re-pick are the next power work order's).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EffectiveMin {
     pub limit: Limit,
-    pub on_declared: OnDeclared,
+    pub on_shortfall: OnShortfall,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum OnDeclared {
+pub enum OnShortfall {
     Enforce,
     Report,
 }
@@ -741,14 +754,25 @@ struct RawCapacitor {
     rated_picofarads: RawLimit,
     rated_millivolts: RawLimit,
     dielectric: Dielectric,
-    dc_bias: Vec<RawBias>,
+    /// Required as a key: `null` where no maker curve is held.
+    #[serde(deserialize_with = "Option::deserialize")]
+    dc_bias: Option<RawCurve>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawBias {
+struct RawCurve {
+    points: Vec<RawCurvePoint>,
+    at: RawAt,
+    tolerance_permille: RawLimit,
+    temperature_permille: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCurvePoint {
     millivolts: i64,
-    picofarads: RawLimit,
+    change_permille: i64,
 }
 
 #[derive(Deserialize)]
@@ -832,7 +856,7 @@ struct RawExternal {
 struct RawEffective {
     value: i64,
     at: RawAt,
-    on_declared: OnDeclared,
+    on_shortfall: OnShortfall,
 }
 
 #[derive(Deserialize)]
@@ -1016,7 +1040,7 @@ impl Reader<'_> {
                         },
                         &format!("{f}.effective_min_picofarads"),
                     )?,
-                    on_declared: m.on_declared,
+                    on_shortfall: m.on_shortfall,
                 }),
                 None => None,
             };
@@ -1037,6 +1061,58 @@ impl Reader<'_> {
 }
 
 impl Reader<'_> {
+    /// A maker's DC-bias curve: from 0 mV, voltage rising, to at most the
+    /// rated voltage; each change above -1000 per mille; and, composed with
+    /// the tolerance and the temperature limit, never above the rated
+    /// capacitance (a bias lie, `AET-WO-4300d3` §5.3).
+    fn curve(&mut self, c: RawCurve, rated_mv: i64) -> Result<DcBiasCurve, String> {
+        let f = "kind.capacitor.dc_bias";
+        let tol = self.limit(c.tolerance_permille, &format!("{f}.tolerance_permille"))?;
+        let temp = self.limit(c.temperature_permille, &format!("{f}.temperature_permille"))?;
+        for (what, l) in [("tolerance", &tol), ("temperature", &temp)] {
+            if !(0..1000).contains(&l.value) {
+                return Err(format!(
+                    "`{f}.{what}_permille` is {}, not 0 to 999",
+                    l.value
+                ));
+            }
+        }
+        if c.points.len() < 2 || c.points[0].millivolts != 0 {
+            return Err(format!("`{f}.points` needs two or more, the first at 0 mV"));
+        }
+        let mut points: Vec<(i64, i64)> = Vec::with_capacity(c.points.len());
+        for q in c.points {
+            bounded(q.millivolts, f)?;
+            bounded(q.change_permille, f)?;
+            if q.change_permille <= -1000
+                || q.millivolts > rated_mv
+                || points.last().is_some_and(|(v, _)| *v >= q.millivolts)
+            {
+                return Err(format!(
+                    "`{f}.points` holds {} mV at {} per mille: not voltage rising to at most the rated {rated_mv} mV, with a change above -1000",
+                    q.millivolts, q.change_permille
+                ));
+            }
+            points.push((q.millivolts, q.change_permille));
+        }
+        let most = points.iter().map(|p| p.1).max().unwrap_or(0);
+        if (1000 + i128::from(most))
+            * (1000 - i128::from(tol.value))
+            * (1000 - i128::from(temp.value))
+            > 1_000_000_000
+        {
+            return Err(format!(
+                "`{f}` composes to above the rated capacitance at its highest point ({most} per mille)"
+            ));
+        }
+        Ok(DcBiasCurve {
+            points,
+            at: self.at(c.at, f)?,
+            tolerance_permille: tol,
+            temperature_permille: temp,
+        })
+    }
+
     /// The control rules of a row, which name exactly the kind's control
     /// pins (`roles`, sorted), each once (adversarial F7).
     fn controls(
@@ -1344,38 +1420,15 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
         RawKind::Capacitor(c) => {
             let rated = r.positive(c.rated_picofarads, "kind.capacitor.rated_picofarads")?;
             let volts = r.positive(c.rated_millivolts, "kind.capacitor.rated_millivolts")?;
-            let mut bias: Vec<(i64, Limit)> = Vec::with_capacity(c.dc_bias.len());
-            for b in c.dc_bias {
-                let f = "kind.capacitor.dc_bias";
-                bounded(b.millivolts, f)?;
-                let pf = r.positive(b.picofarads, f)?;
-                if b.millivolts <= 0 || b.millivolts > volts.value {
-                    return Err(format!(
-                        "`{f}` holds {} mV, not above zero and at most the rated voltage",
-                        b.millivolts
-                    ));
-                }
-                if pf.value > rated.value {
-                    return Err(format!(
-                        "`{f}` holds {} pF at {} mV, above the rated {} pF",
-                        pf.value, b.millivolts, rated.value
-                    ));
-                }
-                if bias
-                    .last()
-                    .is_some_and(|(v, q)| *v >= b.millivolts || q.value < pf.value)
-                {
-                    return Err(format!(
-                        "`{f}` is not voltage rising with capacitance falling or level"
-                    ));
-                }
-                bias.push((b.millivolts, pf));
-            }
+            let dc_bias = match c.dc_bias {
+                Some(curve) => Some(r.curve(curve, volts.value)?),
+                None => None,
+            };
             Kind::Capacitor(Capacitor {
                 rated_picofarads: rated,
                 rated_millivolts: volts,
                 dielectric: c.dielectric,
-                dc_bias: bias,
+                dc_bias,
             })
         }
         RawKind::BulkCapacitor(c) => {

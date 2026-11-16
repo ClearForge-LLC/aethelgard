@@ -90,6 +90,12 @@
       "revision": "Jun. 2024",
       "sha256": "7ecc96085b98e8b9255541bac789a21f19f67a1ce5f45bbc5ac1aa41117c3055",
       "pending": null
+    },
+    "MURATA_GCM32EC71H106KA03_DCBIAS": {
+      "title": "Murata chart GCM32EC71H106KA03, C-DC bias capchange, 25.0 degC, AC 1.0 Vrms (SimSurfing export, PNG)",
+      "revision": "pulled 2026-11-16",
+      "sha256": "8b0b6cfffc8a1bc96152d2d1b6167f71bc9c6cde89d2b37fad060d888b6ce73b",
+      "pending": null
     }
   },
   "parts": [
@@ -265,7 +271,7 @@
                   "document": "SNVSAN3F",
                   "section": "p. 23, 9.2.2.6: a minimum of 10 uF of ceramic capacitance; p. 19 note: capacitances are effective, under DC bias and temperature (ruled D2 (c) on PR #158)"
                 },
-                "on_declared": "report"
+                "on_shortfall": "report"
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -548,7 +554,7 @@
                   "document": "SBVS320D",
                   "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
                 },
-                "on_declared": "enforce"
+                "on_shortfall": "enforce"
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -572,7 +578,7 @@
                   "document": "SBVS320D",
                   "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
                 },
-                "on_declared": "enforce"
+                "on_shortfall": "enforce"
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -1081,7 +1087,112 @@
             }
           },
           "dielectric": "X7S",
-          "dc_bias": []
+          "dc_bias": {
+            "points": [
+              {
+                "millivolts": 0,
+                "change_permille": 3
+              },
+              {
+                "millivolts": 2500,
+                "change_permille": 12
+              },
+              {
+                "millivolts": 5000,
+                "change_permille": -7
+              },
+              {
+                "millivolts": 7500,
+                "change_permille": -40
+              },
+              {
+                "millivolts": 10000,
+                "change_permille": -77
+              },
+              {
+                "millivolts": 12500,
+                "change_permille": -125
+              },
+              {
+                "millivolts": 15000,
+                "change_permille": -172
+              },
+              {
+                "millivolts": 17500,
+                "change_permille": -228
+              },
+              {
+                "millivolts": 20000,
+                "change_permille": -280
+              },
+              {
+                "millivolts": 22500,
+                "change_permille": -340
+              },
+              {
+                "millivolts": 25000,
+                "change_permille": -394
+              },
+              {
+                "millivolts": 27500,
+                "change_permille": -446
+              },
+              {
+                "millivolts": 30000,
+                "change_permille": -493
+              },
+              {
+                "millivolts": 32500,
+                "change_permille": -537
+              },
+              {
+                "millivolts": 35000,
+                "change_permille": -580
+              },
+              {
+                "millivolts": 37500,
+                "change_permille": -611
+              },
+              {
+                "millivolts": 40000,
+                "change_permille": -644
+              },
+              {
+                "millivolts": 42500,
+                "change_permille": -669
+              },
+              {
+                "millivolts": 45000,
+                "change_permille": -696
+              },
+              {
+                "millivolts": 47500,
+                "change_permille": -714
+              },
+              {
+                "millivolts": 50000,
+                "change_permille": -733
+              }
+            ],
+            "at": {
+              "document": "MURATA_GCM32EC71H106KA03_DCBIAS",
+              "section": "the whole chart, 0 to 50 V; digitized from the maker's chart, +/-1 % read, every 2.5 V, each rounded down to a whole per mille"
+            },
+            "tolerance_permille": {
+              "value": 100,
+              "at": {
+                "document": "MURATA_GCM32EC71H106KA03",
+                "section": "Rated Value table, capacitance tolerance +/-10 %"
+              }
+            },
+            "temperature_permille": {
+              "value": 220,
+              "at": {
+                "document": "MURATA_GCM32EC71H106KA03",
+                "section": "Rated Value table, X7S, cap. change -22 to 22 % over -55 to 125 C, ref. 25 C"
+              }
+            }
+          }
         }
       }
     },
@@ -1116,7 +1227,7 @@
             }
           },
           "dielectric": "X7R",
-          "dc_bias": []
+          "dc_bias": null
         }
       }
     },
@@ -1151,7 +1262,7 @@
             }
           },
           "dielectric": "X7R",
-          "dc_bias": []
+          "dc_bias": null
         }
       }
     },
@@ -1186,7 +1297,7 @@
             }
           },
           "dielectric": "X7R",
-          "dc_bias": []
+          "dc_bias": null
         }
       }
     },
@@ -1221,7 +1332,7 @@
             }
           },
           "dielectric": "X7R",
-          "dc_bias": []
+          "dc_bias": null
         }
       }
     },
@@ -1256,7 +1367,7 @@
             }
           },
           "dielectric": "X5R",
-          "dc_bias": []
+          "dc_bias": null
         }
       }
     },

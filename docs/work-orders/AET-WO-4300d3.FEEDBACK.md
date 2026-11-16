@@ -224,3 +224,35 @@ Everything else in §1 is built, judged, adversarially reviewed, mutation-tested
 - Every ruling of comment 6902904831 is applied (§7).
 - The full adversarial pass, the mutation runs and the reduction pass are done (§4–§6, §7).
 - The backlog rows are named: D5 (the emitter draws hot-plug parts and reads controls, before `4500`); effective input capacitance enforced when Murata's chart arrives; `tRSTTEMPO` named as typical; F9 and F11.
+
+## 9. Amendment: Murata's DC-bias curve held (PR #158, architect 04:06 UTC; bus 04:20)
+
+- **The chart**, read at source: `~/.cache/aet-ds/scotty-2026-11-16/GCM32EC71H106KA03-dcbias-25C.png`, sha256 `8b0b6cff…6ce73b`, 575 × 422. Murata's export reads "C-DC bias capchange, 25.0degC, AC1.0Vrms", 0–50 V, +20 to −100 %. Murata's product list gives In Production, X7S, ±10 %, 50 V.
+- **Re-digitized here** [measured]: `~/.cache/aet-4300d3/evidence/digitize.py`, a pure-Python PNG decode.
+  - The plot frame is the two longest dark runs each way: x 59..550 px = 0..50 V, y 25..315 px = +20..−100 %, 2.42 px per %.
+  - The red trace is read at the centre of each column. The same frame gives the same reading at every one of the architect's points: 16.8 V −21.2 %, 25.2 V −40.0 %, 50 V −73.3 %.
+  - The row carries every 2.5 V from 0 to 50 V, each rounded down to a whole per mille, cited as "digitized from the maker's chart, ±1 % read".
+- **The screen:**
+  - **Interpolation:** linear, rounded down. Past the curve's last point a part is refused `DcBiasBeyondCurve` by name, never extrapolated.
+  - **Composition:** by product, worst case: rated × (1 + curve) × (1 − tolerance, 10 %, the sheet's Rated Value table) × (1 − temperature limit, X7S 22 %, the same table). Each factor is named in the verdict.
+  - **Parser:** a curve composing above its rated value is refused (the bias lie of §5.3), since Murata's own curve rises +1.2 % at 2.5 V. Also refused: a curve not from 0 mV, voltages not rising, a point past the rated voltage, a change of −1000 or less, and a loss outside 0 to 999 per mille.
+  - **Without a curve:** parts keep the declared 50 % placeholder, named as one in the verdict.
+- **D2 (c) re-judged at the declared maximum input voltage** (6S HV, 26.1 V) [measured]:
+  - −417 per mille interpolated (−394 at 25 V, −446 at 27.5 V).
+  - 10 µF × 0.583 × 0.9 × 0.78 = **4.092 µF effective (4092660 pF), 5.907 µF short** of 10 µF, for U10 and U11. The curve is harsher than the placeholder's 5.000 µF.
+  - **The named shortfall row stays with these numbers**, not blocking, as ruled. Its enforcement and the input's re-pick stay the next power work order's backlog row. (For scale, inferred: three 10 µF would hold 12.3 µF.)
+  - The row's mode is renamed `on_shortfall` (`report` for the buck's input, `enforce` for TLV755's). The `declared` flag and F5's cap are removed, because a held curve now decides on its own.
+- **Tier-1 tests:**
+  - an interpolated point (−417, floor-rounded; truncation would give −416);
+  - the refusal past a curve's end (`DcBiasBeyondCurve`, on both the buck's and the LDO's inputs);
+  - each factor deciding: at −350 per mille the LDO's input is refused, and with the tolerance or the temperature limit dropped it passes;
+  - the parser's edges.
+- **Mutation** (one each, `aethelgard-ir --test power`): 11 mutants: each factor dropped, the curve dropped, truncating interpolation, extrapolation, the refusal's name, the mode ignored, and four parser guards. **11 of 11 killed** [measured, `~/.cache/aet-4300d3/evidence/mut/curve-log.txt`].
+- **Gates on this head** [measured, Furnace]:
+  - `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 110 binaries, 0 failures.
+- **CI, under the final shard rule** (Scotty, bus 04:35: 20 minutes is a target; the gate is a balanced plan) [measured]:
+  - The plan gives all 8 shards 1046 s, the mean exactly, so none is more than 10 % above it.
+  - `0e8a0f1` (the previous READY head) is green, with tier 2 at 155 = floor. Shard times in minutes: 15.3, 18.1, **21.4** (shard 2), 14.2, 15.4, 18.4, 18.0, 14.7.
+  - Shard 2 at 21.4 minutes is a measurement, not a failure. The refit trigger is "the slowest on two consecutive runs by more than 3 minutes"; this head's run is the second, and it is read there.
+  - TIER2_MIN 155 is exact: this work order adds no tier-2 test.

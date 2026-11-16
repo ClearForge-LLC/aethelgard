@@ -52,9 +52,11 @@
 //! carries a cited bulk capacitor or clamp (`BatteryInputUndamped`). A buck's
 //! junction is screened from a declared loss and its row's typical θJA curve
 //! (`BuckJunctionOverLimit`), and a role's effective capacitance under DC
-//! bias from a maker's typical figure or a declared derating
-//! (`EffectiveCapacitanceBelowMinimum`): screens with named margins, never
-//! guarantees, because only typical figures exist. The MCU's supply clears
+//! bias from the maker's curve, interpolated and composed with the part's
+//! tolerance and temperature limit, or else a declared derating, a 50 %
+//! placeholder (`EffectiveCapacitanceBelowMinimum`; past a curve's end,
+//! `DcBiasBeyondCurve`): screens with named margins, never guarantees,
+//! because only typical figures exist. The MCU's supply clears
 //! the brown-out level's rising maximum (`SupplyFloorBelowBorRising`), and
 //! every control pin is strapped as its row allows or wired
 //! (`ControlPinUnwired`).
@@ -365,6 +367,9 @@ pub enum Refusal {
     SupplyFloorBelowBorRising,
     /// A control pin neither wired nor tied by a strap its row allows (§1.5).
     ControlPinUnwired,
+    /// A ceramic working past the last point of its maker's DC-bias curve,
+    /// which is never extrapolated (the amendment on PR #158).
+    DcBiasBeyondCurve,
 }
 
 impl Refusal {
@@ -400,6 +405,7 @@ impl Refusal {
             Self::EffectiveCapacitanceBelowMinimum => "EffectiveCapacitanceBelowMinimum",
             Self::SupplyFloorBelowBorRising => "SupplyFloorBelowBorRising",
             Self::ControlPinUnwired => "ControlPinUnwired",
+            Self::DcBiasBeyondCurve => "DcBiasBeyondCurve",
         }
     }
 }
@@ -1863,12 +1869,11 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 Some(w) if !caps.is_empty() => Some(
                     caps.iter()
                         .map(|(part, c)| effective(ctx, part, c, w))
-                        .collect::<Result<Vec<_>, String>>()
+                        .collect::<Result<Vec<_>, (Refusal, String)>>()
                         .map(|v| {
-                            let sum: i64 = v.iter().map(|(pf, _, _)| pf).sum();
-                            let declared = v.iter().any(|(_, _, d)| *d);
-                            let how: Vec<String> = v.into_iter().map(|(_, h, _)| h).collect();
-                            (sum, how.join("; "), w, declared)
+                            let sum: i64 = v.iter().map(|(pf, _)| pf).sum();
+                            let how: Vec<String> = v.into_iter().map(|(_, h)| h).collect();
+                            (sum, how.join("; "), w)
                         }),
                 ),
                 _ => None,
@@ -1885,22 +1890,23 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         ctx.cite(&min.limit.at),
                     ));
                 }
-                (Some(min), Some(Err(why))) => {
+                (Some(min), Some(Err((kind, why)))) => {
                     return Err(refuse(
-                        Refusal::EffectiveCapacitanceBelowMinimum,
+                        kind,
                         o.reference,
                         format!("`{role}`: {why}, so the screen cannot clear it"),
                         ctx.cite(&min.limit.at),
                     ));
                 }
-                (Some(min), Some(Ok((eff, how, w, true))))
-                    if eff <= min.limit.value && min.on_declared == pp::OnDeclared::Report =>
+                (Some(min), Some(Ok((eff, how, w))))
+                    if eff <= min.limit.value && min.on_shortfall == pp::OnShortfall::Report =>
                 {
-                    // Ruled D2 (c): named, not blocking, until a maker's
-                    // figure is held for the part.
+                    // Ruled D2 (c), and again with the maker's curve held:
+                    // named, not blocking; enforcing it, with the fixture's
+                    // input re-picked, is the next power work order's.
                     let short = min.limit.value - eff;
                     ctx.note(format!(
-                        "{}: `{role}` holds {}.{:03} µF effective at {w} mV under the declared derating ({how}), {}.{:03} µF short of the {}.{:03} µF minimum ({}); non-blocking until a maker's DC-bias figure is held for its parts, when it is enforced (ruled D2 (c))",
+                        "{}: `{role}` holds {}.{:03} µF effective at {w} mV under DC bias ({how}), {}.{:03} µF short of the {}.{:03} µF minimum ({}); a named shortfall, not blocking: its enforcement and the re-pick of the input capacitance are the next power work order's (ruled D2 (c))",
                         o.reference,
                         eff / 1_000_000,
                         eff % 1_000_000 / 1000,
@@ -1911,7 +1917,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         ctx.cite(&min.limit.at)
                     ));
                 }
-                (Some(min), Some(Ok((eff, how, w, _)))) => {
+                (Some(min), Some(Ok((eff, how, w)))) => {
                     let min = &min.limit;
                     if eff <= min.value {
                         return Err(refuse(
@@ -1933,9 +1939,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         eff * 100 / min.value % 100
                     ));
                 }
-                (None, Some(Ok((eff, how, w, _))))
-                    if matches!(rule.role, Role::Cin | Role::Cout) =>
-                {
+                (None, Some(Ok((eff, how, w)))) if matches!(rule.role, Role::Cin | Role::Cout) => {
                     ctx.note(format!(
                         "{}: `{role}` would hold {eff} pF effective at {w} mV under DC bias ({how}); its row states no effective minimum, so only the rated value is judged",
                         o.reference
@@ -2542,29 +2546,54 @@ fn dielectric(d: pp::Dielectric) -> &'static str {
 }
 
 /// A ceramic's effective capacitance at `working` mV, pF, and how it was
-/// found: its maker's typical figure at the first voltage at or above
-/// `working`, or else the declared derating with the smallest ratio band
-/// that covers it, and whether the declared derating decided it. `Err` says
-/// why there is neither.
+/// found. Where its maker's curve is held: the curve, interpolated linearly
+/// and rounded down, composed by product with the tolerance and the
+/// temperature limit, worst case; past the curve's last point it is refused
+/// `DcBiasBeyondCurve`, never extrapolated. Otherwise the declared derating
+/// with the smallest ratio band that covers it, a placeholder. `Err` names
+/// the refusal and why.
 fn effective(
     ctx: &Ctx<'_>,
     part: &str,
     c: &pp::Capacitor,
     working: i64,
-) -> Result<(i64, String, bool), String> {
-    if let Some((mv, pf)) = c.dc_bias.iter().find(|(mv, _)| *mv >= working) {
+) -> Result<(i64, String), (Refusal, String)> {
+    let rated = c.rated_picofarads.value;
+    if let Some(curve) = &c.dc_bias {
+        let Some(change) = curve_change(&curve.points, working) else {
+            return Err((
+                Refusal::DcBiasBeyondCurve,
+                format!(
+                    "{part} works at {working} mV, past its maker's curve, which ends at {} mV and is never extrapolated ({})",
+                    curve.points.last().map_or(0, |p| p.0),
+                    ctx.cite(&curve.at)
+                ),
+            ));
+        };
+        let (tol, temp) = (
+            curve.tolerance_permille.value,
+            curve.temperature_permille.value,
+        );
+        let pf = i128::from(rated)
+            * i128::from(1000 + change)
+            * i128::from(1000 - tol)
+            * i128::from(1000 - temp)
+            / 1_000_000_000;
+        let pf = i64::try_from(pf).unwrap_or(0);
         return Ok((
-            pf.value,
+            pf,
             format!(
-                "{part}: {} pF at {mv} mV, its maker's typical figure ({})",
-                pf.value,
-                ctx.cite(&pf.at)
+                "{part}: {pf} pF, its rated {rated} pF times its maker's curve at {working} mV, {change} per mille interpolated ({}), its tolerance's -{tol} per mille ({}) and its temperature limit's -{temp} per mille ({}), by product, worst case",
+                ctx.cite(&curve.at),
+                ctx.cite(&curve.tolerance_permille.at),
+                ctx.cite(&curve.temperature_permille.at)
             ),
-            false,
         ));
     }
-    let rated = c.rated_millivolts.value;
-    let ratio = div_ceil(i128::from(working) * 1000, i128::from(rated));
+    let ratio = div_ceil(
+        i128::from(working) * 1000,
+        i128::from(c.rated_millivolts.value),
+    );
     let d = ctx
         .power
         .conditions
@@ -2576,36 +2605,36 @@ fn effective(
         .min_by_key(|d| d.ratio_max_permille);
     match d {
         Some(d) => {
-            let derated = c.rated_picofarads.value * i64::from(d.retained_permille) / 1000;
-            // The curve falls with voltage, so above the maker's last point
-            // the capacitance is at most that point's (adversarial F5).
-            if let Some((mv, last)) = c.dc_bias.last()
-                && last.value < derated
-            {
-                return Ok((
-                    last.value,
-                    format!(
-                        "{part}: {} pF, its maker's typical figure at {mv} mV, below the working voltage, which the declared derating may not exceed ({})",
-                        last.value,
-                        ctx.cite(&last.at)
-                    ),
-                    false,
-                ));
-            }
+            let derated = rated * i64::from(d.retained_permille) / 1000;
             Ok((
                 derated,
                 format!(
-                    "{part}: {derated} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating",
+                    "{part}: {derated} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating, a placeholder until its maker's curve is held",
                     d.retained_permille
                 ),
-                true,
             ))
         }
-        None => Err(format!(
-            "no maker figure is held for {part}, and no declared derating covers {} at {ratio} per mille of its rated voltage",
-            dielectric(c.dielectric)
+        None => Err((
+            Refusal::EffectiveCapacitanceBelowMinimum,
+            format!(
+                "no maker curve is held for {part}, and no declared derating covers {} at {ratio} per mille of its rated voltage",
+                dielectric(c.dielectric)
+            ),
         )),
     }
+}
+
+/// A curve's change at `mv`, per mille: linear between the points around
+/// it, rounded down (toward the larger loss); `None` past its last point.
+fn curve_change(points: &[(i64, i64)], mv: i64) -> Option<i64> {
+    let i = points.iter().rposition(|p| p.0 <= mv)?;
+    let (v0, c0) = points[i];
+    let Some(&(v1, c1)) = points.get(i + 1) else {
+        return (mv == v0).then_some(c0);
+    };
+    let num = i128::from(c1 - c0) * i128::from(mv - v0);
+    let step = -div_ceil(-num, i128::from(v1 - v0));
+    i64::try_from(i128::from(c0) + step).ok()
 }
 
 /// Step 4a (`AET-WO-4300d3` §1.4): the MCU's supply floor clears the

@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "3b6a9bbd2c995afb11193ed84c1c9a7b830ec1c25f4113640c8885e5a221dc5a";
+const TABLE_SHA256: &str = "86c560450e4c7f1cf77f5ffecd63e5f38f153b4982e51ff0f743625dbfc44cab";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -69,6 +69,20 @@ fn assert_case(err: &E, kind: Refusal, id: &str, what: &str) {
         other => panic!("{what}: not a power refusal: {other}"),
     }
 }
+
+/// A DC-bias curve for a test table: `(mV, change per mille)` points, the
+/// tolerance's and the temperature limit's loss, cited to the part's sheet.
+fn curve(doc: &str, points: &[(i64, i64)], tol: i64, temp: i64) -> Value {
+    let at = json!({"document": doc, "section": "test only"});
+    json!({
+        "points": points.iter().map(|(mv, c)| json!({"millivolts": mv, "change_permille": c})).collect::<Vec<_>>(),
+        "at": at,
+        "tolerance_permille": {"value": tol, "at": at},
+        "temperature_permille": {"value": temp, "at": at}
+    })
+}
+
+const GRM_SHEET: &str = "MURATA_GRM188R71C105KA12";
 
 /// The embedded table as JSON, for a copy with one limit changed.
 fn table_json() -> Value {
@@ -1075,11 +1089,26 @@ fn the_fixture_passes_every_new_check_and_names_each_condition() {
     assert!(has("a margin of 1.06 times, typical, not guaranteed"));
     // Ruled D2 (c): the buck's 10 µF input minimum is effective, and its
     // shortfall under the declared derating is named, not blocking.
+    // With Murata's curve held (the amendment on PR #158): 10 µF x (1 - 0.417
+    // at 26.1 V, interpolated between 25 V's -394 and 27.5 V's -446 and
+    // rounded down) x 0.9 (tolerance) x 0.78 (X7S) = 4.092660 µF, 5.907 µF
+    // short of 10 µF, still a named shortfall.
     assert!(has(
-        "U10: `cin` holds 5.000 µF effective at 26100 mV under the declared derating"
+        "U10: `cin` holds 4.092 µF effective at 26100 mV under DC bias"
     ));
-    assert!(has("5.000 µF short of the 10.000 µF minimum"));
-    assert!(has("non-blocking until a maker's DC-bias figure is held"));
+    assert!(has(
+        "4092660 pF, its rated 10000000 pF times its maker's curve at 26100 mV, -417 per mille interpolated"
+    ));
+    assert!(has(
+        "sha256 8b0b6cfffc8a1bc96152d2d1b6167f71bc9c6cde89d2b37fad060d888b6ce73b"
+    ));
+    assert!(has("its tolerance's -100 per mille"));
+    assert!(has("its temperature limit's -220 per mille"));
+    assert!(has("5.907 µF short of the 10.000 µF minimum"));
+    assert!(has("a named shortfall, not blocking"));
+    assert!(has(
+        "by the declared derating, a placeholder until its maker's curve is held"
+    ));
     assert!(has("a declared derating, not a maker's figure"));
     // §1.1, §1.4, D5.
     assert!(has(
@@ -1325,63 +1354,69 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
             );
         }
     }
-    // No derating covers the buck's input at 522 per mille of its rating:
-    // the screen cannot be computed, so it refuses even where it would only
-    // report (ruled D2 (c) names a shortfall, not a missing figure).
+    // No derating covers the LDO's input at 217 per mille of its rating (the
+    // buck's input reads its maker's curve): the screen cannot be computed,
+    // so it refuses.
     let mut v = base();
-    derate(&mut v, 500, 500);
+    derate(&mut v, 200, 500);
     assert_power(
         &refused(&v),
         Refusal::EffectiveCapacitanceBelowMinimum,
-        "U10",
-    );
-    // The maker's typical figure, where held, is used before the derating.
-    let mut t = table_json();
-    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([
-        {"millivolts": 3500, "picofarads": {"value": 470_000, "at": {"document": "MURATA_GRM188R71C105KA12", "section": "test only"}}}
-    ]);
-    assert_power(
-        &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
         "U12",
     );
-    // An effective capacitance above the rated value does not parse.
+    // A held curve is used before the derating, composed with the tolerance
+    // and the temperature limit, each factor deciding: at -350 per mille,
+    // 1 µF x 0.65 x 0.9 x 0.78 = 456300 pF is refused against 0.47 µF, and
+    // without either loss it would pass; at -300, 491400 pF passes.
+    for (change, tol, temp, ok) in [
+        (-350, 100, 220, false),
+        (-350, 0, 220, true),
+        (-350, 100, 0, true),
+        (-300, 100, 220, true),
+    ] {
+        let mut t = table_json();
+        row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] =
+            curve(GRM_SHEET, &[(0, change), (16_000, change)], tol, temp);
+        let r = against(&base(), &t);
+        if ok {
+            assert_eq!(r, Ok(()), "{change} {tol} {temp}");
+        } else {
+            assert_power(
+                &r.unwrap_err(),
+                Refusal::EffectiveCapacitanceBelowMinimum,
+                "U12",
+            );
+        }
+    }
+    // A curve composing to above the rated value does not parse (a bias lie).
     let r = table_refusal(|t| {
-        row(t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([
-            {"millivolts": 1000, "picofarads": {"value": 1_000_001, "at": {"document": "MURATA_GRM188R71C105KA12", "section": "x"}}}
-        ]);
+        row(t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] =
+            curve(GRM_SHEET, &[(0, 200), (16_000, 0)], 0, 0);
     });
-    assert!(r.contains("above the rated"), "{r}");
-    // Ruled D2 (c): the buck's input shortfall blocks once a maker's figure
-    // is held for its part (6 µF at 26.1 V here, against 10 µF), or where the
-    // row enforces on the declared derating.
+    assert!(r.contains("above the rated capacitance"), "{r}");
+    // Past the curve's last point it is refused by name, never extrapolated,
+    // even where the shortfall would only be reported (the buck's input).
     let mut t = table_json();
-    row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = json!([
-        {"millivolts": 26_100, "picofarads": {"value": 6_000_000, "at": {"document": "MURATA_GCM32EC71H106KA03", "section": "test only"}}}
-    ]);
+    row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = curve(
+        "MURATA_GCM32EC71H106KA03_DCBIAS",
+        &[(0, 3), (25_000, -394)],
+        100,
+        220,
+    );
     assert_power(
         &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
+        Refusal::DcBiasBeyondCurve,
         "U10",
     );
+    // Ruled D2 (c): where a row enforces its effective minimum, the buck's
+    // 4.092 µF is refused.
     let mut t = table_json();
     row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
         .as_array_mut()
         .unwrap()
         .iter_mut()
         .find(|e| e["role"] == "cin")
-        .unwrap()["effective_min_picofarads"]["on_declared"] = json!("enforce");
-    assert_power(
-        &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
-        "U10",
-    );
-    // A maker's figure held only below the working voltage still counts as
-    // held: 4 µF at 20 V caps the derating and blocks.
-    let mut t = table_json();
-    row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = json!([
-        {"millivolts": 20_000, "picofarads": {"value": 4_000_000, "at": {"document": "MURATA_GCM32EC71H106KA03", "section": "test only"}}}
-    ]);
+        .unwrap()["effective_min_picofarads"]["on_shortfall"] = json!("enforce");
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,
@@ -1606,27 +1641,15 @@ fn the_new_guards_hold_at_their_edges() {
             &format!("power.conditions.dc_bias_derating[{}]", i.max(1)),
         );
     }
-    // The maker's point at or above the working voltage is used before the
-    // derating: one at exactly 3465 mV holding 480000 pF clears the LDO's
-    // input, where the declared 400 per mille would not.
+    // A point exactly at the working voltage is used as it is: -480 per mille
+    // at 3465 mV keeps 520000 pF, clearing the LDO's input where the declared
+    // 400 per mille would not; its output at 1890 mV interpolates to -262.
     let mut v = base();
     v["power"]["conditions"]["dc_bias_derating"][0]["retained_permille"] = json!(400);
     let mut t = table_json();
-    let at = json!({"document": "MURATA_GRM188R71C105KA12", "section": "test only"});
     row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] =
-        json!([{"millivolts": 3465, "picofarads": {"value": 480_000, "at": at}}]);
+        curve(GRM_SHEET, &[(0, 0), (3465, -480), (16_000, -600)], 0, 0);
     assert_eq!(against(&v, &t), Ok(()));
-    // A later point is not used for an earlier voltage: with an extra point
-    // at 1000 mV holding 900000 pF, the input still reads the 3465 mV one.
-    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([
-        {"millivolts": 1000, "picofarads": {"value": 900_000, "at": at}},
-        {"millivolts": 3465, "picofarads": {"value": 400_000, "at": at}}
-    ]);
-    assert_power(
-        &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
-        "U12",
-    );
     // An effective minimum on a role with no working voltage cannot clear.
     let mut t = table_json();
     let ext = row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
@@ -1635,7 +1658,7 @@ fn the_new_guards_hold_at_their_edges() {
         .iter_mut()
         .find(|e| e["role"] == "cboot")
         .unwrap();
-    ext["effective_min_picofarads"] = json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}, "on_declared": "enforce"});
+    ext["effective_min_picofarads"] = json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}, "on_shortfall": "enforce"});
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,
@@ -1666,23 +1689,37 @@ fn the_new_guards_hold_at_their_edges() {
         let parsed = parse_power_parts(&t.to_string());
         assert_eq!(parsed.is_err(), bad, "{change}");
     }
-    let bias = |points: Value| {
+    let bias = |c: Value| {
         let mut t = table_json();
-        row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = points;
+        row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = c;
         parse_power_parts(&t.to_string()).is_err()
     };
-    let p = |mv: i64, pf: i64| json!({"millivolts": mv, "picofarads": {"value": pf, "at": {"document": "MURATA_GRM188R71C105KA12", "section": "x"}}});
-    assert!(bias(json!([p(16_001, 500_000)])));
-    assert!(bias(json!([p(1000, 600_000), p(1000, 500_000)])));
-    assert!(!bias(json!([p(1000, 1_000_000), p(16_000, 1_000_000)])));
-    // The derating never exceeds the maker's last point below the working
-    // voltage (adversarial F5): 400000 pF at 1000 mV refuses the LDO's input
-    // at 3465 mV, though the declared 50 % would give 500000.
+    let g = |points: &[(i64, i64)], tol: i64, temp: i64| curve(GRM_SHEET, points, tol, temp);
+    assert!(bias(g(&[(0, 0), (16_001, -500)], 0, 0)), "past the rating");
+    assert!(
+        bias(g(&[(0, 0), (8000, -100), (8000, -200)], 0, 0)),
+        "a repeated voltage"
+    );
+    assert!(bias(g(&[(1000, 0), (16_000, -500)], 0, 0)), "not from 0 mV");
+    assert!(bias(g(&[(0, 0)], 0, 0)), "one point");
+    assert!(bias(g(&[(0, 0), (16_000, -1000)], 0, 0)), "all of it lost");
+    assert!(
+        bias(g(&[(0, 0), (16_000, -500)], 1000, 0)),
+        "a tolerance of 1"
+    );
+    assert!(bias(g(&[(0, 0), (16_000, -500)], 0, -1)), "a negative loss");
+    assert!(
+        !bias(g(&[(0, 0), (16_000, -999)], 999, 999)),
+        "the edges pass"
+    );
+    // Past its last point a curve is never extrapolated: a curve to 1 V
+    // refuses the LDO's input at 3465 mV by name.
     let mut t = table_json();
-    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] = json!([p(1000, 400_000)]);
+    row(&mut t, "GRM188R71C105KA12")["kind"]["capacitor"]["dc_bias"] =
+        g(&[(0, 0), (1000, -100)], 0, 0);
     assert_power(
         &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
+        Refusal::DcBiasBeyondCurve,
         "U12",
     );
     // A control's row names exactly its kind's control pins (F7), and a VIN
