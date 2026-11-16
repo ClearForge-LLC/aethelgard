@@ -78,6 +78,55 @@ The variants are built by `spike/3400/make_variants.py` from today's Sentinel-01
 - Fabrication of a 2-layer board of the order of 60 × 50 mm, five pieces, from a low-cost fab: about US$5–30 before shipping, assembly extra [inferred, to be sourced].
 - The MCU dominates the BOM: STM32H753ZIT6 about US$15–20 at one piece [inferred, to be sourced].
 
+### 1.5 Predictions for the amendment (WO §0, Scotty 2026-11-16 22:30 UTC), committed before any four-layer run or W measurement
+
+**S2 at four layers.** Each variant's `board` section is replaced by `crates/aethelgard-cli/tests/fixtures/four-layer.json`'s (S-P-P-S on OSH Park's stackup: In1.Cu `GND`, In2.Cu `VDD_3V3`). Nothing else changes.
+- **The five commands:** V0-4L to V7-4L exit 0 with no finding (75 %). A refusal, if any, comes from the plane's net or a class whose net is now a plane (`ClassNetAbsent` or a router refusal), not from routing space.
+- **The outline is the same as at two layers.** The placer does not read the layer count [inferred]. There are fewer vias to ground, since the ground stitching is the plane.
+- **`extract` moves the other way.** Every line's bound rises, because the elliptical cap over a near plane adds capacitance (`4100`: the 4-layer fixture's I2C lines were 45.9 and 48.8 pF, against 43.3 pF here at two layers).
+  - I2C stays under 100 pF.
+  - SPI_SCK and SPI_MOSI (declared 30 pF) fail on at least one of V5–V7-4L (55 %).
+  - The 2-layer pass does not carry over to four layers for free.
+- **SNVSAN3F item 5:** the "not met" condition disappears at four layers, or turns into a judged condition (70 %).
+- **Renaming:** 20/20 on the largest 4-layer variant.
+
+**W rows** (each will be read at source in RM0433 Rev 9, DS12117 Rev 10, the KiCad 10.0.7 library or the sigrok wiki, or labelled inferred):
+- **W1, the probe header:**
+  - 16 channels in 2 × 8, with a ground per pair;
+  - a direction-controlled translator per 8 channels, 1.65–5.5 V on the target side (e.g. SN74LXC8T245);
+  - series resistors and an ESD array.
+  - The specification cannot express it: no GPIO-capture role exists, and a connector pin cannot carry an undeclared net.
+- **W2, the logic-analyzer capture:**
+  - Rate: timer-paced DMA from `GPIOx_IDR` reaches 10–25 MS/s, the same for 8 and 16 channels, because one read takes either width. It is limited by the bus path from DMA1/2 (D2) to GPIO (AHB4, D3). Labelled inferred unless a cited figure is found; the Nucleo measurement is Scotty's.
+  - Depth: AXI SRAM is 512 KB, so 512 k samples at 8 channels and 256 k at 16.
+- **W3, the host link:**
+  - USB FS: on chip, PA11/PA12, about 1 MB/s bulk in practice [inferred].
+  - USB HS through ULPI: an external PHY (USB3300/USB3320 class) on 12 pins with a 60 MHz clock.
+  - Ethernet RMII: a LAN8742A-class PHY on 9 pins plus MDIO/MDC, with a 50 MHz reference.
+  - **Pin collisions with V5:** ULPI_CK (PA5) and RMII_CRS_DV (PA7) collide with SPI1; ETH_MDIO (PA2) with CRSF_TX; ULPI data on PB10/PB11 with the EXT I2C bus.
+  - **Layers:** ULPI and RMII want a reference plane, so either pushes toward four layers.
+- **W4, protocol capture:**
+  - SPI as a receive-only slave, USART receive, and timer input capture are each available.
+  - RM0433 describes no listen-only or monitor mode for I2C: a slave ACKs its address, and the peripheral cannot observe without taking part. So I2C goes through the analyzer path.
+- **W5, stimulus:** I2C target mode, an SPI slave, a CRSF source by USART TX, and a DShot reader by input capture plus DMA. Each exists in RM0433. None is a specification role today except the serial port's TX.
+- **W6, the host protocol:** SUMP, as sigrok's `openbench-logic-sniffer` driver speaks it, so PulseView's decoders work. Its channel and depth limits are those the driver supports.
+
+**S4, cost:**
+- (a) the lean probe, V0 at 2L;
+- (b) the loaded board at 2L, V6 (largest passing every gate);
+- (c) V6-4L.
+
+**Calendar to the order** [inferred]:
+- (a) a day. V0 has no power tree, so E0 does not apply.
+- (b) one to two weeks: E0, E1, E2, `4220b`, and the witness rows' engine work orders (a capture-port role, a host link).
+- (c) as (b), plus whatever four layers adds to `extract`'s declarations.
+
+| Configuration | OSH Park | JLCPCB / PCBWay | Assembly |
+|---|---|---|---|
+| (a) V0 | about US$16.6 for 3 at $5/sq in (2L) | per-size price only through an interactive quote, so it goes on Scotty's list (90 %) | — |
+| (b) V6 2L | about US$83 for 3 | as (a) | JLCPCB's published fees as read; the BOM dominates, with the MCU the largest line |
+| (c) V6 4L | about US$167 for 3 at $10/sq in (4L, rate to be read) | as (a) | as (b) |
+
 ## 2. S1: every candidate, every field
 
 Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area is the change in the emitter's outline between variants [measured], or a footprint's courtyard from KiCad 10.0.7 in the pinned image (`spike/3400/sources/courtyards.txt`) [read at source]. KiCad libraries are CC-BY-SA 4.0 with the design exception (vendored `LICENSE.md`) [read at source]. Prices: digikey.sg, q1/q10 at cut tape, read 2026-11-16. The page says "All prices are in SGD" where marked **SGD**; **SGD?** means the page showed `$` with the region set to Singapore/SGD. No figure was converted to USD; that would be an estimate. "unknown" means no public page gave a price: LCSC and JLCPCB render prices in script, DigiKey.com returned 403, Mouser timed out. No login was used; nothing was bought.
