@@ -213,3 +213,4 @@ Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9
   - **Measured on Furnace:** a RUN-free build of the pinned tools image plus the new `LABEL` passed. The same build with `vendor=KiCad` was refused: "vendor label is [KiCad], not [ClearForge LLC]".
 - **D3 (the "How long" wording) and D5 (the GPLv2 Debian mirror) wait for Scotty.** Untouched until the architect's next note.
 - **Signal:** STOPPED again after D6, `main` `424f22d` merged in. Waiting only on Scotty for D3 and D5.
+- **Signal:** `main` `55ed4c4` (4211, #173) merged in, with no conflict and no `container/` or workflow change. CI was green at `e403af9` on all three workflows. Still waiting only on Scotty for D3 and D5.
