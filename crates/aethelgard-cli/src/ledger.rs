@@ -1,8 +1,17 @@
 //! The witness ledger (`AET-WO-4230` §1.7, `RUL-20`, contract D9): one row
 //! per register field the generated firmware writes or leaves at reset, each
-//! classed by what a pass of it is evidence of, and the rows the twin cannot
-//! judge at all (each script's wait, each register a model answers 0x00 with
-//! a warning).
+//! classed by what a pass of it is evidence of. The ledger covers register
+//! fields only (the architect's ruling on Q-I): what the twin cannot judge
+//! that no acknowledgement can name (the scripts' start-up wait, each
+//! register a model answers 0x00 with a warning) is [`twin_limits`], a list
+//! of its own that never blocks a package.
+//!
+//! **Acknowledgement (`AET-WO-4230` R1).** Every row of an unwitnessed class
+//! (`same-source`, `ignored-by-model`, `silicon-only`) is `acknowledged` or
+//! not by the specification's `acknowledge_unwitnessed` entry for its
+//! register and class ([`acknowledge`]); `verify --fab-out` refuses a row
+//! that is not, and `validate` refuses an entry naming a field the ledger
+//! lacks ([`stale`]).
 //!
 //! The fields come from the generator's own list
 //! ([`aethelgard_svd_hal::board::register_fields`]); the classes come from
@@ -31,8 +40,10 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
-use aethelgard_ir::silicon::{self, I2cFinding, SpiFinding};
-use aethelgard_ir::{PinTable, SolvedTopology};
+use aethelgard_ir::silicon::{self, BrrFinding, I2cFinding, SpiFinding};
+use aethelgard_ir::{
+    PeerDeviationSource, PinTable, SolvedTopology, Specification, UnwitnessedClass,
+};
 use aethelgard_svd_hal::board::{FieldAccess, FieldUse, register_fields};
 use aethelgard_svd_hal::cmsis;
 use serde::{Serialize, Serializer};
@@ -91,6 +102,17 @@ impl Class {
     pub fn judged(self) -> bool {
         matches!(self, Class::IndependentRule | Class::Observed)
     }
+
+    /// The class an acknowledgement names for a row of this class
+    /// (`AET-WO-4230` R1); `None` for a judged class, which none needs.
+    pub fn unwitnessed(self) -> Option<UnwitnessedClass> {
+        match self {
+            Class::IndependentRule | Class::Observed => None,
+            Class::SameSource => Some(UnwitnessedClass::SameSource),
+            Class::IgnoredByModel => Some(UnwitnessedClass::IgnoredByModel),
+            Class::SiliconOnly => Some(UnwitnessedClass::SiliconOnly),
+        }
+    }
 }
 
 impl Serialize for Class {
@@ -120,6 +142,14 @@ pub struct LedgerRow {
     pub class: Class,
     pub judge: String,
     pub note: String,
+    /// For a row of an unwitnessed class ([`Class::unwitnessed`]), whether
+    /// the specification acknowledges it (`AET-WO-4230` R1); absent for a
+    /// judged row and for a twin limit.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acknowledged: Option<bool>,
+    /// The acknowledging entry's reason, beside `acknowledged: true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// The register's bus address, for the bench sheet; `None` for a
     /// non-register row.
     #[serde(skip)]
@@ -130,6 +160,9 @@ pub struct LedgerRow {
 pub struct Counts {
     pub by_class: BTreeMap<&'static str, usize>,
     pub by_family: BTreeMap<String, usize>,
+    /// The rows of an unwitnessed class no acknowledgement names
+    /// ([`acknowledge`]); every such row before it runs.
+    pub unacknowledged: usize,
 }
 
 /// The ledger as `verify`'s verdict carries it.
@@ -154,6 +187,14 @@ pub enum LedgerError {
     Uncited { id: String },
     /// Two rows with one id.
     Duplicate { id: String },
+    /// A row an independent rule would class whose value is not the rule's:
+    /// a motor-output pin's `PUPDR` field that is not
+    /// [`silicon::motor_output_pupd`] (`AET-WO-4230` R5).
+    RuleDisagrees {
+        id: String,
+        value: Option<u32>,
+        rule: u32,
+    },
 }
 
 impl LedgerError {
@@ -163,6 +204,7 @@ impl LedgerError {
             LedgerError::Unclassified { .. } => "LedgerFieldUnclassified",
             LedgerError::Uncited { .. } => "LedgerClassUncited",
             LedgerError::Duplicate { .. } => "LedgerRowDuplicate",
+            LedgerError::RuleDisagrees { .. } => "LedgerRuleDisagrees",
         }
     }
 
@@ -171,7 +213,8 @@ impl LedgerError {
             LedgerError::Fields(_) => None,
             LedgerError::Unclassified { id }
             | LedgerError::Uncited { id }
-            | LedgerError::Duplicate { id } => Some(id),
+            | LedgerError::Duplicate { id }
+            | LedgerError::RuleDisagrees { id, .. } => Some(id),
         }
     }
 
@@ -185,6 +228,10 @@ impl LedgerError {
                 "the classification entry for `{id}` claims a model's behaviour without citing a measurement or a Renode source line, or names no judge"
             ),
             LedgerError::Duplicate { id } => format!("the ledger has two rows `{id}`"),
+            LedgerError::RuleDisagrees { id, value, rule } => format!(
+                "the generated firmware leaves `{id}` at {}, not the independent rule's {rule:#b} (aethelgard_ir::silicon::motor_output_pupd): the row cannot be classed independent-rule",
+                value.map_or_else(|| "a run-time value".to_owned(), |v| format!("{v:#b}"))
+            ),
         }
     }
 }
@@ -282,7 +329,8 @@ const SPI_RULE: &str = "aethelgard_ir::silicon::spi_words, held by silicon::chec
 const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): the whole select word, the solved controllers' codes and every other field at reset, held by silicon::check_spi; the proof's expected word is the rule's";
 const I2C_CR1_RULE: &str = "aethelgard_ir::silicon::i2c_cr1, held by silicon::check_i2c before generation; the proof's expected CR1 is the rule's word (and the rule's word with PE for the enable)";
 const TIMINGR_RULE: &str = "aethelgard_ir::silicon::check_timingr (through check_i2c), a decode and inequalities at HSI's worst case, which refuses generation when it fails; the proof's expected word is the topology's, which that rule held";
-const BRR_RULE: &str = "aethelgard_ir::serial::check_silicon: the worst-case receiver tolerance (HSI's extremes and the peer), refused at solve (SerialBaudTolerance) and a static finding in the twin's verdict; the proof's expected BRR is the topology's, which that rule held";
+const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr; generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
+const MOTOR_PUPD_RULE: &str = "aethelgard_ir::silicon::motor_output_pupd (AET-WO-4230 R5; its source is the architect's ruling on PR #161, comment 6911424608, Q-G: pull-down `10` on every motor-output pin in the first GPIO init, whole word); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
 const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own example: silicon's ARR + 1), a static finding that fails the twin's verdict (renode.rs static_motor_findings); the proof's expected word is the topology's, which that rule judged";
 
 /// Each RCC enable gate the generator can write (`GPIOA`–`GPIOK`, `I2C1`–`I2C4`,
@@ -573,7 +621,7 @@ fn table() -> Vec<Entry> {
         Si,
         "the boot record's word 1 against topology.bor_level (BrownOutLevelNotProgrammed, contract D10); the twin presents the declared level itself (AET-WO-4230 FEEDBACK §2 m1), so only the bench shows the option byte was programmed",
         "",
-        "set by the declaration and the factory step in FAB-NOTES; the whole word differs between the twin (0x0406_AAF0 + level) and the factory value (0x0006_AAF0, RM0433 Rev 9 Table 21), visible to a firmware that reads all of it",
+        "set by the declaration and the factory step in FAB-NOTES, a read-modify-write of the word as read, the only correct procedure (AET-WO-4230 R8, the architect's ruling on Q-J); the whole word differs above bit 15 among the three values on record, each at BOR_LEV 00: the bench's 0x1BC6_AAF0 (AET-WO-3302, NUCLEO-H753ZI rev V, 2026-11-16 05:00 UTC), RM0433 Rev 9 Table 21's 0x0006_AAF0 and Renode's 0x0406_AAF0 (plus the level, as the twin presents it), visible to a firmware that reads all of it",
     ));
 
     // ---- GPIO.
@@ -608,7 +656,11 @@ fn table() -> Vec<Entry> {
             "OSPEED#",
             "no edge rate is modelled; `check speeds` judges the chosen speed's fmax with svd-hal's own table (SpeedCheck), not an aethelgard-ir rule",
         ),
-        ("PUPDR", "PUPD#", "no pull is modelled"),
+        (
+            "PUPDR",
+            "PUPD#",
+            "no pull is modelled; written whole per port by `split` (AET-WO-4230 R5), every pin's field at its role's pull or its reset value, and a motor-output pin's field is independent-rule instead (silicon::motor_output_pupd, see motor_pupd)",
+        ),
     ] {
         t.push(e(
             "GPIO",
@@ -919,7 +971,9 @@ fn table() -> Vec<Entry> {
         (
             "CFG2",
             "AFCNTR",
-            format!("also ignored-by-model: {SPI_CS} L203, a tag"),
+            format!(
+                "AET-WO-4230 R4 (the architect's ruling on Q-D; RM0433 Rev 9 §50.11.4): 1 on every master, so the controller keeps driving its pins between transfers (ST's HAL MasterKeepIOState); the rule's CFG2 carries it, and a generator that clears it fails the proof (R2-gen's AFCNTR mutant); also ignored-by-model: {SPI_CS} L203, a tag"
+            ),
         ),
     ] {
         t.push(e("SPI", register, field, W, Rule, SPI_RULE, "", &note));
@@ -1009,7 +1063,7 @@ fn table() -> Vec<Entry> {
             Rule,
             BRR_RULE,
             "",
-            "the tolerance is the independent judgement; exactness (the nearest whole USARTDIV) re-runs serial::solve_brr, the solver's own function, so a BRR off by one inside the tolerance passes the rule. Stored (16 bits, STM32F7_USART.cs L210 per aethelgard-twin boot.rs) and read back by the twin's register image; the model renders no wire time (AET-WO-4300b FEEDBACK §10)",
+            "check_brr holds the nearest whole USARTDIV, so a BRR one off fails it; serial::check_silicon also judges the worst-case receiver tolerance (HSI's extremes and the peer) at solve (SerialBaudTolerance). Stored (16 bits, STM32F7_USART.cs L210 per aethelgard-twin boot.rs) and read back by the twin's register image; the model renders no wire time (AET-WO-4300b FEEDBACK §10)",
         ));
     }
     let usart_src = "AET-WO-4300b FEEDBACK §0 (STM32F7_USART.cs read): a TDR write reaches the backend only through TransmitCharacter, when TE and UE are set; UARTBase.cs L80–92: an injected byte is queued only when RE and UE are set";
@@ -1265,7 +1319,7 @@ fn table() -> Vec<Entry> {
     t
 }
 
-// ------------------------------------------------------------ non-register rows
+// ------------------------------------------------------------ the twin's limits
 
 /// The registers each model of a scripted part answers 0x00 with a warning,
 /// one row per set, as the repository lists them: (part, what, source).
@@ -1319,12 +1373,22 @@ fn scripted(topology: &SolvedTopology) -> Vec<(String, String)> {
 
 fn wait_rows(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
     let parts = aethelgard_ir::parts::table().map_err(|e| LedgerError::Fields(e.to_string()))?;
+    let settles: Vec<(String, String, u32)> = scripted(topology)
+        .into_iter()
+        .filter_map(|(reference, part)| {
+            let settle = parts
+                .get(&part)
+                .and_then(|p| p.script.as_ref())
+                .and_then(|s| s.settle_us)
+                .filter(|&s| s > 0)?;
+            Some((reference, part, settle))
+        })
+        .collect();
+    // The bring-up waits once, for the largest (`AET-WO-4230` R6).
+    let wait = settles.iter().map(|s| s.2).max().unwrap_or(0);
     let mut out = Vec::new();
-    for (reference, part) in scripted(topology) {
+    for (reference, part, settle) in settles {
         let Some(script) = parts.get(&part).and_then(|p| p.script.as_ref()) else {
-            continue;
-        };
-        let Some(settle) = script.settle_us.filter(|&s| s > 0) else {
             continue;
         };
         let condition = script.start_up.required_settle().map_or_else(
@@ -1345,9 +1409,11 @@ fn wait_rows(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
                 "aethelgard_ir::parts at load (SettleBelowStartUp, WO §1.9): {part}'s settle_us {settle} µs, {condition}"
             ),
             note: format!(
-                "the twin runs the spin about 1.92 times long and models no instruction timing (AET-WO-4220 F2, D-B5), so only the bench shows the wait suffices; start-up: {}",
+                "the bring-up waits once, after every scripted device's configuration and before any data read, for the largest settle_us among them ({wait} µs), which covers this one's because the devices power up together (AET-WO-4230 R6, the architect's ruling on Q-E); the twin runs the spin about 1.92 times long and models no instruction timing (AET-WO-4220 F2, D-B5), so only the bench shows the wait suffices; start-up: {}",
                 script.start_up.condition
             ),
+            acknowledged: None,
+            reason: None,
             address: None,
         });
     }
@@ -1370,6 +1436,8 @@ fn model_rows(topology: &SolvedTopology) -> Vec<LedgerRow> {
                 class: Class::IgnoredByModel,
                 judge: (*source).to_owned(),
                 note: format!("{part}: what silicon answers there is not modelled"),
+                acknowledged: None,
+                reason: None,
                 address: None,
             });
         }
@@ -1468,6 +1536,8 @@ pub fn register_rows(fields: &[FieldUse], table: &[Entry]) -> Result<Vec<LedgerR
             class: e.class,
             judge: e.judge.clone(),
             note: e.note.clone(),
+            acknowledged: None,
+            reason: None,
             address,
         });
     }
@@ -1509,12 +1579,17 @@ pub fn ledger_of(rows: Vec<LedgerRow>) -> Result<Ledger, LedgerError> {
         *by_class.entry(r.class.name()).or_default() += 1;
         *by_family.entry(r.family.clone()).or_default() += 1;
     }
+    let unacknowledged = rows
+        .iter()
+        .filter(|r| r.class.unwitnessed().is_some() && r.acknowledged != Some(true))
+        .count();
     Ok(Ledger {
         total: rows.len(),
         rows,
         counts: Counts {
             by_class,
             by_family,
+            unacknowledged,
         },
         evidence: Class::ALL
             .iter()
@@ -1523,27 +1598,205 @@ pub fn ledger_of(rows: Vec<LedgerRow>) -> Result<Ledger, LedgerError> {
     })
 }
 
-/// The witness ledger of the firmware `generate` writes for `topology`.
+/// The witness ledger of the firmware `generate` writes for `topology`:
+/// register fields only (the architect's ruling on Q-I), none acknowledged
+/// yet ([`acknowledge`]).
 pub fn build(topology: &SolvedTopology, table: &PinTable) -> Result<Ledger, LedgerError> {
     let fields =
         register_fields(topology, table).map_err(|e| LedgerError::Fields(e.to_string()))?;
     let mut rows = register_rows(&fields, &TABLE)?;
-    rows.extend(wait_rows(topology)?);
-    rows.extend(model_rows(topology));
-    // Declared pin capacitance (`AET-WO-4220b`) is not in the specification
-    // at this commit: no PIN_C row exists to add.
+    motor_pupd(&mut rows, topology)?;
     ledger_of(rows)
+}
+
+/// What the twin cannot judge outside the register fields (the architect's
+/// ruling on Q-I): each scripted device's start-up wait (`WAIT`,
+/// `silicon-only`) and each register a part's model answers 0x00 with a
+/// warning (`MODEL`, `ignored-by-model`). Never acknowledged, never blocking
+/// a package; no `PIN_C` row (Q-I).
+pub fn twin_limits(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
+    let mut rows = wait_rows(topology)?;
+    rows.extend(model_rows(topology));
+    Ok(rows)
+}
+
+/// `AET-WO-4230` R5: each motor-output pin's `PUPDR` field is the
+/// independent rule's ([`silicon::motor_output_pupd`]), not the table's
+/// same-source; any other value is refused (`LedgerRuleDisagrees`). The pin
+/// is the assignment of the output's net (`RUL-16`), never a role the table
+/// cannot see.
+pub fn motor_pupd(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(), LedgerError> {
+    let rule = silicon::motor_output_pupd();
+    for net in topology.motor_outputs.keys() {
+        let pin = topology
+            .assignments
+            .get(net)
+            .map(|a| a.pin.as_str())
+            .ok_or_else(|| LedgerError::Fields(format!("motor output `{net}` has no pin")))?;
+        let (port, index) = pin
+            .strip_prefix('P')
+            .and_then(|p| p.split_at_checked(1))
+            .filter(|(port, n)| {
+                port.bytes().all(|b| b.is_ascii_uppercase())
+                    && !n.is_empty()
+                    && n.bytes().all(|b| b.is_ascii_digit())
+            })
+            .ok_or_else(|| LedgerError::Fields(format!("motor output `{net}`'s pin `{pin}`")))?;
+        let (register, field) = (format!("GPIO{port}.PUPDR"), format!("PUPD{index}"));
+        let row = rows
+            .iter_mut()
+            .find(|r| r.access == "written" && r.register == register && r.field == field)
+            .ok_or_else(|| LedgerError::Unclassified {
+                id: format!("{register}.{field}"),
+            })?;
+        if row.value != Some(rule) {
+            return Err(LedgerError::RuleDisagrees {
+                id: row.id.clone(),
+                value: row.value,
+                rule,
+            });
+        }
+        row.class = Class::IndependentRule;
+        row.judge = MOTOR_PUPD_RULE.to_owned();
+        row.note = format!(
+            "motor output `{net}` on {pin}: pulled down from the first GPIO init until start_outputs, while the timer does not yet drive it; the table's class for any other pin's field is same-source (no pull is modelled)"
+        );
+    }
+    Ok(())
+}
+
+// ------------------------------------------------------------ acknowledgement
+
+/// Marks each row of an unwitnessed class acknowledged or not by `spec`
+/// (`AET-WO-4230` R1): acknowledged exactly when the entry for its register
+/// and class names its field, with that entry's reason. A field the
+/// generator newly writes in an acknowledged register is therefore not
+/// acknowledged. Nothing is dropped. Returns the ids of the rows left
+/// unacknowledged, in the ledger's order.
+pub fn acknowledge(ledger: &mut Ledger, spec: &Specification) -> Vec<String> {
+    let mut missing = Vec::new();
+    for r in &mut ledger.rows {
+        let Some(class) = r.class.unwitnessed() else {
+            continue;
+        };
+        let entry = spec
+            .unwitnessed_acknowledgement(&r.register, class)
+            .filter(|a| a.fields.contains(&r.field));
+        r.acknowledged = Some(entry.is_some());
+        r.reason = entry.map(|a| a.reason.clone());
+        if entry.is_none() {
+            missing.push(r.id.clone());
+        }
+    }
+    ledger.counts.unacknowledged = missing.len();
+    missing
+}
+
+/// An acknowledgement that names what the ledger lacks.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stale {
+    /// Its index in `acknowledge_unwitnessed`.
+    pub index: usize,
+    pub register: String,
+    pub class: &'static str,
+    /// Each field it names that the ledger has no row of for that register
+    /// and class: all of them when the ledger lacks the register.
+    pub fields: Vec<String>,
+}
+
+impl Stale {
+    pub const KIND: &'static str = "UnwitnessedAcknowledgementStale";
+
+    /// The entry's JSON path.
+    pub fn path(&self) -> String {
+        format!("acknowledge_unwitnessed[{}].fields", self.index)
+    }
+
+    pub fn message(&self) -> String {
+        format!(
+            "`acknowledge_unwitnessed` acknowledges {} of register `{}` as `{}`, which the witness ledger of this specification's firmware has no row of: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1)",
+            self.fields
+                .iter()
+                .map(|f| format!("`{f}`"))
+                .collect::<Vec<_>>()
+                .join(", "),
+            self.register,
+            self.class
+        )
+    }
+}
+
+/// The first entry of `spec.acknowledge_unwitnessed` naming a field the
+/// ledger has no row of for its register and class (a register the ledger
+/// lacks included), in document order (`AET-WO-4230` R1).
+pub fn stale(ledger: &Ledger, spec: &Specification) -> Option<Stale> {
+    spec.acknowledge_unwitnessed
+        .iter()
+        .enumerate()
+        .find_map(|(index, a)| {
+            let class = a.class_kind()?;
+            let fields: Vec<String> = a
+                .fields
+                .iter()
+                .filter(|f| {
+                    !ledger.rows.iter().any(|r| {
+                        r.register == a.register
+                            && r.class.unwitnessed() == Some(class)
+                            && r.field == **f
+                    })
+                })
+                .cloned()
+                .collect();
+            (!fields.is_empty()).then(|| Stale {
+                index,
+                register: a.register.clone(),
+                class: class.name(),
+                fields,
+            })
+        })
+}
+
+/// One serial port whose peer deviation is declared, not cited
+/// (`AET-WO-4230` R2, the architect's ruling on Q-A): the verdict names
+/// each with its figure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DeclaredPeer {
+    pub port: String,
+    pub peer_deviation_ppm: u32,
+}
+
+/// Every port of `spec` whose `peer_deviation_source` is `declared`, in the
+/// specification's order.
+pub fn declared_peers(spec: &Specification) -> Vec<DeclaredPeer> {
+    spec.serial_ports
+        .iter()
+        .filter(|p| p.peer_deviation_source == PeerDeviationSource::Declared)
+        .map(|p| DeclaredPeer {
+            port: p.label.clone(),
+            peer_deviation_ppm: p.peer_deviation_ppm,
+        })
+        .collect()
 }
 
 // ------------------------------------------------------------ silicon findings
 
-/// Every SPI and I2C controller's independent rule, as the verdict carries
-/// it (`AET-WO-4230` §1.7).
+/// Every SPI and I2C controller's independent rule and every USART's
+/// `BRR` rule, as the verdict carries them (`AET-WO-4230` §1.7, R3).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Silicon {
     pub spi: Vec<SpiFinding>,
     pub i2c: Vec<I2cFinding>,
+    pub usart: Vec<UsartFinding>,
     pub holds: bool,
+}
+
+/// [`silicon::check_brr`] for one serial port's USART.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct UsartFinding {
+    pub port: String,
+    pub peripheral: String,
+    #[serde(flatten)]
+    pub brr: BrrFinding,
 }
 
 pub fn silicon(topology: &SolvedTopology) -> Silicon {
@@ -1557,8 +1810,24 @@ pub fn silicon(topology: &SolvedTopology) -> Silicon {
         .iter()
         .map(|(p, t)| silicon::check_i2c(p, t))
         .collect();
-    let holds = spi.iter().all(|f| f.holds) && i2c.iter().all(|f| f.holds);
-    Silicon { spi, i2c, holds }
+    let usart: Vec<UsartFinding> = topology
+        .serial_ports
+        .iter()
+        .map(|(port, p)| UsartFinding {
+            port: port.clone(),
+            peripheral: p.peripheral.clone(),
+            brr: silicon::check_brr(p.kernel_hz, p.framing.baud, p.brr),
+        })
+        .collect();
+    let holds = spi.iter().all(|f| f.holds)
+        && i2c.iter().all(|f| f.holds)
+        && usart.iter().all(|f| f.brr.holds);
+    Silicon {
+        spi,
+        i2c,
+        usart,
+        holds,
+    }
 }
 
 /// One message per controller whose rule does not hold, naming it; empty
@@ -1608,6 +1877,12 @@ pub fn silicon_failures(s: &Silicon) -> Vec<String> {
             ]),
             if words.is_empty() { "" } else { "; " },
             words.join(", ")
+        )
+    }));
+    out.extend(s.usart.iter().filter(|f| !f.brr.holds).map(|f| {
+        format!(
+            "{} ({}): aethelgard_ir::silicon::check_brr does not hold (BRR {} at {} baud on a {} Hz kernel: nearest {}, in range {})",
+            f.peripheral, f.port, f.brr.brr, f.brr.baud, f.brr.kernel_hz, f.brr.nearest, f.brr.in_range
         )
     }));
     out
@@ -1855,6 +2130,8 @@ mod tests {
             class: Class::SameSource,
             judge: ORACLE_ONLY.into(),
             note: String::new(),
+            acknowledged: None,
+            reason: None,
             address: None,
         };
         assert_eq!(

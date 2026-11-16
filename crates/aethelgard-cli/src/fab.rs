@@ -339,18 +339,28 @@ fn notes(
     text
 }
 
-/// RM0433 Rev 9 Table 21 (p. 177): `FLASH_OPTSR`'s factory word, `BOR_LEV`
-/// `00`, with the part-dependent bits 28:27 and 20:19 (`X` in the table)
-/// at 0.
-const OPTSR_FACTORY: u32 = 0x0006_AAF0;
+/// The three values of `FLASH_OPTSR_CUR` on record (`AET-WO-4230` R8, the
+/// architect's ruling on Q-J), each with `BOR_LEV` `00`: they agree in the
+/// low 16 bits only, so no fixed word is written.
+/// - read on the bench: `AET-WO-3302`, a NUCLEO-H753ZI rev V, 2026-11-16
+///   05:00 UTC;
+/// - RM0433 Rev 9 Table 21 (p. 177), the factory word with the
+///   part-dependent bits 28:27 and 20:19 (`X` in the table) at 0;
+/// - Renode 1.17.0's model (`AET-WO-4230` FEEDBACK §2, measured).
+const OPTSR_BENCH: u32 = 0x1BC6_AAF0;
+const OPTSR_TABLE_21: u32 = 0x0006_AAF0;
+const OPTSR_RENODE: u32 = 0x0406_AAF0;
 
 /// The factory step that programs the declared brown-out level and reads it
 /// back (`AET-WO-4230` §1.6): none for level 0, which is the factory value
 /// (RM0433 Rev 9 Table 21, p. 177). The firmware never programs option
-/// bytes; it reads `FLASH_OPTSR_CUR` into its boot record. Every address,
+/// bytes; it reads `FLASH_OPTSR_CUR` into its boot record. The step is a
+/// read-modify-write of the word as read, the only correct procedure (the
+/// architect's ruling on Q-J), and cites the three values on record. Every address,
 /// key and bit is RM0433 Rev 9's, at the section and page named in the
 /// text; no programmer's command is cited, because ST's STM32CubeProgrammer
-/// manual (UM2237) could not be fetched (`AET-WO-4230` FEEDBACK).
+/// manual (UM2237) is not held, and the architect ruled it is not fetched
+/// (Q-J).
 fn brown_out_step(level: u8) -> String {
     if level == 0 {
         return String::new();
@@ -360,7 +370,7 @@ fn brown_out_step(level: u8) -> String {
         aethelgard_twin::boot::OPTKEY1,
         aethelgard_twin::boot::OPTKEY2,
     );
-    let word = OPTSR_FACTORY | u32::from(level & 3) << 2;
+    let bench = OPTSR_BENCH | u32::from(level & 3) << 2;
     let lines = [
         String::new(),
         "## Brown-out level".to_owned(),
@@ -377,9 +387,14 @@ fn brown_out_step(level: u8) -> String {
         format!("   bits 3:2 (`BOR_LEV`) set to `{bits}` and every other bit as read: the"),
         "   reserved bits must keep their reset value, and `RDP` (bits 15:8) must".to_owned(),
         "   stay 0xAA, since any other value raises the readout protection level".to_owned(),
-        "   (§4.9.9, pp. 215-216). On a part with its factory option bytes that word".to_owned(),
-        format!("   is 0x{word:08X}, with bits 28:27 and 20:19, which Table 21 leaves"),
-        "   part-dependent, as the part reads them.".to_owned(),
+        "   (§4.9.9, pp. 215-216). Read-modify-write of the word as read is the only".to_owned(),
+        "   procedure: no fixed word is right for every part. Three values are on".to_owned(),
+        "   record, each with `BOR_LEV` 00, and they agree only in bits 15:0:".to_owned(),
+        format!("   - 0x{OPTSR_BENCH:08X}, read on the bench (AET-WO-3302, NUCLEO-H753ZI rev V,"),
+        format!("     2026-11-16 05:00 UTC), for which the word to write is 0x{bench:08X};"),
+        format!("   - 0x{OPTSR_TABLE_21:08X}, RM0433 Rev 9 Table 21 (p. 177), the factory word"),
+        "     with its part-dependent bits 28:27 and 20:19 at 0;".to_owned(),
+        format!("   - 0x{OPTSR_RENODE:08X}, the twin's model (Renode 1.17.0)."),
         "4. Set `OPTSTART` (`FLASH_OPTCR`, 0x52002018, bit 1), wait until `OPT_BUSY`".to_owned(),
         "   (`FLASH_OPTSR_CUR` bit 0) reads 0 (§4.4.3, p. 175), then set `OPTLOCK`".to_owned(),
         "   (`FLASH_OPTCR` bit 0).".to_owned(),
@@ -388,8 +403,8 @@ fn brown_out_step(level: u8) -> String {
         "   `BrownOutLevelNotProgrammed`.".to_owned(),
         String::new(),
         "No programmer's command is given: ST's STM32CubeProgrammer user manual".to_owned(),
-        "(UM2237), which would state its option-byte syntax, could not be fetched".to_owned(),
-        "when this step was written.".to_owned(),
+        "(UM2237), which would state its option-byte syntax, is not held, and none".to_owned(),
+        "is cited here.".to_owned(),
     ];
     lines.join("\n") + "\n"
 }
@@ -966,7 +981,12 @@ mod tests {
         ));
         for want in [
             "bits 3:2 (`BOR_LEV`) set to `11`",
-            "that word\n   is 0x0006AAFC",
+            // `AET-WO-4230` R8: the three values on record, and the one
+            // procedure.
+            "Read-modify-write of the word as read is the only\n   procedure",
+            "   - 0x1BC6AAF0, read on the bench (AET-WO-3302, NUCLEO-H753ZI rev V,\n     2026-11-16 05:00 UTC), for which the word to write is 0x1BC6AAFC;",
+            "   - 0x0006AAF0, RM0433 Rev 9 Table 21 (p. 177)",
+            "   - 0x0406AAF0, the twin's model (Renode 1.17.0).",
             "bits 3:2 must read `11`",
             "a level other than 3 is\n   `BrownOutLevelNotProgrammed`",
             "Write 0x08192A3B, then 0x4C5D6E7F, to `FLASH_OPTKEYR` (0x52002008)",
@@ -974,7 +994,8 @@ mod tests {
         ] {
             assert!(step.contains(want), "{want}: {step}");
         }
-        assert!(brown_out_step(1).contains("is 0x0006AAF4"));
+        assert!(brown_out_step(1).contains("the word to write is 0x1BC6AAF4;"));
+        assert!(!step.contains("0x0006AAFC"), "no fixed word from the table");
         assert!(brown_out_step(2).contains("set to `10`"));
         // The addresses the text states are the header's.
         let f = aethelgard_svd_hal::cmsis::register_facts().unwrap();

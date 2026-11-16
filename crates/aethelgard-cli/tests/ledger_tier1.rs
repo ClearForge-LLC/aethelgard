@@ -6,8 +6,13 @@
 //! - Every specification in the repository that solves has a ledger: no
 //!   field any of them writes is unclassified.
 //! - Sentinel-02's scripted devices give their waits (`silicon-only`) and the
-//!   registers their models answer 0x00 with a warning (`ignored-by-model`).
+//!   registers their models answer 0x00 with a warning (`ignored-by-model`),
+//!   as twin limits outside the ledger (the architect's ruling on Q-I).
 //! - The bench sheet's rows for the reference are pinned by hash.
+//! - `AET-WO-4230` R1: the reference acknowledges every unwitnessed row by
+//!   register and class; a field the ledger newly has is not acknowledged;
+//!   an entry naming what the ledger lacks is stale. R5: a motor output's
+//!   `PUPDR` field is the independent rule's.
 //!
 //! With `AET_LEDGER_DUMP=<dir>` set, the reference's row list and bench rows
 //! are written there (the work order's report files).
@@ -17,7 +22,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use aethelgard_cli::ledger::{self, Class, Ledger};
-use aethelgard_ir::{PinTable, SolvedTopology, Specification};
+use aethelgard_ir::{PinTable, SolvedTopology, Specification, UnwitnessedAcknowledgement};
 use aethelgard_svd_hal::board::{FieldAccess, register_fields};
 use sha2::{Digest, Sha256};
 
@@ -58,6 +63,31 @@ fn sha(text: &str) -> String {
 fn reference_ledger() -> Ledger {
     let (t, table) = reference();
     ledger::build(&t, &table).unwrap()
+}
+
+fn reference_spec() -> Specification {
+    serde_json::from_slice(&fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap())
+        .unwrap()
+}
+
+/// One entry per register and unwitnessed class of `l`, naming every field.
+fn every_row_acknowledged(l: &Ledger) -> Vec<UnwitnessedAcknowledgement> {
+    let mut by: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
+    for r in &l.rows {
+        if let Some(c) = r.class.unwitnessed() {
+            by.entry((r.register.clone(), c.name()))
+                .or_default()
+                .push(r.field.clone());
+        }
+    }
+    by.into_iter()
+        .map(|((register, class), fields)| UnwitnessedAcknowledgement {
+            register,
+            class: class.to_owned(),
+            fields,
+            reason: "a test's".to_owned(),
+        })
+        .collect()
 }
 
 #[test]
@@ -147,6 +177,8 @@ fn the_families_the_work_order_names_are_classed_as_ruled() {
         "I2C1.CR1.DNF",
         "I2C1.TIMINGR.SCLL",
         "USART1.BRR.DIV_MANTISSA",
+        "USART1.BRR.DIV_FRACTION",
+        "SPI1.CFG2.AFCNTR",
     ] {
         assert_eq!(class(id), Class::IndependentRule, "{id}");
     }
@@ -156,6 +188,25 @@ fn the_families_the_work_order_names_are_classed_as_ruled() {
     assert_eq!(class("FLASH.OPTSR_CUR.BOR_LEV@reset"), Class::SiliconOnly);
     assert_eq!(class("GPIOB.OTYPER.OT6"), Class::IgnoredByModel);
     assert_eq!(class("I2C1.CR1.PE"), Class::SameSource);
+    assert_eq!(class("RCC.CR.D2CKRDY@reset"), Class::IgnoredByModel);
+    // R3: BRR's judge is the independent inequality, not the solver's.
+    let brr = l
+        .rows
+        .iter()
+        .find(|r| r.id == "USART1.BRR.DIV_MANTISSA")
+        .unwrap();
+    assert!(
+        brr.judge.starts_with("aethelgard_ir::silicon::check_brr"),
+        "{}",
+        brr.judge
+    );
+    // The reference has no motor output: every PUPDR field is same-source.
+    assert!(
+        l.rows
+            .iter()
+            .filter(|r| r.register.ends_with(".PUPDR"))
+            .all(|r| r.class == Class::SameSource)
+    );
     // Every `observed` row's judge cites what showed the model reacting.
     for r in l.rows.iter().filter(|r| r.class == Class::Observed) {
         assert!(
@@ -208,19 +259,45 @@ fn every_specification_that_solves_has_a_ledger() {
     assert!(classified >= 15, "{classified} specifications classified");
 }
 
+/// The architect's ruling on Q-I: the ledger covers register fields only.
+/// Sentinel-02's scripted devices' waits and model rows are twin limits,
+/// never acknowledged: a specification acknowledging every ledger row
+/// leaves nothing unacknowledged, so a scripted board is not blocked by rows
+/// no acknowledgement can name. The wait is one (R6), the largest settle.
 #[test]
 fn sentinel_02_s_scripted_devices_give_their_waits_and_model_rows() {
     let (t, table) = fixture("sentinel-02-own");
-    let l = ledger::build(&t, &table).unwrap();
-    let waits: Vec<_> = l.rows.iter().filter(|r| r.family == "WAIT").collect();
-    assert!(!waits.is_empty());
+    let mut l = ledger::build(&t, &table).unwrap();
+    assert!(
+        l.rows.iter().all(|r| !r.register.is_empty()),
+        "register fields only"
+    );
+    let limits = ledger::twin_limits(&t).unwrap();
+    let waits: Vec<_> = limits.iter().filter(|r| r.family == "WAIT").collect();
+    assert!(waits.len() >= 2, "{waits:?}");
+    let largest = waits.iter().filter_map(|w| w.value).max().unwrap();
     for w in &waits {
         assert_eq!(w.class, Class::SiliconOnly, "{}", w.id);
         assert!(w.judge.contains("settle covers"), "{}", w.judge);
         assert!(w.register.is_empty());
+        assert!(
+            w.note
+                .starts_with(&format!("the bring-up waits once, after every scripted device's configuration and before any data read, for the largest settle_us among them ({largest} µs)")),
+            "{}",
+            w.note
+        );
+        assert_eq!(w.acknowledged, None);
     }
-    let models: Vec<&str> = l
-        .rows
+    let mut spec: Specification = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    spec.acknowledge_unwitnessed = every_row_acknowledged(&l);
+    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
+    assert_eq!(l.counts.unacknowledged, 0);
+    let models: Vec<&str> = limits
         .iter()
         .filter(|r| r.family == "MODEL")
         .map(|r| r.id.as_str())
@@ -234,18 +311,193 @@ fn sentinel_02_s_scripted_devices_give_their_waits_and_model_rows() {
         "{models:?}"
     );
     assert!(
-        l.rows
+        limits
             .iter()
             .filter(|r| r.family == "MODEL")
-            .all(|r| r.class == Class::IgnoredByModel)
+            .all(|r| r.class == Class::IgnoredByModel && r.acknowledged.is_none())
     );
-    // The reference runs no script and has no own model: neither family.
-    let r = reference_ledger();
-    assert!(
-        !r.rows
+    assert_eq!(limits.len(), waits.len() + models.len());
+    // The reference runs no script and has no own model: no twin limit.
+    assert!(ledger::twin_limits(&reference().0).unwrap().is_empty());
+}
+
+/// `AET-WO-4230` R1: the reference acknowledges every unwitnessed row of its
+/// ledger, one entry per register and class (27: the ruling's 26 and R7's
+/// `RCC.CR` `D2CKRDY`), exact fields (164), each with its own reason; no
+/// entry is stale, and each row carries its entry's reason. Judged rows
+/// carry no acknowledgement.
+#[test]
+fn the_reference_acknowledges_every_unwitnessed_row_by_register_and_class() {
+    let spec = reference_spec();
+    let mut l = reference_ledger();
+    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
+    assert_eq!(l.counts.unacknowledged, 0);
+    let entries = &spec.acknowledge_unwitnessed;
+    assert_eq!(entries.len(), 27);
+    let per_class = |c: &str| entries.iter().filter(|a| a.class == c).count();
+    assert_eq!(
+        (
+            per_class("same-source"),
+            per_class("ignored-by-model"),
+            per_class("silicon-only")
+        ),
+        (15, 11, 1)
+    );
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 164);
+    // The hand-written form is the ledger's, entry for entry.
+    let want = every_row_acknowledged(&l);
+    let mut have: Vec<_> = entries
+        .iter()
+        .map(|a| (a.register.clone(), a.class.clone(), a.fields.clone()))
+        .collect();
+    have.sort();
+    let mut want: Vec<_> = want
+        .into_iter()
+        .map(|a| (a.register, a.class, a.fields))
+        .collect();
+    want.sort();
+    assert_eq!(have, want);
+    // Each reason is its own.
+    let reasons: std::collections::BTreeSet<&str> =
+        entries.iter().map(|a| a.reason.as_str()).collect();
+    assert_eq!(reasons.len(), entries.len());
+    for r in &l.rows {
+        match r.class.unwitnessed() {
+            Some(c) => {
+                assert_eq!(r.acknowledged, Some(true), "{}", r.id);
+                let entry = spec.unwitnessed_acknowledgement(&r.register, c).unwrap();
+                assert_eq!(r.reason.as_deref(), Some(entry.reason.as_str()), "{}", r.id);
+            }
+            None => assert_eq!(
+                (r.acknowledged, r.reason.as_deref()),
+                (None, None),
+                "{}",
+                r.id
+            ),
+        }
+    }
+}
+
+/// R1, fail closed both ways at the ledger: a field the generator newly
+/// writes in an acknowledged register is not acknowledged, and nothing is
+/// dropped; an entry naming a field the ledger lacks for that register and
+/// class (or a register it lacks) is stale, named with every such field.
+#[test]
+fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
+    let spec = reference_spec();
+    let mut l = reference_ledger();
+    let mut extra = l
+        .rows
+        .iter()
+        .find(|r| r.id == "GPIOA.MODER.MODER0")
+        .unwrap()
+        .clone();
+    extra.id = "GPIOA.MODER.MODER1".into();
+    extra.field = "MODER1".into();
+    l.rows.push(extra);
+    assert_eq!(ledger::acknowledge(&mut l, &spec), ["GPIOA.MODER.MODER1"]);
+    assert_eq!(l.counts.unacknowledged, 1);
+    assert_eq!(l.rows.len(), 290);
+    let new = l.rows.last().unwrap();
+    assert_eq!(
+        (new.acknowledged, new.reason.as_deref()),
+        (Some(false), None)
+    );
+
+    let l = reference_ledger();
+    let stale = |edit: &dyn Fn(&mut Specification)| {
+        let mut s = reference_spec();
+        edit(&mut s);
+        ledger::stale(&l, &s)
+    };
+    let at = |s: &Specification, register: &str, class: &str| {
+        s.acknowledge_unwitnessed
             .iter()
-            .any(|r| r.family == "WAIT" || r.family == "MODEL")
+            .position(|a| a.register == register && a.class == class)
+            .unwrap()
+    };
+    // A field the register does not have in the ledger.
+    let found = stale(&|s| {
+        let i = at(s, "GPIOA.MODER", "same-source");
+        s.acknowledge_unwitnessed[i]
+            .fields
+            .extend(["MODER3".into(), "MODER4".into()]);
+    })
+    .unwrap();
+    assert_eq!(found.register, "GPIOA.MODER");
+    assert_eq!(found.class, "same-source");
+    assert_eq!(found.fields, ["MODER3", "MODER4"]);
+    assert_eq!(
+        found.path(),
+        format!("acknowledge_unwitnessed[{}].fields", found.index)
     );
+    assert!(
+        found
+            .message()
+            .contains("`MODER3`, `MODER4` of register `GPIOA.MODER`")
+    );
+    // A field the ledger has, under another class.
+    let found = stale(&|s| {
+        let i = at(s, "I2C1.CR2", "same-source");
+        s.acknowledge_unwitnessed[i].fields.push("SADD".into());
+    })
+    .unwrap();
+    assert_eq!(found.fields, ["SADD"]);
+    // A register the ledger lacks: every field.
+    let found = stale(&|s| {
+        s.acknowledge_unwitnessed.push(UnwitnessedAcknowledgement {
+            register: "SPI2.CFG1".into(),
+            class: "ignored-by-model".into(),
+            fields: vec!["MBR".into(), "FTHLV".into()],
+            reason: "r".into(),
+        });
+    })
+    .unwrap();
+    assert_eq!(
+        (found.register.as_str(), found.fields.len()),
+        ("SPI2.CFG1", 2)
+    );
+    assert_eq!(found.index, 27);
+}
+
+/// R5 (the architect's ruling on Q-G): each motor output's `PUPDR` field is
+/// independent-rule, pulled down (`10`) by `silicon::motor_output_pupd`;
+/// every other `PUPDR` field stays same-source. A generator leaving another
+/// value there is refused by name (`LedgerRuleDisagrees`).
+#[test]
+fn a_motor_output_s_pull_down_is_the_independent_rule_s() {
+    for name in ["motors-pwm", "motors-dshot600"] {
+        let (t, table) = fixture(name);
+        let l = ledger::build(&t, &table).unwrap();
+        let motor: std::collections::BTreeSet<String> = t
+            .motor_outputs
+            .keys()
+            .map(|net| {
+                let pin = &t.assignments[net].pin;
+                format!("GPIO{}.PUPDR.PUPD{}", &pin[1..2], &pin[2..])
+            })
+            .collect();
+        assert_eq!(motor.len(), 4, "{name}");
+        for r in l.rows.iter().filter(|r| r.register.ends_with(".PUPDR")) {
+            if motor.contains(&r.id) {
+                assert_eq!(r.class, Class::IndependentRule, "{name} {}", r.id);
+                assert_eq!(r.value, Some(0b10), "{name} {}", r.id);
+                assert!(r.judge.contains("motor_output_pupd"), "{}", r.judge);
+            } else {
+                assert_eq!(r.class, Class::SameSource, "{name} {}", r.id);
+            }
+        }
+        // The generator's value is the rule's, or the ledger refuses.
+        let mut fields = register_fields(&t, &table).unwrap();
+        let first = motor.iter().next().unwrap().clone();
+        let f = fields.iter_mut().find(|f| f.id() == first).unwrap();
+        f.value = Some(0b01);
+        let mut rows = ledger::register_rows(&fields, &ledger::TABLE).unwrap();
+        let err = ledger::motor_pupd(&mut rows, &t).unwrap_err();
+        assert_eq!(err.kind(), "LedgerRuleDisagrees");
+        assert_eq!(err.id(), Some(first.as_str()));
+    }
 }
 
 #[test]
@@ -299,6 +551,11 @@ fn the_reference_s_bench_rows_are_pinned() {
 /// --against` an empty directory differs before any gate runs, and prints
 /// the verdict with both, its fab keys never after them. The largest
 /// fixture's line stays far under the MCP path's 1 MiB stdout cap.
+///
+/// `AET-WO-4230` R1: every row stays, each unwitnessed one `acknowledged`
+/// with its reason. R2: every declared peer deviation is named with its
+/// figure, a cited one never. R3: `check_brr` for every USART. Q-I: the twin
+/// limits beside the ledger.
 #[test]
 fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     let empty = std::env::temp_dir().join(format!("aet-4230-c2-{}", std::process::id()));
@@ -330,6 +587,34 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     assert_eq!(v["silicon"]["holds"], true);
     assert_eq!(v["silicon"]["spi"][0]["peripheral"], "SPI1");
     assert_eq!(v["silicon"]["i2c"][0]["peripheral"], "I2C1");
+    assert_eq!(
+        v["silicon"]["usart"],
+        serde_json::json!([{"port": "CONSOLE", "peripheral": "USART1", "kernel_hz": 64000000,
+            "baud": 115200, "brr": 556, "residue": 51200, "nearest": true, "in_range": true,
+            "holds": true}])
+    );
+    let rows = v["ledger"]["rows"].as_array().unwrap();
+    let acknowledged: Vec<_> = rows.iter().filter(|r| r["acknowledged"] == true).collect();
+    assert_eq!(acknowledged.len(), 164);
+    assert!(
+        acknowledged
+            .iter()
+            .all(|r| r["reason"].as_str().is_some_and(|x| !x.is_empty()))
+    );
+    assert!(rows.iter().all(|r| r["acknowledged"] != false));
+    assert_eq!(
+        rows.iter()
+            .filter(|r| r.get("acknowledged").is_none())
+            .count(),
+        67 + 58,
+        "judged rows carry no acknowledgement"
+    );
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0);
+    assert_eq!(
+        v["declared_peers"],
+        serde_json::json!([{"port": "CONSOLE", "peer_deviation_ppm": 5000}])
+    );
+    assert_eq!(v["twin_limits"], serde_json::json!([]));
     assert!(
         v["findings"]
             .as_array()
@@ -342,8 +627,59 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     let text = String::from_utf8(line).unwrap();
     let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
     assert!(at("findings") < at("silicon") && at("silicon") < at("ledger"));
+    assert!(at("findings") < at("declared_peers") && at("declared_peers") < at("silicon"));
+    assert!(at("ledger") < at("twin_limits"));
     assert!(!text.contains("\"against_fab\":") && !text.contains("\"fab\":"));
     let large = run(&root().join("crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json"));
     assert!(large.len() < 512 * 1024, "{} bytes", large.len());
+    // Three ports declared, the CRSF port's cited spread never named; with no
+    // acknowledgement every unwitnessed row is marked, none dropped.
+    let four = run(&root().join("crates/aethelgard-cli/tests/fixtures/serial-four.json"));
+    let w: serde_json::Value = serde_json::from_slice(&four).unwrap();
+    assert_eq!(
+        w["declared_peers"],
+        serde_json::json!([
+            {"port": "MAVLINK", "peer_deviation_ppm": 5000},
+            {"port": "GPS", "peer_deviation_ppm": 5000},
+            {"port": "SBUS", "peer_deviation_ppm": 5000},
+        ])
+    );
+    assert_eq!(w["silicon"]["usart"].as_array().unwrap().len(), 4);
+    let rows = w["ledger"]["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), w["ledger"]["total"].as_u64().unwrap() as usize);
+    let unmarked = rows.iter().filter(|r| r["acknowledged"] == false).count();
+    assert!(unmarked > 0);
+    assert_eq!(w["ledger"]["counts"]["unacknowledged"], unmarked);
+    assert!(rows.iter().all(|r| r["acknowledged"] != true));
     fs::remove_dir_all(&empty).unwrap();
+}
+
+/// `AET-WO-4230` R3: the verdict's silicon findings hold `check_brr` for
+/// every serial port's USART, and a BRR one off (inside the tolerance the
+/// solver's rule allows) fails `holds` and is named.
+#[test]
+fn silicon_judges_every_usart_s_brr_by_the_independent_inequality() {
+    let (mut t, _) = fixture("serial-four");
+    let s = ledger::silicon(&t);
+    assert!(s.holds);
+    let ports: Vec<&str> = s.usart.iter().map(|f| f.port.as_str()).collect();
+    assert_eq!(ports, ["CRSF", "GPS", "MAVLINK", "SBUS"]);
+    assert!(ledger::silicon_failures(&s).is_empty());
+    t.serial_ports.get_mut("GPS").unwrap().brr += 1;
+    let s = ledger::silicon(&t);
+    assert!(!s.holds);
+    let failing: Vec<&str> = s
+        .usart
+        .iter()
+        .filter(|f| !f.brr.holds)
+        .map(|f| f.port.as_str())
+        .collect();
+    assert_eq!(failing, ["GPS"]);
+    let named = ledger::silicon_failures(&s);
+    assert_eq!(named.len(), 1);
+    assert!(
+        named[0].contains("(GPS): aethelgard_ir::silicon::check_brr does not hold"),
+        "{}",
+        named[0]
+    );
 }
