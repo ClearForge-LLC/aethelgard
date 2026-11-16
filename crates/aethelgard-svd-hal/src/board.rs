@@ -5732,6 +5732,7 @@ mod tests {
             .insert("SCL".into(), assign("PB6", "I2C4", "I2C4_SCL", 6));
         s.assignments
             .insert("SDA".into(), assign("PB7", "I2C4", "I2C4_SDA", 6));
+        s.derive_controllers();
         assert_eq!(
             fields(&s),
             want(&[("D3CFGR", 0x20, "D3PPRE"), ("D3CCIPR", 0x58, "I2C4SEL")])
@@ -5748,6 +5749,7 @@ mod tests {
                 assign(pin, "SPI6", &format!("SPI6_{signal}"), 8),
             );
         }
+        s.derive_controllers();
         assert_eq!(fields(&s), want(&[("D3CCIPR", 0x58, "SPI6SEL")]));
     }
 
