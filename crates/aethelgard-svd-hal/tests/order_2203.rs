@@ -124,6 +124,12 @@ fn digests() -> Vec<(&'static str, String)> {
 /// hands it to I2C1 and SPI1, passes the registers to each port's `split`,
 /// and names the SPI `EOT` timeout; it was `1564c394…3474`. The device reads'
 /// text and order are unchanged, and the platform and boot image did not move.
+/// Re-taken again in `AET-WO-4230` C1 (the brown-out level, D10): the
+/// platforms gain the `flashController` presentation block at their end, and
+/// with it stripped both are `0a8e3b2b…9734` and `a93b7c45…1fd4` exactly; the
+/// boot image gains its `brown_out`, `GPIOA.OTYPER` (B0's whole-word writes)
+/// and records 4 bytes on (`RECORD_OFFSET` 8), and with the three undone it
+/// is `71c4fd53…09a7` exactly.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -131,15 +137,15 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform",
-        "0a8e3b2b7944e4e0247ec79a3c6e0e6226e6c854c15ea38cc72a39d44a169734",
+        "ac9c5dd717c122f2e6ab4d05e320d88abb696a7bbaaa76e05107228c5847fa88",
     ),
     (
         "platform faulted",
-        "a93b7c450e978e59dc3c583d1a9c8de0e61d653a519a8bf3d829f2a4017d1fd4",
+        "e37ce5a0f598d9d3ae8959496b29191697b8cb6e4026aca90a999de7dfba2f94",
     ),
     (
         "boot image",
-        "71c4fd53166f028d0613d0fcf529445a12145fc548754d28d69fc08d5dbe09a7",
+        "d891e90edfe7db3a91d7b48015e6e7f3254a8dbbb473160a68022b1fd0e7b221",
     ),
 ];
 
