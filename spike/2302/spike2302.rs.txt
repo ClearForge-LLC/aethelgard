@@ -1,0 +1,28 @@
+//! AET-WO-2302 spike only (scratch worktree, never committed): the board crate and the
+//! platform for a fixture whose parts have no KiCad model, as `twin_tier2.rs` makes them.
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
+
+#[test]
+fn spike2302_generate() {
+    let spec_path = PathBuf::from(std::env::var("AET2302_SPEC").unwrap());
+    let out = PathBuf::from(std::env::var("AET2302_OUT").unwrap());
+    let bytes = fs::read(&spec_path).unwrap();
+    let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    spec.validate().unwrap();
+    let sha: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files =
+        aethelgard_svd_hal::board::generate_with("sentinel-01-board", &solved, &table, &answers)
+            .unwrap();
+    let _ = fs::remove_dir_all(&out);
+    for (rel, text) in &files {
+        let to = out.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+    fs::write(out.join("board.repl"), aethelgard_twin::platform::emit(&solved).unwrap()).unwrap();
+}

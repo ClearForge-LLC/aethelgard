@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "sentinel-02-shaped-base",
+  "base": "../fixtures/sentinel-02-shaped.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}

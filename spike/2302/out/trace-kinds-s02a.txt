@@ -1,0 +1,20 @@
+header 416 B
+kind (10, 'end'): 1 x, 108 B
+kind (11, 'end'): 43 x, 1436 B
+kind (12, 'end'): 4 x, 154 B
+kind (13, 'end'): 4 x, 525 B
+kind (14, 'end'): 1 x, 34 B
+kind (15, 't0'): 1 x, 92 B
+kind (21, 'end'): 6 x, 295 B
+kind (22, 'end'): 6 x, 2101 B
+kind (23, 't0'): 2 x, 36 B
+kind (24, 't0'): 4 x, 150 B
+kind (25, 't0'): 4 x, 148 B
+kind (26, 'end'): 4 x, 330 B
+kind (27, 't0'): 2 x, 131 B
+kind (28, 'end'): 2 x, 106 B
+kind (29, 'end'): 2 x, 105 B
+kind (5, 't0'): 1 x, 64 B
+kind (6, 't0'): 1 x, 71 B
+kind (7, 't0'): 2 x, 84 B
+events 90 records, 5970 B; total 6386 B

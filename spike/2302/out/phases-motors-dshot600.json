@@ -1,0 +1,25 @@
+{
+ "boot_word_ns": 21750,
+ "optsr_ns": 1580,
+ "steps": [
+  [
+   "U2",
+   "identity",
+   14610
+  ],
+  [
+   "U4",
+   "identity",
+   20160
+  ]
+ ],
+ "unassigned_record_writes": 1,
+ "start_outputs_ns": {
+  "TIM1": 21670
+ },
+ "serial": {},
+ "verdict": "fail",
+ "findings": [
+  "memory_cap_exceeded"
+ ]
+}

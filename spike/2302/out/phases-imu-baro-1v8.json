@@ -1,0 +1,61 @@
+{
+ "boot_word_ns": 78016480,
+ "optsr_ns": 1590,
+ "steps": [
+  [
+   "U2",
+   "identity",
+   12380
+  ],
+  [
+   "U6",
+   "identity",
+   15060
+  ],
+  [
+   "U6",
+   "configure",
+   16640
+  ],
+  [
+   "U5",
+   "identity",
+   23230
+  ],
+  [
+   "U5",
+   "configure",
+   29780
+  ],
+  [
+   "U7",
+   "identity",
+   36320
+  ],
+  [
+   "U7",
+   "configure",
+   42860
+  ],
+  [
+   "U6",
+   "data",
+   77996360
+  ],
+  [
+   "U5",
+   "data",
+   78006210
+  ],
+  [
+   "U7",
+   "data",
+   78016270
+  ]
+ ],
+ "unassigned_record_writes": 1,
+ "start_outputs_ns": {},
+ "serial": {},
+ "verdict": "pass",
+ "findings": []
+}

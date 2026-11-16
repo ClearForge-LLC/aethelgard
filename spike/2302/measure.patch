@@ -1,0 +1,114 @@
+diff --git a/crates/aethelgard-chaos/src/campaign.rs b/crates/aethelgard-chaos/src/campaign.rs
+index 4f5eff0..e945d89 100644
+--- a/crates/aethelgard-chaos/src/campaign.rs
++++ b/crates/aethelgard-chaos/src/campaign.rs
+@@ -1849,7 +1849,9 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
+     // every witness ends at it. Kind 10's instruction count is not tied to
+     // it: a droop's boot counts from the last reset's release (third
+     // adversarial review, F1).
+-    let window = if short_window(records) {
++    let window = if let Some(w) = std::env::var("AET2302_WINDOW_NS").ok().and_then(|v| v.parse().ok()) {
++        w
++    } else if short_window(records) {
+         TWIN_DSHOT_WINDOW_NS
+     } else {
+         TWIN_MAX_VIRTUAL_NS
+diff --git a/crates/aethelgard-cli/src/main.rs b/crates/aethelgard-cli/src/main.rs
+index 29994ee..caecfcc 100644
+--- a/crates/aethelgard-cli/src/main.rs
++++ b/crates/aethelgard-cli/src/main.rs
+@@ -527,7 +527,7 @@ fn virtual_time(s: &str) -> Result<u64, String> {
+             "`{digits}` is not a positive integer without a leading zero"
+         ));
+     }
+-    let max = aethelgard_twin::boot::MAX_VIRTUAL_NS;
++    let max = std::env::var("AET2302_MAX_NS").ok().and_then(|v| v.parse().ok()).unwrap_or(aethelgard_twin::boot::MAX_VIRTUAL_NS);
+     let ns = digits
+         .parse::<u64>()
+         .ok()
+@@ -1716,7 +1716,23 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
+     // a droop's boot is the bridge's, which owns Renode as its child.
+     let out = match (&plan, &droop) {
+         (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
+-        (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
++        (Some(_), None) => {
++            let mut f = renode::LOG_FILTER;
++            if let Some(b) = std::env::var("AET2302_LOG_BUDGET").ok().and_then(|v| v.parse().ok()) {
++                f.budget = b;
++            }
++            let mut b = renode::BOOT_BOUNDS;
++            if let Some(s) = std::env::var("AET2302_WALL_S").ok().and_then(|v| v.parse().ok()) {
++                b.wall = std::time::Duration::from_secs(s);
++            }
++            let t0 = std::time::Instant::now();
++            let o = run.run_bounded_filtered(b, f)?;
++            if let Ok(p) = std::env::var("AET2302_DUMP") {
++                let _ = std::fs::write(&p, &o.stdout);
++                let _ = std::fs::write(format!("{p}.meta"), format!("wall_ms {}\nstdout_bytes {}\ndropped_log_lines {}\n", t0.elapsed().as_millis(), o.stdout.len(), o.dropped_log_lines));
++            }
++            o
++        }
+         (None, _) => run.run()?,
+     };
+     let (code, (mut findings, machine, observed)) = match (&plan, &out.ended) {
+diff --git a/crates/aethelgard-cli/src/renode.rs b/crates/aethelgard-cli/src/renode.rs
+index 82a80f9..fa1bb26 100644
+--- a/crates/aethelgard-cli/src/renode.rs
++++ b/crates/aethelgard-cli/src/renode.rs
+@@ -404,6 +404,9 @@ impl BootPlan<'_> {
+             }) => at + power::NUDGE_NS,
+             Some(_) => return None,
+         };
++        if let Some(at) = std::env::var("AET2302_INJECT_NS").ok().and_then(|v| v.parse().ok()) {
++            return Some(at);
++        }
+         Some(aethelgard_twin::serial::injection_ns(start))
+     }
+ 
+@@ -687,7 +690,9 @@ impl BootPlan<'_> {
+         }
+         // Each motor output's observer (`AET-WO-4300a`).
+         for m in self.motors {
+-            c.push(format!("logLevel -1 sysbus.{}", m.observer.source));
++            if std::env::var_os("AET2302_NO_OBS").is_none() {
++                c.push(format!("logLevel -1 sysbus.{}", m.observer.source));
++            }
+         }
+         c
+     }
+@@ -781,6 +786,9 @@ impl BootPlan<'_> {
+         c.extend(self.witness_levels());
+         c.extend(self.capture_commands());
+         c.extend(self.stimuli());
++        if let Ok(x) = std::env::var("AET2302_EXTRA") {
++            c.extend(x.split(";;").map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()));
++        }
+         if self.resets.is_empty() {
+             let mut now = 0u64;
+             for (t, commands) in self.injection_events() {
+@@ -790,6 +798,11 @@ impl BootPlan<'_> {
+                 }
+                 c.extend(commands);
+             }
++            if let Some(at) = std::env::var("AET2302_AT_NS").ok().and_then(|v| v.parse::<u64>().ok()).filter(|&a| a > now && a < self.virtual_ns) {
++                c.push(run_for(at - now));
++                now = at;
++                c.extend(std::env::var("AET2302_AT_CMDS").unwrap_or_default().split(";;").map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()));
++            }
+             c.push(run_for(self.virtual_ns.saturating_sub(now)));
+         } else {
+             c.extend(self.droop_schedule());
+diff --git a/crates/aethelgard-twin/src/boot.rs b/crates/aethelgard-twin/src/boot.rs
+index 8ee3aba..66b54f1 100644
+--- a/crates/aethelgard-twin/src/boot.rs
++++ b/crates/aethelgard-twin/src/boot.rs
+@@ -54,6 +54,9 @@ pub const DSHOT_WINDOW_NS: u64 = 2_000_000;
+ /// that states it: [`DSHOT_WINDOW_NS`] when any motor output is DShot, else
+ /// [`MAX_VIRTUAL_NS`].
+ pub fn window(topology: &SolvedTopology) -> (u64, &'static str) {
++    if let Some(w) = std::env::var("AET2302_WINDOW_NS").ok().and_then(|v| v.parse().ok()) {
++        return (w, "SPIKE_WINDOW_NS");
++    }
+     if topology
+         .motor_outputs
+         .values()
