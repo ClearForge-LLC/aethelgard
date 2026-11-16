@@ -344,6 +344,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - `AET-WO-3201`: evolve, replay and the judge (`2205` B1–B3 and M1, `3100` F15, `4300a` Q7, `4210` F-B5/F-B10, `3301` R2).
   - `AET-WO-4401`: the ArduPilot image's pin and the static check's blind spots (`4400a` D-4, A7).
   - `AET-WO-1311` (after `4300g`): eda hygiene: reader bounds, layer names, drill positions, straps from one table, the blocking pair (`3303` F4, review 2 A16, `4300d2` A4, `3300` F21, `4200` F12, `1308` A4).
+  - `AET-WO-4402` (cheap tier): the ArduPilot pin re-taken from `4419c59`'s publish with its regex tested, the merged spikes deleted and the stale spike comments fixed (`4401` Q1/F5; Grok review row 16).
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars. **Ruled 2026-11-15:** four copper layers (Scotty, `4300d2` D4); no 1.8 V domain, because every chosen sensor takes 3.3 V I/O (review B5; `4220` P2.1, F14), while the power fixture keeps its LDO and translator as test coverage; every precondition of `AET-WO-3303` and `4230` holds before anything is ordered. **Ruled by Scotty 2026-11-15: Sentinel-02 is an indoor drone for now.**
   - Position from optical flow with a downward rangefinder, so it needs no GPS.
   - Altitude from the rangefinder, because a barometer is unreliable indoors.
@@ -644,7 +645,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | A part with a table row but no vendored model (`ICM42688P`, `ICP10111`, `BMP581`) passes `validate`, and `generate` refuses it | `1206` F10 | after `AET-WO-4220b` vendors the three models |
 | A booted run whose registers and records are all set to unread replays as `N1`: a rule of all read or all unread across kinds 10–13, 21 and 22 | `3201` adversarial 5.8 | the next chaos work order |
 | Bare literals: the five unread-boot findings in `renode.rs`, `"info"`/`"error"` across crates, `"spi_identity_mismatch"` in `verify.rs` | `3201` Q4 | the next reduction pass that touches them |
-| Re-pin `container/ARDUPILOT-IMAGE` from the publish of `4419c59` (the Dockerfile's pip line changed); a committed test of the `pinned` job's pin regex | `4401` Q1, F5 | a one-line container PR (cheap tier) |
+| Re-pin `container/ARDUPILOT-IMAGE` from the publish of `4419c59` (the Dockerfile's pip line changed); a committed test of the `pinned` job's pin regex | `4401` Q1, F5 | `AET-WO-4402` (written 2026-11-16) |
 | A `# syntax=` directive (BuildKit pulls a frontend by tag) is not refused; dependencies of pinned apt packages come at whatever version the suite serves | `4401` Q2, Q3 | the next container work order |
 | SPI `modes` in `parts.json` are parsed and never read; firmware runs mode 0. A device whose modes exclude the controller's is not refused (all three SPI rows list `[0, 3]` today) | Grok review 2026-11-16 | the next `solve` work order |
 | Free chip-selects take the first leftover pin in key order with no backtrack against the ADC sense pass (the claimed PA0 failure does not occur: sense picks by package position) | Grok review 2026-11-16 | the next `solve` work order (low) |
@@ -652,7 +653,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The W25Q64JV is drawn with the `W25Q32JVSS` symbol (`1300` D2); the Q64 datasheet's package and pinout section is not cited against D2 | Grok review 2026-11-16 | `AET-WO-4211` |
 | `check drc` and `check erc` do not pin KiCad 10.0.7 as `fab` does; `strict.rs` passes unknown children by design; no seeded-neck tier-2 test against a real zone refill | Grok review 2026-11-16 (the pour claim itself refuted: DRC refills and treats unconnected items as fatal) | `AET-WO-1311` |
 | Every pin is a flat 10 pF in extraction, MCU included, stated as a condition; no part's own I/O capacitance is checked against it | Grok review 2026-11-16 | `AET-WO-1303` build |
-| Delete `spike/4210`, `4220`, `4300d`, `4300f` and the stale comments naming `spike/2100` (`twin/src/tests.rs`) and `spike/4400` (four `pincheck` fixture headers) | Grok review 2026-11-16 | a cleanup work order (cheap tier) |
+| Delete `spike/4210`, `4220`, `4300d`, `4300f` and the stale comments naming `spike/2100` (`twin/src/tests.rs`) and `spike/4400` (four `pincheck` fixture headers) | Grok review 2026-11-16 | `AET-WO-4402` (written 2026-11-16) |
 | README status line (P3 "under way"; `cargo install` points at P1-era 0.1.0); `readme_status.rs` checks only the "complete" phases | Grok review 2026-11-16 | the architect's next docs PR (README wording, Scotty's call on the install line); the test: the next CLI work order |
 
 ## 8. Amendments
