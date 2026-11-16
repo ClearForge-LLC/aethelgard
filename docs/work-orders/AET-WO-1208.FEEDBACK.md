@@ -242,3 +242,16 @@ Reduction pass (diff): −48 lines net in `solve.rs` (`i2c_electrical`, the `Bus
 - **`EmitError::InvalidSpecification`,** a new public variant of eda's error.
 - **`solve::serial_timing`** asserts that the reset clock gives all eight USART/UARTs one kernel clock, as `motor_timing` asserts for the timers.
 - **The ir README:** steps 21 and 22, and `solve`'s table (rows 1a, 1b, 2a removed; 7a and 7b reworded).
+
+## 9. Where everything ran, and the gates
+
+- **Where:** host cargo in a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, with `memory.swap.max` read back as 0). The differentials and the adversarial harness ran in a 16 GiB, swap-0 scope with at most 6 workers. No container, Renode or KiCad was started.
+- **This work order adds no tier-2 test,** so `TIER2_MIN` is `main`'s, 160. Its new tests are tier 1, in existing binaries, so it adds no `ci/` weight.
+- **Gates on `d5d600e` plus this FEEDBACK** [measured]:
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: clean;
+  - CI's package include check, run locally on the packaged `aethelgard-ir` and `aethelgard-eda`: every target is inside its package;
+  - `cargo test --workspace --no-fail-fast`: 117 test binaries, 0 failures.
+- **The merge of `origin/main` at `3dcd242`** (`4403` #176, docs #180) brings only `container/`, `.github/` and `docs/`, and no crate source, so the gates above stand on the merged tree. The work order on `main` is identical to the one built from.
+
+## 10. CI and the stop line
