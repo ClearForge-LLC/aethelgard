@@ -84,3 +84,12 @@ Every finding is fixed or named.
 - **§1.1: any item needs a trace-version bump.**
 - **A seeded case's answer would change.**
 - **A committed replay hash changes for a reason other than a refusal this work order adds.**
+
+## 8. Amendments
+
+**2026-11-16, from the build (PR #167, `AET-WO-3201.FEEDBACK.md`), accepted at merge.** §1.2 as written would have refused honest runs, so the builder built these two rules instead and named them before building:
+- **B1, a held line.** A held line has no kind 7 or 8 by design: the analog pass leaves it out of the decks, and its fault is a kind 9 `from: [held_low]` naming the net. Each kind-15 line has exactly one of a kind 7, a kind 8, or a held-low kind 9 naming that net.
+- **B2, an unread boot.** A boot killed at a bound is honestly unread, and its verdict names the bound (`cpu_aborted`, `wall_bound_exceeded` or `memory_cap_exceeded`), never `boot_word_missing`.
+  - A boot that read nothing must name the bound it was killed at.
+  - A boot that was read names `boot_word_missing` exactly once when its word is not the expected one, and never otherwise.
+- **Left open:** a booted run whose registers and records are all set to unread still replays as `N1`. The all-read-or-none rule across kinds 10–13, 21 and 22 is a roadmap §7.1 row.
