@@ -356,9 +356,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: the pin and the manifest
-        run: bash container/check-gcc-source.sh
-
       - name: publish to a registry on the runner, then fetch anonymously
         run: |
           # distribution 3.1.2, by index digest.

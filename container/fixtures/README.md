@@ -23,3 +23,7 @@ These files are tool-calibration inputs, not board artifacts. No specification p
 ## The pin check's fixtures
 
 `check-pins/` holds Dockerfiles that `container/check-pins.sh` must refuse (`AET-WO-4401`). The forms are the four that 4400a's A7 left open (`git submodule update --remote`, `git fetch` and `git pull`, `pipx`, a `pip install` without `--require-hashes`), a venv whose pip is unpinned, and the ways the adversarial pass tried to slip a form past the check. Each `# expect:` line names one refusal. `container/test-check-pins.sh` requires exactly those refusals and no others, and requires the three real Dockerfiles to pass. `copy-script.sh` is never run: it is the script that `copy-script.Dockerfile` copies in.
+
+## The GCC source pin's fixtures
+
+`gcc-source/` holds pairs of a `GCC-SOURCE` pin and a `manifest.json` that `container/check-gcc-source.sh` must refuse (`AET-WO-4403`). Four malformed pins prove that it delegates the pin's form to `check-ardupilot-pin.sh`. Two pins disagree with their manifest. The rest are manifests whose pin matches their bytes but whose shape is not the mirror's. `container/test-check-gcc-source.sh` names each fixture's one refusal and requires the committed pin and manifest to pass. The generator was a one-off; each fixture is plain JSON, and its pin is `sha256sum` of its manifest.

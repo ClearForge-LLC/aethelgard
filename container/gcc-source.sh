@@ -13,16 +13,16 @@
 #       byte for byte (check-gcc-source.sh), and the tarball is fetched into DIR
 #       and refused unless its sha256 and size are the manifest's. Exit 2 when the manifest is not there (404);
 #       1 for every other refusal.
-#   arm FILE        Arm's tarball from the manifest's URL, refused unless its
-#                   sha256 and size are the manifest's.
 #   oras DIR        oras ORAS_VERSION into DIR, refused unless its sha256 is
 #                   ORAS_SHA256; prints the binary's path.
-#   push REPO FILE  The empty config, FILE and the manifest pushed to REPO with
-#                   oras (its docker credentials) under the tag TAG; refused
-#                   unless the digest oras reports is the pin's.
 #   publish REPO DIR
-#                   fetch the pin anonymously; only if it is not there (exit 2),
-#                   arm, push and fetch it anonymously again.
+#                   fetch the pin anonymously. Only if it is not there (exit
+#                   2): download Arm's tarball from the manifest's URL, refuse
+#                   it unless its sha256 and size are the manifest's, push the
+#                   empty config, the tarball and the manifest with oras (its
+#                   docker credentials) under the tag TAG, refuse unless the
+#                   digest oras reports is the pin's, and fetch it anonymously
+#                   again.
 #
 # A REPO or REF whose registry is localhost:PORT or 127.0.0.1:PORT is spoken
 # to over plain HTTP (the pull request rehearsal); every other one over HTTPS.
@@ -33,7 +33,6 @@ ORAS_VERSION=1.3.6
 ORAS_SHA256=66fb0ad7206f3f6fa77ed5b552049d364ccf4b50b1684554f731f76302b52ca0
 MANIFEST=$here/gcc-source.manifest.json
 MT_MANIFEST=application/vnd.oci.image.manifest.v1+json
-EMPTY_DIGEST=sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a
 
 die() { echo "gcc-source: $*" >&2; exit 1; }
 IFS=$'\t' read -r PIN LAYER SIZE ARM_URL TITLE < <(bash "$here/check-gcc-source.sh" "$here/GCC-SOURCE" "$MANIFEST") \
@@ -79,6 +78,8 @@ fetch() {
     realm=$(sed -n 's/.*realm="\([^"]*\)".*/\1/ip' <<< "$ch")
     service=$(sed -n 's/.*service="\([^"]*\)".*/\1/ip' <<< "$ch")
     scope=$(sed -n 's/.*scope="\([^"]*\)".*/\1/ip' <<< "$ch")
+    # belt-and-suspenders: the token request's --proto '=https' also refuses
+    # it; this names the refusal.
     [[ $realm =~ ^https:// ]] || die "the token realm is not HTTPS: $realm"
     tcode=$(curl -q -sS --proto '=https' --max-time 60 -o "$dir/.token" -w '%{http_code}' -G \
       --data-urlencode "service=$service" --data-urlencode "scope=$scope" "$realm") || die "token request failed: $realm"
@@ -139,7 +140,7 @@ push() {
   file_ok "$file" "$LAYER" "$SIZE" || die "$file is not sha256:$LAYER, $SIZE bytes"
   local tmp; tmp=$(mktemp -d)
   printf '{}' > "$tmp/config"
-  "$oras" blob push "${plain[@]}" "$repo@$EMPTY_DIGEST" "$tmp/config"
+  "$oras" blob push "${plain[@]}" "$repo" "$tmp/config"
   "$oras" blob push "${plain[@]}" "$repo@sha256:$LAYER" "$file"
   out=$("$oras" manifest push "${plain[@]}" --media-type "$MT_MANIFEST" "$repo:$TAG" "$MANIFEST")
   rm -r "$tmp"
@@ -152,9 +153,7 @@ push() {
 cmd=${1:-}
 case $cmd in
   fetch) [ $# -ge 3 ] && [ $# -le 4 ] || die "usage: fetch REF@sha256:D DIR [--any]"; fetch "$2" "$3" "${4:-}" ;;
-  arm) [ $# -eq 2 ] || die "usage: arm FILE"; arm "$2" ;;
   oras) [ $# -eq 2 ] || die "usage: oras DIR"; get_oras "$2" ;;
-  push) [ $# -eq 3 ] || die "usage: push REPO FILE"; push "$2" "$3" ;;
   publish)
     [ $# -eq 3 ] || die "usage: publish REPO DIR"
     ref=$2@sha256:${PIN#*@sha256:}
@@ -164,5 +163,5 @@ case $cmd in
       2) arm "$3/$TITLE"; push "$2" "$3/$TITLE"; rm -f "$3/$TITLE"; fetch "$ref" "$3" ;;
       *) die "the mirror is there but refused (above); nothing pushed" ;;
     esac ;;
-  *) die "usage: gcc-source.sh fetch|arm|oras|push|publish ..." ;;
+  *) die "usage: gcc-source.sh fetch|oras|publish ..." ;;
 esac
