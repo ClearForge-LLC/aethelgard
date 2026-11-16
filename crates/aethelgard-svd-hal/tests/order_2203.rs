@@ -119,31 +119,49 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
 /// hashed document, the three moved digests were `72acc1b5…bbc1`,
 /// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
-/// alone moved them); the boot image did not move. Re-taken in
-/// `AET-WO-4300d3` (specification version 10, `power`'s declarations), which
-/// changes no generator: the three moved with the specification's sha256 alone
-/// (`1564c394…3474`, `0a8e3b2b…9734`, `a93b7c45…1fd4` before); the boot image
-/// did not move. Re-taken in `AET-WO-4300g` (specification version 11,
-/// `mcu.supply_source` and the debug and supply connectors), which changes no
-/// generator of these: the three moved with the specification's sha256 alone
-/// (`d2e17ffb…52d7`, `ce78f102…4a16`, `d311c246…7aec` before); the boot image
-/// did not move.
+/// alone moved them); the boot image did not move. The firmware's digest was
+/// re-taken in `AET-WO-4230`, whose bring-up reads the reset clock first and
+/// hands it to I2C1 and SPI1, passes the registers to each port's `split`,
+/// and names the SPI `EOT` timeout; it was `1564c394…3474`. The device reads'
+/// text and order are unchanged, and the platform and boot image did not move.
+/// Re-taken in `AET-WO-4230` slice A2a (the
+/// console's `peer_deviation_ppm`, which moved the hashed document, so the
+/// specification's sha256 in the firmware and the two platforms; the boot
+/// image did not move; `dca32616…7ec2d`, `0a8e3b2b…9734`, `a93b7c45…1fd4`
+/// before).
+/// Moved once more by the merge of `AET-WO-4300d3` (specification version 10;
+/// `4230` renumbered to 11), which changes no generator: the three moved with
+/// the specification's sha256 alone (`4fe0b873…27c4`, `efe40970…ff4b`,
+/// `f2de05af…b9ea` before); the boot image did not move.
+/// Moved again by `AET-WO-4230` round 2 (`acknowledge_unwitnessed` and each
+/// port's `peer_deviation_source` in the hashed document), which changes no
+/// generator: the three moved with the specification's sha256 alone
+/// (`2f7d00e8…df67`, `87f7aa19…ed24`, `61e7224b…bb06` before); the boot image
+/// did not move. Moved once more by the reference's acknowledgements
+/// (`AET-WO-4230` R1, slice R2-cli), which change no generator: the
+/// specification's sha256 alone (`0ae37256…7df4`, `ee09ef30…29f1`,
+/// `d0e7995a…cda3` before); the boot image did not move. Moved once more by
+/// the merge of `AET-WO-4300g` (specification version 11, `mcu.supply_source`
+/// and the debug and supply connectors; `4230` renumbered to 12), which changes
+/// no generator of these (the blessed reference tree moved in its sha256 line
+/// alone): `59c7e081…ccdb`, `a9b14d56…3246`, `892382d5…71cf` before; the boot
+/// image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "8c14d82a5a04709c91b65c5299c301f066597e7b5383effd61235afeaf962024",
+        "c5003f4f0f501f68e08ba00b53852c531ec5abd92a759e67453b49570f95620b",
     ),
     (
         "platform",
-        "482a1f1efb27dc0c7a994cf50a6e0152c6b8f8b18adea526f8975ca26da37dd9",
+        "875c5440d6700df68946fdfb4d015b33ebb9bab4ef4268ac8c59071ee8839ae8",
     ),
     (
         "platform faulted",
-        "33e142e0d09be094d4f0bc2ee11d5580b67b58b94d06d6b8686c9ac8be3dde0e",
+        "63b028f058dc7a5469c616edec22023c2182f209bb4da507917de2379456fbf8",
     ),
     (
         "boot image",
-        "71c4fd53166f028d0613d0fcf529445a12145fc548754d28d69fc08d5dbe09a7",
+        "d891e90edfe7db3a91d7b48015e6e7f3254a8dbbb473160a68022b1fd0e7b221",
     ),
 ];
 

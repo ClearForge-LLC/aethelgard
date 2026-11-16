@@ -198,8 +198,8 @@ fn the_firmware_follows_the_judges_boot_contract() {
 #[test]
 fn the_firmware_follows_the_judges_record_layout() {
     use aethelgard_twin::boot::{
-        RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_OK, STATUS_RXNE, STATUS_RXP, STATUS_STOP,
-        STATUS_TC, STATUS_TXIS, Wire,
+        BROWN_OUT_OFFSET, RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_EOT, STATUS_OK,
+        STATUS_RXNE, STATUS_RXP, STATUS_STOP, STATUS_TC, STATUS_TXIS, Wire,
     };
     let files = generated();
     let main = &files["firmware/src/main.rs"];
@@ -210,6 +210,7 @@ fn the_firmware_follows_the_judges_record_layout() {
         ("STATUS_RXNE", STATUS_RXNE),
         ("STATUS_STOP", STATUS_STOP),
         ("STATUS_RXP", STATUS_RXP),
+        ("STATUS_EOT", STATUS_EOT),
         ("RECORD_UNSET", RECORD_UNSET),
     ] {
         assert!(
@@ -217,6 +218,15 @@ fn the_firmware_follows_the_judges_record_layout() {
             "{name}"
         );
     }
+    // `AET-WO-4230` D10 (reduction-pass finding): the brown-out word is the
+    // judge's word, the one after the boot word.
+    assert!(
+        main.contains(&format!(
+            ".add({}).write_volatile(optsr)",
+            BROWN_OUT_OFFSET / 4
+        )),
+        "the brown-out word at the judge's offset {BROWN_OUT_OFFSET}"
+    );
     // The array holds the boot word, then one record per read: the BME280's
     // and the flash's.
     let words = (RECORD_OFFSET + 2 * RECORD_BYTES) / 4;
@@ -287,4 +297,86 @@ fn the_firmware_follows_the_judges_record_layout() {
         at = main[start..].find(&record).unwrap() + start;
     }
     assert_eq!(main.matches(".transfer(").count(), plan.checks.len());
+}
+
+/// `AET-WO-4230` R6 (the architect's ruling on Q-E): the parts power up
+/// together, so the firmware makes every identity and configuration step,
+/// waits ONCE for the largest cited start-up, then makes every data read;
+/// the judge orders its records the same way, independently. On the
+/// `imu-baro-1v8` fixture (two ICM-20948 stand-ins at 40 ms each, an
+/// ICP-10111 at 340 µs) the wait is 40 ms, spun at HSI's fastest.
+#[test]
+fn one_wait_separates_every_configuration_from_every_data_read() {
+    use aethelgard_twin::boot::Wire;
+    let bytes =
+        fs::read(root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json")).unwrap();
+    let spec: Specification = serde_json::from_slice(&bytes).unwrap();
+    let sha: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let table = pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &sha).unwrap();
+    let answers = |part: &str| matches!(aethelgard_twin::model::model(part), Ok(Some(_)));
+    let files =
+        aethelgard_svd_hal::board::generate_with("imu-baro", &solved, &table, &answers).unwrap();
+    let main = &files["firmware/src/main.rs"];
+    let plan = aethelgard_twin::boot::identity(&solved).unwrap();
+    let order: Vec<(&str, &str)> = plan
+        .checks
+        .iter()
+        .map(|c| (c.reference.as_str(), c.label))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("U2", "identity"),
+            ("U6", "identity"),
+            ("U6", "configure"),
+            ("U5", "identity"),
+            ("U5", "configure"),
+            ("U7", "identity"),
+            ("U7", "configure"),
+            ("U6", "data"),
+            ("U5", "data"),
+            ("U7", "data"),
+        ]
+    );
+    // The records follow one another in that order.
+    for pair in plan.checks.windows(2) {
+        assert!(pair[0].status_at < pair[1].status_at);
+    }
+    // The firmware's transfers, in the judge's order, each into its record.
+    let mut at = 0;
+    for (k, c) in plan.checks.iter().enumerate() {
+        let to = match &c.wire {
+            Wire::I2c { address } => format!("{address:#04x}"),
+            Wire::Spi { .. } => format!(
+                "Spi{}Device::{}",
+                &c.peripheral[3..],
+                c.reference.to_ascii_uppercase()
+            ),
+        };
+        let write: Vec<String> = c.write.iter().map(|b| format!("{b:#04x}")).collect();
+        let read = format!(
+            "let mut buf{k} = [0u8; {w}];\n    \
+             let (status, value) = match {bus}.transfer(&mut r, {to}, &[{write}], &mut buf{k}) {{",
+            w = c.width,
+            bus = c.peripheral.to_ascii_lowercase(),
+            write = write.join(", "),
+        );
+        at = main[at..]
+            .find(&read)
+            .unwrap_or_else(|| panic!("check {k} is not read in order: {read}"))
+            + at;
+    }
+    assert_eq!(main.matches(".transfer(").count(), plan.checks.len());
+    // One wait, of the largest settle (the ICM-20948's 40,000 µs at
+    // 64,958,976 Hz, rounded up), between the last configuration and the
+    // first data read.
+    assert_eq!(main.matches("    settle(").count(), 1, "{main}");
+    let wait = main.find("    settle(2598360);").expect("one 40 ms wait");
+    let last_configure = main.find("let mut buf6 = ").unwrap();
+    let first_data = main.find("let mut buf7 = ").unwrap();
+    assert!(last_configure < wait && wait < first_data);
 }

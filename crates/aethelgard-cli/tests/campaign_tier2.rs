@@ -757,8 +757,11 @@ struct Renode {
 }
 
 const BOOT_WORD: u32 = 0x2000_0000;
-const STATUS_AT: u32 = 0x2000_0004;
-const VALUE_AT: u32 = 0x2000_0008;
+/// The boot record's brown-out word, then U2's record after it
+/// (`AET-WO-4230` D10: `RECORD_OFFSET` 8).
+const BROWN_OUT_AT: u32 = BOOT_WORD + aethelgard_twin::boot::BROWN_OUT_OFFSET;
+const STATUS_AT: u32 = BOOT_WORD + aethelgard_twin::boot::RECORD_OFFSET;
+const VALUE_AT: u32 = STATUS_AT + 4;
 const COLD: [u32; 3] = [0x5802_44e0, 0x5802_44e8, 0x5802_44f0];
 const UNSET: u32 = 0xffff_ffff;
 
@@ -773,6 +776,7 @@ fn run_for(ns: u64) -> String {
 fn rearm() -> Vec<String> {
     vec![
         format!("sysbus WriteDoubleWord {BOOT_WORD:#010x} 0x0"),
+        format!("sysbus WriteDoubleWord {BROWN_OUT_AT:#010x} {UNSET:#010x}"),
         format!("sysbus WriteDoubleWord {STATUS_AT:#010x} {UNSET:#010x}"),
         format!("sysbus WriteDoubleWord {VALUE_AT:#010x} {UNSET:#010x}"),
     ]
@@ -875,8 +879,11 @@ impl Renode {
 }
 
 const READ_BOOT: &str = "sysbus ReadDoubleWord 0x20000000";
-const READ_STATUS: &str = "sysbus ReadDoubleWord 0x20000004";
-const READ_VALUE: &str = "sysbus ReadDoubleWord 0x20000008";
+const READ_STATUS: &str = "sysbus ReadDoubleWord 0x20000008";
+const READ_VALUE: &str = "sysbus ReadDoubleWord 0x2000000c";
+const READ_BROWN_OUT: &str = "sysbus ReadDoubleWord 0x20000004";
+const READ_OPTSR_CUR: &str = "sysbus ReadDoubleWord 0x5200201c";
+const READ_OPTCR: &str = "sysbus ReadDoubleWord 0x52002018";
 const READ_INSTR: &str = "cpu ExecutedInstructions";
 const READ_VTOR: &str = "cpu VectorTableOffset";
 
@@ -942,6 +949,27 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
         .read(&[READ_INSTR]);
     let nudged = r.run("c-nudge");
     assert_eq!(nudged, [vec![1000]], "instructions, with the nudge");
+
+    // d. `AET-WO-4230` D10: the platform presents the reference's declared
+    // level 3 in `FLASH_OPTSR_CUR` (`OPTCR` locked) at the boot and after the
+    // recipe (measured, C1 m2), and the firmware records it in word 1
+    // before and after the release.
+    let mut r = Renode::booted();
+    r.read(&[READ_OPTSR_CUR, READ_OPTCR])
+        .add(recipe())
+        .add([
+            run_for(1_000_000),
+            "cpu IsHalted false".to_owned(),
+            run_for(10),
+            run_for(100_000),
+        ])
+        .read(&[READ_OPTSR_CUR, READ_OPTCR, READ_BROWN_OUT]);
+    let d = r.run("d-brown-out");
+    assert_eq!(
+        d,
+        [vec![0x0406_aafc, 0x1], vec![0x0406_aafc, 0x1, 0x0406_aafc]],
+        "OPTSR_CUR and OPTCR at the boot, then with word 1 after the recipe"
+    );
 }
 
 #[test]

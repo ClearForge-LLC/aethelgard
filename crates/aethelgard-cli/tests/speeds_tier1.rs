@@ -38,7 +38,15 @@ fn by_net(v: &Value) -> Vec<(String, String, String)> {
             let what = match l.get("judged") {
                 Some(j) => {
                     assert_eq!(j["verdict"], "pass", "{l}");
-                    assert!(j["fmax_hz"].as_u64() >= j["rate_hz"].as_u64(), "{l}");
+                    // Judged at the fastest achieved rate (`AET-WO-4230` §1.2).
+                    assert!(
+                        j["fmax_hz"].as_u64() >= j["achieved_max_hz"].as_u64(),
+                        "{l}"
+                    );
+                    assert!(
+                        j["achieved_max_hz"].as_u64() <= j["declared_hz"].as_u64(),
+                        "{l}"
+                    );
                     format!("{} pF", j["row_picofarads"])
                 }
                 None => l["out_of_scope"].as_str().unwrap().to_owned(),
@@ -99,6 +107,24 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
     assert_eq!(sck["vdd_min_millivolts"], 3135);
     assert_eq!(sck["band_millivolts"], serde_json::json!([2700, 3600]));
     assert_eq!(sck["fmax_hz"], 80_000_000);
+    // `AET-WO-4230` §1.2: declared 20 MHz, MBR 1 from HSI's 64 MHz gives
+    // 16 MHz nominal and 16,239,744 Hz at HSI's fastest (+14,984 ppm): the
+    // rate judged.
+    assert_eq!(
+        (
+            &sck["controller"],
+            &sck["declared_hz"],
+            &sck["achieved_hz"],
+            &sck["achieved_max_hz"]
+        ),
+        (
+            &serde_json::json!("SPI1"),
+            &serde_json::json!(20_000_000),
+            &serde_json::json!(16_000_000),
+            &serde_json::json!(16_239_744)
+        )
+    );
+    assert!(sck.get("rate_hz").is_none(), "{sck}");
     assert!(v["table"]["rev_v"].as_str().unwrap().contains("Table 149"));
     assert!(v["table"]["rev_y"].as_str().unwrap().contains("Table 52"));
 }

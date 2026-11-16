@@ -742,6 +742,7 @@ pub fn emit_faulted(
     }
     emit_spi(&mut out, &spi)?;
     emit_observers(&mut out, topology)?;
+    out.push_str(&crate::boot::brown_out(topology)?.presentation());
     Ok(out)
 }
 

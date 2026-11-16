@@ -145,7 +145,9 @@ jobs:
     name: tools-shard (${{ matrix.shard }})
     needs: shards
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # A hang guard, not a budget (AET-WO-4230 Q-K, ruled on PR #161, comment 6911424608): the gate is a
+    # balanced plan (ci/shard.sh), and 20 minutes per shard is a target.
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
@@ -320,7 +322,11 @@ jobs:
       # every firmware channel never reaches the judge).
       # 159: plus 1 from AET-WO-1311 in with_tools.rs (a seeded neck in the
       # ground zone: KiCad's refill joins it wherever route::connectivity does).
-      TIER2_MIN: "159"
+      # 160: plus 1 from AET-WO-4230 slice C2 in twin_tier2.rs (the ledger's
+      # completeness: every bit the reference writes, rebuilt from Renode's
+      # access log of every peripheral, is covered by a ledger row), merged
+      # after 159.
+      TIER2_MIN: "160"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

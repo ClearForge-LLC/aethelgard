@@ -1,5 +1,278 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
+  "acknowledge_unwitnessed": [
+    {
+      "register": "FLASH.OPTSR_CUR",
+      "class": "silicon-only",
+      "fields": [
+        "BOR_LEV"
+      ],
+      "reason": "Level 0, the factory value (RM0433 Rev 9 Table 21, p. 177), so FAB-NOTES carries no step; no model, the twin presents it (4230 FEEDBACK section 2 m1). The bench row reads bits 3:2 as 00."
+    },
+    {
+      "register": "GPIOA.AFRL",
+      "class": "same-source",
+      "fields": [
+        "AFSEL5",
+        "AFSEL6",
+        "AFSEL7"
+      ],
+      "reason": "PA5-PA7 at AF5 for SPI1: the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRL back."
+    },
+    {
+      "register": "GPIOA.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER0",
+        "MODER5",
+        "MODER6",
+        "MODER7"
+      ],
+      "reason": "PA0 output (flash CS) and PA5-PA7 alternate for SPI1: a BSRR write drives a pin whatever MODER says (4200 FEEDBACK). The bench row reads MODER back."
+    },
+    {
+      "register": "GPIOA.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED0",
+        "OSPEED5",
+        "OSPEED6",
+        "OSPEED7"
+      ],
+      "reason": "PA0 and SPI1's PA5-PA7: no edge rate is modelled; check speeds judges each chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+    },
+    {
+      "register": "GPIOA.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15"
+      ],
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port A pin. The bench row reads it back."
+    },
+    {
+      "register": "GPIOA.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15"
+      ],
+      "reason": "No pull is modelled. Written whole by split: no pull on the solved pins, the debug pins' reset pulls (PA13 up, PA14 down, PA15 up) kept. The bench row reads PUPDR back."
+    },
+    {
+      "register": "GPIOB.AFRL",
+      "class": "same-source",
+      "fields": [
+        "AFSEL6",
+        "AFSEL7"
+      ],
+      "reason": "PB6/PB7 at AF4 for I2C1: the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRL back."
+    },
+    {
+      "register": "GPIOB.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER6",
+        "MODER7"
+      ],
+      "reason": "PB6/PB7 alternate for I2C1: the model routes a pin by MODER only for a timer channel (4300 FEEDBACK section 0). The bench row reads MODER back."
+    },
+    {
+      "register": "GPIOB.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED6",
+        "OSPEED7"
+      ],
+      "reason": "PB6/PB7 for I2C1 at 400 kHz: no edge rate is modelled; check speeds judges the chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+    },
+    {
+      "register": "GPIOB.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15"
+      ],
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 open-drain for I2C1, the rest push-pull. The bench row reads it back."
+    },
+    {
+      "register": "GPIOB.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15"
+      ],
+      "reason": "No pull is modelled. Written whole by split: no internal pull on PB6/PB7 (the bus has 2.2 kOhm), PB4's reset pull-up kept. The bench row reads PUPDR back."
+    },
+    {
+      "register": "I2C1.CR1",
+      "class": "same-source",
+      "fields": [
+        "PE"
+      ],
+      "reason": "PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, with no reaction claimed. The bench row reads PE as 1."
+    },
+    {
+      "register": "I2C1.CR2",
+      "class": "same-source",
+      "fields": [
+        "ADD10",
+        "HEAD10R",
+        "STOP",
+        "NACK",
+        "RELOAD",
+        "AUTOEND",
+        "PECBYTE"
+      ],
+      "reason": "7-bit addressing, no reload, no PEC, written 0 (AUTOEND set at run time): STM32F7_I2C.cs is not held, no reaction claimed. The bench row reads CR2 back, all but AUTOEND."
+    },
+    {
+      "register": "I2C1.ICR",
+      "class": "same-source",
+      "fields": [
+        "ADDRCF",
+        "NACKCF",
+        "STOPCF",
+        "BERRCF",
+        "ARLOCF",
+        "OVRCF",
+        "PECCF",
+        "TIMOUTCF",
+        "ALERTCF"
+      ],
+      "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), so no bench row: STOPCF and NACKCF after each transfer. The next record's OK status on silicon shows the clear took."
+    },
+    {
+      "register": "RCC.CR",
+      "class": "ignored-by-model",
+      "fields": [
+        "D2CKRDY"
+      ],
+      "reason": "Not polled (ruling on Q-F): STM32H7_RCC.cs L175 keeps it a tag reading 0, so a wait would park every boot. Silicon must read 1 after a D2 enable: a bench row."
+    },
+    {
+      "register": "RCC.D1CCIPR",
+      "class": "ignored-by-model",
+      "fields": [
+        "CKPERSEL"
+      ],
+      "reason": "A tag in Renode (STM32H7_RCC.cs L401, read 0 whatever is written, 4230 FEEDBACK section 2). SPI1's kernel per_ck assumes HSI here; the bench row reads it."
+    },
+    {
+      "register": "RCC.D2CCIP1R",
+      "class": "ignored-by-model",
+      "fields": [
+        "SPI123SEL",
+        "SPI45SEL"
+      ],
+      "reason": "ResetClock reads them at reset before the select write; a tag (STM32H7_RCC.cs L408-410) reads 0 whatever silicon holds. The written SPI123SEL is judged by spi_words."
+    },
+    {
+      "register": "RCC.D2CCIP2R",
+      "class": "ignored-by-model",
+      "fields": [
+        "USART16SEL",
+        "USART28SEL",
+        "I2C123SEL"
+      ],
+      "reason": "Left at reset: I2C123SEL's rcc_pclk1 is what check_timingr assumes; ResetClock reads the USART selects though no port uses them. A tag in Renode (L420-425); the bench row reads each."
+    },
+    {
+      "register": "SCB.CPACR",
+      "class": "same-source",
+      "fields": [
+        "CP10",
+        "CP11"
+      ],
+      "reason": "The FPU enable in the generated Reset, outside every Kani harness; whether Renode faults a float with CPACR clear is not held. The bench row reads CP10/CP11 as full access."
+    },
+    {
+      "register": "SPI1.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "TSER"
+      ],
+      "reason": "A tag (STM32H7_SPI.cs L149), written 0 with TSIZE: no reload is used. The bench row reads it back as 0."
+    },
+    {
+      "register": "SPI1.IFCR",
+      "class": "ignored-by-model",
+      "fields": [
+        "TXTFC",
+        "UDRC",
+        "OVRC",
+        "CRCEC",
+        "TIFREC",
+        "MODFC",
+        "TSERFC"
+      ],
+      "reason": "Tags in Renode (STM32H7_SPI.cs L258-266), written 0 beside EOTC; write-only, so no bench row. The boot record's flash identity, read on silicon, shows each transfer ended."
+    },
+    {
+      "register": "SPI1.SR",
+      "class": "ignored-by-model",
+      "fields": [
+        "MODF"
+      ],
+      "reason": "MODF is a tag (STM32H7_SPI.cs L238) and MASTER always reads 1: no mode fault in the twin. SSM|SSI before SPE is proved by Kani; the bench row reads MODF as 0."
+    }
+  ],
   "accept_lifecycle": [],
   "project_name": "sentinel-01-4l",
   "mcu": {

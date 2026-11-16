@@ -209,3 +209,98 @@ fn version_prints_name_and_version() {
     assert_eq!(output.status.code(), Some(0));
     assert_eq!(output.stdout, b"aethelgard 0.1.0\n");
 }
+
+/// `AET-WO-4230` R1: `validate` refuses an acknowledgement naming what the
+/// witness ledger lacks for its register and class, computed as `verify`
+/// computes it (`UnwitnessedAcknowledgementStale`, exit 2, the register as
+/// `id` and the entry's `fields` as `path`): a field the register has no row
+/// of, a field the ledger has under another class, a register the ledger
+/// lacks, and every entry of a specification that has no ledger (it does not
+/// solve). `verify` refuses it too, before anything runs. The reference's own
+/// entries are current.
+#[test]
+fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
+    let reference: Value =
+        serde_json::from_slice(&std::fs::read(example("sentinel-01-minimal.json")).unwrap())
+            .unwrap();
+    let index = |v: &Value, register: &str, class: &str| {
+        v["acknowledge_unwitnessed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|a| a["register"] == register && a["class"] == class)
+            .unwrap()
+    };
+    let refused = |v: &Value, id: &str, path: &str, names: &str| {
+        let bytes = serde_json::to_vec(v).unwrap();
+        let r = assert_refused(
+            &run(&["validate"], &bytes),
+            2,
+            "UnwitnessedAcknowledgementStale",
+        );
+        assert_eq!(r["error"]["id"], id, "{r}");
+        assert_eq!(r["error"]["path"], path, "{r}");
+        let m = r["error"]["message"].as_str().unwrap();
+        assert!(m.contains(names), "{m}");
+        r
+    };
+    // A field GPIOA.MODER has no row of.
+    let mut v = reference.clone();
+    let i = index(&v, "GPIOA.MODER", "same-source");
+    v["acknowledge_unwitnessed"][i]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push("MODER3".into());
+    let path = format!("acknowledge_unwitnessed[{i}].fields");
+    refused(
+        &v,
+        "GPIOA.MODER",
+        &path,
+        "`MODER3` of register `GPIOA.MODER` as `same-source`",
+    );
+    // `verify` refuses the same specification before any gate.
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("aet-4230-stale-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let spec = dir.join("stale.json");
+    std::fs::write(&spec, serde_json::to_vec(&v).unwrap()).unwrap();
+    let out = run(&["verify", "--spec", spec.to_str().unwrap()], b"");
+    let r = assert_refused(&out, 2, "UnwitnessedAcknowledgementStale");
+    assert_eq!(r["error"]["id"], "GPIOA.MODER", "{r}");
+    std::fs::remove_dir_all(&dir).unwrap();
+    // A field the ledger has, under another class (SADD is observed).
+    let mut v = reference.clone();
+    let i = index(&v, "I2C1.CR2", "same-source");
+    v["acknowledge_unwitnessed"][i]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push("SADD".into());
+    refused(
+        &v,
+        "I2C1.CR2",
+        &format!("acknowledge_unwitnessed[{i}].fields"),
+        "`SADD`",
+    );
+    // A register the ledger lacks.
+    let mut v = reference.clone();
+    v["acknowledge_unwitnessed"].as_array_mut().unwrap().push(
+        serde_json::json!({"register": "SPI2.CFG1", "class": "ignored-by-model",
+            "fields": ["MBR"], "reason": "no such controller"}),
+    );
+    refused(
+        &v,
+        "SPI2.CFG1",
+        "acknowledge_unwitnessed[27].fields",
+        "`MBR` of register `SPI2.CFG1`",
+    );
+    // No ledger at all: the console's pin taken by the flash's chip select.
+    let mut v = reference.clone();
+    v["spi_devices"][0]["cs"]["pin"] = "PA9".into();
+    v["serial_ports"][0]["tx"]["pin"] = "PA9".into();
+    refused(
+        &v,
+        "FLASH.OPTSR_CUR",
+        "acknowledge_unwitnessed[0].fields",
+        "no witness ledger exists for this specification",
+    );
+}

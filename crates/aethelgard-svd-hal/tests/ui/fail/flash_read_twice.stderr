@@ -1,0 +1,15 @@
+error[E0382]: use of moved value: `flash`
+  --> tests/ui/fail/flash_read_twice.rs:11:19
+   |
+ 9 |     let flash = board.flash;
+   |         ----- move occurs because `flash` has type `sentinel_01_board::Flash`, which does not implement the `Copy` trait
+10 |     let _first = flash.option_status(&mut r);
+   |                        --------------------- `flash` moved due to this method call
+11 |     let _second = flash.option_status(&mut r);
+   |                   ^^^^^ value used here after move
+   |
+note: `sentinel_01_board::Flash::option_status` takes ownership of the receiver `self`, which moves `flash`
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn option_status<R: Registers>(self, r: &mut R) -> u32 {
+   |                                        ^^^^

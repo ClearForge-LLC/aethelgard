@@ -769,7 +769,9 @@ fn a_value_one_bit_off_fails_as_an_identity_mismatch() {
 fn record_on(platform: &Path, elf: &Path) -> (String, String) {
     let boot_word = aethelgard_twin::boot::boot_word().unwrap();
     let unset = aethelgard_twin::boot::RECORD_UNSET;
-    let (status_at, value_at) = (boot_word + 4, boot_word + 8);
+    // U2's record, after the boot word and the brown-out word (`AET-WO-4230`).
+    let status_at = boot_word + aethelgard_twin::boot::RECORD_OFFSET;
+    let value_at = status_at + 4;
     let commands = [
         "emulation SetSeed 2100".to_owned(),
         "mach create".to_owned(),
@@ -1533,12 +1535,14 @@ fn imu_baro_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
 /// `AET-WO-4210` §2.2-§2.4: every device's script runs and each step is
 /// witnessed by its own model's lines, on SPI inside its own chip-select
 /// window; each data read answers the datasheet's conversion of the judge's
-/// stimulus (D3); no interrupt is armed (D6).
+/// stimulus (D3); no interrupt is armed (D6). The boot runs the whole 100 ms
+/// window: the one 40 ms start-up wait (`AET-WO-4230` R6) puts the boot word
+/// at 78.0–78.1 ms of virtual time (measured, Renode running the spin long).
 #[test]
 fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
     let (dir, platform, spec_path) = imu_baro_board("fixture");
     let elf = mutant_of(&dir, "imu-baro", |_| {});
-    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(0), "{v}");
     let steps = |bus: &str| -> Vec<(String, String, String)> {
         v["boot"][bus]
@@ -1569,9 +1573,9 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         [
             t("U5", "identity", "0xea"),
             t("U5", "configure", "0x0"),
-            t("U5", "data", "0x4000"),
             t("U7", "identity", "0xea"),
             t("U7", "configure", "0x0"),
+            t("U5", "data", "0x4000"),
             t("U7", "data", "0x4000"),
         ]
     );
@@ -1586,7 +1590,7 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         .iter()
         .map(|w| w["expected"].as_array().unwrap().len())
         .collect();
-    assert_eq!(lines, [4, 4, 14, 4, 4, 14]);
+    assert_eq!(lines, [4, 4, 4, 4, 14, 14]);
     assert!(spi.iter().all(|w| w["unrouted"] == serde_json::json!([])));
     let csr = v["boot"]["registers"]
         .as_array()
@@ -1644,11 +1648,11 @@ fn a_seeded_imu_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf5)",
+            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf4)",
             "Ok::<usize, SpiError>(0)",
         );
     });
-    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(
@@ -1669,11 +1673,11 @@ fn a_seeded_barometer_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf3)",
-            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf3)",
+            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf7)",
+            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf7)",
         );
     });
-    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
@@ -3068,8 +3072,8 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
 fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
     let (dir, platform, spec_path) = own_board("no-wait");
     let elf = mutant_of(&dir, "own-no-wait", |d| {
-        edit(d, "src/main.rs", "    settle(640000);\n", "");
-        edit(d, "src/main.rs", "    settle(1280000);\n", "");
+        // The one wait (`AET-WO-4230` R6).
+        edit(d, "src/main.rs", "    settle(1299180);\n", "");
     });
     let (code, v) = boot_on("own no wait", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
@@ -3238,6 +3242,157 @@ fn adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails() {
             .iter()
             .any(|m| m.contains("1 of the frame's 8 bytes")),
         "{v}"
+    );
+}
+
+/// `AET-WO-4230` §5.4, contract D9: the ledger is complete, checked without
+/// its own list. The reference boots under Renode with every peripheral's
+/// accesses logged (`sysbus LogAllPeripheralsAccess`, so the set logged is
+/// not taken from the ledger), the enable registers cold as the CLI's boot
+/// leaves them. Every CPU write is rebuilt from the log (the monitor's own
+/// writes carry no `[cpu: …]`): its bits are the bits it sets, plus the bits
+/// it changes against the register's last read or written value, in its
+/// byte lane. A written bit that no `written` row of the ledger covers, or a
+/// write to a peripheral the ledger has no instance for, fails by name.
+#[test]
+fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
+    let topology = topology();
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(spec()).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let ledger = aethelgard_cli::ledger::build(&topology, &table).unwrap();
+    let facts = aethelgard_svd_hal::cmsis::register_facts().unwrap();
+    let image = aethelgard_twin::boot::expected(&topology).unwrap();
+    // Each written field's bits, by the register's bus address.
+    let mut covered: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+    for r in ledger.rows.iter().filter(|r| r.access == "written") {
+        let mask = if r.width >= 32 {
+            u32::MAX
+        } else {
+            ((1u32 << r.width) - 1) << r.pos
+        };
+        *covered.entry(r.address.unwrap()).or_default() |= mask;
+    }
+    let mut commands = vec![
+        "mach create".to_owned(),
+        format!("machine LoadPlatformDescription @{}", platform().display()),
+        format!("sysbus LoadELF @{}", firmware().display()),
+    ];
+    commands.extend(
+        image
+            .cold
+            .iter()
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} {:#x}", r.address, r.value)),
+    );
+    commands.extend([
+        "sysbus LogAllPeripheralsAccess true".to_owned(),
+        "cpu VectorTableOffset 0x08000000".to_owned(),
+        "emulation RunFor \"0.100000000\"".to_owned(),
+        "quit".to_owned(),
+    ]);
+    let out = Command::new("renode")
+        .args([
+            "--disable-gui",
+            "--console",
+            "--plain",
+            "-e",
+            &commands.join("; "),
+        ])
+        .env("DOTNET_EnableDiagnostics", "0")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).replace('\r', "");
+    // Renode's name of an instance, as ST names it.
+    let instance = |source: &str| -> Option<String> {
+        if source == "rcc" {
+            return Some("RCC".into());
+        }
+        if source == "flashController" {
+            return Some("FLASH".into());
+        }
+        // Renode's `nvic` is the whole system control space from 0xE000E000.
+        if source == "nvic" {
+            return Some("SCS".into());
+        }
+        if let Some(port) = source.strip_prefix("gpioPort") {
+            return Some(format!("GPIO{port}"));
+        }
+        for (renode, st) in [
+            ("i2c", "I2C"),
+            ("spi", "SPI"),
+            ("usart", "USART"),
+            ("uart", "UART"),
+            ("timer", "TIM"),
+        ] {
+            if let Some(n) = source.strip_prefix(renode)
+                && !n.is_empty()
+                && n.bytes().all(|b| b.is_ascii_digit())
+            {
+                return Some(format!("{st}{n}"));
+            }
+        }
+        None
+    };
+    let mut last: std::collections::BTreeMap<(String, u32), u32> =
+        std::collections::BTreeMap::new();
+    let (mut writes, mut uncovered, mut unknown) =
+        (0usize, Vec::new(), std::collections::BTreeSet::new());
+    for line in text.lines() {
+        let Some(at) = line.find("[INFO] ") else {
+            continue;
+        };
+        let Some(a) = aethelgard_twin::serial::access(&line[at..]) else {
+            continue;
+        };
+        let word_offset = a.offset & !3;
+        let shift = 8 * (a.offset & 3);
+        let lane = match a.bits {
+            8 => 0xFFu32 << shift,
+            16 => 0xFFFFu32 << shift,
+            _ => u32::MAX,
+        };
+        let value = u32::try_from(a.value & u64::from(u32::MAX)).unwrap_or(u32::MAX) << shift;
+        let key = (a.source.clone(), word_offset);
+        if !a.write {
+            if a.bits == 32 {
+                last.insert(key, value);
+            }
+            continue;
+        }
+        writes += 1;
+        let prev = last.get(&key).copied();
+        let new = prev.map_or(value, |p| (p & !lane) | (value & lane));
+        let bits = (value & lane) | prev.map_or(0, |p| (p ^ new) & lane);
+        last.insert(key, new);
+        let Some(inst) = instance(&a.source) else {
+            unknown.insert(format!("{} @ {:#x}", a.source, a.offset));
+            continue;
+        };
+        let scs = (inst == "SCS").then_some(0xE000_E000u32);
+        let Some(base) = scs.or_else(|| aethelgard_cli::ledger::base(&facts, &inst)) else {
+            unknown.insert(format!("{inst} @ {:#x}", a.offset));
+            continue;
+        };
+        let address = base + word_offset;
+        let missing = bits & !covered.get(&address).copied().unwrap_or(0);
+        if missing != 0 {
+            uncovered.push(format!(
+                "{inst} +{word_offset:#x} ({address:#010x}): bits {missing:#010x} written ({line})"
+            ));
+        }
+    }
+    answer(&format!(
+        "4230 ledger completeness: {writes} CPU writes rebuilt, {} rows, {} uncovered, {} unknown",
+        ledger.total,
+        uncovered.len(),
+        unknown.len()
+    ));
+    assert!(writes > 50, "the boot was logged: {writes} writes\n{text}");
+    assert!(
+        unknown.is_empty() && uncovered.is_empty(),
+        "writes to peripherals the ledger has no instance for: {unknown:?}\nwritten bits no ledger row covers:\n{}",
+        uncovered.join("\n")
     );
 }
 

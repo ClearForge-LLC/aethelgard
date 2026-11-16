@@ -54,6 +54,7 @@ fn two_devices() -> (SolvedTopology, aethelgard_ir::PinTable) {
             cs: "IMU_CS".into(),
         },
     );
+    solved.derive_controllers();
     solved.validate().unwrap();
     (solved, table)
 }
@@ -149,25 +150,27 @@ fn a_second_device_gets_its_own_select_and_is_read_after_the_flash() {
 
     // Records: the BME280's, then U4's, then U5's script, as the judge orders
     // them (`AET-WO-4210`): its identity, its wake, and its 6-byte data read,
-    // whose record takes two value words, so each record names its word.
+    // whose record takes two value words, so each record names its word. The
+    // first record is word 2, after the boot word and the brown-out word
+    // (`AET-WO-4230` D10).
     let main = &files["firmware/src/main.rs"];
     let plan = aethelgard_twin::boot::identity(&solved).unwrap();
     let refs: Vec<(&str, &str, u32)> = plan
         .checks
         .iter()
         .map(|c| {
-            let word = (c.status_at - plan.checks[0].status_at) / 4 + 1;
+            let word = (c.status_at - plan.checks[0].status_at) / 4 + 2;
             (c.reference.as_str(), c.step.name(), word)
         })
         .collect();
     assert_eq!(
         refs,
         [
-            ("U2", "identity", 1),
-            ("U4", "identity", 3),
-            ("U5", "identity", 5),
-            ("U5", "configure", 7),
-            ("U5", "data", 9),
+            ("U2", "identity", 2),
+            ("U4", "identity", 4),
+            ("U5", "identity", 6),
+            ("U5", "configure", 8),
+            ("U5", "data", 10),
         ]
     );
     let u4 = once(
@@ -191,10 +194,10 @@ fn a_second_device_gets_its_own_select_and_is_read_after_the_flash() {
          let (status, value) = match spi1.transfer(&mut r, Spi1Device::U5, &[0xad], &mut buf4) {",
     );
     assert!(u4 < u5 && u5 < wake && wake < data);
-    assert!(once(main, "record(3, 1, status, value);") < u5);
-    assert!(u5 < once(main, "record(5, 1, status, value);"));
-    assert!(wake < once(main, "record(7, 1, status, value);"));
-    assert!(data < once(main, "record(9, 2, status, value);"));
-    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 12] = [0; 12];"));
+    assert!(once(main, "record(4, 1, status, value);") < u5);
+    assert!(u5 < once(main, "record(6, 1, status, value);"));
+    assert!(wake < once(main, "record(8, 1, status, value);"));
+    assert!(data < once(main, "record(10, 2, status, value);"));
+    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 13] = [0; 13];"));
     assert!(main.contains("Spi1Selects { pa0, pa1 }"));
 }

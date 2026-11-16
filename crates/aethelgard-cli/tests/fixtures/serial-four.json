@@ -1,5 +1,6 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
+  "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "serial-four",
   "mcu": {
@@ -396,7 +397,9 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
     },
     {
       "label": "GPS",
@@ -417,7 +420,9 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
     },
     {
       "label": "CRSF",
@@ -438,7 +443,9 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 8002,
+      "peer_deviation_source": "cited"
     },
     {
       "label": "SBUS",
@@ -459,7 +466,9 @@
         "stop_bits": 2,
         "inverted": true
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
     }
   ]
 }

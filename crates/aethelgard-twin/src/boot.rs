@@ -142,8 +142,15 @@ pub struct Register {
 // and the status codes (`aethelgard-svd-hal` `board/firmware.rs`), so the
 // judge reads the records as it defines them (`INV-07`); `tests/board.rs`
 // proves the two agree.
-/// Where the first I2C record starts, from the boot word: the word after it.
-pub const RECORD_OFFSET: u32 = 4;
+/// Where the first I2C record starts, from the boot word: after the boot word
+/// (word 0) and the brown-out word (word 1, [`BROWN_OUT_OFFSET`];
+/// `AET-WO-4230` D10).
+pub const RECORD_OFFSET: u32 = 8;
+
+/// Where the brown-out word sits, from the boot word: `FLASH_OPTSR_CUR`
+/// exactly as the firmware read it, once, early in `main` (`AET-WO-4230`
+/// D7, D10).
+pub const BROWN_OUT_OFFSET: u32 = 4;
 
 /// One record is the status word, then the bytes read in as many words as
 /// they need, at least one, the first byte on the wire as the most
@@ -169,7 +176,206 @@ pub const STATUS_RXNE: u32 = 0x2202_0003;
 pub const STATUS_STOP: u32 = 0x2202_0004;
 /// An SPI read whose bounded wait for `SR.RXP` expired (`AET-WO-4200`).
 pub const STATUS_RXP: u32 = 0x2202_0005;
+/// An SPI read whose bounded wait for `SR.EOT` expired before the firmware
+/// cleared `SPE` (RM0433 Rev 9 §50.4.12; `AET-WO-4230` B0).
+pub const STATUS_EOT: u32 = 0x2202_0006;
 
+/// Renode's name of the embedded flash memory's controller in the stock
+/// platform (`flashController: MTD.STM32H7_FlashController @ sysbus
+/// 0x52002000`, [`platform::STOCK_FILE`] line 66): the composition logs its
+/// accesses on every boot (`AET-WO-4230` D10).
+pub const FLASH_RENODE: &str = "flashController";
+
+/// The `FLASH_OPTCR` unlock keys, written in this order to `FLASH_OPTKEYR`
+/// (RM0433 Rev 9 §4.5.1, p. 182).
+pub const OPTKEY1: u32 = 0x0819_2A3B;
+pub const OPTKEY2: u32 = 0x4C5D_6E7F;
+
+/// What Renode 1.17.0's `FLASH_OPTSR_CUR` reads at reset (measured,
+/// `AET-WO-4230` FEEDBACK §2; `STM32H7_FlashController.cs` L118–119):
+/// `BOR_LEV` `00`. It is not RM0433 Rev 9 Table 21's factory word (p. 177),
+/// whose bit 26 is 0 and whose bits 28:27 and 20:19 are part-dependent: the
+/// presentation keeps the model's other bits and replaces `BOR_LEV` alone.
+pub const RENODE_OPTSR_RESET: u32 = 0x0406_AAF0;
+
+/// The brown-out level a boot of the topology must record, and where
+/// (`AET-WO-4230` §1.6, D10): the declared level (`topology.bor_level`,
+/// `RUL-16`), the word in RAM, and the flash controller's registers, every
+/// address and position from ST's header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrownOut {
+    pub level: u8,
+    /// The boot record's word 1: the boot word plus [`BROWN_OUT_OFFSET`].
+    pub word_at: u32,
+    /// `FLASH_OPTSR_BOR_LEV_Msk` (bits 3:2) and its position.
+    pub mask: u32,
+    pub shift: u32,
+    /// `FLASH_R_BASE`.
+    pub base: u32,
+    /// The offsets in `FLASH_TypeDef` of `OPTKEYR`, `OPTCR`, `OPTSR_CUR` and
+    /// `OPTSR_PRG`.
+    pub optkeyr: u32,
+    pub optcr: u32,
+    pub optsr_cur: u32,
+    pub optsr_prg: u32,
+    /// `FLASH_OPTCR_OPTSTART`.
+    pub optstart: u32,
+}
+
+/// How the boot record's brown-out word reads against the declared level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrownOutOutcome {
+    Pass,
+    /// Still the judge's fill: the firmware never recorded `OPTSR_CUR`. Its
+    /// `BOR_LEV` bits read 3, so it is named before they are compared.
+    Unset,
+    /// The recorded `BOR_LEV` is not the declared level.
+    Mismatch {
+        recorded: u8,
+    },
+}
+
+impl BrownOut {
+    /// The `BOR_LEV` field the twin presents: `level` in place of the
+    /// model's `00`.
+    pub fn expected(&self) -> u32 {
+        u32::from(self.level) << self.shift
+    }
+
+    /// The word the platform programs into `OPTSR_PRG` and so presents in
+    /// `OPTSR_CUR`: [`RENODE_OPTSR_RESET`] with `BOR_LEV` set to the level.
+    pub fn presented(&self) -> u32 {
+        (RENODE_OPTSR_RESET & !self.mask) | self.expected()
+    }
+
+    /// Word 1 of the boot record, judged.
+    pub fn judge(&self, word: u32) -> BrownOutOutcome {
+        if word == RECORD_UNSET {
+            BrownOutOutcome::Unset
+        } else if word & self.mask == self.expected() {
+            BrownOutOutcome::Pass
+        } else {
+            BrownOutOutcome::Mismatch {
+                recorded: u8::try_from((word & self.mask) >> self.shift).unwrap_or(u8::MAX),
+            }
+        }
+    }
+
+    /// The platform's `init add:` block on the flash controller that leaves
+    /// `OPTSR_CUR` at [`Self::presented`], as a factory step would
+    /// (`AET-WO-4230` FEEDBACK §2, m1, measured): the two option keys, the
+    /// word into `OPTSR_PRG`, `OPTSTART`, and last a wrong key, which leaves
+    /// `OPTCR` locked (`OPTLOCK` reads 1), as silicon resets. Emitted for
+    /// every level, 0 included.
+    pub fn presentation(&self) -> String {
+        format!(
+            "\n// The brown-out level the specification declares (mcu.bor_level {level}), presented in\n\
+             // FLASH_OPTSR_CUR as a factory step leaves it (AET-WO-4230 §1.6): the option keys, the\n\
+             // word into FLASH_OPTSR_PRG, OPTSTART, then a wrong key to lock FLASH_OPTCR again.\n\
+             {FLASH_RENODE}:\n    init add:\n\
+             \x20       WriteDoubleWord 0x{keyr:02X} 0x{k1:08X}\n\
+             \x20       WriteDoubleWord 0x{keyr:02X} 0x{k2:08X}\n\
+             \x20       WriteDoubleWord 0x{prg:02X} 0x{word:08X}\n\
+             \x20       WriteDoubleWord 0x{cr:02X} 0x{start:08X}\n\
+             \x20       WriteDoubleWord 0x{keyr:02X} 0x00000000\n",
+            level = self.level,
+            keyr = self.optkeyr,
+            k1 = OPTKEY1,
+            k2 = OPTKEY2,
+            prg = self.optsr_prg,
+            word = self.presented(),
+            cr = self.optcr,
+            start = self.optstart,
+        )
+    }
+
+    /// What the flash controller's access log of each boot shows that the
+    /// bring-up never does, each once, in the order first seen
+    /// (`AET-WO-4230` D10, WO §5.3): any write, at any offset or width (a
+    /// firmware cannot program the twin's option bytes itself); any read but
+    /// a word read of `OPTSR_CUR`; more than one such read in a boot; and,
+    /// in the boot the reads judge (the last), not exactly one; and, where
+    /// that boot read it once, a `word` (the boot record's word 1) other
+    /// than, in all 32 bits, the value that read returned: a firmware that
+    /// records a word it did not read, such as the declared level, would
+    /// otherwise pass wherever the level is presented (the adversarial
+    /// pass's F2). A `word` still at [`RECORD_UNSET`] is [`Self::judge`]'s
+    /// to name. `boots` are [`crate::serial::Access`]es of [`FLASH_RENODE`]
+    /// alone.
+    pub fn judge_accesses(&self, boots: &[Vec<crate::serial::Access>], word: u32) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        let mut note = |x: String| {
+            if !out.contains(&x) {
+                out.push(x);
+            }
+        };
+        for (k, boot) in boots.iter().enumerate() {
+            let mut reads = 0usize;
+            let mut returned = 0u64;
+            for a in boot.iter().filter(|a| a.source == FLASH_RENODE) {
+                if a.write {
+                    note(format!(
+                        "the firmware wrote the flash controller ({} bits at {:#X}, value {:#X})",
+                        a.bits, a.offset, a.value
+                    ));
+                } else if a.bits != 32 || a.offset != self.optsr_cur {
+                    note(format!(
+                        "the firmware read the flash controller other than FLASH_OPTSR_CUR whole ({} bits at {:#X})",
+                        a.bits, a.offset
+                    ));
+                } else {
+                    reads += 1;
+                    returned = a.value;
+                }
+            }
+            let last = k + 1 == boots.len();
+            if last && reads == 1 && word != RECORD_UNSET && u64::from(word) != returned {
+                note(format!(
+                    "the boot record's word 1 is {word:#010X}, not {returned:#010X}, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+                ));
+            }
+            if reads > 1 || (last && reads != 1) {
+                note(format!(
+                    "the firmware read FLASH_OPTSR_CUR {reads} times in {}, not once",
+                    if last {
+                        "the boot the reads judge".to_owned()
+                    } else {
+                        format!("boot {k}")
+                    }
+                ));
+            }
+        }
+        out
+    }
+}
+
+/// The brown-out level a boot of `topology` must record (`AET-WO-4230`
+/// D10), with the flash controller's registers from the header.
+pub fn brown_out(topology: &SolvedTopology) -> Result<BrownOut, TwinError> {
+    let f = cmsis::register_facts()?;
+    let flash = f.layout("FLASH")?;
+    let (shift, width) = f.field("FLASH_OPTSR_BOR_LEV")?;
+    let mask = ((1u32 << width) - 1) << shift;
+    if u32::from(topology.bor_level) << shift & !mask != 0 {
+        return Err(TwinError::InvalidTopology(
+            aethelgard_ir::IrValidationError::BorLevelOutOfRange {
+                value: topology.bor_level,
+            },
+        ));
+    }
+    Ok(BrownOut {
+        level: topology.bor_level,
+        word_at: boot_word()? + BROWN_OUT_OFFSET,
+        mask,
+        shift,
+        base: f.base("FLASH_R")?,
+        optkeyr: flash.offset("OPTKEYR", 0)?,
+        optcr: flash.offset("OPTCR", 0)?,
+        optsr_cur: flash.offset("OPTSR_CUR", 0)?,
+        optsr_prg: flash.offset("OPTSR_PRG", 0)?,
+        optstart: 1 << f.position("FLASH_OPTCR_OPTSTART_Pos")?,
+    })
+}
 /// SysTick's Control and Status Register (ARMv7-M Architecture Reference
 /// Manual, B3.3.2) and the NVIC's Interrupt Set-Enable Registers (B3.4.4):
 /// after the boot word, every one must read 0, because the generated
@@ -296,10 +502,12 @@ pub struct Unmodelled {
 /// What a boot must leave for the devices.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IdentityPlan {
-    /// One per step of each device whose part has a model: the I2C devices
-    /// in the order they are declared, then the SPI devices in theirs, each
-    /// device's steps in its script's order; the record index is the
-    /// position.
+    /// One per step of each device whose part has a model: every identity
+    /// and configuration step, then every data read (`AET-WO-4230` R6, the
+    /// architect's ruling on Q-E: one start-up wait between them), each half
+    /// with the I2C devices in the order they are declared, then the SPI
+    /// devices in theirs, and each device's steps in its script's order; the
+    /// record index is the position.
     pub checks: Vec<StepCheck>,
     pub unmodelled: Vec<Unmodelled>,
 }
@@ -337,26 +545,28 @@ impl StepCheck {
             (STATUS_RXNE, false) => Outcome::Timeout("RXNE"),
             (STATUS_STOP, false) => Outcome::Timeout("STOPF"),
             (STATUS_RXP, true) => Outcome::Timeout("RXP"),
+            (STATUS_EOT, true) => Outcome::Timeout("EOT"),
             _ => Outcome::Invalid,
         }
     }
 }
 
-/// The steps a boot of the topology's devices must make: the I2C devices
-/// in the specification's order, then the SPI devices in theirs, each
-/// device's script in order ([`parts::Part::steps`]); and the devices it
-/// cannot check. The steps are the parts table's; the device is modelled when
-/// [`model::kind`] says so.
+/// The steps a boot of the topology's devices must make: every identity and
+/// configuration step, then every data read (`AET-WO-4230` R6: the firmware
+/// waits once, for the largest start-up, between the two), each half with
+/// the I2C devices in the specification's order, then the SPI devices in
+/// theirs, each device's script in order ([`parts::Part::steps`]); and the
+/// devices it cannot check. The steps are the parts table's; the device is
+/// modelled when [`model::kind`] says so.
 pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = IdentityPlan::default();
-    let mut next = RECORD_OFFSET;
-    let mut push = |plan: &mut IdentityPlan,
-                    reference: &str,
-                    peripheral: &str,
-                    part: &str,
-                    wire: Wire,
-                    device: &dyn Fn() -> Result<String, TwinError>|
+    let push = |plan: &mut IdentityPlan,
+                reference: &str,
+                peripheral: &str,
+                part: &str,
+                wire: Wire,
+                device: &dyn Fn() -> Result<String, TwinError>|
      -> Result<(), TwinError> {
         let Some(model) = model::kind(part)? else {
             plan.unmodelled.push(Unmodelled {
@@ -373,18 +583,6 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
         };
         let device = device()?;
         for step in p.steps() {
-            let words = value_words(step.width);
-            let at = next;
-            next = at
-                .checked_add(4 * (1 + words))
-                .ok_or_else(|| TwinError::InvalidDeviceName {
-                    reference: reference.to_owned(),
-                })?;
-            let status_at = base
-                .checked_add(at)
-                .ok_or_else(|| TwinError::InvalidDeviceName {
-                    reference: reference.to_owned(),
-                })?;
             let stimulus = match (&p.script, step.kind) {
                 (Some(s), parts::StepKind::Data) => s
                     .channels
@@ -402,8 +600,9 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
                 width: step.width,
                 expected: step.expected,
                 mask: step.mask,
-                status_at,
-                value_at: status_at + 4,
+                // Placed below, once the steps are in the boot's order.
+                status_at: 0,
+                value_at: 0,
                 level: model.level(),
                 // A data read whose stimulus the model cannot be set to has
                 // no expected value the twin can witness (D3).
@@ -440,6 +639,22 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
             &|| platform::spi_device_path(&s.peripheral, &s.reference),
         )?;
     }
+    // Every identity and configuration step, then every data read, each half
+    // in the order above (a stable sort), then each record after the last.
+    plan.checks.sort_by_key(|c| c.step == parts::StepKind::Data);
+    let mut next = RECORD_OFFSET;
+    for c in &mut plan.checks {
+        let overflow = || TwinError::InvalidDeviceName {
+            reference: c.reference.clone(),
+        };
+        let at = next;
+        next = at
+            .checked_add(4 * (1 + value_words(c.width)))
+            .ok_or_else(overflow)?;
+        let status_at = base.checked_add(at).ok_or_else(overflow)?;
+        c.status_at = status_at;
+        c.value_at = status_at + 4;
+    }
     Ok(plan)
 }
 
@@ -456,11 +671,14 @@ pub struct Image {
     /// full, which must hold exactly the solved enable bits.
     pub registers: Vec<Register>,
     /// Solved fields Renode 1.17.0 does not store, so no read can judge them
-    /// (spike F11): `OTYPER` of a port with an I2C pin, an I2C's `TIMINGR`;
+    /// (spike F11): `OTYPER` of every port with a solved pin, which the
+    /// bring-up writes whole (`AET-WO-4230` D5, B0), an I2C's `TIMINGR`;
     /// a timer's `BDTR.MOE` and each channel's `OCxPE` (`AET-WO-4300a`).
     pub unobservable: Vec<String>,
     /// The identity reads of the devices (`AET-WO-2202`, `AET-WO-4200`).
     pub identity: IdentityPlan,
+    /// The brown-out word the boot must record (`AET-WO-4230` D10).
+    pub brown_out: BrownOut,
 }
 
 /// The enable registers whose reset value is not 0 (RM0433 Rev 9 Tables
@@ -647,7 +865,6 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         gates.insert(a.peripheral.clone());
         gates.insert(format!("GPIO{port}"));
         if a.peripheral.starts_with("I2C") {
-            unobservable.push(format!("GPIO{port}.OTYPER"));
             unobservable.push(format!("{}.TIMINGR", a.peripheral));
         }
         if let Some((timer, channel)) = aethelgard_ir::motor::timer_channel(&a.signal) {
@@ -657,7 +874,6 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             // counter waiting on `ETR`; a motor pin's output type is a tag
             // too (adversarial H2).
             unobservable.push(format!("{}.SMCR.ECE", a.peripheral));
-            unobservable.push(format!("GPIO{port}.OTYPER"));
             if aethelgard_ir::motor::has_main_output_enable(timer) {
                 unobservable.push(format!("{}.BDTR.MOE", a.peripheral));
                 unobservable.push(format!("{}.BDTR.BKE", a.peripheral));
@@ -678,6 +894,9 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         e.1 |= value;
     };
     for &(port, index, af) in pins.values() {
+        // Every configured port's `OTYPER` is written whole (`AET-WO-4230`
+        // D5, B0), and Renode stores none of its bits (spike F11).
+        unobservable.push(format!("GPIO{port}.OTYPER"));
         let base = f.base(&format!("GPIO{port}"))?;
         let mode = if af.is_some() { MODE_AF } else { MODE_OUTPUT };
         field(
@@ -761,5 +980,6 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         registers,
         unobservable,
         identity,
+        brown_out: brown_out(topology)?,
     })
 }

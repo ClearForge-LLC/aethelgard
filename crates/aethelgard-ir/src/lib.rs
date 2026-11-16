@@ -21,12 +21,13 @@ pub mod parts;
 pub mod power;
 pub mod power_parts;
 pub mod serial;
+pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
-pub use serial::{Framing, Parity, SerialPort, SerialRole, SolvedSerialPort};
+pub use serial::{Framing, Parity, PeerDeviationSource, SerialPort, SerialRole, SolvedSerialPort};
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -56,8 +57,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `junction`, `controls` and `dc_bias_derating`. Version 11 requires
 /// `mcu.supply_source` (`AET-WO-4300g`, renumbered from 9 by the same rule):
 /// the connector pin the supply enters by, or `null` under a regulator.
-/// Nothing supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 11;
+/// Version 12 requires `peer_deviation_ppm` on every serial port, the remote
+/// transmitter's clock deviation, with its `peer_deviation_source`, and
+/// `acknowledge_unwitnessed` (an empty list acknowledges none), taken by
+/// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
+/// after `4300d3` and then `4300g`). Nothing supplies any of them for an
+/// older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -70,7 +76,7 @@ pub const SWCLK: &str = "SWCLK";
 pub const NRST: &str = "NRST";
 pub const DEBUG_NETS: [&str; 3] = [SWDIO, SWCLK, NRST];
 
-/// The top-level specification, version 11 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 12 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -111,6 +117,13 @@ pub struct Specification {
     pub accept_lifecycle: Vec<LifecycleAcceptance>,
     /// Each serial port: a USART or UART the solver assigns (`AET-WO-4300b`).
     pub serial_ports: Vec<SerialPort>,
+    /// Each register's fields that no independent rule and no measured model
+    /// reaction witnesses, acknowledged by register and class with the reason
+    /// (`AET-WO-4230` R1, the architect's ruling on PR #161, comment
+    /// 6911424608). `validate` refuses a malformed entry; the CLI refuses a
+    /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
+    /// list acknowledges none.
+    pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -125,6 +138,76 @@ pub struct LifecycleAcceptance {
 
 /// The longest acknowledgement statement, in bytes.
 pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
+
+/// One acknowledgement of unwitnessed ledger fields (`AET-WO-4230` R1, the
+/// architect's ruling on PR #161, comment 6911424608): the register as the
+/// ledger names it (`SPI1.CFG1`), the class its rows carry
+/// ([`UnwitnessedClass`], held as written so that `validate` refuses an
+/// unknown one by name), the exact fields it covers, and why the board is
+/// fabricated with them unwitnessed. At most one entry per register and
+/// class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct UnwitnessedAcknowledgement {
+    pub register: String,
+    pub class: String,
+    pub fields: Vec<String>,
+    pub reason: String,
+}
+
+impl UnwitnessedAcknowledgement {
+    /// The class, typed; `None` for a name `validate` refuses.
+    pub fn class_kind(&self) -> Option<UnwitnessedClass> {
+        UnwitnessedClass::parse(&self.class)
+    }
+}
+
+/// The ledger classes whose rows an acknowledgement covers (`AET-WO-4230`
+/// contract D9): neither an independent rule nor a measured model reaction
+/// judges them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub enum UnwitnessedClass {
+    #[serde(rename = "ignored-by-model")]
+    IgnoredByModel,
+    #[serde(rename = "same-source")]
+    SameSource,
+    #[serde(rename = "silicon-only")]
+    SiliconOnly,
+}
+
+impl UnwitnessedClass {
+    /// Every class, in the order the ruling names them.
+    pub const ALL: [Self; 3] = [Self::IgnoredByModel, Self::SameSource, Self::SiliconOnly];
+
+    /// The name the specification and the ledger use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::IgnoredByModel => "ignored-by-model",
+            Self::SameSource => "same-source",
+            Self::SiliconOnly => "silicon-only",
+        }
+    }
+
+    /// The class `name` names exactly, if any.
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.name() == name)
+    }
+}
+
+/// Whether `register` has the ledger's shape for a register: a peripheral
+/// and a register name joined by one `.`, each an upper-case letter followed
+/// by upper-case letters, digits or `_` (`SPI1.CFG1`, `FLASH.OPTSR_CUR`).
+fn register_name_ok(register: &str) -> bool {
+    let segment = |s: &str| {
+        let b = s.as_bytes();
+        b.first().is_some_and(u8::is_ascii_uppercase)
+            && b.iter()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == b'_')
+    };
+    register
+        .split_once('.')
+        .is_some_and(|(p, r)| segment(p) && segment(r))
+}
 
 /// The banner every verdict, generated file and fabrication package carries
 /// when the board uses an `eol` or `nrnd` part (`AET-WO-4210`, ruled by Scotty
@@ -287,9 +370,10 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
 /// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
 /// (`AET-WO-4300a`), version 6 `power` (`AET-WO-4300d`), version 7
-/// `serial_ports` (`AET-WO-4300b`); an older file is refused, never
-/// defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 7;
+/// `serial_ports` (`AET-WO-4300b`), version 8 `spi_controllers`,
+/// `i2c_timings` and `bor_level` (`AET-WO-4230`); an older file is refused,
+/// never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 8;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -352,6 +436,60 @@ pub struct SolvedTopology {
     /// `assignments` on `<peripheral>_TX` / `_RX` (`AET-WO-4300b`, `RUL-16`).
     #[serde(deserialize_with = "unique_keys")]
     pub serial_ports: BTreeMap<String, SolvedSerialPort>,
+    /// Each solved SPI controller, keyed by peripheral (`SPI1` … `SPI6`):
+    /// its kernel clock, the speed declared for it and the baud rate solved
+    /// (`AET-WO-4230` §1.1, §1.2). [`silicon::check_spi`] judges it.
+    #[serde(deserialize_with = "unique_keys")]
+    pub spi_controllers: BTreeMap<String, SolvedSpiController>,
+    /// Each solved I2C controller, keyed by peripheral (`I2C1` … `I2C4`):
+    /// its kernel clock, `CR1` and one `TIMINGR` per mode (`AET-WO-4230`
+    /// §1.4). [`silicon::check_i2c`] judges it.
+    #[serde(deserialize_with = "unique_keys")]
+    pub i2c_timings: BTreeMap<String, SolvedI2cTiming>,
+    /// `mcu.bor_level`, copied by `solve` so the twin presents it without
+    /// reading the specification (`AET-WO-4230` §1.6, `RUL-16`).
+    pub bor_level: u8,
+}
+
+/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
+/// for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20; `per_ck`
+/// is `hsi_ker_ck` at `CKPERSEL`'s reset `00`, §8.7.19), `hsi_ker_ck` for
+/// SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6 (`RCC_D3CCIPR.SPI6SEL` =
+/// `011`, §8.7.22).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpiKernel {
+    PerCk,
+    HsiKerCk,
+}
+
+/// One SPI controller as solved (`AET-WO-4230` §1.2, contract D2 and
+/// amendment 1). `declared_hz` is the lowest `speed_hz` of the buses on it;
+/// `mbr` the least with the fastest kernel (`kernel_hz` at HSI's worst
+/// +14,984 ppm, rounded up) divided by `2^(mbr+1)` at or below it;
+/// `achieved_hz` the nominal kernel so divided and `achieved_max_hz` the
+/// fastest, each rounded down. `check speeds` judges `achieved_max_hz`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedSpiController {
+    pub kernel: SpiKernel,
+    pub kernel_hz: u64,
+    pub declared_hz: u32,
+    pub mbr: u8,
+    pub achieved_hz: u64,
+    pub achieved_max_hz: u64,
+}
+
+/// One I2C controller as solved (`AET-WO-4230` §1.4, contract D2, D3):
+/// its kernel clock, the whole `CR1` the bring-up writes with `PE` clear,
+/// and `TIMINGR` for each of `Standard100k`, `Fast400k` and `FastPlus1M`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedI2cTiming {
+    pub kernel_hz: u64,
+    pub cr1: u32,
+    #[serde(deserialize_with = "unique_keys")]
+    pub timingr: BTreeMap<String, u32>,
 }
 
 /// The solved power tree. Every load returns through `GND`, so
@@ -624,6 +762,7 @@ pub(crate) use object_only;
 object_only!(
     Specification,
     LifecycleAcceptance,
+    UnwitnessedAcknowledgement,
     Mcu,
     SupplySource,
     VoltageDomain,
@@ -637,6 +776,8 @@ object_only!(
     AnalogLine,
     SolvedI2cDevice,
     SolvedSpiDevice,
+    SolvedSpiController,
+    SolvedI2cTiming,
     SpiLine,
     SolvedPower,
     SolvedSense,
@@ -679,6 +820,12 @@ struct SolvedWire {
     power: Option<Option<SolvedPower>>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     serial_ports: Option<BTreeMap<String, SolvedSerialPort>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    spi_controllers: Option<BTreeMap<String, SolvedSpiController>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    i2c_timings: Option<BTreeMap<String, SolvedI2cTiming>>,
+    #[serde(default)]
+    bor_level: Option<u8>,
 }
 
 /// A key that is present, whatever its value: `null` reads as `Some(None)`.
@@ -758,6 +905,25 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("serial_ports")),
                 };
+                // The same for `spi_controllers`, `i2c_timings` and
+                // `bor_level`, which version 8 added; an older file's stand-in
+                // is never read.
+                let current = w.schema_version == SOLVED_SCHEMA_VERSION;
+                let spi_controllers = match w.spi_controllers {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("spi_controllers")),
+                };
+                let i2c_timings = match w.i2c_timings {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("i2c_timings")),
+                };
+                let bor_level = match w.bor_level {
+                    Some(b) => b,
+                    None if !current => 0,
+                    None => return Err(serde::de::Error::missing_field("bor_level")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -773,6 +939,9 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     motor_outputs,
                     power,
                     serial_ports,
+                    spi_controllers,
+                    i2c_timings,
+                    bor_level,
                 })
             }
         }
@@ -1111,6 +1280,30 @@ pub enum IrValidationError {
     )]
     LifecycleAcceptanceUnused { id: String },
     #[error(
+        "`acknowledge_unwitnessed` names register `{id}`, which is not a peripheral and a register joined by one `.`, each an upper-case letter then upper-case letters, digits or `_` (`SPI1.CFG1`)"
+    )]
+    UnwitnessedRegisterMalformed { id: String },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as class `{class}`: the class is `ignored-by-model`, `same-source` or `silicon-only` (AET-WO-4230 R1)"
+    )]
+    UnwitnessedClassUnknown { id: String, class: String },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as `{class}` with no fields: an entry names the exact fields it covers"
+    )]
+    UnwitnessedFieldsEmpty { id: String, class: String },
+    #[error(
+        "`acknowledge_unwitnessed` names field `{field}` of register `{id}` as `{class}` twice"
+    )]
+    UnwitnessedFieldTwice {
+        id: String,
+        class: String,
+        field: String,
+    },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as `{class}` twice: one entry per register and class"
+    )]
+    UnwitnessedAcknowledgedTwice { id: String, class: String },
+    #[error(
         "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
     )]
     PartOnWrongBus {
@@ -1264,6 +1457,24 @@ pub enum IrValidationError {
         citation: &'static str,
     },
     #[error(
+        "serial port `{id}` is an `rc_crsf` port and declares a `peer_deviation_ppm` of {declared_ppm}, below {cited_ppm} ppm, the spread of the two CRSF bauds it cites ({citation})"
+    )]
+    PeerDeviationBelowCited {
+        id: String,
+        declared_ppm: u32,
+        cited_ppm: u32,
+        citation: String,
+    },
+    #[error(
+        "serial port `{id}` has role `{role}` and calls its `peer_deviation_ppm` of {declared_ppm} `cited`: only an `rc_crsf` port's figure of {cited_ppm} ppm, the spread of the two CRSF bauds the repository cites, is cited; declare any other figure `declared` (AET-WO-4230 R2)"
+    )]
+    PeerDeviationNotCited {
+        id: String,
+        role: &'static str,
+        declared_ppm: u32,
+        cited_ppm: u32,
+    },
+    #[error(
         "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
     )]
     UnjudgedSerialConstraint { id: String },
@@ -1271,6 +1482,14 @@ pub enum IrValidationError {
         "serial port or net `{id}` disagrees with the solved topology: every assignment on a USART or UART is one port's TX or RX on `<peripheral>_TX` or `_RX` of the port's own peripheral, one of USART1 to UART8, each peripheral once, indices exactly 0..n, the framing's shape valid and not contradicting its role, and the kernel clock, BRR, actual baud and error what `serial` recomputes from the clock"
     )]
     SerialPortMismatch { id: String },
+    #[error(
+        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the reset clock gives it, its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at HSI's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
+    )]
+    SpiControllerMismatch { id: String },
+    #[error(
+        "I2C controller `{id}` disagrees with the solved topology: one entry per I2C peripheral of `assignments` and no other, its kernel clock what the reset clock gives it, CR1 the bring-up's, and TIMINGR for exactly Standard100k, Fast400k and FastPlus1M, each the one `solve` synthesizes (RM0433 Rev 9 §47.4.9)"
+    )]
+    I2cTimingMismatch { id: String },
     #[error(
         "timer `{id}` carries outputs that differ in protocol, rate, PSC or ARR: the outputs of one timer share its counter"
     )]
@@ -1495,6 +1714,11 @@ impl IrValidationError {
             Self::LifecycleAcceptedTwice { .. } => "LifecycleAcceptedTwice",
             Self::LifecycleStatementInvalid { .. } => "LifecycleStatementInvalid",
             Self::LifecycleAcceptanceUnused { .. } => "LifecycleAcceptanceUnused",
+            Self::UnwitnessedRegisterMalformed { .. } => "UnwitnessedRegisterMalformed",
+            Self::UnwitnessedClassUnknown { .. } => "UnwitnessedClassUnknown",
+            Self::UnwitnessedFieldsEmpty { .. } => "UnwitnessedFieldsEmpty",
+            Self::UnwitnessedFieldTwice { .. } => "UnwitnessedFieldTwice",
+            Self::UnwitnessedAcknowledgedTwice { .. } => "UnwitnessedAcknowledgedTwice",
             Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
@@ -1520,8 +1744,12 @@ impl IrValidationError {
             Self::SerialFramingContradictsRole { .. } => "SerialFramingContradictsRole",
             Self::SerialNegotiatedOffCrsf { .. } => "SerialNegotiatedOffCrsf",
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
+            Self::PeerDeviationBelowCited { .. } => "PeerDeviationBelowCited",
+            Self::PeerDeviationNotCited { .. } => "PeerDeviationNotCited",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
+            Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
+            Self::I2cTimingMismatch { .. } => "I2cTimingMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
@@ -1643,6 +1871,11 @@ impl IrValidationError {
             | Self::LifecycleAcceptedTwice { id }
             | Self::LifecycleStatementInvalid { id }
             | Self::LifecycleAcceptanceUnused { id }
+            | Self::UnwitnessedRegisterMalformed { id }
+            | Self::UnwitnessedClassUnknown { id, .. }
+            | Self::UnwitnessedFieldsEmpty { id, .. }
+            | Self::UnwitnessedFieldTwice { id, .. }
+            | Self::UnwitnessedAcknowledgedTwice { id, .. }
             | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
@@ -1664,8 +1897,12 @@ impl IrValidationError {
             | Self::SerialFramingContradictsRole { id, .. }
             | Self::SerialNegotiatedOffCrsf { id, .. }
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
+            | Self::PeerDeviationBelowCited { id, .. }
+            | Self::PeerDeviationNotCited { id, .. }
             | Self::UnjudgedSerialConstraint { id }
-            | Self::SerialPortMismatch { id } => Some(id),
+            | Self::SerialPortMismatch { id }
+            | Self::SpiControllerMismatch { id }
+            | Self::I2cTimingMismatch { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
             Self::PartsTable { part, .. } | Self::PowerPartsTable { part, .. } => part.as_deref(),
             Self::Power { id, .. } => Some(id),
@@ -2560,7 +2797,68 @@ impl Specification {
             motor_shape(m)?;
         }
         // 13c: each serial port, in document order (`AET-WO-4300b`).
-        serial::validate(&self.serial_ports)
+        serial::validate(&self.serial_ports)?;
+        // 13d: each unwitnessed acknowledgement's shape (`AET-WO-4230` R1).
+        self.validate_unwitnessed()
+    }
+
+    /// Step 13d (`AET-WO-4230` R1), each entry in document order: a register
+    /// of the ledger's shape, a class of [`UnwitnessedClass`], at least one
+    /// field and none twice, a reason by the repository's rule for a source
+    /// ([`board::source`], `InvalidSource` naming
+    /// `acknowledge_unwitnessed[i].reason`), and no second entry for the same
+    /// register and class. Whether each field is one the ledger has for that
+    /// register and class needs the pin table: the CLI's `validate` judges it
+    /// (`UnwitnessedAcknowledgementStale`).
+    fn validate_unwitnessed(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+        let mut entries = BTreeSet::new();
+        for (i, a) in self.acknowledge_unwitnessed.iter().enumerate() {
+            let id = || a.register.clone();
+            if !register_name_ok(&a.register) {
+                return Err(E::UnwitnessedRegisterMalformed { id: id() });
+            }
+            let Some(class) = a.class_kind() else {
+                return Err(E::UnwitnessedClassUnknown {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            };
+            if a.fields.is_empty() {
+                return Err(E::UnwitnessedFieldsEmpty {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            }
+            let mut fields = BTreeSet::new();
+            if let Some(field) = a.fields.iter().find(|f| !fields.insert(f.as_str())) {
+                return Err(E::UnwitnessedFieldTwice {
+                    id: id(),
+                    class: a.class.clone(),
+                    field: field.clone(),
+                });
+            }
+            board::source(&a.reason, &format!("acknowledge_unwitnessed[{i}].reason"))?;
+            if !entries.insert((a.register.as_str(), class)) {
+                return Err(E::UnwitnessedAcknowledgedTwice {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The entry acknowledging `register`'s rows of `class`, if any (at most
+    /// one, once `validate` has passed).
+    pub fn unwitnessed_acknowledgement(
+        &self,
+        register: &str,
+        class: UnwitnessedClass,
+    ) -> Option<&UnwitnessedAcknowledgement> {
+        self.acknowledge_unwitnessed
+            .iter()
+            .find(|a| a.register == register && a.class_kind() == Some(class))
     }
 
     /// Step 2, in the order the README lists.
@@ -2879,6 +3177,15 @@ impl SolvedTopology {
             plain(&p.tx, || format!("serial_ports.{label}.tx"))?;
             plain(&p.rx, || format!("serial_ports.{label}.rx"))?;
         }
+        for p in self.spi_controllers.keys() {
+            plain(p, || format!("spi_controllers.{p}"))?;
+        }
+        for (p, t) in &self.i2c_timings {
+            plain(p, || format!("i2c_timings.{p}"))?;
+            for mode in t.timingr.keys() {
+                plain(mode, || format!("i2c_timings.{p}.timingr.{mode}"))?;
+            }
+        }
         plain(&self.clock.source, || "clock.source".into())?;
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
@@ -2913,6 +3220,7 @@ impl SolvedTopology {
         self.validate_spi_lines()?;
         self.validate_motor_outputs()?;
         serial::validate_solved(self)?;
+        self.validate_controllers()?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -2932,6 +3240,108 @@ impl SolvedTopology {
                     .map_or(0, |l| l.rate_hz);
                 check_spi_clock(reference, p, rate_hz)?;
             }
+        }
+        Ok(())
+    }
+
+    /// Sets `spi_controllers` and `i2c_timings` to what `solve` derives for
+    /// the SPI and I2C peripherals of `assignments`, from `clock` and, for
+    /// SPI, the lowest `rate_hz` of each controller's lines in `spi_lines`;
+    /// a peripheral it derives nothing for is left out, which `validate`
+    /// then refuses. For a topology edited by hand, as a test builds one
+    /// (`AET-WO-4230`); `solve` fills both itself.
+    pub fn derive_controllers(&mut self) {
+        (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
+    }
+
+    /// What [`SolvedTopology::derive_controllers`] sets.
+    fn derived_controllers(
+        &self,
+    ) -> (
+        BTreeMap<String, SolvedSpiController>,
+        BTreeMap<String, SolvedI2cTiming>,
+    ) {
+        let mut spi = BTreeMap::new();
+        let mut i2c = BTreeMap::new();
+        for a in self.assignments.values() {
+            let p = a.peripheral.as_str();
+            if p.starts_with("SPI") {
+                let declared = self
+                    .spi_lines
+                    .iter()
+                    .filter(|(net, _)| {
+                        self.assignments
+                            .get(*net)
+                            .is_some_and(|a| a.peripheral == p)
+                    })
+                    .map(|(_, l)| l.rate_hz)
+                    .min();
+                if let Some(c) =
+                    declared.and_then(|d| solve::spi_controller(p, &self.clock, p, d).ok())
+                {
+                    spi.insert(p.to_owned(), c);
+                }
+            } else if p.starts_with("I2C")
+                && let Some(t) = solve::i2c_timing(&self.clock, p)
+            {
+                i2c.insert(p.to_owned(), t);
+            }
+        }
+        (spi, i2c)
+    }
+
+    /// `bor_level` is 0 to 3; `spi_controllers` and `i2c_timings` hold
+    /// exactly the SPI and I2C peripherals of `assignments`, each with what
+    /// `solve` derives from `clock` and, for SPI, the lowest `rate_hz` of the
+    /// buses on it in `spi_lines` (`AET-WO-4230`). It does not judge those
+    /// values for silicon: that is [`silicon`]'s rules (`RUL-20`).
+    fn validate_controllers(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        if self.bor_level > MAX_BOR_LEVEL {
+            return Err(E::BorLevelOutOfRange {
+                value: self.bor_level,
+            });
+        }
+        let on = |prefix: &str| -> BTreeSet<&str> {
+            self.assignments
+                .values()
+                .map(|a| a.peripheral.as_str())
+                .filter(|p| p.starts_with(prefix))
+                .collect()
+        };
+        let (want_spi, want_i2c) = self.derived_controllers();
+        // Every SPI peripheral of `assignments` has an entry, no other key
+        // has one, and each is what `solve` derives.
+        let spi_keys: BTreeSet<&str> = self.spi_controllers.keys().map(String::as_str).collect();
+        let spi = on("SPI");
+        if let Some(p) = spi
+            .symmetric_difference(&spi_keys)
+            .next()
+            .copied()
+            .or_else(|| {
+                let (have, want) = (&self.spi_controllers, &want_spi);
+                have.keys()
+                    .map(String::as_str)
+                    .find(|p| have.get(*p) != want.get(*p))
+            })
+        {
+            return Err(E::SpiControllerMismatch { id: p.to_owned() });
+        }
+        let i2c_keys: BTreeSet<&str> = self.i2c_timings.keys().map(String::as_str).collect();
+        let i2c = on("I2C");
+        if let Some(p) = i2c
+            .symmetric_difference(&i2c_keys)
+            .next()
+            .copied()
+            .or_else(|| {
+                let (have, want) = (&self.i2c_timings, &want_i2c);
+                have.keys()
+                    .map(String::as_str)
+                    .find(|p| have.get(*p) != want.get(*p))
+            })
+        {
+            return Err(E::I2cTimingMismatch { id: p.to_owned() });
         }
         Ok(())
     }

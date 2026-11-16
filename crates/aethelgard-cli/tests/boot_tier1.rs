@@ -167,6 +167,17 @@ const CONSOLE_ACCESS: &str = "[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x800
 [00:00:00.000000000] [INFO] usart1: [cpu: 0x8000990] ReadUInt32 from 0x1C (InterruptAndStatus), returned 0x206000C0\n\
 [00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43\n";
 
+/// The reference's brown-out word as the firmware records it: Renode's
+/// `OPTSR_CUR` with `BOR_LEV` 3 presented (`AET-WO-4230` D10, C1 m2).
+const BROWN_OUT: &str = "0x0406AAFC";
+
+/// The flash controller's access log of a boot (`AET-WO-4230` D10, measured
+/// C1 m2): Renode's answer to the judge's command at the load, then the
+/// bring-up's one word read of `OPTSR_CUR`.
+const FLASH_ACCESS: &str = "[00:00:00.000000000] [INFO] flashController: Logging is already enabled
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC
+";
+
 /// What USART1's file backend holds after a boot of `firmware` that sent
 /// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
 fn capture_of(firmware: &[u8]) -> Vec<u8> {
@@ -184,6 +195,7 @@ fn transcript(run_log: &str, reads: &[&str]) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(FLASH_ACCESS);
     s.push_str(CONSOLE_ACCESS);
     s.push_str(INJECTION);
     s.push_str(run_log);
@@ -209,6 +221,9 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
         // The ELF's one self-loop, as the machine still holds it.
         "0xBF10".to_owned(),
         "0xE7FD".to_owned(),
+        // The brown-out word: `FLASH_OPTSR_CUR` as the platform presents
+        // the reference's level 3 (`AET-WO-4230` D10, measured C1 m2).
+        BROWN_OUT.to_owned(),
     ];
     v.extend(registers.iter().map(|r| (*r).to_owned()));
     // U2's record: OK, then the BME280's identity; then U4's, the flash's
@@ -292,7 +307,7 @@ if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.009200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.009200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -434,9 +449,11 @@ fn three_agreeing_witnesses_pass() {
     // `AET-WO-2204` A2 (ruled D6): no interrupt armed.
     assert_eq!(b["registers"][18]["name"], "SysTick.CSR");
     assert_eq!(b["registers"][23]["name"], "NVIC.ISER4");
+    // Every configured port's `OTYPER`, written whole (`AET-WO-4230` B0).
     assert_eq!(
         b["unobservable"],
         serde_json::json!([
+            "GPIOA.OTYPER",
             "GPIOB.OTYPER",
             "I2C1.TIMINGR",
             "USART1.CR1.FIFOEN",
@@ -1068,10 +1085,13 @@ done
     );
 
     // `AET-WO-1203`: `solve` now refuses the 10 Ω pull-up this case once used
-    // (below the 967 Ω floor), so the specification is the lowest that
+    // (below the 1022 Ω floor), so the specification is the lowest that
     // solves. The stub answers what the real bridge answers for a 10 Ω
     // pull-up (`bridge/tests/edges.rs`); the judgement under test is the same.
-    let (spec, platform) = variant(&dir, &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 967")]);
+    let (spec, platform) = variant(
+        &dir,
+        &[("\"pull_up_ohms\": 2200", "\"pull_up_ohms\": 1022")],
+    );
     let (code, v) = pre_pass_on(Some(STUCK), true, &spec, &platform);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["verdict"], "fail");
@@ -1404,12 +1424,13 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     let flood = "[00:00:00.040000000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
     let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
     assert_eq!(code, Some(1), "{v}");
-    // Every read, U4's on SPI too (`AET-WO-4200`), and the console's
-    // writes and its TX pin at the first TDR write (`AET-WO-4300b`): a
-    // dropped line could be one.
+    // Every read, U4's on SPI too (`AET-WO-4200`), the console's writes and
+    // its TX pin at the first TDR write (`AET-WO-4300b`), and the flash
+    // controller's one read (`AET-WO-4230` D10): a dropped line could be one.
     assert_eq!(
         kinds(&v),
         [
+            "flash_controller_access",
             "i2c_transaction_unwitnessed",
             "spi_transaction_unwitnessed",
             "serial_tag_mismatch",
@@ -1545,6 +1566,10 @@ fn two_devices_witness_their_own_reads_in_either_order() {
             "0x00000064",
             &NO_SERIAL_REGISTERS,
         );
+        // `two-bme.json` declares `bor_level` 0: the model's own word, as
+        // the one read of it returned (below).
+        let at = r.iter().position(|w| w == BROWN_OUT).unwrap();
+        r[at] = "0x0406AAF0".into();
         // U5's record after U2's, before U4's on SPI (`AET-WO-4200`).
         let n = r.len();
         r.splice(n - 2..n - 2, GOOD_RECORD.iter().map(|s| (*s).to_owned()));
@@ -1554,7 +1579,8 @@ fn two_devices_witness_their_own_reads_in_either_order() {
             &r.iter().map(String::as_str).collect::<Vec<_>>(),
         )
         .replace(INJECTION, "")
-        .replace(CPU_LISTING, &listing);
+        .replace(CPU_LISTING, &listing)
+        .replacen("returned 0x406AAFC\n", "returned 0x406AAF0\n", 1);
         // A stub that checks the configuration alone: two devices make
         // another command line.
         let tb = Dir::new("tb-two");
@@ -2052,4 +2078,151 @@ fn a_console_too_slow_for_its_board_s_window_is_refused_before_the_boot() {
             && m.contains("DSHOT_WINDOW_NS of 2000000 ns"),
         "{m}"
     );
+}
+
+/// `AET-WO-4230` §1.6, D10, WO §5.3 (lie about the brown-out level): word 1
+/// of the boot record must hold the declared `BOR_LEV` (the reference
+/// declares 3, which the platform presents); another level, or the judge's
+/// fill (whose bits 3:2 read 3), fails by name, naming both.
+#[test]
+fn a_brown_out_word_that_is_not_the_declared_level_fails_naming_both() {
+    let (code, v) = boot(&good());
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["boot"]["brown_out"],
+        serde_json::json!({
+            "level": 3, "address": "0x20000004", "mask": "0x0000000c",
+            "expected": "0x0000000c", "observed": "0x0406aafc", "flash_access": []
+        })
+    );
+    for (word, says) in [
+        (
+            "0x0406AAF0",
+            "reads 0x0406aaf0: BOR_LEV 0, and the specification declares level 3",
+        ),
+        (
+            "0x0406AAF8",
+            "reads 0x0406aaf8: BOR_LEV 2, and the specification declares level 3",
+        ),
+        (
+            "0xFFFFFFFF",
+            "reads 0xffffffff, the judge's fill: the firmware never recorded BOR_LEV; the specification declares level 3",
+        ),
+    ] {
+        // The platform presented that word, and the firmware recorded what
+        // it read (the judge's fill aside, which no read returns).
+        let read = match word {
+            "0xFFFFFFFF" => "0x406AAFC".to_owned(),
+            w => format!("0x{}", w[2..].trim_start_matches('0')),
+        };
+        let text = good()
+            .replace(&format!("\n{BROWN_OUT}\n"), &format!("\n{word}\n"))
+            .replacen("returned 0x406AAFC\n", &format!("returned {read}\n"), 1);
+        let (code, v) = boot(&text);
+        assert_eq!(code, Some(1), "{word}: {v}");
+        assert_eq!(kinds(&v), ["brown_out_level_not_programmed"], "{word}");
+        let m = finding(&v, "brown_out_level_not_programmed").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert_eq!(
+            m,
+            format!("the boot record's FLASH_OPTSR_CUR word at 0x20000004 {says}")
+        );
+    }
+    // Before the boot word, nothing of it is judged, as a record is not.
+    let text = good()
+        .replacen("\n0x2100B007\n", "\n0x00000000\n", 1)
+        .replace(&format!("\n{BROWN_OUT}\n"), "\n0xFFFFFFFF\n");
+    let (_, v) = boot(&text);
+    assert!(
+        finding(&v, "brown_out_level_not_programmed").is_none(),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4230` D10, WO §5.3: the flash controller's access log must show
+/// exactly the bring-up's one word read of `FLASH_OPTSR_CUR`: a firmware
+/// that programs the option bytes itself, reads nothing, or whose log
+/// cannot be read whole fails by name.
+#[test]
+fn the_flash_controller_is_read_once_and_never_written_or_the_boot_fails() {
+    let read = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC\n";
+    let program = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000104] WriteUInt32 to 0x8 (OptionKey), value 0x8192A3B\n\
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000104] WriteUInt32 to 0x8 (OptionKey), value 0x4C5D6E7F\n\
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000104] WriteUInt32 to 0x20 (OptionStatusProgram), value 0x406AAFC\n\
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000104] WriteUInt32 to 0x18 (OptionControl), value 0x2\n";
+    for (edit, says) in [
+        (
+            format!("{program}{read}"),
+            "the firmware wrote the flash controller (32 bits at 0x8, value 0x8192A3B); the firmware wrote the flash controller (32 bits at 0x8, value 0x4C5D6E7F); the firmware wrote the flash controller (32 bits at 0x20, value 0x406AAFC); the firmware wrote the flash controller (32 bits at 0x18, value 0x2)",
+        ),
+        (
+            String::new(),
+            "the firmware read FLASH_OPTSR_CUR 0 times in the boot the reads judge, not once",
+        ),
+        (
+            format!("{read}{read}"),
+            "the firmware read FLASH_OPTSR_CUR 2 times in the boot the reads judge, not once",
+        ),
+        (
+            // A line of the logged source that is not a whole access.
+            "[00:00:00.000000000] [INFO] flashController: ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC\n".to_owned(),
+            "the flash controller's access log could not be read whole, so its one read of FLASH_OPTSR_CUR is unwitnessed",
+        ),
+    ] {
+        let text = good().replacen(read, &edit, 1);
+        let (code, v) = boot(&text);
+        assert_eq!(code, Some(1), "{says}: {v}");
+        assert_eq!(kinds(&v), ["flash_controller_access"], "{says}");
+        assert_eq!(
+            finding(&v, "flash_controller_access").unwrap()["message"],
+            says
+        );
+    }
+}
+
+/// `AET-WO-4230` D10 (the adversarial pass's F2, `adv_bor.rs`): word 1 of the
+/// boot record must be, exactly, the value the one read of `OPTSR_CUR`
+/// returned. A read of `BOR_LEV` 00 (0x0406AAF0, a part fresh from the
+/// factory) recorded as the declared level 3 is a firmware that wrote a
+/// word it did not read, and the boot fails by name, naming both.
+#[test]
+fn word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both() {
+    let read3 = "returned 0x406AAFC\n";
+    let text = good();
+    assert!(text.contains(read3));
+    let forged = text.replacen(read3, "returned 0x406AAF0\n", 1);
+    let (code, v) = boot(&forged);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["flash_controller_access"], "{v}");
+    assert_eq!(
+        finding(&v, "flash_controller_access").unwrap()["message"],
+        "the boot record's word 1 is 0x0406AAFC, not 0x0406AAF0, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+    );
+}
+
+/// `AET-WO-4230` B0: an SPI read whose bounded wait for `EOT` expired is a
+/// timeout naming it, on SPI alone; on I2C the same word is invalid.
+#[test]
+fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
+    let mut r = reads(
+        "0x2100B007",
+        "0x00000000000F4240",
+        "0x00000064",
+        &GOOD_REGISTERS,
+    );
+    let n = r.len();
+    r[n - 2] = "0x22020006".into();
+    let (code, v) = boot(&transcript(
+        &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
+        &r.iter().map(String::as_str).collect::<Vec<_>>(),
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let f = finding(&v, "spi_timeout").unwrap_or_else(|| panic!("{v}"));
+    assert!(f["message"].as_str().unwrap().contains("EOT"), "{f}");
+    assert_eq!(v["boot"]["spi"][0]["status"], "timeout_eot");
+    let (code, v) = boot(&with_record(["0x22020006", "0x00000060"]));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(finding(&v, "i2c_record_invalid").is_some(), "{v}");
 }

@@ -352,6 +352,13 @@ fn absent_boot() -> Record {
         instructions_observed: None,
         pc: None,
         executable: vec![(0, 0x1000_0000)],
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: None,
+        },
+        flash_access: None,
     }
 }
 
@@ -430,6 +437,13 @@ fn one_of_each() -> Vec<Record> {
             instructions_observed: Some(999),
             pc: Some(0x0800_0100),
             executable: vec![(0, 0x1000_0000)],
+            brown_out: aethelgard_chaos::record::Reading {
+                address: 0x2000_0004,
+                mask: 0xC,
+                expected: 0,
+                observed: Some(0),
+            },
+            flash_access: Some(Vec::new()),
         },
         Record::RegisterObserved {
             name: "RCC_CR".into(),
@@ -846,6 +860,13 @@ fn good() -> Vec<Record> {
             instructions_observed: Some(10),
             pc: Some(0),
             executable: vec![(0, 0x1000_0000)],
+            brown_out: aethelgard_chaos::record::Reading {
+                address: 0x2000_0004,
+                mask: 0xC,
+                expected: 0,
+                observed: Some(0),
+            },
+            flash_access: Some(Vec::new()),
         },
         Record::RegisterObserved {
             name: "R".into(),
@@ -1592,6 +1613,13 @@ mod archived {
                 instructions_observed: Some(10),
                 pc: Some(0),
                 executable: vec![(0, 0x1000_0000)],
+                brown_out: aethelgard_chaos::record::Reading {
+                    address: 0x2000_0004,
+                    mask: 0xC,
+                    expected: 0,
+                    observed: Some(0),
+                },
+                flash_access: Some(Vec::new()),
             },
             Record::RegisterObserved {
                 name: "R".into(),
@@ -2271,6 +2299,13 @@ fn kind_10s_segments_and_kind_7s_window_are_checked_on_write_and_read() {
         instructions_observed: Some(10),
         pc: Some(0),
         executable,
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: Some(0),
+        },
+        flash_access: Some(Vec::new()),
     };
     assert!(boot(vec![(0, 1), (1, 2)]).check().is_ok());
     assert!(
@@ -2338,11 +2373,18 @@ fn the_boot_read_is_whole_and_the_pc_findings_are_the_judges() {
         instructions_observed: instructions,
         pc,
         executable: segs.clone(),
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: Some(0),
+        },
+        flash_access: Some(Vec::new()),
     };
     for r in [boot(None, Some(10)), boot(Some(0), None)] {
         assert_eq!(
             r.check().unwrap_err(),
-            "the boot word, the instruction count and pc are not all read or all unread"
+            "the boot word, the instruction count, pc and the brown-out word are not all read or all unread"
         );
     }
     boot(Some(0), Some(10)).check().unwrap();
@@ -2693,6 +2735,135 @@ fn the_step_fields_of_kinds_12_13_21_and_22_are_refused_by_rule() {
     ] {
         assert!(append_one("step-ok", record).is_ok());
     }
+}
+
+const BROWN_OUT: &str =
+    "the verdict's brown-out and flash controller findings do not match the boot's";
+
+/// `good()` with kind 10's brown-out word observed as `word` (declared
+/// level 3 expected), its flash accesses `flash`, its boot word set or not
+/// (then named missing), and the verdict naming `findings` beside the run's
+/// own.
+fn with_brown_out(
+    word: u32,
+    flash: Option<Vec<String>>,
+    booted: bool,
+    findings: &[&'static str],
+) -> Vec<Record> {
+    let mut r = good();
+    for x in &mut r {
+        if let Record::BootObserved {
+            boot_word,
+            brown_out,
+            flash_access,
+            ..
+        } = x
+        {
+            if !booted {
+                boot_word.observed = Some(0);
+            }
+            brown_out.expected = 0xC;
+            brown_out.observed = Some(word);
+            *flash_access = flash.clone();
+        }
+    }
+    let last = r.len() - 1;
+    let mut f = vec![
+        (PAST, "error", 2),
+        ("device_unmodelled", "info", 1),
+        ("i2c_timeout", "error", 1),
+    ];
+    f.extend(findings.iter().map(|k| (*k, "error", 1)));
+    // A boot read without its boot word names it (`AET-WO-3201` B2).
+    if !booted {
+        f.push(("boot_word_missing", "error", 1));
+    }
+    f.sort();
+    r[last] = verdict(false, &f);
+    r
+}
+
+/// `AET-WO-4230` D10: replay names `brown_out_level_not_programmed` exactly
+/// when kind 10's word is the judge's fill or its `BOR_LEV` is not the
+/// declared level, and `flash_controller_access` exactly when the flash
+/// controller's accesses were not the one read or could not be read; once
+/// the boot word is set, never before.
+#[test]
+fn the_brown_out_findings_are_exactly_what_kind_10_shows() {
+    const B: &str = "brown_out_level_not_programmed";
+    const F: &str = "flash_controller_access";
+    let ok = || Some(Vec::new());
+    check_run(&with_brown_out(0x0406_AAFC, ok(), true, &[])).unwrap();
+    check_run(&with_brown_out(0x0406_AAF0, ok(), true, &[B])).unwrap();
+    check_run(&with_brown_out(0xFFFF_FFFF, ok(), true, &[B])).unwrap();
+    let wrote = Some(vec!["the firmware wrote the flash controller".to_owned()]);
+    check_run(&with_brown_out(0x0406_AAFC, wrote.clone(), true, &[F])).unwrap();
+    check_run(&with_brown_out(0x0406_AAFC, None, true, &[F])).unwrap();
+    check_run(&with_brown_out(0x0406_AAF0, None, true, &[B, F])).unwrap();
+    // Before the boot word, neither is judged.
+    check_run(&with_brown_out(0xFFFF_FFFF, None, false, &[])).unwrap();
+    for (word, flash, booted, f) in [
+        (0x0406_AAF0, ok(), true, &[][..]),
+        (0xFFFF_FFFF, ok(), true, &[][..]),
+        (0x0406_AAFC, ok(), true, &[B][..]),
+        (0x0406_AAFC, wrote, true, &[][..]),
+        (0x0406_AAFC, None, true, &[][..]),
+        (0x0406_AAFC, ok(), true, &[F][..]),
+        (0xFFFF_FFFF, None, false, &[B, F][..]),
+    ] {
+        assert_eq!(
+            check_run(&with_brown_out(word, flash, booted, f)).unwrap_err(),
+            BROWN_OUT,
+            "{word:#x} {f:?}"
+        );
+    }
+}
+
+/// `AET-WO-4230` D10: kind 10's brown-out word is read with the boot, its
+/// expectation inside its mask, and its flash accesses absent when nothing
+/// was read and bounded like witness lines.
+#[test]
+fn kind_10s_brown_out_word_and_flash_accesses_are_checked() {
+    let boot =
+        |observed: Option<u32>, expected: u32, flash: Option<Vec<String>>| Record::BootObserved {
+            image_sha256: [4; 32],
+            boot_word: reading(observed.map(|_| 0x12)),
+            instructions_expected: 10,
+            instructions_observed: observed.map(|_| 10),
+            pc: observed,
+            executable: vec![(0, 0x1000_0000)],
+            brown_out: Reading {
+                address: 0x2000_0004,
+                mask: 0xC,
+                expected,
+                observed,
+            },
+            flash_access: flash,
+        };
+    boot(Some(0xC), 0xC, Some(Vec::new())).check().unwrap();
+    boot(None, 0xC, None).check().unwrap();
+    assert_eq!(
+        boot(Some(0xC), 0x10, None).check().unwrap_err(),
+        "the brown-out word's expected level lies outside its mask"
+    );
+    assert_eq!(
+        boot(None, 0xC, Some(Vec::new())).check().unwrap_err(),
+        "a boot that read nothing holds flash controller accesses"
+    );
+    for flash in [vec![String::new()], vec!["x".to_owned(); 17]] {
+        assert_eq!(
+            boot(Some(0xC), 0xC, Some(flash)).check().unwrap_err(),
+            "flash controller accesses are not at most 16 lines of 1 to 256 printable ASCII bytes"
+        );
+    }
+    let mut unread = boot(Some(0xC), 0xC, None);
+    if let Record::BootObserved { brown_out, .. } = &mut unread {
+        brown_out.observed = None;
+    }
+    assert_eq!(
+        unread.check().unwrap_err(),
+        "the boot word, the instruction count, pc and the brown-out word are not all read or all unread"
+    );
 }
 
 // ---- AET-WO-3201: the joins and the boot word replay binds ----

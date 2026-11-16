@@ -22,8 +22,8 @@ use aethelgard_evolve::propose::{
     self, Answer, BusFacts, Expectation, GeneratorReport, HEADROOM, Input, Outcome, Rules, Sizing,
 };
 use aethelgard_evolve::{AttributeError, Attribution, EventRef, Evidence};
-use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::electrical::i2c_pull_up_floor_ohms;
+use aethelgard_ir::{SolvedTopology, Specification};
 use serde::Serialize;
 
 use crate::campaign::{
@@ -191,18 +191,31 @@ struct Proposed {
 /// speed, which the topology carries in `i2c_speeds` (`RUL-16`; the
 /// `1205` review), the speed `solve` judges the floor at. Never the
 /// topology's `i2c_ceilings`, which is the fastest speed the rise ceiling
-/// allows, not the bus's own (adversarial B1).
-fn facts(t: &SolvedTopology) -> Result<BTreeMap<String, BusFacts>, String> {
+/// allows, not the bus's own (adversarial B1). The specification gives only
+/// the bus's domain, whose maximum rail the floor is judged at.
+fn facts(spec: &Specification, t: &SolvedTopology) -> Result<BTreeMap<String, BusFacts>, String> {
     let mut out: BTreeMap<String, BusFacts> = BTreeMap::new();
     for (net, a) in &t.analog_lines {
         let speed = *t
             .i2c_speeds
             .get(&a.bus)
             .ok_or_else(|| format!("bus `{}` declares no speed in the solved topology", a.bus))?;
+        let bus = spec
+            .i2c_buses
+            .iter()
+            .find(|b| b.id == a.bus)
+            .ok_or_else(|| format!("bus `{}` is not in the specification", a.bus))?;
+        // The floor is judged at the domain's maximum rail, as `solve` does
+        // (`AET-WO-4230` §1.5); the topology carries only the nominal.
+        let maximum = spec
+            .voltage_domains
+            .iter()
+            .find(|d| d.id == bus.domain)
+            .map_or(a.domain_millivolts, aethelgard_ir::maximum_millivolts);
         let f = BusFacts {
             pull_up_ohms: a.pull_up_ohms,
             domain_millivolts: a.domain_millivolts,
-            floor_ohms: i2c_pull_up_floor_ohms(speed, a.domain_millivolts),
+            floor_ohms: i2c_pull_up_floor_ohms(speed, maximum),
         };
         if *out.entry(a.bus.clone()).or_insert(f) != f {
             return Err(format!(
@@ -362,7 +375,7 @@ fn run(dir: &Path, scenario_path: &Path, out: &Path) -> Result<ExitCode, ExitCod
         })
         .collect();
     let buses = view.buses();
-    let facts = facts(&topology).map_err(|m| {
+    let facts = facts(&spec, &topology).map_err(|m| {
         crate::diagnose(&m);
         ExitCode::from(EXIT_INTERNAL)
     })?;

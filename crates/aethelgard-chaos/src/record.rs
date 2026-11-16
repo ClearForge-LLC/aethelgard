@@ -335,6 +335,15 @@ pub enum Record {
         /// virtual one (`AET-WO-2204`), sorted, at most
         /// [`MAX_EXECUTABLE_SEGMENTS`].
         executable: Vec<(u32, u32)>,
+        /// The boot record's word 1, `FLASH_OPTSR_CUR` as the firmware read
+        /// it, judged under `BOR_LEV`'s mask against the declared level in
+        /// place (`AET-WO-4230` D10); read with the boot word.
+        brown_out: Reading,
+        /// What the flash controller's access log showed that the bring-up
+        /// never does, at most [`MAX_WITNESS_LINES`] (a cut list still fails):
+        /// empty when nothing; `None` when unread or when the log could not
+        /// be read whole.
+        flash_access: Option<Vec<String>>,
     },
     /// Kind 11: one solved register after the boot.
     RegisterObserved { name: String, reading: Reading },
@@ -1066,6 +1075,8 @@ impl Record {
                 instructions_observed,
                 pc,
                 executable,
+                brown_out,
+                flash_access,
             } => vec![
                 Value::Bytes(image_sha256.to_vec()),
                 reading(boot_word),
@@ -1078,6 +1089,8 @@ impl Record {
                         .map(|&(s, e)| Value::Array(vec![u(s.into()), u(e.into())]))
                         .collect(),
                 ),
+                reading(brown_out),
+                opt_texts(flash_access.as_deref()),
             ],
             Self::RegisterObserved { name, reading: r } => vec![t(name), reading(r)],
             Self::I2cCheck {
@@ -1510,6 +1523,8 @@ impl Record {
                     }
                     v
                 },
+                brown_out: f.reading()?,
+                flash_access: f.opt_texts()?,
             },
             11 => Self::RegisterObserved {
                 name: f.text()?,
@@ -1870,22 +1885,36 @@ impl Record {
                 instructions_observed,
                 pc,
                 executable,
+                brown_out,
+                flash_access,
                 ..
             } => {
                 let ordered = executable.iter().all(|&(s, e)| s < e)
                     && executable.windows(2).all(|w| w[0].1 <= w[1].0);
-                // One read gives all three (`AET-WO-2205` adversarial 1): a
+                // One read gives all four (`AET-WO-2205` adversarial 1): a
                 // `pc` absent beside a boot that was read hides where it ended.
                 let read = [
                     boot_word.observed.is_some(),
                     instructions_observed.is_some(),
                     pc.is_some(),
+                    brown_out.observed.is_some(),
                 ];
                 if executable.len() > MAX_EXECUTABLE_SEGMENTS || !ordered {
                     Err("executable segments are not at most 16 sorted, disjoint, nonempty ranges")
                 } else if read.contains(&true) && read.contains(&false) {
                     Err(
-                        "the boot word, the instruction count and pc are not all read or all unread",
+                        "the boot word, the instruction count, pc and the brown-out word are not all read or all unread",
+                    )
+                } else if brown_out.expected & !brown_out.mask != 0 {
+                    Err("the brown-out word's expected level lies outside its mask")
+                } else if flash_access.is_some() && !read[0] {
+                    Err("a boot that read nothing holds flash controller accesses")
+                } else if flash_access
+                    .as_deref()
+                    .is_some_and(|v| !witness_lines_ok(v))
+                {
+                    Err(
+                        "flash controller accesses are not at most 16 lines of 1 to 256 printable ASCII bytes",
                     )
                 } else {
                     Ok(())

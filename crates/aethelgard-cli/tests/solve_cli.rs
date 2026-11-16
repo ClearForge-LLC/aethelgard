@@ -49,12 +49,30 @@ use sha2::{Digest, Sha256};
 /// Re-taken for the serial port's required `negotiated` key (ruled on PR
 /// #152, §9 Q1; `7faed6e0…276a` before): with `,"negotiated":null` removed and
 /// the specification's old sha256 put back, the output's digest is the old
-/// one exactly. Re-taken in `AET-WO-4300d3` (specification version 10,
-/// `power`'s judgement declarations), which moved only the specification's
-/// sha256: with `main`'s put back, each output's digest is `main`'s exactly
-/// (`5c2aeff0…dd22` and `84de8b88…016d` before).
-const REFERENCE_DIGEST: &str = "5f717bad93f53a101a3f360db97fd798ee62a5d69960bd3e49ea48b26e11d84b";
-const STRESS_DIGEST: &str = "43d5ed7688cd2605b7f56aa8b08a2bc53e5dd7fcba74082f4af5aadeb25b8418";
+/// one exactly. Re-taken in `AET-WO-4230` (solved version 8:
+/// `spi_controllers`, `i2c_timings`, `bor_level`; `5c2aeff0…3dd22` and
+/// `84de8b88…3b016d` before): with the version set back to 7 and the three
+/// keys removed, each output's digest is the old one exactly. Moved again in
+/// `AET-WO-4230` slice A2a (`peer_deviation_ppm` on the console, which moved
+/// the specification's sha256 and the topology's `serial_ports`; `8c6a0647…56f8`
+/// and `e79f725a…286b` before). Moved once more by the merge of `AET-WO-4300d3`
+/// (specification version 10; `4230` renumbered to 11), which moved only the
+/// specification's sha256 (`3427fca7…a0ff` and `6fe3171b…922b` before).
+/// Moved again in `AET-WO-4230` round 2 (`acknowledge_unwitnessed` and each
+/// port's `peer_deviation_source`), which moved only the specification's
+/// sha256: with `9832b91e…8081` put back, the reference's output hashes to
+/// `447caa7d…46bc`, the old digest, exactly; with `3236b135…76c0` put back,
+/// the stress fixture's hashes to `6d3bb760…8b02`, its old digest, exactly.
+/// Moved once more by the reference's acknowledgements (`AET-WO-4230` R1,
+/// slice R2-cli), its specification's sha256 alone: with `7f2be55f…dd9e` put
+/// back, the reference's output hashes to `f83c83a0…e8ae`, the old digest.
+/// Moved once more by the merge of `AET-WO-4300g` (specification version 11,
+/// `mcu.supply_source`; `4230` renumbered to 12), which moved only the
+/// specification's sha256: with `f3798b1f…b999` put back, the reference's
+/// output hashes to `42f26fce…ad34`, and with `17b53057…0f8a` put back, the
+/// stress fixture's to `1725d651…0d1f`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "5d64214d7506eebf5cc60a8cf50a09d9340c92a2ec449d29fc11f71f6d9af4fb";
+const STRESS_DIGEST: &str = "15dd23367be298e27ae81aacf54f01d0442613b429f828e16ec1860f426910c8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -503,7 +521,7 @@ fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
         (
             |d| d["i2c_buses"][0]["pull_up_ohms"] = 24.into(),
             "PullUpBelowSinkFloor",
-            "I2C bus `SENSORS` has a pull-up of 24 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)",
+            "I2C bus `SENSORS` has a pull-up of 24 ohms, below the 1022 ohm floor its rail and mode set (UM10204 sink current)",
         ),
     ];
     for (edit, kind, message) in cases {

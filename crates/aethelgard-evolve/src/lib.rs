@@ -555,7 +555,7 @@ fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> b
 }
 
 /// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 28] = [
+const PER_EVENT: [&str; 30] = [
     campaign::PAST_CEILING_FINDING,
     campaign::STUCK_HIGH_FINDING,
     campaign::HELD_LOW_FINDING,
@@ -576,6 +576,8 @@ const PER_EVENT: [&str; 28] = [
     campaign::BOOT_WORD_FINDING,
     "cpu_halted",
     "locked_peripheral_access",
+    campaign::BROWN_OUT_FINDING,
+    campaign::FLASH_ACCESS_FINDING,
     campaign::MOTOR_STATIC_FINDING,
     campaign::MOTOR_UNWITNESSED_FINDING,
     campaign::MOTOR_MISMATCH_FINDING,
@@ -1117,6 +1119,8 @@ impl<'a> Run<'a> {
                 boot_word.observed != Some(boot_word.expected)
                     || instructions_observed.is_some_and(|n| n < *instructions_expected)
                     || pc_outside(r)
+                    || brown_out_failed(r)
+                    || flash_access_failed(r)
             }
             Record::RegisterObserved { name, reading } => self.unowned(name, reading) != 0,
             _ => false,
@@ -1285,6 +1289,8 @@ impl<'a> Run<'a> {
                     if boot_word.observed.is_some_and(|o| o != boot_word.expected))
             }),
             campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
+            campaign::BROWN_OUT_FINDING => self.indices(brown_out_failed),
+            campaign::FLASH_ACCESS_FINDING => self.indices(flash_access_failed),
             "cpu_halted" => self.indices(|r| {
                 matches!(r, Record::BootObserved { instructions_expected, instructions_observed, .. }
                     if instructions_observed.is_some_and(|n| n < *instructions_expected))
@@ -1441,6 +1447,23 @@ fn timer_bits(m: &Motor<'_>, name: &str, reading: &Reading) -> u32 {
 fn pc_outside(r: &Record) -> bool {
     matches!(r, Record::BootObserved { pc: Some(pc), executable, .. }
         if !aethelgard_chaos::record::inside(executable, *pc))
+}
+
+/// Kind 10 of a booted firmware whose brown-out word is not the declared
+/// level, or was never recorded (`AET-WO-4230` D10): the judge names it
+/// only once the boot word is set, so the event does too.
+fn brown_out_failed(r: &Record) -> bool {
+    matches!(r, Record::BootObserved { boot_word, brown_out, .. }
+        if boot_word.observed == Some(boot_word.expected)
+            && campaign::brown_out_fails(brown_out))
+}
+
+/// Kind 10 of a booted firmware whose flash controller's accesses were not
+/// the one read, or could not be read whole (`AET-WO-4230` D10).
+fn flash_access_failed(r: &Record) -> bool {
+    matches!(r, Record::BootObserved { boot_word, flash_access, .. }
+        if boot_word.observed == Some(boot_word.expected)
+            && flash_access.as_deref() != Some(&[]))
 }
 
 /// The finding a read's mismatch is named by, from its step: `{bus}_identity_mismatch`,

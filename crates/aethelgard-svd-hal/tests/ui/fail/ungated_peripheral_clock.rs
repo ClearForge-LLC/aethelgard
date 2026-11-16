@@ -7,8 +7,9 @@ fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
-    let b = rcc.enable_gpiob(&mut r, board.gpiob).split();
+    let clock = rcc.reset_clock(&mut r).unwrap();
+    let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);
     let sda = b.pb7.into_i2c1_sda(&mut r);
-    let _bus = board.i2c1.init::<Fast400k, _>(&mut r, scl, sda);
+    let _bus = board.i2c1.init::<Fast400k, _>(&mut r, &clock, scl, sda);
 }

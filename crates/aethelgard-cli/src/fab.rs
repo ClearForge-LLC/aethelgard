@@ -333,7 +333,7 @@ fn notes(
     let stack = aethelgard_eda::stack::Stack::of(spec);
     let layers = gerbers(&stack);
     let described = describe(project, &layers);
-    aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
+    let mut text = aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
         project,
         engine_version: engine,
         specification_sha256,
@@ -345,7 +345,79 @@ fn notes(
         drills,
         power: &aethelgard_eda::loops::conditions(spec),
         support: stated.support,
-    })
+    });
+    text.push_str(&brown_out_step(spec.mcu.bor_level));
+    text
+}
+
+/// The three values of `FLASH_OPTSR_CUR` on record (`AET-WO-4230` R8, the
+/// architect's ruling on Q-J), each with `BOR_LEV` `00`: they agree in the
+/// low 16 bits only, so no fixed word is written.
+/// - read on the bench: `AET-WO-3302`, a NUCLEO-H753ZI rev V, 2026-11-16
+///   05:00 UTC;
+/// - RM0433 Rev 9 Table 21 (p. 177), the factory word with the
+///   part-dependent bits 28:27 and 20:19 (`X` in the table) at 0;
+/// - Renode 1.17.0's model (`AET-WO-4230` FEEDBACK §2, measured).
+const OPTSR_BENCH: u32 = 0x1BC6_AAF0;
+const OPTSR_TABLE_21: u32 = 0x0006_AAF0;
+const OPTSR_RENODE: u32 = 0x0406_AAF0;
+
+/// The factory step that programs the declared brown-out level and reads it
+/// back (`AET-WO-4230` §1.6): none for level 0, which is the factory value
+/// (RM0433 Rev 9 Table 21, p. 177). The firmware never programs option
+/// bytes; it reads `FLASH_OPTSR_CUR` into its boot record. The step is a
+/// read-modify-write of the word as read, the only correct procedure (the
+/// architect's ruling on Q-J), and cites the three values on record. Every address,
+/// key and bit is RM0433 Rev 9's, at the section and page named in the
+/// text; no programmer's command is cited, because ST's STM32CubeProgrammer
+/// manual (UM2237) is not held, and the architect ruled it is not fetched
+/// (Q-J).
+fn brown_out_step(level: u8) -> String {
+    if level == 0 {
+        return String::new();
+    }
+    let bits = format!("{:02b}", level & 3);
+    let (k1, k2) = (
+        aethelgard_twin::boot::OPTKEY1,
+        aethelgard_twin::boot::OPTKEY2,
+    );
+    let bench = OPTSR_BENCH | u32::from(level & 3) << 2;
+    let lines = [
+        String::new(),
+        "## Brown-out level".to_owned(),
+        String::new(),
+        format!("The specification declares brown-out reset level {level} (`mcu.bor_level`). A"),
+        "part leaves the factory at level 0 (RM0433 Rev 9 Table 21, p. 177), and the".to_owned(),
+        "firmware reads the level but never programs option bytes, so each part is".to_owned(),
+        "programmed once, before the board is used, and read back:".to_owned(),
+        String::new(),
+        "1. Read `FLASH_OPTSR_CUR` (0x5200201C; RM0433 Rev 9 §4.9.8, p. 212).".to_owned(),
+        format!("2. Write 0x{k1:08X}, then 0x{k2:08X}, to `FLASH_OPTKEYR` (0x52002008) to"),
+        "   unlock `FLASH_OPTCR` (§4.5.1, p. 182).".to_owned(),
+        "3. Write to `FLASH_OPTSR_PRG` (0x52002020) the word read in step 1 with".to_owned(),
+        format!("   bits 3:2 (`BOR_LEV`) set to `{bits}` and every other bit as read: the"),
+        "   reserved bits must keep their reset value, and `RDP` (bits 15:8) must".to_owned(),
+        "   stay 0xAA, since any other value raises the readout protection level".to_owned(),
+        "   (§4.9.9, pp. 215-216). Read-modify-write of the word as read is the only".to_owned(),
+        "   procedure: no fixed word is right for every part. Three values are on".to_owned(),
+        "   record, each with `BOR_LEV` 00, and they agree only in bits 15:0:".to_owned(),
+        format!("   - 0x{OPTSR_BENCH:08X}, read on the bench (AET-WO-3302, NUCLEO-H753ZI rev V,"),
+        format!("     2026-11-16 05:00 UTC), for which the word to write is 0x{bench:08X};"),
+        format!("   - 0x{OPTSR_TABLE_21:08X}, RM0433 Rev 9 Table 21 (p. 177), the factory word"),
+        "     with its part-dependent bits 28:27 and 20:19 at 0;".to_owned(),
+        format!("   - 0x{OPTSR_RENODE:08X}, the twin's model (Renode 1.17.0)."),
+        "4. Set `OPTSTART` (`FLASH_OPTCR`, 0x52002018, bit 1), wait until `OPT_BUSY`".to_owned(),
+        "   (`FLASH_OPTSR_CUR` bit 0) reads 0 (§4.4.3, p. 175), then set `OPTLOCK`".to_owned(),
+        "   (`FLASH_OPTCR` bit 0).".to_owned(),
+        format!("5. Read `FLASH_OPTSR_CUR` again: bits 3:2 must read `{bits}`. The firmware's"),
+        format!("   boot record then holds the same word, and a level other than {level} is"),
+        "   `BrownOutLevelNotProgrammed`.".to_owned(),
+        String::new(),
+        "No programmer's command is given: ST's STM32CubeProgrammer user manual".to_owned(),
+        "(UM2237), which would state its option-byte syntax, is not held, and none".to_owned(),
+        "is cited here.".to_owned(),
+    ];
+    lines.join("\n") + "\n"
 }
 
 /// Every file of the package but the notes and the manifest, with what it is.
@@ -912,6 +984,9 @@ mod tests {
             // verdict now hands the notes (`AET-WO-3303`); no lifecycle line.
             let stated =
                 aethelgard_eda::extract::conditions(&aethelgard_eda::stack::Stack::of(&spec));
+            // `AET-WO-4230` §1.6: a board declaring a brown-out level adds
+            // its factory step after the files, and nothing else moves.
+            let golden = format!("{golden}{}", brown_out_step(spec.mcu.bor_level));
             for n in [1, 64] {
                 assert_eq!(
                     notes(
@@ -931,6 +1006,55 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `AET-WO-4230` §1.6, WO §5.3 (a package with no factory step): a level
+    /// above 0 carries the step that programs it, its exact factory word and
+    /// the read-back; level 0, the factory value, carries none. The step's
+    /// addresses, keys and bits are the header's and the twin's.
+    #[test]
+    fn a_declared_brown_out_level_adds_its_factory_step_and_level_0_none() {
+        assert_eq!(brown_out_step(0), "");
+        let step = brown_out_step(3);
+        assert!(step.starts_with(
+            "\n## Brown-out level\n\nThe specification declares brown-out reset level 3"
+        ));
+        for want in [
+            "bits 3:2 (`BOR_LEV`) set to `11`",
+            // `AET-WO-4230` R8: the three values on record, and the one
+            // procedure.
+            "Read-modify-write of the word as read is the only\n   procedure",
+            "   - 0x1BC6AAF0, read on the bench (AET-WO-3302, NUCLEO-H753ZI rev V,\n     2026-11-16 05:00 UTC), for which the word to write is 0x1BC6AAFC;",
+            "   - 0x0006AAF0, RM0433 Rev 9 Table 21 (p. 177)",
+            "   - 0x0406AAF0, the twin's model (Renode 1.17.0).",
+            "bits 3:2 must read `11`",
+            "a level other than 3 is\n   `BrownOutLevelNotProgrammed`",
+            "Write 0x08192A3B, then 0x4C5D6E7F, to `FLASH_OPTKEYR` (0x52002008)",
+            "No programmer's command is given",
+        ] {
+            assert!(step.contains(want), "{want}: {step}");
+        }
+        assert!(brown_out_step(1).contains("the word to write is 0x1BC6AAF4;"));
+        assert!(!step.contains("0x0006AAFC"), "no fixed word from the table");
+        assert!(brown_out_step(2).contains("set to `10`"));
+        // The addresses the text states are the header's.
+        let f = aethelgard_svd_hal::cmsis::register_facts().unwrap();
+        let flash = f.layout("FLASH").unwrap();
+        let base = f.base("FLASH_R").unwrap();
+        for (reg, at) in [
+            ("OPTKEYR", 0x5200_2008u32),
+            ("OPTCR", 0x5200_2018),
+            ("OPTSR_CUR", 0x5200_201C),
+            ("OPTSR_PRG", 0x5200_2020),
+        ] {
+            assert_eq!(base + flash.offset(reg, 0).unwrap(), at, "{reg}");
+            assert!(
+                step.contains(&format!("{at:#010X}").replace("0X", "0x")),
+                "{reg}"
+            );
+        }
+        // Each line of the section fits the notes' width.
+        assert!(step.lines().all(|l| l.len() <= 80), "{step}");
     }
 
     /// The reference's drill file as KiCad 10.0.7 wrote it from the emitted

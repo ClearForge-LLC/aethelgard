@@ -183,12 +183,19 @@ const TXIS_TIMEOUT: [&str; 2] = ["0x22020001", "0x00000060"];
 /// 100 ms of a 100 MIPS core, in the transcript's hex.
 const INSTRUCTIONS: &str = "0x0000000000989680";
 
+/// The flash controller's access log of a boot (`AET-WO-4230` D10, measured
+/// C1 m2): Renode's answer to the judge's command, then the bring-up's one
+/// word read of `OPTSR_CUR`.
+const FLASH_ACCESS: &str = "[00:00:00.000000000] [INFO] flashController: Logging is already enabled\n\
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC\n";
+
 /// A transcript: the echoed command line, the run's `log`, the reads between
 /// the markers, then `listing`.
 fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(FLASH_ACCESS);
     s.push_str(CONSOLE_ACCESS);
     s.push_str(INJECTION);
     s.push_str(log);
@@ -215,6 +222,9 @@ fn boot_reads(record: [&str; 2]) -> Vec<String> {
         // The ELF's one self-loop, as the machine still holds it.
         "0xBF10".to_owned(),
         "0xE7FD".to_owned(),
+        // The brown-out word: the reference's level 3, as the platform
+        // presents it (`AET-WO-4230` D10, measured C1 m2).
+        "0x0406AAFC".to_owned(),
     ];
     v.extend(GOOD_REGISTERS.iter().map(|r| (*r).to_owned()));
     v.extend(record.iter().map(|r| (*r).to_owned()));
@@ -266,7 +276,7 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.099200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.099200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
@@ -1714,7 +1724,7 @@ fn propose_on_the_47k_run_changes_only_the_pull_up_to_2700_in_identical_bytes_tw
             &json!(3_982_300),
             &json!(300_000),
             &json!(2832),
-            &json!(967),
+            &json!(1022),
             &json!(2700),
             &json!(228_771)
         ]
@@ -2097,8 +2107,9 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 "#;
 
 /// Adversarial B1: a 400 kHz bus whose 120 ns rise ceiling would allow
-/// 1 MHz. The floor is judged at the bus's declared speed, 967 ohms at 3.3 V,
-/// never at the 20 mA floor of the speed the ceiling allows (145 ohms).
+/// 1 MHz. The floor is judged at the bus's declared speed, 1022 ohms at the
+/// 3.3 V domain's 3465 mV maximum, never at the Fast-mode Plus floor of the
+/// speed the ceiling allows (384 ohms).
 #[test]
 fn the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings() {
     let tb = toolbox(&faulted());
@@ -2126,15 +2137,15 @@ fn the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings() {
     let out = propose(&tb.0, work.cwd(), &run, "s.json", &out_dir);
     assert_eq!(out.status.code(), Some(1), "{:?}", lines(&out));
     let p = read_json(&out_dir.join("proposal.json"));
-    // 2,200 × 96,000 / 500,100 = 422 ohms: below the 967 ohm floor.
+    // 2,200 × 96,000 / 500,100 = 422 ohms: below the 1022 ohm floor.
     let s = &p["sizing"][0];
     assert_eq!(
         (&p["outcome"], &s["rp_min_ohms"], &s["r_target_ohms"]),
-        (&json!("no_proposal"), &json!(967), &json!(422))
+        (&json!("no_proposal"), &json!(1022), &json!(422))
     );
     // The floor proposals are held to is the gate's: `solve` takes a pull-up
     // at `rp_min_ohms` on this bus and refuses one ohm less.
-    for (ohms, code) in [(967, 0), (966, 2)] {
+    for (ohms, code) in [(1022, 0), (1021, 2)] {
         spec["i2c_buses"][0]["pull_up_ohms"] = json!(ohms);
         work.dir.write("edge.json", spec.to_string().as_bytes());
         let out = run_cli(
@@ -2842,6 +2853,7 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                         role: SerialRole::Gps,
                         framing: framing.clone(),
                         negotiated: None,
+                        peer_deviation_ppm: 0,
                         kernel_hz: kernel,
                         brr,
                         actual_millibaud: aethelgard_ir::serial::actual_millibaud(kernel, brr),
@@ -2902,6 +2914,13 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                             instructions_observed: Some(1),
                             pc: None,
                             executable: vec![(0x0800_0000, 0x0801_0000)],
+                            brown_out: aethelgard_chaos::record::Reading {
+                                address: 0x2000_0004,
+                                mask: 0xC,
+                                expected: 0,
+                                observed: Some(0),
+                            },
+                            flash_access: Some(Vec::new()),
                         },
                         Record::SerialFramingCheck {
                             label: "P".into(),

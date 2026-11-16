@@ -293,7 +293,9 @@ fn aet_1206_a_missing_bus_constraint_prints_solves_bytes_from_every_command() {
 
 /// `AET-WO-1206` §1.5 (`AET-WO-1205` F1): `solve`'s three bus refusals are
 /// validation's variants now, and print exactly what `solve` printed before,
-/// each pinned from the binary at `8030fa5`.
+/// each pinned from the binary at `8030fa5`, but for the pull-up's floor:
+/// `AET-WO-4230` §1.5 (review A8) takes it at the domain's maximum, 3465 mV,
+/// so 1022 ohms, where `8030fa5` took the nominal rail's 967.
 #[test]
 fn aet_1206_one_error_set_keeps_solves_bytes() {
     type Pin = (&'static str, fn(&mut Value), &'static str);
@@ -306,7 +308,7 @@ fn aet_1206_one_error_set_keeps_solves_bytes() {
         (
             "pull-up",
             |s| s["i2c_buses"][0]["pull_up_ohms"] = 100.into(),
-            r#"{"ok":false,"error":{"kind":"PullUpBelowSinkFloor","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` has a pull-up of 100 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)"}}"#,
+            r#"{"ok":false,"error":{"kind":"PullUpBelowSinkFloor","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` has a pull-up of 100 ohms, below the 1022 ohm floor its rail and mode set (UM10204 sink current)"}}"#,
         ),
         (
             "capacitance",
@@ -323,9 +325,24 @@ fn aet_1206_one_error_set_keeps_solves_bytes() {
     for (label, edit, expected) in pins {
         let (code, out) = run_file("solve", &format!("1206-f1-{label}"), edit);
         assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
-        // `validate` alone does not solve, so it still passes these.
-        let (code, out) = run_file("validate", &format!("1206-f1v-{label}"), edit);
+        // `validate` alone does not solve, so it still passes these, for a
+        // specification that acknowledges nothing.
+        let (code, out) = run_file("validate", &format!("1206-f1v-{label}"), |s| {
+            edit(s);
+            s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+        });
         assert_eq!(code, Some(0), "{label}: {out}");
+        // `AET-WO-4230` R1: the reference's acknowledgements stand only for a
+        // witness ledger, which a topology that does not solve has none of,
+        // so `validate` refuses them as stale, by that name, never by the
+        // bus refusal `solve` makes.
+        let (code, out) = run_file("validate", &format!("1206-f1a-{label}"), edit);
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(code, Some(2), "{label}: {out}");
+        assert_eq!(
+            v["error"]["kind"], "UnwitnessedAcknowledgementStale",
+            "{label}: {out}"
+        );
     }
 }
 
