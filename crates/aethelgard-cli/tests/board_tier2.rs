@@ -1207,6 +1207,76 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     fs::remove_dir_all(&base).unwrap();
 }
 
+/// `AET-WO-1310` §2: the committed Sentinel-02 power fixture, its crossing
+/// and the ICM-20948 included, routes (U5's 0.2 mm pads at 0.4 mm pitch leave
+/// by escapes off the grid) and passes every gate it reaches: ERC with no
+/// finding; DRC by the specification's rules with schematic parity, with no
+/// finding of any kind (U5's keepout in board coordinates, so no
+/// `lib_footprint_mismatch`: D4) and every loop rule passing; the support
+/// gate. `extract` then refuses it by name (`4300d2` D6 (b)): the
+/// translator's data pins have no stated maximum capacitance.
+#[test]
+fn the_full_power_fixture_routes_and_passes_every_gate_it_reaches() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-1310-power-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aethelgard-ir/tests/fixtures/sentinel-02-power.json");
+    let spec_arg = spec.to_str().unwrap();
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+
+    let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+    let erc = one(&text);
+    assert_eq!(code, Some(0), "erc: {erc}");
+    assert_eq!(erc["findings"], Value::Array(vec![]), "erc has findings");
+
+    let (code, text) = aethelgard(&[
+        "check",
+        "drc",
+        "--board",
+        &board,
+        "--spec",
+        spec_arg,
+        "--schematic",
+        &sch,
+    ]);
+    let v = one(&text);
+    assert_eq!(code, Some(0), "drc: {v}");
+    assert_eq!(v["verdict"], "pass", "drc: {v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "drc has findings: {v}");
+    let loops = v["power"]["loops"].as_array().unwrap();
+    assert!(
+        !loops.is_empty() && loops.iter().all(|l| l["verdict"] == "pass"),
+        "{v}"
+    );
+
+    let (code, text) = aethelgard(&[
+        "check",
+        "support",
+        "--schematic",
+        &sch,
+        "--board",
+        &board,
+        "--spec",
+        spec_arg,
+    ]);
+    let support = one(&text);
+    assert_eq!(code, Some(0), "support: {support}");
+    assert_eq!(support["verdict"], "pass", "support: {support}");
+
+    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    let x = one(&text);
+    assert_ne!(code, Some(0), "extract: {x}");
+    assert_eq!(x["error"]["kind"], "TranslatorPinUnbounded", "extract: {x}");
+    fs::remove_dir_all(&base).unwrap();
+}
+
 /// `AET-WO-4300g` §1.5, on KiCad's own netlist: the reference's schematic,
 /// exported by `kicad-cli sch export netlist` in the sandbox, passes the
 /// support gate with every role in its bound, J1 the programming path and J2
