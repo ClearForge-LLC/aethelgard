@@ -183,3 +183,41 @@ Reduction pass (diff): +1 net in source (measured, `git diff --numstat`; rustfmt
   - the 2.2 kΩ `leave-firmware` run stays `S2`.
 - Every other case's answer, evidence and masked list are unchanged (clause 1 failed only on the placeholder indices of the new I7 case, before they were filled in from this run).
 - `TIER2_MIN` is unchanged: no tier-2 test function was added; both cases ride the seeded block.
+
+## Merges of `main`
+
+- **`a45eb02`** (docs #162), with a merge commit. It is docs only, and the work order's text there is identical to the one I built from.
+- **`4419c59`** (4300g #159, 4401 #163), with a merge commit. Neither touches a file of this fence, and there were no conflicts.
+  - 4300g's specification 11 changes every specification hash, so every seeded `run_id` and every proposal's hash fields move. The only non-hash differences in the proposals are specification 11's own fields (`schema_version`, `supply_source`). Every proposed value is unchanged (measured, `diff -r` against the baseline).
+  - At this head, clause 1 again asserts every case's evidence and masked lists exactly, and passes.
+- **`TIER2_MIN` is 157**, `main`'s, unchanged: this work order adds no tier-2 test function.
+
+## Gates (at the merged head `f52effd`)
+
+- **Host:**
+  - `cargo fmt --all -- --check`;
+  - `cargo clippy --workspace --all-targets -- -D warnings`;
+  - `cargo test --workspace`: 113 suites, 0 failed.
+- **Pinned image**, through `~/bin/capped-run` (8 GiB, swap 0 and pids 8192, read back on each of the four containers):
+  - `clippy --features aethelgard-cli/with-tools -D warnings`: exit 0;
+  - `attribute_seeded`: 11 passed, 488 s;
+  - `twin_tier2`: 66 passed;
+  - `campaign_tier2`: 9 passed.
+- **Earlier in the build** (`1d9c93d`): `board_tier2` 18 passed (1,603 s), `verify_47k_tier2` 2 passed.
+- **CI's plan.** On Furnace the seeded block ran 482 s before the two cases and 471 s and 488 s after, so its colocated weight in `ci/colocate.tsv` (726 s) stands. `ci/` is not changed.
+- **CI:** recorded below, from the PR's run.
+
+## Questions and findings for the architect
+
+1. **B1 and B2 as built differ from the work order's wording, to keep honest runs** (§1.1). A held line is bound by its held-low fault. A boot that read nothing names why: one of three bounds or two load errors. Ruling wanted only if either should be otherwise.
+2. **Fence.**
+   - B1, B2 and B3 live in chaos's `campaign.rs` and `record.rs`, not `replay.rs`.
+   - F-B10 is one expression in `identity_finding`, the booted path.
+   - F2's fix is a rule in `check_run`.
+   - All of these are inside what the work order asks for, and named here.
+3. **Backlog (the adversary's 5.8, not built).** A booted run whose registers and records are set to unread replays as a pass. A rule of all read or all unread across kinds 10 to 13, 21 and 22, beside kind 10's own, would close it.
+4. **Backlog (reduction).** These are bare literals outside this fence:
+   - the five unread findings in `renode.rs`;
+   - `"info"` and `"error"` across crates;
+   - `"spi_identity_mismatch"` in `verify.rs`.
+5. **`I2`'s "a line with no computed rise" is now refused by replay** before attribution. The clause stays in evolve as a second statement, so the CLI README's rule table now says so.
