@@ -91,7 +91,7 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
 /// its own four-pin connector `J10<n>` with an explicit map: each serial port
 /// ends at a connector pin (the architect's ruling 1; adversarial F9).
 fn spec_json(ports: Vec<Value>) -> Value {
-    let connectors: Vec<Value> = ports
+    let mut connectors: Vec<Value> = ports
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -103,12 +103,33 @@ fn spec_json(ports: Vec<Value>) -> Value {
                     {"pin": "4", "net": "GND", "offboard": null}]})
         })
         .collect();
+    // The programming path and the supply input every board declares
+    // (`AET-WO-4300g`), after the ports' own connectors.
+    connectors.push(
+        json!({"reference": "J90", "part": "SM06B-SRSS-TB", "standard": null,
+        "pins": [
+            {"pin": "1", "net": "VDD_3V3", "offboard": null},
+            {"pin": "2", "net": null, "offboard": null},
+            {"pin": "3", "net": null, "offboard": null},
+            {"pin": "4", "net": "SWDIO", "offboard": null},
+            {"pin": "5", "net": "SWCLK", "offboard": null},
+            {"pin": "6", "net": "GND", "offboard": null}]}),
+    );
+    connectors.push(
+        json!({"reference": "J91", "part": "SM04B-GHS-TB", "standard": null,
+        "pins": [
+            {"pin": "1", "net": "VDD_3V3", "offboard": null},
+            {"pin": "2", "net": null, "offboard": null},
+            {"pin": "3", "net": null, "offboard": null},
+            {"pin": "4", "net": "GND", "offboard": null}]}),
+    );
     json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
+        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+            "supply_source": {"connector": "J91", "pin": "1"}},
         "voltage_domains": [
             {"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50},
             {"id": "VDD_5V", "nominal_millivolts": 5000, "tolerance_permille": 50}],
@@ -537,7 +558,12 @@ fn with_connector(
         })
         .cloned()
         .collect();
-    connectors.push(json!({"reference": "J1", "part": part, "standard": standard, "pins": pins}));
+    // First, so the tests read it as `connectors[0]` beside the programming
+    // path and supply input `spec_json` declares (`AET-WO-4300g`).
+    connectors.insert(
+        0,
+        json!({"reference": "J1", "part": part, "standard": standard, "pins": pins}),
+    );
     v["connectors"] = Value::Array(connectors);
     v
 }

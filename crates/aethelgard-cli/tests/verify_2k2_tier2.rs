@@ -155,6 +155,7 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
         [
             ("erc", "pass"),
             ("drc", "pass"),
+            ("support", "pass"),
             ("extract", "pass"),
             // One per harness: the scheduler, I2C1's transfer, since
             // `AET-WO-4200` SPI1's transfer and its frame bound, and since
@@ -401,6 +402,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         {"precondition": "every_harness_proved", "state": "met"},
         {"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
             "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]},
+        {"precondition": "mcu_support_network_judged", "state": "met"},
         {"precondition": "every_gate_passed", "state": "met"},
     ]);
     assert_eq!(fab["preconditions"], met, "{fab}");
@@ -444,7 +446,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "0.34 mm to 2 mm",
         "FR-4",
         "plated via, drilled 0.3 mm",
-        "3811f31d",
+        "e06e33c0",
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }
