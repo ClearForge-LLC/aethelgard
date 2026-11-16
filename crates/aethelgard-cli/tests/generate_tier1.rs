@@ -407,6 +407,10 @@ fn append(path: PathBuf, text: &str) {
     fs::write(path, t).unwrap();
 }
 
+/// A pre-flight case: its label, the change to the board crate, and the
+/// refusal's kind and `id`.
+type Case = (&'static str, Box<dyn Fn(&Path)>, &'static str, &'static str);
+
 /// AET-WO-1603 §1.2: `build` and `prove` refuse by name, before any tool is
 /// looked for, what cargo or rustup would run or take from a crate: a proc
 /// macro, a build script, a path dependency outside the crate, a Cargo
@@ -424,14 +428,14 @@ fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
         assert_eq!(code, Some(4), "{v}");
         assert_eq!(v["error"]["kind"], "ToolMissing", "{v}");
     }
-    let pm = "[package]\nname = \"pm\"\nversion = \"0.0.0\"\nedition = \"2024\"\n";
-    let cases: Vec<(&str, Box<dyn Fn(&Path)>, &str, &str)> = vec![
+    const PM: &str = "[package]\nname = \"pm\"\nversion = \"0.0.0\"\nedition = \"2024\"\n";
+    let cases: Vec<Case> = vec![
         (
             "proc-macro",
             Box::new(|c| {
                 put(
                     c.join("pm/Cargo.toml"),
-                    &format!("{pm}[lib]\nproc-macro = true\n"),
+                    &format!("{PM}[lib]\nproc-macro = true\n"),
                 )
             }),
             "CrateHasProcMacro",
@@ -442,7 +446,7 @@ fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
             Box::new(|c| {
                 put(
                     c.join("pm/Cargo.toml"),
-                    &format!("lib = {{ proc_macro = true }}\n{pm}"),
+                    &format!("lib = {{ proc_macro = true }}\n{PM}"),
                 )
             }),
             "CrateHasProcMacro",
@@ -453,7 +457,7 @@ fn build_and_prove_refuse_what_cargo_would_run_before_any_tool() {
             Box::new(|c| {
                 put(
                     c.join("pm/Cargo.toml"),
-                    &format!("{pm}[lib]\n\"proc\\u002dmacro\" = true\n"),
+                    &format!("{PM}[lib]\n\"proc\\u002dmacro\" = true\n"),
                 )
             }),
             "CrateHasProcMacro",
