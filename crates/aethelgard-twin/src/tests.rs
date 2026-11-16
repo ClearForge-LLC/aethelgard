@@ -73,9 +73,9 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
             "flashController:"
         ]
     );
-    // The spike's measured block (`spike/2100/out/sentinel-01.repl`, loaded
-    // by `simulate` at 459005f), byte for byte, then the brown-out level's
-    // presentation (`AET-WO-4230` D10).
+    // The spike's measured block (`AET-WO-2100.FEEDBACK.md` S1 quotes the
+    // whole file, loaded by `simulate` at 459005f), byte for byte, then the
+    // brown-out level's presentation (`AET-WO-4230` D10).
     let presentation = boot::brown_out(&bare()).unwrap().presentation();
     assert!(text.ends_with(&format!(
         "spi1: SPI.STM32H7_SPI @ {{\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }}\n    IRQ -> nvic@35\n{presentation}"
@@ -204,7 +204,7 @@ fn reg(name: &str, address: u32, mask: u32, value: u32) -> Register {
 }
 
 /// The values the spike read back from Renode after the reference firmware's
-/// boot from a cold RCC (`spike/2100/out/s3/s3-image-cold.out`), and since
+/// boot from a cold RCC (`AET-WO-2100.FEEDBACK.md` S3, F10), and since
 /// `AET-WO-4300a` (2100 F24) every enable register cold at its reset value,
 /// read back by the `cold9` probe (FEEDBACK P6.1); here they are computed
 /// from the topology alone.
