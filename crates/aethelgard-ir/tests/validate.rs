@@ -485,8 +485,14 @@ fn refuses_tolerance_out_of_range() {
         // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
         // tolerance's own range is under test here, so the board has no
         // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
-        // bus.
-        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
+        // bus. At 500 permille the MCU's own range refuses the rail
+        // (`DomainOutsideConsumer`, step 22, `AET-WO-1208` F1/F5), past the
+        // tolerance's own check.
+        let verdict = bare_rail(3300, value, false).validate();
+        match value {
+            1 => assert_eq!(verdict, Ok(())),
+            _ => assert_eq!(verdict.unwrap_err().kind(), "DomainOutsideConsumer"),
+        }
     }
 }
 
@@ -575,6 +581,9 @@ fn refuses_unsupported_i2c_speed_zero_pull_up_and_zero_spi_speed() {
     for value in [100_000, 1_000_000] {
         let mut spec = valid();
         spec.i2c_buses[0].speed_hz = value;
+        // 1 MHz needs lines Fast-mode Plus allows (120 ns), or step 21
+        // refuses it as `BusTooFast` (`AET-WO-1208` §1.3).
+        rise_times(&mut spec, 120, 120);
         assert_eq!(spec.validate(), Ok(()));
     }
     assert_refusal(
@@ -3228,9 +3237,12 @@ fn bare_rail(nominal: u32, tolerance: u16, spi: bool) -> Specification {
 fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
     // 1800 mV ± 10.0 % is 1620 to 1980; ± 10.1 % is 1618 to 1982.
     // 3000 mV ± 20.0 % is 2400 to 3600; ± 20.1 % is 2397 to 3603.
-    for (nominal, tolerance) in [(1800, 100), (3000, 200)] {
-        assert_eq!(bare_rail(nominal, tolerance, true).validate(), Ok(()));
-    }
+    assert_eq!(bare_rail(3000, 200, true).validate(), Ok(()));
+    // 1620 mV passes the speed table's edge (step 21), and the MCU's own
+    // floor refuses it: `bare_rail`'s `bor_level` 0 sets it at VBOR0's
+    // 1680 mV (step 22, `AET-WO-1208` F1/F5).
+    let err = bare_rail(1800, 100, true).validate().unwrap_err();
+    assert_refusal(err, "DomainOutsideConsumer", Some("VDD_3V3"));
     for (nominal, tolerance, min, max) in [(1800, 101, 1618, 1982), (3000, 201, 2397, 3603)] {
         let err = bare_rail(nominal, tolerance, true).validate().unwrap_err();
         assert_refusal(err.clone(), "SupplyOutsideSpeedTable", Some("FLASH"));
@@ -3241,7 +3253,10 @@ fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
                 "SPI bus `FLASH` is on a supply of {min} to {max} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
             )
         );
-        assert_eq!(bare_rail(nominal, tolerance, false).validate(), Ok(()));
+        // With no SPI bus, step 22 judges the same rail by the MCU's own
+        // consumer rule (`AET-WO-1208` F1/F5); before, it passed (`d539bb1`).
+        let err = bare_rail(nominal, tolerance, false).validate().unwrap_err();
+        assert_refusal(err, "DomainOutsideConsumer", Some("VDD_3V3"));
     }
 }
 
@@ -3272,4 +3287,47 @@ fn aet_1207_step_21_refuses_an_spi_line_with_no_constraint() {
         spec.validate().unwrap_err().kind(),
         "SupplyOutsideSpeedTable"
     );
+}
+
+/// `bare_rail`'s board (no device, no SPI bus) with the MCU at `bor_level`.
+fn bor_rail(nominal: u32, tolerance: u16, bor_level: u8) -> Specification {
+    let mut spec = bare_rail(nominal, tolerance, false);
+    spec.mcu.bor_level = bor_level;
+    spec
+}
+
+/// `AET-WO-1208` F1/F5 (the architect's ruling on PR #182): without a power
+/// tree, step 22 judges the MCU's rail by step 16's consumer rule, its
+/// minimum above floor = max(1620 mV, the `bor_level`'s VBOR falling
+/// maximum: VBOR3 2680 mV, VBOR0 1680 mV, DS12117 Table 115), its maximum at
+/// most 3600 mV, as `DomainOutsideConsumer`. The rule is strict ("its minimum
+/// above the floor"): a minimum exactly at the floor is refused. Before
+/// (`88ca5b0`), every one of these passed.
+#[test]
+fn aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor() {
+    // bor_level 3: minimums 2679 and 2680 refused, 2681 passes (2707, 2708,
+    // 2709 mV ± 1 %); bor_level 0: 1620 (1800 ± 10 %) and 1680 refused, 1681
+    // passes (1697, 1698 ± 1 %).
+    for (nominal, tolerance, level, min, floor) in [
+        (2707, 10, 3, 2679, 2680),
+        (2708, 10, 3, 2680, 2680),
+        (1800, 100, 0, 1620, 1680),
+        (1697, 10, 0, 1680, 1680),
+    ] {
+        let err = bor_rail(nominal, tolerance, level).validate().unwrap_err();
+        assert_refusal(err.clone(), "DomainOutsideConsumer", Some("VDD_3V3"));
+        let text = err.to_string();
+        assert!(text.contains(&format!("the domain's {min} to ")), "{text}");
+        assert!(
+            text.contains(&format!("the consumer's floor of {floor} mV")),
+            "{text}"
+        );
+        assert!(
+            text.contains("Table 111") && text.contains(&format!("VBOR{level}")),
+            "{text}"
+        );
+    }
+    for (nominal, level) in [(2709, 3), (1698, 0)] {
+        assert_eq!(bor_rail(nominal, 10, level).validate(), Ok(()), "{nominal}");
+    }
 }

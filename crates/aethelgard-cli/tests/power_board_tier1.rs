@@ -128,8 +128,10 @@ fn a_rule_whose_part_is_missing_is_refused() {
 }
 
 /// One translator carries one chip select: a crossing on a bus of two
-/// devices is refused by name at the emitter (reached here around
-/// `validate`).
+/// devices is refused by name. `validate` refuses it (`CrossingInvalid`,
+/// step 16); a library caller reached the emitter's own `PowerNotDrawable`
+/// around it until `AET-WO-1208` §1.4, and now gets `validate`'s refusal,
+/// since the emitter validates first.
 #[test]
 fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -143,14 +145,16 @@ fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
     let spec: Specification = serde_json::from_value(v).unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
     let (_, solved, _) = fixture();
-    match schematic::emit(&spec, &solved, &table) {
-        Err(e @ EmitError::PowerNotDrawable { .. }) => {
-            assert_eq!(e.kind(), "PowerNotDrawable");
-            assert_eq!(e.id(), Some("U13"));
-            assert!(e.to_string().contains("2 devices"), "{e}");
-        }
-        other => panic!("{other:?}"),
-    }
+    let refused = spec.validate().unwrap_err();
+    assert_eq!(
+        (refused.kind(), refused.id()),
+        ("CrossingInvalid", Some("U13"))
+    );
+    assert!(refused.to_string().contains("2 devices"), "{refused}");
+    assert_eq!(
+        schematic::emit(&spec, &solved, &table).err(),
+        Some(EmitError::InvalidSpecification(refused))
+    );
 }
 
 /// D12: the rail an LDO's `power_out` pin drives carries no `PWR_FLAG` (it
@@ -214,8 +218,9 @@ fn extract_bounds_the_power_board() {
 
 /// K10: the battery's rail is `VBAT` on a board with a power tree, so a net
 /// the specification spells `VBAT`, in any case, is refused by name: by
-/// `validate` (`AET-WO-1206` A5), and by the emitter itself for a library
-/// caller that hands it an unvalidated specification, with one message.
+/// `validate` (`AET-WO-1206` A5), and so for a library caller that hands
+/// the emitter an unvalidated specification, which validates first
+/// (`AET-WO-1208` §1.4).
 #[test]
 fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
     let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
@@ -232,13 +237,12 @@ fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
     let refused = spec.validate().unwrap_err();
     assert_eq!(refused.kind(), "ReservedName");
     assert_eq!(refused.id(), Some("VBAT and vbat"));
-    match schematic::emit(&spec, &solved, &table) {
-        Err(e @ EmitError::ReservedName(_)) => {
-            assert_eq!(e.to_string(), refused.to_string());
-            assert_eq!(e.id(), refused.id());
-        }
-        other => panic!("{other:?}"),
-    }
+    // The emitter validates first (`AET-WO-1208` §1.4), so it returns
+    // `validate`'s refusal; before, its own `ReservedName` printed the same.
+    assert_eq!(
+        schematic::emit(&spec, &solved, &table).err(),
+        Some(EmitError::InvalidSpecification(refused))
+    );
 }
 
 /// §5.3 (adversarial pass A1): a thermal array short of its rule, or a via

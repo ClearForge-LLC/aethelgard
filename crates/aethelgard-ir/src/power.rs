@@ -1079,27 +1079,7 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
     let spec = ctx.spec;
     if spec.mcu.supply == domain {
         let (row, m) = mcu(ctx)?;
-        let level = usize::from(spec.mcu.bor_level);
-        let bor = m.bor_falling_max_millivolts.get(level).ok_or_else(|| {
-            refuse(
-                Refusal::PowerValueInvalid,
-                "mcu",
-                format!("mcu.bor_level {level} has no row"),
-                ctx.cite(&m.vdd_millivolts.at),
-            )
-        })?;
-        let floor = m.vdd_millivolts.range.min.max(bor.value);
-        out.push(Consumer {
-            name: format!("{} (MCU)", row.part),
-            range: (m.vdd_millivolts.range.min, m.vdd_millivolts.range.max),
-            floor,
-            solved_floor: floor,
-            cite: format!(
-                "{}; VBOR{level} falling max {}",
-                ctx.cite(&m.vdd_millivolts.at),
-                ctx.cite(&bor.at)
-            ),
-        });
+        out.push(mcu_consumer(ctx.table, spec, row, m)?);
     }
     for r in &ctx.power.regulators {
         if r.input != domain {
@@ -1156,6 +1136,65 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
     Ok(out)
 }
 
+/// The MCU as a consumer of its supply: its row's operating range (DS12117
+/// Table 111) and its floor, the larger of that range's minimum and the
+/// declared `bor_level`'s VBOR falling maximum (Table 115). One rule for
+/// step 16 and for step 22 without a power tree (`AET-WO-1208` F1/F5, the
+/// architect's ruling on PR #182).
+fn mcu_consumer(
+    table: &PowerPartsTable,
+    spec: &Specification,
+    row: &pp::Row,
+    m: &pp::Mcu,
+) -> Result<Consumer, IrValidationError> {
+    let level = usize::from(spec.mcu.bor_level);
+    let bor = m.bor_falling_max_millivolts.get(level).ok_or_else(|| {
+        refuse(
+            Refusal::PowerValueInvalid,
+            "mcu",
+            format!("mcu.bor_level {level} has no row"),
+            table.cite(&m.vdd_millivolts.at),
+        )
+    })?;
+    let floor = m.vdd_millivolts.range.min.max(bor.value);
+    Ok(Consumer {
+        name: format!("{} (MCU)", row.part),
+        range: (m.vdd_millivolts.range.min, m.vdd_millivolts.range.max),
+        floor,
+        solved_floor: floor,
+        cite: format!(
+            "{}; VBOR{level} falling max {}",
+            table.cite(&m.vdd_millivolts.at),
+            table.cite(&bor.at)
+        ),
+    })
+}
+
+/// Step 22 of `validate` (`AET-WO-1208` F1/F5): with no power tree, the
+/// MCU's supply domain judged by step 16's own consumer rule
+/// ([`domain_inside_consumer`], [`mcu_consumer`]), so one rule and one floor
+/// hold the MCU's rail whether or not a tree declares its source. With a
+/// tree, step 16 has judged it. A part with no MCU row is the emitter's to
+/// refuse, as before.
+pub(crate) fn mcu_without_tree(spec: &Specification) -> Result<(), IrValidationError> {
+    if spec.power.is_some() {
+        return Ok(());
+    }
+    let table = crate::power_parts::table()?;
+    let (Some(row), Some(domain)) = (
+        table.get(&spec.mcu.part),
+        spec.voltage_domains
+            .iter()
+            .find(|d| d.id == spec.mcu.supply),
+    ) else {
+        return Ok(());
+    };
+    let Kind::Mcu(m) = &row.kind else {
+        return Ok(());
+    };
+    domain_inside_consumer(domain, &mcu_consumer(table, spec, row, m)?)
+}
+
 fn mcu<'a>(ctx: &Ctx<'a>) -> Result<(&'a pp::Row, &'a pp::Mcu), IrValidationError> {
     let part = &ctx.spec.mcu.part;
     let row = ctx.row("mcu", part)?;
@@ -1169,28 +1208,34 @@ fn mcu<'a>(ctx: &Ctx<'a>) -> Result<(&'a pp::Row, &'a pp::Mcu), IrValidationErro
 /// consumer's supply range, and above every consumer's floor.
 fn domains_inside_consumers(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
     for d in &ctx.spec.voltage_domains {
-        let (dmin, dmax) = range(d);
-        for Consumer {
-            name,
-            range: (cmin, cmax),
-            floor,
-            cite,
-            ..
-        } in consumers(ctx, &d.id)?
-        {
-            let inside =
-                i128::from(dmin) >= i128::from(cmin) && i128::from(dmax) <= i128::from(cmax);
-            if !inside || i128::from(dmin) <= i128::from(floor) {
-                return Err(refuse(
-                    Refusal::DomainOutsideConsumer,
-                    &d.id,
-                    format!(
-                        "the domain's {dmin} to {dmax} mV is not inside {name}'s {cmin} to {cmax} mV with its minimum above the consumer's floor of {floor} mV"
-                    ),
-                    cite,
-                ));
-            }
+        for c in consumers(ctx, &d.id)? {
+            domain_inside_consumer(d, &c)?;
         }
+    }
+    Ok(())
+}
+
+/// Domain `d`'s declared range inside consumer `c`'s supply range, its
+/// minimum above `c`'s floor.
+fn domain_inside_consumer(d: &VoltageDomain, c: &Consumer) -> Result<(), IrValidationError> {
+    let (dmin, dmax) = range(d);
+    let Consumer {
+        name,
+        range: (cmin, cmax),
+        floor,
+        cite,
+        ..
+    } = c;
+    let inside = i128::from(dmin) >= i128::from(*cmin) && i128::from(dmax) <= i128::from(*cmax);
+    if !inside || i128::from(dmin) <= i128::from(*floor) {
+        return Err(refuse(
+            Refusal::DomainOutsideConsumer,
+            &d.id,
+            format!(
+                "the domain's {dmin} to {dmax} mV is not inside {name}'s {cmin} to {cmax} mV with its minimum above the consumer's floor of {floor} mV"
+            ),
+            cite.clone(),
+        ));
     }
     Ok(())
 }
