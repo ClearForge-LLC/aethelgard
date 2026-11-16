@@ -2214,7 +2214,7 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
     Ok(())
 }
 
-const WINDOWS_RULE: &str = "a project name may not be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`) in any case: `generate` names files after it, and Windows cannot open such a file (`AET-WO-1102` A7)";
+const WINDOWS_RULE: &str = "a project name may not be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`) in any case: `generate` names files after it, and Windows cannot open such a file (`AET-WO-1102` A7)";
 
 const OBSERVER_RULE: &str = "a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)";
 

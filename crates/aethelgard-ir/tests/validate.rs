@@ -3008,6 +3008,13 @@ fn a_project_named_for_a_windows_device_is_refused() {
         let err = refusal(|s| s.project_name = name.into());
         assert_invalid_identifier(err.clone(), "project_name");
         assert!(err.to_string().contains("Windows"), "{err}");
+        // The message lists the range each name is in (adversarial: it
+        // listed `com1` to `com9` while refusing `com0`).
+        assert!(
+            err.to_string()
+                .contains("`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`"),
+            "{err}"
+        );
     }
     for name in [
         "com10",
