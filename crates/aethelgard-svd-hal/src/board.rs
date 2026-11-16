@@ -13,22 +13,31 @@
 //! from ST's CMSIS header ([`crate::cmsis`]). Pin roles' electrical settings
 //! (output type, pull) are this generator's policy, named in [`Role::policy`];
 //! each pin's speed is the output speed check's ([`pin_speeds`],
-//! `AET-WO-4300c`). `I2C_TIMINGR` values are placeholders: clock-tree solving
-//! is out of scope (WO §4).
+//! `AET-WO-4300c`). The register values a controller's bring-up writes are
+//! the solved topology's (`AET-WO-4230` §1.1–§1.4: the SPI kernel clocks and
+//! `MBR`, the I2C `CR1` and `TIMINGR`), copied, never computed here; the
+//! oracle's expected words come from `aethelgard_ir::silicon`, the independent
+//! rule, which [`check_silicon`] runs before anything is emitted.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
 use aethelgard_ir::motor;
 use aethelgard_ir::serial::{self, Parity};
+use aethelgard_ir::silicon;
 use aethelgard_ir::speeds::{self, OutputSpeeds};
-use aethelgard_ir::{IrValidationError, PinTable, RESERVED_PINS, SolvedTopology};
+use aethelgard_ir::{
+    IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
+    SolvedTopology, SpiKernel,
+};
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
 mod firmware;
+mod ledger;
 
 pub use firmware::{ECHO_POLLS, FRAME_LEN, PATTERN_TAIL};
+pub use ledger::{FieldAccess, FieldUse, register_fields};
 
 /// One variant per refusal (`INV-06`).
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -107,6 +116,10 @@ pub enum BoardError {
     },
     #[error("no part of the split schedule proof schedules {action} (AET-WO-3303)")]
     UnscheduledAction { action: String },
+    #[error(
+        "`{peripheral}`'s solved values fail the independent silicon rule (aethelgard_ir::silicon, AET-WO-4230): {finding}"
+    )]
+    SiliconRuleFails { peripheral: String, finding: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -138,17 +151,128 @@ impl BoardError {
             Self::CeilingTooLow { .. } => "CeilingTooLow",
             Self::FootprintOverlap { .. } => "FootprintOverlap",
             Self::UnscheduledAction { .. } => "UnscheduledAction",
+            Self::SiliconRuleFails { .. } => "SiliconRuleFails",
             Self::Register(e) => e.kind(),
         }
     }
 }
 
-/// The I2C modes of UM10204, with placeholder `TIMINGR` values.
-const I2C_MODES: [(&str, u32, u32); 3] = [
-    ("Standard100k", 100_000, 0x1070_7DBC),
-    ("Fast400k", 400_000, 0x0060_2173),
-    ("FastPlus1M", 1_000_000, 0x0030_0B29),
+/// The I2C modes of UM10204 and their SCL frequencies. Each mode's
+/// `TIMINGR` is the solved topology's (`SolvedI2cTiming::timingr`).
+const I2C_MODES: [(&str, u32); 3] = [
+    ("Standard100k", 100_000),
+    ("Fast400k", 400_000),
+    ("FastPlus1M", 1_000_000),
 ];
+
+/// HSI's worst-case deviations from nominal, ppm: DS12117 Rev 10 Table 36
+/// (rev Y) = Table 133 (rev V), rendered: ±0.3 MHz of 64 MHz at 3.3 V and
+/// 30 °C (4,688 ppm, rounded away from zero), −0.12/+0.03 % over VDD 1.62 to
+/// 3.6 V, −2/+1 % over TJ −40 °C to TJmax, summed. The generator's own copy
+/// (`AET-WO-4230` amendment 1); `aethelgard_ir::silicon` holds another.
+const HSI_FAST_PPM: u64 = 14_984;
+const HSI_SLOW_PPM: u64 = 25_894;
+
+/// The reset clock this generator emits for: HSI at 64 MHz, undivided, as the
+/// core clock and as every HSI-derived kernel (`ResetClock`, `AET-WO-4300a`
+/// Q2, ruled).
+const RESET_HZ: u64 = 64_000_000;
+
+/// The fastest `hz` of HSI can run, rounded up.
+fn hsi_fastest(hz: u64) -> u64 {
+    (u128::from(hz) * u128::from(1_000_000 + HSI_FAST_PPM))
+        .div_ceil(1_000_000)
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
+/// The slowest `hz` of HSI can run, rounded down.
+fn hsi_slowest(hz: u64) -> u64 {
+    (u128::from(hz) * u128::from(1_000_000 - HSI_SLOW_PPM) / 1_000_000)
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
+/// Refuses a solved SPI or I2C controller whose values the independent rule
+/// does not hold (`AET-WO-4230` §1.3, review A5): the generator copies them
+/// into code, and the oracle's expected words come from the same rule
+/// (`aethelgard_ir::silicon::spi_words`, `i2c_cr1`), so a value it refuses
+/// is never emitted. [`generate`] runs it first; `SolvedTopology::validate`
+/// also holds the topology to what `solve` derives, so through [`generate`]
+/// this refuses only a solver the rule disagrees with.
+pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
+    for (peripheral, c) in &solved.spi_controllers {
+        let f = silicon::check_spi(peripheral, c);
+        if !f.holds {
+            let failed: Vec<&str> = [
+                ("kernel_ok", f.kernel_ok),
+                ("mbr_ok", f.mbr_ok),
+                ("achieved_ok", f.achieved_ok),
+            ]
+            .into_iter()
+            .filter(|(_, ok)| !ok)
+            .map(|(name, _)| name)
+            .collect();
+            return Err(BoardError::SiliconRuleFails {
+                peripheral: peripheral.clone(),
+                finding: format!(
+                    "check_spi: {} false (kernel {:?} at {} Hz, MBR {}, declared {} Hz)",
+                    failed.join(", "),
+                    c.kernel,
+                    c.kernel_hz,
+                    c.mbr,
+                    c.declared_hz
+                ),
+            });
+        }
+    }
+    for (peripheral, t) in &solved.i2c_timings {
+        let f = silicon::check_i2c(peripheral, t);
+        if !f.holds {
+            let mut failed: Vec<String> = [
+                ("kernel_ok", f.kernel_ok),
+                ("cr1_ok", f.cr1_ok),
+                ("modes_ok", f.modes_ok),
+            ]
+            .into_iter()
+            .filter(|(_, ok)| !ok)
+            .map(|(name, _)| name.to_owned())
+            .collect();
+            for w in f.timingr.iter().filter(|w| !w.holds) {
+                let c = &w.constraints;
+                let flags: Vec<&str> = [
+                    ("t_low", c.t_low),
+                    ("t_high", c.t_high),
+                    ("scl_frequency", c.scl_frequency),
+                    ("data_setup", c.data_setup),
+                    ("data_hold", c.data_hold),
+                    ("kernel_minimum", c.kernel_minimum),
+                    ("tight", w.tight),
+                    ("presc_least", w.presc_least),
+                    ("reserved_zero", w.reserved_zero),
+                ]
+                .into_iter()
+                .filter(|(_, ok)| !ok)
+                .map(|(name, _)| name)
+                .collect();
+                failed.push(format!(
+                    "{} TIMINGR {:#010x}: {}",
+                    w.mode,
+                    w.timingr,
+                    flags.join(", ")
+                ));
+            }
+            if f.timingr.len() != t.timingr.len() {
+                failed.push("a mode the rule does not know".to_owned());
+            }
+            return Err(BoardError::SiliconRuleFails {
+                peripheral: peripheral.clone(),
+                finding: format!("check_i2c: {} false", failed.join("; ")),
+            });
+        }
+    }
+    Ok(())
+}
 
 /// The board crate for `crate_name`, from `solved`.
 ///
@@ -180,6 +304,7 @@ pub fn generate_with(
     answers: &dyn Fn(&str) -> bool,
 ) -> Result<BTreeMap<String, String>, BoardError> {
     let plan = Plan::new(crate_name, solved, table)?;
+    check_silicon(solved)?;
     let i2c: Vec<String> = plan
         .peripherals
         .iter()
@@ -413,17 +538,38 @@ fn shifted(expr: &str, op: &str, pos: u32) -> String {
     }
 }
 
+/// The reads of `SR` an SPI transfer makes after `EOT` before it clears
+/// `SPE`: ES0392 Rev 16 §2.22.6 (p. 47) says only to "add a delay between the
+/// EOT event and SPI disable action", since a disable that comes too fast may
+/// truncate the last SCK pulse. `EOT` is set on sampling the last bit, so at
+/// most one SCK period of that pulse remains; the delay is one whole period,
+/// `2^(MBR+1)` kernel cycles, at the slowest kernel, counted in core cycles at
+/// the fastest core (both are HSI, but no common drift is credited), each
+/// read at least one core cycle.
+fn eot_delay_reads(c: &SolvedSpiController) -> u64 {
+    let period = u128::from(2u64 << c.mbr) * u128::from(hsi_fastest(RESET_HZ));
+    period
+        .div_ceil(u128::from(hsi_slowest(c.kernel_hz).max(1)))
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 /// One SPI peripheral's bounded transfer (`AET-WO-4200`): the command and
 /// argument bytes out, then the answer in, with `0x00` clocked out while it
 /// arrives. The register order is the one measured against Renode 1.17.0
 /// (`TSIZE` while disabled, select, `SPE`, `CSTART`, the frames, `EOTC`, `SPE`
 /// off, deselect), with a bounded wait for `SR.EOT` before `EOTC`
 /// (`AET-WO-4230`; Renode sets `EOT` once `TSIZE` frames moved,
-/// `STM32H7_SPI.cs` L388–395).
+/// `STM32H7_SPI.cs` L388–395), then the erratum's delay
+/// ([`eot_delay_reads`]). `CR1` is written whole each time, never read
+/// (`AET-WO-4230` D5).
 fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan, facts: &Facts) {
     let t = type_name(name);
     let pf = &facts.peripherals[name];
     let Some(s) = &pf.spi else { return };
+    let c = &plan.spi[name];
+    let code = spi_code(c, s, pf.enable, pf.master.unwrap_or_default());
+    let delay = eot_delay_reads(c);
     let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
     let arms: Vec<String> = selects
         .iter()
@@ -477,8 +623,8 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
                  }};\n        \
                  r.write(TOKEN, Block::{t}, {cr2:#04x}, {tsize_word});\n        \
                  r.write(TOKEN, port, {bsrr:#04x}, select);\n        \
-                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v | {spe});\n        \
-                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v | {cstart});\n        \
+                 r.write(TOKEN, Block::{t}, {cr1:#04x}, {enable_word:#010x});\n        \
+                 r.write(TOKEN, Block::{t}, {cr1:#04x}, {start_word:#010x});\n        \
                  let mut fail = false;\n        \
                  for &byte in write {{\n            \
                      if spi_frame(r, Block::{t}, byte, spins).is_none() {{\n                \
@@ -507,8 +653,17 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
                      ended = r.read(TOKEN, Block::{t}, {sr:#04x}) & {eot} != 0;\n            \
                      n += 1;\n        \
                  }}\n        \
+                 // ES0392 Rev 16 §2.22.6: at least one SCK period between `EOT` and\n        \
+                 // `SPE` = 0, {delay} reads of `SR` at the fastest core clock.\n        \
+                 if ended && !fail {{\n            \
+                     let mut k = 0;\n            \
+                     while k < {delay} {{\n                \
+                         let _ = r.read(TOKEN, Block::{t}, {sr:#04x});\n                \
+                         k += 1;\n            \
+                     }}\n        \
+                 }}\n        \
                  r.write(TOKEN, Block::{t}, {ifcr:#04x}, {eotc});\n        \
-                 r.modify(TOKEN, Block::{t}, {cr1:#04x}, |v| v & !{spe});\n        \
+                 r.write(TOKEN, Block::{t}, {cr1:#04x}, {idle_word:#010x});\n        \
                  r.write(TOKEN, port, {bsrr:#04x}, deselect);\n        \
                  if fail {{\n            \
                      Err(SpiError::Rxp)\n        \
@@ -524,8 +679,9 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
         tsize_word = shifted("frames", "<<", s.tsize),
         bsrr = facts.gpio.bsrr,
         cr1 = pf.cr1,
-        spe = bit(pf.enable),
-        cstart = bit(s.cstart),
+        enable_word = code.cr1_enable,
+        start_word = code.cr1_start,
+        idle_word = code.cr1_idle,
         ifcr = s.ifcr,
         eotc = bit(s.eotc),
         sr = s.sr,
@@ -855,6 +1011,14 @@ struct Plan {
     /// apart in the same way: a topology without serial ports emits what it did
     /// before, byte for byte.
     serials: BTreeMap<String, SerialPlan>,
+    /// Each SPI peripheral's solved controller (`AET-WO-4230` §1.1, §1.2),
+    /// copied from the topology (`RUL-16`).
+    spi: BTreeMap<String, SolvedSpiController>,
+    /// Each I2C peripheral's solved `CR1` and `TIMINGR` words (§1.4), copied.
+    i2c: BTreeMap<String, SolvedI2cTiming>,
+    /// The core clock the topology was solved for, Hz: `sysclk_hz` over
+    /// `D1CPRE` (the oracle's, for the erratum delay's sizing).
+    core_hz: u64,
 }
 
 impl Plan {
@@ -1162,6 +1326,30 @@ impl Plan {
                     pin: pin.clone(),
                 });
         }
+        // `SolvedTopology::validate` gives every SPI and I2C peripheral of
+        // `assignments` exactly one solved controller (`AET-WO-4230`).
+        let mut spi = BTreeMap::new();
+        let mut i2c = BTreeMap::new();
+        for (name, p) in &peripherals {
+            match p.kind {
+                Kind::Spi => {
+                    let c = solved.spi_controllers.get(name).ok_or_else(|| {
+                        BoardError::InvalidTopology(IrValidationError::SpiControllerMismatch {
+                            id: name.clone(),
+                        })
+                    })?;
+                    spi.insert(name.clone(), c.clone());
+                }
+                Kind::I2c => {
+                    let t = solved.i2c_timings.get(name).ok_or_else(|| {
+                        BoardError::InvalidTopology(IrValidationError::I2cTimingMismatch {
+                            id: name.clone(),
+                        })
+                    })?;
+                    i2c.insert(name.clone(), t.clone());
+                }
+            }
+        }
         let ports = pins.values().map(|p| p.port).collect();
         Ok(Plan {
             crate_name: crate_name.into(),
@@ -1190,6 +1378,9 @@ impl Plan {
                 .map_err(BoardError::InvalidTopology)?,
             timers,
             serials,
+            spi,
+            i2c,
+            core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
         })
     }
 }
@@ -1279,12 +1470,15 @@ struct SpiFacts {
     cstart: u32,
     tsize: u32,
     dsize: u32,
-    /// `DSIZE`'s width: the next field's position, `FTHLV`, less its own.
-    dsize_width: u32,
     rxp: u32,
     /// `SR.EOT` and `IFCR.EOTC`.
     eot: u32,
     eotc: u32,
+    /// `CFG1.MBR` and `CFG1.CRCSIZE`, `CFG2.SSM`, `CR1.SSI`.
+    mbr: u32,
+    crcsize: u32,
+    ssm: u32,
+    ssi: u32,
 }
 
 /// The I2Cv2 registers (RM0433 §48.7) and bit positions a transfer uses, all
@@ -1510,6 +1704,21 @@ struct Facts {
     usart: Option<UsartFacts>,
     /// `None` unless the board has a timer or a serial port.
     clock: Option<ClockFacts>,
+    /// The kernel-clock select writes, empty without an SPI peripheral.
+    kernel_selects: Vec<SelectWrite>,
+    flash: FlashFacts,
+}
+
+/// The flash controller's register block (`FLASH_R_BASE`, not the memory at
+/// `FLASH_BASE`) and `FLASH_OPTSR_CUR`, which the bring-up reads once for
+/// `BOR_LEV` (`AET-WO-4230` §1.6, D7, D10; RM0433 Rev 9 §4.9.8, p. 212).
+/// The flash interface has no clock gate in RCC: the header has no
+/// `RCC_*ENR_FLASHEN`.
+#[derive(Debug, Clone)]
+struct FlashFacts {
+    base: u32,
+    optsr_cur: u32,
+    bor_lev: (u32, u32),
 }
 
 fn tim_facts(f: &RegisterFacts) -> Result<TimFacts, BoardError> {
@@ -1565,16 +1774,6 @@ fn clock_facts(
 
 fn spi_facts(f: &RegisterFacts, layout: &cmsis::Layout) -> Result<SpiFacts, BoardError> {
     let dsize = f.position("SPI_CFG1_DSIZE_Pos")?;
-    let dsize_width = f
-        .position("SPI_CFG1_FTHLV_Pos")?
-        .checked_sub(dsize)
-        .filter(|w| (3..=5).contains(w))
-        .ok_or_else(|| {
-            BoardError::Register(RegisterError::MalformedSource {
-                detail: "`SPI_CFG1_DSIZE` and `SPI_CFG1_FTHLV` positions do not give a field width"
-                    .into(),
-            })
-        })?;
     Ok(SpiFacts {
         cr2: layout.offset("CR2", 0)?,
         cfg1: layout.offset("CFG1", 0)?,
@@ -1584,11 +1783,109 @@ fn spi_facts(f: &RegisterFacts, layout: &cmsis::Layout) -> Result<SpiFacts, Boar
         cstart: f.position("SPI_CR1_CSTART_Pos")?,
         tsize: f.position("SPI_CR2_TSIZE_Pos")?,
         dsize,
-        dsize_width,
         rxp: f.position("SPI_SR_RXP_Pos")?,
         eot: f.position("SPI_SR_EOT_Pos")?,
         eotc: f.position("SPI_IFCR_EOTC_Pos")?,
+        mbr: f.position("SPI_CFG1_MBR_Pos")?,
+        crcsize: f.position("SPI_CFG1_CRCSIZE_Pos")?,
+        ssm: f.position("SPI_CFG2_SSM_Pos")?,
+        ssi: f.position("SPI_CR1_SSI_Pos")?,
     })
+}
+
+/// `SPI_CFG1.DSIZE` and `SPI_CFG1.CRCSIZE` reset to `00111` (RM0433 Rev 9
+/// §50.11.3, p. 2218: reset `0x0007 0007`); "if CRC calculation is disabled
+/// by CRCEN=0, the CRCSIZE field must be kept at its default setting"
+/// (p. 2219; ES0392 Rev 16 §2.22.5, the same workaround). The generator's own
+/// copy of the reset value.
+const SPI_CRCSIZE_RESET: u32 = 0b0_0111;
+
+/// The whole words one SPI controller's bring-up writes (`AET-WO-4230` D4,
+/// D5), composed here from the solved `MBR` and the header's positions:
+/// `CR1` idle, `SSI` (with `SSM` set, NSS reads high, so the master raises no
+/// mode fault: RM0433 Rev 9 §50.11.1 p. 2215, §50.5.2 p. 2184), and with
+/// `SPE`, and with `SPE` and `CSTART`; `CFG1` `MBR`, `CRCSIZE` at reset and
+/// `DSIZE` 8 bits, every other field 0; `CFG2` `MASTER` and `SSM`, every
+/// other field 0 (mode 0, full duplex, Motorola, `SSOE` 0).
+#[derive(Debug, Clone, Copy)]
+struct SpiCode {
+    cr1_idle: u32,
+    cr1_enable: u32,
+    cr1_start: u32,
+    cfg1: u32,
+    cfg2: u32,
+}
+
+fn spi_code(c: &SolvedSpiController, s: &SpiFacts, enable: u32, master: u32) -> SpiCode {
+    let ssi = 1u32 << s.ssi;
+    let spe = 1u32 << enable;
+    SpiCode {
+        cr1_idle: ssi,
+        cr1_enable: ssi | spe,
+        cr1_start: ssi | spe | (1u32 << s.cstart),
+        cfg1: (u32::from(c.mbr) << s.mbr)
+            | (SPI_CRCSIZE_RESET << s.crcsize)
+            | (SPI_DSIZE << s.dsize),
+        cfg2: (1u32 << master) | (1u32 << s.ssm),
+    }
+}
+
+/// The select field and code that give SPI peripheral `name` its solved
+/// kernel clock (`AET-WO-4230` §1.1), by register and field name (RM0433 Rev 9
+/// §8.7.20, p. 414: `SPI123SEL` `100` is `per_ck`, `SPI45SEL` `011` is
+/// `hsi_ker_ck`; §8.7.22, p. 418: `SPI6SEL` `011` is `hsi_ker_ck`). The
+/// generator's own table; positions come from the header.
+fn select_code(name: &str, kernel: SpiKernel) -> Option<(&'static str, &'static str, u32)> {
+    match (name, kernel) {
+        ("SPI1" | "SPI2" | "SPI3", SpiKernel::PerCk) => Some(("D2CCIP1R", "SPI123SEL", 0b100)),
+        ("SPI4" | "SPI5", SpiKernel::HsiKerCk) => Some(("D2CCIP1R", "SPI45SEL", 0b011)),
+        ("SPI6", SpiKernel::HsiKerCk) => Some(("D3CCIPR", "SPI6SEL", 0b011)),
+        _ => None,
+    }
+}
+
+/// One whole-word write of a kernel-clock select register: its name, its
+/// `RCC_TypeDef` offset and the word, whose every field but the solved
+/// controllers' is at its reset value, 0
+/// (`RCC_D2CCIP1R` and `RCC_D3CCIPR` reset `0x0000 0000`, RM0433 Rev 9
+/// §8.7.20 p. 413, §8.7.22 p. 418).
+#[derive(Debug, Clone)]
+struct SelectWrite {
+    register: &'static str,
+    offset: u32,
+    word: u32,
+}
+
+/// The select writes the plan's SPI controllers need, in offset order.
+fn kernel_selects(
+    plan: &Plan,
+    f: &RegisterFacts,
+    rcc: &cmsis::Layout,
+) -> Result<Vec<SelectWrite>, BoardError> {
+    let mut words: BTreeMap<u32, SelectWrite> = BTreeMap::new();
+    for (name, c) in &plan.spi {
+        let (register, field, code) =
+            select_code(name, c.kernel).ok_or_else(|| BoardError::SiliconRuleFails {
+                peripheral: name.clone(),
+                finding: format!("no select code gives it the kernel {:?}", c.kernel),
+            })?;
+        let (pos, width) = f.field(&format!("RCC_{register}_{field}"))?;
+        if code >> width != 0 {
+            return Err(BoardError::Register(RegisterError::MalformedSource {
+                detail: format!("`RCC_{register}_{field}` is {width} bits, too few for {code:#b}"),
+            }));
+        }
+        let offset = rcc.offset(register, 0)?;
+        words
+            .entry(offset)
+            .or_insert(SelectWrite {
+                register,
+                offset,
+                word: 0,
+            })
+            .word |= code << pos;
+    }
+    Ok(words.into_values().collect())
 }
 
 fn gate(facts: &RegisterFacts, rcc: &cmsis::Layout, name: &str) -> Result<Gate, BoardError> {
@@ -1756,7 +2053,15 @@ impl Facts {
         } else {
             None
         };
+        let fl = f.layout("FLASH")?;
+        let flash = FlashFacts {
+            base: f.base("FLASH_R")?,
+            optsr_cur: fl.offset("OPTSR_CUR", 0)?,
+            bor_lev: f.field("FLASH_OPTSR_BOR_LEV")?,
+        };
         Ok(Facts {
+            kernel_selects: kernel_selects(plan, f, &rcc)?,
+            flash,
             rcc_base: f.base("RCC")?,
             rcc_words: rcc.size / 4,
             gpio,
@@ -1912,7 +2217,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          \n\
          /// The register blocks this board touches.\n\
          #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
-         pub enum Block {{\n    Rcc,"
+         pub enum Block {{\n    Rcc,\n    Flash,"
     );
     for port in &plan.ports {
         let _ = writeln!(w, "    {},", port_type(*port));
@@ -1982,8 +2287,10 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          \n    \
              const fn base(block: Block) -> usize {{\n        \
                  match block {{\n            \
-                     Block::Rcc => {rcc:#010x},",
-        rcc = facts.rcc_base
+                     Block::Rcc => {rcc:#010x},\n            \
+                     Block::Flash => {flash:#010x},",
+        rcc = facts.rcc_base,
+        flash = facts.flash.base,
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -2076,6 +2383,18 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              pub struct NotResetClock;\n"
         );
     }
+    if !plan.spi.is_empty() {
+        w.push_str(
+            "/// The SPI controllers' kernel clocks selected, each the solved topology's\n\
+             /// (`AET-WO-4230` §1.1). Only [`Rcc::select_spi_kernels`] makes one, from a\n\
+             /// [`ResetClock`]; every SPI clock enable takes it, so no SPI controller is\n\
+             /// clocked before its kernel clock is selected.\n\
+             pub struct SpiKernels {\n    \
+                 _private: (),\n\
+             }\n\
+             \n",
+        );
+    }
     // Speeds.
     for (name, (hz, admitted)) in speeds {
         let note = format!(
@@ -2084,8 +2403,9 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
         let _ = writeln!(
             w,
-            "/// `{name}` bus speeds. `TIMINGR` values are placeholders for a 64 MHz kernel\n\
-             /// clock: clock-tree solving is out of scope.\n\
+            "/// `{name}` bus speeds. Each mode's `TIMINGR` is the solved topology's\n\
+             /// (`AET-WO-4230` §1.4: RM0433 Rev 9 §47.4.9 at the kernel clock, judged by\n\
+             /// `aethelgard_ir::silicon::check_i2c` before this crate was generated).\n\
              pub mod {m}_speed {{\n    \
                  mod sealed {{\n        \
                      pub trait Sealed {{}}\n    \
@@ -2098,11 +2418,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             m = name.to_ascii_lowercase(),
             note = note.replace('\n', "\n    "),
         );
-        for (mode, _, _) in I2C_MODES {
+        for (mode, _) in I2C_MODES {
             let _ = writeln!(w, "    pub struct {mode};");
         }
         for &i in admitted {
-            let (mode, _, timingr) = I2C_MODES[i];
+            let (mode, _) = I2C_MODES[i];
+            // `Plan::new` gave every I2C peripheral its solved timing, and
+            // `check_silicon` held it to all three modes.
+            let timingr = plan.i2c[name].timingr[mode];
             let _ = writeln!(
                 w,
                 "\n    impl sealed::Sealed for {mode} {{}}\n    \
@@ -2282,15 +2605,18 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                     w,
                     "impl {t}<Clocked> {{\n    \
                          /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.\n    \
+                         /// `CR1` is written whole, the solved word with `PE` clear, then `TIMINGR`,\n    \
+                         /// then `CR1` with `PE`; none is read (`AET-WO-4230` D5: Renode 1.17.0\n    \
+                         /// stores few `CR1` fields and no `TIMINGR`).\n    \
                          pub fn init<S: {m}_speed::AtMostCeiling, R: Registers>(\n        \
                              self,\n        \
                              r: &mut R,\n        \
                              _clock: &ResetClock,\n        \
                              {params},\n    \
                          ) -> {t}<Enabled<S>> {{\n        \
-                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cr1:#04x}, {word:#010x});\n        \
                              r.write(TOKEN, Block::{block}, {cfg:#04x}, S::TIMINGR);\n        \
-                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v | {enable:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cr1:#04x}, {word_pe:#010x});\n        \
                              {t} {{ _state: PhantomData }}\n    \
                          }}\n\
                      }}\n\
@@ -2299,10 +2625,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                     params = params.join(",\n        "),
                     cr1 = pf.cr1,
                     cfg = pf.config,
+                    word = plan.i2c[name].cr1,
+                    word_pe = plan.i2c[name].cr1 | enable,
                 );
             }
             Kind::Spi => {
-                let master = 1u32 << pf.master.unwrap_or_default();
                 let selects = plan
                     .selects
                     .get(name)
@@ -2364,17 +2691,28 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 let doc_selects = if selects.is_empty() {
                     ""
                 } else {
-                    " Every chip select of the bus is\n    \
-                     /// driven high first (deselected), whatever firmware did with it before."
+                    "\n    /// Every chip select of the bus is driven high first (deselected), whatever\n    \
+                     /// firmware did with it before."
                 };
+                // `Plan::new` gave every SPI peripheral its solved controller.
+                let sf = pf
+                    .spi
+                    .as_ref()
+                    .expect("Facts::new reads an SPI peripheral's facts");
+                let c = &plan.spi[name];
+                let code = spi_code(c, sf, pf.enable, pf.master.unwrap_or_default());
                 let _ = writeln!(
                     w,
                     "impl {t}<Clocked> {{\n    \
-                         /// Master mode, 8-bit frames, and the peripheral left disabled: each\n    \
-                         /// transfer enables it and disables it again.{doc_selects} The\n    \
-                         /// baud rate, clock polarity and phase, and slave-select management are not\n    \
-                         /// solved yet: they stay at reset (Renode 1.17.0 does not model them).\n    \
-                         /// Only with a [`ResetClock`]: its kernel clock is the reset clock's.\n    \
+                         /// Master mode with software slave select, 8-bit frames, mode 0, the solved\n    \
+                         /// baud rate (`MBR` {mbr}: the {kernel_hz} Hz kernel over {div}), and the peripheral\n    \
+                         /// left disabled: each transfer enables it and disables it again.{doc_selects}\n    \
+                         /// `CR1` (`SSI`, `SPE` clear), `CFG1` and `CFG2` are written whole, in that\n    \
+                         /// order, and none is read (`AET-WO-4230` D5): the configuration registers\n    \
+                         /// change only while `SPE` is 0 (RM0433 Rev 9 §50.11.1, p. 2216), and `SSI`\n    \
+                         /// is high before `MASTER` and `SSM` are, so no mode fault can arise\n    \
+                         /// (§50.5.2, p. 2184). Only with a [`ResetClock`]: its kernel clock is the\n    \
+                         /// reset clock's.\n    \
                          pub fn init<R: Registers>(\n        \
                              self,\n        \
                              r: &mut R,\n        \
@@ -2382,21 +2720,22 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                              {params},\n    \
                          ) -> {t}<Enabled<()>> {{\n\
                          {high}        \
-                             r.modify(TOKEN, Block::{block}, {cr1:#04x}, |v| v & !{enable:#010x});\n        \
-                             r.modify(TOKEN, Block::{block}, {cfg1:#04x}, |v| (v & !{dmask:#010x}) | {dsize:#010x});\n        \
-                             r.modify(TOKEN, Block::{block}, {cfg:#04x}, |v| v | {master:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cr1:#04x}, {idle:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cfg1:#04x}, {cfg1_word:#010x});\n        \
+                             r.write(TOKEN, Block::{block}, {cfg:#04x}, {cfg2_word:#010x});\n        \
                              {t} {{ _state: PhantomData }}\n    \
                          }}\n\
                      }}\n",
                     params = params.join(",\n        "),
                     cr1 = pf.cr1,
                     cfg = pf.config,
-                    cfg1 = pf.spi.as_ref().map_or(0, |s| s.cfg1),
-                    dmask = pf
-                        .spi
-                        .as_ref()
-                        .map_or(0, |s| oracle_mask(s.dsize_width, s.dsize)),
-                    dsize = pf.spi.as_ref().map_or(0, |s| SPI_DSIZE << s.dsize),
+                    cfg1 = sf.cfg1,
+                    idle = code.cr1_idle,
+                    cfg1_word = code.cfg1,
+                    cfg2_word = code.cfg2,
+                    mbr = c.mbr,
+                    kernel_hz = c.kernel_hz,
+                    div = 2u32 << c.mbr,
                 );
                 if !selects.is_empty() {
                     emit_spi_transfer(w, name, selects, plan, facts);
@@ -2439,6 +2778,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     // block, its first: a port's and an I2C or SPI peripheral's. A timer's and a USART's do
     // not: their proofs hold that nothing reads them (`AET-WO-4300a`,
     // `AET-WO-4300b`).
+    // An SPI peripheral's enable also takes the selected kernel clocks.
     let gates = facts
         .ports
         .iter()
@@ -2448,6 +2788,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 port_type(*port),
                 &pf.gate,
                 Some(facts.gpio.moder),
+                false,
             )
         })
         .chain(facts.peripherals.iter().map(|(name, pf)| {
@@ -2456,22 +2797,26 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 type_name(name),
                 &pf.gate,
                 Some(pf.cr1),
+                plan.spi.contains_key(name),
             )
         }))
         .chain(
             facts
                 .timers
                 .iter()
-                .map(|(n, tf)| (format!("tim{n}"), format!("Tim{n}"), &tf.gate, None)),
+                .map(|(n, tf)| (format!("tim{n}"), format!("Tim{n}"), &tf.gate, None, false)),
         )
-        .chain(
-            facts
-                .serials
-                .iter()
-                .map(|(name, sf)| (name.to_ascii_lowercase(), type_name(name), &sf.gate, None)),
-        );
+        .chain(facts.serials.iter().map(|(name, sf)| {
+            (
+                name.to_ascii_lowercase(),
+                type_name(name),
+                &sf.gate,
+                None,
+                false,
+            )
+        }));
     let mut first = true;
-    for (field, t, g, dummy) in gates {
+    for (field, t, g, dummy, spi) in gates {
         if !first {
             let _ = writeln!(w);
         }
@@ -2493,7 +2838,8 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             w,
             "    /// `RCC_{reg}` bit {bit}. Then the register read back, so the write is not\n\
              {doc}\n    \
-             pub fn enable_{field}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>) -> {t}<Clocked> {{\n        \
+             {kernels_doc}\
+             pub fn enable_{field}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>{kernels}) -> {t}<Clocked> {{\n        \
                  r.modify(TOKEN, Block::Rcc, {off:#05x}, |v| v | {mask:#010x});\n        \
                  let _ = r.read(TOKEN, Block::Rcc, {off:#05x});{read}\n        \
                  {t} {{ _state: PhantomData }}\n    \
@@ -2502,18 +2848,46 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             bit = g.bit,
             off = g.offset,
             mask = 1u32 << g.bit,
+            kernels_doc = if spi {
+                "/// Only once its kernel clock is selected ([`SpiKernels`]).\n    "
+            } else {
+                ""
+            },
+            kernels = if spi { ", _kernels: &SpiKernels" } else { "" },
         );
     }
     if let Some(clock) = &facts.clock {
         emit_reset_clock(w, clock);
     }
+    if !facts.kernel_selects.is_empty() {
+        emit_select_kernels(w, facts, plan);
+    }
+    let (bor_pos, bor_width) = facts.flash.bor_lev;
     let _ = writeln!(
         w,
         "}}\n\
          \n\
+         /// The flash controller's registers: only `FLASH_OPTSR_CUR`, read once.\n\
+         pub struct Flash {{\n    \
+             _private: (),\n\
+         }}\n\
+         \n\
+         impl Flash {{\n    \
+             /// `FLASH_OPTSR_CUR`, read once, whole: its `BOR_LEV` (bits {hi}:{bor_pos}) is the\n    \
+             /// brown-out level the option bytes hold (RM0433 Rev 9 §4.9.8, p. 212;\n    \
+             /// `AET-WO-4230` §1.6). The firmware writes nothing to the flash controller:\n    \
+             /// programming the option bytes is a factory step.\n    \
+             pub fn option_status<R: Registers>(self, r: &mut R) -> u32 {{\n        \
+                 r.read(TOKEN, Block::Flash, {optsr:#04x})\n    \
+             }}\n\
+         }}\n\
+         \n\
          /// Everything on the board, once per program.\n\
          pub struct Board {{\n    \
-             pub rcc: Rcc,"
+             pub rcc: Rcc,\n    \
+             pub flash: Flash,",
+        hi = bor_pos + bor_width - 1,
+        optsr = facts.flash.optsr_cur,
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -2556,7 +2930,8 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                      return None;\n        \
                  }}\n        \
                  Some(Board {{\n            \
-                     rcc: Rcc {{ _private: () }},"
+                     rcc: Rcc {{ _private: () }},\n            \
+                     flash: Flash {{ _private: () }},"
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -2589,12 +2964,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     s
 }
 
-/// One timer's typestate and its start (`AET-WO-4300a` §1.3): the solved
-/// values, every register written in full and none read, in the order `PSC`,
-/// `ARR`, each used channel's `CCRk`, `CCMR1`, `CCMR2`, `CCER`, `BDTR` (only
-/// on a timer with a main output enable), `EGR`, then `CR1` last.
-fn emit_timer_start(w: &mut String, n: u32, t: &TimerPlan, plan: &Plan, tf: &TimFacts) {
-    let mut writes: Vec<(&str, u32, u32)> = vec![("PSC", tf.psc, t.psc), ("ARR", tf.arr, t.arr)];
+/// One timer's start (`AET-WO-4300a` §1.3), as [`emit_timer_start`] writes
+/// it: (register, offset, value), in order.
+fn timer_writes(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(&'static str, u32, u32)> {
+    let mut writes: Vec<(&'static str, u32, u32)> =
+        vec![("PSC", tf.psc, t.psc), ("ARR", tf.arr, t.arr)];
     let mut ccmr = [0u32; 2];
     let mut ccer = 0u32;
     for (&k, (_, ccr)) in &t.channels {
@@ -2611,6 +2985,15 @@ fn emit_timer_start(w: &mut String, n: u32, t: &TimerPlan, plan: &Plan, tf: &Tim
     }
     writes.push(("EGR", tf.egr, 1 << tf.ug));
     writes.push(("CR1", tf.cr1, (1 << tf.arpe) | (1 << tf.cen)));
+    writes
+}
+
+/// One timer's typestate and its start (`AET-WO-4300a` §1.3): the solved
+/// values, every register written in full and none read, in the order `PSC`,
+/// `ARR`, each used channel's `CCRk`, `CCMR1`, `CCMR2`, `CCER`, `BDTR` (only
+/// on a timer with a main output enable), `EGR`, then `CR1` last.
+fn emit_timer_start(w: &mut String, n: u32, t: &TimerPlan, plan: &Plan, tf: &TimFacts) {
+    let writes = timer_writes(n, t, tf);
     let params: Vec<String> = t
         .channels
         .iter()
@@ -2690,6 +3073,46 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
         reads = reads.join("\n"),
         tests = tests.join(" && "),
         count = count_word(clock.len()),
+    );
+}
+
+/// [`Rcc`]'s `select_spi_kernels`: each select register the plan's SPI
+/// controllers need, written whole (`AET-WO-4230` §1.1, D4, D5), from a
+/// [`ResetClock`]: the reset clock was read before, and is never read again.
+fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
+    let kernels: Vec<String> = plan
+        .spi
+        .iter()
+        .map(|(name, c)| {
+            let kernel = match c.kernel {
+                SpiKernel::PerCk => "`per_ck` (HSI at `CKPERSEL`'s reset)",
+                SpiKernel::HsiKerCk => "`hsi_ker_ck`",
+            };
+            format!("    /// - `{name}`: {kernel}, {} Hz.", c.kernel_hz)
+        })
+        .collect();
+    let writes: Vec<String> = facts
+        .kernel_selects
+        .iter()
+        .map(|s| {
+            format!(
+                "        r.write(TOKEN, Block::Rcc, {:#05x}, {:#010x}); // {}",
+                s.offset, s.word, s.register
+            )
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "\n    /// Selects each solved SPI controller's kernel clock, every select register\n    \
+         /// written whole, every other field at its reset value, 0 (RM0433 Rev 9\n    \
+         /// §8.7.20, §8.7.22), and none read: Renode 1.17.0 stores no selection.\n\
+         {kernels}\n    \
+         pub fn select_spi_kernels<R: Registers>(&mut self, r: &mut R, _clock: &ResetClock) -> SpiKernels {{\n\
+         {writes}\n        \
+             SpiKernels {{ _private: () }}\n    \
+         }}",
+        kernels = kernels.join("\n"),
+        writes = writes.join("\n"),
     );
 }
 
@@ -2918,6 +3341,24 @@ fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: 
     e.1 |= value << pos;
 }
 
+/// The oracle's words of SPI peripheral `name` (`AET-WO-4230` §1.3, D4): the
+/// independent rule's, `aethelgard_ir::silicon::spi_words`, never this
+/// generator's composition ([`spi_code`], [`kernel_selects`]).
+fn oracle_spi(plan: &Plan, name: &str) -> silicon::SpiWords {
+    silicon::spi_words(&plan.spi, name)
+        .expect("check_silicon held every SPI controller's kernel to a select code")
+}
+
+/// The oracle's select writes, by RCC offset: each solved SPI controller's
+/// `kernel_select`, from the independent rule. Controllers that share a
+/// register give one word for it (`spi_words` sets every solved field).
+fn oracle_selects(plan: &Plan) -> BTreeMap<u32, u32> {
+    plan.spi
+        .keys()
+        .map(|name| oracle_spi(plan, name).kernel_select)
+        .collect()
+}
+
 /// The harness image's fields, in its order: RCC, the ports, the I2C and SPI
 /// peripherals, then the timers. A USART's block is never in it.
 fn image_fields(plan: &Plan) -> Vec<String> {
@@ -2951,6 +3392,8 @@ enum Action {
     Pin(String),
     Start(String),
     ResetClock,
+    /// The SPI kernel-clock selection (`AET-WO-4230` §1.1).
+    SelectKernels,
     TimerClock(u32),
     TimerStart(u32),
 }
@@ -2963,6 +3406,7 @@ impl Action {
             Self::Pin(pin) => format!("the {pin} configure"),
             Self::Start(name) => format!("the {name} start"),
             Self::ResetClock => "the reset-clock read".to_owned(),
+            Self::SelectKernels => "the SPI kernel-clock selection".to_owned(),
             Self::TimerClock(n) => format!("the TIM{n} clock enable"),
             Self::TimerStart(n) => format!("the TIM{n} start"),
         }
@@ -3030,9 +3474,13 @@ impl Scope {
                 .map(|p| Action::Pin(p.clone())),
         );
         out.extend(peripherals().map(|n| Action::Start(n.clone())));
-        // Every peripheral's start and every timer's takes the reset clock.
+        // Every peripheral's start and every timer's takes the reset clock,
+        // and an SPI peripheral's clock enable the kernel selection.
         if !self.timers.is_empty() || !self.peripherals.is_empty() {
             out.push(Action::ResetClock);
+        }
+        if self.peripherals.iter().any(|n| plan.spi.contains_key(n)) {
+            out.push(Action::SelectKernels);
         }
         out.extend(self.timers.iter().map(|n| Action::TimerClock(*n)));
         out.extend(self.timers.iter().map(|n| Action::TimerStart(*n)));
@@ -3138,15 +3586,16 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
         Action::Start(name) => {
             let pf = &facts.peripherals[name];
             let t = type_name(name);
-            add(t.clone(), pf.cr1, 1u32 << pf.enable);
+            // `CR1` and the configuration are written whole (`AET-WO-4230` D5).
+            add(t.clone(), pf.cr1, !0);
             match &pf.spi {
                 None => {
                     add(t.clone(), pf.config, !0);
                     add(t, pf.txdr, !0);
                 }
                 Some(spi) => {
-                    add(t.clone(), spi.cfg1, oracle_mask(spi.dsize_width, spi.dsize));
-                    add(t, pf.config, 1u32 << pf.master.unwrap_or_default());
+                    add(t.clone(), spi.cfg1, !0);
+                    add(t, pf.config, !0);
                     // It drives its own chip selects.
                     for s in plan.selects.get(name).into_iter().flatten() {
                         level(&mut add, &s.pin);
@@ -3155,6 +3604,13 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
             }
         }
         Action::ResetClock => {}
+        // Each select register is written whole; the offsets are the oracle's
+        // (`aethelgard_ir::silicon::spi_words`).
+        Action::SelectKernels => {
+            for (offset, _) in oracle_selects(plan) {
+                add("Rcc".to_owned(), offset, !0);
+            }
+        }
         Action::TimerStart(n) => {
             if let Some(tf) = &facts.tim {
                 for (_, offset, _) in timer_oracle(*n, &plan.timers[n], tf) {
@@ -3180,17 +3636,21 @@ fn check_parts(plan: &Plan, facts: &Facts, parts: &[Scope]) -> Result<(), BoardE
             });
         }
     }
+    // The kernel selection, like a port's enable, is one owner however many
+    // SPI parts schedule it.
     let mut owners: Vec<(String, Footprint)> = plan
         .ports
         .iter()
-        .map(|p| {
-            let a = Action::Port(*p);
-            (a.describe(), footprint(plan, facts, &a))
-        })
+        .map(|p| Action::Port(*p))
+        .chain((!plan.spi.is_empty()).then_some(Action::SelectKernels))
+        .map(|a| (a.describe(), footprint(plan, facts, &a)))
         .collect();
     for (part, acts) in parts.iter().zip(&scheduled) {
         let mut own = Footprint::new();
-        for a in acts.iter().filter(|a| !matches!(a, Action::Port(_))) {
+        for a in acts
+            .iter()
+            .filter(|a| !matches!(a, Action::Port(_) | Action::SelectKernels))
+        {
             for (key, mask) in footprint(plan, facts, a) {
                 *own.entry(key).or_default() |= mask;
             }
@@ -3256,7 +3716,62 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
     emit_transfer_proofs(w, plan, facts, speeds);
     emit_spi_transfer_proofs(w, plan, facts);
     emit_timer_proofs(w, plan, facts);
+    emit_flash_proof(w);
     Ok(s)
+}
+
+/// `FLASH_OPTSR_CUR`'s offset in the flash controller's block: "Address
+/// offset: 0x01C or 0x11C" (RM0433 Rev 9 §4.9.8, p. 212). The oracle's own
+/// copy; the code's comes from the header's `FLASH_TypeDef`.
+const ORACLE_OPTSR_CUR: u32 = 0x01C;
+
+/// The proof that the brown-out word is one read of `FLASH_OPTSR_CUR`, the
+/// word exactly as read, and no write to the flash controller (`AET-WO-4230`
+/// §1.6, D7, D10).
+fn emit_flash_proof(w: &mut String) {
+    let _ = writeln!(
+        w,
+        "\n\
+         /// The flash controller as `Flash::option_status` may touch it.\n\
+         struct FlashSpy {{\n    \
+             reads: u32,\n    \
+             word: u32,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for FlashSpy {{}}\n\
+         \n\
+         impl Registers for FlashSpy {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 kani::assert(block == Block::Flash && offset == {optsr:#05x}, \"option_status read anything but FLASH_OPTSR_CUR\");\n        \
+                 self.reads += 1;\n        \
+                 self.word\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, _: Block, _: usize, _: u32) {{\n        \
+                 kani::assert(false, \"option_status wrote a register: the firmware never programs the option bytes\");\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"option_status made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"option_status made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// The brown-out word is exactly one read of `FLASH_OPTSR_CUR`, returned as\n\
+         /// read, for any word there; nothing is written.\n\
+         #[kani::proof]\n\
+         fn flash_option_status_is_one_read() {{\n    \
+             let word: u32 = kani::any();\n    \
+             let mut spy = FlashSpy {{ reads: 0, word }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let read = board.flash.option_status(&mut spy);\n    \
+             kani::assert(spy.reads == 1, \"option_status did not read FLASH_OPTSR_CUR exactly once\");\n    \
+             kani::assert(read == word, \"option_status did not return the word as read\");\n    \
+             kani::cover!(read & 0xc == 0xc, \"BOR_LEV 11 is read\");\n\
+         }}",
+        optsr = ORACLE_OPTSR_CUR,
+    );
 }
 
 /// The whole-schedule harness for `scope`: its register image and the
@@ -3387,6 +3902,15 @@ fn emit_schedule(
             "            _ => unreachable!(\"`clocked` refuses a block outside the part\"),"
         );
     } else {
+        // Nor is the flash controller's: only `Flash::option_status` reads it
+        // (`flash_option_status_is_one_read`).
+        let _ = writeln!(
+            w,
+            "            Block::Flash => {{\n                \
+                 kani::assert(false, \"the flash controller was accessed through the harness image\");\n                \
+                 &mut self.rcc\n            \
+             }}"
+        );
         for name in plan.serials.keys() {
             let _ = writeln!(
                 w,
@@ -3414,6 +3938,7 @@ fn emit_schedule(
                  Block::Rcc => {{}}"
     );
     if !partial {
+        let _ = writeln!(w, "            Block::Flash => {{}}");
         for name in plan.serials.keys() {
             let _ = writeln!(w, "            Block::{} => {{}}", type_name(name));
         }
@@ -3519,6 +4044,30 @@ fn emit_schedule(
             otyper = g.otyper,
         );
     }
+    // The configuration registers are written whole, never read (`AET-WO-4230`
+    // D5): Renode 1.17.0 stores no `TIMINGR` and few `CFG1`/`CFG2` fields. A
+    // `CR1` is read once by its clock enable's dummy read (RM0433 Rev 9 §8.5.10),
+    // so its whole word is the final check's.
+    for (name, pf) in facts
+        .peripherals
+        .iter()
+        .filter(|(n, _)| scope.peripherals.contains(*n))
+    {
+        let t = type_name(name);
+        let regs: Vec<(&str, u32)> = match &pf.spi {
+            None => vec![("TIMINGR", pf.config)],
+            Some(spi) => vec![("CFG1", spi.cfg1), ("CFG2", pf.config)],
+        };
+        for (reg, offset) in regs {
+            let _ = writeln!(
+                w,
+                "        kani::assert(\n            \
+                     !(block == Block::{t} && offset == {offset:#04x}),\n            \
+                     \"{t} {reg} was read\",\n        \
+                 );"
+            );
+        }
+    }
     let _ = writeln!(
         w,
         "        *self.slot(block, offset)\n    \
@@ -3561,6 +4110,26 @@ fn emit_schedule(
                 cfg1 = spi.cfg1,
                 cr1 = pf.cr1 / 4,
                 en = 1u32 << pf.enable,
+            );
+            // No `SPE` before master mode with software slave select (the
+            // 3302 bench, NUCLEO-H753ZI rev V: with `SSM` 0 the first `SPE`
+            // raised `MODF`, `SR` 0x00001202, and cleared `MASTER`). The bits
+            // are the independent rule's (`aethelgard_ir::silicon::spi_words`).
+            let words = oracle_spi(plan, name);
+            let _ = writeln!(
+                w,
+                "        if block == Block::{t} && offset == {cr1_off:#04x} && value & {en:#010x} != 0 {{\n            \
+                     kani::assert(\n                \
+                         self.{field}[{cfg2}] & {master_ssm:#010x} == {master_ssm:#010x},\n                \
+                         \"{t} SPE set before CFG2 holds MASTER and SSM\",\n            \
+                     );\n            \
+                     kani::assert(value & {ssi:#010x} != 0, \"{t} SPE set without SSI\");\n        \
+                 }}",
+                cr1_off = pf.cr1,
+                cfg2 = pf.config / 4,
+                en = 1u32 << pf.enable,
+                master_ssm = words.cfg2,
+                ssi = words.cr1_idle,
             );
         }
     }
@@ -3902,12 +4471,22 @@ fn emit_schedule(
     for (word, mask) in &gates {
         let _ = writeln!(w, "    rcc[{word}] |= {mask:#010x};");
     }
+    // Each kernel-clock select register, the rule's whole word.
+    if acts.contains(&Action::SelectKernels) {
+        for (offset, word) in oracle_selects(plan) {
+            let _ = writeln!(
+                w,
+                "    rcc[{i}] = {word:#010x}; // the kernel selection, whole (aethelgard_ir::silicon::spi_words)",
+                i = offset / 4
+            );
+        }
+    }
     if part.is_none() {
         let _ = writeln!(
             w,
             "    // Word by word: `==` on the arrays is a `memcmp` loop under CBMC.\n    \
              for i in 0..{n} {{\n        \
-                 kani::assert(after.rcc[i] == rcc[i], \"RCC is not before plus exactly the solved clock gates\");\n    \
+                 kani::assert(after.rcc[i] == rcc[i], \"RCC is not before plus exactly the solved clock gates and selections\");\n    \
              }}",
             n = facts.rcc_words
         );
@@ -3932,7 +4511,7 @@ fn emit_schedule(
              for i in 0..{n} {{\n        \
                  kani::assert(\n            \
                      after.rcc[i] & !rely[i] == rcc[i] & !rely[i],\n            \
-                     \"RCC is not before plus exactly the solved clock gates\",\n        \
+                     \"RCC is not before plus exactly the solved clock gates and selections\",\n        \
                  );\n    \
              }}",
             n = facts.rcc_words
@@ -3946,62 +4525,46 @@ fn emit_schedule(
         let t = type_name(name);
         let field = name.to_ascii_lowercase();
         let cr1 = pf.cr1 / 4;
-        // An I2C peripheral is left enabled; an SPI one disabled, as every
-        // transfer leaves it (`AET-WO-4200`).
-        let (enabled, state) = match plan.peripherals[name].kind {
-            Kind::I2c => ("!=", "is not enabled"),
-            Kind::Spi => ("==", "is left enabled"),
-        };
-        let _ = writeln!(
-            w,
-            "    kani::assert(after.{field}[{cr1}] & {en:#010x} {enabled} 0, \"{t} {state}\");\n    \
-             kani::assert(\n        \
-                 after.{field}[{cr1}] & !{en:#010x} == before.{field}[{cr1}] & !{en:#010x},\n        \
-                 \"{t} CR1 changed beyond its enable bit\",\n    \
-             );",
-            en = 1u32 << pf.enable
-        );
+        // Every word the start writes is whole, and the expected word is the
+        // independent rule's (`AET-WO-4230` §1.3, D4, A5): an I2C peripheral is
+        // left enabled; an SPI one idle and disabled, as every transfer leaves
+        // it (`AET-WO-4200`).
         let written = match &pf.spi {
-            None => vec![pf.cr1, pf.config, pf.txdr],
-            Some(spi) => {
-                let mask = oracle_mask(spi.dsize_width, spi.dsize);
-                let _ = writeln!(
-                    w,
-                    "    kani::assert(after.{field}[{c}] & {mask:#010x} == {v:#010x}, \"{t} frames are not 8 bits\");\n    \
-                     kani::assert(\n        \
-                         after.{field}[{c}] & !{mask:#010x} == before.{field}[{c}] & !{mask:#010x},\n        \
-                         \"{t} CFG1 changed beyond DSIZE\",\n    \
-                     );",
-                    c = spi.cfg1 / 4,
-                    v = SPI_DSIZE << spi.dsize,
-                );
-                vec![pf.cr1, spi.cfg1, pf.config]
-            }
-        };
-        match plan.peripherals[name].kind {
-            Kind::I2c => {
+            None => {
                 let _ = writeln!(
                     w,
                     "    kani::assert(\n        \
+                         after.{field}[{cr1}] == {word:#010x},\n        \
+                         \"{t} CR1 is not the rule's word with PE (aethelgard_ir::silicon::i2c_cr1)\",\n    \
+                     );\n    \
+                     kani::assert(\n        \
                          after.{field}[{c}] == {field}_timingr,\n        \
                          \"{t} TIMINGR is not the chosen speed's\",\n    \
                      );",
-                    c = pf.config / 4
+                    word = silicon::i2c_cr1() | (1u32 << pf.enable),
+                    c = pf.config / 4,
                 );
+                vec![pf.cr1, pf.config, pf.txdr]
             }
-            Kind::Spi => {
-                let master = 1u32 << pf.master.unwrap_or_default();
-                let _ = writeln!(
-                    w,
-                    "    kani::assert(after.{field}[{c}] & {master:#010x} != 0, \"{t} is not a master\");\n    \
-                     kani::assert(\n        \
-                         after.{field}[{c}] & !{master:#010x} == before.{field}[{c}] & !{master:#010x},\n        \
-                         \"{t} CFG2 changed beyond MASTER\",\n    \
-                     );",
-                    c = pf.config / 4
-                );
+            Some(spi) => {
+                let words = oracle_spi(plan, name);
+                for (reg, offset, word) in [
+                    ("CR1", pf.cr1, words.cr1_idle),
+                    ("CFG1", spi.cfg1, words.cfg1),
+                    ("CFG2", pf.config, words.cfg2),
+                ] {
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(\n        \
+                             after.{field}[{i}] == {word:#010x},\n        \
+                             \"{t} {reg} is not the rule's word (aethelgard_ir::silicon::spi_words)\",\n    \
+                         );",
+                        i = offset / 4,
+                    );
+                }
+                vec![pf.cr1, spi.cfg1, pf.config]
             }
-        }
+        };
         for i in 0..pf.words {
             if !written.contains(&(i * 4)) {
                 let _ = writeln!(
@@ -4120,6 +4683,9 @@ fn emit_schedule(
     if acts.contains(&Action::ResetClock) {
         let _ = writeln!(w, "    let mut clock = None;");
     }
+    if acts.contains(&Action::SelectKernels) {
+        let _ = writeln!(w, "    let mut kernels = None;");
+    }
     for n in &scope.timers {
         let _ = writeln!(
             w,
@@ -4178,15 +4744,20 @@ fn emit_schedule(
     {
         debug_assert_eq!(acts[a], Action::Clock(name.clone()));
         let f = name.to_ascii_lowercase();
+        let (ready, kernels) = if plan.spi.contains_key(name) {
+            (" && kernels.is_some()", ", kernels.as_ref().unwrap()")
+        } else {
+            ("", "")
+        };
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());"
+                 kani::assume({f}.is_some(){ready});"
         );
         running(w, a);
         let _ = writeln!(
             w,
-            "                {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap()));\n            \
+            "                {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap(){kernels}));\n            \
              }}"
         );
         a += 1;
@@ -4309,10 +4880,12 @@ fn emit_schedule(
                         format!("                }} else if speed == {k} {{")
                     };
                     let _ = writeln!(w, "{open}");
+                    // The topology's word, which `check_silicon` held to
+                    // `aethelgard_ir::silicon::check_i2c`; read here on its own.
                     let _ = writeln!(
                         w,
                         "                    {m}_timingr = {:#010x};",
-                        I2C_MODES[admitted[k]].2
+                        plan.i2c[name].timingr[*mode]
                     );
                     start(
                         w,
@@ -4362,6 +4935,22 @@ fn emit_schedule(
                  kani::assume(read.is_ok());\n                \
                  clock = read.ok();\n                \
                  kani::cover!(true, \"the reset clock was read\");\n            \
+             }}"
+        );
+        a += 1;
+    }
+    if acts.contains(&Action::SelectKernels) {
+        debug_assert_eq!(acts[a], Action::SelectKernels);
+        let _ = writeln!(
+            w,
+            "            {a} => {{\n                \
+                 kani::assume(clock.is_some() && kernels.is_none());"
+        );
+        running(w, a);
+        let _ = writeln!(
+            w,
+            "                kernels = Some(rcc.select_spi_kernels(&mut img, clock.as_ref().unwrap()));\n                \
+                 kani::cover!(true, \"the SPI kernel clocks were selected\");\n            \
              }}"
         );
         a += 1;
@@ -4911,7 +5500,15 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         let t = type_name(name);
         let m = name.to_ascii_lowercase();
         let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
-        let (spe, cstart) = (bit(pf.enable), bit(s.cstart));
+        let spe = bit(pf.enable);
+        // The words each `CR1` write must be: the independent rule's.
+        let words = oracle_spi(plan, name);
+        // The erratum's delay, by the oracle's own arithmetic: one SCK period,
+        // `2^(MBR+1)` kernel cycles at the slowest kernel, in core cycles at
+        // the fastest core, each `SR` read at least one (ES0392 Rev 16 §2.22.6).
+        let c = &plan.spi[name];
+        let delay = (u128::from(1u64 << (c.mbr + 1)) * u128::from(silicon::fast_hz(plan.core_hz)))
+            .div_ceil(u128::from(silicon::slow_hz(c.kernel_hz).max(1)));
         let arms: Vec<String> = selects
             .iter()
             .map(|sel| {
@@ -4943,6 +5540,10 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  rxp: bool,\n    \
                  /// `SR.EOT` read set once every frame was received.\n    \
                  eot: bool,\n    \
+                 /// Reads of `SR` after `EOT` was read set: the erratum's delay.\n    \
+                 after_eot: u32,\n    \
+                 /// `CFG2` as `init` left it in the harness image.\n    \
+                 cfg2: u32,\n    \
                  sent: usize,\n    \
                  received: usize,\n    \
                  touched: bool,\n\
@@ -4964,10 +5565,14 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                      self.touched = true;\n        \
                      kani::assert(block == Block::{t}, \"a {t} transfer read another block\");\n        \
                      if offset == {cr1:#04x} {{\n            \
-                         if kani::any() {{ self.cr1 & !{cstart} }} else {{ self.cr1 }}\n        \
+                         kani::assert(false, \"a {t} transfer read CR1: it writes whole words (AET-WO-4230 D5)\");\n            \
+                         self.cr1\n        \
                      }} else if offset == {sr:#04x} {{\n            \
                          kani::assert(self.stage == 4, \"SR polled outside the transfer\");\n            \
                          self.sr_reads += 1;\n            \
+                         if self.eot {{\n                \
+                             self.after_eot += 1;\n            \
+                         }}\n            \
                          let v: u32 = kani::any();\n            \
                          self.rxp = v & {rxp} != 0;\n            \
                          if v & {eot} != 0 && self.received as u32 == {frames_set} {{\n                \
@@ -4994,22 +5599,22 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                          self.tsize = value;\n            \
                          self.stage = 1;\n        \
                      }} else if block == Block::{t} && offset == {cr1:#04x} {{\n            \
-                         kani::assert(\n                \
-                             (value ^ self.cr1) & !({spe} | {cstart}) == 0,\n                \
-                             \"CR1 changed beyond SPE and CSTART\",\n            \
-                         );\n            \
-                         // `CSTART` is set-only: the enable may carry a stale one back.\n            \
+                         // Each `CR1` write is the rule's whole word for its stage\n            \
+                         // (`aethelgard_ir::silicon::spi_words`), and none sets `SPE`\n            \
+                         // before master mode with software slave select (the 3302\n            \
+                         // bench: with `SSM` 0 the first `SPE` raised `MODF`).\n            \
+                         if value & {spe} != 0 {{\n                \
+                             kani::assert(self.cfg2 & {master_ssm:#010x} == {master_ssm:#010x}, \"SPE set before CFG2 holds MASTER and SSM\");\n                \
+                             kani::assert(value & {idle_word:#010x} != 0, \"SPE set without SSI\");\n            \
+                         }}\n            \
                          if self.stage == 2 {{\n                \
-                             kani::assert(value & {spe} != 0, \"the peripheral was not enabled\");\n                \
+                             kani::assert(value == {enable_word:#010x}, \"the peripheral was not enabled with SSI, alone\");\n                \
                              self.stage = 3;\n            \
                          }} else if self.stage == 3 {{\n                \
-                             kani::assert(\n                    \
-                                 value & ({spe} | {cstart}) == {spe} | {cstart},\n                    \
-                                 \"the transfer was not started\",\n                \
-                             );\n                \
+                             kani::assert(value == {start_word:#010x}, \"the transfer was not started with SSI and SPE, alone\");\n                \
                              self.stage = 4;\n            \
                          }} else if self.stage == 5 {{\n                \
-                             kani::assert(value & {spe} == 0, \"the peripheral was not disabled\");\n                \
+                             kani::assert(value == {idle_word:#010x}, \"the peripheral was not left idle: SSI, alone\");\n                \
                              self.stage = 6;\n            \
                          }} else {{\n                \
                              kani::assert(false, \"CR1 written out of order\");\n            \
@@ -5044,6 +5649,10 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              }}",
             arms = arms.join("\n"),
             cr1 = pf.cr1,
+            enable_word = words.cr1_enable,
+            start_word = words.cr1_start,
+            idle_word = words.cr1_idle,
+            master_ssm = words.cfg2,
             sr = s.sr,
             rxp = bit(s.rxp),
             eot = bit(s.eot),
@@ -5101,29 +5710,34 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             .collect();
         let _ = writeln!(
             setup,
-            "    let mut bus = rcc\n        \
-                 .enable_{m}(&mut img, board.{m})\n        \
+            "    let kernels = rcc.select_spi_kernels(&mut img, &clock);\n    \
+             let mut bus = rcc\n        \
+                 .enable_{m}(&mut img, board.{m}, &kernels)\n        \
                  .init(&mut img, &clock, {args}, {t}Selects {{ {fields} }});\n    \
              let devices = [{variants}];\n    \
              let pick: usize = kani::any();\n    \
              kani::assume(pick < devices.len());\n    \
              let device = devices[pick];\n    \
-             // The state `init` and every transfer leave: disabled (`every_valid_sequence`,\n    \
-             // and the end of this proof).\n    \
-             let cr1: u32 = kani::any();\n    \
-             kani::assume(cr1 & {spe} == 0);",
+             // The state `init` and every transfer leave: `CR1` idle, `SSI` alone\n    \
+             // (`every_valid_sequence`, and the end of this proof); `CFG2` as `init`\n    \
+             // wrote it.\n    \
+             let cr1: u32 = {idle:#010x};\n    \
+             let cfg2 = img.{m}[{cfg2_word}];",
             args = args.join(", "),
             fields = fields.join(", "),
             variants = variants.join(", "),
+            idle = words.cr1_idle,
+            cfg2_word = pf.config / 4,
         );
         let spy = format!(
-            "{t}Spy {{ device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, eot: false, sent: 0, received: 0, touched: false }}"
+            "{t}Spy {{ device, out, wl, stage: 0, cr1, tsize: 0, sr_reads: 0, rxp: false, eot: false, after_eot: 0, cfg2, sent: 0, received: 0, touched: false }}"
         );
         let rest = "and any answers, with each wait bounded at two reads\n\
              /// of `SR`: selects that device before its first frame and deselects it after\n\
              /// the peripheral is disabled, also after a wait that expired; reads `RXDR`\n\
-             /// only after `RXP`; and returns `Ok` only when every frame moved and `EOT`\n\
-             /// was read set after the last, before `EOTC`.\n";
+             /// only after `RXP`; writes `CR1` only whole and never reads it; and returns\n\
+             /// `Ok` only when every frame moved, `EOT` was read set after the last, before\n\
+             /// `EOTC`, and the erratum's delay followed it (ES0392 Rev 16 §2.22.6).\n";
         let doc = if (wmax, rmax) == (2, 3) {
             format!(
                 "/// A transfer of any device, up to two bytes out and three in (an identity\n\
@@ -5136,11 +5750,15 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  /// {rest}"
             )
         };
-        let unwind = wmax + rmax;
-        let most = match unwind {
+        let frames_most = wmax + rmax;
+        let most = match frames_most {
             5 => "five".to_owned(),
             n => n.to_string(),
         };
+        // The delay's loop is the longest when it outruns the frames.
+        let unwind = u128::try_from(frames_most)
+            .unwrap_or(u128::MAX)
+            .max(delay + 1);
         let covers: String = scripted
             .iter()
             .map(|(a, b, step)| {
@@ -5175,13 +5793,15 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  kani::assert(spy.stage == 7, \"a transfer did not end disabled and deselected\");\n    \
                  kani::assert(spy.tsize == {tsize_word}, \"TSIZE is not the frames of the transfer\");\n    \
                  kani::assert(\n        \
-                     spy.sr_reads as usize <= (frames + 1) * spins as usize,\n        \
+                     spy.sr_reads as usize <= (frames + 1) * spins as usize + {delay},\n        \
                      \"a wait read SR more often than its bound\",\n    \
                  );\n    \
+                 kani::assert(spy.cr1 == {idle:#010x}, \"a transfer did not leave CR1 idle\");\n    \
                  match result {{\n        \
                      Ok(n) => {{\n            \
                          kani::assert(n == rl && spy.sent == frames && spy.received == frames, \"Ok without every frame moved\");\n            \
                          kani::assert(spy.eot, \"Ok without EOT read after the last frame, before EOTC\");\n            \
+                         kani::assert(spy.after_eot >= {delay}, \"SPE cleared sooner than one SCK period after EOT (ES0392 Rev 16 2.22.6)\");\n            \
                          kani::cover!(wl > 0 && rl > 0, \"{t} wrote, then read\");\n            \
                          kani::cover!(wl == 1 && rl == 3, \"{t} made an identity read's frames\");\n{covers}        \
                      }}\n        \
@@ -5213,6 +5833,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  kani::cover!(true, \"{t} refused too many frames\");\n\
              }}",
             tsize_word = shifted("frames as u32", "<<", s.tsize),
+            idle = words.cr1_idle,
         );
     }
 }
@@ -5521,7 +6142,7 @@ mod tests {
             assert_eq!(admitted(&files), modes, "{hz}");
             // The harness drives exactly the admitted speeds.
             let proofs = &files["src/proofs.rs"];
-            for (mode, _, _) in I2C_MODES {
+            for (mode, _) in I2C_MODES {
                 assert_eq!(
                     proofs.contains(&format!("i2c1_speed::{mode},")),
                     modes.contains(&mode)
@@ -5539,7 +6160,7 @@ mod tests {
         let files = generate("b", &s, &table()).unwrap();
         assert_eq!(admitted(&files), vec!["Standard100k"]);
         let proofs = &files["src/proofs.rs"];
-        for (mode, _, _) in I2C_MODES {
+        for (mode, _) in I2C_MODES {
             assert_eq!(
                 proofs.contains(&format!("i2c1_speed::{mode},")),
                 mode == "Standard100k",

@@ -1,8 +1,8 @@
 error[E0061]: this method takes 6 arguments but 5 arguments were supplied
-  --> tests/ui/fail/spi_init_without_selects.rs:15:52
+  --> tests/ui/fail/spi_init_without_selects.rs:16:62
    |
-15 |     let _spi = rcc.enable_spi1(&mut r, board.spi1).init(&mut r, &clock, sck, mosi, miso);
-   |                                                    ^^^^--------------------------------- argument #6 of type `Spi1Selects` is missing
+16 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, &kernels).init(&mut r, &clock, sck, mosi, miso);
+   |                                                              ^^^^--------------------------------- argument #6 of type `Spi1Selects` is missing
    |
 note: method defined here
   --> $WORKSPACE/boards/sentinel-01/src/board.rs
@@ -11,5 +11,5 @@ note: method defined here
    |            ^^^^
 help: provide the argument
    |
-15 |     let _spi = rcc.enable_spi1(&mut r, board.spi1).init(&mut r, &clock, sck, mosi, miso, /* Spi1Selects */);
-   |                                                                                        +++++++++++++++++++
+16 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, &kernels).init(&mut r, &clock, sck, mosi, miso, /* Spi1Selects */);
+   |                                                                                                  +++++++++++++++++++

@@ -1,0 +1,15 @@
+error[E0061]: this method takes 3 arguments but 2 arguments were supplied
+  --> tests/ui/fail/spi_without_kernels.rs:12:20
+   |
+12 |     let _spi = rcc.enable_spi1(&mut r, board.spi1);
+   |                    ^^^^^^^^^^^-------------------- argument #3 of type `&SpiKernels` is missing
+   |
+note: method defined here
+  --> $WORKSPACE/boards/sentinel-01/src/board.rs
+   |
+   |     pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _kernels: &SpiKernels) -> Spi1<Clocked> {
+   |            ^^^^^^^^^^^
+help: provide the argument
+   |
+12 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, /* &SpiKernels */);
+   |                                                  +++++++++++++++++++

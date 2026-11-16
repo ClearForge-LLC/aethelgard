@@ -1,6 +1,7 @@
 //! The valid driver: clock both ports and both peripherals, put every pin in
 //! its solved function, start I2C1 at a speed under its ceiling and SPI1 as a
-//! master with its chip select, and read the flash's identity. trybuild runs a
+//! master with its chip select once its kernel clock is selected, read the
+//! brown-out word, and read the flash's identity. trybuild runs a
 //! passing case, and on the host these are not the part's registers, so
 //! `firmware` is compiled and not called.
 use sentinel_01_board::i2c1_speed::Fast400k;
@@ -12,6 +13,8 @@ fn firmware() {
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
     let clock = rcc.reset_clock(&mut r).unwrap();
+    let _optsr: u32 = board.flash.option_status(&mut r);
+    let kernels = rcc.select_spi_kernels(&mut r, &clock);
     let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
     let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);
@@ -23,7 +26,7 @@ fn firmware() {
     cs.set_high(&mut r);
     let mut i2c = rcc.enable_i2c1(&mut r, board.i2c1).init::<Fast400k, _>(&mut r, &clock, scl, sda);
     let mut spi = rcc
-        .enable_spi1(&mut r, board.spi1)
+        .enable_spi1(&mut r, board.spi1, &kernels)
         .init(&mut r, &clock, sck, mosi, miso, Spi1Selects { pa0: cs });
     i2c.write_byte(&mut r, 0x76);
     let mut id = [0u8; 1];

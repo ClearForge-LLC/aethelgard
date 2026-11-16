@@ -1,0 +1,5 @@
+error[E0451]: field `_private` of struct `SpiKernels` is private
+  --> tests/ui/fail/spi_forged_kernels.rs:10:32
+   |
+10 |     let kernels = SpiKernels { _private: () };
+   |                                ^^^^^^^^ private field

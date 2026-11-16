@@ -124,10 +124,14 @@ fn digests() -> Vec<(&'static str, String)> {
 /// hands it to I2C1 and SPI1, passes the registers to each port's `split`,
 /// and names the SPI `EOT` timeout; it was `1564c394…3474`. The device reads'
 /// text and order are unchanged, and the platform and boot image did not move.
+/// Re-taken again in `AET-WO-4230` slice B1: the brown-out word (word 1, so
+/// every record one word later), the SPI kernel selection before the SPI
+/// clock enable, and the spins sized at HSI's fastest; it was `dca32616…ec2d`.
+/// The device reads' text and order are unchanged.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "dca32616070f9242fb4ae8f51d62a9b00d0896fb809924b594ab75f721c7ec2d",
+        "1f6dc2f6d1937e8c9a40c1b89812ecd338c42f8849be7c58ba12bd87637846d8",
     ),
     (
         "platform",
