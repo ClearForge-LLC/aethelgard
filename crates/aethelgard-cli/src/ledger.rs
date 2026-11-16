@@ -538,6 +538,20 @@ fn table() -> Vec<Entry> {
         ));
     }
 
+    // ---- RCC: `D2CKRDY`, a dependency the firmware never polls (the
+    // architect's ruling on Q-F; RM0433 Rev 9 §8.5.10 step c, p. 372).
+    let d2 = format!("{RCC_CS} L175: a tag, read 0 whatever silicon holds");
+    t.push(e(
+        "RCC",
+        "CR",
+        "D2CKRDY",
+        R,
+        Ign,
+        &d2,
+        &d2,
+        "RM0433 Rev 9 §8.7.2 (p. 384): set by hardware once the D2 domain's clocks are available, 0 after reset; §8.5.10 step c asks the firmware to read it until 1 after enabling a D2 peripheral, which the firmware does not (a wait on the twin's 0 would park every boot), so silicon is taken to have set it: a bench row (3302)",
+    ));
+
     // ---- CORE: the FPU enable in the generated `Reset`.
     t.push(e(
         "CORE",

@@ -288,7 +288,6 @@ pub struct PA0<M> {
 impl PA0<Unconfigured> {
     pub fn into_output<R: Registers>(self, r: &mut R) -> PA0<Output> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00000003);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000003);
         r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00000003) | 0x00000001);
         PA0 { _mode: PhantomData }
@@ -312,7 +311,6 @@ pub struct PA10<M> {
 impl PA10<Unconfigured> {
     pub fn into_usart1_rx<R: Registers>(self, r: &mut R) -> PA10<AlternateFunction<7>> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00300000);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00300000);
         r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000700);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00300000) | 0x00200000);
         PA10 { _mode: PhantomData }
@@ -327,7 +325,6 @@ pub struct PA5<M> {
 impl PA5<Unconfigured> {
     pub fn into_spi1_sck<R: Registers>(self, r: &mut R) -> PA5<AlternateFunction<5>> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x00000c00) | 0x00000400);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000c00);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x00f00000) | 0x00500000);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00000c00) | 0x00000800);
         PA5 { _mode: PhantomData }
@@ -342,7 +339,6 @@ pub struct PA6<M> {
 impl PA6<Unconfigured> {
     pub fn into_spi1_miso<R: Registers>(self, r: &mut R) -> PA6<AlternateFunction<5>> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00003000);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x0f000000) | 0x05000000);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00003000) | 0x00002000);
         PA6 { _mode: PhantomData }
@@ -357,7 +353,6 @@ pub struct PA7<M> {
 impl PA7<Unconfigured> {
     pub fn into_spi1_mosi<R: Registers>(self, r: &mut R) -> PA7<AlternateFunction<5>> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| (v & !0x0000c000) | 0x00004000);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x0000c000);
         r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0xf0000000) | 0x50000000);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x0000c000) | 0x00008000);
         PA7 { _mode: PhantomData }
@@ -372,7 +367,6 @@ pub struct PA9<M> {
 impl PA9<Unconfigured> {
     pub fn into_usart1_tx<R: Registers>(self, r: &mut R) -> PA9<AlternateFunction<7>> {
         r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x000c0000);
-        r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x000c0000);
         r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x000000f0) | 0x00000070);
         r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x000c0000) | 0x00080000);
         PA9 { _mode: PhantomData }
@@ -387,7 +381,6 @@ pub struct PB6<M> {
 impl PB6<Unconfigured> {
     pub fn into_i2c1_scl<R: Registers>(self, r: &mut R) -> PB6<AlternateFunction<4>> {
         r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x00003000);
-        r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x00003000);
         r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0x0f000000) | 0x04000000);
         r.modify(TOKEN, Block::GpioB, 0x00, |v| (v & !0x00003000) | 0x00002000);
         PB6 { _mode: PhantomData }
@@ -402,7 +395,6 @@ pub struct PB7<M> {
 impl PB7<Unconfigured> {
     pub fn into_i2c1_sda<R: Registers>(self, r: &mut R) -> PB7<AlternateFunction<4>> {
         r.modify(TOKEN, Block::GpioB, 0x08, |v| v & !0x0000c000);
-        r.modify(TOKEN, Block::GpioB, 0x0c, |v| v & !0x0000c000);
         r.modify(TOKEN, Block::GpioB, 0x20, |v| (v & !0xf0000000) | 0x40000000);
         r.modify(TOKEN, Block::GpioB, 0x00, |v| (v & !0x0000c000) | 0x00008000);
         PB7 { _mode: PhantomData }
@@ -425,10 +417,12 @@ pub struct GpioAPins {
 }
 
 impl GpioA<Clocked> {
-    /// The port's pins, once its whole `OTYPER` is written: each solved pin's
-    /// output type, and every other pin's its reset value, 0.
+    /// The port's pins, once its whole `OTYPER` and `PUPDR` are written: each
+    /// solved pin's output type and pull, and every other pin's its reset
+    /// value (the debug port's pulls on ports A and B).
     pub fn split<R: Registers>(self, r: &mut R) -> GpioAPins {
         r.write(TOKEN, Block::GpioA, 0x04, 0x00000000);
+        r.write(TOKEN, Block::GpioA, 0x0c, 0x64000000);
         GpioAPins {
             pa0: PA0 { _mode: PhantomData },
             pa10: PA10 { _mode: PhantomData },
@@ -452,10 +446,12 @@ pub struct GpioBPins {
 }
 
 impl GpioB<Clocked> {
-    /// The port's pins, once its whole `OTYPER` is written: each solved pin's
-    /// output type, and every other pin's its reset value, 0.
+    /// The port's pins, once its whole `OTYPER` and `PUPDR` are written: each
+    /// solved pin's output type and pull, and every other pin's its reset
+    /// value (the debug port's pulls on ports A and B).
     pub fn split<R: Registers>(self, r: &mut R) -> GpioBPins {
         r.write(TOKEN, Block::GpioB, 0x04, 0x000000c0);
+        r.write(TOKEN, Block::GpioB, 0x0c, 0x00000100);
         GpioBPins {
             pb6: PB6 { _mode: PhantomData },
             pb7: PB7 { _mode: PhantomData },
@@ -610,7 +606,7 @@ impl Spi1<Clocked> {
         r.write(TOKEN, Block::GpioA, 0x18, 0x00000001);
         r.write(TOKEN, Block::Spi1, 0x00, 0x00001000);
         r.write(TOKEN, Block::Spi1, 0x08, 0x10070007);
-        r.write(TOKEN, Block::Spi1, 0x0c, 0x04400000);
+        r.write(TOKEN, Block::Spi1, 0x0c, 0x84400000);
         Spi1 { _state: PhantomData }
     }
 }

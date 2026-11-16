@@ -1535,12 +1535,14 @@ fn imu_baro_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
 /// `AET-WO-4210` §2.2-§2.4: every device's script runs and each step is
 /// witnessed by its own model's lines, on SPI inside its own chip-select
 /// window; each data read answers the datasheet's conversion of the judge's
-/// stimulus (D3); no interrupt is armed (D6).
+/// stimulus (D3); no interrupt is armed (D6). The boot runs the whole 100 ms
+/// window: the one 40 ms start-up wait (`AET-WO-4230` R6) puts the boot word
+/// at 78.0–78.1 ms of virtual time (measured, Renode running the spin long).
 #[test]
 fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
     let (dir, platform, spec_path) = imu_baro_board("fixture");
     let elf = mutant_of(&dir, "imu-baro", |_| {});
-    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(0), "{v}");
     let steps = |bus: &str| -> Vec<(String, String, String)> {
         v["boot"][bus]
@@ -1571,9 +1573,9 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         [
             t("U5", "identity", "0xea"),
             t("U5", "configure", "0x0"),
-            t("U5", "data", "0x4000"),
             t("U7", "identity", "0xea"),
             t("U7", "configure", "0x0"),
+            t("U5", "data", "0x4000"),
             t("U7", "data", "0x4000"),
         ]
     );
@@ -1588,7 +1590,7 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         .iter()
         .map(|w| w["expected"].as_array().unwrap().len())
         .collect();
-    assert_eq!(lines, [4, 4, 14, 4, 4, 14]);
+    assert_eq!(lines, [4, 4, 4, 4, 14, 14]);
     assert!(spi.iter().all(|w| w["unrouted"] == serde_json::json!([])));
     let csr = v["boot"]["registers"]
         .as_array()
@@ -1646,11 +1648,11 @@ fn a_seeded_imu_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf5)",
+            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf4)",
             "Ok::<usize, SpiError>(0)",
         );
     });
-    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(
@@ -1671,11 +1673,11 @@ fn a_seeded_barometer_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf3)",
-            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf3)",
+            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf7)",
+            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf7)",
         );
     });
-    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
@@ -3070,7 +3072,7 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
 fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
     let (dir, platform, spec_path) = own_board("no-wait");
     let elf = mutant_of(&dir, "own-no-wait", |d| {
-        edit(d, "src/main.rs", "    settle(649590);\n", "");
+        // The one wait (`AET-WO-4230` R6).
         edit(d, "src/main.rs", "    settle(1299180);\n", "");
     });
     let (code, v) = boot_on("own no wait", &platform, &spec_path, &elf, "100ms");

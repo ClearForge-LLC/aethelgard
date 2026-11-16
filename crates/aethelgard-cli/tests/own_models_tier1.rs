@@ -18,35 +18,38 @@ fn board(
 
 const OWN: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json";
 
-/// The firmware waits each part's cited time after its last configuration
-/// write and before its data read, sized at HSI's fastest, 64,958,976 cycles
-/// a second (`AET-WO-4230` §1.9, amendment 1), rounded up: the BMP581's 10 ms
-/// after its one write, the ICM-42688-P's 20 ms after its third. A board with
-/// no script is unchanged.
+/// The firmware makes every identity and configuration step, then waits
+/// ONCE, for the largest cited start-up, then makes every data read
+/// (`AET-WO-4230` R6, the architect's ruling on Q-E: the parts power up
+/// together, so no per-device sum). The wait is sized at HSI's fastest,
+/// 64,958,976 cycles a second (§1.9, amendment 1), rounded up: on the own
+/// fixture the ICM-42688-P's 20 ms, which covers the BMP581's 10 ms. A board
+/// with no script is unchanged.
 #[test]
-fn the_firmware_waits_each_cited_time_before_the_data_read() {
+fn the_firmware_waits_once_for_the_largest_cited_time_before_any_data_read() {
     let (_, files) = board(OWN);
     let main = &files["firmware/src/main.rs"];
     assert_eq!(main.matches("fn settle(spins: u32)").count(), 1, "{main}");
-    assert_eq!(main.matches("settle(649590);").count(), 1, "{main}");
+    assert_eq!(main.matches("    settle(").count(), 1, "{main}");
     assert_eq!(main.matches("settle(1299180);").count(), 1, "{main}");
     let at = |what: &str| main.find(what).unwrap_or_else(|| panic!("{what}"));
-    // The BMP581's configuration, its wait, then its data read.
-    assert!(at("&[0x36, 0x40, 0x81]") < at("settle(649590);"));
-    assert!(at("settle(649590);") < at("&[0x1d]"));
-    // The ICM-42688-P's enable is its last write, then its wait, then its read.
+    // The BMP581's configuration and the ICM-42688-P's (its enable last),
+    // then the one wait, then both data reads.
+    assert!(at("&[0x36, 0x40, 0x81]") < at("&[0x4c, 0xc0]"));
     assert!(at("&[0x4c, 0xc0]") < at("&[0x50, 0x66]"));
     assert!(at("&[0x50, 0x66]") < at("&[0x4e, 0x03]"));
     assert!(at("&[0x4e, 0x03]") < at("settle(1299180);"));
-    assert!(at("settle(1299180);") < at("&[0x9d]"));
+    assert!(at("settle(1299180);") < at("&[0x1d]"));
+    assert!(at("&[0x1d]") < at("&[0x9d]"));
     let (_, files) = board("examples/sentinel-01-minimal.json");
     assert!(!files["firmware/src/main.rs"].contains("settle"));
     // The stand-ins wait too (`AET-WO-4230` §1.9, `SettleBelowStartUp`): twice
-    // their typical-only start-ups, 40 ms (two ICM-20948) and 340 us.
+    // their typical-only start-ups, 40 ms (two ICM-20948) and 340 us: one
+    // wait, the larger.
     let (_, files) = board("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
     let main = &files["firmware/src/main.rs"];
-    assert_eq!(main.matches("settle(2598360);").count(), 2, "{main}");
-    assert_eq!(main.matches("settle(22087);").count(), 1, "{main}");
+    assert_eq!(main.matches("    settle(").count(), 1, "{main}");
+    assert_eq!(main.matches("settle(2598360);").count(), 1, "{main}");
 }
 
 /// The emitted platform names both models' pins, and its devices are

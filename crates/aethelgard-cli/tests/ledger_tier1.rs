@@ -91,15 +91,17 @@ fn the_reference_has_a_row_for_every_listed_field_and_no_other() {
 #[test]
 fn the_reference_s_counts_are_pinned() {
     let l = reference_ledger();
-    assert_eq!(l.total, 264);
+    // `AET-WO-4230` R5: `PUPDR` is written whole per port, 16 rows each on
+    // ports A and B (24 more than the 8 solved pins' rows); R7: `D2CKRDY`.
+    assert_eq!(l.total, 289);
     let by_class: BTreeMap<&str, usize> = l.counts.by_class.clone();
     assert_eq!(
         by_class,
         BTreeMap::from([
             ("independent-rule", 67),
             ("observed", 58),
-            ("same-source", 59),
-            ("ignored-by-model", 79),
+            ("same-source", 83),
+            ("ignored-by-model", 80),
             ("silicon-only", 1),
         ])
     );
@@ -109,9 +111,9 @@ fn the_reference_s_counts_are_pinned() {
         BTreeMap::from([
             ("CORE".to_owned(), 2),
             ("FLASH".to_owned(), 1),
-            ("GPIO".to_owned(), 95),
+            ("GPIO".to_owned(), 119),
             ("I2C".to_owned(), 46),
-            ("RCC".to_owned(), 27),
+            ("RCC".to_owned(), 28),
             ("SPI".to_owned(), 46),
             ("USART".to_owned(), 47),
         ])
@@ -283,10 +285,13 @@ fn the_reference_s_bench_rows_are_pinned() {
     // SPI123SEL is read at reset, then written: only the written row is judged.
     assert!(!rows.contains("D2CCIP1R"));
     assert_eq!(rows.lines().count(), on.len() + 2);
-    assert_eq!(on.len(), 120);
+    // `AET-WO-4230` R7: `D2CKRDY` is a bench row (the architect's ruling on
+    // Q-F).
+    assert!(rows.contains("| RCC.CR (`D2CKRDY`) | `0x58024400` | `0x00008000` | `0x00008000` |"));
+    assert_eq!(on.len(), 145);
     assert_eq!(
         sha(&rows),
-        "f25e1c1a5a4e46b6c66cd46b766deb6cf0a5aaa08e76dcea772d9c12cf114664"
+        "af6187acf7a3a1cb3a446fbc81d7c30c62d1fac63cf4a71853f7df41922e083f"
     );
 }
 
@@ -318,8 +323,8 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     let line = run(&root().join("examples/sentinel-01-minimal.json"));
     let v: serde_json::Value = serde_json::from_slice(&line).unwrap();
     assert_eq!(v["against"], "differs");
-    assert_eq!(v["ledger"]["total"], 264);
-    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 264);
+    assert_eq!(v["ledger"]["total"], 289);
+    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 289);
     assert_eq!(v["ledger"]["counts"]["by_class"]["independent-rule"], 67);
     assert_eq!(v["ledger"]["evidence"].as_object().unwrap().len(), 5);
     assert_eq!(v["silicon"]["holds"], true);

@@ -83,14 +83,16 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
             // The 3302 bench (NUCLEO-H753ZI rev V): with `SSM` 0 the first
             // `SPE` raised `MODF` and cleared `MASTER`. So `init` writes `CFG2`
             // with `MASTER` and `SSM` before any write that sets `SPE`, and every
-            // `CR1` word with `SPE` carries `SSI`.
+            // `CR1` word with `SPE` carries `SSI`. `AFCNTR` too (the architect's
+            // ruling on Q-D, RM0433 Rev 9 §50.11.4): the master keeps driving
+            // SCK and MOSI while `SPE` is 0 and a chip select is low.
             let cfg2 = format!("r.write(TOKEN, Block::{b}, 0x0c, ");
             let cfg2_at = board.find(&cfg2).unwrap_or_else(|| panic!("{name} {p}"));
             let cfg2_word =
                 u32::from_str_radix(&board[cfg2_at + cfg2.len() + 2..][..8], 16).unwrap();
             assert_eq!(
-                cfg2_word & (1 << 22 | 1 << 26),
-                1 << 22 | 1 << 26,
+                cfg2_word & (1 << 22 | 1 << 26 | 1 << 31),
+                1 << 22 | 1 << 26 | 1 << 31,
                 "{name} {p}"
             );
             let cr1 = format!("r.write(TOKEN, Block::{b}, 0x00, ");
@@ -208,4 +210,42 @@ fn a_timingr_the_rule_refuses_is_refused_by_name() {
     assert!(text.contains("cr1_ok"), "{text}");
     // The reference holds.
     assert_eq!(check_silicon(&reference()), Ok(()));
+}
+
+/// `AET-WO-4230` R3 (the architect's ruling on Q-H): the generation-time rule
+/// check (`check_silicon`, which `generate` runs first) refuses a serial
+/// port whose `BRR` is not the nearest whole divider by the independent
+/// inequality (`silicon::check_brr`), naming the port's peripheral
+/// (`SiliconRuleFails`). The reference's USART1 runs 115200 baud on 64 MHz at
+/// `BRR` 556 (2·|556·115200 − 64e6| = 102,400 ≤ 115,200); 555 and 557 are off
+/// by more than half a baud (128,000 and 332,800). Through `generate` the
+/// hand-edited topology is refused earlier, by `SolvedTopology::validate`
+/// (it recomputes `BRR` with the solver's arithmetic); the rule check is what
+/// stands when the solver itself is wrong.
+#[test]
+fn a_brr_the_rule_refuses_is_refused_by_name_at_generation() {
+    let table = pin_table("STM32H753ZITx").unwrap();
+    let t = reference();
+    let port = t.serial_ports.values().next().expect("a serial port");
+    assert_eq!(
+        (port.peripheral.as_str(), port.brr, port.kernel_hz),
+        ("USART1", 556, 64_000_000)
+    );
+    generate("b", &t, &table).unwrap();
+    for brr in [555, 557] {
+        let mut t = reference();
+        let port = t.serial_ports.values_mut().next().unwrap();
+        port.brr = brr;
+        assert_eq!(
+            generate("b", &t, &table).unwrap_err().kind(),
+            "InvalidTopology"
+        );
+        let e = check_silicon(&t).unwrap_err();
+        assert_eq!(e.kind(), "SiliconRuleFails", "{e}");
+        let text = e.to_string();
+        assert!(
+            text.contains("`USART1`") && text.contains(&format!("check_brr: BRR {brr} ")),
+            "{text}"
+        );
+    }
 }

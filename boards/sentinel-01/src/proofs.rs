@@ -82,8 +82,16 @@ impl Registers for Image {
             "GpioA OTYPER was read",
         );
         kani::assert(
+            !(block == Block::GpioA && offset == 0x0c),
+            "GpioA PUPDR was read",
+        );
+        kani::assert(
             !(block == Block::GpioB && offset == 0x04),
             "GpioB OTYPER was read",
+        );
+        kani::assert(
+            !(block == Block::GpioB && offset == 0x0c),
+            "GpioB PUPDR was read",
         );
         kani::assert(
             !(block == Block::I2c1 && offset == 0x10),
@@ -127,13 +135,16 @@ impl Registers for Image {
         }
         if block == Block::Spi1 && offset == 0x00 && value & 0x00000001 != 0 {
             kani::assert(
-                self.spi1[3] & 0x04400000 == 0x04400000,
+                self.spi1[3] & 0x84400000 == 0x84400000,
                 "Spi1 SPE set before CFG2 holds MASTER and SSM",
             );
             kani::assert(value & 0x00001000 != 0, "Spi1 SPE set without SSI");
         }
         if block == Block::GpioA && offset == 0x04 {
             kani::assert(value == 0x00000000, "GpioA OTYPER is not the solved word, whole");
+        }
+        if block == Block::GpioA && offset == 0x0c {
+            kani::assert(value == 0x64000000, "GpioA PUPDR is not the solved word, whole");
         }
         if block == Block::GpioA && offset == 0x18 {
             kani::assert(value == 0x00000001 || value == 0x00010000, "GpioA BSRR write touches a pin no solved output owns");
@@ -210,6 +221,9 @@ impl Registers for Image {
         if block == Block::GpioB && offset == 0x04 {
             kani::assert(value == 0x000000c0, "GpioB OTYPER is not the solved word, whole");
         }
+        if block == Block::GpioB && offset == 0x0c {
+            kani::assert(value == 0x00000100, "GpioB PUPDR is not the solved word, whole");
+        }
         if block == Block::GpioB && offset == 0x18 {
             kani::assert(false, "GpioB BSRR write touches a pin no solved output owns");
             // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).
@@ -257,6 +271,7 @@ impl Registers for Image {
 /// The state the specification allows, from any starting image.
 fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(after.gpioa[1] == 0x00000000, "GpioA OTYPER is not the solved word");
+    kani::assert(after.gpioa[3] == 0x64000000, "GpioA PUPDR is not the solved word");
     kani::assert(
         after.gpioa[0] & 0x0000fc03 == 0x0000a801,
         "GpioA word 0: a solved pin's field is not what the specification fixes",
@@ -272,14 +287,6 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
         after.gpioa[2] & !0x0000fc03 == before.gpioa[2] & !0x0000fc03,
         "GpioA word 2: an unsolved pin's field changed",
-    );
-    kani::assert(
-        after.gpioa[3] & 0x0000fc03 == 0x00000000,
-        "GpioA word 3: a solved pin's field is not what the specification fixes",
-    );
-    kani::assert(
-        after.gpioa[3] & !0x0000fc03 == before.gpioa[3] & !0x0000fc03,
-        "GpioA word 3: an unsolved pin's field changed",
     );
     kani::assert(
         after.gpioa[8] & 0xfff00000 == 0x55500000,
@@ -298,6 +305,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(after.gpioa[7] == before.gpioa[7], "GpioA word 7 changed");
     kani::assert(after.gpioa[9] == before.gpioa[9], "GpioA word 9 changed");
     kani::assert(after.gpiob[1] == 0x000000c0, "GpioB OTYPER is not the solved word");
+    kani::assert(after.gpiob[3] == 0x00000100, "GpioB PUPDR is not the solved word");
     kani::assert(
         after.gpiob[0] & 0x0000f000 == 0x0000a000,
         "GpioB word 0: a solved pin's field is not what the specification fixes",
@@ -313,14 +321,6 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
     kani::assert(
         after.gpiob[2] & !0x0000f000 == before.gpiob[2] & !0x0000f000,
         "GpioB word 2: an unsolved pin's field changed",
-    );
-    kani::assert(
-        after.gpiob[3] & 0x0000f000 == 0x00000000,
-        "GpioB word 3: a solved pin's field is not what the specification fixes",
-    );
-    kani::assert(
-        after.gpiob[3] & !0x0000f000 == before.gpiob[3] & !0x0000f000,
-        "GpioB word 3: an unsolved pin's field changed",
     );
     kani::assert(
         after.gpiob[8] & 0xff000000 == 0x44000000,
@@ -369,7 +369,7 @@ fn check_final(before: &Image, after: &Image, i2c1_timingr: u32) {
         "Spi1 CFG1 is not the rule's word (aethelgard_ir::silicon::spi_words)",
     );
     kani::assert(
-        after.spi1[3] == 0x04400000,
+        after.spi1[3] == 0x84400000,
         "Spi1 CFG2 is not the rule's word (aethelgard_ir::silicon::spi_words)",
     );
     kani::assert(after.spi1[1] == before.spi1[1], "Spi1 word 1 changed");
@@ -755,7 +755,7 @@ impl Registers for Spi1Spy {
             // before master mode with software slave select (the 3302
             // bench: with `SSM` 0 the first `SPE` raised `MODF`).
             if value & 0x00000001 != 0 {
-                kani::assert(self.cfg2 & 0x04400000 == 0x04400000, "SPE set before CFG2 holds MASTER and SSM");
+                kani::assert(self.cfg2 & 0x84400000 == 0x84400000, "SPE set before CFG2 holds MASTER and SSM");
                 kani::assert(value & 0x00001000 != 0, "SPE set without SSI");
             }
             if self.stage == 2 {
@@ -1097,8 +1097,7 @@ fn usart1_start_writes_the_solved_values() {
     kani::assert(spy.img.gpioa[1] == 0x00000000, "Usart1: gpioa OTYPER is not the solved word");
     kani::assert(spy.img.gpioa[2] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 2 is not its solved value");
     kani::assert(spy.img.gpioa[2] & !0x003c0000 == before.gpioa[2] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 2");
-    kani::assert(spy.img.gpioa[3] & 0x003c0000 == 0x00000000, "Usart1: a pin's field in gpioa word 3 is not its solved value");
-    kani::assert(spy.img.gpioa[3] & !0x003c0000 == before.gpioa[3] & !0x003c0000, "Usart1's bring-up changed another pin's field in gpioa word 3");
+    kani::assert(spy.img.gpioa[3] == 0x64000000, "Usart1: gpioa PUPDR is not the solved word");
     kani::assert(spy.img.gpioa[4] == before.gpioa[4], "Usart1's bring-up changed gpioa word 4");
     kani::assert(spy.img.gpioa[5] == before.gpioa[5], "Usart1's bring-up changed gpioa word 5");
     kani::assert(spy.img.gpioa[6] == before.gpioa[6], "Usart1's bring-up changed gpioa word 6");
