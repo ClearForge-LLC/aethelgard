@@ -117,6 +117,8 @@ The test against today's inline check (a copy that prints the pin to stdout) fai
 
 ## 6. Questions for the architect
 
+**Ruled on PR #171 (comment 6918583501, 2026-11-16 14:05 UTC): accepted, with one change before merge.** Q2 is applied here (§8). Q1, Q3, Q4 and Q5 become backlog rows in the architect's next docs PR, with no change in this PR. Q6 is noted.
+
 - **Q1, acceptance bullet 3 and the roadmap.** `docs/roadmap.md:660` (§7.1's row for this work order) names `spike/4210`…`4300f`, `spike/2100` and `spike/4400`. It is protected, so it stays until the docs PR that retires the row. Everywhere else outside `docs/work-orders/` and `docs/reviews/`, `git grep` finds none of the six.
 - **Q2, the workflow's `paths:` filters.** `ardupilot-image.yml` triggers on `container/ardupilot*`, `container/ARDUPILOT-IMAGE`, `check-pins.sh` and its fixtures, but not on `container/check-ardupilot-pin.sh`, `container/test-check-ardupilot-pin.sh` or `container/fixtures/ardupilot-pin/**`. This PR runs the test because it also changes `ARDUPILOT-IMAGE`. A later PR that touches only the check would not run its test. The fix is three lines in each of the two `paths:` lists, outside this fence.
 - **Q3, a second copy of the regex.** The `publish` job's `push and record the digest` step checks the pushed digest with the same regex inline. The work order says the regex lives only in the new script; that step is outside the fence. It could call `check-ardupilot-pin.sh` on a temporary file, or keep its own copy labelled as deliberate.
@@ -133,3 +135,9 @@ The test against today's inline check (a copy that prints the pin to stdout) fai
 - **`tools-image`** and **`engine-image`**: success (both trigger on `container/**`; Q6).
 - **After that run**, `main` `331cda1` (docs PR #170: this work order and the roadmap rows) was merged in with a merge commit. It is docs only: `git diff` of the merge against `1d19722` touches only `docs/`. The work order on `main` is byte-identical to the one this build read from `a76d871`. The READY commit adds this FEEDBACK and the locale-probe fix below. Path filters on a pull request compare the whole PR against its base, so the workflows run again on the final head; the result of that run is on the PR, and this section records `1d19722`'s.
 - **A fix after the run, from review of my own test:** the test chose its locale with `locale -a | grep -ixm1 … || echo C.UTF-8`. Under `pipefail`, a `grep -m1` that exits early can end `locale -a` by SIGPIPE, and the `|| echo` then adds a second line, so the check would run under an invalid locale and the test would fail closed with a bash warning. It now reads `locale -a` into a variable and greps a here-string, with no pipe. Re-run on Furnace: all 27 fixtures `ok`, and the `no-locale` mutant still fails the test (`lookalike-fullwidth`, `lookalike-accent`) **[measured]**.
+
+## 8. After the ruling [measured]
+
+- **The final head of the first READY round, `46dc44e`:** `ci`, `ardupilot-image`, `tools-image` and `engine-image` all succeeded (runs 43878436689, 43878436923, 43878436686, 43878436710).
+- **Q2 applied.** `container/check-ardupilot-pin.sh`, `container/test-check-ardupilot-pin.sh` and `container/fixtures/ardupilot-pin/**` were added to both `paths:` lists in `.github/workflows/ardupilot-image.yml`, beside `check-pins.sh` and its fixtures. Nothing else changed. The YAML parses, and the two lists are equal (14 entries each).
+- **Gates on that tree:** fmt and clippy clean; 113 binaries, **1837 passed, 0 failed**, 277 s, `memory.swap.max` 0. Both shell tests pass. `main` is still `331cda1`, so no merge was needed. `TIER2_MIN` stays 159.
