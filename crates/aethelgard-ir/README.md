@@ -170,7 +170,7 @@ What the solver derives (`RUL-16`):
 - `i2c_timings` (version 8), a `BTreeMap` keyed by I2C peripheral, one per I2C peripheral of `assignments`: `kernel_hz` (`rcc_pclk1` for I2C1–3, `rcc_pclk4` for I2C4, both selects at reset), `cr1` (the whole `CR1` the bring-up writes, `PE` clear: 0, the analog filter on, `DNF` 0) and `timingr`, keyed `Standard100k`, `Fast400k`, `FastPlus1M`, each synthesized by RM0433 Rev 9 §47.4.9 with every minimum met at HSI's fastest (`solve::synthesize_timingr`'s documentation);
 - `bor_level` (version 8), `mcu.bor_level`, copied so the twin presents it without reading the specification (`RUL-16`).
 
-`silicon` holds the independent rules for the version-8 values (`RUL-20`): `check_spi`, `check_i2c` and `check_timingr` judge them by their own RM0433 facts, never by `solve`'s code.
+`silicon` holds the independent rules for the version-8 values (`RUL-20`): `check_spi`, `check_i2c` and `check_timingr` judge them by their own RM0433 facts, never by `solve`'s code. `check_brr` judges a USART's `BRR` by `2 · |BRR · baud − kernel| ≤ baud` and `16 ≤ BRR ≤ 0xFFFF` in exact integers, sharing nothing with `serial::solve_brr` (`AET-WO-4230` R3, Q-H). `motor_output_pupd` gives a motor-output pin's `PUPDR` field, `10` pull-down (R5, Q-G).
 
 A repeated key in `assignments`, `gpio`, `i2c_ceilings` or `i2c_speeds` is refused when parsing, and every key is required. `SolvedTopology::validate` refuses, in this order:
 1. `UnsupportedSchemaVersion`;

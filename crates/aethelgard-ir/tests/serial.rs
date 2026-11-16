@@ -1573,3 +1573,46 @@ fn a_version_10_specification_is_refused() {
         .remove("peer_deviation_ppm");
     assert!(serde_json::from_value::<Specification>(v).is_err());
 }
+
+/// `AET-WO-4230` R3 (Q-H): every serial port of every specification in the
+/// repository, at the reset clock's 64 MHz USART kernel, gets from the
+/// solver's `solve_brr` a `BRR` the independent `silicon::check_brr` holds,
+/// and the word one off either way fails it.
+#[test]
+fn check_brr_holds_the_solver_s_brr_on_every_fixture_s_port() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let files = [
+        "examples/sentinel-01-minimal.json",
+        "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+        "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+    ];
+    let kernel = aethelgard_ir::serial::kernel_hz(&SolvedClock::reset(), "USART1").unwrap();
+    let mut seen = Vec::new();
+    for file in files {
+        let spec: Specification =
+            serde_json::from_slice(&std::fs::read(root.join(file)).unwrap()).unwrap();
+        for p in &spec.serial_ports {
+            let baud = p.framing.baud;
+            let brr = solve_brr(kernel, baud).unwrap();
+            let f = aethelgard_ir::silicon::check_brr(kernel, baud, brr);
+            assert!(f.holds, "{file} {}: {f:?}", p.label);
+            for wrong in [brr - 1, brr + 1] {
+                let f = aethelgard_ir::silicon::check_brr(kernel, baud, wrong);
+                assert!(!f.holds, "{file} {} {wrong}: {f:?}", p.label);
+            }
+            seen.push((p.label.clone(), baud, brr));
+        }
+    }
+    let seen: Vec<(&str, u32, u32)> = seen.iter().map(|(l, b, r)| (l.as_str(), *b, *r)).collect();
+    assert_eq!(
+        seen,
+        [
+            ("CONSOLE", 115_200, 556),
+            ("CONSOLE", 9_600, 6_667),
+            ("MAVLINK", 57_600, 1_111),
+            ("GPS", 115_200, 556),
+            ("CRSF", 420_000, 152),
+            ("SBUS", 100_000, 640),
+        ]
+    );
+}
