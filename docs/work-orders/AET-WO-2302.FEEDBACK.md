@@ -315,3 +315,10 @@ Today's other boots, for scale (three runs each):
 - **Architecture §2.17:** "about 1 KB per scenario" is now 3.4 KB on the reference, still independent of virtual time.
 - **Architecture §2:** add the clock-synchronisation divergence (§9) and the bus-time divergence (F4).
 - **The CLI README** documents only version-1 scenarios. The build brings it up to date (WO §2).
+
+## §13 The stop
+
+- **Status:** STOPPED at the spike (WO §1). Nothing is built, and nothing in `crates/`, `ci/` or `scenarios/` changes. The recommendation is (a-i) (§6), and §11 lists the decisions.
+- **Base:** `1178ca8`; `main` had not moved at the stop.
+- **Gates on `6c7c9c3`:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` all pass (1 934 passed, 0 failed), on the host under a capped user scope.
+- **The spike fixture** `spike/2302/fixtures/sentinel-02-shaped.json` places the W25Q64JV and carries no `accept_lifecycle` entry. Once `4211` merges (the row becomes `nrnd`), it needs one before it can move under `crates/`.
