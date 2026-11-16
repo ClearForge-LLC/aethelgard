@@ -101,3 +101,25 @@
 - **A declared speed in a fixture cannot be reached** from HSI through `per_ck` without a PLL. Stop with the list; a PLL is a separate ruling.
 - **§1.0 shows Renode refuses a write the platform needs** for §1.6's presentation.
 - **The ledger has more than about 60 rows on the reference board.** Stop with the list. The acknowledgement form may need grouping by family.
+
+## 8. Amendments
+
+**At launch, 2026-11-16 03:52 UTC (in the kickoff, from `4300b`'s review, PR #152 comment 6903399822):**
+- **§1.8, the peer's deviation.** The remote transmitter's declared clock deviation is a term in the `BRR` tolerance, beside quantization, the HSI and the receiver.
+- **§1.10 (new), whole-word writes.** The generator never read-modify-writes a field the topology does not store. `OTYPER`, I2C `CR1` and `TIMINGR`, and SPI `CR1`, `CFG1` and `CFG2` are written whole. Any field the twin cannot see is an `ignored-by-model` ledger row.
+
+**From first silicon, 2026-11-16 05:05 UTC (`3302` B8):**
+- With `SSM` = 0, the H753 raised `MODF` on the first `SPE` and cleared `MASTER`; Renode models neither. §1.3's `SSM` = 1 and `SSI` = 1 are therefore a silicon fact, not a precaution. `MODF` is an `ignored-by-model` ledger row whose evidence is the bench.
+
+**At the §7 stop, ruled 2026-11-16 (PR #161 comment 6911424608):**
+- The acknowledgement is per register and class, and fails closed both ways.
+- Each port's `peer_deviation_ppm` is cited or declared, and the verdict names it.
+- `AFCNTR` = 1 on every master.
+- One start-up wait, sized to the largest start-up since reset.
+- `D2CKRDY` is not polled.
+- Motor pins are pulled down from the first GPIO initialisation.
+- An independent `BRR` inequality.
+- No `PIN_C` rows.
+- No fetch of UM2237.
+- A refit, with `timeout-minutes` at 45.
+- `AET-WO-4240` (the HSE clock tree) is reserved for Q-B and Q-C.
