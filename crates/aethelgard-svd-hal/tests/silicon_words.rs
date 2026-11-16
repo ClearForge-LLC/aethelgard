@@ -215,3 +215,41 @@ fn a_timingr_the_rule_refuses_is_refused_by_name() {
     // The reference holds.
     assert_eq!(check_silicon(&reference()), Ok(()));
 }
+
+/// `AET-WO-4230` R3 (the architect's ruling on Q-H): the generation-time rule
+/// check (`check_silicon`, which `generate` runs first) refuses a serial
+/// port whose `BRR` is not the nearest whole divider by the independent
+/// inequality (`silicon::check_brr`), naming the port's peripheral
+/// (`SiliconRuleFails`). The reference's USART1 runs 115200 baud on 64 MHz at
+/// `BRR` 556 (2·|556·115200 − 64e6| = 102,400 ≤ 115,200); 555 and 557 are off
+/// by more than half a baud (128,000 and 332,800). Through `generate` the
+/// hand-edited topology is refused earlier, by `SolvedTopology::validate`
+/// (it recomputes `BRR` with the solver's arithmetic); the rule check is what
+/// stands when the solver itself is wrong.
+#[test]
+fn a_brr_the_rule_refuses_is_refused_by_name_at_generation() {
+    let table = pin_table("STM32H753ZITx").unwrap();
+    let t = reference();
+    let port = t.serial_ports.values().next().expect("a serial port");
+    assert_eq!(
+        (port.peripheral.as_str(), port.brr, port.kernel_hz),
+        ("USART1", 556, 64_000_000)
+    );
+    generate("b", &t, &table).unwrap();
+    for brr in [555, 557] {
+        let mut t = reference();
+        let port = t.serial_ports.values_mut().next().unwrap();
+        port.brr = brr;
+        assert_eq!(
+            generate("b", &t, &table).unwrap_err().kind(),
+            "InvalidTopology"
+        );
+        let e = check_silicon(&t).unwrap_err();
+        assert_eq!(e.kind(), "SiliconRuleFails", "{e}");
+        let text = e.to_string();
+        assert!(
+            text.contains("`USART1`") && text.contains(&format!("check_brr: BRR {brr} ")),
+            "{text}"
+        );
+    }
+}

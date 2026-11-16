@@ -196,8 +196,9 @@ fn hsi_slowest(hz: u64) -> u64 {
         .unwrap_or(u64::MAX)
 }
 
-/// Refuses a solved SPI or I2C controller whose values the independent rule
-/// does not hold (`AET-WO-4230` §1.3, review A5): the generator copies them
+/// Refuses a solved SPI or I2C controller, or a serial port's `BRR`, whose
+/// values the independent rule does not hold (`AET-WO-4230` §1.3, review A5,
+/// R3): the generator copies them
 /// into code, and the oracle's expected words come from the same rule
 /// (`aethelgard_ir::silicon::spi_words`, `i2c_cr1`), so a value it refuses
 /// is never emitted. [`generate`] runs it first; `SolvedTopology::validate`
@@ -271,6 +272,21 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
             return Err(BoardError::SiliconRuleFails {
                 peripheral: peripheral.clone(),
                 finding: format!("check_i2c: {} false", failed.join("; ")),
+            });
+        }
+    }
+    // `USART_BRR` (`AET-WO-4230` R3, the architect's ruling on Q-H): the
+    // nearest whole divider, by the rule's own inequality, never by
+    // re-running the solver's `serial::solve_brr`.
+    for port in solved.serial_ports.values() {
+        let baud = port.framing.baud;
+        if !silicon::check_brr(port.kernel_hz, baud, port.brr).holds {
+            return Err(BoardError::SiliconRuleFails {
+                peripheral: port.peripheral.clone(),
+                finding: format!(
+                    "check_brr: BRR {} at {} baud on a {} Hz kernel is not the nearest whole divider of at least 16",
+                    port.brr, baud, port.kernel_hz
+                ),
             });
         }
     }
