@@ -328,8 +328,9 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
         cwd: firmware.clone(),
         status: scratch.root.join(status),
         read_only: read_only.clone(),
-        // Cargo starts its own children with stdin from /dev/null.
-        read_write: vec![PathBuf::from("/dev/null")],
+        // Cargo starts its own children with stdin from /dev/null, which
+        // every tool may read and write (`run::confine`).
+        read_write: Vec::new(),
     };
     let version = crate::version(invocation(run::args(["--version"]), "status-version"))?;
     let ran = invocation(cargo_args(), "status-run").run()?;

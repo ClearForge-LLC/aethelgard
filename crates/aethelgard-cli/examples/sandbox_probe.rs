@@ -133,7 +133,7 @@ fn helper(program: &str, args: &[&str]) -> (String, String) {
     if !Path::new(program).exists() {
         return (format!("missing:{program}"), String::new());
     }
-    // Not Stdio::null: Landlock gives this tool no /dev/null.
+    // Stdin piped and closed at once, so the helper never waits on it.
     match Command::new(program)
         .args(args)
         .stdin(Stdio::piped())

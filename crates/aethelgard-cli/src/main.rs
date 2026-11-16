@@ -1078,8 +1078,9 @@ fn prove(
         cwd: cwd.to_path_buf(),
         status: scratch.root.join(status),
         read_only: read_only.clone(),
-        // Cargo starts its own children with stdin from /dev/null.
-        read_write: vec![PathBuf::from("/dev/null")],
+        // Cargo starts its own children with stdin from /dev/null, which
+        // every tool may read and write (`run::confine`).
+        read_write: Vec::new(),
     };
     let version = version(invocation(
         run::args(["kani", "--version"]),
