@@ -45,8 +45,20 @@ fn valid_example_exits_0() {
     let input = std::fs::read(example("sentinel-01-minimal.json")).unwrap();
     let output = run(&["validate"], &input);
     assert_eq!(output.status.code(), Some(0));
+    let mut report = report(&output);
+    // The flash is `nrnd` by its maker, acknowledged (`AET-WO-4211`): the
+    // verdict carries its banner line.
+    let banner = report.as_object_mut().unwrap().remove("lifecycle").unwrap();
+    assert_eq!(banner.as_array().unwrap().len(), 1, "{banner}");
+    assert!(
+        banner[0]
+            .as_str()
+            .unwrap()
+            .starts_with("LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs"),
+        "{banner}"
+    );
     assert_eq!(
-        report(&output),
+        report,
         serde_json::json!({
             "ok": true,
             "project_name": "sentinel-01",
