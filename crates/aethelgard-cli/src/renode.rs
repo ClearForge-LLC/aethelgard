@@ -784,7 +784,11 @@ impl BootPlan<'_> {
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
         c.extend(self.stimuli());
-        c.extend(self.timer_hooks().iter().map(crate::anchor::timer_hook));
+        c.extend(
+            self.timer_hooks()
+                .iter()
+                .flat_map(crate::anchor::timer_hooks),
+        );
         if self.resets.is_empty() {
             c.extend(self.boot_hooks());
             c.push(run_for(self.virtual_ns));
@@ -2780,7 +2784,7 @@ fn anchor_findings(
             out.push(Finding::plain(
                 MOTOR_ANCHOR_UNOBSERVED_FINDING,
                 format!(
-                    "{who}: the observer logged {} rises and {} falls, but no word write of TIM{}.CR1 set CEN in the boot the judge reads, so the output's window has no anchor (a write narrower than a word is not observed)",
+                    "{who}: the observer logged {} rises and {} falls, but no CPU store of TIM{}.CR1 set CEN in the boot the judge reads, so the output's window has no anchor (a DMA write of CR1 is not observed)",
                     w.rises, w.falls, m.observer.timer
                 ),
             ));
@@ -4021,14 +4025,18 @@ mod tests {
             [(1, 0x4001_0000, false, 2), (2, 0x4000_0000, true, 2)]
         );
         let c = p.commands();
-        let pwm_hook = crate::anchor::timer_hook(&hooks[0]);
-        let dshot_hook = crate::anchor::timer_hook(&hooks[1]);
-        assert!(!pwm_hook.contains("ScheduleAction"));
-        assert!(dshot_hook.contains("ScheduleAction") && !dshot_hook.contains("logLevel"));
-        // Before the first `RunFor`, once each: a peripheral's hook survives
-        // `machine Reset` (measured, F5 and build probe P3).
+        let pwm_hooks = crate::anchor::timer_hooks(&hooks[0]);
+        let dshot_hooks = crate::anchor::timer_hooks(&hooks[1]);
+        assert!(pwm_hooks.iter().all(|h| !h.contains("ScheduleAction")));
+        assert!(
+            dshot_hooks
+                .iter()
+                .all(|h| h.contains("ScheduleAction") && !h.contains("logLevel"))
+        );
+        // Before the first `RunFor`, once each, every width: a peripheral's
+        // hook survives `machine Reset` (measured, F5 and build probe P3).
         let first = c.find("emulation RunFor").unwrap();
-        for h in [&pwm_hook, &dshot_hook] {
+        for h in pwm_hooks.iter().chain(&dshot_hooks) {
             assert_eq!(c.matches(h.as_str()).count(), 1);
             assert!(c.find(h.as_str()).unwrap() < first);
         }
@@ -4260,7 +4268,7 @@ mod tests {
             })),
             ["judge_stop_mismatch"]
         );
-        // Edges with no anchor observed (a CR1 write narrower than a word).
+        // Edges with no anchor observed (a CR1 written by DMA).
         let (f, w) = judge_anchors(
             &with(&|l| {
                 l.remove(2);

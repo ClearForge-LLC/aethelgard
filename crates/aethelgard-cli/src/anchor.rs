@@ -307,8 +307,14 @@ fn next_injected(ports: &[PortHook], k: usize) -> Option<usize> {
 
 /// The monitor's form of a watchpoint hook on writes of a word.
 fn hook(address: u32, python: &str) -> String {
+    hook_of(address, "DoubleWord", python)
+}
+
+/// The monitor's form of a watchpoint hook on writes `width` wide
+/// (`Byte`, `Word` or `DoubleWord`).
+fn hook_of(address: u32, width: &str, python: &str) -> String {
     debug_assert!(!python.contains('"') && !python.contains('\\'));
-    format!("sysbus AddWatchpointHook {address:#010x} DoubleWord Write \"{python}\"")
+    format!("sysbus AddWatchpointHook {address:#010x} {width} Write \"{python}\"")
 }
 
 /// A scheduled action, `delay_ns` after the hook that schedules it, that
@@ -328,9 +334,16 @@ fn action(delay_ns: u64, act: &str, stale: &str) -> String {
 /// without it).
 const PREFIX_TAG: &str = "AETHELGARD-";
 
-/// The hook on a motor timer's `CR1`: each write logged with the word
+/// The hooks on a motor timer's `CR1`, one per store width (`DoubleWord`,
+/// `Word`, `Byte`; adversarial pass 1, M2): each write logged with the word
 /// before it; on a DShot timer's `CEN` rise, the judge's stop scheduled.
-pub fn timer_hook(t: &TimerHook) -> String {
+/// Each width fires only on its own stores (measured, fix round M2), and a
+/// store narrower than a word at `CR1`'s address holds `CEN` in its bit 0
+/// as a word does, so one composition serves all three. A store at
+/// `CR1 + 1` to `+ 3` cannot touch `CEN` and is not hooked; a DMA write
+/// fires no hook at all, and its edges fail closed as
+/// `motor_anchor_unobserved`.
+pub fn timer_hooks(t: &TimerHook) -> Vec<String> {
     let n = t.timer;
     let cr1 = t.cr1;
     let mut py = format!(
@@ -358,7 +371,10 @@ pub fn timer_hook(t: &TimerHook) -> String {
             action(DSHOT_WINDOW_NS, &act.join(", "), &format!("STOP {n}"))
         ));
     }
-    hook(cr1, &py)
+    ["DoubleWord", "Word", "Byte"]
+        .iter()
+        .map(|w| hook_of(cr1, w, &py))
+        .collect()
 }
 
 /// Port `k`'s frame, scheduled from the hook that anchors it: byte `j` a
@@ -450,7 +466,14 @@ mod tests {
     /// single-quoted strings inside, no backslash.
     #[test]
     fn a_dshot_timer_s_hook_logs_every_write_and_schedules_the_stop_on_a_rise() {
-        let h = timer_hook(&dshot());
+        let hooks = timer_hooks(&dshot());
+        // One per store width, the same Python in each (adversarial pass
+        // 1, M2: a narrow store of `CEN` anchors as a word's does).
+        let widths: Vec<&str> = hooks.iter().map(|h| h.split(' ').nth(3).unwrap()).collect();
+        assert_eq!(widths, ["DoubleWord", "Word", "Byte"]);
+        let python = |h: &str| h.split_once(" Write ").unwrap().1.to_owned();
+        assert!(hooks.iter().all(|h| python(h) == python(&hooks[0])));
+        let h = &hooks[0];
         assert!(h.starts_with("sysbus AddWatchpointHook 0x40010000 DoubleWord Write \""));
         assert!(h.ends_with('"'));
         assert_eq!(h.matches('"').count(), 2, "{h}");
@@ -475,13 +498,16 @@ mod tests {
 
     #[test]
     fn a_pwm_timer_s_hook_only_logs() {
-        let h = timer_hook(&TimerHook {
+        let hooks = timer_hooks(&TimerHook {
             dshot: false,
             ..dshot()
         });
-        assert!(h.contains("'AETHELGARD-CR1 1 %x %x %d'"));
-        assert!(!h.contains("ScheduleAction"), "{h}");
-        assert!(!h.contains("WriteDoubleWord"), "{h}");
+        assert_eq!(hooks.len(), 3);
+        for h in hooks {
+            assert!(h.contains("'AETHELGARD-CR1 1 %x %x %d'"));
+            assert!(!h.contains("ScheduleAction"), "{h}");
+            assert!(!h.contains("WriteDoubleWord"), "{h}");
+        }
     }
 
     #[test]

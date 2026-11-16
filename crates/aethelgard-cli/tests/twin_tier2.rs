@@ -2025,6 +2025,8 @@ fn h1b_a_16_bit_restart_after_the_window_fails_by_name() {
     let (code, v) = dshot_mutant("h1b-halfword-restart", |_| {}, &[(BOOT_WORD, &body)]);
     assert_eq!(code, Some(1), "{v}");
     edges_after_window("h1b", &v);
+    // The 16-bit store's rise is observed too (M2): a second anchor.
+    assert!(kinds(&v).contains(&"motor_anchor_repeated"), "{v}");
 }
 
 /// Adversarial pass 1, H1c: after the window, DMA2 stream 0 (memory to
@@ -2039,6 +2041,82 @@ fn h1c_a_dma_restart_after_the_window_fails_by_name() {
     let (code, v) = dshot_mutant("h1c-dma-restart", |_| {}, &[(BOOT_WORD, &body)]);
     assert_eq!(code, Some(1), "{v}");
     edges_after_window("h1c", &v);
+}
+
+/// The board crate's word write that starts TIM1, which the M2 mutants
+/// replace.
+const CR1_WORD: &str = "r.write(TOKEN, Block::Tim1, 0x00, 0x00000081); // CR1";
+
+/// Adversarial pass 1, M2 (A6, A10): TIM1 started by a 16-bit, then a byte
+/// store of `CR1` alone. No word write set `CEN`, so no hook saw it: no
+/// anchor, no stop, and DShot ran the rest of the boot, flooding the log
+/// (97.5 % and 99.1 % of the memory bound). The `Word` and `Byte` hooks see
+/// each store: the window is anchored and stopped as a word store's, and
+/// the board passes in its window.
+#[test]
+fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
+    for (label, store) in [
+        (
+            "m2-halfword-start",
+            "unsafe { core::ptr::write_volatile(0x4001_0000 as *mut u16, 0x81) }; // CR1",
+        ),
+        (
+            "m2-byte-start",
+            "unsafe { core::ptr::write_volatile(0x4001_0000 as *mut u8, 0x81) }; // CR1",
+        ),
+    ] {
+        let (code, v) = dshot_mutant(label, |d| edit(d, "src/board.rs", CR1_WORD, store), &[]);
+        assert_eq!(code, Some(0), "{label}: {v}");
+        windowed_dshot(&v, 1000);
+    }
+}
+
+/// Adversarial pass 1, M2 (A9c): TIM1's word write removed and `CEN` set
+/// by DMA2 (memory to memory) after the outputs' start. A DMA write fires
+/// no hook, so DShot is never stopped: the boot fails closed, by the
+/// flood's names when its log passes the filter's budget (measured before
+/// the fix: 93 % of the memory bound), or by `motor_anchor_unobserved` when
+/// the edges are read. The memory share is the named residual.
+#[test]
+fn m2_a_dma_start_of_cen_fails_closed_by_name() {
+    let body = format!(
+        "{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+    );
+    let (code, v) = dshot_mutant(
+        "m2-dma-start",
+        |d| edit(d, "src/board.rs", CR1_WORD, "// CR1 left to DMA"),
+        &[(START, &body)],
+    );
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    let flood = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|f| f["kind"] == "renode_log_flood");
+    if flood {
+        assert_eq!(
+            k.iter()
+                .filter(|k| **k == "motor_output_unwitnessed")
+                .count(),
+            4,
+            "{v}"
+        );
+    } else {
+        assert_eq!(
+            k.iter()
+                .filter(|k| **k == "motor_anchor_unobserved")
+                .count(),
+            4,
+            "{v}"
+        );
+    }
+    // No stop ran: `stops` is absent.
+    assert!(v["boot"]["stops"].is_null(), "{v}");
+    answer(&format!(
+        "m2 dma start: flood={flood} memory={}",
+        v["memory"]
+    ));
 }
 
 /// A `WFI` before the outputs start, woken by SysTick 1 ms later with
