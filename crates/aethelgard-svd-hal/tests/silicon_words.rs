@@ -249,3 +249,27 @@ fn a_brr_the_rule_refuses_is_refused_by_name_at_generation() {
         );
     }
 }
+
+/// `AET-WO-4230` R3-fix (the adversarial pass's F1, mutant M1): the
+/// generation-time rule derives each USART's kernel clock itself (RM0433
+/// Rev 9 §8.7.21, `rcc_pclk2` for USART1 and USART6 and `rcc_pclk1` for the
+/// rest, both 64 MHz at the reset clock) and refuses a topology whose
+/// kernel is not it, even when its `BRR` divides that kernel exactly as the
+/// inequality wants: 32 MHz at `BRR` 278 is 230,400 baud on silicon.
+#[test]
+fn a_usart_kernel_the_rule_does_not_derive_is_refused_at_generation() {
+    let mut t = reference();
+    let port = t.serial_ports.values_mut().next().unwrap();
+    port.kernel_hz = 32_000_000;
+    port.brr = 278;
+    let e = check_silicon(&t).unwrap_err();
+    assert_eq!(e.kind(), "SiliconRuleFails", "{e}");
+    let text = e.to_string();
+    assert!(
+        text.contains("`USART1`")
+            && text.contains(
+                "check_brr: the topology's kernel clock 32000000 Hz is not the rule's 64000000 Hz"
+            ),
+        "{text}"
+    );
+}

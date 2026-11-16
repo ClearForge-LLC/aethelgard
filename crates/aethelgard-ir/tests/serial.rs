@@ -1647,7 +1647,8 @@ fn check_brr_holds_the_solver_s_brr_on_every_fixture_s_port() {
         "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
         "crates/aethelgard-cli/tests/fixtures/serial-four.json",
     ];
-    let kernel = aethelgard_ir::serial::kernel_hz(&SolvedClock::reset(), "USART1").unwrap();
+    let clock = SolvedClock::reset();
+    let kernel = aethelgard_ir::serial::kernel_hz(&clock, "USART1").unwrap();
     let mut seen = Vec::new();
     for file in files {
         let spec: Specification =
@@ -1655,10 +1656,10 @@ fn check_brr_holds_the_solver_s_brr_on_every_fixture_s_port() {
         for p in &spec.serial_ports {
             let baud = p.framing.baud;
             let brr = solve_brr(kernel, baud).unwrap();
-            let f = aethelgard_ir::silicon::check_brr(kernel, baud, brr);
+            let f = aethelgard_ir::silicon::check_brr("USART1", &clock, kernel, baud, brr);
             assert!(f.holds, "{file} {}: {f:?}", p.label);
             for wrong in [brr - 1, brr + 1] {
-                let f = aethelgard_ir::silicon::check_brr(kernel, baud, wrong);
+                let f = aethelgard_ir::silicon::check_brr("USART1", &clock, kernel, baud, wrong);
                 assert!(!f.holds, "{file} {} {wrong}: {f:?}", p.label);
             }
             seen.push((p.label.clone(), baud, brr));

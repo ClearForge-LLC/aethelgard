@@ -275,14 +275,32 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
     // `USART_BRR` (`AET-WO-4230` R3, the architect's ruling on Q-H): the
     // nearest whole divider, by the rule's own inequality, never by
     // re-running the solver's `serial::solve_brr`.
+    // The kernel clock is the rule's own (`silicon::usart_kernel_hz`, the
+    // adversarial pass's F1), and the topology's must be it.
     for port in solved.serial_ports.values() {
         let baud = port.framing.baud;
-        if !silicon::check_brr(port.kernel_hz, baud, port.brr).holds {
+        let f = silicon::check_brr(
+            &port.peripheral,
+            &solved.clock,
+            port.kernel_hz,
+            baud,
+            port.brr,
+        );
+        if !f.kernel_ok {
+            return Err(BoardError::SiliconRuleFails {
+                peripheral: port.peripheral.clone(),
+                finding: format!(
+                    "check_brr: the topology's kernel clock {} Hz is not the rule's {} Hz",
+                    port.kernel_hz, f.kernel_hz
+                ),
+            });
+        }
+        if !f.holds {
             return Err(BoardError::SiliconRuleFails {
                 peripheral: port.peripheral.clone(),
                 finding: format!(
                     "check_brr: BRR {} at {} baud on a {} Hz kernel is not the nearest whole divider of at least 16",
-                    port.brr, baud, port.kernel_hz
+                    port.brr, baud, f.kernel_hz
                 ),
             });
         }

@@ -329,7 +329,7 @@ const SPI_RULE: &str = "aethelgard_ir::silicon::spi_words, held by silicon::chec
 const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): the whole select word, the solved controllers' codes and every other field at reset, held by silicon::check_spi; the proof's expected word is the rule's";
 const I2C_CR1_RULE: &str = "aethelgard_ir::silicon::i2c_cr1, held by silicon::check_i2c before generation; the proof's expected CR1 is the rule's word (and the rule's word with PE for the enable)";
 const TIMINGR_RULE: &str = "aethelgard_ir::silicon::check_timingr (through check_i2c), a decode and inequalities at HSI's worst case, which refuses generation when it fails; the proof's expected word is the topology's, which that rule held";
-const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr; generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
+const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr, on the rule's own kernel clock (silicon::usart_kernel_hz: RM0433 Rev 9 §8.7.21, USART16SEL and USART234578SEL at reset 000, rcc_pclk2 and rcc_pclk1 from the solved clock's prescalers), which the topology's must equal (the adversarial pass's F1, never serial::kernel_hz); generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
 const MOTOR_PUPD_RULE: &str = "aethelgard_ir::silicon::motor_output_pupd (AET-WO-4230 R5; its source is the architect's ruling on PR #161, comment 6911424608, Q-G: pull-down `10` on every motor-output pin in the first GPIO init, whole word); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
 const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own example: silicon's ARR + 1), a static finding that fails the twin's verdict (renode.rs static_motor_findings); the proof's expected word is the topology's, which that rule judged";
 
@@ -1816,7 +1816,13 @@ pub fn silicon(topology: &SolvedTopology) -> Silicon {
         .map(|(port, p)| UsartFinding {
             port: port.clone(),
             peripheral: p.peripheral.clone(),
-            brr: silicon::check_brr(p.kernel_hz, p.framing.baud, p.brr),
+            brr: silicon::check_brr(
+                &p.peripheral,
+                &topology.clock,
+                p.kernel_hz,
+                p.framing.baud,
+                p.brr,
+            ),
         })
         .collect();
     let holds = spi.iter().all(|f| f.holds)
@@ -1881,8 +1887,17 @@ pub fn silicon_failures(s: &Silicon) -> Vec<String> {
     }));
     out.extend(s.usart.iter().filter(|f| !f.brr.holds).map(|f| {
         format!(
-            "{} ({}): aethelgard_ir::silicon::check_brr does not hold (BRR {} at {} baud on a {} Hz kernel: nearest {}, in range {})",
-            f.peripheral, f.port, f.brr.brr, f.brr.baud, f.brr.kernel_hz, f.brr.nearest, f.brr.in_range
+            "{} ({}): aethelgard_ir::silicon::check_brr does not hold (BRR {} at {} baud on a {} Hz kernel: kernel_ok {} (the topology's {} Hz, the rule's {} Hz), nearest {}, in range {})",
+            f.peripheral,
+            f.port,
+            f.brr.brr,
+            f.brr.baud,
+            f.brr.kernel_hz,
+            f.brr.kernel_ok,
+            f.brr.topology_kernel_hz,
+            f.brr.kernel_hz,
+            f.brr.nearest,
+            f.brr.in_range
         )
     }));
     out
