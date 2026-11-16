@@ -807,7 +807,7 @@ impl Registers for Spi1Spy {
 /// `Ok` only when every frame moved, `EOT` was read set after the last, before
 /// `EOTC`, and the erratum's delay followed it (ES0392 Rev 16 §2.22.6).
 #[kani::proof]
-#[kani::unwind(6)]
+#[kani::unwind(5)]
 fn spi1_transfer_is_bounded_and_ordered() {
     let mut img = Image {
         rcc: kani::any(),
@@ -856,7 +856,7 @@ fn spi1_transfer_is_bounded_and_ordered() {
     kani::assert(spy.stage == 7, "a transfer did not end disabled and deselected");
     kani::assert(spy.tsize == frames as u32, "TSIZE is not the frames of the transfer");
     kani::assert(
-        spy.sr_reads as usize <= (frames + 1) * spins as usize + 5,
+        spy.sr_reads as usize <= (frames + 1) * spins as usize + 16,
         "a wait read SR more often than its bound",
     );
     kani::assert(spy.cr1 == 0x00001000, "a transfer did not leave CR1 idle");

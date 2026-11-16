@@ -239,6 +239,27 @@ fn spi_frame<R: Registers>(r: &mut R, block: Block, byte: u8, spins: u32) -> Opt
     None
 }
 
+/// 16 reads of `SR`, one round of the delay between `EOT` and `SPE` = 0 that
+/// ES0392 Rev 16 §2.22.6 asks for, written out so that no proof unwinds them.
+fn spi_sr_round<R: Registers>(r: &mut R, block: Block) {
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+    let _ = r.read(TOKEN, block, 0x14);
+}
+
 /// The most reads of `ISR` one USART send makes waiting for `TXFNF` before it gives up.
 pub const USART_WAIT_SPINS: u32 = 20_000;
 
@@ -661,11 +682,12 @@ impl Spi1<Enabled<()>> {
             n += 1;
         }
         // ES0392 Rev 16 §2.22.6: at least one SCK period between `EOT` and
-        // `SPE` = 0, 5 reads of `SR` at the fastest core clock.
+        // `SPE` = 0, 5 reads of `SR` at the fastest core clock, as 1 of
+        // [`spi_sr_round`].
         if ended && !fail {
             let mut k = 0;
-            while k < 5 {
-                let _ = r.read(TOKEN, Block::Spi1, 0x14);
+            while k < 1 {
+                spi_sr_round(r, Block::Spi1);
                 k += 1;
             }
         }

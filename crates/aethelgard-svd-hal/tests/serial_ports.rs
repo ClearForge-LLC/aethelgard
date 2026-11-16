@@ -664,7 +664,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/board.rs",
-        "fa71b4d307fcb8184d80cd30847afbaf1bd27f58635e7fea537a3328b861b805",
+        "9d34e02a3e247a372906b5c49dc804412210b1ef438bc850c331752cb4eacbf7",
     ),
     (
         "src/lib.rs",
@@ -672,7 +672,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "a6a8f0d2f4010cc142e53837a03bdaf52d0eb2cd7e974d827a57e2e4b50251b3",
+        "7ffcb0bf6bb7e2fa8ff26846b2c5ea5a63cc1ffb94486e99c8ce498eebd4c252",
     ),
 ];
 

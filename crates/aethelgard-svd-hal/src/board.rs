@@ -522,7 +522,17 @@ fn emit_spi_shared(w: &mut String, s: &SpiFacts, txdr: u32) {
                  n += 1;\n    \
              }}\n    \
              None\n\
+         }}\n\
+         \n\
+         /// {round} reads of `SR`, one round of the delay between `EOT` and `SPE` = 0 that\n\
+         /// ES0392 Rev 16 §2.22.6 asks for, written out so that no proof unwinds them.\n\
+         fn spi_sr_round<R: Registers>(r: &mut R, block: Block) {{\n\
+         {reads}\n\
          }}\n",
+        round = SR_ROUND,
+        reads =
+            vec![format!("    let _ = r.read(TOKEN, block, {:#04x});", s.sr); SR_ROUND as usize]
+                .join("\n"),
         sr = s.sr,
         rxp = 1u32 << s.rxp,
         rxdr = s.rxdr,
@@ -537,6 +547,13 @@ fn shifted(expr: &str, op: &str, pos: u32) -> String {
         format!("({expr}) {op} {pos}")
     }
 }
+
+/// The reads of `SR` in one round of the erratum's delay, straight-line, so a
+/// proof unwinds the delay's loop once per round: at `MBR` 7 the delay is
+/// 267 reads, and a loop of 267 iterations made the transfer proof's unwind
+/// bound 268, which ran out of 8 GiB (measured). A delay rounded up to whole
+/// rounds is only longer.
+const SR_ROUND: u32 = 16;
 
 /// The reads of `SR` an SPI transfer makes after `EOT` before it clears
 /// `SPE`: ES0392 Rev 16 §2.22.6 (p. 47) says only to "add a delay between the
@@ -570,6 +587,7 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
     let c = &plan.spi[name];
     let code = spi_code(c, s, pf.enable, pf.master.unwrap_or_default());
     let delay = eot_delay_reads(c);
+    let rounds = delay.div_ceil(u64::from(SR_ROUND));
     let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
     let arms: Vec<String> = selects
         .iter()
@@ -654,11 +672,12 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
                      n += 1;\n        \
                  }}\n        \
                  // ES0392 Rev 16 §2.22.6: at least one SCK period between `EOT` and\n        \
-                 // `SPE` = 0, {delay} reads of `SR` at the fastest core clock.\n        \
+                 // `SPE` = 0, {delay} reads of `SR` at the fastest core clock, as {rounds} of\n        \
+                 // [`spi_sr_round`].\n        \
                  if ended && !fail {{\n            \
                      let mut k = 0;\n            \
-                     while k < {delay} {{\n                \
-                         let _ = r.read(TOKEN, Block::{t}, {sr:#04x});\n                \
+                     while k < {rounds} {{\n                \
+                         spi_sr_round(r, Block::{t});\n                \
                          k += 1;\n            \
                      }}\n        \
                  }}\n        \
@@ -5773,10 +5792,12 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             5 => "five".to_owned(),
             n => n.to_string(),
         };
-        // The delay's loop is the longest when it outruns the frames.
+        // The delay's loop of rounds is the longest when it outruns the
+        // frames. Its count is the code's: an unwind too small fails the
+        // proof, never passes it.
         let unwind = u128::try_from(frames_most)
             .unwrap_or(u128::MAX)
-            .max(delay + 1);
+            .max(u128::from(eot_delay_reads(c).div_ceil(u64::from(SR_ROUND))) + 1);
         let covers: String = scripted
             .iter()
             .map(|(a, b, step)| {
@@ -5811,7 +5832,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  kani::assert(spy.stage == 7, \"a transfer did not end disabled and deselected\");\n    \
                  kani::assert(spy.tsize == {tsize_word}, \"TSIZE is not the frames of the transfer\");\n    \
                  kani::assert(\n        \
-                     spy.sr_reads as usize <= (frames + 1) * spins as usize + {delay},\n        \
+                     spy.sr_reads as usize <= (frames + 1) * spins as usize + {delay_most},\n        \
                      \"a wait read SR more often than its bound\",\n    \
                  );\n    \
                  kani::assert(spy.cr1 == {idle:#010x}, \"a transfer did not leave CR1 idle\");\n    \
@@ -5852,6 +5873,8 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              }}",
             tsize_word = shifted("frames as u32", "<<", s.tsize),
             idle = words.cr1_idle,
+            // The delay in whole rounds: the most reads it may make.
+            delay_most = delay.div_ceil(u128::from(SR_ROUND)) * u128::from(SR_ROUND),
         );
     }
 }
