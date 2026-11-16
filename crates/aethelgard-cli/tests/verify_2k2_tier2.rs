@@ -155,6 +155,7 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
         [
             ("erc", "pass"),
             ("drc", "pass"),
+            ("support", "pass"),
             ("extract", "pass"),
             // One per harness: the scheduler, I2C1's transfer, and since
             // `AET-WO-4200` SPI1's transfer and its frame bound.
@@ -439,7 +440,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "0.34 mm to 2 mm",
         "FR-4",
         "plated via, drilled 0.3 mm",
-        "03a82a04",
+        "0fb05003",
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }
