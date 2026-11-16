@@ -7,7 +7,6 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Mutex;
@@ -280,8 +279,8 @@ esac
             format!("  build: {build}\\n")
         },
     );
-    let stub = tb.write("renode", body.as_bytes());
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    let stub = tb.0.join("renode");
+    common::stub::write_executable(&stub, body.as_bytes());
     tb
 }
 
@@ -318,12 +317,11 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     fs::create_dir_all(&dir).unwrap();
     let me = dir.join("aethelgard");
     if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
-        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
+        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
-        fs::write(&stub, common::identified_stub(body)).unwrap();
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        common::stub::write_executable(&stub, common::identified_stub(body));
     }
     made.push((bridge, me.clone()));
     me
@@ -2382,8 +2380,8 @@ esac
         out = out.display(),
         build = BUILD,
     );
-    let stub = tb.write("renode", body.as_bytes());
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    let stub = tb.0.join("renode");
+    common::stub::write_executable(&stub, body.as_bytes());
     tb
 }
 
@@ -2483,16 +2481,16 @@ fn a_stale_or_impostor_bridge_is_refused() {
     ] {
         let dir = Dir::new("impostor");
         let me = dir.0.join("aethelgard");
-        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
-        let stub = dir.write(
-            "aethelgard-bridge",
+        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
+        let stub = dir.0.join("aethelgard-bridge");
+        common::stub::write_executable(
+            &stub,
             format!(
                 "#!/bin/sh\necho '{first}'\n{}",
                 BRIDGE_BY_PULL_UP.split_once('\n').unwrap().1
             )
             .as_bytes(),
         );
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
         let archive = Dir::new("archive");
         let out = campaign(
             &me,

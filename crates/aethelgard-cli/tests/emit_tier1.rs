@@ -2,8 +2,11 @@
 //! (`AET-WO-1300` §1.4). What KiCad says about the output is tier 2
 //! (`with_tools.rs`).
 
+#[path = "common/stub.rs"]
+mod stub;
+
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -311,8 +314,7 @@ exit 0
 "#
     );
     let stub = tb.join("kicad-cli");
-    fs::write(&stub, script).unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    stub::write_executable(&stub, script);
     tb
 }
 

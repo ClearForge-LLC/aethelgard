@@ -8,7 +8,6 @@
 
 use std::ffi::OsStr;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::Mutex;
@@ -304,8 +303,8 @@ cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1
         out = out.display(),
         bytes = bytes.display()
     );
-    let stub = tb.write("renode", body.as_bytes());
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    let stub = tb.0.join("renode");
+    common::stub::write_executable(&stub, body.as_bytes());
     tb
 }
 
@@ -334,12 +333,11 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     fs::create_dir_all(&dir).unwrap();
     let me = dir.join("aethelgard");
     if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
-        fs::copy(env!("CARGO_BIN_EXE_aethelgard"), &me).unwrap();
+        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
-        fs::write(&stub, common::identified_stub(body)).unwrap();
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        common::stub::write_executable(&stub, common::identified_stub(body));
     }
     made.push((bridge, me.clone()));
     me
@@ -1561,15 +1559,12 @@ fn two_devices_witness_their_own_reads_in_either_order() {
         // another command line.
         let tb = Dir::new("tb-two");
         let outf = tb.write("renode.out", text.as_bytes());
-        let stub = tb.write(
-            "renode",
-            format!(
+        let stub = tb.0.join("renode");
+        common::stub::write_executable(&stub, format!(
                 "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af\\n'; exit 0; fi\n/bin/cat '{}'\n",
                 outf.display()
             )
-            .as_bytes(),
-        );
-        fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+            .as_bytes(),);
         let input = Dir::new("in");
         let fw = input.write("fw.elf", &elf());
         let out = run(
@@ -1970,9 +1965,8 @@ fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
     let bytes = tb.write("capture.bin", &aethelgard_twin::serial::pattern("CONSOLE"));
     // A stub that checks the configuration, that the run is one `RunFor` of
     // 150 us with no injection, and writes the capture.
-    let stub = tb.write(
-        "renode",
-        format!(
+    let stub = tb.0.join("renode");
+    common::stub::write_executable(&stub, format!(
             r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
@@ -1985,9 +1979,7 @@ cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1
             bytes.display(),
             out.display()
         )
-        .as_bytes(),
-    );
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+        .as_bytes(),);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
     let out = boot_with(&tb.0, &platform(), &fw, "150us");
