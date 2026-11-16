@@ -127,6 +127,7 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-eda/src/board.rs", Role::Gate),
     ("aethelgard-eda/src/parity.rs", Role::Gate),
     ("aethelgard-eda/src/route.rs", Role::Gate),
+    ("aethelgard-eda/src/route/read.rs", Role::Gate),
     ("aethelgard-eda/src/extract.rs", Role::Gate),
     ("aethelgard-eda/src/support.rs", Role::Gate),
     ("aethelgard-eda/src/bom.rs", Role::Other),
@@ -166,7 +167,7 @@ const ENTRY: &[(&str, &str)] = &[
     ("aethelgard-eda/src/board.rs", "strict::board("),
     ("aethelgard-eda/src/parity.rs", "strict::schematic("),
     ("aethelgard-eda/src/extract.rs", "strict::board("),
-    ("aethelgard-eda/src/route.rs", "strict::footprint("),
+    ("aethelgard-eda/src/route/read.rs", "strict::footprint("),
     (
         "aethelgard-cli/src/kicad.rs",
         "aethelgard_eda::board::read(",
@@ -217,9 +218,19 @@ fn methods(module: &str, head: &str) -> Vec<String> {
 fn every_module_is_known_and_reads_kicad_files_only_as_its_role_allows() {
     let mut found = Vec::new();
     for krate in ["aethelgard-eda", "aethelgard-cli"] {
-        for entry in fs::read_dir(crates().join(krate).join("src")).unwrap() {
-            let name = entry.unwrap().file_name().into_string().unwrap();
-            found.push(format!("{krate}/src/{name}"));
+        // A directory of submodules (`route/`, roadmap §6's split) is
+        // walked too: each file in it is a module of its own.
+        let mut dirs = vec![String::new()];
+        while let Some(dir) = dirs.pop() {
+            for entry in fs::read_dir(crates().join(krate).join("src").join(&dir)).unwrap() {
+                let entry = entry.unwrap();
+                let name = format!("{dir}{}", entry.file_name().into_string().unwrap());
+                if entry.file_type().unwrap().is_dir() {
+                    dirs.push(format!("{name}/"));
+                } else {
+                    found.push(format!("{krate}/src/{name}"));
+                }
+            }
         }
     }
     found.sort();
@@ -261,7 +272,7 @@ fn every_module_is_known_and_reads_kicad_files_only_as_its_role_allows() {
         // straight to the strict reader (`pcb` calls it, outside the fence).
         let raw = text.matches("Sx").count();
         let allowed = match *module {
-            "aethelgard-eda/src/route.rs" => 2,
+            "aethelgard-eda/src/route/read.rs" => 2,
             _ if *role == Role::Gate || *role == Role::Other => 0,
             _ => raw,
         };

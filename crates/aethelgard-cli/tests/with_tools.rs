@@ -1482,3 +1482,112 @@ fn a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule() {
         drc_items(&doc)
     ));
 }
+
+// ---- `AET-WO-1311`: a seeded neck in the ground zone, against KiCad's refill ----
+
+/// A 2-layer board, 20 × 10 mm, whose B.Cu ground zone joins its two ground
+/// vias (x = 103.5 and 115.5 mm) only through a neck at y = 105 mm: `/A`'s
+/// B.Cu walls between x = 110 and 111 mm run from the vias at each edge to
+/// the neck, the two `gap_um` apart copper to copper, joined on F.Cu. Every coordinate
+/// is in the engine's own grammar and on its 125 µm grid but the walls' ends.
+fn necked_board(gap_um: i64) -> String {
+    let mm = |um: i64| format!("{}.{:03}", um / 1000, um % 1000);
+    let top = mm(105_000 - gap_um / 2 - 100);
+    let bottom = mm(105_000 + (gap_um + 1) / 2 + 100);
+    assert_eq!(gap_um % 2, 0, "a gap centred on the grid row");
+    let part = |r: &str, x: f64, y: f64, n1: &str, n2: &str| {
+        format!(
+            "\t(footprint \"R\" (layer \"F.Cu\") (at {x} {y}) (property \"Reference\" \"{r}\" (at 0 -1) (layer \"F.Fab\")) (property \"Value\" \"10k\" (at 0 1) (layer \"F.Fab\"))\n\t\t(pad \"1\" smd rect (at -0.5 0) (size 0.5 0.6) (layers \"F.Cu\" \"F.Mask\" \"F.Paste\") (net \"{n1}\"))\n\t\t(pad \"2\" smd rect (at 0.5 0) (size 0.5 0.6) (layers \"F.Cu\" \"F.Mask\" \"F.Paste\") (net \"{n2}\"))\n\t\t(fp_rect (start -0.9 -0.45) (end 0.9 0.45) (stroke (width 0.05) (type default)) (fill no) (layer \"F.CrtYd\")))\n"
+        )
+    };
+    let seg = |a: (&str, &str), b: (&str, &str), layer: &str, net: &str| {
+        format!(
+            "\t(segment (start {} {}) (end {} {}) (width 0.2) (layer \"{layer}\") (net \"{net}\"))\n",
+            a.0, a.1, b.0, b.1
+        )
+    };
+    let via = |x: &str, y: &str, net: &str| {
+        format!(
+            "\t(via (at {x} {y}) (size 0.6) (drill 0.3) (layers \"F.Cu\" \"B.Cu\") (net \"{net}\"))\n"
+        )
+    };
+    let mut text = String::from(
+        "(kicad_pcb\n\t(version 20260206)\n\t(generator \"aethelgard\")\n\t(generator_version \"0.1.0\")\n\t(general (thickness 1.6) (legacy_teardrops no))\n\t(paper \"A4\")\n\t(layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (13 \"F.Paste\" user) (1 \"F.Mask\" user) (25 \"Edge.Cuts\" user) (31 \"F.CrtYd\" user \"F.Courtyard\") (35 \"F.Fab\" user))\n",
+    );
+    text += &part("R1", 104.0, 103.0, "GND", "/L");
+    text += &part("R2", 116.0, 103.0, "GND", "/R");
+    text += &part("R3", 110.5, 103.0, "/A", "/A");
+    text += "\t(gr_rect (start 100 100) (end 120 110) (stroke (width 0.05) (type default)) (fill no) (layer \"Edge.Cuts\"))\n";
+    // Ground: each pad to its via on F.Cu; the zone joins the vias.
+    text += &seg(("103.5", "103"), ("103.5", "105"), "F.Cu", "GND");
+    text += &seg(("115.5", "103"), ("115.5", "105"), "F.Cu", "GND");
+    text += &via("103.5", "105", "GND");
+    text += &via("115.5", "105", "GND");
+    // `/A`: R3's pads (x = 110 and 111 mm) each on an F.Cu spine to a via
+    // at each edge; on B.Cu a U from each edge's two vias to the neck, so
+    // the neck is a channel 1 mm long between the two U's bottoms.
+    for x in ["110", "111"] {
+        text += &seg((x, "100.8"), (x, "103"), "F.Cu", "/A");
+        text += &seg((x, "103"), (x, "109.2"), "F.Cu", "/A");
+        text += &via(x, "100.8", "/A");
+        text += &via(x, "109.2", "/A");
+        text += &seg((x, "100.8"), (x, &top), "B.Cu", "/A");
+        text += &seg((x, &bottom), (x, "109.2"), "B.Cu", "/A");
+    }
+    text += &seg(("110", &top), ("111", &top), "B.Cu", "/A");
+    text += &seg(("110", &bottom), ("111", &bottom), "B.Cu", "/A");
+    text += "\t(zone (net \"GND\") (layer \"B.Cu\") (hatch edge 0.5) (min_thickness 0.25) (filled_areas_thickness no) (fill (thermal_gap 0.5) (thermal_bridge_width 0.5) (island_removal_mode 0)) (polygon (pts (xy 100 100) (xy 120 100) (xy 120 110) (xy 100 110))))\n";
+    text += "\t(embedded_fonts no)\n)\n";
+    text
+}
+
+/// The Grok review's row 3 residual (`AET-WO-1311`): the router's and
+/// `extract`'s zone judge (`route::connectivity`, on `zone_core`) and
+/// KiCad 10.0.7's own refill (`check drc`, `--refill-zones`) on one seeded
+/// neck, across a sweep of widths. Measured: the judge joins the zone from
+/// 670 µm (a neck one grid node wide: clearance 0.2 mm + min_thickness/2 +
+/// 10 µm from each wall), KiCad from 650 µm (2 × 0.2 + 0.25 mm); at 640 µm
+/// KiCad reports the vias unconnected. Wherever the judge joins the zone,
+/// KiCad's refill joins it too, never the false pass the review feared;
+/// between the two the judge fails closed.
+#[test]
+fn a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it() {
+    let scratch = common::Scratch::new("1311-neck");
+    let spec: aethelgard_ir::Specification = serde_json::from_str(
+        &fs::read_to_string(example_spec("sentinel-01-minimal.json")).unwrap(),
+    )
+    .unwrap();
+    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    for (gap, judged, kicad) in [
+        (600, false, false),
+        (640, false, false),
+        (650, false, true),
+        (660, false, true),
+        (670, true, true),
+        (680, true, true),
+        (800, true, true),
+    ] {
+        let text = necked_board(gap);
+        let tree = aethelgard_eda::strict::board(&text).unwrap();
+        let (b, r) = aethelgard_eda::route::read(&tree, &stack).unwrap();
+        let judge = aethelgard_eda::route::connectivity(&b, &r);
+        assert_eq!(judge.is_ok(), judged, "{gap} µm: {judge:?}");
+        if let Err(e) = judge {
+            assert!(e.contains("the zone does not reach via"), "{gap} µm: {e}");
+        }
+        let path = scratch.0.join(format!("neck-{gap}.kicad_pcb"));
+        fs::write(&path, &text).unwrap();
+        let out = run(&["check", "drc", "--board", path.to_str().unwrap()], None);
+        if kicad {
+            let v = verdict(&out, 0);
+            assert_eq!(v["verdict"], "pass", "{gap} µm: {v}");
+        } else {
+            let v = verdict(&out, 1);
+            assert_eq!(kinds(&v), ["unconnected_items"], "{gap} µm: {v}");
+        }
+        assert!(
+            !judged || kicad,
+            "{gap} µm: the judge joined what KiCad cut"
+        );
+    }
+}

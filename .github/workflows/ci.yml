@@ -320,11 +320,13 @@ jobs:
       # that role) and 1 from AET-WO-1310 (merged into that branch, PR #160).
       # 158: plus 1 from AET-WO-1603 in twin_tier2.rs (a witness line sent through
       # every firmware channel never reaches the judge).
-      # 159: plus 1 from AET-WO-4230 slice C2 in twin_tier2.rs (the ledger's
+      # 159: plus 1 from AET-WO-1311 in with_tools.rs (a seeded neck in the
+      # ground zone: KiCad's refill joins it wherever route::connectivity does).
+      # 160: plus 1 from AET-WO-4230 slice C2 in twin_tier2.rs (the ledger's
       # completeness: every bit the reference writes, rebuilt from Renode's
       # access log of every peripheral, is covered by a ledger row), merged
-      # after 158.
-      TIER2_MIN: "159"
+      # after 159.
+      TIER2_MIN: "160"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
