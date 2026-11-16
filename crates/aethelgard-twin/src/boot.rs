@@ -489,10 +489,12 @@ pub struct Unmodelled {
 /// What a boot must leave for the devices.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct IdentityPlan {
-    /// One per step of each device whose part has a model: the I2C devices
-    /// in the order they are declared, then the SPI devices in theirs, each
-    /// device's steps in its script's order; the record index is the
-    /// position.
+    /// One per step of each device whose part has a model: every identity
+    /// and configuration step, then every data read (`AET-WO-4230` R6, the
+    /// architect's ruling on Q-E: one start-up wait between them), each half
+    /// with the I2C devices in the order they are declared, then the SPI
+    /// devices in theirs, and each device's steps in its script's order; the
+    /// record index is the position.
     pub checks: Vec<StepCheck>,
     pub unmodelled: Vec<Unmodelled>,
 }
@@ -536,21 +538,22 @@ impl StepCheck {
     }
 }
 
-/// The steps a boot of the topology's devices must make: the I2C devices
-/// in the specification's order, then the SPI devices in theirs, each
-/// device's script in order ([`parts::Part::steps`]); and the devices it
-/// cannot check. The steps are the parts table's; the device is modelled when
-/// [`model::kind`] says so.
+/// The steps a boot of the topology's devices must make: every identity and
+/// configuration step, then every data read (`AET-WO-4230` R6: the firmware
+/// waits once, for the largest start-up, between the two), each half with
+/// the I2C devices in the specification's order, then the SPI devices in
+/// theirs, each device's script in order ([`parts::Part::steps`]); and the
+/// devices it cannot check. The steps are the parts table's; the device is
+/// modelled when [`model::kind`] says so.
 pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
     let base = boot_word()?;
     let mut plan = IdentityPlan::default();
-    let mut next = RECORD_OFFSET;
-    let mut push = |plan: &mut IdentityPlan,
-                    reference: &str,
-                    peripheral: &str,
-                    part: &str,
-                    wire: Wire,
-                    device: &dyn Fn() -> Result<String, TwinError>|
+    let push = |plan: &mut IdentityPlan,
+                reference: &str,
+                peripheral: &str,
+                part: &str,
+                wire: Wire,
+                device: &dyn Fn() -> Result<String, TwinError>|
      -> Result<(), TwinError> {
         let Some(model) = model::kind(part)? else {
             plan.unmodelled.push(Unmodelled {
@@ -567,18 +570,6 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
         };
         let device = device()?;
         for step in p.steps() {
-            let words = value_words(step.width);
-            let at = next;
-            next = at
-                .checked_add(4 * (1 + words))
-                .ok_or_else(|| TwinError::InvalidDeviceName {
-                    reference: reference.to_owned(),
-                })?;
-            let status_at = base
-                .checked_add(at)
-                .ok_or_else(|| TwinError::InvalidDeviceName {
-                    reference: reference.to_owned(),
-                })?;
             let stimulus = match (&p.script, step.kind) {
                 (Some(s), parts::StepKind::Data) => s
                     .channels
@@ -596,8 +587,9 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
                 width: step.width,
                 expected: step.expected,
                 mask: step.mask,
-                status_at,
-                value_at: status_at + 4,
+                // Placed below, once the steps are in the boot's order.
+                status_at: 0,
+                value_at: 0,
                 level: model.level(),
                 // A data read whose stimulus the model cannot be set to has
                 // no expected value the twin can witness (D3).
@@ -633,6 +625,22 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
             },
             &|| platform::spi_device_path(&s.peripheral, &s.reference),
         )?;
+    }
+    // Every identity and configuration step, then every data read, each half
+    // in the order above (a stable sort), then each record after the last.
+    plan.checks.sort_by_key(|c| c.step == parts::StepKind::Data);
+    let mut next = RECORD_OFFSET;
+    for c in &mut plan.checks {
+        let overflow = || TwinError::InvalidDeviceName {
+            reference: c.reference.clone(),
+        };
+        let at = next;
+        next = at
+            .checked_add(4 * (1 + value_words(c.width)))
+            .ok_or_else(overflow)?;
+        let status_at = base.checked_add(at).ok_or_else(overflow)?;
+        c.status_at = status_at;
+        c.value_at = status_at + 4;
     }
     Ok(plan)
 }

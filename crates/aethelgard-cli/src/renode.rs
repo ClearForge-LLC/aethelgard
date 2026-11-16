@@ -955,19 +955,24 @@ fn attribute(
 ) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
     let mut seen = vec![Vec::new(); checks.len()];
     let mut unrouted = vec![Vec::new(); checks.len()];
-    // Each device's steps are consecutive, in its script's order.
-    let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+    // Each device's steps, in its script's order: not consecutive, since
+    // every data read follows every other device's identity and
+    // configuration (`AET-WO-4230` R6).
+    let mut groups: Vec<Vec<usize>> = Vec::new();
     for (i, c) in checks.iter().enumerate() {
-        match groups.last_mut() {
-            Some(g) if checks[g.start].reference == c.reference => g.end = i + 1,
-            _ => groups.push(i..i + 1),
+        match groups
+            .iter_mut()
+            .find(|g| checks[g[0]].reference == c.reference)
+        {
+            Some(g) => g.push(i),
+            None => groups.push(vec![i]),
         }
     }
     let mut every_window: std::collections::BTreeMap<&str, Vec<(usize, usize)>> =
         Default::default();
     for g in &groups {
-        let c = &checks[g.start];
-        let last = g.end - 1;
+        let c = &checks[g[0]];
+        let last = g[g.len() - 1];
         let spi = match c.wire {
             aethelgard_twin::boot::Wire::Spi { address, .. } => {
                 let w = windows(log, mux_of(c), address);
@@ -1010,7 +1015,7 @@ fn attribute(
                                 .iter()
                                 .position(|&(e, next)| finished && e < i && i < next)
                         })
-                        .map_or(last, |k| (g.start + k).min(last))
+                        .map_or(last, |k| g.get(k).copied().unwrap_or(last))
                 };
                 for (i, body) in lines {
                     seen[step_of(i)].push(body.to_owned());
@@ -1029,7 +1034,7 @@ fn attribute(
                     .partition(|(_, b)| b.starts_with(LOG_ERROR));
                 let mut at = 0;
                 let mut begun = Vec::new();
-                for k in g.clone() {
+                for &k in g {
                     let n = if k == last {
                         lines.len().saturating_sub(at)
                     } else {
@@ -1050,7 +1055,7 @@ fn attribute(
                         .iter()
                         .rev()
                         .find(|&&(b, _)| b < i)
-                        .map_or(g.start, |&(_, k)| k);
+                        .map_or(g[0], |&(_, k)| k);
                     seen[k].push(body.to_owned());
                 }
             }
@@ -1059,14 +1064,14 @@ fn attribute(
     // A multiplexer line inside no device's window is the controller's: it
     // goes to every device's identity step, as `4200` D4 collected it.
     for g in &groups {
-        let c = &checks[g.start];
+        let c = &checks[g[0]];
         if let aethelgard_twin::boot::Wire::Spi { .. } = c.wire {
             let all = every_window.get(mux_of(c)).map_or(&[][..], Vec::as_slice);
             for (i, line) in log.iter().enumerate() {
                 if let Some(u) = unrouted_line(line, mux_of(c))
                     && !all.iter().any(|&(o, e)| o < i && i < e)
                 {
-                    unrouted[g.start].push(u.to_owned());
+                    unrouted[g[0]].push(u.to_owned());
                 }
             }
         }

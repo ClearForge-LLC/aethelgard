@@ -1571,9 +1571,9 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         [
             t("U5", "identity", "0xea"),
             t("U5", "configure", "0x0"),
-            t("U5", "data", "0x4000"),
             t("U7", "identity", "0xea"),
             t("U7", "configure", "0x0"),
+            t("U5", "data", "0x4000"),
             t("U7", "data", "0x4000"),
         ]
     );
@@ -1588,7 +1588,7 @@ fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
         .iter()
         .map(|w| w["expected"].as_array().unwrap().len())
         .collect();
-    assert_eq!(lines, [4, 4, 14, 4, 4, 14]);
+    assert_eq!(lines, [4, 4, 4, 4, 14, 14]);
     assert!(spi.iter().all(|w| w["unrouted"] == serde_json::json!([])));
     let csr = v["boot"]["registers"]
         .as_array()
@@ -1646,7 +1646,7 @@ fn a_seeded_imu_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf5)",
+            "spi1.transfer(&mut r, Spi1Device::U5, &[0x06, 0x01], &mut buf4)",
             "Ok::<usize, SpiError>(0)",
         );
     });
@@ -1671,8 +1671,8 @@ fn a_seeded_barometer_fault_is_named_by_its_step() {
         edit(
             d,
             "src/main.rs",
-            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf3)",
-            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf3)",
+            "i2c1.transfer(&mut r, 0x63, &[0x78, 0x66], &mut buf7)",
+            "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf7)",
         );
     });
     let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "10ms");
@@ -3070,7 +3070,7 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
 fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
     let (dir, platform, spec_path) = own_board("no-wait");
     let elf = mutant_of(&dir, "own-no-wait", |d| {
-        edit(d, "src/main.rs", "    settle(649590);\n", "");
+        // The one wait (`AET-WO-4230` R6).
         edit(d, "src/main.rs", "    settle(1299180);\n", "");
     });
     let (code, v) = boot_on("own no wait", &platform, &spec_path, &elf, "100ms");

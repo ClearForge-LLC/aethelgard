@@ -15,6 +15,7 @@
 //! compares the two.
 
 use aethelgard_ir::SolvedTopology;
+use aethelgard_ir::parts::StepKind;
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
@@ -303,9 +304,11 @@ struct Read {
     write: Vec<u8>,
     /// The bytes read back; none for a configuration.
     width: u8,
-    /// How long the firmware waits after it, in microseconds (`AET-WO-4220`):
-    /// the part's cited start-up before its data read; 0 for no wait.
+    /// The part's cited start-up before its data read, in microseconds
+    /// (`AET-WO-4220`), on its last configuration step; 0 on every other.
     settle_us: u32,
+    /// A scripted part's data read: it comes after the one wait.
+    data: bool,
 }
 
 /// The spins of [`settle`] that make at least `us` microseconds on silicon:
@@ -329,10 +332,13 @@ impl Read {
 }
 
 /// The steps, as the judge orders its records
-/// (`aethelgard_twin::boot::identity`): the I2C devices in the
-/// specification's order, then the SPI devices in theirs, each device's
-/// script in order (`aethelgard_ir::parts::Part::steps`); for each device
-/// that `answers` accepts (the twin has a model for it; this crate cannot
+/// (`aethelgard_twin::boot::identity`): every identity and configuration
+/// step, then every data read (`AET-WO-4230` R6, the architect's ruling on
+/// Q-E: the devices power up together, so one wait between the two halves
+/// serves them all), each half with the I2C devices in the specification's
+/// order, then the SPI devices in theirs, each device's script in order
+/// (`aethelgard_ir::parts::Part::steps`); for each device that `answers`
+/// accepts (the twin has a model for it; this crate cannot
 /// depend on the twin) and whose part is in the table. A device on a
 /// peripheral the board does not have as a bus of its kind is refused.
 fn reads(
@@ -359,6 +365,7 @@ fn reads(
             out.push(Read {
                 bus: d.peripheral.to_ascii_lowercase(),
                 target: Target::I2c { address: d.address },
+                data: step.kind == StepKind::Data,
                 write: step.write,
                 width: step.width,
                 settle_us: step.settle_us,
@@ -388,13 +395,18 @@ fn reads(
                     device: format!("{}Device", type_name(&d.peripheral)),
                     variant: sel.variant.clone(),
                 },
+                data: step.kind == StepKind::Data,
                 write: step.write,
                 width: step.width,
                 settle_us: step.settle_us,
             });
         }
     }
-    Ok(out)
+    // Every identity and configuration step, then every data read, each half
+    // in the order above.
+    let (mut first, data): (Vec<Read>, Vec<Read>) = out.into_iter().partition(|r| !r.data);
+    first.extend(data);
+    Ok(first)
 }
 
 fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
@@ -800,7 +812,28 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         );
     }
     let unset = if uniform { "RECORD_UNSET" } else { "u64::MAX" };
+    // One wait, the largest of the scripted parts' cited start-ups, after the
+    // last configuration write and before the first data read (`AET-WO-4230`
+    // R6, the architect's ruling on Q-E: the parts power up together, so no
+    // per-device sum; each start-up counts from its part's last wake-up
+    // write, all of which precede it).
+    let wait = reads.iter().map(|r| r.settle_us).max().unwrap_or(0);
+    let wait_at = reads.iter().position(|r| r.data).unwrap_or(reads.len());
+    let settle_line = |s: &mut String| {
+        if wait > 0 {
+            let _ = writeln!(
+                s,
+                "    // One wait for every scripted part's start-up, the largest cited\n    \
+                 // (AET-WO-4220; AET-WO-4230 R6), {wait} us, before any data read.\n    \
+                 settle({spins});",
+                spins = settle_spins(wait),
+            );
+        }
+    };
     for (k, read) in reads.iter().enumerate() {
+        if k == wait_at {
+            settle_line(&mut s);
+        }
         let (to, errors) = match &read.target {
             Target::I2c { address } => (
                 format!("{address:#04x}"),
@@ -848,15 +881,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             bus = read.bus,
             write = write.join(", "),
         );
-        if read.settle_us > 0 {
-            let _ = writeln!(
-                s,
-                "    // The part's cited wait before its data read (AET-WO-4220), {us} us.\n    \
-                 settle({spins});",
-                us = read.settle_us,
-                spins = settle_spins(read.settle_us),
-            );
-        }
+    }
+    if wait_at == reads.len() {
+        settle_line(&mut s);
     }
     // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: each
     // timer starts, in ascending number, and is never touched again.
