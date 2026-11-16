@@ -326,7 +326,7 @@ jobs:
       # completeness: every bit the reference writes, rebuilt from Renode's
       # access log of every peripheral, is covered by a ledger row), merged
       # after 159.
-      TIER2_MIN: "160"
+      TIER2_MIN: "173"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
