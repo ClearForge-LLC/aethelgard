@@ -739,7 +739,7 @@
     },
     {
       "part": "W25Q64JVxIQ",
-      "lifecycle": "active",
+      "lifecycle": "nrnd",
       "stand_in": false,
       "bus": {
         "spi": {
@@ -798,10 +798,10 @@
         },
         "spi_output_delay": null,
         "lifecycle": {
-          "document": "Winbond W25Q64JV parts catalog",
-          "revision": "fetched 2026-11-15",
-          "section": "the catalog page lists W25Q64JV, but its status column loads by script and is not in the served bytes: not held",
-          "pending": "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
+          "document": "Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv",
+          "revision": "exported by Scotty 2026-11-16",
+          "section": "column 15 Status-Industrial = N (Not Recommended for New Design) for W25Q64JVSSIQ and all 16 xIQ codes; Longevity Y since 2016/03 (WPLP; image sha256 7091ccdc...); DigiKey shows Active (not held): the maker wins",
+          "sha256": "f10526aeaa7efbf7da5f358f1d1ac933275dcf1628546f136c9e39445ab42ac4"
         },
         "configure": null,
         "start_up": null,

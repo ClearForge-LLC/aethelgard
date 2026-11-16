@@ -145,19 +145,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and the debug and supply connectors; `4230` renumbered to 12), which changes
 /// no generator of these (the blessed reference tree moved in its sha256 line
 /// alone): `59c7e081…ccdb`, `a9b14d56…3246`, `892382d5…71cf` before; the boot
-/// image did not move.
+/// image did not move. Moved once more by `AET-WO-4211` (the flash is `nrnd`
+/// and acknowledged), which changes no generator: with each text's
+/// `LIFECYCLE NRND` line removed and the old specification's sha256 put back,
+/// the three are `c5003f4f…620b`, `875c5440…fbe8` and `63b028f0…bbf8` exactly;
+/// the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "c5003f4f0f501f68e08ba00b53852c531ec5abd92a759e67453b49570f95620b",
+        "4227321d710f562d78352f7d07761a23affdf4a2a7e4fc6325b86c3657bae50e",
     ),
     (
         "platform",
-        "875c5440d6700df68946fdfb4d015b33ebb9bab4ef4268ac8c59071ee8839ae8",
+        "d93b81ee324b84c60e5a4fdeeee0930b6ba1e9397afcefaaef570805e64327c6",
     ),
     (
         "platform faulted",
-        "63b028f058dc7a5469c616edec22023c2182f209bb4da507917de2379456fbf8",
+        "98f7c3d463765a4a000ab815a7f057895594f457769b728b45c9377e4c46ad0b",
     ),
     (
         "boot image",

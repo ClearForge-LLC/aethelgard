@@ -228,6 +228,8 @@ fn a_specification_with_no_spi_bus_judges_nothing_and_says_so() {
     .unwrap();
     spec["spi_buses"] = serde_json::json!([]);
     spec["spi_devices"] = serde_json::json!([]);
+    // The flash goes, and its acknowledgement with it (`AET-WO-4211`).
+    spec["accept_lifecycle"] = serde_json::json!([]);
     let kept: Vec<Value> = spec["net_constraints"]
         .as_array()
         .unwrap()
@@ -266,7 +268,7 @@ fn a_supply_above_the_table_s_bands_is_refused() {
     )
     .unwrap();
     spec["voltage_domains"][0]["nominal_millivolts"] = 3_600.into();
-    for list in ["i2c_devices", "spi_devices"] {
+    for list in ["i2c_devices", "spi_devices", "accept_lifecycle"] {
         spec[list] = Value::Array(Vec::new());
     }
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))

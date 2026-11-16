@@ -448,10 +448,15 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "0.34 mm to 2 mm",
         "FR-4",
         "plated via, drilled 0.3 mm",
-        "c1072b71",
+        "3f89077c",
+        // The flash is `nrnd`, acknowledged, and its lifecycle held
+        // (`AET-WO-4211`): the banner line, and no unheld line.
+        "## Lifecycle",
+        "- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs",
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }
+    assert!(!notes.contains("not held"), "{notes}");
     // The notes describe every other file, and only those.
     let described: Vec<&str> = notes
         .lines()
