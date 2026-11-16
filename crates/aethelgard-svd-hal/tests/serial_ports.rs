@@ -672,7 +672,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "2b6126c986b1a7ac5b8d460347d074e0ca70fdbe846a8d084300dc98f04c0a5f",
+        "a6a8f0d2f4010cc142e53837a03bdaf52d0eb2cd7e974d827a57e2e4b50251b3",
     ),
 ];
 

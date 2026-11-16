@@ -4098,6 +4098,24 @@ fn emit_schedule(
             cr1 = pf.cr1 / 4,
             en = 1u32 << pf.enable,
         );
+        // `TIMINGR` is written while `CR1` is the rule's whole word with `PE`
+        // clear (the filters are set only with `PE` 0, RM0433 Rev 9 §47.9.1),
+        // so a `CR1` read-modify-write before it is caught here, though the
+        // whole `CR1 | PE` after it would hide it from the final check.
+        if pf.spi.is_none() {
+            let _ = writeln!(
+                w,
+                "        if block == Block::{t} && offset == {cfg:#04x} {{\n            \
+                     kani::assert(\n                \
+                         self.{field}[{cr1}] == {word:#010x},\n                \
+                         \"{t} TIMINGR written while CR1 is not the rule's word (aethelgard_ir::silicon::i2c_cr1)\",\n            \
+                     );\n        \
+                 }}",
+                cfg = pf.config,
+                cr1 = pf.cr1 / 4,
+                word = silicon::i2c_cr1(),
+            );
+        }
         if let Some(spi) = &pf.spi {
             let _ = writeln!(
                 w,

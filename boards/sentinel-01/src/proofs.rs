@@ -107,6 +107,12 @@ impl Registers for Image {
                 "I2c1 TIMINGR written while the peripheral is enabled",
             );
         }
+        if block == Block::I2c1 && offset == 0x10 {
+            kani::assert(
+                self.i2c1[0] == 0x00000000,
+                "I2c1 TIMINGR written while CR1 is not the rule's word (aethelgard_ir::silicon::i2c_cr1)",
+            );
+        }
         if block == Block::Spi1 && offset == 0x0c {
             kani::assert(
                 self.spi1[0] & 0x00000001 == 0,
