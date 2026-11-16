@@ -12,7 +12,8 @@
 //! product inequality in exact integers, and testing that each field one
 //! lower fails one (tightness) and that a smaller prescaler cannot fit.
 //! It reads only the [`SolvedSpiController`] and [`SolvedI2cTiming`] types it
-//! judges (`INV-01`); it never reads the generated firmware (`INV-07`).
+//! judges, and a USART's [`SolvedClock`] (`INV-01`); it never reads the
+//! generated firmware (`INV-07`).
 //!
 //! **The worst case is judged** (`AET-WO-4230` §1.8, contract amendment 1).
 //! Every kernel clock here is HSI-derived, and HSI strays by DS12117 Rev 10
@@ -26,7 +27,7 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
-use crate::{SolvedI2cTiming, SolvedSpiController, SpiKernel};
+use crate::{SolvedClock, SolvedI2cTiming, SolvedSpiController, SpiKernel};
 
 /// HSI's worst-case deviations, ppm (DS12117 Rev 10 Table 36 rev Y = Table
 /// 133 rev V, rendered; the PM's sum, contract "Measured facts"). This
@@ -376,6 +377,20 @@ pub const I2C_LIMITS: [I2cLimits; 3] = [
     },
 ];
 
+/// The UM10204 mode a bus whose specification declares `declared_hz` starts
+/// at (the adversarial pass's F3): the fastest of [`I2C_LIMITS`] whose SCL
+/// frequency is at most the declared speed, so that no SCL the bus runs is
+/// above what its devices declared (RM0433 Rev 9 Table 390 gives each mode's
+/// timings at its own SCL frequency); `None` below Standard-mode's 100 kHz.
+/// Chosen by the largest frequency that fits, never by a list's order.
+pub fn i2c_start_mode(declared_hz: u64) -> Option<&'static str> {
+    I2C_LIMITS
+        .iter()
+        .filter(|l| l.scl_hz <= declared_hz)
+        .max_by_key(|l| l.scl_hz)
+        .map(|l| l.mode)
+}
+
 /// `tAF`, the analog filter's delay: DS12117 Rev 10 Table 94 (rev Y,
 /// p. 188) gives 50 to 260 ns, Table 192 (rev V, p. 298) 50 to 80 ns; the
 /// revision is not declared, so the widest, 50 to 260.
@@ -633,6 +648,28 @@ pub fn check_i2c(peripheral: &str, t: &SolvedI2cTiming) -> I2cFinding {
 
 // ---------------------------------------------------------------- USART
 
+/// The kernel clock of a USART or UART with its select field at reset, from
+/// `clock` (the adversarial pass's F1: this module's own, never the
+/// solver's `serial::kernel_hz`). `RCC_D2CCIP2R` resets to `0x0000 0000`
+/// (RM0433 Rev 9 §8.7.21, p. 416, rendered): `USART16SEL[2:0]` (bits 5:3)
+/// `000` selects `rcc_pclk2` for USART1 and USART6, and `USART234578SEL[2:0]`
+/// (bits 2:0) `000` selects `rcc_pclk1` for USART2, USART3, UART4, UART5,
+/// UART7 and UART8 (p. 417, rendered). `rcc_pclk1` and `rcc_pclk2` are
+/// `sys_ck` divided by `D1CPRE`, then `HPRE`, then `D2PPRE1` or `D2PPRE2`
+/// (Figure 49, p. 351): here one division of `sys_ck` by the three
+/// divisors' product, which floors to the same whole hertz. A divisor of 0
+/// gives no clock; so does a peripheral not named above (LPUART1's select is
+/// `RCC_D3CCIPR`'s).
+pub fn usart_kernel_hz(clock: &SolvedClock, peripheral: &str) -> Option<u64> {
+    let apb = match peripheral {
+        "USART1" | "USART6" => clock.d2ppre2,
+        "USART2" | "USART3" | "UART4" | "UART5" | "UART7" | "UART8" => clock.d2ppre1,
+        _ => return None,
+    };
+    let product = u128::from(clock.d1cpre) * u128::from(clock.hpre) * u128::from(apb);
+    (product > 0).then(|| u64::try_from(u128::from(clock.sysclk_hz) / product).unwrap_or(0))
+}
+
 /// `USART_BRR.BRR[15:0]`, a 16-bit field (RM0433 Rev 9 §48.8.5, p. 2082),
 /// holding `USARTDIV`: "In case of oversampling by 16 and 8, USARTDIV must
 /// be greater than or equal to 16" (§48.5.7, the note on p. 2035).
@@ -642,7 +679,13 @@ const BRR_MAX: u32 = 0xFFFF;
 /// What [`check_brr`] found for one USART: exact integers, nothing rounded.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BrrFinding {
+    /// The kernel clock this rule derives ([`usart_kernel_hz`]), 0 where it
+    /// derives none; `BRR` is judged against it.
     pub kernel_hz: u64,
+    /// The topology's kernel clock for the port.
+    pub topology_kernel_hz: u64,
+    /// The topology's kernel clock is the rule's.
+    pub kernel_ok: bool,
     pub baud: u32,
     pub brr: u32,
     /// `|BRR · baud − kernel_hz|`: `baud` times how far `BRR` lies from
@@ -660,18 +703,40 @@ pub struct BrrFinding {
 /// PR #161, comment 6911424608, Q-H). With oversampling by 16, `BRR` is
 /// `USARTDIV` (RM0433 Rev 9 §48.5.7, p. 2034–2035: "In case of oversampling
 /// by 16, … Tx/Rx baud = usart_ker_ck_pres / USARTDIV", "When OVER8 = 0,
-/// BRR = USARTDIV"), so the word a kernel
-/// clock of `kernel_hz` needs for `baud` is the whole number nearest
-/// `kernel_hz / baud`. Checked by an inequality, never by dividing:
-/// `2 · |BRR · baud − kernel_hz| ≤ baud`, with `BRR` in its field's range.
-/// It shares nothing with the solver's `serial::solve_brr`, which rounds a
-/// quotient; at an exact half both neighbours hold.
-pub fn check_brr(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
+/// BRR = USARTDIV"), so the word a kernel clock needs for `baud` is the
+/// whole number nearest `kernel / baud`. The kernel is the rule's own,
+/// [`usart_kernel_hz`] of `peripheral` on `clock`, and the topology's
+/// `kernel_hz` must equal it (the adversarial pass's F1: a solver that
+/// divided a wrong kernel consistently would otherwise hold). Checked by an
+/// inequality, never by dividing: `2 · |BRR · baud − kernel| ≤ baud`, with
+/// `BRR` in its field's range. It shares nothing with the solver's
+/// `serial::solve_brr`, which rounds a quotient; at an exact half both
+/// neighbours hold.
+pub fn check_brr(
+    peripheral: &str,
+    clock: &SolvedClock,
+    kernel_hz: u64,
+    baud: u32,
+    brr: u32,
+) -> BrrFinding {
+    let rule = usart_kernel_hz(clock, peripheral);
+    let mut f = divider(rule.unwrap_or(0), baud, brr);
+    f.topology_kernel_hz = kernel_hz;
+    f.kernel_ok = rule == Some(kernel_hz);
+    f.holds &= f.kernel_ok;
+    f
+}
+
+/// [`check_brr`]'s inequality on a kernel of `kernel_hz`, taken as the
+/// topology's.
+fn divider(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
     let residue = (u128::from(brr) * u128::from(baud)).abs_diff(u128::from(kernel_hz));
     let nearest = baud > 0 && 2 * residue <= u128::from(baud);
     let in_range = (BRR_MIN..=BRR_MAX).contains(&brr);
     BrrFinding {
         kernel_hz,
+        topology_kernel_hz: kernel_hz,
+        kernel_ok: true,
         baud,
         brr,
         residue: u64::try_from(residue).unwrap_or(u64::MAX),
@@ -1028,27 +1093,27 @@ mod tests {
         // 64 MHz / 115200 = 555.56: 556 · 115200 = 64,051,200, 51,200 over,
         // 2 · 51,200 = 102,400 ≤ 115,200. 555 is 64,000 under (128,000 >
         // 115,200) and 557 166,400 over: both fail.
-        let f = check_brr(64_000_000, 115_200, 556);
+        let f = divider(64_000_000, 115_200, 556);
         assert_eq!(
             (f.residue, f.nearest, f.in_range, f.holds),
             (51_200, true, true, true)
         );
         for wrong in [555, 557] {
-            assert!(!check_brr(64_000_000, 115_200, wrong).holds, "{wrong}");
+            assert!(!divider(64_000_000, 115_200, wrong).holds, "{wrong}");
         }
-        assert_eq!(check_brr(64_000_000, 115_200, 555).residue, 64_000);
+        assert_eq!(divider(64_000_000, 115_200, 555).residue, 64_000);
         // 420000: 152 · 420000 = 63,840,000, 160,000 under, 320,000 ≤
         // 420,000; 151 is 580,000 under and 153 260,000 over (520,000).
-        let f = check_brr(64_000_000, 420_000, 152);
+        let f = divider(64_000_000, 420_000, 152);
         assert_eq!((f.residue, f.holds), (160_000, true));
-        assert_eq!(check_brr(64_000_000, 420_000, 153).residue, 260_000);
+        assert_eq!(divider(64_000_000, 420_000, 153).residue, 260_000);
         for wrong in [151, 153] {
-            assert!(!check_brr(64_000_000, 420_000, wrong).holds, "{wrong}");
+            assert!(!divider(64_000_000, 420_000, wrong).holds, "{wrong}");
         }
         // 100000: 640 exactly; 639 and 641 are 100,000 off, 200,000 > 100,000.
-        assert_eq!(check_brr(64_000_000, 100_000, 640).residue, 0);
-        assert!(!check_brr(64_000_000, 100_000, 639).holds);
-        assert!(!check_brr(64_000_000, 100_000, 641).holds);
+        assert_eq!(divider(64_000_000, 100_000, 640).residue, 0);
+        assert!(!divider(64_000_000, 100_000, 639).holds);
+        assert!(!divider(64_000_000, 100_000, 641).holds);
     }
 
     #[test]
@@ -1057,36 +1122,114 @@ mod tests {
         // 63 · 1,024,000 = 64,512,000, each 512,000 away: 2 · 512,000 =
         // 1,024,000, the baud, so `≤` holds for both and `<` for neither.
         for brr in [62, 63] {
-            let f = check_brr(64_000_000, 1_024_000, brr);
+            let f = divider(64_000_000, 1_024_000, brr);
             assert_eq!((f.residue, f.holds), (512_000, true), "{brr}");
         }
-        assert!(!check_brr(64_000_000, 1_024_000, 61).holds);
-        assert!(!check_brr(64_000_000, 1_024_000, 64).holds);
+        assert!(!divider(64_000_000, 1_024_000, 61).holds);
+        assert!(!divider(64_000_000, 1_024_000, 64).holds);
     }
 
     #[test]
     fn brr_is_16_to_0xffff() {
         // 4 Mbaud: 16 exactly, the least BRR the field takes.
-        let f = check_brr(64_000_000, 4_000_000, 16);
+        let f = divider(64_000_000, 4_000_000, 16);
         assert_eq!((f.residue, f.in_range, f.holds), (0, true, true));
         // 4,266,667 baud: 15 · 4,266,667 = 64,000,005, 5 over, nearest, but
         // below 16.
-        let f = check_brr(64_000_000, 4_266_667, 15);
+        let f = divider(64_000_000, 4_266_667, 15);
         assert_eq!(
             (f.residue, f.nearest, f.in_range, f.holds),
             (5, true, false, false)
         );
         // 0xFFFF holds; 0x10000 is nearest (1000 · 65,536 = 65,536,000) but
         // past the 16-bit field.
-        assert!(check_brr(65_535_000, 1_000, 0xFFFF).holds);
-        let f = check_brr(65_536_000, 1_000, 0x1_0000);
+        assert!(divider(65_535_000, 1_000, 0xFFFF).holds);
+        let f = divider(65_536_000, 1_000, 0x1_0000);
         assert_eq!((f.residue, f.nearest, f.in_range), (0, true, false));
         // A zero baud has no USARTDIV, even on a zero kernel.
-        assert!(!check_brr(0, 0, 16).holds);
-        assert!(!check_brr(64_000_000, 0, 16).holds);
+        assert!(!divider(0, 0, 16).holds);
+        assert!(!divider(64_000_000, 0, 16).holds);
         // No overflow at the extremes.
-        let f = check_brr(u64::MAX, u32::MAX, u32::MAX);
+        let f = divider(u64::MAX, u32::MAX, u32::MAX);
         assert!(!f.holds);
+    }
+
+    #[test]
+    fn a_bus_starts_at_the_fastest_mode_at_or_under_its_declared_speed() {
+        for (hz, mode) in [
+            (99_999, None),
+            (100_000, Some("Standard100k")),
+            (399_999, Some("Standard100k")),
+            (400_000, Some("Fast400k")),
+            (999_999, Some("Fast400k")),
+            (1_000_000, Some("FastPlus1M")),
+            (3_400_000, Some("FastPlus1M")),
+        ] {
+            assert_eq!(i2c_start_mode(hz), mode, "{hz}");
+        }
+    }
+
+    #[test]
+    fn the_usart_kernel_is_the_apb_clock_its_select_resets_to() {
+        // RM0433 Rev 9 §8.7.21: USART1 and USART6 on rcc_pclk2, the rest on
+        // rcc_pclk1; 64 MHz each at the reset clock.
+        let reset = SolvedClock::reset();
+        for p in [
+            "USART1", "USART2", "USART3", "UART4", "UART5", "USART6", "UART7", "UART8",
+        ] {
+            assert_eq!(usart_kernel_hz(&reset, p), Some(64_000_000), "{p}");
+        }
+        assert_eq!(usart_kernel_hz(&reset, "LPUART1"), None);
+        assert_eq!(usart_kernel_hz(&reset, "USART9"), None);
+        // Each APB prescaler reaches only its own USARTs.
+        let pclk2_half = SolvedClock {
+            d2ppre2: 2,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(usart_kernel_hz(&pclk2_half, "USART1"), Some(32_000_000));
+        assert_eq!(usart_kernel_hz(&pclk2_half, "USART6"), Some(32_000_000));
+        assert_eq!(usart_kernel_hz(&pclk2_half, "USART2"), Some(64_000_000));
+        let pclk1_quarter = SolvedClock {
+            d2ppre1: 4,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(usart_kernel_hz(&pclk1_quarter, "UART8"), Some(16_000_000));
+        assert_eq!(usart_kernel_hz(&pclk1_quarter, "USART1"), Some(64_000_000));
+        let zero = SolvedClock {
+            hpre: 0,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(usart_kernel_hz(&zero, "USART1"), None);
+        // No overflow at the extremes: the divisors' product exceeds u64.
+        let huge = SolvedClock {
+            d1cpre: u32::MAX,
+            hpre: u32::MAX,
+            d2ppre2: u32::MAX,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(usart_kernel_hz(&huge, "USART1"), Some(0));
+    }
+
+    #[test]
+    fn brr_is_judged_on_the_rule_s_kernel_and_the_topology_s_must_be_it() {
+        let reset = SolvedClock::reset();
+        let f = check_brr("USART1", &reset, 64_000_000, 115_200, 556);
+        assert_eq!(
+            (f.kernel_hz, f.topology_kernel_hz, f.kernel_ok, f.holds),
+            (64_000_000, 64_000_000, true, true)
+        );
+        // The adversarial pass's M1: the kernel halved and divided
+        // consistently, 278 the nearest divider of 32 MHz at 115,200 baud,
+        // which is 230,400 baud on the 64 MHz silicon runs.
+        let f = check_brr("USART1", &reset, 32_000_000, 115_200, 278);
+        assert!(!f.kernel_ok && !f.nearest && !f.holds, "{f:?}");
+        assert_eq!(
+            (f.kernel_hz, f.topology_kernel_hz),
+            (64_000_000, 32_000_000)
+        );
+        // A peripheral with no kernel at reset holds nothing.
+        let f = check_brr("LPUART1", &reset, 64_000_000, 115_200, 556);
+        assert!(!f.kernel_ok && !f.holds && f.kernel_hz == 0, "{f:?}");
     }
 
     #[test]

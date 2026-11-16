@@ -1819,7 +1819,13 @@ mod tests {
             let usart = vec![aethelgard_cli::ledger::UsartFinding {
                 port: "CONSOLE".into(),
                 peripheral: "USART1".into(),
-                brr: aethelgard_ir::silicon::check_brr(64_000_000, 115_200, brr),
+                brr: aethelgard_ir::silicon::check_brr(
+                    "USART1",
+                    &aethelgard_ir::SolvedClock::reset(),
+                    64_000_000,
+                    115_200,
+                    brr,
+                ),
             }];
             let holds = spi.iter().all(|f| f.holds) && usart.iter().all(|f| f.brr.holds);
             aethelgard_cli::ledger::Silicon {

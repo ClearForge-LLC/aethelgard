@@ -158,6 +158,57 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
     );
 }
 
+/// `AET-WO-4230` R3-fix (the adversarial pass's F3): in every fixture's
+/// generated proofs, the schedule starts each I2C bus last at the mode the
+/// independent rule gives its declared speed (`silicon::i2c_start_mode`,
+/// which is the mode the firmware's `main` starts it at), and before every
+/// `init` the oracle expects the topology's `TIMINGR` for that `init`'s
+/// mode, so Kani can hold them. A generator that admits a mode above the
+/// declared speed (mutant M3) starts the bus there while the oracle expects
+/// the rule's mode's word: the pairing fails here, as the proof does.
+#[test]
+fn every_fixture_s_schedule_starts_each_i2c_bus_at_the_rule_s_mode() {
+    let table = pin_table("STM32H753ZITx").unwrap();
+    let mut checked = 0;
+    for (name, t) in &solved() {
+        let Some(&hz) = t.i2c_speeds.values().min() else {
+            continue;
+        };
+        let rule = silicon::i2c_start_mode(u64::from(hz)).unwrap();
+        let files = generate("b", t, &table).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let lines: Vec<&str> = files["src/proofs.rs"].lines().map(str::trim).collect();
+        let main = &files["firmware/src/main.rs"];
+        for (p, timing) in &t.i2c_timings {
+            let m = p.to_ascii_lowercase();
+            let set = format!("{m}_timingr = 0x");
+            let speed = format!("{m}_speed::");
+            let started: Vec<(u32, &str)> = lines
+                .windows(2)
+                .filter_map(|w| {
+                    let word = w[0].strip_prefix(set.as_str())?.strip_suffix(';')?;
+                    let mode = w[1].split(speed.as_str()).nth(1)?.split(',').next()?;
+                    Some((u32::from_str_radix(word, 16).unwrap(), mode))
+                })
+                .collect();
+            assert!(!started.is_empty(), "{name} {p}");
+            for (word, mode) in &started {
+                assert_eq!(
+                    Some(word),
+                    timing.timingr.get(*mode),
+                    "{name} {p}: the oracle's TIMINGR before init at {mode}"
+                );
+            }
+            assert_eq!(started.last().unwrap().1, rule, "{name} {p}");
+            assert!(
+                main.contains(&format!("{m}.init::<{m}_speed::{rule}, _>(")),
+                "{name} {p}: main does not start at {rule}"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked >= 2, "{checked}");
+}
+
 fn reference() -> SolvedTopology {
     let bytes = std::fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
@@ -248,4 +299,28 @@ fn a_brr_the_rule_refuses_is_refused_by_name_at_generation() {
             "{text}"
         );
     }
+}
+
+/// `AET-WO-4230` R3-fix (the adversarial pass's F1, mutant M1): the
+/// generation-time rule derives each USART's kernel clock itself (RM0433
+/// Rev 9 §8.7.21, `rcc_pclk2` for USART1 and USART6 and `rcc_pclk1` for the
+/// rest, both 64 MHz at the reset clock) and refuses a topology whose
+/// kernel is not it, even when its `BRR` divides that kernel exactly as the
+/// inequality wants: 32 MHz at `BRR` 278 is 230,400 baud on silicon.
+#[test]
+fn a_usart_kernel_the_rule_does_not_derive_is_refused_at_generation() {
+    let mut t = reference();
+    let port = t.serial_ports.values_mut().next().unwrap();
+    port.kernel_hz = 32_000_000;
+    port.brr = 278;
+    let e = check_silicon(&t).unwrap_err();
+    assert_eq!(e.kind(), "SiliconRuleFails", "{e}");
+    let text = e.to_string();
+    assert!(
+        text.contains("`USART1`")
+            && text.contains(
+                "check_brr: the topology's kernel clock 32000000 Hz is not the rule's 64000000 Hz"
+            ),
+        "{text}"
+    );
 }

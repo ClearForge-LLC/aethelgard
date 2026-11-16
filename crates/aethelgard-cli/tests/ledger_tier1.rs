@@ -590,7 +590,7 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     assert_eq!(
         v["silicon"]["usart"],
         serde_json::json!([{"port": "CONSOLE", "peripheral": "USART1", "kernel_hz": 64000000,
-            "baud": 115200, "brr": 556, "residue": 51200, "nearest": true, "in_range": true,
+            "topology_kernel_hz": 64000000, "kernel_ok": true, "baud": 115200, "brr": 556, "residue": 51200, "nearest": true, "in_range": true,
             "holds": true}])
     );
     let rows = v["ledger"]["rows"].as_array().unwrap();
@@ -681,5 +681,34 @@ fn silicon_judges_every_usart_s_brr_by_the_independent_inequality() {
         named[0].contains("(GPS): aethelgard_ir::silicon::check_brr does not hold"),
         "{}",
         named[0]
+    );
+}
+
+/// `AET-WO-4230` R3-fix (the adversarial pass's F1, mutant M1): the verdict's
+/// USART rule derives the kernel clock itself (RM0433 Rev 9 §8.7.21:
+/// `USART16SEL` and `USART234578SEL` reset to `000`, `rcc_pclk2` and
+/// `rcc_pclk1`, 64 MHz at the reset clock) and holds the topology's to it. A
+/// solver that halved the kernel and divided it consistently (32 MHz, `BRR`
+/// 278, which is 230,400 baud on silicon) fails `holds`, named.
+#[test]
+fn silicon_derives_each_usart_s_kernel_itself_and_holds_the_topology_s_to_it() {
+    let (mut t, _) = fixture("serial-four");
+    for p in t.serial_ports.values_mut() {
+        p.kernel_hz /= 2;
+        p.brr = u32::try_from(
+            (2 * p.kernel_hz + u64::from(p.framing.baud)) / (2 * u64::from(p.framing.baud)),
+        )
+        .unwrap();
+    }
+    let s = ledger::silicon(&t);
+    assert!(!s.holds);
+    let named = ledger::silicon_failures(&s);
+    assert_eq!(named.len(), 4, "{named:?}");
+    let gps = named.iter().find(|m| m.contains("(GPS)")).unwrap();
+    assert!(
+        gps.contains("aethelgard_ir::silicon::check_brr does not hold")
+            && gps.contains("kernel_ok false")
+            && gps.contains("the topology's 32000000 Hz, the rule's 64000000 Hz"),
+        "{gps}"
     );
 }

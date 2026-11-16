@@ -294,9 +294,15 @@ impl BrownOut {
     /// (`AET-WO-4230` D10, WO §5.3): any write, at any offset or width (a
     /// firmware cannot program the twin's option bytes itself); any read but
     /// a word read of `OPTSR_CUR`; more than one such read in a boot; and,
-    /// in the boot the reads judge (the last), not exactly one. `boots` are
-    /// [`crate::serial::Access`]es of [`FLASH_RENODE`] alone.
-    pub fn judge_accesses(&self, boots: &[Vec<crate::serial::Access>]) -> Vec<String> {
+    /// in the boot the reads judge (the last), not exactly one; and, where
+    /// that boot read it once, a `word` (the boot record's word 1) other
+    /// than, in all 32 bits, the value that read returned: a firmware that
+    /// records a word it did not read, such as the declared level, would
+    /// otherwise pass wherever the level is presented (the adversarial
+    /// pass's F2). A `word` still at [`RECORD_UNSET`] is [`Self::judge`]'s
+    /// to name. `boots` are [`crate::serial::Access`]es of [`FLASH_RENODE`]
+    /// alone.
+    pub fn judge_accesses(&self, boots: &[Vec<crate::serial::Access>], word: u32) -> Vec<String> {
         let mut out: Vec<String> = Vec::new();
         let mut note = |x: String| {
             if !out.contains(&x) {
@@ -305,6 +311,7 @@ impl BrownOut {
         };
         for (k, boot) in boots.iter().enumerate() {
             let mut reads = 0usize;
+            let mut returned = 0u64;
             for a in boot.iter().filter(|a| a.source == FLASH_RENODE) {
                 if a.write {
                     note(format!(
@@ -318,9 +325,15 @@ impl BrownOut {
                     ));
                 } else {
                     reads += 1;
+                    returned = a.value;
                 }
             }
             let last = k + 1 == boots.len();
+            if last && reads == 1 && word != RECORD_UNSET && u64::from(word) != returned {
+                note(format!(
+                    "the boot record's word 1 is {word:#010X}, not {returned:#010X}, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+                ));
+            }
             if reads > 1 || (last && reads != 1) {
                 note(format!(
                     "the firmware read FLASH_OPTSR_CUR {reads} times in {}, not once",

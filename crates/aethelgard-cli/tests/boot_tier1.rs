@@ -1566,7 +1566,8 @@ fn two_devices_witness_their_own_reads_in_either_order() {
             "0x00000064",
             &NO_SERIAL_REGISTERS,
         );
-        // `two-bme.json` declares `bor_level` 0: the model's own word.
+        // `two-bme.json` declares `bor_level` 0: the model's own word, as
+        // the one read of it returned (below).
         let at = r.iter().position(|w| w == BROWN_OUT).unwrap();
         r[at] = "0x0406AAF0".into();
         // U5's record after U2's, before U4's on SPI (`AET-WO-4200`).
@@ -1578,7 +1579,8 @@ fn two_devices_witness_their_own_reads_in_either_order() {
             &r.iter().map(String::as_str).collect::<Vec<_>>(),
         )
         .replace(INJECTION, "")
-        .replace(CPU_LISTING, &listing);
+        .replace(CPU_LISTING, &listing)
+        .replacen("returned 0x406AAFC\n", "returned 0x406AAF0\n", 1);
         // A stub that checks the configuration alone: two devices make
         // another command line.
         let tb = Dir::new("tb-two");
@@ -2107,7 +2109,15 @@ fn a_brown_out_word_that_is_not_the_declared_level_fails_naming_both() {
             "reads 0xffffffff, the judge's fill: the firmware never recorded BOR_LEV; the specification declares level 3",
         ),
     ] {
-        let text = good().replace(&format!("\n{BROWN_OUT}\n"), &format!("\n{word}\n"));
+        // The platform presented that word, and the firmware recorded what
+        // it read (the judge's fill aside, which no read returns).
+        let read = match word {
+            "0xFFFFFFFF" => "0x406AAFC".to_owned(),
+            w => format!("0x{}", w[2..].trim_start_matches('0')),
+        };
+        let text = good()
+            .replace(&format!("\n{BROWN_OUT}\n"), &format!("\n{word}\n"))
+            .replacen("returned 0x406AAFC\n", &format!("returned {read}\n"), 1);
         let (code, v) = boot(&text);
         assert_eq!(code, Some(1), "{word}: {v}");
         assert_eq!(kinds(&v), ["brown_out_level_not_programmed"], "{word}");
@@ -2170,6 +2180,26 @@ fn the_flash_controller_is_read_once_and_never_written_or_the_boot_fails() {
             says
         );
     }
+}
+
+/// `AET-WO-4230` D10 (the adversarial pass's F2, `adv_bor.rs`): word 1 of the
+/// boot record must be, exactly, the value the one read of `OPTSR_CUR`
+/// returned. A read of `BOR_LEV` 00 (0x0406AAF0, a part fresh from the
+/// factory) recorded as the declared level 3 is a firmware that wrote a
+/// word it did not read, and the boot fails by name, naming both.
+#[test]
+fn word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both() {
+    let read3 = "returned 0x406AAFC\n";
+    let text = good();
+    assert!(text.contains(read3));
+    let forged = text.replacen(read3, "returned 0x406AAF0\n", 1);
+    let (code, v) = boot(&forged);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["flash_controller_access"], "{v}");
+    assert_eq!(
+        finding(&v, "flash_controller_access").unwrap()["message"],
+        "the boot record's word 1 is 0x0406AAFC, not 0x0406AAF0, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+    );
 }
 
 /// `AET-WO-4230` B0: an SPI read whose bounded wait for `EOT` expired is a
