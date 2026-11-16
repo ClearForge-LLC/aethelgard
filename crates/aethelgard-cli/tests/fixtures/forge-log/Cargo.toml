@@ -1,0 +1,16 @@
+# A test fixture, not a workspace member and not shipped: a firmware that sends
+# witness-shaped text through every channel that could reach Renode's log (AET-WO-1603 §1.1).
+# Its own `[workspace]` keeps the repository root from claiming it; no dependencies and no
+# build script.
+[package]
+name = "aet-forge-log-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"

@@ -51,8 +51,7 @@ exit 0
 "#,
     );
     let stub = tb.join("kicad-cli");
-    fs::write(&stub, body).unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    common::stub::write_executable(&stub, body);
     tb
 }
 
