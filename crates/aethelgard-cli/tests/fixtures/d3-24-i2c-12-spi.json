@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "accept_lifecycle": [],
   "project_name": "d3-24-i2c-12-spi",
   "mcu": {
@@ -618,5 +618,6 @@
   "net_classes": [],
   "diff_pairs": [],
   "motor_outputs": [],
-  "power": null
+  "power": null,
+  "serial_ports": []
 }

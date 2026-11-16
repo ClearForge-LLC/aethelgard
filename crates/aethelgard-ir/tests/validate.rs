@@ -23,7 +23,7 @@ fn valid() -> Specification {
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
-        "schema_version": 8,
+        "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
         "net_classes": [],
         "diff_pairs": [],
@@ -95,6 +95,7 @@ fn valid() -> Specification {
             impedance_ohms: None,
         }],
         "motor_outputs": [],
+        "serial_ports": [],
     });
     serde_json::from_value(json).expect("the fixture is a specification")
 }
@@ -135,7 +136,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 9, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -779,7 +780,7 @@ fn unknown_field_in_each_struct_is_refused() {
 /// A document with every section of the specification populated, and one
 /// entry of each variant a section has: `sentinel-02-power.json` (power,
 /// lifecycle, devices, board) plus the connectors, net classes, pair and
-/// motor outputs it lacks. A new section earns its place in the walk by being
+/// motor outputs and serial ports it lacks. A new section earns its place in the walk by being
 /// added here; `the_full_document_is_valid_and_populates_every_section` fails
 /// until it is.
 fn full_document() -> serde_json::Value {
@@ -829,6 +830,30 @@ fn full_document() -> serde_json::Value {
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}},
         {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null}
     ]);
+    // `AET-WO-4300b`: a port left to the solver, and one with its peripheral
+    // and pins named, parity, two stop bits and inversion.
+    v["serial_ports"] = json!([
+        {"label": "CONSOLE", "peripheral": null,
+         "tx": {"net": "CONSOLE_TX", "pin": null}, "rx": {"net": "CONSOLE_RX", "pin": null},
+         "role": "console",
+         "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
+         "negotiated": null},
+        {"label": "SBUS", "peripheral": "USART2",
+         "tx": {"net": "SBUS_TX", "pin": "PD5"}, "rx": {"net": "SBUS_RX", "pin": "PD6"},
+         "role": "rc_sbus",
+         "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true},
+         "negotiated": null}
+    ]);
+    // Each serial line leaves the board at a connector.
+    for (reference, port) in [("J7", "CONSOLE"), ("J8", "SBUS")] {
+        v["connectors"].as_array_mut().unwrap().push(json!(
+            {"reference": reference, "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": format!("{port}_TX"), "offboard": null},
+                {"pin": "2", "net": format!("{port}_RX"), "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ));
+    }
     v
 }
 
@@ -1047,6 +1072,7 @@ fn solved() -> SolvedTopology {
         clock: SolvedClock::reset(),
         motor_outputs: BTreeMap::new(),
         power: None,
+        serial_ports: BTreeMap::new(),
     }
 }
 
@@ -1108,9 +1134,10 @@ fn solved_refuses_version_and_hash() {
     // Version 1 is the file before `i2c_speeds` (`AET-WO-1205`), 2 the file
     // before `spi_devices` (`AET-WO-4200`), 3 the file before `spi_lines`
     // (`AET-WO-4300c`), 4 the file before `clock` and `motor_outputs`
-    // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 7 one
-    // this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 7] {
+    // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 6 the
+    // file before `serial_ports` (`AET-WO-4300b`), 8 one this build does not
+    // know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 8] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }

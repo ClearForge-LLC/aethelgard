@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "accept_lifecycle": [
     {
       "part": "ICM20948",
@@ -470,5 +470,6 @@
         ]
       }
     ]
-  }
+  },
+  "serial_ports": []
 }

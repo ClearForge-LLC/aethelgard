@@ -103,22 +103,39 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
 /// `StepCheck` names each step (`label`): with its three `label: "identity"`
 /// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
+/// Re-taken in `AET-WO-4300b`, merging after `4300d` and `4210`
+/// (specification version 9, solved version 7, `serial_ports`): the
+/// reference gains its console (USART1 on PA9/PA10). With the console and
+/// its connector removed and `main`'s hash passed to `solve`, all four were
+/// `main`'s digests exactly (`d114ae78…c455`, `849eb6bc…4397`,
+/// `b24f53eb…9e35`, then `0e4d72ee…c8a2`), so the console alone moved them.
+/// The boot image again at `4300b`'s merge after `4220`: it was
+/// `80c36d58…ce16`, and with the `label: "identity"` fields removed it still
+/// is exactly; with the console removed and `main`'s hash passed, all four are
+/// `main`'s now (the boot image `a03116d6…6b64`). The boot image again with
+/// `CR1.FIFOEN` (the PM's ruling on adversarial pass 2, H1): it was
+/// `224dfd8a…f501`, and with `USART1.CR1.FIFOEN` dropped from its
+/// unobservable list it still is exactly. Re-taken for the port's required
+/// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
+/// hashed document, the three moved digests were `72acc1b5…bbc1`,
+/// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
+/// alone moved them); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d114ae787ece6238223fdd2ddf78c14021dbb548ce966cac310aceb9bc89c455",
+        "1564c3949380f353dba9d3e450ca705ea9fb5d7942bf99d0e859d8bf15113474",
     ),
     (
         "platform",
-        "849eb6bc70882585b2fa054260861646f6bb026ef0203fbb0cd5c7447a844397",
+        "0a8e3b2b7944e4e0247ec79a3c6e0e6226e6c854c15ea38cc72a39d44a169734",
     ),
     (
         "platform faulted",
-        "b24f53ebd62e293e1edaabb0a0723c1accb0098e3e64ef4f7e21caf363459e35",
+        "a93b7c450e978e59dc3c583d1a9c8de0e61d653a519a8bf3d829f2a4017d1fd4",
     ),
     (
         "boot image",
-        "a03116d62e833cf8128e8bb677de97ff249186c743fa5393a94d7274ea206b64",
+        "71c4fd53166f028d0613d0fcf529445a12145fc548754d28d69fc08d5dbe09a7",
     ),
 ];
 
