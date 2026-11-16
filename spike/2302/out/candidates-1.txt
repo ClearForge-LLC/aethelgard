@@ -1,0 +1,41 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.06s
+1
+== (a) k=1: boot to start_outputs + 2 ms (41.1 ms), observers logged, frames injected at 39.1 ms
+/cache/m.sh: line 18: /cache/m/sentinel-02-shaped/a1.log.meta: No such file or directory
+exit=3 cli_wall_ms=2456 
+verdict None findings [] window None
+peak_rss_kib 11364
+== (b) k=1: 100 ms boot, observers logged until 41.1 ms then silenced
+exit=1 cli_wall_ms=12810 wall_ms 9842 stdout_bytes 2878775 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 948696
+== (c-device) k=1: 100 ms device boot, observers silenced throughout
+exit=1 cli_wall_ms=12363 wall_ms 9589 stdout_bytes 47681 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_output_unwitnessed'] window SPIKE_WINDOW_NS
+peak_rss_kib 850448
+== (a) k=2: boot to start_outputs + 2 ms (41.1 ms), observers logged, frames injected at 39.1 ms
+/cache/m.sh: line 18: /cache/m/sentinel-02-shaped/a2.log.meta: No such file or directory
+exit=3 cli_wall_ms=2453 
+verdict None findings [] window None
+peak_rss_kib 
+== (b) k=2: 100 ms boot, observers logged until 41.1 ms then silenced
+exit=1 cli_wall_ms=12820 wall_ms 9840 stdout_bytes 2878789 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 949264
+== (c-device) k=2: 100 ms device boot, observers silenced throughout
+exit=1 cli_wall_ms=12484 wall_ms 9721 stdout_bytes 47695 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_output_unwitnessed'] window SPIKE_WINDOW_NS
+peak_rss_kib 859028
+== (a) k=3: boot to start_outputs + 2 ms (41.1 ms), observers logged, frames injected at 39.1 ms
+exit=3 cli_wall_ms=2450 
+/cache/m.sh: line 18: /cache/m/sentinel-02-shaped/a3.log.meta: No such file or directory
+verdict None findings [] window None
+peak_rss_kib 
+== (b) k=3: 100 ms boot, observers logged until 41.1 ms then silenced
+exit=1 cli_wall_ms=12739 wall_ms 9862 stdout_bytes 2878789 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 957648
+== (c-device) k=3: 100 ms device boot, observers silenced throughout
+exit=1 cli_wall_ms=12215 wall_ms 9535 stdout_bytes 47695 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_output_unwitnessed'] window SPIKE_WINDOW_NS
+peak_rss_kib 858320

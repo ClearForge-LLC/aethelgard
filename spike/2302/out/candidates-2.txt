@@ -1,0 +1,32 @@
+== (a) k=1: boot 44.1 ms, observers logged to 41.1 ms then silenced, frames injected at 39.1 ms
+exit=1 cli_wall_ms=7733 wall_ms 4884 stdout_bytes 2878761 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 688836
+== (a) k=2: boot 44.1 ms, observers logged to 41.1 ms then silenced, frames injected at 39.1 ms
+exit=1 cli_wall_ms=7875 wall_ms 5016 stdout_bytes 2878775 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 703348
+== (a) k=3: boot 44.1 ms, observers logged to 41.1 ms then silenced, frames injected at 39.1 ms
+exit=1 cli_wall_ms=7696 wall_ms 4724 stdout_bytes 2878775 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_timing_mismatch'] window SPIKE_WINDOW_NS
+peak_rss_kib 686492
+== (a-log): boot 44.1 ms, observers logged throughout
+exit=0 cli_wall_ms=8059 wall_ms 4858 stdout_bytes 7067193 dropped_log_lines 0 
+verdict pass findings ['device_unmodelled'] window SPIKE_WINDOW_NS
+peak_rss_kib 630540
+== log
+exit=1 cli_wall_ms=12858 wall_ms 10141 stdout_bytes 48332 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_output_unwitnessed'] window SPIKE_WINDOW_NS
+(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  include @/var/lib/aethelgard/aethelgard-1424-1794846014996790716/tool/models/BMP581.cs;  include @/var/lib/aethelgard/aethelgard-1424-1794846
+[00:00:00.039072280] [WARNING] sysbus: AETCEN 3907233
+[00:00:00.039072410] [WARNING] sysbus: AETBW 3907241
+[00:00:00.041072330] [WARNING] sysbus: AETSCHED 4107233
+instructions {'expected': 10000000, 'observed': 10000000} error None
+== pause
+exit=1 cli_wall_ms=12865 wall_ms 10186 stdout_bytes 48367 dropped_log_lines 0 
+verdict fail findings ['device_unmodelled', 'motor_output_unwitnessed'] window SPIKE_WINDOW_NS
+(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  include @/var/lib/aethelgard/aethelgard-1482-1794846027895036640/tool/models/BMP581.cs;  include @/var/lib/aethelgard/aethelgard-1482-1794846
+[00:00:00.039072280] [WARNING] sysbus: AETCEN 3907233
+[00:00:00.039072410] [WARNING] sysbus: AETBW 3907241
+[00:00:00.041072330] [WARNING] sysbus: AETSCHED 4107233
+instructions {'expected': 10000000, 'observed': 10000000} error None

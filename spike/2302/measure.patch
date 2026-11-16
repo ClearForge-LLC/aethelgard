@@ -14,7 +14,7 @@ index 4f5eff0..e945d89 100644
      } else {
          TWIN_MAX_VIRTUAL_NS
 diff --git a/crates/aethelgard-cli/src/main.rs b/crates/aethelgard-cli/src/main.rs
-index 29994ee..caecfcc 100644
+index 29994ee..6d68adc 100644
 --- a/crates/aethelgard-cli/src/main.rs
 +++ b/crates/aethelgard-cli/src/main.rs
 @@ -527,7 +527,7 @@ fn virtual_time(s: &str) -> Result<u64, String> {
@@ -26,11 +26,20 @@ index 29994ee..caecfcc 100644
      let ns = digits
          .parse::<u64>()
          .ok()
-@@ -1716,7 +1716,23 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
+@@ -1715,8 +1715,31 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
+     // A boot's log is read through the filter, so a flood reaches a verdict;
      // a droop's boot is the bridge's, which owns Renode as its child.
      let out = match (&plan, &droop) {
-         (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
+-        (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
 -        (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
++        (Some(_), Some(_)) => {
++            let o = analog::boot(&run, &tool.path)?;
++            if let Ok(p) = std::env::var("AET2302_DUMP") {
++                let _ = std::fs::write(&p, &o.stdout);
++                let _ = std::fs::write(format!("{p}.meta"), format!("wall_ms 0\nstdout_bytes {}\ndropped_log_lines {}\n", o.stdout.len(), o.dropped_log_lines));
++            }
++            o
++        }
 +        (Some(_), None) => {
 +            let mut f = renode::LOG_FILTER;
 +            if let Some(b) = std::env::var("AET2302_LOG_BUDGET").ok().and_then(|v| v.parse().ok()) {
@@ -52,7 +61,7 @@ index 29994ee..caecfcc 100644
      };
      let (code, (mut findings, machine, observed)) = match (&plan, &out.ended) {
 diff --git a/crates/aethelgard-cli/src/renode.rs b/crates/aethelgard-cli/src/renode.rs
-index 82a80f9..fa1bb26 100644
+index 82a80f9..2a237af 100644
 --- a/crates/aethelgard-cli/src/renode.rs
 +++ b/crates/aethelgard-cli/src/renode.rs
 @@ -404,6 +404,9 @@ impl BootPlan<'_> {
@@ -65,7 +74,17 @@ index 82a80f9..fa1bb26 100644
          Some(aethelgard_twin::serial::injection_ns(start))
      }
  
-@@ -687,7 +690,9 @@ impl BootPlan<'_> {
+@@ -491,6 +494,9 @@ impl BootPlan<'_> {
+     /// rule ([`aethelgard_twin::serial::judge_pins`]) holds each one from
+     /// before the injection to the end, through every later byte.
+     fn injection_events(&self) -> Vec<(u64, Vec<String>)> {
++        if std::env::var_os("AET2302_NO_INJECT").is_some() {
++            return Vec::new();
++        }
+         let Some(at) = self.injected_ns() else {
+             return Vec::new();
+         };
+@@ -687,7 +693,9 @@ impl BootPlan<'_> {
          }
          // Each motor output's observer (`AET-WO-4300a`).
          for m in self.motors {
@@ -76,7 +95,7 @@ index 82a80f9..fa1bb26 100644
          }
          c
      }
-@@ -781,6 +786,9 @@ impl BootPlan<'_> {
+@@ -781,6 +789,9 @@ impl BootPlan<'_> {
          c.extend(self.witness_levels());
          c.extend(self.capture_commands());
          c.extend(self.stimuli());
@@ -86,7 +105,7 @@ index 82a80f9..fa1bb26 100644
          if self.resets.is_empty() {
              let mut now = 0u64;
              for (t, commands) in self.injection_events() {
-@@ -790,6 +798,11 @@ impl BootPlan<'_> {
+@@ -790,6 +801,11 @@ impl BootPlan<'_> {
                  }
                  c.extend(commands);
              }
