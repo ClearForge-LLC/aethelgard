@@ -144,6 +144,32 @@ pub struct SerialPort {
     /// silicon adds to the receiver's own error (`AET-WO-4230` §1.8). An
     /// `rc_crsf` port declares at least [`crsf_cited_spread_ppm`].
     pub peer_deviation_ppm: u32,
+    /// Where `peer_deviation_ppm` comes from (`AET-WO-4230` R2, the
+    /// architect's ruling on Q-A): required (`INV-06`).
+    pub peer_deviation_source: PeerDeviationSource,
+}
+
+/// Where a port's `peer_deviation_ppm` comes from (`AET-WO-4230` R2, the
+/// architect's ruling on PR #161, comment 6911424608, Q-A). `cited` only
+/// where the repository holds the citation: an `rc_crsf` port whose figure is
+/// exactly [`crsf_cited_spread_ppm`], the spread of [`CRSF_BAUDS`]; any
+/// other `cited` is refused (`PeerDeviationNotCited`). Every other figure is
+/// `declared`, and the verdict names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeerDeviationSource {
+    Cited,
+    Declared,
+}
+
+impl PeerDeviationSource {
+    /// The name the specification uses.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Cited => "cited",
+            Self::Declared => "declared",
+        }
+    }
 }
 
 /// A declaration that a port's baud is a rate the two ends negotiate, not
@@ -554,9 +580,12 @@ fn negotiated_error(
 /// name), and not another port's; the framing's shape; a `negotiated`
 /// declaration only on an `rc_crsf` port, with a source by the
 /// repository's rule ([`negotiated_error`]), at a baud
-/// [`CRSF_BAUDS`] does not cite; and no contradiction of the role's
-/// published framing ([`contradiction`]). The nets are step 11's
-/// and a constraint on one step 14's.
+/// [`CRSF_BAUDS`] does not cite; no contradiction of the role's
+/// published framing ([`contradiction`]); an `rc_crsf` port's
+/// `peer_deviation_ppm` at least the cited spread; and a
+/// `peer_deviation_source` of `cited` only where it is the cited spread
+/// ([`PeerDeviationSource`]). The nets are step 11's and a constraint on one
+/// step 14's.
 pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
     use IrValidationError as E;
 
@@ -627,8 +656,27 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
                 citation: format!("{CRSF_SOURCE}; {CRSF_ELRS_SOURCE}"),
             });
         }
+        if !cited_ok(port) {
+            return Err(E::PeerDeviationNotCited {
+                id: id(),
+                role: port.role.name(),
+                declared_ppm: port.peer_deviation_ppm,
+                cited_ppm: crsf_cited_spread_ppm(),
+            });
+        }
     }
     Ok(())
+}
+
+/// Whether `port`'s `peer_deviation_source` holds: `declared` always; `cited`
+/// only on an `rc_crsf` port whose figure is the cited spread.
+fn cited_ok(port: &SerialPort) -> bool {
+    match port.peer_deviation_source {
+        PeerDeviationSource::Declared => true,
+        PeerDeviationSource::Cited => {
+            port.role == SerialRole::RcCrsf && port.peer_deviation_ppm == crsf_cited_spread_ppm()
+        }
+    }
 }
 
 /// The cited spread, when `role` is `rc_crsf` and `declared_ppm` is below it.
