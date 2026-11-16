@@ -3070,8 +3070,8 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
 fn without_the_cited_wait_each_data_read_answers_its_reset_value() {
     let (dir, platform, spec_path) = own_board("no-wait");
     let elf = mutant_of(&dir, "own-no-wait", |d| {
-        edit(d, "src/main.rs", "    settle(640000);\n", "");
-        edit(d, "src/main.rs", "    settle(1280000);\n", "");
+        edit(d, "src/main.rs", "    settle(649590);\n", "");
+        edit(d, "src/main.rs", "    settle(1299180);\n", "");
     });
     let (code, v) = boot_on("own no wait", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
