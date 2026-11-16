@@ -2,7 +2,8 @@
 # this file build the image on the runner, smoke-test it with and without the
 # network, and run the workspace gates inside it; they never publish. A push to
 # main does the same and then publishes from one job, the only one holding
-# packages: write.
+# packages: write. Every build's written source offer, /SOURCES.md, is read
+# back from the image (AET-WO-4403).
 name: tools-image
 
 on:
@@ -55,6 +56,13 @@ jobs:
       - name: smoke with --network none
         run: docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/smoke.sh
 
+      # AET-WO-4403: the labels point at the written source offer, and
+      # /SOURCES.md names what this image holds.
+      - name: the source offer in the built image
+        run: |
+          bash container/check-sources.sh labels tools "$IMAGE"
+          docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/check-sources.sh inside tools
+
       - name: cargo fmt inside the image
         run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" cargo fmt --all -- --check
 
@@ -86,12 +94,18 @@ jobs:
         with:
           context: container
           tags: ${{ env.TAG }}
+          labels: org.opencontainers.image.documentation=https://github.com/ClearForge-LLC/aethelgard/blob/${{ github.sha }}/container/TOOLS-SOURCES.md
           load: true
           cache-from: type=gha,scope=tools-image
 
       # The image pushed is the image smoke-tested here, not a rebuild of it.
       - name: smoke the image about to be published
         run: docker run --rm --network none -v "$PWD/container:/container:ro" "$TAG" bash /container/smoke.sh
+
+      - name: the source offer in the image about to be published
+        run: |
+          bash container/check-sources.sh labels tools "$TAG" "$GITHUB_SHA"
+          docker run --rm --network none -v "$PWD/container:/container:ro" "$TAG" bash /container/check-sources.sh inside tools
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:

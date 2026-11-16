@@ -10,7 +10,8 @@ FROM kicad/kicad:10.0.7@sha256:3224d1bf143185ecc1bd3a1082a36f37f0f4e59d707983a16
 
 LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelgard" \
       org.opencontainers.image.description="Aethelgard tools: KiCad, Renode, ngspice, Kani, Rust" \
-      org.opencontainers.image.licenses="MIT OR Apache-2.0"
+      org.opencontainers.image.licenses="GPL-3.0-or-later AND CC-BY-SA-4.0" \
+      org.opencontainers.image.documentation="https://github.com/ClearForge-LLC/aethelgard/blob/main/container/TOOLS-SOURCES.md"
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -69,3 +70,14 @@ RUN cargo install --locked kani-verifier --version 0.68.0 \
 # beside the libraries it covers. The file is byte-identical to the copy
 # vendored in aethelgard-kicad-lib (AET-WO-1300 D10, AET-WO-1900).
 COPY KICAD-LICENSE.md /usr/share/kicad/LICENSE.md
+
+# The written source offer (AET-WO-4403): KiCad, Renode's LGPL parts and the
+# rest, and every Debian package by source and version, read from dpkg last so
+# it lists exactly what the image holds. check-sources.sh judges both against
+# the built image. The licences label names the principal components (KiCad
+# and its libraries); the documentation label points at the full list, and the
+# publish job sets it to this file at the commit it publishes.
+COPY TOOLS-SOURCES.md /SOURCES.md
+RUN dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\thttps://snapshot.debian.org/package/${source:Package}/${source:Version}/\n' > /tmp/dpkg.tsv \
+ && LC_ALL=C sort -o /SOURCES-debian.tsv /tmp/dpkg.tsv \
+ && rm /tmp/dpkg.tsv
