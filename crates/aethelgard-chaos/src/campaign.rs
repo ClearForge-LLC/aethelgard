@@ -108,10 +108,17 @@ pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "spi_transaction_unwitnessed",
 ];
 /// The boot judge's finding for an identity read whose record is still
-/// unset when the boot ends, made only when the boot word is not set
-/// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule), on every board since every
-/// board boots 100 ms (`AET-WO-2302`).
+/// unset when a short window ends, made only when the boot word is not set
+/// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule).
 pub const OUTSIDE_WINDOW_FINDING: &str = "identity_read_outside_window";
+
+/// Whether the board's boots run the short window: a board with a DShot
+/// output (`AET-WO-4300a` D1).
+pub fn short_window(records: &[Record]) -> bool {
+    records.iter().any(
+        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
+    )
+}
 
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1027,10 +1034,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         return Err("the verdict judges an identity read's record of a boot without its boot word");
     }
     // An identity read outside the window (`AET-WO-4300a` D1) is named only
-    // of a boot that was read without its boot word, on any board
-    // (`AET-WO-2302`), at most once per record archived as `invalid`: the
-    // judge names a record whose status word is still its fill, which the
-    // archive keeps only as `invalid`.
+    // of a boot that was read without its boot word on a short window, at
+    // most once per record archived as `invalid`: the judge names a record
+    // whose status word is still its fill, which the archive keeps only as
+    // `invalid`.
     let unset = records
         .iter()
         .filter(|r| {
@@ -1038,12 +1045,16 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                 if s == "invalid")
         })
         .count() as u64;
-    let outside = if read && !booted { unset } else { 0 };
+    let outside = if read && !booted && short_window(records) {
+        unset
+    } else {
+        0
+    };
     if any_severity(OUTSIDE_WINDOW_FINDING) > outside
         || count(OUTSIDE_WINDOW_FINDING) != any_severity(OUTSIDE_WINDOW_FINDING)
     {
         return Err(
-            "the verdict names identity_read_outside_window for no invalid record of an unbooted boot",
+            "the verdict names identity_read_outside_window for no invalid record of an unbooted short window",
         );
     }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static

@@ -94,11 +94,11 @@
       "replace": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000800);"
     },
     "identity-late": {
-      "why": "AET-WO-3201 (4300a Q7), lengthened by AET-WO-2302 (the PM's decision on S1's open question 1): on the DShot fixture, the firmware spins before its first identity read long enough that neither U2's nor U4's read starts inside the 100 ms boot every board now runs: both records stay as the judge filled them and the boot word is never written, on a healthy bus",
+      "why": "AET-WO-3201 (4300a Q7): on the DShot fixture (a 2 ms window), the firmware spins before its first identity read, so neither U2's nor U4's read starts inside the window: both records stay as the judge filled them and the boot word is never written, on a healthy bus",
       "spec": "crates/aethelgard-cli/tests/fixtures/motors-dshot600.json",
       "file": "firmware/src/main.rs",
       "find": "    let mut buf0 = [0u8; 1];\n    let (status, value) = match i2c1.transfer(&mut r, 0x76,",
-      "replace": "    for _ in 0..10_000_000 {\n        core::hint::spin_loop();\n    }\n    let mut buf0 = [0u8; 1];\n    let (status, value) = match i2c1.transfer(&mut r, 0x76,"
+      "replace": "    for _ in 0..1_000_000 {\n        core::hint::spin_loop();\n    }\n    let mut buf0 = [0u8; 1];\n    let (status, value) = match i2c1.transfer(&mut r, 0x76,"
     }
   },
   "cases": [

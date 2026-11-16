@@ -2950,8 +2950,7 @@ const UNBOUND: &str =
 const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
 const BOUND: &str =
     "a boot that read nothing does not name once why (a bound or a load error), or a read one does";
-const OUTSIDE: &str =
-    "the verdict names identity_read_outside_window for no invalid record of an unbooted boot";
+const OUTSIDE: &str = "the verdict names identity_read_outside_window for no invalid record of an unbooted short window";
 
 /// `records` with its verdict's findings replaced, `pass` as they say.
 fn with_findings(mut records: Vec<Record>, findings: &[(&str, &str, u64)]) -> Vec<Record> {
@@ -3147,11 +3146,11 @@ fn boot_word_missing_is_named_exactly_when_the_word_is_wrong() {
 }
 
 /// `AET-WO-4300a` D1's finding, as replay can bind it: only of a boot read
-/// without its boot word, on any board since `AET-WO-2302`, at most once per
-/// record archived as `invalid`. A boot word written after the window is no
+/// without its boot word, on a short window, at most once per record
+/// archived as `invalid`. A boot word written after the window is no
 /// longer missing, and the finding beside it is refused.
 #[test]
-fn identity_read_outside_window_is_bound_to_an_unbooted_boot() {
+fn identity_read_outside_window_is_bound_to_an_unbooted_short_window() {
     let invalid = |r: &mut Vec<Record>| {
         for x in r.iter_mut() {
             if let Record::I2cCheck {
@@ -3169,21 +3168,14 @@ fn identity_read_outside_window_is_bound_to_an_unbooted_boot() {
         ("device_unmodelled", "info", 1),
         ("identity_read_outside_window", "error", 1),
     ];
-    // Unbooted on a board with no DShot output: every board boots 100 ms
-    // (`AET-WO-2302`), so the record still unset at its end is named.
+    // Unbooted, but the board's window is the long one: refused.
     let mut r = good_with_boot(|w, _, _| w.observed = Some(0));
     invalid(&mut r);
-    assert!(check_run(&with_findings(r.clone(), &findings)).is_ok());
-    // Twice for one invalid record: refused.
-    let twice: Vec<_> = findings
-        .iter()
-        .map(|f| match f.0 {
-            "identity_read_outside_window" => (f.0, f.1, 2),
-            _ => *f,
-        })
-        .collect();
-    assert_eq!(check_run(&with_findings(r, &twice)).unwrap_err(), OUTSIDE);
-    // Booted (the word written in the end): refused.
+    assert_eq!(
+        check_run(&with_findings(r, &findings)).unwrap_err(),
+        OUTSIDE
+    );
+    // Booted (the word written in the end), on any window: refused.
     let mut r = good();
     invalid(&mut r);
     let booted: Vec<_> = findings

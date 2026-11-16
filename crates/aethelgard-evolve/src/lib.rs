@@ -122,7 +122,7 @@ pub enum Rule {
     /// software by elimination.
     I6,
     /// The symptom is a read whose record is still as the judge filled it
-    /// when the boot ended, in a boot without its boot word
+    /// when a short window ended, in a boot without its boot word
     /// (`identity_read_outside_window`, `AET-WO-4300a` D1 and Q7): the read
     /// did not complete inside the window, and the unset record cannot say
     /// whether the bus or the firmware was too slow. The record decides it.
@@ -522,8 +522,8 @@ struct Run<'a> {
     rcc: (u32, u32),
     /// The boot word is set: the judge read the serial witnesses and tags.
     booted: bool,
-    /// The boot was read without its boot word: the judge named each record
-    /// still unset (`AET-WO-4300a` D1, on every board since `AET-WO-2302`).
+    /// The boot was read without its boot word on a short window: the
+    /// judge named each record still unset (`AET-WO-4300a` D1).
     late: bool,
     /// The resets the run rendered and released.
     releases: u64,
@@ -803,8 +803,8 @@ impl<'a> Run<'a> {
     }
 
     /// A read (kind 12 or 21) whose record is still unset at the end of a
-    /// boot read without its boot word: what the judge names
-    /// `identity_read_outside_window`.
+    /// boot read without its boot word on a short window: what the judge
+    /// names `identity_read_outside_window`.
     fn outside_window(&self, r: &Record) -> bool {
         self.late
             && match r {
@@ -1640,9 +1640,10 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         serial,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
         booted,
-        // belt-and-suspenders: `check_run` already refuses the finding of a
-        // booted run; this states the judge's rule where it is used.
+        // belt-and-suspenders: `check_run` already refuses the finding off
+        // a short window; this states the judge's rule where it is used.
         late: !booted
+            && campaign::short_window(records)
             && records.iter().any(|r| {
                 matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some())
             }),

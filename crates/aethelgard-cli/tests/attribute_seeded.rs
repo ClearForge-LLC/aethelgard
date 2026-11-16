@@ -197,13 +197,12 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         ("indeterminate", "I3"),
         "a core leaving the firmware beside the one-line 390 pF fault is the second I3 trap"
     );
-    // `AET-WO-3201` (`4300a` Q7): a read left unset when the boot ends is
-    // decided by its record (every board's boot is 100 ms since
-    // `AET-WO-2302`).
+    // `AET-WO-3201` (`4300a` Q7): a read left unset by a short window is
+    // decided by its record.
     assert_eq!(
         trap(case("motors/dshot600.json", Some("identity-late"))),
         ("indeterminate", "I7"),
-        "identity reads that start after the 100 ms boot are the I7 case"
+        "identity reads that start after the DShot window are the I7 case"
     );
     for c in &m.cases {
         assert_eq!(
