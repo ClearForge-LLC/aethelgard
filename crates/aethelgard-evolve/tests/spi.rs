@@ -706,3 +706,45 @@ fn a_six_byte_read_is_shown_in_64_bits() {
         .collect();
     assert_eq!(read, [(u64::MAX, value, Some(value), true)]);
 }
+
+/// `AET-WO-4210` F-B10: a configuration step reads nothing, so a value in
+/// its record is a mismatch of that step: named `spi_configure_mismatch` it
+/// is explained, and named as the identity's it is unexplained.
+#[test]
+fn a_configure_steps_mismatch_is_named_by_its_step() {
+    let mut cfg_check = spi_check("ok", Some(0x1));
+    if let Record::SpiCheck {
+        step,
+        width,
+        expected,
+        mask,
+        write,
+        ..
+    } = &mut cfg_check
+    {
+        (*step, *width, *expected, *mask) = ("configure".into(), 0, 0, 0);
+        *write = vec![0x06];
+    }
+    let mut cfg_witness = spi_witness(Some(flash_ok()), vec![]);
+    if let Record::SpiWitness { step, .. } = &mut cfg_witness {
+        *step = "configure".into();
+    }
+    let mut r = base();
+    r.extend([
+        spi_check("ok", Some(EXPECTED_ID)),
+        cfg_check,
+        spi_witness(Some(flash_ok()), vec![]),
+        cfg_witness,
+        verdict(&[("spi_configure_mismatch", 1)]),
+    ]);
+    let a = attribute(&archived(&r)).unwrap();
+    assert_ne!(a.rule, Rule::I1, "{a:?}");
+    let n = r.len() - 1;
+    r[n] = verdict(&[("spi_identity_mismatch", 1)]);
+    let a = attribute(&archived(&r)).unwrap();
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert!(
+        a.unexplained.contains(&"spi_identity_mismatch".to_owned()),
+        "{a:?}"
+    );
+}

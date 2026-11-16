@@ -143,3 +143,26 @@ It forged runs as Rust tests: `~/.cache/aet-3201/adv-src/crates/{aethelgard-evol
 The five assertions that fail there are the adversary's pins of the old behaviour.
 
 **Residual, not fixed (backlog): the adversary's 5.8.** A booted, passing run whose registers and identity records are set to unread (status and value `None`) replays as `N1`. The judge reads all of them or none, as kind 10's "all read or all unread" rule says for the boot. A like rule across kinds 10 to 13, 21 and 22 would close it. That is a new cross-record rule outside the B items, so it is not built here.
+
+## Reduction pass (diff), by a fresh subagent; each proposal checked, applied and re-proved
+
+**Applied.** Each change keeps the suite green, and its guards' mutants are re-run and all killed (`~/.cache/aet-3201/mut/result3.txt`, `result4.txt`).
+- **One selection arm for the six mismatch kinds.** The I2C and SPI arms were one condition stated twice. The bus now comes from the record's kind, 12 or 21.
+- **One `record_words(width)`** for the value words' bits, used by `unset_record` and by the SPI `read` field's mask (F-B5). It was the same expression twice.
+- **`SEVERITIES` moved above a protected comment it had split** (`record.rs`, the `belt-and-suspenders:` note on `SERIAL_FRAME_LEN`).
+- **The judge's `identity_read_outside_window` literal** is now `campaign::OUTSIDE_WINDOW_FINDING`.
+- **A mutant survived** on the reshaped `mismatch_kind`: no test held a configure step's mismatch. `a_configure_steps_mismatch_is_named_by_its_step` now kills it.
+
+**Protected kept, labelled:**
+- evolve's `unset_record`, a second statement of the twin's fill;
+- evolve's `late`, a second statement of `check_run`'s window rule;
+- the serial frame constants.
+
+**Skipped:** a shared closure for "the solved line's net" in `check_run`, which is marginal and would add a mechanism.
+
+**Findings outside this fence (not changed):**
+- The five unread findings are literals in `renode.rs` (`bounded`, `judge_boot`'s load-error branch) beside chaos's `UNREAD_FINDINGS`. These are `1603`'s and `4230`'s hunks. A follow-up can use the constants.
+- `"info"` and `"error"` are bare literals across chaos, evolve and the CLI. `SEVERITIES` now closes the set, and a `pub const` per severity would end the scatter.
+- `verify.rs` holds `"spi_identity_mismatch"` literals.
+
+Reduction pass (diff): −9 net · 3 duplicates removed · 0 dead paths removed · 3 protected kept · 3 findings above

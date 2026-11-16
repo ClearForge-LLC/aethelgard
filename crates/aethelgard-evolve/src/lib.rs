@@ -678,14 +678,9 @@ impl<'a> Run<'a> {
         // A configure step reads nothing back.
         if *width > 0 {
             // The whole read, past 32 bits for a read of 5 to 8 bytes.
-            let mask = if *width > 4 {
-                u64::MAX
-            } else {
-                u64::from(u32::MAX)
-            };
             fields.push(at(
                 "read",
-                mask,
+                record_words(*width),
                 *value,
                 *value_read,
                 claimed && observed.is_empty() && unrouted.is_empty(),
@@ -1201,13 +1196,20 @@ impl<'a> Run<'a> {
             ),
             "i2c_timeout" => self.indices(|r| status_is(r, &|s| s.starts_with("timeout_"))),
             "i2c_record_invalid" => self.indices(|r| status_is(r, &|s| s == "invalid")),
-            // A read's mismatch is named by its step (`AET-WO-4210` F-B10).
-            "i2c_identity_mismatch" | "i2c_configure_mismatch" | "i2c_data_mismatch" => self
-                .indices(|r| {
-                    matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, step, .. }
+            // A read's mismatch is named by its bus and step (`AET-WO-4210`
+            // F-B10): kind 12 is I2C's, kind 21 SPI's.
+            "i2c_identity_mismatch"
+            | "i2c_configure_mismatch"
+            | "i2c_data_mismatch"
+            | "spi_identity_mismatch"
+            | "spi_configure_mismatch"
+            | "spi_data_mismatch" => self.indices(|r| {
+                matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, step, .. }
+                    | Record::SpiCheck { status: Some(s), expected, mask, width, observed, step, .. }
                     if s == "ok" && !read_matches(*width, *expected, *mask, *observed)
-                        && mismatch_kind("i2c", step).as_deref() == Some(kind))
-                }),
+                        && mismatch_kind(if r.kind() == 12 { "i2c" } else { "spi" }, step).as_deref()
+                            == Some(kind))
+            }),
             "i2c_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::I2cWitness {
                     reference,
@@ -1228,12 +1230,6 @@ impl<'a> Run<'a> {
             "spi_record_invalid" => self.indices(
                 |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s == "invalid"),
             ),
-            "spi_identity_mismatch" | "spi_configure_mismatch" | "spi_data_mismatch" => self
-                .indices(|r| {
-                    matches!(r, Record::SpiCheck { status: Some(s), expected, mask, width, observed, step, .. }
-                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed)
-                        && mismatch_kind("spi", step).as_deref() == Some(kind))
-                }),
             campaign::OUTSIDE_WINDOW_FINDING => self.indices(|r| self.outside_window(r)),
             "spi_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::SpiWitness {
@@ -1465,12 +1461,17 @@ fn mismatch_kind(bus: &str, step: &str) -> Option<String> {
 // state the fill and the word count; evolve reads an archive without the
 // twin, so it states them again.
 fn unset_record(width: u8, status: Option<&str>, observed: Option<u64>) -> bool {
-    let fill = if width > 4 {
+    status == Some("invalid") && observed == Some(record_words(width))
+}
+
+/// Every bit of a read record's value words: one word for a read of up to
+/// 4 bytes, two for 5 to 8.
+fn record_words(width: u8) -> u64 {
+    if width > 4 {
         u64::MAX
     } else {
         u64::from(u32::MAX)
-    };
-    status == Some("invalid") && observed == Some(fill)
+    }
 }
 
 /// The run, judged by exactly the rules `replay` applies after its reader

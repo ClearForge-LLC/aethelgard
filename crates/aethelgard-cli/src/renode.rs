@@ -2571,7 +2571,7 @@ fn reads_outside_window(
                 _ => format!("its {} step's read", c.label),
             };
             Finding::plain(
-                "identity_read_outside_window",
+                aethelgard_chaos::campaign::OUTSIDE_WINDOW_FINDING,
                 format!(
                     "{}: {what} did not complete inside this boot of {boot_ns} ns (a board with a DShot output boots inside its window of {window_ns} ns, AET-WO-4300a D1)",
                     who(c)

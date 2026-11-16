@@ -57,16 +57,16 @@ pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
     "not_judged",
 ];
 
-/// The injected frame's length, and the bytes each port's pattern adds to
-/// its label (`00 FE 7F 80 FF`).
-// belt-and-suspenders: `aethelgard_twin::serial::{FRAME_LEN, PATTERN_TAIL}`
-// state these; replay checks an archive without the twin, so it states them
-// again.
 /// A finding's severities in a campaign verdict (kind 14), closed
 /// (`AET-WO-3201` B3): the judge writes `error` or `info`, and KiCad's
 /// `warning` never reaches a campaign. Checked exactly, so another case or
 /// whitespace is refused, on write and on read; the bytes are unchanged.
 pub const SEVERITIES: [&str; 2] = ["error", "info"];
+/// The injected frame's length, and the bytes each port's pattern adds to
+/// its label (`00 FE 7F 80 FF`).
+// belt-and-suspenders: `aethelgard_twin::serial::{FRAME_LEN, PATTERN_TAIL}`
+// state these; replay checks an archive without the twin, so it states them
+// again.
 pub const SERIAL_FRAME_LEN: usize = 8;
 pub const SERIAL_TAIL_LEN: usize = 5;
 
