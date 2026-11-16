@@ -106,6 +106,13 @@ fn valid() -> Specification {
             max_capacitance_femtofarads: 30_000,
             max_rise_time_nanoseconds: 20,
             impedance_ohms: None,
+        }, NetConstraint {
+            // Last, so no index above moves: `validate` requires both I2C
+            // lines' constraints (step 19, `AET-WO-1206` §1.2).
+            net_name: "I2C_SCL".into(),
+            max_capacitance_femtofarads: 400_000,
+            max_rise_time_nanoseconds: 300,
+            impedance_ohms: None,
         }],
         "motor_outputs": [],
         "serial_ports": [],
@@ -467,11 +474,10 @@ fn refuses_tolerance_out_of_range() {
         spec.voltage_domains[0].tolerance_permille = value;
         // At 500 permille the rail spans 1650 to 4950 mV, outside every
         // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`); only
-        // the tolerance's own range is under test here.
-        for d in devs(&mut spec).i2c.iter_mut() {
-            d.part = "UNLISTED".into();
-        }
-        devs(&mut spec).spi[0].part = "UNLISTED".into();
+        // the tolerance's own range is under test here, so the board has no
+        // device (a part with no row is refused, `AET-WO-1206` §1.8).
+        devs(&mut spec).i2c.clear();
+        devs(&mut spec).spi.clear();
         assert_eq!(spec.validate(), Ok(()));
     }
 }
@@ -618,11 +624,12 @@ fn refuses_i2c_address_out_of_range_and_duplicate_on_a_bus() {
     }
     for value in [0x08, 0x77] {
         let mut spec = valid();
-        // The range is the point; a part the table does not hold keeps no
-        // strap limit to refuse the address by.
+        // The range is the point: the address passes step 10, and the
+        // refusal is step 14's, for a part with no row and so no straps
+        // (`AET-WO-1206` §1.8), never `I2cAddressOutOfRange`.
         devs(&mut spec).i2c[0].part = "UNLISTED".into();
         devs(&mut spec).i2c[0].address = value;
-        assert_eq!(spec.validate(), Ok(()));
+        assert_eq!(spec.validate().unwrap_err().kind(), "UnknownPart");
     }
     let err = refusal(|s| devs(s).i2c[1].address = 118);
     assert_eq!(
@@ -643,10 +650,15 @@ fn same_i2c_address_on_two_buses_is_valid() {
     second.sda.net = "I2C2_SDA".into();
     second.scl.net = "I2C2_SCL".into();
     spec.i2c_buses.push(second);
+    for net in ["I2C2_SDA", "I2C2_SCL"] {
+        let mut c = spec.net_constraints[0].clone();
+        c.net_name = net.into();
+        spec.net_constraints.push(c);
+    }
     devs(&mut spec).i2c[1].bus = "OTHER".into();
     devs(&mut spec).i2c[1].address = 118;
-    // A part the table does not hold keeps no strap limit on the address.
-    devs(&mut spec).i2c[1].part = "UNLISTED".into();
+    // A second BME280, strapped as the first, on the other bus.
+    devs(&mut spec).i2c[1].part = "BME280".into();
     assert_eq!(spec.validate(), Ok(()));
 }
 
@@ -692,7 +704,9 @@ fn refuses_net_constraint_faults() {
 #[test]
 fn a_constraint_may_name_a_voltage_domain() {
     let mut spec = valid();
-    spec.net_constraints[0].net_name = "VDD_3V3".into();
+    let mut rail = spec.net_constraints[0].clone();
+    rail.net_name = "VDD_3V3".into();
+    spec.net_constraints.push(rail);
     assert_eq!(spec.validate(), Ok(()));
 }
 
@@ -1413,11 +1427,12 @@ fn solved_refuses_a_rise_time_slower_than_every_mode() {
         }
     });
     assert_not_derived(err, "SENSORS", 400_000, None);
-    // `solve` takes the smallest bound of the two lines, so one slow line
-    // beside a 300 ns line still derives 400 kHz.
-    let mut t = solved();
-    t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 1001;
-    assert_eq!(t.validate(), Ok(()));
+    // The worse line decides (`AET-WO-1206` §1.7): one line past every mode
+    // beside a 300 ns line derives no mode, as `solve` refuses it.
+    let err = solved_refusal(|t| {
+        t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 1001;
+    });
+    assert_not_derived(err, "SENSORS", 400_000, None);
 }
 
 #[test]
@@ -1435,17 +1450,22 @@ fn solved_refuses_a_ceiling_faster_or_slower_than_its_lines_derive() {
 }
 
 #[test]
-fn solved_derives_the_ceiling_from_the_smallest_bound_of_the_bus() {
-    // One line at 120 ns and one at 300 ns: the smallest bound decides, as in
-    // `solve`, so the bus derives 1 MHz and a 400 kHz ceiling is refused.
-    let mut t = solved();
-    t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 120;
-    t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
-    assert_eq!(t.validate(), Ok(()));
-    let err = solved_refusal(|t| {
-        t.analog_lines.get_mut("I2C_SDA").unwrap().ceiling_ns = 120;
-    });
-    assert_not_derived(err, "SENSORS", 400_000, Some(1_000_000));
+fn solved_derives_the_ceiling_from_the_worse_line_of_the_bus() {
+    // One line at 120 ns and one at 300 ns: the larger bound decides, as in
+    // `solve` (`AET-WO-1206` §1.7), so the bus derives 400 kHz, whichever
+    // line is the faster, and a 1 MHz ceiling is refused.
+    for fast in ["I2C_SDA", "I2C_SCL"] {
+        let mut t = solved();
+        t.analog_lines.get_mut(fast).unwrap().ceiling_ns = 120;
+        assert_eq!(t.validate(), Ok(()), "{fast}");
+        t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
+        assert_not_derived(
+            t.validate().unwrap_err(),
+            "SENSORS",
+            1_000_000,
+            Some(400_000),
+        );
+    }
 }
 
 #[test]
@@ -1530,12 +1550,15 @@ fn solved_refuses_a_zero_analog_value() {
         assert_refusal(err, kind, Some("I2C_SDA"));
     }
     // Huge values are the bridge's to measure or refuse, not validate's, but
-    // capacitance now has the declared speed's limit (`AET-WO-1205`).
+    // capacitance now has the declared speed's limit (`AET-WO-1205`), and a
+    // line's rise time bounds its bus's ceiling, the worse line deciding
+    // (`AET-WO-1206` §1.7): 300 ns is the largest that keeps 400 kHz.
+    // `u32::MAX` is `solved_refuses_a_rise_time_slower_than_every_mode`'s.
     let mut t = solved();
     let line = t.analog_lines.get_mut("I2C_SDA").unwrap();
     line.pull_up_ohms = u32::MAX;
     line.capacitance_femtofarads = 400_000;
-    line.ceiling_ns = u32::MAX;
+    line.ceiling_ns = 300;
     line.domain_millivolts = u32::MAX;
     assert_eq!(t.validate(), Ok(()));
 }
@@ -2219,12 +2242,28 @@ fn an_i2c_address_the_part_does_not_offer_is_refused() {
 }
 
 #[test]
-fn a_part_the_table_does_not_hold_is_not_refused() {
+/// `AET-WO-1206` §1.8: a part with no row in the table is refused by name,
+/// I2C then SPI in document order, by the emitter's kind, `id` and message.
+/// Before, it passed every limit unheld (and `generate` refused it).
+fn a_part_the_table_does_not_hold_is_refused() {
     let mut spec = valid();
-    devs(&mut spec).i2c[0].part = "UNLISTED".into();
     devs(&mut spec).spi[0].part = "UNLISTED".into();
     spec.spi_buses[0].speed_hz = 200_000_000;
-    assert_eq!(spec.validate(), Ok(()));
+    let err = spec.validate().unwrap_err();
+    assert_eq!(
+        err,
+        E::PartWithoutRow {
+            reference: "U4".into(),
+            part: "UNLISTED".into()
+        }
+    );
+    assert_refusal(err.clone(), "UnknownPart", Some("U4"));
+    assert_eq!(
+        err.to_string(),
+        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, W25Q64JVxIQ, ICM20948"
+    );
+    devs(&mut spec).i2c[1].part = "LM75".into();
+    assert_refusal(spec.validate().unwrap_err(), "UnknownPart", Some("U3"));
 }
 
 #[test]
@@ -2308,9 +2347,7 @@ fn a_supply_outside_a_part_s_range_is_refused() {
     // The flash alone, at 2.8 V less 5 %: 2660 mV, under its 2.7 V.
     let mut spec = valid();
     spec.voltage_domains[0].nominal_millivolts = 2_800;
-    for d in devs(&mut spec).i2c.iter_mut() {
-        d.part = "UNLISTED".into();
-    }
+    devs(&mut spec).i2c.clear();
     let err = spec.validate().unwrap_err();
     assert_refusal(err.clone(), "SupplyOutsidePart", Some("U4"));
     assert!(err.to_string().contains("9.2"), "{err}");
@@ -2527,4 +2564,211 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
     assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
     // A board of `active` parts has no banner.
     assert!(valid().lifecycle_banner().unwrap().is_empty());
+}
+
+/// `AET-WO-1206` §1.2 (`AET-WO-4100` F1): step 19 refuses an I2C line with
+/// no net constraint, SDA before SCL, by `solve`'s kind, `id`, claimant and
+/// message.
+#[test]
+fn an_i2c_line_with_no_constraint_is_refused_at_validate() {
+    for (line, missing) in [("I2C_SDA", "I2C_SDA"), ("I2C_SCL", "I2C_SCL")] {
+        let err = refusal(|s| s.net_constraints.retain(|c| c.net_name != line));
+        assert_eq!(
+            err,
+            E::MissingBusConstraint {
+                bus: "SENSORS".into(),
+                net: missing.into()
+            }
+        );
+        assert_refusal(err.clone(), "MissingBusConstraint", Some("SENSORS"));
+        assert_eq!(err.claimants(), ["SENSORS"]);
+    }
+    let err = refusal(|s| s.net_constraints.retain(|c| !c.net_name.starts_with("I2C")));
+    assert_eq!(
+        err.to_string(),
+        "I2C bus `SENSORS` has no net constraint on `I2C_SDA`, so it has no rise time to bound its speed"
+    );
+    // An SPI-only board needs none.
+    let mut spec = valid();
+    spec.i2c_buses.clear();
+    devs(&mut spec).i2c.clear();
+    spec.net_constraints
+        .retain(|c| !c.net_name.starts_with("I2C"));
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+/// A2: a device named for a peripheral instance a solve can use, in any
+/// case, is the twin's `InvalidDeviceName`, with no `id` as the twin prints
+/// none. A timer the motors cannot use, or a port the MCU lacks, is free.
+#[test]
+fn a_device_named_for_a_peripheral_instance_is_refused() {
+    for name in ["gpioa", "GPIOE", "Gpiok", "tim1", "TIM8", "tim17"] {
+        for spi in [false, true] {
+            let err = refusal(|s| {
+                let mut d = devs(s);
+                if spi {
+                    d.spi[0].reference = name.into();
+                } else {
+                    d.i2c[0].reference = name.into();
+                }
+            });
+            assert_refusal(err.clone(), "InvalidDeviceName", None);
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "device `{name}` cannot be a Renode name (a lower-case letter, then letters, digits or `_`) that no stock instance already has"
+                )
+            );
+        }
+    }
+    for name in ["tim6", "tim7", "gpiol", "gpio", "tim"] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].reference = name.into();
+        assert_eq!(spec.validate(), Ok(()), "{name}");
+    }
+}
+
+/// A4: a reference KiCad would take for one the emitter numbers. The MCU is
+/// the first `U<n>` the specification does not spell, so `u2` is free until
+/// `U1` is spelled; any `R<n>` or `C<n>` from 1 in another spelling is held.
+/// The `id` is the pair, as the emitter's and the board writer's refusals
+/// name it.
+#[test]
+fn a_reference_the_emitter_numbers_in_another_spelling_is_refused() {
+    for (name, id) in [
+        ("u1", "U1 and u1"),
+        ("U01", "U01 and U1"),
+        ("r1", "R1 and r1"),
+        ("R01", "R01 and R1"),
+        ("c007", "C7 and c007"),
+        ("r99", "R99 and r99"),
+    ] {
+        let err = refusal(|s| devs(s).i2c[0].reference = name.into());
+        assert_refusal(err.clone(), "DuplicateReference", Some(id));
+        assert_eq!(
+            err.to_string(),
+            format!("`{id}` is used twice as a reference")
+        );
+    }
+    for name in ["u2", "U1", "R1", "C5", "r0", "R00", "U0", "Ux1"] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].reference = name.into();
+        assert_eq!(spec.validate(), Ok(()), "{name}");
+    }
+    // With `U1` spelled, the emitter numbers the MCU `U2`, which `u2` then
+    // meets; `u5` it never reaches.
+    let err = refusal(|s| {
+        let mut d = devs(s);
+        d.i2c[0].reference = "U1".into();
+        d.i2c[1].reference = "u2".into();
+    });
+    assert_refusal(err, "DuplicateReference", Some("U2 and u2"));
+    let mut spec = valid();
+    {
+        let mut d = devs(&mut spec);
+        d.i2c[0].reference = "U1".into();
+        d.i2c[1].reference = "u5".into();
+    }
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+/// A5: a net or domain the emitter names for itself, in any case, or one
+/// starting with KiCad's `unconnected-` (case-sensitive, as KiCad's prefix
+/// match is), is the emitter's `ReservedName`.
+#[test]
+fn a_net_or_domain_the_emitter_names_is_refused() {
+    fn rename(spec: &mut Specification, old: &str, new: &str) {
+        let v = serde_json::to_string(&*spec)
+            .unwrap()
+            .replace(&format!("\"{old}\""), &format!("\"{new}\""));
+        *spec = serde_json::from_str(&v).unwrap();
+    }
+    // The fixture's MCU is `U1`; U2 is a BME280 and U4 the flash.
+    for (old, new, id) in [
+        ("VDD_3V3", "GND", "GND"),
+        ("I2C_SDA", "U1_VCAP1", "U1_VCAP1"),
+        ("I2C_SDA", "u1_vcap2", "U1_VCAP2 and u1_vcap2"),
+        ("SPI_MISO", "U2_SDO", "U2_SDO"),
+        ("FLASH_CS", "U4_WP", "U4_WP"),
+        ("VDD_3V3", "u4_hold", "U4_HOLD and u4_hold"),
+        ("SPI_MISO", "unconnected-x", "unconnected-x"),
+    ] {
+        let mut spec = valid();
+        rename(&mut spec, old, new);
+        let err = spec.validate().unwrap_err();
+        assert_refusal(err.clone(), "ReservedName", Some(id));
+        assert_eq!(
+            err.to_string(),
+            format!("`{id}` names a net, rail or reference the emitter uses for itself; rename it")
+        );
+    }
+    // Not the emitter's: a third VCAP, a pin of another part, another U's
+    // VCAP, the battery net without a power tree, KiCad's prefix in another
+    // case.
+    for (old, new) in [
+        ("I2C_SDA", "U1_VCAP3"),
+        ("I2C_SDA", "U3_SDO"),
+        ("I2C_SDA", "U2_REGOUT"),
+        ("I2C_SDA", "U5_VCAP1"),
+        ("I2C_SDA", "VBAT"),
+        ("I2C_SDA", "Unconnected-x"),
+    ] {
+        let mut spec = valid();
+        rename(&mut spec, old, new);
+        assert_eq!(spec.validate(), Ok(()), "{new}");
+    }
+}
+
+/// A7: a project name whose stem is a Windows reserved device name, in any
+/// case, names files Windows cannot open. Only the project name becomes a
+/// file name (`generate`'s `kicad/<project>.*` and `board/<project>.repl`,
+/// the fabrication package's `<project>-*`).
+#[test]
+fn a_project_named_for_a_windows_device_is_refused() {
+    for name in ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"] {
+        let err = refusal(|s| s.project_name = name.into());
+        assert_invalid_identifier(err.clone(), "project_name");
+        assert!(err.to_string().contains("Windows"), "{err}");
+    }
+    for name in [
+        "com10",
+        "com0",
+        "lpt0",
+        "con-x",
+        "console",
+        "nul1",
+        "aux-board",
+    ] {
+        let mut spec = valid();
+        spec.project_name = name.into();
+        assert_eq!(spec.validate(), Ok(()), "{name}");
+    }
+    // The stem is what Windows matches: before the first `.`, without
+    // trailing spaces, in any case.
+    for name in ["CON", "Con.", "con.txt", "con .txt", "nul.tar.gz", "COM1 "] {
+        assert!(aethelgard_ir::names::windows_reserved(name), "{name}");
+    }
+    for name in ["cons", ".con", "com", "lpt10", "con_x"] {
+        assert!(!aethelgard_ir::names::windows_reserved(name), "{name}");
+    }
+}
+
+/// The adversarial pass's F1: two of the specification's references that
+/// KiCad takes for one, differing in more than case (a leading zero), are
+/// the board writer's `DuplicateReference`, by its sorted pair.
+#[test]
+fn two_references_with_one_kicad_key_are_refused() {
+    let err = refusal(|s| devs(s).i2c[1].reference = "U02".into());
+    assert_refusal(err, "DuplicateReference", Some("U02 and U2"));
+    let err = refusal(|s| devs(s).spi[0].reference = "u002".into());
+    assert_refusal(err, "DuplicateReference", Some("U2 and u002"));
+    // Case alone is step 8's refusal, as before.
+    let err = refusal(|s| devs(s).i2c[1].reference = "u2".into());
+    assert_eq!(
+        err,
+        E::DuplicateReference {
+            id: "u2".into(),
+            first: "U2".into()
+        }
+    );
 }
