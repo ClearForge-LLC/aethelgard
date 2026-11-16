@@ -54,6 +54,7 @@ fn two_devices() -> (SolvedTopology, aethelgard_ir::PinTable) {
             cs: "IMU_CS".into(),
         },
     );
+    solved.derive_controllers();
     solved.validate().unwrap();
     (solved, table)
 }

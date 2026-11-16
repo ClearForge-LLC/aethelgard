@@ -4,8 +4,8 @@ use common::devs;
 
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
-    Signal, SolvedClock, SolvedI2cDevice, SolvedSpiDevice, SolvedTopology, Specification, SpiBus,
-    SpiDevice, SpiLine, VoltageDomain,
+    Signal, SolvedClock, SolvedI2cDevice, SolvedI2cTiming, SolvedSpiController, SolvedSpiDevice,
+    SolvedTopology, Specification, SpiBus, SpiDevice, SpiKernel, SpiLine, VoltageDomain,
 };
 use std::collections::BTreeMap;
 
@@ -1073,6 +1073,35 @@ fn solved() -> SolvedTopology {
         motor_outputs: BTreeMap::new(),
         power: None,
         serial_ports: BTreeMap::new(),
+        // Hand values (`silicon`'s tests): SPI1 at 20 MHz is MBR 1; I2C1's
+        // three words at 64 MHz.
+        spi_controllers: [(
+            "SPI1".to_owned(),
+            SolvedSpiController {
+                kernel: SpiKernel::PerCk,
+                kernel_hz: 64_000_000,
+                declared_hz: 20_000_000,
+                mbr: 1,
+                achieved_hz: 16_000_000,
+                achieved_max_hz: 16_239_744,
+            },
+        )]
+        .into(),
+        i2c_timings: [(
+            "I2C1".to_owned(),
+            SolvedI2cTiming {
+                kernel_hz: 64_000_000,
+                cr1: 0,
+                timingr: [
+                    ("Standard100k".to_owned(), 0x50D3_2A40),
+                    ("Fast400k".to_owned(), 0x10C7_123C),
+                    ("FastPlus1M".to_owned(), 0x00B2_0E2D),
+                ]
+                .into(),
+            },
+        )]
+        .into(),
+        bor_level: 0,
     }
 }
 
@@ -1135,9 +1164,10 @@ fn solved_refuses_version_and_hash() {
     // before `spi_devices` (`AET-WO-4200`), 3 the file before `spi_lines`
     // (`AET-WO-4300c`), 4 the file before `clock` and `motor_outputs`
     // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 6 the
-    // file before `serial_ports` (`AET-WO-4300b`), 8 one this build does not
-    // know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 8] {
+    // file before `serial_ports` (`AET-WO-4300b`), 7 the file before
+    // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 9 one
+    // this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 9] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -2216,16 +2246,20 @@ fn a_part_the_table_does_not_hold_is_not_refused() {
 
 #[test]
 fn solved_holds_the_flash_to_its_clock_after_a_bus_is_sped_up() {
-    let mut ok = solved();
-    for l in ok.spi_lines.values_mut() {
-        l.rate_hz = 104_000_000;
-    }
-    assert_eq!(ok.validate(), Ok(()));
-    let err = solved_refusal(|t| {
+    // The bus and its controller sped up together: above 32,479,488 Hz (the
+    // fastest kernel / 2) MBR is 0.
+    let sped_up = |t: &mut SolvedTopology, rate_hz: u32| {
         for l in t.spi_lines.values_mut() {
-            l.rate_hz = 104_000_001;
+            l.rate_hz = rate_hz;
         }
-    });
+        let c = t.spi_controllers.get_mut("SPI1").unwrap();
+        (c.declared_hz, c.mbr, c.achieved_hz, c.achieved_max_hz) =
+            (rate_hz, 0, 32_000_000, 32_479_488);
+    };
+    let mut ok = solved();
+    sped_up(&mut ok, 104_000_000);
+    assert_eq!(ok.validate(), Ok(()));
+    let err = solved_refusal(|t| sped_up(t, 104_000_001));
     assert_refusal(err.clone(), "SpiClockAbovePart", Some("U4"));
     assert!(err.to_string().contains("9.6"), "{err}");
 }
@@ -2514,4 +2548,93 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
     assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
     // A board of `active` parts has no banner.
     assert!(valid().lifecycle_banner().unwrap().is_empty());
+}
+
+/// `AET-WO-4230`: the version-8 fields, each refused by name, never defaulted.
+#[test]
+fn solved_holds_the_controllers_to_what_solve_derives() {
+    let err = solved_refusal(|t| t.bor_level = 4);
+    assert_refusal(err, "BorLevelOutOfRange", None);
+    for b in 0..=3 {
+        let mut ok = solved();
+        ok.bor_level = b;
+        assert_eq!(ok.validate(), Ok(()));
+    }
+    // An SPI peripheral of `assignments` with no controller, and a
+    // controller with no peripheral.
+    let err = solved_refusal(|t| {
+        t.spi_controllers.clear();
+    });
+    assert_refusal(err, "SpiControllerMismatch", Some("SPI1"));
+    let err = solved_refusal(|t| {
+        let c = t.spi_controllers["SPI1"].clone();
+        t.spi_controllers.insert("SPI2".into(), c);
+    });
+    assert_refusal(err, "SpiControllerMismatch", Some("SPI2"));
+    let spi = |edit: fn(&mut SolvedSpiController)| {
+        solved_refusal(|t| edit(t.spi_controllers.get_mut("SPI1").unwrap()))
+    };
+    for err in [
+        spi(|c| c.mbr = 0),
+        spi(|c| c.mbr = 2),
+        spi(|c| c.mbr = 9),
+        spi(|c| c.kernel = SpiKernel::HsiKerCk),
+        spi(|c| c.kernel_hz = 32_000_000),
+        spi(|c| c.declared_hz = 19_999_999),
+        spi(|c| c.achieved_hz = 16_239_744),
+        spi(|c| c.achieved_max_hz = 16_000_000),
+    ] {
+        assert_refusal(err, "SpiControllerMismatch", Some("SPI1"));
+    }
+    let err = solved_refusal(|t| {
+        t.i2c_timings.clear();
+    });
+    assert_refusal(err, "I2cTimingMismatch", Some("I2C1"));
+    let i2c = |edit: fn(&mut SolvedI2cTiming)| {
+        solved_refusal(|t| edit(t.i2c_timings.get_mut("I2C1").unwrap()))
+    };
+    for err in [
+        i2c(|t| t.cr1 = 1 << 12),
+        i2c(|t| t.kernel_hz = 32_000_000),
+        i2c(|t| *t.timingr.get_mut("Fast400k").unwrap() += 1),
+        i2c(|t| {
+            t.timingr.remove("FastPlus1M");
+        }),
+        i2c(|t| {
+            t.timingr.insert("HighSpeed3M4".into(), 0);
+        }),
+    ] {
+        assert_refusal(err, "I2cTimingMismatch", Some("I2C1"));
+    }
+}
+
+#[test]
+fn a_version_7_file_is_refused_and_a_version_8_file_needs_every_new_key() {
+    let mut v = serde_json::to_value(solved()).unwrap();
+    let o = v.as_object_mut().unwrap();
+    for key in ["spi_controllers", "i2c_timings", "bor_level"] {
+        let mut missing = o.clone();
+        missing.remove(key);
+        let err = serde_json::from_value::<SolvedTopology>(missing.clone().into())
+            .expect_err("a missing key");
+        assert!(err.to_string().contains(key), "{err}");
+        // The same file as version 7 parses and is refused by version.
+        missing.insert("schema_version".into(), 7.into());
+        let old: SolvedTopology = serde_json::from_value(missing.into()).unwrap();
+        assert_refusal(
+            old.validate().unwrap_err(),
+            "UnsupportedSchemaVersion",
+            None,
+        );
+    }
+    // A repeated mode key is refused when parsing.
+    let text = serde_json::to_string(&solved()).unwrap().replace(
+        "\"Fast400k\":281481788",
+        "\"Fast400k\":281481788,\"Fast400k\":281481788",
+    );
+    assert!(
+        text.contains("\"Fast400k\":281481788,\"Fast400k\""),
+        "{text}"
+    );
+    assert!(serde_json::from_str::<SolvedTopology>(&text).is_err());
 }

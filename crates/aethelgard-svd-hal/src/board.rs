@@ -5442,6 +5442,21 @@ mod tests {
             motor_outputs: BTreeMap::new(),
             power: None,
             serial_ports: BTreeMap::new(),
+            spi_controllers: BTreeMap::new(),
+            // I2C1 as `solve` gives it on the reset clock (`AET-WO-4230`).
+            i2c_timings: BTreeMap::from([(
+                "I2C1".into(),
+                aethelgard_ir::SolvedI2cTiming {
+                    kernel_hz: 64_000_000,
+                    cr1: 0,
+                    timingr: BTreeMap::from([
+                        ("Fast400k".into(), 0x10C7_123C),
+                        ("FastPlus1M".into(), 0x00B2_0E2D),
+                        ("Standard100k".into(), 0x50D3_2A40),
+                    ]),
+                },
+            )]),
+            bor_level: 0,
         }
     }
 
@@ -5558,6 +5573,7 @@ mod tests {
         s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
         set_ceiling(&mut s, "A", 1_000_000);
         set_ceiling(&mut s, "B", 100_000);
+        s.derive_controllers();
         let files = generate("b", &s, &table()).unwrap();
         let board = &files["src/board.rs"];
         for m in ["i2c1_speed", "i2c2_speed"] {
@@ -5905,6 +5921,7 @@ mod tests {
         for line in slow.spi_lines.values_mut() {
             line.rate_hz = 7_000_000;
         }
+        slow.derive_controllers();
         let speeds = pin_speeds(&slow, &table()).unwrap();
         assert!(speeds.iter().all(|p| p.ospeedr == 0));
     }
@@ -5938,6 +5955,7 @@ mod tests {
         for line in s.spi_lines.values_mut() {
             line.rate_hz = 80_000_001;
         }
+        s.derive_controllers();
         let err = generate("b", &s, &table()).unwrap_err();
         assert_eq!(err.kind(), "RateAbovePinSpeed", "{err}");
         assert!(err.to_string().contains("`MOSI` on `PA7`"), "{err}");
@@ -5986,6 +6004,7 @@ mod tests {
                 spi_device(u32::try_from(i).unwrap(), "SPI1", net),
             );
         }
+        s.derive_controllers();
         s
     }
 
@@ -6113,6 +6132,7 @@ mod tests {
         s.gpio.insert("CS2".into(), "PA1".into());
         s.spi_devices
             .insert("U5".into(), spi_device(1, "SPI2", "CS2"));
+        s.derive_controllers();
         let files = generate("b", &s, &table()).unwrap();
         let lib = &files["src/board.rs"];
         for (t, other) in [("Spi1", "Spi2"), ("Spi2", "Spi1")] {
