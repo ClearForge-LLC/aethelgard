@@ -230,3 +230,29 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 - No container, Renode or KiCad was started.
 - This work order adds no tier-2 test, so `TIER2_MIN` is `main`'s, 157 since `4300g`.
 - The tier-2 tests compile under `--features aethelgard-cli/with-tools`, and clippy is clean with it. Their specification edits (`S<i>`, `U<nn>m…`, `T`, `U_2`, punctuated nets, `p-x`) meet no new rule [read]. CI's tier-2 run is the measurement.
+
+## 10. CI and the stop line
+
+- **CI on PR #166 at `69875af`** (run 43849842506): green [measured].
+  - Green jobs: `gates` (fmt, clippy, tier 1), all eight `tools-shard` jobs, the `tools` aggregate (which holds `TIER2_MIN` at 157), `engine-image` and `ardupilot-image`.
+  - Shard times, under the 04:35 UTC ruling (a measurement, not a gate):
+
+    | Shard | Time |
+    |---|---|
+    | 0 | 14:32 |
+    | 1 | 23:06 |
+    | 2 | 15:41 |
+    | 3 | 16:27 |
+    | 4 | 16:02 |
+    | 5 | 17:47 |
+    | 6 | 17:33 |
+    | 7 | 20:39 |
+
+    The `shards` job planned them balanced. Shard 1 is the slowest by 2:27, under the 3-minute refit trigger, and this is its first run.
+  - This work order adds no weights: its new tests are tier 1, in existing binaries.
+- **The READY commit** changes only this file; its own CI run is the one the architect reads.
+- **Disk:**
+  - Removed: the `main` worktree used for the second baseline (`git worktree prune`), its target, and the spare binaries.
+  - Kept, as the evidence this document cites: `~/.cache/aet-1206/` (627 MB). It holds `baseline/` and `baseline2/` (the `8030fa5` and `4419c59` binaries), `new/`, `tools/`, the verdict records `v-*`, `adv/` (the 5,422-specification harness, its reports and repros), `mutants/`, and `pr-title-body.md`.
+  - No agent worktree was created.
+- **Token:** minted per push and revoked after the last one (HTTP 204, recorded at the push).
