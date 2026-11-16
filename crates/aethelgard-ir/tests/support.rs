@@ -32,27 +32,28 @@ fn the_reference_declares_a_programming_path_and_a_source() {
 fn a_connector_short_of_any_debug_line_is_no_programming_path() {
     for pin in 0..6 {
         let mut v = value(REFERENCE);
-        let net = v["connectors"][0]["pins"][pin]["net"].clone();
+        let net = v["connectors"][1]["pins"][pin]["net"].clone();
         if net.is_null() {
             continue;
         }
-        v["connectors"][0]["pins"][pin]["net"] = Value::Null;
+        v["connectors"][1]["pins"][pin]["net"] = Value::Null;
         assert_eq!(
             refused(&v),
             "NoProgrammingPath",
-            "J1 pin {} ({net})",
+            "J2 pin {} ({net})",
             pin + 1
         );
     }
     // Spread over two connectors, the four reach no one connector.
     let mut v = value(REFERENCE);
-    v["connectors"][0]["pins"][3]["net"] = Value::Null;
-    v["connectors"][1]["pins"][1]["net"] = json!("SWDIO");
+    v["connectors"][1]["pins"][3]["net"] = Value::Null;
+    v["connectors"][2]["pins"][1]["net"] = json!("SWDIO");
     assert_eq!(refused(&v), "NoProgrammingPath");
-    // No connector at all: the source's connector goes too, and the path is
+    // Only the console's J1 left (its serial port must still end at a
+    // connector, step 15): the source's connector goes too, and the path is
     // judged first.
     let mut v = value(REFERENCE);
-    v["connectors"] = json!([]);
+    v["connectors"].as_array_mut().unwrap().truncate(1);
     assert_eq!(refused(&v), "NoProgrammingPath");
 }
 
@@ -60,7 +61,7 @@ fn a_connector_short_of_any_debug_line_is_no_programming_path() {
 #[test]
 fn nrst_on_the_connector_is_admitted() {
     let mut v = value(REFERENCE);
-    v["connectors"][0]["pins"][1]["net"] = json!("NRST");
+    v["connectors"][1]["pins"][1]["net"] = json!("NRST");
     check(&v).unwrap();
 }
 
@@ -94,9 +95,9 @@ fn a_supply_without_one_declared_source_is_refused() {
         ),
         (
             "a pin the connector does not list",
-            json!({"connector": "J2", "pin": "7"}),
+            json!({"connector": "J3", "pin": "7"}),
         ),
-        ("a pin on GND", json!({"connector": "J2", "pin": "4"})),
+        ("a pin on GND", json!({"connector": "J3", "pin": "4"})),
     ];
     for (why, source) in cases {
         let mut v = value(REFERENCE);
@@ -227,8 +228,9 @@ fn support_of(t: &mut Value) -> &mut Value {
 #[test]
 fn the_debug_ports_supply_pin_is_not_a_source() {
     let mut v = value(REFERENCE);
-    v["connectors"].as_array_mut().unwrap().truncate(1);
-    v["mcu"]["supply_source"] = json!({"connector": "J1", "pin": "1"});
+    // The supply input J3 goes; the debug mini J2 names itself the source.
+    v["connectors"].as_array_mut().unwrap().truncate(2);
+    v["mcu"]["supply_source"] = json!({"connector": "J2", "pin": "1"});
     let e = check(&v).unwrap_err();
     assert_eq!(e.kind(), "SupplyHasNoSource");
     assert!(e.to_string().contains("programs the part"), "{e}");
