@@ -509,3 +509,146 @@ fn aet_1207_the_emitter_refuses_a_serial_or_motor_net_named_for_its_own() {
         );
     }
 }
+
+/// `<args…> <spec>` on `base` with `edit` applied, from the repository root
+/// with an empty `PATH`: the exit code and stdout exactly as printed, and
+/// whether `out` (when `args` writes one) exists afterwards.
+fn run_on(
+    base: &str,
+    args: &[&str],
+    label: &str,
+    edit: impl FnOnce(&mut Value),
+) -> (Option<i32>, String, bool) {
+    let dir = scratch(label);
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(base)).unwrap()).unwrap();
+    edit(&mut spec);
+    let path = dir.join("spec.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let out = dir.join("out");
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
+    cmd.args(args).arg(&path);
+    if args[0] == "generate" {
+        cmd.arg("--out").arg(&out);
+    }
+    let run = cmd
+        .current_dir(root())
+        .env("PATH", "")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    (
+        run.status.code(),
+        String::from_utf8(run.stdout).unwrap(),
+        out.exists(),
+    )
+}
+
+const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
+
+/// A base, an edit, and the bytes `solve` and `generate` refuse it with.
+type PinnedOn = (&'static str, &'static str, fn(&mut Value), &'static str);
+
+/// `AET-WO-1208` §1.3 (`1207` F1): the motor and serial refusals `solve`
+/// made from the specification and the reset clock alone, each with the
+/// bytes the binary at `d539bb1` printed from `solve`, `generate`, `emit`,
+/// `check speeds`, `verify` and `extract`.
+fn aet_1208_pins() -> [PinnedOn; 3] {
+    [
+        (
+            "motor-rate",
+            MOTORS,
+            |s| s["motor_outputs"][0]["pwm"]["rate_hz"] = 1.into(),
+            r#"{"ok":false,"error":{"kind":"MotorTiming","id":"MOTOR1","claimants":["MOTOR1"],"message":"motor output `MOTOR1`: its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)"}}"#,
+        ),
+        (
+            "serial-brr",
+            SPEC,
+            |s| s["serial_ports"][0]["framing"]["baud"] = 300.into(),
+            r#"{"ok":false,"error":{"kind":"SerialBaudOutOfRange","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: 300 baud needs a BRR outside 16 to 0xFFFF on a 64000000 Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"}}"#,
+        ),
+        (
+            "serial-tolerance",
+            SPEC,
+            |s| s["serial_ports"][0]["peer_deviation_ppm"] = 50_000.into(),
+            r#"{"ok":false,"error":{"kind":"SerialBaudTolerance","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: the worst-case baud error, 76673 ppm (the receiver's 26673: quantization 800 with HSI at 25894; plus the peer's declared 50000), is not below the receiver's tolerance of 33300 ppm (RM0433 Rev 9 §48.5.8, Tables 406 and 407, column OVER8 = 0, ONEBIT = 0, Table 407, M = 00)"}}"#,
+        ),
+    ]
+}
+
+/// `AET-WO-1208` §1.3, the behaviour before: `solve` and `generate` refuse
+/// each with the pinned bytes, and `validate` passes it (a specification
+/// that acknowledges nothing).
+#[test]
+fn aet_1208_validate_refuses_what_solve_refused_byte_for_byte() {
+    for (label, base, edit, expected) in aet_1208_pins() {
+        for args in [&["solve", "--file"][..], &["generate", "--spec"]] {
+            let (code, out, created) =
+                run_on(base, args, &format!("1208-{}-{label}", args[0]), edit);
+            assert_eq!(
+                (code, out.trim_end()),
+                (Some(2), expected),
+                "{label} {args:?}"
+            );
+            assert!(!created, "{label}: generate created its output directory");
+        }
+        let (code, out, _) = run_on(
+            base,
+            &["validate", "--file"],
+            &format!("1208-v-{label}"),
+            |s| {
+                edit(s);
+                s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+            },
+        );
+        assert_eq!(code, Some(0), "{label}: {out}");
+    }
+}
+
+/// The reference with its MCU rail at `millivolts` (tolerance 0.1 %), and
+/// only a TMP117 (1.8 to 5.5 V) on it: no SPI bus, no other device, nothing
+/// acknowledged. `1207`'s measured board (`~/.cache/aet-1207/reach4/`).
+fn mcu_rail(s: &mut Value, millivolts: u32) {
+    s["voltage_domains"][0]["nominal_millivolts"] = millivolts.into();
+    s["voltage_domains"][0]["tolerance_permille"] = 1.into();
+    s["spi_buses"] = Value::Array(Vec::new());
+    s["spi_devices"] = Value::Array(Vec::new());
+    s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+    s["accept_lifecycle"] = Value::Array(Vec::new());
+    for net in ["SPI_SCK", "SPI_MOSI", "SPI_MISO", "FLASH_CS"] {
+        unconstrain(s, net);
+    }
+    s["i2c_devices"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| d["part"] == "TMP117");
+}
+
+/// `AET-WO-1208` §1.2 (`1207` F2), the behaviour before: an MCU rail of
+/// 5.0 V, which DS12117 Table 111 does not allow (1.62 to 3.6 V), passes
+/// `validate` and `generate` writes a board.
+#[test]
+fn aet_1208_the_mcu_rail_is_judged_against_its_row() {
+    let edit = |s: &mut Value| mcu_rail(s, 5000);
+    let (code, out, _) = run_on(SPEC, &["validate", "--file"], "1208-mcu-v", edit);
+    assert_eq!(code, Some(0), "{out}");
+    let (code, out, created) = run_on(SPEC, &["generate", "--spec"], "1208-mcu-g", edit);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(created);
+}
+
+/// `AET-WO-1208` §1.4 (`1207` F3), the behaviour before: the emitter held
+/// its own nets against the spelled ones, never the spelled ones against
+/// each other, so a library caller of `schematic::emit` naming a serial or
+/// motor net for a domain or another spelled net got a shorted board
+/// (`validate` refuses each).
+#[test]
+fn aet_1208_the_emitter_draws_only_what_validate_passes() {
+    for (spec, old, new) in [
+        (SPEC, "CONSOLE_TX", "VDD_3V3"),
+        (SPEC, "CONSOLE_TX", "I2C_SDA"),
+        (MOTORS, "MOTOR3", "MOTOR4"),
+    ] {
+        let emitted = emit_renamed(spec, old, new);
+        assert!(emitted.is_ok(), "{old} -> {new}: {:?}", emitted.err());
+    }
+}
