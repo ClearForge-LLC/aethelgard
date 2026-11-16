@@ -367,11 +367,6 @@ fn a_keepout_is_read_routed_around_and_judged() {
         (k.rect.x0, k.rect.y0, k.rect.x1, k.rect.y1),
         (99_125_000, 99_205_000, 100_875_000, 100_795_000)
     );
-    // The keepout alone: the gate's pad clearance measures pads by their
-    // boxes, which read the QFN's corner pads 1 and 24 as 0.177 mm apart
-    // (0.218 mm as rounded copper; FEEDBACK D7), so the pads are left out.
-    let mut part = part;
-    part.pads.clear();
     let (spec, _, _) = fixture();
     let board = route::Board {
         outline: aethelgard_eda::pcb::Rect {

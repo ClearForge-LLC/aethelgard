@@ -143,6 +143,17 @@ fn from_centre<'a>(b: &Board, routed: &'a Routed, number: &str) -> Vec<&'a route
         .collect()
 }
 
+/// Every track end of `r` is a node of `b`'s 125 µm grid: no escape was laid.
+fn assert_on_grid(b: &Board, r: &Routed) {
+    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
+    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
+    for s in &r.segments {
+        for (x, y) in [s.start, s.end] {
+            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
+        }
+    }
+}
+
 fn judged(b: &Board) -> Routed {
     let r = route::route(b).unwrap_or_else(|e| panic!("{e:?}"));
     route::check(b, &r).unwrap();
@@ -266,13 +277,7 @@ fn a_pad_the_grid_reaches_gets_no_escape() {
         &Stack::of(&spec),
     )
     .unwrap();
-    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
-    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
-    for s in &r.segments {
-        for (x, y) in [s.start, s.end] {
-            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
-        }
-    }
+    assert_on_grid(&b, &r);
 }
 
 /// A sealed pad (A′): an IC's pad whose way out is a channel between its row
@@ -376,13 +381,7 @@ fn a_pocket_with_two_terminals_of_one_net_routes_on_the_grid() {
     let b = pocket(600_000, true);
     let r = judged(&b);
     assert!(!r.segments.is_empty());
-    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
-    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
-    for s in &r.segments {
-        for (x, y) in [s.start, s.end] {
-            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
-        }
-    }
+    assert_on_grid(&b, &r);
 }
 
 #[test]
@@ -651,13 +650,7 @@ fn a_through_hole_pad_in_the_pocket_is_a_way_out() {
     });
     let r = judged(&b);
     assert!(r.vias.is_empty(), "{r:?}");
-    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
-    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
-    for s in &r.segments {
-        for (x, y) in [s.start, s.end] {
-            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
-        }
-    }
+    assert_on_grid(&b, &r);
 }
 
 /// Adversarial pass (medium): a dual-row part at 0.4 mm with 0.2 mm pads,

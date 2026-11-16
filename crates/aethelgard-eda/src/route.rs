@@ -711,7 +711,7 @@ fn nearest(grid: &Grid, (x, y): (i64, i64)) -> Option<usize> {
 /// interior under the part's own body is empty copper the escape can use
 /// instead.
 pub fn ring_interior(part: &Part) -> Option<Rect> {
-    let field = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b))?;
+    let field = field(part)?;
     let (cx, cy) = ((field.x0 + field.x1) / 2, (field.y0 + field.y1) / 2);
     let (qw, qh) = ((field.x1 - field.x0) / 4, (field.y1 - field.y0) / 4);
     let mid = |p: &&Pad| p.rect.centre();
@@ -933,7 +933,7 @@ impl<'a> Router<'a> {
             }
             // The pad field: on F.Cu, only inside a pad; no via near it;
             // except in a dense part's own ring interior (K1).
-            let Some(field) = part.pads.iter().map(|p| p.rect).reduce(|a, b| a.union(b)) else {
+            let Some(field) = field(part) else {
                 continue;
             };
             let own = |node: usize| {
@@ -2206,6 +2206,12 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
 
 // ---- escapes for pads the grid cannot reach (`AET-WO-1310`) ----
 
+/// A part's pad field: the box around its pads, which no F.Cu track of
+/// another part crosses.
+fn field(part: &Part) -> Option<Rect> {
+    part.pads.iter().map(|p| p.rect).reduce(Rect::union)
+}
+
 /// A pad's exact copper: its rounded rectangle, the inner box grown by the
 /// rounding radius (a circle or an oval included). `check` judges pads by it:
 /// by their boxes, the ICM-20948's corner pads read closer than they are.
@@ -2324,7 +2330,7 @@ fn clear_of(
         // No F.Cu track crosses another part's pad field (the module's rule).
         && board.parts.iter().all(|q| {
             q.pads.iter().any(|p| p.rect == own.rect)
-                || q.pads.iter().map(|p| p.rect).reduce(Rect::union).is_none_or(|f| {
+                || field(q).is_none_or(|f| {
                     Shape { rect: f, r: 0 }.clear(shape, 0)
                 })
         })
@@ -2424,13 +2430,7 @@ fn lay_escapes(
             .collect()
     };
     let mut parts: Vec<&Part> = board.parts.iter().filter(|p| !p.pads.is_empty()).collect();
-    let field_of = |p: &Part| {
-        p.pads
-            .iter()
-            .map(|d| d.rect)
-            .reduce(Rect::union)
-            .unwrap_or(Rect::point(0, 0))
-    };
+    let field_of = |p: &Part| field(p).unwrap_or(Rect::point(0, 0));
     parts.sort_by_key(|p| {
         let f = field_of(p);
         (f.y0, f.x0, f.y1, f.x1)
