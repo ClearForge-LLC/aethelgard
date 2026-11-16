@@ -200,3 +200,27 @@ Everything else in §1 is built, judged, adversarially reviewed, mutation-tested
   - Mutants: report regardless of mode; the declared flag never set; a maker point, or the capped last point, counted as declared; the ceiling at 501; the class-2 test inverted.
   - The first run left one survivor: the capped last point. A test now pins it. **6 of 6 killed** [measured, `~/.cache/aet-4300d3/evidence/mut/rulings-log.txt`].
 - **Shard time, as ruled at 22:55:** when `4300b` merges, merge `main` and take its `ci/test-weights.tsv`. Re-measure only if a shard still passes 20 minutes.
+
+## 8. Merge of `main` after `4300b`, and READY
+
+- **Merged `origin/main` at `25640c5`** (4300b) in `a3c43ab`, by merge commit.
+  - **Specification renumbered 9 → 10.** 4300b took 9 (`serial_ports`); this work order merges before `4300g`, which takes 11. Power-parts schema stays 2.
+  - `ci/test-weights.tsv`, `ci/colocate.tsv` and `TIER2_MIN` (155) are `main`'s exactly: `git diff origin/main -- ci/ .github/` is empty. This branch adds no test of 0.5 s or more, so it adds no weight row.
+- **What the renumber moved** [measured]: specification hashes only.
+  - `boards/sentinel-01` was regenerated: 8 files, hash lines only.
+  - The reference's hash was replaced in the twin's, Renode's and the CLI README's pinned topologies, and in `verify_2k2_tier2`'s prefix.
+  - The svd-hal UI fixtures were re-blessed (`motors-pwm`, `serial-four`), hash-only.
+  - `solve_cli`'s two digests and `order_2203`'s three were re-taken. With `main`'s hash put back, each equals `main`'s exactly; the boot image did not move.
+  - Main's pincheck topology still carries an older hash, which no test reads. It is left as `main` has it.
+- **Gates on `a3c43ab`** [measured, Furnace]:
+  - `cargo fmt --all -- --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+  - `cargo test --workspace --no-fail-fast`: 110 binaries, 0 failures.
+- **The plan** [measured]: `ci/shard.sh assign` on this branch's 1892 workspace tests with `main`'s weights plans 1046 s per shard. That is the figure 4300b's accepted run `bcc4135` printed (43796790248), so this branch leaves the plan as `main` has it.
+- **CI before the merge:** `73b59e1` was green, shards 13.3 to 16.9 minutes, tier 2 129 = floor.
+- **CI on this head:** read per shard, as ruled on #152 (comment 6906540406). The final line is printed only once it is green with no shard over 20 minutes on both the run and its one re-run.
+
+**READY.**
+- Every ruling of comment 6902904831 is applied (§7).
+- The full adversarial pass, the mutation runs and the reduction pass are done (§4–§6, §7).
+- The backlog rows are named: D5 (the emitter draws hot-plug parts and reads controls, before `4500`); effective input capacitance enforced when Murata's chart arrives; `tRSTTEMPO` named as typical; F9 and F11.
