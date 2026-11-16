@@ -76,3 +76,40 @@ Labels: **measured** (run on this branch), **read** (read at source, file:line a
 - **F-B5.** `Field`'s `mask`, `solved` and `observed` are `u64`, and so is `Expectation::mask`. An SPI read of 5 to 8 bytes keeps its whole value, with a 64-bit mask; 32-bit fields are unchanged in value and in text.
 - **R2.** `propose` writes through `tree::write`, and `write_out` is gone. `tree::write`'s emptiness message no longer says "generate", since it now serves `propose`, `generate` and `fab`.
 - **`1205` review.** `propose::facts` reads the declared speed from the topology's `i2c_speeds`, so the specification is no longer passed to it.
+
+## Measured (tier 2 in the pinned image, `~/bin/capped-run`, 8 GiB, swap 0, read back on every container)
+
+- **Baseline at `8030fa5`** (`~/.cache/aet-3201/t2/base`): `attribute_seeded` 11 passed, 496 s. `attribute` was saved for all 30 archived runs, and every proposal directory kept.
+- **This branch at `9e133ba`, before the new cases** (`~/.cache/aet-3201/t2/head1`):
+  - `attribute_seeded` 11 passed, 482 s;
+  - `campaign_tier2` 9 passed;
+  - `twin_tier2` 65 of 66 (the one failure is below).
+- **P1 held (measured).** All 30 `attribute` outputs are **byte-identical** to the baseline, with the same `run_id`s and `state_hash`es: domain, rule, evidence, symptoms and masked, for every seeded case.
+- **P5 held (measured).** Every `propose` output directory is byte-identical (`diff -r`), the 47 kΩ proposal and both re-gate specifications included.
+- **P3 held.** The golden test passes unchanged, and no committed hash moved, because no archive changed.
+- **P2 held.** `held-low-sda` and `held-low-scl` replay and attribute as before.
+- **P9 held (measured).** `twin_tier2`'s `without_the_cited_wait_each_data_read_answers_its_reset_value` failed on the rename alone: its kinds are now `i2c_data_mismatch` and `spi_data_mismatch`. The test now asserts those, and that neither identity mismatch appears, since both identities read right.
+- **P4 held (measured, tier 1).** Fixtures that are not honest runs now break: a solved bus with no rises (chaos `campaign.rs`, `droop.rs` `run_with_check`, evolve's `the_lowest_indeterminate_rule…`), a wrong boot word with no `boot_word_missing` (evolve, CLI `campaign_tier1`'s serial sweep), a killed droop boot without its bound (chaos `droop.rs`), and `warning` (evolve A10). Each now carries what the CLI writes. Tests whose run is now refused assert the refusal. No guard was weakened.
+  - **Consequence: `I2`'s first clause is now unreachable.** "A line with no computed rise" is refused by `replay`, so `I2` remains for a bus the header cannot join, or a board with no bus. Evolve's `healthy` check of a rise per line stays, as a second statement, and the README says so.
+
+## Each B item, before and after (measured)
+
+The six new chaos tests, run against `8030fa5`'s code (`~/.cache/aet-3201/before-after-chaos.txt`), all **fail there**: each forged run is accepted. On this branch they are refused.
+- `a_run_with_its_rises_dropped_is_refused` (B1);
+- `a_line_bound_only_by_another_bus_or_another_line_is_refused` (B1);
+- `a_boot_that_read_nothing_names_its_bound` (B2);
+- `boot_word_missing_is_named_exactly_when_the_word_is_wrong` (B2);
+- `a_severity_outside_error_and_info_is_refused_on_write_and_on_read` (B3: `zzz`, `warning`, `Error`, `INFO`, leading or trailing space, tab, empty; on write and through the reader);
+- `identity_read_outside_window_is_bound_to_an_unbooted_short_window`.
+
+In evolve, B2's unnamed missing boot word was `I1` and is now refused (`a_boot_word_missing_unnamed_is_refused`). Q7's run was `I1` (`4300a` P12) and is now `I7`.
+
+## Mutation testing (diff-sized: one mutant per guard this work order adds)
+
+`~/.cache/aet-3201/mut/mut.py` (each mutant an exact-once edit of a scratch copy, its suite run, the edit reverted). **18 of 18 killed** (`result.txt`, `result2.txt`). Four survived the first run, and each now has a test:
+- `boot_word_missing` at `info` beside a boot that has its word;
+- the replay bound on `identity_read_outside_window` for a *booted* DShot run, a boot word written after the window;
+- the I2C mismatch selected by step: an identity mismatch dressed as a data or configure step's;
+- `I7`'s conditions, unbooted and on a short window. The first survived because the booted variant's `I4` sorted below the mutant's `I7`, so the test now asserts the exact rule and its rises.
+
+No mutant was run on `propose`'s speed source: the topology's speed and the specification's are one value on every honest input, so a mutant there would be equivalent.
