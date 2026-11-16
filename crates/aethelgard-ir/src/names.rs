@@ -187,8 +187,9 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
 
 /// Every net and domain name the specification gives, in document order:
 /// domains, the I2C and SPI lines, chip selects, serial lines, motor
-/// outputs, then the power tree's sense nets.
-fn spelled_nets(spec: &Specification) -> Vec<&str> {
+/// outputs, then the power tree's sense nets. The emitter holds its own nets
+/// against this list (`AET-WO-1207` §1.4), as step 20 does.
+pub fn spelled_nets(spec: &Specification) -> Vec<&str> {
     let mut out: Vec<&str> = spec.voltage_domains.iter().map(|d| d.id.as_str()).collect();
     for b in &spec.i2c_buses {
         out.extend([b.sda.net.as_str(), b.scl.net.as_str()]);
@@ -283,10 +284,12 @@ pub(crate) fn check(spec: &Specification) -> Result<(), E> {
 }
 
 /// Windows' reserved device names (`AET-WO-1102` A7): a file whose stem is
-/// one of these, in any case, cannot be opened on Windows.
-pub const WINDOWS_RESERVED: [&str; 22] = [
-    "aux", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "con", "lpt1",
-    "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "nul", "prn",
+/// one of these, in any case, cannot be opened on Windows. `com0` and `lpt0`
+/// are on Microsoft's list too (`AET-WO-1207` §1.3, `1206` F7); its
+/// superscript forms are not ASCII, which every identifier already is.
+pub const WINDOWS_RESERVED: [&str; 24] = [
+    "aux", "com0", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8", "com9", "con",
+    "lpt0", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9", "nul", "prn",
 ];
 
 /// Whether a name's stem, before its first `.` and without trailing spaces,

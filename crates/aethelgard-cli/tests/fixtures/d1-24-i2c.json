@@ -1,7 +1,13 @@
 {
   "schema_version": 12,
   "acknowledge_unwitnessed": [],
-  "accept_lifecycle": [],
+  "accept_lifecycle": [
+    {
+      "part": "W25Q64JVxIQ",
+      "status": "nrnd",
+      "statement": "The board's SPI flash, NRND by its maker (Winbond's catalog, Status-Industrial N, 2026-11-16) with longevity support listed; kept until AET-WO-4500 picks a flash in mass production (AET-WO-4211)"
+    }
+  ],
   "project_name": "d1-24-i2c",
   "mcu": {
     "part": "STM32H753ZITx",

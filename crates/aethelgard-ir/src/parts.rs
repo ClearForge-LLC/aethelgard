@@ -126,6 +126,15 @@ pub const FLASH_CAPACITY_CODES: std::ops::RangeInclusive<u8> = 0x10..=0x19;
 /// specification naming it is refused, naming both.
 pub const BARE_W25Q64JV: &str = "W25Q64JV";
 
+/// The one SPI mode (CPOL × 2 + CPHA) the generated firmware drives on every
+/// controller: `aethelgard-svd-hal`'s `spi_code` (`board.rs`) writes `CFG2`
+/// with `MASTER`, `SSM` and `AFCNTR` only, so `CPOL` and `CPHA` are 0
+/// (RM0433 Rev 9 §50.11.4), whatever the solve or the part. `validate`
+/// refuses a device whose row's `modes` lack it (`SpiModeNotDriven`,
+/// `AET-WO-1207` §1.5); a test in `aethelgard-svd-hal` pins it to the word
+/// the generator writes.
+pub const DRIVEN_SPI_MODE: u8 = 0;
+
 /// How a part sits on its bus.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Bus {
@@ -1278,5 +1287,54 @@ mod tests {
         assert_eq!(identity("bme280").unwrap(), None);
         assert_eq!(identity("W25Q128").unwrap(), None);
         assert_eq!(identity(BARE_W25Q64JV).unwrap(), None);
+    }
+
+    /// The embedded table with the W25Q64JVxIQ row's `bus.spi.modes` set to
+    /// `modes`, parsed as a table is.
+    fn with_flash_modes(modes: &[u8]) -> PartsTable {
+        let mut doc: serde_json::Value = serde_json::from_str(PARTS_JSON).unwrap();
+        let row = doc["parts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["part"] == "W25Q64JVxIQ")
+            .unwrap();
+        row["bus"]["spi"]["modes"] = serde_json::json!(modes);
+        parse_parts(&doc.to_string()).unwrap()
+    }
+
+    /// The crate's own power-board fixture, whose first SPI device, `U4`, is
+    /// a W25Q64JVxIQ (inside the package: CI's package gate refuses an
+    /// `include_str!` reaching outside the crate).
+    fn reference() -> crate::Specification {
+        serde_json::from_str(include_str!("../tests/fixtures/sentinel-02-power.json")).unwrap()
+    }
+
+    /// `AET-WO-1207` §1.5 (Grok 2026-11-16 row 5): step 14 refuses a device
+    /// whose part's row lists no mode the controller drives, naming the row's
+    /// modes and its citation. Before, a row's `modes` were parsed and never
+    /// read, and each of these passed (`4c61fad`).
+    #[test]
+    fn aet_1207_a_device_whose_modes_exclude_the_driven_one_is_refused() {
+        let spec = reference();
+        for modes in [&[1u8, 2, 3][..], &[3], &[2]] {
+            let table = with_flash_modes(modes);
+            let err = spec.validate_parts(&table).unwrap_err();
+            assert_eq!(err.kind(), "SpiModeNotDriven", "{modes:?}");
+            assert_eq!(err.id(), Some("U4"));
+            // The row's own citation (`AET-WO-4211` revises that row).
+            let c = &table.get("W25Q64JVxIQ").unwrap().citations.bus;
+            assert_eq!(
+                err.to_string(),
+                format!(
+                    "device `U4` is a `W25Q64JVxIQ`, which accepts SPI modes {modes:?} ({} rev. {}, {}), not mode 0, the one the generated firmware drives (CFG2 CPOL 0, CPHA 0)",
+                    c.document, c.revision, c.section
+                )
+            );
+        }
+        for modes in [&[0u8][..], &[3, 0], &[0, 1, 2, 3]] {
+            let table = with_flash_modes(modes);
+            assert_eq!(spec.validate_parts(&table), Ok(()), "{modes:?}");
+        }
     }
 }

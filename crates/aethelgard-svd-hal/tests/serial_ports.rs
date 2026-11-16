@@ -639,7 +639,9 @@ fn what_the_generator_cannot_write_is_refused() {
 /// SPI, `OTYPER` written whole, the enables read back, the SPI `EOT` wait;
 /// then the solved SPI and I2C words written whole, the kernel selection, the
 /// erratum delay and the brown-out word; in round 2, `CFG2.AFCNTR` and
-/// `PUPDR` written whole by `split`).
+/// `PUPDR` written whole by `split`). Re-taken at `AET-WO-4211`: the flash is
+/// `nrnd`, so each file with a header gains its one `LIFECYCLE NRND` line, and
+/// nothing else moves (`Cargo.lock` and `firmware/Cargo.lock` carry no header).
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -647,11 +649,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "Cargo.toml",
-        "7edbfc21dadac72091760b985507c58ce85489fdead12197ac8da42e36b8f4cd",
+        "f4e5c4dbdb6a816e1efdc99cd8071a1598acef82224b27225b86217a1f9d6169",
     ),
     (
         "firmware/.cargo/config.toml",
-        "6332c833ef99625b3e81acec94d8a25a24cdd786d3cdcf449e773f788384944f",
+        "468c489444b42d98dc223d65af57707b9890a5de8253ac814104eb9e478b5de2",
     ),
     (
         "firmware/Cargo.lock",
@@ -659,27 +661,27 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/Cargo.toml",
-        "097ae55e14276b4abca9745570116db1882e08382b369277394ae0eb370b575c",
+        "b13172b26c76bde6ff2d706dd9804bee9b5835806bd187eebd398b8d45afb97f",
     ),
     (
         "firmware/link.x",
-        "2fc18cf846486f794fb2c47971c036899eb13d6e5e4b696d5ae738f499a89f70",
+        "f8b01e41ab824305cd250c72742294d94606ec8e46a6f34bb0fb85955c76aa68",
     ),
     (
         "firmware/src/main.rs",
-        "bf17a4eeb6e2b49656212e8f5f2dfb7441835a894f6350f540d8b933e4986e94",
+        "ff451c44b6f7ac8b28e10611e7f12cd85b401ad2cbe93df3ed6de7edd0d08d2e",
     ),
     (
         "src/board.rs",
-        "2f5240457f3527f1f00e70a74f529560c31ae7d0c799a68aa9ad5386ae67a456",
+        "59f194d1e1ce562906667f7b205eec79771b42476e9fd67c5dcab2883160c792",
     ),
     (
         "src/lib.rs",
-        "82201c264087df189148486ed65391cf33d609d7480670f30192d3901af22b57",
+        "7b8e13544cfa36e35068ca9e05b2106972cb267c2304b0aaecdc3d779f2ba67d",
     ),
     (
         "src/proofs.rs",
-        "162eebdad9f07230170948a1c05cc83449667a4bf329f3dfc863e4acc7447e08",
+        "e693dcba3c9b246246b6351d1eb5e5dc30ec8515476d479d2ca3d6e90c1418df",
     ),
 ];
 

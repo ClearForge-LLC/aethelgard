@@ -12,7 +12,8 @@ FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f0
 
 LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelgard" \
       org.opencontainers.image.description="ArduPilot Copter-4.7.2 (fb773567) with its toolchain, for building board definitions offline" \
-      org.opencontainers.image.licenses="GPL-3.0-or-later"
+      org.opencontainers.image.licenses="GPL-3.0-or-later" \
+      org.opencontainers.image.documentation="https://github.com/ClearForge-LLC/aethelgard/blob/main/container/ARDUPILOT-SOURCES.md"
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/venv/bin:/opt/gcc-arm-none-eabi-10-2020-q4-major/bin:$PATH
@@ -66,4 +67,13 @@ RUN git clone --depth 1 -b Copter-4.7.2 --recurse-submodules --shallow-submodule
  && test -z "$(git -C /opt/ardupilot status --porcelain)"
 
 COPY ARDUPILOT-LICENSE.md /opt/ARDUPILOT-LICENSE.md
+
+# The written source offer (AET-WO-4403), and every Debian package by source
+# and version, read from dpkg last so it lists exactly what the image holds.
+# check-sources.sh judges both against the built image. The publish job sets
+# the documentation label to this file at the commit it publishes.
+COPY ARDUPILOT-SOURCES.md /SOURCES.md
+RUN dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\thttps://snapshot.debian.org/package/${source:Package}/${source:Version}/\n' > /tmp/dpkg.tsv \
+ && LC_ALL=C sort -o /SOURCES-debian.tsv /tmp/dpkg.tsv \
+ && rm /tmp/dpkg.tsv
 WORKDIR /opt/ardupilot

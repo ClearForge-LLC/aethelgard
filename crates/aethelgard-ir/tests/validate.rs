@@ -25,7 +25,12 @@ fn valid() -> Specification {
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
-        "accept_lifecycle": [],
+        // U4, the flash, is `nrnd` by its maker (`AET-WO-4211`).
+        "accept_lifecycle": [{
+            "part": "W25Q64JVxIQ",
+            "status": "nrnd",
+            "statement": "NRND by its maker; kept until AET-WO-4500 picks a flash (AET-WO-4211)"
+        }],
         "acknowledge_unwitnessed": [],
         "net_classes": [],
         "diff_pairs": [],
@@ -152,6 +157,8 @@ fn empty_lists_other_than_domains_are_valid() {
     spec.spi_buses.clear();
     devs(&mut spec).i2c.clear();
     devs(&mut spec).spi.clear();
+    // The flash is gone, so its acknowledgement would stand for no part.
+    spec.accept_lifecycle.clear();
     spec.net_constraints.clear();
     assert_eq!(spec.validate(), Ok(()));
 }
@@ -472,15 +479,14 @@ fn refuses_tolerance_out_of_range() {
         assert_eq!(err.id(), Some("VDD_3V3"));
     }
     for value in [1, 500] {
-        let mut spec = valid();
-        spec.voltage_domains[0].tolerance_permille = value;
         // At 500 permille the rail spans 1650 to 4950 mV, outside every
-        // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`); only
-        // the tolerance's own range is under test here, so the board has no
-        // device (a part with no row is refused, `AET-WO-1206` §1.8).
-        devs(&mut spec).i2c.clear();
-        devs(&mut spec).spi.clear();
-        assert_eq!(spec.validate(), Ok(()));
+        // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`) and
+        // DS12117 Table 149's bands for an SPI bus on it
+        // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
+        // tolerance's own range is under test here, so the board has no
+        // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
+        // bus.
+        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
     }
 }
 
@@ -819,9 +825,13 @@ fn full_document() -> serde_json::Value {
     // Without the 1.8 V IMU and the crossing to it, which wait for `K6`
     // (the sensor table has no output delay for it yet): `power.crossings`
     // is the one empty list, named in `EMPTY_LISTS`. Its lifecycle
-    // acknowledgement goes with it (`AET-WO-4210`).
+    // acknowledgement goes with it (`AET-WO-4210`); the flash's stays
+    // (`AET-WO-4211`).
     v["power"]["crossings"] = json!([]);
-    v["accept_lifecycle"] = json!([]);
+    v["accept_lifecycle"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["part"] != "ICM20948");
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let list = v[key].as_array().unwrap().clone();
         v[key] = Value::Array(
@@ -932,18 +942,11 @@ fn the_full_document_is_valid_and_populates_every_section() {
 /// The lists the full document cannot populate, and why. Each is covered
 /// where it can be (`an_acknowledgement_s_keys_are_each_required`) or waits
 /// for the work that makes it buildable.
-const EMPTY_LISTS: &[(&str, &str)] = &[
-    (
-        "/accept_lifecycle",
-        "an acknowledgement stands only for an eol or nrnd part the board uses, and \
-         the only such parts (ICP10111, ICM20948) need a 1.8 V bus",
-    ),
-    (
-        "/power/crossings",
-        "the 1.8 V IMU crossing waits for K6: the sensor table has no output delay \
+const EMPTY_LISTS: &[(&str, &str)] = &[(
+    "/power/crossings",
+    "the 1.8 V IMU crossing waits for K6: the sensor table has no output delay \
          for ICM20948 (`OutputDelayMissing`)",
-    ),
-];
+)];
 
 #[test]
 fn an_acknowledgement_s_keys_are_each_required() {
@@ -2526,6 +2529,8 @@ fn stand_ins() -> Specification {
     let mut spec: Specification = serde_json::from_str(&v).unwrap();
     spec.voltage_domains[0].nominal_millivolts = 1_800;
     spec.spi_buses[0].speed_hz = 7_000_000;
+    // The flash is gone, so its acknowledgement would stand for no part.
+    spec.accept_lifecycle.clear();
     spec
 }
 
@@ -2605,8 +2610,97 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
         "{banner:?}"
     );
     assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
-    // A board of `active` parts has no banner.
-    assert!(valid().lifecycle_banner().unwrap().is_empty());
+    // A board of `active` parts has no banner: the reference without its
+    // `nrnd` flash.
+    let mut active = valid();
+    devs(&mut active).spi.clear();
+    assert!(active.lifecycle_banner().unwrap().is_empty());
+}
+
+/// `AET-WO-4211`: the W25Q64JV is `nrnd` by Winbond's catalog export. The
+/// reference without its acknowledgement is refused by name, citing the
+/// export; with it, it passes with the NRND banner. §5's adversarial cases
+/// each meet `4210`'s rules: another case does not acknowledge the part, a
+/// second entry is refused, and an entry for a part the board does not place
+/// stands for nothing.
+#[test]
+fn the_nrnd_flash_is_refused_unless_acknowledged_and_bannered_when_it_is() {
+    let mut spec = valid();
+    spec.accept_lifecycle.clear();
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "LifecycleNotAccepted", Some("U4"));
+    let m = err.to_string();
+    for word in [
+        "W25Q64JVxIQ",
+        "`nrnd`",
+        "winbond-W25Q64JV-catalog-export-2026-11-16.csv",
+        "Status-Industrial = N",
+    ] {
+        assert!(m.contains(word), "{word}: {m}");
+    }
+
+    let spec = valid();
+    spec.validate().unwrap();
+    let banner = spec.lifecycle_banner().unwrap();
+    assert_eq!(banner.len(), 1, "{banner:?}");
+    assert!(
+        banner[0].starts_with(
+            "LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export"
+        ),
+        "{banner:?}"
+    );
+
+    // The part named in another case, or with a space: not the part.
+    for name in ["w25q64jvxiq", "W25Q64JVXIQ", "W25Q64JVxIQ ", "W25Q64JVSSIQ"] {
+        let mut spec = valid();
+        spec.accept_lifecycle[0].part = name.into();
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleNotAccepted",
+            Some("U4"),
+        );
+    }
+    // The status in another case, or another status.
+    for status in ["NRND", "eol", "active", ""] {
+        let mut spec = valid();
+        spec.accept_lifecycle[0].status = status.into();
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleStatusMismatch",
+            Some("U4"),
+        );
+    }
+    // Named twice, even with the same words.
+    let mut spec = valid();
+    let again = spec.accept_lifecycle[0].clone();
+    spec.accept_lifecycle.push(again);
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptedTwice",
+        Some("W25Q64JVxIQ"),
+    );
+    // A board that does not place it: the stand-ins' board, and the
+    // reference with no device.
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+    spec.accept_lifecycle
+        .push(valid().accept_lifecycle[0].clone());
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptanceUnused",
+        Some("W25Q64JVxIQ"),
+    );
+    let mut spec = valid();
+    devs(&mut spec).i2c.clear();
+    devs(&mut spec).spi.clear();
+    spec.i2c_buses.clear();
+    spec.spi_buses.clear();
+    spec.net_constraints.clear();
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptanceUnused",
+        Some("W25Q64JVxIQ"),
+    );
 }
 
 /// An entry of `acknowledge_unwitnessed` for `register` and `class`.
@@ -3002,15 +3096,26 @@ fn a_net_or_domain_the_emitter_names_is_refused() {
 /// the fabrication package's `<project>-*`).
 #[test]
 fn a_project_named_for_a_windows_device_is_refused() {
-    for name in ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"] {
+    // `com0` and `lpt0` (`AET-WO-1207` §1.3, `1206` F7) passed before, in
+    // the list below (`4c61fad`).
+    for name in [
+        "con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9", "com0", "lpt0",
+    ] {
         let err = refusal(|s| s.project_name = name.into());
         assert_invalid_identifier(err.clone(), "project_name");
         assert!(err.to_string().contains("Windows"), "{err}");
+        // The message lists the range each name is in (adversarial: it
+        // listed `com1` to `com9` while refusing `com0`).
+        assert!(
+            err.to_string()
+                .contains("`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`"),
+            "{err}"
+        );
     }
     for name in [
         "com10",
-        "com0",
-        "lpt0",
+        "com00",
+        "lpt01",
         "con-x",
         "console",
         "nul1",
@@ -3022,7 +3127,16 @@ fn a_project_named_for_a_windows_device_is_refused() {
     }
     // The stem is what Windows matches: before the first `.`, without
     // trailing spaces, in any case.
-    for name in ["CON", "Con.", "con.txt", "con .txt", "nul.tar.gz", "COM1 "] {
+    for name in [
+        "CON",
+        "Con.",
+        "con.txt",
+        "con .txt",
+        "nul.tar.gz",
+        "COM1 ",
+        "com0.txt",
+        "LPT0 ",
+    ] {
         assert!(aethelgard_ir::names::windows_reserved(name), "{name}");
     }
     for name in ["cons", ".con", "com", "lpt10", "con_x"] {
@@ -3047,5 +3161,115 @@ fn two_references_with_one_kicad_key_are_refused() {
             id: "u2".into(),
             first: "U2".into()
         }
+    );
+}
+
+/// Sets the I2C lines' declared rise times.
+fn rise_times(spec: &mut Specification, sda: u32, scl: u32) {
+    for c in &mut spec.net_constraints {
+        match c.net_name.as_str() {
+            "I2C_SDA" => c.max_rise_time_nanoseconds = sda,
+            "I2C_SCL" => c.max_rise_time_nanoseconds = scl,
+            _ => {}
+        }
+    }
+}
+
+/// `AET-WO-1207` §1.2 (`1206` F3): step 21 refuses an I2C bus whose worse
+/// line no mode allows, by `solve`'s kind, `id`, claimant and message, at the
+/// boundary both ways. Before, `validate` passed it and `solve` refused it
+/// (`4c61fad`; the CLI pins hold `1178ca8`'s bytes).
+#[test]
+fn aet_1207_step_21_refuses_a_rise_time_no_mode_allows() {
+    for (sda, scl, worse) in [
+        (1000, 1001, 1001),
+        (1001, 1000, 1001),
+        (300, u32::MAX, u32::MAX),
+    ] {
+        let err = refusal(|s| rise_times(s, sda, scl));
+        assert_refusal(err.clone(), "RiseTimeTooSlow", Some("SENSORS"));
+        assert_eq!(err.claimants(), ["SENSORS"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "I2C bus `SENSORS` allows a rise time of {worse} ns, slower than any I2C mode (1000 ns at most)"
+            )
+        );
+    }
+    let mut spec = valid();
+    spec.i2c_buses[0].speed_hz = 100_000;
+    rise_times(&mut spec, 1000, 1000);
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+/// The MCU rail at `nominal` and `tolerance`, with no device (each part's
+/// supply would bound it first, `SupplyOutsidePart`), so no acknowledgement
+/// of one (`AET-WO-4211`), and, unless `spi`, no SPI bus either.
+fn bare_rail(nominal: u32, tolerance: u16, spi: bool) -> Specification {
+    let mut spec = valid();
+    spec.voltage_domains[0].nominal_millivolts = nominal;
+    spec.voltage_domains[0].tolerance_permille = tolerance;
+    devs(&mut spec).i2c.clear();
+    devs(&mut spec).spi.clear();
+    spec.accept_lifecycle.clear();
+    if !spi {
+        spec.spi_buses.clear();
+        spec.net_constraints
+            .retain(|c| !c.net_name.starts_with("SPI_"));
+    }
+    spec
+}
+
+/// Step 21 refuses an SPI bus on an MCU supply outside DS12117 Table 149's
+/// bands, 1620 to 3600 mV, across the whole tolerance (the minimum rounded
+/// down, the maximum up), at each edge both ways; with no SPI bus there is
+/// nothing to judge, as in `solve`. Before, `validate` passed each.
+#[test]
+fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
+    // 1800 mV ± 10.0 % is 1620 to 1980; ± 10.1 % is 1618 to 1982.
+    // 3000 mV ± 20.0 % is 2400 to 3600; ± 20.1 % is 2397 to 3603.
+    for (nominal, tolerance) in [(1800, 100), (3000, 200)] {
+        assert_eq!(bare_rail(nominal, tolerance, true).validate(), Ok(()));
+    }
+    for (nominal, tolerance, min, max) in [(1800, 101, 1618, 1982), (3000, 201, 2397, 3603)] {
+        let err = bare_rail(nominal, tolerance, true).validate().unwrap_err();
+        assert_refusal(err.clone(), "SupplyOutsideSpeedTable", Some("FLASH"));
+        assert_eq!(err.claimants(), ["FLASH"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SPI bus `FLASH` is on a supply of {min} to {max} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
+            )
+        );
+        assert_eq!(bare_rail(nominal, tolerance, false).validate(), Ok(()));
+    }
+}
+
+/// Step 21 refuses an SPI bus with no net constraint on its SCK, then its
+/// MOSI, naming the net; in `solve`'s order, after the I2C buses' rise times
+/// and, on one bus, after its supply. Before, `validate` passed each.
+#[test]
+fn aet_1207_step_21_refuses_an_spi_line_with_no_constraint() {
+    for net in ["SPI_SCK", "SPI_MOSI"] {
+        let err = refusal(|s| s.net_constraints.retain(|c| c.net_name != net));
+        assert_refusal(err.clone(), "MissingSpiConstraint", Some("FLASH"));
+        assert_eq!(err.claimants(), ["FLASH"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SPI bus `FLASH` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
+            )
+        );
+    }
+    let err = refusal(|s| {
+        s.net_constraints.retain(|c| c.net_name != "SPI_SCK");
+        rise_times(s, 300, 1001);
+    });
+    assert_eq!(err.kind(), "RiseTimeTooSlow", "{err}");
+    let mut spec = bare_rail(3000, 201, true);
+    spec.net_constraints.retain(|c| c.net_name != "SPI_SCK");
+    assert_eq!(
+        spec.validate().unwrap_err().kind(),
+        "SupplyOutsideSpeedTable"
     );
 }

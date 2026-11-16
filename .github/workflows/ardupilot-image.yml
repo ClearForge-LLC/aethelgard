@@ -6,6 +6,13 @@
 # container/ARDUPILOT-IMAGE pins what main last published, and `pinned` pulls
 # that digest and smokes it (AET-WO-4401).
 #
+# The image carries GPL object code, so it carries its written source offer,
+# /SOURCES.md, read back from every build (AET-WO-4403). Arm's GCC source is
+# mirrored by sha256 next to the image (4400a D-2): `publish` pushes it before
+# the image when it is not there yet, and `source` then fetches it with no
+# credentials. Pull requests cannot push (RUL-15), so `source-rehearsal` runs
+# the same scripts against a registry on the runner instead.
+#
 # The `ardupilot` jobs build step G and the three seeds in the image, one each,
 # and `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
 # here, not in ci.yml, because they need this image, which only this workflow
@@ -24,6 +31,15 @@ on:
       - "container/check-ardupilot-pin.sh"
       - "container/test-check-ardupilot-pin.sh"
       - "container/fixtures/ardupilot-pin/**"
+      - "container/ARDUPILOT-LICENSE.md"
+      - "container/ARDUPILOT-SOURCES.md"
+      - "container/GCC-SOURCE"
+      - "container/gcc-source.manifest.json"
+      - "container/gcc-source.sh"
+      - "container/check-gcc-source.sh"
+      - "container/test-check-gcc-source.sh"
+      - "container/fixtures/gcc-source/**"
+      - "container/check-sources.sh"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -41,6 +57,15 @@ on:
       - "container/check-ardupilot-pin.sh"
       - "container/test-check-ardupilot-pin.sh"
       - "container/fixtures/ardupilot-pin/**"
+      - "container/ARDUPILOT-LICENSE.md"
+      - "container/ARDUPILOT-SOURCES.md"
+      - "container/GCC-SOURCE"
+      - "container/gcc-source.manifest.json"
+      - "container/gcc-source.sh"
+      - "container/check-gcc-source.sh"
+      - "container/test-check-gcc-source.sh"
+      - "container/fixtures/gcc-source/**"
+      - "container/check-sources.sh"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -76,6 +101,10 @@ jobs:
       - name: check-ardupilot-pin against its fixtures
         run: bash container/test-check-ardupilot-pin.sh
 
+      # AET-WO-4403: the mirror's pin and manifest, each refusal by name.
+      - name: check-gcc-source against its fixtures
+        run: bash container/test-check-gcc-source.sh
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: build
@@ -95,6 +124,14 @@ jobs:
         run: |
           docker run --rm --network none -v "$PWD/container:/container:ro" \
             "$IMAGE" bash /container/ardupilot-build.sh smoke
+
+      # AET-WO-4403: the labels point at the offer, and /SOURCES.md names what
+      # this image holds.
+      - name: the source offer in the built image
+        run: |
+          bash container/check-sources.sh labels ardupilot "$IMAGE"
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            "$IMAGE" bash /container/check-sources.sh inside ardupilot
 
       # D4 (PR #130): the runner sets GITHUB_ACTIONS=true, and ArduPilot then
       # refuses a numeric APJ_BOARD_ID. This control passes it into the
@@ -250,7 +287,9 @@ jobs:
           context: container
           file: container/ardupilot.Dockerfile
           tags: ${{ env.TAG }}
-          labels: org.opencontainers.image.revision=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.documentation=https://github.com/ClearForge-LLC/aethelgard/blob/${{ github.sha }}/container/ARDUPILOT-SOURCES.md
           load: true
           cache-from: type=gha,scope=ardupilot-image
 
@@ -260,11 +299,26 @@ jobs:
           docker run --rm --network none -v "$PWD/container:/container:ro" \
             "$TAG" bash /container/ardupilot-build.sh smoke
 
+      - name: the source offer in the image about to be published
+        run: |
+          bash container/check-sources.sh labels ardupilot "$TAG" "$GITHUB_SHA"
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            "$TAG" bash /container/check-sources.sh inside ardupilot
+
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ github.token }}
+
+      # 4400a D-2: Arm's GCC source, by the sha256 in container/, next to the
+      # image and before it, so no image names a mirror that is not there. When
+      # the pinned digest already serves anonymously, Arm's host is not asked.
+      - name: mirror the toolchain source
+        run: |
+          ORAS=$(bash container/gcc-source.sh oras "$RUNNER_TEMP/oras")
+          ORAS=$ORAS bash container/gcc-source.sh publish ghcr.io/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/gcc-source"
+          echo "Toolchain source at \`$(head -n 1 container/GCC-SOURCE)\`." >> "$GITHUB_STEP_SUMMARY"
 
       # container/ARDUPILOT-IMAGE is set by a pull request from this digest; CI
       # never writes to the repository.
@@ -274,3 +328,54 @@ jobs:
           digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
           [[ "$digest" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]] || { echo "no digest: $digest" >&2; exit 1; }
           echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
+
+  # 4403 acceptance: an anonymous client fetches the mirror by its pinned
+  # digest. No login and no token: curl reads no netrc and no docker config.
+  source:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: fetch the toolchain source anonymously by its pinned digest
+        run: bash container/gcc-source.sh fetch "$(head -n 1 container/GCC-SOURCE)" "$RUNNER_TEMP/gcc-source"
+
+  # Pull requests cannot push to ghcr (RUL-15), and until main's first publish
+  # the pinned digest is not there. This job runs the publish and fetch scripts
+  # end to end against a registry on the runner, and checks the two halves of
+  # anonymity against ghcr itself: a public image's manifest and blob fetch with
+  # no credentials, and the private engine image is refused by name.
+  source-rehearsal:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: publish to a registry on the runner, then fetch anonymously
+        run: |
+          # distribution 3.1.2, by index digest.
+          docker run -d --rm --name registry -p 127.0.0.1:5000:5000 \
+            registry@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+          for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:5000/v2/ && break; sleep 0.2; done
+          ORAS=$(bash container/gcc-source.sh oras "$RUNNER_TEMP/oras")
+          ORAS=$ORAS bash container/gcc-source.sh publish localhost:5000/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/a"
+          echo "a second publish finds it and pushes nothing:"
+          ORAS=$ORAS bash container/gcc-source.sh publish localhost:5000/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/b"
+          pin=$(head -n 1 container/GCC-SOURCE)
+          "$ORAS" pull --plain-http -o "$RUNNER_TEMP/c" "localhost:5000/clearforge-llc/aethelgard-ardupilot@${pin#*@}"
+          (cd "$RUNNER_TEMP/c" && sha256sum gcc-arm-none-eabi-10-2020-q4-major-src.tar.bz2)
+
+      - name: ghcr serves this package anonymously, and refuses a private one by name
+        run: |
+          bash container/gcc-source.sh fetch "$(head -n 1 container/ARDUPILOT-IMAGE)" "$RUNNER_TEMP/public" --any
+          set +e
+          bash container/gcc-source.sh fetch ghcr.io/clearforge-llc/aethelgard-engine@sha256:0000000000000000000000000000000000000000000000000000000000000000 "$RUNNER_TEMP/private" --any 2> "$RUNNER_TEMP/err"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/err"
+          [ "$rc" -eq 1 ] && grep -q '^gcc-source: anonymous pull refused: ' "$RUNNER_TEMP/err"

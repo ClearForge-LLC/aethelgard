@@ -142,11 +142,22 @@ fn spec(
             impedance_ohms: None,
         })
     }));
+    // Every device is the flash, `nrnd` by its maker (`AET-WO-4211`): a board
+    // that places it acknowledges it, and one that does not cannot.
+    let accept_lifecycle = if spi_devices.is_empty() {
+        serde_json::json!([])
+    } else {
+        serde_json::json!([{
+            "part": "W25Q64JVxIQ",
+            "status": "nrnd",
+            "statement": "NRND by its maker; kept until AET-WO-4500 picks a flash (AET-WO-4211)"
+        }])
+    };
     // The device lists are private to the crate (`AET-WO-1204`), so the
     // specification is built from the JSON it reads.
     let json = serde_json::json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
-        "accept_lifecycle": [],
+        "accept_lifecycle": accept_lifecycle,
         "acknowledge_unwitnessed": [],
         "net_classes": [],
         "diff_pairs": [],
@@ -665,10 +676,10 @@ fn the_worse_line_sets_the_ceiling_whichever_it_is() {
     for (sda, scl) in [(1000, 1001), (1001, 1000)] {
         assert_eq!(
             refused(&i2c_spec(100_000, sda, scl)),
-            SolveError::RiseTimeTooSlow {
+            SolveError::InvalidSpecification(IrValidationError::RiseTimeTooSlow {
                 bus: "I".into(),
                 rise_time_ns: 1001
-            }
+            })
         );
     }
 }
@@ -747,10 +758,10 @@ fn a_rise_time_slower_than_every_mode_is_refused() {
     let err = refused(&i2c_spec(100_000, 1001, 2000));
     assert_eq!(
         err,
-        SolveError::RiseTimeTooSlow {
+        SolveError::InvalidSpecification(IrValidationError::RiseTimeTooSlow {
             bus: "I".into(),
             rise_time_ns: 2000
-        }
+        })
     );
     assert_eq!(
         err.to_string(),

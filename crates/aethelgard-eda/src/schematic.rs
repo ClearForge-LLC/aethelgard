@@ -664,24 +664,11 @@ pub(crate) fn design(
         used.claim(r)
             .map_err(|holder| collision(r, holder, EmitError::DuplicateReference))?;
     }
-    // Every name the specification gives a net or a rail; an emitter net may
-    // not take one.
-    let mut spelled: Vec<String> = spec.voltage_domains.iter().map(|d| d.id.clone()).collect();
-    for bus in &spec.i2c_buses {
-        spelled.extend([bus.sda.net.clone(), bus.scl.net.clone()]);
-    }
-    for bus in &spec.spi_buses {
-        spelled.extend([
-            bus.sck.net.clone(),
-            bus.mosi.net.clone(),
-            bus.miso.net.clone(),
-        ]);
-    }
-    for d in spec.declared_spi_devices() {
-        spelled.push(d.cs.net.clone());
-    }
-    spelled.extend(spec.power.iter().flat_map(power::spelled));
-    let mut names = Taken::of(spelled);
+    // Every name the specification gives a net or a rail, serial and motor
+    // nets included (`AET-WO-1207` §1.4, `1206` F1): an emitter net may not
+    // take one. The one list `validate`'s step 20 reads.
+    let spelled = aethelgard_ir::names::spelled_nets(spec);
+    let mut names = Taken::of(spelled.into_iter().map(str::to_owned));
     names
         .claim(GND)
         .map_err(|holder| collision(GND, holder, EmitError::ReservedName))?;

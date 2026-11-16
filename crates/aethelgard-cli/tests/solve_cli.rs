@@ -71,8 +71,13 @@ use sha2::{Digest, Sha256};
 /// specification's sha256: with `f3798b1f…b999` put back, the reference's
 /// output hashes to `42f26fce…ad34`, and with `17b53057…0f8a` put back, the
 /// stress fixture's to `1725d651…0d1f`, the old digests, exactly.
-const REFERENCE_DIGEST: &str = "5d64214d7506eebf5cc60a8cf50a09d9340c92a2ec449d29fc11f71f6d9af4fb";
-const STRESS_DIGEST: &str = "15dd23367be298e27ae81aacf54f01d0442613b429f828e16ec1860f426910c8";
+/// Moved once more by `AET-WO-4211` (the flash's `nrnd` acknowledgement),
+/// which moved only the specification's sha256: with `c1072b71…2e3e` put
+/// back, the reference's output hashes to `5d64214d…d4fb`, and with
+/// `4c9aa762…762e` put back, the stress fixture's to `15dd2336…10c8`, the old
+/// digests, exactly.
+const REFERENCE_DIGEST: &str = "d751e1f4cfbc66008d655c135baa17aa44e4e272676e3a03c6159fa6be220dcf";
+const STRESS_DIGEST: &str = "00be83e163e9b28a0a0757be7ddf7d7f05d86ebbcd88c6d66b219f1e2da8eef6";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
