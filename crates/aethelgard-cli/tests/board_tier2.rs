@@ -307,7 +307,8 @@ fn build_gives_one_sha256_at_two_paths() {
 
     // End to end, what `build` refuses (adversarial B5, B7): a build script,
     // a source read from outside the crate, each exit 3 with no ELF; and a
-    // cargo configuration cargo cannot load, exit 5, not a design fail.
+    // cargo configuration other than the generated one, exit 3 before cargo
+    // runs (`AET-WO-1603` §1.2), never a design fail.
     let refused = |label: &str, edit: &dyn Fn(&Path), code: i32, kind: &str| {
         let dir = base.join(label);
         copy_tree(&board(), &dir);
@@ -347,7 +348,8 @@ fn build_gives_one_sha256_at_two_paths() {
             .unwrap();
         },
         3,
-        "CrateHasDependency",
+        // The pre-flight, before cargo runs (`AET-WO-1603` §1.2).
+        "CrateHasBuildScript",
     );
     let v = refused(
         "outside-source",
@@ -367,11 +369,13 @@ fn build_gives_one_sha256_at_two_paths() {
             .contains("/etc/passwd"),
         "{v}"
     );
+    // Refused by name before cargo runs (`AET-WO-1603` §1.2); it was
+    // cargo's `ToolError` before.
     refused(
         "bad-config",
         &|d| append(&d.join("firmware/.cargo/config.toml"), "\nnot toml [[\n"),
-        5,
-        "ToolError",
+        3,
+        "CargoConfigRefused",
     );
     fs::remove_dir_all(&base).unwrap();
     assert_eq!(sha(&ea), sha(&eb));

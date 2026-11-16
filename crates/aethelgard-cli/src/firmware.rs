@@ -81,6 +81,253 @@ fn dependency_free(copy: &Path) -> Result<(), Stop> {
     Ok(())
 }
 
+/// The one Cargo configuration a crate may carry: the file `generate` writes
+/// into the board crate's firmware (`svd-hal` `board/firmware.rs`), with
+/// exactly its keys and values (`AET-WO-1603` D1).
+const GENERATED_CONFIG: &str = "firmware/.cargo/config.toml";
+
+/// A pre-flight refusal, exit 3 before any cargo runs. `id` names the file:
+/// relative to the crate when it is in the copy, else absolute; `message`
+/// follows it.
+fn preflight_refused(kind: &'static str, root: &Path, path: &Path, message: &str) -> Stop {
+    let shown = path
+        .strip_prefix(root)
+        .unwrap_or(path)
+        .display()
+        .to_string();
+    Stop {
+        id: Some(shown.clone()),
+        ..Stop::refused(kind, format!("{shown} {message}"))
+    }
+}
+
+/// Whether `text` is exactly the configuration `generate` writes: `[build]`
+/// with `target` (this target) and `target-dir` (a string; `CARGO_TARGET_DIR`
+/// overrides it), and this target's `rustflags` naming the crate's
+/// `link.x`. Comments aside, nothing else.
+fn generated_config(text: &str) -> bool {
+    let Ok(v) = text.parse::<toml::Table>() else {
+        return false;
+    };
+    let build = v.get("build").and_then(toml::Value::as_table);
+    let flags = v
+        .get("target")
+        .and_then(toml::Value::as_table)
+        .filter(|t| t.len() == 1)
+        .and_then(|t| t.get(TARGET))
+        .and_then(toml::Value::as_table)
+        .filter(|t| t.len() == 1)
+        .and_then(|t| t.get("rustflags"))
+        .and_then(toml::Value::as_array);
+    v.len() == 2
+        && build.is_some_and(|b| {
+            b.len() == 2
+                && b.get("target").and_then(toml::Value::as_str) == Some(TARGET)
+                && b.get("target-dir").is_some_and(toml::Value::is_str)
+        })
+        && flags.is_some_and(|f| {
+            f.iter().map(toml::Value::as_str).collect::<Vec<_>>()
+                == [Some("-C"), Some("link-arg=-Tlink.x")]
+        })
+}
+
+/// Every file beneath `dir`, the copy, which holds only regular files and
+/// directories (`input::crate_dir`).
+fn files_beneath(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Stop> {
+    let unreadable = |e: std::io::Error| Stop::unreadable(format!("cannot read the copy: {e}"));
+    for entry in fs::read_dir(dir).map_err(unreadable)? {
+        let path = entry.map_err(unreadable)?.path();
+        if fs::symlink_metadata(&path).map_err(unreadable)?.is_dir() {
+            files_beneath(&path, out)?;
+        } else {
+            out.push(path);
+        }
+    }
+    Ok(())
+}
+
+/// The tables of one manifest that can name a path dependency.
+fn dependency_tables(m: &toml::Table) -> Vec<&toml::Table> {
+    const KINDS: [&str; 5] = [
+        "dependencies",
+        "dev-dependencies",
+        "dev_dependencies",
+        "build-dependencies",
+        "build_dependencies",
+    ];
+    fn table<'t>(v: &'t toml::Table, k: &str) -> Option<&'t toml::Table> {
+        v.get(k).and_then(toml::Value::as_table)
+    }
+    let mut out: Vec<&toml::Table> = KINDS.iter().filter_map(|k| table(m, k)).collect();
+    for platform in table(m, "target").into_iter().flat_map(|t| t.values()) {
+        if let Some(p) = platform.as_table() {
+            out.extend(KINDS.iter().filter_map(|k| table(p, k)));
+        }
+    }
+    out.extend(table(m, "workspace").and_then(|w| table(w, "dependencies")));
+    out.extend(table(m, "replace"));
+    out.extend(
+        table(m, "patch")
+            .into_iter()
+            .flat_map(|t| t.values())
+            .filter_map(toml::Value::as_table),
+    );
+    out
+}
+
+/// One manifest of the copy: no proc macro, no build script, and no path
+/// dependency resolving outside `root`.
+fn manifest_preflight(manifest: &Path, root: &Path) -> Result<(), Stop> {
+    let dir = manifest.parent().unwrap_or(root);
+    let m = fs::read_to_string(manifest)
+        .ok()
+        .and_then(|t| t.parse::<toml::Table>().ok())
+        .ok_or_else(|| {
+            preflight_refused(
+                "MalformedManifest",
+                root,
+                manifest,
+                "is not a TOML manifest",
+            )
+        })?;
+    let lib = m.get("lib").and_then(toml::Value::as_table);
+    if lib.is_some_and(|l| {
+        ["proc-macro", "proc_macro"]
+            .iter()
+            .any(|k| l.get(*k).and_then(toml::Value::as_bool) == Some(true))
+    }) {
+        return Err(preflight_refused(
+            "CrateHasProcMacro",
+            root,
+            manifest,
+            "is a proc-macro crate, whose code cargo would run at build time; a board crate has none (RUL-04)",
+        ));
+    }
+    if let Some(package) = m.get("package").and_then(toml::Value::as_table) {
+        let script = match package.get("build") {
+            Some(toml::Value::Boolean(false)) => None,
+            Some(toml::Value::String(s)) => Some(dir.join(s)),
+            Some(_) => Some(dir.join("build.rs")),
+            None => Some(dir.join("build.rs")).filter(|b| fs::symlink_metadata(b).is_ok()),
+        };
+        if let Some(script) = script {
+            return Err(preflight_refused(
+                "CrateHasBuildScript",
+                root,
+                manifest,
+                &format!(
+                    "has a build script ({}), which cargo would run; a board crate has none (RUL-04)",
+                    script.strip_prefix(root).unwrap_or(&script).display()
+                ),
+            ));
+        }
+    }
+    for table in dependency_tables(&m) {
+        for (name, dep) in table {
+            let Some(path) = dep.get("path").and_then(toml::Value::as_str) else {
+                continue;
+            };
+            match fs::canonicalize(dir.join(path)) {
+                Ok(resolved) if resolved.starts_with(root) => {}
+                resolved => {
+                    return Err(preflight_refused(
+                        "CrateHasDependency",
+                        root,
+                        manifest,
+                        &format!(
+                            "names `{name}` at {path}, {}; a board crate has no dependencies (RUL-04)",
+                            match resolved {
+                                Ok(r) => format!("which is outside the crate ({})", r.display()),
+                                Err(e) => format!("which cannot be resolved ({e})"),
+                            }
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `AET-WO-1603` §1.2: what `build` and `prove` refuse by name before any
+/// cargo invocation, each being code cargo or rustup would run, or a setting
+/// they would take, before anything else judges the crate (FEEDBACK §3):
+///
+/// - in any manifest of `copy`: a proc-macro crate, a build script, or a
+///   path dependency resolving outside the copy;
+/// - in `copy`: a `.cargo/config` or `.cargo/config.toml` other than the
+///   generated one, exactly; a `rust-toolchain` or `rust-toolchain.toml`;
+/// - in every ancestor of `cwd` above the copy, up to `/`: any of those
+///   files, or a `Cargo.toml`, which cargo would take as a workspace root.
+///
+/// A registry proc macro (`cortex-m-rt`'s) is never reached here: a board
+/// crate's lockfiles name no registry package (`dependency_free`). The
+/// checks after the build (`built_from_the_copy`) still run.
+pub fn preflight(copy: &Path, cwd: &Path) -> Result<(), Stop> {
+    let root = fs::canonicalize(copy)
+        .map_err(|e| Stop::unreadable(format!("cannot resolve the copy: {e}")))?;
+    let mut files = Vec::new();
+    files_beneath(&root, &mut files)?;
+    files.sort();
+    for file in &files {
+        let rel = file.strip_prefix(&root).unwrap_or(file);
+        let name = rel.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        let in_dot_cargo = rel
+            .parent()
+            .and_then(Path::file_name)
+            .is_some_and(|d| d == ".cargo");
+        if name == "Cargo.toml" {
+            manifest_preflight(file, &root)?;
+        } else if in_dot_cargo && (name == "config" || name == "config.toml") {
+            let generated = rel == Path::new(GENERATED_CONFIG)
+                && fs::read_to_string(file).is_ok_and(|t| generated_config(&t));
+            if !generated {
+                return Err(preflight_refused(
+                    "CargoConfigRefused",
+                    &root,
+                    file,
+                    "is a Cargo configuration other than the one `generate` writes, which cargo would take",
+                ));
+            }
+        } else if name == "rust-toolchain" || name == "rust-toolchain.toml" {
+            return Err(preflight_refused(
+                "ToolchainFileRefused",
+                &root,
+                file,
+                "names a toolchain, which rustup would take",
+            ));
+        }
+    }
+    let cwd = fs::canonicalize(cwd)
+        .map_err(|e| Stop::unreadable(format!("cannot resolve the copy: {e}")))?;
+    for dir in cwd.ancestors().filter(|d| !d.starts_with(&root)) {
+        for (rel, kind) in [
+            (".cargo/config", "CargoConfigRefused"),
+            (".cargo/config.toml", "CargoConfigRefused"),
+            ("rust-toolchain", "ToolchainFileRefused"),
+            ("rust-toolchain.toml", "ToolchainFileRefused"),
+            ("Cargo.toml", "WorkspaceAboveCrate"),
+        ] {
+            let path = dir.join(rel);
+            match fs::symlink_metadata(&path) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                found => {
+                    return Err(preflight_refused(
+                        kind,
+                        &root,
+                        &path,
+                        &format!(
+                            "is above the crate's copy, where cargo or rustup would read it{}",
+                            found.err().map(|e| format!(" ({e})")).unwrap_or_default()
+                        ),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// What cargo's JSON messages say: whether the build finished and succeeded
 /// (`build-finished`), every manifest a unit was built from, and every
 /// executable.
@@ -305,6 +552,8 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     let scratch = crate::Scratch::new()?;
     let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
     dependency_free(&input.copy)?;
+    let firmware = input.copy.join("firmware");
+    preflight(&input.copy, &firmware)?;
     let cargo = run::Tool::find("cargo")?;
     let rustup_home = run::required_var("RUSTUP_HOME", true)?;
     let path_var = run::required_var("PATH", false)?;
@@ -319,7 +568,6 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     }
     let mut read_only = cargo.dirs();
     read_only.push(PathBuf::from(&rustup_home));
-    let firmware = input.copy.join("firmware");
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &cargo,
         args,

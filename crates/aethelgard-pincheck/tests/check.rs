@@ -420,7 +420,10 @@ fn a_definition_inside_a_conditional_is_evaluated_exactly_or_refused() {
         assert_eq!(header::read(&wrapped(open, close)).unwrap(), real, "{open}");
     }
     // A decoy in a dead branch beside the real definition is not a second one.
-    let decoy = format!("#if 0\n{}#endif\n{text}", def.replace("INPUT(0U)", "OUTPUT(0U)"));
+    let decoy = format!(
+        "#if 0\n{}#endif\n{text}",
+        def.replace("INPUT(0U)", "OUTPUT(0U)")
+    );
     assert_eq!(header::read(&decoy).unwrap(), real);
     // Dead after a taken branch, whatever its own condition says.
     let after = refused(&wrapped("#if 1\n#else", "#endif"));
@@ -470,7 +473,10 @@ fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
     let real = header::read(&text).unwrap();
     let refused = |t: &str| header::read(t).unwrap_err();
     // In a block comment: no region opens.
-    assert_eq!(header::read(&format!("/*\n#if 0\n*/\n{text}")).unwrap(), real);
+    assert_eq!(
+        header::read(&format!("/*\n#if 0\n*/\n{text}")).unwrap(),
+        real
+    );
     // A line comment ended by a backslash swallows the next line: here the
     // `#if 0`, so the `#endif` below has nothing to close.
     let e = refused(&format!("// note \\\n#if 0\n{text}#endif\n"));
@@ -479,7 +485,10 @@ fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
     // wherever it is (4400a adversarial case 73).
     let e = refused(&format!("// note \\ \t\n#if 0\n{text}#endif\n"));
     assert_eq!(e.kind(), "MalformedHeader", "{e}");
-    assert!(e.to_string().contains("backslash followed by blanks"), "{e}");
+    assert!(
+        e.to_string().contains("backslash followed by blanks"),
+        "{e}"
+    );
     let blank = text.replacen("PIN_MODE_INPUT(1U) | \\\n", "PIN_MODE_INPUT(1U) | \\ \n", 1);
     assert_ne!(blank, text);
     assert_eq!(refused(&blank).id().as_deref(), Some("line 4"));
@@ -495,7 +504,11 @@ fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
     assert_eq!(header::read(&carried).unwrap(), real);
     // A definition only inside a comment is no definition.
     let commented = text.replacen("#define VAL_GPIOA_MODER", "/*\n#define VAL_GPIOA_MODER", 1);
-    let commented = commented.replacen("\n\n#define VAL_GPIOA_AFRL", "\n*/\n\n#define VAL_GPIOA_AFRL", 1);
+    let commented = commented.replacen(
+        "\n\n#define VAL_GPIOA_AFRL",
+        "\n*/\n\n#define VAL_GPIOA_AFRL",
+        1,
+    );
     assert_eq!(refused(&commented).id().as_deref(), Some("VAL_GPIOA_MODER"));
     // Unbalanced or unterminated structure is refused.
     for bad in [
