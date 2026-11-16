@@ -767,9 +767,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
             Record::MotorWitness { .. } => 14,
-            Record::SerialFramingCheck { .. } => 15,
-            Record::SerialWitness { .. } => 16,
-            Record::Verdict { .. } => 17,
+            Record::JudgeStop { .. } => 15,
+            Record::SerialFramingCheck { .. } => 16,
+            Record::SerialWitness { .. } => 17,
+            Record::Verdict { .. } => 18,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -789,7 +790,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(17) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(18) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
@@ -1047,6 +1048,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                     "unwitnessed" | "unreadable" => Some(MOTOR_UNWITNESSED_FINDING),
                     "mismatch" | "batched" | "stopped" => Some(MOTOR_MISMATCH_FINDING),
                     "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
+                    "unanchored" => Some(MOTOR_ANCHOR_UNOBSERVED_FINDING),
                     _ => None,
                 };
                 if let Some(kind) = kind {
@@ -1054,6 +1056,14 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                 }
             }
             _ => {}
+        }
+    }
+    // Each DShot timer's window and stop (`AET-WO-2302`), from the records
+    // once the boot word is set: a window past the boot, or an anchored
+    // window inside it with no judge's stop, each named once per timer.
+    if booted {
+        for (kind, n) in dshot_timer_findings(records) {
+            *motor_needed.entry(kind).or_default() += n;
         }
     }
     for kind in MOTOR_FINDINGS {
@@ -1646,6 +1656,25 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             );
         }
     }
+    // The injections are sequential (`AET-WO-2302` D4): a port goes in only
+    // after the port before it, inside the boot.
+    let injected: Vec<Option<u64>> = witnesses
+        .iter()
+        .map(|w| match w {
+            Record::SerialWitness { injected_ns, .. } => *injected_ns,
+            _ => None,
+        })
+        .collect();
+    let sequential = injected.windows(2).all(|w| match (w[0], w[1]) {
+        (Some(a), Some(b)) => a < b,
+        (None, Some(_)) => false,
+        _ => true,
+    });
+    if !sequential || injected.iter().flatten().any(|&t| t > TWIN_MAX_VIRTUAL_NS) {
+        return Err(
+            "a serial port's frame went in before the port before it, without it, or past the boot",
+        );
+    }
     Ok(())
 }
 
@@ -1845,12 +1874,64 @@ pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<()
 }
 
 /// Every motor finding kind the records explain.
-const MOTOR_FINDINGS: [&str; 4] = [
+const MOTOR_FINDINGS: [&str; 7] = [
     MOTOR_STATIC_FINDING,
     MOTOR_UNWITNESSED_FINDING,
     MOTOR_MISMATCH_FINDING,
     MOTOR_STATIC_ONLY_FINDING,
+    MOTOR_ANCHOR_UNOBSERVED_FINDING,
+    MOTOR_WINDOW_PAST_RUN_FINDING,
+    JUDGE_STOP_MISSING_FINDING,
 ];
+
+/// Each DShot timer's window findings, from kinds 24, 26 and 30
+/// (`AET-WO-2302`): its anchored window past the boot
+/// (`motor_window_past_run`), or inside it with no judge's stop for that
+/// anchor (`judge_stop_missing`; a kind 30 whose `CR1` after it still has
+/// `CEN` set is no stop).
+fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
+    let mut anchors: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+    for r in records {
+        let Record::MotorOutputSolved {
+            label,
+            timer,
+            protocol,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        if !protocol.starts_with("dshot") {
+            continue;
+        }
+        let anchor = records.iter().find_map(|w| match w {
+            Record::MotorWitness {
+                label: l,
+                anchor_ns,
+                ..
+            } if l == label => *anchor_ns,
+            _ => None,
+        });
+        let slot = anchors.entry(timer.as_str()).or_insert(None);
+        *slot = slot.or(anchor);
+    }
+    let (mut past, mut missing) = (0, 0);
+    for (timer, anchor) in anchors {
+        let Some(at) = anchor else { continue };
+        if at.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS {
+            past += 1;
+        } else if !records.iter().any(|r| {
+            matches!(r, Record::JudgeStop { timer: t, anchor_ns, cr1_after: Some(c), .. }
+                if t == timer && *anchor_ns == at && c & 1 == 0)
+        }) {
+            missing += 1;
+        }
+    }
+    vec![
+        (MOTOR_WINDOW_PAST_RUN_FINDING, past),
+        (JUDGE_STOP_MISSING_FINDING, missing),
+    ]
+}
 
 /// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
 /// every output has exactly one static check and at most one witness, and
@@ -1864,15 +1945,13 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
             return Err("a motor output is solved twice");
         }
     }
-    // The board's window, from its outputs' protocols (`AET-WO-4300a` D1):
-    // every witness ends at it. Kind 10's instruction count is not tied to
-    // it: a droop's boot counts from the last reset's release (third
-    // adversarial review, F1).
-    let window = if short_window(records) {
-        TWIN_DSHOT_WINDOW_NS
-    } else {
-        TWIN_MAX_VIRTUAL_NS
-    };
+    // Each witness's window, from the records (`AET-WO-2302`): it starts at
+    // its anchor, which all outputs of a timer share, and ends
+    // `DSHOT_WINDOW_NS` after it for DShot and at the boot's end, 100 ms on
+    // every board, for PWM and without an anchor. Kind 10's instruction
+    // count is not tied to it: a droop's boot counts from the last reset's
+    // release (third adversarial review, F1).
+    let mut timer_anchor: BTreeMap<&str, Option<u64>> = BTreeMap::new();
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -1896,8 +1975,35 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                 else {
                     return Err("a motor witness names no solved output");
                 };
-                if !matches!(r, Record::MotorWitness { end_ns, .. } if *end_ns == window) {
-                    return Err("a motor witness does not end at its board's window");
+                let Record::MotorOutputSolved {
+                    timer, protocol, ..
+                } = m
+                else {
+                    unreachable!("kind 24 by its label");
+                };
+                let Record::MotorWitness {
+                    anchor_ns,
+                    end_ns,
+                    first_ns,
+                    ..
+                } = r
+                else {
+                    unreachable!("matched");
+                };
+                let window = match (anchor_ns, protocol.starts_with("dshot")) {
+                    (Some(a), true) => a.checked_add(TWIN_DSHOT_WINDOW_NS),
+                    _ => Some(TWIN_MAX_VIRTUAL_NS),
+                };
+                if window != Some(*end_ns)
+                    || anchor_ns.is_some_and(|a| a >= *end_ns)
+                    || first_ns.zip(*anchor_ns).is_some_and(|(f, a)| f < a)
+                {
+                    return Err(
+                        "a motor witness's window is not its anchor's, or its first rise is before it",
+                    );
+                }
+                if *timer_anchor.entry(timer.as_str()).or_insert(*anchor_ns) != *anchor_ns {
+                    return Err("two outputs of one timer name different anchors");
                 }
                 if !witness_consistent(m, r) {
                     return Err(
@@ -1922,6 +2028,35 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     if checked.len() != solved.len() {
         return Err("a solved motor output has no static timing check");
     }
+    // Each judge's stop (kind 30): a DShot timer's, once, at its witnesses'
+    // anchor plus `DSHOT_WINDOW_NS`, inside the boot.
+    let mut stopped: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        let Record::JudgeStop {
+            timer,
+            anchor_ns,
+            at_ns,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        let dshot = solved.values().any(|m| {
+            matches!(m, Record::MotorOutputSolved { timer: t, protocol, .. }
+                if t == timer && protocol.starts_with("dshot"))
+        });
+        if !dshot || !stopped.insert(timer.as_str()) {
+            return Err("a judge's stop names no DShot timer, or one twice");
+        }
+        if timer_anchor.get(timer.as_str()) != Some(&Some(*anchor_ns))
+            || anchor_ns.checked_add(TWIN_DSHOT_WINDOW_NS) != Some(*at_ns)
+            || *at_ns > TWIN_MAX_VIRTUAL_NS
+        {
+            return Err(
+                "a judge's stop is not at its timer's witnesses' anchor plus DSHOT_WINDOW_NS, inside the boot",
+            );
+        }
+    }
     Ok(())
 }
 
@@ -1935,14 +2070,13 @@ const TWIN_CYCLE_NS: u64 = 4;
 const TWIN_GRAIN_NS: u64 = 10;
 const TWIN_QUANTUM_NS: u64 = 100_000;
 
-/// A boot's windows: 100 ms, or 2 ms for a board with a DShot output
-/// (`AET-WO-4300a` D1); and every timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
-/// only clock a solved topology admits.
+/// Every board's boot, 100 ms, and a DShot output's window from its anchor,
+/// 2 ms (`AET-WO-2302`); and every timer's kernel clock, the reset clock's
+/// 64 MHz (RM0433 Table 57), the only clock a solved topology admits.
 // belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
 // DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
-// these, and `aethelgard_twin::boot::window` the rule that picks the window
-// (any DShot output); replay checks an archive without the twin or
-// `aethelgard-ir` (RUL-16), so it states them again.
+// these; replay checks an archive without the twin or `aethelgard-ir`
+// (RUL-16), so it states them again.
 const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
 const RESET_KERNEL_HZ: u64 = 64_000_000;
@@ -2040,6 +2174,7 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
             span_ns,
             off_grid,
             batched,
+            anchor_ns,
             ..
         },
     ) = (m, w)
@@ -2093,6 +2228,13 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         "unreadable" => none,
         "batched" => *rises >= 2 && *batched > 0,
         "stopped" => shaped && !covers,
+        "unanchored" => {
+            anchor_ns.is_none()
+                && first_ns.is_none()
+                && last_ns.is_none()
+                && span_ns.is_none()
+                && rises.checked_add(*falls).is_some_and(|e| e > 0)
+        }
         // An unreadable log, or edges off the model's sequence.
         "mismatch" => none || *rises >= 2,
         _ => false,

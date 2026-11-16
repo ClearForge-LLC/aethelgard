@@ -1,13 +1,15 @@
 //! `AET-WO-4300a` §1.4: kinds 24 to 26 (a solved motor output, its static
 //! check for silicon, its twin witness) through the archive, their field
 //! rules, and `check_run`'s joins and its re-derivation of the verdict's
-//! motor findings from them.
+//! motor findings from them. `AET-WO-2302`: each witness's window derived
+//! from its anchor, and kind 30, the judge's stop.
 
 mod common;
 
 use aethelgard_chaos::campaign::{
-    MOTOR_MISMATCH_FINDING, MOTOR_STATIC_FINDING, MOTOR_STATIC_ONLY_FINDING,
-    MOTOR_UNWITNESSED_FINDING, check_run,
+    JUDGE_STOP_MISSING_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING, MOTOR_MISMATCH_FINDING,
+    MOTOR_STATIC_FINDING, MOTOR_STATIC_ONLY_FINDING, MOTOR_UNWITNESSED_FINDING,
+    MOTOR_WINDOW_PAST_RUN_FINDING, check_run,
 };
 use aethelgard_chaos::record::{Reading, Record};
 use aethelgard_chaos::{Event, replay_dir};
@@ -56,6 +58,10 @@ fn check(label: &str, holds: bool) -> Record {
     }
 }
 
+/// The PWM timer's anchor, its first `CEN` rise, one period before the first
+/// rise (`AET-WO-2302`): every output of the timer names it.
+const PWM_ANCHOR: u64 = 6;
+
 /// A witness with counts the status allows: a full window of edges on the
 /// model's sequence for `witnessed`, and each other status's own departure.
 fn witness(label: &str, observer: &str, status: &str) -> Record {
@@ -74,6 +80,7 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         "mismatch" => span_ns = Some(400),
         "batched" => batched = 3,
         "stopped" => last_ns = Some(50_000_000),
+        "unanchored" => (first_ns, last_ns, span_ns) = (None, None, None),
         _ => {}
     }
     Record::MotorWitness {
@@ -92,6 +99,7 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         span_ns,
         off_grid,
         batched,
+        anchor_ns: (status != "unanchored").then_some(PWM_ANCHOR),
     }
 }
 
@@ -572,10 +580,11 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     assert!(check_run(&clock).is_err());
 }
 
-#[test]
-fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
-    // `AET-WO-4300a` D1: a board with a DShot output boots for 2 ms, so its
-    // boot is 200,000 instructions and every witness ends at 2,000,000 ns.
+/// `AET-WO-2302`: a DShot output's window is its anchor plus
+/// `DSHOT_WINDOW_NS`, derived by replay from the records, never the board's
+/// whole boot; the judge's stop (kind 30) sits at its end; and a window past
+/// the boot, or one with no stop, is named once per timer.
+fn dshot_run(anchor: Option<u64>, stop: Option<(u64, u32)>, findings: Vec<(&str, u64)>) -> Vec<Record> {
     let mut r = run("witnessed", true, true, vec![]);
     r[3] = Record::MotorOutputSolved {
         label: "M2".into(),
@@ -589,25 +598,6 @@ fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
         ccr: 40,
         pwm: None,
     };
-    // Both witnesses end at the board's 2 ms window; here neither output
-    // shows a rise (a firmware that never started its timers).
-    let unwitnessed = |label: &str, observer: &str, period: u64, high: u64| Record::MotorWitness {
-        label: label.into(),
-        observer: observer.into(),
-        period_ns: period,
-        high_ns: high,
-        grain_ns: 10,
-        quantum_ns: 100_000,
-        status: "unwitnessed".into(),
-        rises: 0,
-        falls: 0,
-        first_ns: None,
-        last_ns: None,
-        end_ns: 2_000_000,
-        span_ns: None,
-        off_grid: 0,
-        batched: 0,
-    };
     r[5] = Record::MotorTimingCheck {
         label: "M2".into(),
         kernel_hz: 64_000_000,
@@ -617,29 +607,151 @@ fn a_dshot_board_s_witnesses_end_at_its_2_ms_window() {
         nominal_high_ps: 624_999,
         holds: true,
     };
-    if let Record::BootObserved {
-        instructions_expected,
-        instructions_observed,
-        ..
-    } = &mut r[6]
-    {
-        (*instructions_expected, *instructions_observed) = (200_000, Some(200_000));
+    // Its edges from its anchor: the first rise one period after it, the
+    // last within a period of its window's end.
+    let at = anchor.unwrap_or(0);
+    let rises = 4716;
+    r[8] = Record::MotorWitness {
+        label: "M2".into(),
+        observer: "gpioPortA.pa9obs".into(),
+        period_ns: 424,
+        high_ns: 160,
+        grain_ns: 10,
+        quantum_ns: 100_000,
+        status: if anchor.is_some() { "witnessed" } else { "unanchored" }.into(),
+        rises,
+        falls: rises,
+        first_ns: anchor.map(|a| a + 490),
+        last_ns: anchor.map(|a| a + 490 + (rises - 1) * 424),
+        end_ns: anchor.map_or(100_000_000, |a| a + 2_000_000),
+        span_ns: anchor.map(|_| 8),
+        off_grid: 2 * rises - 1,
+        batched: 0,
+        anchor_ns: anchor,
+    };
+    let mut at_end = r.split_off(9);
+    if let Some((stop_at, cr1)) = stop {
+        r.push(Record::JudgeStop {
+            timer: "TIM2".into(),
+            anchor_ns: at,
+            at_ns: stop_at,
+            read_back: vec![Reading {
+                address: 0x4000_0000,
+                mask: 0xFF,
+                expected: 0x81,
+                observed: Some(0x81),
+            }],
+            cr1_after: Some(cr1),
+        });
     }
-    r[7] = unwitnessed("M1", "gpioPortA.pa8obs", 639_744, 256_000);
-    r[8] = unwitnessed("M2", "gpioPortA.pa9obs", 424, 160);
-    r[0] = scenario(false, &[MOTOR_UNWITNESSED_FINDING]);
+    r.append(&mut at_end);
+    let failing: Vec<&str> = findings.iter().map(|f| f.0).collect();
+    r[0] = scenario(findings.is_empty(), &failing);
     let last = r.len() - 1;
     r[last] = Record::Verdict {
-        pass: false,
-        findings: vec![(MOTOR_UNWITNESSED_FINDING.to_owned(), "error".to_owned(), 2)],
+        pass: findings.is_empty(),
+        findings: findings
+            .into_iter()
+            .map(|(k, n)| (k.to_owned(), "error".to_owned(), n))
+            .collect(),
     };
-    assert_eq!(check_run(&r).map(|_| ()), Ok(()));
-    // The same witnesses ending at the 100 ms window are refused: a board
-    // with a DShot output boots for 2 ms.
-    for i in [7, 8] {
-        if let Record::MotorWitness { end_ns, .. } = &mut r[i] {
-            *end_ns = 100_000_000;
+    r
+}
+
+#[test]
+fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
+    let a = 30_670;
+    let end = a + 2_000_000;
+    let ok = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    assert_eq!(check_run(&ok).map(|s| s.pass), Ok(true));
+    // Kind 30 round-trips through the archive, after kind 26.
+    let events: Vec<Event> = ok
+        .iter()
+        .cloned()
+        .enumerate()
+        .map(|(i, record)| Event::Record {
+            timestamp: i as u64,
+            record,
+        })
+        .collect();
+    let (dir, _) = write_run("stop-roundtrip", 7, &events);
+    assert_eq!(replay_dir(&dir).unwrap().state.records, ok);
+    assert_eq!(ok[9].kind(), 30);
+    // The witness ending anywhere but its anchor plus 2 ms is refused: the
+    // board's boot (100 ms, the old 2 ms) is no DShot window.
+    for wrong_end in [100_000_000, 2_000_000, end - 10] {
+        let mut r = ok.clone();
+        if let Record::MotorWitness { end_ns, .. } = &mut r[8] {
+            *end_ns = wrong_end;
         }
+        assert!(check_run(&r).is_err(), "{wrong_end}");
+    }
+    // A first rise before the anchor is refused.
+    let mut r = ok.clone();
+    if let Record::MotorWitness { first_ns, .. } = &mut r[8] {
+        *first_ns = Some(a - 1);
     }
     assert!(check_run(&r).is_err());
+    // The stop anywhere but the window's end, of another anchor, of a PWM
+    // timer, or twice, is refused.
+    for f in [
+        |s: &mut Record| {
+            if let Record::JudgeStop { at_ns, .. } = s {
+                *at_ns -= 10;
+            }
+        },
+        |s: &mut Record| {
+            if let Record::JudgeStop { anchor_ns, at_ns, .. } = s {
+                (*anchor_ns, *at_ns) = (*anchor_ns + 10, *at_ns + 10);
+            }
+        },
+        |s: &mut Record| {
+            if let Record::JudgeStop { timer, .. } = s {
+                *timer = "TIM1".into();
+            }
+        },
+    ] {
+        let mut r = ok.clone();
+        f(&mut r[9]);
+        assert!(check_run(&r).is_err());
+    }
+    let mut twice = ok.clone();
+    twice.insert(9, ok[9].clone());
+    assert!(check_run(&twice).is_err());
+    // No stop, or one that left CEN set: `judge_stop_missing`, once.
+    let missing = vec![(JUDGE_STOP_MISSING_FINDING, 1)];
+    assert!(check_run(&dshot_run(Some(a), None, vec![])).is_err());
+    assert!(check_run(&dshot_run(Some(a), None, missing.clone())).unwrap().matched);
+    assert!(check_run(&dshot_run(Some(a), Some((end, 0x81)), missing)).unwrap().matched);
+    // F2's late anchor: 99.07 ms plus 2 ms is past the boot, named.
+    let late = 99_072_350;
+    let mut r = dshot_run(Some(late), None, vec![(MOTOR_WINDOW_PAST_RUN_FINDING, 1)]);
+    if let Record::MotorWitness {
+        status,
+        rises,
+        falls,
+        last_ns,
+        off_grid,
+        ..
+    } = &mut r[8]
+    {
+        // Its edges to the boot's end: 2187 rises, short of its window.
+        (*status, *rises, *falls, *off_grid) = ("stopped".into(), 2187, 2187, 4373);
+        *last_ns = Some(late + 490 + 2186 * 424);
+    }
+    r[0] = scenario(false, &[MOTOR_MISMATCH_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING]);
+    let n = r.len() - 1;
+    r[n] = Record::Verdict {
+        pass: false,
+        findings: vec![
+            (MOTOR_MISMATCH_FINDING.into(), "error".into(), 1),
+            (MOTOR_WINDOW_PAST_RUN_FINDING.into(), "error".into(), 1),
+        ],
+    };
+    assert!(check_run(&r).unwrap().matched);
+    // Edges with no anchor: `unanchored`, named `motor_anchor_unobserved`,
+    // the window the boot's end.
+    let unanchored = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
+    assert!(check_run(&unanchored).unwrap().matched);
+    assert!(check_run(&dshot_run(None, None, vec![])).is_err());
 }

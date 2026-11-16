@@ -909,6 +909,7 @@ fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
             rx_at_injection: w.rx_fields,
             tx_at_end: w.tx_fields,
             tx_at_send: w.tx_send_fields,
+            injected_ns: w.injected_ns.filter(|_| w.rx_fields.is_some()),
         });
     }
     out
@@ -1286,6 +1287,17 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             span_ns: w.span_ns,
             off_grid,
             batched,
+            anchor_ns: w.anchor_ns,
+        });
+    }
+    // Kind 30, each judge's stop (`AET-WO-2302` D2).
+    for stop in &boot.stops {
+        out.push(Record::JudgeStop {
+            timer: stop.timer.clone(),
+            anchor_ns: stop.anchor_ns,
+            at_ns: stop.at_ns,
+            read_back: stop.read_back.iter().map(reading).collect::<Result<_, _>>()?,
+            cr1_after: stop.cr1_after.as_deref().map(hex_u32).transpose()?,
         });
     }
     out.extend(serial_records(&boot.serial));
@@ -1439,6 +1451,7 @@ fn subject(r: &Record) -> String {
         Record::MotorOutputSolved { label, .. }
         | Record::MotorTimingCheck { label, .. }
         | Record::MotorWitness { label, .. } => format!("output:{label}"),
+        Record::JudgeStop { timer, .. } => format!("timer:{timer}"),
         Record::SerialPortSolved { label, .. }
         | Record::SerialFramingCheck { label, .. }
         | Record::SerialWitness { label, .. } => format!("port:{label}"),
@@ -1533,6 +1546,7 @@ mod tests {
             rx_at_injection: None,
             tx_at_end: None,
             tx_at_send: None,
+            injected_ns: None,
         };
         assert_eq!(subject(&witness), "port:CONSOLE");
     }

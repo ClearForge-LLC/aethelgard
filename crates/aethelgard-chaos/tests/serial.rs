@@ -123,6 +123,9 @@ fn witness(label: &str, af: u8) -> Record {
         rx_at_injection: Some((0b10, af)),
         tx_at_end: Some((0b10, af)),
         tx_at_send: Some((0b10, af)),
+        // Port after port (`AET-WO-2302` D4): the console's frame a quantum
+        // after the boot word, the next once the console has echoed.
+        injected_ns: Some(if label == "CONSOLE" { 130_750 } else { 2_000_000 }),
     }
 }
 
@@ -262,12 +265,17 @@ fn set_witness(
         echo,
         rx_at_injection,
         tx_at_end,
+        injected_ns,
         ..
     } = &mut r[at]
     else {
         panic!("not a witness");
     };
     f(capture, echo, rx_at_injection, tx_at_end);
+    // The injection's instant goes with the RX pin's read there (trace 13).
+    if rx_at_injection.is_none() {
+        *injected_ns = None;
+    }
 }
 
 fn ok(r: &[Record]) -> bool {
@@ -862,6 +870,29 @@ fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
     }
 }
 
+/// `AET-WO-2302` D4: each port goes in after the port before it, never
+/// without it, and inside the boot; replay refuses any other order.
+#[test]
+fn the_ports_go_in_one_after_another_inside_the_boot() {
+    assert!(ok(&edit(|_| {})));
+    let at = |r: &mut [Record], i: usize, t: Option<u64>| {
+        if let Record::SerialWitness { injected_ns, .. } = &mut r[i] {
+            *injected_ns = t;
+        }
+    };
+    for (console, sbus) in [
+        (Some(2_000_000), Some(2_000_000)),
+        (Some(2_000_000), Some(130_750)),
+        (Some(130_750), Some(100_000_001)),
+    ] {
+        let r = edit(|r| {
+            at(r, WITNESS_CONSOLE, console);
+            at(r, WITNESS_SBUS, sbus);
+        });
+        assert!(check_run(&r).is_err(), "{console:?} {sbus:?}");
+    }
+}
+
 #[test]
 fn a_serial_record_that_joins_no_solved_port_is_refused() {
     assert!(check_run(&run()).is_ok());
@@ -1064,6 +1095,20 @@ fn the_field_rules_hold_on_write_and_read() {
         w(&|r| {
             if let Record::SerialWitness { tx_at_end, .. } = r {
                 *tx_at_end = Some((2, 16))
+            }
+        }),
+        // Trace 13: the injection's instant goes with the RX pin's read.
+        w(&|r| {
+            if let Record::SerialWitness { injected_ns, .. } = r {
+                *injected_ns = None
+            }
+        }),
+        w(&|r| {
+            if let Record::SerialWitness {
+                rx_at_injection, ..
+            } = r
+            {
+                *rx_at_injection = None
             }
         }),
         // Counts that do not fit the length: a byte short, a byte over, more
