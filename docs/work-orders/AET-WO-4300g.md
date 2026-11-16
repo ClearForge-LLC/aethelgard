@@ -56,7 +56,7 @@
 ## 2. Acceptance
 
 - **Sentinel-01's reference:**
-  - emits 16 per-pin capacitors, the bulk, VDDA/VREF+, NRST, the straps, a debug-mini connector and a declared 3.3 V input;
+  - emits 13 per-pin capacitors (*corrected 2026-11-16, D1:* DS12117's note 1 asks for 13 on this package; this line first said 16), the bulk, VDDA/VREF+, NRST, the straps, a debug-mini connector and a declared 3.3 V input;
   - passes the support gate, ERC and DRC with parity.
 - **The power fixture and every other fixture pass.** Each fixture that lacks a programming path or source is refused, by name, until it declares one, and FEEDBACK lists them.
 - **Each refusal and each support-gate failure has a tier-1 test.**

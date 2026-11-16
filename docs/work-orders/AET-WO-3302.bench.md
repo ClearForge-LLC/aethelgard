@@ -155,3 +155,110 @@ Read after the same 1 s as B2. Compare only the masked bits.
 - **If edges appear,** record their frequency. The prediction is then wrong, and the result is a scar either way.
 
 Edges seen: ________ · frequency if any: ________
+
+## Results: first silicon, 2026-11-16
+
+Filled by the architect from the session's own record. Scotty was at the bench. `probe-rs` ran over the tailnet: first on PRECISION777 (Ubuntu 24.04) for B1, B2, B7 and B8, then on t9o777 (Omarchy, the bench machine) for the scope work. **The predictions above are unedited; where they disagree, the result is below.**
+
+**Setup:**
+- NUCLEO-H753ZI with an ST-LINK V3, `0483:374e`. `probe-rs` 0.32.0 (`48f5e4d`), a user install.
+- `DBGMCU_IDC` `0x5C001000` = `0x20036450`: `DEV_ID` `0x450`, `REV_ID` `0x2003` (rev V).
+- The ELF's sha256 matched the sheet. Before the flash, the boot word read `0xa219dd69`, which is RAM residue.
+- Scope: FNIRSI 2C53T with ×10 probes on both ends. Probe compensation was **not verified**, and an under-compensated probe slows displayed edges.
+- The kit holds no 2.2K, 2.7K or 47K resistors, so B3–B5 used 2K, 5K1, 10K and 100K. **No sensors were wired;** the BME280 and TMP117 are still in shipping.
+
+### B0, corrected from UM2407 rev 6 (held)
+
+| Pin | Header | On this board |
+|---|---|---|
+| PB6 | CN10 pin 14 (Zio D1) | LPUART1 TX, routable to the ST-LINK virtual COM port by SB34/SB66 |
+| PB7 | CN10 pin 16 (Zio D0) | LPUART1 RX, likewise |
+
+- **The sheet's "PB7: LD2" expectation was wrong.** It came from an older Nucleo-144. On this board, LD1 is PB0/PA5, LD2 is PE1 and LD3 is PB14.
+- Ground is on CN10 pin 17 and CN8 pins 11 and 13; 3V3 is on CN8 pin 7.
+- PA7's Ethernet use is still to be confirmed.
+
+### B1 and B2: **agree**
+
+- The download finished in 1.94 s, and the reset was clean.
+- The boot word and all seven masked rows agreed: every `& mask` equals the expected column.
+- Raw values:
+
+| Register | Raw |
+|---|---|
+| GPIOA.MODER | `abffabfd` |
+| GPIOA.AFRL | `55500000` |
+| GPIOB.MODER | `ffffaebf` |
+| GPIOB.AFRL | `44000000` |
+| AHB4ENR | `00000003` |
+| APB1LENR | `00200000` |
+| APB2ENR | `00001000` |
+
+- **Status `0x22020001` (TXIS) and value 0, as predicted.**
+- For the record:
+  - `GPIOB.OTYPER` = `0x000000c0` (open-drain on PB6 and PB7);
+  - `I2C1.TIMINGR` = `0x00602173`;
+  - `I2C1.CR1` = `0x00000001`.
+- `I2C1.ISR` read `0x00000201`, which is `ARLO`. With no pull-ups, SDA floats low; `GPIOB.IDR` read `0x50`.
+
+### B7: **agrees**
+
+- `FLASH_OPTSR_CUR` = `0x1BC6AAF0`, so `BOR_LEV` is `00`.
+- The low 16 bits are exactly Table 21's factory value (`RDP` `0xAA`).
+- The whole word is neither Table 21's `0x0006_AAF0` nor Renode's `0x0406_AAF0`. A firmware or a factory step must therefore read-modify-write it (`AET-WO-4230` Q-J).
+
+### B8: **one row disagrees, and the disagreement is a scar**
+
+| Register | Raw | & mask | Predicted | Agree |
+|---|---|---|---|---|
+| RCC.CR | `0004c025` | `0` | `0` | yes: PLL1 is off |
+| RCC.D1CCIPR | `0` | `0` | `0` | yes |
+| RCC.D2CCIP1R | `0` | `0` | `0` | yes: no kernel clock |
+| SPI1.CR1 | `0` | `0` | `0` | yes, and `SPE` is 0 |
+| SPI1.CFG1 | `00070007` | `0` | `0` | yes: the reset value |
+| SPI1.CFG2 | `0` | `0` | `0x00400000` | **no: `MASTER` is clear** |
+
+- `SPI1.SR` = `0x00001202`: **`MODF` is set.** With `SSM` = 0 and the internal NSS low, the first `SPE` raised a mode fault, and the H7 cleared `SPE` and `MASTER`.
+- Renode models no `MODF`, so the twin passed what silicon refused.
+- The SCK scope check was not run; with `MASTER` cleared, no SCK is possible.
+- `4230` §1.3 (`SSM` = 1, `SSI` = 1, written before `SPE`) is the fix. This is the first silicon proof of review A1.
+
+### B3–B5 with substitute pull-ups, and no sensors
+
+**Method:**
+- The debugger held PB6 low through `BSRR` and then released it, so each edge is the pull-up's RC with no firmware involved.
+- Predictions were written before each reading, from `t(30–70 %) = 0.8473·R·C`.
+- The first band assumed 20–40 pF; every later band was predicted from the C measured at 2K.
+
+| Pull-up | Predicted | Measured (30–70 %) | C implied | Result |
+|---|---|---|---|---|
+| 2K | 34–68 ns (prior) | ≈ 100 ns ± 15 | ≈ 59 pF | **missed:** the line is about 55 pF, not 20–40 |
+| 5K1 | 205–305 ns | ≈ 220–235 ns | ≈ 52 pF | hit |
+| 10K | 400–600 ns | ≈ 470 ns ± 30 | ≈ 55 pF | hit |
+| 100K | 4.0–6.0 µs | ≈ 5.4 µs ± 0.3 | ≈ 64 pF | hit |
+
+- **The bench line is 52–64 pF** (mean ≈ 57 pF), including the ×10 probe, the dupont wires, the breadboard, the Zio trace and the pin.
+- **The rise scales linearly with R, so the RC model holds.** The 2K edge is inflated by a fixed release delay and by ringing.
+- **The falling edge** (open-drain) takes about 10 ns, rings at a 40–50 ns period, undershoots by −0.5 V, and puts about 0.7 V of crosstalk onto SDA.
+
+**The firmware's transfer with a 100K SCL pull-up (SDA on 2K):**
+- The transfer completed: SDA decodes `1110 1100` (`0xEC`), then NACK, then STOP. Status `0x22020001`; no lockup.
+- **The SCL period was about 8 µs, against 2.6 µs at 2K.** The prediction was 9–10 µs: the completion hit, and the period missed.
+- SCL is a sawtooth peaking at about 1.7–1.8 V, and **it never reaches 0.7·VDD = 2.31 V.**
+
+**Why the period missed:** the H7's clock synchronisation counts `SCLH` from when its own pin threshold sees SCL high. That threshold is about 1.7 V, the FT I/O's V_IH, not 0.7·VDD.
+
+**The finding:**
+- The controller is self-consistent at 100K, but a compliant peer (the BME280's V_IH is 0.7·VDDIO) would see no valid clock.
+- So the campaign's `analog_rise_exceeds_ceiling` is **right for the bus**: the H7 survives, and its peers do not.
+- **The twin's note:** the controller's timing uses the pin's threshold, and the bus verdict uses the peer's V_IH (roadmap §7.1).
+
+### Still to run (clause 4 stays open)
+
+- B3–B5 with the BME280 and TMP117, at 2.2 kΩ, 47 kΩ and 2.7 kΩ when those values are in hand. Or rule the substitutes in, scaled by the measured C.
+- B6.
+- From `4230`'s ruling:
+  - `D2CKRDY` after reset;
+  - programming `BOR_LEV` by `FAB-NOTES`' procedure;
+  - the 120 ledger bench rows `4230` generates.
+- The scars, written into `northstar.md` §2 and ratified by Scotty once the sensor rows have run: the SPI `MODF` and the H7's synchronisation threshold.
