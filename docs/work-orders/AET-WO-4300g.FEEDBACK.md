@@ -320,3 +320,42 @@ The last measured run's shards were all under 20 minutes (§10).
 - **Where the spike leaves 1310 [measured]:** lever 2 is what routes `pair-standin`. Lever 1 lays every stub but does not by itself change any outcome measured here.
 - **d1's S9 [measured]:** S9 sits about 4 mm off the MCU's lower-right corner, behind the ring's right column, beside C29, C30, R12 and S10. That failure, seed 22's and the edge test's are escape failures at a crowded terminal, the kind `1310`'s sub-grid escape addresses.
 - **Kept out of the branch with the patch:** the spike also moved routed copper on every board, so the extraction terms, the corpus edits and the tests' fixed copper positions would each need re-taking.
+
+## 13. Close: AET-WO-1310 and `main` merged, specification 11, power parts 3, READY
+
+**The merges** (the architect's comment 6911284656 on PR #160):
+- `AET-WO-1310` was squash-merged into this branch as `046089b`. Its escapes and pair approach close D5: every fixture routes, with no fixture edit and no test re-pinned for it. The twelve D5 tests pass.
+- `origin/main` was merged with a merge commit (`e8a567c`). It brought `4300b` (specification 9, serial ports, topology 7, trace 11, `TIER2_MIN` 155, the in-shard weights) and `4300d3` (specification 10, power parts 2, the DC-bias curve). Every conflict kept both sides:
+  - **ir.** `NetKind` holds both `Debug` and the serial kinds. The id mapping holds both arms. 4300d3's control-pin `Strap` stands beside this work order's support strap, renamed `SupportStrap`.
+  - **`power-parts.json`** was merged as data: main's table, plus this branch's two documents (RM0433 and ST's pin data) and the MCU row's `support`, which was this branch's only change to the file.
+  - **Fixtures** were merged as data: main's content, plus this branch's debug connector, supply input and `mcu.supply_source`. A script checked that this branch changed nothing else in any of them, and that no reference clashed.
+  - **The reference's connectors renumbered.** 4300b gave it a console J1, so this work order's debug mini is J2 and the 3.3 V input J3, with the source on J3 pin 1.
+  - **4300b's two new serial fixtures and ir's serial test builder** gained a programming path and a source, on references their own tests do not use.
+  - **The CI files.** The weights are main's refit plus 1310's rows. `TIER2_MIN` is 157: main's 155, plus 1 from this work order (the support gate on KiCad's netlist) and 1 from 1310. It was counted exactly from the shard plan's list: 157 tier-2 entries.
+- **Renumbered:** specification 9 to **11**, and power-parts schema 2 to **3**. The ir README's version text, validation steps 1, 11 and 17–18, and its example all follow. `4230` (PR #161) also claims specification 11; the second to merge renumbers.
+
+**Re-taken, each moved only by the merge, with its old value in the test's own comment:**
+- **The committed board crate and the UI boards** were re-blessed (`AETHELGARD_BLESS`); only their specification-hash lines moved.
+- **Three digests in `order_2203`** moved with the specification's sha256 alone. The boot image did not move.
+- **`solve_cli`'s reference and stress digests** moved with the specification's sha256 alone. The re-blessed topology shows the assignments unchanged.
+- **The SPI extraction terms and the SCK bound case** moved because the routed copper moved: SCK 15 534 to 16 498 fF, MOSI 17 567 to 17 023 fF.
+- **The strict corpus's positions** shifted with the board. The re-key was done by a subagent and checked here: 14 files, index-only except the rail edit, which was re-keyed to the same rail.
+- **Expectations naming the new gate's precondition** (`mcu_support_network_judged`) gained it, in both package tests. That was CI on `c8bed77`: shard 0 failed on the identifier test, the one place the merge had not reached.
+- **4300b's console test** now drops only the console's connector, so the programming path stays.
+
+**Gates and CI** [measured]:
+- `fmt` and clippy `-D warnings` (tier 2 compiled) pass, and all 1787 tier-1 tests pass, at `61ef2dc`.
+- **The shard plan** (the 04:35 rule): balanced, every shard planned at 1058 s, 0 % above the mean, and the guard holds over 1961 test names.
+- **CI on `61ef2dc`** (runs 43838126962 and siblings) is green on every job, the `tools` aggregate included (`TIER2_MIN` 157 held). The shards ran:
+
+| shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| `c8bed77` | 12 m 50 s (failed, above) | 18 m 23 s | 16 m 17 s | 21 m 45 s | 14 m 50 s | 20 m 10 s | 18 m 01 s | 18 m 15 s |
+| `61ef2dc` | 15 m 20 s | 18 m 30 s | 20 m 23 s | 20 m 34 s | 18 m 22 s | 17 m 07 s | 18 m 22 s | 20 m 34 s |
+
+- **Over the 20-minute target:** three shards, each by under 35 s. Under the 04:35 rule that is a measurement, not a failure.
+- **No refit is triggered.** The plan is balanced, and the slowest shard did not lead by 3 minutes on two consecutive runs: shard 3 led by 1.6 min, then tied with 7.
+
+**For the architect's next docs PR:** the README's quickstart pin moves, since the reference board changed (§2 of the work order).
+
+**After CI on `61ef2dc`**, `main` gained the docs-only PR #162 (`a45eb02`), merged here as `e683ac7`. No file outside `docs/` changed since `61ef2dc`, so the code CI judged is this head's.
