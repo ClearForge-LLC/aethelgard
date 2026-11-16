@@ -339,8 +339,8 @@ refuses:
   word: the judge names a record before the fixed point only by its timeout
   or outside the window (`AET-WO-3201`, adversarial F2);
 - `identity_read_outside_window` named other than of a boot read without its
-  boot word on a short (DShot) window, or more times than the reads archived
-  `invalid`.
+  boot word (on any board since `AET-WO-2302`), or more times than the reads
+  archived `invalid`.
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

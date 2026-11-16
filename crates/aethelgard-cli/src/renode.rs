@@ -2380,6 +2380,11 @@ pub fn judge_boot(
         }
         findings.extend(witness_findings(checks, &observed));
     } else {
+        findings.extend(reads_outside_window(
+            checks,
+            &observed.records,
+            plan.virtual_ns,
+        ));
         findings.extend(timeouts_without_the_boot_word(checks, &observed.records));
     }
     // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
@@ -3280,6 +3285,38 @@ fn witness_finding(
             ),
         )),
     }
+}
+
+/// With no boot word, every declared step whose record is still unset when
+/// the boot ends did not complete inside it, and is named, on every board:
+/// every board boots `MAX_VIRTUAL_NS` (`AET-WO-2302`; the PM's decision on
+/// S1's open question 1, WO §5's read timed to the edge of its window). The
+/// run already fails on its missing boot word. A record the firmware wrote,
+/// however it reads, is not named here.
+fn reads_outside_window(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    records: &[(u32, u64)],
+    boot_ns: u64,
+) -> Vec<Finding> {
+    checks
+        .iter()
+        .zip(records)
+        .filter(|(_, r)| r.0 == aethelgard_twin::boot::RECORD_UNSET)
+        .map(|(c, _)| {
+            // A script's later steps say which step (`AET-WO-4210`).
+            let what = match c.step {
+                aethelgard_ir::parts::StepKind::Identity => "its identity read".to_owned(),
+                _ => format!("its {} step's read", c.label),
+            };
+            Finding::plain(
+                aethelgard_chaos::campaign::OUTSIDE_WINDOW_FINDING,
+                format!(
+                    "{}: {what} did not complete inside this boot of {boot_ns} ns (MAX_VIRTUAL_NS on every board, AET-WO-2302)",
+                    who(c)
+                ),
+            )
+        })
+        .collect()
 }
 
 /// With no boot word, each read whose record says its wait expired is still
@@ -5159,6 +5196,37 @@ mod tests {
                 .message
                 .contains("its window of 1000000 ns is shorter than two of its periods")
         );
+    }
+
+    /// The PM's decision on S1's open question 1 (WO §5, a read timed to
+    /// the edge of its window): with no boot word, a declared step whose
+    /// record is still unset when the 100 ms boot ends is named, on every
+    /// board; one the firmware wrote is not.
+    #[test]
+    fn a_read_left_unset_when_the_boot_ends_is_named() {
+        use aethelgard_twin::boot::{MAX_VIRTUAL_NS, RECORD_UNSET, STATUS_OK};
+        let image = image();
+        let checks = &image.identity.checks;
+        assert!(!checks.is_empty());
+        let unset = vec![(RECORD_UNSET, u64::from(RECORD_UNSET)); checks.len()];
+        let named = reads_outside_window(checks, &unset, MAX_VIRTUAL_NS);
+        assert_eq!(named.len(), checks.len());
+        assert!(
+            named
+                .iter()
+                .all(|f| f.kind == "identity_read_outside_window")
+        );
+        assert!(
+            named[0].message.contains(&who(&checks[0]))
+                && named[0].message.contains("100000000 ns"),
+            "{}",
+            named[0].message
+        );
+        let written = vec![(STATUS_OK, 0x60); checks.len()];
+        assert!(reads_outside_window(checks, &written, MAX_VIRTUAL_NS).is_empty());
+        let mut one = written;
+        one[0] = unset[0];
+        assert_eq!(reads_outside_window(checks, &one, MAX_VIRTUAL_NS).len(), 1);
     }
 
     /// `AET-WO-3201` (`3100` F15): with no boot word, a record that says its

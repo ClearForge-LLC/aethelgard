@@ -625,7 +625,7 @@ fn late_dshot(findings: &[(&str, u64)]) -> Vec<Record> {
 /// Q7: `identity_read_outside_window` is decided by the unset record, I7,
 /// with that record as its evidence. Before, no rule selected it: `I1`.
 #[test]
-fn a_read_still_unset_when_the_short_window_ends_is_i7_by_its_record() {
+fn a_read_still_unset_when_the_boot_ends_is_i7_by_its_record() {
     let r = late_dshot(&[("identity_read_outside_window", 1)]);
     let a = attributed(&r);
     let check = r
@@ -648,10 +648,10 @@ fn a_read_still_unset_when_the_short_window_ends_is_i7_by_its_record() {
     assert!(Rule::I7.domain() == Domain::Indeterminate);
 }
 
-/// The selection is exact: the record must be the judge's fill, the boot
-/// unbooted and the window short, or the finding is unexplained (`I1`).
+/// The selection is exact: the record must be the judge's fill and the boot
+/// unbooted, or the finding is unexplained (`I1`).
 #[test]
-fn a_late_read_is_only_the_unset_record_of_an_unbooted_short_window() {
+fn a_late_read_is_only_the_unset_record_of_an_unbooted_boot() {
     let finding = [("identity_read_outside_window", 1)];
     // The record's value written: not the fill, so not the judge's unset
     // record, and the finding is unexplained.
@@ -715,11 +715,13 @@ fn a_late_read_is_only_the_unset_record_of_an_unbooted_short_window() {
     assert!(attribute(&archived(&r)).is_err());
 }
 
-/// The same unset record on the PWM board's long window, unbooted, claimed
-/// as invalid: the judge never judges a record before the boot word, so
-/// `replay` refuses the verdict (adversarial F2), and it is never `I7`.
+/// The same unset record on the PWM board, unbooted, claimed as invalid: the
+/// judge never judges a record before the boot word, so `replay` refuses
+/// the verdict (adversarial F2). Named outside the window, as the judge
+/// names it on every board since every board boots 100 ms (`AET-WO-2302`,
+/// the PM's decision on S1's open question 1), it is `I7` by its record.
 #[test]
-fn an_unset_record_on_the_long_window_is_never_i7() {
+fn an_unset_record_on_a_pwm_board_is_i7_only_outside_the_window() {
     let mut r = run(
         &Wrong::default(),
         "unwitnessed",
@@ -741,4 +743,28 @@ fn an_unset_record_on_the_long_window_is_never_i7() {
             "the verdict judges an identity read's record of a boot without its boot word"
         ))
     ));
+    let n = r.len() - 1;
+    r[n] = Record::Verdict {
+        pass: false,
+        findings: vec![
+            ("boot_word_missing".into(), "error".into(), 1),
+            ("device_unmodelled".into(), "info".into(), 1),
+            ("identity_read_outside_window".into(), "error".into(), 1),
+        ],
+    };
+    if let Record::Scenario {
+        expect_findings, ..
+    } = &mut r[0]
+    {
+        *expect_findings = vec![
+            "boot_word_missing".into(),
+            "identity_read_outside_window".into(),
+        ];
+    }
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I7),
+        "{a:?}"
+    );
 }
