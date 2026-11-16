@@ -51,7 +51,7 @@ Harness: `~/.cache/aet-1206/tools/` (`verdicts.sh`, `names.py`, `mutate.py`, `ta
 | P5 | Held, with one correction: the emitter's own nets are exact and static, as predicted, but **`unconnected-` is case-sensitive** (`Unconnected-x` generates), and `VBAT` is reserved only beside a power tree. | measured |
 | P6 | Held. No second error type was needed; the CLI envelope gained an optional `claimants` (§4.3). | measured |
 | P7 | Partly wrong. Kept: eda `UnsupportedAddress`, and the twin's SPI `ModelOffItsBus`. **Deleted: the twin's I2C `ModelOffItsBus`**, which nothing can reach. `spi1`–`spi6` have no code of their own. See §4.6. | read, measured |
-| P8 | Held: every emitted file of every corpus specification is byte-identical (157 of 157 records), and `TIER2_MIN` stays 155. | measured |
+| P8 | Held: every emitted file of every corpus specification is byte-identical (157 of 157 records against `8030fa5`, and 159 of 159 against `4419c59` after `4300g` merged), and this work order adds no tier-2 test (`TIER2_MIN` is `main`'s, 157 since `4300g`). | measured |
 | P9 | Held for the corpus (0 unequal-line specifications). Five tests encoded the bug and now assert the worse line (§3). | measured |
 | P10 | Wrong on the `solve/` fixtures: they use real parts (TMP117, W25Q64JVxIQ), so their `Infeasible` refusals stand. Right on the rest: no stop; kind `UnknownPart` with the emitter's message; the test edits are synthetic parts (`FLASH`, `HDC1080`, `UNLISTED`). | measured |
 
@@ -70,7 +70,7 @@ All new rules are steps of `Specification::validate`, after every existing step,
      - **`R` and `C` follow the solve-independent pattern:** the set depends on the drawing, not on the solve, so §7's second stop does not fire. The pattern is held because §1.1 found no use.
      - The `id` is the sorted pair, as both checks print it (`U1 and u1`, `R1 and r01`).
    - **A5:** a net or domain (domains, bus lines, chip selects, serial lines, motor outputs, sense nets) that case-folds to a net in `names::own_nets(spec)`, or that starts with `unconnected-`, is refused as `ReservedName`. The `id` is the name, or `<own> and <spelled>` as the emitter's `collision` prints it.
-   - **The moved list:** `own_nets` is the one list both stages read. It holds `GND`, `VBAT` beside a power tree, `<mcu>_VCAP1..2`, each part's straps and filter (`device_nets`: BME280 `SDO`, W25Q64JVxIQ `WP` and `HOLD`, ICM20948 `REGOUT`), a buck's `FB`, `VCC`, `BOOT` and `SW`, and a crossing's four lines (`Translator::crossing_lines`, moved from eda's `lines`).
+   - **The moved list:** `own_nets` is the one list both stages read. It holds `GND`, `VBAT` beside a power tree, the MCU's support nets as its power-parts row draws them (`NRST`, `SWDIO`, `SWCLK`, and `<mcu>_VCAP<n>` per `VCAP` pin, since `4300g` merged), each part's straps and filter (`device_nets`: BME280 `SDO`, W25Q64JVxIQ `WP` and `HOLD`, ICM20948 `REGOUT`), a buck's `FB`, `VCC`, `BOOT` and `SW`, and a crossing's four lines (`Translator::crossing_lines`, moved from eda's `lines`).
      - The emitter's `own_net` refuses, as `EmitterError`, any net the list lacks.
      - `power::references` (eda `schematic_power.rs`), `reference_key` (eda `pcb.rs`), `UNCONNECTED` (eda `parity.rs`) and `VENDORED_PARTS` (eda's `KNOWN_PARTS`) moved to `ir` unchanged; eda reads them.
 4. **§1.4, A7:** `check_identifier` refuses a project name whose stem (before the first `.`, without trailing spaces) case-folds to `con`, `prn`, `aux`, `nul`, `com1`–`com9` or `lpt1`–`lpt9`, as `InvalidIdentifier` at `project_name`.
@@ -93,7 +93,9 @@ All new rules are steps of `Specification::validate`, after every existing step,
 ## 4. Evidence
 
 ### 4.1 Verdicts and bytes (measured, `~/.cache/aet-1206/v-base`, `v-new2`)
-- **The corpus:** after the change, all 24 specifications give byte-identical `validate`, `solve` and `generate` stdout and exit codes, and an identical sha256 for every generated file (157 of 157 records).
+- **The corpus:** after the change, all 24 specifications give byte-identical `validate`, `solve` and `generate` stdout and exit codes, and an identical sha256 for every generated file (157 of 157 records against `8030fa5`).
+- **After merging `main` at `4419c59`** (`4300g`: specification 11, the support network, the `1310` router): measured again against a fresh baseline built from `4419c59` (`~/.cache/aet-1206/baseline2/`, `v-b2` against `v-n4`). 159 of 159 records are identical. `stress` and `sentinel-02-power` now generate on `main`, so `own_nets` and the emitter's guard hold on a whole power board with its crossing translator.
+- **The merge:** `4300g` took validation steps 17 and 18 (programming path, supply source), so this work order's are 19 and 20, still after every existing step.
 - **76 name mutations of the reference:** every one `generate` refused before (57) now gets the same bytes from `validate`, and `generate` prints exactly what it printed before. Old against new: `~/.cache/aet-1206/mut1-base.table`, `mut1-new.table`.
 - **The three F1 refusals and `MissingBusConstraint`:** byte-identical from `solve`, `emit` and `generate`, measured on both binaries.
 
@@ -115,11 +117,11 @@ All new rules are steps of `Specification::validate`, after every existing step,
 ### 4.4 Gates
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean. The boxed `claimants` keeps the refusal under `result_large_err`.
-- `cargo test --workspace --no-fail-fast` in a 32 GiB, swap-0 user scope: 110 test binaries, 0 failures [measured].
+- `cargo test --workspace --no-fail-fast` in a 32 GiB, swap-0 user scope: 113 test binaries, 0 failures, on the tree after the merge of `4419c59` [measured].
 - No container was started.
 
 ### 4.5 Mutation (diff-sized: one mutant per guard this work order adds)
-19 mutants, run one at a time against `ir` validate/solve, twin `spi_platform`, and cli `reserved_references_tier1`, `power_board_tier1` and `solve_cli` (`~/.cache/aet-1206/mutants/`). Three are for the adversarial fixes, run after `dee28d9`. **18 killed** by test failures (none by compilation).
+20 mutants, run one at a time against `ir` validate/solve, twin `spi_platform`, and cli `reserved_references_tier1`, `power_board_tier1` and `solve_cli` (`~/.cache/aet-1206/mutants/`). Three are for the adversarial fixes, run after `dee28d9`, and one for the support nets, run after the merge. **19 killed** by test failures (none by compilation). The support-net mutant (the list drops `NRST`, `SWDIO`, `SWCLK`) is killed by the emitter's guard too.
 - **The survivor is mutant 12** (the emitter's `own_net` guard off). It fires only when `own_nets` and the emitter disagree, which no correct tree does.
 - Mutant 13 (the list drops a buck's nets) is killed by that very guard: `Internal("the emitter names net U10_FB, which aethelgard_ir::names::own_nets does not list")`. So the guard is load-bearing exactly when the two lists drift.
 
@@ -203,7 +205,7 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 | F12 | A multi-fault specification can report a different first refusal than `generate` did: 84 of 231 combinations measured, and 23 byte differences of the same kind. New `validate` and new `generate` always agree | step 19/20 order | measured | a measurement (§5) | no |
 
 **Peers told (inbox, 09:45 UTC):**
-- `4300g`: `own_nets` must list its support network's nets when the second of us merges.
+- `4300g`: `own_nets` must list its support network's nets when the second of us merges. It merged first (`4e821ed`), and this branch took its nets at the merge.
 - `4230`: the deleted `SolveError` variants sit beside its `id()` and `claimants()` hunks.
 
 ## 9. Where everything ran
