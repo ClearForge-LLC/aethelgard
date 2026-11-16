@@ -368,7 +368,7 @@ fn ohms(v: u32) -> String {
 /// The MCU's symbol, the one part every design has.
 pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 
-const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
+use aethelgard_ir::names::VENDORED_PARTS as KNOWN_PARTS;
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -378,6 +378,8 @@ struct Builder<'a> {
     next: BTreeMap<char, u32>,
     rails: BTreeSet<String>,
     names: Taken,
+    /// `aethelgard_ir::names::own_nets` for the specification.
+    own: Vec<String>,
 }
 
 /// Names claimed so far, keyed by their ASCII-folded spelling, each holding
@@ -452,8 +454,15 @@ impl Builder<'_> {
     }
 
     /// An emitter-chosen net, refused if the specification already uses the
-    /// name, in any case, for something else.
+    /// name, in any case, for something else. Every such name is one
+    /// `aethelgard_ir::names::own_nets` lists, the list `validate` refuses by
+    /// (`AET-WO-1206`): a name it lacks is this emitter's fault, never drawn.
     fn own_net(&mut self, name: String) -> Result<String, EmitError> {
+        if !self.own.contains(&name) {
+            return Err(EmitError::Internal(format!(
+                "the emitter names net `{name}`, which aethelgard_ir::names::own_nets does not list"
+            )));
+        }
         self.names
             .claim(&name)
             .map_err(|holder| collision(&name, holder, EmitError::ReservedName))?;
@@ -644,7 +653,7 @@ pub(crate) fn design(
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
-        .chain(spec.power.iter().flat_map(power::references))
+        .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -681,6 +690,8 @@ pub(crate) fn design(
             .claim(BATTERY_NET)
             .map_err(|holder| collision(BATTERY_NET, holder, EmitError::ReservedName))?;
     }
+    let own =
+        aethelgard_ir::names::own_nets(spec).map_err(|e| EmitError::Internal(e.to_string()))?;
     let mut b = Builder {
         spec,
         parts: Vec::new(),
@@ -688,6 +699,7 @@ pub(crate) fn design(
         next: BTreeMap::new(),
         rails: BTreeSet::new(),
         names,
+        own,
     };
 
     // The MCU.

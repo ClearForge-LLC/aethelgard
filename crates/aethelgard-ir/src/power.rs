@@ -80,6 +80,29 @@ pub const BATTERY: &str = "battery";
 /// for the power tree, which a net class may name when a tree is declared.
 pub const BATTERY_NET: &str = "VBAT";
 
+/// Every reference the power tree declares, in the emitter's claim order
+/// (moved from `aethelgard-eda` by `AET-WO-1206`, so `validate`'s name checks
+/// and the emitter read one list).
+pub fn references(p: &Power) -> Vec<&String> {
+    let mut out = vec![&p.input.reference];
+    for r in &p.regulators {
+        out.push(&r.reference);
+        if let Some(d) = &r.feedback {
+            out.extend([&d.top.reference, &d.bottom.reference]);
+        }
+        out.extend(r.external.iter().map(|e| &e.reference));
+    }
+    for s in &p.sense {
+        out.extend([&s.top.reference, &s.bottom.reference]);
+        out.extend(s.reservoir.iter().map(|c| &c.reference));
+    }
+    for c in &p.crossings {
+        out.extend([&c.reference, &c.cs_pull_up.reference]);
+        out.extend(c.external.iter().map(|e| &e.reference));
+    }
+    out
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Power {

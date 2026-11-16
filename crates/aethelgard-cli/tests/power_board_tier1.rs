@@ -213,9 +213,14 @@ fn extract_bounds_the_power_board() {
 }
 
 /// K10: the battery's rail is `VBAT` on a board with a power tree, so a net
-/// the specification spells `VBAT`, in any case, is refused by name.
+/// the specification spells `VBAT`, in any case, is refused by name: by
+/// `validate` (`AET-WO-1206` A5), and by the emitter itself for a library
+/// caller that hands it an unvalidated specification, with one message.
 #[test]
 fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
     let mut v = common::power::power_tree();
     v["i2c_buses"][0]["sda"]["net"] = "vbat".into();
     for c in v["net_constraints"].as_array_mut().unwrap() {
@@ -224,10 +229,14 @@ fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
         }
     }
     let spec: Specification = serde_json::from_value(v).unwrap();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let refused = spec.validate().unwrap_err();
+    assert_eq!(refused.kind(), "ReservedName");
+    assert_eq!(refused.id(), Some("VBAT and vbat"));
     match schematic::emit(&spec, &solved, &table) {
-        Err(e @ EmitError::ReservedName(_)) => assert!(e.to_string().contains("VBAT"), "{e}"),
+        Err(e @ EmitError::ReservedName(_)) => {
+            assert_eq!(e.to_string(), refused.to_string());
+            assert_eq!(e.id(), refused.id());
+        }
         other => panic!("{other:?}"),
     }
 }
@@ -509,4 +518,86 @@ fn the_router_goes_around_a_keepout() {
     let routed = route::route(&board).unwrap();
     route::check(&board, &routed).unwrap();
     assert!(!routed.segments.is_empty());
+}
+
+/// `AET-WO-1206` A5: the nets `validate` reserves
+/// (`aethelgard_ir::names::own_nets`) are exactly the nets the emitter names
+/// for itself on the reference and on the power tree (two bucks, an LDO, the
+/// MCU's VCAPs, the straps). The emitter refuses to name one the list lacks,
+/// so this holds the other direction: the list names none it does not draw.
+#[test]
+fn the_nets_validate_reserves_are_the_emitters_own() {
+    use std::collections::BTreeSet;
+    let reference: Specification = serde_json::from_slice(
+        &std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/sentinel-01-minimal.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let (power, ..) = fixture();
+    for spec in [reference, power] {
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let board = schematic::emit(&spec, &solved, &table).unwrap().board;
+        // Every net the board names: a label as `/<name>`, a rail bare.
+        let drawn: BTreeSet<String> = board
+            .split("(net \"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .map(|n| n.strip_prefix('/').unwrap_or(n).to_owned())
+            .collect();
+        let mut spelled = BTreeSet::new();
+        collect_strings(&serde_json::to_value(&spec).unwrap(), &mut spelled);
+        let own: BTreeSet<String> = aethelgard_ir::names::own_nets(&spec)
+            .unwrap()
+            .into_iter()
+            .collect();
+        // Every listed net is drawn, and every net the emitter draws that the
+        // specification does not spell (KiCad's own `unconnected-` aside) is
+        // listed. `GND` is both drawn and, on a connector pin, spelled.
+        let missing: Vec<_> = own.iter().filter(|n| !drawn.contains(*n)).collect();
+        assert!(missing.is_empty(), "{}: {missing:?}", spec.project_name);
+        let unlisted: Vec<_> = drawn
+            .iter()
+            .filter(|n| !spelled.contains(*n) && !n.starts_with("unconnected-"))
+            .filter(|n| !own.contains(*n))
+            .collect();
+        assert!(unlisted.is_empty(), "{}: {unlisted:?}", spec.project_name);
+    }
+}
+
+fn collect_strings(v: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+    match v {
+        serde_json::Value::String(s) => {
+            out.insert(s.clone());
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|x| collect_strings(x, out)),
+        serde_json::Value::Object(map) => map.values().for_each(|x| collect_strings(x, out)),
+        _ => {}
+    }
+}
+
+/// `AET-WO-1206`, the adversarial pass's F2 and F3: a power-tree reference
+/// starting `#` (KiCad's virtual-symbol prefix), or starting `unconnected-`
+/// (so a buck's own nets start with it), is refused by `validate` with the
+/// emitter's own kind, `id` and message. Before, only `generate` refused it.
+#[test]
+fn a_power_reference_the_emitter_refuses_is_refused_at_validate() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    for (name, id) in [("#U10", "#U10"), ("unconnected-x", "unconnected-x_FB")] {
+        let mut v = common::power::power_tree();
+        assert_eq!(v["power"]["regulators"][0]["reference"], "U10");
+        v["power"]["regulators"][0]["reference"] = name.into();
+        let spec: Specification = serde_json::from_value(v).unwrap();
+        let refused = spec.validate().unwrap_err();
+        assert_eq!((refused.kind(), refused.id()), ("ReservedName", Some(id)));
+        let e = schematic::emit(&spec, &solved, &table).unwrap_err();
+        assert_eq!(e.kind(), refused.kind(), "{name}");
+        assert_eq!(e.id(), refused.id(), "{name}");
+        assert_eq!(e.to_string(), refused.to_string(), "{name}");
+    }
 }

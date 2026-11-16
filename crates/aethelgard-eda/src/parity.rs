@@ -24,7 +24,7 @@ use crate::sexpr::SexprError;
 use crate::strict::{self, Node, Tree};
 
 /// KiCad's prefix for the net of a pin the schematic leaves unconnected.
-pub const UNCONNECTED: &str = "unconnected-";
+pub use aethelgard_ir::names::UNCONNECTED;
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ParityRefusal {
