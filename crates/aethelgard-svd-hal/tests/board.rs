@@ -198,8 +198,8 @@ fn the_firmware_follows_the_judges_boot_contract() {
 #[test]
 fn the_firmware_follows_the_judges_record_layout() {
     use aethelgard_twin::boot::{
-        RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_OK, STATUS_RXNE, STATUS_RXP, STATUS_STOP,
-        STATUS_TC, STATUS_TXIS, Wire,
+        BROWN_OUT_OFFSET, RECORD_BYTES, RECORD_OFFSET, RECORD_UNSET, STATUS_EOT, STATUS_OK,
+        STATUS_RXNE, STATUS_RXP, STATUS_STOP, STATUS_TC, STATUS_TXIS, Wire,
     };
     let files = generated();
     let main = &files["firmware/src/main.rs"];
@@ -210,6 +210,7 @@ fn the_firmware_follows_the_judges_record_layout() {
         ("STATUS_RXNE", STATUS_RXNE),
         ("STATUS_STOP", STATUS_STOP),
         ("STATUS_RXP", STATUS_RXP),
+        ("STATUS_EOT", STATUS_EOT),
         ("RECORD_UNSET", RECORD_UNSET),
     ] {
         assert!(
@@ -217,6 +218,12 @@ fn the_firmware_follows_the_judges_record_layout() {
             "{name}"
         );
     }
+    // `AET-WO-4230` D10 (reduction-pass finding): the brown-out word is the
+    // judge's word, the one after the boot word.
+    assert!(
+        main.contains(&format!(".add({}).write_volatile(optsr)", BROWN_OUT_OFFSET / 4)),
+        "the brown-out word at the judge's offset {BROWN_OUT_OFFSET}"
+    );
     // The array holds the boot word, then one record per read: the BME280's
     // and the flash's.
     let words = (RECORD_OFFSET + 2 * RECORD_BYTES) / 4;
