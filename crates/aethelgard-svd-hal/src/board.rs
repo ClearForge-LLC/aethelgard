@@ -6407,6 +6407,13 @@ mod tests {
         );
         // A generator that started the bus below the rule's mode.
         assert_eq!(words(vec![0]), pairs(&[(fm, "Standard100k")]));
+        // A declared speed the rule gives no mode: the start fails the proof.
+        let speeds: Speeds = BTreeMap::from([("I2C1".to_owned(), (50_000, vec![0]))]);
+        let proofs = emit_proofs(&plan, &facts, &speeds).unwrap();
+        assert!(proofs.contains(
+            "kani::assert(false, \"aethelgard_ir::silicon::i2c_start_mode gives I2C1 no mode at 50000 Hz\");"
+        ));
+        assert!(started(&proofs).is_empty());
     }
 
     #[test]

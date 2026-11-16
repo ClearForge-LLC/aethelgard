@@ -666,8 +666,8 @@ pub fn usart_kernel_hz(clock: &SolvedClock, peripheral: &str) -> Option<u64> {
         "USART2" | "USART3" | "UART4" | "UART5" | "UART7" | "UART8" => clock.d2ppre1,
         _ => return None,
     };
-    let product = u64::from(clock.d1cpre) * u64::from(clock.hpre) * u64::from(apb);
-    (product > 0).then(|| u64::from(clock.sysclk_hz) / product)
+    let product = u128::from(clock.d1cpre) * u128::from(clock.hpre) * u128::from(apb);
+    (product > 0).then(|| u64::try_from(u128::from(clock.sysclk_hz) / product).unwrap_or(0))
 }
 
 /// `USART_BRR.BRR[15:0]`, a 16-bit field (RM0433 Rev 9 §48.8.5, p. 2082),
@@ -1200,6 +1200,14 @@ mod tests {
             ..SolvedClock::reset()
         };
         assert_eq!(usart_kernel_hz(&zero, "USART1"), None);
+        // No overflow at the extremes: the divisors' product exceeds u64.
+        let huge = SolvedClock {
+            d1cpre: u32::MAX,
+            hpre: u32::MAX,
+            d2ppre2: u32::MAX,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(usart_kernel_hz(&huge, "USART1"), Some(0));
     }
 
     #[test]
