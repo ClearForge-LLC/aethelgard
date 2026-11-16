@@ -617,7 +617,6 @@ fn verdict(pass: bool, findings: &[(&str, &str, u64)]) -> Record {
 fn a_passing_verdict_beside_an_error_finding_is_refused() {
     let why = "pass is not the absence of a finding above info";
     assert_eq!(refused("v-1", verdict(true, &[("a", "error", 1)])), why);
-    assert_eq!(refused("v-2", verdict(true, &[("a", "warning", 1)])), why);
     assert_eq!(refused("v-3", verdict(false, &[("a", "info", 1)])), why);
     assert_eq!(refused("v-4", verdict(false, &[])), why);
     assert!(append_one("v-ok1", verdict(true, &[])).is_ok());
@@ -638,8 +637,49 @@ fn unsorted_or_duplicate_verdict_findings_are_refused() {
 
 #[test]
 fn a_verdict_finding_with_a_count_of_zero_is_refused() {
-    let why = "a finding is not a kind, a severity and a count above 0";
+    let why = "a finding is not a kind, a severity of error or info, and a count above 0";
     assert_eq!(refused("v0", verdict(false, &[("a", "error", 0)])), why);
+}
+
+/// `AET-WO-3201` B3: a severity is `error` or `info`, exactly. Any other,
+/// in another case or with whitespace, is refused by the writer, and by
+/// the reader in an archive written around the writer: the check is at
+/// read, with no byte of the format changed. Before, `zzz` counted as
+/// failing.
+#[test]
+fn a_severity_outside_error_and_info_is_refused_on_write_and_on_read() {
+    let why = "a finding is not a kind, a severity of error or info, and a count above 0";
+    for (i, severity) in [
+        "zzz", "warning", "Error", "INFO", " error", "error ", "info\t", "",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        for pass in [false, true] {
+            let v = verdict(pass, &[("a", severity, 1)]);
+            assert_eq!(
+                refused(&format!("sev-w{i}-{pass}"), v.clone()),
+                why,
+                "{severity:?}"
+            );
+            let event = Event::Record {
+                timestamp: 0,
+                record: v,
+            };
+            let r = raw_with_event(
+                &format!("sev-r{i}-{pass}"),
+                cbor::to_bytes(&event.to_value()),
+            );
+            assert!(
+                matches!(r, Err(E::MalformedEvent { index: 0, reason, .. }) if reason == why),
+                "{severity:?}: {r:?}"
+            );
+        }
+    }
+    for severity in aethelgard_chaos::record::SEVERITIES {
+        let v = verdict(severity == "info", &[("a", severity, 1)]);
+        assert!(append_one(&format!("sev-ok-{severity}"), v).is_ok());
+    }
 }
 
 fn big_scenario(overrides: usize) -> Record {
@@ -882,6 +922,22 @@ fn solved_bus(bus: &str, peripheral: &str, nets: [&str; 2], devices: &[(&str, u8
     }
 }
 
+/// A computed rise within its ceiling, of `net` on `bus`.
+fn healthy_rise(bus: &str, net: &str) -> Record {
+    Record::RiseComputed {
+        bus: bus.into(),
+        net: net.into(),
+        rise_30_70_ps: 150_000,
+        complete: true,
+        ceiling_ps: 300_000,
+        exceeds: false,
+        window: aethelgard_chaos::record::Window {
+            deck_hz: 400_000,
+            declared_hz: 400_000,
+        },
+    }
+}
+
 fn on_bus(mut r: Record, b: &str) -> Record {
     if let Record::BusFault { bus, .. } = &mut r {
         *bus = b.into();
@@ -1107,7 +1163,10 @@ fn held_low_run() -> Vec<Record> {
         line: Line::Sda,
     }];
     *expect_findings = vec!["i2c_line_held_low".into()];
-    r.insert(3, fault(vec![HELD_LOW], vec!["I2C_SDA"]));
+    // The other line is measured, healthy; the held one only faulted
+    // (`AET-WO-3201` B1).
+    r.insert(3, healthy_rise("SENSORS", "I2C_SCL"));
+    r.insert(4, fault(vec![HELD_LOW], vec!["I2C_SDA"]));
     r.push(verdict(false, &[("i2c_line_held_low", "error", 1)]));
     r
 }
@@ -1170,8 +1229,9 @@ fn a_held_low_override_with_no_fault_is_refused() {
 #[test]
 fn one_held_low_override_faulting_twice_is_refused() {
     let mut r = held_low_run();
-    let f = r[3].clone();
-    r.insert(4, f);
+    let i = position(&r, |x| matches!(x, Record::BusFault { .. }));
+    let f = r[i].clone();
+    r.insert(i + 1, f);
     assert_eq!(
         check_run(&r).unwrap_err(),
         "a held-low override faulted no bus, or one bus twice"
@@ -1215,9 +1275,13 @@ fn two_solved_records_for_one_bus_or_unsorted_buses_are_refused() {
     let mut r = good();
     r.insert(2, solved_bus("Z", "I2C3", ["Z_SCL", "Z_SDA"], &[]));
     assert_eq!(check_run(&r).unwrap_err(), why);
-    // Sorted, another bus beside it: accepted.
+    // Sorted, another bus beside it, each of its lines measured: accepted.
     let mut r = good();
     r.insert(3, solved_bus("Z", "I2C3", ["Z_SCL", "Z_SDA"], &[]));
+    let at = position(&r, |x| matches!(x, Record::BusFault { .. }));
+    for net in ["Z_SDA", "Z_SCL"] {
+        r.insert(at, healthy_rise("Z", net));
+    }
     assert!(check_run(&r).is_ok());
 }
 
@@ -2629,4 +2693,233 @@ fn the_step_fields_of_kinds_12_13_21_and_22_are_refused_by_rule() {
     ] {
         assert!(append_one("step-ok", record).is_ok());
     }
+}
+
+// ---- AET-WO-3201: the joins and the boot word replay binds ----
+
+const UNBOUND: &str =
+    "a solved line has no computed rise, stuck-high record or held-low fault, or more than one";
+const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
+const BOUND: &str =
+    "a boot that read nothing names no bound it was killed at, or a read one names one";
+const OUTSIDE: &str = "the verdict names identity_read_outside_window for no invalid record of an unbooted short window";
+
+/// `records` with its verdict's findings replaced, `pass` as they say.
+fn with_findings(mut records: Vec<Record>, findings: &[(&str, &str, u64)]) -> Vec<Record> {
+    let pass = findings.iter().all(|(_, s, _)| *s == "info");
+    *records.last_mut().unwrap() = verdict(pass, findings);
+    records
+}
+
+/// `good()` with its boot record edited by `edit`.
+fn good_with_boot(edit: impl Fn(&mut Reading, &mut Option<u64>, &mut Option<u32>)) -> Vec<Record> {
+    let mut r = good();
+    for x in &mut r {
+        if let Record::BootObserved {
+            boot_word,
+            instructions_observed,
+            pc,
+            ..
+        } = x
+        {
+            edit(boot_word, instructions_observed, pc);
+        }
+    }
+    r
+}
+
+/// B1, the forgery `AET-WO-2205` found: every rise and the bus fault
+/// dropped and the verdict rewritten to pass. It replayed as a pass; each
+/// line of the solved bus now needs its record.
+#[test]
+fn a_run_with_its_rises_dropped_is_refused() {
+    let mut r = good();
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
+    let r = with_findings(
+        r,
+        &[
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 1),
+        ],
+    );
+    assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
+    // One line's rise dropped, the other kept: refused too.
+    let mut r = good();
+    let i = position(
+        &r,
+        |x| matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"),
+    );
+    r.remove(i);
+    assert!(check_run(&r).is_err());
+}
+
+/// B1: a line of one bus is not bound by a rise of another bus's line,
+/// nor a held line by a held-low fault of the other line.
+#[test]
+fn a_line_bound_only_by_another_bus_or_another_line_is_refused() {
+    // A second bus whose lines' rises are the first bus's: the first bus's
+    // own lines are then unbound.
+    let mut r = good();
+    r.insert(3, solved_bus("Z", "I2C3", ["Z_SCL", "Z_SDA"], &[]));
+    let at = position(&r, |x| matches!(x, Record::BusFault { .. }));
+    for net in ["Z_SDA", "Z_SCL"] {
+        r.insert(at, healthy_rise("Z", net));
+    }
+    assert!(check_run(&r).is_ok());
+    r.retain(|x| !matches!(x, Record::RiseComputed { bus, .. } if bus == "Z"));
+    assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
+    // The held SDA line's fault named on SCL, with SCL's rise dropped: the
+    // fault binds the override's line, SDA, only.
+    let mut r = held_low_run();
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
+    let i = position(&r, |x| matches!(x, Record::BusFault { .. }));
+    r[i] = fault(vec![HELD_LOW], vec!["I2C_SCL"]);
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a held-low fault names no held-low override of its bus"
+    );
+    // The held line measured as well as faulted: bound twice.
+    let mut r = held_low_run();
+    r.insert(3, healthy_rise("SENSORS", "I2C_SDA"));
+    assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
+    // The other line's rise dropped beside a held line.
+    let mut r = held_low_run();
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. }));
+    assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
+}
+
+/// B2: a boot that read nothing replayed as a pass with no finding saying
+/// why. The judge names the bound it was killed at; that is required, at
+/// error, once, and a read boot names none.
+#[test]
+fn a_boot_that_read_nothing_names_its_bound() {
+    let unread = || {
+        good_with_boot(|w, n, pc| {
+            w.observed = None;
+            *n = None;
+            *pc = None;
+        })
+    };
+    let others = [
+        (PAST, "error", 2),
+        ("device_unmodelled", "info", 1),
+        ("i2c_timeout", "error", 1),
+    ];
+    // Before: the run's other findings alone replayed.
+    assert_eq!(
+        check_run(&with_findings(unread(), &others)).unwrap_err(),
+        BOUND
+    );
+    // Even its pass (the forgery `AET-WO-2205` B2 found) is refused.
+    let mut r = unread();
+    r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
+    assert!(check_run(&with_findings(r, &[])).is_err());
+    for bound in ["cpu_aborted", "memory_cap_exceeded", "wall_bound_exceeded"] {
+        let mut f = others.to_vec();
+        f.push((bound, "error", 1));
+        f.sort();
+        check_run(&with_findings(unread(), &f)).unwrap();
+        // At info, twice, or beside a read boot: refused.
+        let mut info = others.to_vec();
+        info.push((bound, "info", 1));
+        info.sort();
+        assert_eq!(
+            check_run(&with_findings(unread(), &info)).unwrap_err(),
+            BOUND
+        );
+        let mut twice = others.to_vec();
+        twice.push((bound, "error", 2));
+        twice.sort();
+        assert_eq!(
+            check_run(&with_findings(unread(), &twice)).unwrap_err(),
+            BOUND
+        );
+        assert_eq!(check_run(&with_findings(good(), &f)).unwrap_err(), BOUND);
+    }
+    // An unread boot with boot_word_missing instead of a bound: refused.
+    let mut f = others.to_vec();
+    f.push(("boot_word_missing", "error", 1));
+    f.sort();
+    assert_eq!(
+        check_run(&with_findings(unread(), &f)).unwrap_err(),
+        BOOT_WORD
+    );
+}
+
+/// B2: a boot that was read names `boot_word_missing` exactly when its
+/// word is not the firmware's, once, as an error.
+#[test]
+fn boot_word_missing_is_named_exactly_when_the_word_is_wrong() {
+    let wrong = || good_with_boot(|w, _, _| w.observed = Some(0));
+    let others = [
+        (PAST, "error", 2),
+        ("device_unmodelled", "info", 1),
+        ("i2c_timeout", "error", 1),
+    ];
+    // Before: a wrong word with no finding replayed (attribute: I1).
+    assert_eq!(
+        check_run(&with_findings(wrong(), &others)).unwrap_err(),
+        BOOT_WORD
+    );
+    let mut f = others.to_vec();
+    f.push(("boot_word_missing", "error", 1));
+    f.sort();
+    check_run(&with_findings(wrong(), &f)).unwrap();
+    assert_eq!(
+        check_run(&with_findings(good(), &f)).unwrap_err(),
+        BOOT_WORD
+    );
+    for bad in [
+        ("boot_word_missing", "info", 1),
+        ("boot_word_missing", "error", 2),
+    ] {
+        let mut f = others.to_vec();
+        f.push(bad);
+        f.sort();
+        assert_eq!(
+            check_run(&with_findings(wrong(), &f)).unwrap_err(),
+            BOOT_WORD
+        );
+    }
+}
+
+/// `AET-WO-4300a` D1's finding, as replay can bind it: only of a boot read
+/// without its boot word, on a short window, at most once per record
+/// archived as `invalid`. A boot word written after the window is no
+/// longer missing, and the finding beside it is refused.
+#[test]
+fn identity_read_outside_window_is_bound_to_an_unbooted_short_window() {
+    let invalid = |r: &mut Vec<Record>| {
+        for x in r.iter_mut() {
+            if let Record::I2cCheck {
+                status, observed, ..
+            } = x
+            {
+                *status = Some("invalid".into());
+                *observed = Some(0xFFFF_FFFF);
+            }
+        }
+    };
+    let findings = [
+        (PAST, "error", 2),
+        ("boot_word_missing", "error", 1),
+        ("device_unmodelled", "info", 1),
+        ("identity_read_outside_window", "error", 1),
+    ];
+    // Unbooted, but the board's window is the long one: refused.
+    let mut r = good_with_boot(|w, _, _| w.observed = Some(0));
+    invalid(&mut r);
+    assert_eq!(
+        check_run(&with_findings(r, &findings)).unwrap_err(),
+        OUTSIDE
+    );
+    // Booted (the word written in the end), on any window: refused.
+    let mut r = good();
+    invalid(&mut r);
+    let booted: Vec<_> = findings
+        .iter()
+        .copied()
+        .filter(|f| f.0 != "boot_word_missing")
+        .collect();
+    assert_eq!(check_run(&with_findings(r, &booted)).unwrap_err(), OUTSIDE);
 }

@@ -2141,7 +2141,7 @@ pub fn judge_boot(
     }
     if !booted {
         findings.push(Finding::plain(
-            "boot_word_missing",
+            aethelgard_chaos::campaign::BOOT_WORD_FINDING,
             format!(
                 "the boot word at {:#010x} reads {:#010x}, not {:#010x}",
                 plan.boot_word,
@@ -2240,6 +2240,7 @@ pub fn judge_boot(
             plan.virtual_ns,
             plan.window_ns,
         ));
+        findings.extend(timeouts_without_the_boot_word(checks, &observed.records));
     }
     // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
     // silicon from the topology alone, the twin's witness the model's
@@ -2580,6 +2581,24 @@ fn reads_outside_window(
         .collect()
 }
 
+/// With no boot word, each read whose record says its wait expired is still
+/// named, as the booted path names it (`AET-WO-3201`, `3100` F15): the
+/// record is the firmware's own, so the timeout is never left for
+/// attribution to find unnamed. Nothing else of the record is judged before
+/// the fixed point.
+fn timeouts_without_the_boot_word(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    records: &[(u32, u64)],
+) -> Vec<Finding> {
+    use aethelgard_twin::boot::Outcome;
+    checks
+        .iter()
+        .zip(records)
+        .filter(|(c, r)| matches!(c.judge(r.0, r.1), Outcome::Timeout(_)))
+        .filter_map(|(c, r)| identity_finding(c, r.0, r.1))
+        .collect()
+}
+
 /// The finding for one identity record, or none when the read passed. The
 /// expectation is the check's, which comes from the part table, never from
 /// the firmware (`INV-07`).
@@ -2606,8 +2625,10 @@ fn identity_finding(
     };
     match c.judge(status, value) {
         Outcome::Pass => None,
+        // Named by its step (`AET-WO-4210` F-B10): a data read's mismatch
+        // is not the identity's.
         Outcome::Mismatch => Some(Finding::plain(
-            &format!("{bus}_identity_mismatch"),
+            &format!("{bus}_{}_mismatch", c.step.name()),
             format!(
                 "{who}: {what} {wrote} read {value:#x}, the part table says {:#x}{under}",
                 c.expected

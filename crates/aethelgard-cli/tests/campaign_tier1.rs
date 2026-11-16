@@ -2854,11 +2854,16 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                         Record::Scenario {
                             name: "sweep".into(),
                             sha256: [1; 32],
-                            expect_pass: f.holds,
+                            expect_pass: false,
+                            // The boot word was read and is not the
+                            // firmware's (`AET-WO-3201` B2).
                             expect_findings: if f.holds {
-                                vec![]
+                                vec!["boot_word_missing".into()]
                             } else {
-                                vec!["serial_framing_static_mismatch".into()]
+                                vec![
+                                    "boot_word_missing".into(),
+                                    "serial_framing_static_mismatch".into(),
+                                ]
                             },
                             overrides: vec![],
                         },
@@ -2914,12 +2919,13 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                             tags: None,
                         },
                         Record::Verdict {
-                            pass: f.holds,
-                            findings: if f.holds {
-                                vec![]
-                            } else {
-                                vec![("serial_framing_static_mismatch".into(), "error".into(), 1)]
-                            },
+                            pass: false,
+                            findings: [("boot_word_missing".into(), "error".into(), 1)]
+                                .into_iter()
+                                .chain((!f.holds).then(|| {
+                                    ("serial_framing_static_mismatch".into(), "error".into(), 1)
+                                }))
+                                .collect(),
                         },
                     ];
                     let summary = aethelgard_chaos::campaign::check_run(&records);
