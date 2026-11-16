@@ -1436,9 +1436,7 @@ impl<'a> Router<'a> {
     }
 
     /// Raises the history of every node within `shadow` of `here` on
-    /// `layers`, and names the nets but `skip` whose copper on those layers
-    /// is within `reach` of it, or (`hole`: a via of that rule stands at
-    /// `here`) whose via hole is too near.
+    /// `layers`, and names the nets ([`Router::near`]) that are not fixed.
     fn contest(
         &mut self,
         here: Rect,

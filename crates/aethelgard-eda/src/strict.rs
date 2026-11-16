@@ -148,7 +148,7 @@ pub enum Refusal {
         kind: Kind,
         path: String,
         name: String,
-        wildcards: &'static str,
+        wildcards: String,
     },
 }
 
@@ -671,9 +671,6 @@ fn read(text: &str, kind: Kind) -> Result<Tree, Refusal> {
     }
     let tree = Tree { root, kind };
     check(&tree)?;
-    if kind == Kind::Board {
-        layer_names(&tree)?;
-    }
     Ok(tree)
 }
 
@@ -699,37 +696,30 @@ pub const PAD_WILDCARDS: &[&str] = &["*.Cu", "*.Mask"];
 /// a `stackup`'s rows, which describe layers (KiCad names its dielectrics
 /// there) and place nothing, and a `padstack`'s `"Inner"` row, KiCad's own
 /// keyword for every inner layer.
-fn layer_names(tree: &Tree) -> Result<(), Refusal> {
-    let root = tree.root();
-    let Some(table) = root.one("layers")? else {
-        return Ok(());
+fn layer_names(node: &Node<'_>, parent: &str, table: &[&str]) -> Result<(), Refusal> {
+    let head = node.head().unwrap_or("");
+    let names: Vec<&str> = match head {
+        "layers" if parent == node.kind.root() => Vec::new(),
+        "layer" if parent == "stackup" => Vec::new(),
+        // A padstack's row for every inner layer (`PADSTACK::INNER_LAYERS`).
+        "layer" if parent == "padstack" && node.arg(1) == Some("Inner") => Vec::new(),
+        "layer" => node.arg(1).into_iter().collect(),
+        "layers" => node.texts().collect(),
+        _ => Vec::new(),
     };
-    let table: Vec<&str> = table.lists().filter_map(|row| row.arg(1)).collect();
-    let mut stack = vec![(root, "")];
-    while let Some((node, parent)) = stack.pop() {
-        let head = node.head().unwrap_or("");
-        let names: Vec<&str> = match head {
-            "layers" if parent == tree.kind.root() => Vec::new(),
-            "layer" if parent == "stackup" => Vec::new(),
-            // A padstack's row for every inner layer (`PADSTACK::INNER_LAYERS`).
-            "layer" if parent == "padstack" && node.arg(1) == Some("Inner") => Vec::new(),
-            "layer" => node.arg(1).into_iter().collect(),
-            "layers" => node.texts().collect(),
-            _ => Vec::new(),
-        };
-        let pad = head == "layers" && parent == "pad";
-        for name in names {
-            if !table.contains(&name) && !(pad && PAD_WILDCARDS.contains(&name)) {
-                return Err(Refusal::Layer {
-                    kind: tree.kind,
-                    path: node.path(),
-                    name: name.to_owned(),
-                    wildcards: if pad { " or `*.Cu` or `*.Mask`" } else { "" },
-                });
-            }
-        }
-        for child in node.lists() {
-            stack.push((child, head));
+    let pad = head == "layers" && parent == "pad";
+    for name in names {
+        if !table.contains(&name) && !(pad && PAD_WILDCARDS.contains(&name)) {
+            return Err(Refusal::Layer {
+                kind: node.kind,
+                path: node.path(),
+                name: name.to_owned(),
+                wildcards: if pad {
+                    PAD_WILDCARDS.iter().map(|w| format!(" or `{w}`")).collect()
+                } else {
+                    String::new()
+                },
+            });
         }
     }
     Ok(())
@@ -780,6 +770,15 @@ pub const MAX_PATH_BYTES: usize = sexpr::MAX_DEPTH * (MAX_KEYWORD_BYTES + 10);
 /// Every node [`RULES`] names, judged; depth first, without recursion. A
 /// list's keyword longer than [`MAX_KEYWORD_BYTES`] is refused first.
 fn check(tree: &Tree) -> Result<(), Refusal> {
+    // A board's layer table, whose names alone its items may name
+    // ([`layer_names`]); a footprint judged alone has none.
+    let table: Option<Vec<&str>> = match tree.kind {
+        Kind::Board => tree
+            .root()
+            .one("layers")?
+            .map(|t| t.lists().filter_map(|row| row.arg(1)).collect()),
+        _ => None,
+    };
     let mut stack = vec![(tree.root(), "")];
     while let Some((node, parent)) = stack.pop() {
         let head = node.head().unwrap_or("");
@@ -794,6 +793,9 @@ fn check(tree: &Tree) -> Result<(), Refusal> {
             judge(&node, rule)?;
         }
         numbers(&node)?;
+        if let Some(table) = &table {
+            layer_names(&node, parent, table)?;
+        }
         if tree.kind == Kind::Schematic {
             spelling(&node)?;
         }
