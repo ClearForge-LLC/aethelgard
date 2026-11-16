@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "6429c287b9073c983d3a88f5320b368ed1104b2428e7c32bf9d240b46dc47b7f";
+const PARTS_SHA256: &str = "052d2afe2d8b4d385e1ab14535130357c0eea4faec27d87fbf5391e3011c388d";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -69,18 +69,27 @@ fn the_embedded_table_parses_and_holds_seven_parts() {
 }
 
 #[test]
-fn only_the_flashs_lifecycle_is_pending() {
+fn no_citation_is_pending_and_the_flash_is_nrnd_by_its_makers_export() {
+    use aethelgard_ir::parts::Lifecycle;
     // Every datasheet is held in ~/.cache/aet-4200/ds/ or ~/.cache/aet-4210/ds/,
-    // recorded in the work orders' FEEDBACK. Winbond's catalog loads the
-    // flash's status by script, so its lifecycle is not held (`AET-WO-4210`).
-    assert_eq!(
-        table().unwrap().pending(),
-        [(
-            "W25Q64JVxIQ",
-            "lifecycle",
-            "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
-        )]
+    // recorded in the work orders' FEEDBACK. The flash's lifecycle, pending
+    // since `AET-WO-4210`, is Winbond's own catalog export (`AET-WO-4211`).
+    let t = table().unwrap();
+    assert_eq!(t.pending(), []);
+    let flash = t.get("W25Q64JVxIQ").unwrap();
+    assert_eq!(flash.lifecycle, Lifecycle::Nrnd);
+    let c = &flash.citations.lifecycle;
+    assert!(
+        matches!(&c.held, Held::Sha256(h) if h == "f10526aeaa7efbf7da5f358f1d1ac933275dcf1628546f136c9e39445ab42ac4")
     );
+    assert!(
+        c.document
+            .contains("winbond-W25Q64JV-catalog-export-2026-11-16.csv"),
+        "{c:?}"
+    );
+    for word in ["column 15 Status-Industrial = N", "Longevity Y", "DigiKey"] {
+        assert!(c.section.contains(word), "{word}: {c:?}");
+    }
 }
 
 #[test]
@@ -446,14 +455,7 @@ fn a_pending_citation_must_be_an_https_url_and_is_listed() {
     let t = parse_parts(&doc.to_string()).unwrap();
     assert_eq!(
         t.pending(),
-        [
-            ("TMP117", "bus", "https://example.com/ds.pdf"),
-            (
-                "W25Q64JVxIQ",
-                "lifecycle",
-                "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
-            )
-        ]
+        [("TMP117", "bus", "https://example.com/ds.pdf")]
     );
 }
 
@@ -577,7 +579,7 @@ fn the_stand_ins_hold_their_scripts_and_lifecycles() {
             ("ICM42688P", Lifecycle::Active, false),
             ("ICP10111", Lifecycle::Eol, true),
             ("TMP117", Lifecycle::Active, false),
-            ("W25Q64JVxIQ", Lifecycle::Active, false),
+            ("W25Q64JVxIQ", Lifecycle::Nrnd, false),
         ]
     );
     let imu = t.get("ICM20948").unwrap();
