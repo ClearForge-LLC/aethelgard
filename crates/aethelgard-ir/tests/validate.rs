@@ -3285,3 +3285,31 @@ fn aet_1207_step_21_refuses_an_spi_line_with_no_constraint() {
         "SupplyOutsideSpeedTable"
     );
 }
+
+/// `bare_rail`'s board (no device, no SPI bus) with the MCU at `bor_level`.
+fn bor_rail(nominal: u32, tolerance: u16, bor_level: u8) -> Specification {
+    let mut spec = bare_rail(nominal, tolerance, false);
+    spec.mcu.bor_level = bor_level;
+    spec
+}
+
+/// `AET-WO-1208` F1/F5 (the architect's ruling on PR #182), the behaviour
+/// before: without a power tree, step 22 judged the MCU's rail against the
+/// row's 1620 to 3600 mV only, so a rail below the selected BOR level's
+/// falling threshold passed. `bor_level` 3's VBOR3 falls at up to 2680 mV
+/// and level 0's VBOR0 at up to 1680 mV (DS12117 Table 115, the row).
+#[test]
+fn aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor() {
+    // Minimums 2679, 2680, 2681 mV at bor_level 3 (2707, 2708, 2709 ± 1 %).
+    for nominal in [2707, 2708, 2709] {
+        assert_eq!(bor_rail(nominal, 10, 3).validate(), Ok(()), "{nominal}");
+    }
+    // bor_level 0: minimums 1620 (1800 ± 10 %), 1680 and 1681 (1697, 1698 ± 1 %).
+    for (nominal, tolerance) in [(1800, 100), (1697, 10), (1698, 10)] {
+        assert_eq!(
+            bor_rail(nominal, tolerance, 0).validate(),
+            Ok(()),
+            "{nominal}"
+        );
+    }
+}

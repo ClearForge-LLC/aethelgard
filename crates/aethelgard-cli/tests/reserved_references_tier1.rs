@@ -701,3 +701,22 @@ fn aet_1208_the_emitter_draws_only_what_validate_passes() {
         );
     }
 }
+
+/// `AET-WO-1208` F1 (the architect's ruling on PR #182), the behaviour
+/// before: an MCU rail of 1.9 V ± 1 % with `bor_level` 3, whose VBOR3 falls
+/// at up to 2.68 V (DS12117 Table 115), so the MCU stays in reset, passes
+/// `validate` and `generate` writes a board (`~/.cache/aet-1208/reach/
+/// bor3-1900-nospi.json`).
+#[test]
+fn aet_1208_a_rail_below_the_bor_floor_is_refused() {
+    let edit = |s: &mut Value| {
+        mcu_rail(s, 1900);
+        s["voltage_domains"][0]["tolerance_permille"] = 10.into();
+        s["mcu"]["bor_level"] = 3.into();
+    };
+    let (code, out, _) = run_on(SPEC, &["validate", "--file"], "1208-bor-v", edit);
+    assert_eq!(code, Some(0), "{out}");
+    let (code, out, created) = run_on(SPEC, &["generate", "--spec"], "1208-bor-g", edit);
+    assert_eq!(code, Some(0), "{out}");
+    assert!(created);
+}
