@@ -287,6 +287,23 @@ fn refused(records: &[Record]) -> &'static str {
     }
 }
 
+/// `AET-WO-4210` F-B10: an identity read's mismatch named as a data or
+/// configuration step's selects nothing, and the run is `I1`; named as its
+/// own step's, it is decided as before.
+#[test]
+fn an_identity_mismatch_dressed_as_another_steps_is_unexplained() {
+    let mut r = healthy();
+    replace(&mut r, is_check, check("ok", 0x61));
+    replace(&mut r, is_verdict, verdict(&[("i2c_identity_mismatch", 1)]));
+    assert_ne!(attributed(&r).rule, Rule::I1);
+    for dressed in ["i2c_data_mismatch", "i2c_configure_mismatch"] {
+        replace(&mut r, is_verdict, verdict(&[(dressed, 1)]));
+        let a = attributed(&r);
+        assert_eq!(a.rule, Rule::I1, "{dressed}: {a:?}");
+        assert!(a.unexplained.contains(&dressed.to_owned()), "{a:?}");
+    }
+}
+
 /// `AET-WO-3201` B2: a boot word missing that no finding names. It was
 /// `I1`; `replay` now refuses it by name.
 #[test]

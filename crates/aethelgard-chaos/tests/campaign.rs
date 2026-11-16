@@ -2869,6 +2869,14 @@ fn boot_word_missing_is_named_exactly_when_the_word_is_wrong() {
         check_run(&with_findings(good(), &f)).unwrap_err(),
         BOOT_WORD
     );
+    // At info beside a boot that has its word: refused too.
+    let mut f = others.to_vec();
+    f.push(("boot_word_missing", "info", 1));
+    f.sort();
+    assert_eq!(
+        check_run(&with_findings(good(), &f)).unwrap_err(),
+        BOOT_WORD
+    );
     for bad in [
         ("boot_word_missing", "info", 1),
         ("boot_word_missing", "error", 2),

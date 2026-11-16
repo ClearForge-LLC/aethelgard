@@ -680,7 +680,49 @@ fn a_late_read_is_only_the_unset_record_of_an_unbooted_short_window() {
             MOTOR_UNWITNESSED_FINDING.into(),
         ];
     }
+    // The record is decided on its healthy bus (I4, its rises), beside the
+    // dead output's I4: never `Window`.
     let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I4, "{a:?}");
+    assert_eq!(
+        a.evidence.iter().filter(|e| e.kind == 7).count(),
+        2,
+        "the record's own decision names its bus's rises: {a:?}"
+    );
+    // A boot word written after the window, with the finding beside it:
+    // `replay` refuses the run.
+    let n = r.len() - 1;
+    r[n] = Record::Verdict {
+        pass: false,
+        findings: vec![
+            ("device_unmodelled".into(), "info".into(), 1),
+            ("identity_read_outside_window".into(), "error".into(), 1),
+            (MOTOR_UNWITNESSED_FINDING.into(), "error".into(), 1),
+        ],
+    };
+    assert!(attribute(&archived(&r)).is_err());
+}
+
+/// The same unset record on the PWM board's long window, unbooted, claimed
+/// as invalid: decided on its bus, never `I7` (the window is not short).
+#[test]
+fn an_unset_record_on_the_long_window_is_never_i7() {
+    let mut r = run(
+        &Wrong::default(),
+        "unwitnessed",
+        true,
+        &[("boot_word_missing", 1), ("i2c_record_invalid", 1)],
+    );
+    for x in &mut r {
+        match x {
+            Record::BootObserved { boot_word, .. } => boot_word.observed = Some(0),
+            Record::I2cCheck {
+                status, observed, ..
+            } => (*status, *observed) = (Some("invalid".into()), Some(0xFFFF_FFFF)),
+            _ => {}
+        }
+    }
+    let a = attribute(&archived(&r)).unwrap();
     assert_ne!(a.rule, Rule::I7, "{a:?}");
     assert!(a.evidence.iter().all(|e| e.kind != 12), "{a:?}");
 }
