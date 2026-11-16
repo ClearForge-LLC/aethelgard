@@ -276,8 +276,8 @@ fn a_write_past_the_block_fails() {
 fn a_vacuous_harness_fails() {
     let dir = seeded(
         "seed-vacuous",
-        "r.write(TOKEN, Block::Spi1, 0x0c, 0x04400000);",
-        "#[cfg(kani)]\n        kani::assume(false);\n        r.write(TOKEN, Block::Spi1, 0x0c, 0x04400000);",
+        "r.write(TOKEN, Block::Spi1, 0x0c, 0x84400000);",
+        "#[cfg(kani)]\n        kani::assume(false);\n        r.write(TOKEN, Block::Spi1, 0x0c, 0x84400000);",
     );
     let v = prove("seed-vacuous", &dir, 1);
     fs::remove_dir_all(&dir).unwrap();

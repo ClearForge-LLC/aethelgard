@@ -537,7 +537,8 @@ fn runs(name: &str, mask: u32) -> Vec<(String, u32)> {
 ///
 /// `D2CKRDY` (RM0433 Rev 9 §8.7.2, p. 384: "D2 domain clocks ready flag", 0
 /// after reset, set by hardware once the D2 domain's clocks are available)
-/// is listed whenever the firmware enables an I2C, SPI, USART or timer.
+/// is listed whenever the firmware enables an I2C, SPI, USART or timer in
+/// D2 (every one the generator emits but I2C4 and SPI6).
 /// RM0433 Rev 9 §8.5.10 (p. 372) step c asks to read `DxCKRDY` until it is 1
 /// after enabling a peripheral in another domain; the firmware does not
 /// (the architect's ruling on Q-F: Renode 1.17.0 reads the flag 0 whatever,
@@ -567,7 +568,10 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
             }
         }
     }
-    let d2 = !plan.peripherals.is_empty() || !plan.timers.is_empty() || !plan.serials.is_empty();
+    // I2C4 and SPI6 sit on APB4, in D3 (RM0433 Rev 9 Table 8, p. 133).
+    let d2 = plan.peripherals.keys().any(|n| n != "I2C4" && n != "SPI6")
+        || !plan.timers.is_empty()
+        || !plan.serials.is_empty();
     if d2 {
         let (pos, width) = f.field("RCC_CR_D2CKRDY")?;
         out.push(FieldUse {
