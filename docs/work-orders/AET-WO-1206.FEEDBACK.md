@@ -57,7 +57,7 @@ Harness: `~/.cache/aet-1206/tools/` (`verdicts.sh`, `names.py`, `mutate.py`, `ta
 
 ## 3. What was built, by work-order item
 
-All new rules are steps of `Specification::validate`, after every existing step, so a specification `validate` refused before is refused with the same refusal. The new code is a new module, `crates/aethelgard-ir/src/names.rs`; `lib.rs` gains only the variants, steps 19 and 20 (4300g took 17 and 18), the §1.8 refusal and the Windows rule.
+Steps 19 and 20 come after every existing step of `Specification::validate`. Two rules sit earlier, where their kind already lived: §1.8 in step 14 (the parts) and A7 in step 2 (the identifiers). So a specification `validate` refused before keeps its refusal, unless it also carries a part with no row or a Windows project name, which now come first (§5). The new code is a new module, `crates/aethelgard-ir/src/names.rs`; `lib.rs` gains only the variants, steps 19 and 20 (4300g took 17 and 18), the §1.8 refusal and the Windows rule.
 
 1. **§1.1:** above.
 2. **§1.2 `MissingBusConstraint`:** step 19 (`Specification::bus_constraints`), the same check `solve` made, by the same name and message. `solve`'s copy is deleted: `i2c_ceilings` now `expect`s the constraint, as `i2c_electrical` already did.
@@ -97,7 +97,8 @@ All new rules are steps of `Specification::validate`, after every existing step,
 - **After merging `main` at `4419c59`** (`4300g`: specification 11, the support network, the `1310` router): measured again against a fresh baseline built from `4419c59` (`~/.cache/aet-1206/baseline2/`, `v-b2` against `v-n4`). 159 of 159 records are identical. `stress` and `sentinel-02-power` now generate on `main`, so `own_nets` and the emitter's guard hold on a whole power board with its crossing translator.
 - **The merge:** `4300g` took validation steps 17 and 18 (programming path, supply source), so this work order's are 19 and 20, still after every existing step.
 - **76 name mutations of the reference:** every one `generate` refused before (57) now gets the same bytes from `validate`, and `generate` prints exactly what it printed before. Old against new: `~/.cache/aet-1206/mut1-base.table`, `mut1-new.table`.
-- **The three F1 refusals and `MissingBusConstraint`:** byte-identical from `solve`, `emit` and `generate`, measured on both binaries.
+- **The three F1 refusals and `MissingBusConstraint`:** byte-identical from `solve`, `emit` and `generate`, measured on both binaries. On `4419c59`'s binary against this branch's, `MissingBusConstraint` is also byte-identical from `emit --file` and `check speeds --spec`.
+- **§1.7, the behaviour before, measured:** `4419c59`'s `solve` accepts the amendment's case, SDA 1000 ns and SCL 120 ns at 1 MHz, either way round (exit 0). This branch refuses both as `BusTooFast`, ceiling 100,000 Hz.
 
 ### 4.2 Tier-1 tests (each with the behaviour before)
 - `reserved_references_tier1.rs`:
@@ -141,11 +142,19 @@ All new rules are steps of `Specification::validate`, after every existing step,
   - `CONSOLE_TX` renamed `U1_VCAP1` put J1 pad 1 and U1 pad 101 on the MCU's VCAP1 net with U1 pad 71 and C1. The emitter compares its own nets only with the names it "spells" (domains, bus lines, chip selects, sense nets), not serial or motor nets (`schematic.rs` `design`).
   - A5 reads every net, so `validate`, and with it `generate`, refuses it.
   - The emitter's own list is unchanged (moved, not changed): backlog F1.
+- **A part with no row (step 14) or a Windows project name (step 2)** now comes before steps 15 to 18, so a specification refused before for a connector, the power tree, the programming path or the supply source, and also carrying one of them, now gets the new refusal first. §6 measured it: a Windows name pre-empted `NetShadowsDomain` and `ReservedName`.
 - **A doubly faulty specification** may now report a different first refusal: a new step 19/20 refusal comes before a `solve`-time one (`PartMismatch`, the search), and within step 20 the order approximates `generate`'s. Each is still refused.
 - **§1.7 moves two messages:** `RiseTimeTooSlow` now names the worse line's rise time, and a mixed bus's ceiling is the slower mode.
 - **`campaign` over a base specification missing a bus constraint** [read, `campaign.rs:362`, not run: it needs a firmware ELF]. The refusal now comes from `parse_spec`, with campaign's `scenario \`<name>\`, base: ` message prefix, where before it came from `solve_spec` without one. Kind, `id` and `claimants` are unchanged.
 
 ## 6. Adversarial pass (targeted)
+
+**Run at `47de363` and rerun at `dee28d9`, both before `main`'s `4300g` merge (specification 10), and not rerun after it.** What stands in for a rerun on specification 11:
+
+- the 159-of-159 corpus comparison against `4419c59`;
+- the suite (113 binaries);
+- the support-net mutant (§4.5);
+- the routed power board with its crossing, whose own nets the emitter's guard checked.
 
 A fresh subagent (no stake in the code, given the code and both binaries, not this document) generated 5,422 specifications over the reference and the power-tree fixture. It ran `validate` and `generate` on both binaries for each, plus the work order's targeted list: Unicode case (`İ`, `ſ`, the Kelvin sign `K`, fullwidth, NBSP, ZWSP), trailing dots, `CON.`, `con .txt`, `Gnd`/`gNd`/`Vbat`/`UNCONNECTED-x`/`Unconnected-x`, `U01`/`u001`/`R0`/`U0`, buck and translator nets, and every 1-, 2- and 3-fault combination of 11 faults. Harness and specifications: `~/.cache/aet-1206/adv/` (`drive.py`; each class's report in `rep/`, the rerun in `rep3/`; repros in `repro/`, `run.sh <spec>`).
 
@@ -204,6 +213,12 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 | F11 | A crossing (translator) reference starting `unconnected-`: `validate` names `<ref>_B1Y`, while the board writer named `<ref>_B4`, the first offending pad in the KiCad symbol's pin order, which `ir` does not hold. Kind and message form agree, and `generate` now prints `validate`'s refusal | `names.rs` A3 fix | measured | residual: exotic, one fault | no |
 | F12 | A multi-fault specification can report a different first refusal than `generate` did: 84 of 231 combinations measured, and 23 byte differences of the same kind. New `validate` and new `generate` always agree | step 19/20 order | measured | a measurement (§5) | no |
 
+**Forks for the architect to confirm** (each closes an escape `generate` refused, with `generate`'s bytes, beyond the work order's named list):
+
+- F2: the specification's own references held to KiCad's key;
+- a power reference starting `#`;
+- a power reference that makes an own net start `unconnected-` (§6 A1 to A3).
+
 **Peers told (inbox, 09:45 UTC):**
 - `4300g`: `own_nets` must list its support network's nets when the second of us merges. It merged first (`4e821ed`), and this branch took its nets at the merge.
 - `4230`: the deleted `SolveError` variants sit beside its `id()` and `claimants()` hunks.
@@ -212,4 +227,6 @@ Reduction pass (diff): −19 lines net (the envelope merge; the guard deletion i
 
 - Host cargo, in a capped user scope (`systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, `memory.swap.max` read back 0).
 - The baseline and differential runs used the debug binaries under `~/.cache/aet-1206/`.
-- No container, Renode or KiCad was started; `TIER2_MIN` stays 155 (no tier-2 test added).
+- No container, Renode or KiCad was started.
+- This work order adds no tier-2 test, so `TIER2_MIN` is `main`'s, 157 since `4300g`.
+- The tier-2 tests compile under `--features aethelgard-cli/with-tools`, and clippy is clean with it. Their specification edits (`S<i>`, `U<nn>m…`, `T`, `U_2`, punctuated nets, `p-x`) meet no new rule [read]. CI's tier-2 run is the measurement.
