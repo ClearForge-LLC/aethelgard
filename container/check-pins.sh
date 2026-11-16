@@ -17,14 +17,16 @@
 #     rev-parse HEAD` or `git -C DIR status --porcelain`, and `git submodule
 #     update --remote`, `git fetch`, `git pull`, `pipx` and a `pip install`
 #     without --require-hashes are refused by name, wherever the word stands
-#     (in quotes, in $(...), as an ENV value, as /path/to/git);
+#     (in quotes, spliced as gi''t, in $(...), as an ENV value, as -mpip, as
+#     /path/to/git);
 #   - a `-m venv` takes Debian's pip, so python3-pip-whl must be pinned in the
 #     apt block;
-#   - no heredoc, no `# escape=` directive, and no COPY of a script (a #!
-#     line, an executable bit or a .sh/.bash/.py/.pl name): the check reads
-#     only this file and the hashed requirements.
-# What is left of A7: a command name assembled at run time (`${G}t fetch`),
-# and a plain file copied in and run by an interpreter (`sh /x.txt`). This
+#   - no heredoc, no `# escape=` directive, no carriage return, and no COPY of
+#     a script (a #! line, an executable bit or a .sh/.bash/.py/.pl name): the
+#     check reads only this file and the hashed requirements.
+# What is left of A7: a command name assembled at run time (`${G}t fetch`,
+# `$(printf '\x67it')`), a plain file copied in and run by an interpreter
+# (`sh /x.txt`), and installers this list does not name (uvx, conda). This
 # script stops accidental drift, not an attacker; those are left to review.
 # Needs no container runtime.
 #
@@ -70,7 +72,8 @@ for i in "${!lines[@]}"; do
 done
 [ "$open" -eq 0 ] || logical+=("$cur") starts+=("$start") ends+=("$i")
 
-# Each instruction as words: separators become `;`, and quotes, brackets and
+# Each instruction as words: separators become `;`; quotes and backslashes go,
+# as the shell splices `gi''t` and `g\it` into `git`; brackets, backquotes and
 # `$` become spaces, so a command word is found inside a string, a $(...) or a
 # ${VAR}. A word's name drops an `X=` prefix, a `-m` prefix and its directory.
 named=()
@@ -79,7 +82,8 @@ for n in "${!logical[@]}"; do
   t=${logical[$n]}
   t=${t//&&/ ; } t=${t//||/ ; }
   t=${t//|/ ; } t=${t//&/ ; }
-  t=${t//[\"\'\(\)\`\$\{\}\[\],<>]/ }
+  t=${t//[\"\'\\]/}
+  t=${t//[\(\)\`\$\{\}\[\],<>]/ }
   read -ra w <<< "$t"
   for k in "${!w[@]}"; do
     name=${w[$k]##*=}
@@ -95,7 +99,7 @@ for n in "${!logical[@]}"; do
       j=0
       while [ "$j" -lt "${#rest[@]}" ] && [[ "${rest[$j]}" == -* ]]; do
         case ${rest[$j]} in
-          -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --config-env) j=$((j + 2)) ;;
+          -C | -c | --git-dir | --work-tree | --namespace | --config-env) j=$((j + 2)) ;;
           *) j=$((j + 1)) ;;
         esac
       done
@@ -137,6 +141,8 @@ for i in "${!lines[@]}"; do
   # A parser directive: `escape` changes the continuation character, so the
   # joining above would no longer be Docker's.
   [[ "${line,,}" =~ ^#[[:space:]]*escape[[:space:]]*= ]] && refuse "$i" "an escape directive changes how lines join: $line"
+  # A carriage return: whether Docker then joins on `\` is not this check's to guess.
+  [[ "$line" == *$'\r'* ]] && refuse "$i" "a carriage return (CRLF line ends)"
   [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
   if [[ "$line" == *"<<"* ]]; then
     refuse "$i" "a heredoc, whose body the shell joins and quotes its own way: write it as RUN lines: $line"
