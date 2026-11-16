@@ -29,14 +29,14 @@ pub const NODE_LIMIT: u64 = 10_000_000;
 pub enum SolveError {
     /// The specification failed [`Specification::validate`], or the hash is
     /// malformed; `solve` re-checks both rather than trusting its caller.
+    /// The bus refusals `BusTooFast`, `PullUpBelowSinkFloor` and
+    /// `BusCapacitanceOverLimit` are validation's own variants, raised here
+    /// too (`AET-WO-1205` F1, `AET-WO-1206` §1.5: one error set); each keeps
+    /// its kind, `id`, claimant and message.
     #[error("{0}")]
     InvalidSpecification(IrValidationError),
     #[error("the specification is for part `{spec}`, the pin table for `{table}`")]
     PartMismatch { spec: String, table: String },
-    #[error(
-        "I2C bus `{bus}` has no net constraint on `{net}`, so it has no rise time to bound its speed"
-    )]
-    MissingBusConstraint { bus: String, net: String },
     #[error(
         "SPI bus `{bus}` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
     )]
@@ -53,30 +53,6 @@ pub enum SolveError {
         "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
     )]
     RiseTimeTooSlow { bus: String, rise_time_ns: u32 },
-    #[error(
-        "I2C bus `{bus}` runs at {speed_hz} Hz, above its rise-time ceiling of {ceiling_hz} Hz"
-    )]
-    BusTooFast {
-        bus: String,
-        speed_hz: u32,
-        ceiling_hz: u32,
-    },
-    #[error(
-        "I2C bus `{bus}` has a pull-up of {pull_up_ohms} ohms, below the {floor_ohms} ohm floor its rail and mode set (UM10204 sink current)"
-    )]
-    PullUpBelowSinkFloor {
-        bus: String,
-        pull_up_ohms: u32,
-        floor_ohms: u32,
-    },
-    #[error(
-        "I2C line `{net}` has a capacitance of {capacitance_femtofarads} fF, over its bus's limit of {limit_femtofarads} fF (UM10204)"
-    )]
-    BusCapacitanceOverLimit {
-        net: String,
-        capacitance_femtofarads: u64,
-        limit_femtofarads: u64,
-    },
     #[error("`{claimant}` names pin `{pin}`, which the pin table does not have")]
     UnknownPin { pin: String, claimant: String },
     #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
@@ -189,13 +165,9 @@ impl SolveError {
         match self {
             Self::InvalidSpecification(e) => e.kind(),
             Self::PartMismatch { .. } => "PartMismatch",
-            Self::MissingBusConstraint { .. } => "MissingBusConstraint",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
             Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
-            Self::BusTooFast { .. } => "BusTooFast",
-            Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
-            Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedPin { .. } => "ReservedPin",
             Self::UnknownPeripheral { .. } => "UnknownPeripheral",
@@ -231,13 +203,10 @@ impl SolveError {
             | Self::PeripheralClaimedTwice { peripheral, .. } => Some(peripheral),
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
-            | Self::MissingBusConstraint { bus, .. }
             | Self::MissingSpiConstraint { bus, .. }
             | Self::SupplyOutsideSpeedTable { bus, .. }
-            | Self::RiseTimeTooSlow { bus, .. }
-            | Self::BusTooFast { bus, .. }
-            | Self::PullUpBelowSinkFloor { bus, .. } => Some(bus),
-            Self::BusCapacitanceOverLimit { net, .. } | Self::NoAdcPin { net } => Some(net),
+            | Self::RiseTimeTooSlow { bus, .. } => Some(bus),
+            Self::NoAdcPin { net } => Some(net),
             Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
             Self::SerialPinsSplit { port, .. }
@@ -256,7 +225,8 @@ impl SolveError {
     /// are about the whole specification.
     pub fn claimants(&self) -> Vec<String> {
         match self {
-            Self::InvalidSpecification(_) | Self::PartMismatch { .. } => Vec::new(),
+            Self::InvalidSpecification(e) => e.claimants(),
+            Self::PartMismatch { .. } => Vec::new(),
             Self::UnknownPin { claimant, .. }
             | Self::ReservedPin { claimant, .. }
             | Self::UnknownPeripheral { claimant, .. }
@@ -267,15 +237,10 @@ impl SolveError {
             }
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
-            | Self::MissingBusConstraint { bus, .. }
             | Self::MissingSpiConstraint { bus, .. }
             | Self::SupplyOutsideSpeedTable { bus, .. }
-            | Self::RiseTimeTooSlow { bus, .. }
-            | Self::BusTooFast { bus, .. }
-            | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
-            Self::BusCapacitanceOverLimit { net, .. } | Self::NoAdcPin { net } => {
-                vec![net.clone()]
-            }
+            | Self::RiseTimeTooSlow { bus, .. } => vec![bus.clone()],
+            Self::NoAdcPin { net } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => {
                 vec![output.clone()]
@@ -743,22 +708,22 @@ fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveErr
     Ok(out)
 }
 
-/// Each I2C bus's ceiling, from the stricter of its two lines' declared
-/// `max_rise_time_nanoseconds`, in document order. A line with no constraint
-/// refuses: nothing is defaulted (`INV-06`). Pull-up and capacitance are not
+/// Each I2C bus's ceiling, from the worse of its two lines' declared
+/// `max_rise_time_nanoseconds`, in document order: a mode is legal only when
+/// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` (step 19)
+/// has refused a line with no constraint. Pull-up and capacitance are not
 /// read; that physics is the twin's.
 fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveError> {
     let mut out = BTreeMap::new();
     for bus in &spec.i2c_buses {
-        let mut t_max = u32::MAX;
+        let mut t_max = 0;
         for net in [&bus.sda.net, &bus.scl.net] {
-            let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
-                return Err(SolveError::MissingBusConstraint {
-                    bus: bus.id.clone(),
-                    net: net.clone(),
-                });
-            };
-            t_max = t_max.min(c.max_rise_time_nanoseconds);
+            let c = spec
+                .net_constraints
+                .iter()
+                .find(|c| &c.net_name == net)
+                .expect("Specification::validate checked every I2C line's constraint");
+            t_max = t_max.max(c.max_rise_time_nanoseconds);
         }
         let Some(ceiling) = electrical::ceiling_hz(t_max) else {
             return Err(SolveError::RiseTimeTooSlow {
@@ -767,11 +732,13 @@ fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveErro
             });
         };
         if bus.speed_hz > ceiling {
-            return Err(SolveError::BusTooFast {
-                bus: bus.id.clone(),
-                speed_hz: bus.speed_hz,
-                ceiling_hz: ceiling,
-            });
+            return Err(SolveError::InvalidSpecification(
+                IrValidationError::BusTooFast {
+                    bus: bus.id.clone(),
+                    speed_hz: bus.speed_hz,
+                    ceiling_hz: ceiling,
+                },
+            ));
         }
         out.insert(bus.id.clone(), ceiling);
     }
@@ -792,11 +759,13 @@ fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
             .expect("Specification::validate checked every bus's domain");
         let floor = electrical::i2c_pull_up_floor_ohms(bus.speed_hz, domain.nominal_millivolts);
         if bus.pull_up_ohms < floor {
-            return Err(SolveError::PullUpBelowSinkFloor {
-                bus: bus.id.clone(),
-                pull_up_ohms: bus.pull_up_ohms,
-                floor_ohms: floor,
-            });
+            return Err(SolveError::InvalidSpecification(
+                IrValidationError::PullUpBelowSinkFloor {
+                    bus: bus.id.clone(),
+                    pull_up_ohms: bus.pull_up_ohms,
+                    floor_ohms: floor,
+                },
+            ));
         }
         let limit = electrical::i2c_bus_capacitance_limit_femtofarads(bus.speed_hz);
         for net in [&bus.sda.net, &bus.scl.net] {
@@ -806,11 +775,13 @@ fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
                 .find(|c| &c.net_name == net)
                 .expect("i2c_ceilings checked every I2C line's constraint");
             if c.max_capacitance_femtofarads > limit {
-                return Err(SolveError::BusCapacitanceOverLimit {
-                    net: net.clone(),
-                    capacitance_femtofarads: c.max_capacitance_femtofarads,
-                    limit_femtofarads: limit,
-                });
+                return Err(SolveError::InvalidSpecification(
+                    IrValidationError::BusCapacitanceOverLimit {
+                        net: net.clone(),
+                        capacitance_femtofarads: c.max_capacitance_femtofarads,
+                        limit_femtofarads: limit,
+                    },
+                ));
             }
         }
     }
