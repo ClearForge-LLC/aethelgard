@@ -8,8 +8,9 @@
 //!   name ([`RegisterFacts::fields_of`]), as the word sets it;
 //! - a read-modify-write lists only the fields it changes;
 //! - the reset fields are [`Rcc::reset_clock`]'s (the clock tree and the
-//!   kernel-clock selects the firmware leaves at reset) and `BOR_LEV`, which
-//!   the firmware reads from `FLASH_OPTSR_CUR` and never writes.
+//!   kernel-clock selects the firmware leaves at reset), `RCC_CR.D2CKRDY`,
+//!   which the firmware depends on and never polls, and `BOR_LEV`, which the
+//!   firmware reads from `FLASH_OPTSR_CUR` and never writes.
 //!
 //! The writes listed are every one the board crate can make on the bring-up
 //! path the reference firmware takes (each port's split and pins, each
@@ -60,7 +61,8 @@ pub struct FieldUse {
     /// the last write's value is decided at run time: a data byte, an
     /// address, a count, a chip select's set or reset bit. For a reset field,
     /// its reset value; for `BOR_LEV`, the level the topology declares, which
-    /// the option bytes must hold and the judge compares.
+    /// the option bytes must hold and the judge compares; for `D2CKRDY`, 1,
+    /// what silicon must read once a D2 peripheral is enabled.
     pub value: Option<u32>,
     /// Whether the write is of the whole word; `false` for a field changed by
     /// a read-modify-write, and for a reset field.
@@ -530,8 +532,18 @@ fn runs(name: &str, mask: u32) -> Vec<(String, u32)> {
 }
 
 /// The reset fields: [`clock_fields`]' (`Rcc::reset_clock` reads each and
-/// requires its reset value, 0), then `FLASH_OPTSR_CUR.BOR_LEV`, whose value
-/// is the declared level.
+/// requires its reset value, 0), then `RCC_CR.D2CKRDY`, then
+/// `FLASH_OPTSR_CUR.BOR_LEV`, whose value is the declared level.
+///
+/// `D2CKRDY` (RM0433 Rev 9 §8.7.2, p. 384: "D2 domain clocks ready flag", 0
+/// after reset, set by hardware once the D2 domain's clocks are available)
+/// is listed whenever the firmware enables an I2C, SPI, USART or timer.
+/// RM0433 Rev 9 §8.5.10 (p. 372) step c asks to read `DxCKRDY` until it is 1
+/// after enabling a peripheral in another domain; the firmware does not
+/// (the architect's ruling on Q-F: Renode 1.17.0 reads the flag 0 whatever,
+/// so the wait would park every twin boot). The row is the dependency the
+/// firmware takes on silicon having set it; its value is 1. A GPIO port alone
+/// does not list it: the ports are on AHB4, in D3 (RM0433 Rev 9 Table 8).
 fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<FieldUse>, BoardError> {
     let mut out = Vec::new();
     if plan.needs_clock() {
@@ -553,6 +565,21 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
                 });
             }
         }
+    }
+    let d2 = !plan.peripherals.is_empty() || !plan.timers.is_empty() || !plan.serials.is_empty();
+    if d2 {
+        let (pos, width) = f.field("RCC_CR_D2CKRDY")?;
+        out.push(FieldUse {
+            family: "RCC".into(),
+            register: "RCC.CR".into(),
+            offset: f.layout("RCC")?.offset("CR", 0)?,
+            field: "D2CKRDY".into(),
+            pos: u8::try_from(pos).unwrap_or(u8::MAX),
+            width: u8::try_from(width).unwrap_or(u8::MAX),
+            access: FieldAccess::Reset,
+            value: Some(1),
+            whole_word: false,
+        });
     }
     let (pos, width) = f.field("FLASH_OPTSR_BOR_LEV")?;
     out.push(FieldUse {

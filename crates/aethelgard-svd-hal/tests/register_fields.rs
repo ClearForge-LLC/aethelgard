@@ -267,4 +267,27 @@ fn the_reference_rows_carry_the_solved_values() {
         value("FLASH.OPTSR_CUR.BOR_LEV", FieldAccess::Reset),
         Some(3)
     );
+    // `AET-WO-4230` R4: `AFCNTR` on the master.
+    assert_eq!(value("SPI1.CFG2.AFCNTR", written), Some(1));
+    // R5: `PUPDR` whole, by port: the debug pulls kept (PA13 pull-up, PA14
+    // pull-down, PB4 pull-up), no solved pin of the reference pulled.
+    assert_eq!(value("GPIOA.PUPDR.PUPD13", written), Some(0b01));
+    assert_eq!(value("GPIOA.PUPDR.PUPD14", written), Some(0b10));
+    assert_eq!(value("GPIOB.PUPDR.PUPD4", written), Some(0b01));
+    assert_eq!(value("GPIOA.PUPDR.PUPD5", written), Some(0));
+    assert!(
+        rows.iter()
+            .filter(|r| r.register == "GPIOA.PUPDR")
+            .all(|r| r.whole_word)
+    );
+    // R7: `D2CKRDY`, a dependency the firmware never polls (RM0433 Rev 9
+    // §8.5.10 step c), 1 once a D2 peripheral is enabled.
+    let d2 = rows
+        .iter()
+        .find(|r| r.id() == "RCC.CR.D2CKRDY")
+        .expect("RCC.CR.D2CKRDY");
+    assert_eq!(
+        (d2.access, d2.value, d2.pos, d2.width, d2.offset),
+        (FieldAccess::Reset, Some(1), 15, 1, 0)
+    );
 }
