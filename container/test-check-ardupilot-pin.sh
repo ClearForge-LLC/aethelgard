@@ -18,7 +18,9 @@ check=${1:-container/check-ardupilot-pin.sh}
 dir=container/fixtures/ardupilot-pin
 want_pin=$(head -n 1 "$dir/pin")
 want_form='ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:<64 hex>'
-loc=$(locale -a 2>/dev/null | grep -ixm1 'en_US\.utf-\?8' || echo C.UTF-8)
+# No pipe: under pipefail, grep -m1 can end `locale -a` by SIGPIPE.
+locales=$(locale -a 2>/dev/null || true)
+loc=$(grep -ixm1 'en_US\.utf-\?8' <<< "$locales" || echo C.UTF-8)
 echo "the check runs under LC_ALL=$loc"
 fail=0
 
