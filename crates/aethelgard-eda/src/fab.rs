@@ -158,14 +158,10 @@ pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
     for part in &board.parts {
         for pad in &part.pads {
             if let Some(d) = pad.drill_nm {
-                // `route::read` holds a pad's drill at its centre.
+                // `route::read` holds a pad's drill at its centre, and lays its
+                // box from there as `c − w/2 .. c + w − w/2` (`AET-WO-1311`
+                // adversarial L: an odd width's centre is still exact).
                 let r = pad.rect;
-                if (r.x0 + r.x1) % 2 != 0 || (r.y0 + r.y1) % 2 != 0 {
-                    return Err(format!(
-                        "{} pad {}'s centre is not a whole nanometre",
-                        part.reference, pad.number
-                    ));
-                }
                 add(
                     d,
                     Hole::Pad,
@@ -173,7 +169,7 @@ pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
                         reference: part.reference.clone(),
                         number: pad.number.clone(),
                     },
-                    &[((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2)],
+                    &[(r.x0 + (r.x1 - r.x0) / 2, r.y0 + (r.y1 - r.y0) / 2)],
                 );
             }
         }
@@ -925,6 +921,31 @@ mod tests {
     /// A routed via is at its net class's declared drill; an array's vias
     /// at its rule's drill, whatever the board's array says, so an array
     /// drilled otherwise disagrees with KiCad's file.
+    /// `AET-WO-1311` adversarial L: a plated pad of an odd width in
+    /// nanometres is drilled at its centre, which `route::read` keeps exact.
+    #[test]
+    fn a_pad_of_an_odd_width_is_drilled_at_its_centre() {
+        let part = crate::route::part_of(
+            &crate::sexpr::parse(
+                "(footprint \"x\" (at 10 20) (property \"Reference\" \"J1\") (pad \"1\" thru_hole circle (at 0 0) (size 1.000001 1.000001) (drill 0.5) (layers \"*.Cu\")) (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")))",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let b = Board {
+            outline: crate::pcb::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 40_000_000,
+                y1: 40_000_000,
+            },
+            parts: vec![part],
+            stack: crate::stack::reference(),
+        };
+        let d = drills(&b, &Routed::default()).unwrap();
+        assert_eq!(d[0].at, [(10_000_000, 20_000_000)]);
+    }
+
     #[test]
     fn each_via_is_counted_at_its_rules_drill() {
         let mut st = crate::stack::reference();

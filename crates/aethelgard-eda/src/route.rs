@@ -5254,5 +5254,50 @@ mod tests {
         assert_ne!(e.kind, "LayersDisagree", "{}", e.message);
         let e = judged("(0 \"F.Cu\" signal) (1 \"B.Cu\" signal)").unwrap_err();
         assert_eq!(e.kind, "LayersDisagree");
+        // `AET-WO-1311` adversarial B: a row of a copper type is copper
+        // whatever its id and name; KiCad plotted `(37 "Top" signal)` and
+        // `(39 "Mid" signal)` as In1.Cu and In2.Cu (measured).
+        for rows in [
+            "(37 \"Top\" signal) (39 \"Mid\" signal)",
+            "(3 \"Top\" power) (5 \"Mid\" mixed)",
+            "(4.0 \"Top\" jumper)",
+        ] {
+            let e = judged(&format!("{canonical} {rows}")).unwrap_err();
+            assert_eq!(e.kind, "LayersDisagree", "{rows}: {}", e.message);
+        }
+    }
+
+    /// `AET-WO-1311` adversarial D and E: `read` refuses a board with no
+    /// layer table (the strict reader judges item layers only against one,
+    /// and `check support` reads without `declared`), a pad with no
+    /// `layers` (KiCad flashed one on F.Cu and B.Cu) and a pad with a
+    /// padstack of its own (KiCad flashed its size, not the pad's).
+    #[test]
+    fn read_refuses_what_kicad_places_otherwise() {
+        let e = read_ref(
+            &strict::board("(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")))")
+                .unwrap(),
+        )
+        .unwrap_err();
+        assert!(e.contains("no layer table"), "{e}");
+        let fp = |pad: &str| {
+            crate::sexpr::parse(&format!(
+                "(footprint \"x\" (at 1 2) (property \"Reference\" \"R1\") {pad} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")))"
+            ))
+            .unwrap()
+        };
+        assert!(
+            part_of(&fp(
+                "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\"))"
+            ))
+            .is_ok()
+        );
+        let e = part_of(&fp("(pad \"1\" smd rect (at 0 0) (size 0.5 0.5))")).unwrap_err();
+        assert!(e.contains("names no layers"), "{e}");
+        let e = part_of(&fp(
+            "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (padstack (mode custom) (layer \"F.Cu\" (size 3 3))))",
+        ))
+        .unwrap_err();
+        assert!(e.contains("padstack"), "{e}");
     }
 }

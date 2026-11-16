@@ -43,7 +43,7 @@
 //! bound depends on every child of the copper it reads, refuses them; KiCad
 //! judges them for DRC and ERC).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 
 use crate::sexpr::{self, SexprError, Sx};
@@ -688,15 +688,15 @@ pub const PAD_WILDCARDS: &[&str] = &["*.Cu", "*.Mask"];
 /// accepts for the layer, would put an item on a layer the gates read by
 /// its canonical name, unseen. Names are compared exactly: a case or a
 /// look-alike is another name. A board with no table is not judged here:
-/// KiCad then reads its own names, and every gate that reads copper itself
-/// refuses it first (`route::declared`: "the board has no layer table").
+/// KiCad then reads its own names, and `route::read`, which every gate that
+/// reads copper itself runs, refuses it ("the board has no layer table").
 ///
 /// Judged: a `layer`'s first value (KiCad may append a flag, such as a
 /// text's `knockout`) and every value of a `layers`, but the table itself,
 /// a `stackup`'s rows, which describe layers (KiCad names its dielectrics
 /// there) and place nothing, and a `padstack`'s `"Inner"` row, KiCad's own
 /// keyword for every inner layer.
-fn layer_names(node: &Node<'_>, parent: &str, table: &[&str]) -> Result<(), Refusal> {
+fn layer_names(node: &Node<'_>, parent: &str, table: &BTreeSet<&str>) -> Result<(), Refusal> {
     let head = node.head().unwrap_or("");
     let names: Vec<&str> = match head {
         "layers" if parent == node.kind.root() => Vec::new(),
@@ -772,7 +772,7 @@ pub const MAX_PATH_BYTES: usize = sexpr::MAX_DEPTH * (MAX_KEYWORD_BYTES + 10);
 fn check(tree: &Tree) -> Result<(), Refusal> {
     // A board's layer table, whose names alone its items may name
     // ([`layer_names`]); a footprint judged alone has none.
-    let table: Option<Vec<&str>> = match tree.kind {
+    let table: Option<BTreeSet<&str>> = match tree.kind {
         Kind::Board => tree
             .root()
             .one("layers")?
@@ -883,7 +883,7 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
         }
     }
     let mut seen: BTreeMap<usize, &str> = BTreeMap::new();
-    let mut fields: Vec<String> = Vec::new();
+    let mut fields: BTreeSet<String> = BTreeSet::new();
     for child in node.lists() {
         let Some(head) = child.head() else { continue };
         if let Some(group) = rule.once.iter().position(|g| g.contains(&head))
@@ -915,7 +915,7 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
                 name,
             });
         }
-        fields.push(name);
+        fields.insert(name);
     }
     Ok(())
 }

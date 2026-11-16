@@ -87,9 +87,18 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     for pad in fp.all("pad") {
         let number = pad.arg(1).unwrap_or("").to_owned();
         let what = format!("{reference} pad {number}");
+        // A pad with no `layers`, or with a padstack of its own, puts copper
+        // where KiCad says, not where this reads it (`AET-WO-1311`
+        // adversarial E: KiCad flashed a pad with no `layers` on F.Cu and
+        // B.Cu, and a padstack's own size over the pad's): refused.
+        if one(&pad, "padstack")?.is_some() {
+            return Err(format!(
+                "{what} has its own `padstack`, which the gate does not model"
+            ));
+        }
         let layers: Vec<&str> = one(&pad, "layers")?
             .map(|l| l.texts().collect())
-            .unwrap_or_default();
+            .ok_or_else(|| format!("{what} names no layers"))?;
         let copper: Vec<&str> = layers
             .iter()
             .copied()
@@ -299,8 +308,8 @@ fn keepout(z: &strict::Node<'_>, reference: &str) -> Result<Keepout, String> {
 
 /// A plated through-hole pad's drill (one round hole at the pad's centre,
 /// with every layer's copper kept) and its `zone_connect`: 2 solid, 1
-/// relief, or none. Any token by which the pad would set its own relief,
-/// padstack or unused-layer removal is refused.
+/// relief, or none. Any token by which the pad would set its own relief or
+/// unused-layer removal is refused (a padstack, on any pad, by [`part`]).
 fn through_hole(
     pad: &strict::Node<'_>,
     what: &str,
@@ -315,7 +324,6 @@ fn through_hole(
         "thermal_width",
         "thermal_bridge_width",
         "thermal_bridge_angle",
-        "padstack",
         "keep_end_layers",
         "clearance",
         "backdrill",
@@ -418,7 +426,11 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         // KiCad 10 numbers copper 0, 2, 4 … 62 (even) and every other layer
         // odd; a row is copper by its id whatever its name says, or by name.
         let even = id.parse::<u32>().is_ok_and(|n| n % 2 == 0 && n <= 62);
-        let is_copper = even || strict::copper_layer(name);
+        // KiCad takes a row of a copper type as copper whatever its id and
+        // name (`AET-WO-1311` adversarial B: `(37 "Top" signal)` plotted as
+        // In1.Cu, measured).
+        let typed = matches!(row.arg(2), Some("signal" | "power" | "mixed" | "jumper"));
+        let is_copper = even || typed || strict::copper_layer(name);
         // `(id "name" type "user name")`: KiCad then takes the user name for
         // the layer, so an item on `"TOP"` would sit on `F.Cu` unseen. KiCad
         // itself writes one on a non-copper row (`(9 "F.Adhes" user
@@ -572,10 +584,18 @@ fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
 /// Tracks must be the declared width and on F.Cu or B.Cu; vias the engine's
 /// through via; the outline the one `Edge.Cuts` rectangle. Whether the layer
 /// table, the zones and the thickness are exactly the declared ones is
-/// [`declared`]'s, which every caller runs first, and [`connectivity`] judges
-/// the zones again on the copper read here.
+/// [`declared`]'s, which every caller but `check support` runs first (so a
+/// board with no layer table is refused here too), and [`connectivity`]
+/// judges the zones again on the copper read here.
 pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed), String> {
     let board = tree.root();
+    // The strict reader judges every item's layer against the table
+    // (`strict::board`); a board with none is not judged there, so it is
+    // refused here, whichever gate reads it (`AET-WO-1311` adversarial D:
+    // `check support` reads a board without `declared`).
+    if one(&board, "layers")?.is_none() {
+        return Err("the board has no layer table".to_owned());
+    }
     let items = board.all("segment").count()
         + board.all("via").count()
         + board
