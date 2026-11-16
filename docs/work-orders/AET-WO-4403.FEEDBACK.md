@@ -214,3 +214,13 @@ Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9
 - **D3 (the "How long" wording) and D5 (the GPLv2 Debian mirror) wait for Scotty.** Untouched until the architect's next note.
 - **Signal:** STOPPED again after D6, `main` `424f22d` merged in. Waiting only on Scotty for D3 and D5.
 - **Signal:** `main` `55ed4c4` (4211, #173) merged in, with no conflict and no `container/` or workflow change. CI was green at `e403af9` on all three workflows. Still waiting only on Scotty for D3 and D5.
+
+## 10. Scotty's rulings on D3 and D5 (architect's note, 2026-11-16 19:30 UTC)
+
+- **D3: the "How long" wording is approved as written** ("Honesty first always"). Both offers keep it unchanged.
+- **D5: the GPLv2-only Debian sources are to be mirrored in a follow-up PR** after this one merges, on a new branch `wo/aet-4403-debian-src` from `main`.
+  - It is pushed by the `main` publish job, as the GCC mirror is.
+  - `SOURCES.md` points to it.
+  - It gets the same anonymous-fetch proof.
+  - This PR's scope is unchanged.
+- **Acceptance stays as D1 ruled:** the first clause is met on `main`'s first publish after merge.
