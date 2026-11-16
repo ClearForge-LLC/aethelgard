@@ -317,7 +317,7 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     fs::create_dir_all(&dir).unwrap();
     let me = dir.join("aethelgard");
     if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
-        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
+        common::stub::write_executable(&me, fs::read(env!("CARGO_BIN_EXE_aethelgard")).unwrap());
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");
@@ -2481,7 +2481,7 @@ fn a_stale_or_impostor_bridge_is_refused() {
     ] {
         let dir = Dir::new("impostor");
         let me = dir.0.join("aethelgard");
-        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
+        common::stub::write_executable(&me, fs::read(env!("CARGO_BIN_EXE_aethelgard")).unwrap());
         let stub = dir.0.join("aethelgard-bridge");
         common::stub::write_executable(
             &stub,

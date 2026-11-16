@@ -333,7 +333,7 @@ fn cli(bridge: Option<&'static str>) -> PathBuf {
     fs::create_dir_all(&dir).unwrap();
     let me = dir.join("aethelgard");
     if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
-        common::stub::copy_executable(Path::new(env!("CARGO_BIN_EXE_aethelgard")), &me);
+        common::stub::write_executable(&me, fs::read(env!("CARGO_BIN_EXE_aethelgard")).unwrap());
     }
     if let Some(body) = bridge {
         let stub = dir.join("aethelgard-bridge");

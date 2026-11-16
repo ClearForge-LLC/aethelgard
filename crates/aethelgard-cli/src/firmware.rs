@@ -131,21 +131,6 @@ fn generated_config(text: &str) -> bool {
         })
 }
 
-/// Every file beneath `dir`, the copy, which holds only regular files and
-/// directories (`input::crate_dir`).
-fn files_beneath(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), Stop> {
-    let unreadable = |e: std::io::Error| Stop::unreadable(format!("cannot read the copy: {e}"));
-    for entry in fs::read_dir(dir).map_err(unreadable)? {
-        let path = entry.map_err(unreadable)?.path();
-        if fs::symlink_metadata(&path).map_err(unreadable)?.is_dir() {
-            files_beneath(&path, out)?;
-        } else {
-            out.push(path);
-        }
-    }
-    Ok(())
-}
-
 /// The tables of one manifest that can name a path dependency.
 fn dependency_tables(m: &toml::Table) -> Vec<&toml::Table> {
     const KINDS: [&str; 5] = [
@@ -338,10 +323,11 @@ pub fn preflight(copy: &Path, cwd: &Path) -> Result<(), Stop> {
     let root = fs::canonicalize(copy)
         .map_err(|e| Stop::unreadable(format!("cannot resolve the copy: {e}")))?;
     let mut files = Vec::new();
-    files_beneath(&root, &mut files)?;
+    input::walk(&root, &root, &mut files)?;
     files.sort();
-    for file in &files {
-        let rel = file.strip_prefix(&root).unwrap_or(file);
+    for rel in &files {
+        let file = &root.join(rel);
+        let rel = Path::new(rel);
         let name = rel.file_name().and_then(|n| n.to_str()).unwrap_or("");
         let in_dot_cargo = rel
             .parent()
@@ -491,6 +477,9 @@ fn dep_info(target: &Path, exe: &Path) -> Result<Vec<PathBuf>, Stop> {
 /// from what the sandbox lets cargo read (FEEDBACK F12).
 fn built_from_the_copy(m: &Messages, sources: &[PathBuf], copy: &Path) -> Result<(), Stop> {
     let refuse = |message: String| Err(Stop::refused("CrateHasDependency", message));
+    // belt-and-suspenders: the pre-flight refuses every build script it can
+    // read from a manifest (`AET-WO-1603` §1.2); this is cargo's own word
+    // that one ran, for any form the static check does not model.
     if let Some(package) = m.build_scripts.first() {
         return refuse(format!(
             "cargo ran a build script of {package}; a board crate has none (RUL-04)"

@@ -32,22 +32,3 @@ pub fn write_executable(path: &Path, body: impl AsRef<[u8]>) {
         path.display()
     );
 }
-
-/// Copies the executable `from` to `to`, mode 0755, from a child process, for
-/// the same reason.
-#[allow(dead_code)]
-pub fn copy_executable(from: &Path, to: &Path) {
-    let status = Command::new("/bin/sh")
-        .args(["-c", "cat < \"$1\" > \"$2\" && chmod 755 \"$2\"", "sh"])
-        .arg(from)
-        .arg(to)
-        .stdin(Stdio::null())
-        .status()
-        .unwrap();
-    assert!(
-        status.success(),
-        "copying {} to {}",
-        from.display(),
-        to.display()
-    );
-}

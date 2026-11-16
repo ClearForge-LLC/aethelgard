@@ -178,7 +178,7 @@ pub fn crate_dir(path: &Path, dest: &Path) -> Result<Input, Stop> {
 /// Collects every regular file beneath `dir` as a `/`-separated UTF-8 path
 /// relative to `root`, skipping `root/target`. Refuses symlinks, special files
 /// and names that are not UTF-8.
-fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), Stop> {
+pub(crate) fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) -> Result<(), Stop> {
     let entries = fs::read_dir(dir)
         .map_err(|e| Stop::unreadable(format!("cannot read {}: {e}", dir.display())))?;
     for entry in entries {
