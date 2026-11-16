@@ -14,8 +14,9 @@
 //!   sent once by each boot that reached it, whole, or cut short (a proper
 //!   prefix) by a rendered reset; the last one whole, and whole and cut
 //!   together at most the releases plus one ([`parse`]);
-//! - `F`, the frame ([`frame`]): bytes the composition injects at
-//!   [`injection_ns`], which only a firmware that reads `RDR` sends back.
+//! - `F`, the frame ([`frame`]): bytes the composition injects from
+//!   [`injection_ns`], one [`spacing_ns`] apart, which only a firmware that
+//!   reads `RDR` sends back.
 //!   They are derived from the firmware's own sha256, which no firmware can
 //!   hold when it is built.
 
@@ -121,13 +122,44 @@ pub fn injection_ns(boot_start_ns: u64) -> u64 {
     boot_start_ns.saturating_add(boot::QUANTUM_NS)
 }
 
-/// Whether a boot of `virtual_ns` holds the injection and one quantum after
-/// it, in which the firmware echoes: a boot that cannot is refused by name,
-/// never cut short (the ruling's amendment 3).
-pub fn fits(injection_ns: u64, virtual_ns: u64) -> bool {
-    injection_ns
+/// Whether a boot of `virtual_ns` holds the instant `at_ns` and one quantum
+/// after it: the injection, or a board whose window cannot hold it is
+/// refused by name (the ruling's amendment 3); and the frames' last byte
+/// ([`last_byte_ns`]), after which the firmware echoes it, or nothing goes
+/// in: a frame is never cut short.
+pub fn fits(at_ns: u64, virtual_ns: u64) -> bool {
+    at_ns
         .checked_add(boot::QUANTUM_NS)
         .is_some_and(|end| end <= virtual_ns)
+}
+
+/// How far apart a port's frame bytes go in (`AET-WO-4300b` adversarial
+/// pass 4, ADV4-2): one character's time on the wire ([`char_ns`]) rounded
+/// up to a whole quantum. Renode queues a byte at its `WriteChar`, so a frame
+/// written at one instant lets a firmware that hardly waits after the first
+/// byte echo all eight, where silicon's bytes arrive a character apart. The
+/// composition writes byte `k` at the injection plus `k` spacings, with a
+/// `RunFor` between distinct instants. A whole quantum, not the character
+/// itself (measured in the pinned image, fix 4 P1): a `RunFor` shorter than
+/// the quantum advances virtual time exactly, but the core executes the
+/// whole instructions of each `RunFor` only (86 876 ns runs 8 687, not
+/// 8 687.6: after one quantum and eight such, 79 496 instructions, not
+/// 79 500), so `MIPS x time` no longer holds, and every line the CPU causes
+/// is stamped at its `RunFor`'s start, off the quantum's grid; at a whole
+/// quantum both hold (900 000 ns, 90 000 instructions). The twin renders no
+/// overrun: a byte waits in Renode's queue however late the firmware reads
+/// it (FEEDBACK, a named residual).
+pub fn spacing_ns(framing: &Framing, actual_millibaud: u64) -> Option<u64> {
+    char_ns(framing, actual_millibaud)?
+        .div_ceil(boot::QUANTUM_NS)
+        .checked_mul(boot::QUANTUM_NS)
+}
+
+/// The instant a port's last frame byte goes in, for a frame injected at
+/// `injection_ns` with its bytes `spacing_ns` apart ([`spacing_ns`]).
+pub fn last_byte_ns(injection_ns: u64, spacing_ns: u64) -> Option<u64> {
+    let gaps = u64::try_from(FRAME_LEN - 1).ok()?;
+    injection_ns.checked_add(spacing_ns.checked_mul(gaps)?)
 }
 
 /// One character's time on the wire in ns, rounded up: its start bit, data
@@ -140,15 +172,20 @@ pub fn char_ns(framing: &Framing, actual_millibaud: u64) -> Option<u64> {
 }
 
 /// A port's wire-time budget in ns (the PM's ruling on adversarial F5): its
-/// pattern, the frame, and one character more, since the firmware echoes
-/// byte by byte, each character [`char_ns`]. The twin renders no wire time
-/// (Renode queues the bytes): the CLI sums the ports' budgets in the
+/// pattern, each character [`char_ns`]; the frame as the composition paces
+/// it, [`FRAME_LEN`] bytes each [`spacing_ns`] (pass 4, ADV4-2); and one
+/// character more, since the firmware echoes byte by byte. The twin renders
+/// the frame's spacing but not the pattern's wire time (Renode emits a byte
+/// at its `TDR` write): the CLI sums the ports' budgets in the
 /// specification's order, since the firmware serves them one after another
 /// (the ruling on pass 2's H1), and judges the sum statically, before the
 /// boot, against the board's window.
 pub fn wire_ns(label: &str, framing: &Framing, actual_millibaud: u64) -> Option<u64> {
-    let chars = u64::try_from(pattern(label).len() + FRAME_LEN + 1).ok()?;
-    char_ns(framing, actual_millibaud)?.checked_mul(chars)
+    let chars = u64::try_from(pattern(label).len() + 1).ok()?;
+    let frame = u64::try_from(FRAME_LEN).ok()?;
+    char_ns(framing, actual_millibaud)?
+        .checked_mul(chars)?
+        .checked_add(spacing_ns(framing, actual_millibaud)?.checked_mul(frame)?)
 }
 
 /// What one port's capture holds, read against its pattern and frame.
@@ -919,7 +956,7 @@ impl PinWords {
 ///   write the rebuild cannot apply included (`PA9 MODER 0b00, AF7, OTYPER 0,
 ///   OSPEEDR 0b00, PUPDR 0b00 after it was solved`, the first change of each
 ///   pin in each boot). Renode emits a byte at
-///   its `TDR` write and queues the frame at the injection, where silicon
+///   its `TDR` write and a frame byte at its quantum ([`spacing_ns`]), where silicon
 ///   shifts each bit over a character's time, so a pin unrouted between two
 ///   samples loses bytes on silicon only;
 /// - no write sets a serial pin's `OT`, which Renode does not store;
@@ -1353,6 +1390,11 @@ mod tests {
         assert!(fits(100_000, 200_000));
         assert!(!fits(100_000, 199_999));
         assert!(!fits(u64::MAX, u64::MAX));
+        // ADV4-2: the last of eight bytes a quantum apart, 700 000 ns after
+        // the first.
+        assert_eq!(last_byte_ns(100_000, 100_000), Some(800_000));
+        assert_eq!(last_byte_ns(u64::MAX, 1), None);
+        assert_eq!(last_byte_ns(0, u64::MAX), None);
     }
 
     #[test]
@@ -2269,11 +2311,14 @@ mod tests {
     }
 
     /// The PM's ruling on F5: one character at the solved actual baud, in ns
-    /// rounded up; the budget is the pattern, the frame and one character.
-    /// 115200 8N1 (BRR 556, 115 107.913 baud): 10 bits, 86 876 ns, 21
-    /// characters for `CONSOLE`, 1 824 396 ns. 9600 8N1 (BRR 6667, 9 599.520
-    /// baud): 1 041 719 ns, 21 876 099 ns. SBUS 100000 8E2: 12 bits, 120 000
-    /// ns.
+    /// rounded up; the budget is the pattern and one character, and the
+    /// frame's eight bytes at their spacing, the character rounded up to a
+    /// whole quantum (pass 4, ADV4-2). 115200 8N1 (BRR 556, 115 107.913
+    /// baud): 10 bits, 86 876 ns, spaced 100 000 ns; for `CONSOLE` 13 x
+    /// 86 876 + 8 x 100 000 = 1 929 388 ns. 9600 8N1 (BRR 6667, 9 599.520
+    /// baud): 1 041 719 ns, spaced 1 100 000 ns; 13 x 1 041 719 + 8 x
+    /// 1 100 000 = 22 342 347 ns. SBUS 100000 8E2: 12 bits, 120 000 ns,
+    /// spaced 200 000 ns.
     #[test]
     fn a_port_s_wire_time_is_its_characters_at_the_solved_baud() {
         let f = |baud, data_bits, parity, stop_bits| Framing {
@@ -2285,17 +2330,22 @@ mod tests {
         };
         let console = f(115_200, 8, Parity::None, 1);
         assert_eq!(char_ns(&console, 115_107_913), Some(86_876));
-        assert_eq!(wire_ns("CONSOLE", &console, 115_107_913), Some(1_824_396));
+        assert_eq!(spacing_ns(&console, 115_107_913), Some(100_000));
+        assert_eq!(wire_ns("CONSOLE", &console, 115_107_913), Some(1_929_388));
         let slow = f(9_600, 8, Parity::None, 1);
         assert_eq!(char_ns(&slow, 9_599_520), Some(1_041_719));
-        assert_eq!(wire_ns("CONSOLE", &slow, 9_599_520), Some(21_876_099));
-        assert_eq!(
-            char_ns(&f(100_000, 8, Parity::Even, 2), 100_000_000),
-            Some(120_000)
-        );
-        // Exact: 10 bits at 10 000 baud is 1 ms, not rounded up past it.
+        assert_eq!(spacing_ns(&slow, 9_599_520), Some(1_100_000));
+        assert_eq!(wire_ns("CONSOLE", &slow, 9_599_520), Some(22_342_347));
+        let sbus = f(100_000, 8, Parity::Even, 2);
+        assert_eq!(char_ns(&sbus, 100_000_000), Some(120_000));
+        assert_eq!(spacing_ns(&sbus, 100_000_000), Some(200_000));
+        // Exact: 10 bits at 10 000 baud is 1 ms, not rounded up past it, and
+        // a whole number of quanta stays as it is.
         assert_eq!(char_ns(&slow, 10_000_000), Some(1_000_000));
+        assert_eq!(spacing_ns(&slow, 10_000_000), Some(1_000_000));
         assert_eq!(char_ns(&slow, 0), None);
+        assert_eq!(spacing_ns(&slow, 0), None);
+        assert_eq!(wire_ns("CONSOLE", &slow, 0), None);
     }
 
     #[test]

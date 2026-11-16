@@ -397,14 +397,28 @@ impl BootPlan<'_> {
         Some(aethelgard_twin::serial::injection_ns(start))
     }
 
-    /// The instant the frames actually go in: [`Self::injection_ns`] when this
-    /// boot holds it and the quantum after it, in which the firmware echoes.
-    /// A `--for` shorter than that is not cut to fit: nothing is injected,
-    /// and the echo fails closed by name ([`serial_findings_of`]). A board
-    /// whose window cannot hold it is refused before the boot (`main.rs`).
+    /// The instant the last frame byte of any port goes in: each port's
+    /// bytes one [`Serial::spacing_ns`] apart from [`Self::injection_ns`]
+    /// (adversarial pass 4, ADV4-2). `None` without an injection, or where a
+    /// port's spacing cannot be computed.
+    pub fn last_byte_ns(&self) -> Option<u64> {
+        let at = self.injection_ns()?;
+        self.serial.iter().try_fold(at, |end, s| {
+            let last = aethelgard_twin::serial::last_byte_ns(at, s.spacing_ns?)?;
+            Some(end.max(last))
+        })
+    }
+
+    /// The instant the frames actually start to go in: [`Self::injection_ns`]
+    /// when this boot holds every port's last byte and the quantum after it,
+    /// in which the firmware echoes it. A `--for` shorter than that is not
+    /// cut to fit: nothing is injected, and the echo fails closed by name
+    /// ([`serial_findings_of`]). A board whose window cannot hold it is
+    /// refused before the boot (`main.rs`).
     pub fn injected_ns(&self) -> Option<u64> {
+        let last = self.last_byte_ns()?;
         self.injection_ns()
-            .filter(|&i| aethelgard_twin::serial::fits(i, self.virtual_ns))
+            .filter(|_| aethelgard_twin::serial::fits(last, self.virtual_ns))
     }
 
     /// Before the first `RunFor`, with a serial port: Renode's access log on
@@ -456,22 +470,49 @@ impl BootPlan<'_> {
         out
     }
 
-    /// The reads of each port's RX pin's mux at the injection instant, then
-    /// each frame written into its USART byte by byte (`UARTBase.WriteChar`).
-    fn injection_commands(&self) -> Vec<String> {
-        let mut c = vec![format!("echo \"{INJECT_BEGIN}\"")];
+    /// The injection as monitor commands at their instants, in time order,
+    /// none without one ([`Self::injected_ns`]): at the injection instant the
+    /// reads of each port's RX pin's mux, then each port's frame written into
+    /// its USART byte by byte (`UARTBase.WriteChar`), byte `k` at the
+    /// injection plus `k` of the port's spacings (adversarial pass 4,
+    /// ADV4-2): the ports interleave by time, in the specification's order
+    /// at one instant, and the caller runs to each instant before its
+    /// commands. The RX pins are read once, at the first byte: the interval
+    /// rule ([`aethelgard_twin::serial::judge_pins`]) holds each one from
+    /// before the injection to the end, through every later byte.
+    fn injection_events(&self) -> Vec<(u64, Vec<String>)> {
+        let Some(at) = self.injected_ns() else {
+            return Vec::new();
+        };
+        let mut reads = vec![format!("echo \"{INJECT_BEGIN}\"")];
         for p in self.serial {
             for at in [p.rx.moder.1, p.rx.afr.1] {
-                c.push(format!("sysbus ReadDoubleWord {at:#010x}"));
+                reads.push(format!("sysbus ReadDoubleWord {at:#010x}"));
             }
         }
-        c.push(format!("echo \"{INJECT_END}\""));
-        for p in self.serial {
-            for b in p.frame {
-                c.push(format!("sysbus.{} WriteChar {b:#04x}", p.port.renode));
+        reads.push(format!("echo \"{INJECT_END}\""));
+        let mut bytes: Vec<(u64, usize, String)> = Vec::new();
+        for (n, p) in self.serial.iter().enumerate() {
+            // `injected_ns` holds only when every spacing is known.
+            let spacing = p.spacing_ns.unwrap_or_default();
+            for (k, b) in (0u64..).zip(p.frame) {
+                bytes.push((
+                    at + k * spacing,
+                    n,
+                    format!("sysbus.{} WriteChar {b:#04x}", p.port.renode),
+                ));
             }
         }
-        c
+        // Stable: at one instant, the ports in order, each byte once.
+        bytes.sort_by_key(|b| (b.0, b.1));
+        let mut events: Vec<(u64, Vec<String>)> = vec![(at, reads)];
+        for (t, _, c) in bytes {
+            match events.last_mut() {
+                Some(last) if last.0 == t => last.1.push(c),
+                _ => events.push((t, vec![c])),
+            }
+        }
+        events
     }
 
     /// Every read, in order, as the monitor command and what it reads.
@@ -655,17 +696,17 @@ impl BootPlan<'_> {
     fn droop_schedule(&self) -> Vec<String> {
         let mut c = Vec::new();
         let mut now = 0u64;
-        // The frames go in at the injection instant, wherever it falls
-        // between the schedule's own instants (`AET-WO-4300b`).
-        let mut inject = self.injected_ns();
+        // The frames' bytes go in at their instants, wherever they fall
+        // between the schedule's own, before a schedule command at the same
+        // instant (`AET-WO-4300b`).
+        let mut inject = self.injection_events().into_iter().peekable();
         let mut at = |c: &mut Vec<String>, t: u64| {
-            if let Some(i) = inject.filter(|&i| i <= t) {
+            while let Some((i, commands)) = inject.next_if(|e| e.0 <= t) {
                 if i > now {
                     c.push(run_for(i - now));
                     now = i;
                 }
-                c.extend(self.injection_commands());
-                inject = None;
+                c.extend(commands);
             }
             if t > now {
                 c.push(run_for(t - now));
@@ -718,14 +759,18 @@ impl BootPlan<'_> {
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
         c.extend(self.stimuli());
-        match (self.resets.is_empty(), self.injected_ns()) {
-            (true, None) => c.push(run_for(self.virtual_ns)),
-            (true, Some(i)) => {
-                c.push(run_for(i));
-                c.extend(self.injection_commands());
-                c.push(run_for(self.virtual_ns.saturating_sub(i)));
+        if self.resets.is_empty() {
+            let mut now = 0u64;
+            for (t, commands) in self.injection_events() {
+                if t > now {
+                    c.push(run_for(t - now));
+                    now = t;
+                }
+                c.extend(commands);
             }
-            (false, _) => c.extend(self.droop_schedule()),
+            c.push(run_for(self.virtual_ns.saturating_sub(now)));
+        } else {
+            c.extend(self.droop_schedule());
         }
         c.push(format!("echo \"{BEGIN}\""));
         c.extend(self.reads().into_iter().map(|(cmd, _)| cmd));
@@ -1040,9 +1085,13 @@ pub struct Serial {
     pub role: aethelgard_ir::SerialRole,
     /// The bytes the port must send at each boot's start.
     pub pattern: Vec<u8>,
-    /// The bytes injected at [`BootPlan::injection_ns`], and echoed back by
-    /// a firmware that reads them.
+    /// The bytes injected from [`BootPlan::injection_ns`], and echoed back
+    /// by a firmware that reads them.
     pub frame: [u8; aethelgard_twin::serial::FRAME_LEN],
+    /// How far apart the frame's bytes go in
+    /// ([`aethelgard_twin::serial::spacing_ns`]); `None` where the solved
+    /// baud gives no time.
+    pub spacing_ns: Option<u64>,
     pub tx: aethelgard_twin::serial::PinMux,
     pub rx: aethelgard_twin::serial::PinMux,
     pub silicon: aethelgard_ir::serial::SiliconFraming,
@@ -1069,6 +1118,10 @@ pub fn serials(
                 role: solved.role,
                 pattern: aethelgard_twin::serial::pattern(&port.label),
                 frame: aethelgard_twin::serial::frame(firmware, &port.label),
+                spacing_ns: aethelgard_twin::serial::spacing_ns(
+                    &port.framing,
+                    solved.actual_millibaud,
+                ),
                 tx: aethelgard_twin::serial::PinMux::of(&port.tx, port.tx_af)?,
                 rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
                 silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
@@ -1147,7 +1200,7 @@ pub type WirePast<'a> = (&'a Serial, Option<(u64, u64, u64)>, Option<u64>);
 /// pass 2's H1): the firmware sends the patterns port after port and echoes
 /// port after port, so the budget is the sum, in the specification's order,
 /// of each port's own ([`aethelgard_twin::serial::wire_ns`]: its pattern,
-/// the frame and one echoed character). The port, its character's ns, its
+/// the frame as the composition paces it and one echoed character). The port, its character's ns, its
 /// budget's and the sum through it, and where the sum ends. A port whose baud
 /// gives no time is the same.
 pub fn wire_past_window(
@@ -1203,13 +1256,14 @@ pub fn static_serial_findings(serial: &[Serial]) -> Vec<Finding> {
 
 /// One port's witness findings, once the boot reached its fixed point.
 /// `releases` is the boots the droop rendered after the first; `short` the
-/// boot's length and the injection instant it does not hold, when no frame
-/// went in for that reason.
+/// boot's length, the injection instant and the frames' last byte's
+/// ([`BootPlan::last_byte_ns`]) it does not hold, when no frame went in for
+/// that reason.
 fn serial_findings_of(
     s: &Serial,
     w: &SerialWitness,
     releases: usize,
-    short: Option<(u64, u64)>,
+    short: Option<(u64, u64, Option<u64>)>,
 ) -> Vec<Finding> {
     use aethelgard_chaos::campaign::{
         SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING, SERIAL_TAG_FINDING,
@@ -1324,8 +1378,12 @@ fn serial_findings_of(
         _ => out.push(Finding::plain(
             SERIAL_ECHO_FINDING,
             match short {
-                Some((virtual_ns, at)) => format!(
-                    "{who}: no frame went in: the boot of {virtual_ns} ns ends before the injection at {at} ns and the {} ns after it, so its echo cannot be witnessed",
+                Some((virtual_ns, at, last)) => format!(
+                    "{who}: no frame went in: the boot of {virtual_ns} ns ends before the injection at {at} ns, {} and the {} ns after it, so its echo cannot be witnessed",
+                    last.map_or_else(
+                        || "a frame whose spacing cannot be computed".to_owned(),
+                        |l| format!("the frames' last byte at {l} ns (one character apart, rounded up to a quantum)")
+                    ),
                     aethelgard_twin::boot::QUANTUM_NS
                 ),
                 None => format!(
@@ -2175,7 +2233,7 @@ pub fn judge_boot(
             .filter(|r| r.released_ns.is_some())
             .count();
         let short = match (plan.injection_ns(), plan.injected_ns()) {
-            (Some(at), None) => Some((plan.virtual_ns, at)),
+            (Some(at), None) => Some((plan.virtual_ns, at, plan.last_byte_ns())),
             _ => None,
         };
         for (s, w) in plan.serial.iter().zip(&observed.serial) {
@@ -3016,9 +3074,10 @@ mod tests {
     }
 
     /// `AET-WO-4300b`: one file backend per port before anything runs; the
-    /// frame injected one quantum in, after the RX pin's mux is read between
-    /// its own markers; and with a droop, one quantum after the release's
-    /// nudge, after its probe.
+    /// frame injected from one quantum in, after the RX pin's mux is read
+    /// between its own markers, a byte each quantum (adversarial pass 4,
+    /// ADV4-2: 86 876 ns a character at 115 200 8N1, rounded up); and with a
+    /// droop, from one quantum after the release's nudge, after its probe.
     #[test]
     fn a_serial_boot_captures_first_and_injects_one_quantum_after_the_last_start() {
         let t = console_topology();
@@ -3031,7 +3090,7 @@ mod tests {
             .collect();
         let inject = format!(
             "echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; {}",
-            frame.join("; ")
+            frame.join("; emulation RunFor \"0.000100000\"; ")
         );
         let p = serial_plan(&image, &[], &serial);
         assert_eq!(p.injection_ns(), Some(100_000));
@@ -3047,13 +3106,14 @@ mod tests {
         .collect();
         assert!(
             c.contains(&format!(
-                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; emulation RunFor \"0.000100000\"; {inject}; emulation RunFor \"0.099900000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; emulation RunFor \"0.000100000\"; {inject}; emulation RunFor \"0.099200000\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
         assert_eq!(c.matches("CreateFileBackend").count(), 9);
         assert_eq!(c.matches("LogPeripheralAccess").count(), 3);
         assert_eq!(c.matches("WriteChar").count(), 8);
+        assert_eq!(p.last_byte_ns(), Some(800_000));
         let resets = bor3();
         let p = serial_plan(&image, &resets, &serial);
         assert_eq!(p.injection_ns(), Some(1_227_980 + 10 + 100_000));
@@ -3074,7 +3134,7 @@ mod tests {
         );
         assert!(
             c.contains(&format!(
-                "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.000000010\"; {inject}; emulation RunFor \"0.098672010\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.000000010\"; {inject}; emulation RunFor \"0.097972010\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
@@ -3089,17 +3149,82 @@ mod tests {
         assert!(!p.commands().contains("INJECT"));
         // A board without a port: no capture, no injection, one RunFor.
         assert_eq!(plan(&image, &[]).injection_ns(), None);
-        // A boot too short for the instant and the quantum after it: the
-        // instant is known, nothing goes in, and the run is one `RunFor`.
+        // A boot too short for the frame's last byte and the quantum after
+        // it: the instant is known, nothing goes in (never a cut frame), and
+        // the run is one `RunFor`.
         let mut p = serial_plan(&image, &[], &serial);
-        p.virtual_ns = 199_999;
+        p.virtual_ns = 899_999;
         assert_eq!((p.injection_ns(), p.injected_ns()), (Some(100_000), None));
         let c = p.commands();
         assert!(!c.contains("INJECT") && !c.contains("WriteChar"), "{c}");
         assert!(c.contains("CreateFileBackend"));
-        assert!(c.contains("emulation RunFor \"0.000199999\"; echo \"AETHELGARD-BOOT-BEGIN\""));
-        p.virtual_ns = 200_000;
+        assert!(c.contains("emulation RunFor \"0.000899999\"; echo \"AETHELGARD-BOOT-BEGIN\""));
+        p.virtual_ns = 900_000;
         assert_eq!(p.injected_ns(), Some(100_000));
+        let c = p.commands();
+        assert!(
+            c.contains(&format!(
+                "{}; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-BOOT-BEGIN\"",
+                frame[7]
+            )),
+            "{c}"
+        );
+    }
+
+    /// ADV4-2 (adversarial pass 4): ports interleave by time, each byte at
+    /// the injection plus its index times its own spacing, the ports in the
+    /// specification's order at one instant, and a `RunFor` between each
+    /// two instants. The console at 115 200 (100 000 ns apart) beside a
+    /// port at 9600 (1 100 000 ns apart): at 100 000 ns both first bytes,
+    /// then the console's seven, then the slow port's from 1 200 000 ns.
+    #[test]
+    fn the_frames_bytes_go_in_a_character_apart_rounded_up_to_a_quantum() {
+        let t = console_topology();
+        let image = aethelgard_twin::boot::expected(&t).unwrap();
+        let mut serial = console();
+        let mut slow = serial[0].clone();
+        slow.port.label = "SLOW".to_owned();
+        slow.port.renode = "usart2";
+        slow.frame = [0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7];
+        slow.spacing_ns = Some(1_100_000);
+        serial.push(slow);
+        let p = serial_plan(&image, &[], &serial);
+        assert_eq!(p.last_byte_ns(), Some(100_000 + 7 * 1_100_000));
+        let events = p.injection_events();
+        let at: Vec<u64> = events.iter().map(|e| e.0).collect();
+        let mut want = vec![100_000];
+        want.extend((2..=8).map(|k| k * 100_000));
+        want.extend(
+            (1..=7)
+                .map(|k| 100_000 + k * 1_100_000)
+                .filter(|t| *t > 800_000),
+        );
+        assert_eq!(at, want);
+        let first = &events[0].1;
+        assert_eq!(first[0], "echo \"AETHELGARD-INJECT-BEGIN\"");
+        assert_eq!(
+            first[first.len() - 2..],
+            [
+                format!("sysbus.usart1 WriteChar {:#04x}", serial[0].frame[0]),
+                "sysbus.usart2 WriteChar 0xa0".to_owned()
+            ]
+        );
+        // 1 200 000 ns: the slow port's second byte, after the console's last.
+        assert_eq!(
+            events[8],
+            (1_200_000, vec!["sysbus.usart2 WriteChar 0xa1".to_owned()])
+        );
+        let c = p.commands();
+        assert_eq!(c.matches("WriteChar").count(), 16);
+        assert!(c.contains(
+            "sysbus.usart2 WriteChar 0xa6; emulation RunFor \"0.001100000\"; sysbus.usart2 WriteChar 0xa7; emulation RunFor \"0.092200000\"; echo"
+        ), "{c}");
+        // A spacing that cannot be computed: nothing goes in.
+        serial[1].spacing_ns = None;
+        let p = serial_plan(&image, &[], &serial);
+        assert_eq!((p.last_byte_ns(), p.injected_ns()), (None, None));
+        assert!(p.injection_events().is_empty());
+        assert!(!p.commands().contains("WriteChar"));
     }
 
     /// `4300` D8: the silicon check is the topology's, reported apart; a port
@@ -3408,28 +3533,39 @@ mod tests {
     }
 
     /// The PM's rulings on adversarial F5 and pass 2's H1, from the
-    /// topology alone: each port's pattern, the frame (8) and one echoed
-    /// character, summed over the ports in the specification's order, from
-    /// the injection one quantum in (100 000 ns), inside the board's window.
-    /// The console at 115 200 8N1 (BRR 556): 21 x 86 876 = 1 824 396 ns,
-    /// ending at 1 924 396 ns, inside `DSHOT_WINDOW_NS` (2 000 000). A `GPS`
-    /// port after it at 115 200 8N1: 17 x 86 876 = 1 476 892 ns, 3 301 288 ns
-    /// with the console's, ending at 3 401 288 ns: past the DShot window,
-    /// though each alone fits. At 9600 8N1 (BRR 6667, 9 599.520 baud): 21 x
-    /// 1 041 719 = 21 876 099 ns, ending at 21 976 099 ns: past the DShot
-    /// window, inside `MAX_VIRTUAL_NS` (100 000 000).
+    /// topology alone: each port's pattern and one echoed character, and the
+    /// frame's eight bytes as the composition paces them, a character
+    /// rounded up to a whole quantum apart (pass 4, ADV4-2), summed over the
+    /// ports in the specification's order, from the injection, inside the
+    /// board's window. The console at 115 200 8N1 (BRR 556): 13 x 86 876 +
+    /// 8 x 100 000 = 1 929 388 ns; from the injection one quantum in
+    /// (100 000 ns) it ends at 2 029 388 ns, past `DSHOT_WINDOW_NS`
+    /// (2 000 000): a DShot board with a 115 200 console is refused (before
+    /// the pacing it ended at 1 924 396 ns and fitted). It fits from an
+    /// injection at 70 612 ns or earlier. A `GPS` port after it at 115 200
+    /// 8N1: 9 x 86 876 + 800 000 = 1 581 884 ns, 3 511 272 ns with the
+    /// console's: past the DShot window, though each alone fits. At 9600 8N1
+    /// (BRR 6667, 9 599.520 baud): 13 x 1 041 719 + 8 x 1 100 000 =
+    /// 22 342 347 ns, ending at 22 442 347 ns: past the DShot window, inside
+    /// `MAX_VIRTUAL_NS` (100 000 000).
     #[test]
     fn a_port_s_wire_time_must_fit_the_board_s_window() {
         let dshot = aethelgard_twin::boot::DSHOT_WINDOW_NS;
         let full = aethelgard_twin::boot::MAX_VIRTUAL_NS;
         let fast = console();
-        assert!(wire_past_window(&fast, 100_000, dshot).is_none());
+        assert_eq!(fast[0].spacing_ns, Some(100_000));
+        let one = wire_past_window(&fast, 100_000, dshot).unwrap();
+        assert_eq!(
+            (one.1, one.2),
+            (Some((86_876, 1_929_388, 1_929_388)), Some(2_029_388))
+        );
+        assert!(wire_past_window(&fast, 100_000, full).is_none());
         // At its edge: a budget ending at the window's last ns fits.
-        assert!(wire_past_window(&fast, 175_604, dshot).is_none());
-        let late = wire_past_window(&fast, 175_605, dshot).unwrap();
+        assert!(wire_past_window(&fast, 70_612, dshot).is_none());
+        let late = wire_past_window(&fast, 70_613, dshot).unwrap();
         assert_eq!(
             (late.1, late.2),
-            (Some((86_876, 1_824_396, 1_824_396)), Some(2_000_001))
+            (Some((86_876, 1_929_388, 1_929_388)), Some(2_000_001))
         );
         // H1: the ports are served one after another. A second port, alone
         // inside the window, passes it after the console.
@@ -3438,11 +3574,11 @@ mod tests {
         gps.pattern = aethelgard_twin::serial::pattern("GPS");
         assert!(wire_past_window(std::slice::from_ref(&gps), 100_000, dshot).is_none());
         let two = [fast[0].clone(), gps];
-        let (port, times, end) = wire_past_window(&two, 100_000, dshot).unwrap();
+        let (port, times, end) = wire_past_window(&two, 70_612, dshot).unwrap();
         assert_eq!(port.port.label, "GPS");
         assert_eq!(
             (times, end),
-            (Some((86_876, 1_476_892, 3_301_288)), Some(3_401_288))
+            (Some((86_876, 1_581_884, 3_511_272)), Some(3_581_884))
         );
         assert!(wire_past_window(&two, 100_000, full).is_none());
         let slow_json = CONSOLE_TOPOLOGY
@@ -3455,11 +3591,12 @@ mod tests {
             serde_json::from_str(&slow_json).unwrap();
         let slow = serials(&slow_topology, &[0x11; 32]).unwrap();
         assert_eq!(slow[0].silicon.actual_millibaud, 9_599_520);
+        assert_eq!(slow[0].spacing_ns, Some(1_100_000));
         let (port, times, end) = wire_past_window(&slow, 100_000, dshot).unwrap();
         assert_eq!(port.port.label, "CONSOLE");
         assert_eq!(
             (times, end),
-            (Some((1_041_719, 21_876_099, 21_876_099)), Some(21_976_099))
+            (Some((1_041_719, 22_342_347, 22_342_347)), Some(22_442_347))
         );
         assert!(wire_past_window(&slow, 100_000, full).is_none());
     }

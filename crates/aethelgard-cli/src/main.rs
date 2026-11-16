@@ -1272,7 +1272,9 @@ fn ready(
 
 /// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
 /// firmware needs the quantum after it to echo them, all inside the board's
-/// window (`aethelgard_twin::boot::window`), named by `window`.
+/// window (`aethelgard_twin::boot::window`), named by `window`. The frames'
+/// later bytes, paced a character apart (adversarial pass 4, ADV4-2), are
+/// the wire budget's ([`serial_wire_fits`]), which holds them all.
 fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), run::Stop> {
     if aethelgard_twin::serial::fits(injection_ns, window_ns) {
         return Ok(());
@@ -1287,11 +1289,12 @@ fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), ru
 }
 
 /// `SerialWireTimePastWindow` (the PM's rulings on adversarial F5 and pass
-/// 2's H1): every port's pattern, the frame and one echoed character, each
-/// at its solved actual baud, summed over the ports in the specification's
-/// order (the firmware serves them one after another), from the injection
-/// at `injection_ns`, inside the board's window. The twin renders no wire
-/// time, so this is judged before the boot.
+/// 2's H1): every port's pattern and one echoed character at its solved
+/// actual baud, and the frame as the composition paces it (pass 4, ADV4-2),
+/// summed over the ports in the specification's order (the firmware serves
+/// them one after another), from the injection at `injection_ns`, inside the
+/// board's window. The twin renders no pattern's wire time, so this is
+/// judged before the boot.
 fn serial_wire_fits(
     serial: &[renode::Serial],
     injection_ns: u64,
@@ -1310,10 +1313,11 @@ fn serial_wire_fits(
             aethelgard_twin::serial::describe(&s.port.framing),
             match (times, end) {
                 (Some((char_ns, wire, sum)), Some(end)) => format!(
-                    "its pattern ({} characters), the frame ({}) and one echoed character take {wire} ns on the wire at {} mbaud ({char_ns} ns a character), {}ending at {end} ns",
+                    "its pattern ({} characters), the frame ({}) and one echoed character take {wire} ns on the wire at {} mbaud ({char_ns} ns a character, the frame's {} ns apart), {}ending at {end} ns",
                     s.pattern.len(),
                     aethelgard_twin::serial::FRAME_LEN,
                     s.silicon.actual_millibaud,
+                    s.spacing_ns.unwrap_or_default(),
                     if sum > wire {
                         format!(
                             "{sum} ns after the ports before it in the specification's order, which the firmware serves first, "

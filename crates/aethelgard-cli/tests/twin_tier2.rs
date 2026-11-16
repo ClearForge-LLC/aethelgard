@@ -3153,3 +3153,44 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
         ]
     );
 }
+
+// ------------------------------------------------- adversarial pass 4 (ADV4)
+
+/// ADV4-2 (the PM's ruling): the echo waits `ECHO_POLLS` for the first byte
+/// and 2 polls (a few hundred ns) for each later one. Renode queued the
+/// frame at one instant, so all eight were echoed and the boot passed
+/// (adversarial pass 4's verdict, code 0); silicon's bytes arrive a
+/// character apart (86 876 ns at 115 200 8N1). The composition now writes
+/// byte `k` at the injection plus `k` characters rounded up to a quantum:
+/// the second byte is not there after 2 polls, so one byte comes back.
+#[test]
+fn adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "adv4-short-poll",
+        &[],
+        &[
+            ("for _ in 0..FRAME_LEN {", "for i in 0..FRAME_LEN {"),
+            (
+                "usart1.receive(&mut r, ECHO_POLLS)",
+                "usart1.receive(&mut r, if i == 0 { ECHO_POLLS } else { 2 })",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv4-2", &elf, "100ms");
+    answer(&format!("ADV4-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_echo_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(
+        (&t["echo"], &t["echoed"]),
+        (&"partial".into(), &1.into()),
+        "{v}"
+    );
+    assert_eq!(t["tags_unexpected"], serde_json::json!([]), "{v}");
+    assert!(
+        messages(&v, "serial_echo_missing")
+            .iter()
+            .any(|m| m.contains("1 of the frame's 8 bytes")),
+        "{v}"
+    );
+}
