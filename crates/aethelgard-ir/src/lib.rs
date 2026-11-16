@@ -50,8 +50,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// D1); an empty list acknowledges none. `4210` took 8 by the numbering
 /// rule, merging after `4300d`. Version 9 requires `serial_ports`
 /// (`AET-WO-4300b`, renumbered from 7 by the same rule); an empty list
-/// declares none. Nothing supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 9;
+/// declares none. Version 10 adds `power`'s judgement declarations
+/// (`AET-WO-4300d3`, renumbered from 9 by the same rule): `hot_plug`,
+/// `junction`, `controls` and `dc_bias_derating`. Nothing supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 10;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";

@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "accept_lifecycle": [
     {
       "part": "ICM20948",
@@ -240,11 +240,30 @@
         "min": -20,
         "max": 85,
         "source": "Sentinel-02 declared range: the XT30's -20 C floor and the 5 V output capacitors' 85 C ceiling"
-      }
+      },
+      "dc_bias_derating": [
+        {
+          "dielectrics": [
+            "X5R",
+            "X7R",
+            "X7S"
+          ],
+          "ratio_max_permille": 1000,
+          "retained_permille": 500,
+          "source": "TI SBVS320D (TLV755P) p. 15, 7.1.1: generally, derate ceramic capacitors by 50 % (p. 3, note 1: the nominal derating is 50 %); no maker DC-bias figure is held (AET-WO-4300d3 FEEDBACK D2)"
+        }
+      ]
     },
     "input": {
       "reference": "J1",
-      "part": "XT30PW-M"
+      "part": "XT30PW-M",
+      "hot_plug": [
+        {
+          "reference": "C1",
+          "part": "UCZ1H470MCL1GS",
+          "side": "board"
+        }
+      ]
     },
     "battery": {
       "chemistry": "LiPo, 3S to 6S, high-voltage cells allowed",
@@ -325,6 +344,28 @@
             "reference": "L1",
             "part": "IHLP5050FDER8R2M01"
           }
+        ],
+        "junction": {
+          "copper_square_centimetres": {
+            "value": 20,
+            "source": "declared by the fixture: the copper around U10 on each layer; not measured on the drawn board"
+          },
+          "loss_milliwatts": {
+            "value": 1170,
+            "source": "SNVSAN3F p. 27, Figure 9-7, typical at TA 25 C: 90 % on the 36 V curve at 2 A; P_loss = 5.237 V x 2 A x (1/0.90 - 1) = 1164 mW, rounded up"
+          }
+        },
+        "controls": [
+          {
+            "pin": "EN",
+            "strap": "input",
+            "wire": null
+          },
+          {
+            "pin": "PG",
+            "strap": "open",
+            "wire": null
+          }
         ]
       },
       {
@@ -390,6 +431,28 @@
             "reference": "L2",
             "part": "IHLP5050FDER8R2M01"
           }
+        ],
+        "junction": {
+          "copper_square_centimetres": {
+            "value": 20,
+            "source": "declared by the fixture: the copper around U11 on each layer; not measured on the drawn board"
+          },
+          "loss_milliwatts": {
+            "value": 550,
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 81 % on the 36 V curve at 0.68 A; P_loss = 3.417 V x 679 mA x (1/0.81 - 1) = 544 mW, rounded up"
+          }
+        },
+        "controls": [
+          {
+            "pin": "EN",
+            "strap": "input",
+            "wire": null
+          },
+          {
+            "pin": "PG",
+            "strap": "open",
+            "wire": null
+          }
         ]
       },
       {
@@ -408,6 +471,14 @@
             "role": "cout",
             "reference": "C31",
             "part": "GRM188R71C105KA12"
+          }
+        ],
+        "junction": null,
+        "controls": [
+          {
+            "pin": "EN",
+            "strap": "input",
+            "wire": null
           }
         ]
       }
@@ -466,6 +537,13 @@
             "role": "bypass_b",
             "reference": "C41",
             "part": "GCM188R71H104KA57"
+          }
+        ],
+        "controls": [
+          {
+            "pin": "OE",
+            "strap": "vcca",
+            "wire": null
           }
         ]
       }

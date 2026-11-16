@@ -49,9 +49,12 @@ use sha2::{Digest, Sha256};
 /// Re-taken for the serial port's required `negotiated` key (ruled on PR
 /// #152, §9 Q1; `7faed6e0…276a` before): with `,"negotiated":null` removed and
 /// the specification's old sha256 put back, the output's digest is the old
-/// one exactly.
-const REFERENCE_DIGEST: &str = "5c2aeff03321ff5dd1bb046b1a2042729d7eafa565d29afdbb3d6f220ba3dd22";
-const STRESS_DIGEST: &str = "84de8b88afc6d6e60e9a39ccbb0e537ecb0cde5b34837c0e9144dd9d5f3b016d";
+/// one exactly. Re-taken in `AET-WO-4300d3` (specification version 10,
+/// `power`'s judgement declarations), which moved only the specification's
+/// sha256: with `main`'s put back, each output's digest is `main`'s exactly
+/// (`5c2aeff0…dd22` and `84de8b88…016d` before).
+const REFERENCE_DIGEST: &str = "097279028a910d985d17b54f392ef1b08606448b47c1fe3bb6c7ae1a9ea923ba";
+const STRESS_DIGEST: &str = "fdc06258c65bceab15ac18c536419edc2440467397b4111ebb14d7ea7d12f367";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

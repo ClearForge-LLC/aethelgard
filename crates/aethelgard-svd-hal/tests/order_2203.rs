@@ -119,19 +119,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
 /// hashed document, the three moved digests were `72acc1b5…bbc1`,
 /// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
-/// alone moved them); the boot image did not move.
+/// alone moved them); the boot image did not move. Re-taken in
+/// `AET-WO-4300d3` (specification version 10, `power`'s declarations), which
+/// changes no generator: the three moved with the specification's sha256 alone
+/// (`1564c394…3474`, `0a8e3b2b…9734`, `a93b7c45…1fd4` before); the boot image
+/// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "1564c3949380f353dba9d3e450ca705ea9fb5d7942bf99d0e859d8bf15113474",
+        "d2e17ffbde888cd4a54809b5028e7e208d1780caf70eeb103e8e4b354ac752d7",
     ),
     (
         "platform",
-        "0a8e3b2b7944e4e0247ec79a3c6e0e6226e6c854c15ea38cc72a39d44a169734",
+        "ce78f102f919f91e51ea2dc609f14bd2ae894d211ad7961d08496904b09d4a16",
     ),
     (
         "platform faulted",
-        "a93b7c450e978e59dc3c583d1a9c8de0e61d653a519a8bf3d829f2a4017d1fd4",
+        "d311c246b7fa0eb6cfc97031a933d024564ef6a7968fa0d4b554656067a67aec",
     ),
     (
         "boot image",
