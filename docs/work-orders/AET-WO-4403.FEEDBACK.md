@@ -357,3 +357,40 @@ All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv5/` and `rehea
 - **ArduPilot image:** at most 1 more source package, about 0.7 MB.
 - **Tools image:** at most 15 more, about 156 MB. Fewer if some are already flagged by free text.
 - **Total:** at most about 1.10 GB, under 1.25 GB.
+
+**Q2, measured** (2026-11-16 21:35–21:50 UTC; classifier v3 on the images published from `938b7f4`):
+
+| Image | Source packages | Files | Bytes |
+|---|---|---|---|
+| ArduPilot | 29 (+1: libseccomp) | 92 | 368 132 091 |
+| Tools | 84 (+15) | 274 | 732 653 749 |
+| **Total** | | | **1 100 785 840 (1.101 GB), under the 1.25 GB stop** |
+
+- **The predictions held.** At most +1 and +15 were predicted, about 1.10 GB in all.
+- **The tools image's 15 new packages:** codec2, gst-plugins-bad1.0, gst-plugins-good1.0, libassuan, libinstpatch, libpgm, libseccomp, libssh, mpg123, ngspice, opencascade, openni2, shine, taglib, webkit2gtk.
+- **Every file verified.** Each file of every package matches snapshot's sha1 and its `.dsc`'s sha256, and every row of the D5 tables survives into the new ones.
+- **Every manifest digest changed.** The artifacts' description now reads "GPL-2.0-only or LGPL-2.x-only code". Nothing Debian had been published, so no tag moved.
+- **Snapshot's throughput varies [measured]:**
+  - 56 MB/s for the ArduPilot table (all but one file cached);
+  - about 0.5 MB/s for the tools image's 156 MB of new files (335 s).
+
+  At that worst rate a first `publish` takes about 13 min for the ArduPilot image (budget 40) and about 25 min for the tools image (budget 60).
+
+**Q1, built.**
+- `check-sources.sh inside KIND [--drift warn]`. By default a package missing from the table refuses; both `publish` jobs run that, before any push.
+- The `image` jobs, which run on pull requests, pass `--drift warn`: a `::warning` annotation and `ANSWER debian_drift kind=… missing=N packages=…`, exit 0.
+- `debian-src.py check` still refuses in both modes.
+
+Measured in both published images, rebuilt RUN-free with the new offer and tables:
+- with no drift, it passes (29 and 84);
+- with `libseccomp` dropped, the default mode refuses by name, and `--drift warn` warns, prints the ANSWER line and passes;
+- with a broken table, `--drift warn` still refuses;
+- an unknown option is refused.
+
+**Q2, built.**
+- `debian-gpl2.py` also flags DEP-5 conjuncts LGPL-2 / LGPL-2.1, with ".0", "-only" or neither, and never "+" (unit-checked on 11 spellings).
+- Free text was already covered: "General Public License" also matches the Lesser and Library variants.
+- Both `SOURCES.md` files name the three licences and why "or later" code goes by the third-party route.
+- Both tables and the 18 fixtures are regenerated, and `test-debian-src.sh` passes.
+
+**Gates.** Since the cargo gates passed on this branch at `ccdecb6`, only `container/` and FEEDBACK have changed; no crate changed. All four container suites pass, and so does `check-pins.sh` on all three Dockerfiles.

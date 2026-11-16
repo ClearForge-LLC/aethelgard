@@ -61,7 +61,7 @@ jobs:
       - name: the source offer in the built image
         run: |
           bash container/check-sources.sh labels tools "$IMAGE"
-          docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/check-sources.sh inside tools
+          docker run --rm --network none -v "$PWD/container:/container:ro" "$IMAGE" bash /container/check-sources.sh inside tools --drift warn
 
       - name: cargo fmt inside the image
         run: docker run --rm -v "$PWD:/work" -w /work "$IMAGE" cargo fmt --all -- --check

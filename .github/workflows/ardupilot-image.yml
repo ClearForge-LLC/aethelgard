@@ -148,7 +148,7 @@ jobs:
         run: |
           bash container/check-sources.sh labels ardupilot "$IMAGE"
           docker run --rm --network none -v "$PWD/container:/container:ro" \
-            "$IMAGE" bash /container/check-sources.sh inside ardupilot
+            "$IMAGE" bash /container/check-sources.sh inside ardupilot --drift warn
 
       # D4 (PR #130): the runner sets GITHUB_ACTIONS=true, and ArduPilot then
       # refuses a numeric APJ_BOARD_ID. This control passes it into the

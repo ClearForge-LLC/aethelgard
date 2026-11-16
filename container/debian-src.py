@@ -74,7 +74,7 @@ def manifest_bytes(source, version, files):
         "layers": [{"mediaType": "application/octet-stream", "digest": "sha256:" + h, "size": n,
                     "annotations": {"org.opencontainers.image.title": name}} for name, h, n in files],
         "annotations": {
-            "org.opencontainers.image.description": f"Debian source package {source} {version}, byte for byte, the corresponding source of GPL-2.0-only code in this image",
+            "org.opencontainers.image.description": f"Debian source package {source} {version}, byte for byte, the corresponding source of GPL-2.0-only or LGPL-2.x-only code in this image",
             "org.opencontainers.image.url": f"{SNAP}/package/{source}/{version}/",
             "org.opencontainers.image.source": "https://github.com/ClearForge-LLC/aethelgard",
         },
