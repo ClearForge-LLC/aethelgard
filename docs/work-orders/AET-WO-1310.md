@@ -7,6 +7,7 @@
 
 **Grounds:**
 - **The grid and the floor.** The router lays copper on a 125 µm grid (`crates/aethelgard-eda/src/route.rs`, `PITCH_NM`), and the engine floor is 200 µm track and clearance (`FLOOR_UM`, `RUL-03`).
+- *Corrected 2026-11-16 (the spike, PR #160):* the sub-grid pad on the power fixture was the ICM-20948's, not the TXU0304's. The grounds below are left as first written; the scope is unchanged.
 - **What `4300d2` measured.** On the full power fixture, the TXU0304's pads (0.4 mm centres, 0.2 mm gaps) can be escaped only by a track centred exactly on the pad, and the grid rarely puts one there. `4300d2` therefore closed with the crossing's board waiting. Its FEEDBACK holds the numbers.
 - **The same limit is coming.** Sentinel-02's sensors are fine-pitch LGA parts (the ICM-42688-P and the BMP581; their land patterns are held, `4220b`). The DShot and USB parts that follow are fine-pitch as well.
 
