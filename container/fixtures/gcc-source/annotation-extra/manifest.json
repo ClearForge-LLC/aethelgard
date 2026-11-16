@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "artifactType": "application/vnd.clearforge.aethelgard.corresponding-source.v1",
+  "config": {
+    "mediaType": "application/vnd.oci.empty.v1+json",
+    "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "size": 2
+  },
+  "layers": [
+    {
+      "mediaType": "application/octet-stream",
+      "digest": "sha256:2721e414ef279118ac6c6f4f57114d8dad09a875f98025b123e9dc1c59177156",
+      "size": 200406637,
+      "annotations": {
+        "org.opencontainers.image.title": "gcc-arm-none-eabi-10-2020-q4-major-src.tar.bz2"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.description": "Corresponding source of the GNU Arm Embedded Toolchain 10-2020-q4-major in ghcr.io/clearforge-llc/aethelgard-ardupilot: Arm's source tarball, byte for byte",
+    "org.opencontainers.image.url": "https://developer.arm.com/-/media/Files/downloads/gnu-rm/10-2020q4/gcc-arm-none-eabi-10-2020-q4-major-src.tar.bz2",
+    "org.opencontainers.image.source": "https://github.com/ClearForge-LLC/aethelgard",
+    "org.opencontainers.image.created": "2020-12-08T14:57:28Z"
+  }
+}
