@@ -1535,12 +1535,14 @@ fn imu_baro_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
 /// `AET-WO-4210` §2.2-§2.4: every device's script runs and each step is
 /// witnessed by its own model's lines, on SPI inside its own chip-select
 /// window; each data read answers the datasheet's conversion of the judge's
-/// stimulus (D3); no interrupt is armed (D6).
+/// stimulus (D3); no interrupt is armed (D6). The boot runs the whole 100 ms
+/// window: the one 40 ms start-up wait (`AET-WO-4230` R6) puts the boot word
+/// at 78.0–78.1 ms of virtual time (measured, Renode running the spin long).
 #[test]
 fn the_imu_and_barometer_fixture_runs_every_script_step_witnessed() {
     let (dir, platform, spec_path) = imu_baro_board("fixture");
     let elf = mutant_of(&dir, "imu-baro", |_| {});
-    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu baro", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(0), "{v}");
     let steps = |bus: &str| -> Vec<(String, String, String)> {
         v["boot"][bus]
@@ -1650,7 +1652,7 @@ fn a_seeded_imu_fault_is_named_by_its_step() {
             "Ok::<usize, SpiError>(0)",
         );
     });
-    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("imu unwoken", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(
@@ -1675,7 +1677,7 @@ fn a_seeded_barometer_fault_is_named_by_its_step() {
             "i2c1.transfer(&mut r, 0x63, &[0x48, 0xa3], &mut buf7)",
         );
     });
-    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "10ms");
+    let (code, v) = boot_on("baro pressure first", &platform, &spec_path, &elf, "100ms");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
     assert!(k.contains(&"i2c_transaction_unwitnessed"), "{v}");
