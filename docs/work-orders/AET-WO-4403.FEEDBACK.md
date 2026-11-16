@@ -326,3 +326,21 @@ All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv5/` and `rehea
   - The duplicate was the registry code, which lived only in `gcc-source.sh` and is now shared by both mirrors through `oci-mirror.sh` instead of copied.
   - The protected one is the realm check, labelled `belt-and-suspenders`.
   - The finding: the empty config descriptor is a constant in `check-gcc-source.sh` and `debian-src.py`, and in the committed GCC manifest. It is a fixed fact of the OCI spec and each check verifies it; left as is.
+
+## D5.7 CI on `ccdecb6` (PR #181), all green [measured]
+
+- **`ardupilot-image` [run 43950185629](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185629):**
+  - `image` builds fresh: all 28 flagged GPL-2.0-only source packages are in the table.
+  - **`source` ran on a pull request for the first time** (the D1 follow-up). It fetched `sha256:00f5fb5b…` and the 200 406 637-byte tarball from ghcr with no credentials.
+  - `source-rehearsal` seeded the GCC tarball from the published ghcr mirror, not Arm. It published and fetched `base-passwd` and `hostname` from snapshot.debian.org (`ANSWER debian_rehearsal bytes=77086 s=1`). It fetched the re-pinned image `7b7ebed3…` anonymously and refused `aethelgard-engine` by name (HTTP 403).
+- **`tools-image` [run 43950185755](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185755):** the fresh build's 69 flagged packages are all in the table, and the labels include D6. `publish` and `source` are skipped, as on any PR.
+- **`ci` [run 43950185531](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185531):** green. Shard times (main's plan; this branch changes no test and no `ci/` file):
+  - shard 0: 20:48
+  - shard 1: 21:35
+  - shard 2: 28:27
+  - shard 3: 23:37
+  - shard 4: 28:08
+  - shard 5: 32:21
+  - shard 6: 26:11
+  - shard 7: 25:28
+- **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge, as D1(a) ruled.
