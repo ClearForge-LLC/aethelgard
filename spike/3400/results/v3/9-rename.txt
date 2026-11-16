@@ -1,0 +1,24 @@
+board: outline 113.10 x 107.60 mm, 69 parts, 355 pads; emitted copper: 1144 segments, 1961.6 mm of track, 237 vias, 1 zones; classes 2, pairs 0, joins 1, thermal 2
+unrenamed reroute: 1144 segments, 237 vias, 44 rip-ups, same copper as emitted: true
+seed  0: routes, 44 rip-ups, own copper: true
+seed  1: routes, 44 rip-ups, own copper: true
+seed  2: routes, 44 rip-ups, own copper: true
+seed  3: routes, 44 rip-ups, own copper: true
+seed  4: routes, 44 rip-ups, own copper: true
+seed  5: routes, 44 rip-ups, own copper: true
+seed  6: routes, 44 rip-ups, own copper: true
+seed  7: routes, 44 rip-ups, own copper: true
+seed  8: routes, 44 rip-ups, own copper: true
+seed  9: routes, 44 rip-ups, own copper: true
+seed 10: routes, 44 rip-ups, own copper: true
+seed 11: routes, 44 rip-ups, own copper: true
+seed 12: routes, 44 rip-ups, own copper: true
+seed 13: routes, 44 rip-ups, own copper: true
+seed 14: routes, 44 rip-ups, own copper: true
+seed 15: routes, 44 rip-ups, own copper: true
+seed 16: routes, 44 rip-ups, own copper: true
+seed 17: routes, 44 rip-ups, own copper: true
+seed 18: routes, 44 rip-ups, own copper: true
+seed 19: routes, 44 rip-ups, own copper: true
+renamings routed to their own copper: 20/20
+exit 0

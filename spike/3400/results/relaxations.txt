@@ -1,0 +1,16 @@
+== v1
+  RELAXED: none
+  changed, not relaxed: ["mcu.supply_source: {'connector': 'J3', 'pin': '1'} -> None"]
+  added: ["net_class POWER (500 um; nets ['VBAT', 'VDD_5V'])", "net_class SUPPLY_MCU (200 um; nets ['VDD_3V3'])", "power: regulators ['U10 LMR33630ADDA -> VDD_5V', 'U11 LMR33630ADDA -> VDD_3V3']"]
+== v2
+  RELAXED: none
+  changed, not relaxed: ["serial_ports CONSOLE changed in ['tx', 'rx']", "mcu.supply_source: {'connector': 'J3', 'pin': '1'} -> None", "acknowledgement ('GPIOA.PUPDR', 'same-source') fields removed: ['PUPD11', 'PUPD8'], added: []"]
+  added: ['serial_ports CRSF', 'serial_ports MAVLINK', 'connectors J5', 'connectors J6', 'connectors J7', "net_class POWER (500 um; nets ['VBAT', 'VDD_5V'])", "net_class SUPPLY_MCU (200 um; nets ['VDD_3V3'])", 'motor_output MOTOR1 pin None', 'motor_output MOTOR2 pin None', 'motor_output MOTOR3 pin None', 'motor_output MOTOR4 pin None', "power: regulators ['U10 LMR33630ADDA -> VDD_5V', 'U11 LMR33630ADDA -> VDD_3V3']"]
+== v3
+  RELAXED: none
+  changed, not relaxed: ["serial_ports CONSOLE changed in ['tx', 'rx']", "mcu.supply_source: {'connector': 'J3', 'pin': '1'} -> None", "acknowledgement ('GPIOA.PUPDR', 'same-source') fields removed: ['PUPD11', 'PUPD8'], added: []"]
+  added: ['net_constraint EXT_SDA', 'net_constraint EXT_SCL', 'net_constraint XEXT_SCK', 'net_constraint XEXT_MOSI', 'i2c_buses EXT', 'spi_buses XSPI', 'serial_ports CRSF', 'serial_ports MAVLINK', 'connectors J5', 'connectors J6', 'connectors J7', 'connectors J8', 'connectors J9', "net_class POWER (500 um; nets ['VBAT', 'VDD_5V'])", "net_class SUPPLY_MCU (200 um; nets ['VDD_3V3'])", 'motor_output MOTOR1 pin None', 'motor_output MOTOR2 pin None', 'motor_output MOTOR3 pin None', 'motor_output MOTOR4 pin None', "power: regulators ['U10 LMR33630ADDA -> VDD_5V', 'U11 LMR33630ADDA -> VDD_3V3']"]
+== v4
+  RELAXED: none
+  changed, not relaxed: ["serial_ports CONSOLE changed in ['tx', 'rx']", "mcu.supply_source: {'connector': 'J3', 'pin': '1'} -> None", "acknowledgement ('GPIOA.PUPDR', 'same-source') fields removed: ['PUPD11', 'PUPD8'], added: []"]
+  added: ['net_constraint EXT_SDA', 'net_constraint EXT_SCL', 'net_constraint XEXT_SCK', 'net_constraint XEXT_MOSI', 'i2c_buses EXT', 'spi_buses XSPI', 'serial_ports CRSF', 'serial_ports MAVLINK', 'connectors J5', 'connectors J6', 'connectors J7', 'connectors J8', 'connectors J9', "net_class POWER (500 um; nets ['VBAT', 'VDD_5V'])", "net_class SUPPLY_MCU (200 um; nets ['VDD_3V3'])", 'motor_output MOTOR1 pin PE9', 'motor_output MOTOR2 pin PE11', 'motor_output MOTOR3 pin PE13', 'motor_output MOTOR4 pin PE14', "power: regulators ['U10 LMR33630ADDA -> VDD_5V', 'U11 LMR33630ADDA -> VDD_3V3']"]
