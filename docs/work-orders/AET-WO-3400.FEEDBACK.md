@@ -6,6 +6,8 @@ Labels used throughout: **[measured]** (run here, output in `spike/3400/results/
 
 ## 0. Status: STOPPED at S3 for the architect's and Scotty's ruling
 
+**Stopped twice.** Once at S3 (`da4665a`). Then again at S3/S4 after Scotty's amendment (WO §0, 22:30 UTC), with §1.5's predictions committed first (`8ee7c93`) and §10 measured. `main` at `b29bdec` is merged. The head is the second STOPPED commit; nothing is pushed after it unless the architect asks.
+
 - **Everything Specification 12 can say routes on two layers** [measured]. V0 to V7 each pass `validate`, `generate`, `emit`, `check erc` and `check drc --spec` (exit 0, `findings == []`), plus DRC with schematic parity and `check support`.
   - **The largest variant passing the work order's five commands is V7:** 79 parts, 100.05 × 118.95 mm. It adds the LDO and `main`'s 1.8 V crossing with an ICM-20948 as a density proxy for F2. Its `extract` refuses the translator's pins (`TranslatorPinUnbounded`), as `main`'s own tier-2 test expects.
   - **The largest passing every gate, `extract` included, is V6:** V5 plus the LDO, 71 parts, 100.05 × 107.60 mm.
