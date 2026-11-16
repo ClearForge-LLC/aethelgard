@@ -2215,6 +2215,14 @@ pub fn judge_boot(
             observed.instructions
         )));
     }
+    // A line of ours lagging its stamp is a core that executed fewer
+    // instructions than its time held: with the whole run's executed, the
+    // witnesses disagree.
+    if let Some(s) = slept.as_deref().filter(|_| !halted) {
+        return Err(untrusted(format!(
+            "{s}, but the core executed all the run's {expected} instructions"
+        )));
+    }
     let mut findings = Vec::new();
     if out.dropped_log_lines > 0 {
         findings.push(Finding::info(
@@ -2260,11 +2268,11 @@ pub fn judge_boot(
         ));
     }
     // One `cpu_halted`: the core executed fewer instructions than the run
-    // holds, or a line of ours shows it lagging its time (it slept, `WFI`):
-    // what a hook or action anchored there is then judged at its stamp, and
-    // an action whose count was due falls stale and fails by its own name
-    // (adversarial pass 1, M1).
-    if halted || slept.is_some() {
+    // holds, naming the first line of ours that shows it lagging its time
+    // (it slept, `WFI`): what a hook or action anchored there is then
+    // judged at its stamp, and an action whose count was due falls stale
+    // and fails by its own name (adversarial pass 1, M1).
+    if halted {
         let lag = slept
             .as_deref()
             .map(|s| format!("; {s}: the core slept or stopped before it"))
@@ -2479,11 +2487,12 @@ type Seen = (usize, crate::anchor::Hook, u64);
 /// `CEN` cleared, an injected byte, a stale action) is stamped exactly
 /// there, as every probe measured it; a hook's line at or before it, inside
 /// one quantum (measured up to 60 ns early). A line of ours not exactly one
-/// of its shapes is refused, never read past (exit 5). A count that does
-/// not place at its stamp is the core's: it executed fewer instructions
-/// than its time held (it slept, `WFI`), so the line's instant is its
-/// stamp, and the first such line is returned beside, for `cpu_halted`
-/// (adversarial pass 1, M1; before it, exit 5).
+/// of its shapes is refused, never read past (exit 5), and so is a count
+/// ahead of its stamp: no core runs ahead of its time. A count behind its
+/// stamp is the core's: it executed fewer instructions than its time held
+/// (it slept, `WFI`), so the line's instant is its stamp, and the first
+/// such line is returned beside, for `cpu_halted` (adversarial pass 1, M1;
+/// before it, exit 5).
 fn hooks_of(boot: &[&str], start_ns: u64) -> Result<(Vec<Seen>, Option<String>), String> {
     let mut out = Vec::new();
     let mut slept = None;
@@ -2506,11 +2515,18 @@ fn hooks_of(boot: &[&str], start_ns: u64) -> Result<(Vec<Seen>, Option<String>),
         } else {
             stamp <= at && at - stamp < aethelgard_twin::boot::QUANTUM_NS
         };
-        if !placed && slept.is_none() {
-            slept = Some(format!(
+        let misplaced = || {
+            format!(
                 "`{}`: its count places it at {at} ns in a boot started at {start_ns} ns, but it is stamped {stamp} ns",
                 body.escape_debug()
-            ));
+            )
+        };
+        // A count ahead of its time is no core's: refused.
+        if !placed && stamp < at {
+            return Err(misplaced());
+        }
+        if !placed && slept.is_none() {
+            slept = Some(misplaced());
         }
         out.push((i, hook, if placed { at } else { stamp }));
     }
@@ -4448,12 +4464,12 @@ mod tests {
         );
     }
 
-    /// Every line of ours is read whole: one in no shape it writes is
-    /// refused (exit 5). One whose count its boot's start does not place at
-    /// its stamp is the core's lag, not the tool's: `cpu_halted`, naming the
-    /// line, never an error (adversarial pass 1, M1).
+    /// Every line of ours is read whole: one in no shape it writes, or
+    /// whose count is ahead of its stamp, is refused (exit 5). One whose
+    /// count lags its stamp is the core's lag, not the tool's:
+    /// `cpu_halted`, naming the line (adversarial pass 1, M1).
     #[test]
-    fn a_hook_line_out_of_shape_is_refused_and_one_out_of_place_is_cpu_halted() {
+    fn a_hook_line_out_of_shape_is_refused_and_one_lagging_is_cpu_halted() {
         let halted = |log: &[String], start: u64| -> Vec<String> {
             let (f, _) = judge_anchors(log, start).unwrap();
             f.into_iter()
@@ -4483,21 +4499,36 @@ mod tests {
             "{:?}",
             messages(&f)
         );
-        // The same boot read from the wrong start.
-        assert_eq!(halted(&dshot_log(), 100_000).len(), 1);
+        // The same boot read from the wrong start: every count ahead of
+        // its stamp, refused.
+        assert!(
+            judge_anchors(&dshot_log(), 100_000)
+                .err()
+                .unwrap()
+                .contains("stamped 30620 ns")
+        );
         // A hook's line may be stamped up to a quantum early (the `CR1`
         // line above is 50 ns early); a scheduled action's line is exact
-        // (the PM's decision on S1's open question 3): one grain early or
-        // late, a stop, its clearing, a stale stop or an injected byte is
-        // the core's lag.
+        // (the PM's decision on S1's open question 3): one grain early, a
+        // stop, its clearing, a stale stop or an injected byte is refused;
+        // one grain late, it is the core's lag.
         assert_eq!(halted(&dshot_log(), 0), Vec::<String>::new());
         let n = dshot_log().len();
         for (i, ns, body) in [
             (n - 2, 2_030_660, "STOP 2 3067 203067 81 81"),
-            (n - 2, 2_030_680, "STOP 2 3067 203067 81 81"),
             (n - 1, 2_030_660, "CLEARED 2 3067 203067 80"),
             (n - 1, 2_030_660, "STALE STOP 2 3067 203067"),
             (n - 1, 2_030_660, "INJECT 0 1 3075 203067"),
+        ] {
+            let mut log = dshot_log();
+            log[i] = at(ns, &format!("[WARNING] sysbus: AETHELGARD-{body}"));
+            let e = judge_anchors(&log, 0).err().unwrap_or_default();
+            assert!(e.contains(&format!("stamped {ns} ns")), "{body}: {e}");
+        }
+        for (i, ns, body) in [
+            (n - 2, 2_030_680, "STOP 2 3067 203067 81 81"),
+            (n - 1, 2_030_680, "CLEARED 2 3067 203067 80"),
+            (n - 1, 2_030_680, "INJECT 0 1 3075 203067"),
         ] {
             let mut log = dshot_log();
             log[i] = at(ns, &format!("[WARNING] sysbus: AETHELGARD-{body}"));
