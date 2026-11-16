@@ -1255,13 +1255,17 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     // before. Since adversarial pass 4 (ADV4-2) the frame's bytes go in a
     // quantum apart, so the echo ends about 700 us later: the last pair is
     // 183,981 (re-measured by the same bisection, fix 4), the read at
-    // 183,681.
+    // 183,681. Since `AET-WO-2302` the frame goes in a quantum after the boot
+    // word, 25.75 us later than at 100 us, so the loop starts later again
+    // and 183,681 is past the run's end (measured: no locked access); at
+    // about 50 ns a pair that is some 515 pairs, and the read moves 600
+    // earlier, to 183,081, still deep in the flood.
     let elf = mutant("flood-locked", |d| {
         edit(
             d,
             "src/main.rs",
             "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
-            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183681 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183081 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
@@ -1958,7 +1962,10 @@ const RAW: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a 
 /// stores with the timer never started, and the `UG` + `BSRR` pair the 4300
 /// spike left unmeasured (an update event and a store edge in one quantum).
 /// Neither is the model's sequence, and the read-back names the timer left
-/// stopped and the update interrupt armed.
+/// stopped and the update interrupt armed. Since `AET-WO-2302` the edges
+/// are judged inside their timer's window, which starts at its `CEN`: with
+/// the timer never started, no write set it, so the edges have no anchor
+/// and fail by that name, `unanchored`, before any sequence is judged.
 #[test]
 fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
     let start = "let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);";
@@ -1977,7 +1984,7 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
         let (code, v) = boot_on(label, &platform, &spec, &elf, "100ms");
         assert_eq!(code, Some(1), "{label}: {v}");
         let k = kinds(&v);
-        assert!(k.contains(&"motor_timing_mismatch"), "{label}: {v}");
+        assert!(k.contains(&"motor_anchor_unobserved"), "{label}: {v}");
         assert!(k.contains(&"register_mismatch"), "{label}: {v}");
         assert!(
             v["findings"]
@@ -1987,11 +1994,14 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
                 .any(|f| f["message"].as_str().unwrap().starts_with(register)),
             "{label}: {v}"
         );
-        // Stores in one quantum share its stamp (`batched`); spread over
-        // quanta they miss the sequence (`mismatch`): either way no pass.
+        // Store-made edges with no `CEN` rise: no anchor, never a pass
+        // (they were `batched` or `mismatch` against the whole boot's
+        // window before `AET-WO-2302`).
         for m in motors(&v) {
-            let status = m["twin"]["status"].as_str().unwrap();
-            assert!(["mismatch", "batched"].contains(&status), "{label}: {m}");
+            let t = &m["twin"];
+            assert_eq!(t["status"], "unanchored", "{label}: {m}");
+            assert!(t["rises"].as_u64().unwrap() > 0, "{label}: {m}");
+            assert_eq!(t["anchor_ns"], Value::Null, "{label}: {m}");
             // A store right after a timer access (the `UG` write) carries an
             // exact stamp, so a store edge can be off the grid (FEEDBACK M4):
             // the grid alone never passes or fails a witness.
