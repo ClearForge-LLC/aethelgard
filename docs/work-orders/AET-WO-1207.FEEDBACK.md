@@ -1,0 +1,23 @@
+# AET-WO-1207 FEEDBACK — `validate` refuses the rest of what `solve` refuses statically, and an SPI device whose modes the controller cannot drive
+
+Builder: Claude (Opus 5.5), session started 2026-11-16 ~16:50 UTC, worktree `~/aethelgard-1207`, branch `wo/aet-1207-validate-rest` from `origin/main` `1178ca8`. The work order is read from `origin/claude/argon-repo-docs-synthesis-rjrb0d` (docs PR #174); this branch does not commit it.
+
+Labels: **measured** (run here), **read** (read at source, file:line), **inferred** (reasoned, not run).
+
+## 0. Predictions (committed before any measured run)
+
+Written at ~17:20 UTC, after reading the code and before building or running anything.
+
+| # | Prediction | Basis |
+|---|---|---|
+| P1 | §1.1 finds **no** stop. No specification `generate` accepts today carries any of the three solve refusals (each is `solve`'s, and `generate` solves). No project is named `com0` or `lpt0`. No serial or motor net is named for an emitter net (`validate`'s A5 already refuses one, `1206`). Every SPI part with a row (ICM20948, ICM42688P, W25Q64JVxIQ) lists mode 0. | read: `solve.rs:921-1000`, `names.rs:287`, `parts.json` rows |
+| P2 | The corpus is 23 specifications (1206's 24, less `spike/4300f/s2/offboard.json`, deleted by `4402`) and 26 scenario files. The scenarios override only `pull_up_ohms`, `droop`, `max_capacitance_femtofarads`, `line_held_low` and `spi_device_absent`, so none can change a verdict of these rules. | measured: `git ls-files` (listing only, before any rule ran) |
+| P3 | `RiseTimeTooSlow` and `MissingSpiConstraint` are reachable today from a specification that `validate` passes. `SupplyOutsideSpeedTable` may not be: every SPI bus is on the MCU's supply (step 5a), and a device on it is bounded by its part's supply and I/O range. It is reachable only where no device bounds the bus: a bus with no device (if `validate` allows one), or every device behind a crossing. If none is reachable, the move is recorded as such, not claimed. | inferred |
+| P4 | The three move to a new last step of `Specification::validate` (step 21, after `1206`'s 20), in `solve`'s order: each I2C bus's rise time, then each SPI bus's supply and its SCK and MOSI constraints. Their kind, `id`, `claimants` (the bus) and message stay as before, so the CLI needs no edit: `1206`'s optional `claimants` already carries a validation refusal that names someone. `SupplyOutsideSpeedTable` fires only inside the SPI-bus loop, as `solve`'s does (never with no SPI bus). | read: `cli/src/main.rs:290-305`, `solve.rs:925-955` |
+| P5 | `solve`'s three copies become unreachable: `solve_inner` calls `spec.validate()` first (`solve.rs:322`), so no library caller reaches them without `validate`. They are deleted from `SolveError`, with `expect`s where `solve` reads what step 21 checked. | read |
+| P6 | First refusals change only for specifications with two faults: a step-21 refusal now comes before a `solve`-time refusal, including `BusTooFast` on an earlier bus (per-bus interleaving in `i2c_ceilings`) and `i2c_electrical`'s two (which `solve` ran before `spi_lines`). | read |
+| P7 | The adversarial search finds other refusals `solve` makes from the specification alone, which `validate` passes: at least `BusTooFast`, `PullUpBelowSinkFloor` and `BusCapacitanceOverLimit` (validation's own variants, raised only by `solve` on a specification), and probably motor timing. They are findings for the architect, not builds: the work order names three. | read: `solve.rs:991-1048`, `motor_timing` |
+| P8 | The driven SPI mode is one fixed value, **mode 0**: `svd-hal` `spi_code` (`board.rs:1898-1910`) composes `CFG2` from `MASTER`, `SSM` and `AFCNTR` only, so `CPOL` and `CPHA` are 0 for every controller, independent of the solve and the part. No §7 stop. `ir` cannot depend on `svd-hal`, so the constant lives in `ir` and an `svd-hal` test pins it to the `CFG2` word's `CPOL`/`CPHA` bits. | read |
+| P9 | The mode refusal sits beside `check_spi_clock` in step 14, and cites the row's bus citation. No real row excludes mode 0, so the refusal is reachable only with a modified table; the test reaches it through a table parsed from mutated JSON. | read: `parts.rs:1029-1050`, `lib.rs:3078` |
+| P10 | `spelled` reading `names::spelled_nets` (one list) closes F1: on `main`, a library caller of `schematic::emit` with a serial net `U1_VCAP1` gets a board (VCAP1 shorted to a UART pin); after, `ReservedName`. A motor label behaves the same. | read: `schematic.rs:669-684`; `1206` §5 |
+| P11 | Every emitted file of every corpus specification is byte-identical; `TIER2_MIN` stays at `main`'s 160 (no tier-2 test added). | inferred |
