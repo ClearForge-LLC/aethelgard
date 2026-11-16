@@ -29,13 +29,11 @@ use std::path::Path;
 use rustix::fs::OFlags;
 use serde::Serialize;
 
-use crate::kicad;
+// The KiCad whose output this module is written against: its version is in
+// the two lines `strip_clock` deletes and in the line before them.
+use crate::kicad::{self, KICAD_VERSION};
 use crate::run::{self, MAX_CAPTURE, Stop};
 use crate::tree;
-
-/// The KiCad whose output this module is written against: its version is in
-/// the two lines [`strip_clock`] deletes and in the line before them.
-pub const KICAD_VERSION: &str = "10.0.7";
 
 const TOOL: &str = "kicad-cli";
 
@@ -842,6 +840,11 @@ mod tests {
     /// The tool `derive` expects of a board whose only holes are `n` routed
     /// vias at the board's own rule.
     fn vias_only(n: usize) -> Vec<aethelgard_eda::fab::Drill> {
+        vias_at((0..n as i64).map(|i| (i * 1_000_000, 0)).collect())
+    }
+
+    /// The same, its vias at `at` (board coordinates, nm, sorted).
+    fn vias_at(at: Vec<(i64, i64)>) -> Vec<aethelgard_eda::fab::Drill> {
         vec![aethelgard_eda::fab::Drill {
             drill_nm: aethelgard_eda::route::DRILL_NM,
             hole: aethelgard_eda::fab::Hole::Via,
@@ -849,9 +852,30 @@ mod tests {
                 aethelgard_eda::fab::Drilled::Routed {
                     via_nm: aethelgard_eda::route::VIA_NM,
                 },
-                n,
+                at.len(),
             )],
+            at,
         }]
+    }
+
+    /// A drill file's hits as board coordinates (nm, Y down), read here
+    /// independently of `fab::holes`: `X<mm>Y<mm>` with Y up.
+    fn hits(drl: &[u8]) -> Vec<(i64, i64)> {
+        let nm = |t: &str| -> i64 {
+            let (neg, t) = t.strip_prefix('-').map_or((false, t), |r| (true, r));
+            let (w, f) = t.split_once('.').unwrap();
+            let v =
+                w.parse::<i64>().unwrap() * 1_000_000 + format!("{f:0<6}").parse::<i64>().unwrap();
+            if neg { -v } else { v }
+        };
+        let mut at: Vec<(i64, i64)> = std::str::from_utf8(drl)
+            .unwrap()
+            .lines()
+            .filter_map(|l| l.strip_prefix('X')?.split_once('Y'))
+            .map(|(x, y)| (nm(x), -nm(y)))
+            .collect();
+        at.sort_unstable();
+        at
     }
 
     /// `AET-WO-4300d2` §2: every existing board's package is byte-identical.
@@ -911,13 +935,27 @@ mod tests {
 
     /// The reference's drill file as KiCad 10.0.7 wrote it from the emitted
     /// `sentinel-01` board (64 vias), pinned: the one tool and its hits, and
-    /// an off-by-one either way refused.
+    /// an off-by-one either way refused; and each hole where the board has
+    /// one: a via moved by a micrometre is refused (`AET-WO-1311` §1.3).
     #[test]
     fn todays_drill_file_holds_exactly_its_vias() {
         let drl = include_bytes!("../tests/fixtures/fab/kicad-10.0.7-vias.drl");
-        assert_eq!(aethelgard_eda::fab::holes(drl, &vias_only(64)), Ok(()));
+        let at = hits(drl);
+        assert_eq!(at.len(), 64);
+        assert_eq!(
+            aethelgard_eda::fab::holes(drl, &vias_at(at.clone())),
+            Ok(())
+        );
+        let mut moved = at.clone();
+        moved[10].0 += 1_000;
+        moved.sort_unstable();
+        let e = aethelgard_eda::fab::holes(drl, &vias_at(moved)).unwrap_err();
+        assert!(e.contains("tool T1 (0.3 mm) drills at"), "{e}");
         for n in [63, 65] {
-            let e = aethelgard_eda::fab::holes(drl, &vias_only(n)).unwrap_err();
+            let mut at = at.clone();
+            at.resize(n, (0, 0));
+            at.sort_unstable();
+            let e = aethelgard_eda::fab::holes(drl, &vias_at(at)).unwrap_err();
             assert!(
                 e.contains(&format!("tool T1 (0.3 mm) has 64 hits, where the board holds {n}: routed vias, 0.6 mm pad ({n})")),
                 "{e}"

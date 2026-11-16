@@ -6,6 +6,14 @@
 use std::collections::BTreeSet;
 
 use super::*;
+
+/// The most copper items (pads, tracks and vias) [`read`] takes
+/// (`AET-WO-1311` §1.2). `check` compares every pair of items and
+/// `connectivity` every track with every item, so both cost the square of
+/// the count; measured (release, Furnace, 2026-11-16): 0.9 s together at
+/// 20 000 items, 5.8 s at 30 000. The largest board the fixtures emit holds
+/// 3 351 (`d3-24-i2c-12-spi`).
+pub const MAX_ITEMS: usize = 20_000;
 use crate::sexpr::Sx;
 use crate::strict::{self, Tree};
 
@@ -568,6 +576,17 @@ fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
 /// the zones again on the copper read here.
 pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed), String> {
     let board = tree.root();
+    let items = board.all("segment").count()
+        + board.all("via").count()
+        + board
+            .all("footprint")
+            .map(|fp| fp.all("pad").count())
+            .sum::<usize>();
+    if items > MAX_ITEMS {
+        return Err(format!(
+            "the board holds {items} copper items (pads, tracks and vias); the judges read at most {MAX_ITEMS}"
+        ));
+    }
     let mut edges = Vec::new();
     for r in board.all("gr_rect") {
         if one(&r, "layer")?.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {

@@ -44,6 +44,7 @@
 //! judges them for DRC and ERC).
 
 use std::collections::BTreeMap;
+use std::rc::Rc;
 
 use crate::sexpr::{self, SexprError, Sx};
 
@@ -132,6 +133,23 @@ pub enum Refusal {
         found: String,
         want: &'static str,
     },
+    #[error(
+        "{path} holds a list whose keyword is {bytes} bytes long; KiCad's keywords are short, and the reader takes none longer than {MAX_KEYWORD_BYTES}"
+    )]
+    Keyword {
+        kind: Kind,
+        path: String,
+        bytes: usize,
+    },
+    #[error(
+        "{path} names the layer {name:?}, which is not a canonical name in the board's layer table{wildcards}"
+    )]
+    Layer {
+        kind: Kind,
+        path: String,
+        name: String,
+        wildcards: &'static str,
+    },
 }
 
 impl Refusal {
@@ -144,6 +162,8 @@ impl Refusal {
             | Self::Quoted { kind, .. }
             | Self::Number { kind, .. }
             | Self::Version { kind, .. }
+            | Self::Keyword { kind, .. }
+            | Self::Layer { kind, .. }
             | Self::Ambiguous { kind, .. } => *kind,
         }
     }
@@ -168,6 +188,8 @@ impl Refusal {
             | Self::Quoted { path, .. }
             | Self::Number { path, .. }
             | Self::Version { path, .. }
+            | Self::Keyword { path, .. }
+            | Self::Layer { path, .. }
             | Self::Ambiguous { path, .. } => Some(path),
         }
     }
@@ -649,7 +671,68 @@ fn read(text: &str, kind: Kind) -> Result<Tree, Refusal> {
     }
     let tree = Tree { root, kind };
     check(&tree)?;
+    if kind == Kind::Board {
+        layer_names(&tree)?;
+    }
     Ok(tree)
+}
+
+/// The wildcards KiCad 10.0.7 reads in a pad's `(layers …)`, and only
+/// there, that the vendored footprints use (`AET-WO-1311` R5): every copper
+/// layer and both masks.
+pub const PAD_WILDCARDS: &[&str] = &["*.Cu", "*.Mask"];
+
+/// Every layer an item names is one of the board's own: a canonical name in
+/// its `(layers …)` table, or on a pad one of [`PAD_WILDCARDS`]
+/// (`AET-WO-3303` F4, `AET-WO-1311` §1.1). KiCad refuses to load a board
+/// naming a layer it does not know (`"F&B.Cu"` or `"Top"` on a footprint
+/// line, measured by `3303`), so a gate that reads it alone would pass a
+/// board no tool can; and a row's user name (`"F.Courtyard"`), which KiCad
+/// accepts for the layer, would put an item on a layer the gates read by
+/// its canonical name, unseen. Names are compared exactly: a case or a
+/// look-alike is another name. A board with no table is not judged here:
+/// KiCad then reads its own names, and every gate that reads copper itself
+/// refuses it first (`route::declared`: "the board has no layer table").
+///
+/// Judged: a `layer`'s first value (KiCad may append a flag, such as a
+/// text's `knockout`) and every value of a `layers`, but the table itself,
+/// a `stackup`'s rows, which describe layers (KiCad names its dielectrics
+/// there) and place nothing, and a `padstack`'s `"Inner"` row, KiCad's own
+/// keyword for every inner layer.
+fn layer_names(tree: &Tree) -> Result<(), Refusal> {
+    let root = tree.root();
+    let Some(table) = root.one("layers")? else {
+        return Ok(());
+    };
+    let table: Vec<&str> = table.lists().filter_map(|row| row.arg(1)).collect();
+    let mut stack = vec![(root, "")];
+    while let Some((node, parent)) = stack.pop() {
+        let head = node.head().unwrap_or("");
+        let names: Vec<&str> = match head {
+            "layers" if parent == tree.kind.root() => Vec::new(),
+            "layer" if parent == "stackup" => Vec::new(),
+            // A padstack's row for every inner layer (`PADSTACK::INNER_LAYERS`).
+            "layer" if parent == "padstack" && node.arg(1) == Some("Inner") => Vec::new(),
+            "layer" => node.arg(1).into_iter().collect(),
+            "layers" => node.texts().collect(),
+            _ => Vec::new(),
+        };
+        let pad = head == "layers" && parent == "pad";
+        for name in names {
+            if !table.contains(&name) && !(pad && PAD_WILDCARDS.contains(&name)) {
+                return Err(Refusal::Layer {
+                    kind: tree.kind,
+                    path: node.path(),
+                    name: name.to_owned(),
+                    wildcards: if pad { " or `*.Cu` or `*.Mask`" } else { "" },
+                });
+            }
+        }
+        for child in node.lists() {
+            stack.push((child, head));
+        }
+    }
+    Ok(())
 }
 
 /// The one `(version …)` a file may declare: the engine's own emitter's
@@ -674,7 +757,7 @@ pub fn version(tree: &Tree) -> Result<(), Refusal> {
     }
     Err(Refusal::Version {
         kind: tree.kind,
-        path: child.map_or_else(|| root.path.clone(), |v| v.path),
+        path: child.map_or_else(|| root.path(), |v| v.path()),
         found: found.map_or_else(
             || "missing, quoted or not a single value".to_owned(),
             str::to_owned,
@@ -683,11 +766,30 @@ pub fn version(tree: &Tree) -> Result<(), Refusal> {
     })
 }
 
-/// Every node [`RULES`] names, judged; depth first, without recursion.
+/// The longest keyword a list may have (`AET-WO-1311` §1.2). The longest in
+/// any held KiCad file or emitted board is 33 bytes
+/// (`duplicate_pad_numbers_are_jumpers`, measured); the cap bounds a
+/// rendered path.
+pub const MAX_KEYWORD_BYTES: usize = 64;
+
+/// The longest path a refusal renders: one segment per level, each a `/`, a
+/// keyword, and its ordinal in brackets (at most seven digits, since a file
+/// holds at most [`sexpr::MAX_TOKENS`] tokens).
+pub const MAX_PATH_BYTES: usize = sexpr::MAX_DEPTH * (MAX_KEYWORD_BYTES + 10);
+
+/// Every node [`RULES`] names, judged; depth first, without recursion. A
+/// list's keyword longer than [`MAX_KEYWORD_BYTES`] is refused first.
 fn check(tree: &Tree) -> Result<(), Refusal> {
     let mut stack = vec![(tree.root(), "")];
     while let Some((node, parent)) = stack.pop() {
         let head = node.head().unwrap_or("");
+        if head.len() > MAX_KEYWORD_BYTES {
+            return Err(Refusal::Keyword {
+                kind: tree.kind,
+                path: node.at.up.as_deref().map_or_else(String::new, render),
+                bytes: head.len(),
+            });
+        }
         if let Some(rule) = rule(tree.kind, parent, head) {
             judge(&node, rule)?;
         }
@@ -756,7 +858,7 @@ fn numbers(node: &Node<'_>) -> Result<(), Refusal> {
         if !ok {
             return Err(Refusal::Number {
                 kind: node.kind,
-                path: node.path.clone(),
+                path: node.path(),
                 text: match v {
                     Sx::Atom(t) => t.clone(),
                     Sx::Str(t) => format!("\"{t}\""),
@@ -773,7 +875,7 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
         if let Some(Sx::Str(word)) = node.sx.items().get(i) {
             return Err(Refusal::Quoted {
                 kind: node.kind,
-                path: node.path.clone(),
+                path: node.path(),
                 word: word.clone(),
             });
         }
@@ -787,7 +889,7 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
         {
             return Err(Refusal::Repeated {
                 kind: node.kind,
-                path: node.path.clone(),
+                path: node.path(),
                 first: first.to_owned(),
                 child: head.to_owned(),
             });
@@ -807,7 +909,7 @@ fn judge(node: &Node<'_>, rule: &Rule) -> Result<(), Refusal> {
         if fields.contains(&name) {
             return Err(Refusal::FieldTwice {
                 kind: node.kind,
-                path: node.path.clone(),
+                path: node.path(),
                 name,
             });
         }
@@ -829,7 +931,7 @@ fn spelling(node: &Node<'_>) -> Result<(), Refusal> {
     match MANDATORY.iter().find(|m| m.to_lowercase() == lower) {
         Some(canonical) if *canonical != name => Err(Refusal::FieldSpelling {
             kind: node.kind,
-            path: node.path.clone(),
+            path: node.path(),
             name: name.to_owned(),
             canonical,
         }),
@@ -843,21 +945,61 @@ impl Tree {
         Node {
             sx: &self.root,
             kind: self.kind,
-            path: self.kind.root().to_owned(),
+            at: Rc::new(Place {
+                up: None,
+                head: self.kind.root(),
+                n: 0,
+            }),
         }
     }
 }
 
-/// A list inside a [`Tree`], with its path from the root. It offers no
+/// Where a list sits: its parent's place, its head, and its ordinal among
+/// its parent's lists with that head. A node holds one of these, never its
+/// path as text (review 2, A16): the path is rendered only into a refusal,
+/// so a wide, deep file costs one small record per list.
+#[derive(Debug)]
+struct Place<'a> {
+    up: Option<Rc<Place<'a>>>,
+    head: &'a str,
+    n: usize,
+}
+
+/// A place's path from the root, rendered.
+fn render(place: &Place<'_>) -> String {
+    let mut places = vec![place];
+    while let Some(up) = places.last().and_then(|p| p.up.as_deref()) {
+        places.push(up);
+    }
+    let mut out = String::new();
+    for p in places.iter().rev() {
+        if p.up.is_some() {
+            out.push_str(&format!("/{}[{}]", p.head, p.n));
+        } else {
+            out.push_str(p.head);
+        }
+    }
+    out
+}
+
+/// A list inside a [`Tree`], with its place from the root. It offers no
 /// first-match lookup: [`Node::one`] refuses a second match.
 #[derive(Clone, Debug)]
 pub struct Node<'a> {
     sx: &'a Sx,
     kind: Kind,
-    path: String,
+    at: Rc<Place<'a>>,
 }
 
 impl<'a> Node<'a> {
+    /// The path from the root, such as `kicad_pcb/footprint[3]/pad[2]`, for
+    /// a refusal: at most [`MAX_PATH_BYTES`], since every list's keyword is
+    /// at most [`MAX_KEYWORD_BYTES`] ([`check`]) and its depth at most
+    /// [`sexpr::MAX_DEPTH`].
+    fn path(&self) -> String {
+        render(&self.at)
+    }
+
     /// The head, when it is a bare atom (KiCad's keywords are).
     pub fn head(&self) -> Option<&'a str> {
         self.sx.head()
@@ -899,7 +1041,11 @@ impl<'a> Node<'a> {
                 Node {
                     sx: c,
                     kind: self.kind,
-                    path: format!("{}/{head}[{n}]", self.path),
+                    at: Rc::new(Place {
+                        up: Some(Rc::clone(&self.at)),
+                        head,
+                        n: *n,
+                    }),
                 }
             })
     }
@@ -917,7 +1063,7 @@ impl<'a> Node<'a> {
         if found.next().is_some() {
             return Err(Refusal::Ambiguous {
                 kind: self.kind,
-                path: self.path.clone(),
+                path: self.path(),
                 child: head.to_owned(),
             });
         }
@@ -955,7 +1101,7 @@ impl<'a> Node<'a> {
         if found.next().is_some() {
             return Err(Refusal::FieldTwice {
                 kind: self.kind,
-                path: self.path.clone(),
+                path: self.path(),
                 name: name.to_owned(),
             });
         }
@@ -1269,5 +1415,122 @@ mod tests {
         }
         assert!(copper_pad_layer("*.Cu") && copper_pad_layer("In2.Cu"));
         assert!(!copper_pad_layer("X.Cu"));
+    }
+
+    /// The emitter's layer table, as `pcb` writes it, around `items`.
+    fn tabled(items: &str) -> String {
+        format!(
+            "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (31 \"F.CrtYd\" user \"F.Courtyard\") (5 \"F.SilkS\" user \"F.Silkscreen\") (1 \"F.Mask\" user) (13 \"F.Paste\" user) (25 \"Edge.Cuts\" user)) {items})"
+        )
+    }
+
+    /// `AET-WO-1311` §1.1 (`3303` F4): an item on a layer outside the
+    /// board's table is refused by name, wherever it is; a case variant, a
+    /// Unicode look-alike (Cyrillic `С`, U+0421, for `C`), KiCad's `F&B.Cu`
+    /// and a row's user name are other names. A pad's `layers` may also
+    /// name `*.Cu` and `*.Mask`, and nothing else may.
+    #[test]
+    fn a_layer_outside_the_boards_table_is_refused_by_name() {
+        let line = |layer: &str| {
+            tabled(&format!(
+                "(footprint \"X\" (layer \"F.Cu\") (fp_line (start 0 0) (end 1 0) (layer \"{layer}\")))"
+            ))
+        };
+        for ok in ["F.Cu", "F.SilkS", "F.CrtYd", "Edge.Cuts"] {
+            assert!(board(&line(ok)).is_ok(), "{ok}");
+        }
+        for no in [
+            "F&B.Cu",
+            "Top",
+            "f.cu",
+            "F.cu",
+            "F.Cu ",
+            "F.\u{421}u",
+            "F.Courtyard",
+            "*.Cu",
+            "In1.Cu",
+            "",
+        ] {
+            let r = refused(&line(no));
+            assert!(
+                matches!(&r, Refusal::Layer { name, path, .. } if name == no && path == "kicad_pcb/footprint[1]/fp_line[1]/layer[1]"),
+                "{no:?}: {r:?}"
+            );
+            assert_eq!(r.kind(), "MalformedBoard");
+        }
+        let pad = |layers: &str| {
+            tabled(&format!(
+                "(footprint \"X\" (pad \"1\" thru_hole circle (at 0 0) (size 1 1) (drill 0.5) (layers {layers})))"
+            ))
+        };
+        assert!(board(&pad("\"*.Cu\" \"*.Mask\"")).is_ok());
+        assert!(board(&pad("\"F.Cu\" \"F.Mask\" \"F.Paste\"")).is_ok());
+        for no in [
+            "\"*.Cu\" \"*.Paste\"",
+            "\"F&B.Cu\"",
+            "\"*.cu\"",
+            "\"B.Mask\"",
+        ] {
+            assert!(matches!(refused(&pad(no)), Refusal::Layer { .. }), "{no}");
+        }
+        // A wildcard is a pad's only: on a via or a segment it is refused.
+        for item in [
+            "(via (at 1 1) (size 0.6) (drill 0.3) (layers \"*.Cu\") (net \"/A\"))",
+            "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"*.Cu\") (net \"/A\"))",
+        ] {
+            assert!(
+                matches!(refused(&tabled(item)), Refusal::Layer { .. }),
+                "{item}"
+            );
+        }
+        // What names no placed item is not judged: the table itself, a
+        // stackup's rows (KiCad names its dielectrics there), a padstack's
+        // `Inner`; and a text's flag after its layer is not a name.
+        for ok in [
+            "(setup (stackup (layer \"F.Cu\" (type \"copper\")) (layer \"dielectric 1\" (type \"core\"))))",
+            "(via (at 1 1) (size 0.6) (drill 0.3) (layers \"F.Cu\" \"B.Cu\") (padstack (mode front_inner_back) (layer \"Inner\" (size 0.6))) (net \"/A\"))",
+            "(gr_text \"x\" (at 1 1) (layer \"F.SilkS\" knockout))",
+        ] {
+            assert!(board(&tabled(ok)).is_ok(), "{ok}");
+        }
+        assert!(matches!(
+            refused(&tabled(
+                "(via (at 1 1) (padstack (layer \"Outer\" (size 0.6))))"
+            )),
+            Refusal::Layer { .. }
+        ));
+        // With no table, KiCad's own names are KiCad's to judge, and every
+        // gate that reads copper refuses the board (`route::declared`).
+        assert!(board("(kicad_pcb (gr_line (layer \"F.SilkS\")))").is_ok());
+    }
+
+    /// `AET-WO-1311` §1.2: a list's keyword is at most
+    /// [`MAX_KEYWORD_BYTES`]; one byte more is refused, naming its parent's
+    /// path. A path at the nesting limit with every keyword at that length
+    /// renders within [`MAX_PATH_BYTES`].
+    #[test]
+    fn a_keyword_past_the_cap_is_refused_and_a_path_is_bounded() {
+        let at = "k".repeat(MAX_KEYWORD_BYTES);
+        assert!(board(&format!("(kicad_pcb ({at} 1))")).is_ok());
+        let over = format!("{at}k");
+        let r = refused(&format!("(kicad_pcb (general ({over} 1)))"));
+        assert!(
+            matches!(&r, Refusal::Keyword { path, bytes, .. } if path == "kicad_pcb/general[1]" && *bytes == MAX_KEYWORD_BYTES + 1),
+            "{r:?}"
+        );
+        // The deepest path: every level a keyword at the cap, the last a
+        // repeated `width`, which the number grammar refuses there.
+        let depth = sexpr::MAX_DEPTH - 2;
+        let text = format!(
+            "(kicad_pcb {}(width x){})",
+            format!("({at} ").repeat(depth),
+            ")".repeat(depth)
+        );
+        let r = refused(&text);
+        let Refusal::Number { path, .. } = &r else {
+            panic!("{r:?}");
+        };
+        assert_eq!(path.matches(&at).count(), depth);
+        assert!(path.len() <= MAX_PATH_BYTES, "{}", path.len());
     }
 }

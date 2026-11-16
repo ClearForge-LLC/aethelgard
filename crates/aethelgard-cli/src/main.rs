@@ -862,7 +862,10 @@ fn check_kicad(
         read_only: tool.dirs(),
         read_write: Vec::new(),
     };
-    let version = version(invocation(run::args(["version"]), "status-version"))?;
+    let version = kicad::pinned(version(invocation(
+        run::args(["version"]),
+        "status-version",
+    ))?)?;
     let report = scratch.tool.join("report.json");
     let [noun, verb] = check.verb();
     let mut args = run::args([noun, verb, "--exit-code-violations", "--format", "json"]);

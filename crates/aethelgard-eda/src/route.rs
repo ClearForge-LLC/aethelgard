@@ -316,6 +316,17 @@ impl Shape {
         let need = self.r + o.r + gap;
         gap2(self.rect, o.rect) >= need * need
     }
+    /// True when the shape's inside meets `area`'s: copper that only touches
+    /// its edge does not. A sharp-cornered pad has no rounding (`r` 0), so
+    /// its box must overlap the area's; `!clear(…, 0)` held such a pad
+    /// inside a keepout to be outside it (`AET-WO-1311` adversarial pass).
+    fn enters(self, area: Rect) -> bool {
+        if self.r > 0 {
+            return gap2(self.rect, area) < self.r * self.r;
+        }
+        let (a, b) = (self.rect, area);
+        a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
+    }
     /// True when `p` is in the shape, edge included.
     fn holds(self, p: (i64, i64)) -> bool {
         gap2(self.rect, Rect::point(p.0, p.1)) <= self.r * self.r
@@ -1310,6 +1321,9 @@ impl<'a> Router<'a> {
             (None, false),
             (None, true),
         ];
+        // The fixed pairs whose copper alone stood in a soft path's way
+        // (`1308` A4): named if nothing else is found.
+        let mut pinned = BTreeSet::new();
         {
             self.banned.clear();
             for (margin, soft) in tries {
@@ -1333,6 +1347,7 @@ impl<'a> Router<'a> {
                     // Only a pair's fixed copper in the way: a wider free
                     // search may still go round it (or under, by a via).
                     if by.is_empty() && self.fixed.contains(&true) {
+                        pinned.extend(self.pinned(net, &p));
                         continue;
                     }
                     if by.is_empty() {
@@ -1342,14 +1357,33 @@ impl<'a> Router<'a> {
                 }
             }
         }
-        Err(Stuck::Unroutable(what.to_owned()))
+        if pinned.is_empty() {
+            return Err(Stuck::Unroutable(what.to_owned()));
+        }
+        let pairs: Vec<String> = self
+            .board
+            .stack
+            .pairs
+            .iter()
+            .filter(|p| {
+                p.nets
+                    .iter()
+                    .any(|n| pinned.iter().any(|&i| &self.nets[i] == n))
+            })
+            .map(|p| format!("`{}` ({})", p.name, p.nets.join(", ")))
+            .collect();
+        Err(Stuck::Unroutable(format!(
+            "{what}: only the fixed copper of the pair {} stands in the way",
+            pairs.join(" and the pair ")
+        )))
     }
 
-    /// The nets whose copper stands where a soft `path` went, each step of
-    /// it that was not free marked as contested.
-    fn blockers(&mut self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+    /// The steps of a soft `path` that were not free: each one's node, the
+    /// reach of `net`'s copper there, its layers, and its via's rule when
+    /// the step changes layer.
+    fn contested(&self, net: usize, path: &[Node]) -> Vec<(usize, i64, [bool; 2], Option<Rule>)> {
         let rule = self.rule(net);
-        let mut out = BTreeSet::new();
+        let mut out = Vec::new();
         // The source is a step too (F2): a path may start where it is not free.
         let first = path.first().map(|&(l, n)| ((l, n), (l, n)));
         let steps = first
@@ -1371,12 +1405,32 @@ impl<'a> Router<'a> {
                 }
                 (a, self.board.via_reach(rule), [true, true])
             };
+            out.push((at, reach, layers, (la != lb).then_some(rule)));
+        }
+        out
+    }
+
+    /// The nets whose copper stands where a soft `path` went, each step of
+    /// it that was not free marked as contested.
+    fn blockers(&mut self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        for (at, reach, layers, hole) in self.contested(net, path) {
             // Every node where a blocker's track would stand in the way
             // costs more from now on: the contested node's shadow.
-            let hole = (la != lb).then_some(rule);
             let (x, y) = self.grid.at(at);
             let shadow = reach + self.board.w() / 2;
             out.extend(self.contest(Rect::point(x, y), shadow, reach, layers, net, hole));
+        }
+        out
+    }
+
+    /// The fixed nets (a pair's) whose copper stands where a soft `path`
+    /// went: read only, so naming them changes no search.
+    fn pinned(&self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        for (at, reach, layers, hole) in self.contested(net, path) {
+            let (x, y) = self.grid.at(at);
+            out.extend(self.near(Rect::point(x, y), reach, layers, net, hole, true));
         }
         out
     }
@@ -1402,6 +1456,21 @@ impl<'a> Router<'a> {
                 }
             }
         }
+        self.near(here, reach, layers, skip, hole, false)
+    }
+
+    /// The nets but `skip`, fixed or not as `fixed` says, whose copper on
+    /// `layers` is within `reach` of `here`, or (`hole`) whose via hole is
+    /// too near.
+    fn near(
+        &self,
+        here: Rect,
+        reach: i64,
+        layers: [bool; 2],
+        skip: usize,
+        hole: Option<Rule>,
+        fixed: bool,
+    ) -> BTreeSet<usize> {
         let mut out = BTreeSet::new();
         for (other, e) in self.edges.iter().enumerate() {
             let r = reach + self.rule(other).width_nm / 2;
@@ -1409,7 +1478,7 @@ impl<'a> Router<'a> {
                 e[l].iter()
                     .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
             });
-            if other != skip && near && !self.fixed[other] {
+            if other != skip && near && self.fixed[other] == fixed {
                 out.insert(other);
             }
         }
@@ -1418,7 +1487,10 @@ impl<'a> Router<'a> {
             let d2 = gap2(Rect::point(vx, vy), here);
             let copper = reach + self.rule(other).via_nm / 2;
             let hole = hole.map_or(0, |h| hole_reach(h, self.rule(other)));
-            if other != skip && !self.fixed[other] && (d2 < copper * copper || d2 < hole * hole) {
+            if other != skip
+                && self.fixed[other] == fixed
+                && (d2 < copper * copper || d2 < hole * hole)
+            {
                 out.insert(other);
             }
         }
@@ -3605,12 +3677,24 @@ pub fn pairs(board: &Board, routed: &Routed) -> Result<Vec<PairReport>, String> 
 
 // ---- the router's own judgement, exact ----
 
-/// One copper item: its shape, net and layers.
+/// One copper item: what it is, its shape, net and layers.
 struct Item<'a> {
     what: String,
+    kind: Copper<'a>,
     net: Option<&'a str>,
     shape: Shape,
     layers: [bool; 2],
+}
+
+/// What kind of copper an [`Item`] is, never read from its text, which for
+/// a pad starts with its part's reference (`via1`, review 2, A16).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Copper<'a> {
+    /// A pad of the part with this reference.
+    Pad(&'a str),
+    Thermal,
+    Track,
+    Via,
 }
 
 fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
@@ -3619,6 +3703,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
         for pad in &part.pads {
             out.push(Item {
                 what: format!("{} pad {}", part.reference, pad.number),
+                kind: Copper::Pad(&part.reference),
                 net: pad.net.as_deref(),
                 shape: copper(pad),
                 layers: [true, pad.drill_nm.is_some()],
@@ -3629,6 +3714,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
         for &at in &a.at {
             out.push(Item {
                 what: format!("thermal via {at:?} under {} pad {}", a.reference, a.pad),
+                kind: Copper::Thermal,
                 net: Some(&a.net),
                 shape: Shape {
                     rect: Rect::point(at.0, at.1),
@@ -3641,6 +3727,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     for s in &routed.segments {
         out.push(Item {
             what: format!("track {:?} {:?}-{:?}", s.layer, s.start, s.end),
+            kind: Copper::Track,
             net: Some(&s.net),
             shape: Shape {
                 rect: span(s.start, s.end),
@@ -3652,6 +3739,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     for v in &routed.vias {
         out.push(Item {
             what: format!("via {:?}", v.at),
+            kind: Copper::Via,
             net: Some(&v.net),
             shape: Shape {
                 rect: Rect::point(v.at.0, v.at.1),
@@ -3670,17 +3758,14 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), String> {
     for part in &board.parts {
         for k in &part.keepouts {
-            let area = Shape { rect: k.rect, r: 0 };
             let l = k.layer.index();
             for item in all.iter().filter(|i| i.layers[l]) {
-                let forbidden = if item.what.starts_with("track") {
-                    k.tracks
-                } else if item.what.starts_with("via") || item.what.starts_with("thermal") {
-                    k.vias
-                } else {
-                    k.pads && !item.what.starts_with(&format!("{} pad ", part.reference))
+                let forbidden = match item.kind {
+                    Copper::Track => k.tracks,
+                    Copper::Via | Copper::Thermal => k.vias,
+                    Copper::Pad(owner) => k.pads && owner != part.reference,
                 };
-                if forbidden && !area.clear(item.shape, 0) {
+                if forbidden && item.shape.enters(k.rect) {
                     return Err(format!(
                         "{} is inside {}'s keepout on {:?}",
                         item.what, part.reference, k.layer
@@ -3726,11 +3811,9 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     let o = board.outline;
     let inner = o.grow(-EDGE_NM);
-    // Every item after the pads is a track, a via or a thermal via ([`items`]
-    // puts the pads first): chosen by position, never by its text, which
-    // starts with a part's reference for a pad (`via1`, review 2, A16).
-    let pads: usize = board.parts.iter().map(|p| p.pads.len()).sum();
-    for item in &all[pads..] {
+    // Every track, via and thermal via: chosen by its kind, never by its
+    // text (`via1`, review 2, A16).
+    for item in all.iter().filter(|i| !matches!(i.kind, Copper::Pad(_))) {
         if !inner.contains(item.shape.rect.grow(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
@@ -4535,6 +4618,40 @@ mod tests {
         }
     }
 
+    /// `1308` A4 (`AET-WO-1311` §1.6): a net whose only way is across a
+    /// fixed pair's copper fails closed naming the pair. `/S` must cross the
+    /// pair `X` on F.Cu, and a keepout over the whole board forbids every
+    /// via and every B.Cu track.
+    #[test]
+    fn a_net_blocked_only_by_a_fixed_pair_names_the_pair() {
+        let mut board = paired(12 * MM);
+        let at = |x: i64, y: i64| rect(x - 150_000, y - 150_000, x + 150_000, y + 150_000);
+        board.parts.push(Part {
+            rotation: 0,
+            reference: "S".into(),
+            pads: vec![
+                pad("1", Some("/S"), at(9 * MM, 2 * MM)),
+                pad("2", Some("/S"), at(9 * MM, 8 * MM)),
+            ],
+            courtyard: Vec::new(),
+            keepouts: vec![Keepout {
+                layer: Layer::B,
+                rect: rect(0, 0, 20 * MM, 10 * MM),
+                tracks: true,
+                vias: true,
+                pads: false,
+                fill: false,
+            }],
+        });
+        let e = route(&board).unwrap_err();
+        assert_eq!(e.net, "/S", "{e:?}");
+        assert!(
+            e.why
+                .contains("only the fixed copper of the pair `X` (/P, /N) stands in the way"),
+            "{e:?}"
+        );
+    }
+
     /// The judge's two bounds, each alone (`AET-WO-1308` §1.3, F6): a loop
     /// on `/P`'s tail 1.2 mm out leaves 3.4 mm uncoupled (under 4 mm) and a
     /// 2.4 mm difference (over 2 mm); a loop 2 mm out leaves 5 mm uncoupled.
@@ -4797,6 +4914,74 @@ mod tests {
         }
     }
 
+    /// Review 2, A16, in `keepouts` (`AET-WO-1311` §1.7): a pad of a part
+    /// named `via1`, `track_x` or `thermal1` is a pad there too. A keepout
+    /// forbidding pads (and nothing else) refuses it; one forbidding tracks
+    /// and vias (and not pads) lets it be.
+    #[test]
+    fn a_keepout_judges_a_part_named_like_copper_as_a_pad() {
+        let keepout = |pads: bool| Keepout {
+            layer: Layer::F,
+            rect: rect(3 * MM, 9 * MM, 5 * MM, 11 * MM),
+            tracks: !pads,
+            vias: !pads,
+            pads,
+            fill: false,
+        };
+        for reference in ["via1", "track_x", "thermal1", "R9"] {
+            for pads in [true, false] {
+                let mut host = resistor("H1", 15 * MM, "/C", "/D");
+                host.keepouts = vec![keepout(pads)];
+                // Rounded pads: inside the keepout whatever the judge's
+                // reading of a sharp corner (the next test's).
+                let mut guest = resistor(reference, 4 * MM, "/A", "/B");
+                for p in &mut guest.pads {
+                    p.corner_nm = 100_000;
+                }
+                let board = Board {
+                    outline: rect(0, 0, 20 * MM, 20 * MM),
+                    parts: vec![guest, host],
+                    stack: crate::stack::reference(),
+                };
+                let e = check(&board, &Routed::default());
+                assert_eq!(
+                    e.as_ref().is_err_and(|m| m.contains("keepout")),
+                    pads,
+                    "{reference}, a keepout forbidding pads: {pads}: {e:?}"
+                );
+            }
+        }
+    }
+
+    /// A sharp-cornered pad (`r` 0) inside another part's keepout is inside
+    /// it (`AET-WO-1311` adversarial pass); one that only touches its edge,
+    /// or lies beside it, is not.
+    #[test]
+    fn a_sharp_pad_inside_a_keepout_is_refused() {
+        for (left, inside) in [(3 * MM, true), (4_760_000, false), (6 * MM, false)] {
+            let mut host = resistor("H1", 15 * MM, "/C", "/D");
+            host.keepouts = vec![Keepout {
+                layer: Layer::F,
+                rect: rect(left, 9 * MM, left + 2 * MM, 11 * MM),
+                tracks: false,
+                vias: false,
+                pads: true,
+                fill: false,
+            }];
+            let board = Board {
+                outline: rect(0, 0, 20 * MM, 20 * MM),
+                parts: vec![resistor("R1", 4 * MM, "/A", "/B"), host],
+                stack: crate::stack::reference(),
+            };
+            let e = check(&board, &Routed::default());
+            assert_eq!(
+                e.as_ref().is_err_and(|m| m.contains("inside H1's keepout")),
+                inside,
+                "a keepout from {left} nm: {e:?}"
+            );
+        }
+    }
+
     /// What the router does not model is refused when read, never guessed.
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
@@ -4926,7 +5111,7 @@ mod tests {
         }
         let board = |copper: &str| {
             strict::board(&format!(
-                "(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (4 \"In1.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
             ))
             .unwrap()
         };
@@ -4952,6 +5137,31 @@ mod tests {
             "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\"))",
         ] {
             assert!(read_ref(&board(copper)).is_err(), "{copper}");
+        }
+    }
+
+    /// `AET-WO-1311` §1.2: `read` takes at most [`MAX_ITEMS`] copper items,
+    /// pads included; one more is refused before any is read.
+    #[test]
+    fn a_board_past_the_item_cap_is_refused() {
+        let board = |pads: usize, segments: usize| {
+            let pad = "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (net \"/A\"))";
+            let segment =
+                "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))";
+            strict::board(&format!(
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (31 \"F.CrtYd\" user) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) (footprint \"x\" (at 5 5) (property \"Reference\" \"R1\") {} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))) {})",
+                pad.repeat(pads),
+                segment.repeat(segments)
+            ))
+            .unwrap()
+        };
+        assert!(read_ref(&board(2, MAX_ITEMS - 2)).is_ok());
+        for (pads, segments) in [(2, MAX_ITEMS - 1), (MAX_ITEMS + 1, 0)] {
+            let e = read_ref(&board(pads, segments)).unwrap_err();
+            assert!(
+                e.contains(&format!("{} copper items", MAX_ITEMS + 1)),
+                "{e}"
+            );
         }
     }
 
