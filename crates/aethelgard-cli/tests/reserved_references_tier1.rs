@@ -209,6 +209,21 @@ fn moved() -> Vec<Moved> {
             "ReservedName",
             json!("U4_WP"),
         ),
+        // Two of the specification's references with one KiCad key, by a
+        // leading zero (the adversarial pass's F1); `generate`'s board writer
+        // refuses the pair.
+        (
+            "a4-key-u02",
+            |s| s["i2c_devices"][1]["reference"] = "U02".into(),
+            "DuplicateReference",
+            json!("U02 and U2"),
+        ),
+        (
+            "a4-key-j01",
+            |s| s["i2c_devices"][0]["reference"] = "J01".into(),
+            "DuplicateReference",
+            json!("J01 and J1"),
+        ),
         // A serial line the emitter never compared with its own nets: before,
         // `generate` accepted this and drew J1 pad 1 and U1 pad 101 onto the
         // MCU's VCAP1 net (FEEDBACK, measured); now both refuse it.

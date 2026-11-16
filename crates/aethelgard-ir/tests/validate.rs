@@ -2739,3 +2739,23 @@ fn a_project_named_for_a_windows_device_is_refused() {
         assert!(!aethelgard_ir::names::windows_reserved(name), "{name}");
     }
 }
+
+/// The adversarial pass's F1: two of the specification's references that
+/// KiCad takes for one, differing in more than case (a leading zero), are
+/// the board writer's `DuplicateReference`, by its sorted pair.
+#[test]
+fn two_references_with_one_kicad_key_are_refused() {
+    let err = refusal(|s| devs(s).i2c[1].reference = "U02".into());
+    assert_refusal(err, "DuplicateReference", Some("U02 and U2"));
+    let err = refusal(|s| devs(s).spi[0].reference = "u002".into());
+    assert_refusal(err, "DuplicateReference", Some("U2 and u002"));
+    // Case alone is step 8's refusal, as before.
+    let err = refusal(|s| devs(s).i2c[1].reference = "u2".into());
+    assert_eq!(
+        err,
+        E::DuplicateReference {
+            id: "u2".into(),
+            first: "U2".into()
+        }
+    );
+}

@@ -529,3 +529,26 @@ fn collect_strings(v: &serde_json::Value, out: &mut std::collections::BTreeSet<S
         _ => {}
     }
 }
+
+/// `AET-WO-1206`, the adversarial pass's F2 and F3: a power-tree reference
+/// starting `#` (KiCad's virtual-symbol prefix), or starting `unconnected-`
+/// (so a buck's own nets start with it), is refused by `validate` with the
+/// emitter's own kind, `id` and message. Before, only `generate` refused it.
+#[test]
+fn a_power_reference_the_emitter_refuses_is_refused_at_validate() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    for (name, id) in [("#U10", "#U10"), ("unconnected-x", "unconnected-x_FB")] {
+        let mut v = common::power::power_tree();
+        assert_eq!(v["power"]["regulators"][0]["reference"], "U10");
+        v["power"]["regulators"][0]["reference"] = name.into();
+        let spec: Specification = serde_json::from_value(v).unwrap();
+        let refused = spec.validate().unwrap_err();
+        assert_eq!((refused.kind(), refused.id()), ("ReservedName", Some(id)));
+        let e = schematic::emit(&spec, &solved, &table).unwrap_err();
+        assert_eq!(e.kind(), refused.kind(), "{name}");
+        assert_eq!(e.id(), refused.id(), "{name}");
+        assert_eq!(e.to_string(), refused.to_string(), "{name}");
+    }
+}

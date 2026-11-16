@@ -6,7 +6,9 @@
 //! Step 18 of [`Specification::validate`] refuses, by the name and with the
 //! JSON `generate` printed for each before it existed:
 //!
-//! - a reference the emitter would also number (`DuplicateReference`, A4);
+//! - a reference the emitter would also number, or two of the specification's
+//!   that KiCad takes for one (`DuplicateReference`, A4);
+//! - a reference starting `#`, which KiCad drops (`ReservedName`);
 //! - a net or domain named for one of the emitter's nets, or starting with
 //!   KiCad's `unconnected-` (`ReservedName`, A5);
 //! - a device reference named for a peripheral instance of the MCU
@@ -222,6 +224,12 @@ fn pair(own: &str, spelled: &str) -> String {
 pub(crate) fn check(spec: &Specification) -> Result<(), E> {
     let mcu = mcu_reference(spec);
     for r in references(spec) {
+        // KiCad drops a reference starting `#` from the netlist and the bill
+        // of materials (its power symbols' prefix); the emitter refuses one,
+        // and only the power tree's references can spell it (adversarial F2).
+        if r.starts_with('#') {
+            return Err(E::ReservedName(r.to_owned()));
+        }
         let key = reference_key(r);
         if emitter_numbered(&key, &mcu) && r != key {
             let mut both = [key.as_str(), r];
@@ -230,12 +238,28 @@ pub(crate) fn check(spec: &Specification) -> Result<(), E> {
         }
     }
     let own = own_nets(spec)?;
+    // A power reference starting `unconnected-` names the emitter's own nets
+    // so (`unconnected-x_FB`), which the board writer refuses (adversarial F3).
+    if let Some(o) = own.iter().find(|o| o.starts_with(UNCONNECTED)) {
+        return Err(E::ReservedName(o.clone()));
+    }
     for name in spelled_nets(spec) {
         if name.starts_with(UNCONNECTED) {
             return Err(E::ReservedName(name.to_owned()));
         }
         if let Some(o) = own.iter().find(|o| o.eq_ignore_ascii_case(name)) {
             return Err(E::ReservedName(pair(o, name)));
+        }
+    }
+    // Two references of the specification with one KiCad key that differ in
+    // more than case (`J1` and `J01`): step 8 and the power tree's check fold
+    // case only, and the board writer refuses the pair (adversarial F1).
+    let mut keys = std::collections::BTreeMap::new();
+    for r in references(spec) {
+        if let Some(other) = keys.insert(reference_key(r), r) {
+            let mut both = [other, r];
+            both.sort_unstable();
+            return Err(E::EmitterReference(both.join(" and ")));
         }
     }
     let instances = peripheral_instances();
