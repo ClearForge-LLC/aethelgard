@@ -37,3 +37,28 @@ Every answer below is labelled **measured**, **read at source** or **inferred**.
 ### P7. Existing boards
 - Board files (schematic, PCB, rules) are byte-identical: nothing here touches `aethelgard-eda`.
 - Firmware changes on every board with SPI or I2C. Verdicts change by the ledger and the boot record's `BOR_LEV`; the reference declares `bor_level` 3, so its twin must present 3 to pass.
+
+## 2. §1.0, measured (2026-11-16 03:41 UTC, pinned image `aethelgard-tools@sha256:c69ff9bc…a195a`, Renode `1.17.0+20260907gitf1dd1b4af`)
+
+The reference's emitted platform (`main` `25640c5`, `sentinel-01.repl`), driven from Renode's monitor with `LogPeripheralAccess` on `flashController`, `rcc` and `spi1`, run under `~/bin/capped-run` (scope `memory.max` 8 GiB, `memory.swap.max` 0, `pids.max` 8192, read back). The script and its whole output are in `~/.cache/aet-4230/m0/` (`m0.sh`, `out.txt`, `m0.log`). Renode's model sources were read at `renode-infrastructure` `066a7f13c052215632d469c995c89aea37c573b1`, the submodule of `renode` tag `v1.17.0` (`~/.cache/aet-4230/renode-src/SOURCE.txt` lists sha256 per file).
+
+| Register | Reset read | Write, read back | Label |
+|---|---|---|---|
+| `FLASH_OPTSR_CUR` (0x5200201C) | `0x0406AAF0`: `BOR_LEV` (bits 3:2) = `00` | `0xFFFFFFFF` ignored, still `0x0406AAF0` (the field is `FieldMode.Read`) | measured; read at source (`STM32H7_FlashController.cs` L118–119) |
+| `FLASH_OPTSR_PRG` (0x52002020), locked | `0x0406AAF0` | `0x0406AAFC` ignored, with the warning "Attempted to write to a program register (OptionStatusProgram) while OPTLOCK bit is set. Ignoring" | measured |
+| `FLASH_OPTKEYR` `0x08192A3B`, `0x4C5D6E7F`, then `OPTSR_PRG` `0x0406AAFC` | `OPTCR` reads `0x0` (unlocked) | `OPTSR_PRG` reads `0x0406AAFC`; `OPTSR_CUR` unchanged until `OPTCR.OPTSTART` | measured |
+| `OPTCR` = `0x2` (`OPTSTART`) | | `OPTSR_CUR` reads `0x0406AAFC`: `BOR_LEV` = `11` | measured |
+| after `machine Reset` | | `OPTSR_CUR` and `OPTSR_PRG` both `0x0406AAFC`: kept (`OPTSR_PRG` is not soft-resettable, and `Reset` copies it into `OPTSR_CUR`) | measured; read at source (L38–47, L121–122, L147–150) |
+| `RCC_D1CCIPR` (0x5802444C) | `0x0` | `0xFFFFFFFF`: reads `0x0`; "Unhandled write … Tags: … CKPERSEL (0x3)" | measured; every field a tag (L394–402) |
+| `RCC_D2CCIP1R` (0x58024450) | `0x0` | `0x00004000` (`SPI123SEL` = `100`): reads `0x0`; "Unhandled bits: [14] … Tags: SPI123SEL (0x4)"; all-ones likewise | measured; every field a tag (L403–418) |
+| `RCC_D2CCIP2R` (0x58024454) | `0x0` | not written | measured; `I2C123SEL`, `USART16SEL`, `USART234578SEL` are tags (L419–431) |
+| `SPI1_CFG1` (0x40013008) | `0x0` | `0x70000007` (`MBR` 7, `DSIZE` 7): reads `0x7`; "Tags: MBR (0x7)". All-ones reads `0xC01F` (`DSIZE`, `RXDMAEN`, `TXDMAEN` only) | measured |
+| `SPI1_CFG2` (0x4001300C) | `0x00400000` (`MASTER` always reads 1) | `0x04400000` (`SSM`): reads `0x00400000`; "Tags: SSM (0x1)". All-ones reads `0x00C00000` (`MASTER`, `LSBFRST` only) | measured |
+| `SPI1_CR1` (0x40013000) | `0x0` | `0x00001000` (`SSI`): reads `0x0`; "Tags: SSI (0x1)" | measured |
+
+**What it decides:**
+- **The brown-out presentation (§1.6) is possible:** a key unlock, an `OPTSR_PRG` write and `OPTSTART` give `OPTSR_CUR` any `BOR_LEV`, and the value survives `machine Reset`. §7's second stop does not fire. Whether it survives the droop scenario's own reset is measured with the campaign (§4).
+- **P1 held.** P2 was wrong: `CKPERSEL`, `SPI123SEL`, `SPI45SEL` and `I2C123SEL` are tags, so a write is logged and dropped, and every read gives 0. So the run-time `ResetClock` check reads `D1CCIPR` and `D2CCIP1R` before the selection is written and never after; a read-back would park every boot in the twin, and would tell the firmware it is in the twin (4300b Q9's class).
+- **P3 held.** `MBR`, `SSM` and `SSI` are not stored (measured). They are not honoured either: the model's transfer path never reads them, and `MODF` is a tag, so no mode fault can be raised (read at source, `STM32H7_SPI.cs` L91–203; no transfer was run to show it).
+- **Ledger consequences:** `SPI123SEL`, `CKPERSEL`, `I2C123SEL`, `MBR`, `SSM` and `SSI` are `ignored-by-model`. Each is judged by an independent rule, and the access log shows the value written. `BOR_LEV` is `silicon-only` as programmed: the twin presents the declared value.
+- **4300b's serial judge allows RCC writes only to the nine `*ENR` registers** (4300b FEEDBACK §8, passes 3 and 4), so the generated `D2CCIP1R` write fails the reference's CONSOLE judgement unless that allowance is extended. That judge is outside this work order's named CLI fence, but §1.1 forces the change. It allows exactly the solved whole word, and nothing else (§5).
