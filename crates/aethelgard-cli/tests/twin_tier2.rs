@@ -484,8 +484,13 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
         ["cpu_aborted"],
         "an aborted machine reports exactly cpu_aborted: {v}"
     );
+    // The test claims the machine returns instead of hanging (Renode grew
+    // about 55 MB/s without the bound), not that the 30 s bound
+    // (`renode::BOOT_BOUNDS`) is precise: the 30 s of slack covers start-up
+    // and reaping under a loaded runner (35.13 s on CI beside a Kani test;
+    // ruled on PR #152, comment 6903399822).
     assert!(
-        took.as_secs() < 30 + 5,
+        took.as_secs() < 30 + 30,
         "an aborted machine returns inside the bound: {took:?}"
     );
 }
