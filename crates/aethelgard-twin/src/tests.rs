@@ -827,19 +827,21 @@ fn the_flash_controller_is_read_once_and_never_written() {
         refused: false,
     };
     let read = a(false, 32, 0x1C, 0x0406_AAFC);
-    assert!(b.judge_accesses(&[vec![read.clone()]]).is_empty());
+    // Word 1 as the boot record holds it: the value the one read returned.
+    let j = |boots: &[Vec<crate::serial::Access>]| b.judge_accesses(boots, 0x0406_AAFC);
+    assert!(j(&[vec![read.clone()]]).is_empty());
     // A droop's earlier boot cut before the read.
-    assert!(b.judge_accesses(&[vec![], vec![read.clone()]]).is_empty());
+    assert!(j(&[vec![], vec![read.clone()]]).is_empty());
     assert_eq!(
-        b.judge_accesses(&[vec![]]),
+        j(&[vec![]]),
         ["the firmware read FLASH_OPTSR_CUR 0 times in the boot the reads judge, not once"]
     );
     assert_eq!(
-        b.judge_accesses(&[vec![read.clone(), read.clone()]]),
+        j(&[vec![read.clone(), read.clone()]]),
         ["the firmware read FLASH_OPTSR_CUR 2 times in the boot the reads judge, not once"]
     );
     assert_eq!(
-        b.judge_accesses(&[vec![read.clone(), read.clone()], vec![read.clone()]]),
+        j(&[vec![read.clone(), read.clone()], vec![read.clone()]]),
         ["the firmware read FLASH_OPTSR_CUR 2 times in boot 0, not once"]
     );
     // The m1 sequence, run by a firmware: every write named.
@@ -851,7 +853,7 @@ fn the_flash_controller_is_read_once_and_never_written() {
         read.clone(),
     ];
     assert_eq!(
-        b.judge_accesses(&[program.to_vec()]),
+        j(&[program.to_vec()]),
         [
             "the firmware wrote the flash controller (32 bits at 0x8, value 0x8192A3B)",
             "the firmware wrote the flash controller (32 bits at 0x8, value 0x4C5D6E7F)",
@@ -861,15 +863,41 @@ fn the_flash_controller_is_read_once_and_never_written() {
     );
     // A byte of OPTSR_CUR, or another register, is not the one word read.
     assert_eq!(
-        b.judge_accesses(&[vec![a(false, 8, 0x1C, 0xFC), read.clone()]]),
+        j(&[vec![a(false, 8, 0x1C, 0xFC), read.clone()]]),
         [
             "the firmware read the flash controller other than FLASH_OPTSR_CUR whole (8 bits at 0x1C)"
         ]
     );
     assert_eq!(
-        b.judge_accesses(&[vec![a(false, 32, 0x20, 0), read]]),
+        j(&[vec![a(false, 32, 0x20, 0), read.clone()]]),
         [
             "the firmware read the flash controller other than FLASH_OPTSR_CUR whole (32 bits at 0x20)"
         ]
     );
+    // Word 1 is the value the judged boot's one read returned, in all 32
+    // bits (the adversarial pass's F2): the declared level recorded over a
+    // read of BOR_LEV 00, or any other bit changed, is named; the judge's
+    // fill is `judge`'s to name, and an earlier boot's read is not word 1's.
+    let fresh = a(false, 32, 0x1C, 0x0406_AAF0);
+    assert_eq!(
+        j(&[vec![fresh.clone()]]),
+        [
+            "the boot record's word 1 is 0x0406AAFC, not 0x0406AAF0, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+        ]
+    );
+    assert_eq!(
+        b.judge_accesses(&[vec![read.clone()]], 0x0406_AAFD),
+        [
+            "the boot record's word 1 is 0x0406AAFD, not 0x0406AAFC, the value the firmware's one read of FLASH_OPTSR_CUR returned"
+        ]
+    );
+    assert!(
+        b.judge_accesses(&[vec![fresh.clone()]], 0x0406_AAF0)
+            .is_empty()
+    );
+    assert!(
+        b.judge_accesses(&[vec![fresh.clone()]], boot::RECORD_UNSET)
+            .is_empty()
+    );
+    assert!(j(&[vec![fresh], vec![read]]).is_empty());
 }

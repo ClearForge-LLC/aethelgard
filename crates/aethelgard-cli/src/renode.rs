@@ -2108,7 +2108,7 @@ pub fn judge_boot(
             access_boots(&flash, &[aethelgard_twin::boot::FLASH_RENODE])
         })
         .flatten()
-        .map(|b| plan.image.brown_out.judge_accesses(&b));
+        .map(|b| plan.image.brown_out.judge_accesses(&b, observed.brown_out));
     // How many of the last boot's accesses precede the injection: the RX
     // pin's words there are rebuilt from them (adversarial pass 2, A2).
     let last_start = releases.last().map_or(0, |&r| r + 1);

@@ -619,7 +619,7 @@ fn table() -> Vec<Entry> {
         "BOR_LEV",
         R,
         Si,
-        "the boot record's word 1 against topology.bor_level (BrownOutLevelNotProgrammed, contract D10); the twin presents the declared level itself (AET-WO-4230 FEEDBACK §2 m1), so only the bench shows the option byte was programmed",
+        "the boot record's word 1 against topology.bor_level (BrownOutLevelNotProgrammed, contract D10) and, in all 32 bits, against the value the flash controller's log shows its one read returned (flash_controller_access, the adversarial pass's F2); the twin presents the declared level itself (AET-WO-4230 FEEDBACK §2 m1), so only the bench shows the option byte was programmed",
         "",
         "set by the declaration and the factory step in FAB-NOTES, a read-modify-write of the word as read, the only correct procedure (AET-WO-4230 R8, the architect's ruling on Q-J); the whole word differs above bit 15 among the three values on record, each at BOR_LEV 00: the bench's 0x1BC6_AAF0 (AET-WO-3302, NUCLEO-H753ZI rev V, 2026-11-16 05:00 UTC), RM0433 Rev 9 Table 21's 0x0006_AAF0 and Renode's 0x0406_AAF0 (plus the level, as the twin presents it), visible to a firmware that reads all of it",
     ));
