@@ -2141,7 +2141,7 @@ pub fn judge_boot(
     }
     if !booted {
         findings.push(Finding::plain(
-            "boot_word_missing",
+            aethelgard_chaos::campaign::BOOT_WORD_FINDING,
             format!(
                 "the boot word at {:#010x} reads {:#010x}, not {:#010x}",
                 plan.boot_word,
@@ -2240,6 +2240,7 @@ pub fn judge_boot(
             plan.virtual_ns,
             plan.window_ns,
         ));
+        findings.extend(timeouts_without_the_boot_word(checks, &observed.records));
     }
     // The motor outputs (`AET-WO-4300a` §1.4): the static check judges
     // silicon from the topology alone, the twin's witness the model's
@@ -2570,13 +2571,31 @@ fn reads_outside_window(
                 _ => format!("its {} step's read", c.label),
             };
             Finding::plain(
-                "identity_read_outside_window",
+                aethelgard_chaos::campaign::OUTSIDE_WINDOW_FINDING,
                 format!(
                     "{}: {what} did not complete inside this boot of {boot_ns} ns (a board with a DShot output boots inside its window of {window_ns} ns, AET-WO-4300a D1)",
                     who(c)
                 ),
             )
         })
+        .collect()
+}
+
+/// With no boot word, each read whose record says its wait expired is still
+/// named, as the booted path names it (`AET-WO-3201`, `3100` F15): the
+/// record is the firmware's own, so the timeout is never left for
+/// attribution to find unnamed. Nothing else of the record is judged before
+/// the fixed point.
+fn timeouts_without_the_boot_word(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    records: &[(u32, u64)],
+) -> Vec<Finding> {
+    use aethelgard_twin::boot::Outcome;
+    checks
+        .iter()
+        .zip(records)
+        .filter(|(c, r)| matches!(c.judge(r.0, r.1), Outcome::Timeout(_)))
+        .filter_map(|(c, r)| identity_finding(c, r.0, r.1))
         .collect()
 }
 
@@ -2606,8 +2625,10 @@ fn identity_finding(
     };
     match c.judge(status, value) {
         Outcome::Pass => None,
+        // Named by its step (`AET-WO-4210` F-B10): a data read's mismatch
+        // is not the identity's.
         Outcome::Mismatch => Some(Finding::plain(
-            &format!("{bus}_identity_mismatch"),
+            &format!("{bus}_{}_mismatch", c.step.name()),
             format!(
                 "{who}: {what} {wrote} read {value:#x}, the part table says {:#x}{under}",
                 c.expected
@@ -3720,6 +3741,55 @@ mod tests {
             reads_outside_window(checks, &written, DSHOT_WINDOW_NS, DSHOT_WINDOW_NS).is_empty()
         );
         assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS, MAX_VIRTUAL_NS).is_empty());
+    }
+
+    /// `AET-WO-3201` (`3100` F15): with no boot word, a record that says its
+    /// wait expired is still named, as the booted path names it; a mismatch,
+    /// the fill or a passing read is not judged before the fixed point.
+    #[test]
+    fn a_timed_out_read_is_named_without_the_boot_word() {
+        use aethelgard_twin::boot::{RECORD_UNSET, STATUS_OK, STATUS_TXIS};
+        let image = image();
+        let checks = &image.identity.checks;
+        let i2c = checks
+            .iter()
+            .position(|c| matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. }))
+            .unwrap();
+        let mut records = vec![(RECORD_UNSET, u64::from(RECORD_UNSET)); checks.len()];
+        assert!(timeouts_without_the_boot_word(checks, &records).is_empty());
+        records[i2c] = (STATUS_OK, 0x1);
+        assert!(timeouts_without_the_boot_word(checks, &records).is_empty());
+        records[i2c] = (STATUS_TXIS, 0);
+        let named = timeouts_without_the_boot_word(checks, &records);
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].kind, "i2c_timeout");
+        assert_eq!(
+            named[0].message,
+            identity_finding(&checks[i2c], STATUS_TXIS, 0)
+                .unwrap()
+                .message
+        );
+    }
+
+    /// `AET-WO-3201` (`4210` F-B10): a mismatch is named by its step, so a
+    /// data read's is never dressed as the identity's.
+    #[test]
+    fn a_mismatch_is_named_by_its_step() {
+        use aethelgard_ir::parts::StepKind;
+        use aethelgard_twin::boot::STATUS_OK;
+        let image = image();
+        let mut c = image.identity.checks[0].clone();
+        let bus = bus_word(&c);
+        for (step, name) in [
+            (StepKind::Identity, "identity"),
+            (StepKind::Configure, "configure"),
+            (StepKind::Data, "data"),
+        ] {
+            c.step = step;
+            let value = !c.expected & aethelgard_ir::parts::width_mask(c.width);
+            let f = identity_finding(&c, STATUS_OK, value).unwrap();
+            assert_eq!(f.kind, format!("{bus}_{name}_mismatch"));
+        }
     }
 
     #[test]
