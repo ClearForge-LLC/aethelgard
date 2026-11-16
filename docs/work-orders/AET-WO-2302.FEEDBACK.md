@@ -108,12 +108,15 @@ Measured on the Sentinel-02-shaped board unless a row says otherwise. Every row'
 |---|---|---|---|---|---|---|
 | today (unpatched) | refused, exit 3 `SerialWireTimePastWindow`: MAVLINK's wire time ends at 3.96 ms, past `DSHOT_WINDOW_NS` (measured). The data steps at 39 ms would miss it too. | — | — | — | — | nothing |
 | no motors (`sentinel-02-own`, today's 100 ms boot), for scale | 100 ms | 3.20–3.24 s | 0.03 MB | 607–615 MiB (59–60 %) | — | — |
-| **(a) static**: boot to a fixed 44.1 ms, observers logged throughout (one run) | 44.1 ms | 4.86 s | 7.07 MB (84 % of budget) | 615 MiB (60 %) | **6 386 B (measured, campaign, 90 records)** | everything; **today's judge passes it** |
-| (a) static, observers silenced at `start_outputs` + 2 ms | 44.1 ms | 4.72–5.02 s | 2.88 MB | 670–686 MiB (65–67 %) | as above, plus window fields on 8 records, about 0.1 KB (inferred) | DShot inside its 2 ms: today's judge says only "the output stopped" (§4 note) |
-| **(a-i) anchored, 100 ms boot**: at `start_outputs` + 2 ms the judge's own action reads `TIM1.CR1` back (0x81), silences the observers and clears `CEN` | 100 ms | **3.98–4.74 s** | 2.84 MB | **645–661 MiB (63–65 %)** | as (a), inferred | as above; plus `register_mismatch` on `CR1`, the judge's own clear |
-| (b) one 100 ms window, DShot sub-window by silencing only | 100 ms | 9.84–9.86 s | 2.88 MB | **926–935 MiB (90–91 %)** | as (a), inferred | as (a) silenced |
-| (c) two boots: the device boot alone (100 ms, observers silenced) | 100 ms | 9.54–9.72 s | 0.05 MB | 830–838 MiB (81–82 %) | | |
-| (c) both boots (inferred: the device boot plus (a)'s output boot) | 100 + 41–44 ms | about 14.3–14.7 s | about 2.9 MB | 838 MiB | about 8.1 KB (inferred: kinds 10, 11, 12 and 14 twice, 1 732 B more) | as (a-i) |
+| **(a) static**: boot to a fixed 44.1 ms, observers logged throughout | 44.1 ms | 4.87–5.31 s (campaign 8.5–9.0 s) | 7.07 MB (84 % of budget) | 615 MiB (60 %, one run) | **6 386 B** | everything; **today's judge passes it** (3 of 3 campaign runs) |
+| (a) static, observers silenced at `start_outputs` + 2 ms | 44.1 ms | 4.70–5.02 s (campaign 7.96–8.10 s) | 2.88 MB | 670–686 MiB (65–67 %) | **6 408 B** (a built judge adds window fields on 8 records, about 0.1 KB, inferred) | DShot inside its 2 ms: today's judge says only "the output stopped" (§4 note) |
+| **(a-i) anchored, 100 ms boot**: at `start_outputs` + 2 ms the judge's own action reads `TIM1.CR1` back (0x81), silences the observers and clears `CEN` | 100 ms | **3.98–4.74 s** (campaign 7.35–7.68 s) | 2.84 MB | **645–661 MiB (63–65 %)** | **6 434 B** | as above; plus `register_mismatch` on `CR1`, the judge's own clear |
+| (b) one 100 ms window, DShot sub-window by silencing only | 100 ms | 9.84–10.23 s (campaign 13.1–13.6 s) | 2.88 MB | **926–935 MiB (90–91 %)** | **6 408 B** | as (a) silenced |
+| (c) two boots: the device boot (100 ms, observers silenced, frames at 39.1 ms) | 100 ms | 9.51–10.12 s (campaign 12.6–13.3 s) | 0.05 MB | 830–838 MiB (81–82 %) | 6 360 B | devices and serial |
+| (c) its output boot (41.1 ms, observers logged, today's injection) | 41.1 ms | 4.01–4.06 s (campaign 7.22–7.30 s) | about 2.9 MB | — | 6 386 B | DShot (passes) |
+| **(c) both boots** (measured as two campaign runs) | 100 + 41.1 ms | **13.5–14.2 s** (campaign 19.8–20.6 s) | — | 838 MiB | **12 746 B** (two archives; every boot writes a whole one) | as (a-i) |
+
+**Trace bytes, measured** (`spike/2302/out/candidates-campaign.txt`): one campaign per candidate, three runs each, identical across runs; only (a) and (c)'s output boot pass with today's judge, the others fail on the sub-window as below, and every archive is written whole.
 
 **Every `motor_timing_mismatch` above is the "output stopped" form**, read in the `stop1`, `b1` and `as1` verdicts. For example: "4716 rises follow the model's period 424 ns and high time 160 ns …, but the last is at 41071980 ns, more than a period before the window's end". Inside the 2 ms the witness is today's, so a judge that ends DShot's window at its anchor + 2 ms would witness it whole (inferred, not built).
 
@@ -214,7 +217,7 @@ Today's other boots, for scale (three runs each):
   - But its bound needs the twin's instructions per spin, 3, a property of the generated loop that `INV-07` keeps the judge from taking.
   - And its injection must land within the echo's poll budget after the real boot word (`ECHO_POLLS` 20 000, about 1–2 ms, inferred), which a static bound cannot promise.
 - **(b)** costs 2.4× (a-i)'s wall and 90–91 % of the memory bound, for no extra evidence.
-- **(c)** costs about 3.5× (a-i)'s wall and needs a determinism check between its boots, for no extra evidence.
+- **(c)** costs about 3× (a-i)'s wall (13.5–14.2 s against 4.0–4.7 s) and twice its trace bytes (12 746 B against 6 434 B), and needs a determinism check between its boots, for no extra evidence.
 
 ## §7 Q6 under (a-i): a mixed board
 
@@ -275,7 +278,7 @@ Today's other boots, for scale (three runs each):
 | P6 | **Held, but incomplete:** about 0.10 s per ms of DShot with the observers silenced. I missed the memory, 4.7 MiB per ms, which is what limits DShot. |
 | P7 | **Held in shape:** (a) took 4.7–5.0 s and 2.9–7.1 MB. The boot ends at 44.1 ms, not 41 ms, because the wire budget counts from the injection. |
 | P8 | **Held:** silenced, 9.8 s, 5 s more than (a); unsilenced, it floods. I did not predict 90–91 % of the memory bound. |
-| P9 | **Held:** about 14.5 s; trace about 8.1 KB (inferred). |
+| P9 | **Held on wall** (13.5–14.2 s, measured). **Missed on trace:** 12 746 B, not 2×: each boot writes a whole archive. |
 | P10 | **Held, refined:** (a), as (a-i). The judge can bound the anchor, and it must (F2); per boot (F5). |
 | P11 | **Missed:** the cost is about 0, because under (a-i) the boot is 100 ms anyway and DShot is stopped. I also took the period as silicon's: 50 Hz is 5.12 ms in the model. |
 | P12 | **Held in substance.** I did not foresee the fence or evolve's `I6`/`E3`. |
@@ -322,3 +325,4 @@ Today's other boots, for scale (three runs each):
 - **Base:** `1178ca8`; `main` had not moved at the stop.
 - **Gates on `6c7c9c3`:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` all pass (1 934 passed, 0 failed), on the host under a capped user scope.
 - **The spike fixture** `spike/2302/fixtures/sentinel-02-shaped.json` places the W25Q64JV and carries no `accept_lifecycle` entry. Once `4211` merges (the row becomes `nrnd`), it needs one before it can move under `crates/`.
+- **Re-signalled.** After the first STOPPED push (`7eff16f`), every candidate's `OQ-03` trace bytes and wall time were measured as campaign archives, three runs each (§4; `spike/2302/sh/camp2.sh`), in place of the inferred figures: (a) 6 386 B, (a) silenced 6 408 B, (a-i) 6 434 B, (b) 6 408 B, (c) 6 360 + 6 386 = 12 746 B. (c)'s inferred 8.1 KB was wrong, because each boot writes a whole archive. The recommendation is unchanged.
