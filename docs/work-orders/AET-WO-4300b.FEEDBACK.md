@@ -3,7 +3,7 @@
 **Builder:** Claude (strong tier), worktree `~/aethelgard-4300b`, branch `wo/aet-4300b-serial` from `main` `7ca65e6`.
 **Work order:** `docs/work-orders/AET-WO-4300b.md` on `main`, as amended by the architect's kickoff amendments (`~/.cache/aet-4300b-ruling.md`, 2026-11-15 12:00 UTC).
 **Cadence:** build, with one measured stop (§1.6, now answered by connectors unless ERC or DRC fails).
-**Status:** the STOP at `cb07f59` was ruled (PR #152, comment 6903399822, and the architect's interim ruling of 2026-11-16 01:20 UTC); its rulings are built (§9, §12), and adversarial pass 4 is done and fixed (§8). §1.6 is measured and passed, and the §7 clock stop does not fire. Four fresh adversarial passes; reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 155 (exact). The head's CI is judged by the measurement clause (§12).
+**Status: READY** on PR #152. The STOP at `cb07f59` was ruled (PR #152, comment 6903399822, and the architect's interim ruling of 2026-11-16 01:20 UTC), and its rulings are built (§9, §12). Adversarial pass 4 is done and its findings fixed (§8). §1.6 is measured and passed, and the §7 clock stop does not fire. Four fresh adversarial passes; reduction pass (§11); gates green. Specification 9, topology 7, trace 11, `TIER2_MIN` 155 (exact). CI on `fdd87b4` was green with shard 1 at 21m19s and every other shard under 20 minutes; by the architect's 03:25 UTC instruction this commit's own run is the one re-run under clause (2) (§12).
 
 The predictions in §1 are committed before any container run, any firmware build for a probe, and any baseline run. They are not edited afterwards; corrections go in later sections.
 
@@ -338,3 +338,8 @@ The refit's weights stay committed, since they are this rule's measurement; the 
 ### For §8
 
 Done: pass 4 (§8) re-attacked fix 3 and this round, as ruled.
+
+### The head's run, and the re-run (clause (2))
+
+- **CI on `fdd87b4`** (run 43794308142, the ruled weights and pass 4's fixes): every job green. The tools shards took 14m31s (7), 14m32s (3), 15m14s (2), 15m27s (0), 15m30s (4), 16m40s (5), 18m52s (6) and **21m19s (1)**. One shard was over 20 minutes while the plan held at about 1,046 s per shard, under the interim ruling.
+- **The re-run.** By the architect's instruction of 2026-11-16 03:25 UTC, there is no manual re-run. This docs-only READY commit's own CI run is the one re-run of clause (2). The architect judges it: a merge if every shard is under 20 minutes, a ruling if not. Nothing is pushed after this commit.
