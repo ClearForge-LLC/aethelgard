@@ -69,14 +69,17 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
         declarations,
         [
             "using \"platforms/cpus/stm32h753.repl\"",
-            "spi1: SPI.STM32H7_SPI @ {"
+            "spi1: SPI.STM32H7_SPI @ {",
+            "flashController:"
         ]
     );
     // The spike's measured block (`spike/2100/out/sentinel-01.repl`, loaded
-    // by `simulate` at 459005f), byte for byte.
-    assert!(text.ends_with(
-        "spi1: SPI.STM32H7_SPI @ {\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }\n    IRQ -> nvic@35\n"
-    ));
+    // by `simulate` at 459005f), byte for byte, then the brown-out level's
+    // presentation (`AET-WO-4230` D10).
+    let presentation = boot::brown_out(&bare()).unwrap().presentation();
+    assert!(text.ends_with(&format!(
+        "spi1: SPI.STM32H7_SPI @ {{\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }}\n    IRQ -> nvic@35\n{presentation}"
+    )));
     let names: Vec<(String, bool)> = platform::instances(
         &pre_serial(),
         &std::collections::BTreeSet::new(),
@@ -115,6 +118,7 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
         f.base("SPI2").unwrap(),
         f.irq("SPI2").unwrap()
     );
+    let block = block + &boot::brown_out(&t).unwrap().presentation();
     assert!(text.ends_with(&block), "{text}");
     // A solved SPI4 is Renode's own `spi4`, never declared twice (§2.9).
     let t = edited("\"SPI1", "\"SPI4");
@@ -247,7 +251,12 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
             reg("RCC.APB4ENR", 0x5802_44F4, u32::MAX, 0x0001_0000),
         ]
     );
-    assert_eq!(image.unobservable, ["GPIOB.OTYPER", "I2C1.TIMINGR"]);
+    // Every configured port's `OTYPER` is written whole (`AET-WO-4230` B0):
+    // port A's SPI and chip-select pins too.
+    assert_eq!(
+        image.unobservable,
+        ["GPIOA.OTYPER", "GPIOB.OTYPER", "I2C1.TIMINGR"]
+    );
 }
 
 /// The console (`AET-WO-4300b`): USART1 on PA9/PA10 at AF7, 115200 8N1.
@@ -280,6 +289,7 @@ fn the_console_adds_its_usart_its_pins_and_its_gate() {
     assert_eq!(
         image.unobservable,
         [
+            "GPIOA.OTYPER",
             "GPIOB.OTYPER",
             "I2C1.TIMINGR",
             "USART1.CR1.FIFOEN",
@@ -393,12 +403,16 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
         ),
         ("U4", &[0x9F][..], 3, 0xEF_4017)
     );
-    assert_eq!((f.status_at, f.value_at), (word + 12, word + 16));
+    // After the boot word and the brown-out word (`AET-WO-4230` D10).
+    assert_eq!((f.status_at, f.value_at), (word + 16, word + 20));
     assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
+    // B0's EOT wait: an SPI read's status, never an I2C one's.
+    assert_eq!(f.judge(boot::STATUS_EOT, 0), boot::Outcome::Timeout("EOT"));
+    assert_eq!(c.judge(boot::STATUS_EOT, 0x60), boot::Outcome::Invalid);
     assert_eq!(f.judge(boot::STATUS_TXIS, 0), boot::Outcome::Invalid);
     assert_eq!(c.judge(boot::STATUS_RXP, 0x60), boot::Outcome::Invalid);
     assert_eq!((c.width, c.expected), (1, 0x60));
-    assert_eq!((c.status_at, c.value_at), (word + 4, word + 8));
+    assert_eq!((c.status_at, c.value_at), (word + 8, word + 12));
     assert_eq!(image.identity.unmodelled.len(), 1);
     assert_eq!(image.identity.unmodelled[0].reference, "U3");
 
@@ -733,4 +747,129 @@ fn the_emitted_header_names_each_own_model_s_pin() {
     let renode = platform::emit(&with_devices(&[("U2", "BME280", 0x76)])).unwrap();
     assert!(!renode.contains(platform::OWN_LINE), "{renode}");
     assert!(platform::own_models(&renode).unwrap().is_empty());
+}
+
+/// `AET-WO-4230` D10, §1.6: the platform presents the declared level in
+/// `FLASH_OPTSR_CUR` by the block measured in FEEDBACK §2 m1, keys first and
+/// a wrong key last, for every level, 0 included; the addresses and the
+/// field from the header.
+#[test]
+fn the_platform_presents_the_declared_brown_out_level() {
+    let b = boot::brown_out(&reference()).unwrap();
+    assert_eq!(
+        (b.level, b.word_at, b.mask, b.shift, b.base),
+        (3, boot::boot_word().unwrap() + 4, 0xC, 2, 0x5200_2000)
+    );
+    assert_eq!(
+        (b.optkeyr, b.optcr, b.optsr_cur, b.optsr_prg, b.optstart),
+        (0x08, 0x18, 0x1C, 0x20, 0x2)
+    );
+    assert_eq!(b.presented(), 0x0406_AAFC);
+    assert_eq!(
+        b.presentation(),
+        "\n// The brown-out level the specification declares (mcu.bor_level 3), presented in\n\
+         // FLASH_OPTSR_CUR as a factory step leaves it (AET-WO-4230 §1.6): the option keys, the\n\
+         // word into FLASH_OPTSR_PRG, OPTSTART, then a wrong key to lock FLASH_OPTCR again.\n\
+         flashController:\n    init add:\n\
+         \x20       WriteDoubleWord 0x08 0x08192A3B\n\
+         \x20       WriteDoubleWord 0x08 0x4C5D6E7F\n\
+         \x20       WriteDoubleWord 0x20 0x0406AAFC\n\
+         \x20       WriteDoubleWord 0x18 0x00000002\n\
+         \x20       WriteDoubleWord 0x08 0x00000000\n"
+    );
+    for (level, word) in [(0u8, 0x0406_AAF0u32), (1, 0x0406_AAF4), (2, 0x0406_AAF8)] {
+        let mut t = reference();
+        t.bor_level = level;
+        let b = boot::brown_out(&t).unwrap();
+        assert!(
+            b.presentation()
+                .contains(&format!("WriteDoubleWord 0x20 0x{word:08X}\n")),
+            "{level}"
+        );
+        assert!(platform::emit(&t).unwrap().ends_with(&b.presentation()));
+    }
+    let mut t = reference();
+    t.bor_level = 4;
+    assert!(boot::brown_out(&t).is_err());
+}
+
+/// `AET-WO-4230` D10: word 1's `BOR_LEV` against the declared level; the
+/// judge's fill (whose bits 3:2 read 3) is named before it is compared.
+#[test]
+fn the_brown_out_word_is_judged_against_the_declared_level() {
+    use boot::BrownOutOutcome::*;
+    let b = boot::brown_out(&reference()).unwrap();
+    assert_eq!(b.judge(0x0406_AAFC), Pass);
+    assert_eq!(b.judge(0x0000_000C), Pass);
+    assert_eq!(b.judge(0x0406_AAF0), Mismatch { recorded: 0 });
+    assert_eq!(b.judge(0x0406_AAF8), Mismatch { recorded: 2 });
+    assert_eq!(b.judge(boot::RECORD_UNSET), Unset);
+    let mut t = reference();
+    t.bor_level = 0;
+    let z = boot::brown_out(&t).unwrap();
+    assert_eq!(z.judge(0x0406_AAF0), Pass);
+    assert_eq!(z.judge(0x0406_AAFC), Mismatch { recorded: 3 });
+    assert_eq!(z.judge(boot::RECORD_UNSET), Unset);
+}
+
+/// `AET-WO-4230` D10, WO §5.3: from the flash controller's access log, one
+/// word read of `OPTSR_CUR` in the judged boot, at most one in an earlier
+/// one, and no other access at all.
+#[test]
+fn the_flash_controller_is_read_once_and_never_written() {
+    let b = boot::brown_out(&reference()).unwrap();
+    let a = |write: bool, bits: u8, offset: u32, value: u64| crate::serial::Access {
+        source: boot::FLASH_RENODE.to_owned(),
+        write,
+        bits,
+        offset,
+        value,
+        refused: false,
+    };
+    let read = a(false, 32, 0x1C, 0x0406_AAFC);
+    assert!(b.judge_accesses(&[vec![read.clone()]]).is_empty());
+    // A droop's earlier boot cut before the read.
+    assert!(b.judge_accesses(&[vec![], vec![read.clone()]]).is_empty());
+    assert_eq!(
+        b.judge_accesses(&[vec![]]),
+        ["the firmware read FLASH_OPTSR_CUR 0 times in the boot the reads judge, not once"]
+    );
+    assert_eq!(
+        b.judge_accesses(&[vec![read.clone(), read.clone()]]),
+        ["the firmware read FLASH_OPTSR_CUR 2 times in the boot the reads judge, not once"]
+    );
+    assert_eq!(
+        b.judge_accesses(&[vec![read.clone(), read.clone()], vec![read.clone()]]),
+        ["the firmware read FLASH_OPTSR_CUR 2 times in boot 0, not once"]
+    );
+    // The m1 sequence, run by a firmware: every write named.
+    let program = [
+        a(true, 32, 0x08, 0x0819_2A3B),
+        a(true, 32, 0x08, 0x4C5D_6E7F),
+        a(true, 32, 0x20, 0x0406_AAFC),
+        a(true, 32, 0x18, 0x2),
+        read.clone(),
+    ];
+    assert_eq!(
+        b.judge_accesses(&[program.to_vec()]),
+        [
+            "the firmware wrote the flash controller (32 bits at 0x8, value 0x8192A3B)",
+            "the firmware wrote the flash controller (32 bits at 0x8, value 0x4C5D6E7F)",
+            "the firmware wrote the flash controller (32 bits at 0x20, value 0x406AAFC)",
+            "the firmware wrote the flash controller (32 bits at 0x18, value 0x2)"
+        ]
+    );
+    // A byte of OPTSR_CUR, or another register, is not the one word read.
+    assert_eq!(
+        b.judge_accesses(&[vec![a(false, 8, 0x1C, 0xFC), read.clone()]]),
+        [
+            "the firmware read the flash controller other than FLASH_OPTSR_CUR whole (8 bits at 0x1C)"
+        ]
+    );
+    assert_eq!(
+        b.judge_accesses(&[vec![a(false, 32, 0x20, 0), read]]),
+        [
+            "the firmware read the flash controller other than FLASH_OPTSR_CUR whole (32 bits at 0x20)"
+        ]
+    );
 }

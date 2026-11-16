@@ -15,6 +15,12 @@
 //! board; where it cannot, the verdict labels it unverified and names the
 //! emitter's refusal. `judged` counts the lines judged, 0 for a
 //! specification with no SPI bus.
+//!
+//! `AET-WO-4230` §1.2 (Amendment 1): a line's rate is its controller's
+//! achieved rate at the fastest HSI (`spi_controllers[..].achieved_max_hz`),
+//! not the declared speed; the output names the declared, the nominal
+//! achieved and the fastest achieved rate, and the line holds when the
+//! chosen speed's `fmax` is at least the fastest.
 
 use std::path::Path;
 use std::process::ExitCode;
@@ -23,7 +29,7 @@ use aethelgard_svd_hal::board::{self as board, SpeedCheck};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::{EXIT_INVALID_SPEC, Refusal};
+use crate::{EXIT_FAIL, EXIT_INVALID_SPEC, Refusal};
 
 #[derive(Serialize)]
 struct Report {
@@ -47,6 +53,30 @@ struct Report {
 
 fn ospeedr(v: u8) -> &'static str {
     ["00", "01", "10", "11"][usize::from(v & 3)]
+}
+
+/// One judged line's rates and verdict (`AET-WO-4230` §1.2): its SPI
+/// controller's declared, nominal achieved and fastest achieved rate, from
+/// the solved topology, against the chosen speed's `fmax_hz`. `None` when
+/// the line's net is not on a solved SPI controller.
+fn judge_line(
+    topology: &aethelgard_ir::SolvedTopology,
+    net: &str,
+    fmax_hz: u32,
+) -> Option<(bool, Value)> {
+    let peripheral = &topology.assignments.get(net)?.peripheral;
+    let c = topology.spi_controllers.get(peripheral)?;
+    let holds = c.achieved_max_hz <= u64::from(fmax_hz);
+    Some((
+        holds,
+        json!({
+            "verdict": if holds { "pass" } else { "fail" },
+            "controller": peripheral,
+            "declared_hz": c.declared_hz,
+            "achieved_hz": c.achieved_hz,
+            "achieved_max_hz": c.achieved_max_hz,
+        }),
+    ))
 }
 
 /// `aethelgard check speeds --spec <spec>`.
@@ -80,6 +110,7 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
         .iter()
         .filter(|p| matches!(p.check, SpeedCheck::Judged { .. }))
         .count();
+    let mut ok = true;
     let lines = pins
         .into_iter()
         .map(|p| {
@@ -89,16 +120,19 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
             });
             match p.check {
                 SpeedCheck::Judged {
-                    rate_hz,
                     vdd_min_millivolts,
                     capacitance_femtofarads,
                     rise_time_ns,
                     row,
                     fmax_hz,
+                    ..
                 } => {
+                    // `SolvedTopology::validate` puts every solved SCK and
+                    // MOSI on a solved controller; a line that is not fails.
+                    let (holds, rates) = judge_line(&topology, &p.net, fmax_hz)
+                        .unwrap_or_else(|| (false, json!({"verdict": "fail", "controller": null})));
+                    ok &= holds;
                     v["judged"] = json!({
-                        "verdict": "pass",
-                        "rate_hz": rate_hz,
                         "vdd_min_millivolts": vdd_min_millivolts,
                         "band_millivolts": [row.vdd_min_millivolts, row.vdd_max_millivolts],
                         "declared_femtofarads": capacitance_femtofarads,
@@ -107,6 +141,9 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
                         "declared_rise_time_ns": rise_time_ns,
                         "rise_fall_picoseconds": row.rise_fall_picoseconds,
                     });
+                    if let (Value::Object(j), Value::Object(r)) = (&mut v["judged"], rates) {
+                        j.extend(r);
+                    }
                 }
                 SpeedCheck::OutOfScope { reason } => v["out_of_scope"] = reason.into(),
             }
@@ -114,8 +151,8 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
         })
         .collect();
     let report = Report {
-        ok: true,
-        verdict: "pass",
+        ok,
+        verdict: if ok { "pass" } else { "fail" },
         check: "speeds",
         engine_version: env!("CARGO_PKG_VERSION"),
         specification_sha256: topology.specification_sha256.clone(),
@@ -130,5 +167,37 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
         judged,
         lines,
     };
-    crate::emit(&report, 0)
+    crate::emit(&report, if ok { 0 } else { EXIT_FAIL })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `AET-WO-4230` §1.2: the reference's SPI1 is judged at its fastest
+    /// achieved rate (16,239,744 Hz at MBR 1, Amendment 1), not its declared
+    /// 20 MHz; a speed whose `fmax` is under that fails, one at it holds.
+    #[test]
+    fn a_line_is_judged_at_its_controller_s_fastest_achieved_rate() {
+        let bytes = std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/sentinel-01-minimal.json"),
+        )
+        .unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let (holds, v) = judge_line(&t, "SPI_SCK", 16_239_744).unwrap();
+        assert!(holds);
+        assert_eq!(
+            v,
+            json!({"verdict": "pass", "controller": "SPI1", "declared_hz": 20_000_000,
+                   "achieved_hz": 16_000_000, "achieved_max_hz": 16_239_744})
+        );
+        let (holds, v) = judge_line(&t, "SPI_MOSI", 16_239_743).unwrap();
+        assert!(!holds);
+        assert_eq!(v["verdict"], "fail");
+        // A net on no SPI controller has no rate to judge.
+        assert!(judge_line(&t, "I2C_SCL", u32::MAX).is_none());
+    }
 }

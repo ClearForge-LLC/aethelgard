@@ -1824,6 +1824,14 @@ fn boot_report(
             expected: word(aethelgard_twin::boot::BOOT_MAGIC),
             observed: observed.map(|o| word(o.boot_word)),
         },
+        brown_out: verdict::BrownOutReport {
+            level: r.image.brown_out.level,
+            address: word(r.image.brown_out.word_at),
+            mask: word(r.image.brown_out.mask),
+            expected: word(r.image.brown_out.expected()),
+            observed: observed.map(|o| word(o.brown_out)),
+            flash_access: observed.and_then(|o| o.flash_access.clone()),
+        },
         registers: r
             .image
             .registers

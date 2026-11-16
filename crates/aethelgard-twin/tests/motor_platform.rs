@@ -77,10 +77,14 @@ fn the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route() {
             "{pin}"
         );
     }
+    // Then the brown-out level's presentation (`AET-WO-4230` D10).
+    let presentation = aethelgard_twin::boot::brown_out(&topology("motors-pwm"))
+        .unwrap()
+        .presentation();
     assert!(
-        text.ends_with(
-            "\ngpioPortA:\n    8 -> timer1@00 | pa8obs@0\n    9 -> timer1@01 | pa9obs@0\n    10 -> timer1@02 | pa10obs@0\n    11 -> timer1@03 | pa11obs@0\n"
-        ),
+        text.ends_with(&format!(
+            "\ngpioPortA:\n    8 -> timer1@00 | pa8obs@0\n    9 -> timer1@01 | pa9obs@0\n    10 -> timer1@02 | pa10obs@0\n    11 -> timer1@03 | pa11obs@0\n{presentation}"
+        )),
         "{text}"
     );
     let listed: Vec<(String, String)> = platform::instances(

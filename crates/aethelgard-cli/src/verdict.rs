@@ -200,6 +200,8 @@ pub struct Boot {
     /// Where the core was when the run ended, for a reader; not a witness.
     pub pc: Option<String>,
     pub boot_word: Word,
+    /// The brown-out level the boot recorded (`AET-WO-4230` D10).
+    pub brown_out: BrownOutReport,
     pub registers: Vec<RegisterReport>,
     pub unobservable: Vec<String>,
     /// One per step the judge expects (`AET-WO-2202`; one per step of a
@@ -233,6 +235,22 @@ pub struct Boot {
     /// (`AET-WO-2205` §1.5). Not part of the verdict's JSON.
     #[serde(skip)]
     pub executable: Vec<(u64, u64)>,
+}
+
+/// The boot record's word 1, `FLASH_OPTSR_CUR` as the firmware read it,
+/// against the declared level (`AET-WO-4230` §1.6, D10): `BOR_LEV` (bits
+/// 3:2, `mask`) must be `expected`, the specification's `level` in place;
+/// and what the flash controller's access log showed that the bring-up never
+/// does (`flash_access`: empty when nothing, `null` until read or when the
+/// log could not be read whole). On silicon only the bench reads the level.
+#[derive(Serialize)]
+pub struct BrownOutReport {
+    pub level: u8,
+    pub address: String,
+    pub mask: String,
+    pub expected: String,
+    pub observed: Option<String>,
+    pub flash_access: Option<Vec<String>>,
 }
 
 /// One motor output's two judgements (`AET-WO-4300a`, `4300` D3), never

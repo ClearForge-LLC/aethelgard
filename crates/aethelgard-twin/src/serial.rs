@@ -413,7 +413,9 @@ pub fn refused_by(body: &str) -> Option<&str> {
 }
 
 /// True for a line of Renode's access log ([`access`]) the judge never reads:
-/// a read of a GPIO port or of the RCC, a USART's read of `ISR` or `RDR` (any
+/// a read of a GPIO port or of the RCC (any source but a USART and the flash
+/// controller, [`boot::FLASH_RENODE`], whose every access is judged:
+/// `AET-WO-4230` D10), a USART's read of `ISR` or `RDR` (any
 /// width, in the word), or a write to a GPIO port's word other than `MODER`,
 /// `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL` and `AFRH` (a sub-word write into one
 /// of those is kept, and fails closed). A USART's read of any other word is
@@ -428,8 +430,9 @@ pub fn is_unjudged_access(body: &str) -> bool {
             a.source.starts_with("gpioPort")
                 && gpio_judged_offsets().is_some_and(|o| !o.contains(&(a.offset & !3)))
         } else {
-            !usart_sources().contains(&a.source.as_str())
-                || usart_polled_offsets().is_some_and(|o| o.contains(&(a.offset & !3)))
+            a.source != boot::FLASH_RENODE
+                && (!usart_sources().contains(&a.source.as_str())
+                    || usart_polled_offsets().is_some_and(|o| o.contains(&(a.offset & !3))))
         }
     })
 }
@@ -1106,6 +1109,12 @@ pub struct Gate {
 /// in them (measured, fix 3 m1: the reference, the four-port fixture and
 /// both motor fixtures write `AHB4ENR`, `APB1LENR` and `APB2ENR`, nothing
 /// else). Every RCC register is named for a finding.
+///
+/// Besides them, `AET-WO-4230` §1.1 (FEEDBACK §2, last bullet) allows each
+/// SPI kernel-clock select the topology solves ([`RccRule::selects`]): one
+/// whole-word write per boot of exactly the select word
+/// `aethelgard_ir::silicon::spi_words` gives, before any solved SPI's clock
+/// enable is set. A select names `D3CCIPR` only when SPI6 is solved.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RccRule {
     /// Every register of the RCC's layout: its name and offset.
@@ -1115,10 +1124,22 @@ pub struct RccRule {
     /// The gates of the port's USART and of each of its pins' GPIO ports,
     /// once each.
     pub gates: Vec<Gate>,
+    /// Each kernel-clock select register the bring-up writes, once each: its
+    /// RCC offset and the whole word, from the independent rule
+    /// (`aethelgard_ir::silicon::spi_words`), never from the generator.
+    pub selects: Vec<(u32, u32)>,
+    /// Each solved SPI controller's clock gate, with the offset of the
+    /// select register that must be written before it is set.
+    pub spi_gates: Vec<(Gate, u32)>,
 }
 
-/// The RCC rule of a port on `peripheral` (its USART) with `pins`.
-pub fn rcc_rule(peripheral: &str, pins: &[&str]) -> Result<RccRule, TwinError> {
+/// The RCC rule of a port on `peripheral` (its USART) with `pins`, on
+/// `topology`'s board, whose solved SPI controllers add their selects.
+pub fn rcc_rule(
+    topology: &SolvedTopology,
+    peripheral: &str,
+    pins: &[&str],
+) -> Result<RccRule, TwinError> {
     let f = cmsis::register_facts()?;
     let rcc = f.layout("RCC")?;
     let registers: Vec<(String, u32)> = rcc
@@ -1139,22 +1160,39 @@ pub fn rcc_rule(peripheral: &str, pins: &[&str]) -> Result<RccRule, TwinError> {
             names.push(port);
         }
     }
+    let gate = |peripheral: String| -> Result<Gate, TwinError> {
+        let (register, bit) = f.enable_bit(&peripheral)?;
+        Ok(Gate {
+            offset: rcc.offset(&register, 0)?,
+            mask: 1 << bit,
+            register,
+            peripheral,
+        })
+    };
     let gates = names
         .into_iter()
-        .map(|peripheral| {
-            let (register, bit) = f.enable_bit(&peripheral)?;
-            Ok(Gate {
-                offset: rcc.offset(&register, 0)?,
-                mask: 1 << bit,
-                register,
-                peripheral,
-            })
-        })
+        .map(gate)
         .collect::<Result<_, TwinError>>()?;
+    let mut selects: Vec<(u32, u32)> = Vec::new();
+    let mut spi_gates = Vec::new();
+    for p in topology.spi_controllers.keys() {
+        let words =
+            aethelgard_ir::silicon::spi_words(&topology.spi_controllers, p).ok_or_else(|| {
+                TwinError::InvalidTopology(
+                    aethelgard_ir::IrValidationError::SpiControllerMismatch { id: p.clone() },
+                )
+            })?;
+        if !selects.contains(&words.kernel_select) {
+            selects.push(words.kernel_select);
+        }
+        spi_gates.push((gate(p.clone())?, words.kernel_select.0));
+    }
     Ok(RccRule {
         registers,
         enables,
         gates,
+        selects,
+        spi_gates,
     })
 }
 
@@ -1169,36 +1207,87 @@ pub fn rcc_rule(peripheral: &str, pins: &[&str]) -> Result<RccRule, TwinError> {
 ///   which changes or stops a port's clock on silicon;
 /// - in a boot, an enable write that clears the gate of the port's USART or
 ///   of its pins' GPIO ports once a write set it (`RCC.APB2ENR.USART1EN
-///   cleared after it was set`).
+///   cleared after it was set`);
+/// - in a boot, a select register written a second time, with any word but
+///   the solved one, or after a solved SPI's gate was set; and a solved
+///   SPI's gate set before its select register was written (`AET-WO-4230`
+///   §1.1: on silicon `SPI123SEL` at reset selects `pll1_q_ck`, which is
+///   off).
 pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
+    let mut note = |x: String| {
+        if !out.contains(&x) {
+            out.push(x);
+        }
+    };
+    let name = |offset: u32| {
+        rule.registers
+            .iter()
+            .find(|r| r.1 == offset && !r.0.starts_with("RESERVED"))
+            .map_or_else(|| format!("{offset:#X}"), |r| r.0.clone())
+    };
     for boot in boots {
         let mut set = vec![false; rule.gates.len()];
+        let mut spi_set = vec![false; rule.spi_gates.len()];
+        let mut selected = vec![false; rule.selects.len()];
         for a in boot.iter().filter(|a| a.write && a.source == RCC_RENODE) {
             let value = u32::try_from(a.value).unwrap_or(u32::MAX);
-            let x = if a.bits != 32 || a.offset % 4 != 0 {
-                Some(format!(
+            if a.bits != 32 || a.offset % 4 != 0 {
+                note(format!(
                     "Write{} to RCC {:#X}",
                     width_name(a.bits),
                     a.offset
-                ))
-            } else if !rule.enables.contains(&a.offset) {
-                let name = rule
-                    .registers
-                    .iter()
-                    .find(|r| r.1 == a.offset && !r.0.starts_with("RESERVED"))
-                    .map_or_else(|| format!("{:#X}", a.offset), |r| r.0.clone());
-                Some(format!(
-                    "RCC.{name} {value:#X} written, not an enable register"
-                ))
-            } else {
-                None
-            };
-            if let Some(x) = x {
-                if !out.contains(&x) {
-                    out.push(x);
-                }
+                ));
                 continue;
+            }
+            if let Some(i) = rule.selects.iter().position(|s| s.0 == a.offset) {
+                let (at, word) = rule.selects[i];
+                if selected[i] {
+                    note(format!("RCC.{} written twice in a boot", name(at)));
+                } else if value != word {
+                    note(format!(
+                        "RCC.{} {value:#X} written, not the solved select word {word:#X}",
+                        name(at)
+                    ));
+                }
+                for ((g, select), on) in rule.spi_gates.iter().zip(&spi_set) {
+                    if *select == at && *on {
+                        note(format!(
+                            "RCC.{} written after RCC.{}.{}EN was set",
+                            name(at),
+                            g.register,
+                            g.peripheral
+                        ));
+                    }
+                }
+                selected[i] = true;
+                continue;
+            }
+            if !rule.enables.contains(&a.offset) {
+                note(format!(
+                    "RCC.{} {value:#X} written, not an enable register",
+                    name(a.offset)
+                ));
+                continue;
+            }
+            for ((g, select), on) in rule.spi_gates.iter().zip(spi_set.iter_mut()) {
+                if g.offset != a.offset || value & g.mask == 0 || *on {
+                    continue;
+                }
+                *on = true;
+                let written = rule
+                    .selects
+                    .iter()
+                    .zip(&selected)
+                    .any(|(s, &w)| s.0 == *select && w);
+                if !written {
+                    note(format!(
+                        "RCC.{}.{}EN set before RCC.{} selected its kernel clock",
+                        g.register,
+                        g.peripheral,
+                        name(*select)
+                    ));
+                }
             }
             for (g, on) in rule.gates.iter().zip(set.iter_mut()) {
                 if g.offset != a.offset {
@@ -1207,13 +1296,10 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
                 if value & g.mask != 0 {
                     *on = true;
                 } else if *on {
-                    let x = format!(
+                    note(format!(
                         "RCC.{}.{}EN cleared after it was set",
                         g.register, g.peripheral
-                    );
-                    if !out.contains(&x) {
-                        out.push(x);
-                    }
+                    ));
                 }
             }
         }
@@ -2014,7 +2100,7 @@ mod tests {
     /// GPIO ports once set in that boot.
     #[test]
     fn adversarial_3_adv3_1_the_rcc_writes_only_enable_registers() {
-        let rule = rcc_rule("USART1", &["PA9", "PA10"]).unwrap();
+        let rule = rcc_rule(&crate::tests::bare(), "USART1", &["PA9", "PA10"]).unwrap();
         let gates: Vec<(&str, &str, u32, u32)> = rule
             .gates
             .iter()
@@ -2032,11 +2118,13 @@ mod tests {
             rule.enables,
             [0xD4, 0xD8, 0xDC, 0xE0, 0xE4, 0xE8, 0xEC, 0xF0, 0xF4]
         );
-        // The reference's RCC writes (measured, fix 3 m1).
+        // The reference's RCC writes (measured, fix 3 m1), with the SPI1
+        // kernel select `AET-WO-4230` §1.1 adds before SPI1's gate.
         let enable = [
             w("rcc", 0xE0, 1),
             w("rcc", 0xE0, 3),
             w("rcc", 0xE8, 0x20_0000),
+            w("rcc", 0x50, 0x4000),
             w("rcc", 0xF0, 0x1000),
             w("rcc", 0xF0, 0x1010),
         ];
@@ -2113,9 +2201,121 @@ mod tests {
         // Another source's write at the same offset is not the RCC's.
         assert!(with(&[w("gpioPortA", 0x1C, 1)]).is_empty());
         // A UART8 port's pins on port E: APB1LENR's 31 and AHB4ENR's 4.
-        let uart8 = rcc_rule("UART8", &["PE1", "PE0"]).unwrap();
+        let uart8 = rcc_rule(&crate::tests::bare(), "UART8", &["PE1", "PE0"]).unwrap();
         let g: Vec<(u32, u32)> = uart8.gates.iter().map(|g| (g.offset, g.mask)).collect();
         assert_eq!(g, [(0xE8, 1 << 31), (0xE0, 1 << 4)]);
+    }
+
+    /// `AET-WO-4230` §1.1 (FEEDBACK §2, last bullet): beside the enable
+    /// registers, the RCC takes exactly one whole-word write of each solved
+    /// kernel select, the word `aethelgard_ir::silicon::spi_words` gives,
+    /// before any solved SPI's gate is set; a read of an enable register (B0's
+    /// read-back) is no write. `D3CCIPR` only with SPI6 solved.
+    #[test]
+    fn the_rcc_takes_each_solved_spi_select_once_before_the_spi_clock() {
+        let reference = crate::tests::bare();
+        let rule = rcc_rule(&reference, "USART1", &["PA9", "PA10"]).unwrap();
+        // SPI123SEL (bits 14:12) = 100, per_ck (RM0433 Rev 9 §8.7.20, p. 414).
+        assert_eq!(rule.selects, [(0x50, 0x4000)]);
+        let spi: Vec<(&str, &str, u32, u32, u32)> = rule
+            .spi_gates
+            .iter()
+            .map(|(g, s)| {
+                (
+                    g.peripheral.as_str(),
+                    g.register.as_str(),
+                    g.offset,
+                    g.mask,
+                    *s,
+                )
+            })
+            .collect();
+        assert_eq!(spi, [("SPI1", "APB2ENR", 0xF0, 1 << 12, 0x50)]);
+        let read = |offset: u32, value: u32| Access {
+            write: false,
+            ..w("rcc", offset, value)
+        };
+        let select = w("rcc", 0x50, 0x4000);
+        let spi1 = w("rcc", 0xF0, 0x1000);
+        // B0's read-backs: each enable register read after its write.
+        let good = vec![
+            read(0x50, 0),
+            select.clone(),
+            spi1.clone(),
+            read(0xF0, 0x1000),
+            w("rcc", 0xF0, 0x1010),
+            read(0xF0, 0x1010),
+        ];
+        assert!(judge_rcc(&rule, std::slice::from_ref(&good)).is_empty());
+        // Each boot from reset: the select again after a droop's reset.
+        assert!(judge_rcc(&rule, &[good.clone(), good]).is_empty());
+        let judged = |boot: &[Access]| judge_rcc(&rule, &[boot.to_vec()]);
+        assert_eq!(
+            judged(&[w("rcc", 0x50, 0x3000), spi1.clone()]),
+            ["RCC.D2CCIP1R 0x3000 written, not the solved select word 0x4000"]
+        );
+        assert_eq!(
+            judged(&[select.clone(), select.clone(), spi1.clone()]),
+            ["RCC.D2CCIP1R written twice in a boot"]
+        );
+        assert_eq!(
+            judged(&[spi1.clone(), select.clone()]),
+            [
+                "RCC.APB2ENR.SPI1EN set before RCC.D2CCIP1R selected its kernel clock",
+                "RCC.D2CCIP1R written after RCC.APB2ENR.SPI1EN was set"
+            ]
+        );
+        assert_eq!(
+            judged(std::slice::from_ref(&spi1)),
+            ["RCC.APB2ENR.SPI1EN set before RCC.D2CCIP1R selected its kernel clock"]
+        );
+        // The other select registers stay refused: D2CCIP2R, and D3CCIPR
+        // with no SPI6 solved.
+        assert_eq!(
+            judged(&[select.clone(), w("rcc", 0x54, 0), spi1.clone()]),
+            ["RCC.D2CCIP2R 0x0 written, not an enable register"]
+        );
+        assert_eq!(
+            judged(&[select.clone(), w("rcc", 0x58, 0x3000_0000), spi1.clone()]),
+            ["RCC.D3CCIPR 0x30000000 written, not an enable register"]
+        );
+        // A board without SPI allows no select at all.
+        let mut no_spi = reference.clone();
+        no_spi.spi_controllers.clear();
+        let none = rcc_rule(&no_spi, "USART1", &["PA9", "PA10"]).unwrap();
+        assert!(none.selects.is_empty() && none.spi_gates.is_empty());
+        assert_eq!(
+            judge_rcc(&none, &[vec![select.clone()]]),
+            ["RCC.D2CCIP1R 0x4000 written, not an enable register"]
+        );
+        // SPI6 solved on hsi_ker_ck: D3CCIPR's SPI6SEL (bits 30:28) = 011
+        // (§8.7.22, p. 418), and SPI6's gate in APB4ENR.
+        let mut six = reference;
+        let mut c = six.spi_controllers["SPI1"].clone();
+        c.kernel = aethelgard_ir::SpiKernel::HsiKerCk;
+        six.spi_controllers.insert("SPI6".to_owned(), c);
+        let rule6 = rcc_rule(&six, "USART1", &["PA9", "PA10"]).unwrap();
+        assert_eq!(rule6.selects, [(0x50, 0x4000), (0x58, 0x3000_0000)]);
+        let spi6 = rule6
+            .spi_gates
+            .iter()
+            .find(|(g, _)| g.peripheral == "SPI6")
+            .unwrap();
+        assert_eq!((spi6.0.offset, spi6.1), (0xF4, 0x58));
+        let six_boot = [
+            select.clone(),
+            w("rcc", 0x58, 0x3000_0000),
+            spi1.clone(),
+            w("rcc", 0xF4, 0x1_0000 | spi6.0.mask),
+        ];
+        assert!(judge_rcc(&rule6, &[six_boot.to_vec()]).is_empty());
+        assert_eq!(
+            judge_rcc(
+                &rule6,
+                &[vec![select, spi1, w("rcc", 0xF4, 0x1_0000 | spi6.0.mask)]]
+            ),
+            ["RCC.APB4ENR.SPI6EN set before RCC.D3CCIPR selected its kernel clock"]
+        );
     }
 
     /// The console's TX and RX as the generated board leaves them: each word

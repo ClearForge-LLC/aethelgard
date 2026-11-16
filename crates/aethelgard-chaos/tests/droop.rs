@@ -742,6 +742,13 @@ fn boot(instructions_observed: Option<u64>) -> Record {
         instructions_observed,
         pc: (!none).then_some(0),
         executable: vec![(0, 0x1000_0000)],
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: Some(0),
+        },
+        flash_access: Some(Vec::new()),
     }
 }
 

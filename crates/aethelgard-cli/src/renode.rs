@@ -295,6 +295,16 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
 /// the run's; one between the sentinels is the judge's own reads' (F3).
 const BEGIN: &str = "AETHELGARD-BOOT-BEGIN";
 const END: &str = "AETHELGARD-BOOT-END";
+
+/// The flash controller's access log, on for every boot before anything
+/// runs (`AET-WO-4230` D10): its one read of `FLASH_OPTSR_CUR` and that it
+/// never writes are judged from it. Logging is off without it (measured,
+/// C1 m2), and the command answers with [`FLASH_LOG_ON`].
+const FLASH_LOG: &str = "sysbus LogPeripheralAccess sysbus.flashController true";
+/// What Renode 1.17.0 answers [`FLASH_LOG`] with, once, at the load
+/// (measured, `AET-WO-4230` FEEDBACK §2 m0 and C1 m2: the CPU's accesses are
+/// logged after it all the same): the judge's own line, never an access.
+const FLASH_LOG_ON: &str = "[INFO] flashController: Logging is already enabled";
 /// The warning Renode logs when a gated peripheral is touched (spike F10).
 const LOCKED: [&str; 2] = [
     "Tried to write a locked peripheral",
@@ -538,6 +548,13 @@ impl BootPlan<'_> {
                 reads.push((format!("sysbus ReadWord {at:#010x}"), Read::Loop(i, k)));
             }
         }
+        reads.push((
+            format!(
+                "sysbus ReadDoubleWord {:#010x}",
+                self.image.brown_out.word_at
+            ),
+            Read::BrownOut,
+        ));
         for (i, r) in self.image.registers.iter().enumerate() {
             reads.push((
                 format!("sysbus ReadDoubleWord {:#010x}", r.address),
@@ -607,10 +624,14 @@ impl BootPlan<'_> {
     /// fill a record, so one preloaded in the image, or never written, reads as
     /// the judge left it (`AET-WO-2202` adversarial 1).
     fn rearm(&self) -> Vec<String> {
-        let mut c = vec![format!(
-            "sysbus WriteDoubleWord {:#010x} 0x0",
-            self.boot_word
-        )];
+        let mut c = vec![
+            format!("sysbus WriteDoubleWord {:#010x} 0x0", self.boot_word),
+            format!(
+                "sysbus WriteDoubleWord {:#010x} {:#010x}",
+                self.image.brown_out.word_at,
+                aethelgard_twin::boot::RECORD_UNSET
+            ),
+        ];
         for check in &self.image.identity.checks {
             for at in record_words(check) {
                 c.push(format!(
@@ -752,6 +773,7 @@ impl BootPlan<'_> {
                 self.platform.display()
             ),
             format!("sysbus LoadELF @{}", self.firmware.display()),
+            FLASH_LOG.to_owned(),
         ]);
         c.extend(self.cold());
         c.extend(self.rearm());
@@ -788,6 +810,8 @@ enum Read {
     Mips,
     Pc,
     Icsr,
+    /// The boot record's word 1, `FLASH_OPTSR_CUR` as the firmware read it.
+    BrownOut,
     /// Self-loop `.0`'s halfword `.1` (0 the `yield`, 1 the `b.n`), read back
     /// from the machine.
     Loop(usize, u8),
@@ -807,6 +831,12 @@ pub struct Observed {
     pub mips: u64,
     pub pc: u32,
     pub icsr: u32,
+    /// The boot record's word 1 (`AET-WO-4230` D10).
+    pub brown_out: u32,
+    /// What the flash controller's access log of each boot shows that the
+    /// bring-up never does ([`aethelgard_twin::boot::BrownOut::judge_accesses`]),
+    /// empty when nothing; `None` when the log could not be read whole.
+    pub flash_access: Option<Vec<String>>,
     /// Each ELF self-loop's two halfwords as the machine held them after the
     /// run: a firmware can rewrite its flash in Renode (adversarial A1).
     pub loops: Vec<[u32; 2]>,
@@ -1126,7 +1156,11 @@ pub fn serials(
                 rx: aethelgard_twin::serial::PinMux::of(&port.rx, port.rx_af)?,
                 silicon: aethelgard_ir::serial::check_silicon(&topology.clock, solved),
                 bringup: aethelgard_twin::serial::Bringup::of(&port.framing, solved.brr)?,
-                rcc: aethelgard_twin::serial::rcc_rule(&port.peripheral, &[&port.tx, &port.rx])?,
+                rcc: aethelgard_twin::serial::rcc_rule(
+                    topology,
+                    &port.peripheral,
+                    &[&port.tx, &port.rx],
+                )?,
                 port,
             })
         })
@@ -1988,6 +2022,8 @@ pub fn judge_boot(
         mips: 0,
         pc: 0,
         icsr: 0,
+        brown_out: 0,
+        flash_access: None,
         loops: vec![[0, 0]; plan.self_loops.len()],
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
@@ -2028,6 +2064,7 @@ pub fn judge_boot(
             Read::Mips => observed.mips = v,
             Read::Pc => observed.pc = word()?,
             Read::Icsr => observed.icsr = word()?,
+            Read::BrownOut => observed.brown_out = word()?,
             Read::Loop(i, k) => observed.loops[i][usize::from(k)] = word()?,
             Read::Register(i) => observed.registers[i] = word()?,
             Read::Record(i, 0) => observed.records[i].0 = word()?,
@@ -2050,6 +2087,23 @@ pub fn judge_boot(
     } else {
         None
     };
+    // The flash controller's accesses, each boot's, but for the line
+    // Renode answers the judge's own command with (C1 m2).
+    observed.flash_access = (out.dropped_log_lines == 0)
+        .then(|| {
+            let flash: Vec<Vec<&str>> = boots
+                .iter()
+                .map(|b| {
+                    b.iter()
+                        .copied()
+                        .filter(|l| log_body(l) != Some(FLASH_LOG_ON))
+                        .collect()
+                })
+                .collect();
+            access_boots(&flash, &[aethelgard_twin::boot::FLASH_RENODE])
+        })
+        .flatten()
+        .map(|b| plan.image.brown_out.judge_accesses(&b));
     // How many of the last boot's accesses precede the injection: the RX
     // pin's words there are rebuilt from them (adversarial pass 2, A2).
     let last_start = releases.last().map_or(0, |&r| r + 1);
@@ -2225,6 +2279,16 @@ pub fn judge_boot(
             ));
         }
     }
+    // The brown-out level (`AET-WO-4230` D10), once the firmware reached its
+    // fixed point, as an identity record is: word 1 against the declared
+    // level, and the flash controller read once and never written.
+    if booted {
+        findings.extend(brown_out_findings(
+            &plan.image.brown_out,
+            observed.brown_out,
+            observed.flash_access.as_deref(),
+        ));
+    }
     // The identity reads. A record is only meaningful once the firmware has
     // reached its fixed point, which it does after writing every record;
     // before that `boot_word_missing` already says the run failed.
@@ -2286,6 +2350,51 @@ pub fn judge_boot(
         Some(Machine { cpus, peripherals }),
         Some(observed),
     ))
+}
+
+/// The brown-out word's finding and the flash controller's, from what the
+/// boot read (`AET-WO-4230` D10): each names both the declared level and
+/// what the firmware recorded; a log that could not be read whole is a
+/// failure, never a pass.
+pub fn brown_out_findings(
+    b: &aethelgard_twin::boot::BrownOut,
+    word: u32,
+    flash: Option<&[String]>,
+) -> Vec<Finding> {
+    use aethelgard_chaos::campaign::{BROWN_OUT_FINDING, FLASH_ACCESS_FINDING};
+    use aethelgard_twin::boot::BrownOutOutcome;
+    let mut out = Vec::new();
+    let at = format!(
+        "the boot record's FLASH_OPTSR_CUR word at {:#010x}",
+        b.word_at
+    );
+    match b.judge(word) {
+        BrownOutOutcome::Pass => {}
+        BrownOutOutcome::Unset => out.push(Finding::plain(
+            BROWN_OUT_FINDING,
+            format!(
+                "{at} reads {word:#010x}, the judge's fill: the firmware never recorded BOR_LEV; the specification declares level {}",
+                b.level
+            ),
+        )),
+        BrownOutOutcome::Mismatch { recorded } => out.push(Finding::plain(
+            BROWN_OUT_FINDING,
+            format!(
+                "{at} reads {word:#010x}: BOR_LEV {recorded}, and the specification declares level {}",
+                b.level
+            ),
+        )),
+    }
+    match flash {
+        Some([]) => {}
+        Some(notes) => out.push(Finding::plain(FLASH_ACCESS_FINDING, notes.join("; "))),
+        None => out.push(Finding::plain(
+            FLASH_ACCESS_FINDING,
+            "the flash controller's access log could not be read whole, so its one read of FLASH_OPTSR_CUR is unwitnessed"
+                .to_owned(),
+        )),
+    }
+    out
 }
 
 /// Each boot's accesses on `sources` ([`aethelgard_twin::serial::access`]),
@@ -2742,6 +2851,7 @@ pub fn status_name(c: &aethelgard_twin::boot::StepCheck, status: u32) -> &'stati
         Outcome::Timeout("RXNE") => "timeout_rxne",
         Outcome::Timeout("STOPF") => "timeout_stopf",
         Outcome::Timeout("RXP") => "timeout_rxp",
+        Outcome::Timeout("EOT") => "timeout_eot",
         Outcome::Timeout(_) | Outcome::Invalid => "invalid",
     }
 }
@@ -3154,7 +3264,8 @@ mod tests {
             "{c}"
         );
         assert_eq!(c.matches("CreateFileBackend").count(), 9);
-        assert_eq!(c.matches("LogPeripheralAccess").count(), 3);
+        // The three, and the flash controller's on every boot (`AET-WO-4230`).
+        assert_eq!(c.matches("LogPeripheralAccess").count(), 4);
         assert_eq!(c.matches("WriteChar").count(), 8);
         assert_eq!(p.last_byte_ns(), Some(800_000));
         let resets = bor3();
@@ -3170,11 +3281,11 @@ mod tests {
             )),
             "{c}"
         );
-        assert!(
-            !plan(&image, &resets)
-                .commands()
-                .contains("LogPeripheralAccess")
-        );
+        // Without a serial port only the flash controller's is on
+        // (`AET-WO-4230` D10), and no reset turns it off.
+        let no_serial = plan(&image, &resets).commands();
+        assert_eq!(no_serial.matches("LogPeripheralAccess").count(), 1);
+        assert!(no_serial.contains(FLASH_LOG));
         assert!(
             c.contains(&format!(
                 "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.000000010\"; {inject}; emulation RunFor \"0.097972010\"; echo \"AETHELGARD-BOOT-BEGIN\""
@@ -3749,6 +3860,22 @@ mod tests {
         assert!(!droop.contains("logLevel 3") && !static_.contains("logLevel 3"));
         assert_eq!(static_.matches("logLevel").count(), 1);
         assert!(static_.contains("sysbus ReadDoubleWord 0xe000ed04"));
+        // `AET-WO-4230` D10: the flash controller's access log is on from the
+        // firmware's load, on a board without a serial port too, and the
+        // brown-out word is armed with the judge's fill and read back.
+        let elf = static_.split("sysbus LoadELF @").nth(1).unwrap();
+        assert!(
+            elf.split_once("; ")
+                .unwrap()
+                .1
+                .starts_with(&format!("{FLASH_LOG}; ")),
+            "{static_}"
+        );
+        assert_eq!(static_.matches("LogPeripheralAccess").count(), 1);
+        let word = image.brown_out.word_at;
+        assert!(static_.contains(&format!("sysbus WriteDoubleWord {word:#010x} 0xffffffff")));
+        let after_begin = static_.split("AETHELGARD-BOOT-BEGIN").nth(1).unwrap();
+        assert!(after_begin.contains(&format!("; sysbus ReadDoubleWord {word:#010x}; ")));
         assert!(!static_.contains("machine Reset"));
         // A device the booted platform does not declare (a faulted bus) gets
         // no level: a level on no element is a failed command.
@@ -3768,6 +3895,8 @@ mod tests {
         let rest = [
             "cpu IsHalted true".to_owned(),
             "sysbus WriteDoubleWord 0x20000000 0x0".to_owned(),
+            // The brown-out word (`AET-WO-4230` D10).
+            rec(image.brown_out.word_at),
             rec(check.status_at),
             rec(check.value_at),
             "emulation RunFor \"0.000213550\"".to_owned(),
@@ -3994,6 +4123,8 @@ mod tests {
             mips: 0,
             pc: 0,
             icsr: 0,
+            brown_out: 0,
+            flash_access: None,
             loops: Vec::new(),
             registers: Vec::new(),
             records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
