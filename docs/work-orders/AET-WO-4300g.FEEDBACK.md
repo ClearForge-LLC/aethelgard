@@ -292,3 +292,31 @@ The tier-2 tests left failing are D5's four:
 - the plan is to be taken after `4300b` merges and its weights land, per the clause.
 
 The last measured run's shards were all under 20 minutes (§10).
+
+## 12. The rulings of PR #159 comment 6904190430, applied, and D5's spike: STOPPED a second time
+
+**Applied:**
+- **D3:** two declared sources are their own refusal, `SupplyHasTwoSources`, naming the regulator. It has a tier-1 test, and the ir README's step 18 names it.
+- **D1, D2, D4 and the forks stand as built.** `ds009.rs` is untouched, and the console is not `MayFloat`.
+
+**D5's spike** (about one hour of the two allowed; `route.rs` ordering and the placer's reserve only; no fixture edit and no re-pinning) [measured]:
+- **Lever 1, stubs first.** Before any pair or net, each two-pad part's pad within 2.0 mm (copper edge to copper edge) of a multi-pad IC's pad on the same net, other than a filled net, is joined to that pad on F.Cu. `route_net` then reaches the two as one, through the stub's copper.
+  - Stubs are found from the board alone (`STUB_NM` 2.0 mm, `4300d2`'s near bound). The tests that route a board read back from its own file therefore lay the same stubs.
+  - On `pair-standin`, all 20 stubs were laid, the 19 support capacitors' among them.
+- **Lever 2, the pair's approach.** The placer keeps a strip clear in front of each declared pair's MCU pins: their span plus 0.5 mm each way, from the pins to 5.0 mm past the MCU's courtyard. It is a taken rectangle for every part placed after the MCU.
+- **Lever 2 with the mirror reserve** (§6) was also measured, the placer's reserve being in the widened fence. It is not proposed.
+
+| fixture or test | lever 1 | levers 1+2 | levers 1+2 with the mirror |
+|---|---|---|---|
+| `pair-standin` (3 tier-1 tests in `classes_tier1`, 1 tier-2 in `with_tools`) | Unroutable: pair cannot be coupled | **routes** | Unroutable `VDD_3V3`: C10 pad 1 |
+| `d1-24-i2c` (`stackups_tier1::d1…`, `escape_tier1::twenty_renamings…`, `adversarial_1301::attack_a_wide_reference…`; tier 2: `with_tools::d3_and_d1…`, `adversarial_1301_tools::attack_wide_references…`) | Unroutable `/SCL1`: S9 pad 1 | Unroutable `/SCL1`: S9 pad 1 | routes |
+| `d3-24-i2c-12-spi` | routes | routes | **Unroutable `/SCL3`: S18 pad 4** |
+| `escape_tier1::shifted_placements…` seed 22 | — | Unroutable `VDD_3V3`: U3 pad 5 to a via | — |
+| `classes_tier1::a_part_on_each_edge…`, `with_tools::a_part_on_each_edge…` | — | Unroutable `/I2C_SDA`: R1 pad 2 has no node clear to end a track | — |
+| every other fixture that routes today | routes | routes | routes |
+
+**Not every one routes, so this stops as ruled.**
+- **The spike's code is not in the branch.** It is kept as `~/.cache/aet-4300g/spike-d5-levers.patch` (350 lines, against `b2ec444`; its `AET_MIRROR` and `AET_STUBS` switches are probes). It is for `AET-WO-1310`, which takes routing order with its escape work. This PR waits on it.
+- **Where the spike leaves 1310 [measured]:** lever 2 is what routes `pair-standin`. Lever 1 lays every stub but does not by itself change any outcome measured here.
+- **d1's S9 [measured]:** S9 sits about 4 mm off the MCU's lower-right corner, behind the ring's right column, beside C29, C30, R12 and S10. That failure, seed 22's and the edge test's are escape failures at a crowded terminal, the kind `1310`'s sub-grid escape addresses.
+- **Kept out of the branch with the patch:** the spike also moved routed copper on every board, so the extraction terms, the corpus edits and the tests' fixed copper positions would each need re-taking.
