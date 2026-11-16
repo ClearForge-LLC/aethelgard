@@ -24,7 +24,9 @@ use std::fmt::Write as _;
 
 use aethelgard_ir::motor;
 use aethelgard_ir::serial::{self, Parity};
-use aethelgard_ir::silicon;
+// R2-ir shim: `aethelgard_ir::silicon` until slice R2-ir merges; then this
+// line is `use aethelgard_ir::silicon;` again and `r2ir_shim` goes.
+use self::r2ir_shim as silicon;
 use aethelgard_ir::speeds::{self, OutputSpeeds};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
@@ -35,6 +37,7 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 
 mod firmware;
 mod ledger;
+mod r2ir_shim;
 
 pub use firmware::{ECHO_POLLS, FRAME_LEN, PATTERN_TAIL};
 pub use ledger::{FieldAccess, FieldUse, register_fields};
@@ -1493,10 +1496,11 @@ struct SpiFacts {
     /// `SR.EOT` and `IFCR.EOTC`.
     eot: u32,
     eotc: u32,
-    /// `CFG1.MBR` and `CFG1.CRCSIZE`, `CFG2.SSM`, `CR1.SSI`.
+    /// `CFG1.MBR` and `CFG1.CRCSIZE`, `CFG2.SSM` and `CFG2.AFCNTR`, `CR1.SSI`.
     mbr: u32,
     crcsize: u32,
     ssm: u32,
+    afcntr: u32,
     ssi: u32,
 }
 
@@ -1808,6 +1812,7 @@ fn spi_facts(f: &RegisterFacts, layout: &cmsis::Layout) -> Result<SpiFacts, Boar
         mbr: f.position("SPI_CFG1_MBR_Pos")?,
         crcsize: f.position("SPI_CFG1_CRCSIZE_Pos")?,
         ssm: f.position("SPI_CFG2_SSM_Pos")?,
+        afcntr: f.position("SPI_CFG2_AFCNTR_Pos")?,
         ssi: f.position("SPI_CR1_SSI_Pos")?,
     })
 }
@@ -1824,8 +1829,12 @@ const SPI_CRCSIZE_RESET: u32 = 0b0_0111;
 /// `CR1` idle, `SSI` (with `SSM` set, NSS reads high, so the master raises no
 /// mode fault: RM0433 Rev 9 §50.11.1 p. 2215, §50.5.2 p. 2184), and with
 /// `SPE`, and with `SPE` and `CSTART`; `CFG1` `MBR`, `CRCSIZE` at reset and
-/// `DSIZE` 8 bits, every other field 0; `CFG2` `MASTER` and `SSM`, every
-/// other field 0 (mode 0, full duplex, Motorola, `SSOE` 0).
+/// `DSIZE` 8 bits, every other field 0; `CFG2` `MASTER`, `SSM` and `AFCNTR`,
+/// every other field 0 (mode 0, full duplex, Motorola, `SSOE` 0). `AFCNTR`
+/// keeps the master driving its pins while `SPE` is 0 (RM0433 Rev 9 §50.11.4,
+/// p. 2221), so SCK and MOSI do not float while the transfer's chip select is
+/// low before `SPE` rises and after it falls (the architect's ruling on Q-D;
+/// ST's HAL calls it `MasterKeepIOState`).
 #[derive(Debug, Clone, Copy)]
 struct SpiCode {
     cr1_idle: u32,
@@ -1845,7 +1854,7 @@ fn spi_code(c: &SolvedSpiController, s: &SpiFacts, enable: u32, master: u32) -> 
         cfg1: (u32::from(c.mbr) << s.mbr)
             | (SPI_CRCSIZE_RESET << s.crcsize)
             | (SPI_DSIZE << s.dsize),
-        cfg2: (1u32 << master) | (1u32 << s.ssm),
+        cfg2: (1u32 << master) | (1u32 << s.ssm) | (1u32 << s.afcntr),
     }
 }
 

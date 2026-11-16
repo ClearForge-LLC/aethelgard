@@ -63,7 +63,11 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
         let files = generate("b", t, &table).unwrap_or_else(|e| panic!("{name}: {e}"));
         let board = &files["src/board.rs"];
         for p in t.spi_controllers.keys() {
-            let w = silicon::spi_words(&t.spi_controllers, p).unwrap();
+            let mut w = silicon::spi_words(&t.spi_controllers, p).unwrap();
+            // R2-ir shim: `AFCNTR` (bit 31) joins the rule's `CFG2` in slice
+            // R2-ir; removed at merge with the generator's shim.
+            assert_eq!(w.cfg2 & 1 << 31, 0, "R2-ir has merged: remove the shim");
+            w.cfg2 |= 1 << 31;
             let b = block(p);
             // A bus with no device has no transfer, so no enable or start.
             let transfer = board.contains(&format!("pub enum {b}Device {{"));
@@ -83,14 +87,16 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
             // The 3302 bench (NUCLEO-H753ZI rev V): with `SSM` 0 the first
             // `SPE` raised `MODF` and cleared `MASTER`. So `init` writes `CFG2`
             // with `MASTER` and `SSM` before any write that sets `SPE`, and every
-            // `CR1` word with `SPE` carries `SSI`.
+            // `CR1` word with `SPE` carries `SSI`. `AFCNTR` too (the architect's
+            // ruling on Q-D, RM0433 Rev 9 §50.11.4): the master keeps driving
+            // SCK and MOSI while `SPE` is 0 and a chip select is low.
             let cfg2 = format!("r.write(TOKEN, Block::{b}, 0x0c, ");
             let cfg2_at = board.find(&cfg2).unwrap_or_else(|| panic!("{name} {p}"));
             let cfg2_word =
                 u32::from_str_radix(&board[cfg2_at + cfg2.len() + 2..][..8], 16).unwrap();
             assert_eq!(
-                cfg2_word & (1 << 22 | 1 << 26),
-                1 << 22 | 1 << 26,
+                cfg2_word & (1 << 22 | 1 << 26 | 1 << 31),
+                1 << 22 | 1 << 26 | 1 << 31,
                 "{name} {p}"
             );
             let cr1 = format!("r.write(TOKEN, Block::{b}, 0x00, ");
