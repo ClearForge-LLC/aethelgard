@@ -1431,7 +1431,11 @@ pub fn register_rows(fields: &[FieldUse], table: &[Entry]) -> Result<Vec<LedgerR
 /// The bus address of `instance`'s register block: the flash controller's is
 /// `FLASH_R_BASE`, not the memory at `FLASH_BASE` (svd-hal board.rs).
 pub fn base(facts: &cmsis::RegisterFacts, instance: &str) -> Option<u32> {
-    let name = if instance == "FLASH" { "FLASH_R" } else { instance };
+    let name = if instance == "FLASH" {
+        "FLASH_R"
+    } else {
+        instance
+    };
     facts.base(name).ok()
 }
 
