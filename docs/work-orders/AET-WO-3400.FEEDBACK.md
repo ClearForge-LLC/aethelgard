@@ -6,10 +6,16 @@ Labels used throughout: **[measured]** (run here, output in `spike/3400/results/
 
 ## 0. Status: STOPPED at S3 for the architect's and Scotty's ruling
 
-- **Everything Specification 12 can say routes on two layers and passes every gate** [measured]: V0 to V5 each pass `validate`, `generate`, `emit`, `check erc` and `check drc --spec` (exit 0, no finding), plus the extras (DRC with schematic parity, `check support`). V4 is the only one that fails `extract`. The largest variant that passes everything is **V5** (100.05 × 107.60 mm, 68 parts). Its 20 renamings route to its own copper, 20/20.
+- **Everything Specification 12 can say routes on two layers** [measured]. V0 to V7 each pass `validate`, `generate`, `emit`, `check erc` and `check drc --spec` (exit 0, `findings == []`), plus DRC with schematic parity and `check support`.
+  - **The largest variant passing the work order's five commands is V7:** 79 parts, 100.05 × 118.95 mm. It adds the LDO and `main`'s 1.8 V crossing with an ICM-20948 as a density proxy for F2. Its `extract` refuses the translator's pins (`TranslatorPinUnbounded`), as `main`'s own tier-2 test expects.
+  - **The largest passing every gate, `extract` included, is V6:** V5 plus the LDO, 71 parts, 100.05 × 107.60 mm.
+  - **The recommended board is V5:** 68 parts, the same outline. It has no LDO, because Sentinel-02 has no 1.8 V domain.
+  - **Renamings:** every variant routes to its own copper under the 20 renamings, 20/20.
+- **Not measured: the board recommended for ordering.** V5 plus E0–E2 and `4220b` (test points, BOOT0 and reset, the hot-plug capacitor, and the ICM-42688-P and BMP581) has not been routed on two layers. Main cannot express those rows, so no variant holds all the *must* rows (T4, F2, and T1's jumper form). V7 is the nearest proxy: an IMU in a 0.4 mm-pitch QFN on its own bus, behind a translator, routes and passes the five commands. The two-layer verdict for the ordered board belongs to the build work order that adds them, and is the §7 condition this spike can only approach.
 - **Most of the test features cannot be expressed** [read at source, measured by probe]. Test points, jumpers, shunts, a BOOT0 header, a reset switch, input capture, `MCO`, USB, FDCAN and the flight sensors' footprints each need an engine work order (§7).
 - **One gap on `main` matters for ordering Sentinel-01** (F1): the emitter does not draw `power.input.hot_plug`, the bulk capacitor that `BatteryInputUndamped` credits. It also gives that capacitor's reference, `C1`, to a 100 nF decoupler. This is a known backlog row (4300d3 D5, roadmap §7.1 L635, "before `4500`"). With Sentinel-01 first, its deadline moves before Sentinel-01's order.
 - **Recommendation, short:** order V5's content plus three small engine work orders: test points, BOOT0/reset, and the hot-plug draw. Unhold `4220b` for Sentinel-01. Take J1 (the witness fixture) as the job after bring-up, not J2. §7 has the table.
+- **Gates** (`spike/3400/sources/gates.txt`), on `53bb75b`, whose tree is the head's minus the docs-only merge of `d6410b8`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 0, with 1942 passed and 0 failed.
 
 ## 1. Predictions (committed before any variant was run)
 
@@ -74,7 +80,7 @@ The variants are built by `spike/3400/make_variants.py` from today's Sentinel-01
 
 ## 2. S1: every candidate, every field
 
-Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area is the change in the emitter's outline between variants [measured], or a footprint's courtyard from KiCad 10.0.7 in the pinned image (`~/.cache/aet-3400/courtyards.txt`) [read at source]. KiCad libraries are CC-BY-SA 4.0 with the design exception (vendored `LICENSE.md`) [read at source]. Prices: digikey.sg, q1/q10 at cut tape, read 2026-11-16. The page says "All prices are in SGD" where marked **SGD**; **SGD?** means the page showed `$` with the region set to Singapore/SGD. No figure was converted to USD; that would be an estimate. "unknown" means no public page gave a price: LCSC and JLCPCB render prices in script, DigiKey.com returned 403, Mouser timed out. No login was used; nothing was bought.
+Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area is the change in the emitter's outline between variants [measured], or a footprint's courtyard from KiCad 10.0.7 in the pinned image (`spike/3400/sources/courtyards.txt`) [read at source]. KiCad libraries are CC-BY-SA 4.0 with the design exception (vendored `LICENSE.md`) [read at source]. Prices: digikey.sg, q1/q10 at cut tape, read 2026-11-16. The page says "All prices are in SGD" where marked **SGD**; **SGD?** means the page showed `$` with the region set to Singapore/SGD. No figure was converted to USD; that would be an estimate. "unknown" means no public page gave a price: LCSC and JLCPCB render prices in script, DigiKey.com returned 403, Mouser timed out. No login was used; nothing was bought.
 
 ### 2.1 Test features
 
@@ -93,7 +99,7 @@ Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area 
 
 | # | What it tells us | Specification 12? | Parts | Cost; area; pins | Class |
 |---|---|---|---|---|---|
-| F1 power tree | `4300d`/`4300d3`/`4300d2`: the bucks' static checks, the 15 loop rules, hot-plug damping, and the support gate with a regulator as the MCU's source. Sentinel-02 carries this tree | **Yes.** V1 to V5 pass every gate [measured]. **But** `power.input.hot_plug` is not drawn (F1, §6) | `power-parts.json` rows exist (LMR33630ADDA, IHLP5050FDER8R2M01, GCM32EC71H106KA03, …), with vendored KiCad symbols and footprints (`LMR33630ADDA`, `Texas_HSOP-8-1EP`, `L_Vishay_IHLP-5050`, `AMASS_XT30PW-M`). LMR33630: TI **ACTIVE** at family level (research B) | LMR33630ADDAR **SGD** 3.96 / 2.956; IHLP5050FDER8R2M01 **SGD** 2.92 / 2.403; GCM32EC71H106KA03K **SGD?** 1.37; UCZ1H470MCL1GS **SGD** 1.92 / 1.233; XT30PW-M unknown (no listing). Area +44.9 cm² of outline (V1 against V0). Pins: 1 (PF3, ADC3_INP5, VBAT_SENSE) | **must** |
+| F1 power tree | `4300d`/`4300d3`/`4300d2`: the bucks' static checks, the 15 loop rules, hot-plug damping, and the support gate with a regulator as the MCU's source. Sentinel-02 carries this tree | **Yes.** The bucks: V1–V7. The LDO (TLV75518, VDD_1V8, 20 mA declared): V6, every gate passed, and V7. **But** `power.input.hot_plug` is not drawn (F1, §6) | `power-parts.json` rows exist (LMR33630ADDA, IHLP5050FDER8R2M01, GCM32EC71H106KA03, …), with vendored KiCad symbols and footprints (`LMR33630ADDA`, `Texas_HSOP-8-1EP`, `L_Vishay_IHLP-5050`, `AMASS_XT30PW-M`). LMR33630: TI **ACTIVE** at family level (research B) | LMR33630ADDAR **SGD** 3.96 / 2.956; IHLP5050FDER8R2M01 **SGD** 2.92 / 2.403; GCM32EC71H106KA03K **SGD?** 1.37; UCZ1H470MCL1GS **SGD** 1.92 / 1.233; XT30PW-M unknown (no listing). Area +44.9 cm² of outline (V1 against V0). Pins: 1 (PF3, ADC3_INP5, VBAT_SENSE) | **must** |
 | F2 IMU and barometer | `4220`'s C# models and `4210`'s witnessed scripts against silicon; `1310`'s sub-grid escape and `4220b`'s own footprints on copper | **No.** The specification names the parts (`parts.json` rows exist); the emitter refuses them: its SPI arms are `W25Q64JVxIQ` and `ICM20948` only. This is `4220b` | Neither part has a KiCad 10.0.7 symbol (Sensor_Motion, Sensor_Pressure; research B; `4220b` grounds). An LGA-14 3 × 2.5 mm footprint exists (11.5 mm²); none for the BMP581's LGA-10. ICM-42688-P: TDK **"Production"**. BMP581: Bosch's page states no status | ICM-42688-P **SGD?** 6.67; BMP581 **SGD?** 4.87 (q10 not shown). Pins: 2 chip selects, plus one SPI bus if not shared | **must**; needs `4220b` |
 | F3 motor outputs | `4300a`'s DShot timing witnessed in virtual time, against the scope | **Yes** (V2–V5). Solved free, the motors took PA8 (MCO1's only pin) and PA11 (OTG_FS DM); V4/V5 pin them to PE9/PE11/PE13/PE14 (TIM1_CH1–4) | SM06B-GHS-TB, an existing row | **SGD** 0.67 / 0.571; motors, CRSF and MAVLINK together +29.8 cm² (V2 against V1). Pins: 4 | extra |
 | F4 CRSF input | `4300b`'s framing at 420 000 baud and HSI's tolerance (`SerialBaudTolerance`), against silicon | **Yes** (V2–V5): USART2 PA2/PA3 on a DS-009 TELEM GH-6 | SM06B-GHS-TB | as F3; pins 2 | extra |
@@ -108,6 +114,14 @@ Pins are after the solve (V5, `results/v5/0-solve.json`) [measured]. Board area 
 | J2 DroneCAN node | A sensor node on Sentinel-02's CAN bus, running AP_Periph | **No**: no FDCAN field and no transceiver row. FDCAN1 PD0/PD1 and FDCAN2 PB5/PB13 are free in V5 (pin table and solve). AP_Periph has H743 targets at Copter-4.7.2 (`CubeOrange-periph`, `MatekH743-periph`: `MCU STM32H7xx STM32H743xx`, `env AP_PERIPH 1`; research A, GitHub) | TCAN334DCNR: TI **ACTIVE**, "3.3V single supply", classic CAN at 1 Mbps (DroneCAN's rate) (ti.com/product/TCAN334); symbol `Interface_CAN_LIN:TCAN334` and footprint `SOT-23-8` in the library. CAN-FD transceivers (TCAN1462-Q1) need 5 V VCC | TCAN334DCNR **SGD** 3.90 / 2.905 (backorder); SOT-23-8 14.4 mm² + GH-4 60.5 mm². Pins 2 | defer |
 | J3 Klipper, grblHAL, Zephyr | Note only | — | Klipper `src/stm32/Kconfig`: `MACH_STM32H743`, `MACH_STM32H723`. grblHAL Drivers: Nucleo-H743ZI, WeAct MiniSTM32H743. Zephyr: `nucleo_h743zi`, `nucleo_h723zg` (research A, URLs there). V5 solves 19 of the 100 I/O pins and SWD holds PA13/PA14, leaving 79 free, so each would find pins. **Prediction, not fact:** an H743 build runs on the H753ZI (the H753 is the H743 with crypto, `RUL-08`); unverified | — | — | note |
 
+### 2.4 Rows added by the spike (the work order's "add any you find")
+
+| # | What it tells us | Specification 12? | Parts | Cost; area; pins | Class |
+|---|---|---|---|---|---|
+| A1 MAVLink TELEM port (J7, DS-009 TELEM) | `4300b`'s MAVLink framing and HSI tolerance on a second USART. It is J1's second serial line out, and a companion computer's port (roadmap §5 P4) | **Yes** (V2–V7): USART3 on PC10/PC11 in V5 | SM06B-GHS-TB, an existing row | **SGD** 0.67 / 0.571; pins 2 | extra (carried) |
+| A2 external SPI port (J9) | An SPI bus off the board: J1 driving the next board's SPI as a master, and later as a target | **Yes**, but not within its declared bound (V3, V4) | SM06B-GHS-TB | Pins 3; `extract` 54.0/56.1 pF against 50 pF declared when pinned to SPI4 on PE2/PE5/PE6 (V4) | extra; dropped from V5 (Q2) |
+| A3 the 1.8 V crossing and IMU (proxy) | No new prediction. It is the only stand-in on `main` for F2's density: a 3 × 3 mm QFN at 0.4 mm pitch on its own bus, behind a translator (`4300d2`, `1310`) | **Yes** (V7); `extract` refuses `TranslatorPinUnbounded`, as on `main` | `main`'s fixture rows (ICM20948 EOL, acknowledged; TXU0304) | +11.35 mm of outline height (V7 against V6); pins 4 | not a candidate: a measurement aid |
+
 ## 3. S2: the variants, measured
 
 Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every step's stdout, exit and stderr are in `spike/3400/results/<v>/`. Host: release CLI from `3dcd242`. KiCad steps ran the same binary inside the pinned tools image (`container/IMAGE`, `c69ff9bc…`) under `~/bin/capped-run`. Caps were read back as memory.max 8 GiB, memory.swap.max 0 and pids.max 8192 (each `*.stderr`). Inside rootless podman the sandbox reports `uid_boundary: false` (`user_namespace`), as in every local tier-2 run.
@@ -119,11 +133,15 @@ Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every
 | V2 | F3 (4 × DShot600, J5), F4 (CRSF, J6), MAVLink (J7); console pinned PA9/PA10 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 89.50 × 107.40 | 65 | 1037 / 1555 mm / 196 / 88 |
 | V3 | a second I2C bus (10 kΩ, 100 kHz) on DS-009 I2C J8; an external SPI port J9 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 113.10 × 107.60 | 69 | 1144 / 1962 mm / 237 / 44 |
 | V4 | V3 with pins kept free: motors PE9/11/13/14, J9's SPI on PE2/PE5/PE6 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1**: XEXT_SCK 54.0 pF, XEXT_MOSI 56.1 pF > 50 pF declared (~100 mm of track) | 113.10 × 107.60 | 69 | 1092 / 2002 mm / 208 / 92 |
-| **V5** | V4 without J9; NRST on J2 pin 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **100.05 × 107.60** | 68 | 1020 / 1743 mm / 189 / 41 |
+| **V5** (recommended) | V4 without J9; NRST on J2 pin 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **100.05 × 107.60** | 68 | 1020 / 1743 mm / 189 / 41 |
+| V6 (largest, every gate) | V5 + the LDO U12 (TLV75518) to VDD_1V8, 20 mA declared | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 100.05 × 107.60 | 71 | 1109 / 1722 mm / 214 / 31 |
+| V7 (largest, the five) | V6 + `main`'s crossing U13 (TXU0304) and ICM-20948 U5 on SPI `IMU` (F2 proxy) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2**: `TranslatorPinUnbounded` (SCES935A gives no maximum Cio), as `main`'s `board_tier2.rs` L1244 expects | 100.05 × 118.95 | 79 | 1511 / 2467 mm / 302 / 74 |
 
-- `generate`'s `kicad/` equals `emit`'s three files byte for byte for every variant. `generate` of V0 reproduces `boards/sentinel-01/**` (`diff -rq` empty) [measured].
+- `findings == []` in `check erc`, `check drc --spec`, DRC with parity and `check support` for V0–V7 and `p-nrst` [measured, asserted by script]. V3's J9 and V2's MAVLink port were not among the predicted definitions; they are §2.4's A2 and A1.
+- `generate`'s `kicad/` equals `emit`'s three files byte for byte for V0–V7. `generate` of V0 reproduces `boards/sentinel-01/**` (`diff -rq` empty) [measured].
 - The router's numbers come from `route::route` on each emitted board (`9-rename.txt`, first two lines). Each unrenamed reroute equals the emitted copper.
-- **First runs, kept in `~/.cache/aet-3400/first-runs/`:**
+- The variants V6 and V7 were added after the advisor's review, to measure F1's LDO and the nearest F2 proxy; V0–V5's files were unchanged by the rebuild.
+- **First runs, kept in `spike/3400/sources/first-runs/`:**
   - With the motors solved free, the solver moved the console from PA9/PA10 to PB14/PB15, because TIM1 took PA8–PA11. That left the bootloader's USART1 pins and made V0's GPIOA acknowledgements stale (`validate` exit 2, `UnwitnessedAcknowledgementStale`).
   - Pinning the console where V0 solved it fixed both, except PUPD8 and PUPD11: motor pins are pulled down from the first GPIO initialisation (`4230`'s ruling), so they leave the same-source row. Those two names were removed from V0's entry; nothing new is acknowledged.
   - Unpinned, V3's SPI_MOSI was bounded at 32.6 pF against 30 pF (`extract` exit 1).
@@ -133,7 +151,7 @@ Built by `spike/3400/make_variants.py` and run by `spike/3400/run.sh <v>`. Every
 
 ## 4. The renaming check (1307), on the largest passing variant
 
-- **V5: 20/20** renamings route to their own copper (`results/v5/9-rename.txt`). V0–V4: 20/20 each.
+- **V7 (the largest) and V6: 20/20** renamings route to their own copper (`results/v7/9-rename.txt`, `results/v6/9-rename.txt`). V0–V5: 20/20 each.
 - **Harness, named.** `spike/3400/rename/` copies `escape_tier1.rs`'s `mix`, `hash`, `renamed` and `named_back` (seeds 0..20, the same assertion), with two extensions:
   1. `renamed` also renames the stack's classes, pairs, through-hole joins and thermal arrays by the same maps. 1307's boards declare none of these.
   2. `named_back` maps `Routed.arrays` (`AET-WO-1309`) back by reference and net. It postdates 1307's copy.
@@ -161,9 +179,10 @@ These need test points on SW, the rails and the bus lines (T4). Four layers have
   - the console's pins pinned to V0's own solve;
   - `mcu.supply_source` from J3 to `null`, because U11 outputs VDD_3V3 (`4300g` D3). J3's VDD_3V3 pin stays, and with the buck that is a back-feed point (T6);
   - PUPD8 and PUPD11 removed from one acknowledgement, because the ledger moved them.
+  - **V7 only:** one acceptance added, `accept_lifecycle` for the ICM-20948 (`eol`), carried with the proxy from `main`'s fixture ("A twin stand-in for the IMU, never bought"). The script flags it. It is an acceptance, so V7 is a density proxy and never a board to order.
   - What the power tree brings is declared, not measured, and carries over from `sentinel-02-power.json`: the junction's 20 cm² and 550 mW, the 2000 mA 5 V load ("DS-009 port budget for Sentinel-02"), and the board temperature range. For Sentinel-01 the 5 V load is generous. None of it is relaxed.
 - **A *must* row whose "why" cites no prediction:** none demoted. T1, T4, T8 (SWD), F1, F2 and F6 each cite one (§1.2, §2). T8's USART boot and reset rest on AN2606, which was not read, so they stay *extra*.
-- **A cost with no source:** every figure carries its URL in the research files (`~/.cache/aet-3400/research-A.md`, `research-B.md`), or was read by me (INA226, TCAN334, PTS810, USBLC6, USB4105, TMP117). OSH Park's rate and TMP117's price were re-read and match. Prices that could not be read say "unknown". The q1 sum in §7 is SGD, labelled.
+- **A cost with no source:** every figure carries its URL in `spike/3400/sources/research-A.md` and `research-B.md` (the research subagents' files, copied verbatim), or in `sources/digikey-sg-reads.md` (my reads: INA226, TCAN334, PTS810, USBLC6, USB4105, TMP117). Research A's AP_Periph claim was re-checked in the pinned ArduPilot image (`sources/ap-periph.txt`), and its TCAN334 lifecycle on ti.com. OSH Park's rate and TMP117's price were re-read and match. Prices that could not be read say "unknown". The q1 sum in §7 is SGD, labelled.
 - **F1. The declared hot-plug capacitor is not on the board, and its reference is reused.**
   - On `main`, `power.input.hot_plug` (C1, UCZ1H470MCL1GS) satisfies `BatteryInputUndamped` in `ir`, but nothing in `aethelgard-eda` draws it (no `hot_plug` in `eda/src`).
   - The emitter numbers its own decouplers from C1, so the bill of materials' C1 is a 100 nF 0402. Measured on V1–V5 and on `main`'s `sentinel-02-power.json` (no `UCZ1H470` in schematic, board or bill of materials).
@@ -179,6 +198,7 @@ These need test points on SW, the rails and the bus lines (T4). Four layers have
 |---|---|---|
 | **1. Carry now, no engine change** (V5, measured) | F1 power tree; F6 flash; the two sensors; F3 four DShot on J5 (PE9–PE14, TIM1); F4 CRSF on J6; MAVLink on J7; console on J1 held at PA9/PA10 (USART1 boot); T1/T2's second operating point (EXT bus at 10 kΩ / 100 kHz on DS-009 I2C J8, the off-board coupon socket); T6's J3 rail tap; T8's SWD with NRST on J2. Pins kept free for later: PA8, PC9 (MCO), PA11/PA12 (USB), PD0/PD1 (FDCAN1) | A specification in the next board work order. No version number |
 | **2. Engine work orders, before ordering** | E1 test points (T4); E2 BOOT0 on a header plus a reset switch (T8); E0 the hot-plug draw and its reference (F1, §6); **`4220b` unheld** (F2) | Below |
+| *T1's place* | T1 is a *must* for what it measures: the rise time at more than one pull-up, including a weak one. V5's EXT bus (10 kΩ, 100 kHz) beside SENSORS (2.2 kΩ, 400 kHz) measures two points on our copper, the weak one included, and so meets that *must* in tier 1. **Reclassified after measuring:** the jumper form (a sweep on one bus) becomes *extra* and goes to tier 3 with E3. If the architect rules that one bus must be swept, E3 moves to tier 2, before ordering, with its own spike (Q5) | |
 | **3. Defer, with pins reserved** | E3 jumpers and alternates (T1 full, T2 on-board, T5, T6's link, T7's TX–RX); E4 current sense (T3); E5 capture input and `MCO` (T7, J1); F5 USB (`4300e1`); J2 DroneCAN | Each its own work order. Sentinel-01's V5 pins leave them room |
 
 ### 7.2 The engine work orders it implies
@@ -231,14 +251,12 @@ These need test points on SW, the rails and the bus lines (T4). Four layers have
 - **Rerun from `main`:**
   1. `cargo build --release -p aethelgard-cli`
   2. `python3 -I spike/3400/make_variants.py`
-  3. `spike/3400/run.sh v0` … `v5`, and `p-nrst`
+  3. `spike/3400/run.sh v0` … `v7`, and `p-nrst`
   4. `CARGO_TARGET_DIR=~/.cache/aet-3400/target cargo run --release --manifest-path spike/3400/rename/Cargo.toml -- spike/3400/variants/v5.json spike/3400/results/v5/emit/s01-v5.kicad_pcb`
   5. `python3 -I spike/3400/relaxations.py`
 
   The emitted `gen/` and `emit/` trees are not committed (12 MB); `run.sh` regenerates them byte for byte.
-- **Evidence outside the repository:**
-  - `~/.cache/aet-3400/` holds the research files, the KiCad listing, the courtyards, the first runs and the probe target;
-  - AN2606: both downloads failed, so nothing was kept.
+- **Evidence:** `spike/3400/sources/` holds the research files, the digikey.sg reads, the KiCad 10.0.7 listing and courtyards from the pinned image, the AP_Periph check, the first runs and the gates. AN2606: both downloads and one fetch failed, so nothing was kept.
 - **Reduction pass** (diff-sized):
   - the probe directory keeps only the BOOT0 refusal's input and output;
   - the NRST probe lives in `variants/p-nrst.json`;

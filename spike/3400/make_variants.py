@@ -147,12 +147,40 @@ def v5(base):
     return v
 
 
+def v6(base):
+    """V5 plus the rest of F1 as the work order names it (buck, LDO, hot-plug): the fixture's TLV75518
+    LDO U12 from VDD_3V3 to a VDD_1V8 domain, with its 20 mA declared load, as tests/common/power.rs
+    gates it. The hot-plug part is declared since V1 but not drawn (FEEDBACK F1)."""
+    v = v5(base)
+    fx = load(POWER)
+    v["power"]["regulators"].append(copy.deepcopy(next(r for r in fx["power"]["regulators"] if r["reference"] == "U12")))
+    v["power"]["loads"].append(copy.deepcopy(next(l for l in fx["power"]["loads"] if l["domain"] == "VDD_1V8")))
+    v["voltage_domains"].append(copy.deepcopy(next(d for d in fx["voltage_domains"] if d["id"] == "VDD_1V8")))
+    v["project_name"] = "s01-v6"
+    return v
+
+
+def v7(base):
+    """V6 plus main's 1.8 V crossing (TXU0304 U13) and the ICM-20948 behind it (U5, SPI 'IMU'), grafted
+    from sentinel-02-power.json with its acknowledgement: a density PROXY for F2 (an IMU in a 3 x 3 mm
+    0.4 mm-pitch package on its own SPI bus), not the ICM-42688-P or BMP581, which main cannot draw."""
+    v = v6(base)
+    fx = load(POWER)
+    v["power"]["crossings"] = copy.deepcopy(fx["power"]["crossings"])
+    v["spi_buses"].append(copy.deepcopy(next(b for b in fx["spi_buses"] if b["id"] == "IMU")))
+    v["spi_devices"].append(copy.deepcopy(next(d for d in fx["spi_devices"] if d["reference"] == "U5")))
+    v["net_constraints"] += [copy.deepcopy(k) for k in fx["net_constraints"] if k["net_name"].startswith("IMU")]
+    v["accept_lifecycle"].append(copy.deepcopy(next(a for a in fx["accept_lifecycle"] if a["part"] == "ICM20948")))
+    v["project_name"] = "s01-v7"
+    return v
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     raw = EXAMPLE.read_bytes()
     (OUT / "v0.json").write_bytes(raw)
     base = json.loads(raw)
-    for name, f in (("v1", v1), ("v2", v2), ("v3", v3), ("v4", v4), ("v5", v5)):
+    for name, f in (("v1", v1), ("v2", v2), ("v3", v3), ("v4", v4), ("v5", v5), ("v6", v6), ("v7", v7)):
         (OUT / f"{name}.json").write_text(json.dumps(f(base), indent=2) + "\n")
     print("wrote", sorted(p.name for p in OUT.glob("v*.json")), file=sys.stderr)
 
