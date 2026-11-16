@@ -152,7 +152,7 @@ Each slice applied every mutant by editing a file, ran the test that should kill
 
 ## 7. The stop: the ledger has 264 rows on the reference (WO §7, third condition)
 
-`aethelgard verify`'s verdict now carries the ledger: one row per field, with a family key on each, so any grouping is a view. On the reference (`examples/sentinel-01-minimal.json`) it has **264 rows**: 249 written, 15 at reset or read.
+`aethelgard verify`'s verdict now carries the ledger: one row per field, with a family key on each, so any grouping is a view. On the reference (`examples/sentinel-01-minimal.json`) it has **264 rows**: 248 written, 16 at reset or read (counted from the list's `access` column).
 
 | Class | Rows | | Family | Rows |
 |---|---|---|---|---|
@@ -185,11 +185,11 @@ The full list (id, class, family, access, value) is `~/.cache/aet-4230/c2/ledger
 - **Q-B, CRSF at TBS's default 416666 baud cannot solve on HSI.** `BRR` 154 is 2,596 ppm slow; with the HSI and the cited spread the total is 36,425 ppm against RM0433 Table 407's 33,300. `solve` refuses it (`SerialBaudTolerance`), and 420000 solves with a 1,845 ppm margin. Sentinel-02 needs CRSF: a crystal (`hse_hz`, unowned in §7.1) would close it.
 - **Q-C, DShot and PWM receivers' tolerance (§1.8).** No source the repository holds gives one. The motor check now reports the worst-case period and high time at both HSI extremes without changing `holds`. A PWM idle pulse is 1,026.6 µs at the slow HSI, and DShot600's bit is 1.647 to 1.716 µs. Rule a source or a declared term.
 - **Q-D, `CFG2.AFCNTR` (B1, RM0433 §50.11.4).** With `AFCNTR` = 0 the controller does not drive its pins while `SPE` is 0. The transfer drops the chip select before `SPE` rises and raises it after `SPE` falls, so SCK and MOSI float while the device is selected. Options: `AFCNTR` = 1 for a master, or select after `SPE`. Not changed.
-- **Q-E, §1.9 against the twin's 100 ms window.** `imu-baro-1v8` carries two ICM20948 stand-ins. Each now waits 40 ms, twice the 20 ms typical-only start-up (DS Table 2, p.12; it was `null` before). Renode runs the spin about 1.92 times long (4220 F2), so the boot word is not written within 100 ms, and three `twin_tier2` tests on that fixture fail. They fail closed. Options:
+- **Q-E, §1.9 against the twin's 100 ms window.** `imu-baro-1v8` carries two ICM20948 stand-ins. Each now waits 40 ms, twice the 20 ms typical-only start-up (DS Table 2, p.12; it was `null` before). The boot word reads 0 at 100 ms (measured, `twin_tier2` on `82c2bc2`). That the cause is the waits, Renode running each spin about 1.92 times long (4220 F2) for about 154 ms in all, is inferred by arithmetic, not measured. Three `twin_tier2` tests on that fixture fail. They fail closed. Options:
   - (a) the twin-window work order (4300b Q4's owner) widens the window;
   - (b) the generator overlaps independent devices' waits;
   - (c) stand-ins are exempt from §1.9, which contradicts its text.
-  Not weakened. This head's CI is red on those three tests for this reason alone.
+  Not weakened. The head's CI fails on those three tests for this reason; §12 names its other red, the two shards cancelled at the job limit.
 - **Q-F, `RCC` step c (B0).** RM0433 §8.5.10 also asks to poll `D2CKRDY` after an enable. That flag resets to 0 and is a tag in Renode (`STM32H7_RCC.cs` L175), so a wait on it would park every twin boot. Not done.
 - **Q-G, motor pins float until `start_outputs` (A16, B0).** True: they are in analog mode from reset, then Hi-Z with `MOE`/`CCxE` clear (RM0433 Table 337 p.1608, Table 342 p.1695). No source the repository cites gives a level before start. A pull-down or a low GPIO is a policy ruling.
 - **Q-H, `BRR`'s rule.** `serial::check_silicon`'s exactness test re-runs the solver's own `solve_brr` (4300b). The tolerance judgement is independent, so the row is `independent-rule` with that note. An independent exactness check (an inequality) would close it.
@@ -217,10 +217,10 @@ The full list (id, class, family, access, value) is `~/.cache/aet-4230/c2/ledger
 - once with this branch's CLI from the file as it is here.
 
 Results (`~/.cache/aet-4230/boardcmp/`):
-- **The reference and 13 fixtures are byte-identical:** `connectors`, `d1-24-i2c`, `d3-24-i2c-12-spi`, `four-layer-power`, `four-layer`, `motors-dshot600`, `motors-pwm`, `pair-standin`, `serial-dshot-9600`, `serial-four`, `spi-only`, `two-bme`. They agree in all three files each.
+- **The reference and 12 fixtures are byte-identical**, in all three files each: `.kicad_sch`, `.kicad_pcb` (the board as `generate` emits it; routed boards are exercised by `board_tier2`) and `.bom.csv`: `connectors`, `d1-24-i2c`, `d3-24-i2c-12-spi`, `four-layer-power`, `four-layer`, `motors-dshot600`, `motors-pwm`, `pair-standin`, `serial-dshot-9600`, `serial-four`, `spi-only`, `two-bme`.
 - `imu-baro-1v8` and `sentinel-02-own` are refused by both binaries alike (`UnknownPart`: no vendored KiCad model, `4220b`'s).
 - The `solve/` fixtures and `invalid-zero-domain` are refused by both, as designed.
-- `aethelgard-eda` is untouched by this branch.
+- `aethelgard-eda` is untouched: `git diff 8030fa5 HEAD -- crates/aethelgard-eda` is empty (8030fa5 is the merge base with `main`).
 
 Firmware and verdicts change on every board, each change named in §3 and §5:
 - the reset clock is read first;
