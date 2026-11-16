@@ -30,7 +30,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0 },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }) },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -77,7 +77,20 @@ fn valid() -> Specification {
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
         }],
-        "connectors": [],
+        "connectors": [
+            {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "SWDIO", "offboard": null},
+                {"pin": "5", "net": "SWCLK", "offboard": null},
+                {"pin": "6", "net": "GND", "offboard": null}]},
+            {"reference": "J2", "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ],
         "net_constraints": [NetConstraint {
             net_name: "I2C_SDA".into(),
             max_capacitance_femtofarads: 400_000,
@@ -95,7 +108,7 @@ fn valid() -> Specification {
             impedance_ohms: None,
         }, NetConstraint {
             // Last, so no index above moves: `validate` requires both I2C
-            // lines' constraints (step 17, `AET-WO-1206` §1.2).
+            // lines' constraints (step 19, `AET-WO-1206` §1.2).
             net_name: "I2C_SCL".into(),
             max_capacitance_femtofarads: 400_000,
             max_rise_time_nanoseconds: 300,
@@ -143,7 +156,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -2553,7 +2566,7 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
     assert!(valid().lifecycle_banner().unwrap().is_empty());
 }
 
-/// `AET-WO-1206` §1.2 (`AET-WO-4100` F1): step 17 refuses an I2C line with
+/// `AET-WO-1206` §1.2 (`AET-WO-4100` F1): step 19 refuses an I2C line with
 /// no net constraint, SDA before SCL, by `solve`'s kind, `id`, claimant and
 /// message.
 #[test]

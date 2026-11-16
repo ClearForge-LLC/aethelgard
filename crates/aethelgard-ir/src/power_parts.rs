@@ -31,7 +31,7 @@ use crate::IrValidationError;
 pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 
 /// The `schema_version` the parser reads.
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 2;
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 3;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -380,6 +380,117 @@ pub struct Mcu {
     pub spi_input_setup_min_ns: Limit,
     /// How much shorter than half a period SCK's low phase may be, ns.
     pub spi_sck_low_shortfall_ns: Limit,
+    /// The support network its datasheet draws (`AET-WO-4300g`).
+    pub support: Support,
+}
+
+/// The MCU's support network, as its datasheet draws it (`AET-WO-4300g`):
+/// its package pins by group, each capacitor role, and each strap. The
+/// emitter draws from it, and the support gate judges an emitted netlist
+/// against it, never against the emitter's choices (`RUL-20`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Support {
+    /// Each group's package pin numbers, ascending; no pin is in two groups.
+    pub pins: BTreeMap<String, Vec<String>>,
+    pub pins_at: At,
+    /// The group whose pins are all on the MCU's supply.
+    pub supply: String,
+    /// The groups whose pins are all on `GND`.
+    pub grounds: Vec<String>,
+    /// Groups each on a declared voltage domain whose whole tolerance band
+    /// lies in the group's operating range.
+    pub powered: Vec<Powered>,
+    /// Groups whose every pin is on a net of its own: no declared domain,
+    /// not `GND`, and no other support pin's (`AET-WO-4300g` adversarial A1).
+    pub own_nets: Vec<OwnNet>,
+    pub capacitors: Vec<SupportCapacitor>,
+    pub straps: Vec<SupportStrap>,
+}
+
+impl Support {
+    /// The package pins of `group`; empty for a group the row does not name.
+    pub fn group(&self, group: &str) -> &[String] {
+        self.pins.get(group).map_or(&[], Vec::as_slice)
+    }
+}
+
+/// A powered group and the range its supply must hold, mV.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Powered {
+    pub group: String,
+    pub millivolts: Range,
+    pub at: At,
+}
+
+/// A group whose pins each need a net of their own, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OwnNet {
+    pub group: String,
+    pub at: At,
+}
+
+/// What a support capacitor does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SupportRole {
+    VddBypass,
+    VddBulk,
+    AnalogBypass,
+    AnalogBulk,
+    UsbBypass,
+    UsbBulk,
+    Vcap,
+    Reset,
+}
+
+impl SupportRole {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::VddBypass => "vdd_bypass",
+            Self::VddBulk => "vdd_bulk",
+            Self::AnalogBypass => "analog_bypass",
+            Self::AnalogBulk => "analog_bulk",
+            Self::UsbBypass => "usb_bypass",
+            Self::UsbBulk => "usb_bulk",
+            Self::Vcap => "vcap",
+            Self::Reset => "reset",
+        }
+    }
+}
+
+/// One capacitor role: between its owner group's net and its ground group's
+/// net, of `picofarads` within `tolerance_permille` (its value class), one at
+/// each owner pin (`per_pin`) or one for the group, and, where the gate can
+/// check it, within `bound_um` of its owner pin, copper edge to copper edge.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupportCapacitor {
+    pub role: SupportRole,
+    pub owner: String,
+    pub per_pin: bool,
+    pub ground: String,
+    pub picofarads: i64,
+    pub tolerance_permille: i64,
+    /// `None`: no distance the gate can check, a named condition.
+    pub bound_um: Option<i64>,
+    pub bound_basis: String,
+    pub at: At,
+}
+
+impl SupportCapacitor {
+    /// The value class, pF: `picofarads` less and plus its tolerance.
+    pub fn class(&self) -> (i64, i64) {
+        let d = self.picofarads * self.tolerance_permille / 1000;
+        (self.picofarads - d, self.picofarads + d)
+    }
+}
+
+/// A single pin tied to a group's net, directly (an MCU support strap; a
+/// control pin's is [`Strap`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SupportStrap {
+    pub pin: String,
+    pub to: String,
+    pub at: At,
 }
 
 /// AN2834's rule for an external reservoir capacitor at an ADC input,
@@ -836,6 +947,60 @@ struct RawMcu {
     reservoir_rule: RawReservoirRule,
     spi_input_setup_min_ns: RawLimit,
     spi_sck_low_shortfall_ns: RawLimit,
+    support: RawSupport,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSupport {
+    #[serde(deserialize_with = "crate::unique_keys")]
+    pins: BTreeMap<String, Vec<String>>,
+    pins_at: RawAt,
+    supply: String,
+    grounds: Vec<String>,
+    powered: Vec<RawPowered>,
+    own_nets: Vec<RawOwnNet>,
+    capacitors: Vec<RawSupportCapacitor>,
+    straps: Vec<RawStrap>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPowered {
+    group: String,
+    min_millivolts: i64,
+    max_millivolts: i64,
+    at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawOwnNet {
+    group: String,
+    at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSupportCapacitor {
+    role: SupportRole,
+    owner: String,
+    per_pin: bool,
+    ground: String,
+    picofarads: i64,
+    tolerance_permille: i64,
+    #[serde(deserialize_with = "Option::deserialize")]
+    bound_um: Option<i64>,
+    bound_basis: String,
+    at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawStrap {
+    pin: String,
+    to: String,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -1230,6 +1395,144 @@ fn text(value: &str, field: &str, max: usize) -> Result<(), String> {
     Ok(())
 }
 
+/// The MCU's support network, refused where a group is empty, unknown or
+/// shares a pin, a pin is not a package position, a role repeats, a value or
+/// tolerance is out of range, a strap is not one pin, or a text is not.
+fn support(raw: RawSupport, r: &mut Reader<'_>) -> Result<Support, String> {
+    const F: &str = "kind.mcu.support";
+    let mut seen = BTreeSet::new();
+    for (group, pins) in &raw.pins {
+        text(group, &format!("{F}.pins key"), 16)?;
+        if pins.is_empty() {
+            return Err(format!("`{F}.pins.{group}` is empty"));
+        }
+        let mut last = 0;
+        for p in pins {
+            let n = p
+                .parse::<u16>()
+                .ok()
+                .filter(|n| p == &n.to_string() && *n > 0);
+            let Some(n) = n else {
+                return Err(format!(
+                    "`{F}.pins.{group}` holds `{p}`, not a package position"
+                ));
+            };
+            if n <= last {
+                return Err(format!("`{F}.pins.{group}` is not ascending"));
+            }
+            last = n;
+            if !seen.insert(n) {
+                return Err(format!("`{F}.pins` names pin {p} in two groups"));
+            }
+        }
+    }
+    let group = |name: &str, field: &str| {
+        if raw.pins.contains_key(name) {
+            Ok(name.to_owned())
+        } else {
+            Err(format!(
+                "`{F}.{field}` names `{name}`, which `pins` does not"
+            ))
+        }
+    };
+    let supply = group(&raw.supply, "supply")?;
+    let grounds = raw
+        .grounds
+        .iter()
+        .map(|g| group(g, "grounds"))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut powered = Vec::with_capacity(raw.powered.len());
+    for p in raw.powered {
+        let g = group(&p.group, "powered")?;
+        if p.min_millivolts < 0 || p.min_millivolts > p.max_millivolts {
+            return Err(format!("`{F}.powered.{g}` is not a range of 0 mV or more"));
+        }
+        bounded(p.max_millivolts, &format!("{F}.powered.{g}"))?;
+        powered.push(Powered {
+            millivolts: Range {
+                min: p.min_millivolts,
+                max: p.max_millivolts,
+            },
+            at: r.at(p.at, &format!("{F}.powered.{g}"))?,
+            group: g,
+        });
+    }
+    let mut own_nets = Vec::with_capacity(raw.own_nets.len());
+    for o in raw.own_nets {
+        let g = group(&o.group, "own_nets")?;
+        own_nets.push(OwnNet {
+            at: r.at(o.at, &format!("{F}.own_nets.{g}"))?,
+            group: g,
+        });
+    }
+    if grounds.is_empty() {
+        return Err(format!("`{F}.grounds` is empty"));
+    }
+    let mut capacitors: Vec<SupportCapacitor> = Vec::with_capacity(raw.capacitors.len());
+    for c in raw.capacitors {
+        let f = format!("{F}.capacitors.{}", c.role.name());
+        if capacitors.iter().any(|o| o.role == c.role) {
+            return Err(format!(
+                "`{F}.capacitors` names the role `{}` twice",
+                c.role.name()
+            ));
+        }
+        let owner = group(&c.owner, &format!("capacitors.{}.owner", c.role.name()))?;
+        let ground = group(&c.ground, &format!("capacitors.{}.ground", c.role.name()))?;
+        if !grounds.contains(&ground) {
+            return Err(format!("`{f}.ground` is `{ground}`, not one of `grounds`"));
+        }
+        bounded(c.picofarads, &f)?;
+        if c.picofarads <= 0 || !(0..=500).contains(&c.tolerance_permille) {
+            return Err(format!(
+                "`{f}` needs picofarads above zero and a tolerance of 0 to 500 permille"
+            ));
+        }
+        if c.bound_um.is_some_and(|b| !(1..=100_000).contains(&b)) {
+            return Err(format!("`{f}.bound_um` is not 1 to 100000"));
+        }
+        text(&c.bound_basis, &format!("{f}.bound_basis"), 256)?;
+        capacitors.push(SupportCapacitor {
+            role: c.role,
+            owner,
+            per_pin: c.per_pin,
+            ground,
+            picofarads: c.picofarads,
+            tolerance_permille: c.tolerance_permille,
+            bound_um: c.bound_um,
+            bound_basis: c.bound_basis,
+            at: r.at(c.at, &f)?,
+        });
+    }
+    let mut straps: Vec<SupportStrap> = Vec::with_capacity(raw.straps.len());
+    for s in raw.straps {
+        let f = format!("{F}.straps.{}", s.pin);
+        let pin = group(&s.pin, "straps.pin")?;
+        if raw.pins[&pin].len() != 1 {
+            return Err(format!("`{f}` names a group of more than one pin"));
+        }
+        if straps.iter().any(|o| o.pin == pin) {
+            return Err(format!("`{F}.straps` names `{pin}` twice"));
+        }
+        let to = group(&s.to, &format!("straps.{pin}.to"))?;
+        straps.push(SupportStrap {
+            pin,
+            to,
+            at: r.at(s.at, &f)?,
+        });
+    }
+    Ok(Support {
+        pins: raw.pins,
+        pins_at: r.at(raw.pins_at, &format!("{F}.pins"))?,
+        supply,
+        grounds,
+        powered,
+        own_nets,
+        capacitors,
+        straps,
+    })
+}
+
 /// The pin roles each IC kind must name, exactly.
 fn pin_roles(kind: &Kind) -> &'static [&'static str] {
     match kind {
@@ -1578,6 +1881,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 },
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
+                support: support(m.support, r)?,
             }))
         }
     })

@@ -47,11 +47,14 @@ use std::collections::BTreeMap;
 
 use crate::sexpr::{self, SexprError, Sx};
 
-/// Which of KiCad's two files a tree is.
+/// Which of KiCad's files a tree is: a board, a schematic, or the netlist
+/// `kicad-cli sch export netlist --format kicadsexpr` writes of a schematic
+/// (`AET-WO-4300g`: the support gate's input).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Kind {
     Board,
     Schematic,
+    Netlist,
 }
 
 impl Kind {
@@ -59,12 +62,14 @@ impl Kind {
         match self {
             Kind::Board => "kicad_pcb",
             Kind::Schematic => "kicad_sch",
+            Kind::Netlist => "export",
         }
     }
     fn noun(self) -> &'static str {
         match self {
             Kind::Board => "board",
             Kind::Schematic => "schematic",
+            Kind::Netlist => "netlist",
         }
     }
 }
@@ -148,6 +153,7 @@ impl Refusal {
         match self.file() {
             Kind::Board => "MalformedBoard",
             Kind::Schematic => "MalformedSchematic",
+            Kind::Netlist => "MalformedNetlist",
         }
     }
 
@@ -201,10 +207,53 @@ struct Rule {
 
 const B: Kind = Kind::Board;
 const S: Kind = Kind::Schematic;
+const N: Kind = Kind::Netlist;
 
 /// The nodes the gates read, with what each may hold once. A node absent
 /// here is read by no gate; its children are KiCad's alone.
 const RULES: &[Rule] = &[
+    // A netlist (KiCad 10.0.7, `netlist_exporter_kicad.cpp`): each section,
+    // each component's reference and value, each net's name, each node's
+    // reference and pin are written once, and the support gate reads them.
+    Rule {
+        kind: N,
+        parents: &[""],
+        node: &["export"],
+        once: &[
+            &["version"],
+            &["design"],
+            &["components"],
+            &["libparts"],
+            &["libraries"],
+            &["nets"],
+        ],
+        fields: Fields::None,
+        keywords: &[],
+    },
+    Rule {
+        kind: N,
+        parents: &["components"],
+        node: &["comp"],
+        once: &[&["ref"], &["value"], &["footprint"], &["libsource"]],
+        fields: Fields::None,
+        keywords: &[],
+    },
+    Rule {
+        kind: N,
+        parents: &["nets"],
+        node: &["net"],
+        once: &[&["code"], &["name"], &["class"]],
+        fields: Fields::None,
+        keywords: &[],
+    },
+    Rule {
+        kind: N,
+        parents: &["net"],
+        node: &["node"],
+        once: &[&["ref"], &["pin"], &["pinfunction"], &["pintype"]],
+        fields: Fields::None,
+        keywords: &[],
+    },
     // parseBOARD_unchecked, parseHeader: each top-level section sets the
     // board's one copy.
     Rule {
@@ -574,6 +623,14 @@ pub fn schematic(text: &str) -> Result<Tree, Refusal> {
     read(text, Kind::Schematic)
 }
 
+/// The netlist format KiCad 10.0.7 writes (`netlist_exporter_kicad.cpp`).
+pub const NETLIST_VERSION: &str = "E";
+
+/// Reads a KiCad netlist's text (`--format kicadsexpr`) strictly.
+pub fn netlist(text: &str) -> Result<Tree, Refusal> {
+    read(text, Kind::Netlist)
+}
+
 /// Judges a footprint this engine placed (`route::part_of`'s caller in
 /// `pcb`) as if it sat at the top of a board.
 pub fn footprint(fp: &Sx) -> Result<Tree, Refusal> {
@@ -596,17 +653,20 @@ fn read(text: &str, kind: Kind) -> Result<Tree, Refusal> {
 }
 
 /// The one `(version …)` a file may declare: the engine's own emitter's
-/// (`AET-WO-3303` A11), as a bare atom. KiCad reads another version's
-/// grammar differently; none is read here.
+/// (`AET-WO-3303` A11), as a bare atom; a netlist's, `"E"`, quoted as KiCad
+/// 10.0.7 writes it. KiCad reads another version's grammar differently; none
+/// is read here.
 pub fn version(tree: &Tree) -> Result<(), Refusal> {
     let root = tree.root();
-    let want = match tree.kind {
-        Kind::Board => crate::pcb::VERSION,
-        Kind::Schematic => crate::schematic::VERSION,
+    let (want, quoted) = match tree.kind {
+        Kind::Board => (crate::pcb::VERSION, false),
+        Kind::Schematic => (crate::schematic::VERSION, false),
+        Kind::Netlist => (NETLIST_VERSION, true),
     };
     let child = root.one("version")?;
     let found = match child.as_ref().map(|v| v.sx.items()) {
-        Some([_, Sx::Atom(v)]) => Some(v.as_str()),
+        Some([_, Sx::Atom(v)]) if !quoted => Some(v.as_str()),
+        Some([_, Sx::Str(v)]) if quoted => Some(v.as_str()),
         _ => None,
     };
     if found == Some(want) {

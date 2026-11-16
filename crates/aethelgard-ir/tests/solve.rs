@@ -152,7 +152,7 @@ fn spec(
         "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0 },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }) },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -162,7 +162,20 @@ fn spec(
         "spi_buses": spi_buses,
         "i2c_devices": [],
         "spi_devices": spi_devices,
-        "connectors": [],
+        "connectors": [
+            {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "SWDIO", "offboard": null},
+                {"pin": "5", "net": "SWCLK", "offboard": null},
+                {"pin": "6", "net": "GND", "offboard": null}]},
+            {"reference": "J2", "part": "SM04B-GHS-TB", "standard": null, "pins": [
+                {"pin": "1", "net": "VDD_3V3", "offboard": null},
+                {"pin": "2", "net": null, "offboard": null},
+                {"pin": "3", "net": null, "offboard": null},
+                {"pin": "4", "net": "GND", "offboard": null}]}
+        ],
         "net_constraints": net_constraints,
         "motor_outputs": [],
         "serial_ports": [],
@@ -697,7 +710,7 @@ fn one_slow_line_refuses_a_fast_bus() {
 
 #[test]
 fn a_line_with_no_constraint_is_refused_naming_the_first_in_document_order() {
-    // `validate` refuses it (step 17, `AET-WO-1206` §1.2), and `solve`
+    // `validate` refuses it (step 19, `AET-WO-1206` §1.2), and `solve`
     // reports that refusal by the same kind, id and claimant as before.
     let mut s = i2c_spec(100_000, 300, 300);
     s.net_constraints.clear();

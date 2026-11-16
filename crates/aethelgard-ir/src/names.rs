@@ -3,7 +3,7 @@
 //! spells one, and the schematic emitter names no net this module does not
 //! list (`aethelgard_eda::schematic`'s `own_net`).
 //!
-//! Step 18 of [`Specification::validate`] refuses, by the name and with the
+//! Step 20 of [`Specification::validate`] refuses, by the name and with the
 //! JSON `generate` printed for each before it existed:
 //!
 //! - a reference the emitter would also number, or two of the specification's
@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 use crate::power::{self, BATTERY_NET};
 use crate::power_parts::{self, Kind};
-use crate::{GND, IrValidationError as E, Specification};
+use crate::{GND, IrValidationError as E, NRST, SWCLK, SWDIO, Specification};
 
 /// KiCad's prefix for a pad on no net. Its parity check matches it by
 /// prefix, case-sensitively, so the emitter refuses a net or rail that
@@ -30,11 +30,6 @@ pub const UNCONNECTED: &str = "unconnected-";
 /// (`parts.json`), so `validate`'s refusal of a part with no row (step 14,
 /// `AET-WO-1206` §1.8) prints the emitter's message truthfully.
 pub const VENDORED_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
-
-/// The VCAP pins of the MCU's symbol (`MCU_ST_STM32H7:STM32H753ZITx`, KiCad
-/// 10.0.7), by pin-number order. The emitter names one net `<mcu>_VCAP<n>`
-/// for each; `aethelgard-eda`'s tests hold this to the symbol.
-pub const MCU_VCAP_PINS: usize = 2;
 
 /// The nets the emitter names `<reference>_<suffix>` for a device of each
 /// part: a strap or a filter pin it draws a passive on (`BME280`'s `SDO`
@@ -141,7 +136,9 @@ pub fn mcu_reference(spec: &Specification) -> String {
 }
 
 /// Every net the schematic emitter names for itself, for `spec`: `GND`, the
-/// battery net when a power tree is declared, the MCU's VCAP nets, each
+/// battery net when a power tree is declared, the MCU's support nets as its
+/// power-parts row draws them (`NRST`, `SWDIO`, `SWCLK` for each group the
+/// row has, and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), each
 /// device's [`device_nets`], each buck's [`BUCK_NETS`], and each crossing's
 /// four translated lines. The emitter refuses to name a net this list lacks.
 pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
@@ -149,8 +146,16 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
     if spec.power.is_some() {
         out.push(BATTERY_NET.to_owned());
     }
-    let mcu = mcu_reference(spec);
-    out.extend((1..=MCU_VCAP_PINS).map(|n| format!("{mcu}_VCAP{n}")));
+    let table = power_parts::table()?;
+    if let Some(Kind::Mcu(m)) = table.get(&spec.mcu.part).map(|row| &row.kind) {
+        for net in [NRST, SWDIO, SWCLK] {
+            if !m.support.group(net).is_empty() {
+                out.push(net.to_owned());
+            }
+        }
+        let mcu = mcu_reference(spec);
+        out.extend((1..=m.support.group("VCAP").len()).map(|n| format!("{mcu}_VCAP{n}")));
+    }
     let devices = spec
         .declared_i2c_devices()
         .iter()
@@ -164,7 +169,6 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         out.extend(device_nets(part).iter().map(|s| format!("{reference}_{s}")));
     }
     if let Some(p) = &spec.power {
-        let table = power_parts::table()?;
         for r in &p.regulators {
             if let Some(Kind::Buck(_)) = table.get(&r.part).map(|row| &row.kind) {
                 out.extend(BUCK_NETS.iter().map(|s| format!("{}_{s}", r.reference)));
@@ -218,7 +222,7 @@ fn pair(own: &str, spelled: &str) -> String {
     }
 }
 
-/// Step 18 of `validate`: the names (`AET-WO-1206` §1.3). In `generate`'s
+/// Step 20 of `validate`: the names (`AET-WO-1206` §1.3). In `generate`'s
 /// order: the emitter's references (A4) and nets (A5), then the twin's
 /// device names (A2).
 pub(crate) fn check(spec: &Specification) -> Result<(), E> {

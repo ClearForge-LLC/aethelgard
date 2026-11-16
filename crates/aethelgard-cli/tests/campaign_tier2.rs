@@ -636,10 +636,13 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(
         shape,
         [
-            ("VBOR3_rising", 1_012_422_222, true),
-            ("VBOR3_falling", 1_014_422_222, true),
-            ("VBOR3_falling", 1_225_977_778, false),
-            ("VBOR3_rising", 1_227_977_778, false),
+            // Re-measured at `AET-WO-4300g`: the rail's decoupling rose from
+            // 0.4 to 8.3 uF with the MCU's support network, so its time
+            // constant and every crossing moved (FEEDBACK §10, P5).
+            ("VBOR3_rising", 1_016_291_380, true),
+            ("VBOR3_falling", 1_018_322_818, true),
+            ("VBOR3_falling", 1_229_512_382, false),
+            ("VBOR3_rising", 1_231_681_149, false),
         ],
         "the bor3 droop crosses VBOR3 falling then rising at the predicted times"
     );
@@ -658,8 +661,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(
         resets,
         [
-            (1_014_430, false, vec!["VBOR3".to_owned()]),
-            (1_227_980, true, vec!["VBOR3".to_owned()]),
+            (1_018_330, false, vec!["VBOR3".to_owned()]),
+            (1_231_690, true, vec!["VBOR3".to_owned()]),
         ],
         "the bor3 droop asserts the reset then releases it, both caused by VBOR3"
     );
@@ -683,7 +686,7 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         unreachable!()
     };
     assert_eq!(
-        *at_ns, 1_327_980,
+        *at_ns, 1_331_690,
         "the firmware is observed at the predicted time after the release"
     );
     assert_eq!(
@@ -724,13 +727,13 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         panic!("the bor3 droop archives a boot observation: {bor3:?}");
     };
     assert_eq!(
-        *instructions_expected, 9_877_201,
-        "the bor3 droop expects 9,877,201 instructions"
+        *instructions_expected, 9_876_830,
+        "the bor3 droop expects 9,876,830 instructions"
     );
     assert_eq!(
         *instructions_observed,
-        Some(9_877_201),
-        "the bor3 droop observes all 9,877,201 instructions"
+        Some(9_876_830),
+        "the bor3 droop observes all 9,876,830 instructions"
     );
     let Some(Record::Verdict { pass, findings }) = bor3.last() else {
         panic!("the verdict is the last record");

@@ -710,7 +710,7 @@ fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveErr
 
 /// Each I2C bus's ceiling, from the worse of its two lines' declared
 /// `max_rise_time_nanoseconds`, in document order: a mode is legal only when
-/// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` (step 17)
+/// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` (step 19)
 /// has refused a line with no constraint. Pull-up and capacitance are not
 /// read; that physics is the twin's.
 fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveError> {
@@ -2001,6 +2001,10 @@ mod differential {
                 supply: "D".into(),
                 hse_hz: 0,
                 bor_level: 0,
+                supply_source: Some(crate::SupplySource {
+                    connector: "J2".into(),
+                    pin: "1".into(),
+                }),
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),
@@ -2011,10 +2015,35 @@ mod differential {
             spi_buses,
             i2c_devices: vec![],
             spi_devices,
-            connectors: vec![],
+            connectors: vec![
+                connector(
+                    "J1",
+                    "SM06B-SRSS-TB",
+                    &["D", "", "", "SWDIO", "SWCLK", "GND"],
+                ),
+                connector("J2", "SM04B-GHS-TB", &["D", "", "", "GND"]),
+            ],
             net_constraints,
             motor_outputs: vec![],
             serial_ports: vec![],
+        }
+    }
+
+    /// A connector whose pins name these nets, an empty name being no net.
+    fn connector(reference: &str, part: &str, nets: &[&str]) -> crate::connectors::Connector {
+        crate::connectors::Connector {
+            reference: reference.into(),
+            part: part.into(),
+            standard: None,
+            pins: nets
+                .iter()
+                .enumerate()
+                .map(|(i, n)| crate::connectors::ConnectorPin {
+                    pin: (i + 1).to_string(),
+                    net: (!n.is_empty()).then(|| (*n).to_string()),
+                    offboard: None,
+                })
+                .collect(),
         }
     }
 

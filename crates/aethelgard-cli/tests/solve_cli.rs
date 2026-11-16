@@ -53,8 +53,8 @@ use sha2::{Digest, Sha256};
 /// `power`'s judgement declarations), which moved only the specification's
 /// sha256: with `main`'s put back, each output's digest is `main`'s exactly
 /// (`5c2aeff0…dd22` and `84de8b88…016d` before).
-const REFERENCE_DIGEST: &str = "097279028a910d985d17b54f392ef1b08606448b47c1fe3bb6c7ae1a9ea923ba";
-const STRESS_DIGEST: &str = "fdc06258c65bceab15ac18c536419edc2440467397b4111ebb14d7ea7d12f367";
+const REFERENCE_DIGEST: &str = "5f717bad93f53a101a3f360db97fd798ee62a5d69960bd3e49ea48b26e11d84b";
+const STRESS_DIGEST: &str = "43d5ed7688cd2605b7f56aa8b08a2bc53e5dd7fcba74082f4af5aadeb25b8418";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -235,7 +235,22 @@ fn the_reference_s_console_moves_no_other_assignment() {
     let dir = Dir::new("no-console");
     let file = edited(&dir, |d| {
         d["serial_ports"] = json!([]);
-        d["connectors"] = json!([]);
+        // The console's connector goes with it; the programming path and the
+        // supply input stay (`AET-WO-4300g`).
+        let kept: Vec<serde_json::Value> = d["connectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| {
+                !c["pins"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p["net"].as_str().is_some_and(|n| n.starts_with("CONSOLE_")))
+            })
+            .cloned()
+            .collect();
+        d["connectors"] = json!(kept);
     });
     let (without, _) = solved(&file);
     let mut rest = with.assignments.clone();

@@ -247,6 +247,8 @@ pub(crate) enum NetKind<'s> {
     /// A motor output's net (`AET-WO-4300a` §1.8): it leaves the board at
     /// a connector, on no bus, so it declares no off-board capacitance.
     Motor,
+    /// One of the MCU's debug nets (`AET-WO-4300g`).
+    Debug,
     /// A serial port's TX or RX net, with the port's label
     /// (`AET-WO-4300b`): on no bus, so, like a motor output's, it declares
     /// no off-board capacitance (D8 covers I2C and SPI lines only).
@@ -265,6 +267,9 @@ impl NetKind<'_> {
 /// invent a net: it joins nets the specification already declares.
 fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     let mut kinds = BTreeMap::from([(crate::GND, NetKind::Ground)]);
+    for n in crate::DEBUG_NETS {
+        kinds.insert(n, NetKind::Debug);
+    }
     for d in &spec.voltage_domains {
         kinds.insert(d.id.as_str(), NetKind::Domain(d.nominal_millivolts));
     }
@@ -438,4 +443,96 @@ pub(crate) fn identifiers(spec: &Specification) -> Result<(), E> {
         }
     }
     Ok(())
+}
+
+/// Step 17 (`AET-WO-4300g` §1.4): one declared connector carries `SWDIO`,
+/// `SWCLK`, `GND` and the MCU's supply (DS-009's debug ports carry those and
+/// no NRST, so NRST is not required). Its standard, if any, was judged in
+/// step 15.
+pub(crate) fn programming_path(spec: &Specification) -> Result<(), E> {
+    programming_connector(spec)
+        .map(|_| ())
+        .ok_or_else(|| E::NoProgrammingPath {
+            supply: spec.mcu.supply.clone(),
+        })
+}
+
+/// The connector that programs the part, by document order: the first that
+/// carries `SWDIO`, `SWCLK`, `GND` and the supply, with whether it also
+/// carries `NRST`.
+pub fn programming_connector(spec: &Specification) -> Option<(&Connector, bool)> {
+    let supply = spec.mcu.supply.as_str();
+    spec.declared_connectors()
+        .iter()
+        .find(|c| {
+            [crate::SWDIO, crate::SWCLK, crate::GND, supply]
+                .iter()
+                .all(|want| c.pins.iter().any(|p| p.net.as_deref() == Some(*want)))
+        })
+        .map(|c| {
+            let nrst = c.pins.iter().any(|p| p.net.as_deref() == Some(crate::NRST));
+            (c, nrst)
+        })
+}
+
+/// Step 18 (`AET-WO-4300g` §1.4): the MCU's supply is driven by exactly one
+/// declared source. With `mcu.supply_source` `null`, a regulator of `power`
+/// must output the supply. With it set, it names a declared connector's
+/// listed pin on the supply, on a connector other than the programming one
+/// (whose supply pin is the debugger's target-voltage sense, adversarial A3),
+/// and no regulator drives the supply too.
+pub(crate) fn supply_source(spec: &Specification) -> Result<(), E> {
+    let supply = spec.mcu.supply.as_str();
+    let refuse = |why: String| E::SupplyHasNoSource {
+        supply: supply.to_owned(),
+        why,
+    };
+    let regulator = spec
+        .power
+        .iter()
+        .flat_map(|p| &p.regulators)
+        .find(|r| r.output == supply);
+    match (&spec.mcu.supply_source, regulator) {
+        (None, Some(_)) => Ok(()),
+        (None, None) => Err(refuse(
+            "`mcu.supply_source` is null and no regulator of `power` outputs it; name the connector pin it enters by, or declare its regulator".to_owned(),
+        )),
+        (Some(_), Some(r)) => Err(E::SupplyHasTwoSources {
+            supply: supply.to_owned(),
+            regulator: r.reference.clone(),
+        }),
+        (Some(s), None) => {
+            let c = spec
+                .declared_connectors()
+                .iter()
+                .find(|c| c.reference == s.connector)
+                .ok_or_else(|| {
+                    refuse(format!(
+                        "`mcu.supply_source` names connector `{}`, which is not declared",
+                        s.connector
+                    ))
+                })?;
+            if programming_connector(spec).is_some_and(|(p, _)| p.reference == c.reference) {
+                return Err(refuse(format!(
+                    "`mcu.supply_source` names `{}`, the connector that programs the part: its supply pin is the debugger's target-voltage sense, not a source; name the connector the supply enters by",
+                    s.connector
+                )));
+            }
+            match c.pins.iter().find(|p| p.pin == s.pin) {
+                Some(p) if p.net.as_deref() == Some(supply) => Ok(()),
+                Some(p) => Err(refuse(format!(
+                    "`mcu.supply_source` names `{}` pin `{}`, which is on {} rather than the supply",
+                    s.connector,
+                    s.pin,
+                    p.net
+                        .as_deref()
+                        .map_or_else(|| "no net".to_owned(), |n| format!("`{n}`"))
+                ))),
+                None => Err(refuse(format!(
+                    "`mcu.supply_source` names `{}` pin `{}`, which the connector does not list",
+                    s.connector, s.pin
+                ))),
+            }
+        }
+    }
 }
