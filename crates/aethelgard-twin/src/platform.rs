@@ -513,16 +513,16 @@ fn split_devices<'d>(
                 reference: reference.to_owned(),
             });
         }
+        // Every caller validated the topology (`stock_instances`), which
+        // refuses a listed part off its row's bus (`PartOnWrongBus`); every
+        // modelled part has a row, on its model's bus (`tests/spi_platform.rs`,
+        // `every_modelled_part_s_row_is_on_its_model_s_bus`). So an I2C
+        // device's model is an I2C model here (`AET-WO-1206` §1.6: the
+        // `ModelOffItsBus` check that stood here was unreachable, and went).
         let Some(model) = model::kind(&d.part)? else {
             unmodelled.push((reference, d));
             continue;
         };
-        if model.bus() != BusKind::I2c {
-            return Err(TwinError::ModelOffItsBus {
-                reference: reference.to_owned(),
-                part: d.part.clone(),
-            });
-        }
         let model = model.renode();
         let bus = STOCK
             .iter()

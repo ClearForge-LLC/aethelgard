@@ -290,6 +290,12 @@ struct Refusal {
 struct RefusalBody {
     kind: &'static str,
     id: Option<String>,
+    /// Who is in conflict: on every refusal of the solver, empty or not, and
+    /// on a validation refusal that names someone (`MissingBusConstraint`,
+    /// which `solve` made before `AET-WO-1206`), so each prints the same bytes
+    /// from every command. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claimants: Option<Box<[String]>>,
     /// The JSON path of the refused field (`InvalidIdentifier` only); absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
@@ -303,6 +309,7 @@ impl Refusal {
             error: RefusalBody {
                 kind,
                 id: id.map(str::to_owned),
+                claimants: None,
                 path: None,
                 message,
             },
@@ -311,6 +318,11 @@ impl Refusal {
 
     fn at(mut self, path: Option<&str>) -> Self {
         self.error.path = path.map(str::to_owned);
+        self
+    }
+
+    fn claimed(mut self, claimants: Vec<String>) -> Self {
+        self.error.claimants = Some(claimants.into_boxed_slice());
         self
     }
 }
@@ -2156,10 +2168,13 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
         }
     })?;
     spec.validate().map_err(|err| {
-        (
-            Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
-            EXIT_INVALID_SPEC,
-        )
+        let refusal = Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path());
+        let claimants = err.claimants();
+        if claimants.is_empty() {
+            (refusal, EXIT_INVALID_SPEC)
+        } else {
+            (refusal.claimed(claimants), EXIT_INVALID_SPEC)
+        }
     })?;
     Ok((
         spec,
@@ -2191,19 +2206,6 @@ fn solve_spec(
     spec: &Specification,
     sha256: &str,
 ) -> Result<(aethelgard_ir::SolvedTopology, aethelgard_ir::PinTable), ExitCode> {
-    #[derive(Serialize)]
-    struct SolveRefusal {
-        ok: bool,
-        error: SolveRefusalBody,
-    }
-    #[derive(Serialize)]
-    struct SolveRefusalBody {
-        kind: &'static str,
-        id: Option<String>,
-        claimants: Vec<String>,
-        message: String,
-    }
-
     let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
         Ok(table) => table,
         Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
@@ -2220,15 +2222,7 @@ fn solve_spec(
     match aethelgard_ir::solve(spec, &table, sha256) {
         Ok(topology) => Ok((topology, table)),
         Err(err) => Err(emit(
-            &SolveRefusal {
-                ok: false,
-                error: SolveRefusalBody {
-                    kind: err.kind(),
-                    id: err.id().map(str::to_owned),
-                    claimants: err.claimants(),
-                    message: err.to_string(),
-                },
-            },
+            &Refusal::new(err.kind(), err.id(), err.to_string()).claimed(err.claimants()),
             EXIT_INVALID_SPEC,
         )),
     }

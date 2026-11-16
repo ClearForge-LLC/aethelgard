@@ -361,3 +361,37 @@ fn a_spi_device_path_is_the_controller_its_mux_and_the_lowercased_reference() {
         }
     );
 }
+
+/// `AET-WO-1206` §1.6: what makes the twin's I2C `ModelOffItsBus` check
+/// unreachable, so it was deleted. Every part the table gives a Renode model
+/// sits, in its row, on the one bus the twin attaches that model to; the
+/// topology refuses a part off its row's bus first (`PartOnWrongBus`).
+#[test]
+fn every_modelled_part_s_row_is_on_its_model_s_bus() {
+    let table = aethelgard_ir::parts::table().unwrap();
+    let mut modelled = 0;
+    for p in table.parts() {
+        if let Some(name) = &p.renode {
+            let model = aethelgard_twin::model::Model::from_renode(name).unwrap();
+            assert_eq!(model.bus(), p.bus.kind(), "{}", p.part);
+            modelled += 1;
+        }
+    }
+    assert!(modelled > 0);
+}
+
+/// `AET-WO-1206` §1.6: the SPI `ModelOffItsBus` check is kept, because
+/// `platform::spi_wiring` is public and reads a topology it does not
+/// validate: a hand-written one with an I2C-only model on SPI reaches it.
+/// `validate` and the topology's own check pre-empt it on every other path.
+#[test]
+fn an_i2c_model_on_spi_reaches_the_kept_guard_through_spi_wiring() {
+    let mut t = reference();
+    t.spi_devices
+        .insert("U6".to_owned(), spi_device(1, "BME280", "FLASH_CS"));
+    let e = platform::spi_wiring(&t).unwrap_err();
+    assert!(
+        matches!(&e, TwinError::ModelOffItsBus { reference, part } if reference == "U6" && part == "BME280"),
+        "{e:?}"
+    );
+}
