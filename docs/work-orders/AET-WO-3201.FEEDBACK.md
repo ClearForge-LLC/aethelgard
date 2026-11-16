@@ -234,3 +234,16 @@ Tools shards, start to end:
 
 - Shards 1, 2 and 6 passed 20 minutes. By the eight-shard rule (2026-11-16 04:35) that is a measurement, not a failure.
 - **No refit is triggered.** The plan is unchanged, and shard 1 leads shard 2 by 2:49, under the rule's 3 minutes, on one run. Shard 1 was the slowest here; the next run decides whether it is again.
+
+## After READY: main merged twice at the architect's request
+
+- **`ebe8017` merges `5a8892d`** (1206 #166) and **`6d35e5a` merges `de841da`** (1603 #165). Both are merge commits with no conflicts. Git auto-merged `renode.rs` and `twin_tier2.rs` beside 1603's hunks, and mine are intact.
+- **`TIER2_MIN`:** recounted at 158, `main`'s. This work order adds no tier-2 test function.
+- **Gates at `6d35e5a`:**
+  - host fmt, clippy and `cargo test --workspace`: 113 suites, 0 failed;
+  - in the image, through `capped-run` (swap 0, read back on each of four containers): with-tools clippy exit 0, `attribute_seeded` 11 passed with every case's evidence exact (1206's worse-line ceiling moved no seeded answer), `twin_tier2` 67 passed, `campaign_tier2` 9 passed.
+- **CI:** run 43858306843 on `ebe8017` was green. Run **43862239204 on `6d35e5a` is green**: every check on the PR passed or was skipped.
+
+  Tools shards: 0 15:32 · 1 16:52 · 2 20:57 · 3 21:04 · 4 16:04 · 5 17:10 · 6 **22:20** · 7 21:18.
+
+  Shard 6 is the slowest, by 1:02, where shard 1 was on the previous run, so no refit rule fires.
