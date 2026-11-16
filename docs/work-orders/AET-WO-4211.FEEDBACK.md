@@ -65,7 +65,7 @@ Host runs used release CLIs built from `1178ca8` (`~/.cache/aet-4211/aethelgard-
 | P3 | **Held, and sharper than predicted [measured].** All 19 specifications' `emit/` and `generate`'s `kicad/` (`.kicad_sch`, `.kicad_pcb`, `.bom.csv`) are byte-identical: the KiCad files carry no specification hash. The `emit` verdict changes only in its `specification_sha256`, and carries no banner (F2). |
 | P4 | **Held [measured].** For each of the 15 specifications that generate, 9 board files differ: `Cargo.toml`, `firmware/.cargo/config.toml`, `firmware/Cargo.toml`, `firmware/link.x`, `firmware/src/main.rs`, `src/board.rs`, `src/lib.rs`, `src/proofs.rs` and the `.repl`. `~/.cache/aet-4211/tools/classify.py` sorted every diff hunk: each is a specification-hash line or one inserted `LIFECYCLE NRND: W25Q64JVxIQ (U4) …` line, with 0 other hunks. `Cargo.lock` and `firmware/Cargo.lock` are unchanged. |
 | P5 | **Held [measured].** `aethelgard build` in the tools image on the base and branch `boards/sentinel-01` gives the same ELF, sha256 `430e48ab7a92755b3759d8f9dbaeca60cd163f2b42a7573dc0bc80743bb58de8`. |
-| P6 | **Held on the host [measured]:** `validate`, `check speeds` and `generate` verdicts gain `lifecycle` with the one NRND line. The `verify --fab-out` side (`FAB-NOTES.md`'s `## Lifecycle` section with the NRND line and no `not held` line) is asserted in `verify_2k2_tier2.rs` and measured by CI's tier-2 run (§4). |
+| P6 | **Held [measured].** `validate`, `check speeds` and `generate` verdicts gain `lifecycle` with the one NRND line (host). On the fab side, `verify_2k2_tier2` in the tools image passed both tests in 1215 s at `fe5c038`. That run asserts `FAB-NOTES.md`'s `## Lifecycle` section holds exactly one line, the NRND banner, and no unheld line (§5). |
 | P7 | **Held, wider than predicted [measured].** 93 host tests failed on the first run, in 14 targets. Most were specifications built in test code (the power fixture's four `base()` copies, `valid()`, `solve.rs`'s `spec()`) that cleared or lacked the entry, and three that remove the flash and so must drop the entry. The rest: the parts table's pinned sha256, the pending list, the solved digests, `validate`'s verdict, the svd-hal digests and UI files, and `own_models_tier1`'s no-banner assertion. |
 | P8 | **Held [read + measured].** Its triggers are `README.md` and its own workflow, so this PR does not run it. Its "as written" step runs the pinned image `59e9f0aa…` on the pinned specification `10806528…/examples/sentinel-01-minimal.json` (`03a82a04…`); neither moves. After merge, `engine-image.yml` calls it with the new image, and `test this commit's image and example` swaps in this commit's reference and its sha256. **Measured:** the block's four checks, run in the pinned tools image with this branch's binary on the changed reference, print `quickstart ok` (`~/.cache/aet-4211/qs/out.log`). `emit` is `ok`; ERC and DRC pass with `findings: []`; `solve` on the double claim exits 2 with `PinClaimedTwice` and the same claimants. The KiCad hashes are the baseline's. **The pin is not moved.** |
 
@@ -90,6 +90,7 @@ Host runs used release CLIs built from `1178ca8` (`~/.cache/aet-4211/aethelgard-
   - The catalog legend "N = Not Recommended for New Design" and the WPLP meaning of Longevity Y are in neither the CSV nor the two images. The row states them as the architect's README relays them.
   - DigiKey's screenshots are not in the evidence directory, so the row says "(not held)".
   - The CSV has 98 rows: 50 industrial codes, all `N`, and 48 automotive codes, `-` there and `P` under Status-Automotive. The 16 `W25Q64JV??IQ[G]` codes the row's `xIQ` covers are all `N`.
+  - The work order's grounds say "the maker's word wins, and the row says so". The first wording said "the maker wins" in so many words. A-C1's rewrite dropped the phrase to stay inside the 256-byte section. The row now says it by its value, `nrnd` from the maker's export, beside "DigiKey: Active (not held)".
 - **F5 · Files outside the fence's letter, each forced by the change:**
   - `boards/sentinel-01/**`, regenerated with `generate`, never by hand; the regeneration test compares it byte for byte;
   - `crates/aethelgard-svd-hal/tests/ui/{motors-pwm,serial-four}/board.rs` and `motors-pwm/topology.json`, blessed with `AETHELGARD_BLESS=1`;
@@ -108,6 +109,11 @@ Host runs used release CLIs built from `1178ca8` (`~/.cache/aet-4211/aethelgard-
   - `aethelgard-cli/tests/common/power.rs`.
 
   This work order had to edit all four. The ir tests could share one `tests/common` module; the CLI's copy is in another crate.
+- **F10 · Sentinel-01 is now the first fabricated board (Scotty's ruling 2 on the Grok review, merged in `311398d`) [read].** The board bought first therefore carries the NRND flash, acknowledged.
+  - The statement's "kept until AET-WO-4500 picks a flash in mass production" still holds, but `4500` is held until the first scar.
+  - F2's gaps matter for that purchase: the BOM and the KiCad files carry no NRND line. `FAB-NOTES.md` does (§5).
+  - **For the architect:** whether Sentinel-01's order should name a mass-production substitute, or rest on Winbond's longevity listing.
+- **F11 · `crates/aethelgard-ir/README.md`'s example specification places the flash and has no `accept_lifecycle` key [read].** It already omits other required keys (`acknowledge_unwitnessed`, `serial_ports`), so it is illustrative, not a file `validate` reads. Left unchanged.
 - **F9 · `lifecycle_unheld` now has no case [read].** No row in `parts.json` is `pending` after this change, so `verify`'s `lifecycle_unheld` is always empty on real data. It stays as the guard for the next pending citation (the parser still accepts `pending`, and `a_pending_citation_must_be_an_https_url_and_is_listed` covers it). Reported, not removed.
 
 ## 4. Adversarial pass (targeted; a fresh subagent, Opus: judgement over gate logic)
@@ -120,7 +126,7 @@ The adversary was given the work order, the diff `1178ca8..84c0b33`, the lifecyc
 | A-C1 | low | The citation claimed more than its evidence. The legend and WPLP are only in the architect's README. "Longevity Y" is shown only for SSIQ/SSIQG. The status image went uncited, and the longevity image was cited without saying what it shows. | **Fixed:** the section now reads "column 15 Status-Industrial = N for all 16 xIQ codes (legend N = Not Recommended for New Design, relayed: not in the export); SSIQ screenshots 73aa6c75 (N) and 7091ccdc (Longevity Y since 2016/03); DigiKey: Active (not held)" (224 of 256 bytes). The CSV's own sha256 is the citation's `sha256`; the banner prints `document`, `revision` and `section` only. Boards, UI files and digests were re-taken; §2's classification re-ran with 0 unexpected hunks. |
 | A-R1 | low | Two roadmap rows route to 4211: the Q64 pinout citation and the two enums. | Answered in **F6** and **F7**. |
 | A-D1 | low | The CLI README still said `lifecycle_unheld` names the W25Q64JV today. | **Fixed**, `crates/aethelgard-cli/README.md`. |
-| A-D2 | low | `lifecycle_unheld` can no longer fire on real data. The golden `FAB-NOTES` unit test in `cli/src/fab.rs` (984-1000) passes `lifecycle: &[]` with the comment "no lifecycle line", but `verify` now writes one for those boards. | **F9**; the `fab.rs` comment is in `src/`, outside the fence. The containment is asserted by tier-2 `verify_2k2_tier2` (this branch adds the NRND line and "no `not held`"). |
+| A-D2 | low | `lifecycle_unheld` can no longer fire on real data. The golden `FAB-NOTES` unit test in `cli/src/fab.rs` (984-1000) passes `lifecycle: &[]` with the comment "no lifecycle line", but `verify` now writes one for those boards. | **F9**; the `fab.rs` comment is in `src/`, outside the fence. The containment is asserted by tier-2 `verify_2k2_tier2`: since `fe5c038`, the package's `## Lifecycle` section is exactly the NRND line (§5). |
 | A-D3 | info | Three topology literals still carry the old reference sha256 `c1072b71…`: `cli/src/renode.rs` 3236, `twin/src/tests.rs` 9, `twin/tests/spi_platform.rs` 14. No test compares them with a file. | Left. They are solved topologies the twin reads, not the specification, and two are under `src/`. |
 | A-X1 | info | The old binary refuses the new reference (`LifecycleAcceptanceUnused`); the new binary refuses the old reference (`LifecycleNotAccepted`, U4). | **For the phase close:** the quickstart's image pin and specification pin must move together. Today they are a pair (`59e9f0aa…`, `10806528…`), so "as written" is unaffected (P8). |
 
@@ -137,3 +143,32 @@ The adversary was given the work order, the diff `1178ca8..84c0b33`, the lifecyc
 - All 55 tracked specification files on both binaries: every one placing the flash passes with exactly one banner line (two for `sentinel-02-power`); `invalid-zero-domain` still fails with `ZeroNominalVoltage`.
 - CI steps that run the reference (`ci.yml` 47-52 and 116, `engine-smoke.sh`, `ardupilot-image.yml` 223) expect exit 0 or 2, not exact text.
 - Regenerated files and the `solve_cli` re-pins confirmed independently. No assertion was weakened: each "no LIFECYCLE" became an exact count plus a prefix check.
+
+## 5. CI, the gates, and the reduction pass
+
+- **CI on `ee88f97`:** every job passed but tools-shard 1. `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` panicked at `verify_2k2_tier2.rs:459`, on `assert!(!notes.contains("not held"))`. CI tests the PR merged with `main`, and `AET-WO-4230`'s `FAB-NOTES.md` states that ST's UM2237 "is not held, and none is cited here". My check caught that sentence, not a lifecycle line (the architect's diagnosis, inbox 17:20 UTC, confirmed at the code).
+  - **Fix, `fe5c038`:** `origin/main` (`311398d`, docs only) merged in. The check now reads the `## Lifecycle` section alone: exactly one `- ` line, the NRND banner.
+  - **Measured** in the tools image under `capped-run` (`memory.max=8589934592 memory.swap.max=0 pids.max=8192`, `TMPDIR` unset, `--network none`): both `verify_2k2_tier2` tests pass, wall 1215 s (`~/.cache/aet-4211/t2/out/`).
+  - **The 20-minute clause:** on `ee88f97`, shards 0 and 2-7 passed in 21.9 to 33.4 min, and `shards` (the plan) passed. Every shard ran long, not one. **[measured]** `main`'s own run on the docs-only `311398d` (run 43914815919) had shards at 18 to 25 min, with five CI runs in flight together (1207, this branch, the 4230 refit, 4403, `main`). The slowness is the runners', not this change's.
+- **CI on `fe5c038` (run 43920671965): green [measured].**
+  - Every job passed, and the aggregate printed `ANSWER tier2_tests_passed=160 floor=160`.
+  - Shards ran 20.1 to 31.7 min (0: 24.0, 1: 20.1, 2: 31.7, 3: 22.2, 4: 30.7, 5: 26.5, 6: 24.9, 7: 26.9), and `shards` (the plan) passed.
+  - **The 20-minute clause is not met as worded:** every shard is over, not one, as on `main`'s concurrent run above. The builder cannot re-run a job with its tokens. **For the architect:** whether one re-run is wanted.
+- **The CLAUDE.md gates [measured, at the final head's content]:**
+  - `cargo fmt --all -- --check` is clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings` is clean, also with `--features aethelgard-cli/with-tools`.
+  - `cargo test --workspace` passed 117 of 117 targets on the merged head `fe5c038`, under a capped scope.
+  - `TIER2_MIN` stays 160, exact: no tier-2 test added or removed.
+- **Reduction pass (diff):** 1 duplicate removed: the single-use `FLASH_NRND` const and its struct in `validate.rs`, folded into `valid()`'s JSON before the first commit (−17 lines). 0 dead paths removed · 0 protected kept · 3 findings (F7, the two enums; F8, the fixture transform in four copies; F9, `lifecycle_unheld` without a case).
+- **Changed files (47, plus this FEEDBACK):**
+  - `crates/aethelgard-ir/data/parts.json` (the row);
+  - the 19 specifications (§1);
+  - `boards/sentinel-01/**` (9 files) and `crates/aethelgard-svd-hal/tests/ui/**` (3), regenerated;
+  - `crates/aethelgard-cli/README.md` (2 lines);
+  - 14 test sources: ir `parts`, `power`, `sense_pin`, `solve`, `validate`; cli `common/power`, `own_models_tier1`, `solve_cli`, `speeds_tier1`, `twin_tier2`, `validate_cli`, `verify_2k2_tier2`; svd-hal `order_2203`, `serial_ports`.
+
+  No file under any `src/` changed.
+- **Peers:** 2302's inbox has the fixture list and the entry's shape (17:40 UTC). 1207's note (`parts.rs` `mod tests`, `SpiModeNotDriven`) touches no file of this branch.
+- **Evidence:** `~/.cache/aet-4211/`: the base and branch CLIs, `base-sweep/`, `new-sweep/`, `tools/`, `qs/` (quickstart), `elf/`, `t2/` (tier-2), `adv/` (the adversary's mutants and outputs), and `pr-title-body.md`.
+
+**AET-WO-4211 READY:** the W25Q64JV is `nrnd`, cited to Winbond's export by sha256 and column. Every specification placing it acknowledges it. KiCad outputs and the ELF are unchanged, and the boards move only by the banner line and their hash line. Its treatment matches `4210` D1; F2, F6, F7, F10 and the reduction findings are for the architect.
