@@ -1,5 +1,5 @@
 {
-  "schema_version": 10,
+  "schema_version": 11,
   "accept_lifecycle": [
     {
       "part": "ICP10111",

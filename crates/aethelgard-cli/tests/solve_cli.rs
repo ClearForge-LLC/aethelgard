@@ -53,11 +53,13 @@ use sha2::{Digest, Sha256};
 /// `spi_controllers`, `i2c_timings`, `bor_level`; `5c2aeff0…3dd22` and
 /// `84de8b88…3b016d` before): with the version set back to 7 and the three
 /// keys removed, each output's digest is the old one exactly. Moved again in
-/// `AET-WO-4230` slice A2a (specification version 10, `peer_deviation_ppm` on
-/// the console, which moved the specification's sha256 and the topology's
-/// `serial_ports`; `8c6a0647…56f8` and `e79f725a…286b` before).
-const REFERENCE_DIGEST: &str = "3427fca7218f86e86e402d142ca6c521dd375b3611d9d359a3f6fd6d83d9a0ff";
-const STRESS_DIGEST: &str = "6fe3171bd06aeb02fe4236e0327218f8090e2da853a7498b8b4a84d0002e922b";
+/// `AET-WO-4230` slice A2a (`peer_deviation_ppm` on the console, which moved
+/// the specification's sha256 and the topology's `serial_ports`; `8c6a0647…56f8`
+/// and `e79f725a…286b` before). Moved once more by the merge of `AET-WO-4300d3`
+/// (specification version 10; `4230` renumbered to 11), which moved only the
+/// specification's sha256 (`3427fca7…a0ff` and `6fe3171b…922b` before).
+const REFERENCE_DIGEST: &str = "447caa7d40fc55874a348664e54a25cb088036aa7d4ca3df6958fb1feea246bc";
+const STRESS_DIGEST: &str = "6d3bb7608549f5933026612d29a4fb62fe895528a0f05909ab5976fb96ef8b02";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

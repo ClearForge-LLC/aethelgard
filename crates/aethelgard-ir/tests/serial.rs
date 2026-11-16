@@ -1452,7 +1452,7 @@ fn a_crsf_port_s_peer_deviation_is_at_least_the_cited_spread() {
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
 fn a_version_9_specification_is_refused() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 10);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 11);
     let mut v = spec_json(vec![port("C", None, None, None)]);
     v["schema_version"] = json!(9);
     let e = refused(v.clone());
@@ -1461,7 +1461,7 @@ fn a_version_9_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 9,
-                expected: 10
+                expected: 11
             }
         ),
         "{e}"
@@ -1475,4 +1475,29 @@ fn a_version_9_specification_is_refused() {
 
 fn solved_or_err(v: Value) -> Result<SolvedTopology, SolveError> {
     solve(&parse(v), &table(), HASH)
+}
+
+/// A version-10 file (`AET-WO-4300d3`'s, which has no `peer_deviation_ppm`) is
+/// refused by its version, never defaulted; one that has the key is refused
+/// by its version too.
+#[test]
+fn a_version_10_specification_is_refused() {
+    let mut v = spec_json(vec![port("C", None, None, None)]);
+    v["schema_version"] = json!(10);
+    let e = refused(v.clone());
+    assert!(
+        matches!(
+            e,
+            IrValidationError::UnsupportedSchemaVersion {
+                version: 10,
+                expected: 11
+            }
+        ),
+        "{e}"
+    );
+    v["serial_ports"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("peer_deviation_ppm");
+    assert!(serde_json::from_value::<Specification>(v).is_err());
 }

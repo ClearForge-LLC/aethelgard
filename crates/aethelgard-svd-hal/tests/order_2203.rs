@@ -124,23 +124,27 @@ fn digests() -> Vec<(&'static str, String)> {
 /// hands it to I2C1 and SPI1, passes the registers to each port's `split`,
 /// and names the SPI `EOT` timeout; it was `1564c394…3474`. The device reads'
 /// text and order are unchanged, and the platform and boot image did not move.
-/// Re-taken in `AET-WO-4230` slice A2a (specification version 10 and the
+/// Re-taken in `AET-WO-4230` slice A2a (the
 /// console's `peer_deviation_ppm`, which moved the hashed document, so the
 /// specification's sha256 in the firmware and the two platforms; the boot
 /// image did not move; `dca32616…7ec2d`, `0a8e3b2b…9734`, `a93b7c45…1fd4`
 /// before).
+/// Moved once more by the merge of `AET-WO-4300d3` (specification version 10;
+/// `4230` renumbered to 11), which changes no generator: the three moved with
+/// the specification's sha256 alone (`4fe0b873…27c4`, `efe40970…ff4b`,
+/// `f2de05af…b9ea` before); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "4fe0b87330e547f6c87ab5d451e18d5cde49bd2905ccfcd5ac7e7b459fc227c4",
+        "f7b0874eb71196b0e0705e788eacbc1078e4aeb0bf3af1f9b9b44e79f5e0ddb6",
     ),
     (
         "platform",
-        "efe40970dac4410e7ec94b2c91e3da5e4c67ab3ba5fac4b97c71e03a9a8eff4b",
+        "1b96d852f5ec731e657a1183c5853a8e2aa9279fb008b952f03cab8f902513dd",
     ),
     (
         "platform faulted",
-        "f2de05afc788cbb3aafb8e9d5135ba7816480e9fb149b06971d7845c4af6b9ea",
+        "68af39f35a1c16b66c1d7af3d16a1065a18539eeb61ef2a8ef4cdfd136ca4bca",
     ),
     (
         "boot image",

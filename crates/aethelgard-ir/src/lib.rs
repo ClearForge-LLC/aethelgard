@@ -51,16 +51,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// D1); an empty list acknowledges none. `4210` took 8 by the numbering
 /// rule, merging after `4300d`. Version 9 requires `serial_ports`
 /// (`AET-WO-4300b`, renumbered from 7 by the same rule); an empty list
-/// declares none. Version 10 requires `peer_deviation_ppm` on every serial
-/// port, the remote transmitter's clock deviation, taken by `AET-WO-4230`;
-/// the second of `4230`, `4300d3` and `4300g` to merge renumbers. Nothing
-/// supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 10;
+/// declares none. Version 10 adds `power`'s judgement declarations
+/// (`AET-WO-4300d3`, renumbered from 9 by the same rule): `hot_plug`,
+/// `junction`, `controls` and `dc_bias_derating`. Version 11 requires
+/// `peer_deviation_ppm` on every serial port, the remote transmitter's clock
+/// deviation, taken by `AET-WO-4230` (renumbered from 10 by the same rule,
+/// merging after `4300d3`). Nothing supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 11;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 10 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 11 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]

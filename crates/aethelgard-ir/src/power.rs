@@ -7,8 +7,11 @@
 //!
 //! ```json
 //! "power": null | {
-//!   "conditions": { "board_temperature_celsius": { "min": -20, "max": 85, "source": "..." } },
-//!   "input": { "reference": "J1", "part": "XT30PW-M" },
+//!   "conditions": { "board_temperature_celsius": { "min": -20, "max": 85, "source": "..." },
+//!                   "dc_bias_derating": [ { "dielectrics": ["X7R"], "ratio_max_permille": 1000,
+//!                                           "retained_permille": 500, "source": "..." } ] },
+//!   "input": { "reference": "J1", "part": "XT30PW-M",
+//!              "hot_plug": [ { "reference": "C1", "part": "UCZ1H470MCL1GS", "side": "board" } ] },
 //!   "battery": { "chemistry": "LiPo", "cells": { "min": 2, "max": 6 },
 //!                "cell_min_millivolts": { "value": 3000, "source": "..." },
 //!                "cell_max_millivolts": { "value": 4350, "source": "..." } },
@@ -16,13 +19,17 @@
 //!                     "output": "VDD_5V",
 //!                     "feedback": { "top": { "reference": "R10", "part": "TNPW0603", "ohms": 102000 },
 //!                                   "bottom": { ... } } | null,
-//!                     "external": [ { "role": "cin", "reference": "C10", "part": "..." } ] } ],
+//!                     "external": [ { "role": "cin", "reference": "C10", "part": "..." } ],
+//!                     "junction": { "copper_square_centimetres": { "value": 20, "source": "..." },
+//!                                   "loss_milliwatts": { "value": 1170, "source": "..." } } | null,
+//!                     "controls": [ { "pin": "EN", "strap": "input", "wire": null },
+//!                                   { "pin": "PG", "strap": null, "wire": { "net": "PG_5V", "role": "..." } } ] } ],
 //!   "loads": [ { "domain": "VDD_5V", "milliamps": 2000, "source": "..." } ],
 //!   "sense": [ { "net": "VBAT_SENSE", "top": {...}, "bottom": {...},
 //!                "reservoir": { "reference": "C30", "part": "..." } | null, "adc_resolution_bits": 12 } ],
 //!   "crossings": [ { "reference": "U13", "part": "TXU0304PW", "bus": "IMU", "a_domain": "VDD_3V3",
 //!                    "b_domain": "VDD_1V8", "cs_pull_up": { "reference": "R40", "part": "...", "ohms": 100000 },
-//!                    "external": [ ... ] } ]
+//!                    "external": [ ... ], "controls": [ ... ] } ]
 //! }
 //! ```
 //!
@@ -40,6 +47,19 @@
 //! [`check`] runs them: see [`Refusal`]. A value the datasheet states only
 //! under a condition, or by design, is used and the condition is named in
 //! [`Checked::conditions`], which `solve` carries into the topology.
+//!
+//! **The judgements of `AET-WO-4300d3`.** A battery input feeding a regulator
+//! carries a cited bulk capacitor or clamp (`BatteryInputUndamped`). A buck's
+//! junction is screened from a declared loss and its row's typical θJA curve
+//! (`BuckJunctionOverLimit`), and a role's effective capacitance under DC
+//! bias from the maker's curve, interpolated and composed with the part's
+//! tolerance and temperature limit, or else a declared derating, a 50 %
+//! placeholder (`EffectiveCapacitanceBelowMinimum`; past a curve's end,
+//! `DcBiasBeyondCurve`): screens with named margins, never guarantees,
+//! because only typical figures exist. The MCU's supply clears
+//! the brown-out level's rising maximum (`SupplyFloorBelowBorRising`), and
+//! every control pin is strapped as its row allows or wired
+//! (`ControlPinUnwired`).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -77,6 +97,21 @@ pub struct Power {
 pub struct Conditions {
     /// The temperature every part and resistor check evaluates at (spike A2).
     pub board_temperature_celsius: Temperature,
+    /// The capacitance kept under DC bias where no maker figure is held, per
+    /// dielectric and voltage ratio, with its source (`AET-WO-4300d3` §1.3).
+    pub dc_bias_derating: Vec<Derating>,
+}
+
+/// One declared derating: a ceramic of one of `dielectrics` working at most
+/// `ratio_max_permille` of its rated voltage keeps at least
+/// `retained_permille` of its rated capacitance.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Derating {
+    pub dielectrics: Vec<pp::Dielectric>,
+    pub ratio_max_permille: u32,
+    pub retained_permille: u32,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -93,6 +128,28 @@ pub struct Temperature {
 pub struct PowerIn {
     pub reference: String,
     pub part: String,
+    /// The bulk capacitors and clamps that answer a hot-plug's ring on the
+    /// battery input (`AET-WO-4300d3` §1.1).
+    pub hot_plug: Vec<HotPlug>,
+}
+
+/// A damping part on the battery input: a bulk capacitor or a TVS row, and
+/// the side of the connector it sits on.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct HotPlug {
+    pub reference: String,
+    pub part: String,
+    pub side: Side,
+}
+
+/// Which side of the power-in connector a part sits on: the board's, where
+/// the regulators are, or the pack's, beyond the leads' inductance.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Side {
+    Board,
+    Pack,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -132,6 +189,41 @@ pub struct Regulator {
     #[serde(deserialize_with = "Option::deserialize")]
     pub feedback: Option<Divider>,
     pub external: Vec<External>,
+    /// Required as a key: a buck's junction screen declarations; an LDO
+    /// takes `null`, its row holding its θJA (`AET-WO-4300d3` §1.2).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub junction: Option<Junction>,
+    /// Each control pin of its row, strapped or wired (§1.5).
+    pub controls: Vec<Control>,
+}
+
+/// What the buck's junction screen reads from the specification: the copper
+/// area on each layer around the part, and the loss bound with its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Junction {
+    pub copper_square_centimetres: SourcedValue,
+    pub loss_milliwatts: SourcedValue,
+}
+
+/// A control pin and what it is tied to: a strap its row allows, or a wire to
+/// a named net with its stated role. Both keys are required, and exactly one
+/// is `null`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Control {
+    pub pin: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub strap: Option<pp::Strap>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub wire: Option<Wire>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Wire {
+    pub net: String,
+    pub role: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,6 +295,8 @@ pub struct Crossing {
     pub b_domain: String,
     pub cs_pull_up: Resistor,
     pub external: Vec<External>,
+    /// The translator's control pins (§1.5).
+    pub controls: Vec<Control>,
 }
 
 crate::object_only!(
@@ -220,7 +314,12 @@ crate::object_only!(
     Load,
     Sense,
     Reservoir,
-    Crossing
+    Crossing,
+    Derating,
+    HotPlug,
+    Junction,
+    Control,
+    Wire
 );
 
 /// The names a power refusal carries, as the CLI's error envelope shows them.
@@ -255,6 +354,22 @@ pub enum Refusal {
     MisoRoundTripTooSlow,
     /// A device behind a crossing whose sensor row holds no output delay.
     OutputDelayMissing,
+    /// A battery input feeding a regulator with no cited bulk capacitor or
+    /// clamp to answer a hot-plug's ring (`AET-WO-4300d3` §1.1).
+    BatteryInputUndamped,
+    /// A buck whose junction screen does not clear its limit (§1.2).
+    BuckJunctionOverLimit,
+    /// A role's effective capacitance under DC bias at or below its stated
+    /// minimum (§1.3).
+    EffectiveCapacitanceBelowMinimum,
+    /// The MCU's supply floor at or below the selected brown-out level's
+    /// rising maximum (§1.4).
+    SupplyFloorBelowBorRising,
+    /// A control pin neither wired nor tied by a strap its row allows (§1.5).
+    ControlPinUnwired,
+    /// A ceramic working past the last point of its maker's DC-bias curve,
+    /// which is never extrapolated (the amendment on PR #158).
+    DcBiasBeyondCurve,
 }
 
 impl Refusal {
@@ -285,6 +400,12 @@ impl Refusal {
             Self::CrossingTooFast => "CrossingTooFast",
             Self::MisoRoundTripTooSlow => "MisoRoundTripTooSlow",
             Self::OutputDelayMissing => "OutputDelayMissing",
+            Self::BatteryInputUndamped => "BatteryInputUndamped",
+            Self::BuckJunctionOverLimit => "BuckJunctionOverLimit",
+            Self::EffectiveCapacitanceBelowMinimum => "EffectiveCapacitanceBelowMinimum",
+            Self::SupplyFloorBelowBorRising => "SupplyFloorBelowBorRising",
+            Self::ControlPinUnwired => "ControlPinUnwired",
+            Self::DcBiasBeyondCurve => "DcBiasBeyondCurve",
         }
     }
 }
@@ -482,6 +603,57 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             ),
         ));
     }
+    for (i, d) in power.conditions.dc_bias_derating.iter().enumerate() {
+        let path = format!("power.conditions.dc_bias_derating[{i}]");
+        crate::board::source(&d.source, &format!("{path}.source"))?;
+        let mut kinds = d.dielectrics.clone();
+        kinds.sort();
+        kinds.dedup();
+        if kinds.is_empty() || kinds.len() != d.dielectrics.len() {
+            return Err(invalid(
+                &path,
+                "names no dielectric, or one twice".to_owned(),
+            ));
+        }
+        // A wider band keeping more, or two bands at one ratio, would make
+        // the verdict depend on the bands' order (adversarial F6).
+        let clash = power.conditions.dc_bias_derating[..i].iter().find(|e| {
+            e.dielectrics.iter().any(|k| d.dielectrics.contains(k))
+                && (e.ratio_max_permille == d.ratio_max_permille
+                    || (e.ratio_max_permille < d.ratio_max_permille)
+                        != (e.retained_permille > d.retained_permille)
+                        && e.retained_permille != d.retained_permille)
+        });
+        if clash.is_some() {
+            return Err(invalid(
+                &path,
+                "shares a dielectric with an earlier band at the same ratio, or keeps more over a wider ratio".to_owned(),
+            ));
+        }
+        // Ruled on PR #158: a class-2 ceramic's declared derating is the
+        // conservative 50 % (SBVS320D p. 15) until a maker's curve is held.
+        let class2 = d.dielectrics.iter().any(|k| *k != pp::Dielectric::C0g);
+        if class2 && d.retained_permille > 500 {
+            return Err(invalid(
+                &path,
+                format!(
+                    "keeps {} per mille of a class-2 ceramic; the declared derating keeps at most 500 (the conservative 50 %, SBVS320D p. 15, ruled on PR #158)",
+                    d.retained_permille
+                ),
+            ));
+        }
+        // A derating above 1 would raise capacitance under bias.
+        if !(1..=1000).contains(&d.ratio_max_permille) || !(1..=1000).contains(&d.retained_permille)
+        {
+            return Err(invalid(
+                &path,
+                format!(
+                    "a ratio of {} and a retained share of {} per mille are not each 1 to 1000",
+                    d.ratio_max_permille, d.retained_permille
+                ),
+            ));
+        }
+    }
     id(&power.input.reference, "power.input.reference".into())?;
     id(&power.input.part, "power.input.part".into())?;
     let b = &power.battery;
@@ -511,6 +683,27 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         ));
     }
     let mut references = vec![power.input.reference.as_str()];
+    for (i, h) in power.input.hot_plug.iter().enumerate() {
+        id(&h.reference, format!("power.input.hot_plug[{i}].reference"))?;
+        id(&h.part, format!("power.input.hot_plug[{i}].part"))?;
+        references.push(&h.reference);
+    }
+    let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
+        for (i, c) in list.iter().enumerate() {
+            id(&c.pin, format!("{path}[{i}].pin"))?;
+            if c.strap.is_some() == c.wire.is_some() {
+                return Err(invalid(
+                    &format!("{path}[{i}]"),
+                    "a control pin takes exactly one of `strap` and `wire`".to_owned(),
+                ));
+            }
+            if let Some(w) = &c.wire {
+                id(&w.net, format!("{path}[{i}].wire.net"))?;
+                crate::board::source(&w.role, &format!("{path}[{i}].wire.role"))?;
+            }
+        }
+        Ok(())
+    };
     let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
         id(&r.reference, format!("{path}.reference"))?;
         id(&r.part, format!("{path}.part"))?;
@@ -550,6 +743,25 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         }
         externals(&r.external, &format!("{path}.external"))?;
         references.extend(r.external.iter().map(|e| e.reference.as_str()));
+        controls(&r.controls, &format!("{path}.controls"))?;
+        if let Some(j) = &r.junction {
+            for (what, v, max) in [
+                (
+                    "copper_square_centimetres",
+                    &j.copper_square_centimetres,
+                    10_000,
+                ),
+                ("loss_milliwatts", &j.loss_milliwatts, 1_000_000),
+            ] {
+                crate::board::source(&v.source, &format!("{path}.junction.{what}.source"))?;
+                if v.value == 0 || v.value > max {
+                    return Err(invalid(
+                        &r.reference,
+                        format!("{path}.junction.{what} is {}, not 1 to {max}", v.value),
+                    ));
+                }
+            }
+        }
     }
     for (i, l) in power.loads.iter().enumerate() {
         known(&l.domain)?;
@@ -609,6 +821,7 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         known(&c.b_domain)?;
         resistor(&c.cs_pull_up, &format!("{path}.cs_pull_up"))?;
         externals(&c.external, &format!("{path}.external"))?;
+        controls(&c.controls, &format!("{path}.controls"))?;
         references.push(&c.reference);
         references.push(&c.cs_pull_up.reference);
         references.extend(c.external.iter().map(|e| e.reference.as_str()));
@@ -1153,10 +1366,6 @@ fn headroom(
                     - div_ceil((1_000_000 - d_ppm) * i * rls, 1_000_000)
                     - i * dcr;
                 ctx.note(format!(
-                    "{}: its thermal performance is a named condition: the datasheet's θJA is for comparison only, not design, so no junction check is made (ruled D1)",
-                    d.reg.part
-                ));
-                ctx.note(format!(
                     "{}: tOFF-MIN, RDS(on) and fSW are stated {} ({})",
                     d.reg.part,
                     b.stated_at,
@@ -1333,7 +1542,12 @@ fn power_in(
 
 /// Every part a power tree declares, with its reference.
 fn every_part(power: &Power) -> Vec<(&str, &str)> {
-    let mut v: Vec<(&str, &str)> = Vec::new();
+    let mut v: Vec<(&str, &str)> = power
+        .input
+        .hot_plug
+        .iter()
+        .map(|h| (h.reference.as_str(), h.part.as_str()))
+        .collect();
     for r in &power.regulators {
         v.push((&r.reference, &r.part));
         if let Some(f) = &r.feedback {
@@ -1500,6 +1714,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 ));
             }
             let mut total: i128 = 0;
+            let mut caps: Vec<(&str, &pp::Capacitor)> = Vec::new();
             for e in &parts {
                 let row = ctx.row(&e.reference, &e.part)?;
                 match (&row.kind, rule.role) {
@@ -1563,6 +1778,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     }
                     (Kind::Capacitor(c), role) if role != Role::Inductor => {
                         total += i128::from(c.rated_picofarads.value);
+                        caps.push((&e.part, c));
                         if c.dielectric == pp::Dielectric::X7s {
                             ctx.note(format!(
                                 "{}: {} is X7S, accepted where TI's example says X7R or better (ruled D-B8)",
@@ -1625,26 +1841,116 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     }
                 }
             }
-            if let Some(r) = &rule.value {
-                if total < i128::from(r.min) || r.max.is_some_and(|m| total > i128::from(m)) {
+            if let Some(r) = &rule.value
+                && (total < i128::from(r.min) || r.max.is_some_and(|m| total > i128::from(m)))
+            {
+                return Err(refuse(
+                    Refusal::ExternalPartOutOfRange,
+                    o.reference,
+                    format!(
+                        "the role `{}` totals {total} pF rated, outside {} to {} pF",
+                        rule.role.name(),
+                        r.min,
+                        r.max
+                            .map_or_else(|| "no stated maximum".to_owned(), |m| m.to_string())
+                    ),
+                    ctx.cite(&rule.at),
+                ));
+            }
+            // §1.3: the effective capacitance under DC bias at the voltage
+            // the role works at, screened where the row states a minimum.
+            let working = o
+                .working
+                .iter()
+                .find(|(r, _)| *r == rule.role)
+                .map(|(_, v)| i64::try_from(*v).unwrap_or(i64::MAX));
+            let role = rule.role.name();
+            let screened = match working {
+                Some(w) if !caps.is_empty() => Some(
+                    caps.iter()
+                        .map(|(part, c)| effective(ctx, part, c, w))
+                        .collect::<Result<Vec<_>, (Refusal, String)>>()
+                        .map(|v| {
+                            let sum: i64 = v.iter().map(|(pf, _)| pf).sum();
+                            let how: Vec<String> = v.into_iter().map(|(_, h)| h).collect();
+                            (sum, how.join("; "), w)
+                        }),
+                ),
+                _ => None,
+            };
+            match (&rule.effective_min_picofarads, screened) {
+                _ if rule.role == Role::Inductor => {}
+                (Some(min), None) => {
                     return Err(refuse(
-                        Refusal::ExternalPartOutOfRange,
+                        Refusal::EffectiveCapacitanceBelowMinimum,
                         o.reference,
                         format!(
-                            "the role `{}` totals {total} pF rated, outside {} to {} pF",
-                            rule.role.name(),
-                            r.min,
-                            r.max
-                                .map_or_else(|| "no stated maximum".to_owned(), |m| m.to_string())
+                            "`{role}`: no working voltage is known for the role, so the screen cannot clear it"
                         ),
-                        ctx.cite(&rule.at),
+                        ctx.cite(&min.limit.at),
                     ));
                 }
-                ctx.note(format!(
-                    "{}: `{}` is judged at rated capacitance; effective capacitance under DC bias and temperature is not guaranteed by any maker and is not judged (ruled D6)",
-                    o.reference,
-                    rule.role.name()
-                ));
+                (Some(min), Some(Err((kind, why)))) => {
+                    return Err(refuse(
+                        kind,
+                        o.reference,
+                        format!("`{role}`: {why}, so the screen cannot clear it"),
+                        ctx.cite(&min.limit.at),
+                    ));
+                }
+                (Some(min), Some(Ok((eff, how, w))))
+                    if eff <= min.limit.value && min.on_shortfall == pp::OnShortfall::Report =>
+                {
+                    // Ruled D2 (c), and again with the maker's curve held:
+                    // named, not blocking; enforcing it, with the fixture's
+                    // input re-picked, is the next power work order's.
+                    let short = min.limit.value - eff;
+                    ctx.note(format!(
+                        "{}: `{role}` holds {}.{:03} µF effective at {w} mV under DC bias ({how}), {}.{:03} µF short of the {}.{:03} µF minimum ({}); a named shortfall, not blocking: its enforcement and the re-pick of the input capacitance are the next power work order's (ruled D2 (c))",
+                        o.reference,
+                        eff / 1_000_000,
+                        eff % 1_000_000 / 1000,
+                        short / 1_000_000,
+                        short % 1_000_000 / 1000,
+                        min.limit.value / 1_000_000,
+                        min.limit.value % 1_000_000 / 1000,
+                        ctx.cite(&min.limit.at)
+                    ));
+                }
+                (Some(min), Some(Ok((eff, how, w)))) => {
+                    let min = &min.limit;
+                    if eff <= min.value {
+                        return Err(refuse(
+                            Refusal::EffectiveCapacitanceBelowMinimum,
+                            o.reference,
+                            format!(
+                                "`{role}` holds {eff} pF effective at {w} mV ({how}), not above the {} pF minimum",
+                                min.value
+                            ),
+                            ctx.cite(&min.at),
+                        ));
+                    }
+                    ctx.note(format!(
+                        "{}: `{role}` holds {eff} pF effective at {w} mV under DC bias ({how}), from rated capacitance before its tolerance; it is screened against the {} pF minimum ({}), a margin of {}.{:02} times, typical, not guaranteed",
+                        o.reference,
+                        min.value,
+                        ctx.cite(&min.at),
+                        eff * 100 / min.value / 100,
+                        eff * 100 / min.value % 100
+                    ));
+                }
+                (None, Some(Ok((eff, how, w)))) if matches!(rule.role, Role::Cin | Role::Cout) => {
+                    ctx.note(format!(
+                        "{}: `{role}` would hold {eff} pF effective at {w} mV under DC bias ({how}); its row states no effective minimum, so only the rated value is judged",
+                        o.reference
+                    ));
+                }
+                _ => {
+                    ctx.note(format!(
+                        "{}: `{role}` is judged at rated capacitance; its row states no effective minimum under DC bias",
+                        o.reference
+                    ));
+                }
             }
         }
     }
@@ -1999,6 +2305,472 @@ pub fn vias(rule: &pp::ThermalRule, layers: Vec<String>) -> crate::thermal::Ther
     }
 }
 
+/// Step 5a (`AET-WO-4300d3` §1.1): the battery input's answer to a hot-plug.
+/// Each part on it is cited and on the board's side of the connector. A bulk
+/// capacitor's rating is above the battery's maximum, and the bulk total sits
+/// in every battery-fed buck's damping range. A clamp stands off above the
+/// battery's maximum and clamps at or below every battery-fed regulator's VIN
+/// absolute maximum. With a regulator fed from the battery, one of the two
+/// must hold. The ring's size is named, not computed.
+fn hot_plug(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
+    let input = &ctx.power.input;
+    let (_, bmax) = battery_range(&ctx.power.battery);
+    let bmax = i64::try_from(bmax).unwrap_or(i64::MAX);
+    // Each battery-fed regulator: its VIN ceiling and, for a buck, its range.
+    let mut fed: Vec<(&str, &pp::Limit, Option<&pp::Ranged>)> = Vec::new();
+    for r in ctx.power.regulators.iter().filter(|r| r.input == BATTERY) {
+        match &ctx.row(&r.reference, &r.part)?.kind {
+            Kind::Buck(b) => fed.push((
+                &r.reference,
+                &b.vin_abs_max_millivolts,
+                Some(&b.input_damping_picofarads),
+            )),
+            Kind::Ldo(l) => fed.push((&r.reference, &l.vin_abs_max_millivolts, None)),
+            _ => return Err(ctx.kind_err(&r.reference, &r.part, "regulator (buck or LDO)")),
+        }
+    }
+    let rule_cite = fed
+        .iter()
+        .find_map(|(_, _, range)| range.map(|r| ctx.cite(&r.at)))
+        .unwrap_or_else(|| "docs/work-orders/AET-WO-4300d3.md §1.1".to_owned());
+    let mut bulk: i64 = 0;
+    let mut clamps = 0;
+    for h in &input.hot_plug {
+        let row = ctx.row(&h.reference, &h.part)?;
+        if h.side == Side::Pack {
+            return Err(refuse(
+                Refusal::BatteryInputUndamped,
+                &h.reference,
+                format!(
+                    "`{}` sits on the pack's side of {}: beyond the leads' inductance, it does not damp the ring at the regulators' input",
+                    h.part, input.reference
+                ),
+                rule_cite,
+            ));
+        }
+        match &row.kind {
+            Kind::BulkCapacitor(c) => {
+                if c.rated_millivolts.value <= bmax {
+                    return Err(refuse(
+                        Refusal::BatteryInputUndamped,
+                        &h.reference,
+                        format!(
+                            "{} is rated {} mV, not above the battery's maximum of {bmax} mV",
+                            h.part, c.rated_millivolts.value
+                        ),
+                        ctx.cite(&c.rated_millivolts.at),
+                    ));
+                }
+                bulk += c.rated_picofarads.value;
+                ctx.note(format!(
+                    "{}: {} damps the input's ring through its ESR, at most {} mOhm {} ({})",
+                    h.reference,
+                    h.part,
+                    c.esr_max_milliohms.value,
+                    c.esr_condition,
+                    ctx.cite(&c.esr_max_milliohms.at)
+                ));
+            }
+            Kind::Tvs(t) => {
+                if t.standoff_millivolts.value <= bmax {
+                    return Err(refuse(
+                        Refusal::BatteryInputUndamped,
+                        &h.reference,
+                        format!(
+                            "{} stands off {} mV, not above the battery's maximum of {bmax} mV",
+                            h.part, t.standoff_millivolts.value
+                        ),
+                        ctx.cite(&t.standoff_millivolts.at),
+                    ));
+                }
+                for (reference, ceiling, _) in &fed {
+                    if t.clamp_max_millivolts.value > ceiling.value {
+                        return Err(refuse(
+                            Refusal::BatteryInputUndamped,
+                            &h.reference,
+                            format!(
+                                "{} clamps at up to {} mV {}, above {reference}'s VIN absolute maximum of {} mV ({})",
+                                h.part,
+                                t.clamp_max_millivolts.value,
+                                t.clamp_condition,
+                                ceiling.value,
+                                ctx.cite(&ceiling.at)
+                            ),
+                            ctx.cite(&t.clamp_max_millivolts.at),
+                        ));
+                    }
+                }
+                clamps += 1;
+                ctx.note(format!(
+                    "{}: {} clamps at up to {} mV {} ({})",
+                    h.reference,
+                    h.part,
+                    t.clamp_max_millivolts.value,
+                    t.clamp_condition,
+                    ctx.cite(&t.clamp_max_millivolts.at)
+                ));
+            }
+            _ => return Err(ctx.kind_err(&h.reference, &h.part, "bulk capacitor or TVS")),
+        }
+    }
+    if fed.is_empty() {
+        return Ok(());
+    }
+    let outside = fed.iter().find_map(|(reference, _, range)| {
+        range
+            .filter(|r| bulk < r.range.min || bulk > r.range.max)
+            .map(|r| (*reference, r))
+    });
+    if clamps == 0 && (bulk == 0 || outside.is_some()) {
+        let detail = match outside {
+            Some((reference, r)) if bulk > 0 => format!(
+                "its bulk capacitance totals {bulk} pF rated, outside {reference}'s {} to {} pF",
+                r.range.min, r.range.max
+            ),
+            _ => "no bulk capacitor or clamp is declared on its board side".to_owned(),
+        };
+        return Err(refuse(
+            Refusal::BatteryInputUndamped,
+            &input.reference,
+            format!("the battery input feeds a regulator, and {detail}"),
+            rule_cite,
+        ));
+    }
+    for (reference, ceiling, _) in &fed {
+        ctx.note(format!(
+            "{reference}: hot-plugging a pack through long leads rings VIN above the battery's {bmax} mV; the ring's size is not computed, and VIN's absolute maximum is {} mV ({})",
+            ceiling.value,
+            ctx.cite(&ceiling.at)
+        ));
+    }
+    Ok(())
+}
+
+/// Step 7a (`AET-WO-4300d3` §1.2): each buck's junction, screened as
+/// T_J = T_board,max + P_loss × θJA. P_loss is the declared bound, from a
+/// typical efficiency; θJA is the row's typical curve at the declared copper
+/// area. A screen with a named margin, never a guarantee.
+fn junctions(
+    ctx: &mut Ctx<'_>,
+    derived: &[Derived<'_>],
+    load: &BTreeMap<String, u64>,
+) -> Result<(), IrValidationError> {
+    for d in derived {
+        let r = d.reg;
+        let b = match (&d.row.kind, &r.junction) {
+            (Kind::Buck(b), _) => b,
+            (_, Some(_)) => {
+                return Err(refuse(
+                    Refusal::PowerValueInvalid,
+                    &r.reference,
+                    "only a buck declares `junction`; an LDO's junction is judged from its row's θJA",
+                    "docs/work-orders/AET-WO-4300d3.md §1.2",
+                ));
+            }
+            _ => continue,
+        };
+        let curve = &b.theta_ja;
+        let Some(j) = &r.junction else {
+            return Err(refuse(
+                Refusal::BuckJunctionOverLimit,
+                &r.reference,
+                "no copper area or loss bound is declared (`junction` is null), so the screen cannot clear it",
+                ctx.cite(&curve.at),
+            ));
+        };
+        let area = i64::from(j.copper_square_centimetres.value);
+        let Some(&(at_area, theta)) = curve.points.iter().rev().find(|(a, _)| *a <= area) else {
+            return Err(refuse(
+                Refusal::BuckJunctionOverLimit,
+                &r.reference,
+                format!(
+                    "the declared {area} cm² per layer is below the figure's smallest area, {} cm²",
+                    curve.points.first().map_or(0, |p| p.0)
+                ),
+                ctx.cite(&curve.at),
+            ));
+        };
+        let loss = i128::from(j.loss_milliwatts.value);
+        // mW × (0.1 K/W) is 0.1 mK.
+        let rise_mk = div_ceil(loss * i128::from(theta), 10);
+        let tj_mk = i128::from(ctx.temperature().max) * 1000 + rise_mk;
+        let limit = &d.row.temperature_celsius;
+        let limit_mk = i128::from(limit.range.max) * 1000;
+        if tj_mk > limit_mk {
+            return Err(refuse(
+                Refusal::BuckJunctionOverLimit,
+                &r.reference,
+                format!(
+                    "{loss} mW at θJA {}.{} °C/W raises the junction {rise_mk} mK above a {} °C board, to {tj_mk} m°C, above {} °C",
+                    theta / 10,
+                    theta % 10,
+                    ctx.temperature().max,
+                    limit.range.max
+                ),
+                ctx.cite(&limit.at),
+            ));
+        }
+        ctx.note(format!(
+            "{}: its junction is screened, not guaranteed: {loss} mW of loss at {} mA (declared: {}) at θJA {}.{} °C/W, the figure's point at {at_area} cm² for the {area} cm² per layer declared ({}; {}; declared: {}), is {tj_mk} m°C on a {} °C board, {} mK under {} °C; the efficiency figure is typical at its own ambient",
+            r.reference,
+            load[&r.output],
+            j.loss_milliwatts.source,
+            theta / 10,
+            theta % 10,
+            curve.condition,
+            ctx.cite(&curve.at),
+            j.copper_square_centimetres.source,
+            ctx.temperature().max,
+            limit_mk - tj_mk,
+            limit.range.max
+        ));
+        let layers = ctx.spec.board.copper_layers;
+        if layers != curve.board_copper_layers {
+            ctx.note(format!(
+                "{}: the board declares {layers} copper layers, outside the θJA figure's {}-layer board, so the screen's θJA is not this board's (FEEDBACK D1)",
+                r.reference, curve.board_copper_layers
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// A dielectric as datasheets write it.
+fn dielectric(d: pp::Dielectric) -> &'static str {
+    match d {
+        pp::Dielectric::C0g => "C0G",
+        pp::Dielectric::X5r => "X5R",
+        pp::Dielectric::X7r => "X7R",
+        pp::Dielectric::X7s => "X7S",
+    }
+}
+
+/// A ceramic's effective capacitance at `working` mV, pF, and how it was
+/// found. Where its maker's curve is held: the curve, interpolated linearly
+/// and rounded down, composed by product with the tolerance and the
+/// temperature limit, worst case; past the curve's last point it is refused
+/// `DcBiasBeyondCurve`, never extrapolated. Otherwise the declared derating
+/// with the smallest ratio band that covers it, a placeholder. `Err` names
+/// the refusal and why.
+fn effective(
+    ctx: &Ctx<'_>,
+    part: &str,
+    c: &pp::Capacitor,
+    working: i64,
+) -> Result<(i64, String), (Refusal, String)> {
+    let rated = c.rated_picofarads.value;
+    if let Some(curve) = &c.dc_bias {
+        let Some(change) = curve_change(&curve.points, working) else {
+            return Err((
+                Refusal::DcBiasBeyondCurve,
+                format!(
+                    "{part} works at {working} mV, past its maker's curve, which ends at {} mV and is never extrapolated ({})",
+                    curve.points.last().map_or(0, |p| p.0),
+                    ctx.cite(&curve.at)
+                ),
+            ));
+        };
+        let (tol, temp) = (
+            curve.tolerance_permille.value,
+            curve.temperature_permille.value,
+        );
+        let pf = i128::from(rated)
+            * i128::from(1000 + change)
+            * i128::from(1000 - tol)
+            * i128::from(1000 - temp)
+            / 1_000_000_000;
+        let pf = i64::try_from(pf).unwrap_or(0);
+        return Ok((
+            pf,
+            format!(
+                "{part}: {pf} pF, its rated {rated} pF times its maker's curve at {working} mV, {change} per mille interpolated ({}), its tolerance's -{tol} per mille ({}) and its temperature limit's -{temp} per mille ({}), by product, worst case",
+                ctx.cite(&curve.at),
+                ctx.cite(&curve.tolerance_permille.at),
+                ctx.cite(&curve.temperature_permille.at)
+            ),
+        ));
+    }
+    let ratio = div_ceil(
+        i128::from(working) * 1000,
+        i128::from(c.rated_millivolts.value),
+    );
+    let d = ctx
+        .power
+        .conditions
+        .dc_bias_derating
+        .iter()
+        .filter(|d| {
+            d.dielectrics.contains(&c.dielectric) && i128::from(d.ratio_max_permille) >= ratio
+        })
+        .min_by_key(|d| d.ratio_max_permille);
+    match d {
+        Some(d) => {
+            let derated = rated * i64::from(d.retained_permille) / 1000;
+            Ok((
+                derated,
+                format!(
+                    "{part}: {derated} pF, {} per mille of its rating kept at {ratio} per mille of its rated voltage, by the declared derating, a placeholder until its maker's curve is held",
+                    d.retained_permille
+                ),
+            ))
+        }
+        None => Err((
+            Refusal::EffectiveCapacitanceBelowMinimum,
+            format!(
+                "no maker curve is held for {part}, and no declared derating covers {} at {ratio} per mille of its rated voltage",
+                dielectric(c.dielectric)
+            ),
+        )),
+    }
+}
+
+/// A curve's change at `mv`, per mille: linear between the points around
+/// it, rounded down (toward the larger loss); `None` past its last point.
+fn curve_change(points: &[(i64, i64)], mv: i64) -> Option<i64> {
+    let i = points.iter().rposition(|p| p.0 <= mv)?;
+    let (v0, c0) = points[i];
+    let Some(&(v1, c1)) = points.get(i + 1) else {
+        return (mv == v0).then_some(c0);
+    };
+    let num = i128::from(c1 - c0) * i128::from(mv - v0);
+    let step = -div_ceil(-num, i128::from(v1 - v0));
+    i64::try_from(i128::from(c0) + step).ok()
+}
+
+/// Step 4a (`AET-WO-4300d3` §1.4): the MCU's supply floor clears the
+/// selected brown-out level's rising maximum, as well as its falling one.
+fn bor_rising(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
+    let (_, m) = mcu(ctx)?;
+    let level = usize::from(ctx.spec.mcu.bor_level);
+    let supply = &ctx.spec.mcu.supply;
+    let (Some(rise), Some(d)) = (m.bor_rising_max_millivolts.get(level), ctx.domain(supply)) else {
+        // belt-and-suspenders: step 4 refused an unknown level, and
+        // `validate` an unknown supply, before this step.
+        return Ok(());
+    };
+    let dmin = range(d).0;
+    if i128::from(dmin) <= i128::from(rise.value) {
+        return Err(refuse(
+            Refusal::SupplyFloorBelowBorRising,
+            supply,
+            format!(
+                "the domain's minimum of {dmin} mV does not clear VBOR{level}'s rising maximum of {} mV, so the MCU may not leave reset",
+                rise.value
+            ),
+            ctx.cite(&rise.at),
+        ));
+    }
+    ctx.note(format!(
+        "{supply}: VBOR{level}'s rising maximum of {} mV is judged at the domain's minimum; the floor carried to the copper bound stays the falling maximum ({})",
+        rise.value,
+        ctx.cite(&rise.at)
+    ));
+    Ok(())
+}
+
+/// Step 9b (`AET-WO-4300d3` §1.5): each regulator's and translator's control
+/// pins, each declared once, strapped as its row allows or wired to a named
+/// net with a stated role.
+fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
+    // Rails, ground and the battery, folded as KiCad folds labels.
+    let rails: BTreeSet<String> = ctx
+        .spec
+        .voltage_domains
+        .iter()
+        .map(|d| d.id.to_lowercase())
+        .chain([crate::GND, BATTERY_NET, BATTERY].map(str::to_lowercase))
+        .collect();
+    let mut wires = Vec::new();
+    let owners = ctx
+        .power
+        .regulators
+        .iter()
+        .map(|r| (&r.reference, &r.part, &r.controls))
+        .chain(
+            ctx.power
+                .crossings
+                .iter()
+                .map(|c| (&c.reference, &c.part, &c.controls)),
+        );
+    for (reference, part, declared) in owners {
+        let rules: &[pp::ControlRule] = match &ctx.row(reference, part)?.kind {
+            Kind::Buck(b) => &b.controls,
+            Kind::Ldo(l) => &l.controls,
+            Kind::Translator(t) => &t.controls,
+            _ => return Err(ctx.kind_err(reference, part, "regulator or translator")),
+        };
+        for (i, c) in declared.iter().enumerate() {
+            let twice = declared[..i].iter().any(|p| p.pin == c.pin);
+            if twice || !rules.iter().any(|r| r.pin == c.pin) {
+                return Err(refuse(
+                    Refusal::PowerValueInvalid,
+                    reference,
+                    format!(
+                        "`controls` names `{}` twice, or a pin its row lists as no control pin",
+                        c.pin
+                    ),
+                    "crates/aethelgard-ir/data/power-parts.json (controls)",
+                ));
+            }
+        }
+        for rule in rules {
+            let allowed = || {
+                rule.straps
+                    .iter()
+                    .map(|s| s.name())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            let unwired = |detail: String| {
+                refuse(
+                    Refusal::ControlPinUnwired,
+                    reference,
+                    detail,
+                    ctx.cite(&rule.at),
+                )
+            };
+            let Some(c) = declared.iter().find(|c| c.pin == rule.pin) else {
+                return Err(unwired(format!(
+                    "{} is declared neither wired nor strapped (its row allows straps: {})",
+                    rule.pin,
+                    allowed()
+                )));
+            };
+            match (&c.strap, &c.wire) {
+                (Some(s), _) if !rule.straps.contains(s) => {
+                    return Err(unwired(format!(
+                        "{} is strapped `{}`, which its row does not allow (it allows: {})",
+                        rule.pin,
+                        s.name(),
+                        allowed()
+                    )));
+                }
+                (_, Some(w)) if !rule.wirable => {
+                    return Err(unwired(format!(
+                        "{} is wired to `{}`, and its row allows no wire",
+                        rule.pin, w.net
+                    )));
+                }
+                (_, Some(w)) if rails.contains(&w.net.to_lowercase()) => {
+                    return Err(unwired(format!(
+                        "{} is wired to `{}`, a rail: a tie to a rail is a strap, which its row judges (adversarial F1, F3)",
+                        rule.pin, w.net
+                    )));
+                }
+                (_, Some(w)) => wires.push(format!(
+                    "{reference}: {} is declared wired to `{}` ({}); neither the net's driver nor its level is judged, and the board does not draw it (FEEDBACK D5)",
+                    rule.pin, w.net, w.role
+                )),
+                _ => {}
+            }
+        }
+    }
+    for w in wires {
+        ctx.note(w);
+    }
+    Ok(())
+}
+
 /// Runs every check on a specification's power tree, in the order the module
 /// documents, and returns what `solve` carries. `None` when the
 /// specification declares no tree.
@@ -2061,12 +2833,34 @@ pub fn check_against(
     mcu(&ctx)?;
     temperatures(&mut ctx)?;
     thermal(&ctx)?;
+    controls(&mut ctx)?;
     let derived = outputs(&mut ctx)?;
     domains_inside_consumers(&ctx)?;
+    bor_rising(&mut ctx)?;
     battery_inputs(&ctx)?;
+    hot_plug(&mut ctx)?;
     let load = loads(&mut ctx, &derived)?;
     headroom(&mut ctx, &derived, &load)?;
+    junctions(&mut ctx, &derived, &load)?;
     externals(&mut ctx)?;
+    for d in &power.conditions.dc_bias_derating {
+        let kinds: Vec<&str> = d.dielectrics.iter().map(|k| dielectric(*k)).collect();
+        ctx.note(format!(
+            "power: a {} ceramic at up to {} per mille of its rated voltage keeps {} per mille of its rated capacitance, a declared derating, not a maker's figure (declared: {})",
+            kinds.join(" or "),
+            d.ratio_max_permille,
+            d.retained_permille,
+            d.source
+        ));
+    }
+    if !power.input.hot_plug.is_empty()
+        || power.regulators.iter().any(|r| !r.controls.is_empty())
+        || power.crossings.iter().any(|c| !c.controls.is_empty())
+    {
+        ctx.note(
+            "power: the hot-plug parts and the control declarations are judged here, and the board emitter does not draw them: it ties a regulator's EN to its input, leaves PG open and ties OE to VCCA (FEEDBACK D5)",
+        );
+    }
     let (steady, fault) = power_in(&mut ctx, &derived, &load)?;
     sense(&mut ctx)?;
     crossings(&mut ctx)?;
