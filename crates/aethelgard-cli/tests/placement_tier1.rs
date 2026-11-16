@@ -179,20 +179,40 @@ fn no_courtyards_overlap_and_every_one_is_inside_the_outline() {
         x1: edge.x1 - FLOOR_NM,
         y1: edge.y1 - FLOOR_NM,
     };
+    // A connector's courtyard bottom is the bottom edge (`AET-WO-4300f`,
+    // ruled D7): inside the outline and within one 50 um snap of it (`pcb.rs`
+    // SNAP, private; `connectors_go_at_the_bottom_edge_in_reference_order`).
+    // Its other three sides keep FLOOR_NM, as every other courtyard does.
+    const SNAP_NM: i64 = 50_000;
+    let at_edge = Rect {
+        y1: edge.y1,
+        ..inner
+    };
     let mut courtyards = Vec::new();
+    let mut connectors = Vec::new();
     for fp in board.children("footprint") {
         let reference = fp.property("Reference").unwrap().to_owned();
         let at = fp.child("at").unwrap();
         assert_eq!(at.items().len(), 3, "{reference} is rotated");
         let g = pcb::geometry(fp, &reference).unwrap();
         let c = shifted(g.courtyard, (nm(at, 1), nm(at, 2)));
-        assert!(
-            inner.contains(c),
-            "{reference}'s courtyard {c:?} is not inside {inner:?}"
-        );
+        if fp.arg(1).unwrap().starts_with("Connector_") {
+            assert!(
+                at_edge.contains(c) && c.y1 > edge.y1 - SNAP_NM,
+                "connector {reference}'s courtyard {c:?} is not inside {at_edge:?} with its bottom on the edge"
+            );
+            connectors.push(reference.clone());
+        } else {
+            assert!(
+                inner.contains(c),
+                "{reference}'s courtyard {c:?} is not inside {inner:?}"
+            );
+        }
         courtyards.push((reference, c));
     }
-    assert_eq!(courtyards.len(), 15);
+    // AET-WO-4300b: the console's J1 is the sixteenth part.
+    assert_eq!(connectors, ["J1"]);
+    assert_eq!(courtyards.len(), 16);
     for (i, (a, ca)) in courtyards.iter().enumerate() {
         for (b, cb) in &courtyards[i + 1..] {
             assert!(!ca.overlaps(*cb), "{a} and {b} overlap");

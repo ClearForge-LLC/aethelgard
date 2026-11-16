@@ -222,6 +222,12 @@ pub struct Boot {
     /// outputs reports as before.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub motor: Vec<MotorReport>,
+    /// One per serial port, in the specification's order (`AET-WO-4300b`):
+    /// the silicon check and the twin's judgement, apart. Absent from the
+    /// JSON when the topology has none, so a board without serial ports
+    /// reports as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub serial: Vec<SerialReport>,
     /// The firmware's executable segments, `[start, end)` at their physical
     /// address, that the judge placed `pc` against: kind 10 archives them
     /// (`AET-WO-2205` §1.5). Not part of the verdict's JSON.
@@ -253,6 +259,155 @@ pub struct MotorReport {
 /// The motor pin's speed is not judged: its load is off-board and no
 /// specification declares it (`AET-WO-4300a` Q3, ruled).
 pub const MOTOR_SPEED_NOT_JUDGED: &str = "motor pin speed not judged: off-board load undeclared";
+
+/// One serial port's judgements (`AET-WO-4300b`, `4300` D8), never blended:
+/// `silicon`, the solved `BRR` on the topology's clock against RM0433's
+/// receiver tolerance; and `twin`, what Renode's USART left: the capture,
+/// the pins' mux, and the USART's writes from Renode's access log.
+#[derive(Serialize)]
+pub struct SerialReport {
+    pub label: String,
+    pub role: &'static str,
+    pub peripheral: String,
+    pub tx: PinReport,
+    pub rx: PinReport,
+    pub framing: aethelgard_ir::Framing,
+    pub brr: u32,
+    pub actual_millibaud: u64,
+    pub error_ppm: i64,
+    pub silicon: aethelgard_ir::serial::SiliconFraming,
+    /// [`aethelgard_ir::serial::TOLERANCE_SOURCE`].
+    pub tolerance_source: &'static str,
+    pub twin: SerialTwinReport,
+    /// What the verdict says of the pins' output speed (as motors).
+    pub speed: &'static str,
+}
+
+/// A serial pin and its solved alternate function.
+#[derive(Serialize)]
+pub struct PinReport {
+    pub pin: String,
+    pub alternate_function: u8,
+}
+
+/// The serial pin's speed is not judged: its load is off-board and no
+/// specification declares it (as `MOTOR_SPEED_NOT_JUDGED`).
+pub const SERIAL_SPEED_NOT_JUDGED: &str = "serial pin speed not judged: off-board load undeclared";
+
+/// The twin's half of a serial port. `null` until Renode has run, as every
+/// field after `tags_needed`.
+#[derive(Serialize)]
+pub struct SerialTwinReport {
+    /// The USART's Renode name, `usart1`: the log source and the capture's.
+    pub source: &'static str,
+    /// The pattern's bytes, upper-case hexadecimal.
+    pub pattern: String,
+    /// The injected frame's bytes, upper-case hexadecimal.
+    pub frame: String,
+    /// The tags the framing needs set (`CR1.M0`) at `UE`, each seen only in
+    /// the words Renode's access log shows written; the register image holds
+    /// the stored fields.
+    pub tags_needed: Vec<String>,
+    /// Whole patterns before the frame.
+    pub patterns: Option<usize>,
+    /// Patterns among them cut short, each by a rendered reset.
+    pub cut: Option<usize>,
+    /// The frame's bytes that came back after them.
+    pub echoed: Option<usize>,
+    /// The capture's length, and whether anything in it was not a pattern
+    /// or the frame.
+    pub capture_bytes: Option<usize>,
+    pub stray: Option<bool>,
+    /// `witnessed`, `missing`, `partial`, `not_counted` or `not_judged`.
+    pub echo: Option<&'static str>,
+    /// The RX pin at the injection, the TX pin at the end, and the TX pin at
+    /// a boot's first `TDR` write (the first boot's not routed, else the
+    /// first that left the AF after it was solved, else the last's): `PA10 MODER 0b10,
+    /// AF7`.
+    pub rx_at_injection: Option<String>,
+    pub tx_at_end: Option<String>,
+    pub tx_at_send: Option<String>,
+    /// The USART's writes in the last boot (Renode's access log), and what
+    /// they lacked at `UE` or did beyond the bring-up; `null` when the log
+    /// could not be read whole.
+    pub usart_writes: Option<usize>,
+    pub tags_missing: Option<Vec<String>>,
+    pub tags_unexpected: Option<Vec<String>>,
+    /// What the campaign archives (kind 29) and the JSON says in words: the
+    /// frame's bytes, and each pin's `MODER` and `AFSEL` fields.
+    #[serde(skip)]
+    pub frame_bytes: [u8; aethelgard_twin::serial::FRAME_LEN],
+    #[serde(skip)]
+    pub rx_fields: Option<(u8, u8)>,
+    #[serde(skip)]
+    pub tx_fields: Option<(u8, u8)>,
+    #[serde(skip)]
+    pub tx_send_fields: Option<(u8, u8)>,
+}
+
+impl SerialReport {
+    pub fn new(s: &crate::renode::Serial, w: Option<&crate::renode::SerialWitness>) -> Self {
+        use crate::renode::hex_bytes;
+        let f = &s.silicon;
+        let c = w.and_then(|w| w.capture.as_ref());
+        let tags = w.and_then(|w| w.tags.as_ref());
+        SerialReport {
+            label: s.port.label.clone(),
+            role: s.role.name(),
+            peripheral: s.port.peripheral.clone(),
+            tx: PinReport {
+                pin: s.port.tx.clone(),
+                alternate_function: s.port.tx_af,
+            },
+            rx: PinReport {
+                pin: s.port.rx.clone(),
+                alternate_function: s.port.rx_af,
+            },
+            framing: s.port.framing.clone(),
+            brr: f.brr,
+            actual_millibaud: f.actual_millibaud,
+            error_ppm: f.error_ppm,
+            silicon: f.clone(),
+            tolerance_source: aethelgard_ir::serial::TOLERANCE_SOURCE,
+            twin: SerialTwinReport {
+                source: s.port.renode,
+                pattern: hex_bytes(&s.pattern),
+                frame: hex_bytes(&s.frame),
+                tags_needed: s
+                    .port
+                    .tags
+                    .iter()
+                    .map(|t| format!("{}.{}", t.register, t.field))
+                    .collect(),
+                patterns: c.map(|c| c.patterns),
+                cut: c.map(|c| c.cut),
+                echoed: c.map(|c| c.echoed),
+                capture_bytes: c.map(|c| c.len),
+                stray: c.map(|c| c.stray),
+                echo: w.map(|w| w.echo),
+                rx_at_injection: w
+                    .and_then(|w| w.rx_at_injection)
+                    .map(|(m, a)| s.rx.describe(m, a)),
+                tx_at_end: w
+                    .and_then(|w| w.tx_at_end)
+                    .map(|(m, a)| s.tx.describe(m, a)),
+                tx_at_send: w
+                    .and_then(|w| w.tx_at_send)
+                    .map(|(m, a)| s.tx.describe(m, a)),
+                usart_writes: tags.map(|t| t.writes),
+                tags_missing: tags.map(|t| t.missing.clone()),
+                tags_unexpected: tags.map(|t| t.unexpected.clone()),
+                frame_bytes: s.frame,
+                rx_fields: w
+                    .and_then(|w| w.rx_at_injection)
+                    .map(|(m, a)| s.rx.fields(m, a)),
+                tx_fields: w.and_then(|w| w.tx_at_end).map(|(m, a)| s.tx.fields(m, a)),
+                tx_send_fields: w.and_then(|w| w.tx_at_send).map(|(m, a)| s.tx.fields(m, a)),
+            },
+            speed: SERIAL_SPEED_NOT_JUDGED,
+        }
+    }
+}
 
 #[derive(Serialize)]
 pub struct TwinReport {

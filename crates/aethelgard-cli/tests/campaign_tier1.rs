@@ -87,16 +87,21 @@ fn elf() -> Vec<u8> {
 const U2_LINE: &str = "  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
 
 /// The listing of the emitted platform's CPU and every solved peripheral.
-const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n";
+const CPU_LISTING: &str = "Available peripherals:\n  (machine-0)\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} gpioPortA (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} gpioPortB (STM32_GPIOPort)\n  \u{251c}\u{2500}\u{2500} i2c1 (STM32F7_I2C)\n  \u{251c}\u{2500}\u{2500} spi1 (STM32H7_SPI)\n  \u{2502}   \u{2514}\u{2500}\u{2500} spi1mux (SPIMultiplexer)\n  \u{2502}       \u{2514}\u{2500}\u{2500} u4 (GenericSpiFlash)\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n  \u{251c}\u{2500}\u{2500} usart1 (STM32F7_USART)\n";
 
-/// The reference topology's seven registers as a correct boot leaves them,
-/// the six other enable registers at their reset values (`AET-WO-4300a`,
-/// 2100 F24), then SysTick's control word, unarmed, and the five NVIC
-/// set-enable words, 0: no interrupt armed (`AET-WO-2204` A2, ruled D6 on
-/// PR #131).
-const GOOD_REGISTERS: [&str; 19] = [
-    "0x0000A801",
+/// The reference topology's registers as a correct boot leaves them, in
+/// address order: the console's USART1 (`AET-WO-4300b`), the ports' mode
+/// and AF registers, then every RCC enable register; then SysTick's control
+/// word, unarmed, and the five NVIC set-enable words, 0: no interrupt armed
+/// (`AET-WO-2204` A2, ruled D6 on PR #131).
+const GOOD_REGISTERS: [&str; 24] = [
+    "0x0000000D",
+    "0x00000000",
+    "0x00000000",
+    "0x0000022C",
+    "0x0028A801",
     "0x55500000",
+    "0x00000770",
     "0x0000A000",
     "0x44000000",
     "0x00000000",
@@ -106,7 +111,7 @@ const GOOD_REGISTERS: [&str; 19] = [
     "0x00000000",
     "0x00200000",
     "0x00000000",
-    "0x00001000",
+    "0x00001010",
     "0x00010000",
     // `CLKSOURCE` reads 1 in Renode whatever is written (`NVIC.cs` L1040).
     "0x00000004",
@@ -116,6 +121,41 @@ const GOOD_REGISTERS: [&str; 19] = [
     "0x00000000",
     "0x00000000",
 ];
+
+/// The reads at the injection instant (`AET-WO-4300b`): the console's RX
+/// pin, PA10, in AF mode on AF7, as measured.
+const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
+
+/// The console's bring-up as Renode 1.17.0's access log shows it
+/// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
+/// USART1's `BRR`, `CR2`, `CR1`, `CR1 | UE` (in FIFO mode), then the
+/// pattern's first byte.
+const CONSOLE_ACCESS: &str = "[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x770\n\
+[00:00:00.000000000] [INFO] gpioPortA: [cpu: 0x80009BC] WriteUInt32 to 0x0 (Mode), value 0x28A801\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0xC (BaudRate), value 0x22C\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x4 (ControlRegister2), value 0x0\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000C\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000000D\n\
+[00:00:00.000000000] [INFO] usart1: [cpu: 0x80009BC] WriteUInt32 to 0x28 (TransmitData), value 0x43\n";
+
+/// What USART1's file backend holds after a boot of `firmware` that sent
+/// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
+fn capture_of(firmware: &[u8]) -> Vec<u8> {
+    use sha2::Digest;
+    let sha: [u8; 32] = sha2::Sha256::digest(firmware).into();
+    let mut c = aethelgard_twin::serial::pattern("CONSOLE");
+    c.extend(aethelgard_twin::serial::frame(&sha, "CONSOLE"));
+    c
+}
+
+/// The stub's lines that write the capture where the command line's
+/// `CreateFileBackend` names USART1's file, as Renode's backend would.
+fn capture_lines(bytes: &Path) -> String {
+    format!(
+        "cap=$(printf '%s' \"$7\" | /bin/sed -n 's/.*CreateFileBackend @\\([^ ]*\\) true.*/\\1/p')\n/bin/cat '{}' > \"$cap\" || exit 95\n",
+        bytes.display()
+    )
+}
 
 /// What Renode 1.17.0's BME280 logs for U2's identity read (`AET-WO-2204`
 /// S1, measured).
@@ -150,6 +190,8 @@ fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(CONSOLE_ACCESS);
+    s.push_str(INJECTION);
     s.push_str(log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
     for r in reads {
@@ -216,6 +258,7 @@ const BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
 fn toolbox_built(stdout: &str, build: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
+    let capture = capture_lines(&tb.write("capture.bin", &capture_of(&elf())));
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
@@ -224,10 +267,10 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x58020000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.099200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
-/bin/cat '{out}'
+{capture}/bin/cat '{out}'
 "#,
         out = out.display(),
         // An empty `build` prints no build line at all.
@@ -1823,6 +1866,11 @@ fn propose_on_a_software_run_writes_a_generator_report_and_no_specification() {
                 if let Record::BootObserved { boot_word, .. } = x {
                     boot_word.observed = Some(0);
                 }
+                // Without the boot word, the judge never judges an echo
+                // (`AET-WO-4300b`), and replay holds it to that.
+                if let Record::SerialWitness { echo, .. } = x {
+                    *echo = "not_judged".into();
+                }
             }
             let last = r.len() - 1;
             r[last] = Record::Verdict {
@@ -2269,6 +2317,15 @@ if [ "$1" = --renode ]; then shift; exec "$@"; fi
 printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
 "#;
 
+/// What USART1's backend holds after a droop boot that recovered: the
+/// pattern from the first boot and again from the one after the release,
+/// then the frame, injected after the release (`AET-WO-4300b`; measured).
+fn droop_capture_of(firmware: &[u8]) -> Vec<u8> {
+    let mut c = aethelgard_twin::serial::pattern("CONSOLE");
+    c.extend(capture_of(firmware));
+    c
+}
+
 /// When U2's witness lines appear in a droop boot's log: since the release
 /// and before the probe (a firmware that recovered in the bound), only after
 /// the probe (one that talked to the bus late), or never.
@@ -2309,6 +2366,7 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
         CPU_LISTING,
     ));
     let out = tb.write("renode.out", out.as_bytes());
+    let capture = capture_lines(&tb.write("capture.bin", &droop_capture_of(&elf())));
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
@@ -2318,7 +2376,7 @@ case "$7" in
   *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
-/bin/cat '{out}'
+{capture}/bin/cat '{out}'
 {then}
 "#,
         out = out.display(),
@@ -2649,4 +2707,235 @@ fn a_droop_past_a_dshot_board_s_window_is_refused_with_its_time() {
     let message = v["error"]["message"].as_str().unwrap();
     assert!(message.contains("past the boot's 2000000 ns"), "{message}");
     assert!(!work.archive.exists(), "an archive was made");
+}
+
+// ---------------------------------------------------------------- AET-WO-4300b
+
+/// As [`DROOP_BRIDGE`], with the rail's crossings late in the 100 ms
+/// window: held from 99.6 ms, released at 99.85 ms. The release's probe at
+/// 99.95 ms still fits; the serial injection, one quantum after the
+/// release's nudge (99,950,010 ns), and the quantum after it do not.
+const LATE_DROOP_BRIDGE: &str = r#"#!/bin/sh
+if [ "$1" = --rail ]; then
+  printf '%s\n' \
+    '{"at_ps":99598000000,"falling":true,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"at_ps":99600000000,"falling":true,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":99848000000,"falling":false,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}' \
+    '{"at_ps":99850000000,"falling":false,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}' \
+    '{"accepted_points":100027,"minimum_microvolts":2350000,"rail":"solved"}'
+  exit 0
+fi
+if [ "$1" = --renode ]; then shift; exec "$@"; fi
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+/// The ruling's amendment 3 (`AET-WO-4300b`): a rendered release so late
+/// that the serial frames and the quantum after them pass the board's
+/// window is refused by name before the boot runs, never cut short. The
+/// stub would exit 99 on any boot; it is never asked for one.
+#[test]
+fn a_release_too_late_for_the_serial_injection_is_refused_by_name() {
+    let tb = droop_toolbox(
+        ["0x2100B007", "0x22020000", "0x00000060"],
+        Witness::BeforeProbe,
+    );
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(LATE_DROOP_BRIDGE)),
+        &tb.0,
+        &root(),
+        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let v = refusal(&out);
+    assert_eq!(out.status.code(), Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "SerialInjectionPastWindow", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("go in at 99950010 ns")
+            && message.contains("MAX_VIRTUAL_NS of 100000000 ns"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4300b`: replay holds its own copy of the frame's formula and of
+/// the pattern's tail and the frame's length (it never depends on the twin,
+/// `RUL-16`); the copies are the judge's.
+#[test]
+fn replay_s_serial_frame_and_lengths_are_the_twin_s() {
+    for (fw, label) in [([0u8; 32], "CONSOLE"), ([0xA5; 32], "rc_sbus-2")] {
+        assert_eq!(
+            aethelgard_chaos::record::serial_frame(&fw, label),
+            aethelgard_twin::serial::frame(&fw, label),
+            "{label}"
+        );
+    }
+    assert_eq!(
+        aethelgard_chaos::record::SERIAL_FRAME_LEN,
+        aethelgard_twin::serial::FRAME_LEN
+    );
+    assert_eq!(
+        aethelgard_chaos::record::SERIAL_TAIL_LEN,
+        aethelgard_twin::serial::PATTERN_TAIL.len()
+    );
+}
+
+/// `AET-WO-4300b`: replay's copy of the silicon check (and of the tags a
+/// framing needs) gives `aethelgard_ir::serial::check_silicon`'s figures,
+/// row and `holds` (and the twin's `needed_tags`) on every baud, word,
+/// parity and stop bits the sweep tries, solved and off by one, both tables.
+#[test]
+fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
+    use aethelgard_chaos::record::{Reading, SerialFraming};
+    use aethelgard_ir::serial::{Framing, Parity, SerialRole, SolvedSerialPort};
+    let clock = aethelgard_ir::SolvedClock::reset();
+    let mut tried = 0;
+    let mut failing = 0;
+    // The header is read once per shape, not once per case.
+    let shapes: Vec<(u8, Parity, u8, Vec<String>)> = [
+        (8u8, Parity::None, 1u8),
+        (8, Parity::Even, 2),
+        (7, Parity::None, 1),
+        (8, Parity::Odd, 1),
+        (6, Parity::Even, 1),
+    ]
+    .into_iter()
+    .map(|(d, p, s)| {
+        let framing = Framing {
+            baud: 1,
+            data_bits: d,
+            parity: p,
+            stop_bits: s,
+            inverted: p == Parity::Even,
+        };
+        let needed = aethelgard_twin::serial::needed_tags(&framing)
+            .unwrap()
+            .iter()
+            .map(|t| format!("{}.{}", t.register, t.field))
+            .collect();
+        (d, p, s, needed)
+    })
+    .collect();
+    for peripheral in ["USART1", "UART4"] {
+        let kernel = aethelgard_ir::serial::kernel_hz(&clock, peripheral).unwrap();
+        for baud in [
+            1_200u32, 9_600, 57_600, 100_000, 115_200, 230_400, 420_000, 1_000_000, 4_000_000,
+        ] {
+            for (data_bits, parity, stop_bits, needed) in &shapes {
+                let (data_bits, parity, stop_bits) = (*data_bits, *parity, *stop_bits);
+                let Some(solved) = aethelgard_ir::serial::solve_brr(kernel, baud) else {
+                    continue;
+                };
+                for brr in [solved, solved + 1, solved - 1] {
+                    let framing = Framing {
+                        baud,
+                        data_bits,
+                        parity,
+                        stop_bits,
+                        inverted: parity == Parity::Even,
+                    };
+                    let port = SolvedSerialPort {
+                        index: 0,
+                        peripheral: peripheral.into(),
+                        tx: "TX".into(),
+                        rx: "RX".into(),
+                        role: SerialRole::Gps,
+                        framing: framing.clone(),
+                        negotiated: None,
+                        kernel_hz: kernel,
+                        brr,
+                        actual_millibaud: aethelgard_ir::serial::actual_millibaud(kernel, brr),
+                        error_ppm: aethelgard_ir::serial::error_ppm(kernel, brr, baud),
+                    };
+                    let f = aethelgard_ir::serial::check_silicon(&clock, &port);
+                    let records = vec![
+                        Record::Scenario {
+                            name: "sweep".into(),
+                            sha256: [1; 32],
+                            expect_pass: f.holds,
+                            expect_findings: if f.holds {
+                                vec![]
+                            } else {
+                                vec!["serial_framing_static_mismatch".into()]
+                            },
+                            overrides: vec![],
+                        },
+                        Record::Solved {
+                            specification_sha256: [2; 32],
+                            topology_sha256: [3; 32],
+                        },
+                        Record::SerialPortSolved {
+                            label: "P".into(),
+                            index: 0,
+                            peripheral: peripheral.into(),
+                            tx: "PA0".into(),
+                            tx_af: 8,
+                            rx: "PA1".into(),
+                            rx_af: 8,
+                            role: "gps".into(),
+                            framing: SerialFraming {
+                                baud,
+                                data_bits,
+                                parity: parity.name().into(),
+                                stop_bits,
+                                inverted: framing.inverted,
+                            },
+                            kernel_hz: port.kernel_hz,
+                            brr,
+                            actual_millibaud: port.actual_millibaud,
+                            error_ppm: port.error_ppm,
+                        },
+                        Record::BootObserved {
+                            image_sha256: [4; 32],
+                            boot_word: Reading {
+                                address: 0x2000_0000,
+                                mask: u32::MAX,
+                                expected: 1,
+                                observed: Some(0),
+                            },
+                            instructions_expected: 1,
+                            instructions_observed: Some(1),
+                            pc: None,
+                            executable: vec![(0x0800_0000, 0x0801_0000)],
+                        },
+                        Record::SerialFramingCheck {
+                            label: "P".into(),
+                            kernel_hz: f.kernel_hz,
+                            brr: f.brr,
+                            actual_millibaud: f.actual_millibaud,
+                            error_ppm: f.error_ppm,
+                            tolerance: f
+                                .tolerance
+                                .map(|r| (r.table.into(), r.m_bits, r.tolerance_ppm)),
+                            holds: f.holds,
+                            tags_needed: needed.clone(),
+                            tags: None,
+                        },
+                        Record::Verdict {
+                            pass: f.holds,
+                            findings: if f.holds {
+                                vec![]
+                            } else {
+                                vec![("serial_framing_static_mismatch".into(), "error".into(), 1)]
+                            },
+                        },
+                    ];
+                    let summary = aethelgard_chaos::campaign::check_run(&records);
+                    assert!(
+                        summary.as_ref().is_ok_and(|s| s.matched),
+                        "{peripheral} {baud} {data_bits}{parity:?}{stop_bits} BRR {brr}: {summary:?}"
+                    );
+                    tried += 1;
+                    failing += usize::from(!f.holds);
+                }
+            }
+        }
+    }
+    // The sweep reaches both outcomes, on both tables.
+    assert!(
+        tried > 200 && failing > 0 && failing < tried,
+        "{tried} {failing}"
+    );
 }

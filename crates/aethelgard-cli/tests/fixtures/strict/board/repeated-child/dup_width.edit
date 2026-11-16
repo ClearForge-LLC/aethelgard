@@ -1,9 +1,9 @@
 # class: repeated-child
 # note: a segment's second (width 2): KiCad reads 2 mm (A1)
 # main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
-# drc: 3 MalformedBoard kicad_pcb/segment[51]
-# drc-parity: 3 MalformedBoard kicad_pcb/segment[51]
-# extract: 3 MalformedBoard kicad_pcb/segment[51]
+# drc: 3 MalformedBoard kicad_pcb/segment[70]
+# drc-parity: 3 MalformedBoard kicad_pcb/segment[70]
+# extract: 3 MalformedBoard kicad_pcb/segment[70]
 @@ find
 		(start 94.625 87.25)
 		(end 99.25 87.25)

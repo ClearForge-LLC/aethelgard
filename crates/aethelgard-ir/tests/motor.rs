@@ -79,6 +79,7 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "diff_pairs": [],
         "motor_outputs": motors,
         "power": null,
+        "serial_ports": [],
     })
 }
 

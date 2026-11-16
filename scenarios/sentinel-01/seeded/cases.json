@@ -66,11 +66,11 @@
       "replace": "write_volatile(0)"
     },
     "leave-firmware": {
-      "why": "after writing the boot word, the core jumps into the FMC bank at 0x70000000, plain zero-filled memory outside every executable segment (AET-WO-2205 \u00a71.5; twin_tier2's adversarial A7)",
+      "why": "after writing the boot word and echoing the serial frame, the core jumps into the FMC bank at 0x70000000, plain zero-filled memory outside every executable segment (AET-WO-2205 \u00a71.5; twin_tier2's adversarial A7, at its place since AET-WO-4300b: a jump before the echo leaves the console's echo dead too, which no register explains, so I6)",
       "spec": "examples/sentinel-01-minimal.json",
       "file": "firmware/src/main.rs",
-      "find": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };",
-      "replace": "unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };\n    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };"
+      "find": "    for _ in 0..FRAME_LEN {\n        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n        if usart1.send(&mut r, byte).is_err() {\n            break;\n        }\n    }",
+      "replace": "    for _ in 0..FRAME_LEN {\n        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n        if usart1.send(&mut r, byte).is_err() {\n            break;\n        }\n    }\n    unsafe { core::arch::asm!(\"ldr r0, =0x70000001\", \"bx r0\", options(noreturn)) };"
     },
     "cs-never": {
       "why": "the SPI transfer never asserts U4's chip select: its select drives PA0 high, not low",
@@ -85,6 +85,13 @@
       "file": "src/board.rs",
       "find": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x0000000f) | 0x00000001);",
       "replace": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x0000000f) | 0x00000002);"
+    },
+    "console-rx-af-wrong": {
+      "why": "AET-WO-4300b serial_rx_dead: PA10 (the console's RX, USART1_RX) is put on AF8, not the solved AF7, so no injected byte reaches the receiver while the pattern still leaves on PA9",
+      "spec": "examples/sentinel-01-minimal.json",
+      "file": "src/board.rs",
+      "find": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000700);",
+      "replace": "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000800);"
     }
   },
   "cases": [
@@ -100,15 +107,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -126,15 +133,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -152,15 +159,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -178,15 +185,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -204,15 +211,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -230,15 +237,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -256,11 +263,11 @@
       ],
       "evidence": [
         [
-          5,
+          6,
           7
         ],
         [
-          6,
+          7,
           9
         ]
       ],
@@ -278,7 +285,7 @@
       ],
       "evidence": [
         [
-          5,
+          6,
           9
         ]
       ],
@@ -296,7 +303,7 @@
       ],
       "evidence": [
         [
-          5,
+          6,
           9
         ]
       ],
@@ -314,21 +321,21 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
       "masked": [
         [
-          28,
+          34,
           13
         ]
       ]
@@ -344,15 +351,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          27,
+          6,
+          7
+        ],
+        [
+          33,
           13
         ]
       ],
@@ -369,15 +376,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          27,
+          6,
+          7
+        ],
+        [
+          33,
           13
         ]
       ],
@@ -395,15 +402,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          27,
+          6,
+          7
+        ],
+        [
+          33,
           13
         ]
       ],
@@ -421,15 +428,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          27,
+          6,
+          7
+        ],
+        [
+          33,
           13
         ]
       ],
@@ -448,15 +455,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          16,
+          6,
+          7
+        ],
+        [
+          22,
           11
         ]
       ],
@@ -473,15 +480,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          10,
+          6,
+          7
+        ],
+        [
+          16,
           11
         ]
       ],
@@ -498,15 +505,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          10,
+          6,
+          7
+        ],
+        [
+          16,
           11
         ]
       ],
@@ -523,15 +530,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          9,
+          6,
+          7
+        ],
+        [
+          15,
           11
         ]
       ],
@@ -549,23 +556,23 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
-          9,
+          6,
+          7
+        ],
+        [
+          15,
           11
         ],
         [
-          10,
+          16,
           11
         ],
         [
-          14,
+          20,
           11
         ]
       ],
@@ -582,15 +589,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           10
         ]
       ],
@@ -618,7 +625,7 @@
       ],
       "evidence": [
         [
-          29,
+          35,
           22
         ]
       ],
@@ -636,7 +643,7 @@
       ],
       "evidence": [
         [
-          29,
+          35,
           22
         ]
       ],
@@ -663,15 +670,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           10
         ]
       ],
@@ -690,15 +697,15 @@
       ],
       "evidence": [
         [
-          4,
-          7
-        ],
-        [
           5,
           7
         ],
         [
           6,
+          7
+        ],
+        [
+          7,
           9
         ]
       ],
@@ -722,6 +729,28 @@
         [
           53,
           26
+        ]
+      ],
+      "masked": []
+    },
+    {
+      "name": "serial-rx-dead",
+      "scenario": "scenarios/sentinel-01/seeded/serial-rx-dead.json",
+      "mutant": "console-rx-af-wrong",
+      "domain": "software",
+      "rule": "S5",
+      "findings": [
+        "register_mismatch",
+        "serial_echo_missing"
+      ],
+      "evidence": [
+        [
+          14,
+          11
+        ],
+        [
+          37,
+          29
         ]
       ],
       "masked": []
