@@ -485,8 +485,14 @@ fn refuses_tolerance_out_of_range() {
         // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
         // tolerance's own range is under test here, so the board has no
         // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
-        // bus.
-        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
+        // bus. At 500 permille the MCU's own range refuses the rail
+        // (`McuSupplyOutsideRange`, step 22, `AET-WO-1208`), past the
+        // tolerance's own check.
+        let verdict = bare_rail(3300, value, false).validate();
+        match value {
+            1 => assert_eq!(verdict, Ok(())),
+            _ => assert_eq!(verdict.unwrap_err().kind(), "McuSupplyOutsideRange"),
+        }
     }
 }
 
@@ -575,6 +581,9 @@ fn refuses_unsupported_i2c_speed_zero_pull_up_and_zero_spi_speed() {
     for value in [100_000, 1_000_000] {
         let mut spec = valid();
         spec.i2c_buses[0].speed_hz = value;
+        // 1 MHz needs lines Fast-mode Plus allows (120 ns), or step 21
+        // refuses it as `BusTooFast` (`AET-WO-1208` §1.3).
+        rise_times(&mut spec, 120, 120);
         assert_eq!(spec.validate(), Ok(()));
     }
     assert_refusal(
@@ -3241,7 +3250,10 @@ fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
                 "SPI bus `FLASH` is on a supply of {min} to {max} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
             )
         );
-        assert_eq!(bare_rail(nominal, tolerance, false).validate(), Ok(()));
+        // With no SPI bus, step 22 judges the same rail against the MCU's
+        // own row (`AET-WO-1208` §1.2); before, it passed (`d539bb1`).
+        let err = bare_rail(nominal, tolerance, false).validate().unwrap_err();
+        assert_refusal(err, "McuSupplyOutsideRange", Some("VDD_3V3"));
     }
 }
 

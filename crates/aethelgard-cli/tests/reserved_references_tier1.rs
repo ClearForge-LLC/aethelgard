@@ -325,35 +325,28 @@ fn aet_1206_one_error_set_keeps_solves_bytes() {
     for (label, edit, expected) in pins {
         let (code, out) = run_file("solve", &format!("1206-f1-{label}"), edit);
         assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
-        // `validate` alone does not solve, so it still passes these, for a
-        // specification that acknowledges nothing.
+        // `AET-WO-1208` §1.3: `validate` refuses each with `solve`'s bytes
+        // (step 21), with or without acknowledgements. Before, it passed a
+        // specification that acknowledged nothing, and refused the
+        // reference's acknowledgements as `UnwitnessedAcknowledgementStale`
+        // (`AET-WO-4230` R1: no ledger for a topology that does not solve).
         let (code, out) = run_file("validate", &format!("1206-f1v-{label}"), |s| {
             edit(s);
             s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
         });
-        assert_eq!(code, Some(0), "{label}: {out}");
-        // `AET-WO-4230` R1: the reference's acknowledgements stand only for a
-        // witness ledger, which a topology that does not solve has none of,
-        // so `validate` refuses them as stale, by that name, never by the
-        // bus refusal `solve` makes.
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
         let (code, out) = run_file("validate", &format!("1206-f1a-{label}"), edit);
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(code, Some(2), "{label}: {out}");
-        assert_eq!(
-            v["error"]["kind"], "UnwitnessedAcknowledgementStale",
-            "{label}: {out}"
-        );
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
     }
 }
 
-/// `AET-WO-1206` §1.6: eda's `UnsupportedAddress` is kept. `validate`
-/// refuses a strap the part does not offer (`I2cAddressNotOffered`, step
-/// 14), so `generate` never reaches it; a library caller of
-/// `aethelgard_eda::schematic::emit` handing it a deserialized, unvalidated
-/// specification does, so the emitter still refuses rather than draw a strap
-/// the part cannot take.
+/// `AET-WO-1206` §1.6, then `AET-WO-1208` §1.4: `validate` refuses a strap
+/// the part does not offer (`I2cAddressNotOffered`, step 14). A library
+/// caller of `aethelgard_eda::schematic::emit` handing it a deserialized,
+/// unvalidated specification reached eda's own `UnsupportedAddress` until
+/// `1208`; the emitter now validates first and returns `validate`'s refusal.
 #[test]
-fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
+fn aet_1206_a_library_caller_s_bad_strap_is_refused_by_validate_first() {
     use aethelgard_ir::Specification;
     let mut v: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     let valid: Specification = serde_json::from_value(v.clone()).unwrap();
@@ -362,9 +355,14 @@ fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
     for (index, part, address) in [(0, "BME280", 0x50), (1, "TMP117", 0x50)] {
         v["i2c_devices"][index]["address"] = address.into();
         let spec: Specification = serde_json::from_value(v.clone()).unwrap();
-        assert_eq!(spec.validate().unwrap_err().kind(), "I2cAddressNotOffered");
+        let refused = spec.validate().unwrap_err();
+        assert_eq!(refused.kind(), "I2cAddressNotOffered");
         let e = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap_err();
-        assert_eq!(e.kind(), "UnsupportedAddress", "{part}: {e}");
+        assert_eq!(
+            e,
+            aethelgard_eda::schematic::EmitError::InvalidSpecification(refused),
+            "{part}"
+        );
         v = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     }
 }
@@ -484,29 +482,45 @@ fn emit_renamed(
     aethelgard_eda::schematic::emit(&spec, &solved, &table)
 }
 
-/// `AET-WO-1207` §1.4 (`1206` F1): the emitter holds its own nets against
-/// every net the specification spells, serial and motor nets included, so a
-/// library caller of `schematic::emit` naming one for an emitter net is
-/// refused (`validate` refuses it too; `generate` never gets there). Before
-/// (`4c61fad`), each of these emitted a board, the net shorted to the MCU's
-/// own (`U1_VCAP1` on a UART pin) or to ground.
+/// [`emit_renamed`], with the refusal `validate` makes of the renamed
+/// specification.
+fn emit_renamed_both(
+    spec: &str,
+    old: &str,
+    new: &str,
+) -> (
+    aethelgard_ir::IrValidationError,
+    Result<aethelgard_eda::schematic::Emission, aethelgard_eda::schematic::EmitError>,
+) {
+    let mut v: Value = serde_json::from_slice(&fs::read(root().join(spec)).unwrap()).unwrap();
+    rename(&mut v, old, new);
+    let renamed: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+    (
+        renamed.validate().unwrap_err(),
+        emit_renamed(spec, old, new),
+    )
+}
+
+/// `AET-WO-1207` §1.4 (`1206` F1), then `AET-WO-1208` §1.4: a library
+/// caller of `schematic::emit` naming a serial or motor net for an emitter
+/// net is refused by `validate`'s refusal (the emitter validates first).
+/// Before `1207` (`4c61fad`), each of these emitted a board, the net shorted
+/// to the MCU's own (`U1_VCAP1` on a UART pin) or to ground; under `1207` the
+/// emitter's own `ReservedName` refused them.
 #[test]
 fn aet_1207_the_emitter_refuses_a_serial_or_motor_net_named_for_its_own() {
-    const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
-    for (spec, old, new, id) in [
-        (SPEC, "CONSOLE_TX", "U1_VCAP1", "U1_VCAP1"),
-        (SPEC, "CONSOLE_RX", "gnd", "GND and gnd"),
-        (MOTORS, "MOTOR1", "U1_VCAP2", "U1_VCAP2"),
-        (MOTORS, "MOTOR2", "GND", "GND"),
+    for (spec, old, new, kind, id) in [
+        (SPEC, "CONSOLE_TX", "U1_VCAP1", "ReservedName", "U1_VCAP1"),
+        (SPEC, "CONSOLE_RX", "gnd", "NetShadowsDomain", "gnd"),
+        (MOTORS, "MOTOR1", "U1_VCAP2", "ReservedName", "U1_VCAP2"),
+        (MOTORS, "MOTOR2", "GND", "NetShadowsDomain", "GND"),
     ] {
-        let Err(e) = emit_renamed(spec, old, new) else {
+        let (refused, emitted) = emit_renamed_both(spec, old, new);
+        let Err(e) = emitted else {
             panic!("{old} -> {new}: emitted a board");
         };
-        assert_eq!(
-            (e.kind(), e.id()),
-            ("ReservedName", Some(id)),
-            "{old} -> {new}: {e}"
-        );
+        assert_eq!((e.kind(), e.id()), (kind, Some(id)), "{old} -> {new}: {e}");
+        assert_eq!(e.to_string(), refused.to_string(), "{old} -> {new}");
     }
 }
 
@@ -575,13 +589,18 @@ fn aet_1208_pins() -> [PinnedOn; 3] {
     ]
 }
 
-/// `AET-WO-1208` §1.3, the behaviour before: `solve` and `generate` refuse
-/// each with the pinned bytes, and `validate` passes it (a specification
-/// that acknowledges nothing).
+/// `AET-WO-1208` §1.3: `validate` refuses each with the bytes `solve` and
+/// `generate` printed, which they still print, with or without the base's
+/// acknowledgements. Before (`bb72efc`), `validate` passed each that
+/// acknowledged nothing.
 #[test]
 fn aet_1208_validate_refuses_what_solve_refused_byte_for_byte() {
     for (label, base, edit, expected) in aet_1208_pins() {
-        for args in [&["solve", "--file"][..], &["generate", "--spec"]] {
+        for args in [
+            &["solve", "--file"][..],
+            &["generate", "--spec"],
+            &["validate", "--file"],
+        ] {
             let (code, out, created) =
                 run_on(base, args, &format!("1208-{}-{label}", args[0]), edit);
             assert_eq!(
@@ -600,7 +619,7 @@ fn aet_1208_validate_refuses_what_solve_refused_byte_for_byte() {
                 s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
             },
         );
-        assert_eq!(code, Some(0), "{label}: {out}");
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
     }
 }
 
@@ -623,32 +642,42 @@ fn mcu_rail(s: &mut Value, millivolts: u32) {
         .retain(|d| d["part"] == "TMP117");
 }
 
-/// `AET-WO-1208` §1.2 (`1207` F2), the behaviour before: an MCU rail of
-/// 5.0 V, which DS12117 Table 111 does not allow (1.62 to 3.6 V), passes
-/// `validate` and `generate` writes a board.
+/// `AET-WO-1208` §1.2 (`1207` F2): an MCU rail of 5.0 V is outside the MCU
+/// row's operating range, DS12117 Table 111's 1.62 to 3.6 V, and `validate`
+/// refuses it by name, citing the row, as does `generate` before writing
+/// anything. Before (`bb72efc`), both passed and `generate` wrote a board.
 #[test]
 fn aet_1208_the_mcu_rail_is_judged_against_its_row() {
+    let expected = r#"{"ok":false,"error":{"kind":"McuSupplyOutsideRange","id":"VDD_3V3","message":"the MCU `STM32H753ZITx` is on `VDD_3V3`, declared 4995 to 5005 mV, outside its operating range of 1620 to 3600 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
     let edit = |s: &mut Value| mcu_rail(s, 5000);
-    let (code, out, _) = run_on(SPEC, &["validate", "--file"], "1208-mcu-v", edit);
-    assert_eq!(code, Some(0), "{out}");
-    let (code, out, created) = run_on(SPEC, &["generate", "--spec"], "1208-mcu-g", edit);
-    assert_eq!(code, Some(0), "{out}");
-    assert!(created);
+    for args in [&["validate", "--file"][..], &["generate", "--spec"]] {
+        let (code, out, created) = run_on(SPEC, args, &format!("1208-mcu-{}", args[0]), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{args:?}");
+        assert!(!created, "generate created its output directory");
+    }
 }
 
-/// `AET-WO-1208` §1.4 (`1207` F3), the behaviour before: the emitter held
-/// its own nets against the spelled ones, never the spelled ones against
-/// each other, so a library caller of `schematic::emit` naming a serial or
-/// motor net for a domain or another spelled net got a shorted board
-/// (`validate` refuses each).
+/// `AET-WO-1208` §1.4 (`1207` F3), option (a): `schematic::emit` calls
+/// `Specification::validate` first, so a library caller naming a serial or
+/// motor net for a domain or another spelled net gets `validate`'s refusal,
+/// by kind, `id` and message. Before (`bb72efc`), the emitter held its own
+/// nets against the spelled ones, never the spelled ones against each
+/// other, and each of these emitted a shorted board.
 #[test]
 fn aet_1208_the_emitter_draws_only_what_validate_passes() {
-    for (spec, old, new) in [
-        (SPEC, "CONSOLE_TX", "VDD_3V3"),
-        (SPEC, "CONSOLE_TX", "I2C_SDA"),
-        (MOTORS, "MOTOR3", "MOTOR4"),
+    for (spec, old, new, kind) in [
+        (SPEC, "CONSOLE_TX", "VDD_3V3", "NetShadowsDomain"),
+        (SPEC, "CONSOLE_TX", "I2C_SDA", "DuplicateNetName"),
+        (MOTORS, "MOTOR3", "MOTOR4", "DuplicateNetName"),
     ] {
-        let emitted = emit_renamed(spec, old, new);
-        assert!(emitted.is_ok(), "{old} -> {new}: {:?}", emitted.err());
+        let (refused, emitted) = emit_renamed_both(spec, old, new);
+        assert_eq!(refused.kind(), kind, "{old} -> {new}");
+        assert_eq!(
+            emitted.err(),
+            Some(aethelgard_eda::schematic::EmitError::InvalidSpecification(
+                refused
+            )),
+            "{old} -> {new}"
+        );
     }
 }

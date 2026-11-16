@@ -412,12 +412,15 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
     // HSI's worst case and the cited 8,002 ppm of spread: 154 is 2,596 ppm
     // slow, HSI's 25,894 takes it to 28,423 ppm, and with 8,002 of spread that is
     // 36,425, not below Table 407's
-    // 33,300. `solve` refuses it, naming each term.
+    // 33,300. `validate` refuses it, naming each term (step 21,
+    // `AET-WO-1208` §1.3; before, it passed and `solve` refused it), and so
+    // does `solve`, which calls it first.
     let p = crsf(|p| p["framing"]["baud"] = json!(416666));
-    assert_eq!(spec(vec![p.clone()]).validate(), Ok(()));
+    let v = spec(vec![p.clone()]).validate().unwrap_err();
     let e = solve_refused(spec_json(vec![p]));
+    assert_eq!(e, SolveError::InvalidSpecification(v.clone()));
     assert!(
-        matches!(&e, SolveError::SerialBaudTolerance { port, quantization_ppm: 2_596,
+        matches!(&v, IrValidationError::SerialBaudTolerance { port, quantization_ppm: 2_596,
             hsi_ppm: 25_894, receiver_ppm: 28_423, peer_deviation_ppm: 8_002,
             worst_case_ppm: 36_425,
             tolerance_ppm: 33_300, .. } if port == "RC"),
@@ -1061,11 +1064,11 @@ fn a_baud_no_brr_reaches_is_refused_by_name() {
         p["framing"]["baud"] = json!(baud);
         assert_eq!(
             solve_refused(spec_json(vec![p])),
-            SolveError::SerialBaudOutOfRange {
+            SolveError::InvalidSpecification(IrValidationError::SerialBaudOutOfRange {
                 port: "C".into(),
                 baud,
                 kernel_hz: 64_000_000
-            }
+            })
         );
     }
 }
@@ -1412,10 +1415,10 @@ fn the_serial_check_sums_quantization_hsi_and_the_peer_strictly_below_the_row() 
     // One more ppm reaches the row, which is not below it: `solve` refuses.
     let e = held(6_627).unwrap_err();
     assert!(
-        matches!(&e, SolveError::SerialBaudTolerance { port, quantization_ppm: 800,
-            hsi_ppm: 25_894, receiver_ppm: 26_673, peer_deviation_ppm: 6_627,
-            worst_case_ppm: 33_300,
-            tolerance_ppm: 33_300, .. } if port == "C"),
+        matches!(&e, SolveError::InvalidSpecification(IrValidationError::SerialBaudTolerance {
+            port, quantization_ppm: 800, hsi_ppm: 25_894, receiver_ppm: 26_673,
+            peer_deviation_ppm: 6_627, worst_case_ppm: 33_300, tolerance_ppm: 33_300, .. })
+            if port == "C"),
         "{e}"
     );
 }
@@ -1495,11 +1498,18 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
     // Cited at the spread, on CRSF: held.
     assert_eq!(parse(spec_json(vec![crsf(|_| {})])).validate(), Ok(()));
     // Declared, on CRSF at or above the spread, and on any other role.
-    for ppm in [8_002, 8_003, 20_000] {
+    for ppm in [8_002, 8_003] {
         let mut p = crsf(|p| p["peer_deviation_source"] = json!("declared"));
         p["peer_deviation_ppm"] = json!(ppm);
         assert_eq!(parse(spec_json(vec![p])).validate(), Ok(()), "{ppm}");
     }
+    // 20,000 declared passes the citation rule, and its worst case (43,453
+    // ppm) is over the receiver's 33,300: `validate`'s step 21 refuses it
+    // (`AET-WO-1208` §1.3; before, it passed and `solve` refused it).
+    let mut p = crsf(|p| p["peer_deviation_source"] = json!("declared"));
+    p["peer_deviation_ppm"] = json!(20_000);
+    let e = parse(spec_json(vec![p])).validate().unwrap_err();
+    assert_eq!(e.kind(), "SerialBaudTolerance", "{e}");
     // Cited on CRSF at a figure that is not the spread: above it (below it
     // is `PeerDeviationBelowCited`, judged first).
     for ppm in [8_003, 10_000, u32::MAX] {
@@ -1525,11 +1535,17 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
                 p["framing"] = json!({"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true});
             }
             p["peer_deviation_ppm"] = json!(ppm);
-            assert_eq!(
-                parse(spec_json(vec![p.clone()])).validate(),
-                Ok(()),
-                "{role}"
-            );
+            // Declared, each passes the citation rule. At 8,002 ppm an 8N1
+            // 115,200 baud port's worst case (34,675 ppm) is over the
+            // receiver's 33,300, which step 21 refuses (`AET-WO-1208` §1.3;
+            // before, `solve` did).
+            match parse(spec_json(vec![p.clone()])).validate() {
+                Ok(()) => {}
+                Err(e) => assert!(
+                    ppm == 8_002 && e.kind() == "SerialBaudTolerance",
+                    "{role} {ppm}: {e}"
+                ),
+            }
             p["peer_deviation_source"] = json!("cited");
             let e = refused_ports(vec![p]);
             assert!(

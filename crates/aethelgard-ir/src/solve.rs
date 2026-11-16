@@ -34,8 +34,10 @@ pub enum SolveError {
     /// `BusCapacitanceOverLimit` are validation's own variants, raised here
     /// too (`AET-WO-1205` F1, `AET-WO-1206` §1.5: one error set); each keeps
     /// its kind, `id`, claimant and message. `RiseTimeTooSlow`,
-    /// `SupplyOutsideSpeedTable` and `MissingSpiConstraint` are `validate`'s
-    /// alone (step 21, `AET-WO-1207` §1.2), which `solve` calls first.
+    /// `SupplyOutsideSpeedTable` and `MissingSpiConstraint` (`AET-WO-1207`
+    /// §1.2), and `MotorTiming`, `SerialBaudOutOfRange` and
+    /// `SerialBaudTolerance` (`AET-WO-1208` §1.3), are `validate`'s alone
+    /// (step 21), which `solve` calls first.
     #[error("{0}")]
     InvalidSpecification(IrValidationError),
     #[error("the specification is for part `{spec}`, the pin table for `{table}`")]
@@ -94,11 +96,6 @@ pub enum SolveError {
         quoted(.claimants)
     )]
     MotorsInfeasible { claimants: Vec<String> },
-    #[error("motor output `{output}`: {reason}")]
-    MotorTiming {
-        output: String,
-        reason: &'static str,
-    },
     #[error(
         "serial port `{port}` fixes TX on `{tx_pin}` and RX on `{rx_pin}`, and no USART or UART it may use carries both: a port's two lines are one peripheral's"
     )]
@@ -118,27 +115,6 @@ pub enum SolveError {
         "serial port `{port}`: the solved clock gives no kernel clock for `{peripheral}` (RM0433 Rev 9 §8.7.21, `RCC_D2CCIP2R` at reset)"
     )]
     SerialClock { port: String, peripheral: String },
-    #[error(
-        "serial port `{port}`: {baud} baud needs a BRR outside 16 to 0xFFFF on a {kernel_hz} Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"
-    )]
-    SerialBaudOutOfRange {
-        port: String,
-        baud: u32,
-        kernel_hz: u64,
-    },
-    #[error(
-        "serial port `{port}`: the worst-case baud error, {worst_case_ppm} ppm (the receiver's {receiver_ppm}: quantization {quantization_ppm} with HSI at {hsi_ppm}; plus the peer's declared {peer_deviation_ppm}), is not below the receiver's tolerance of {tolerance_ppm} ppm ({row})"
-    )]
-    SerialBaudTolerance {
-        port: String,
-        row: String,
-        quantization_ppm: u64,
-        hsi_ppm: u32,
-        receiver_ppm: u64,
-        peer_deviation_ppm: u32,
-        worst_case_ppm: u64,
-        tolerance_ppm: u32,
-    },
     #[error(
         "SPI bus `{bus}` on `{peripheral}`: the solved clock gives it no kernel clock (`per_ck` or `hsi_ker_ck` from HSI, RM0433 Rev 9 §8.7.19, §8.7.20, §8.7.22)"
     )]
@@ -184,13 +160,10 @@ impl SolveError {
             Self::NoTimerChannel { .. } => "NoTimerChannel",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
-            Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialPinsSplit { .. } => "SerialPinsSplit",
             Self::NoSerialPeripheral { .. } => "NoSerialPeripheral",
             Self::SerialPortsInfeasible { .. } => "SerialPortsInfeasible",
             Self::SerialClock { .. } => "SerialClock",
-            Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
-            Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
             Self::SpiKernelClockUnavailable { .. } => "SpiKernelClockUnavailable",
             Self::SpiSpeedBelowKernelRange { .. } => "SpiSpeedBelowKernelRange",
         }
@@ -211,13 +184,11 @@ impl SolveError {
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. } => Some(bus),
             Self::NoAdcPin { net } => Some(net),
-            Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => Some(output),
+            Self::NoTimerChannel { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
             Self::SerialPinsSplit { port, .. }
             | Self::NoSerialPeripheral { port, .. }
-            | Self::SerialClock { port, .. }
-            | Self::SerialBaudOutOfRange { port, .. }
-            | Self::SerialBaudTolerance { port, .. } => Some(port),
+            | Self::SerialClock { port, .. } => Some(port),
             Self::Infeasible { .. }
             | Self::NoFreePin { .. }
             | Self::MotorsInfeasible { .. }
@@ -245,18 +216,14 @@ impl SolveError {
             | Self::SpiSpeedBelowKernelRange { bus, .. } => vec![bus.clone()],
             Self::NoAdcPin { net } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
-            Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => {
-                vec![output.clone()]
-            }
+            Self::NoTimerChannel { output, .. } => vec![output.clone()],
             Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
             Self::MotorsInfeasible { claimants } | Self::SerialPortsInfeasible { claimants } => {
                 claimants.clone()
             }
             Self::SerialPinsSplit { port, .. }
             | Self::NoSerialPeripheral { port, .. }
-            | Self::SerialClock { port, .. }
-            | Self::SerialBaudOutOfRange { port, .. }
-            | Self::SerialBaudTolerance { port, .. } => vec![port.clone()],
+            | Self::SerialClock { port, .. } => vec![port.clone()],
         }
     }
 }
@@ -318,13 +285,12 @@ fn solve_inner(
         bor_level: spec.mcu.bor_level,
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
-    out.i2c_ceilings = i2c_ceilings(spec)?;
+    out.i2c_ceilings = i2c_ceilings(spec);
     out.i2c_speeds = spec
         .i2c_buses
         .iter()
         .map(|b| (b.id.clone(), b.speed_hz))
         .collect();
-    i2c_electrical(spec)?;
     let spi_lines = spi_lines(spec);
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
@@ -333,7 +299,7 @@ fn solve_inner(
         });
     }
 
-    let timing = motor_timing(spec, &out.clock)?;
+    let timing = motor_timing(spec, &out.clock).map_err(SolveError::InvalidSpecification)?;
     let model = Model::new(spec, table)?;
     model.check_motors(budget)?;
     model.check_serial(budget)?;
@@ -501,9 +467,8 @@ fn solve_inner(
     Ok(out)
 }
 
-/// Serial port `label`, placed on `peripheral`: its kernel clock, its `BRR`
-/// ([`serial::solve_brr`]) and the static check ([`serial::check_silicon`]),
-/// each refused by name.
+/// Serial port `label`, placed on `peripheral`: its kernel clock, then
+/// [`port_on`], each refused by name.
 fn solved_port(
     label: &str,
     index: usize,
@@ -511,16 +476,58 @@ fn solved_port(
     declared: &crate::SerialPort,
     clock: &SolvedClock,
 ) -> Result<SolvedSerialPort, SolveError> {
-    let baud = declared.framing.baud;
     let kernel = serial::kernel_hz(clock, peripheral).ok_or_else(|| SolveError::SerialClock {
         port: label.to_owned(),
         peripheral: peripheral.to_owned(),
     })?;
-    let brr = serial::solve_brr(kernel, baud).ok_or_else(|| SolveError::SerialBaudOutOfRange {
-        port: label.to_owned(),
-        baud,
-        kernel_hz: kernel,
-    })?;
+    port_on(label, index, peripheral, kernel, declared, clock)
+        .map_err(SolveError::InvalidSpecification)
+}
+
+/// `validate`'s step 21 for serial port `label` (`AET-WO-1208` §1.3): its
+/// `BRR` and worst-case baud error on `clock`, which gives every USART and
+/// UART one kernel clock, so the verdict and the message are the same
+/// whichever peripheral the search later picks.
+pub(crate) fn serial_timing(
+    label: &str,
+    index: usize,
+    clock: &SolvedClock,
+    declared: &crate::SerialPort,
+) -> Result<(), IrValidationError> {
+    let kernels: BTreeSet<u64> = serial::PERIPHERALS
+        .iter()
+        .filter_map(|p| serial::kernel_hz(clock, p))
+        .collect();
+    assert_eq!(
+        kernels.len(),
+        1,
+        "the reset clock gives every USART and UART one kernel clock"
+    );
+    let (peripheral, kernel) = (
+        serial::PERIPHERALS[0],
+        kernels.into_iter().next().unwrap_or(0),
+    );
+    port_on(label, index, peripheral, kernel, declared, clock).map(|_| ())
+}
+
+/// Serial port `label` on `peripheral` at `kernel` Hz: its `BRR`
+/// ([`serial::solve_brr`]) and the static check ([`serial::check_silicon`]),
+/// each refused by name.
+fn port_on(
+    label: &str,
+    index: usize,
+    peripheral: &str,
+    kernel: u64,
+    declared: &crate::SerialPort,
+    clock: &SolvedClock,
+) -> Result<SolvedSerialPort, IrValidationError> {
+    let baud = declared.framing.baud;
+    let brr =
+        serial::solve_brr(kernel, baud).ok_or_else(|| IrValidationError::SerialBaudOutOfRange {
+            port: label.to_owned(),
+            baud,
+            kernel_hz: kernel,
+        })?;
     let port = SolvedSerialPort {
         index: u32::try_from(index).expect("fewer ports than u32::MAX"),
         peripheral: peripheral.to_owned(),
@@ -553,7 +560,7 @@ fn solved_port(
                 )
             },
         );
-        return Err(SolveError::SerialBaudTolerance {
+        return Err(IrValidationError::SerialBaudTolerance {
             port: label.to_owned(),
             row,
             quantization_ppm: check.quantization_ppm,
@@ -775,10 +782,10 @@ pub(crate) fn i2c_timing(clock: &SolvedClock, peripheral: &str) -> Option<Solved
 /// on, in document order. Every timer's kernel clock is the same on the
 /// reset clock (RM0433 Rev 9 Table 57), so the values do not depend on which
 /// timer the search picks; they are solved, and refused by name, before it.
-fn motor_timing(
+pub(crate) fn motor_timing(
     spec: &Specification,
     clock: &SolvedClock,
-) -> Result<Vec<(u32, u32, u32)>, SolveError> {
+) -> Result<Vec<(u32, u32, u32)>, IrValidationError> {
     let (k1, k2) = (
         clock.timer_kernel_hz(motor::Apb::Apb1),
         clock.timer_kernel_hz(motor::Apb::Apb2),
@@ -787,7 +794,7 @@ fn motor_timing(
     spec.motor_outputs
         .iter()
         .map(|m| {
-            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| SolveError::MotorTiming {
+            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| IrValidationError::MotorTiming {
                 output: m.label.clone(),
                 reason: match e {
                     TimingError::NoMicrosecondTick => {
@@ -930,10 +937,10 @@ fn spi_lines(spec: &Specification) -> BTreeMap<String, SpiLine> {
 /// Each I2C bus's ceiling, from the worse of its two lines' declared
 /// `max_rise_time_nanoseconds`, in document order: a mode is legal only when
 /// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` has
-/// refused a line with no constraint (step 19) and a rise time no mode
-/// allows (step 21). Pull-up and capacitance are not read; that physics is
-/// the twin's.
-fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveError> {
+/// refused a line with no constraint (step 19), and a rise time no mode
+/// allows, a speed above its ceiling, a pull-up below its floor and a line
+/// over its capacitance limit (step 21).
+fn i2c_ceilings(spec: &Specification) -> BTreeMap<String, u32> {
     let mut out = BTreeMap::new();
     for bus in &spec.i2c_buses {
         let mut t_max = 0;
@@ -947,64 +954,9 @@ fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveErro
         }
         let ceiling = electrical::ceiling_hz(t_max)
             .expect("Specification::validate checked every I2C bus's rise time (step 21)");
-        if bus.speed_hz > ceiling {
-            return Err(SolveError::InvalidSpecification(
-                IrValidationError::BusTooFast {
-                    bus: bus.id.clone(),
-                    speed_hz: bus.speed_hz,
-                    ceiling_hz: ceiling,
-                },
-            ));
-        }
         out.insert(bus.id.clone(), ceiling);
     }
-    Ok(out)
-}
-
-/// The two static electrical rules (`AET-WO-1203`), after the ceilings: each
-/// bus's pull-up against the sink-current floor at its rail, then each line's
-/// declared capacitance against its bus's limit. Both come from
-/// [`crate::electrical`]; `validate` has already refused an undeclared rail
-/// and `i2c_ceilings` a line with no constraint.
-fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
-    for bus in &spec.i2c_buses {
-        let domain = spec
-            .voltage_domains
-            .iter()
-            .find(|d| d.id == bus.domain)
-            .expect("Specification::validate checked every bus's domain");
-        // The floor is taken at the domain's maximum rail (`AET-WO-4230` §1.5,
-        // review A8), where the sink current is greatest.
-        let floor =
-            electrical::i2c_pull_up_floor_ohms(bus.speed_hz, crate::maximum_millivolts(domain));
-        if bus.pull_up_ohms < floor {
-            return Err(SolveError::InvalidSpecification(
-                IrValidationError::PullUpBelowSinkFloor {
-                    bus: bus.id.clone(),
-                    pull_up_ohms: bus.pull_up_ohms,
-                    floor_ohms: floor,
-                },
-            ));
-        }
-        let limit = electrical::i2c_bus_capacitance_limit_femtofarads(bus.speed_hz);
-        for net in [&bus.sda.net, &bus.scl.net] {
-            let c = spec
-                .net_constraints
-                .iter()
-                .find(|c| &c.net_name == net)
-                .expect("i2c_ceilings checked every I2C line's constraint");
-            if c.max_capacitance_femtofarads > limit {
-                return Err(SolveError::InvalidSpecification(
-                    IrValidationError::BusCapacitanceOverLimit {
-                        net: net.clone(),
-                        capacitance_femtofarads: c.max_capacitance_femtofarads,
-                        limit_femtofarads: limit,
-                    },
-                ));
-            }
-        }
-    }
-    Ok(())
+    out
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
