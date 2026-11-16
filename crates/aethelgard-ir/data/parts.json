@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "parts": [
     {
       "part": "BME280",
@@ -75,6 +75,7 @@
           "sha256": "974f1fe8e3a92a37e3276ceefbf1bd3a1a64cf48c9851cc94896d92e07e4c708"
         },
         "configure": null,
+        "start_up": null,
         "data": null
       }
     },
@@ -121,7 +122,12 @@
               "0x81"
             ]
           ],
-          "settle_us": 10000
+          "settle_us": 10000,
+          "start_up": {
+            "max_us": 6100,
+            "typ_us": null,
+            "condition": "BMP581: from the burst that leaves reset DEEP STANDBY for NORMAL to the first valid words: t_startup_deep 4000 us max, then a 1x temperature and a 1x pressure conversion in sequence, 1050 us max each"
+          }
         },
         "data": {
           "write": [
@@ -201,6 +207,12 @@
           "section": "7.33-7.34 (OSR_CONFIG 0x40: press_en, OSR 1x; ODR_CONFIG 0x81: deep_dis, 240 Hz, normal), pp. 64-65; 5.6.1 (writes auto-increment), p. 39; table 4 (t_startup_deep 4 ms max, t_conv 1x 1.0 ms each): waits 10 ms; read (rendered)",
           "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
         },
+        "start_up": {
+          "document": "Bosch Sensortec BST-BMP581-DS004-13",
+          "revision": "1.13 (2025-04)",
+          "section": "table 4 (t_startup_deep 4 ms max, from DEEP STANDBY, the reset state), p. 11; table 4 (t_conv_t, t_conv_p at OSR 1x: 1.0 ms typ, +5 % = 1.05 ms max each), p. 12; 4000+1050+1050 = 6100 us; read (rendered)",
+          "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        },
         "data": {
           "document": "Bosch Sensortec BST-BMP581-DS004-13",
           "revision": "1.13 (2025-04)",
@@ -252,7 +264,12 @@
               "0x01"
             ]
           ],
-          "settle_us": null
+          "settle_us": 40000,
+          "start_up": {
+            "max_us": null,
+            "typ_us": 20000,
+            "condition": "ICM20948 stand-in: accelerometer from sleep mode (SLEEP cleared) to valid data, 20 ms typ; no maximum is printed"
+          }
         },
         "data": {
           "write": [
@@ -350,6 +367,12 @@
           "section": "8.4 (PWR_MGMT_1, bank 0 0x06, resets to 0x41 with SLEEP set; 0x01 clears SLEEP with CLKSEL 1) and 4.14 (CLKSEL = 1 recommended), pp. 37, 25",
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         },
+        "start_up": {
+          "document": "TDK InvenSense DS-000189 ICM-20948",
+          "revision": "1.6 (2024-03-12)",
+          "section": "3.2, table 2 (accelerometer startup time from sleep mode: 20 ms typ, MIN and MAX empty), p. 12; no maximum is printed; read (rendered)",
+          "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
+        },
         "data": {
           "document": "TDK InvenSense DS-000189 ICM-20948",
           "revision": "1.6 (2024-03-12)",
@@ -409,7 +432,12 @@
               "0x03"
             ]
           ],
-          "settle_us": 20000
+          "settle_us": 20000,
+          "start_up": {
+            "max_us": null,
+            "typ_us": 10000,
+            "condition": "ICM42688P: accelerometer from sleep mode to valid data (PWR_MGMT0 0x03, low-noise mode), 10 ms typ; no maximum is printed"
+          }
         },
         "data": {
           "write": [
@@ -502,6 +530,12 @@
           "section": "14.34 (INTF_CONFIG0 0xC0, ArduPilot's: little-endian data), 14.38 (ACCEL_CONFIG0 0x66: +-2 g, 1 kHz), 14.36 (PWR_MGMT0 0x03, last: no write for 200 us after), pp. 74-78; table 2 (accel start-up 10 ms typ, no max: waits 20 ms), p. 12",
           "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
         },
+        "start_up": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "3.2, table 2 (accelerometer startup time from sleep mode to valid data: 10 ms typ, MIN and MAX empty), p. 12; no maximum, and none for the temperature sensor, is printed; read (rendered)",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
+        },
         "data": {
           "document": "TDK InvenSense DS-000347 ICM-42688-P",
           "revision": "1.9 (2024-11-12)",
@@ -549,7 +583,12 @@
               "0x5D"
             ]
           ],
-          "settle_us": null
+          "settle_us": 340,
+          "start_up": {
+            "max_us": null,
+            "typ_us": 170,
+            "condition": "ICP10111 stand-in: soft reset ACK to idle state, t_SR 170 us typ; no maximum is printed; the measurement the data command starts is not part of this start-up"
+          }
         },
         "data": {
           "write": [
@@ -610,6 +649,12 @@
           "document": "TDK InvenSense DS-000177 ICP-10111",
           "revision": "1.3",
           "section": "5.6, table 13 (soft reset 0x805D), p. 15",
+          "sha256": "249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58"
+        },
+        "start_up": {
+          "document": "TDK InvenSense DS-000177 ICP-10111",
+          "revision": "1.3",
+          "section": "3.3, table 7 (soft reset time t_SR 170 us typ, MIN and MAX empty; t_MEAS 20.8 typ, 23.8 ms max is the data command's), p. 9; no start-up maximum is printed; read (rendered)",
           "sha256": "249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58"
         },
         "data": {
@@ -688,6 +733,7 @@
           "sha256": "aacc9c80342e7dcceefa4ca4a801d1c75c95e093bb3722e85a9f9410cd3e8529"
         },
         "configure": null,
+        "start_up": null,
         "data": null
       }
     },
@@ -758,6 +804,7 @@
           "pending": "https://www.winbond.com/hq/new-online-purchasing-guide/?__locale=en&pLine=/product/code-storage-flash/qspi-nor/&pNo=W25Q64JV"
         },
         "configure": null,
+        "start_up": null,
         "data": null
       }
     }
