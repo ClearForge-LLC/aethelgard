@@ -107,6 +107,9 @@ fn witness_of(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         // Trace 13 (`AET-WO-2302`): every output of the timer names its
         // anchor, one period before the first rise.
         anchor_ns: Some(6),
+        edges_before: 0,
+        edges_after: 0,
+        cen_rises: 1,
     }
 }
 
@@ -602,8 +605,9 @@ fn late_dshot(findings: &[(&str, u64)]) -> Vec<Record> {
                 period_ns,
                 high_ns,
                 anchor_ns,
+                cen_rises,
                 ..
-            } => (*period_ns, *high_ns, *anchor_ns) = (424, 160, None),
+            } => (*period_ns, *high_ns, *anchor_ns, *cen_rises) = (424, 160, None, 0),
             Record::BootObserved {
                 boot_word,
                 instructions_expected,

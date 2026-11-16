@@ -1297,8 +1297,27 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
     // (`AET-WO-4300a`).
     for m in &boot.motor {
         let w = &m.twin;
-        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched), Some(end_ns)) =
-            (w.status, w.rises, w.falls, w.off_grid, w.batched, w.end_ns)
+        let (
+            Some(status),
+            Some(rises),
+            Some(falls),
+            Some(off_grid),
+            Some(batched),
+            Some(end_ns),
+            Some(edges_before),
+            Some(edges_after),
+            Some(cen_rises),
+        ) = (
+            w.status,
+            w.rises,
+            w.falls,
+            w.off_grid,
+            w.batched,
+            w.end_ns,
+            w.edges_before,
+            w.edges_after,
+            w.cen_rises,
+        )
         else {
             continue;
         };
@@ -1319,6 +1338,9 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             off_grid,
             batched,
             anchor_ns: w.anchor_ns,
+            edges_before,
+            edges_after,
+            cen_rises,
         });
     }
     // Kind 30, each judge's stop (`AET-WO-2302` D2).

@@ -1541,6 +1541,10 @@ pub struct MotorWitness {
     /// never judged, each named.
     pub edges_before: u64,
     pub edges_after: u64,
+    /// Its timer's `CEN` rises in that boot, the anchor's first (kind 26
+    /// carries it, so replay binds `motor_anchor_repeated`; adversarial
+    /// pass 1, L3).
+    pub cen_rises: u64,
 }
 
 /// The observer's edges, `(stamp, rising)`, in the log's order; `None` when
@@ -1591,6 +1595,7 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
         anchor_ns: None,
         edges_before: 0,
         edges_after: 0,
+        cen_rises: 0,
     };
     let Some(edges) = edges else {
         return w;
@@ -2631,9 +2636,11 @@ fn witness_motor_in(
 ) -> MotorWitness {
     let anchor = timer.and_then(|t| t.anchor.map(|a| a.2));
     let end = timer.and_then(|t| t.end_ns).unwrap_or(run_end_ns);
+    let cen_rises = timer.map_or(0, |t| t.rises.len() as u64);
     let Some(Some(all)) = edges else {
         let mut w = witness_motor(m, edges, end);
         w.anchor_ns = anchor;
+        w.cen_rises = cen_rises;
         return w;
     };
     let Some(at) = anchor else {
@@ -2659,6 +2666,7 @@ fn witness_motor_in(
     w.anchor_ns = Some(at);
     w.edges_before = before;
     w.edges_after = after;
+    w.cen_rises = cen_rises;
     w
 }
 

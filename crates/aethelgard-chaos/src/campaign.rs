@@ -1083,9 +1083,17 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     }
     // Each DShot timer's window and stop (`AET-WO-2302`), from the records
     // once the boot word is set: a window past the boot, or an anchored
-    // window inside it with no judge's stop, each named once per timer.
+    // window inside it with no judge's stop, each named once per timer; a
+    // stop that ran, cleared `CEN` and read a register back off its solved
+    // value, once per such register (and once for registers it did not
+    // read); a timer whose `CEN` rose more than once, once; and each
+    // output's edges before its anchor or after its window, once each
+    // (adversarial pass 1, L3).
     if booted {
-        for (kind, n) in dshot_timer_findings(records) {
+        for (kind, n) in dshot_timer_findings(records)
+            .into_iter()
+            .chain(anchor_record_findings(records))
+        {
             *motor_needed.entry(kind).or_default() += n;
         }
     }
@@ -1922,8 +1930,11 @@ pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<()
     }
 }
 
-/// Every motor finding kind the records explain.
-const MOTOR_FINDINGS: [&str; 7] = [
+/// Every motor finding kind the records explain. `motor_anchor_out_of_order`
+/// stays unbound: it is the order of the boot's log lines (the anchor
+/// against the last device step's witness and the boot word), which no
+/// record carries.
+const MOTOR_FINDINGS: [&str; 11] = [
     MOTOR_STATIC_FINDING,
     MOTOR_UNWITNESSED_FINDING,
     MOTOR_MISMATCH_FINDING,
@@ -1931,7 +1942,67 @@ const MOTOR_FINDINGS: [&str; 7] = [
     MOTOR_ANCHOR_UNOBSERVED_FINDING,
     MOTOR_WINDOW_PAST_RUN_FINDING,
     JUDGE_STOP_MISSING_FINDING,
+    JUDGE_STOP_MISMATCH_FINDING,
+    MOTOR_ANCHOR_REPEATED_FINDING,
+    MOTOR_EDGE_BEFORE_FINDING,
+    MOTOR_EDGE_AFTER_FINDING,
 ];
+
+/// The anchors' findings kinds 26 and 30 carry (`AET-WO-2302` adversarial
+/// pass 1, L3), as the judge names them once the boot word is set:
+/// `judge_stop_mismatch` once per register a stop that left `CEN` cleared
+/// read back off its solved value under its mask, and once more when it
+/// read fewer registers back than its timer has; `motor_anchor_repeated`
+/// once per timer whose `CEN` rose more than once (kind 26's `cen_rises`,
+/// one per timer, [`check_motor_joins`]); `motor_edge_before_anchor` and
+/// `motor_edge_after_window` once per output with such edges.
+fn anchor_record_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
+    let (mut mismatch, mut before, mut after) = (0, 0, 0);
+    let mut rises: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::JudgeStop {
+                read_back,
+                cr1_after: Some(c),
+                ..
+            } if c & 1 == 0 => {
+                let off = read_back
+                    .iter()
+                    .filter(|g| g.observed.is_some_and(|o| o & g.mask != g.expected))
+                    .count() as u64;
+                let short = read_back.iter().any(|g| g.observed.is_none());
+                mismatch += off + u64::from(short);
+            }
+            Record::MotorWitness {
+                label,
+                edges_before,
+                edges_after,
+                cen_rises,
+                ..
+            } => {
+                before += u64::from(*edges_before > 0);
+                after += u64::from(*edges_after > 0);
+                let timer = records.iter().find_map(|m| match m {
+                    Record::MotorOutputSolved {
+                        label: l, timer, ..
+                    } if l == label => Some(timer.as_str()),
+                    _ => None,
+                });
+                if let Some(t) = timer {
+                    rises.insert(t, *cen_rises);
+                }
+            }
+            _ => {}
+        }
+    }
+    let repeated = rises.values().filter(|&&n| n > 1).count() as u64;
+    vec![
+        (JUDGE_STOP_MISMATCH_FINDING, mismatch),
+        (MOTOR_ANCHOR_REPEATED_FINDING, repeated),
+        (MOTOR_EDGE_BEFORE_FINDING, before),
+        (MOTOR_EDGE_AFTER_FINDING, after),
+    ]
+}
 
 /// Each DShot timer's window findings, from kinds 24, 26 and 30
 /// (`AET-WO-2302`): its anchored window past the boot
@@ -2001,6 +2072,7 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     // count is not tied to it: a droop's boot counts from the last reset's
     // release (third adversarial review, F1).
     let mut timer_anchor: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+    let mut timer_rises: BTreeMap<&str, u64> = BTreeMap::new();
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -2034,6 +2106,7 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                     anchor_ns,
                     end_ns,
                     first_ns,
+                    cen_rises,
                     ..
                 } = r
                 else {
@@ -2051,8 +2124,10 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                         "a motor witness's window is not its anchor's, or its first rise is before it",
                     );
                 }
-                if *timer_anchor.entry(timer.as_str()).or_insert(*anchor_ns) != *anchor_ns {
-                    return Err("two outputs of one timer name different anchors");
+                if *timer_anchor.entry(timer.as_str()).or_insert(*anchor_ns) != *anchor_ns
+                    || *timer_rises.entry(timer.as_str()).or_insert(*cen_rises) != *cen_rises
+                {
+                    return Err("two outputs of one timer name different anchors or CEN rises");
                 }
                 if !witness_consistent(m, r) {
                     return Err(

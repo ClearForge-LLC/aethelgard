@@ -7,9 +7,12 @@
 mod common;
 
 use aethelgard_chaos::campaign::{
-    JUDGE_STOP_MISSING_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING, MOTOR_MISMATCH_FINDING,
+    BOOT_WORD_FINDING, JUDGE_STOP_MISMATCH_FINDING, JUDGE_STOP_MISSING_FINDING,
+    MOTOR_ANCHOR_ORDER_FINDING, MOTOR_ANCHOR_REPEATED_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING,
+    MOTOR_EDGE_AFTER_FINDING, MOTOR_EDGE_BEFORE_FINDING, MOTOR_MISMATCH_FINDING,
     MOTOR_STATIC_FINDING, MOTOR_STATIC_ONLY_FINDING, MOTOR_UNWITNESSED_FINDING,
-    MOTOR_WINDOW_PAST_RUN_FINDING, check_run,
+    MOTOR_WINDOW_PAST_RUN_FINDING, SERIAL_INJECTION_ORDER_FINDING, SERIAL_WIRE_PAST_RUN_FINDING,
+    check_run,
 };
 use aethelgard_chaos::record::{Reading, Record};
 use aethelgard_chaos::{Event, replay_dir};
@@ -100,6 +103,9 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         off_grid,
         batched,
         anchor_ns: (status != "unanchored").then_some(PWM_ANCHOR),
+        edges_before: 0,
+        edges_after: 0,
+        cen_rises: u64::from(status != "unanchored"),
     }
 }
 
@@ -637,6 +643,9 @@ fn dshot_run(
         off_grid: 2 * rises - 1,
         batched: 0,
         anchor_ns: anchor,
+        edges_before: 0,
+        edges_after: 0,
+        cen_rises: u64::from(anchor.is_some()),
     };
     let mut at_end = r.split_off(9);
     if let Some((stop_at, cr1)) = stop {
@@ -777,4 +786,120 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
     let unanchored = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
     assert!(check_run(&unanchored).unwrap().matched);
     assert!(check_run(&dshot_run(None, None, vec![])).is_err());
+}
+
+/// Adversarial pass 1, L3 (R1, R2): replay binds what kinds 26 and 30 can
+/// carry. A stop that cleared `CEN` and read a register back off its solved
+/// value names `judge_stop_mismatch` once per such register; kind 26's
+/// `edges_before`, `edges_after` and `cen_rises` name
+/// `motor_edge_before_anchor`, `motor_edge_after_window` (once per output)
+/// and `motor_anchor_repeated` (once per timer). A verdict that adds or
+/// drops any of them beside its records is refused. What no record
+/// carries stays unbound, documented: `motor_anchor_out_of_order` (the
+/// boot's line order), `serial_wire_past_run` (the boot word's instant),
+/// `serial_injection_out_of_order` (the logged `TDR` bytes).
+#[test]
+fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
+    let a = 30_670;
+    let end = a + 2_000_000;
+    let run = |f: &dyn Fn(&mut Vec<Record>), findings: Vec<(&str, u64)>| {
+        let mut r = dshot_run(Some(a), Some((end, 0x80)), findings);
+        f(&mut r);
+        check_run(&r).map(|s| s.matched)
+    };
+    let none = |_: &mut Vec<Record>| {};
+    assert_eq!(run(&none, vec![]), Ok(true));
+    // R2: each bound kind named beside clean records is refused.
+    for kind in [
+        JUDGE_STOP_MISMATCH_FINDING,
+        MOTOR_ANCHOR_REPEATED_FINDING,
+        MOTOR_EDGE_BEFORE_FINDING,
+        MOTOR_EDGE_AFTER_FINDING,
+    ] {
+        assert!(run(&none, vec![(kind, 1)]).is_err(), "{kind}");
+    }
+    // The unbound ones are neither required nor refused.
+    for kind in [
+        MOTOR_ANCHOR_ORDER_FINDING,
+        SERIAL_WIRE_PAST_RUN_FINDING,
+        SERIAL_INJECTION_ORDER_FINDING,
+    ] {
+        assert_eq!(run(&none, vec![(kind, 1)]), Ok(true), "{kind}");
+    }
+    // R1: the read-back off its solved value: named once, or refused.
+    let off = |r: &mut Vec<Record>| {
+        if let Record::JudgeStop { read_back, .. } = &mut r[9] {
+            read_back[0].observed = Some(0x00);
+        }
+    };
+    assert!(run(&off, vec![]).is_err());
+    assert_eq!(run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]), Ok(true));
+    assert!(run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 2)]).is_err());
+    // A register the stop did not read back: once.
+    let short = |r: &mut Vec<Record>| {
+        if let Record::JudgeStop { read_back, .. } = &mut r[9] {
+            read_back[0].observed = None;
+        }
+    };
+    assert!(run(&short, vec![]).is_err());
+    assert_eq!(
+        run(&short, vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]),
+        Ok(true)
+    );
+    // A stop that left CEN set is `judge_stop_missing`, never a mismatch.
+    let left = |r: &mut Vec<Record>| {
+        off(r);
+        if let Record::JudgeStop { cr1_after, .. } = &mut r[9] {
+            *cr1_after = Some(0x81);
+        }
+    };
+    assert_eq!(run(&left, vec![(JUDGE_STOP_MISSING_FINDING, 1)]), Ok(true));
+    // Kind 26's counts.
+    let witness = |before: u64, after: u64, rises: u64| {
+        move |r: &mut Vec<Record>| {
+            if let Record::MotorWitness {
+                edges_before,
+                edges_after,
+                cen_rises,
+                ..
+            } = &mut r[8]
+            {
+                (*edges_before, *edges_after, *cen_rises) = (before, after, rises);
+            }
+        }
+    };
+    for (w, kind) in [
+        (witness(3, 0, 1), MOTOR_EDGE_BEFORE_FINDING),
+        (witness(0, 5, 1), MOTOR_EDGE_AFTER_FINDING),
+        (witness(0, 0, 2), MOTOR_ANCHOR_REPEATED_FINDING),
+    ] {
+        assert!(run(&w, vec![]).is_err(), "{kind}");
+        assert_eq!(run(&w, vec![(kind, 1)]), Ok(true), "{kind}");
+    }
+    // Before the boot word, none is named.
+    let unbooted = |r: &mut Vec<Record>| {
+        witness(3, 5, 2)(r);
+        off(r);
+        if let Some(Record::BootObserved { boot_word, .. }) = r
+            .iter_mut()
+            .find(|x| matches!(x, Record::BootObserved { .. }))
+        {
+            boot_word.observed = Some(0);
+        }
+    };
+    assert_eq!(run(&unbooted, vec![(BOOT_WORD_FINDING, 1)]), Ok(true));
+    // Kind 26 itself, as the archive's reader checks it: an anchor without
+    // a rise, a rise without one, or edges outside a window it does not
+    // have, are refused.
+    let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    assert_eq!(r[8].check(), Ok(()));
+    witness(0, 0, 0)(&mut r);
+    assert!(r[8].check().is_err());
+    let mut r = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
+    assert!(check_run(&r).unwrap().matched);
+    assert_eq!(r[8].check(), Ok(()));
+    for (before, after, rises) in [(0, 0, 1), (1, 0, 0), (0, 1, 0)] {
+        witness(before, after, rises)(&mut r);
+        assert!(r[8].check().is_err(), "{before} {after} {rises}");
+    }
 }

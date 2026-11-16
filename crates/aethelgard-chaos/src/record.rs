@@ -530,7 +530,13 @@ pub enum Record {
     /// (`AET-WO-2302`) its window: `anchor_ns`, its timer's first `CEN` rise
     /// in the boot the judge reads (absent when none was observed), and
     /// `end_ns`, `DSHOT_WINDOW_NS` after it for DShot and the boot's end for
-    /// PWM; replay derives both from the records.
+    /// PWM; replay derives both from the records. And the edges the window
+    /// left out, `edges_before` its anchor and `edges_after` its end, and
+    /// `cen_rises`, its timer's `CEN` rises in that boot (0 exactly when no
+    /// anchor was observed; one timer's outputs all carry the same), from
+    /// which replay binds `motor_edge_before_anchor`,
+    /// `motor_edge_after_window` and `motor_anchor_repeated` (adversarial
+    /// pass 1, L3).
     MotorWitness {
         label: String,
         observer: String,
@@ -549,6 +555,9 @@ pub enum Record {
         off_grid: u64,
         batched: u64,
         anchor_ns: Option<u64>,
+        edges_before: u64,
+        edges_after: u64,
+        cen_rises: u64,
     },
     /// Kind 27: one solved serial port, from the solved topology alone
     /// (`AET-WO-4300b`): its label, its place in the specification, its
@@ -1380,6 +1389,9 @@ impl Record {
                 off_grid,
                 batched,
                 anchor_ns,
+                edges_before,
+                edges_after,
+                cen_rises,
             } => vec![
                 t(label),
                 t(observer),
@@ -1397,6 +1409,9 @@ impl Record {
                 u(*off_grid),
                 u(*batched),
                 opt(*anchor_ns),
+                u(*edges_before),
+                u(*edges_after),
+                u(*cen_rises),
             ],
             Self::SerialPortSolved {
                 label,
@@ -1783,6 +1798,9 @@ impl Record {
                 off_grid: f.uint()?,
                 batched: f.uint()?,
                 anchor_ns: f.opt()?,
+                edges_before: f.uint()?,
+                edges_after: f.uint()?,
+                cen_rises: f.uint()?,
             },
             27 => Self::SerialPortSolved {
                 label: f.text()?,
@@ -2264,6 +2282,10 @@ impl Record {
                 grain_ns,
                 quantum_ns,
                 status,
+                anchor_ns,
+                edges_before,
+                edges_after,
+                cen_rises,
                 ..
             } => {
                 if !name_ok(label) || !name_ok(observer) {
@@ -2272,6 +2294,12 @@ impl Record {
                     Err("a motor witness's status is not one the judge gives")
                 } else if *grain_ns == 0 || *quantum_ns == 0 {
                     Err("a motor witness's grain or quantum is 0")
+                } else if anchor_ns.is_some() != (*cen_rises > 0)
+                    || (anchor_ns.is_none() && (*edges_before > 0 || *edges_after > 0))
+                {
+                    Err(
+                        "a motor witness names an anchor without a CEN rise, a rise without an anchor, or edges outside a window it does not have",
+                    )
                 } else {
                     Ok(())
                 }

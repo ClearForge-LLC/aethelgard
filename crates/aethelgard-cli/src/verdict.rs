@@ -508,9 +508,11 @@ pub struct TwinReport {
     /// boot's end for PWM (`AET-WO-2302`). `null` until Renode has run, as
     /// every field below; the anchor `null` too when none was observed.
     pub anchor_ns: Option<u64>,
-    /// Edges before the anchor and after the window's end, each named.
+    /// Edges before the anchor and after the window's end, each named, and
+    /// the timer's `CEN` rises in the boot (more than one named).
     pub edges_before: Option<u64>,
     pub edges_after: Option<u64>,
+    pub cen_rises: Option<u64>,
     pub status: Option<&'static str>,
     pub rises: Option<u64>,
     pub falls: Option<u64>,
@@ -545,6 +547,7 @@ impl MotorReport {
                 anchor_ns: w.and_then(|w| w.anchor_ns),
                 edges_before: w.map(|w| w.edges_before),
                 edges_after: w.map(|w| w.edges_after),
+                cen_rises: w.map(|w| w.cen_rises),
                 status: w.map(|w| w.status),
                 rises: w.map(|w| w.rises),
                 falls: w.map(|w| w.falls),
