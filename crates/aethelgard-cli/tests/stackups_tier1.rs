@@ -141,7 +141,8 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
     ));
     // Measured with the integer path (FEEDBACK §2): evidence for Sentinel-02.
     // AET-WO-1307 (its FEEDBACK, K1 and K2): the escape and the order moved
-    // the fixture's copper; were 45_857 and 48_827.
+    // the fixture's copper; were 45_857 and 48_827. AET-WO-4300g (the MCU's
+    // support network on the board): were 49_641, 45_671, 15_264 and 16_439.
     let bounds: Vec<(String, u64)> = x["lines"]
         .as_array()
         .unwrap()
@@ -156,12 +157,12 @@ fn the_four_layer_board_is_the_declared_one_and_extracts() {
     assert_eq!(
         bounds,
         [
-            ("I2C_SDA".to_owned(), 49_641),
-            ("I2C_SCL".to_owned(), 45_671),
+            ("I2C_SDA".to_owned(), 44_924),
+            ("I2C_SCL".to_owned(), 48_334),
             // `AET-WO-4300c`: SCK and MOSI, the flash's pin at 8 pF; on
             // AET-WO-1307's routes (were 18_470 and 17_114).
-            ("SPI_SCK".to_owned(), 15_264),
-            ("SPI_MOSI".to_owned(), 16_439)
+            ("SPI_SCK".to_owned(), 16_656),
+            ("SPI_MOSI".to_owned(), 17_729)
         ],
         "re-measure FEEDBACK §2 (and AET-WO-4300c's) before changing this line"
     );
@@ -316,7 +317,7 @@ fn the_old_and_new_paths_agree_on_the_reference() {
         // [46_800, 58_235, 18_521, 17_188] (AET-WO-1305 §3, AET-WO-4300c).
         // AET-WO-4300b: the console's nets reroute SCK and MOSI; SPI was
         // [16_972, 13_772] (extract_tier1 says how).
-        [50_576, 43_749, 15_534, 17_567],
+        [43_317, 46_927, 16_498, 17_023],
         "the reference's bounds (AET-WO-1305 §3, AET-WO-4300c, AET-WO-1307 K2) moved"
     );
     fs::remove_dir_all(&dir).unwrap();

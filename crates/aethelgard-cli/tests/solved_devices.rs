@@ -112,8 +112,9 @@ fn no_fenced_crate_allows_the_disallowed_methods_lint() {
 
 /// `aethelgard-eda` draws declared intent, not a generator of the firmware or
 /// the platform, so it carries no `clippy.toml` fence (`RUL-16`, 2026-11-09).
-/// Pinned at the one file that calls the accessors, so a second reader goes
-/// to the architect (FEEDBACK).
+/// Pinned at the files that call the accessors, so another reader goes to
+/// the architect (FEEDBACK). The second, `support.rs`, is the support gate
+/// reading the declared connectors as requirements (`AET-WO-4300g` FEEDBACK).
 #[test]
 fn the_eda_reader_is_exactly_the_schematic() {
     let mut readers = std::collections::BTreeSet::new();
@@ -131,5 +132,8 @@ fn the_eda_reader_is_exactly_the_schematic() {
             }
         }
     }
-    assert_eq!(readers.into_iter().collect::<Vec<_>>(), ["schematic.rs"]);
+    assert_eq!(
+        readers.into_iter().collect::<Vec<_>>(),
+        ["schematic.rs", "support.rs"]
+    );
 }

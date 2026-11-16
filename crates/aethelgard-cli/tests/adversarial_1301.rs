@@ -202,12 +202,37 @@ fn attack_a_wide_reference_stays_clear_of_every_other_part() {
     assert!(met.is_empty(), "{} collisions: {met:#?}", met.len());
 }
 
-/// Emits `spec`; every reference text, by KiCad's ink, that leaves the
-/// outline or meets another part's courtyard or reference.
+/// The references a board must keep off its silkscreen (`AET-WO-1310` D2),
+/// from the design's ownership, never from the board: each anchored part's,
+/// and the MCU's when anchored parts ring it (`AET-WO-4300d2` §1.3,
+/// `AET-WO-4300g` §3).
+fn on_fab(spec: &Value, sha256: &str) -> std::collections::BTreeSet<String> {
+    let spec: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, sha256).unwrap();
+    let anchored = aethelgard_eda::schematic::anchored(&spec, &solved, &table).unwrap();
+    anchored
+        .keys()
+        .cloned()
+        .chain(anchored.values().filter(|ic| ic.as_str() == "U1").cloned())
+        .collect()
+}
+
+/// Emits `spec`; every printed reference text (`F.SilkS`), by KiCad's ink and
+/// at its angle, that leaves the outline or meets another part's courtyard
+/// or printed reference. The claim is about printed references; so that it
+/// cannot pass with none printed, every reference the design keeps off the
+/// silkscreen must be on `F.Fab`, and every other on `F.SilkS`
+/// (`AET-WO-1310` D2).
 fn reference_collisions(dir: &Path, name: &str, spec: &Value) -> Vec<String> {
     let out = emit(&write_spec(dir, name, spec), &dir.join(name));
     let r = json_line(&out);
     assert_eq!(out.status.code(), Some(0), "{r}");
+    let fab = on_fab(spec, r["specification_sha256"].as_str().unwrap());
+    assert!(
+        fab.contains("U1") && fab.len() > 1,
+        "{name}: no anchored part: {fab:?}"
+    );
     let board =
         sexpr::parse(&fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap()).unwrap();
     let edge = board.child("gr_rect").unwrap();
@@ -225,6 +250,8 @@ fn reference_collisions(dir: &Path, name: &str, spec: &Value) -> Vec<String> {
     };
     // (reference, courtyard, reference text box), board coordinates.
     let mut parts: Vec<(String, Rect, Rect)> = Vec::new();
+    let mut courtyards: Vec<(String, Rect)> = Vec::new();
+    let (mut silk, mut all) = (0, 0);
     for fp in board.children("footprint") {
         let reference = fp.property("Reference").unwrap().to_owned();
         let at = fp.child("at").unwrap();
@@ -234,6 +261,25 @@ fn reference_collisions(dir: &Path, name: &str, spec: &Value) -> Vec<String> {
             .children("property")
             .find(|p| p.arg(1) == Some("Reference"))
             .unwrap();
+        all += 1;
+        courtyards.push((reference.clone(), shift(g.courtyard, origin)));
+        match prop.child("layer").and_then(|l| l.arg(1)) {
+            Some("F.Fab") => {
+                assert!(
+                    fab.contains(&reference),
+                    "{name}: {reference}'s reference is not printed"
+                );
+                continue;
+            }
+            Some("F.SilkS") => {
+                assert!(
+                    !fab.contains(&reference),
+                    "{name}: {reference}'s reference is printed"
+                );
+                silk += 1;
+            }
+            other => panic!("{name}: {reference}'s reference is on {other:?}"),
+        }
         let pat = prop.child("at").unwrap();
         let font = prop.child("effects").unwrap().child("font").unwrap();
         let (w, h) = (
@@ -241,9 +287,15 @@ fn reference_collisions(dir: &Path, name: &str, spec: &Value) -> Vec<String> {
             nm(font.child("size").unwrap(), 2),
         );
         let thick = nm(font.child("thickness").unwrap(), 1);
-        assert_eq!(pat.arg(3).unwrap_or("0"), "0", "{reference}");
+        let angle = pat.arg(3).unwrap_or("0");
         let n = i64::try_from(reference.chars().count()).unwrap();
         let (hw, hh) = (reference_half_width(n, w, thick), h / 2 + thick);
+        // A quarter turn swaps the text's box; a half turn keeps it.
+        let (hw, hh) = match angle {
+            "0" | "180" => (hw, hh),
+            "90" | "270" => (hh, hw),
+            a => panic!("{name}: {reference}'s reference at {a}"),
+        };
         let (x, y) = (nm(pat, 1) + origin.0, nm(pat, 2) + origin.1);
         let text = Rect {
             x0: x - hw,
@@ -253,14 +305,21 @@ fn reference_collisions(dir: &Path, name: &str, spec: &Value) -> Vec<String> {
         };
         parts.push((reference, shift(g.courtyard, origin), text));
     }
+    // Every reference not kept off the silkscreen was judged.
+    assert_eq!(silk, all - fab.len(), "{name}: printed references judged");
     let mut met = Vec::new();
     for (i, (a, _, text)) in parts.iter().enumerate() {
         if !outline.contains(*text) {
             met.push(format!("{a}'s reference leaves the board"));
         }
-        for (j, (b, courtyard, other_text)) in parts.iter().enumerate() {
-            if i != j && (text.overlaps(*courtyard) || (j > i && text.overlaps(*other_text))) {
+        for (b, courtyard) in &courtyards {
+            if b != a && text.overlaps(*courtyard) {
                 met.push(format!("{a}'s reference meets {b}"));
+            }
+        }
+        for (b, _, other_text) in &parts[i + 1..] {
+            if text.overlaps(*other_text) {
+                met.push(format!("{a}'s reference meets {b}'s"));
             }
         }
     }

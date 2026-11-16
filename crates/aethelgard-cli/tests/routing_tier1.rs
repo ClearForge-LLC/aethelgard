@@ -287,20 +287,35 @@ fn the_routers_judges_refuse_orphan_and_relabelled_copper() {
             "\t(segment (start {a}) (end {b}) (width 0.2) (layer \"F.Cu\") (net \"{net}\") (uuid \"00000000-0000-4000-8000-00000000000{i}\"))\n"
         )
     };
+    // Placed from the board as emitted, not at fixed coordinates: the ring and
+    // the stray 1.8 mm inside the outline's top-left corner, clear of its
+    // 0.5 mm edge rule; the stub from U3's ALERT pad, 0.5125 mm down, clear of
+    // its neighbours (`AET-WO-4300g`: the support network moved both).
+    let (b0, _) = read(&board);
+    let mm = |nm: i64| format!("{}.{:06}", nm / 1_000_000, nm % 1_000_000);
+    let (x0, y0) = (b0.outline.x0 + 1_800_000, b0.outline.y0 + 1_800_000);
+    let p = |dx: i64, dy: i64| format!("{} {}", mm(x0 + dx), mm(y0 + dy));
     let ring = [
-        seg("74 78", "76 78", "/I2C_SDA", 1),
-        seg("76 78", "76 79", "/I2C_SDA", 2),
-        seg("76 79", "74 79", "/I2C_SDA", 3),
-        seg("74 79", "74 78", "/I2C_SDA", 4),
+        seg(&p(0, 0), &p(2_000_000, 0), "/I2C_SDA", 1),
+        seg(&p(2_000_000, 0), &p(2_000_000, 1_000_000), "/I2C_SDA", 2),
+        seg(&p(2_000_000, 1_000_000), &p(0, 1_000_000), "/I2C_SDA", 3),
+        seg(&p(0, 1_000_000), &p(0, 0), "/I2C_SDA", 4),
     ]
     .concat();
+    let alert = b0
+        .parts
+        .iter()
+        .find(|q| q.reference == "U3")
+        .and_then(|q| q.pads.iter().find(|d| d.number == "3"))
+        .map(|d| ((d.rect.x0 + d.rect.x1) / 2, (d.rect.y0 + d.rect.y1) / 2))
+        .unwrap();
     let stub = seg(
-        "90.1125 85.15",
-        "89.6 85.15",
+        &format!("{} {}", mm(alert.0), mm(alert.1)),
+        &format!("{} {}", mm(alert.0), mm(alert.1 + 512_500)),
         "unconnected-(U3-ALERT-Pad3)",
         5,
     );
-    let stray = seg("74 79", "76 79", "/NOPE", 6);
+    let stray = seg(&p(0, 1_000_000), &p(2_000_000, 1_000_000), "/NOPE", 6);
     let at = board.rfind("\t(embedded_fonts no)").unwrap();
     let mut relabelled = String::new();
     let mut copper = false;

@@ -89,6 +89,8 @@ pub struct Bound<'a> {
     pub conditions: &'a [String],
     /// The verdict's lifecycle lines: its banner, then each part unheld.
     pub lifecycle: &'a [String],
+    /// The support gate's verdict, as lines for the notes (`AET-WO-4300g`).
+    pub support: &'a [String],
 }
 
 /// What the export reports for the verdict's `fab` key: the tool it ran and
@@ -266,8 +268,11 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         b.specification_sha256,
         b.spec,
         &drills,
-        b.conditions,
-        b.lifecycle,
+        &Stated {
+            conditions: b.conditions,
+            lifecycle: b.lifecycle,
+            support: b.support,
+        },
     );
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
@@ -308,6 +313,14 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
     out
 }
 
+/// What the verdict states that the notes repeat: `extract`'s conditions,
+/// the lifecycle lines, and the support gate's lines.
+struct Stated<'a> {
+    conditions: &'a [String],
+    lifecycle: &'a [String],
+    support: &'a [String],
+}
+
 /// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
 /// `drills`, with the `extract` verdict's `conditions` and `lifecycle` lines
 /// as it stated them (`AET-WO-3303`).
@@ -317,8 +330,7 @@ fn notes(
     specification_sha256: &str,
     spec: &aethelgard_ir::Specification,
     drills: &[aethelgard_eda::fab::Drill],
-    conditions: &[String],
-    lifecycle: &[String],
+    stated: &Stated<'_>,
 ) -> String {
     let stack = aethelgard_eda::stack::Stack::of(spec);
     let layers = gerbers(&stack);
@@ -330,10 +342,11 @@ fn notes(
         kicad_version: KICAD_VERSION,
         files: &described,
         stack: &stack,
-        conditions,
-        lifecycle,
+        conditions: stated.conditions,
+        lifecycle: stated.lifecycle,
         drills,
         power: &aethelgard_eda::loops::conditions(spec),
+        support: stated.support,
     })
 }
 
@@ -883,8 +896,11 @@ mod tests {
                         "SPEC_SHA",
                         &spec,
                         &vias_only(n),
-                        &stated,
-                        &[]
+                        &Stated {
+                            conditions: &stated,
+                            lifecycle: &[],
+                            support: &[],
+                        },
                     ),
                     golden,
                     "{project}"

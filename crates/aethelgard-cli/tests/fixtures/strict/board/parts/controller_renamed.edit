@@ -1,5 +1,5 @@
 # class: parts
-# note: U1 renamed J2 (B2; J1 at AET-WO-1305, a reference the reference board has held since AET-WO-4300b's console)
+# note: U1 renamed J9 (J1 is the debug connector now) (B2)
 # main: drc 0 pass; drc-parity 1 fail; extract 3 DeviceNotOnLine
 # drc: 0 pass
 # drc-parity: 1 fail
@@ -7,5 +7,5 @@
 @@ find
 		(property "Reference" "U1"
 @@ replace
-		(property "Reference" "J2"
+		(property "Reference" "J9"
 @@ end

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "documents": {
     "SNVSAN3F": {
       "title": "TI LMR33630 datasheet SNVSAN3F",
@@ -95,6 +95,18 @@
       "title": "Murata chart GCM32EC71H106KA03, C-DC bias capchange, 25.0 degC, AC 1.0 Vrms (SimSurfing export, PNG)",
       "revision": "pulled 2026-11-16",
       "sha256": "8b0b6cfffc8a1bc96152d2d1b6167f71bc9c6cde89d2b37fad060d888b6ce73b",
+      "pending": null
+    },
+    "RM0433": {
+      "title": "ST RM0433, STM32H742/743/753/750 reference manual",
+      "revision": "9",
+      "sha256": "672a9433d6602da224e5215f571beed2be0e683cb025526f4afe9db61c26b6a0",
+      "pending": null
+    },
+    "ST_PIN_DATA_H753ZI": {
+      "title": "ST STM32_open_pin_data STM32H753ZITx.xml, commit 7d1f1514ed5583ec5007ad91236b4e1d377295b1",
+      "revision": "7d1f1514",
+      "sha256": "d167c0884383dd22adc1f25b712c4b12ed1cdf35d898af7edba34ce0e7f98a05",
       "pending": null
     }
   },
@@ -926,6 +938,284 @@
               "document": "DS12117",
               "section": "p. 301, Table 194, SPI master tw(SCKL) min TPCLK - 2 ns, typ TPCLK"
             }
+          },
+          "support": {
+            "pins": {
+              "VDD": [
+                "17",
+                "30",
+                "39",
+                "52",
+                "62",
+                "72",
+                "84",
+                "108",
+                "121",
+                "131",
+                "144"
+              ],
+              "VSS": [
+                "16",
+                "38",
+                "51",
+                "61",
+                "83",
+                "94",
+                "107",
+                "120",
+                "130"
+              ],
+              "VDDA": [
+                "33"
+              ],
+              "VSSA": [
+                "31"
+              ],
+              "VREF+": [
+                "32"
+              ],
+              "VDD33USB": [
+                "95"
+              ],
+              "VBAT": [
+                "6"
+              ],
+              "VCAP": [
+                "71",
+                "106"
+              ],
+              "NRST": [
+                "25"
+              ],
+              "BOOT0": [
+                "138"
+              ],
+              "PDR_ON": [
+                "143"
+              ],
+              "SWDIO": [
+                "105"
+              ],
+              "SWCLK": [
+                "109"
+              ]
+            },
+            "pins_at": {
+              "document": "ST_PIN_DATA_H753ZI",
+              "section": "each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; PA13 is JTMS-SWDIO and PA14 JTCK-SWCLK in its signals)"
+            },
+            "supply": "VDD",
+            "grounds": [
+              "VSS",
+              "VSSA"
+            ],
+            "powered": [
+              {
+                "group": "VDDA",
+                "min_millivolts": 1620,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 209, Table 111, VDDA with the ADC or COMP used 1.62 to 3.6 V; pp. 207-208, Table 108 note 1: connected to the external power supply, in the permitted range"
+                }
+              },
+              {
+                "group": "VDD33USB",
+                "min_millivolts": 0,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 209, Table 111, VDD33USB with USB not used 0 to 3.6 V (no USB is declared); pp. 207-208, Table 108 note 1"
+                }
+              },
+              {
+                "group": "VBAT",
+                "min_millivolts": 1200,
+                "max_millivolts": 3600,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 27, 3.5.1: VBAT = 1.2 to 3.6 V; pp. 207-208, Table 108 note 1"
+                }
+              }
+            ],
+            "own_nets": [
+              {
+                "group": "VCAP",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 27, 3.5.1: VCAP is VCORE, 1.0 to 1.35 V by voltage scaling, from the internal regulator; p. 209, Table 111; p. 211, Table 113: one CEXT per VCAP pin"
+                }
+              },
+              {
+                "group": "NRST",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 248, Figure 73 note 2: the level on the NRST pin must be able to go below VIL(NRST)"
+                }
+              },
+              {
+                "group": "SWDIO",
+                "at": {
+                  "document": "ST_PIN_DATA_H753ZI",
+                  "section": "PA13 carries JTMS-SWDIO: the debug port's data line, its own signal"
+                }
+              },
+              {
+                "group": "SWCLK",
+                "at": {
+                  "document": "ST_PIN_DATA_H753ZI",
+                  "section": "PA14 carries JTCK-SWCLK: the debug port's clock, its own signal"
+                }
+              }
+            ],
+            "capacitors": [
+              {
+                "role": "vdd_bypass",
+                "owner": "VDD",
+                "per_pin": true,
+                "ground": "VSS",
+                "picofarads": 100000,
+                "tolerance_permille": 200,
+                "bound_um": 2000,
+                "bound_basis": "2.0 mm, an engine choice: DS12117 asks for each capacitor as close as possible to, or below, its pins (p. 206 Caution, p. 207) and states no distance; AET-WO-4300d2's near bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 206, Figure 65: N x 100 nF on VDD, note 1: N is the number of VDD pins on the package; note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "vdd_bulk",
+                "owner": "VDD",
+                "per_pin": false,
+                "ground": "VSS",
+                "picofarads": 4700000,
+                "tolerance_permille": 200,
+                "bound_um": 5000,
+                "bound_basis": "5.0 mm, an engine choice set before measuring: the bulk sits behind the 100 nF capacitors, which take the pins first; no distance is stated; AET-WO-4300d2's bulk bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 206, Figure 65: + 1 x 4.7 uF on VDD; note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "analog_bypass",
+                "owner": "VDDA",
+                "per_pin": true,
+                "ground": "VSSA",
+                "picofarads": 100000,
+                "tolerance_permille": 200,
+                "bound_um": 2000,
+                "bound_basis": "2.0 mm, an engine choice: DS12117 asks for each capacitor as close as possible to, or below, its pins (p. 206 Caution, p. 207) and states no distance; AET-WO-4300d2's near bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 280, Figure 90 (VREF+ connected to VDDA): 1 uF // 100 nF to VREF-/VSSA, the 100 nF as close as possible to the chip; p. 206 note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "analog_bulk",
+                "owner": "VDDA",
+                "per_pin": false,
+                "ground": "VSSA",
+                "picofarads": 1000000,
+                "tolerance_permille": 200,
+                "bound_um": 5000,
+                "bound_basis": "5.0 mm, an engine choice set before measuring: the bulk sits behind the 100 nF capacitors, which take the pins first; no distance is stated; AET-WO-4300d2's bulk bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 280, Figure 90 (VREF+ connected to VDDA): 1 uF // 100 nF; p. 206 note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "usb_bypass",
+                "owner": "VDD33USB",
+                "per_pin": true,
+                "ground": "VSS",
+                "picofarads": 100000,
+                "tolerance_permille": 200,
+                "bound_um": 2000,
+                "bound_basis": "2.0 mm, an engine choice: DS12117 asks for each capacitor as close as possible to, or below, its pins (p. 206 Caution, p. 207) and states no distance; AET-WO-4300d2's near bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 206, Figure 65: 100 nF on VDD33USB; note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "usb_bulk",
+                "owner": "VDD33USB",
+                "per_pin": false,
+                "ground": "VSS",
+                "picofarads": 1000000,
+                "tolerance_permille": 200,
+                "bound_um": 5000,
+                "bound_basis": "5.0 mm, an engine choice set before measuring: the bulk sits behind the 100 nF capacitors, which take the pins first; no distance is stated; AET-WO-4300d2's bulk bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 206, Figure 65: 1 uF on VDD33USB; note 2: +/-20 %"
+                }
+              },
+              {
+                "role": "vcap",
+                "owner": "VCAP",
+                "per_pin": true,
+                "ground": "VSS",
+                "picofarads": 2200000,
+                "tolerance_permille": 200,
+                "bound_um": 2000,
+                "bound_basis": "2.0 mm, an engine choice: DS12117 asks for each capacitor as close as possible to, or below, its pins (p. 206 Caution, p. 207) and states no distance; AET-WO-4300d2's near bound",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 211, 7.3.2 and Table 113: CEXT 2.2 uF on each VCAP pin, ESR < 100 mOhm, note 2: +/-20 %; p. 206, Figure 65: 2 x 2.2 uF"
+                }
+              },
+              {
+                "role": "reset",
+                "owner": "NRST",
+                "per_pin": true,
+                "ground": "VSS",
+                "picofarads": 100000,
+                "tolerance_permille": 200,
+                "bound_um": null,
+                "bound_basis": "none: Figure 73 draws the capacitor in the external reset circuit and states no placement, so its distance is a named condition",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 248, Figure 73, recommended NRST pin protection: 0.1 uF to ground; no tolerance is stated, so p. 206 note 2's +/-20 % is taken"
+                }
+              }
+            ],
+            "straps": [
+              {
+                "pin": "BOOT0",
+                "to": "VSS",
+                "at": {
+                  "document": "RM0433",
+                  "section": "p. 138, 2.6, Table 9: BOOT = 0 boots from BOOT_ADD0, ST-programmed to flash at 0x0800 0000"
+                }
+              },
+              {
+                "pin": "PDR_ON",
+                "to": "VDD",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 28, 3.5.2: the PDR supervisor is enabled through PDR_ON; p. 22 note 6: tied to VSS it needs an external supervisor"
+                }
+              },
+              {
+                "pin": "VBAT",
+                "to": "VDD",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 36, 3.19: VBAT provided directly by VDD, in which case the VBAT mode is not functional (no battery is declared)"
+                }
+              },
+              {
+                "pin": "VREF+",
+                "to": "VDDA",
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 280, Figure 90: the decoupling above is for VREF+ connected to VDDA"
+                }
+              }
+            ]
           }
         }
       }

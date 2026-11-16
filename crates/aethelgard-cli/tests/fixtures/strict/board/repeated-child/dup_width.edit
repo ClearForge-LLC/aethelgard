@@ -1,22 +1,22 @@
 # class: repeated-child
 # note: a segment's second (width 2): KiCad reads 2 mm (A1)
 # main: drc 1 fail; drc-parity 1 fail; extract 3 UnmodelledCopper
-# drc: 3 MalformedBoard kicad_pcb/segment[70]
-# drc-parity: 3 MalformedBoard kicad_pcb/segment[70]
-# extract: 3 MalformedBoard kicad_pcb/segment[70]
+# drc: 3 MalformedBoard kicad_pcb/segment[74]
+# drc-parity: 3 MalformedBoard kicad_pcb/segment[74]
+# extract: 3 MalformedBoard kicad_pcb/segment[74]
 @@ find
-		(start 94.625 87.25)
-		(end 99.25 87.25)
+		(start 92.75 86.125)
+		(end 92.75 90.625)
 		(width 0.2)
 		(layer "B.Cu")
 		(net "/I2C_SDA")
-		(uuid "bc956304-1844-88d5-b59b-852d0860b9e6")
+		(uuid "447bcff3-685e-8165-b2ac-907deb59a698")
 @@ replace
-		(start 94.625 87.25)
-		(end 99.25 87.25)
+		(start 92.75 86.125)
+		(end 92.75 90.625)
 		(width 0.2)
 		(width 2)
 		(layer "B.Cu")
 		(net "/I2C_SDA")
-		(uuid "bc956304-1844-88d5-b59b-852d0860b9e6")
+		(uuid "447bcff3-685e-8165-b2ac-907deb59a698")
 @@ end

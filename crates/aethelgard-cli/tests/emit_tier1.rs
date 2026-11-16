@@ -220,6 +220,15 @@ fn a_net_the_emitter_would_use_is_refused_by_name() {
             item[field] = json!("GND");
         }
     }
+    // The connectors' supply pins follow the domain (AET-WO-4300g), or the
+    // connectors' own net check would refuse first.
+    for c in spec["connectors"].as_array_mut().unwrap() {
+        for p in c["pins"].as_array_mut().unwrap() {
+            if p["net"] == "VDD_3V3" {
+                p["net"] = json!("GND");
+            }
+        }
+    }
     let v = json_line(&emit(&write_spec(&d, &spec), &d.0.join("o")), 2);
     assert_eq!(v["error"]["kind"], "ReservedName", "{v}");
 }

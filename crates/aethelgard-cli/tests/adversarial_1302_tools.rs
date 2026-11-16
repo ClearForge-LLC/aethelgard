@@ -139,7 +139,32 @@ fn kicad_does_not_see_a_floating_loop_on_a_net_no_pad_carries() {
             a.0, a.1, b.0, b.1
         )
     };
-    let (p, q, r, s) = (("74", "78"), ("76", "78"), ("76", "79"), ("74", "79"));
+    // 1.8 mm inside the outline's top-left corner, clear of its 0.5 mm edge
+    // rule (`AET-WO-4300g`: the support network moved the outline).
+    let start = board.find("(gr_rect").unwrap();
+    let corner: Vec<f64> = board[start..]
+        .split("(start ")
+        .nth(1)
+        .unwrap()
+        .split(')')
+        .next()
+        .unwrap()
+        .split(' ')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let at = |dx: f64, dy: f64| {
+        (
+            format!("{:.3}", corner[0] + 1.8 + dx),
+            format!("{:.3}", corner[1] + 1.8 + dy),
+        )
+    };
+    let (p, q, r, s) = (at(0.0, 0.0), at(2.0, 0.0), at(2.0, 1.0), at(0.0, 1.0));
+    let (p, q, r, s) = (
+        (p.0.as_str(), p.1.as_str()),
+        (q.0.as_str(), q.1.as_str()),
+        (r.0.as_str(), r.1.as_str()),
+        (s.0.as_str(), s.1.as_str()),
+    );
     let ring = [seg(p, q, 1), seg(q, r, 2), seg(r, s, 3), seg(s, p, 4)].concat();
     let at = board.rfind("\t(embedded_fonts no)").unwrap();
     let edited = format!("{}{ring}{}", &board[..at], &board[at..]);

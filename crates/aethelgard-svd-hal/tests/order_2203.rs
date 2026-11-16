@@ -123,19 +123,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `AET-WO-4300d3` (specification version 10, `power`'s declarations), which
 /// changes no generator: the three moved with the specification's sha256 alone
 /// (`1564c394…3474`, `0a8e3b2b…9734`, `a93b7c45…1fd4` before); the boot image
+/// did not move. Re-taken in `AET-WO-4300g` (specification version 11,
+/// `mcu.supply_source` and the debug and supply connectors), which changes no
+/// generator of these: the three moved with the specification's sha256 alone
+/// (`d2e17ffb…52d7`, `ce78f102…4a16`, `d311c246…7aec` before); the boot image
 /// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d2e17ffbde888cd4a54809b5028e7e208d1780caf70eeb103e8e4b354ac752d7",
+        "8c14d82a5a04709c91b65c5299c301f066597e7b5383effd61235afeaf962024",
     ),
     (
         "platform",
-        "ce78f102f919f91e51ea2dc609f14bd2ae894d211ad7961d08496904b09d4a16",
+        "482a1f1efb27dc0c7a994cf50a6e0152c6b8f8b18adea526f8975ca26da37dd9",
     ),
     (
         "platform faulted",
-        "d311c246b7fa0eb6cfc97031a933d024564ef6a7968fa0d4b554656067a67aec",
+        "33e142e0d09be094d4f0bc2ee11d5580b67b58b94d06d6b8686c9ac8be3dde0e",
     ),
     (
         "boot image",

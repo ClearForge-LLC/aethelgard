@@ -134,7 +134,7 @@ pub fn gate_reads(gate: &str) -> Vec<PathBuf> {
         .to_path_buf();
     let mut reads = Vec::new();
     match gate {
-        "erc" | "drc" => reads.extend(super::tool_dirs("kicad-cli")),
+        "erc" | "drc" | "support" => reads.extend(super::tool_dirs("kicad-cli")),
         "prove" => {
             reads.extend(super::tool_dirs("cargo"));
             reads.extend(super::tool_dirs("cargo-kani"));

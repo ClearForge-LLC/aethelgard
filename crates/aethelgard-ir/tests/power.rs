@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "86c560450e4c7f1cf77f5ffecd63e5f38f153b4982e51ff0f743625dbfc44cab";
+const TABLE_SHA256: &str = "596ee05066017d8de2d1d5a9817e399bd963e11e97484f770bfae30e1b7356a9";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -242,6 +242,19 @@ fn a_sense_net_is_a_new_net() {
 fn power_is_a_required_key_and_null_declares_none() {
     let mut v = base();
     v["power"] = Value::Null;
+    // Without a tree no regulator outputs the supply, so it enters by a
+    // connector pin (`AET-WO-4300g`), on a connector of its own: the debug
+    // connector's supply pin is the debugger's sense, no source (adversarial A3).
+    v["connectors"].as_array_mut().unwrap().push(json!({
+        "reference": "J3", "part": "SM04B-GHS-TB", "standard": null,
+        "pins": [
+            {"pin": "1", "net": "VDD_3V3", "offboard": null},
+            {"pin": "2", "net": null, "offboard": null},
+            {"pin": "3", "net": null, "offboard": null},
+            {"pin": "4", "net": "GND", "offboard": null}
+        ]
+    }));
+    v["mcu"]["supply_source"] = json!({"connector": "J3", "pin": "1"});
     // Without a tree there is no battery rail, so a class naming it names an
     // unknown net (`AET-WO-4300d2` K10).
     assert_eq!(refused(&v).kind(), "ClassUnknownNet");

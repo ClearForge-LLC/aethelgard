@@ -2030,6 +2030,10 @@ mod differential {
                 supply: "D".into(),
                 hse_hz: 0,
                 bor_level: 0,
+                supply_source: Some(crate::SupplySource {
+                    connector: "J2".into(),
+                    pin: "1".into(),
+                }),
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),
@@ -2040,10 +2044,35 @@ mod differential {
             spi_buses,
             i2c_devices: vec![],
             spi_devices,
-            connectors: vec![],
+            connectors: vec![
+                connector(
+                    "J1",
+                    "SM06B-SRSS-TB",
+                    &["D", "", "", "SWDIO", "SWCLK", "GND"],
+                ),
+                connector("J2", "SM04B-GHS-TB", &["D", "", "", "GND"]),
+            ],
             net_constraints,
             motor_outputs: vec![],
             serial_ports: vec![],
+        }
+    }
+
+    /// A connector whose pins name these nets, an empty name being no net.
+    fn connector(reference: &str, part: &str, nets: &[&str]) -> crate::connectors::Connector {
+        crate::connectors::Connector {
+            reference: reference.into(),
+            part: part.into(),
+            standard: None,
+            pins: nets
+                .iter()
+                .enumerate()
+                .map(|(i, n)| crate::connectors::ConnectorPin {
+                    pin: (i + 1).to_string(),
+                    net: (!n.is_empty()).then(|| (*n).to_string()),
+                    offboard: None,
+                })
+                .collect(),
         }
     }
 

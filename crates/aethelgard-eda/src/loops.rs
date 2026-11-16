@@ -42,13 +42,15 @@ pub fn rules(
     Ok(parts
         .into_iter()
         .filter_map(|p| {
-            let a = p.anchor?;
+            let o = p.owner?;
+            let a = o.anchor?;
+            let (bound_nm, rule) = a.loop_rule?;
             Some(LoopRule {
                 part: p.reference,
-                ic: a.ic,
+                ic: o.ic,
                 pads: a.pads,
-                bound_nm: a.bound_nm,
-                rule: a.rule,
+                bound_nm,
+                rule,
             })
         })
         .collect())
