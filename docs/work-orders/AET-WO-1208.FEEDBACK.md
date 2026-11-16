@@ -71,7 +71,7 @@ Harness: `~/.cache/aet-1208/tools/` (`verdicts.sh`, `probe.py`); the baseline bi
 ## 3. What was built, by work-order item
 
 1. **§1.1:** above.
-2. **§1.2, the MCU's supply (F2).**
+2. **§1.2, the MCU's supply (F2).** *Superseded by the architect's ruling on F1 and F5 (§10): the no-tree path now runs step 16's consumer rule as `DomainOutsideConsumer`, and `McuSupplyOutsideRange` is deleted. This item records the first build.*
    - **Step 22, `Specification::mcu_supply`:** the MCU's supply domain, its declared minimum and maximum (`minimum_millivolts`, `maximum_millivolts`, as `4230` took the pull-up floor at the maximum), against the power-parts row's `kind.mcu.vdd_millivolts`.
    - **The refusal:** `McuSupplyOutsideRange`, whose `id` is the domain. The message names the part, the domain, both ranges, and the row's citation in step 16's form (`PowerPartsTable::cite`), so the two refusals cite one row alike.
    - **A part with no MCU row** is left to the emitter's `UnknownPart`, as before.
@@ -284,3 +284,70 @@ Reduction pass (diff): −48 lines net in `solve.rs` (`i2c_electrical`, the `Bus
     - `pr-title-body.md`.
   - `1207`'s `~/.cache/aet-1207/` is kept for `1207`'s FEEDBACK.
 - **Tokens:** minted per push (the branch and the PR; the READY commit) and revoked after each, every revocation `HTTP 204`. Three prep files from a refused fill (a typo in my own check fragment) held the token; they were deleted after its revocation.
+
+### 10.1 The architect's rulings on §8 (PR #182, 2026-11-16 21:40 UTC), and what was built
+
+| # | Ruling | Done |
+|---|---|---|
+| F1, F5 | Build in this PR. Without a power tree, judge the MCU domain by step 16's consumer rule: floor = max(1620 mV, the `bor_level`'s VBOR falling max), ceiling 3600 mV, one rule and one floor. Its name follows a stated test: `DomainOutsideConsumer` if that message reads true with no tree, else keep `McuSupplyOutsideRange` with the shared floor | **Built** (`88ca5b0` old behaviour, `74f8c42` build), below |
+| F2 | Keep `SpiSpeedBelowKernelRange` at `solve`, recorded as a deviation from §1.3 for that reason; no backlog row | Kept. **Deviation from §1.3:** its message names the controller the search chose (`SPI1` against a hand-set `SPI4`, measured), so moving it would change an existing refusal's bytes for a cosmetic gain |
+| F3 | No change here; a §7.1 row for the next eda reduction work order | None here (the architect's row) |
+| F4 | Backlog: the floor's maximum over [min, max], with its own measured stop | None here (the architect's row) |
+| F6 | Agreed, declined | — |
+| Forks | All four confirmed | — |
+
+**The name.**
+- **The rule's test:** `DomainOutsideConsumer`'s message reads "`<domain>`: the domain's *min* to *max* mV is not inside STM32H753ZITx (MCU)'s 1620 to 3600 mV with its minimum above the consumer's floor of *floor* mV (Table 111 …; VBOR*n* falling max … Table 115 …)". It names the domain and the consumer, never a regulator, so it reads true with no tree.
+- **So:** the no-tree path uses it, and `McuSupplyOutsideRange` (variant, `kind`, `id`, `mcu_supply`) is deleted.
+- **One function computes the floor.** `power.rs` gains `mcu_consumer` (the MCU's consumer entry: range, floor, both citations) and `domain_inside_consumer` (one domain against one consumer), which step 16 now calls, and `mcu_without_tree`, which step 22 calls when `power` is `null`. Step 16's own behaviour and bytes are unchanged: the corpus and the power-tree tests show it [measured].
+- **Fence:** this edits `power.rs`, outside the work order's named fence, as the ruling requires ("by step 16's consumer rule").
+
+**A discrepancy in the ruling's tests, measured and built to the rule.** The ruling lists "`bor_level` 0 at 1.62 V passes" and "a domain exactly at the BOR maximum". Step 16's rule, which the ruling names, gives different results:
+- **The floor at level 0 is not 1620 mV.** The row's `bor_falling_max_millivolts[0]` is VBOR0's 1680 mV (DS12117 Table 115). So at `bor_level` 0 the floor is 1680 mV, not 1620, and a rail whose minimum is 1620 mV is **refused**.
+- **The rule is strict.** It requires the minimum to be *above* the floor (`dmin <= floor` refuses). So a minimum exactly at the BOR maximum is refused, and 1 mV above passes.
+- **What I built and tested:** the rule as ruled, one rule and one floor, at its real edges (`aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor`):
+  - at `bor_level` 3, minimums 2679 and 2680 mV refused, 2681 mV passes;
+  - at `bor_level` 0, minimums 1620 and 1680 mV refused, 1681 mV passes.
+
+  Before (`88ca5b0`), every one passed.
+- **Not built, for your decision:** if `bor_level` 0 was meant as "no BOR", so that 1.62 V should pass, that is a change to step 16's rule for trees too.
+- `1207`'s speed-table test edge at 1620 mV (`bare_rail(1800, 100, true)`, `bor_level` 0) moves the same way: step 21 passes the table's edge, and step 22's 1680 mV floor refuses it.
+
+**F1's repro** (`aet_1208_a_rail_below_the_bor_floor_is_refused`, cli). 1.9 V ± 1 % at `bor_level` 3: `validate` and `generate` now print `DomainOutsideConsumer` (minimum 1881 mV against the 2680 mV floor) and write nothing. Before, both passed and `generate` wrote a board. The 5.0 V pin (`aet_1208_the_mcu_rail_is_judged_against_its_row`) now prints the same refusal's bytes.
+
+**§1.1 re-run (measured): no stop.**
+- The probe's BOR column again hits only `invalid-zero-domain` (already refused).
+- **Corpus:** all 23 specifications give byte-identical `validate`, `solve` and `generate` output and generated files against `d539bb1`, 153 of 153 records (`v-new3`).
+- **The adversary's 5,254 specifications, re-run on `validate`** (`adv/recheck-f1f5.txt`): 255 moved since `7c9bb8f`.
+  - **171 follow the rule exactly**, each now `DomainOutsideConsumer`, each with no power tree and its minimum at or below max(1620, VBOR) or its maximum over 3600 mV:
+    - 91 were `ok`;
+    - 80 were `McuSupplyOutsideRange`.
+  - **84 are the `d5d600e` nominal pull-up fix**, which `generate` already refused.
+  - None is a corpus specification.
+
+
+### 10.2 Mutation at `74f8c42` (after the ruling)
+10 mutants, one at a time, against `aethelgard-ir` and cli `reserved_references_tier1` and `power_board_tier1`; all 10 killed by a test failure, none by compilation [measured, `~/.cache/aet-1208/mut/`]. The ruling's three replace `McuSupplyOutsideRange`'s:
+
+| Mutant | Killed by |
+|---|---|
+| `BusTooFast` off | ir, cli |
+| pull-up at the maximum off | ir, cli |
+| capacitance off | cli |
+| motor timing off | cli |
+| serial off | ir, cli |
+| step 22 off | ir, cli |
+| the BOR floor ignored (in the shared `mcu_consumer`, so step 16 too) | ir, cli |
+| the floor's edge loosened (`<=` to `<`, in the shared `domain_inside_consumer`) | ir |
+| the nominal pull-up check off | cli |
+| `emit` trusting its caller | cli |
+
+### 10.3 Gates after the ruling (`74f8c42` plus this FEEDBACK) [measured]
+- **Gates:**
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: clean;
+  - `cargo test --workspace --no-fail-fast`: 117 test binaries, 0 failures.
+- No `include_str!` changed, so the package step stands as measured in §9.
+- `TIER2_MIN` is unchanged (160).
+- **The READY commit** is this file only; its own CI run is the one the architect reads.
+- **Tokens:** minted for this push and revoked after it (`HTTP 204`).
