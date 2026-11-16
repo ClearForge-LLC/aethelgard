@@ -241,3 +241,9 @@ Reduction pass (diff): −9 lines net in the pass (the build itself deleted 65 l
   - `cargo test --workspace --no-fail-fast`: 117 test binaries, 0 failures.
 
 ## 10. CI and the stop line
+
+- **First CI run (run 43920679872, at `97b181f`): `gates` failed in its package step** [measured]. The mode unit test (§3.5) read the reference specification with `include_str!("../../../examples/...")`, outside the `aethelgard-ir` crate, and the step refuses any include target missing from the package. The suite had not caught it, because the test passes in the workspace.
+  - **Fix:** the test reads the crate's own `tests/fixtures/sentinel-02-power.json`, whose first SPI device is also `U4`, a W25Q64JVxIQ.
+  - **Checked:** the step's include check, run locally on the packaged `ir` crate, finds all four targets.
+  - That run's other jobs finished green at the time it was read: `cli`, `pinned`, `pinout`, both images, the four `ardupilot` jobs, and tools shards 1, 3, 4, 5 and 7 (19:33 to 24:32).
+

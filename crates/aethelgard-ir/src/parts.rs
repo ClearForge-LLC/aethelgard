@@ -1303,10 +1303,11 @@ mod tests {
         parse_parts(&doc.to_string()).unwrap()
     }
 
-    /// The reference specification, whose one SPI device, `U4`, is a
-    /// W25Q64JVxIQ.
+    /// The crate's own power-board fixture, whose first SPI device, `U4`, is
+    /// a W25Q64JVxIQ (inside the package: CI's package gate refuses an
+    /// `include_str!` reaching outside the crate).
     fn reference() -> crate::Specification {
-        serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json")).unwrap()
+        serde_json::from_str(include_str!("../tests/fixtures/sentinel-02-power.json")).unwrap()
     }
 
     /// `AET-WO-1207` §1.5 (Grok 2026-11-16 row 5): step 14 refuses a device
