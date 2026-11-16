@@ -42,7 +42,7 @@ fn fixtures() -> Vec<PathBuf> {
 #[test]
 fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
     let table = aethelgard_svd_hal::pin_table("STM32H753ZITx").unwrap();
-    let (mut solved, mut spi, mut i2c) = (Vec::new(), 0, 0);
+    let (mut solved, mut skipped, mut spi, mut i2c) = (Vec::new(), Vec::new(), 0, 0);
     for path in fixtures() {
         let bytes = std::fs::read(&path).unwrap();
         let Ok(spec) = serde_json::from_slice::<Specification>(&bytes) else {
@@ -52,10 +52,23 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect();
-        let Ok(t) = solve(&spec, &table, &hash) else {
-            continue;
-        };
         let name = path.strip_prefix(root()).unwrap().display().to_string();
+        let t = match solve(&spec, &table, &hash) {
+            Ok(t) => t,
+            Err(e) => {
+                // A fixture refused today is skipped, but never for a reason
+                // this work order added.
+                let new = [
+                    "SpiSpeedBelowKernelRange",
+                    "SpiKernelClockUnavailable",
+                    "SpiControllerMismatch",
+                    "I2cTimingMismatch",
+                ];
+                assert!(!new.contains(&e.kind()), "{name}: {e}");
+                skipped.push(format!("{name}: {}", e.kind()));
+                continue;
+            }
+        };
         assert_eq!(t.bor_level, spec.mcu.bor_level, "{name}");
         for (p, c) in &t.spi_controllers {
             let f = silicon::check_spi(p, c);
@@ -78,7 +91,7 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
         solved.push(name);
     }
     eprintln!(
-        "{} fixtures solved, {spi} SPI controllers, {i2c} I2C controllers: {solved:?}",
+        "{} fixtures solved, {spi} SPI controllers, {i2c} I2C controllers: {solved:?}; refused: {skipped:?}",
         solved.len()
     );
     assert!(

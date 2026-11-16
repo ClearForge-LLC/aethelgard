@@ -657,6 +657,9 @@ mod tests {
         }
         assert_eq!(kernel_at_reset(SpiSelect::Spi45, 0b011), Some(64_000_000));
         assert_eq!(kernel_at_reset(SpiSelect::Spi6, 0b011), Some(64_000_000));
+        // The APB clock, `000`, runs at reset too (rcc_pclk2, rcc_pclk4).
+        assert_eq!(kernel_at_reset(SpiSelect::Spi45, 0b000), Some(64_000_000));
+        assert_eq!(kernel_at_reset(SpiSelect::Spi6, 0b000), Some(64_000_000));
         for dead in [0b001, 0b010, 0b100, 0b101, 0b110, 0b111] {
             assert_eq!(kernel_at_reset(SpiSelect::Spi45, dead), None, "{dead:03b}");
         }
