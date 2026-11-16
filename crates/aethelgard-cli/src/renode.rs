@@ -4461,6 +4461,111 @@ mod tests {
         );
     }
 
+    /// `AET-WO-2302`, through `judge_boot` whole: a DShot plan's boot read
+    /// from its transcript. Passing, the stop's read-back holds and the end
+    /// read of `CR1` expects `CEN` cleared, the judge's own act; with no stop
+    /// in the boot, `CR1` is expected set and `judge_stop_missing` named;
+    /// past the filter's budget nothing of ours is read, every output is
+    /// unreadable, and no anchor finding is named (fail closed, never absent).
+    #[test]
+    fn judge_boot_reads_a_dshot_boot_s_window_and_stop() {
+        let (image, motors) = dshot_parts();
+        let loops = [0x0800_0010u64];
+        let executable = [(0x0800_0000u64, 0x0801_0000u64)];
+        let p = BootPlan {
+            motors: &motors,
+            self_loops: &loops,
+            executable: &executable,
+            ..plan(&image, &[])
+        };
+        let flash = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0";
+        let judge = |log: &[String], cr1: u32, dropped: u64| {
+            let mut text = format!("{flash}\n");
+            for l in log {
+                text.push_str(l);
+                text.push('\n');
+            }
+            text.push_str("AETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(aethelgard_twin::boot::BOOT_MAGIC),
+                    Read::Instructions => 10_000_000,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) if image.registers[i].name == "TIM2.CR1" => u64::from(cr1),
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
+                    Read::Record(_, _) => 0x60,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = Output {
+                ended: crate::run::Ended::Code(0),
+                stdout: text.into_bytes(),
+                stderr: Vec::new(),
+                sandbox: crate::run::SandboxReport {
+                    landlock_abi: 0,
+                    tcp_confined: false,
+                    scoped: false,
+                    sockets_denied: true,
+                    uid_boundary: false,
+                    uid_boundary_unmet: None,
+                },
+                dropped_log_lines: dropped,
+                peak_rss_kib: None,
+            };
+            let (f, _, o) = judge_boot(0, &out, &p, &Captured::default()).unwrap();
+            let failing: Vec<String> = f
+                .iter()
+                .filter(|f| f.severity != "info")
+                .map(|f| f.kind.clone())
+                .collect();
+            (failing, o.unwrap())
+        };
+        let cr1 = image
+            .registers
+            .iter()
+            .position(|r| r.name == "TIM2.CR1")
+            .unwrap();
+        // Passing: the window's witness, the stop, and CR1 cleared at the end.
+        let (failing, o) = judge(&dshot_log(), 0x80, 0);
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(o.motors[0].status, "witnessed");
+        assert_eq!(o.register_expected[cr1], 0x80);
+        assert_eq!(o.boot_word_ns, Some(30_750));
+        assert_eq!(o.timers[0].stop.as_ref().map(|s| s.at_ns), Some(2_030_670));
+        // CR1 read with CEN still set after the stop ran: the judge's own
+        // clear did not hold, named as a register mismatch.
+        let (failing, _) = judge(&dshot_log(), 0x81, 0);
+        assert_eq!(failing, ["register_mismatch"]);
+        // No stop in the boot: CEN is expected set, and the stop is named.
+        let mut no_stop = dshot_log();
+        no_stop.truncate(no_stop.len() - 2);
+        let (failing, o) = judge(&no_stop, 0x81, 0);
+        assert_eq!(failing, ["judge_stop_missing"]);
+        assert_eq!(o.register_expected[cr1], 0x81);
+        // Past the filter's budget: nothing of ours is read.
+        let (failing, o) = judge(&dshot_log(), 0x80, 1);
+        assert!(o.timers.is_empty() && o.boot_word_ns.is_none());
+        assert_eq!(o.motors[0].status, "unreadable");
+        assert!(
+            failing.iter().all(|k| !k.starts_with("motor_anchor")
+                && !k.starts_with("judge_stop")
+                && !k.starts_with("motor_edge")
+                && k != "motor_window_past_run"),
+            "{failing:?}"
+        );
+        assert!(
+            failing.contains(&"motor_output_unwitnessed".to_owned()),
+            "{failing:?}"
+        );
+    }
+
     /// `4300` D8: the silicon check is the topology's, reported apart; a port
     /// whose check fails is named with its row and source.
     #[test]
