@@ -24,9 +24,7 @@ use std::fmt::Write as _;
 
 use aethelgard_ir::motor;
 use aethelgard_ir::serial::{self, Parity};
-// R2-ir shim: `aethelgard_ir::silicon` until slice R2-ir merges; then this
-// line is `use aethelgard_ir::silicon;` again and `r2ir_shim` goes.
-use self::r2ir_shim as silicon;
+use aethelgard_ir::silicon;
 use aethelgard_ir::speeds::{self, OutputSpeeds};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
@@ -37,7 +35,6 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 
 mod firmware;
 mod ledger;
-mod r2ir_shim;
 
 pub use firmware::{ECHO_POLLS, FRAME_LEN, PATTERN_TAIL};
 pub use ledger::{FieldAccess, FieldUse, register_fields};

@@ -63,11 +63,7 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
         let files = generate("b", t, &table).unwrap_or_else(|e| panic!("{name}: {e}"));
         let board = &files["src/board.rs"];
         for p in t.spi_controllers.keys() {
-            let mut w = silicon::spi_words(&t.spi_controllers, p).unwrap();
-            // R2-ir shim: `AFCNTR` (bit 31) joins the rule's `CFG2` in slice
-            // R2-ir; removed at merge with the generator's shim.
-            assert_eq!(w.cfg2 & 1 << 31, 0, "R2-ir has merged: remove the shim");
-            w.cfg2 |= 1 << 31;
+            let w = silicon::spi_words(&t.spi_controllers, p).unwrap();
             let b = block(p);
             // A bus with no device has no transfer, so no enable or start.
             let transfer = board.contains(&format!("pub enum {b}Device {{"));
