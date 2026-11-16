@@ -820,3 +820,18 @@ fn a_part_moved_inside_the_board_keeps_the_outline() {
         assert_eq!(outline(&e.board), plain, "R1 up {up}");
     }
 }
+
+/// The same with the through-hole pad on the sealed pad's own part (no
+/// other part's field in the way): the pad above it, drilled, on its net.
+#[test]
+fn a_through_hole_pad_of_its_own_part_in_the_pocket_is_a_way_out() {
+    let mut b = pocket(600_000, true);
+    let above = b.parts[0]
+        .pads
+        .iter_mut()
+        .find(|p| p.net.is_some() && p.number == "4")
+        .unwrap();
+    above.drill_nm = Some(200_000);
+    let r = judged(&b);
+    assert_on_grid(&b, &r);
+}
