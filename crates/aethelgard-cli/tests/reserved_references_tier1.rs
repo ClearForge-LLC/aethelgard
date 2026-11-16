@@ -378,12 +378,14 @@ fn unconstrain(s: &mut Value, net: &str) {
 }
 
 /// The reference's MCU rail at `millivolts` (tolerance 0.1 %), with the SPI
-/// device and its chip-select constraint gone and only the I2C devices of
-/// `keep`: a bus no device's part bounds.
+/// device, its chip-select constraint and its lifecycle acknowledgement
+/// (`AET-WO-4211`) gone, and only the I2C devices of `keep`: a bus no
+/// device's part bounds.
 fn bare_spi_bus(s: &mut Value, millivolts: u32, keep: &[&str]) {
     s["voltage_domains"][0]["nominal_millivolts"] = millivolts.into();
     s["voltage_domains"][0]["tolerance_permille"] = 1.into();
     s["spi_devices"] = Value::Array(Vec::new());
+    s["accept_lifecycle"] = Value::Array(Vec::new());
     unconstrain(s, "FLASH_CS");
     s["i2c_devices"]
         .as_array_mut()

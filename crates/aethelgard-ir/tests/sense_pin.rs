@@ -41,8 +41,12 @@ fn base() -> Value {
     let mut v: Value =
         serde_json::from_str(include_str!("fixtures/sentinel-02-power.json")).unwrap();
     v["power"]["crossings"] = json!([]);
-    // U5 goes, so its acknowledgement would stand for no part (`4210`).
-    v["accept_lifecycle"] = json!([]);
+    // U5 goes, so its acknowledgement would stand for no part (`4210`); the
+    // flash's stays (`AET-WO-4211`).
+    v["accept_lifecycle"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["part"] != "ICM20948");
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let kept: Vec<Value> = v[key]
             .as_array()

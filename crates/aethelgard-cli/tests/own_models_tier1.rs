@@ -68,7 +68,14 @@ fn the_platform_pins_both_models_and_the_proofs_bound_the_data_read() {
     );
     assert!(text.contains("u7: Sensors.BMP581 @ i2c1 0x46"), "{text}");
     assert!(text.contains("u5: Sensors.ICM42688P @ "), "{text}");
-    assert!(!text.contains("LIFECYCLE"), "{text}");
+    // The one lifecycle line is the flash's (`AET-WO-4211`): both parts of
+    // our own are `active`.
+    let banner: Vec<&str> = text.lines().filter(|l| l.contains("LIFECYCLE")).collect();
+    assert_eq!(banner.len(), 1, "{text}");
+    assert!(
+        banner[0].starts_with("// - LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended"),
+        "{text}"
+    );
     assert!(
         files["src/proofs.rs"].contains("kani::assume(wl <= 2 && rl <= 6);"),
         "{}",

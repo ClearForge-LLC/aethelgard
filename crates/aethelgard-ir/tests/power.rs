@@ -28,8 +28,11 @@ fn base() -> Value {
     let mut v = full();
     v["power"]["crossings"] = json!([]);
     // The IMU's acknowledgement goes with it: one stands only for a part the
-    // board uses (`AET-WO-4210` D-B6).
-    v["accept_lifecycle"] = json!([]);
+    // board uses (`AET-WO-4210` D-B6). The flash's stays (`AET-WO-4211`).
+    v["accept_lifecycle"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["part"] != "ICM20948");
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let list = v[key].as_array().unwrap().clone();
         v[key] = Value::Array(

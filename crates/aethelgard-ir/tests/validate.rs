@@ -25,7 +25,12 @@ fn valid() -> Specification {
     // fixture is built from the JSON the type reads.
     let json = serde_json::json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
-        "accept_lifecycle": [],
+        // U4, the flash, is `nrnd` by its maker (`AET-WO-4211`).
+        "accept_lifecycle": [{
+            "part": "W25Q64JVxIQ",
+            "status": "nrnd",
+            "statement": "NRND by its maker; kept until AET-WO-4500 picks a flash (AET-WO-4211)"
+        }],
         "acknowledge_unwitnessed": [],
         "net_classes": [],
         "diff_pairs": [],
@@ -152,6 +157,8 @@ fn empty_lists_other_than_domains_are_valid() {
     spec.spi_buses.clear();
     devs(&mut spec).i2c.clear();
     devs(&mut spec).spi.clear();
+    // The flash is gone, so its acknowledgement would stand for no part.
+    spec.accept_lifecycle.clear();
     spec.net_constraints.clear();
     assert_eq!(spec.validate(), Ok(()));
 }
@@ -477,7 +484,8 @@ fn refuses_tolerance_out_of_range() {
         // DS12117 Table 149's bands for an SPI bus on it
         // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
         // tolerance's own range is under test here, so the board has no
-        // device and no SPI bus.
+        // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
+        // bus.
         assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
     }
 }
@@ -817,9 +825,13 @@ fn full_document() -> serde_json::Value {
     // Without the 1.8 V IMU and the crossing to it, which wait for `K6`
     // (the sensor table has no output delay for it yet): `power.crossings`
     // is the one empty list, named in `EMPTY_LISTS`. Its lifecycle
-    // acknowledgement goes with it (`AET-WO-4210`).
+    // acknowledgement goes with it (`AET-WO-4210`); the flash's stays
+    // (`AET-WO-4211`).
     v["power"]["crossings"] = json!([]);
-    v["accept_lifecycle"] = json!([]);
+    v["accept_lifecycle"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["part"] != "ICM20948");
     for key in ["spi_devices", "spi_buses", "net_constraints"] {
         let list = v[key].as_array().unwrap().clone();
         v[key] = Value::Array(
@@ -930,18 +942,11 @@ fn the_full_document_is_valid_and_populates_every_section() {
 /// The lists the full document cannot populate, and why. Each is covered
 /// where it can be (`an_acknowledgement_s_keys_are_each_required`) or waits
 /// for the work that makes it buildable.
-const EMPTY_LISTS: &[(&str, &str)] = &[
-    (
-        "/accept_lifecycle",
-        "an acknowledgement stands only for an eol or nrnd part the board uses, and \
-         the only such parts (ICP10111, ICM20948) need a 1.8 V bus",
-    ),
-    (
-        "/power/crossings",
-        "the 1.8 V IMU crossing waits for K6: the sensor table has no output delay \
+const EMPTY_LISTS: &[(&str, &str)] = &[(
+    "/power/crossings",
+    "the 1.8 V IMU crossing waits for K6: the sensor table has no output delay \
          for ICM20948 (`OutputDelayMissing`)",
-    ),
-];
+)];
 
 #[test]
 fn an_acknowledgement_s_keys_are_each_required() {
@@ -2524,6 +2529,8 @@ fn stand_ins() -> Specification {
     let mut spec: Specification = serde_json::from_str(&v).unwrap();
     spec.voltage_domains[0].nominal_millivolts = 1_800;
     spec.spi_buses[0].speed_hz = 7_000_000;
+    // The flash is gone, so its acknowledgement would stand for no part.
+    spec.accept_lifecycle.clear();
     spec
 }
 
@@ -2603,8 +2610,97 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
         "{banner:?}"
     );
     assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
-    // A board of `active` parts has no banner.
-    assert!(valid().lifecycle_banner().unwrap().is_empty());
+    // A board of `active` parts has no banner: the reference without its
+    // `nrnd` flash.
+    let mut active = valid();
+    devs(&mut active).spi.clear();
+    assert!(active.lifecycle_banner().unwrap().is_empty());
+}
+
+/// `AET-WO-4211`: the W25Q64JV is `nrnd` by Winbond's catalog export. The
+/// reference without its acknowledgement is refused by name, citing the
+/// export; with it, it passes with the NRND banner. §5's adversarial cases
+/// each meet `4210`'s rules: another case does not acknowledge the part, a
+/// second entry is refused, and an entry for a part the board does not place
+/// stands for nothing.
+#[test]
+fn the_nrnd_flash_is_refused_unless_acknowledged_and_bannered_when_it_is() {
+    let mut spec = valid();
+    spec.accept_lifecycle.clear();
+    let err = spec.validate().unwrap_err();
+    assert_refusal(err.clone(), "LifecycleNotAccepted", Some("U4"));
+    let m = err.to_string();
+    for word in [
+        "W25Q64JVxIQ",
+        "`nrnd`",
+        "winbond-W25Q64JV-catalog-export-2026-11-16.csv",
+        "Status-Industrial = N",
+    ] {
+        assert!(m.contains(word), "{word}: {m}");
+    }
+
+    let spec = valid();
+    spec.validate().unwrap();
+    let banner = spec.lifecycle_banner().unwrap();
+    assert_eq!(banner.len(), 1, "{banner:?}");
+    assert!(
+        banner[0].starts_with(
+            "LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export"
+        ),
+        "{banner:?}"
+    );
+
+    // The part named in another case, or with a space: not the part.
+    for name in ["w25q64jvxiq", "W25Q64JVXIQ", "W25Q64JVxIQ ", "W25Q64JVSSIQ"] {
+        let mut spec = valid();
+        spec.accept_lifecycle[0].part = name.into();
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleNotAccepted",
+            Some("U4"),
+        );
+    }
+    // The status in another case, or another status.
+    for status in ["NRND", "eol", "active", ""] {
+        let mut spec = valid();
+        spec.accept_lifecycle[0].status = status.into();
+        assert_refusal(
+            spec.validate().unwrap_err(),
+            "LifecycleStatusMismatch",
+            Some("U4"),
+        );
+    }
+    // Named twice, even with the same words.
+    let mut spec = valid();
+    let again = spec.accept_lifecycle[0].clone();
+    spec.accept_lifecycle.push(again);
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptedTwice",
+        Some("W25Q64JVxIQ"),
+    );
+    // A board that does not place it: the stand-ins' board, and the
+    // reference with no device.
+    let mut spec = stand_ins();
+    spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+    spec.accept_lifecycle
+        .push(valid().accept_lifecycle[0].clone());
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptanceUnused",
+        Some("W25Q64JVxIQ"),
+    );
+    let mut spec = valid();
+    devs(&mut spec).i2c.clear();
+    devs(&mut spec).spi.clear();
+    spec.i2c_buses.clear();
+    spec.spi_buses.clear();
+    spec.net_constraints.clear();
+    assert_refusal(
+        spec.validate().unwrap_err(),
+        "LifecycleAcceptanceUnused",
+        Some("W25Q64JVxIQ"),
+    );
 }
 
 /// An entry of `acknowledge_unwitnessed` for `register` and `class`.
@@ -3107,14 +3203,15 @@ fn aet_1207_step_21_refuses_a_rise_time_no_mode_allows() {
 }
 
 /// The MCU rail at `nominal` and `tolerance`, with no device (each part's
-/// supply would bound it first, `SupplyOutsidePart`) and, unless `spi`, no
-/// SPI bus either.
+/// supply would bound it first, `SupplyOutsidePart`), so no acknowledgement
+/// of one (`AET-WO-4211`), and, unless `spi`, no SPI bus either.
 fn bare_rail(nominal: u32, tolerance: u16, spi: bool) -> Specification {
     let mut spec = valid();
     spec.voltage_domains[0].nominal_millivolts = nominal;
     spec.voltage_domains[0].tolerance_permille = tolerance;
     devs(&mut spec).i2c.clear();
     devs(&mut spec).spi.clear();
+    spec.accept_lifecycle.clear();
     if !spi {
         spec.spi_buses.clear();
         spec.net_constraints
