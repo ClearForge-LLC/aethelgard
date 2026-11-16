@@ -1228,9 +1228,11 @@ fn layout_of(
         // a moved part below them still bounds it (`AET-WO-1310`, O1).
         y1: match edge {
             Some(e) => {
+                // Only a moved part reaching below the connectors' edge moves it.
                 let moved = placed
                     .iter()
                     .filter(|p| moves.iter().any(|(r, _, _)| *r == p.reference))
+                    .filter(|p| p.keep.y1 > e)
                     .map(|p| p.keep.y1 + MARGIN_NM)
                     .max()
                     .unwrap_or(e);

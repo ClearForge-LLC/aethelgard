@@ -77,9 +77,9 @@ pub enum EmitError {
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
-    /// `AET-WO-1310` D1: a run of adjacent connected pads too wide for the
-    /// escape's lanes. Never left to chance.
-    #[error("`{reference}` pads {} have no escape: a run of adjacent connected pads wider than the lanes beside it", pads.join(", "))]
+    /// `AET-WO-1310` D1: a run of adjacent connected pads with no lane to the
+    /// grid. Never left to chance.
+    #[error("`{reference}` pads {} have no escape: no lane on which this run of adjacent connected pads reaches the grid at its width and clearance", pads.join(", "))]
     PadEscapeExhausted {
         reference: String,
         pads: Vec<String>,

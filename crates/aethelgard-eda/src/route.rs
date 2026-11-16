@@ -2060,7 +2060,7 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
         return Err(Unroutable {
             net: String::new(),
             why: format!(
-                "{reference} pads {} have no escape: a run of adjacent connected pads wider than the lanes beside it",
+                "{reference} pads {} have no escape: no lane on which this run of adjacent connected pads reaches the grid at its width and clearance",
                 pads.join(", ")
             ),
             exhausted: Some((reference, pads)),
@@ -2243,6 +2243,13 @@ const LANE_NM: i64 = 500_000;
 const _: () = assert!(LANE_NM % PITCH_NM == 0 && LANE_NM >= FLOOR_NM + FLOOR_NM + EPS_NM);
 /// How far past its field an escape may run before it reaches the grid.
 const ESCAPE_STEPS: i64 = 24;
+/// How far a reserve or lane is kept clear of its own part's escapes: past
+/// the deepest escape by 2 mm, so that none can run beyond its end and jog
+/// back across it (adversarial pass, the 0.45 mm boxing). Another part's
+/// escapes keep clear of its first [`NEAR_NM`] only: a longer one would sweep
+/// across parts it never meets (measured: it refused the power fixture's U5).
+const RESERVE_NM: i64 = ESCAPE_STEPS * PITCH_NM + 2_000_000;
+const NEAR_NM: i64 = 2_000_000;
 /// Pitches between the jogs of two pads of a run that jog the same way.
 const JOG_STEP: i64 = 3;
 /// How many grid states a pad's hard region may hold and still be sealed.
@@ -2258,7 +2265,19 @@ fn side_of(field: Rect, pad: &Pad) -> Option<usize> {
         r.y0 == field.y0,
         r.y1 == field.y1,
     ];
-    (sides.iter().filter(|s| **s).count() == 1).then(|| sides.iter().position(|s| *s))?
+    match sides {
+        // An end pad of a row meets two sides: it leaves along its long axis
+        // (adversarial pass: a dual-row part's end pads).
+        [h0, h1, v0, v1] if (h0 ^ h1) && (v0 ^ v1) => {
+            let (w, h) = (r.x1 - r.x0, r.y1 - r.y0);
+            match w.cmp(&h) {
+                std::cmp::Ordering::Greater => Some(usize::from(h1)),
+                std::cmp::Ordering::Less => Some(2 + usize::from(v1)),
+                std::cmp::Ordering::Equal => None,
+            }
+        }
+        _ => (sides.iter().filter(|s| **s).count() == 1).then(|| sides.iter().position(|s| *s))?,
+    }
 }
 
 /// The point `d` beyond `(x, y)` in `side`'s outward direction.
@@ -2287,7 +2306,14 @@ type Avoid = (usize, Shape, bool);
 /// copper) and every escape or reserve of another net in `avoid`, exactly
 /// (a grid track's with the grid's margin); the board edge; and a keepout
 /// forbidding F.Cu tracks.
-fn clear_of(board: &Board, net: Option<&str>, avoid: &[Avoid], me: usize, shape: Shape) -> bool {
+fn clear_of(
+    board: &Board,
+    net: Option<&str>,
+    own: &Pad,
+    avoid: &[Avoid],
+    me: usize,
+    shape: Shape,
+) -> bool {
     let s = board.s();
     let edge = board.outline.grow(-EDGE_NM);
     board
@@ -2295,6 +2321,13 @@ fn clear_of(board: &Board, net: Option<&str>, avoid: &[Avoid], me: usize, shape:
         .iter()
         .flat_map(|q| &q.pads)
         .all(|p| (p.net.is_some() && p.net.as_deref() == net) || copper(p).clear(shape, s))
+        // No F.Cu track crosses another part's pad field (the module's rule).
+        && board.parts.iter().all(|q| {
+            q.pads.iter().any(|p| p.rect == own.rect)
+                || q.pads.iter().map(|p| p.rect).reduce(Rect::union).is_none_or(|f| {
+                    Shape { rect: f, r: 0 }.clear(shape, 0)
+                })
+        })
         && avoid
             .iter()
             .all(|&(n, o, grid)| n == me || o.clear(shape, if grid { s + EPS_NM } else { s }))
@@ -2378,8 +2411,18 @@ fn lay_escapes(
         };
     let mut escapes = BTreeMap::new();
     let mut exhausted = None;
-    // Copper and reserves an escape keeps clear of, with their nets.
-    let mut laid: Vec<Avoid> = Vec::new();
+    // Copper and reserves an escape keeps clear of: the part they belong to,
+    // and each as its own part's escapes see it and as another part's do.
+    let mut laid: Vec<(&str, Avoid, Avoid)> = Vec::new();
+    let line = |net: usize, at: (i64, i64), side: usize, len: i64| Shape {
+        rect: span(at, outward(side, at, len)),
+        r: kinds[kind[net]].width_nm / 2,
+    };
+    let seen_by = |laid: &[(&str, Avoid, Avoid)], me: &str| -> Vec<Avoid> {
+        laid.iter()
+            .map(|&(q, own, other)| if q == me { own } else { other })
+            .collect()
+    };
     let mut parts: Vec<&Part> = board.parts.iter().filter(|p| !p.pads.is_empty()).collect();
     let field_of = |p: &Part| {
         p.pads
@@ -2421,14 +2464,10 @@ fn lay_escapes(
                         (d, x, y)
                     });
                     if let Some(at) = near {
-                        let half = kinds[kind[net]].width_nm / 2;
                         laid.push((
-                            net,
-                            Shape {
-                                rect: span(at, outward(side, at, 2_000_000)),
-                                r: half,
-                            },
-                            true,
+                            part.reference.as_str(),
+                            (net, line(net, at, side, RESERVE_NM), true),
+                            (net, line(net, at, side, NEAR_NM), true),
                         ));
                     }
                 }
@@ -2452,7 +2491,7 @@ fn lay_escapes(
                             outward(
                                 side,
                                 c,
-                                2_000_000
+                                RESERVE_NM
                                     + (pad.rect.x1 - pad.rect.x0).max(pad.rect.y1 - pad.rect.y0),
                             ),
                         ),
@@ -2507,7 +2546,7 @@ fn lay_escapes(
                     let mut got = Vec::new();
                     for &(rank, i) in &order {
                         let (_, pad, net) = run[i];
-                        let mut avoid = trial.clone();
+                        let mut avoid = seen_by(&trial, &part.reference);
                         avoid.extend(
                             pending
                                 .iter()
@@ -2533,23 +2572,21 @@ fn lay_escapes(
                         };
                         let half = kinds[kind[net]].width_nm / 2;
                         for w in e.path.windows(2) {
-                            trial.push((
+                            let copper = (
                                 net,
                                 Shape {
                                     rect: span(w[0], w[1]),
                                     r: half,
                                 },
                                 false,
-                            ));
+                            );
+                            trial.push((part.reference.as_str(), copper, copper));
                         }
                         let at = grid.at(e.end);
                         trial.push((
-                            net,
-                            Shape {
-                                rect: span(at, outward(side, at, 2_000_000)),
-                                r: half,
-                            },
-                            true,
+                            part.reference.as_str(),
+                            (net, line(net, at, side, RESERVE_NM), true),
+                            (net, line(net, at, side, NEAR_NM), true),
                         ));
                         got.push((pad.rect, e));
                     }
@@ -2579,24 +2616,34 @@ fn lay_escapes(
     }
     // A′: sealed pads, in the order of their centres.
     let mut terminals_of: BTreeMap<usize, BTreeMap<usize, Rect>> = BTreeMap::new();
-    let mut sealed_pads: Vec<((i64, i64), &Pad, usize, usize)> = Vec::new();
+    // A′'s candidates: (centre, pad, net, side, its part's reference).
+    type Candidate<'b> = ((i64, i64), &'b Pad, usize, usize, &'b str);
+    let mut sealed_pads: Vec<Candidate<'_>> = Vec::new();
     for part in &board.parts {
         let field = field_of(part);
         for pad in &part.pads {
+            // Every pad of a net counts as a way to it, a drilled or thermal
+            // one included (adversarial pass: a through-hole pad in the pocket),
+            // and an escaped pad by its escape's end.
+            if let Some(net) = pad.net.as_deref().and_then(|n| index.get(n).copied()) {
+                for n in grid.nodes(pad.reach()).filter(|&n| open(track, net, n)) {
+                    terminals_of.entry(net).or_default().insert(n, pad.rect);
+                }
+                if let Some(e) = escapes.get(&key(pad.rect)) {
+                    terminals_of.entry(net).or_default().insert(e.end, pad.rect);
+                }
+            }
             let Some(net) = routed(part, pad) else {
                 continue;
             };
-            for n in grid.nodes(pad.reach()).filter(|&n| open(track, net, n)) {
-                terminals_of.entry(net).or_default().insert(n, pad.rect);
-            }
             if let (false, Some(side)) = (escapes.contains_key(&key(pad.rect)), side_of(field, pad))
             {
-                sealed_pads.push((yx(pad), pad, net, side));
+                sealed_pads.push((yx(pad), pad, net, side, part.reference.as_str()));
             }
         }
     }
-    sealed_pads.sort_by_key(|&(at, pad, _, _)| (at, key(pad.rect)));
-    for (_, pad, net, side) in sealed_pads {
+    sealed_pads.sort_by_key(|&(at, pad, _, _, _)| (at, key(pad.rect)));
+    for (_, pad, net, side, reference) in sealed_pads {
         let k = kind[net];
         let starts: Vec<usize> = grid
             .nodes(pad.reach())
@@ -2623,19 +2670,20 @@ fn lay_escapes(
             side,
             net,
             kinds[k],
-            &laid,
+            &seen_by(&laid, reference),
             &out,
         ) {
             let half = kinds[k].width_nm / 2;
             for w in e.path.windows(2) {
-                laid.push((
+                let copper = (
                     net,
                     Shape {
                         rect: span(w[0], w[1]),
                         r: half,
                     },
                     false,
-                ));
+                );
+                laid.push((reference, copper, copper));
             }
             claim_path(track, via, net, &e.path);
             escapes.insert(key(pad.rect), e);
@@ -2708,13 +2756,14 @@ fn escape(
             path.push(at);
         }
         let lane_on = Shape {
-            rect: span(at, outward(side, at, 2_000_000)),
+            rect: span(at, outward(side, at, RESERVE_NM)),
             r: half,
         };
         if path.windows(2).all(|w| {
             clear_of(
                 board,
                 me,
+                pad,
                 avoid,
                 net,
                 Shape {
@@ -2866,6 +2915,7 @@ fn channel(
                         clear_of(
                             board,
                             me,
+                            pad,
                             avoid,
                             net,
                             Shape {

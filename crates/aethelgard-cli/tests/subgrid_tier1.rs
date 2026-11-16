@@ -559,3 +559,271 @@ fn an_escape_never_takes_a_reached_pads_way_out() {
     assert_eq!(e.net, "B", "{e:?}");
     assert!(e.why.contains("U1 pad 2"), "{e:?}");
 }
+
+/// A quad part: `n` pads a side at `pitch`, pads `w` across and `len` along,
+/// centres `span` from `origin`; each pad `wired` gets its own net and a
+/// partner 3 mm out (the adversarial pass's harness).
+#[allow(clippy::too_many_arguments)]
+fn quad(
+    origin: (i64, i64),
+    n: usize,
+    pitch: i64,
+    w: i64,
+    len: i64,
+    span: i64,
+    corner: i64,
+    wired: &dyn Fn(usize) -> bool,
+) -> Board {
+    let along: Vec<i64> = (0..n)
+        .map(|i| (2 * i as i64 - (n as i64 - 1)) * pitch / 2)
+        .collect();
+    let mut spots: Vec<(i64, i64, bool)> = Vec::new();
+    spots.extend(along.iter().map(|&a| (-span, a, true)));
+    spots.extend(along.iter().map(|&a| (a, span, false)));
+    spots.extend(along.iter().rev().map(|&a| (span, a, true)));
+    spots.extend(along.iter().rev().map(|&a| (a, -span, false)));
+    let mut pads = Vec::new();
+    let mut parts = Vec::new();
+    for (i, &(x, y, wide)) in spots.iter().enumerate() {
+        let (pw, ph) = if wide { (len, w) } else { (w, len) };
+        let net = wired(i).then(|| format!("N{}", i + 1));
+        pads.push(pad(
+            &(i + 1).to_string(),
+            net.clone(),
+            rect((origin.0 + x, origin.1 + y), pw, ph),
+            corner,
+        ));
+        if let Some(net) = net {
+            let (ax, ay) = if x.abs() > y.abs() {
+                (x.signum(), 0)
+            } else {
+                (0, y.signum())
+            };
+            let p = (
+                origin.0 + 2 * x + ax * 3 * MM,
+                origin.1 + 2 * y + ay * 3 * MM,
+            );
+            parts.push(Part {
+                reference: format!("P{}", i + 1),
+                rotation: 0,
+                pads: vec![pad("1", Some(net), rect(p, 300_000, 300_000), 0)],
+                courtyard: vec![],
+                keepouts: vec![],
+            });
+        }
+    }
+    let f = 2 * span + len;
+    parts.insert(
+        0,
+        Part {
+            reference: "U1".into(),
+            rotation: 0,
+            pads,
+            courtyard: square(rect(origin, f, f)),
+            keepouts: vec![],
+        },
+    );
+    Board {
+        outline: rect(origin, 28 * MM, 28 * MM),
+        parts,
+        stack: stack(),
+    }
+}
+
+/// Adversarial pass (high): a pocket that holds a through-hole pad of the
+/// sealed pad's own net is not sealed; it routes on the grid, as before, and
+/// gets no channel escape.
+#[test]
+fn a_through_hole_pad_in_the_pocket_is_a_way_out() {
+    let mut b = sealed(600_000);
+    let edge = 50 * MM + 43_822 + 187_500;
+    b.parts[2].pads.clear();
+    let at = (edge + 200_000, 50 * MM);
+    b.parts.push(Part {
+        reference: "J1".into(),
+        rotation: 0,
+        pads: vec![Pad {
+            drill_nm: Some(200_000),
+            ..pad("1", Some("N".into()), rect(at, 400_000, 400_000), 0)
+        }],
+        courtyard: square(rect(at, 500_000, 500_000)),
+        keepouts: vec![],
+    });
+    let r = judged(&b);
+    assert!(r.vias.is_empty(), "{r:?}");
+    let ceil = |v: i64| -((-v).div_euclid(125_000)) * 125_000;
+    let (gx, gy) = (ceil(b.outline.x0), ceil(b.outline.y0));
+    for s in &r.segments {
+        for (x, y) in [s.start, s.end] {
+            assert!((x - gx) % 125_000 == 0 && (y - gy) % 125_000 == 0, "{s:?}");
+        }
+    }
+}
+
+/// Adversarial pass (medium): a dual-row part at 0.4 mm with 0.2 mm pads,
+/// every pad wired; each row's end pads meet two sides of the field and leave
+/// along their long axis.
+#[test]
+fn a_dual_row_parts_end_pads_escape() {
+    for theta in [0u16, 90] {
+        for (dx, dy) in [(0, 0), (25_000, 50_000), (75_000, 0)] {
+            let org = (50 * MM + dx, 50 * MM + dy);
+            let n = 5i64;
+            let mut pads = Vec::new();
+            let mut parts = Vec::new();
+            for side in [-1i64, 1] {
+                for i in 0..n {
+                    let a = (2 * i - (n - 1)) * 200_000;
+                    let (x, y) = route::rotate(theta, (side * 2_200_000, a));
+                    let (pw, ph) = if theta % 180 == 0 {
+                        (1_450_000, 200_000)
+                    } else {
+                        (200_000, 1_450_000)
+                    };
+                    let num = if side < 0 { i + 1 } else { 2 * n - i };
+                    let net = format!("D{num}");
+                    pads.push(pad(
+                        &num.to_string(),
+                        Some(net.clone()),
+                        rect((org.0 + x, org.1 + y), pw, ph),
+                        50_000,
+                    ));
+                    let (px, py) = route::rotate(theta, (side * 6 * MM, 2 * a));
+                    parts.push(Part {
+                        reference: format!("P{num}"),
+                        rotation: 0,
+                        pads: vec![pad(
+                            "1",
+                            Some(net),
+                            rect((org.0 + px, org.1 + py), 400_000, 400_000),
+                            0,
+                        )],
+                        courtyard: vec![],
+                        keepouts: vec![],
+                    });
+                }
+            }
+            parts.insert(
+                0,
+                Part {
+                    reference: "U1".into(),
+                    rotation: theta,
+                    pads,
+                    courtyard: vec![],
+                    keepouts: vec![],
+                },
+            );
+            let b = Board {
+                outline: rect(org, 24 * MM, 24 * MM),
+                parts,
+                stack: stack(),
+            };
+            judged(&b);
+        }
+    }
+}
+
+/// Adversarial pass (low): an escape never crosses another part's pad field
+/// (the router's rule for F.Cu): a two-pad part 200 µm past the QFN, whose
+/// 600 µm gap would let pad 9's escape through, is not crossed.
+#[test]
+fn an_escape_never_crosses_another_parts_pad_field() {
+    for dx in [0i64, 25_000, 50_000, 75_000, 100_000] {
+        let org = (50 * MM + dx, 50 * MM + dx / 2);
+        let mut b = qfn24(org, 0, &|i| i == 8 || i == 20);
+        let c = org.0 - 200_000;
+        let y = org.1 + 1_775_000 + 200_000 + 300_000;
+        let (l, r) = (c - 300_000 - 75_000, c + 300_000 + 75_000);
+        let field = Rect {
+            x0: l - 75_000,
+            y0: y - 300_000,
+            x1: r + 75_000,
+            y1: y + 300_000,
+        };
+        b.parts.push(Part {
+            reference: "B1".into(),
+            rotation: 0,
+            pads: vec![
+                pad("1", None, rect((l, y), 150_000, 600_000), 0),
+                pad("2", None, rect((r, y), 150_000, 600_000), 0),
+            ],
+            courtyard: vec![],
+            keepouts: vec![],
+        });
+        if let Ok(routed) = route::route(&b) {
+            for s in routed
+                .segments
+                .iter()
+                .filter(|s| s.layer == route::Layer::F)
+            {
+                let sb = Rect {
+                    x0: s.start.0.min(s.end.0) - 100_000,
+                    y0: s.start.1.min(s.end.1) - 100_000,
+                    x1: s.start.0.max(s.end.0) + 100_000,
+                    y1: s.start.1.max(s.end.1) + 100_000,
+                };
+                let inside =
+                    sb.x0 < field.x1 && field.x0 < sb.x1 && sb.y0 < field.y1 && field.y0 < sb.y1;
+                assert!(!inside, "dx {dx}: {s:?}");
+            }
+        }
+    }
+}
+
+/// The 0.45 mm boxing (adversarial pass, medium): a side of six 0.25 mm pads
+/// at 0.45 mm, every pad wired, whose two end pads the grid reaches. Between
+/// their straight exits four lanes cannot fit, so the run between them is
+/// refused by name, not left to fail in the router on a pad it could reach.
+#[test]
+fn a_run_boxed_by_reached_pads_is_refused_by_name() {
+    let b = quad(
+        (50 * MM, 50 * MM),
+        6,
+        450_000,
+        250_000,
+        600_000,
+        1_700_000,
+        62_500,
+        &|i| (18..24).contains(&i),
+    );
+    let e = route::route(&b).unwrap_err();
+    assert_eq!(
+        e.exhausted,
+        Some((
+            "U1".to_owned(),
+            ["23", "22", "21", "20"].map(String::from).to_vec()
+        )),
+        "{e:?}"
+    );
+}
+
+/// O1 applies only to a moved part below the connectors' edge: a part moved
+/// within the board leaves the outline as the placer drew it.
+#[test]
+fn a_part_moved_inside_the_board_keeps_the_outline() {
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let outline = |board: &str| {
+        route::read(
+            &aethelgard_eda::strict::board(board).unwrap(),
+            &Stack::of(&spec),
+        )
+        .unwrap()
+        .0
+        .outline
+    };
+    let plain = outline(
+        &aethelgard_eda::schematic::emit(&spec, &solved, &table)
+            .unwrap()
+            .board,
+    );
+    for up in [1_200_000, 2_000_000, 2_800_000] {
+        let moves = vec![("R1".to_owned(), (plain.x0 + 4 * MM, plain.y1 - up), 0)];
+        let e = aethelgard_eda::schematic::emit_moved(&spec, &solved, &table, &moves).unwrap();
+        assert_eq!(outline(&e.board), plain, "R1 up {up}");
+    }
+}
