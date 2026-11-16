@@ -1954,6 +1954,91 @@ fn f2_a_late_dshot_anchor_fails_by_name() {
     );
 }
 
+/// The raw-register code adversarial pass 1's mutants use (`AET-WO-2302`):
+/// a word write and read, a 16-bit store and a spin of `n` iterations.
+const RAW_ADV: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn rd(a: u32) -> u32 { unsafe { core::ptr::read_volatile(a as *const u32) } }\nfn wr16(a: u32, v: u16) { unsafe { core::ptr::write_volatile(a as *mut u16, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
+/// The generated firmware's write of its boot word.
+const BOOT_WORD: &str =
+    "    unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };";
+
+/// One boot of the DShot600 fixture's firmware with `edits` (find,
+/// replace) applied to `main.rs` beside [`RAW_ADV`], and `board` to its board
+/// crate.
+fn dshot_mutant(
+    label: &str,
+    board: impl Fn(&Path),
+    edits: &[(&str, &str)],
+) -> (Option<i32>, Value) {
+    let (platform, spec, elf) = motor_board("motors-dshot600", label, board, |d| {
+        edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+        for (from, to) in edits {
+            edit(d, "src/main.rs", from, to);
+        }
+    });
+    boot_on(label, &platform, &spec, &elf, "100ms")
+}
+
+/// Every output of `v` has edges after its window's end and none before
+/// its anchor, each output named once by `motor_edge_after_window`
+/// (adversarial pass 1, H1).
+fn edges_after_window(label: &str, v: &Value) {
+    let named: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "motor_edge_after_window")
+        .collect();
+    assert_eq!(named.len(), 4, "{label}: {v}");
+    for m in motors(v) {
+        let t = &m["twin"];
+        assert!(t["edges_after"].as_u64().unwrap() > 0, "{label}: {m}");
+        assert_eq!(t["edges_before"], 0, "{label}: {m}");
+    }
+}
+
+/// Adversarial pass 1, H1a (`AET-WO-2302`): after TIM1's window, PA8..PA11
+/// switched to GPIO outputs and bit-banged through `BSRR`, then `MODER`
+/// restored to the solved alternate function. The judge's stop silenced
+/// the observers, so this passed; it silences nothing now, and every edge
+/// after the window is named.
+#[test]
+fn h1a_a_pin_bit_banged_after_the_window_fails_by_name() {
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    let m = rd(0x5802_0000);\n    wr(0x5802_0000, (m & !0x00ff_0000) | 0x0055_0000);\n    for _ in 0..50 {{ wr(0x5802_0018, 0x0F00); spin(30); wr(0x5802_0018, 0x0F00_0000); spin(30); }}\n    wr(0x5802_0000, m);"
+    );
+    let (code, v) = dshot_mutant("h1a-bit-bang", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1a", &v);
+}
+
+/// Adversarial pass 1, H1b: after the window, `CEN` set again by a 16-bit
+/// store, `CCR1`..`CCR4` made wrong for 50 000 spins, then restored and
+/// `CEN` cleared by a 16-bit store, so the end's read-back is clean.
+#[test]
+fn h1b_a_16_bit_restart_after_the_window_fails_by_name() {
+    let ccrs = "[0x4001_0034u32, 0x4001_0038, 0x4001_003c, 0x4001_0040]";
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    wr16(0x4001_0000, 0x81);\n    for a in {ccrs} {{ wr(a, 0x50); }}\n    spin(50_000);\n    for a in {ccrs} {{ wr(a, 0x28); }}\n    wr16(0x4001_0000, 0x80);"
+    );
+    let (code, v) = dshot_mutant("h1b-halfword-restart", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1b", &v);
+}
+
+/// Adversarial pass 1, H1c: after the window, DMA2 stream 0 (memory to
+/// memory) writes 0x81 into `TIM1.CR1`, 50 000 spins, then 0x80 the same
+/// way, and DMA2's clock restored: no hook sees a DMA write, but the edges
+/// it starts are named.
+#[test]
+fn h1c_a_dma_restart_after_the_window_fails_by_name() {
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    for v in [0x81u32, 0x80] {{\n        unsafe {{ core::ptr::write_volatile(&raw mut src, v) }};\n        wr(0x4002_0410, 0);\n        wr(0x4002_0408, 0x3d);\n        wr(0x4002_0418, (&raw const src) as u32);\n        wr(0x4002_041c, 0x4001_0000);\n        wr(0x4002_0414, 1);\n        wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n        spin(50_000);\n    }}\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+    );
+    let (code, v) = dshot_mutant("h1c-dma-restart", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1c", &v);
+}
+
 /// The raw-register code the forgeries put where the outputs start: a
 /// write and a spin of `n` iterations, in the firmware's own crate.
 const RAW: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";

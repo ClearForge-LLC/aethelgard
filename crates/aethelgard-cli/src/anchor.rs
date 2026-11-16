@@ -7,8 +7,10 @@
 //! - each motor timer's `CR1` write: logged with the word it held before
 //!   (a hook runs before the write, measured), so the judge decides a `CEN`
 //!   rise; on a DShot timer's rise the hook schedules the judge's stop at
-//!   `DSHOT_WINDOW_NS` after it: the timer's solved registers read back,
-//!   its observers silenced, `CEN` cleared;
+//!   `DSHOT_WINDOW_NS` after it: the timer's solved registers read back and
+//!   `CEN` cleared. The observers are never silenced: a stopped timer makes
+//!   no edge, so every edge after the window is the firmware's own (a
+//!   restart, a pin driven by hand) and the judge names it;
 //! - the boot word: on the write of `BOOT_MAGIC` over any other word, the
 //!   first port's frame is scheduled a quantum after it, byte by byte a
 //!   character apart rounded up to a quantum, the RX pin's mux read in the
@@ -38,9 +40,7 @@
 //! delay in instructions; a peripheral's hook survives `machine Reset`, but
 //! a hook on RAM is not fired again after it (re-adding it fires both), so
 //! the boot word's and the ports' hooks are added once, before the boot the
-//! judge reads (the run's start, or the last release); and an observer an
-//! earlier boot's stop silenced stays silenced across a reset, so each
-//! reset sets the observers' level again.
+//! judge reads (the run's start, or the last release).
 //!
 //! The lines are `[WARNING] sysbus: AETHELGARD-<TAG> <fields>`, each field
 //! a decimal count or index, or a hexadecimal word as Python's `%x` writes
@@ -278,8 +278,6 @@ pub struct TimerHook {
     /// The timer's solved registers, in the image's order: what the stop
     /// reads back.
     pub registers: Vec<u32>,
-    /// Each of its outputs' observers, `gpioPortA.pa8obs`.
-    pub observers: Vec<String>,
     /// A DShot timer is stopped `DSHOT_WINDOW_NS` after its anchor; a PWM
     /// timer runs to the end of the boot.
     pub dshot: bool,
@@ -349,11 +347,6 @@ pub fn timer_hook(t: &TimerHook) -> String {
             "self.Log(LogLevel.Warning, '{PREFIX_TAG}STOP {n} %d %d {words}' % (a, cpu.ExecutedInstructions, {}))",
             reads.join(", ")
         )];
-        act.extend(
-            t.observers
-                .iter()
-                .map(|o| format!("monitor.Parse('logLevel 3 sysbus.{o}')")),
-        );
         act.push(format!(
             "self.WriteDoubleWord({cr1:#x}, self.ReadDoubleWord({cr1:#x}) & 0xfffffffe)"
         ));
@@ -437,7 +430,6 @@ mod tests {
             timer: 1,
             cr1: 0x4001_0000,
             registers: vec![0x4001_0000, 0x4001_002c],
-            observers: vec!["gpioPortA.pa8obs".into(), "gpioPortA.pa9obs".into()],
             dshot: true,
         }
     }
@@ -470,15 +462,15 @@ mod tests {
         // Stale first: the stop acts at exactly its anchor plus 2 ms of
         // instructions, and otherwise logs that it did nothing.
         assert!(h.contains(") if cpu.ExecutedInstructions == a + 200000 else self.Log(LogLevel.Warning, 'AETHELGARD-STALE STOP 1 %d %d' % (a, cpu.ExecutedInstructions)))"));
-        // The read-back, then the observers silenced, then CEN cleared and
-        // read again, in that order.
+        // The read-back, then CEN cleared and read again, in that order;
+        // the observers are never silenced (adversarial pass 1, H1).
         let stop = h.find("AETHELGARD-STOP 1 %d %d %x %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x40010000), self.ReadDoubleWord(0x4001002c))").unwrap();
-        let silence = h.find("monitor.Parse('logLevel 3 sysbus.gpioPortA.pa8obs'), monitor.Parse('logLevel 3 sysbus.gpioPortA.pa9obs')").unwrap();
         let clear = h
             .find("self.WriteDoubleWord(0x40010000, self.ReadDoubleWord(0x40010000) & 0xfffffffe)")
             .unwrap();
         let cleared = h.find("'AETHELGARD-CLEARED 1 %d %d %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x40010000))").unwrap();
-        assert!(stop < silence && silence < clear && clear < cleared);
+        assert!(stop < clear && clear < cleared);
+        assert!(!h.contains("logLevel"), "{h}");
     }
 
     #[test]

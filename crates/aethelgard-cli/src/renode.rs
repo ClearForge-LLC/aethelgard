@@ -409,7 +409,7 @@ impl BootPlan<'_> {
 
     /// Each motor timer as the composition hooks it (`AET-WO-2302`), in
     /// ascending number: its `CR1` and solved registers from the image
-    /// (`INV-07`), its outputs' observers, and whether it is DShot. A timer
+    /// (`INV-07`), and whether it is DShot. A timer
     /// whose `CR1` the image does not hold is not hooked, and its outputs
     /// fail closed on an anchor never observed.
     pub fn timer_hooks(&self) -> Vec<crate::anchor::TimerHook> {
@@ -435,12 +435,6 @@ impl BootPlan<'_> {
                         .iter()
                         .filter(|r| r.name.starts_with(&prefix))
                         .map(|r| r.address)
-                        .collect(),
-                    observers: self
-                        .motors
-                        .iter()
-                        .filter(|m| m.observer.timer == n)
-                        .map(|m| m.observer.source.clone())
                         .collect(),
                     dshot: self
                         .motors
@@ -609,10 +603,6 @@ impl BootPlan<'_> {
         c.push(self.vtor());
         c.push("cpu IsHalted true".to_owned());
         c.extend(self.rearm());
-        // An earlier boot's stop silenced its timer's observers, and the
-        // level outlives the reset (measured, build probe P3): the next
-        // boot's edges are logged as the first boot's were.
-        c.extend(self.observer_levels());
         c
     }
 
@@ -697,16 +687,14 @@ impl BootPlan<'_> {
                 }
             }
         }
-        c.extend(self.observer_levels());
+        // Each motor output's observer at `Noisy` (`AET-WO-4300a`), never
+        // changed after (`AET-WO-2302` adversarial pass 1, H1).
+        c.extend(
+            self.motors
+                .iter()
+                .map(|m| format!("logLevel -1 sysbus.{}", m.observer.source)),
+        );
         c
-    }
-
-    /// Each motor output's observer at `Noisy` (`AET-WO-4300a`).
-    fn observer_levels(&self) -> Vec<String> {
-        self.motors
-            .iter()
-            .map(|m| format!("logLevel -1 sysbus.{}", m.observer.source))
-            .collect()
     }
 
     /// The stimulus of each data read whose device the platform declares,
@@ -2797,7 +2785,7 @@ fn anchor_findings(
             out.push(Finding::plain(
                 MOTOR_EDGE_AFTER_FINDING,
                 format!(
-                    "{who}: {} edge(s) after its window's end at {} ns, where the judge's stop silenced and stopped the timer",
+                    "{who}: {} edge(s) after its window's end at {} ns, where the judge's stop stopped the timer: the firmware drove the pin or restarted the timer after its window",
                     w.edges_after, w.end_ns
                 ),
             ));
@@ -3980,11 +3968,12 @@ mod tests {
     }
 
     /// `AET-WO-2302`: each motor timer's `CR1` is hooked before the run, a
-    /// DShot timer's with the judge's stop and a PWM timer's only logged;
-    /// each rendered reset sets the observers' level again, since an earlier
-    /// boot's stop silenced them (measured, build probe P3).
+    /// DShot timer's with the judge's stop and a PWM timer's only logged.
+    /// The observers' level is set once, before the run, and never changed:
+    /// the stop silences nothing (adversarial pass 1, H1), so a reset sets
+    /// no level again.
     #[test]
-    fn each_motor_timer_is_hooked_and_each_reset_sets_its_observers_again() {
+    fn each_motor_timer_is_hooked_and_its_observers_never_silenced() {
         let image = image();
         let pwm = motor();
         let mut dshot = motor();
@@ -4020,7 +4009,7 @@ mod tests {
         let pwm_hook = crate::anchor::timer_hook(&hooks[0]);
         let dshot_hook = crate::anchor::timer_hook(&hooks[1]);
         assert!(!pwm_hook.contains("ScheduleAction"));
-        assert!(dshot_hook.contains("monitor.Parse('logLevel 3 sysbus.gpioPortA.pa9obs')"));
+        assert!(dshot_hook.contains("ScheduleAction") && !dshot_hook.contains("logLevel"));
         // Before the first `RunFor`, once each: a peripheral's hook survives
         // `machine Reset` (measured, F5 and build probe P3).
         let first = c.find("emulation RunFor").unwrap();
@@ -4030,12 +4019,9 @@ mod tests {
         }
         let reset = c.split("machine Reset").nth(1).unwrap();
         let reset = reset.split("cpu IsHalted false").next().unwrap();
-        assert!(
-            reset.contains(
-                "logLevel -1 sysbus.gpioPortA.pa8obs; logLevel -1 sysbus.gpioPortA.pa9obs"
-            ),
-            "{reset}"
-        );
+        assert!(!reset.contains("logLevel"), "{reset}");
+        assert!(!c.contains("logLevel 3"), "{c}");
+        assert_eq!(c.matches("logLevel -1 sysbus.gpioPortA.pa9obs").count(), 1);
     }
 
     // ------------------------------------------------------- AET-WO-2302
@@ -4182,7 +4168,8 @@ mod tests {
             f(&mut l);
             l
         };
-        // An edge after the window's end (the stop did not silence it).
+        // An edge after the window's end: the stop silences nothing, so it
+        // is the firmware's own.
         assert_eq!(
             kinds(with(&|l| l.push(at(
                 2_030_700,
