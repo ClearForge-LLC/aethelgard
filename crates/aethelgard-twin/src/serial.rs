@@ -2254,6 +2254,11 @@ mod tests {
             judged(&[w("rcc", 0x50, 0x3000), spi1.clone()]),
             ["RCC.D2CCIP1R 0x3000 written, not the solved select word 0x4000"]
         );
+        // The solved field and more: SPI45SEL set beside it (bits 18:16).
+        assert_eq!(
+            judged(&[w("rcc", 0x50, 0x3_4000), spi1.clone()]),
+            ["RCC.D2CCIP1R 0x34000 written, not the solved select word 0x4000"]
+        );
         assert_eq!(
             judged(&[select.clone(), select.clone(), spi1.clone()]),
             ["RCC.D2CCIP1R written twice in a boot"]
