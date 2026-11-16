@@ -391,10 +391,13 @@ fn bare_spi_bus(s: &mut Value, millivolts: u32, keep: &[&str]) {
         .retain(|d| keep.iter().any(|k| d["part"] == *k));
 }
 
+/// An edit of the reference, and the bytes a command refuses it with.
+type Pinned = (&'static str, fn(&mut Value), &'static str);
+
 /// `AET-WO-1207` §1.2 (`1206` F3): the three refusals `solve` made from the
 /// specification alone, each with the bytes the binary at `1178ca8` printed
 /// from `solve` and `generate`.
-fn aet_1207_pins() -> [(&'static str, fn(&mut Value), &'static str); 5] {
+fn aet_1207_pins() -> [Pinned; 5] {
     [
         (
             "rise",
@@ -430,11 +433,12 @@ fn aet_1207_pins() -> [(&'static str, fn(&mut Value), &'static str); 5] {
     ]
 }
 
-/// `AET-WO-1207` §1.2, the behaviour before: `solve` and `generate` refuse
-/// each with the pinned bytes, and `validate` passes it (a specification
-/// that acknowledges nothing; with the reference's acknowledgements it
-/// refuses them as stale, having no ledger for a topology that does not
-/// solve).
+/// `AET-WO-1207` §1.2: `validate` refuses each with the bytes `solve` and
+/// `generate` printed, which they still print, whether or not the
+/// specification acknowledges anything. Before (`4c61fad`), `validate`
+/// passed each that acknowledged nothing, and refused the reference's
+/// acknowledgements as stale (`UnwitnessedAcknowledgementStale`): a
+/// topology that does not solve has no witness ledger.
 #[test]
 fn aet_1207_validate_refuses_what_solve_refused_byte_for_byte() {
     for (label, edit, expected) in aet_1207_pins() {
@@ -447,14 +451,9 @@ fn aet_1207_validate_refuses_what_solve_refused_byte_for_byte() {
             edit(s);
             s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
         });
-        assert_eq!(code, Some(0), "{label}: {out}");
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
         let (code, out) = run_file("validate", &format!("1207-va-{label}"), edit);
-        let v: Value = serde_json::from_str(&out).unwrap();
-        assert_eq!(code, Some(2), "{label}: {out}");
-        assert_eq!(
-            v["error"]["kind"], "UnwitnessedAcknowledgementStale",
-            "{label}: {out}"
-        );
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
     }
 }
 
@@ -483,21 +482,28 @@ fn emit_renamed(
     aethelgard_eda::schematic::emit(&spec, &solved, &table)
 }
 
-/// `AET-WO-1207` §1.4 (`1206` F1), the behaviour before: the emitter's
-/// `spelled` omitted serial and motor nets, so a library caller of
-/// `schematic::emit` naming one for an emitter net got a board, the net
-/// shorted to the MCU's own (`validate` refuses it, `generate` never gets
-/// there).
+/// `AET-WO-1207` §1.4 (`1206` F1): the emitter holds its own nets against
+/// every net the specification spells, serial and motor nets included, so a
+/// library caller of `schematic::emit` naming one for an emitter net is
+/// refused (`validate` refuses it too; `generate` never gets there). Before
+/// (`4c61fad`), each of these emitted a board, the net shorted to the MCU's
+/// own (`U1_VCAP1` on a UART pin) or to ground.
 #[test]
 fn aet_1207_the_emitter_refuses_a_serial_or_motor_net_named_for_its_own() {
     const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
-    for (spec, old, new) in [
-        (SPEC, "CONSOLE_TX", "U1_VCAP1"),
-        (SPEC, "CONSOLE_RX", "gnd"),
-        (MOTORS, "MOTOR1", "U1_VCAP2"),
-        (MOTORS, "MOTOR2", "GND"),
+    for (spec, old, new, id) in [
+        (SPEC, "CONSOLE_TX", "U1_VCAP1", "U1_VCAP1"),
+        (SPEC, "CONSOLE_RX", "gnd", "GND and gnd"),
+        (MOTORS, "MOTOR1", "U1_VCAP2", "U1_VCAP2"),
+        (MOTORS, "MOTOR2", "GND", "GND"),
     ] {
-        let emitted = emit_renamed(spec, old, new);
-        assert!(emitted.is_ok(), "{old} -> {new}: {:?}", emitted.err());
+        let Err(e) = emit_renamed(spec, old, new) else {
+            panic!("{old} -> {new}: emitted a board");
+        };
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("ReservedName", Some(id)),
+            "{old} -> {new}: {e}"
+        );
     }
 }
