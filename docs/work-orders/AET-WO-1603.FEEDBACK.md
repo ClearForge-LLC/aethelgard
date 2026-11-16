@@ -41,3 +41,51 @@ These were read, not run, before any prediction below was written.
 
 - **D1 · The pre-flight refuses a Cargo configuration unless it is exactly the one `generate` writes** (R1). §1.2's "refuse by name" and "the engine's own generated crates must still pass" conflict for `firmware/.cargo/config.toml`. The pre-flight accepts that one path only when its parsed keys are exactly `build.target = "thumbv7em-none-eabihf"`, `build.target-dir` (a string; `CARGO_TARGET_DIR` overrides it) and `target.thumbv7em-none-eabihf.rustflags = ["-C", "link-arg=-Tlink.x"]`, and refuses every other configuration file by name. So no generated crate is refused, and §7's condition does not fire. **Question for the architect:** confirm this reading.
 - **D2 · `hwdef.h`: the refusal is scoped to the 33 macros' regions** (R6). The real headers hold `#ifndef` and `#if defined(…)` regions elsewhere, so refusing every region the reader cannot evaluate would refuse every CI board (a §7 condition). The reader refuses `HwdefConditionalUnsupported` when one of the 33 names is defined or mentioned inside any conditional region other than exactly `#if 0` (dead: its lines are not read) or `#if 1` (live), after splicing continuations and stripping comments. A target macro at depth above 0 on a CI board would be the §7 stop; on step-g and seed-pkg none is (read). **Question for the architect:** confirm this reading.
+
+## 3. §1.1 Measured (main `8030fa5`'s binary, before any change)
+
+**Where.** The pinned tools image (`container/IMAGE`, `aethelgard-tools@sha256:c69ff9bc…`) under `~/bin/capped-run` (scope `memory.max` 8589934592, `memory.swap.max` 0, `pids.max` 8192, read back for every run: `~/.cache/aet-1603/caps.log`), `--network none`, as the image's root, so every tool ran under the uid boundary's 65534 (`uid_boundary: false`, `user_namespace`, as rootless podman always gives). The ETXTBSY and `/dev/null` rows ran on Furnace as `forge`. Fixtures, scripts and raw output: `~/.cache/aet-1603/m1/` (caller crates), `m2/` (Renode), `evidence/`.
+
+### Caller crates (P1-P9)
+
+Each fixture is the reference board crate (`boards/sentinel-01`) with one change. The proc macro and the build script try a marker in the tool's cwd (the copy), `$HOME` (the tool's directory), `/tmp`, `/cache`, `/repo`, `/var/lib` and `/usr/local`, and report what succeeded through a compile error.
+
+| # | fixture | measured | prediction held? |
+|---|---|---|---|
+| M1 | `build`, a path proc macro inside the copy, reporting | **The macro ran in the sandbox.** Only `$HOME` (the tool's directory) took a marker; the copy (root's 0444, uid boundary) and every other place gave `EACCES`. No marker outside the sandbox. Its report came back as `build_failed` | yes, but the copy itself is not writable under the uid boundary |
+| M2 | the same, silent | **`pass`, an ELF written.** Nothing refuses an in-copy proc macro today | yes |
+| M3 | `build`, a `build.rs` in the firmware, reporting through a generated `compile_error!` | ran in the sandbox; `$HOME` only, as M1; `build_failed`. A silent one would be refused after cargo ran (`firmware.rs:176`, read) | yes |
+| M4 | `build`, a proc macro by absolute path outside the copy (`/cache`, not granted) | `ToolError`: `failed to get evilpm as a dependency`; nothing ran | yes |
+| M5 | `firmware/.cargo/config.toml` + an extra `-C link-arg` | honoured: `build_failed`, `linking with rust-lld failed` | yes |
+| M6 | `firmware/.cargo/config.toml` + `linker = "/bin/false"` | honoured: `/bin/false` executed as the linker | yes |
+| M7 | `firmware/.cargo/config.toml` + `runner` | ignored by `cargo build`: `pass` | yes |
+| M8 | the crate root's `.cargo/config.toml` (`linker = "/bin/false"`), an ancestor of `firmware/` | honoured by `build` (`linking with /bin/false failed`). A root `build.rustflags` alone is shadowed by the firmware's `target.<triple>.rustflags` (`pass`, the reference ELF) | yes; shadowing is a new detail |
+| M9 | `prove`, the crate root's `.cargo/config.toml` (`build.rustc-wrapper = "/bin/false"`) | honoured: `ToolError`, Kani's `cargo metadata` ran `/bin/false … rustc -vV` | yes |
+| M10 | `prove`, a path proc macro, then a build script, in the board crate | both ran; reported as `compile_error`. Silent proc macro: `pass` | yes |
+| M11 | a `.cargo/config.toml` in a parent of the scratch directory that Landlock does not grant (`/var/lib/.cargo/`, scratch in `/var/lib/aethelgard`) | `build`: `ToolError`, `could not load Cargo configuration`; `prove`: `ToolUnusable`, the version probe exited 101. Never a pass | yes |
+| M12 | the same in a parent Landlock grants (`TMPDIR=/usr/local/aet-scratch`, `/usr/local/.cargo/config.toml`) | honoured: `build` linked with `/bin/false`; `prove` ran the wrapper. A parent is reachable only when the scratch is under a granted directory, and every scratch ancestor is root's or the caller's (`AET-WO-1601`) | yes |
+| M13 | `firmware/rust-toolchain.toml` naming an uninstalled channel; the legacy `rust-toolchain`; `path = "../tc"` (a toolchain directory in the copy) | each `ToolUnusable`, exit 4: rustup honoured the file in the version probe and failed (the copy's `tc/bin/cargo` is not executable, R3) | yes |
+| M14 | the uninstalled channel with `RUSTUP_TOOLCHAIN=1.99.1` from the caller | `pass`: the variable overrides the file | yes |
+| M15 | the reference crate, unchanged | `pass`, ELF `45a17992…`, the baseline's | — |
+
+**What this means.** Every route ran inside the sandbox, and no marker reached any place outside the tool's own directory. The hardening the work order asks for is the pre-flight: today an in-copy proc macro passes `build` and `prove` (M2, M10), and a configuration or toolchain file reaches cargo or rustup before anything refuses it. **A parent configuration can be refused statically** (M12): the pre-flight walks every ancestor of cargo's working directory, so `--config` overrides are not needed (§1.2's condition for them does not hold).
+
+### Renode's log (P10, P11)
+
+The fixture `tests/fixtures/forge-log` carries one text, a leading newline then a whole line shaped like U2's I2C witness (`[00:00:00.000100000] [NOISY] i2c1.u2: C1603-…`) and the bare sentinel `AETHELGARD-BOOT-BEGIN`, through: two ELF names (a function symbol and a section name, patched in the string tables), USART1 (clocked, `UE|TE`, 85 bytes to `TDR`), semihosting `SYS_WRITE0` (`bkpt 0xab`), RCC, GPIOA and USART1 writes and an unimplemented USART1 offset (with the platform's access logging on), the FMC window, and a jump out of the firmware.
+
+| # | measured | prediction held? |
+|---|---|---|
+| M16 | Renode 1.17.0 run directly on the reference platform with **every** log source at NOISY and access logging on for RCC, GPIOA and USART1 (a superset of what any boot command enables): **0** lines carry the canary. Semihosting is `[WARNING] cpu: Semihosting handler is not registered; R0=0x4 R1=0x80000E6` (numbers only); the unimplemented offset is `[WARNING] usart1: Unhandled read from offset 0x3FC.`; the jump is `Trying to find the mapping for offset 0xD0000000.` No line names a symbol. The USART's 85 bytes went to its file backend only | yes |
+| M17 | `aethelgard simulate` on the same ELF and the reference specification: **`fail`**; U2's and U4's records invalid (no transfer), `pc_outside_firmware`, the serial capture `serial_capture_forged`. No forgery reaches `pass` | yes |
+| M18 | No boot command enables `LogFunctionNames`, an analyzer or a semihosting handler (`grep` of `crates/` and `models/`: none) | read |
+
+**§7 does not fire.** No forgery reached `pass`, and nothing measured needs a trace-format or specification change.
+
+### `/dev/null` and the ETXTBSY race (P13-P15)
+
+| # | measured | prediction held? |
+|---|---|---|
+| M19 | Tier 1's stand-in tool, `mode=devices`, under the real CLI on Furnace: `/dev/null` read, write, and a child started with `Stdio::null()` each `errno=13`; `/dev/zero`, `/dev/full`, `/dev/random`, `/dev/urandom`, `/dev/tty`, `/dev/ptmx`, `/dev/kmsg`, `/dev/mem` and a create in `/dev/shm` each `errno=13` (`channels_tier1::dev_null_alone_opens_inside`, failing before the fix) | yes |
+| M21 | `hwdef.h` whose only `VAL_GPIOA_MODER` definition sits inside `#if 0 … #endif`: **accepted** by main's reader, the dead definition read as the value (`check::a_definition_inside_a_conditional_is_evaluated_exactly_or_refused`, failing before the fix) | yes |
+| M20 | A stress program (`etx`, scratchpad): one thread writes a `#!/bin/sh` stub and execs it, 2,000 times, while four threads spawn `/bin/true` without pause. Plain write: **49** `ETXTBSY`. Write to a temporary name, close, `rename`: **78**. A process-wide `RwLock`, the write held exclusively while a stub is open for writing and shared around every `spawn`: **0** | yes: `rename` does not remove the race |

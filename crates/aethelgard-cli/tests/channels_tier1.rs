@@ -58,6 +58,11 @@ fn sleeper() -> Child {
 
 /// Runs the probe as `kicad-cli` under `check drc`; its findings by name.
 fn inside() -> BTreeMap<String, String> {
+    inside_mode("channels")
+}
+
+/// As [`inside`], with the board's `mode=` line naming what the probe tries.
+fn inside_mode(mode: &str) -> BTreeMap<String, String> {
     let dir = Dir(std::env::temp_dir().join(format!(
         "aet-channels-{}-{:?}",
         std::process::id(),
@@ -73,7 +78,7 @@ fn inside() -> BTreeMap<String, String> {
     // runs (AET-WO-1300 B5); the probe reads its lines inside it.
     fs::write(
         &board,
-        format!("(kicad_pcb\nmode=channels\nvictim={}\n)\n", victim.id()),
+        format!("(kicad_pcb\nmode={mode}\nvictim={}\n)\n", victim.id()),
     )
     .unwrap();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
@@ -187,6 +192,30 @@ fn threads_and_children_still_start_inside() {
     let got = inside();
     assert_eq!(got["thread_spawn"], "ok", "{got:?}");
     assert_eq!(got["process_spawn"], "ok", "{got:?}");
+}
+
+/// AET-WO-1603 §1.5 (2301 B2): inside, `/dev/null` opens for reading and
+/// writing and a child starts with `Stdio::null()`; no other device node
+/// opens, and nothing can be created in `/dev/shm`. A node this environment
+/// lacks gives ENOENT before Landlock looks; one it has gives EACCES.
+#[test]
+fn dev_null_alone_opens_inside() {
+    let got = inside_mode("devices");
+    for k in ["null_read", "null_write", "null_stdio"] {
+        assert_eq!(got[k], "ok", "{k}: {got:?}");
+    }
+    let others: Vec<_> = got.iter().filter(|(k, _)| k.starts_with("/dev/")).collect();
+    assert_eq!(others.len(), 9, "{got:?}");
+    for (path, r) in others {
+        let parent = Path::new(path).parent().unwrap();
+        let present = if path.starts_with("/dev/shm/") {
+            parent.is_dir()
+        } else {
+            Path::new(path).exists()
+        };
+        let want = if present { "errno=13" } else { "errno=2" };
+        assert_eq!(r, want, "{path}: {got:?}");
+    }
 }
 
 /// The test process's own sets, from /proc/self/status, as hex masks.
