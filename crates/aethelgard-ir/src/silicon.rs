@@ -222,14 +222,22 @@ const CR1_SSI: u32 = 1 << 12;
 const CFG1_MBR_SHIFT: u32 = 28;
 const CFG1_CRCSIZE_RESET: u32 = 0b00111 << 16;
 const CFG1_DSIZE_8BIT: u32 = 0b00111;
-/// `SPI_CFG2` (§50.11.4, p. 2221–2222): `SSM` bit 26, `MASTER` bit 22; reset
-/// `0x0000 0000` (`CPOL` = `CPHA` = 0, mode 0; `COMM` `00` full duplex; `SP`
-/// `000` Motorola; `SSOE` 0).
+/// `SPI_CFG2` (§50.11.4, p. 2221–2222): `AFCNTR` bit 31, `SSM` bit 26,
+/// `MASTER` bit 22; reset `0x0000 0000` (`CPOL` = `CPHA` = 0, mode 0; `COMM`
+/// `00` full duplex; `SP` `000` Motorola; `SSOE` 0). `AFCNTR` (p. 2221,
+/// rendered): "This bit is taken into account when SPE=0 only … 1: the
+/// peripheral keeps always control of all associated GPIOs", so SCK and MOSI
+/// stay driven while the chip select is low and `SPE` is not yet set or
+/// already cleared; "This bit must be never used at slave mode", and every
+/// controller here is a master (the architect's ruling on PR #161, comment
+/// 6911424608, Q-D).
+const CFG2_AFCNTR: u32 = 1 << 31;
 const CFG2_SSM: u32 = 1 << 26;
 const CFG2_MASTER: u32 = 1 << 22;
 
 /// The whole words the bring-up writes for one SPI controller (contract D4,
-/// with `CFG1`'s `CRCSIZE` at its reset value, p. 2219).
+/// with `CFG1`'s `CRCSIZE` at its reset value, p. 2219, and `CFG2`'s
+/// `AFCNTR` set, round 2 R4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SpiWords {
     /// `SSI`: with `SSM` set, NSS reads high, so a master raises no mode
@@ -241,7 +249,7 @@ pub struct SpiWords {
     pub cr1_start: u32,
     /// `MBR << 28 | CRCSIZE 8 bits (reset) | DSIZE 8 bits`.
     pub cfg1: u32,
-    /// `MASTER | SSM`.
+    /// `MASTER | SSM | AFCNTR`.
     pub cfg2: u32,
     /// The RCC offset of the controller's select register and the whole word
     /// written there: every solved controller's field in that register set
@@ -274,7 +282,7 @@ pub fn spi_words(
         cr1_enable: CR1_SSI | CR1_SPE,
         cr1_start: CR1_SSI | CR1_SPE | CR1_CSTART,
         cfg1: u32::from(c.mbr) << CFG1_MBR_SHIFT | CFG1_CRCSIZE_RESET | CFG1_DSIZE_8BIT,
-        cfg2: CFG2_MASTER | CFG2_SSM,
+        cfg2: CFG2_MASTER | CFG2_SSM | CFG2_AFCNTR,
         kernel_select: (offset, word),
     })
 }
@@ -811,7 +819,9 @@ mod tests {
         assert_eq!(w.cr1_enable, 0x0000_1001);
         assert_eq!(w.cr1_start, 0x0000_1201);
         assert_eq!(w.cfg1, 0x1007_0007);
-        assert_eq!(w.cfg2, 0x0440_0000);
+        // MASTER (22), SSM (26) and AFCNTR (31), every other field 0.
+        assert_eq!(w.cfg2, 0x8440_0000);
+        assert_eq!(w.cfg2 >> 31, 1, "AFCNTR");
         // SPI123SEL = 100 at bits 14:12 of RCC_D2CCIP1R (0x050).
         assert_eq!(w.kernel_select, (0x050, 0x0000_4000));
         // SPI4 shares the register: SPI45SEL = 011 at bits 18:16, and SPI1's
