@@ -158,3 +158,129 @@ Each has a killed mutant.
 - **D5 · Roadmap §7.1's row for `1310`** (the pair walk tests a track end with `inner().contains`). Take it in the build? It is small and in `route.rs`.
 
 **Base and CI.** This PR's base is `wo/aet-4300g-support`. Its CI runs that branch's 12 failing tests, so the STOPPED head is red by inheritance, not by anything here; nothing but FEEDBACK changed.
+
+## 8. The ruling (PR #160, comment 6906218561), applied: the build
+
+Every element of the recommendation is built, as ruled. Lever 1 and U1 are not.
+
+| piece | where | proved by (tier 1 unless named) |
+|---|---|---|
+| **A**, the pin-centred escape, with the **lane plan**: runs of adjacent sub-grid pads on one side get lanes 500 µm apart, the base keeping the largest jog least; the longest jogs go first, shallowest (`JOG_STEP` 3 pitches deeper each), so the run's pivot goes last | `route.rs` `lay_escapes`, `escape` | `subgrid_tier1`: `a_sub_grid_pad_escapes_along_its_own_axis`, `a_run_of_adjacent_pads_reaches_the_grid_on_lanes`, `a_turned_part_escapes`, `a_fully_wired_qfn_routes_at_every_residue`, `a_dual_row_parts_end_pads_escape` |
+| **`PadEscapeExhausted`** (D1): a run of two or more with no escape is refused by name, naming the part and the pads; a lone pad with none is left to the router, which names it as it always did | `route.rs`, `schematic.rs` `EmitError`, `pcb.rs` | `a_run_with_no_escape_is_refused_by_name`, `a_run_boxed_by_reached_pads_is_refused_by_name`; the 300 µm class and 250 µm clearance tests keep their `Unroutable` |
+| **A′**, the channel escape: a pad whose hard region reaches no via site and no terminal of any other pad of its net (through-hole and thermal pads and escape ends included) within 4000 states leaves outward along its axis to the channel's exact centreline, along it to a grid line, and onto the grid outside the seal | `route.rs` `sealed`, `channel` | `a_sealed_pad_escapes_down_its_channel_at_exactly_the_width_a_track_needs` (600 µm routes, 599.999 µm refused), `a_pocket_with_two_terminals_of_one_net_routes_on_the_grid`, `a_through_hole_pad_in_the_pocket_is_a_way_out`, `escape_tier1::shifted_placements…` (seed 22) |
+| Every escape keeps exact clearance from foreign copper and other escapes, the grid's margin (clearance + 10 µm) from a grid track's lane or a reached pad's straight exit, stays out of every other part's pad field, the board edge and F.Cu keepouts; reserves run the full escape depth within their own part, 2 mm across parts | `route.rs` `clear_of`, `RESERVE_NM`, `NEAR_NM` | `an_escape_never_takes_a_reached_pads_way_out`, `an_escape_never_crosses_another_parts_pad_field`, and §5's byte identity |
+| **Exact rounded-pad clearance** in `check`: a pad is judged as its rounded rectangle (`copper`) | `route.rs` `items` | `check_judges_pads_as_rounded_copper`; the power board in KiCad (tier 2) |
+| **`BANS` 16** | `route.rs` | `stackups_tier1::d1…`, `escape_tier1::twenty_renamings…d1` |
+| **Lever 2**, the pair's approach kept clear by the placer | `pcb.rs` `approaches` | the three `classes_tier1` pair tests; tier 2 `with_tools::the_class_and_pair_fixtures…` |
+| **O1**: a moved part reaching below the connectors' edge bounds the outline; nothing else moves it | `pcb.rs` `layout_of` | `classes_tier1::a_part_on_each_edge…`, `a_part_moved_inside_the_board_keeps_the_outline`; tier 2 `with_tools::a_part_on_each_edge_passes_erc_and_drc` |
+| **D2**: `attack_a_wide_reference…` and its tier-2 twin judge `F.SilkS` references only, with angle-aware boxes and every courtyard; the references kept off the silkscreen (each anchored part's, and the MCU's when they ring it) come from the design's ownership (`schematic::anchored`, a new read-only `pub fn`), each must be on `F.Fab`, every other on `F.SilkS`, and the count judged must equal the rest | `adversarial_1301.rs`, `adversarial_1301_tools.rs`, `schematic.rs` | both tests; the all-on-Fab mutant (§10) |
+| **D4**: footprint zones written in board coordinates, and read so | `pcb.rs` `to_board`, `route.rs` `keepout` | `power_board_tier1` (U5's keepout about its pads, both keepout tests); tier 2: DRC with no finding |
+| **D5**: the pair walk ends a track anywhere in a pad's `reach()`, as the router and `connectivity` do (roadmap §7.1's row) | `route.rs` `conductor` | `route::tests::the_pair_walk_ends_a_track_anywhere_a_pad_reaches` |
+| `power_board_tier1::the_crossing…` re-taken: the board routes, U5's nine routed pads (8, 9, 10, 11, 13, 18, 20, 22, 23) each leave by an escape from their centre, two emissions are equal, and `extract` refuses by name | `power_board_tier1.rs` | itself |
+| The full power fixture through every gate it reaches | `board_tier2.rs` `the_full_power_fixture_routes_and_passes_every_gate_it_reaches` | tier 2 |
+
+## 9. D4, found: the keepout zone was written in the footprint's coordinates [measured]
+
+- **Cause.** In a `.kicad_pcb` file KiCad holds a footprint's zone polygon in board coordinates; in a `.kicad_mod` it is about the footprint's origin. The emitter copied the library's polygon unchanged, so KiCad read the ICM-20948's keepout at the board's origin (−0.875…0.875 mm) and reported `lib_footprint_mismatch`.
+- **Measured:** with the polygon moved by U5's origin, the same board's DRC passed with no finding at all. The vendored footprint is byte-identical to the image's library file (sha256 `f8bb8114…` both).
+- **What it means beyond the warning:** since `4300d2` D2 (a), KiCad's DRC never judged the ICM-20948's keepout under the part; it sat off the board. The router and `route::check` read it where they assumed, about the footprint's origin, so routing kept clear of it; KiCad's own judgement of it was missing. Both now agree with KiCad.
+- **Fixed in the emitter** (found within the hour; nothing is admitted). The reader takes the polygon as written. The footprint writer still refuses to turn a footprint carrying a zone.
+
+## 10. Measured results [measured]
+
+**Byte identity.** Every board that routes on the base (`4bb6814`) is byte-identical: the 9 fixture boards (`emit-all`, `~/.cache/aet-1310/emit/build6` against `base`), and every case of the adversarial harness that base routed (§11). The boards that change are the four that now route: `d1-24-i2c`, `pair-standin`, `solve/stress` and `sentinel-02-power`.
+
+**4300g's twelve tests.** All 8 tier-1 and all 4 tier-2 pass, with no fixture edit and no re-pinning. The tier-2 run was in the pinned image under `capped-run` (caps read back: 8 GiB, swap 0, 8192 tasks).
+
+**The power fixture's gates (tier 2, in the image):** ERC pass, no finding; DRC with parity by the specification's rules, pass, no finding, every loop rule passing; the support gate, pass; `extract` refuses by name (`TranslatorPinUnbounded`, `4300d2` D6 (b)).
+
+**The fully wired QFN-24 (A's limit at the spike).** At each of the placer's 25 µm residues, turned 0° and 90° (and, measured once, 180° and 270°): 100 / 100 route, against 36 / 100 at the spike. Every 2nd and every 3rd pad wired: 100 / 100.
+
+**Router wall time** (release, best of 3, against base): every board that routes on the base is within noise (d3 5.7 s against 6.1 s); the newly routing boards take 0.3 s (pair-standin) to 6.6 s (`sentinel-02-power`).
+
+## 11. Adversarial pass (full; a fresh Opus subagent, frozen at `1422c3b`) [measured]
+
+Twelve attacks: the work order's §5 and the ruling's additions. Its harness (`~/.cache/aet-1310/adv/adv1310.rs`, differential against `4bb6814`) was then run again on the fixed build. Every case base routes gives the same outcome on the fix.
+
+| # | finding | severity | status |
+|---|---|---|---|
+| A1 | A′ laid a channel escape on a board that routes on base: `terminals_of` counted only SMD pads, so a pocket holding a same-net **through-hole** pad was "sealed" (7 segments and a via where base laid one grid segment) | high | **Fixed:** every pad of the net counts, drilled and thermal included, and an escaped pad by its escape's end. Tests `a_through_hole_pad_in_the_pocket_is_a_way_out`, `…of_its_own_part…` (each fails on `1422c3b`) |
+| A2 | The lane plan boxed in a pad the grid reaches (0.45 mm, 0.25 mm pads): escapes ran past the 2 mm end of its exit's reserve and jogged back to 375 µm of it; the router then named the boxed pad | medium | **Fixed:** a reserve or lane runs the full escape depth plus 2 mm within its own part (2 mm across parts: longer, they swept across U5's top run and refused the power fixture, measured). The case is now refused by name. Test `a_run_boxed_by_reached_pads_is_refused_by_name` |
+| A3 | A dual-row part's row-end pads (they meet two sides of the field) were never escaped: 0.4 mm, 0.2 mm pads, 0 / 20 | medium | **Fixed:** such a pad leaves along its long axis; 20 / 20 route. Test `a_dual_row_parts_end_pads_escape` |
+| A4 | O1 also grew the outline for a part moved inside the board | low | **Fixed:** only a moved part reaching below the edge moves it. Test `a_part_moved_inside_the_board_keeps_the_outline` |
+| A5 | An escape could pass between another part's pads (inside its pad field), breaking the router's own F.Cu rule; `check` passed it | low | **Fixed:** `clear_of` keeps every escape out of another part's pad field. Test `an_escape_never_crosses_another_parts_pad_field` |
+| A6 | The refusal's wording was wrong for two cases (a run blocked by a part in front; a class too wide to escape at all) | low | **Fixed:** "no lane on which this run … reaches the grid at its width and clearance" |
+| A7 | The reader accepts a footprint keepout anywhere (pre-existing, not a D4 regression) | low | **Backlog** (§14) |
+
+Withstood (measured):
+- **Clearance:** no output carried copper `check` refused, across plane nets, a 250 µm class and rounded walls.
+- **Escapes on their own axis:** 900 configurations (5 pitch kinds × 4 rotations × 3 patterns × 15 residues).
+- **Rotations and edges.**
+- **A′ 1 nm under:** at widths 200, 250, 300 and 400 µm.
+- **Renamings and permutations:** QFN boards, the sealed board and the power board.
+- **The D2 guard:** an all-on-Fab board was refused.
+- **Zone coordinates on every read path:** a turned footprint with a zone is refused.
+- **Wall time:** 100 sealed pockets took 0.15 s; 900 sweep boards took 7.1 s.
+- **Byte identity:** the 9 fixtures, about 470 shifted boards (every one base routed is unchanged) and d3 × 13.
+
+Untestable at tier 1, and taken to tier 2 (§12): KiCad's view of the exact 200 µm rounded clearance, the zone coordinates and the off-grid copper.
+
+## 12. Tier 2, mutation, reduction [measured]
+
+**Tier 2, in the pinned image** (`~/bin/capped-run`, caps read back: `memory.max` 8 GiB, `memory.swap.max` 0, `pids.max` 8192; `--network none`; TMPDIR unset), at the final code:
+- `4300g`'s four pass: `with_tools::{d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers, the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported, a_part_on_each_edge_passes_erc_and_drc}` and `adversarial_1301_tools::attack_wide_references_leave_the_emitted_board_clean`.
+- The new `board_tier2::the_full_power_fixture_routes_and_passes_every_gate_it_reaches` passes: KiCad agrees with the exact rounded clearance (U5's corner pads, 0.218 mm) and with the off-grid escapes at exactly 200 µm.
+- Neighbours O1 or D4 could disturb, all passing: `board_tier2::{the_power_fixture_passes_erc_drc_its_loop_rules_and_extract, the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails, connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers, four_layer_fixture_passes_every_gate_and_its_package_holds}`.
+
+**Mutation pass (diff-sized):** 19 mutants, one per guard this work order adds or changes, each run against the suite it lives in (`~/.cache/aet-1310/tools/mutate.py`, `~/.cache/aet-1310/mutants-all.json`). **19 killed.**
+- **Three survived a first run, and each now has a test that kills it:**
+  - lanes held at the bare clearance (`an_escape_never_takes_a_reached_pads_way_out`);
+  - the sealed predicate ignoring own-net terminals (`a_pocket_with_two_terminals_of_one_net_routes_on_the_grid`);
+  - through-hole pads not counted (`…of_its_own_part…`). Its first test was masked by A5's rule.
+- **The list:**
+  - `BANS` 4;
+  - an escape on a reached pad;
+  - the jog order reversed;
+  - lanes at the bare clearance;
+  - escape clearance 1 nm short;
+  - the sealed predicate's own-net terminals;
+  - `check` by boxes;
+  - no pair approach;
+  - O1 off;
+  - the zone not moved to board coordinates;
+  - every reference on F.Fab;
+  - no refusal of a run;
+  - the pair walk by `inner()`;
+  - A′ inward;
+  - through-hole pads not a way out;
+  - end pads without a side;
+  - an escape across a foreign field;
+  - own-part reserves short;
+  - O1 for any moved part.
+
+**Reduction pass (diff): −12 lines net · 3 duplicates removed · 0 dead paths removed · 1 protected kept · 1 finding below.**
+- **Duplicates:**
+  - one `field()` for a part's pad field, in place of five copies (two pre-existing);
+  - one `assert_on_grid` in place of three;
+  - `power_board_tier1`'s keepout test no longer clears U5's pads, a workaround for `check`'s box clearance, now gone. The test is stronger for it: the whole footprint.
+- **Protected and kept:** the footprint writer's `belt-and-suspenders:` refusal to turn a footprint carrying a zone.
+- **Finding:** the refusal's text stands in `route::Unroutable::why` and in `EmitError`'s message; the router's own text is what tests and logs show. It is noted, not removed, since `emit` replaces the one with the other.
+
+## 13. Gates and CI
+
+- **CLAUDE.md gates, on Furnace, under a capped user scope (swap 0), at the final code:**
+  - `cargo fmt --all -- --check`: exit 0;
+  - `cargo clippy --workspace --all-targets -- -D warnings`, with `--features aethelgard-cli/with-tools`: clean;
+  - `cargo test --workspace --no-fail-fast`: 1655 passed, 0 failed.
+- **`TIER2_MIN` 131, exact:** 131 tier-2 tests on this branch by `ci/shard.sh`'s `TIER2_RE`, against 130 on the base; one added.
+- **Shard plan (the CI rule as ruled 04:35 UTC):** `bash ci/shard.sh plan` in the image plans every one of the 8 shards at 977 s, so none is over the mean. The new and lengthened tests are weighed in `ci/test-weights.tsv` at Furnace's alone time × 2.8.
+- **The head run's shard times:** §15.
+
+## 14. For the architect
+
+- **D3's U1** (a soft search's flattened hop judged on the hard maps) goes to roadmap §7.1, as ruled. The roadmap is a steering document, so it is named here for the docs PR.
+- **A7, backlog:** the reader accepts a footprint keepout placed anywhere. With the zone moved off its footprint, `check` judges a track through the die by the misplaced zone. The reader could require the zone inside the footprint's courtyard or field. This is pre-existing.
+- **The 0.45 mm boxing, a trade measured:** a side of six 0.25 mm pads at 0.45 mm, all wired, routes at 6 of 15 residues and is refused by name at the rest. Before the fix, 9 of 15 routed, by escapes jogging back past the end of a reserve.
+- **`schematic::anchored`**, a new read-only `pub fn` in the emitter's crate, is what D2's guard reads.
+- **The base:** `wo/aet-4300g-support` is still at `4bb6814`. 1310 asked 4300g's owner (inbox, 03:40 UTC) to merge `main`. The architect's 04:50 note has 4300g merge `main` (taking specification 11) before 1310 lands in it. This PR is tested against the base as it stands, and `TIER2_MIN` is recounted when the base moves.
+- **4220b:** the BMP581's corner gap on the inferred centres is exactly the floor (§3), the ruling's binding note.
