@@ -119,7 +119,7 @@ A fresh read-only subagent (Opus, chosen for judgement), given the code and the 
 
 ## 6. Mutation (diff-sized)
 
-One mutant per guard this work order adds, each against the suite that pins it (`~/.cache/aet-1603/mut/`, `mut.py`, results 1-4): **37 of 37 killed**. Five survived the first run (the config allow-list's extra-key, top-level and rustflags checks; `#elif 0` after an unknown branch; a line comment) and were killed after the tests were added (2e71263); the adversarial fixes' nine guards were killed at once.
+One mutant per guard this work order adds, each against the suite that pins it (`~/.cache/aet-1603/mut/mut.py`): **35 of 35 killed at the head (dc92fc3, `result-head.txt`)**. In the first run five survived (the config allow-list's extra-key, top-level and rustflags checks; `#elif 0` after an unknown branch; a line comment) and were killed once tests were added (2e71263); the adversarial fixes' nine guards were killed at once; the reduction removed one target (the pre-flight's own walk, now `input::walk`).
 
 ## 7. Residuals and boundaries (named)
 
@@ -137,11 +137,13 @@ One mutant per guard this work order adds, each against the suite that pins it (
 - **D5 · `hwdef.h` comments.** The reader now strips comments before counting mentions, so a macro's name in a comment no longer counts (main refused it as a second mention). This is what GCC sees; neither real header has one. A backslash followed by blanks, which GCC splices, stays refused.
 - **D6 · §1.6 by a child-process writer**, not the suggested lock or rename (rename measured not to work). Every test binary that writes or copies an executable uses it (16 stub sites and 3 binary copies in 10 binaries), not only `tools_tier1`.
 - **Outside the named fence, each minimal:** `main.rs` (`prove` copies and pre-flights before looking for tools; its `/dev/null` grant removed); `pinout.rs` (one match arm for the new refusal); `input.rs` (`walk` made `pub(crate)`, reduction); `Cargo.toml` (`toml`, already a dev-dependency, now a dependency); the CLI README; `ci.yml` `TIER2_MIN` 157 → 158 (main moved to 157 with 4300g); `ci/test-weights.tsv` one row (8 s, an estimate: 3.7 s measured locally with the fixture built, plus its build); `examples/sandbox_probe.rs` (tier 1's stand-in tool, `mode=devices`).
+- **F1 · Architecture §6 (protected) needs two amendments**, for the architect: step 4's tool environment now has `/dev/null` readable and writable by every tool (no longer only `build` and `prove`, with every right), and `build` and `prove` now refuse a crate by the pre-flight before any tool is looked for (§4).
+- **F2 · A machine with `~/.cargo/config.toml` fails the tier-1 tests that take `build` or `prove` past the pre-flight** (the default scratch is under `~/.cache/aethelgard`, so the home directory is an ancestor; `CargoConfigRefused`, as the CLI README now says). CI runs as root with scratch in `/var/lib/aethelgard`, and Furnace's `forge` has none; a developer machine may. Setting `TMPDIR` to a private directory elsewhere avoids it.
 - No specification, topology, parts or trace version taken; no emitted byte changed.
 
 ## 9. Gates and acceptance
 
-- **Byte-identical (measured, the image):** main's and this branch's binaries on the same tree give identical `build` (ELF `45a17992…`), `campaign` over all 16 scenarios (`campaign.jsonl`, every `trace.cbor` and `manifest.cbor` hash), `replay` of each archive, a static `simulate`, and `verify` on the reference, which passes (`~/.cache/aet-1603/evidence/byte-identical.txt`).
+- **Byte-identical (measured, the image):** main's binary at `4e821ed` and this branch's at `dc92fc3`, each built from its own tree and run on main's tree, give identical `build` (ELF `45a17992…`), `campaign` over all 16 scenarios (`campaign.jsonl`, every `trace.cbor` and `manifest.cbor` hash), `replay` of each archive, a static `simulate`, and `verify` on the reference, which passes (`~/.cache/aet-1603/evidence/byte-identical-head.txt`; the same held earlier at `b33331d` against `8030fa5`).
 - **Tier 2 touched here (measured, the image):** `twin_tier2::a_witness_line_…` pass (3.7 s); `board_tier2::build_gives_one_sha256_at_two_paths`, `prove_with_spec…`; `with_tools` `prove_*` (7); `channels_tier1` (7).
 - **CLAUDE.md gates (measured, Furnace):** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with and without `with-tools`), `cargo test --workspace` (110 test binaries, exit 0).
 - Reduction pass (diff): −30 net · 2 duplicates removed (the pre-flight's own directory walk, now `input::walk`; the stub copier, now the one writer) · 0 dead paths removed · 1 protected kept (the post-crate build-script check, labelled) · 1 finding (the generated configuration in two places, §7).

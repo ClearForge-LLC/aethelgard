@@ -692,10 +692,15 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
     let board = dir.join("board");
     // Under the CLI's own base, whose ancestors no one else can write
     // (`AET-WO-1601` §1.4).
-    let base = if rustix::process::geteuid().is_root() {
-        PathBuf::from("/var/lib/aethelgard")
+    // (`AET-WO-1601` §1.4); as root, searchable by the tool uid, as
+    // `common::private_tmp` makes it.
+    let (base, mode) = if rustix::process::geteuid().is_root() {
+        (PathBuf::from("/var/lib/aethelgard"), 0o711)
     } else {
-        PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cache/aethelgard")
+        (
+            PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cache/aethelgard"),
+            0o700,
+        )
     };
     for (rel, kind) in [
         (".cargo/config.toml", "CargoConfigRefused"),
@@ -707,7 +712,7 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
         let tmp = parent.join("tmp");
         fs::DirBuilder::new()
             .recursive(true)
-            .mode(0o700)
+            .mode(mode)
             .create(&tmp)
             .unwrap();
         put(parent.join(rel), "[build]\n");
