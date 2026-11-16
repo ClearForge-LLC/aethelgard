@@ -112,7 +112,7 @@ The "before" column is `origin/main`'s `check-pins.sh` (`8030fa5`); the "after" 
 
 ## 7. Gates
 
-- **CLAUDE.md gates on Furnace** [measured], in `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `86dfc5a`:
+- **CLAUDE.md gates on Furnace** [measured], in `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `86dfc5a` (the READY commit adds FEEDBACK and the docs merge only):
   - `cargo fmt --all -- --check` passed.
   - `cargo clippy --workspace --all-targets -- -D warnings` passed.
   - `cargo test --workspace` (6 streams): 1,742 passed and 0 failed, across 110 test binaries.
@@ -133,9 +133,9 @@ The "before" column is `origin/main`'s `check-pins.sh` (`8030fa5`); the "after" 
   | `86dfc5a` | 1182 | **1243** | 1187 | 968 | 1091 | 1001 | 1128 | 871 |
   | main `8030fa5` (run 43805854131) | 896 | 1034 | 1133 | 902 | 1069 | 912 | 1136 | 1064 |
 
-  - Shard 1 is over 20 minutes on this run. Under the ruling on #152 (comment 6906540406) that is a measurement, not a failure, unless the one re-run of the head is over too.
+  - Shard 1 is over 20 minutes on this run. Roadmap §6's eight-shard rule (merged in #162) says 20 minutes is a target, never a stop: a shard over it on a balanced plan is reported, not refused.
   - The plan is unchanged: no test, weight or `ci/` file moves in this diff.
   - On `main`'s run for `8030fa5`, shard 1 took 1034 s and was not the slowest shard (shard 6 was, at 1136 s), so the refit rule does not fire.
-  - The READY head's own run is the one that decides.
+  - The READY head's own run is reported in the PR, not here, because nothing is pushed after the READY commit.
 - **Reduction pass (diff): −1 line net · 0 duplicates removed · 1 dead path removed** (`--exec-path` in git's option-skip list; that option takes no separate argument) **· 0 protected kept · 1 finding** (the generic physical deny-list overlaps the new by-name rules but stays load-bearing: it catches a one-line clone with no commit test, and `pip download`).
 - **Furnace scratch.** `~/.cache/aet-4401` keeps the predictions-era logs, `mut/run.py` with `mut/result.txt`, and `pr-title-body.md`. The probe trees and mutant copies are removed. The pulled 2.7 GB image is removed at the close.
