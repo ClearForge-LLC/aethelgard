@@ -255,3 +255,32 @@ Reduction pass (diff): −48 lines net in `solve.rs` (`i2c_electrical`, the `Bus
 - **The merge of `origin/main` at `3dcd242`** (`4403` #176, docs #180) brings only `container/`, `.github/` and `docs/`, and no crate source, so the gates above stand on the merged tree. The work order on `main` is identical to the one built from.
 
 ## 10. CI and the stop line
+
+- **CI on PR #182 at `57d8295`** (run 43950671084): **green** [measured].
+  - **Green jobs:** `gates` (fmt, clippy, tier 1, the package step), all eight `tools-shard` jobs, the `tools` aggregate (`tier2_tests_passed=160 floor=160`: `TIER2_MIN` is exact and unchanged), `shards`, `cli`, `pinned`, `pinout`, `source-rehearsal`, both images and the four `ardupilot` jobs.
+  - **Shard times:**
+
+    | Shard | Time |
+    |---|---|
+    | 0 | 27:59 |
+    | 1 | 29:48 |
+    | 2 | 26:57 |
+    | 3 | 22:29 |
+    | 4 | 27:02 |
+    | 5 | 24:49 |
+    | 6 | 24:35 |
+    | 7 | 22:27 |
+
+    `gates` took 14:58. Every shard is over the 20-minute clause, as are the same hour's other runs [measured, from their run timings]: `main`, run 43944349940, 23 to 27 min; `4403`, run 43950185531, 20 to 32 min. So this is the runners' load. This work order adds no tier-2 test and no `ci/` weight. The READY commit changes only this file, and its own run is the one the architect reads.
+- **Disk:**
+  - No agent worktree was created (the adversarial subagent ran without one). The mutants ran in this worktree, each restored.
+  - **Kept, as the evidence this document cites:** `~/.cache/aet-1208/`. It holds:
+    - `baseline/` and `new/`, the binaries;
+    - `tools/`;
+    - `v-base`, `v-new` and `v-new2`;
+    - `pins/` and `reach/`;
+    - `mut/`;
+    - `adv/`: 5,254 specifications, `REPORT.md`, `results/`;
+    - `pr-title-body.md`.
+  - `1207`'s `~/.cache/aet-1207/` is kept for `1207`'s FEEDBACK.
+- **Tokens:** minted per push (the branch and the PR; the READY commit) and revoked after each, every revocation `HTTP 204`. Three prep files from a refused fill (a typo in my own check fragment) held the token; they were deleted after its revocation.
