@@ -134,7 +134,8 @@ fn a_regulated_supply_takes_no_connector_source() {
         .clone();
     two["mcu"]["supply_source"] = json!({"connector": debug, "pin": "1"});
     let e = check(&two).unwrap_err();
-    assert_eq!(e.kind(), "SupplyHasNoSource");
+    assert_eq!(e.kind(), "SupplyHasTwoSources");
+    assert_eq!(e.id(), Some("VDD_3V3"));
     assert!(e.to_string().contains("outputs it too"), "{e}");
 }
 

@@ -1221,8 +1221,12 @@ pub enum IrValidationError {
         "no declared connector carries `SWDIO`, `SWCLK`, `GND` and the MCU's supply `{supply}` together, so nothing can program the part: declare one, a DS-009 debug port or an explicit pin map (`AET-WO-4300g`)"
     )]
     NoProgrammingPath { supply: String },
-    #[error("the MCU's supply `{supply}` has no single declared source: {why} (`AET-WO-4300g`)")]
+    #[error("the MCU's supply `{supply}` has no source: {why} (`AET-WO-4300g`)")]
     SupplyHasNoSource { supply: String, why: String },
+    #[error(
+        "the MCU's supply `{supply}` has two declared sources: `mcu.supply_source` names a connector pin, and regulator `{regulator}` outputs it too; a supply has one (`AET-WO-4300g` D3, ruled)"
+    )]
+    SupplyHasTwoSources { supply: String, regulator: String },
     #[error(
         "connector `{id}` pin `{pin}` is on an I2C or SPI line (a bus line or a chip select) and declares no off-board capacitance (null or 0); ruling D8 requires one on every such pin, so that a bound over the line can count the cable and the remote pins (`RUL-19` (1))"
     )]
@@ -1385,6 +1389,7 @@ impl IrValidationError {
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
             Self::NoProgrammingPath { .. } => "NoProgrammingPath",
             Self::SupplyHasNoSource { .. } => "SupplyHasNoSource",
+            Self::SupplyHasTwoSources { .. } => "SupplyHasTwoSources",
             Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
             Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
             Self::ConnectorReferenceReserved { .. } => "ConnectorReferenceReserved",
@@ -1508,9 +1513,9 @@ impl IrValidationError {
             | Self::ConnectorPartContradictsStandard { id, .. }
             | Self::ConnectorSupplyContradictsStandard { id, .. }
             | Self::ConnectorPinContradictsStandard { id, .. } => Some(id),
-            Self::NoProgrammingPath { supply } | Self::SupplyHasNoSource { supply, .. } => {
-                Some(supply)
-            }
+            Self::NoProgrammingPath { supply }
+            | Self::SupplyHasNoSource { supply, .. }
+            | Self::SupplyHasTwoSources { supply, .. } => Some(supply),
         }
     }
 

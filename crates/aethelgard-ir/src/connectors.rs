@@ -468,10 +468,10 @@ pub(crate) fn supply_source(spec: &Specification) -> Result<(), E> {
         (None, None) => Err(refuse(
             "`mcu.supply_source` is null and no regulator of `power` outputs it; name the connector pin it enters by, or declare its regulator".to_owned(),
         )),
-        (Some(_), Some(r)) => Err(refuse(format!(
-            "`mcu.supply_source` names a connector pin and regulator `{}` outputs it too; a supply has one declared source",
-            r.reference
-        ))),
+        (Some(_), Some(r)) => Err(E::SupplyHasTwoSources {
+            supply: supply.to_owned(),
+            regulator: r.reference.clone(),
+        }),
         (Some(s), None) => {
             let c = spec
                 .declared_connectors()
