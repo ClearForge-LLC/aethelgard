@@ -3,6 +3,8 @@
 # image. Pull requests build it and smoke it under --network none; they never
 # publish. A push to main does the same and then publishes from one job, the
 # only one holding packages: write, the very image it has just smoke-tested.
+# container/ARDUPILOT-IMAGE pins what main last published, and `pinned` pulls
+# that digest and smokes it (AET-WO-4401).
 #
 # The `ardupilot` jobs build step G and the three seeds in the image, one each,
 # and `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
@@ -15,7 +17,10 @@ on:
   pull_request:
     paths:
       - "container/ardupilot*"
+      - "container/ARDUPILOT-IMAGE"
       - "container/check-pins.sh"
+      - "container/test-check-pins.sh"
+      - "container/fixtures/check-pins/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -26,7 +31,10 @@ on:
     branches: [main]
     paths:
       - "container/ardupilot*"
+      - "container/ARDUPILOT-IMAGE"
       - "container/check-pins.sh"
+      - "container/test-check-pins.sh"
+      - "container/fixtures/check-pins/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -51,6 +59,11 @@ jobs:
 
       - name: refuse an unpinned base, download, package, clone or pip file
         run: bash container/check-pins.sh container/ardupilot.Dockerfile
+
+      # AET-WO-4401: each refused form has a fixture that must draw exactly
+      # its named refusals, and the three real Dockerfiles must still pass.
+      - name: check-pins against its fixtures
+        run: bash container/test-check-pins.sh
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
@@ -82,6 +95,37 @@ jobs:
           docker run --rm --network none -v "$PWD/container:/container:ro" \
             -v "$PWD/crates/aethelgard-pincheck/fixtures:/boards:ro" \
             "$IMAGE" bash /container/ardupilot-build.sh d4
+
+  # The published image, pinned by container/ARDUPILOT-IMAGE (RUL-15,
+  # AET-WO-4401): pulled by its digest, never built, and smoked under
+  # --network none. The jobs above and below build this pull request's
+  # Dockerfile instead, because the pin names the image main last published.
+  pinned:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # INV-06: a missing or malformed pin fails here by name.
+      - name: read the pin
+        run: |
+          [ -r container/ARDUPILOT-IMAGE ] || { echo "container/ARDUPILOT-IMAGE missing or unreadable" >&2; exit 1; }
+          pin=$(cat container/ARDUPILOT-IMAGE)
+          [[ "$pin" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]] \
+            || { echo "container/ARDUPILOT-IMAGE is not ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:<64 hex>: $pin" >&2; exit 1; }
+          echo "PIN=$pin" >> "$GITHUB_ENV"
+
+      - name: pull the published image by its digest
+        run: |
+          docker pull "$PIN"
+          echo "ANSWER pinned revision=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$PIN")"
+
+      - name: smoke with --network none
+        run: |
+          docker run --rm --network none -v "$PWD/container:/container:ro" \
+            "$PIN" bash /container/ardupilot-build.sh smoke
 
   # One board per job: a clean build takes about 3 minutes on the runner, so
   # four in one job with the image and its smoke would pass 20 minutes

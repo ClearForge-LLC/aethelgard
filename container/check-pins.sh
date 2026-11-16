@@ -11,9 +11,21 @@
 #   - `cargo install` is --locked with a --version, and rustup installs a
 #     numbered toolchain;
 #   - nothing is swallowed with `||`, and the common fetchers outside the curl
-#     shape (wget, pip, npm, git clone, ADD <url>) are refused. That last list
-#     is a deny-list, so a deliberate fetch another way (python, git fetch) is
-#     left to review; this script stops accidental drift, not an attacker.
+#     shape (wget, pip, npm, git clone, ADD <url>) are refused;
+#   - read on whole instructions, continuations joined as Docker joins them
+#     (AET-WO-4401, 4400a A7): git runs only as the clone shape, `git -C DIR
+#     rev-parse HEAD` or `git -C DIR status --porcelain`, and `git submodule
+#     update --remote`, `git fetch`, `git pull`, `pipx` and a `pip install`
+#     without --require-hashes are refused by name, wherever the word stands
+#     (in quotes, in $(...), as an ENV value, as /path/to/git);
+#   - a `-m venv` takes Debian's pip, so python3-pip-whl must be pinned in the
+#     apt block;
+#   - no heredoc, no `# escape=` directive, and no COPY of a script (a #!
+#     line, an executable bit or a .sh/.bash/.py/.pl name): the check reads
+#     only this file and the hashed requirements.
+# What is left of A7: a command name assembled at run time (`${G}t fetch`),
+# and a plain file copied in and run by an interpreter (`sh /x.txt`). This
+# script stops accidental drift, not an attacker; those are left to review.
 # Needs no container runtime.
 #
 # One extension (AET-WO-1501): a Dockerfile may `FROM ${TOOLS_IMAGE}` when it
@@ -39,9 +51,110 @@ refuse() {
   bad=1
 }
 
+# Whole instructions (AET-WO-4401). Docker drops a trailing `\` (spaces and
+# tabs may follow it) with its newline and joins the next line as it stands,
+# with no space added, skipping comment and empty lines in between.
+logical=() starts=() ends=()
+cur='' open=0 start=0
+for i in "${!lines[@]}"; do
+  l=${lines[$i]}
+  [[ "$l" =~ ^[[:space:]]*(#|$) ]] && continue
+  [ "$open" -eq 1 ] || { cur=''; start=$i; }
+  if [[ "$l" =~ ^(.*)\\[[:blank:]]*$ ]]; then
+    cur+=${BASH_REMATCH[1]}
+    open=1
+  else
+    logical+=("$cur$l") starts+=("$start") ends+=("$i")
+    open=0
+  fi
+done
+[ "$open" -eq 0 ] || logical+=("$cur") starts+=("$start") ends+=("$i")
+
+# Each instruction as words: separators become `;`, and quotes, brackets and
+# `$` become spaces, so a command word is found inside a string, a $(...) or a
+# ${VAR}. A word's name drops an `X=` prefix, a `-m` prefix and its directory.
+named=()
+venv=0
+for n in "${!logical[@]}"; do
+  t=${logical[$n]}
+  t=${t//&&/ ; } t=${t//||/ ; }
+  t=${t//|/ ; } t=${t//&/ ; }
+  t=${t//[\"\'\(\)\`\$\{\}\[\],<>]/ }
+  read -ra w <<< "$t"
+  for k in "${!w[@]}"; do
+    name=${w[$k]##*=}
+    [[ "$name" == -m?* ]] && name=${name#-m}
+    name=${name##*/}
+    rest=()
+    for ((j = k + 1; j < ${#w[@]}; j++)); do
+      [ "${w[$j]}" = ";" ] && break
+      rest+=("${w[$j]}")
+    done
+    msg=''
+    if [ "$name" = git ]; then
+      j=0
+      while [ "$j" -lt "${#rest[@]}" ] && [[ "${rest[$j]}" == -* ]]; do
+        case ${rest[$j]} in
+          -C | -c | --git-dir | --work-tree | --namespace | --exec-path | --config-env) j=$((j + 2)) ;;
+          *) j=$((j + 1)) ;;
+        esac
+      done
+      sub=${rest[$j]:-}
+      case $sub in
+        fetch | pull) msg="git $sub moves the tree past its pinned commit" ;;
+        submodule)
+          if [[ " ${rest[*]} " == *" --remote "* ]]; then
+            msg="git submodule update --remote checks out a branch tip, not the commit the tree records"
+          fi
+          ;;
+        clone)
+          [ "$j" -eq 0 ] && [[ "${rest[*]}" =~ ^clone\ --depth\ 1\ -b\ [A-Za-z0-9._-]+\ --recurse-submodules\ --shallow-submodules\ https://[^[:space:]]+\ /[^[:space:]]+$ ]] \
+            || msg="git clone outside the checked shape"
+          ;;
+        rev-parse) [ "$j" -eq 2 ] && [ "${rest[0]}" = -C ] && [ "${rest[3]:-}" = HEAD ] && sub=ok ;;
+        status) [ "$j" -eq 2 ] && [ "${rest[0]}" = -C ] && [ "${rest[3]:-}" = --porcelain ] && sub=ok ;;
+      esac
+      [ -n "$msg" ] || [ "$sub" = ok ] || [ "$sub" = clone ] \
+        || msg="git subcommand '$sub' is outside the checked shapes (clone, -C DIR rev-parse HEAD, -C DIR status --porcelain)"
+    elif [ "$name" = pipx ]; then
+      msg="pipx installs from an index with no hash check"
+    elif [[ "$name" =~ ^pip[0-9.]*$ ]] && [[ " ${rest[*]} " == *" install "* ]] \
+      && [[ " ${rest[*]} " != *" --require-hashes "* ]]; then
+      msg="pip install without --require-hashes"
+    elif [ "$name" = venv ] && { [ "${w[$k]}" = -mvenv ] || [ "${w[$((k > 0 ? k - 1 : 0))]}" = -m ]; } \
+      && [[ " ${rest[*]} " != *" --without-pip "* ]]; then
+      venv=1
+    fi
+    if [ -n "$msg" ]; then
+      refuse "${starts[$n]}" "$msg: ${logical[$n]}"
+      for ((p = starts[n]; p <= ends[n]; p++)); do named[p]=1; done
+    fi
+  done
+done
+
 for i in "${!lines[@]}"; do
   line=${lines[$i]}
+  # A parser directive: `escape` changes the continuation character, so the
+  # joining above would no longer be Docker's.
+  [[ "${line,,}" =~ ^#[[:space:]]*escape[[:space:]]*= ]] && refuse "$i" "an escape directive changes how lines join: $line"
   [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+  if [[ "$line" == *"<<"* ]]; then
+    refuse "$i" "a heredoc, whose body the shell joins and quotes its own way: write it as RUN lines: $line"
+  fi
+  # A COPY'd script would run unread, so only plain files beside this file.
+  if [[ "${line,,}" =~ ^[[:space:]]*copy[[:space:]] ]] && [[ "$line" != *--from=* ]]; then
+    read -ra words <<< "$line"
+    srcs=()
+    for s in "${words[@]:1}"; do [[ "$s" == --* ]] || srcs+=("$s"); done
+    for s in "${srcs[@]:0:${#srcs[@]}-1}"; do
+      p=$(dirname "$file")/$s
+      if ! [ -f "$p" ]; then
+        refuse "$i" "COPY source is not a file beside this Dockerfile: $s"
+      elif [ -x "$p" ] || [ "$(head -c2 "$p")" = '#!' ] || [[ "$s" =~ \.(sh|bash|py|pl)$ ]]; then
+        refuse "$i" "COPY of a script, which this check cannot read: write its commands as RUN lines: $s"
+      fi
+    done
+  fi
 
   # Inside the apt install block: one name=version per line until the cleanup.
   if [ "$in_apt" -eq 1 ]; then
@@ -139,7 +252,8 @@ for i in "${!lines[@]}"; do
     fi
   fi
 
-  if [ "$shaped" -eq 0 ] && { [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]].*clone)([^a-z-]|$) ]]; }; then
+  if [ "$shaped" -eq 0 ] && [ -z "${named[$i]:-}" ] \
+    && [[ "$line" =~ (^|[^a-z-])(wget|pip3?|npm|git[[:space:]].*clone)([^a-z-]|$) ]]; then
     refuse "$i" "fetches outside the checked curl, clone and pip shapes: $line"
   fi
 
@@ -175,5 +289,8 @@ done
 
 [ "$from_seen" -eq 1 ] || refuse -1 "no FROM line"
 [ "$in_apt" -eq 0 ] || refuse -1 "apt install block never closed"
+if [ "$venv" -eq 1 ] && ! printf '%s\n' "${lines[@]}" | grep -qE '^[[:space:]]+python3-pip-whl=[0-9]'; then
+  refuse -1 "a -m venv takes Debian's pip: pin python3-pip-whl in the apt block"
+fi
 [ "$bad" -eq 0 ] || exit 1
 echo "check-pins: $file ok"
