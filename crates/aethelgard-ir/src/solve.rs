@@ -590,6 +590,9 @@ fn solved_port(
     Ok(port)
 }
 
+// belt-and-suspenders: `aethelgard_ir::silicon` holds its own copy of these
+// bounds, so the rule that judges the solver's MBR and TIMINGR never shares
+// a constant with it (contract D1, amendment 1, `RUL-20`).
 /// HSI's worst-case deviations, ppm: DS12117 Rev 10 Table 36 (rev Y) =
 /// Table 133 (rev V), ±0.3 MHz at 3.3 V 30 °C, −0.12/+0.03 % over VDD and
 /// −2/+1 % over TJ −40 °C to TJmax, summed (`AET-WO-4230` contract,
