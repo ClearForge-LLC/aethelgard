@@ -16,6 +16,7 @@ pub mod connectors;
 pub mod ds009;
 pub mod electrical;
 pub mod motor;
+pub mod names;
 pub mod parts;
 pub mod power;
 pub mod power_parts;
@@ -54,17 +55,28 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// declares none. Version 10 adds `power`'s judgement declarations
 /// (`AET-WO-4300d3`, renumbered from 9 by the same rule): `hot_plug`,
 /// `junction`, `controls` and `dc_bias_derating`. Version 11 requires
-/// `peer_deviation_ppm` on every serial port, the remote transmitter's clock
-/// deviation, with its `peer_deviation_source`, and `acknowledge_unwitnessed`
-/// (an empty list acknowledges none), taken by `AET-WO-4230` (renumbered from
-/// 10 by the same rule, merging after `4300d3`). Nothing supplies any of them
-/// for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 11;
+/// `mcu.supply_source` (`AET-WO-4300g`, renumbered from 9 by the same rule):
+/// the connector pin the supply enters by, or `null` under a regulator.
+/// Version 12 requires `peer_deviation_ppm` on every serial port, the remote
+/// transmitter's clock deviation, with its `peer_deviation_source`, and
+/// `acknowledge_unwitnessed` (an empty list acknowledges none), taken by
+/// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
+/// after `4300d3` and then `4300g`). Nothing supplies any of them for an
+/// older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 11 (`RUL-14`). Arrays keep the order a
+/// The MCU's debug nets (`AET-WO-4300g`): the emitter puts SWDIO (`PA13`)
+/// and SWCLK (`PA14`) on these, and NRST on [`NRST`], and a connector pin may
+/// name any of them. No other declared net may take one, in any case.
+pub const SWDIO: &str = "SWDIO";
+pub const SWCLK: &str = "SWCLK";
+pub const NRST: &str = "NRST";
+pub const DEBUG_NETS: [&str; 3] = [SWDIO, SWCLK, NRST];
+
+/// The top-level specification, version 12 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -254,6 +266,19 @@ pub struct Mcu {
     pub hse_hz: u32,
     /// `0` (RM0433's factory default) to `3`.
     pub bor_level: u8,
+    /// Where the supply enters the board when no regulator of `power` drives
+    /// it: one declared connector's pin on the supply (`AET-WO-4300g`).
+    /// Required as a key; `null` when a regulator's output is the supply.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub supply_source: Option<SupplySource>,
+}
+
+/// A connector pin the supply enters by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SupplySource {
+    pub connector: String,
+    pub pin: String,
 }
 
 /// The highest BOR level the option bytes can select (RM0433, `BOR_LEV`).
@@ -739,6 +764,7 @@ object_only!(
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
     Mcu,
+    SupplySource,
     VoltageDomain,
     Signal,
     I2cBus,
@@ -1322,7 +1348,7 @@ pub enum IrValidationError {
     },
     #[error("`i2c_speeds` and `i2c_ceilings` do not name the same buses: `{id}` is in only one")]
     SpeedBusMismatch { id: String },
-    /// Same name and meaning as `SolveError::BusTooFast`.
+    /// `solve` raises it too, wrapped (`AET-WO-1206` §1.5: one error set).
     #[error(
         "I2C bus `{bus}` runs at {speed_hz} Hz, above its rise-time ceiling of {ceiling_hz} Hz"
     )]
@@ -1331,7 +1357,7 @@ pub enum IrValidationError {
         speed_hz: u32,
         ceiling_hz: u32,
     },
-    /// Same name and meaning as `SolveError::PullUpBelowSinkFloor`.
+    /// `solve` raises it too, wrapped (`AET-WO-1206` §1.5: one error set).
     #[error(
         "I2C bus `{bus}` has a pull-up of {pull_up_ohms} ohms, below the {floor_ohms} ohm floor its rail and mode set (UM10204 sink current)"
     )]
@@ -1340,7 +1366,7 @@ pub enum IrValidationError {
         pull_up_ohms: u32,
         floor_ohms: u32,
     },
-    /// Same name and meaning as `SolveError::BusCapacitanceOverLimit`.
+    /// `solve` raises it too, wrapped (`AET-WO-1206` §1.5: one error set).
     #[error(
         "I2C line `{net}` has a capacitance of {capacitance_femtofarads} fF, over its bus's limit of {limit_femtofarads} fF (UM10204)"
     )]
@@ -1491,6 +1517,16 @@ pub enum IrValidationError {
         net: String,
     },
     #[error(
+        "no declared connector carries `SWDIO`, `SWCLK`, `GND` and the MCU's supply `{supply}` together, so nothing can program the part: declare one, a DS-009 debug port or an explicit pin map (`AET-WO-4300g`)"
+    )]
+    NoProgrammingPath { supply: String },
+    #[error("the MCU's supply `{supply}` has no source: {why} (`AET-WO-4300g`)")]
+    SupplyHasNoSource { supply: String, why: String },
+    #[error(
+        "the MCU's supply `{supply}` has two declared sources: `mcu.supply_source` names a connector pin, and regulator `{regulator}` outputs it too; a supply has one (`AET-WO-4300g` D3, ruled)"
+    )]
+    SupplyHasTwoSources { supply: String, regulator: String },
+    #[error(
         "connector `{id}` pin `{pin}` is on an I2C or SPI line (a bus line or a chip select) and declares no off-board capacitance (null or 0); ruling D8 requires one on every such pin, so that a bound over the line can count the cable and the remote pins (`RUL-19` (1))"
     )]
     ConnectorBudgetMissing { id: String, pin: String },
@@ -1565,6 +1601,36 @@ pub enum IrValidationError {
         line: &'static str,
         net: String,
     },
+    /// Step 19 (`AET-WO-4100` F1, `AET-WO-1206` §1.2): the refusal `solve`
+    /// made, by its name, message and claimant.
+    #[error(
+        "I2C bus `{bus}` has no net constraint on `{net}`, so it has no rise time to bound its speed"
+    )]
+    MissingBusConstraint { bus: String, net: String },
+    /// Step 20 (`AET-WO-1206` A4): a reference the emitter also numbers,
+    /// spelled another way; the emitter's `DuplicateReference`, by kind, `id`
+    /// (`U1 and u1`) and message.
+    #[error("`{0}` is used twice as a reference")]
+    EmitterReference(String),
+    /// Step 20 (A5): a net or domain the emitter names for itself; the
+    /// emitter's `ReservedName`, by kind, `id` and message.
+    #[error("`{0}` names a net, rail or reference the emitter uses for itself; rename it")]
+    ReservedName(String),
+    /// Step 20 (A2): a device named for a peripheral instance of the MCU; the
+    /// twin's `InvalidDeviceName`, by kind and message, with no `id` as the
+    /// twin prints none.
+    #[error(
+        "device `{reference}` cannot be a Renode name (a lower-case letter, then letters, digits or `_`) that no stock instance already has"
+    )]
+    InvalidDeviceName { reference: String },
+    /// Step 14 (`AET-WO-1206` §1.8): a device whose part has no row in the
+    /// parts table, so no address, supply or clock limit could be held; the
+    /// emitter's `UnknownPart`, by kind, `id` and message.
+    #[error(
+        "`{reference}` is a `{part}`, which has no vendored model; known: {}",
+        names::VENDORED_PARTS
+    )]
+    PartWithoutRow { reference: String, part: String },
 }
 
 impl IrValidationError {
@@ -1691,6 +1757,9 @@ impl IrValidationError {
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
             Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::NoProgrammingPath { .. } => "NoProgrammingPath",
+            Self::SupplyHasNoSource { .. } => "SupplyHasNoSource",
+            Self::SupplyHasTwoSources { .. } => "SupplyHasTwoSources",
             Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
             Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
             Self::ConnectorReferenceReserved { .. } => "ConnectorReferenceReserved",
@@ -1703,6 +1772,24 @@ impl IrValidationError {
                 "ConnectorSerialRoleContradictsStandard"
             }
             Self::SerialPortNotAtConnector { .. } => "SerialPortNotAtConnector",
+            Self::MissingBusConstraint { .. } => "MissingBusConstraint",
+            Self::EmitterReference(_) => "DuplicateReference",
+            Self::ReservedName(_) => "ReservedName",
+            Self::InvalidDeviceName { .. } => "InvalidDeviceName",
+            Self::PartWithoutRow { .. } => "UnknownPart",
+        }
+    }
+
+    /// Who is in conflict, as `solve`'s refusal names them: the bus of the
+    /// four bus refusals `solve` made (`AET-WO-1206` §1.5), the line of
+    /// `BusCapacitanceOverLimit`, and nothing for every other refusal.
+    pub fn claimants(&self) -> Vec<String> {
+        match self {
+            Self::MissingBusConstraint { bus, .. }
+            | Self::BusTooFast { bus, .. }
+            | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
+            Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
+            _ => Vec::new(),
         }
     }
 
@@ -1839,6 +1926,13 @@ impl IrValidationError {
             | Self::ConnectorPinContradictsStandard { id, .. }
             | Self::ConnectorSerialRoleContradictsStandard { id, .. } => Some(id),
             Self::SerialPortNotAtConnector { label, .. } => Some(label),
+            Self::NoProgrammingPath { supply }
+            | Self::SupplyHasNoSource { supply, .. }
+            | Self::SupplyHasTwoSources { supply, .. } => Some(supply),
+            Self::MissingBusConstraint { bus, .. } => Some(bus),
+            Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
+            Self::InvalidDeviceName { .. } => None,
+            Self::PartWithoutRow { reference, .. } => Some(reference),
         }
     }
 
@@ -2058,6 +2152,11 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
     if !ok {
         return Err(rule);
     }
+    // `generate` writes `<project>.kicad_sch`, `<project>.repl` and the
+    // fabrication files under the project name (`AET-WO-1102` A7).
+    if kind == IdentifierKind::Project && names::windows_reserved(value) {
+        return Err(WINDOWS_RULE);
+    }
     if kind == IdentifierKind::Reference {
         let lowered = value.to_ascii_lowercase();
         if RESERVED_REFERENCES.binary_search(&lowered.as_str()).is_ok() {
@@ -2069,6 +2168,8 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
     }
     Ok(())
 }
+
+const WINDOWS_RULE: &str = "a project name may not be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`) in any case: `generate` names files after it, and Windows cannot open such a file (`AET-WO-1102` A7)";
 
 const OBSERVER_RULE: &str = "a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)";
 
@@ -2151,14 +2252,38 @@ impl Specification {
         // 15
         connectors::validate(self)?;
         // 16 (`AET-WO-4300d`)
-        power::check(self).map(|_| ())
+        power::check(self)?;
+        // 17, 18 (`AET-WO-4300g`)
+        connectors::programming_path(self)?;
+        connectors::supply_source(self)?;
+        // 19 (`AET-WO-1206` §1.2)
+        self.bus_constraints()?;
+        // 20 (`AET-WO-1206` §1.3)
+        names::check(self)
+    }
+
+    /// Step 19: each I2C bus's SDA then SCL carries a net constraint, in
+    /// document order, as `solve` required before (`AET-WO-4100` F1): its
+    /// rise time bounds the bus's speed, and nothing is defaulted (`INV-06`).
+    fn bus_constraints(&self) -> Result<(), IrValidationError> {
+        for bus in &self.i2c_buses {
+            for net in [&bus.sda.net, &bus.scl.net] {
+                if !self.net_constraints.iter().any(|c| &c.net_name == net) {
+                    return Err(IrValidationError::MissingBusConstraint {
+                        bus: bus.id.clone(),
+                        net: net.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Step 14 (`AET-WO-4300c` §1.5, F11): each device's part against the
     /// table. The bare `W25Q64JV` is refused by name; a part with an entry
     /// must sit on its kind of bus, at an address its straps offer, on a bus
     /// clocked no faster than it; each refusal cites the datasheet. A part
-    /// with no entry has no limits to hold, as before.
+    /// with no entry is refused (`AET-WO-1206` §1.8, `PartWithoutRow`).
     fn validate_parts(&self, table: &parts::PartsTable) -> Result<(), IrValidationError> {
         // F-a: a declaration nothing judges is refused, not silently unread.
         let unjudged = self
@@ -2185,6 +2310,22 @@ impl Specification {
         for net in serial_nets {
             if self.net_constraints.iter().any(|c| &c.net_name == net) {
                 return Err(IrValidationError::UnjudgedSerialConstraint { id: net.clone() });
+            }
+        }
+        // Each device's part has a row (`AET-WO-1206` §1.8), I2C then SPI in
+        // document order: a part with none would pass every limit below
+        // unheld, and `generate` refuses it (`UnknownPart`).
+        let parts = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part))
+            .chain(self.spi_devices.iter().map(|d| (&d.reference, &d.part)));
+        for (reference, part) in parts {
+            if part_entry(table, reference, part)?.is_none() {
+                return Err(IrValidationError::PartWithoutRow {
+                    reference: reference.clone(),
+                    part: part.clone(),
+                });
             }
         }
         // Each device's supply within its part's range (adversarial 2):
@@ -2569,7 +2710,17 @@ impl Specification {
         // Names are compared with case folded: KiCad's ERC refuses labels that
         // differ only in case (`similar_labels`, `similar_label_and_power`).
         let folded_domains: BTreeSet<String> = domains.iter().map(|d| d.to_lowercase()).collect();
-        let mut folded_nets = BTreeSet::new();
+        // The MCU's debug nets are the engine's (`AET-WO-4300g`): a declared
+        // net or domain spelling one, in any case, is refused.
+        let mut folded_nets: BTreeSet<String> =
+            DEBUG_NETS.iter().map(|n| n.to_lowercase()).collect();
+        if let Some(d) = self
+            .voltage_domains
+            .iter()
+            .find(|d| folded_nets.contains(&d.id.to_lowercase()))
+        {
+            return Err(E::NetShadowsDomain { id: d.id.clone() });
+        }
         let mut nets = BTreeSet::new();
         let signals = self
             .i2c_buses
@@ -2717,6 +2868,10 @@ impl Specification {
         })?;
         plain(&self.mcu.part, || "mcu.part".into())?;
         plain(&self.mcu.supply, || "mcu.supply".into())?;
+        if let Some(s) = &self.mcu.supply_source {
+            plain(&s.connector, || "mcu.supply_source.connector".into())?;
+            plain(&s.pin, || "mcu.supply_source.pin".into())?;
+        }
         for (i, domain) in self.voltage_domains.iter().enumerate() {
             plain(&domain.id, || format!("voltage_domains[{i}].id"))?;
         }
@@ -3516,12 +3671,13 @@ impl SolvedTopology {
                     derived_hz: None,
                 });
             }
+            // The worse line's rise time bounds the bus (`AET-WO-1206` §1.7).
             let slowest = self
                 .analog_lines
                 .values()
                 .filter(|line| &line.bus == bus)
                 .map(|line| line.ceiling_ns)
-                .min();
+                .max();
             let derived_hz = slowest.and_then(electrical::ceiling_hz);
             if derived_hz != Some(ceiling_hz) {
                 return Err(E::CeilingNotDerived {

@@ -66,8 +66,13 @@ use sha2::{Digest, Sha256};
 /// Moved once more by the reference's acknowledgements (`AET-WO-4230` R1,
 /// slice R2-cli), its specification's sha256 alone: with `7f2be55f…dd9e` put
 /// back, the reference's output hashes to `f83c83a0…e8ae`, the old digest.
-const REFERENCE_DIGEST: &str = "42f26fce89c613b3de9c9ccb97fd7d92a9638d7ceae62cf58d6a74c51430ad34";
-const STRESS_DIGEST: &str = "1725d65176fed0735af72d99b1008c431c25547d2ff4fb7083748d5c31050d1f";
+/// Moved once more by the merge of `AET-WO-4300g` (specification version 11,
+/// `mcu.supply_source`; `4230` renumbered to 12), which moved only the
+/// specification's sha256: with `f3798b1f…b999` put back, the reference's
+/// output hashes to `42f26fce…ad34`, and with `17b53057…0f8a` put back, the
+/// stress fixture's to `1725d651…0d1f`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "5d64214d7506eebf5cc60a8cf50a09d9340c92a2ec449d29fc11f71f6d9af4fb";
+const STRESS_DIGEST: &str = "15dd23367be298e27ae81aacf54f01d0442613b429f828e16ec1860f426910c8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -248,7 +253,22 @@ fn the_reference_s_console_moves_no_other_assignment() {
     let dir = Dir::new("no-console");
     let file = edited(&dir, |d| {
         d["serial_ports"] = json!([]);
-        d["connectors"] = json!([]);
+        // The console's connector goes with it; the programming path and the
+        // supply input stay (`AET-WO-4300g`).
+        let kept: Vec<serde_json::Value> = d["connectors"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| {
+                !c["pins"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|p| p["net"].as_str().is_some_and(|n| n.starts_with("CONSOLE_")))
+            })
+            .cloned()
+            .collect();
+        d["connectors"] = json!(kept);
     });
     let (without, _) = solved(&file);
     let mut rest = with.assignments.clone();

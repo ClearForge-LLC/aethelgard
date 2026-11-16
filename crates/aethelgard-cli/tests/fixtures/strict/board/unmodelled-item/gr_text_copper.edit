@@ -10,7 +10,7 @@
 @@ replace
 	)
 	(gr_text "X"
-		(at 75 115 0)
+		(at 76.5 100.5 0)
 		(layer "F.Cu")
 	)
 	(embedded_fonts no)

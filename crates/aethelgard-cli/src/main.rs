@@ -234,6 +234,18 @@ enum CheckCommand {
         #[arg(long)]
         schematic: PathBuf,
     },
+    /// The MCU's support network (AET-WO-4300g): KiCad's netlist of the schematic (kicad-cli sch export netlist) judged against the MCU's row and the specification, each bounded capacitor measured on the board. Never reads the emitter's choices.
+    Support {
+        /// The .kicad_sch file, whose netlist KiCad exports.
+        #[arg(long)]
+        schematic: PathBuf,
+        /// The .kicad_pcb file: where each pad sits, for the bounded distances.
+        #[arg(long)]
+        board: PathBuf,
+        /// The specification: the MCU's part and supply, its domains and its connectors.
+        #[arg(long)]
+        spec: PathBuf,
+    },
     /// Judge what a linked STM32H753 firmware writes to its GPIO registers at reset (gpio_default_config in the ELF) against a SolvedTopology: forward, reverse and package. Starts no process.
     Pinout {
         /// The SolvedTopology JSON the firmware was meant to realise.
@@ -278,6 +290,12 @@ struct Refusal {
 struct RefusalBody {
     kind: &'static str,
     id: Option<String>,
+    /// Who is in conflict: on every refusal of the solver, empty or not, and
+    /// on a validation refusal that names someone (`MissingBusConstraint`,
+    /// which `solve` made before `AET-WO-1206`), so each prints the same bytes
+    /// from every command. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claimants: Option<Box<[String]>>,
     /// The JSON path of the refused field (`InvalidIdentifier` only); absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
@@ -291,6 +309,7 @@ impl Refusal {
             error: RefusalBody {
                 kind,
                 id: id.map(str::to_owned),
+                claimants: None,
                 path: None,
                 message,
             },
@@ -299,6 +318,11 @@ impl Refusal {
 
     fn at(mut self, path: Option<&str>) -> Self {
         self.error.path = path.map(str::to_owned);
+        self
+    }
+
+    fn claimed(mut self, claimants: Vec<String>) -> Self {
+        self.error.claimants = Some(claimants.into_boxed_slice());
         self
     }
 }
@@ -395,6 +419,14 @@ fn main() -> ExitCode {
         Command::Check {
             check: CheckCommand::Erc { schematic },
         } => check_kicad(kicad::Check::Erc, &schematic, None, None),
+        Command::Check {
+            check:
+                CheckCommand::Support {
+                    schematic,
+                    board,
+                    spec,
+                },
+        } => check_support(&schematic, &board, &spec),
         Command::Check {
             check:
                 CheckCommand::Pinout {
@@ -882,6 +914,128 @@ fn check_kicad(
             sha256: s.sha256,
         });
     }
+    Ok(v)
+}
+
+/// `check support` (`AET-WO-4300g` §1.5): the schematic is copied, refused
+/// unless flat, and KiCad exports its netlist in the sandbox; the netlist is
+/// read strictly and judged by `aethelgard_eda::support` against the MCU's row
+/// and the specification, with the board read strictly for where each pad
+/// sits. A finding fails the check; a file the gate cannot read is refused.
+fn check_support(
+    schematic: &Path,
+    board: &Path,
+    spec: &Path,
+) -> Result<verdict::Verdict, run::Stop> {
+    let (spec, sha256) = read_spec(Some(spec)).map_err(|(refusal, code)| run::Stop {
+        code,
+        kind: refusal.error.kind,
+        id: refusal.error.id,
+        message: refusal.error.message,
+    })?;
+    let unreadable = |kind: &'static str| {
+        move |message: String| run::Stop {
+            code: EXIT_UNREADABLE,
+            kind,
+            id: None,
+            message,
+        }
+    };
+    let scratch = Scratch::new()?;
+    let input = input::file(schematic, &scratch.tool.join(kicad::Check::Erc.copy_name()))?;
+    kicad::refuse_sheets(&input.copy)?;
+    kicad::prepare(
+        kicad::Check::Erc,
+        &input.copy,
+        &scratch.tool,
+        &aethelgard_eda::rules::Rules::kicad_default(),
+    )?;
+    let board = input::file(board, &scratch.root.join("board.kicad_pcb"))?;
+    let text = fs::read(&board.copy)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .ok_or_else(|| unreadable("MalformedBoard")("the board is not UTF-8".to_owned()))?;
+    let tree = aethelgard_eda::board::read(&text).map_err(|r| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind: r.kind(),
+        id: r.id().map(str::to_owned),
+        message: r.to_string(),
+    })?;
+    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let (placed, _) =
+        aethelgard_eda::route::read(&tree, &stack).map_err(unreadable("BoardUnreadable"))?;
+    let tool = run::Tool::find("kicad-cli")?;
+    let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
+        tool: &tool,
+        args,
+        env: Vec::new(),
+        workdir: &scratch.tool,
+        cwd: scratch.tool.clone(),
+        status: scratch.root.join(status),
+        read_only: tool.dirs(),
+        read_write: Vec::new(),
+    };
+    let version = version(invocation(run::args(["version"]), "status-version"))?;
+    let net = scratch.tool.join("input.net");
+    let mut args = run::args(["sch", "export", "netlist", "--format", "kicadsexpr", "-o"]);
+    args.push(net.clone().into_os_string());
+    args.push(input.copy.clone().into_os_string());
+    let out = invocation(args, "status-run").run()?;
+    let code = out.code("kicad-cli")?;
+    if code != 0 {
+        return Err(run::Stop::tool_error(
+            "kicad-cli",
+            format!("kicad-cli sch export netlist exited {code}"),
+        ));
+    }
+    let netlist = fs::read(&net)
+        .ok()
+        .and_then(|b| String::from_utf8(b).ok())
+        .ok_or_else(|| {
+            run::Stop::tool_error("kicad-cli", "the exported netlist is unreadable".to_owned())
+        })?;
+    let tree = aethelgard_eda::strict::netlist(&netlist).map_err(|r| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind: r.kind(),
+        id: r.id().map(str::to_owned),
+        message: r.to_string(),
+    })?;
+    let netlist =
+        aethelgard_eda::support::netlist(&tree).map_err(unreadable("MalformedNetlist"))?;
+    let record =
+        aethelgard_eda::support::judge(&spec, &netlist, &placed).map_err(|m| run::Stop {
+            code: EXIT_INVALID_SPEC,
+            kind: "SupportUnjudgeable",
+            id: None,
+            message: m,
+        })?;
+    let findings = record
+        .findings
+        .iter()
+        .map(|f| verdict::Finding {
+            kind: f.kind.to_owned(),
+            severity: "error".to_owned(),
+            message: f.message.clone(),
+            location: Vec::new(),
+        })
+        .collect();
+    let mut v = verdict::Verdict::new(
+        "support",
+        &input,
+        &tool,
+        version,
+        code,
+        out.sandbox,
+        findings,
+    );
+    v.specification_sha256 = Some(sha256);
+    v.support = Some(verdict::SupportRecord::from((
+        record,
+        verdict::InputReport {
+            path: board.original.display().to_string(),
+            sha256: board.sha256,
+        },
+    )));
     Ok(v)
 }
 
@@ -2059,10 +2213,13 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
         }
     })?;
     spec.validate().map_err(|err| {
-        (
-            Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
-            EXIT_INVALID_SPEC,
-        )
+        let refusal = Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path());
+        let claimants = err.claimants();
+        if claimants.is_empty() {
+            (refusal, EXIT_INVALID_SPEC)
+        } else {
+            (refusal.claimed(claimants), EXIT_INVALID_SPEC)
+        }
     })?;
     Ok((
         spec,
@@ -2094,19 +2251,6 @@ fn solve_spec(
     spec: &Specification,
     sha256: &str,
 ) -> Result<(aethelgard_ir::SolvedTopology, aethelgard_ir::PinTable), ExitCode> {
-    #[derive(Serialize)]
-    struct SolveRefusal {
-        ok: bool,
-        error: SolveRefusalBody,
-    }
-    #[derive(Serialize)]
-    struct SolveRefusalBody {
-        kind: &'static str,
-        id: Option<String>,
-        claimants: Vec<String>,
-        message: String,
-    }
-
     let table = match aethelgard_svd_hal::pin_table(&spec.mcu.part) {
         Ok(table) => table,
         Err(err @ aethelgard_svd_hal::PinTableError::UnknownPart { .. }) => {
@@ -2123,15 +2267,7 @@ fn solve_spec(
     match aethelgard_ir::solve(spec, &table, sha256) {
         Ok(topology) => Ok((topology, table)),
         Err(err) => Err(emit(
-            &SolveRefusal {
-                ok: false,
-                error: SolveRefusalBody {
-                    kind: err.kind(),
-                    id: err.id().map(str::to_owned),
-                    claimants: err.claimants(),
-                    message: err.to_string(),
-                },
-            },
+            &Refusal::new(err.kind(), err.id(), err.to_string()).claimed(err.claimants()),
             EXIT_INVALID_SPEC,
         )),
     }

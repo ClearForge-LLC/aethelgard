@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "sentinel-01",
@@ -7,7 +7,8 @@
     "part": "STM32H753ZITx",
     "supply": "VDD_3V3",
     "hse_hz": 0,
-    "bor_level": 0
+    "bor_level": 0,
+    "supply_source": null
   },
   "voltage_domains": [
     {

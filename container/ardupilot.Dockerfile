@@ -22,6 +22,9 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # not see because Furnace has one: waf builds AP_Scripting's binding generator
 # (libraries/AP_Scripting/generator/src/main.c) with `gcc` (AET-WO-4400a, first
 # CI run). bzip2 unpacks the toolchain; curl and ca-certificates fetch it.
+# python3-pip-whl is the wheel `python3 -m venv` installs as the venv's pip; a
+# dependency of python3-venv, so it is named here to pin it (AET-WO-4401,
+# 4400a A7; 25.1.1+dfsg-1 read in the image published from 8030fa5).
 # Exact versions from trixie and trixie-security.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -29,6 +32,7 @@ RUN apt-get update \
       curl=8.14.1-2+deb13u7 \
       python3=3.13.5-1 \
       python3-venv=3.13.5-1 \
+      python3-pip-whl=25.1.1+dfsg-1 \
       make=4.4.1-2 \
       git=1:2.47.3-0+deb13u1 \
       rsync=3.5.0+ds1-0+deb13u1 \
@@ -44,8 +48,9 @@ RUN curl -fsSLo /tmp/gcc-arm.tar.bz2 https://firmware.ardupilot.org/Tools/STM32-
  && tar -xjf /tmp/gcc-arm.tar.bz2 -C /opt --no-same-owner \
  && rm /tmp/gcc-arm.tar.bz2
 
-# The pip set, every file by its hash. setuptools first, alone, so empy's sdist
-# builds without pip fetching an unhashed build backend.
+# The pip set, every file by its hash, installed by the pinned pip above.
+# setuptools first, alone, so empy's sdist builds without pip fetching an
+# unhashed build backend.
 COPY ardupilot-build-requirements.txt /tmp/ardupilot-build-requirements.txt
 COPY ardupilot-requirements.txt /tmp/ardupilot-requirements.txt
 RUN python3 -m venv /opt/venv \

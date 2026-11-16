@@ -38,6 +38,10 @@ pub struct Verdict {
     /// class with its width, and what the board cannot show.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub power: Option<PowerRecord>,
+    /// `check support` only (`AET-WO-4300g`): the MCU's support network as
+    /// the schematic's netlist and the board's pads show it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub support: Option<SupportRecord>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub harness: Option<String>,
     /// `prove` only (`AET-WO-3301` §1.4): `generated` when the crate copied is
@@ -640,6 +644,69 @@ pub struct Finding {
     pub location: Vec<Where>,
 }
 
+/// The MCU's support network on a judged schematic (`AET-WO-4300g`).
+#[derive(Serialize)]
+pub struct SupportRecord {
+    /// The board the distances were measured on.
+    pub board: InputReport,
+    pub mcu: String,
+    pub roles: Vec<SupportRole>,
+    pub straps: Vec<String>,
+    /// The connector that programs the part, and whether NRST reaches it.
+    pub programming: Option<Programming>,
+    pub supply_source: Option<String>,
+    pub conditions: Vec<String>,
+}
+
+/// One capacitor role at one pin.
+#[derive(Serialize)]
+pub struct SupportRole {
+    pub role: &'static str,
+    pub pin: String,
+    pub part: Option<String>,
+    pub picofarads: Option<i64>,
+    pub gap_um: Option<i64>,
+    pub bound_um: Option<i64>,
+    pub rule: String,
+    pub verdict: &'static str,
+}
+
+#[derive(Serialize)]
+pub struct Programming {
+    pub connector: String,
+    pub nrst: bool,
+}
+
+impl From<(aethelgard_eda::support::Record, InputReport)> for SupportRecord {
+    fn from((r, board): (aethelgard_eda::support::Record, InputReport)) -> Self {
+        Self {
+            board,
+            mcu: r.mcu,
+            roles: r
+                .roles
+                .into_iter()
+                .map(|x| SupportRole {
+                    role: x.role,
+                    pin: x.pin,
+                    part: x.part,
+                    picofarads: x.picofarads,
+                    gap_um: x.gap_um,
+                    bound_um: x.bound_um,
+                    rule: x.rule,
+                    verdict: x.verdict,
+                })
+                .collect(),
+            straps: r.straps,
+            programming: r.programming.map(|p| Programming {
+                connector: p.connector,
+                nrst: p.nrst,
+            }),
+            supply_source: r.supply_source,
+            conditions: r.conditions,
+        }
+    }
+}
+
 /// The power tree on a judged board (`AET-WO-4300d2`).
 #[derive(Serialize)]
 pub struct PowerRecord {
@@ -767,6 +834,7 @@ impl Verdict {
             schematic: None,
             pairs: None,
             power: None,
+            support: None,
             harness: None,
             harness_provenance: None,
             cover_count: None,

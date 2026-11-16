@@ -91,7 +91,7 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
 /// its own four-pin connector `J10<n>` with an explicit map: each serial port
 /// ends at a connector pin (the architect's ruling 1; adversarial F9).
 fn spec_json(ports: Vec<Value>) -> Value {
-    let connectors: Vec<Value> = ports
+    let mut connectors: Vec<Value> = ports
         .iter()
         .enumerate()
         .map(|(i, p)| {
@@ -103,13 +103,34 @@ fn spec_json(ports: Vec<Value>) -> Value {
                     {"pin": "4", "net": "GND", "offboard": null}]})
         })
         .collect();
+    // The programming path and the supply input every board declares
+    // (`AET-WO-4300g`), after the ports' own connectors.
+    connectors.push(
+        json!({"reference": "J90", "part": "SM06B-SRSS-TB", "standard": null,
+        "pins": [
+            {"pin": "1", "net": "VDD_3V3", "offboard": null},
+            {"pin": "2", "net": null, "offboard": null},
+            {"pin": "3", "net": null, "offboard": null},
+            {"pin": "4", "net": "SWDIO", "offboard": null},
+            {"pin": "5", "net": "SWCLK", "offboard": null},
+            {"pin": "6", "net": "GND", "offboard": null}]}),
+    );
+    connectors.push(
+        json!({"reference": "J91", "part": "SM04B-GHS-TB", "standard": null,
+        "pins": [
+            {"pin": "1", "net": "VDD_3V3", "offboard": null},
+            {"pin": "2", "net": null, "offboard": null},
+            {"pin": "3", "net": null, "offboard": null},
+            {"pin": "4", "net": "GND", "offboard": null}]}),
+    );
     json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
         "acknowledge_unwitnessed": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
+        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+            "supply_source": {"connector": "J91", "pin": "1"}},
         "voltage_domains": [
             {"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50},
             {"id": "VDD_5V", "nominal_millivolts": 5000, "tolerance_permille": 50}],
@@ -569,7 +590,12 @@ fn with_connector(
         })
         .cloned()
         .collect();
-    connectors.push(json!({"reference": "J1", "part": part, "standard": standard, "pins": pins}));
+    // First, so the tests read it as `connectors[0]` beside the programming
+    // path and supply input `spec_json` declares (`AET-WO-4300g`).
+    connectors.insert(
+        0,
+        json!({"reference": "J1", "part": part, "standard": standard, "pins": pins}),
+    );
     v["connectors"] = Value::Array(connectors);
     v
 }
@@ -1524,7 +1550,7 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
 fn a_version_9_specification_is_refused() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 11);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 12);
     let mut v = spec_json(vec![port("C", None, None, None)]);
     v["schema_version"] = json!(9);
     let e = refused(v.clone());
@@ -1533,7 +1559,7 @@ fn a_version_9_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 9,
-                expected: 11
+                expected: 12
             }
         ),
         "{e}"
@@ -1562,7 +1588,7 @@ fn a_version_10_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 10,
-                expected: 11
+                expected: 12
             }
         ),
         "{e}"
@@ -1572,6 +1598,41 @@ fn a_version_10_specification_is_refused() {
         .unwrap()
         .remove("peer_deviation_ppm");
     assert!(serde_json::from_value::<Specification>(v).is_err());
+}
+
+/// A version-11 file (`AET-WO-4300g`'s: `mcu.supply_source`, but no
+/// `peer_deviation_ppm`, `peer_deviation_source` or `acknowledge_unwitnessed`)
+/// is refused by its version, never defaulted; one that has every key is
+/// refused by its version too (`AET-WO-4230` renumbered to 12).
+#[test]
+fn a_version_11_specification_is_refused() {
+    let mut v = spec_json(vec![port("C", None, None, None)]);
+    v["schema_version"] = json!(11);
+    assert!(v["mcu"].get("supply_source").is_some());
+    let e = refused(v.clone());
+    assert!(
+        matches!(
+            e,
+            IrValidationError::UnsupportedSchemaVersion {
+                version: 11,
+                expected: 12
+            }
+        ),
+        "{e}"
+    );
+    for key in ["peer_deviation_ppm", "peer_deviation_source"] {
+        let mut old = v.clone();
+        old["serial_ports"][0].as_object_mut().unwrap().remove(key);
+        assert!(
+            serde_json::from_value::<Specification>(old).is_err(),
+            "{key}"
+        );
+    }
+    let mut old = v;
+    old.as_object_mut()
+        .unwrap()
+        .remove("acknowledge_unwitnessed");
+    assert!(serde_json::from_value::<Specification>(old).is_err());
 }
 
 /// `AET-WO-4230` R3 (Q-H): every serial port of every specification in the

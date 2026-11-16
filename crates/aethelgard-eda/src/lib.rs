@@ -27,3 +27,4 @@ pub mod schematic;
 pub mod sexpr;
 pub mod stack;
 pub mod strict;
+pub mod support;

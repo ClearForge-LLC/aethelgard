@@ -29,7 +29,7 @@ use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
 use aethelgard_ir::{SolvedTopology, SpiDevice};
 
-use super::{Anchor, Builder, Conn, EmitError, Part};
+use super::{Anchor, Builder, Conn, EmitError, Owner, Part};
 
 use aethelgard_ir::power::BATTERY_NET;
 
@@ -65,14 +65,16 @@ const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at
 /// Anchors the part just drawn to `ic`'s pads.
 fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
     if let Some(p) = b.parts.last_mut() {
-        p.anchor = Some(Anchor {
+        p.owner = Some(Owner {
             ic: ic.to_owned(),
-            pads: pads
-                .iter()
-                .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
-                .collect(),
-            bound_nm,
-            rule,
+            anchor: Some(Anchor {
+                pads: pads
+                    .iter()
+                    .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
+                    .collect(),
+                loop_rule: Some((bound_nm, rule)),
+            }),
+            decouples: false,
         });
     }
 }
@@ -109,7 +111,7 @@ fn row(reference: &str, part: &str) -> Result<&'static Row, EmitError> {
 }
 
 /// Picofarads the way schematics write them: `100n`, `10u`, `2u2`.
-fn farads(pf: u64) -> String {
+pub(super) fn farads(pf: u64) -> String {
     si(pf, ['p', 'n', 'u'])
 }
 
@@ -155,8 +157,7 @@ fn two_pin(
         footprint: r.footprint.clone(),
         conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -199,8 +200,7 @@ fn ic(
         footprint: r.footprint.clone(),
         conns,
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -221,28 +221,6 @@ fn supply(b: &mut Builder<'_>, name: &str) -> Conn {
     } else {
         name
     })
-}
-
-/// Every reference the power tree declares, for the emitter's reference
-/// claims (`design`).
-pub(crate) fn references(p: &Power) -> Vec<&String> {
-    let mut out = vec![&p.input.reference];
-    for r in &p.regulators {
-        out.push(&r.reference);
-        if let Some(d) = &r.feedback {
-            out.extend([&d.top.reference, &d.bottom.reference]);
-        }
-        out.extend(r.external.iter().map(|e| &e.reference));
-    }
-    for s in &p.sense {
-        out.extend([&s.top.reference, &s.bottom.reference]);
-        out.extend(s.reservoir.iter().map(|c| &c.reference));
-    }
-    for c in &p.crossings {
-        out.extend([&c.reference, &c.cs_pull_up.reference]);
-        out.extend(c.external.iter().map(|e| &e.reference));
-    }
-    out
 }
 
 /// The nets the specification spells inside its power tree.
@@ -288,27 +266,17 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
     let Kind::Translator(t) = &row(reference, part)?.kind else {
         return Err(refuse(reference, format!("`{part}` is not a translator")));
     };
-    let a: Vec<_> = t
-        .channels
-        .iter()
-        .filter(|c| c.direction == Direction::AToB)
-        .collect();
-    let back: Vec<_> = t
-        .channels
-        .iter()
-        .filter(|c| c.direction == Direction::BToA)
-        .collect();
-    let ([sck, mosi, cs, ..], [miso, ..]) = (a.as_slice(), back.as_slice()) else {
+    let Some([sck, mosi, cs, miso]) = t.crossing_lines() else {
         return Err(refuse(
             reference,
             format!("`{part}` has no three A-to-B channels and one B-to-A channel"),
         ));
     };
     Ok(vec![
-        (Line::Sck, sck.output.clone()),
-        (Line::Mosi, mosi.output.clone()),
-        (Line::Cs, cs.output.clone()),
-        (Line::Miso, miso.input.clone()),
+        (Line::Sck, sck.to_owned()),
+        (Line::Mosi, mosi.to_owned()),
+        (Line::Cs, cs.to_owned()),
+        (Line::Miso, miso.to_owned()),
     ])
 }
 
@@ -374,8 +342,7 @@ pub(crate) fn draw(
             (POWER_IN_NEGATIVE.into(), minus),
         ]),
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())

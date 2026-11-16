@@ -28,6 +28,8 @@ use crate::sexpr::{self, Sx, mm};
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_power.rs"]
 mod power;
+#[path = "schematic_support.rs"]
+mod support;
 use aethelgard_ir::power::BATTERY_NET;
 
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
@@ -75,6 +77,13 @@ pub enum EmitError {
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
+    /// `AET-WO-1310` D1: a run of adjacent connected pads with no lane to the
+    /// grid. Never left to chance.
+    #[error("`{reference}` pads {} have no escape: no lane on which this run of adjacent connected pads reaches the grid at its width and clearance", pads.join(", "))]
+    PadEscapeExhausted {
+        reference: String,
+        pads: Vec<String>,
+    },
     #[error("{0}")]
     Internal(String),
 }
@@ -91,6 +100,7 @@ impl EmitError {
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
+            Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -99,7 +109,8 @@ impl EmitError {
         match self {
             Self::UnknownPart { reference, .. }
             | Self::UnsupportedAddress { reference, .. }
-            | Self::PowerNotDrawable { reference, .. } => Some(reference),
+            | Self::PowerNotDrawable { reference, .. }
+            | Self::PadEscapeExhausted { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
@@ -193,25 +204,38 @@ pub(crate) struct Part {
     /// By pin number; pins absent here get a no-connect.
     pub(crate) conns: BTreeMap<String, Conn>,
     pub(crate) note: Option<&'static str>,
-    /// A decoupling capacitor's IC: the reference it was drawn for.
-    pub(crate) decouples: Option<String>,
+    /// The IC this part belongs to, if any: one relation for a decoupling
+    /// capacitor and for a part a datasheet asks to sit by an IC's pins.
+    pub(crate) owner: Option<Owner>,
     /// A connector's declared off-board capacitance by pin number, with its
     /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
     pub(crate) offboard: BTreeMap<String, (u64, String)>,
-    /// A power-tree part's place by its regulator's pin (`AET-WO-4300d2`
-    /// §1.3), which the placer targets and the DRC gate judges.
-    pub(crate) anchor: Option<Anchor>,
 }
 
-/// Where a power-tree part must sit, from the tree's declared ownership: the
-/// IC that owns it, each of its own pads with the IC pad it must lie beside,
-/// the largest copper-edge gap allowed, and the rule that asks for it.
+/// The IC a part belongs to (`AET-WO-4300d2` reduction finding 9: one
+/// relation, where there were two fields): the placer puts the part beside
+/// it, by its pins when the part is anchored.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Owner {
+    pub(crate) ic: String,
+    /// Where by the IC's pins it must sit (`AET-WO-4300d2` §1.3), which the
+    /// placer targets and the DRC gate judges; `None` beside the IC by its
+    /// shared net alone.
+    pub(crate) anchor: Option<Anchor>,
+    /// Whether it counts in its rail's decoupling, as a capacitor between the
+    /// rail and `GND` drawn for this IC ([`decoupling_picofarads`]).
+    pub(crate) decouples: bool,
+}
+
+/// Where an owned part must sit: each of its own pads with the IC pad it
+/// must lie beside, and, for a power-tree part, the largest copper-edge gap
+/// allowed with the rule that asks for it, which the loop gate judges
+/// (`crate::loops`). The MCU's support parts carry none: the support gate
+/// judges them from the MCU's row, not from here (`AET-WO-4300g`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Anchor {
-    pub(crate) ic: String,
     pub(crate) pads: Vec<(String, String)>,
-    pub(crate) bound_nm: i64,
-    pub(crate) rule: &'static str,
+    pub(crate) loop_rule: Option<(i64, &'static str)>,
 }
 
 /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
@@ -304,7 +328,7 @@ fn ohms(v: u32) -> String {
 /// The MCU's symbol, the one part every design has.
 pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 
-const KNOWN_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
+use aethelgard_ir::names::VENDORED_PARTS as KNOWN_PARTS;
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -314,6 +338,8 @@ struct Builder<'a> {
     next: BTreeMap<char, u32>,
     rails: BTreeSet<String>,
     names: Taken,
+    /// `aethelgard_ir::names::own_nets` for the specification.
+    own: Vec<String>,
 }
 
 /// Names claimed so far, keyed by their ASCII-folded spelling, each holding
@@ -388,8 +414,15 @@ impl Builder<'_> {
     }
 
     /// An emitter-chosen net, refused if the specification already uses the
-    /// name, in any case, for something else.
+    /// name, in any case, for something else. Every such name is one
+    /// `aethelgard_ir::names::own_nets` lists, the list `validate` refuses by
+    /// (`AET-WO-1206`): a name it lacks is this emitter's fault, never drawn.
     fn own_net(&mut self, name: String) -> Result<String, EmitError> {
+        if !self.own.contains(&name) {
+            return Err(EmitError::Internal(format!(
+                "the emitter names net `{name}`, which aethelgard_ir::names::own_nets does not list"
+            )));
+        }
         self.names
             .claim(&name)
             .map_err(|holder| collision(&name, holder, EmitError::ReservedName))?;
@@ -416,8 +449,7 @@ impl Builder<'_> {
             footprint: footprint.to_owned(),
             conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
             note: None,
-            decouples: None,
-            anchor: None,
+            owner: None,
             offboard: BTreeMap::new(),
         });
         Ok(())
@@ -445,26 +477,13 @@ impl Builder<'_> {
         let g = self.ground();
         self.passive('C', value.to_owned(), r, g)?;
         if let Some(cap) = self.parts.last_mut() {
-            cap.decouples = Some(ic.to_owned());
+            cap.owner = Some(Owner {
+                ic: ic.to_owned(),
+                anchor: None,
+                decouples: true,
+            });
         }
         Ok(())
-    }
-}
-
-fn by_name<'p>(pins: &'p [Pin], name: &str) -> impl Iterator<Item = &'p Pin> + 'p {
-    let name = name.to_owned();
-    pins.iter().filter(move |p| p.name == name)
-}
-
-/// The MCU's connection for a pin, by name. Signal pins are set later.
-fn mcu_conn(b: &mut Builder<'_>, name: &str) -> Option<Conn> {
-    let supply = b.spec.mcu.supply.clone();
-    if name.starts_with("VDD") || name == "VBAT" || name == "VREF+" || name == "PDR_ON" {
-        Some(b.rail(&supply))
-    } else if name.starts_with("VSS") || name == "BOOT0" {
-        Some(b.ground())
-    } else {
-        None
     }
 }
 
@@ -511,7 +530,10 @@ pub fn decoupling_picofarads(
 ) -> Result<BTreeMap<String, u64>, EmitError> {
     let (parts, _) = design(spec, solved, table)?;
     let mut out: BTreeMap<String, u64> = BTreeMap::new();
-    for p in parts.iter().filter(|p| p.decouples.is_some()) {
+    for p in parts
+        .iter()
+        .filter(|p| p.owner.as_ref().is_some_and(|o| o.decouples))
+    {
         let pf = picofarads(&p.value).ok_or_else(|| {
             EmitError::Internal(format!(
                 "{}'s value `{}` is not a capacitance this reads",
@@ -552,6 +574,25 @@ fn picofarads(value: &str) -> Option<u64> {
     total.is_multiple_of(scale).then_some(total / scale)
 }
 
+/// Each anchored part's reference, with the IC it is anchored to
+/// (`AET-WO-4300d2` §1.3), read from the design's ownership, never from a
+/// board's layers: what a test needs to judge which references a board
+/// prints (`AET-WO-1310` D2).
+pub fn anchored(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    Ok(parts
+        .iter()
+        .filter_map(|p| {
+            let o = p.owner.as_ref().filter(|o| o.anchor.is_some())?;
+            Some((p.reference.clone(), o.ic.clone()))
+        })
+        .collect())
+}
+
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,
@@ -572,7 +613,7 @@ pub(crate) fn design(
         .map(|d| &d.reference)
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
-        .chain(spec.power.iter().flat_map(power::references))
+        .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -609,6 +650,8 @@ pub(crate) fn design(
             .claim(BATTERY_NET)
             .map_err(|holder| collision(BATTERY_NET, holder, EmitError::ReservedName))?;
     }
+    let own =
+        aethelgard_ir::names::own_nets(spec).map_err(|e| EmitError::Internal(e.to_string()))?;
     let mut b = Builder {
         spec,
         parts: Vec::new(),
@@ -616,18 +659,16 @@ pub(crate) fn design(
         next: BTreeMap::new(),
         rails: BTreeSet::new(),
         names,
+        own,
     };
 
     // The MCU.
     let mcu_ref = b.reference('U')?;
     let mcu_sym = library::symbol(MCU)?;
     let mcu_pins = pins(&mcu_sym).map_err(EmitError::Internal)?;
-    let mut conns = BTreeMap::new();
-    for p in &mcu_pins {
-        if let Some(c) = mcu_conn(&mut b, &p.name) {
-            conns.insert(p.number.clone(), c);
-        }
-    }
+    // Its support pins and network, from its row (`AET-WO-4300g`); signal
+    // pins are set below.
+    let mut conns = support::draw(&mut b, &mcu_ref)?;
     let solved_pins = solved
         .assignments
         .iter()
@@ -648,17 +689,26 @@ pub(crate) fn design(
             .iter()
             .find(|p| p.number == position)
             .ok_or_else(unknown)?;
+        // belt-and-suspenders: `solve` never assigns a reserved pin, and the
+        // row's pins are power, reset, boot and debug pins.
+        if conns.contains_key(&p.number) {
+            return Err(EmitError::Internal(format!(
+                "{net}: the MCU's pin {position} is already a support pin"
+            )));
+        }
         conns.insert(p.number.clone(), Conn::Net(net.clone()));
     }
-    let mut vcaps: Vec<&Pin> = by_name(&mcu_pins, "VCAP").collect();
-    vcaps.sort_by_key(|p| p.number.parse::<u32>().unwrap_or(u32::MAX));
-    for (i, p) in vcaps.iter().enumerate() {
-        let net = b.own_net(format!("{mcu_ref}_VCAP{}", i + 1))?;
-        conns.insert(p.number.clone(), Conn::Net(net.clone()));
-        let g = b.ground();
-        b.passive('C', "2u2".into(), Conn::Net(net), g)?;
+    // belt-and-suspenders: `the_mcu_rows_support_pins_are_the_symbols` proves
+    // the one MCU row's pins against the symbol; a row added later is refused
+    // here at emit, not drawn on a pin the symbol lacks.
+    if let Some((pin, _)) = conns
+        .iter()
+        .find(|(pin, _)| !mcu_pins.iter().any(|p| &p.number == *pin))
+    {
+        return Err(EmitError::Internal(format!(
+            "the MCU's row names pin {pin}, which the symbol lacks"
+        )));
     }
-    b.decouple(&mcu_ref, &spec.mcu.supply.clone(), "100n")?;
     b.parts.push(Part {
         lib_id: MCU,
         reference: mcu_ref.clone(),
@@ -666,8 +716,7 @@ pub(crate) fn design(
         footprint: mcu_sym.property("Footprint").unwrap_or("").to_owned(),
         conns,
         note: None,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
 
@@ -887,8 +936,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             footprint: footprint.to_owned(),
             conns,
             note: None,
-            decouples: None,
-            anchor: None,
+            owner: None,
             offboard,
         });
     }
@@ -923,8 +971,7 @@ fn device(
         footprint: sym.property("Footprint").unwrap_or("").to_owned(),
         conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
         note,
-        decouples: None,
-        anchor: None,
+        owner: None,
         offboard: BTreeMap::new(),
     });
     Ok(())
@@ -1363,17 +1410,44 @@ mod tests {
         assert!(matches!(&a[19..20], "8" | "9" | "a" | "b"));
     }
 
+    /// The MCU row's support pins (ST's pin data) and KiCad's symbol agree,
+    /// pin for pin, and the row covers every supply, ground, reset, boot and
+    /// regulator pin the symbol has (`AET-WO-4300g`).
     #[test]
-    fn every_mcu_pin_rule_names_pins_the_symbol_has() {
+    fn the_mcu_rows_support_pins_are_the_symbols() {
         let sym = library::symbol("MCU_ST_STM32H7:STM32H753ZITx").unwrap();
         let pins = pins(&sym).unwrap();
         assert_eq!(pins.len(), 144);
-        for name in [
-            "VDD", "VBAT", "VREF+", "PDR_ON", "VSS", "BOOT0", "VCAP", "PB8", "PB9",
-        ] {
-            assert!(pins.iter().any(|p| p.name == name), "{name}");
+        let row = support::row("STM32H753ZITx").unwrap();
+        let mut covered = BTreeSet::new();
+        for (group, numbers) in &row.pins {
+            let name = match group.as_str() {
+                "VDD33USB" => "VDD33_USB",
+                "SWDIO" => "PA13",
+                "SWCLK" => "PA14",
+                g => g,
+            };
+            for n in numbers {
+                let p = pins.iter().find(|p| &p.number == n).unwrap();
+                assert_eq!(p.name, name, "pin {n} of {group}");
+                covered.insert(n.clone());
+            }
         }
-        let vcap: Vec<&str> = by_name(&pins, "VCAP").map(|p| p.etype.as_str()).collect();
+        let special = |n: &str| {
+            [
+                "VDD", "VSS", "VBAT", "VREF", "VCAP", "NRST", "BOOT0", "PDR_ON",
+            ]
+            .iter()
+            .any(|s| n.starts_with(s))
+        };
+        for p in pins.iter().filter(|p| special(&p.name)) {
+            assert!(covered.contains(&p.number), "{} ({})", p.number, p.name);
+        }
+        let vcap: Vec<&str> = row
+            .group("VCAP")
+            .iter()
+            .map(|n| pins.iter().find(|p| &p.number == n).unwrap().etype.as_str())
+            .collect();
         assert_eq!(vcap, ["power_out", "power_out"]);
     }
 
@@ -1489,8 +1563,7 @@ mod tests {
                     footprint: fp_id.into(),
                     conns: Default::default(),
                     note: None,
-                    decouples: None,
-                    anchor: None,
+                    owner: None,
                     offboard: Default::default(),
                 }),
                 "{}: its symbol is not recognised as a connector",

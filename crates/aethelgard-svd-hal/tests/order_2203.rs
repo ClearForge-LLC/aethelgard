@@ -140,19 +140,24 @@ fn digests() -> Vec<(&'static str, String)> {
 /// did not move. Moved once more by the reference's acknowledgements
 /// (`AET-WO-4230` R1, slice R2-cli), which change no generator: the
 /// specification's sha256 alone (`0ae37256…7df4`, `ee09ef30…29f1`,
-/// `d0e7995a…cda3` before); the boot image did not move.
+/// `d0e7995a…cda3` before); the boot image did not move. Moved once more by
+/// the merge of `AET-WO-4300g` (specification version 11, `mcu.supply_source`
+/// and the debug and supply connectors; `4230` renumbered to 12), which changes
+/// no generator of these (the blessed reference tree moved in its sha256 line
+/// alone): `59c7e081…ccdb`, `a9b14d56…3246`, `892382d5…71cf` before; the boot
+/// image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "59c7e081dc22278e7c3575926e812ea0345de8288222df39d87bf4a3b766ccdb",
+        "c5003f4f0f501f68e08ba00b53852c531ec5abd92a759e67453b49570f95620b",
     ),
     (
         "platform",
-        "a9b14d567ee259ff349d8ea4d978497ac7ddffb43436f2916387da9953633246",
+        "875c5440d6700df68946fdfb4d015b33ebb9bab4ef4268ac8c59071ee8839ae8",
     ),
     (
         "platform faulted",
-        "892382d5cef5f574a43c50a6c0cc59955b2ad955182c7e7028f1a0c5c58571cf",
+        "63b028f058dc7a5469c616edec22023c2182f209bb4da507917de2379456fbf8",
     ),
     (
         "boot image",

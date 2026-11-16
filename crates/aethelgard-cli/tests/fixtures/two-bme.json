@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "sentinel-01",
@@ -7,7 +7,11 @@
     "part": "STM32H753ZITx",
     "supply": "VDD_3V3",
     "hse_hz": 0,
-    "bor_level": 0
+    "bor_level": 0,
+    "supply_source": {
+      "connector": "J2",
+      "pin": "1"
+    }
   },
   "voltage_domains": [
     {
@@ -88,7 +92,72 @@
       }
     }
   ],
-  "connectors": [],
+  "connectors": [
+    {
+      "reference": "J1",
+      "part": "SM06B-SRSS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "SWDIO",
+          "offboard": null
+        },
+        {
+          "pin": "5",
+          "net": "SWCLK",
+          "offboard": null
+        },
+        {
+          "pin": "6",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    },
+    {
+      "reference": "J2",
+      "part": "SM04B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    }
+  ],
   "net_constraints": [
     {
       "net_name": "I2C_SDA",

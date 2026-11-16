@@ -296,7 +296,9 @@ fn extract_counts_each_connectors_declared_budget_and_no_ci() {
 fn solve_does_not_see_the_connectors() {
     let d = Dir::new("solve");
     let mut bare = spec();
-    bare["connectors"] = Value::Array(vec![]);
+    // The programming path and the supply input (J3, J4; AET-WO-4300g) stay.
+    let kept = bare["connectors"].as_array().unwrap()[2..].to_vec();
+    bare["connectors"] = Value::Array(kept);
     let bare = d.write("bare.json", &bare);
     let solved = |p: &Path| {
         let mut v = json_line(&run(&["solve", "--file", p.to_str().unwrap()]), 0);
@@ -342,21 +344,31 @@ fn a_connector_pin_with_no_budget_is_refused_naming_the_connector() {
     );
 }
 
-/// With `connectors` empty the board has no connector footprint: the
-/// reference board's emission is untouched by this work order (its hashes
-/// are pinned by the tests that already hold them).
+/// A board draws exactly its declared connectors. With every connector but the
+/// programming path and the supply input removed (since `AET-WO-4300g` no
+/// board has none), the board carries those two connector footprints and no
+/// other: no footprint survives the declaration that drew it.
 #[test]
-fn without_connectors_the_board_has_no_connector_footprint() {
+fn a_board_draws_exactly_its_declared_connectors() {
     let d = Dir::new("none");
     let mut bare = spec();
-    bare["connectors"] = Value::Array(vec![]);
+    // The programming path and the supply input (J3, J4; AET-WO-4300g) stay.
+    let kept = bare["connectors"].as_array().unwrap()[2..].to_vec();
+    bare["connectors"] = Value::Array(kept);
     let p = d.write("bare.json", &bare);
     emit(&p, &d.0.join("a"));
     let (text, _) = board(&d, "a");
-    assert!(
-        !text.contains("Connector_JST"),
-        "a board with no connectors has a Connector_JST footprint"
+    let drawn = text.matches("(footprint \"Connector_").count();
+    assert_eq!(
+        drawn, 2,
+        "the board draws {drawn} connectors, not J3 and J4"
     );
+    for kept in ["\"J3\"", "\"J4\""] {
+        assert!(
+            text.contains(&format!("(property \"Reference\" {kept}")),
+            "{kept}"
+        );
+    }
 }
 
 /// The fixture is a whole specification, not only a board: `check speeds`

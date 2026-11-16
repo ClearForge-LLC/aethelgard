@@ -256,8 +256,9 @@ fn a_specification_with_no_spi_bus_judges_nothing_and_says_so() {
 }
 
 /// Adversarial 2: the whole supply must lie in Table 149's bands. 3600 mV
-/// at 50 permille reaches 3780 mV, above 3.6 V. The parts are unlisted, so
-/// no part's own range refuses first.
+/// at 50 permille reaches 3780 mV, above 3.6 V. The board has no device, so
+/// no part's own range refuses first (a part with no row is refused,
+/// `AET-WO-1206` §1.8).
 #[test]
 fn a_supply_above_the_table_s_bands_is_refused() {
     let mut spec: Value = serde_json::from_slice(
@@ -266,9 +267,7 @@ fn a_supply_above_the_table_s_bands_is_refused() {
     .unwrap();
     spec["voltage_domains"][0]["nominal_millivolts"] = 3_600.into();
     for list in ["i2c_devices", "spi_devices"] {
-        for d in spec[list].as_array_mut().unwrap() {
-            d["part"] = "UNLISTED".into();
-        }
+        spec[list] = Value::Array(Vec::new());
     }
     let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("aet-4300c-vdd-{}", std::process::id()));

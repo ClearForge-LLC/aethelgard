@@ -213,9 +213,14 @@ fn extract_bounds_the_power_board() {
 }
 
 /// K10: the battery's rail is `VBAT` on a board with a power tree, so a net
-/// the specification spells `VBAT`, in any case, is refused by name.
+/// the specification spells `VBAT`, in any case, is refused by name: by
+/// `validate` (`AET-WO-1206` A5), and by the emitter itself for a library
+/// caller that hands it an unvalidated specification, with one message.
 #[test]
 fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
     let mut v = common::power::power_tree();
     v["i2c_buses"][0]["sda"]["net"] = "vbat".into();
     for c in v["net_constraints"].as_array_mut().unwrap() {
@@ -224,10 +229,14 @@ fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
         }
     }
     let spec: Specification = serde_json::from_value(v).unwrap();
-    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let refused = spec.validate().unwrap_err();
+    assert_eq!(refused.kind(), "ReservedName");
+    assert_eq!(refused.id(), Some("VBAT and vbat"));
     match schematic::emit(&spec, &solved, &table) {
-        Err(e @ EmitError::ReservedName(_)) => assert!(e.to_string().contains("VBAT"), "{e}"),
+        Err(e @ EmitError::ReservedName(_)) => {
+            assert_eq!(e.to_string(), refused.to_string());
+            assert_eq!(e.id(), refused.id());
+        }
         other => panic!("{other:?}"),
     }
 }
@@ -272,17 +281,60 @@ fn full() -> (Specification, SolvedTopology, PinTable) {
 }
 
 /// K6 and D2 (a): the committed fixture, crossing and all, validates and is
-/// drawn. Its board does not route yet (D7: the ICM-20948's 0.2 mm pads at
-/// 0.4 mm pitch, under the 200 um floor on the 125 um grid), refused by name;
-/// and `extract` refuses the IMU's MCU-side lines by name (D6 (b)): the
-/// translator's data pins have no stated maximum capacitance.
+/// drawn, and its board routes (`AET-WO-1310`, re-taken: before it, D7
+/// refused "U5 pad 20", the ICM-20948's 0.2 mm pads at 0.4 mm pitch having no
+/// node on the 125 um grid at the 200 um floor). Each of U5's routed pads
+/// leaves by an escape from its own centre, off the grid, and the copper
+/// passes the router's exact judges read back from the file. `extract`
+/// refuses the IMU's MCU-side lines by name (D6 (b)): the translator's data
+/// pins have no stated maximum capacitance.
 #[test]
 fn the_crossing_is_drawn_and_its_limits_are_refused_by_name() {
     let (spec, solved, table) = full();
-    match schematic::emit(&spec, &solved, &table) {
-        Err(e @ EmitError::Unroutable { .. }) => assert!(e.to_string().contains("U5"), "{e}"),
-        other => panic!("{other:?}"),
-    }
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (b, r) = route::read(&strict::board(&e.board).unwrap(), &Stack::of(&spec)).unwrap();
+    route::check(&b, &r).unwrap();
+    route::connectivity(&b, &r).unwrap();
+    let u5 = b.parts.iter().find(|p| p.reference == "U5").unwrap();
+    let escaped: Vec<&str> = u5
+        .pads
+        .iter()
+        .filter(|p| {
+            let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
+            r.segments.iter().any(|s| s.start == c || s.end == c)
+        })
+        .map(|p| p.number.as_str())
+        .collect();
+    // Measured: nine of U5's pads are routed, and none has a grid node.
+    assert_eq!(
+        escaped,
+        ["8", "9", "10", "11", "13", "18", "20", "22", "23"]
+    );
+    // Its keepout under the die, read back where KiCad reads it: in board
+    // coordinates about U5's centre (`AET-WO-1310` D4).
+    let k = &u5.keepouts[0].rect;
+    let (cx, cy) = ((k.x0 + k.x1) / 2, (k.y0 + k.y1) / 2);
+    let pads = u5
+        .pads
+        .iter()
+        .map(|p| p.rect)
+        .reduce(|a, b| aethelgard_eda::pcb::Rect {
+            x0: a.x0.min(b.x0),
+            y0: a.y0.min(b.y0),
+            x1: a.x1.max(b.x1),
+            y1: a.y1.max(b.y1),
+        });
+    let f = pads.unwrap();
+    assert!(
+        (cx - (f.x0 + f.x1) / 2).abs() < 300_000 && (cy - (f.y0 + f.y1) / 2).abs() < 300_000,
+        "{k:?}"
+    );
+    assert_eq!((k.x1 - k.x0, k.y1 - k.y0), (1_750_000, 1_590_000));
+    assert_eq!(
+        e,
+        schematic::emit(&spec, &solved, &table).unwrap(),
+        "two emissions"
+    );
     match aethelgard_eda::extract::lines(&spec, &solved, &table) {
         Err(r) => {
             assert_eq!(r.kind, "TranslatorPinUnbounded", "{r:?}");
@@ -303,6 +355,17 @@ fn a_keepout_is_read_routed_around_and_judged() {
         "(footprint \"InvenSense_QFN-24_3x3mm_P0.4mm\" (at 100 100)",
         1,
     );
+    // As a board file holds it, the zone in board coordinates (`AET-WO-1310`
+    // D4).
+    for (lib, board) in [
+        ("(xy -0.875 -0.795)", "(xy 99.125 99.205)"),
+        ("(xy 0.875 -0.795)", "(xy 100.875 99.205)"),
+        ("(xy 0.875 0.795)", "(xy 100.875 100.795)"),
+        ("(xy -0.875 0.795)", "(xy 99.125 100.795)"),
+    ] {
+        assert_eq!(text.matches(lib).count(), 1, "{lib}");
+        text = text.replacen(lib, board, 1);
+    }
     text = text.replacen("\"REF**\"", "\"U5\"", 1);
     let part = route::part_of(&aethelgard_eda::sexpr::parse(&text).unwrap()).unwrap();
     assert_eq!(part.keepouts.len(), 1);
@@ -313,11 +376,6 @@ fn a_keepout_is_read_routed_around_and_judged() {
         (k.rect.x0, k.rect.y0, k.rect.x1, k.rect.y1),
         (99_125_000, 99_205_000, 100_875_000, 100_795_000)
     );
-    // The keepout alone: the gate's pad clearance measures pads by their
-    // boxes, which read the QFN's corner pads 1 and 24 as 0.177 mm apart
-    // (0.218 mm as rounded copper; FEEDBACK D7), so the pads are left out.
-    let mut part = part;
-    part.pads.clear();
     let (spec, _, _) = fixture();
     let board = route::Board {
         outline: aethelgard_eda::pcb::Rect {
@@ -460,4 +518,86 @@ fn the_router_goes_around_a_keepout() {
     let routed = route::route(&board).unwrap();
     route::check(&board, &routed).unwrap();
     assert!(!routed.segments.is_empty());
+}
+
+/// `AET-WO-1206` A5: the nets `validate` reserves
+/// (`aethelgard_ir::names::own_nets`) are exactly the nets the emitter names
+/// for itself on the reference and on the power tree (two bucks, an LDO, the
+/// MCU's VCAPs, the straps). The emitter refuses to name one the list lacks,
+/// so this holds the other direction: the list names none it does not draw.
+#[test]
+fn the_nets_validate_reserves_are_the_emitters_own() {
+    use std::collections::BTreeSet;
+    let reference: Specification = serde_json::from_slice(
+        &std::fs::read(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/sentinel-01-minimal.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let (power, ..) = fixture();
+    for spec in [reference, power] {
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let board = schematic::emit(&spec, &solved, &table).unwrap().board;
+        // Every net the board names: a label as `/<name>`, a rail bare.
+        let drawn: BTreeSet<String> = board
+            .split("(net \"")
+            .skip(1)
+            .filter_map(|rest| rest.split('"').next())
+            .map(|n| n.strip_prefix('/').unwrap_or(n).to_owned())
+            .collect();
+        let mut spelled = BTreeSet::new();
+        collect_strings(&serde_json::to_value(&spec).unwrap(), &mut spelled);
+        let own: BTreeSet<String> = aethelgard_ir::names::own_nets(&spec)
+            .unwrap()
+            .into_iter()
+            .collect();
+        // Every listed net is drawn, and every net the emitter draws that the
+        // specification does not spell (KiCad's own `unconnected-` aside) is
+        // listed. `GND` is both drawn and, on a connector pin, spelled.
+        let missing: Vec<_> = own.iter().filter(|n| !drawn.contains(*n)).collect();
+        assert!(missing.is_empty(), "{}: {missing:?}", spec.project_name);
+        let unlisted: Vec<_> = drawn
+            .iter()
+            .filter(|n| !spelled.contains(*n) && !n.starts_with("unconnected-"))
+            .filter(|n| !own.contains(*n))
+            .collect();
+        assert!(unlisted.is_empty(), "{}: {unlisted:?}", spec.project_name);
+    }
+}
+
+fn collect_strings(v: &serde_json::Value, out: &mut std::collections::BTreeSet<String>) {
+    match v {
+        serde_json::Value::String(s) => {
+            out.insert(s.clone());
+        }
+        serde_json::Value::Array(items) => items.iter().for_each(|x| collect_strings(x, out)),
+        serde_json::Value::Object(map) => map.values().for_each(|x| collect_strings(x, out)),
+        _ => {}
+    }
+}
+
+/// `AET-WO-1206`, the adversarial pass's F2 and F3: a power-tree reference
+/// starting `#` (KiCad's virtual-symbol prefix), or starting `unconnected-`
+/// (so a buck's own nets start with it), is refused by `validate` with the
+/// emitter's own kind, `id` and message. Before, only `generate` refused it.
+#[test]
+fn a_power_reference_the_emitter_refuses_is_refused_at_validate() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    for (name, id) in [("#U10", "#U10"), ("unconnected-x", "unconnected-x_FB")] {
+        let mut v = common::power::power_tree();
+        assert_eq!(v["power"]["regulators"][0]["reference"], "U10");
+        v["power"]["regulators"][0]["reference"] = name.into();
+        let spec: Specification = serde_json::from_value(v).unwrap();
+        let refused = spec.validate().unwrap_err();
+        assert_eq!((refused.kind(), refused.id()), ("ReservedName", Some(id)));
+        let e = schematic::emit(&spec, &solved, &table).unwrap_err();
+        assert_eq!(e.kind(), refused.kind(), "{name}");
+        assert_eq!(e.id(), refused.id(), "{name}");
+        assert_eq!(e.to_string(), refused.to_string(), "{name}");
+    }
 }
