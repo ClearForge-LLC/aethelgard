@@ -5828,6 +5828,13 @@ mod tests {
         // The highest admitted speed, every pin in its role, init in the board
         // crate's argument order.
         assert!(main.contains("init::<i2c1_speed::Fast400k, _>(&mut r, &clock, pb6, pb7)"));
+        // A board with only an I2C bus reads the reset clock too, first, and
+        // its crate makes the token (`AET-WO-4230` D6).
+        let clock = main
+            .find("    let Ok(clock) = rcc.reset_clock(&mut r) else {\n")
+            .unwrap();
+        assert!(clock < main.find("rcc.enable_").unwrap());
+        assert!(files["src/board.rs"].contains("pub struct ResetClock {"));
         assert!(main.contains("let _pa0 = gpioa.pa0.into_output(&mut r);"));
         assert!(main.contains("let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);"));
         assert!(main.contains("use b::{Board, i2c1_speed, mmio::Mmio};"));
