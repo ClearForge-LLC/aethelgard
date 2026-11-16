@@ -1,9 +1,9 @@
 # class: unmodelled-item
-# note: F.Cu renamed TOP and a gr_rect on TOP (F10)
+# note: F.Cu renamed TOP and a gr_rect on TOP (F10); since AET-WO-1311 the strict reader refuses the name before any gate (before it: drc 5 ToolError kicad-cli; drc-parity 3 LayersDisagree; extract 3 UnmodelledCopper)
 # main: drc 5 ToolError kicad-cli; drc-parity 5 ToolError kicad-cli; extract 3 UnmodelledCopper
-# drc: 5 ToolError kicad-cli
-# drc-parity: 3 LayersDisagree
-# extract: 3 UnmodelledCopper
+# drc: 3 MalformedBoard kicad_pcb/gr_rect[2]/layer[1]
+# drc-parity: 3 MalformedBoard kicad_pcb/gr_rect[2]/layer[1]
+# extract: 3 MalformedBoard kicad_pcb/gr_rect[2]/layer[1]
 @@ find
 		(0 "F.Cu" signal)
 @@ replace

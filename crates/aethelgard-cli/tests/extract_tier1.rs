@@ -491,7 +491,8 @@ fn what_the_reader_does_not_model_is_refused() {
                 "(layers \"F.Cu\" \"F.Mask\" \"F.Paste\")",
                 "(layers \"TOP\" \"F.Mask\" \"F.Paste\")",
             ),
-            unmodelled,
+            // Refused by name before any gate (`AET-WO-1311` §1.1).
+            malformed,
         ),
         (
             "pad_circle",

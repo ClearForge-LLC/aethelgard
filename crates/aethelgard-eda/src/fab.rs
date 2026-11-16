@@ -43,12 +43,14 @@ pub enum Drilled {
 }
 
 /// One tool of the drill file, as the judged board predicts it: its
-/// diameter, what it drills, and how many holes of each kind.
+/// diameter, what it drills, how many holes of each kind, and every hole's
+/// centre in board coordinates (nm, Y down), sorted (`AET-WO-1311` §1.3).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Drill {
     pub drill_nm: i64,
     pub hole: Hole,
     pub what: Vec<(Drilled, usize)>,
+    pub at: Vec<(i64, i64)>,
 }
 
 impl Drill {
@@ -112,13 +114,12 @@ impl Drill {
 /// offset drill, a hole with no copper. A drill that is not a whole
 /// micrometre cannot be stated in KiCad's three places, and is refused.
 pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
-    let mut tools: BTreeMap<(i64, Hole), BTreeMap<Drilled, usize>> = BTreeMap::new();
-    let mut add = |drill_nm: i64, hole: Hole, what: Drilled, n: usize| {
-        *tools
-            .entry((drill_nm, hole))
-            .or_default()
-            .entry(what)
-            .or_default() += n;
+    type Tool = (BTreeMap<Drilled, usize>, Vec<(i64, i64)>);
+    let mut tools: BTreeMap<(i64, Hole), Tool> = BTreeMap::new();
+    let mut add = |drill_nm: i64, hole: Hole, what: Drilled, at: &[(i64, i64)]| {
+        let tool = tools.entry((drill_nm, hole)).or_default();
+        *tool.0.entry(what).or_default() += at.len();
+        tool.1.extend_from_slice(at);
     };
     for v in &routed.vias {
         let rule = board.stack.rule(&v.net);
@@ -128,7 +129,7 @@ pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
             Drilled::Routed {
                 via_nm: rule.via_nm,
             },
-            1,
+            &[v.at],
         );
     }
     for a in &routed.arrays {
@@ -151,12 +152,16 @@ pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
                 pad: a.pad.clone(),
                 via_nm: rule.via_nm,
             },
-            a.at.len(),
+            &a.at,
         );
     }
     for part in &board.parts {
         for pad in &part.pads {
             if let Some(d) = pad.drill_nm {
+                // `route::read` holds a pad's drill at its centre, and lays its
+                // box from there as `c − w/2 .. c + w − w/2` (`AET-WO-1311`
+                // adversarial L: an odd width's centre is still exact).
+                let r = pad.rect;
                 add(
                     d,
                     Hole::Pad,
@@ -164,22 +169,24 @@ pub fn drills(board: &Board, routed: &Routed) -> Result<Vec<Drill>, String> {
                         reference: part.reference.clone(),
                         number: pad.number.clone(),
                     },
-                    1,
+                    &[(r.x0 + (r.x1 - r.x0) / 2, r.y0 + (r.y1 - r.y0) / 2)],
                 );
             }
         }
     }
     let mut out = Vec::new();
-    for ((drill_nm, hole), what) in tools {
+    for ((drill_nm, hole), (what, mut at)) in tools {
         if drill_nm <= 0 || drill_nm % 1000 != 0 {
             return Err(format!(
                 "a drill of {drill_nm} nm is not a whole micrometre, which KiCad's tool line (three places in mm) cannot state"
             ));
         }
+        at.sort_unstable();
         out.push(Drill {
             drill_nm,
             hole,
             what: what.into_iter().collect(),
+            at,
         });
     }
     Ok(out)
@@ -197,12 +204,32 @@ fn decimal(s: &str) -> bool {
     })
 }
 
-/// Whether `line` is one round hit, `X<decimal>Y<decimal>`, and nothing
-/// else: a slot (`…G85X…`) is not.
-fn hit(line: &str) -> bool {
-    line.strip_prefix('X')
-        .and_then(|r| r.split_once('Y'))
-        .is_some_and(|(x, y)| decimal(x) && decimal(y))
+/// A decimal KiCad writes in a hit, in millimetres, as nanometres: at most
+/// six places.
+fn nm(s: &str) -> Option<i64> {
+    if !decimal(s) {
+        return None;
+    }
+    let (neg, s) = s.strip_prefix('-').map_or((false, s), |r| (true, r));
+    let (whole, frac) = s.split_once('.')?;
+    if frac.len() > 6 {
+        return None;
+    }
+    let v = whole
+        .parse::<i64>()
+        .ok()?
+        .checked_mul(1_000_000)?
+        .checked_add(format!("{frac:0<6}").parse::<i64>().ok()?)?;
+    Some(if neg { -v } else { v })
+}
+
+/// The hole `line` places, in board coordinates (nm, Y down: the file's Y
+/// is up, measured: a via at (122.375, 115.125) mm is `X122.375Y-115.125`),
+/// when it is one round hit, `X<decimal>Y<decimal>`, and nothing else: a
+/// slot (`…G85X…`) is not.
+fn hit(line: &str) -> Option<(i64, i64)> {
+    let (x, y) = line.strip_prefix('X')?.split_once('Y')?;
+    Some((nm(x)?, nm(y)?.checked_neg()?))
 }
 
 /// KiCad's drill file (`kicad-cli pcb export drill --excellon-min-header`)
@@ -216,10 +243,12 @@ fn hit(line: &str) -> bool {
 ///
 /// Each of `expected`'s tools must be in the header in order with its
 /// diameter, and selected once, in order, in the body, followed by exactly
-/// its holes, one round hit per line. A tool missing, an extra tool, a wrong
-/// diameter, a hit count off by one, a slot or any line not in that shape is
-/// refused, naming the tool and what it drills. A board with no hole is
-/// refused: its drill file is not measured.
+/// its holes, one round hit per line, at exactly its holes' positions in
+/// any order (`AET-WO-1311` §1.3). A tool missing, an extra tool, a wrong
+/// diameter, a hit count off by one, a hole moved or exchanged with another
+/// tool's, a slot or any line not in that shape is refused, naming the tool
+/// and what it drills. A board with no hole is refused: its drill file is
+/// not measured.
 pub fn holes(drill: &[u8], expected: &[Drill]) -> Result<(), String> {
     let text = std::str::from_utf8(drill)
         .ok()
@@ -277,19 +306,32 @@ pub fn holes(drill: &[u8], expected: &[Drill]) -> Result<(), String> {
                 "tool {select} is not selected next, after every earlier tool's holes"
             ));
         }
-        let mut hits = 0;
+        let mut at = Vec::new();
         while lines.peek().is_some_and(|l| l.starts_with('X')) {
             let line = lines.next().unwrap_or_default();
-            if !hit(line) {
-                return Err(format!("under {select}, `{line}` is not one round hit"));
-            }
-            hits += 1;
+            at.push(
+                hit(line)
+                    .ok_or_else(|| format!("under {select}, `{line}` is not one round hit"))?,
+            );
         }
+        let hits = at.len();
         if hits != d.hits() {
             return Err(format!(
                 "tool {select} ({} mm) has {hits} hits, where the board holds {}: {}",
                 mm(d.drill_nm),
                 d.hits(),
+                d.named()
+            ));
+        }
+        at.sort_unstable();
+        if let Some((got, want)) = at.iter().zip(&d.at).find(|(g, w)| g != w) {
+            return Err(format!(
+                "tool {select} ({} mm) drills at ({}, {}) mm where the board's next hole is at ({}, {}) mm: {}",
+                mm(d.drill_nm),
+                signed(got.0),
+                signed(got.1),
+                signed(want.0),
+                signed(want.1),
                 d.named()
             ));
         }
@@ -336,6 +378,15 @@ pub struct Notes<'a> {
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
+/// [`mm`] of a coordinate, which may be negative.
+fn signed(nm: i64) -> String {
+    if nm < 0 {
+        format!("-{}", mm(nm.saturating_neg()))
+    } else {
+        mm(nm)
+    }
+}
+
 fn mm(nm: i64) -> String {
     let whole = nm / 1_000_000;
     let frac = format!("{:06}", nm % 1_000_000);
@@ -720,6 +771,7 @@ mod tests {
             drill_nm,
             hole: Hole::Via,
             what: vec![(Drilled::Routed { via_nm }, n)],
+            at: (0..n as i64).map(|i| (i * 1_000_000, 0)).collect(),
         }
     }
 
@@ -869,6 +921,31 @@ mod tests {
     /// A routed via is at its net class's declared drill; an array's vias
     /// at its rule's drill, whatever the board's array says, so an array
     /// drilled otherwise disagrees with KiCad's file.
+    /// `AET-WO-1311` adversarial L: a plated pad of an odd width in
+    /// nanometres is drilled at its centre, which `route::read` keeps exact.
+    #[test]
+    fn a_pad_of_an_odd_width_is_drilled_at_its_centre() {
+        let part = crate::route::part_of(
+            &crate::sexpr::parse(
+                "(footprint \"x\" (at 10 20) (property \"Reference\" \"J1\") (pad \"1\" thru_hole circle (at 0 0) (size 1.000001 1.000001) (drill 0.5) (layers \"*.Cu\")) (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")))",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let b = Board {
+            outline: crate::pcb::Rect {
+                x0: 0,
+                y0: 0,
+                x1: 40_000_000,
+                y1: 40_000_000,
+            },
+            parts: vec![part],
+            stack: crate::stack::reference(),
+        };
+        let d = drills(&b, &Routed::default()).unwrap();
+        assert_eq!(d[0].at, [(10_000_000, 20_000_000)]);
+    }
+
     #[test]
     fn each_via_is_counted_at_its_rules_drill() {
         let mut st = crate::stack::reference();
@@ -883,10 +960,10 @@ mod tests {
             nets: vec!["VBAT".into()],
         }];
         let (b, r) = board(st, &[], &["GND", "VBAT", "VBAT"], vec![]);
-        assert_eq!(
-            drills(&b, &r).unwrap(),
-            [routed(DRILL_NM, VIA_NM, 1), routed(400_000, 800_000, 2)]
-        );
+        let mut want = [routed(DRILL_NM, VIA_NM, 1), routed(400_000, 800_000, 2)];
+        // Each via at its own position (`board` lays via `i` at `(i, 0)`).
+        want[1].at = vec![(1, 0), (2, 0)];
+        assert_eq!(drills(&b, &r).unwrap(), want);
         let (b, r) = board(thermal_stack(), &[], &[], vec![array(300_000, 12)]);
         assert_eq!(drills(&b, &r).unwrap()[0].drill_nm, 254_000);
     }

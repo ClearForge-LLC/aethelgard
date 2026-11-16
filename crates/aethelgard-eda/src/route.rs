@@ -63,9 +63,7 @@ use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 
 use crate::pcb::Rect;
 use crate::rules::FLOOR_NM;
-use crate::sexpr::Sx;
 use crate::stack::Rule;
-use crate::strict::{self, Tree};
 
 /// The grid's pitch.
 pub const PITCH_NM: i64 = 125_000;
@@ -317,6 +315,17 @@ impl Shape {
     fn clear(self, o: Shape, gap: i64) -> bool {
         let need = self.r + o.r + gap;
         gap2(self.rect, o.rect) >= need * need
+    }
+    /// True when the shape's inside meets `area`'s: copper that only touches
+    /// its edge does not. A sharp-cornered pad has no rounding (`r` 0), so
+    /// its box must overlap the area's; `!clear(…, 0)` held such a pad
+    /// inside a keepout to be outside it (`AET-WO-1311` adversarial pass).
+    fn enters(self, area: Rect) -> bool {
+        if self.r > 0 {
+            return gap2(self.rect, area) < self.r * self.r;
+        }
+        let (a, b) = (self.rect, area);
+        a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1
     }
     /// True when `p` is in the shape, edge included.
     fn holds(self, p: (i64, i64)) -> bool {
@@ -1312,6 +1321,9 @@ impl<'a> Router<'a> {
             (None, false),
             (None, true),
         ];
+        // The fixed pairs whose copper alone stood in a soft path's way
+        // (`1308` A4): named if nothing else is found.
+        let mut pinned = BTreeSet::new();
         {
             self.banned.clear();
             for (margin, soft) in tries {
@@ -1335,6 +1347,7 @@ impl<'a> Router<'a> {
                     // Only a pair's fixed copper in the way: a wider free
                     // search may still go round it (or under, by a via).
                     if by.is_empty() && self.fixed.contains(&true) {
+                        pinned.extend(self.pinned(net, &p));
                         continue;
                     }
                     if by.is_empty() {
@@ -1344,14 +1357,33 @@ impl<'a> Router<'a> {
                 }
             }
         }
-        Err(Stuck::Unroutable(what.to_owned()))
+        if pinned.is_empty() {
+            return Err(Stuck::Unroutable(what.to_owned()));
+        }
+        let pairs: Vec<String> = self
+            .board
+            .stack
+            .pairs
+            .iter()
+            .filter(|p| {
+                p.nets
+                    .iter()
+                    .any(|n| pinned.iter().any(|&i| &self.nets[i] == n))
+            })
+            .map(|p| format!("`{}` ({})", p.name, p.nets.join(", ")))
+            .collect();
+        Err(Stuck::Unroutable(format!(
+            "{what}: only the fixed copper of the pair {} stands in the way",
+            pairs.join(" and the pair ")
+        )))
     }
 
-    /// The nets whose copper stands where a soft `path` went, each step of
-    /// it that was not free marked as contested.
-    fn blockers(&mut self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+    /// The steps of a soft `path` that were not free: each one's node, the
+    /// reach of `net`'s copper there, its layers, and its via's rule when
+    /// the step changes layer.
+    fn contested(&self, net: usize, path: &[Node]) -> Vec<(usize, i64, [bool; 2], Option<Rule>)> {
         let rule = self.rule(net);
-        let mut out = BTreeSet::new();
+        let mut out = Vec::new();
         // The source is a step too (F2): a path may start where it is not free.
         let first = path.first().map(|&(l, n)| ((l, n), (l, n)));
         let steps = first
@@ -1373,9 +1405,18 @@ impl<'a> Router<'a> {
                 }
                 (a, self.board.via_reach(rule), [true, true])
             };
+            out.push((at, reach, layers, (la != lb).then_some(rule)));
+        }
+        out
+    }
+
+    /// The nets whose copper stands where a soft `path` went, each step of
+    /// it that was not free marked as contested.
+    fn blockers(&mut self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        for (at, reach, layers, hole) in self.contested(net, path) {
             // Every node where a blocker's track would stand in the way
             // costs more from now on: the contested node's shadow.
-            let hole = (la != lb).then_some(rule);
             let (x, y) = self.grid.at(at);
             let shadow = reach + self.board.w() / 2;
             out.extend(self.contest(Rect::point(x, y), shadow, reach, layers, net, hole));
@@ -1383,10 +1424,19 @@ impl<'a> Router<'a> {
         out
     }
 
+    /// The fixed nets (a pair's) whose copper stands where a soft `path`
+    /// went: read only, so naming them changes no search.
+    fn pinned(&self, net: usize, path: &[Node]) -> BTreeSet<usize> {
+        let mut out = BTreeSet::new();
+        for (at, reach, layers, hole) in self.contested(net, path) {
+            let (x, y) = self.grid.at(at);
+            out.extend(self.near(Rect::point(x, y), reach, layers, net, hole, true));
+        }
+        out
+    }
+
     /// Raises the history of every node within `shadow` of `here` on
-    /// `layers`, and names the nets but `skip` whose copper on those layers
-    /// is within `reach` of it, or (`hole`: a via of that rule stands at
-    /// `here`) whose via hole is too near.
+    /// `layers`, and names the nets ([`Router::near`]) that are not fixed.
     fn contest(
         &mut self,
         here: Rect,
@@ -1404,6 +1454,21 @@ impl<'a> Router<'a> {
                 }
             }
         }
+        self.near(here, reach, layers, skip, hole, false)
+    }
+
+    /// The nets but `skip`, fixed or not as `fixed` says, whose copper on
+    /// `layers` is within `reach` of `here`, or (`hole`) whose via hole is
+    /// too near.
+    fn near(
+        &self,
+        here: Rect,
+        reach: i64,
+        layers: [bool; 2],
+        skip: usize,
+        hole: Option<Rule>,
+        fixed: bool,
+    ) -> BTreeSet<usize> {
         let mut out = BTreeSet::new();
         for (other, e) in self.edges.iter().enumerate() {
             let r = reach + self.rule(other).width_nm / 2;
@@ -1411,7 +1476,7 @@ impl<'a> Router<'a> {
                 e[l].iter()
                     .any(|&(p, q)| gap2(span(self.grid.at(p), self.grid.at(q)), here) < r * r)
             });
-            if other != skip && near && !self.fixed[other] {
+            if other != skip && near && self.fixed[other] == fixed {
                 out.insert(other);
             }
         }
@@ -1420,7 +1485,10 @@ impl<'a> Router<'a> {
             let d2 = gap2(Rect::point(vx, vy), here);
             let copper = reach + self.rule(other).via_nm / 2;
             let hole = hole.map_or(0, |h| hole_reach(h, self.rule(other)));
-            if other != skip && !self.fixed[other] && (d2 < copper * copper || d2 < hole * hole) {
+            if other != skip
+                && self.fixed[other] == fixed
+                && (d2 < copper * copper || d2 < hole * hole)
+            {
                 out.insert(other);
             }
         }
@@ -3607,12 +3675,24 @@ pub fn pairs(board: &Board, routed: &Routed) -> Result<Vec<PairReport>, String> 
 
 // ---- the router's own judgement, exact ----
 
-/// One copper item: its shape, net and layers.
+/// One copper item: what it is, its shape, net and layers.
 struct Item<'a> {
     what: String,
+    kind: Copper<'a>,
     net: Option<&'a str>,
     shape: Shape,
     layers: [bool; 2],
+}
+
+/// What kind of copper an [`Item`] is, never read from its text, which for
+/// a pad starts with its part's reference (`via1`, review 2, A16).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Copper<'a> {
+    /// A pad of the part with this reference.
+    Pad(&'a str),
+    Thermal,
+    Track,
+    Via,
 }
 
 fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
@@ -3621,6 +3701,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
         for pad in &part.pads {
             out.push(Item {
                 what: format!("{} pad {}", part.reference, pad.number),
+                kind: Copper::Pad(&part.reference),
                 net: pad.net.as_deref(),
                 shape: copper(pad),
                 layers: [true, pad.drill_nm.is_some()],
@@ -3631,6 +3712,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
         for &at in &a.at {
             out.push(Item {
                 what: format!("thermal via {at:?} under {} pad {}", a.reference, a.pad),
+                kind: Copper::Thermal,
                 net: Some(&a.net),
                 shape: Shape {
                     rect: Rect::point(at.0, at.1),
@@ -3643,6 +3725,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     for s in &routed.segments {
         out.push(Item {
             what: format!("track {:?} {:?}-{:?}", s.layer, s.start, s.end),
+            kind: Copper::Track,
             net: Some(&s.net),
             shape: Shape {
                 rect: span(s.start, s.end),
@@ -3654,6 +3737,7 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
     for v in &routed.vias {
         out.push(Item {
             what: format!("via {:?}", v.at),
+            kind: Copper::Via,
             net: Some(&v.net),
             shape: Shape {
                 rect: Rect::point(v.at.0, v.at.1),
@@ -3672,17 +3756,14 @@ fn items<'a>(board: &'a Board, routed: &'a Routed) -> Vec<Item<'a>> {
 fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), String> {
     for part in &board.parts {
         for k in &part.keepouts {
-            let area = Shape { rect: k.rect, r: 0 };
             let l = k.layer.index();
             for item in all.iter().filter(|i| i.layers[l]) {
-                let forbidden = if item.what.starts_with("track") {
-                    k.tracks
-                } else if item.what.starts_with("via") || item.what.starts_with("thermal") {
-                    k.vias
-                } else {
-                    k.pads && !item.what.starts_with(&format!("{} pad ", part.reference))
+                let forbidden = match item.kind {
+                    Copper::Track => k.tracks,
+                    Copper::Via | Copper::Thermal => k.vias,
+                    Copper::Pad(owner) => k.pads && owner != part.reference,
                 };
-                if forbidden && !area.clear(item.shape, 0) {
+                if forbidden && item.shape.enters(k.rect) {
                     return Err(format!(
                         "{} is inside {}'s keepout on {:?}",
                         item.what, part.reference, k.layer
@@ -3728,11 +3809,9 @@ pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     let o = board.outline;
     let inner = o.grow(-EDGE_NM);
-    // Every item after the pads is a track, a via or a thermal via ([`items`]
-    // puts the pads first): chosen by position, never by its text, which
-    // starts with a part's reference for a pad (`via1`, review 2, A16).
-    let pads: usize = board.parts.iter().map(|p| p.pads.len()).sum();
-    for item in &all[pads..] {
+    // Every track, via and thermal via: chosen by its kind, never by its
+    // text (`via1`, review 2, A16).
+    for item in all.iter().filter(|i| !matches!(i.kind, Copper::Pad(_))) {
         if !inner.contains(item.shape.rect.grow(item.shape.r)) {
             return Err(format!("{} is within {EDGE_NM} nm of the edge", item.what));
         }
@@ -4208,826 +4287,13 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     dangling.map_or(Ok(()), Err)
 }
 
-// ---- reading a board ----
-
-fn nm_at(item: &strict::Node<'_>, i: usize, what: &str) -> Result<i64, String> {
-    strict::number(item, i).ok_or_else(|| format!("{what}: unreadable `{:?}`", item.head()))
-}
-
-fn xy_of(item: Option<strict::Node<'_>>, what: &str) -> Result<(i64, i64), String> {
-    let item = item.ok_or_else(|| format!("{what}: missing coordinates"))?;
-    Ok((nm_at(&item, 1, what)?, nm_at(&item, 2, what)?))
-}
-
-/// The child `head` of `item`, read by [`strict::Node::one`]: two are refused.
-fn one<'a>(item: &strict::Node<'a>, head: &str) -> Result<Option<strict::Node<'a>>, String> {
-    item.one(head).map_err(|e| e.to_string())
-}
-
-/// A placed footprint this engine built (`pcb`), judged by the strict
-/// reader, then read by [`part`].
-pub fn part_of(fp: &Sx) -> Result<Part, String> {
-    let tree = strict::footprint(fp).map_err(|e| e.to_string())?;
-    let fp = one(&tree.root(), "footprint")?.ok_or("no footprint")?;
-    part(&fp)
-}
-
-/// A footprint's rotation as KiCad's file states it (`AET-WO-1308` §1.5):
-/// 0, 90, 180 or 270 degrees, positive counter-clockwise on the board (Y
-/// down). Measured in the tools image (IPC-D-356 export of a rotated
-/// SOIC-8): a pad's local `(x, y)` lands at the origin plus
-/// `(x cos θ + y sin θ, −x sin θ + y cos θ)`, and a pad's or a text's own
-/// angle in the file is absolute, the footprint's rotation included.
-pub fn rotate(theta: u16, (x, y): (i64, i64)) -> (i64, i64) {
-    match theta {
-        90 => (y, -x),
-        180 => (-x, -y),
-        270 => (-y, x),
-        _ => (x, y),
-    }
-}
-
-/// A footprint's `(at x y θ)` angle: none or one of the four right angles,
-/// written as KiCad writes them; any other is refused, never rounded.
-pub fn angle(at: Option<&str>) -> Option<u16> {
-    match at {
-        None | Some("0") => Some(0),
-        Some("90") => Some(90),
-        Some("180") => Some(180),
-        Some("270") => Some(270),
-        Some(_) => None,
-    }
-}
-
-/// A placed footprint's copper pads, in board coordinates. Only front SMD
-/// pads and plated through-hole pads (`AET-WO-1309`: `*.Cu`, one round
-/// drill at the pad's centre, the same copper on every layer), at a right
-/// angle, rectangular or rounded, on a footprint at a right angle
-/// ([`rotate`]), are modelled; anything else is refused, never approximated.
-/// A through-hole pad that sets its own plane join, relief or padstack is
-/// refused: how it meets a fill is the specification's (FEEDBACK F5).
-pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
-    let reference = fp
-        .field("Reference")
-        .map_err(|e| e.to_string())?
-        .unwrap_or("?")
-        .to_owned();
-    let at = one(fp, "at")?.ok_or_else(|| format!("{reference}: no `at`"))?;
-    let theta =
-        angle(at.arg(3)).ok_or_else(|| format!("{reference} is rotated by {:?}", at.arg(3)))?;
-    let origin = xy_of(Some(at), &reference)?;
-    let mut pads = Vec::new();
-    for pad in fp.all("pad") {
-        let number = pad.arg(1).unwrap_or("").to_owned();
-        let what = format!("{reference} pad {number}");
-        let layers: Vec<&str> = one(&pad, "layers")?
-            .map(|l| l.texts().collect())
-            .unwrap_or_default();
-        let copper: Vec<&str> = layers
-            .iter()
-            .copied()
-            .filter(|l| strict::copper_pad_layer(l))
-            .collect();
-        if copper.is_empty() {
-            // A hole with no copper still cuts every layer it passes:
-            // not modelled, so refused (`AET-WO-1309` adversarial F1).
-            if one(&pad, "drill")?.is_some() {
-                return Err(format!("{what} is a drilled hole with no copper"));
-            }
-            continue;
-        }
-        let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
-            (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => (None, None),
-            (Some("thru_hole"), ["*.Cu"]) => through_hole(&pad, &what)?,
-            _ => {
-                return Err(format!(
-                    "{what} is neither a front SMD pad nor a plated through-hole pad on *.Cu"
-                ));
-            }
-        };
-        let pat = one(&pad, "at")?;
-        let angle = pat.as_ref().and_then(|a| a.arg(3)).unwrap_or("0");
-        let (px, py) = rotate(theta, xy_of(pat, &what)?);
-        let (mut w, mut h) = xy_of(one(&pad, "size")?, &what)?;
-        match angle {
-            "0" | "180" => {}
-            "90" | "270" => std::mem::swap(&mut w, &mut h),
-            a => return Err(format!("{what} is at angle {a}")),
-        }
-        let corner = match pad.arg(3) {
-            Some("rect") => 0,
-            Some("roundrect") => {
-                let ratio = one(&pad, "roundrect_rratio")?
-                    .and_then(|r| strict::number(&r, 1))
-                    .ok_or_else(|| format!("{what}: no `roundrect_rratio`"))?;
-                w.min(h) * ratio.clamp(0, 500_000) / 1_000_000
-            }
-            // KiCad draws a circle as a disk of its x size, which the
-            // stadium below holds only when the size is square, as
-            // `extract` requires (review 2, A16).
-            Some("circle") if w != h => {
-                return Err(format!("{what} is a circle whose size is not square"));
-            }
-            Some("oval" | "circle") => w.min(h) / 2,
-            other => return Err(format!("{what} has shape {other:?}")),
-        };
-        let (cx, cy) = (origin.0 + px, origin.1 + py);
-        pads.push(Pad {
-            number,
-            net: one(&pad, "net")?.and_then(|n| n.arg(1)).map(str::to_owned),
-            rect: Rect {
-                x0: cx - w / 2,
-                y0: cy - h / 2,
-                x1: cx + w - w / 2,
-                y1: cy + h - h / 2,
-            },
-            corner_nm: corner,
-            drill_nm,
-            join,
-        });
-        if drill_nm.is_some_and(|d| d >= w.min(h)) {
-            return Err(format!("{what}: its drill leaves no copper ring"));
-        }
-    }
-    // The front courtyard, as straight edges; an arc or circle in it is not
-    // modelled and is refused, never approximated.
-    let mut courtyard = Vec::new();
-    let at = |p: (i64, i64)| {
-        let (x, y) = rotate(theta, p);
-        (origin.0 + x, origin.1 + y)
-    };
-    for g in fp.lists() {
-        let head = g.head().unwrap_or("");
-        if !head.starts_with("fp_") || one(&g, "layer")?.and_then(|l| l.arg(1)) != Some("F.CrtYd") {
-            continue;
-        }
-        let what = format!("{reference}'s courtyard {head}");
-        match head {
-            "fp_line" | "fp_rect" => {
-                let a = at(xy_of(one(&g, "start")?, &what)?);
-                let b = at(xy_of(one(&g, "end")?, &what)?);
-                if head == "fp_line" {
-                    courtyard.push((a, b));
-                } else {
-                    let c = [a, (b.0, a.1), b, (a.0, b.1)];
-                    courtyard.extend((0..4).map(|i| (c[i], c[(i + 1) % 4])));
-                }
-            }
-            "fp_poly" => {
-                let pts = one(&g, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
-                let c = pts
-                    .lists()
-                    .map(|xy| match xy.head() {
-                        Some("xy") => xy_of(Some(xy), &what).map(at),
-                        h => Err(format!(
-                            "{what}: a `{}` in its points is not modelled",
-                            h.unwrap_or("()")
-                        )),
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                courtyard.extend((0..c.len()).map(|i| (c[i], c[(i + 1) % c.len()])));
-            }
-            _ => return Err(format!("{what} is not modelled")),
-        }
-    }
-    // The outline is judged by crossings, so it must be one closed outline
-    // with no edge twice: every corner met by an even number of edges, and no
-    // edge repeated in either direction.
-    let mut corners: BTreeMap<(i64, i64), usize> = BTreeMap::new();
-    let mut seen = BTreeSet::new();
-    for &(a, b) in &courtyard {
-        *corners.entry(a).or_default() += 1;
-        *corners.entry(b).or_default() += 1;
-        if !seen.insert((a.min(b), a.max(b))) {
-            return Err(format!("{reference}'s courtyard has an edge twice"));
-        }
-    }
-    if corners.values().any(|n| n % 2 == 1) {
-        return Err(format!("{reference}'s courtyard is not a closed outline"));
-    }
-    if courtyard.is_empty() && !pads.is_empty() {
-        return Err(format!("{reference} has copper pads and no courtyard"));
-    }
-    let mut keepouts = Vec::new();
-    for z in fp.all("zone") {
-        keepouts.push(keepout(&z, &reference)?);
-    }
-    Ok(Part {
-        reference,
-        rotation: theta,
-        pads,
-        courtyard,
-        keepouts,
-    })
-}
-
-/// A footprint zone, which only a keepout may be: a rectangle on one copper
-/// layer, turned with the footprint, each of its five kinds `allowed` or
-/// `not_allowed`, no net. Anything else is refused by name, never dropped
-/// (`RUL-03`, amended for `AET-WO-4300d2` D2).
-fn keepout(z: &strict::Node<'_>, reference: &str) -> Result<Keepout, String> {
-    let what = format!("{reference}'s zone");
-    let k = one(z, "keepout")?.ok_or_else(|| format!("{what} is not a keepout"))?;
-    for token in ["net", "net_name"] {
-        if one(z, token)?.is_some() {
-            return Err(format!("{what} is a keepout with a `{token}`"));
-        }
-    }
-    if one(z, "layers")?.is_some() {
-        return Err(format!("{what} names more than one layer"));
-    }
-    let layer = match one(z, "layer")?.and_then(|l| l.arg(1)) {
-        Some("F.Cu") => Layer::F,
-        Some("B.Cu") => Layer::B,
-        other => return Err(format!("{what} is on {other:?}, not F.Cu or B.Cu")),
-    };
-    let flag = |name: &str| -> Result<bool, String> {
-        match one(&k, name)?.map(|n| (n.arg(1), n.arg(2))) {
-            Some((Some("not_allowed"), None)) => Ok(true),
-            Some((Some("allowed"), None)) => Ok(false),
-            other => Err(format!("{what}'s keepout `{name}` is {other:?}")),
-        }
-    };
-    let (tracks, vias, pads, fill) = (
-        flag("tracks")?,
-        flag("vias")?,
-        flag("pads")?,
-        flag("copperpour")?,
-    );
-    flag("footprints")?;
-    let mut polys = z.all("polygon");
-    let (Some(poly), None) = (polys.next(), polys.next()) else {
-        return Err(format!("{what} has no polygon, or more than one"));
-    };
-    let pts = one(&poly, "pts")?.ok_or_else(|| format!("{what}: no `pts`"))?;
-    let corners = pts
-        .lists()
-        // In a board file a footprint's zone stands in board coordinates
-        // (`AET-WO-1310` D4, measured: KiCad reads it so).
-        .map(|xy| match xy.head() {
-            Some("xy") => xy_of(Some(xy), &what),
-            h => Err(format!("{what}: a `{}` in its points", h.unwrap_or("()"))),
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let rect = corners
-        .iter()
-        .map(|&(x, y)| Rect::point(x, y))
-        .reduce(Rect::union)
-        .ok_or_else(|| format!("{what} has no points"))?;
-    let on_box =
-        |&(x, y): &(i64, i64)| (x == rect.x0 || x == rect.x1) && (y == rect.y0 || y == rect.y1);
-    if corners.len() != 4 || !corners.iter().all(on_box) || rect.x0 == rect.x1 || rect.y0 == rect.y1
-    {
-        return Err(format!("{what} is not a rectangle at a right angle"));
-    }
-    Ok(Keepout {
-        layer,
-        rect,
-        tracks,
-        vias,
-        pads,
-        fill,
-    })
-}
-
-/// A plated through-hole pad's drill (one round hole at the pad's centre,
-/// with every layer's copper kept) and its `zone_connect`: 2 solid, 1
-/// relief, or none. Any token by which the pad would set its own relief,
-/// padstack or unused-layer removal is refused.
-fn through_hole(
-    pad: &strict::Node<'_>,
-    what: &str,
-) -> Result<(Option<i64>, Option<crate::stack::Join>), String> {
-    let join = match one(pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
-        None => None,
-        Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => Some(j),
-        Some(other) => return Err(format!("{what} has `zone_connect` {other:?}")),
-    };
-    for token in [
-        "thermal_gap",
-        "thermal_width",
-        "thermal_bridge_width",
-        "thermal_bridge_angle",
-        "padstack",
-        "keep_end_layers",
-        "clearance",
-        "backdrill",
-        "tertiary_drill",
-        "front_post_machining",
-        "back_post_machining",
-    ] {
-        if one(pad, token)?.is_some() {
-            return Err(format!("{what} sets its own `{token}`"));
-        }
-    }
-    if let Some(r) = one(pad, "remove_unused_layers")?
-        && (r.arg(1) != Some("no") || r.arg(2).is_some())
-    {
-        return Err(format!("{what} removes its unused layers"));
-    }
-    let drill = one(pad, "drill")?.ok_or_else(|| format!("{what} has no drill"))?;
-    if drill.arg(2).is_some() || drill.lists().count() != 0 {
-        return Err(format!(
-            "{what}: only a round drill at its centre is modelled"
-        ));
-    }
-    let d = nm_at(&drill, 1, what)?;
-    if d <= 0 {
-        return Err(format!("{what}: drill {d} nm"));
-    }
-    Ok((Some(d), join))
-}
-
-/// True when `zone`'s outline is the board's (`AET-WO-1307` K6, 4100 F7):
-/// exactly one `polygon` with one `pts` of exactly four `xy` points, which
-/// are `outline`'s corners in any cyclic order and direction. A
-/// `filled_polygon` (KiCad's saved fill) is not read.
-fn zone_is_outline(zone: &strict::Node<'_>, outline: Rect) -> Result<bool, String> {
-    let polygons: Vec<_> = zone.all("polygon").collect();
-    let [polygon] = polygons.as_slice() else {
-        return Ok(false);
-    };
-    let lists: Vec<_> = polygon.lists().collect();
-    let [pts] = lists.as_slice() else {
-        return Ok(false);
-    };
-    if pts.head() != Some("pts") {
-        return Ok(false);
-    }
-    let points = pts
-        .lists()
-        .map(|xy| match xy.head() {
-            Some("xy") if xy.len() == 3 => xy_of(Some(xy), "a zone").map(Some),
-            _ => Ok(None),
-        })
-        .collect::<Result<Option<Vec<_>>, _>>()?;
-    let Some(points) = points else {
-        return Ok(false);
-    };
-    let Rect { x0, y0, x1, y1 } = outline;
-    let mut corners = vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-    let mut seen = points.clone();
-    corners.sort();
-    seen.sort();
-    // The four corners, each once, and each step along an edge (never a
-    // diagonal): the rectangle, walked either way from any corner.
-    Ok(seen == corners
-        && x0 != x1
-        && y0 != y1
-        && (0..4).all(|i| {
-            let (p, q) = (points[i], points[(i + 1) % 4]);
-            (p.0 == q.0) != (p.1 == q.1)
-        }))
-}
-
-/// A board that does not agree with the specification's declared board,
-/// named: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees` or
-/// `ViaNotThrough`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Disagrees {
-    pub kind: &'static str,
-    pub message: String,
-}
-
-/// Refuses a board whose copper layers, zones or declared thickness are not
-/// the specification's (`AET-WO-4100`): the layer table's copper entries
-/// must be exactly the declared layers, each with KiCad's id and `signal`;
-/// every via the engine's untyped through via (`F.Cu` to `B.Cu`, no `blind`
-/// or `micro`: the specification declares through vias only);
-/// every zone a declared one (ground's B.Cu zone at 2 layers, the planes at
-/// 4, each plane present); and `(general (thickness …))` the declared
-/// nominal. The board is judged by the specification, never by its own
-/// claims.
-pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagrees> {
-    let no = |kind: &'static str, message: String| Disagrees { kind, message };
-    let board = tree.root();
-    let table = one(&board, "layers")
-        .map_err(|m| no("LayersDisagree", m))?
-        .ok_or_else(|| no("LayersDisagree", "the board has no layer table".into()))?;
-    let mut copper = Vec::new();
-    for row in table.lists() {
-        let name = row.arg(1).unwrap_or("");
-        let id = row.head().unwrap_or("");
-        // KiCad 10 numbers copper 0, 2, 4 … 62 (even) and every other layer
-        // odd; a row is copper by its id whatever its name says, or by name.
-        let even = id.parse::<u32>().is_ok_and(|n| n % 2 == 0 && n <= 62);
-        let is_copper = even || strict::copper_layer(name);
-        // `(id "name" type "user name")`: KiCad then takes the user name for
-        // the layer, so an item on `"TOP"` would sit on `F.Cu` unseen. KiCad
-        // itself writes one on a non-copper row (`(9 "F.Adhes" user
-        // "F.Adhesive")`), so only a copper row's, or a user name that is
-        // itself a copper layer's, is refused (`AET-WO-3303` A11).
-        let user = row.arg(3);
-        if !(3..=4).contains(&row.len())
-            || (user.is_some() && is_copper)
-            || user.is_some_and(strict::copper_pad_layer)
-        {
-            return Err(no(
-                "LayersDisagree",
-                format!(
-                    "layer row `{id}` is not an id, a canonical name and a type; a copper row has no user name, and KiCad would take one for the layer",
-                ),
-            ));
-        }
-        if is_copper {
-            copper.push((
-                id.to_owned(),
-                name.to_owned(),
-                row.arg(2).unwrap_or("").to_owned(),
-            ));
-        }
-    }
-    let want: Vec<(String, String, String)> = stack
-        .copper
-        .iter()
-        .map(|n| {
-            (
-                crate::stack::kicad_id(n).unwrap_or("?").to_owned(),
-                n.clone(),
-                "signal".to_owned(),
-            )
-        })
-        .collect();
-    let mut sorted = copper.clone();
-    sorted.sort();
-    let mut expected = want.clone();
-    expected.sort();
-    if sorted != expected {
-        return Err(no(
-            "LayersDisagree",
-            format!(
-                "the board's copper layers are {copper:?}; the specification declares {want:?}"
-            ),
-        ));
-    }
-    for v in board.all("via") {
-        let layers: Vec<&str> = one(&v, "layers")
-            .map_err(|m| no("ViaNotThrough", m))?
-            .map(|l| l.texts().collect())
-            .unwrap_or_default();
-        if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
-            return Err(no(
-                "ViaNotThrough",
-                format!(
-                    "a via typed {:?} on {layers:?}; the specification declares through vias, F.Cu to B.Cu",
-                    v.arg(1)
-                ),
-            ));
-        }
-    }
-    let mut zones = Vec::new();
-    for z in board.all("zone") {
-        let net = one(&z, "net")
-            .map_err(|m| no("PlanesDisagree", m))?
-            .and_then(|n| n.arg(1))
-            .unwrap_or("")
-            .to_owned();
-        let layer = one(&z, "layer")
-            .map_err(|m| no("PlanesDisagree", m))?
-            .and_then(|l| l.arg(1))
-            .unwrap_or("")
-            .to_owned();
-        zones.push((net, layer));
-    }
-    let planes: Vec<(String, String)> = stack
-        .planes
-        .iter()
-        .map(|(l, n)| (n.clone(), l.clone()))
-        .collect();
-    let ok = if stack.has_planes() {
-        let mut z = zones.clone();
-        z.sort();
-        let mut p = planes.clone();
-        p.sort();
-        z == p
-    } else {
-        zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
-    };
-    if !ok {
-        return Err(no(
-            "PlanesDisagree",
-            format!(
-                "the board's zones are {zones:?}; the specification declares {planes:?} (and ground's B.Cu zone at 2 layers)"
-            ),
-        ));
-    }
-    let thickness = board
-        .one("general")
-        .and_then(|g| g.map(|g| g.one("thickness")).transpose())
-        .map_err(|e| no("ThicknessDisagrees", e.to_string()))?
-        .flatten()
-        .and_then(|t| strict::number(&t, 1));
-    // Every declared class's and pair's net is on a pad (`AET-WO-1308`
-    // adversarial pass A3): a board that renames one, pads and tracks alike,
-    // would otherwise escape its class's rules.
-    let pad_nets: BTreeSet<&str> = board
-        .all("footprint")
-        .flat_map(|fp| fp.all("pad").collect::<Vec<_>>())
-        .filter_map(|pad| pad.one("net").ok().flatten().and_then(|n| n.arg(1)))
-        .collect();
-    let declared_nets = stack
-        .classes
-        .iter()
-        .flat_map(|c| c.nets.iter())
-        .chain(stack.pairs.iter().flat_map(|p| p.nets.iter()));
-    for net in declared_nets {
-        if !pad_nets.contains(net.as_str()) {
-            return Err(no(
-                "ClassNetAbsent",
-                format!(
-                    "the specification puts `{net}` in a class or pair, and no pad of the board is on it"
-                ),
-            ));
-        }
-    }
-    if thickness != Some(stack.thickness.nominal_nm) {
-        return Err(no(
-            "ThicknessDisagrees",
-            format!(
-                "the board declares thickness {thickness:?} nm; the specification declares {} nm",
-                stack.thickness.nominal_nm
-            ),
-        ));
-    }
-    Ok(())
-}
-
-fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
-    match one(item, "layer")?.and_then(|l| l.arg(1)) {
-        Some("F.Cu") => Ok(Layer::F),
-        Some("B.Cu") => Ok(Layer::B),
-        other => Err(format!("{what} on layer {other:?}")),
-    }
-}
-
-/// A board as the strict reader read it: its outline and pads, and its
-/// copper, judged against the specification's declared board `stack`.
-/// Tracks must be the declared width and on F.Cu or B.Cu; vias the engine's
-/// through via; the outline the one `Edge.Cuts` rectangle. Whether the layer
-/// table, the zones and the thickness are exactly the declared ones is
-/// [`declared`]'s, which every caller runs first, and [`connectivity`] judges
-/// the zones again on the copper read here.
-pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed), String> {
-    let board = tree.root();
-    let mut edges = Vec::new();
-    for r in board.all("gr_rect") {
-        if one(&r, "layer")?.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {
-            edges.push(r);
-        }
-    }
-    let edge = match edges.as_slice() {
-        [edge] => edge,
-        [] => return Err("no outline".to_owned()),
-        _ => return Err(format!("{} outlines", edges.len())),
-    };
-    let (a, b) = (
-        xy_of(one(edge, "start")?, "outline")?,
-        xy_of(one(edge, "end")?, "outline")?,
-    );
-    let parts = board
-        .all("footprint")
-        .map(|fp| part(&fp))
-        .collect::<Result<Vec<_>, _>>()?;
-    let net = |item: &strict::Node<'_>, what: &str| {
-        one(item, "net")?
-            .and_then(|n| n.arg(1))
-            .map(str::to_owned)
-            .ok_or_else(|| format!("{what} has no net"))
-    };
-    // Each item's rule is its net's (`AET-WO-1308`). A label that lies about
-    // the net is caught by `check` and `connectivity`, which join copper by
-    // geometry; every caller runs them on what this returns.
-    let rule_of = |item: &strict::Node<'_>| -> Result<Rule, String> {
-        Ok(one(item, "net")?
-            .and_then(|n| n.arg(1))
-            .map_or(stack.default_rule(), |n| stack.rule(n)))
-    };
-    let named = |item: &strict::Node<'_>, rule: Rule| -> Result<String, String> {
-        let net = one(item, "net")?.and_then(|n| n.arg(1)).unwrap_or("?");
-        Ok(match stack.owner(net) {
-            Some((kind, name, _)) if rule != stack.default_rule() => {
-                format!(" on `{net}`, whose {kind} `{name}` declares")
-            }
-            _ => String::new(),
-        })
-    };
-    // The pads the specification puts a thermal array under (`AET-WO-1309`):
-    // a via whose centre is in one is that array's, judged by its rule in
-    // `check`, never by its own size.
-    let under: Vec<(&str, &str, Rect)> = stack
-        .thermal
-        .iter()
-        .flat_map(|t| {
-            parts
-                .iter()
-                .filter(move |p| p.reference == t.reference)
-                .flat_map(|p| &p.pads)
-                .filter(move |p| p.number == t.pad && p.drill_nm.is_none())
-                .map(move |p| (t.reference.as_str(), t.pad.as_str(), p.rect))
-        })
-        .collect();
-    let mut routed = Routed::default();
-    for s in board.all("segment") {
-        let width = one(&s, "width")?
-            .map(|w| nm_at(&w, 1, "segment"))
-            .transpose()?;
-        let rule = rule_of(&s)?;
-        if width != Some(rule.width_nm) {
-            let class = named(&s, rule)?;
-            return Err(if class.is_empty() {
-                format!("a segment {width:?} wide")
-            } else {
-                format!("a segment {width:?} wide{class} {} nm", rule.width_nm)
-            });
-        }
-        routed.segments.push(Segment {
-            net: net(&s, "a segment")?,
-            layer: layer_of(&s, "a segment")?,
-            start: xy_of(one(&s, "start")?, "segment")?,
-            end: xy_of(one(&s, "end")?, "segment")?,
-        });
-    }
-    for v in board.all("via") {
-        // The engine's via holds these and nothing else: a backdrill or a
-        // machining token would cut its hole off a layer the judges join it
-        // on (`AET-WO-1309` adversarial F2).
-        for child in v.lists() {
-            let head = child.head().unwrap_or("");
-            if !matches!(head, "at" | "size" | "drill" | "layers" | "net" | "uuid") {
-                return Err(format!("a via has `{head}`, which the gate does not model"));
-            }
-        }
-        let size = one(&v, "size")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
-        let drill = one(&v, "drill")?.map(|w| nm_at(&w, 1, "via")).transpose()?;
-        let layers: Vec<&str> = one(&v, "layers")?
-            .map(|l| l.texts().collect())
-            .unwrap_or_default();
-        let at = xy_of(one(&v, "at")?, "via")?;
-        if let Some(&(reference, pad, _)) = under
-            .iter()
-            .find(|(_, _, r)| r.contains(Rect::point(at.0, at.1)))
-        {
-            let (Some(size), Some(drill)) = (size, drill) else {
-                return Err(format!("a thermal via at {at:?} has no size or drill"));
-            };
-            if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
-                return Err(format!("a thermal via at {at:?} on {layers:?}"));
-            }
-            let net = net(&v, "a via")?;
-            let i = match routed
-                .arrays
-                .iter()
-                .position(|a| a.reference == reference && a.pad == pad)
-            {
-                Some(i) => i,
-                None => {
-                    routed.arrays.push(Array {
-                        reference: reference.to_owned(),
-                        pad: pad.to_owned(),
-                        net: net.clone(),
-                        via_nm: size,
-                        drill_nm: drill,
-                        at: Vec::new(),
-                    });
-                    routed.arrays.len() - 1
-                }
-            };
-            let a = &mut routed.arrays[i];
-            if (a.via_nm, a.drill_nm, a.net.as_str()) != (size, drill, net.as_str()) {
-                return Err(format!(
-                    "the thermal vias under {reference} pad {pad} differ in size, drill or net"
-                ));
-            }
-            a.at.push(at);
-            continue;
-        }
-        let rule = rule_of(&v)?;
-        if v.arg(1).is_some()
-            || size != Some(rule.via_nm)
-            || drill != Some(rule.drill_nm)
-            || layers != ["F.Cu", "B.Cu"]
-        {
-            let class = named(&v, rule)?;
-            return Err(if class.is_empty() {
-                format!("a via {size:?}/{drill:?} on {layers:?}")
-            } else {
-                format!(
-                    "a via {size:?}/{drill:?} on {layers:?}{class} {}/{} nm",
-                    rule.via_nm, rule.drill_nm
-                )
-            });
-        }
-        routed.vias.push(Via {
-            net: net(&v, "a via")?,
-            at,
-        });
-    }
-    let outline = span(a, b);
-    for z in board.all("zone") {
-        let layer = one(&z, "layer")?
-            .and_then(|l| l.arg(1))
-            .map(str::to_owned)
-            .ok_or("a zone has no layer")?;
-        let name = net(&z, "a zone")?;
-        // A fill is solid and as the engine writes it: its judges assume
-        // sure, solid copper (`AET-WO-1309` adversarial F3), and a relieved
-        // pad's gap and spokes are the zone's (measured, B2).
-        for child in z.lists() {
-            let head = child.head().unwrap_or("");
-            if !matches!(
-                head,
-                "net"
-                    | "layer"
-                    | "uuid"
-                    | "hatch"
-                    | "min_thickness"
-                    | "filled_areas_thickness"
-                    | "fill"
-                    | "polygon"
-                    // KiCad's saved fill: not read (the gate refills), as before.
-                    | "filled_polygon"
-            ) {
-                return Err(format!(
-                    "zone `{name}` on {layer} has `{head}`, which the gate does not model"
-                ));
-            }
-        }
-        let fill = one(&z, "fill")?;
-        if let Some(f) = &fill {
-            for child in f.lists() {
-                let head = child.head().unwrap_or("");
-                if !matches!(
-                    head,
-                    "thermal_gap" | "thermal_bridge_width" | "island_removal_mode"
-                ) {
-                    return Err(format!(
-                        "zone `{name}` on {layer}: its fill has `{head}`, which the gate does not model"
-                    ));
-                }
-            }
-        }
-        let pinned = |item: Option<strict::Node<'_>>, want: &str| {
-            item.and_then(|i| i.arg(1).map(str::to_owned)) == Some(want.to_owned())
-        };
-        if fill.as_ref().is_some_and(|f| f.arg(1).is_some())
-            || !pinned(
-                one(&z, "min_thickness")?,
-                &crate::sexpr::mm(MIN_THICKNESS_NM),
-            )
-            || !pinned(
-                fill.as_ref()
-                    .map(|f| one(f, "island_removal_mode"))
-                    .transpose()?
-                    .flatten(),
-                "0",
-            )
-        {
-            return Err(format!(
-                "zone `{name}` on {layer}: its fill is not the engine's solid fill (min_thickness {}, island_removal_mode 0)",
-                crate::sexpr::mm(MIN_THICKNESS_NM)
-            ));
-        }
-        let at = |token: &str| -> Result<Option<i64>, String> {
-            fill.as_ref()
-                .map(|f| one(f, token))
-                .transpose()?
-                .flatten()
-                .map(|t| nm_at(&t, 1, "a zone's fill"))
-                .transpose()
-        };
-        if at("thermal_gap")? != Some(THERMAL_GAP_NM)
-            || at("thermal_bridge_width")? != Some(THERMAL_BRIDGE_NM)
-        {
-            return Err(format!(
-                "zone `{name}` on {layer}: its relief gap and spoke are not the engine's {THERMAL_GAP_NM}/{THERMAL_BRIDGE_NM} nm"
-            ));
-        }
-        if !zone_is_outline(&z, outline)? {
-            return Err(format!(
-                "zone `{name}` on {layer}: its outline is not the board's"
-            ));
-        }
-        routed.zones.push((name, layer));
-    }
-    routed.segments.sort();
-    routed.vias.sort();
-    for a in &mut routed.arrays {
-        a.at.sort();
-    }
-    routed.arrays.sort();
-    Ok((
-        Board {
-            outline,
-            parts,
-            stack: stack.clone(),
-        },
-        routed,
-    ))
-}
+mod read;
+pub use read::*;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::strict::{self, Tree};
 
     fn rect(x0: i64, y0: i64, x1: i64, y1: i64) -> Rect {
         Rect { x0, y0, x1, y1 }
@@ -5350,6 +4616,40 @@ mod tests {
         }
     }
 
+    /// `1308` A4 (`AET-WO-1311` §1.6): a net whose only way is across a
+    /// fixed pair's copper fails closed naming the pair. `/S` must cross the
+    /// pair `X` on F.Cu, and a keepout over the whole board forbids every
+    /// via and every B.Cu track.
+    #[test]
+    fn a_net_blocked_only_by_a_fixed_pair_names_the_pair() {
+        let mut board = paired(12 * MM);
+        let at = |x: i64, y: i64| rect(x - 150_000, y - 150_000, x + 150_000, y + 150_000);
+        board.parts.push(Part {
+            rotation: 0,
+            reference: "S".into(),
+            pads: vec![
+                pad("1", Some("/S"), at(9 * MM, 2 * MM)),
+                pad("2", Some("/S"), at(9 * MM, 8 * MM)),
+            ],
+            courtyard: Vec::new(),
+            keepouts: vec![Keepout {
+                layer: Layer::B,
+                rect: rect(0, 0, 20 * MM, 10 * MM),
+                tracks: true,
+                vias: true,
+                pads: false,
+                fill: false,
+            }],
+        });
+        let e = route(&board).unwrap_err();
+        assert_eq!(e.net, "/S", "{e:?}");
+        assert!(
+            e.why
+                .contains("only the fixed copper of the pair `X` (/P, /N) stands in the way"),
+            "{e:?}"
+        );
+    }
+
     /// The judge's two bounds, each alone (`AET-WO-1308` §1.3, F6): a loop
     /// on `/P`'s tail 1.2 mm out leaves 3.4 mm uncoupled (under 4 mm) and a
     /// 2.4 mm difference (over 2 mm); a loop 2 mm out leaves 5 mm uncoupled.
@@ -5612,6 +4912,74 @@ mod tests {
         }
     }
 
+    /// Review 2, A16, in `keepouts` (`AET-WO-1311` §1.7): a pad of a part
+    /// named `via1`, `track_x` or `thermal1` is a pad there too. A keepout
+    /// forbidding pads (and nothing else) refuses it; one forbidding tracks
+    /// and vias (and not pads) lets it be.
+    #[test]
+    fn a_keepout_judges_a_part_named_like_copper_as_a_pad() {
+        let keepout = |pads: bool| Keepout {
+            layer: Layer::F,
+            rect: rect(3 * MM, 9 * MM, 5 * MM, 11 * MM),
+            tracks: !pads,
+            vias: !pads,
+            pads,
+            fill: false,
+        };
+        for reference in ["via1", "track_x", "thermal1", "R9"] {
+            for pads in [true, false] {
+                let mut host = resistor("H1", 15 * MM, "/C", "/D");
+                host.keepouts = vec![keepout(pads)];
+                // Rounded pads: inside the keepout whatever the judge's
+                // reading of a sharp corner (the next test's).
+                let mut guest = resistor(reference, 4 * MM, "/A", "/B");
+                for p in &mut guest.pads {
+                    p.corner_nm = 100_000;
+                }
+                let board = Board {
+                    outline: rect(0, 0, 20 * MM, 20 * MM),
+                    parts: vec![guest, host],
+                    stack: crate::stack::reference(),
+                };
+                let e = check(&board, &Routed::default());
+                assert_eq!(
+                    e.as_ref().is_err_and(|m| m.contains("keepout")),
+                    pads,
+                    "{reference}, a keepout forbidding pads: {pads}: {e:?}"
+                );
+            }
+        }
+    }
+
+    /// A sharp-cornered pad (`r` 0) inside another part's keepout is inside
+    /// it (`AET-WO-1311` adversarial pass); one that only touches its edge,
+    /// or lies beside it, is not.
+    #[test]
+    fn a_sharp_pad_inside_a_keepout_is_refused() {
+        for (left, inside) in [(3 * MM, true), (4_760_000, false), (6 * MM, false)] {
+            let mut host = resistor("H1", 15 * MM, "/C", "/D");
+            host.keepouts = vec![Keepout {
+                layer: Layer::F,
+                rect: rect(left, 9 * MM, left + 2 * MM, 11 * MM),
+                tracks: false,
+                vias: false,
+                pads: true,
+                fill: false,
+            }];
+            let board = Board {
+                outline: rect(0, 0, 20 * MM, 20 * MM),
+                parts: vec![resistor("R1", 4 * MM, "/A", "/B"), host],
+                stack: crate::stack::reference(),
+            };
+            let e = check(&board, &Routed::default());
+            assert_eq!(
+                e.as_ref().is_err_and(|m| m.contains("inside H1's keepout")),
+                inside,
+                "a keepout from {left} nm: {e:?}"
+            );
+        }
+    }
+
     /// What the router does not model is refused when read, never guessed.
     #[test]
     fn reading_refuses_what_the_router_does_not_model() {
@@ -5741,7 +5109,7 @@ mod tests {
         }
         let board = |copper: &str| {
             strict::board(&format!(
-                "(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (4 \"In1.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
             ))
             .unwrap()
         };
@@ -5767,6 +5135,31 @@ mod tests {
             "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\"))",
         ] {
             assert!(read_ref(&board(copper)).is_err(), "{copper}");
+        }
+    }
+
+    /// `AET-WO-1311` §1.2: `read` takes at most [`MAX_ITEMS`] copper items,
+    /// pads included; one more is refused before any is read.
+    #[test]
+    fn a_board_past_the_item_cap_is_refused() {
+        let board = |pads: usize, segments: usize| {
+            let pad = "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (net \"/A\"))";
+            let segment =
+                "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))";
+            strict::board(&format!(
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (31 \"F.CrtYd\" user) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) (footprint \"x\" (at 5 5) (property \"Reference\" \"R1\") {} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))) {})",
+                pad.repeat(pads),
+                segment.repeat(segments)
+            ))
+            .unwrap()
+        };
+        assert!(read_ref(&board(2, MAX_ITEMS - 2)).is_ok());
+        for (pads, segments) in [(2, MAX_ITEMS - 1), (MAX_ITEMS + 1, 0)] {
+            let e = read_ref(&board(pads, segments)).unwrap_err();
+            assert!(
+                e.contains(&format!("{} copper items", MAX_ITEMS + 1)),
+                "{e}"
+            );
         }
     }
 
@@ -5861,5 +5254,50 @@ mod tests {
         assert_ne!(e.kind, "LayersDisagree", "{}", e.message);
         let e = judged("(0 \"F.Cu\" signal) (1 \"B.Cu\" signal)").unwrap_err();
         assert_eq!(e.kind, "LayersDisagree");
+        // `AET-WO-1311` adversarial B: a row of a copper type is copper
+        // whatever its id and name; KiCad plotted `(37 "Top" signal)` and
+        // `(39 "Mid" signal)` as In1.Cu and In2.Cu (measured).
+        for rows in [
+            "(37 \"Top\" signal) (39 \"Mid\" signal)",
+            "(3 \"Top\" power) (5 \"Mid\" mixed)",
+            "(4.0 \"Top\" jumper)",
+        ] {
+            let e = judged(&format!("{canonical} {rows}")).unwrap_err();
+            assert_eq!(e.kind, "LayersDisagree", "{rows}: {}", e.message);
+        }
+    }
+
+    /// `AET-WO-1311` adversarial D and E: `read` refuses a board with no
+    /// layer table (the strict reader judges item layers only against one,
+    /// and `check support` reads without `declared`), a pad with no
+    /// `layers` (KiCad flashed one on F.Cu and B.Cu) and a pad with a
+    /// padstack of its own (KiCad flashed its size, not the pad's).
+    #[test]
+    fn read_refuses_what_kicad_places_otherwise() {
+        let e = read_ref(
+            &strict::board("(kicad_pcb (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")))")
+                .unwrap(),
+        )
+        .unwrap_err();
+        assert!(e.contains("no layer table"), "{e}");
+        let fp = |pad: &str| {
+            crate::sexpr::parse(&format!(
+                "(footprint \"x\" (at 1 2) (property \"Reference\" \"R1\") {pad} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")))"
+            ))
+            .unwrap()
+        };
+        assert!(
+            part_of(&fp(
+                "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\"))"
+            ))
+            .is_ok()
+        );
+        let e = part_of(&fp("(pad \"1\" smd rect (at 0 0) (size 0.5 0.5))")).unwrap_err();
+        assert!(e.contains("names no layers"), "{e}");
+        let e = part_of(&fp(
+            "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (padstack (mode custom) (layer \"F.Cu\" (size 3 3))))",
+        ))
+        .unwrap_err();
+        assert!(e.contains("padstack"), "{e}");
     }
 }

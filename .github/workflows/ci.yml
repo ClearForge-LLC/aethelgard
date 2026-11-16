@@ -318,7 +318,9 @@ jobs:
       # that role) and 1 from AET-WO-1310 (merged into that branch, PR #160).
       # 158: plus 1 from AET-WO-1603 in twin_tier2.rs (a witness line sent through
       # every firmware channel never reaches the judge).
-      TIER2_MIN: "158"
+      # 159: plus 1 from AET-WO-1311 in with_tools.rs (a seeded neck in the
+      # ground zone: KiCad's refill joins it wherever route::connectivity does).
+      TIER2_MIN: "159"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
