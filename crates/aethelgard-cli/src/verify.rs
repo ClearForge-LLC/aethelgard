@@ -78,6 +78,12 @@ struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     campaign: Option<Vec<Run>>,
     findings: Vec<Finding>,
+    /// Each SPI and I2C controller's independent rule (`AET-WO-4230` §1.7);
+    /// one that does not hold is also an error finding by name.
+    silicon: aethelgard_cli::ledger::Silicon,
+    /// The witness ledger (`AET-WO-4230` §1.7, `RUL-20`): every field the
+    /// generated firmware writes or leaves at reset, classed.
+    ledger: aethelgard_cli::ledger::Ledger,
     /// `--against-fab`: whether the directory matched the package. With
     /// `fab`, always the last keys, so the verdict without them is the line
     /// a call without the fab flags prints (the manifest's `verdict_sha256`).
@@ -990,6 +996,13 @@ pub fn verify(
         .iter()
         .map(|(p, t)| (p.clone(), tree::sha256(t.as_bytes())))
         .collect();
+    // The ledger before any gate: a field it cannot class is refused, never
+    // guessed (`AET-WO-4230` §1.7, §5.4).
+    let ledger = match aethelgard_cli::ledger::build(&topology, &table) {
+        Ok(l) => l,
+        Err(e) => return refuse(e.kind(), e.id(), e.message(), EXIT_INTERNAL),
+    };
+    let silicon = aethelgard_cli::ledger::silicon(&topology);
     let project = spec.project_name.clone();
     let mut report = Report {
         ok: false,
@@ -1006,7 +1019,9 @@ pub fn verify(
         rise_times: RISE_TIMES,
         gates: Vec::new(),
         campaign: None,
-        findings: Vec::new(),
+        findings: silicon_findings(&silicon),
+        silicon,
+        ledger,
         against_fab: None,
         fab: None,
         lifecycle_unheld,
@@ -1111,14 +1126,11 @@ pub fn verify(
         };
         if !differences.is_empty() {
             report.against = Some("differs");
-            report.findings = differences
-                .iter()
-                .map(|d| Finding {
-                    kind: d.kind(),
-                    severity: "error",
-                    message: describe(d),
-                })
-                .collect();
+            report.findings.extend(differences.iter().map(|d| Finding {
+                kind: d.kind(),
+                severity: "error",
+                message: describe(d),
+            }));
             if let Some(mode) = fab_mode {
                 not_packaged(&mut report, mode);
             }
@@ -1176,8 +1188,7 @@ pub fn verify(
     ) {
         return code;
     }
-    report.ok = report.findings.iter().all(|f| f.severity != "error")
-        && report.gates.iter().all(|g| g.verdict == "pass");
+    report.ok = passes(&report.findings, &report.gates);
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
@@ -1219,6 +1230,26 @@ pub fn verify(
     }
     let code = if report.ok { 0 } else { EXIT_FAIL };
     crate::emit(&report, code)
+}
+
+/// The verdict passes when no finding is an error and every gate passed.
+fn passes(findings: &[Finding], gates: &[Gate]) -> bool {
+    findings.iter().all(|f| f.severity != "error") && gates.iter().all(|g| g.verdict == "pass")
+}
+
+/// Each controller whose independent rule does not hold, as an error by name
+/// (`AET-WO-4230` §1.7). `generate` refuses such a topology first
+/// (svd-hal `check_silicon`), so through the CLI it is empty; the verdict
+/// judges it again on its own.
+fn silicon_findings(s: &aethelgard_cli::ledger::Silicon) -> Vec<Finding> {
+    aethelgard_cli::ledger::silicon_failures(s)
+        .into_iter()
+        .map(|message| Finding {
+            kind: "silicon_rule_fails",
+            severity: "error",
+            message,
+        })
+        .collect()
 }
 
 /// A run that failed writes and compares nothing, and says so.
@@ -1618,6 +1649,50 @@ fn run_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `AET-WO-4230` §1.7: a controller whose independent rule does not hold
+    /// fails the verdict by name, every gate passing; one that holds adds
+    /// nothing. A hand-edited controller (MBR one too fast), since `generate`
+    /// refuses such a topology before the verdict sees it.
+    #[test]
+    fn a_silicon_rule_that_does_not_hold_fails_the_verdict_by_name() {
+        let controller = |mbr: u8| aethelgard_ir::SolvedSpiController {
+            kernel: aethelgard_ir::SpiKernel::PerCk,
+            kernel_hz: 64_000_000,
+            declared_hz: 20_000_000,
+            mbr,
+            achieved_hz: 64_000_000 >> (mbr + 1),
+            achieved_max_hz: 64_958_976 >> (mbr + 1),
+        };
+        let silicon = |mbr| {
+            let spi = vec![aethelgard_ir::silicon::check_spi("SPI1", &controller(mbr))];
+            let holds = spi.iter().all(|f| f.holds);
+            aethelgard_cli::ledger::Silicon {
+                spi,
+                i2c: Vec::new(),
+                holds,
+            }
+        };
+        let mut gate = not_run("erc");
+        gate.verdict = "pass";
+        let gates = [gate];
+        assert!(silicon_findings(&silicon(1)).is_empty());
+        assert!(passes(&silicon_findings(&silicon(1)), &gates));
+        let failing = silicon_findings(&silicon(0));
+        assert_eq!(failing.len(), 1);
+        assert_eq!(failing[0].kind, "silicon_rule_fails");
+        assert!(
+            failing[0].message.starts_with("SPI1: "),
+            "{}",
+            failing[0].message
+        );
+        assert!(
+            failing[0].message.contains("mbr_ok"),
+            "{}",
+            failing[0].message
+        );
+        assert!(!passes(&failing, &gates));
+    }
 
     /// `AET-WO-3303` §1.1: every `kani::proof` attribute in the crate is
     /// counted, so a harness the line reader misses (its attribute and `fn`

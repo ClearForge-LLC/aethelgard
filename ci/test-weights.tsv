@@ -303,6 +303,7 @@ tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	4.940
 tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	5.959
 tests/twin_tier2.rs	a_tdr_store_with_ue_clear_sends_no_pattern	7.153
 tests/twin_tier2.rs	a_value_one_bit_off_fails_as_an_identity_mismatch	4.586
+tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	5.000
 tests/twin_tier2.rs	kani_proves_every_part_of_both_motor_fixtures	374.148
 tests/twin_tier2.rs	kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check	54.064
 tests/twin_tier2.rs	motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af	5.791

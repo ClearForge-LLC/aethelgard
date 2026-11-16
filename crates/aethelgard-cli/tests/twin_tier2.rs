@@ -3238,3 +3238,159 @@ fn adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails() {
         "{v}"
     );
 }
+
+/// `AET-WO-4230` §5.4, contract D9: the ledger is complete, checked without
+/// its own list. The reference boots under Renode with every peripheral's
+/// accesses logged (`sysbus LogAllPeripheralsAccess`, so the set logged is
+/// not taken from the ledger), the enable registers cold as the CLI's boot
+/// leaves them. Every CPU write is rebuilt from the log (the monitor's own
+/// writes carry no `[cpu: …]`): its bits are the bits it sets, plus the bits
+/// it changes against the register's last read or written value, in its
+/// byte lane. A written bit that no `written` row of the ledger covers, or a
+/// write to a peripheral the ledger has no instance for, fails by name.
+#[test]
+fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
+    let topology = topology();
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(spec()).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let ledger = aethelgard_cli::ledger::build(&topology, &table).unwrap();
+    let facts = aethelgard_svd_hal::cmsis::register_facts().unwrap();
+    let image = aethelgard_twin::boot::expected(&topology).unwrap();
+    // Each written field's bits, by the register's bus address.
+    let mut covered: std::collections::BTreeMap<u32, u32> = std::collections::BTreeMap::new();
+    for r in ledger.rows.iter().filter(|r| r.access == "written") {
+        let mask = if r.width >= 32 {
+            u32::MAX
+        } else {
+            ((1u32 << r.width) - 1) << r.pos
+        };
+        *covered.entry(r.address.unwrap()).or_default() |= mask;
+    }
+    let mut commands = vec![
+        "mach create".to_owned(),
+        format!("machine LoadPlatformDescription @{}", platform().display()),
+        format!("sysbus LoadELF @{}", firmware().display()),
+    ];
+    commands.extend(
+        image
+            .cold
+            .iter()
+            .map(|r| format!("sysbus WriteDoubleWord {:#010x} {:#x}", r.address, r.value)),
+    );
+    commands.extend([
+        "sysbus LogAllPeripheralsAccess true".to_owned(),
+        "cpu VectorTableOffset 0x08000000".to_owned(),
+        "emulation RunFor \"0.100000000\"".to_owned(),
+        "quit".to_owned(),
+    ]);
+    let out = Command::new("renode")
+        .args([
+            "--disable-gui",
+            "--console",
+            "--plain",
+            "-e",
+            &commands.join("; "),
+        ])
+        .env("DOTNET_EnableDiagnostics", "0")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).replace('\r', "");
+    // Renode's name of an instance, as ST names it.
+    let instance = |source: &str| -> Option<String> {
+        if source == "rcc" {
+            return Some("RCC".into());
+        }
+        if source == "flashController" {
+            return Some("FLASH".into());
+        }
+        // Renode's `nvic` is the whole system control space from 0xE000E000.
+        if source == "nvic" {
+            return Some("SCS".into());
+        }
+        if let Some(port) = source.strip_prefix("gpioPort") {
+            return Some(format!("GPIO{port}"));
+        }
+        for (renode, st) in [
+            ("i2c", "I2C"),
+            ("spi", "SPI"),
+            ("usart", "USART"),
+            ("uart", "UART"),
+            ("timer", "TIM"),
+        ] {
+            if let Some(n) = source.strip_prefix(renode)
+                && !n.is_empty()
+                && n.bytes().all(|b| b.is_ascii_digit())
+            {
+                return Some(format!("{st}{n}"));
+            }
+        }
+        None
+    };
+    let mut last: std::collections::BTreeMap<(String, u32), u32> =
+        std::collections::BTreeMap::new();
+    let (mut writes, mut uncovered, mut unknown) =
+        (0usize, Vec::new(), std::collections::BTreeSet::new());
+    for line in text.lines() {
+        let Some(at) = line.find("[INFO] ") else {
+            continue;
+        };
+        let Some(a) = aethelgard_twin::serial::access(&line[at..]) else {
+            continue;
+        };
+        let word_offset = a.offset & !3;
+        let shift = 8 * (a.offset & 3);
+        let lane = match a.bits {
+            8 => 0xFFu32 << shift,
+            16 => 0xFFFFu32 << shift,
+            _ => u32::MAX,
+        };
+        let value = u32::try_from(a.value & u64::from(u32::MAX)).unwrap_or(u32::MAX) << shift;
+        let key = (a.source.clone(), word_offset);
+        if !a.write {
+            if a.bits == 32 {
+                last.insert(key, value);
+            }
+            continue;
+        }
+        writes += 1;
+        let prev = last.get(&key).copied();
+        let new = prev.map_or(value, |p| (p & !lane) | (value & lane));
+        let bits = (value & lane) | prev.map_or(0, |p| (p ^ new) & lane);
+        last.insert(key, new);
+        let Some(inst) = instance(&a.source) else {
+            unknown.insert(format!("{} @ {:#x}", a.source, a.offset));
+            continue;
+        };
+        let scs = (inst == "SCS").then_some(0xE000_E000u32);
+        let Some(base) = scs.or_else(|| aethelgard_cli::ledger::base(&facts, &inst)) else {
+            unknown.insert(format!("{inst} @ {:#x}", a.offset));
+            continue;
+        };
+        let address = base + word_offset;
+        let missing = bits & !covered.get(&address).copied().unwrap_or(0);
+        if missing != 0 {
+            uncovered.push(format!(
+                "{inst} +{word_offset:#x} ({address:#010x}): bits {missing:#010x} written ({line})"
+            ));
+        }
+    }
+    answer(&format!(
+        "4230 ledger completeness: {writes} CPU writes rebuilt, {} rows, {} uncovered, {} unknown",
+        ledger.total,
+        uncovered.len(),
+        unknown.len()
+    ));
+    assert!(writes > 50, "the boot was logged: {writes} writes\n{text}");
+    assert!(
+        unknown.is_empty() && uncovered.is_empty(),
+        "writes to peripherals the ledger has no instance for: {unknown:?}\nwritten bits no ledger row covers:\n{}",
+        uncovered.join("\n")
+    );
+    assert!(
+        uncovered.is_empty(),
+        "written bits no ledger row covers:\n{}",
+        uncovered.join("\n")
+    );
+}
