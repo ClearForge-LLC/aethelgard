@@ -926,3 +926,53 @@ fn solve_copies_each_declared_sck_and_mosi_constraint_and_nothing_else() {
     assert!(!t.spi_lines.contains_key("S_MISO"));
     assert!(!t.spi_lines.contains_key("U1_CS"));
 }
+
+/// `AET-WO-4230`: each SPI controller gets its kernel clock and `MBR`, each
+/// I2C controller its `TIMINGR` words, and `bor_level` is copied.
+#[test]
+fn the_controllers_are_solved_and_a_speed_below_the_kernel_range_is_refused() {
+    let mut s = basic();
+    s.mcu.bor_level = 2;
+    let t = ok(&s);
+    assert_eq!(t.bor_level, 2);
+    let c = &t.spi_controllers["SPI1"];
+    // 1 MHz at the fastest kernel, 64,958,976 Hz: ÷128 is 507,492 Hz, and
+    // ÷64 (1,014,984 Hz) is above it, so MBR 6, not the nominal 5.
+    assert_eq!(
+        (
+            c.kernel_hz,
+            c.declared_hz,
+            c.mbr,
+            c.achieved_hz,
+            c.achieved_max_hz
+        ),
+        (64_000_000, 1_000_000, 6, 500_000, 507_492)
+    );
+    assert_eq!(t.spi_controllers.len(), 1);
+    let i = &t.i2c_timings["I2C1"];
+    assert_eq!((i.kernel_hz, i.cr1), (64_000_000, 0));
+    assert_eq!(
+        i.timingr
+            .iter()
+            .map(|(m, w)| (m.as_str(), *w))
+            .collect::<Vec<_>>(),
+        [
+            ("Fast400k", 0x10C7_123C),
+            ("FastPlus1M", 0x00B2_0E2D),
+            ("Standard100k", 0x50D3_2A40)
+        ]
+    );
+    // 253,746 Hz is the fastest kernel / 256 exactly: MBR 7. One less is
+    // refused by name, naming the bus.
+    let mut s = basic();
+    s.spi_buses[0].speed_hz = 253_746;
+    assert_eq!(ok(&s).spi_controllers["SPI1"].mbr, 7);
+    for speed in [253_745, 250_000] {
+        s.spi_buses[0].speed_hz = speed;
+        let err = refused(&s);
+        assert_eq!(err.kind(), "SpiSpeedBelowKernelRange", "{err}");
+        assert_eq!(err.id(), Some("S"));
+        assert_eq!(err.claimants(), ["S"]);
+        assert!(err.to_string().contains("253746 Hz"), "{err}");
+    }
+}

@@ -20,6 +20,7 @@ pub mod parts;
 pub mod power;
 pub mod power_parts;
 pub mod serial;
+pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
@@ -260,9 +261,10 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// (`AET-WO-1205`), version 3 `spi_devices` (`AET-WO-4200`), version 4
 /// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
 /// (`AET-WO-4300a`), version 6 `power` (`AET-WO-4300d`), version 7
-/// `serial_ports` (`AET-WO-4300b`); an older file is refused, never
-/// defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 7;
+/// `serial_ports` (`AET-WO-4300b`), version 8 `spi_controllers`,
+/// `i2c_timings` and `bor_level` (`AET-WO-4230`); an older file is refused,
+/// never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 8;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -325,6 +327,60 @@ pub struct SolvedTopology {
     /// `assignments` on `<peripheral>_TX` / `_RX` (`AET-WO-4300b`, `RUL-16`).
     #[serde(deserialize_with = "unique_keys")]
     pub serial_ports: BTreeMap<String, SolvedSerialPort>,
+    /// Each solved SPI controller, keyed by peripheral (`SPI1` … `SPI6`):
+    /// its kernel clock, the speed declared for it and the baud rate solved
+    /// (`AET-WO-4230` §1.1, §1.2). [`silicon::check_spi`] judges it.
+    #[serde(deserialize_with = "unique_keys")]
+    pub spi_controllers: BTreeMap<String, SolvedSpiController>,
+    /// Each solved I2C controller, keyed by peripheral (`I2C1` … `I2C4`):
+    /// its kernel clock, `CR1` and one `TIMINGR` per mode (`AET-WO-4230`
+    /// §1.4). [`silicon::check_i2c`] judges it.
+    #[serde(deserialize_with = "unique_keys")]
+    pub i2c_timings: BTreeMap<String, SolvedI2cTiming>,
+    /// `mcu.bor_level`, copied by `solve` so the twin presents it without
+    /// reading the specification (`AET-WO-4230` §1.6, `RUL-16`).
+    pub bor_level: u8,
+}
+
+/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
+/// for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20; `per_ck`
+/// is `hsi_ker_ck` at `CKPERSEL`'s reset `00`, §8.7.19), `hsi_ker_ck` for
+/// SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6 (`RCC_D3CCIPR.SPI6SEL` =
+/// `011`, §8.7.22).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SpiKernel {
+    PerCk,
+    HsiKerCk,
+}
+
+/// One SPI controller as solved (`AET-WO-4230` §1.2, contract D2 and
+/// amendment 1). `declared_hz` is the lowest `speed_hz` of the buses on it;
+/// `mbr` the least with the fastest kernel (`kernel_hz` at HSI's worst
+/// +14,984 ppm, rounded up) divided by `2^(mbr+1)` at or below it;
+/// `achieved_hz` the nominal kernel so divided and `achieved_max_hz` the
+/// fastest, each rounded down. `check speeds` judges `achieved_max_hz`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedSpiController {
+    pub kernel: SpiKernel,
+    pub kernel_hz: u64,
+    pub declared_hz: u32,
+    pub mbr: u8,
+    pub achieved_hz: u64,
+    pub achieved_max_hz: u64,
+}
+
+/// One I2C controller as solved (`AET-WO-4230` §1.4, contract D2, D3):
+/// its kernel clock, the whole `CR1` the bring-up writes with `PE` clear,
+/// and `TIMINGR` for each of `Standard100k`, `Fast400k` and `FastPlus1M`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedI2cTiming {
+    pub kernel_hz: u64,
+    pub cr1: u32,
+    #[serde(deserialize_with = "unique_keys")]
+    pub timingr: BTreeMap<String, u32>,
 }
 
 /// The solved power tree. Every load returns through `GND`, so
@@ -609,6 +665,8 @@ object_only!(
     AnalogLine,
     SolvedI2cDevice,
     SolvedSpiDevice,
+    SolvedSpiController,
+    SolvedI2cTiming,
     SpiLine,
     SolvedPower,
     SolvedSense,
@@ -651,6 +709,12 @@ struct SolvedWire {
     power: Option<Option<SolvedPower>>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     serial_ports: Option<BTreeMap<String, SolvedSerialPort>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    spi_controllers: Option<BTreeMap<String, SolvedSpiController>>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    i2c_timings: Option<BTreeMap<String, SolvedI2cTiming>>,
+    #[serde(default)]
+    bor_level: Option<u8>,
 }
 
 /// A key that is present, whatever its value: `null` reads as `Some(None)`.
@@ -730,6 +794,25 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("serial_ports")),
                 };
+                // The same for `spi_controllers`, `i2c_timings` and
+                // `bor_level`, which version 8 added; an older file's stand-in
+                // is never read.
+                let current = w.schema_version == SOLVED_SCHEMA_VERSION;
+                let spi_controllers = match w.spi_controllers {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("spi_controllers")),
+                };
+                let i2c_timings = match w.i2c_timings {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("i2c_timings")),
+                };
+                let bor_level = match w.bor_level {
+                    Some(b) => b,
+                    None if !current => 0,
+                    None => return Err(serde::de::Error::missing_field("bor_level")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -745,6 +828,9 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     motor_outputs,
                     power,
                     serial_ports,
+                    spi_controllers,
+                    i2c_timings,
+                    bor_level,
                 })
             }
         }
@@ -1244,6 +1330,14 @@ pub enum IrValidationError {
     )]
     SerialPortMismatch { id: String },
     #[error(
+        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the reset clock gives it, its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at HSI's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
+    )]
+    SpiControllerMismatch { id: String },
+    #[error(
+        "I2C controller `{id}` disagrees with the solved topology: one entry per I2C peripheral of `assignments` and no other, its kernel clock what the reset clock gives it, CR1 the bring-up's, and TIMINGR for exactly Standard100k, Fast400k and FastPlus1M, each the one `solve` synthesizes (RM0433 Rev 9 §47.4.9)"
+    )]
+    I2cTimingMismatch { id: String },
+    #[error(
         "timer `{id}` carries outputs that differ in protocol, rate, PSC or ARR: the outputs of one timer share its counter"
     )]
     TimerShared { id: String },
@@ -1454,6 +1548,8 @@ impl IrValidationError {
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
+            Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
+            Self::I2cTimingMismatch { .. } => "I2cTimingMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
@@ -1576,7 +1672,9 @@ impl IrValidationError {
             | Self::SerialNegotiatedOffCrsf { id, .. }
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
             | Self::UnjudgedSerialConstraint { id }
-            | Self::SerialPortMismatch { id } => Some(id),
+            | Self::SerialPortMismatch { id }
+            | Self::SpiControllerMismatch { id }
+            | Self::I2cTimingMismatch { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
             Self::PartsTable { part, .. } | Self::PowerPartsTable { part, .. } => part.as_deref(),
             Self::Power { id, .. } => Some(id),
@@ -2722,6 +2820,15 @@ impl SolvedTopology {
             plain(&p.tx, || format!("serial_ports.{label}.tx"))?;
             plain(&p.rx, || format!("serial_ports.{label}.rx"))?;
         }
+        for p in self.spi_controllers.keys() {
+            plain(p, || format!("spi_controllers.{p}"))?;
+        }
+        for (p, t) in &self.i2c_timings {
+            plain(p, || format!("i2c_timings.{p}"))?;
+            for mode in t.timingr.keys() {
+                plain(mode, || format!("i2c_timings.{p}.timingr.{mode}"))?;
+            }
+        }
         plain(&self.clock.source, || "clock.source".into())?;
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
@@ -2756,6 +2863,7 @@ impl SolvedTopology {
         self.validate_spi_lines()?;
         self.validate_motor_outputs()?;
         serial::validate_solved(self)?;
+        self.validate_controllers()?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -2774,6 +2882,64 @@ impl SolvedTopology {
                     .find(|l| l.bus == d.bus)
                     .map_or(0, |l| l.rate_hz);
                 check_spi_clock(reference, p, rate_hz)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// `bor_level` is 0 to 3; `spi_controllers` and `i2c_timings` hold
+    /// exactly the SPI and I2C peripherals of `assignments`, each with what
+    /// `solve` derives from `clock` and, for SPI, the lowest `rate_hz` of the
+    /// buses on it in `spi_lines` (`AET-WO-4230`). It does not judge those
+    /// values for silicon: that is [`silicon`]'s rules (`RUL-20`).
+    fn validate_controllers(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+
+        if self.bor_level > MAX_BOR_LEVEL {
+            return Err(E::BorLevelOutOfRange {
+                value: self.bor_level,
+            });
+        }
+        let on = |prefix: &str| -> BTreeSet<&str> {
+            self.assignments
+                .values()
+                .map(|a| a.peripheral.as_str())
+                .filter(|p| p.starts_with(prefix))
+                .collect()
+        };
+        let spi = on("SPI");
+        let have: BTreeSet<&str> = self.spi_controllers.keys().map(String::as_str).collect();
+        if let Some(p) = spi.symmetric_difference(&have).next() {
+            return Err(E::SpiControllerMismatch {
+                id: (*p).to_owned(),
+            });
+        }
+        for (p, c) in &self.spi_controllers {
+            let declared = self
+                .spi_lines
+                .iter()
+                .filter(|(net, _)| {
+                    self.assignments
+                        .get(*net)
+                        .is_some_and(|a| a.peripheral == *p)
+                })
+                .map(|(_, l)| l.rate_hz)
+                .min();
+            let solved = declared.and_then(|d| solve::spi_controller(p, &self.clock, p, d).ok());
+            if solved.as_ref() != Some(c) {
+                return Err(E::SpiControllerMismatch { id: p.clone() });
+            }
+        }
+        let i2c = on("I2C");
+        let have: BTreeSet<&str> = self.i2c_timings.keys().map(String::as_str).collect();
+        if let Some(p) = i2c.symmetric_difference(&have).next() {
+            return Err(E::I2cTimingMismatch {
+                id: (*p).to_owned(),
+            });
+        }
+        for (p, t) in &self.i2c_timings {
+            if solve::i2c_timing(&self.clock, p).as_ref() != Some(t) {
+                return Err(E::I2cTimingMismatch { id: p.clone() });
             }
         }
         Ok(())
