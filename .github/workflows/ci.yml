@@ -312,7 +312,7 @@ jobs:
       # fixture passes ERC and DRC with parity, its loop rules measured, and
       # extract; a loop part moved off its pin fails DRC by its rule) and
       # with_tools.rs (KiCad writes the pinned drill files: one tool per drill).
-      TIER2_MIN: "154"
+      TIER2_MIN: "155"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
