@@ -6,7 +6,7 @@ mod common;
 
 use std::ffi::OsString;
 use std::fs;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -168,12 +168,10 @@ fn a_cli_told_a_dead_parents_pid_exits_70_and_starts_nothing() {
     fs::create_dir_all(&tb).unwrap();
     let marker = dir.0.join("ran");
     let stub = tb.join("kicad-cli");
-    fs::write(
+    common::stub::write_executable(
         &stub,
         format!("#!/bin/sh\n: > '{}'\necho 10.0.7\n", marker.display()),
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let board = dir.0.join("b.kicad_pcb");
     fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let cli = |parent: &str| {
@@ -283,16 +281,14 @@ fn a_cli_without_the_variable_outlives_the_thread_that_started_it() {
     // Slow to report its version, then a clean DRC report: a pass.
     let report = r#"{"$schema":"https://schemas.kicad.org/drc.v1.json","coordinate_units":"mm","date":"x","ignored_checks":[],"included_severities":["error","warning"],"kicad_version":"10.0.7","source":"b","violations":[],"unconnected_items":[],"schematic_parity":[]}"#;
     let stub = tb.join("kicad-cli");
-    fs::write(
+    common::stub::write_executable(
         &stub,
         format!(
             "#!/bin/sh\nif [ \"$1\" = version ]; then sleep 1; echo 10.0.7; exit 0; fi\n\
              out=; prev=\nfor a in \"$@\"; do [ \"$prev\" = -o ] && out=$a; prev=$a; done\n\
              printf '%s' '{report}' > \"$out\"\n"
         ),
-    )
-    .unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    );
     let board = dir.0.join("b.kicad_pcb");
     fs::write(&board, "(kicad_pcb (version 20240108))\n").unwrap();
     let mut cli = std::thread::spawn(move || {

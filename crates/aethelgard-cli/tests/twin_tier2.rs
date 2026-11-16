@@ -3396,3 +3396,69 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         uncovered.join("\n")
     );
 }
+
+/// AET-WO-1603 §1.1 and §1.3: no route from a firmware into what the judge
+/// reads (FEEDBACK §3, M16-M18). `tests/fixtures/forge-log` sends one text, a
+/// whole line shaped like U2's I2C witness and then a bare sentinel, through
+/// two ELF names (patched here into its string tables), USART1, semihosting,
+/// logged accesses and a jump out of the firmware, and performs no
+/// transaction. The boot fails with U2's record invalid, and no finding
+/// carries the text: a source tag the platform emits is never the firmware's.
+#[test]
+fn a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge() {
+    let dir = root().join("crates/aethelgard-cli/tests/fixtures/forge-log");
+    let out = Command::new(env!("CARGO"))
+        .args(["build", "--release", "--offline", "--locked"])
+        .current_dir(&dir)
+        .env_remove("CARGO_TARGET_DIR")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "the forge-log fixture builds offline: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let built = root()
+        .join("target/aet-forge-log-fixture/thumbv7em-none-eabihf/release/aet-forge-log-fixture");
+    let mut bytes = fs::read(&built).unwrap();
+    let mut patched = 0;
+    for tag in [&b"C1603SYM_"[..], b".C1603SECT_"] {
+        let mut from = 0;
+        while let Some(at) = bytes[from..]
+            .windows(tag.len() + 10)
+            .position(|w| w.starts_with(tag) && w[tag.len()..].iter().all(|&b| b == b'X'))
+        {
+            let start = from + at + tag.len();
+            let end = start + bytes[start..].iter().take_while(|&&b| b == b'X').count();
+            let text = format!(
+                "\n[00:00:00.000100000] [NOISY] i2c1.u2: C1603-{}\nAETHELGARD-BOOT-BEGIN\n",
+                String::from_utf8_lossy(tag).trim_matches(['.', '_'])
+            );
+            assert!(text.len() <= end - start, "the run holds the text");
+            let mut fill = text.into_bytes();
+            fill.resize(end - start, b' ');
+            bytes[start..end].copy_from_slice(&fill);
+            patched += 1;
+            from = end;
+        }
+    }
+    assert_eq!(
+        patched, 2,
+        "the symbol's and the section's names, once each"
+    );
+    let elf = std::env::temp_dir().join(format!("aet-1603-forge-log-{}.elf", std::process::id()));
+    fs::write(&elf, &bytes).unwrap();
+    let (code, v) = boot_elf("forge-log", &elf, "10ms");
+    let _ = fs::remove_file(&elf);
+    assert_eq!(code, Some(1), "the forging firmware fails: {v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    assert!(
+        kinds(&v).contains(&"i2c_record_invalid"),
+        "U2 performed no transaction: {v}"
+    );
+    assert!(
+        !v.to_string().contains("C1603"),
+        "no channel carried the firmware's text to the judge: {v}"
+    );
+}

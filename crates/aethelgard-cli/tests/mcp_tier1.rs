@@ -4,7 +4,6 @@
 mod common;
 
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -204,12 +203,10 @@ impl Scratch {
         let tb = self.0.join("toolbox");
         fs::create_dir_all(&tb).unwrap();
         let path = tb.join("kicad-cli");
-        fs::write(
+        common::stub::write_executable(
             &path,
             format!("#!/bin/sh\nif [ \"$1\" = version ]; then echo 10.0.7; exit 0; fi\n{body}\n"),
-        )
-        .unwrap();
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        );
     }
 
     fn client(&self) -> Client {

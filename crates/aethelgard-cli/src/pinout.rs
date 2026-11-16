@@ -49,9 +49,10 @@ fn refused(err: CheckRefusal) -> Stop {
         CheckRefusal::DecodesDisagree { .. } => EXIT_TOOL_ERROR,
         CheckRefusal::InvalidPin { .. } => EXIT_INVALID_SPEC,
         CheckRefusal::UnsupportedPart { .. } => EXIT_INTERNAL,
-        CheckRefusal::Elf { .. } | CheckRefusal::Header { .. } | CheckRefusal::Allow { .. } => {
-            EXIT_UNREADABLE
-        }
+        CheckRefusal::Elf { .. }
+        | CheckRefusal::Header { .. }
+        | CheckRefusal::Conditional { .. }
+        | CheckRefusal::Allow { .. } => EXIT_UNREADABLE,
     };
     Stop {
         code,
