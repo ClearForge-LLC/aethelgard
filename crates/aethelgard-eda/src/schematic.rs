@@ -77,6 +77,13 @@ pub enum EmitError {
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
+    /// `AET-WO-1310` D1: a run of adjacent connected pads too wide for the
+    /// escape's lanes. Never left to chance.
+    #[error("`{reference}` pads {} have no escape: a run of adjacent connected pads wider than the lanes beside it", pads.join(", "))]
+    PadEscapeExhausted {
+        reference: String,
+        pads: Vec<String>,
+    },
     #[error("{0}")]
     Internal(String),
 }
@@ -93,6 +100,7 @@ impl EmitError {
             Self::ReservedName(_) => "ReservedName",
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
+            Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -101,7 +109,8 @@ impl EmitError {
         match self {
             Self::UnknownPart { reference, .. }
             | Self::UnsupportedAddress { reference, .. }
-            | Self::PowerNotDrawable { reference, .. } => Some(reference),
+            | Self::PowerNotDrawable { reference, .. }
+            | Self::PadEscapeExhausted { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
@@ -554,6 +563,25 @@ fn picofarads(value: &str) -> Option<u64> {
     let n: u64 = format!("{whole}{frac}").parse().ok()?;
     let total = n.checked_mul(unit)?;
     total.is_multiple_of(scale).then_some(total / scale)
+}
+
+/// Each anchored part's reference, with the IC it is anchored to
+/// (`AET-WO-4300d2` §1.3), read from the design's ownership, never from a
+/// board's layers: what a test needs to judge which references a board
+/// prints (`AET-WO-1310` D2).
+pub fn anchored(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    Ok(parts
+        .iter()
+        .filter_map(|p| {
+            let o = p.owner.as_ref().filter(|o| o.anchor.is_some())?;
+            Some((p.reference.clone(), o.ic.clone()))
+        })
+        .collect())
 }
 
 /// Every part and what each of its pins connects to, and every rail.

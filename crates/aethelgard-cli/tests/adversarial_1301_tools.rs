@@ -318,6 +318,12 @@ fn attack_wide_references_leave_the_emitted_board_clean() {
         fs::write(&spec, serde_json::to_vec(&s).unwrap()).unwrap();
         let r = emit_to(&spec, &t.0.join(name));
         let read = |k: &str| fs::read_to_string(r[k]["path"].as_str().unwrap()).unwrap();
+        printed_as_designed(
+            name,
+            &s,
+            r["specification_sha256"].as_str().unwrap(),
+            &read("board"),
+        );
         let (code, v) = drc(
             &t.0.join(format!("{name}-drc")),
             &read("board"),
@@ -330,6 +336,51 @@ fn attack_wide_references_leave_the_emitted_board_clean() {
         ));
         assert!(passes_parity(code, &v), "{name}: {:?}", beyond(&v));
     }
+}
+
+/// KiCad's silkscreen checks see printed references only. So that the clean
+/// board above cannot be clean for want of printed references, every
+/// reference the design keeps off the silkscreen (each anchored part's, and
+/// the MCU's when they ring it) is on `F.Fab`, every other on `F.SilkS`, and
+/// there is at least one of each (`AET-WO-1310` D2). The kept set comes from
+/// the design's ownership, never from the board.
+fn printed_as_designed(name: &str, spec: &Value, sha256: &str, board: &str) {
+    let spec: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, sha256).unwrap();
+    let anchored = aethelgard_eda::schematic::anchored(&spec, &solved, &table).unwrap();
+    let fab: BTreeSet<&str> = anchored
+        .keys()
+        .map(String::as_str)
+        .chain(
+            anchored
+                .values()
+                .map(String::as_str)
+                .filter(|ic| *ic == "U1"),
+        )
+        .collect();
+    assert!(fab.contains("U1") && fab.len() > 1, "{name}: {fab:?}");
+    let tree = aethelgard_eda::sexpr::parse(board).unwrap();
+    let (mut silk, mut all) = (0, 0);
+    for fp in tree.children("footprint") {
+        let reference = fp.property("Reference").unwrap();
+        let layer = fp
+            .children("property")
+            .find(|p| p.arg(1) == Some("Reference"))
+            .and_then(|p| p.child("layer"))
+            .and_then(|l| l.arg(1));
+        all += 1;
+        match layer {
+            Some("F.Fab") => assert!(fab.contains(reference), "{name}: {reference} not printed"),
+            Some("F.SilkS") => {
+                assert!(!fab.contains(reference), "{name}: {reference} printed");
+                silk += 1;
+            }
+            other => panic!("{name}: {reference} on {other:?}"),
+        }
+    }
+    assert_eq!(silk, all - fab.len(), "{name}: printed references");
+    assert!(silk > 0, "{name}: nothing printed");
 }
 
 /// A limit of KiCad's parity check, pinned as measured (FEEDBACK A5, for a

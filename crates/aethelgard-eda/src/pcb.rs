@@ -510,7 +510,10 @@ fn is_ic(part: &Part) -> bool {
 ///
 /// Connectors are left to [`place_connectors`], after every other part, so
 /// none is an anchor; the board's bottom edge is returned when there is one.
-fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
+fn place(
+    items: &[Item<'_>],
+    pairs: &[[String; 2]],
+) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
     let mut order: Vec<usize> = (0..items.len())
         .filter(|&i| !schematic::is_connector(items[i].part))
         .collect();
@@ -545,6 +548,9 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
     }
     let order = grouped;
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
+    // The approach to each declared pair's MCU pins, kept clear of every
+    // part placed after the MCU (`AET-WO-4300g` D5, lever 2; `AET-WO-1310`).
+    let mut approach: Vec<Rect> = Vec::new();
     for (step, &i) in order.iter().enumerate() {
         let item = &items[i];
         let g = item.geometry;
@@ -559,6 +565,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
                 courtyard: g.courtyard.shift(ORIGIN),
                 keep: g.keep.shift(ORIGIN),
             });
+            approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
             continue;
         }
         // The anchor: an IC already placed.
@@ -612,6 +619,7 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
                 };
                 placed[j].as_ref().map(|p| (p.keep, gap))
             })
+            .chain(approach.iter().map(|&r| (r, 0)))
             .collect();
         if let Some(a) = item.part.owner.as_ref().and_then(|o| o.anchor.as_ref()) {
             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
@@ -644,6 +652,73 @@ fn place(items: &[Item<'_>]) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
     Ok((placed, edge))
+}
+
+/// How far past the MCU's courtyard a pair's approach is kept clear, and how
+/// far to each side of its outermost pins (`AET-WO-4300g` D5, lever 2): engine
+/// choices, measured to route `pair-standin` around the MCU's support ring.
+const APPROACH_DEPTH_NM: i64 = 5_000_000;
+const APPROACH_SIDE_NM: i64 = 500_000;
+
+/// For each side of the MCU that carries a declared pair's pins, the strip in
+/// front of them: from the pins out past the courtyard by
+/// [`APPROACH_DEPTH_NM`], as wide as the pins plus [`APPROACH_SIDE_NM`] each
+/// way. A pair is routed first, whole, coupled on F.Cu; it leaves its pins
+/// through this strip, so no part placed after the MCU takes it.
+fn approaches(mcu: &Item<'_>, courtyard: Rect, pairs: &[[String; 2]]) -> Vec<Rect> {
+    let mut by_side: BTreeMap<u8, Vec<(i64, i64)>> = BTreeMap::new();
+    for net in pairs.iter().flatten() {
+        for &(at, ref n) in mcu.pads.values() {
+            if n != net && n.strip_prefix('/') != Some(net.as_str()) {
+                continue;
+            }
+            let (x, y) = (ORIGIN.0 + at.0, ORIGIN.1 + at.1);
+            let d = [
+                (x - courtyard.x0, 0u8),
+                (courtyard.x1 - x, 1),
+                (y - courtyard.y0, 2),
+                (courtyard.y1 - y, 3),
+            ];
+            let side = d.iter().min().map_or(0, |&(_, s)| s);
+            by_side.entry(side).or_default().push((x, y));
+        }
+    }
+    by_side
+        .into_iter()
+        .map(|(side, pins)| {
+            let xs = pins.iter().map(|p| p.0);
+            let ys = pins.iter().map(|p| p.1);
+            let (lx, hx) = (xs.clone().min().unwrap_or(0), xs.max().unwrap_or(0));
+            let (ly, hy) = (ys.clone().min().unwrap_or(0), ys.max().unwrap_or(0));
+            let s = APPROACH_SIDE_NM;
+            match side {
+                0 => Rect {
+                    x0: courtyard.x0 - APPROACH_DEPTH_NM,
+                    y0: ly - s,
+                    x1: lx,
+                    y1: hy + s,
+                },
+                1 => Rect {
+                    x0: hx,
+                    y0: ly - s,
+                    x1: courtyard.x1 + APPROACH_DEPTH_NM,
+                    y1: hy + s,
+                },
+                2 => Rect {
+                    x0: lx - s,
+                    y0: courtyard.y0 - APPROACH_DEPTH_NM,
+                    x1: hx + s,
+                    y1: ly,
+                },
+                _ => Rect {
+                    x0: lx - s,
+                    y0: hy,
+                    x1: hx + s,
+                    y1: courtyard.y1 + APPROACH_DEPTH_NM,
+                },
+            }
+        })
+        .collect()
 }
 
 /// An anchored part (`AET-WO-4300d2` §1.3), placed at whichever of the four
@@ -919,6 +994,12 @@ fn footprint(
                     "a footprint with a keepout zone is not turned",
                 ));
             }
+            // A footprint's zone stands in board coordinates in a board file,
+            // where its library file has it about the footprint's origin
+            // (measured, `AET-WO-1310` D4: written unshifted, KiCad read the
+            // ICM-20948's keepout at the board's origin and reported
+            // `lib_footprint_mismatch`).
+            Some("zone") => to_board(&mut c, origin, &part.reference)?,
             Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
                 if rotation != 0 {
@@ -1062,6 +1143,20 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
     Ok(out)
 }
 
+/// Each `(xy x y)` under `sx`, moved by `origin`: a footprint zone's polygon
+/// from the library's coordinates to the board's.
+fn to_board(sx: &mut Sx, origin: (i64, i64), reference: &str) -> Result<(), EmitError> {
+    if sx.head() == Some("xy") {
+        let (x, y) = xy(sx, reference)?;
+        *sx = at_sx("xy", (origin.0 + x, origin.1 + y));
+        return Ok(());
+    }
+    for c in sx.items_mut().into_iter().flatten() {
+        to_board(c, origin, reference)?;
+    }
+    Ok(())
+}
+
 /// An anchored part's reference text moves from the silkscreen to `F.Fab`
 /// (`AET-WO-4300d2` §1.3): on the silkscreen it would hold the part's keep-out
 /// box a text's width from the pin it must sit beside. The board's
@@ -1094,8 +1189,12 @@ pub struct Layout {
 /// origin and its rotation. Every other part is placed by [`place`] first.
 pub type Move = (String, (i64, i64), u16);
 
-fn layout_of(items: &[Item<'_>], moves: &[Move]) -> Result<Layout, EmitError> {
-    let (mut placed, edge) = place(items)?;
+fn layout_of(
+    items: &[Item<'_>],
+    moves: &[Move],
+    pairs: &[[String; 2]],
+) -> Result<Layout, EmitError> {
+    let (mut placed, edge) = place(items, pairs)?;
     for (reference, origin, rotation) in moves {
         if !matches!(rotation, 0 | 90 | 180 | 270) {
             return Err(internal(reference, format!("a rotation of {rotation}")));
@@ -1125,8 +1224,20 @@ fn layout_of(items: &[Item<'_>], moves: &[Move]) -> Result<Layout, EmitError> {
         x0: all.x0.div_euclid(SNAP) * SNAP,
         y0: all.y0.div_euclid(SNAP) * SNAP,
         x1: -((-all.x1).div_euclid(SNAP) * SNAP),
-        // With connectors, their courtyards' bottoms are the bottom edge.
-        y1: edge.unwrap_or(-((-all.y1).div_euclid(SNAP) * SNAP)),
+        // With connectors, their courtyards' bottoms are the bottom edge, but
+        // a moved part below them still bounds it (`AET-WO-1310`, O1).
+        y1: match edge {
+            Some(e) => {
+                let moved = placed
+                    .iter()
+                    .filter(|p| moves.iter().any(|(r, _, _)| *r == p.reference))
+                    .map(|p| p.keep.y1 + MARGIN_NM)
+                    .max()
+                    .unwrap_or(e);
+                e.max(-((-moved).div_euclid(SNAP) * SNAP))
+            }
+            None => -((-all.y1).div_euclid(SNAP) * SNAP),
+        },
     };
     let pad_nets = items
         .iter()
@@ -1146,7 +1257,7 @@ fn layout_of(items: &[Item<'_>], moves: &[Move]) -> Result<Layout, EmitError> {
 /// The placement and pad nets `write` uses.
 #[cfg(test)]
 fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
-    layout_of(&items(parts)?, &[])
+    layout_of(&items(parts)?, &[], &[])
 }
 
 /// A pad's or a text's `(at x y [a])` with the footprint's rotation added to
@@ -1191,7 +1302,8 @@ pub(crate) fn write_moved(
     moves: &[Move],
 ) -> Result<String, EmitError> {
     let items = items(parts)?;
-    let layout = layout_of(&items, moves)?;
+    let pairs: Vec<[String; 2]> = stack.pairs.iter().map(|p| p.nets.clone()).collect();
+    let layout = layout_of(&items, moves, &pairs)?;
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
     // `place` returns each item's placement at the item's index.
@@ -1261,9 +1373,10 @@ pub fn write_placed(
         parts,
         stack: stack.clone(),
     };
-    let routed = route::route(&board).map_err(|e| match e.net.is_empty() {
-        true => EmitError::BoardUnroutable(e.why),
-        false => EmitError::Unroutable {
+    let routed = route::route(&board).map_err(|e| match (e.exhausted, e.net.is_empty()) {
+        (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
+        (None, true) => EmitError::BoardUnroutable(e.why),
+        (None, false) => EmitError::Unroutable {
             net: e.net,
             why: e.why,
         },
