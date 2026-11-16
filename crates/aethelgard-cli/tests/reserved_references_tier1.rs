@@ -566,7 +566,7 @@ type PinnedOn = (&'static str, &'static str, fn(&mut Value), &'static str);
 /// made from the specification and the reset clock alone, each with the
 /// bytes the binary at `d539bb1` printed from `solve`, `generate`, `emit`,
 /// `check speeds`, `verify` and `extract`.
-fn aet_1208_pins() -> [PinnedOn; 3] {
+fn aet_1208_pins() -> [PinnedOn; 4] {
     [
         (
             "motor-rate",
@@ -585,6 +585,26 @@ fn aet_1208_pins() -> [PinnedOn; 3] {
             SPEC,
             |s| s["serial_ports"][0]["peer_deviation_ppm"] = 50_000.into(),
             r#"{"ok":false,"error":{"kind":"SerialBaudTolerance","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: the worst-case baud error, 76673 ppm (the receiver's 26673: quantization 800 with HSI at 25894; plus the peer's declared 50000), is not below the receiver's tolerance of 33300 ppm (RM0433 Rev 9 §48.5.8, Tables 406 and 407, column OVER8 = 0, ONEBIT = 0, Table 407, M = 00)"}}"#,
+        ),
+        // The adversarial pass's 3a: 2.6 V ± 10 % at 1 MHz. At the maximum,
+        // 2860 mV, Fast-mode Plus takes the 8 mA row and the floor is 308
+        // ohms; at the nominal, 2600 mV, the 4 mA row gives 550, which
+        // `solve`'s own topology check refused and `validate` passed until
+        // step 21 judged the nominal too (`d539bb1` and `7c9bb8f` alike).
+        (
+            "pull-up-nominal",
+            SPEC,
+            |s| {
+                mcu_rail(s, 2600);
+                s["voltage_domains"][0]["tolerance_permille"] = 100.into();
+                s["i2c_buses"][0]["speed_hz"] = 1_000_000.into();
+                s["i2c_buses"][0]["pull_up_ohms"] = 308.into();
+                for c in s["net_constraints"].as_array_mut().unwrap() {
+                    c["max_rise_time_nanoseconds"] = 1.into();
+                    c["max_capacitance_femtofarads"] = 1000.into();
+                }
+            },
+            r#"{"ok":false,"error":{"kind":"PullUpBelowSinkFloor","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` has a pull-up of 308 ohms, below the 550 ohm floor its rail and mode set (UM10204 sink current)"}}"#,
         ),
     ]
 }

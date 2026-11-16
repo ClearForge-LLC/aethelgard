@@ -2389,7 +2389,9 @@ impl Specification {
     /// 4. each motor output's timing fits a timer on the reset clock, which
     ///    gives every timer one kernel clock (RM0433 Rev 9 Table 57);
     /// 5. each serial port's `BRR` and worst-case baud error, on the reset
-    ///    clock's one USART/UART kernel clock.
+    ///    clock's one USART/UART kernel clock;
+    /// 6. each I2C bus's pull-up again, at its domain's nominal rail, as
+    ///    `solve`'s topology judged it last.
     fn solve_static(&self) -> Result<(), IrValidationError> {
         for bus in &self.i2c_buses {
             let rise_time_ns = [&bus.sda.net, &bus.scl.net]
@@ -2467,6 +2469,27 @@ impl Specification {
         solve::motor_timing(self, &clock)?;
         for (index, port) in self.serial_ports.iter().enumerate() {
             solve::serial_timing(&port.label, index, &clock, port)?;
+        }
+        // 6. Each I2C bus's pull-up at its domain's nominal rail, as `solve`'s
+        // own topology judges it last (`SolvedTopology::validate`, the
+        // `analog_lines` carry the nominal), buses in id order as the
+        // topology keys them. The floor jumps at 2.0 V and 2.7 V, so a pull-up
+        // can pass at the maximum (2 above) and fail here (adversarial pass,
+        // `AET-WO-1208` FEEDBACK F4).
+        let mut buses: Vec<&I2cBus> = self.i2c_buses.iter().collect();
+        buses.sort_by(|a, b| a.id.cmp(&b.id));
+        for bus in buses {
+            if let Some(domain) = self.voltage_domains.iter().find(|d| d.id == bus.domain) {
+                let floor_ohms =
+                    electrical::i2c_pull_up_floor_ohms(bus.speed_hz, domain.nominal_millivolts);
+                if bus.pull_up_ohms < floor_ohms {
+                    return Err(IrValidationError::PullUpBelowSinkFloor {
+                        bus: bus.id.clone(),
+                        pull_up_ohms: bus.pull_up_ohms,
+                        floor_ohms,
+                    });
+                }
+            }
         }
         Ok(())
     }
