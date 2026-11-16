@@ -136,7 +136,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -837,12 +837,12 @@ fn full_document() -> serde_json::Value {
          "tx": {"net": "CONSOLE_TX", "pin": null}, "rx": {"net": "CONSOLE_RX", "pin": null},
          "role": "console",
          "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
-         "negotiated": null},
+         "negotiated": null, "peer_deviation_ppm": 5000},
         {"label": "SBUS", "peripheral": "USART2",
          "tx": {"net": "SBUS_TX", "pin": "PD5"}, "rx": {"net": "SBUS_RX", "pin": "PD6"},
          "role": "rc_sbus",
          "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true},
-         "negotiated": null}
+         "negotiated": null, "peer_deviation_ppm": 5000}
     ]);
     // Each serial line leaves the board at a connector.
     for (reference, port) in [("J7", "CONSOLE"), ("J8", "SBUS")] {
@@ -1886,7 +1886,8 @@ fn solved_holds_the_pull_up_to_the_floor_at_the_declared_speed() {
     let err = solved_refusal(|t| t.analog_lines.get_mut("I2C_SCL").unwrap().pull_up_ohms = 966);
     assert_refusal(err, "PullUpBelowSinkFloor", Some("SENSORS"));
     // The floor follows the declared speed, not the ceiling: at 1 MHz it is
-    // 20 mA, ceil(2900 / 20 mA) = 145 ohms, so 144 refuses and 145 passes.
+    // 8 mA (DS12117 Rev 10 Table 50, `AET-WO-4230` D8), ceil(2900 / 8 mA) =
+    // 363 ohms at the topology's rail, so 362 refuses and 363 passes.
     let at_1m = |t: &mut SolvedTopology, ohms| {
         t.i2c_ceilings.insert("SENSORS".into(), 1_000_000);
         t.i2c_speeds.insert("SENSORS".into(), 1_000_000);
@@ -1895,10 +1896,10 @@ fn solved_holds_the_pull_up_to_the_floor_at_the_declared_speed() {
             line.pull_up_ohms = ohms;
         }
     };
-    let err = solved_refusal(|t| at_1m(t, 144));
+    let err = solved_refusal(|t| at_1m(t, 362));
     assert_refusal(err, "PullUpBelowSinkFloor", Some("SENSORS"));
     let mut t = solved();
-    at_1m(&mut t, 145);
+    at_1m(&mut t, 363);
     assert_eq!(t.validate(), Ok(()));
     // A rail at the 2 V boundary reads 0.2 x VDD at 2 mA: ceil(1600 / 2 mA) = 800.
     // One millivolt above it is VOL 0.4 V at 3 mA: ceil(1601 / 3 mA) = 534.

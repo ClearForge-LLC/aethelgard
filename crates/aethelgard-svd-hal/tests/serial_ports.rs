@@ -107,6 +107,12 @@ fn insert_ports(solved: &mut SolvedTopology, ports: &[Port]) {
                 role: *role,
                 framing: f.clone(),
                 negotiated: None,
+                // An `rc_crsf` port declares at least the cited CRSF spread.
+                peer_deviation_ppm: if *role == SerialRole::RcCrsf {
+                    serial::crsf_cited_spread_ppm()
+                } else {
+                    0
+                },
                 kernel_hz: kernel,
                 brr,
                 actual_millibaud: serial::actual_millibaud(kernel, brr),

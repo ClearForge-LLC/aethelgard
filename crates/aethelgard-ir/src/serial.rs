@@ -22,7 +22,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::motor::SolvedClock;
+use crate::motor::{HSI_FAST_PPM, HSI_SLOW_PPM, SolvedClock};
 use crate::{IrValidationError, Signal, SolvedTopology};
 
 /// What a port carries. The framing is declared, never inferred from it.
@@ -139,6 +139,11 @@ pub struct SerialPort {
     pub framing: Framing,
     #[serde(deserialize_with = "Option::deserialize")]
     pub negotiated: Option<Negotiated>,
+    /// The deviation, in ppm, of the remote transmitter's baud clock from the
+    /// declared baud: a declaration, required (`INV-06`), that the check for
+    /// silicon adds to the receiver's own error (`AET-WO-4230` §1.8). An
+    /// `rc_crsf` port declares at least [`crsf_cited_spread_ppm`].
+    pub peer_deviation_ppm: u32,
 }
 
 /// A declaration that a port's baud is a rate the two ends negotiate, not
@@ -267,8 +272,8 @@ pub fn tolerance(brr: u32, m_bits: u8) -> Option<&'static ToleranceRow> {
 /// With `BRR` the nearest whole `USARTDIV` and at least 16, the error is at
 /// most `1 / (2·BRR)`: 3.125 % at `BRR` 16 (Table 406, whose tightest row is
 /// 3.41 %) and 2.94 % from `BRR` 17 on (Table 407, tightest 3.03 %). So no
-/// baud [`solve_brr`] admits fails this on any kernel clock; the check
-/// refuses only a `BRR` that is not the solved one.
+/// baud [`solve_brr`] admits fails this on any kernel clock. It judges the
+/// quantization alone: [`check_silicon`] adds HSI's deviation and the peer's.
 pub fn within(kernel_hz: u64, brr: u32, baud: u32, tolerance_ppm: u32) -> bool {
     let d = u128::from(brr) * u128::from(baud);
     u128::from(kernel_hz).abs_diff(d) * 1_000_000 < u128::from(tolerance_ppm) * d
@@ -313,6 +318,8 @@ pub struct SolvedSerialPort {
     /// The port's [`Negotiated`] declaration, copied by `solve`.
     #[serde(deserialize_with = "Option::deserialize")]
     pub negotiated: Option<Negotiated>,
+    /// The port's `peer_deviation_ppm`, copied by `solve`.
+    pub peer_deviation_ppm: u32,
     /// The kernel clock [`kernel_hz`] gives on the topology's clock.
     pub kernel_hz: u64,
     /// `USART_BRR` as the firmware writes it.
@@ -324,24 +331,51 @@ pub struct SolvedSerialPort {
 
 crate::object_only!(Framing, SerialPort, Negotiated, SolvedSerialPort);
 
-/// What [`check_silicon`] found for one port.
+/// What [`check_silicon`] found for one port. The judgement, in ppm: the
+/// receiver's own clock error `receiver_ppm`, which is the quantization error
+/// at the worse of HSI's two extremes, plus `peer_deviation_ppm`, strictly
+/// below the row's tolerance.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SiliconFraming {
     pub kernel_hz: u64,
     pub brr: u32,
     pub actual_millibaud: u64,
     pub error_ppm: i64,
+    /// `|kernel / BRR − baud| / baud`, in ppm, rounded up: HSI at nominal.
+    pub quantization_ppm: u64,
+    /// The HSI bound at the worse extreme: [`HSI_FAST_PPM`] or
+    /// [`HSI_SLOW_PPM`], whichever gives the larger `receiver_ppm`. It is
+    /// the direction that adds when the quantization error and HSI share a
+    /// sign, and the slow bound when they do not and HSI is far the larger.
+    pub hsi_ppm: u32,
+    /// `|(1 + e)(1 + h) − 1|` in ppm, rounded up, for the quantization error
+    /// `e` and the HSI deviation `h` of `hsi_ppm` taken with the sign that
+    /// makes it larger: `quantization_ppm + hsi_ppm` plus their product when
+    /// they share a sign, and less their product when they do not (so
+    /// opposite signs shrink it).
+    pub receiver_ppm: u64,
+    /// The port's declared `peer_deviation_ppm`.
+    pub peer_deviation_ppm: u32,
+    /// `receiver_ppm + peer_deviation_ppm`.
+    pub worst_case_ppm: u64,
     /// The row of [`TOLERANCE`] that applies, with [`TOLERANCE_SOURCE`].
     pub tolerance: Option<ToleranceRow>,
+    /// The row's tolerance less `worst_case_ppm`; negative when exceeded.
+    /// `None` when no row applies.
+    pub margin_ppm: Option<i64>,
     /// Every rule held: the kernel clock is the one the topology's clock
     /// gives; `BRR` is in range and is the nearest whole `USARTDIV`; the
-    /// word is 7 to 9 bits and the stop bits 1 or 2; and the error is
+    /// word is 7 to 9 bits and the stop bits 1 or 2; and the worst case is
     /// strictly below the row's tolerance (RM0433's "<").
     pub holds: bool,
 }
 
 /// The static check for silicon: `port`'s `BRR` and framing on `clock`, in
-/// exact integers. It never reads the generated firmware or board (`INV-07`).
+/// exact integers. The receiver's tolerance is judged against the worst
+/// case: the quantization error at each of HSI's two extremes
+/// ([`HSI_FAST_PPM`] / [`HSI_SLOW_PPM`], DS12117 Rev 10 Table 36), the larger
+/// taken, plus the remote transmitter's declared deviation. It never reads
+/// the generated firmware or board (`INV-07`).
 pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFraming {
     let kernel = kernel_hz(clock, &port.peripheral);
     let tolerance = port
@@ -352,21 +386,45 @@ pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFra
     let brr_ok = kernel
         .is_some_and(|k| k == port.kernel_hz && solve_brr(k, port.framing.baud) == Some(port.brr));
     let shape_ok = port.framing.stop_field().is_some();
-    let within = tolerance.is_some_and(|row| {
-        within(
-            port.kernel_hz,
-            port.brr,
-            port.framing.baud,
-            row.tolerance_ppm,
-        )
+    let d = u128::from(port.brr) * u128::from(port.framing.baud);
+    let k = u128::from(port.kernel_hz);
+    // The ppm by which `kernel × scale / 10⁶` is off `d`, scaled by `d`, then
+    // rounded up: |k·scale − d·10⁶| / d.
+    let off = |scale: u128| (k * scale).abs_diff(d * 1_000_000);
+    let ceil_ppm = |n: u128| {
+        if d == 0 {
+            u64::MAX
+        } else {
+            u64::try_from(n.div_ceil(d)).unwrap_or(u64::MAX)
+        }
+    };
+    let fast = off(1_000_000 + u128::from(HSI_FAST_PPM));
+    let slow = off(1_000_000 - u128::from(HSI_SLOW_PPM));
+    let (hsi_ppm, worse) = if fast > slow {
+        (HSI_FAST_PPM, fast)
+    } else {
+        (HSI_SLOW_PPM, slow)
+    };
+    let quantization_ppm = ceil_ppm(off(1_000_000));
+    let receiver_ppm = ceil_ppm(worse);
+    let worst_case_ppm = receiver_ppm.saturating_add(u64::from(port.peer_deviation_ppm));
+    let margin_ppm = tolerance.map(|row| {
+        i64::try_from(i128::from(row.tolerance_ppm) - i128::from(worst_case_ppm))
+            .unwrap_or(i64::MIN)
     });
     SiliconFraming {
         kernel_hz: port.kernel_hz,
         brr: port.brr,
         actual_millibaud: actual_millibaud(port.kernel_hz, port.brr),
         error_ppm: error_ppm(port.kernel_hz, port.brr, port.framing.baud),
+        quantization_ppm,
+        hsi_ppm,
+        receiver_ppm,
+        peer_deviation_ppm: port.peer_deviation_ppm,
+        worst_case_ppm,
         tolerance,
-        holds: brr_ok && shape_ok && within,
+        margin_ppm,
+        holds: brr_ok && shape_ok && margin_ppm.is_some_and(|m| m > 0),
     }
 }
 
@@ -387,6 +445,20 @@ pub const CRSF_ELRS_SOURCE: &str = "ExpressLRS src/lib/OPTIONS/options.cpp at f8
 /// default ExpressLRS and Betaflight receivers run. Any other baud is
 /// declared [`Negotiated`], or refused.
 pub const CRSF_BAUDS: [(u32, &str); 2] = [(416_666, CRSF_SOURCE), (420_000, CRSF_ELRS_SOURCE)];
+
+/// The spread of [`CRSF_BAUDS`], in ppm, rounded up: the two cited bauds'
+/// difference over the lower, exactly (3,334 / 416,666 = 8,002 ppm). A
+/// transmitter on the other cited baud is that far from a port declared on
+/// either, so an `rc_crsf` port declares a `peer_deviation_ppm` of at least
+/// this (`PeerDeviationBelowCited`).
+pub fn crsf_cited_spread_ppm() -> u32 {
+    let hi = CRSF_BAUDS.iter().map(|(b, _)| u64::from(*b)).max();
+    let lo = CRSF_BAUDS.iter().map(|(b, _)| u64::from(*b)).min();
+    let (Some(hi), Some(lo)) = (hi, lo) else {
+        return 0;
+    };
+    u32::try_from(((hi - lo) * 1_000_000).div_ceil(lo)).unwrap_or(u32::MAX)
+}
 
 /// Where a declared framing contradicts the role's published framing: the
 /// field, what the sources require, and the citation; `None` when it does
@@ -547,8 +619,22 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
                 citation,
             });
         }
+        if let Some(cited) = peer_below_cited(port.role, port.peer_deviation_ppm) {
+            return Err(E::PeerDeviationBelowCited {
+                id: id(),
+                declared_ppm: port.peer_deviation_ppm,
+                cited_ppm: cited,
+                citation: format!("{CRSF_SOURCE}; {CRSF_ELRS_SOURCE}"),
+            });
+        }
     }
     Ok(())
+}
+
+/// The cited spread, when `role` is `rc_crsf` and `declared_ppm` is below it.
+fn peer_below_cited(role: SerialRole, declared_ppm: u32) -> Option<u32> {
+    let cited = crsf_cited_spread_ppm();
+    (role == SerialRole::RcCrsf && declared_ppm < cited).then_some(cited)
 }
 
 /// The first field of `framing` outside the shape the firmware can write:
@@ -641,6 +727,7 @@ pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidat
                 negotiated_error(i, label, port.role, f, port.negotiated.as_ref()).is_some()
             })
             || contradiction(port.role, f, port.negotiated.is_some()).is_some()
+            || peer_below_cited(port.role, port.peer_deviation_ppm).is_some()
             || !solved
         {
             return Err(mismatch(label));
@@ -782,6 +869,7 @@ mod tests {
             role: SerialRole::Console,
             framing: framing(115_200, 8, Parity::None, 1),
             negotiated: None,
+            peer_deviation_ppm: 0,
             kernel_hz: 64_000_000,
             brr: 556,
             actual_millibaud: 0,

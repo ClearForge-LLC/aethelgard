@@ -165,12 +165,16 @@ pub enum SolveError {
         kernel_hz: u64,
     },
     #[error(
-        "serial port `{port}`: the solved baud's error, {error_ppm} ppm, is not below the receiver's tolerance of {tolerance_ppm} ppm ({row})"
+        "serial port `{port}`: the worst-case baud error, {worst_case_ppm} ppm (the receiver's {receiver_ppm}: quantization {quantization_ppm} with HSI at {hsi_ppm}; plus the peer's declared {peer_deviation_ppm}), is not below the receiver's tolerance of {tolerance_ppm} ppm ({row})"
     )]
     SerialBaudTolerance {
         port: String,
         row: String,
-        error_ppm: i64,
+        quantization_ppm: u64,
+        hsi_ppm: u32,
+        receiver_ppm: u64,
+        peer_deviation_ppm: u32,
+        worst_case_ppm: u64,
         tolerance_ppm: u32,
     },
     #[error(
@@ -583,14 +587,14 @@ fn solved_port(
         role: declared.role,
         framing: declared.framing.clone(),
         negotiated: declared.negotiated.clone(),
+        peer_deviation_ppm: declared.peer_deviation_ppm,
         kernel_hz: kernel,
         brr,
         actual_millibaud: serial::actual_millibaud(kernel, brr),
         error_ppm: serial::error_ppm(kernel, brr, baud),
     };
-    // belt-and-suspenders: a solved BRR is the nearest, at least 16, so its
-    // error is at most 1 / 32 and below every row (`serial::within`); this
-    // refuses rather than emits if the clock or the table ever changes that.
+    // The worst case, not the quantization alone: HSI's deviation and the
+    // peer's declared one sum with it (`AET-WO-4230` §1.8).
     let check = serial::check_silicon(clock, &port);
     if !check.holds {
         let (row, tolerance_ppm) = check.tolerance.map_or_else(
@@ -610,7 +614,11 @@ fn solved_port(
         return Err(SolveError::SerialBaudTolerance {
             port: label.to_owned(),
             row,
-            error_ppm: check.error_ppm,
+            quantization_ppm: check.quantization_ppm,
+            hsi_ppm: check.hsi_ppm,
+            receiver_ppm: check.receiver_ppm,
+            peer_deviation_ppm: check.peer_deviation_ppm,
+            worst_case_ppm: check.worst_case_ppm,
             tolerance_ppm,
         });
     }
@@ -1042,7 +1050,10 @@ fn i2c_electrical(spec: &Specification) -> Result<(), SolveError> {
             .iter()
             .find(|d| d.id == bus.domain)
             .expect("Specification::validate checked every bus's domain");
-        let floor = electrical::i2c_pull_up_floor_ohms(bus.speed_hz, domain.nominal_millivolts);
+        // The floor is taken at the domain's maximum rail (`AET-WO-4230` §1.5,
+        // review A8), where the sink current is greatest.
+        let floor =
+            electrical::i2c_pull_up_floor_ohms(bus.speed_hz, crate::maximum_millivolts(domain));
         if bus.pull_up_ohms < floor {
             return Err(SolveError::PullUpBelowSinkFloor {
                 bus: bus.id.clone(),

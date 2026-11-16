@@ -51,13 +51,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// D1); an empty list acknowledges none. `4210` took 8 by the numbering
 /// rule, merging after `4300d`. Version 9 requires `serial_ports`
 /// (`AET-WO-4300b`, renumbered from 7 by the same rule); an empty list
-/// declares none. Nothing supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 9;
+/// declares none. Version 10 requires `peer_deviation_ppm` on every serial
+/// port, the remote transmitter's clock deviation, taken by `AET-WO-4230`;
+/// the second of `4230`, `4300d3` and `4300g` to merge renumbers. Nothing
+/// supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 10;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 9 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 10 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -1322,6 +1325,15 @@ pub enum IrValidationError {
         citation: &'static str,
     },
     #[error(
+        "serial port `{id}` is an `rc_crsf` port and declares a `peer_deviation_ppm` of {declared_ppm}, below {cited_ppm} ppm, the spread of the two CRSF bauds it cites ({citation})"
+    )]
+    PeerDeviationBelowCited {
+        id: String,
+        declared_ppm: u32,
+        cited_ppm: u32,
+        citation: String,
+    },
+    #[error(
         "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
     )]
     UnjudgedSerialConstraint { id: String },
@@ -1546,6 +1558,7 @@ impl IrValidationError {
             Self::SerialFramingContradictsRole { .. } => "SerialFramingContradictsRole",
             Self::SerialNegotiatedOffCrsf { .. } => "SerialNegotiatedOffCrsf",
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
+            Self::PeerDeviationBelowCited { .. } => "PeerDeviationBelowCited",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
@@ -1671,6 +1684,7 @@ impl IrValidationError {
             | Self::SerialFramingContradictsRole { id, .. }
             | Self::SerialNegotiatedOffCrsf { id, .. }
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
+            | Self::PeerDeviationBelowCited { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }

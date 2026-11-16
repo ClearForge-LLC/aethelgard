@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "accept_lifecycle": [],
   "project_name": "serial-four",
   "mcu": {
@@ -328,7 +328,8 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000
     },
     {
       "label": "GPS",
@@ -349,7 +350,8 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000
     },
     {
       "label": "CRSF",
@@ -370,7 +372,8 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 8002
     },
     {
       "label": "SBUS",
@@ -391,7 +394,8 @@
         "stop_bits": 2,
         "inverted": true
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000
     }
   ]
 }

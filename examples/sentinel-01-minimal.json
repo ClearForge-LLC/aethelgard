@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "accept_lifecycle": [],
   "project_name": "sentinel-01",
   "mcu": {
@@ -206,7 +206,8 @@
         "stop_bits": 1,
         "inverted": false
       },
-      "negotiated": null
+      "negotiated": null,
+      "peer_deviation_ppm": 5000
     }
   ]
 }
