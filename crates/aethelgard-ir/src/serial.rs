@@ -438,9 +438,15 @@ pub fn contradiction(
 }
 
 /// What is wrong with a port's [`Negotiated`] declaration, if anything: it
-/// is on a role other than `rc_crsf`, its source is empty, or the baud it
-/// calls negotiated is one [`CRSF_BAUDS`] cites. `None` for `null`.
+/// is on a role other than `rc_crsf`; its source is not a source by the
+/// repository's rule for one (a stackup's: 1 to 200 bytes of printable
+/// ASCII, no space at either end; `InvalidSource` naming
+/// `serial_ports[index].negotiated.source`, never the value; adversarial
+/// pass 4, ADV4-3: a zero-width space, a NUL, a newline or a megabyte was
+/// accepted); or the baud it calls negotiated is one [`CRSF_BAUDS`] cites.
+/// `None` for `null`.
 fn negotiated_error(
+    index: usize,
     label: &str,
     role: SerialRole,
     framing: &Framing,
@@ -454,8 +460,9 @@ fn negotiated_error(
             role: role.name(),
         });
     }
-    if n.source.trim().is_empty() {
-        return Some(IrValidationError::SerialNegotiatedSourceEmpty { id });
+    let path = format!("serial_ports[{index}].negotiated.source");
+    if let Err(e) = crate::board::source(&n.source, &path) {
+        return Some(e);
     }
     CRSF_BAUDS
         .iter()
@@ -473,7 +480,8 @@ fn negotiated_error(
 /// order: a label unique with case folded; a peripheral that is `null` or one
 /// of [`PERIPHERALS`] exactly (`LPUART1`, in any case, refused by its own
 /// name), and not another port's; the framing's shape; a `negotiated`
-/// declaration only on an `rc_crsf` port, with a source, at a baud
+/// declaration only on an `rc_crsf` port, with a source by the
+/// repository's rule ([`negotiated_error`]), at a baud
 /// [`CRSF_BAUDS`] does not cite; and no contradiction of the role's
 /// published framing ([`contradiction`]). The nets are step 11's
 /// and a constraint on one step 14's.
@@ -482,7 +490,7 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
 
     let mut labels: BTreeMap<String, &str> = BTreeMap::new();
     let mut peripherals: BTreeMap<&str, &str> = BTreeMap::new();
-    for port in ports {
+    for (index, port) in ports.iter().enumerate() {
         let id = || port.label.clone();
         if labels
             .insert(port.label.to_lowercase(), &port.label)
@@ -520,6 +528,7 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
             });
         }
         if let Some(e) = negotiated_error(
+            index,
             &port.label,
             port.role,
             &port.framing,
@@ -628,7 +637,9 @@ pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidat
             || !indices.insert(port.index)
             || !peripherals.insert(p)
             || shape_error(f).is_some()
-            || negotiated_error(label, port.role, f, port.negotiated.as_ref()).is_some()
+            || usize::try_from(port.index).map_or(true, |i| {
+                negotiated_error(i, label, port.role, f, port.negotiated.as_ref()).is_some()
+            })
             || contradiction(port.role, f, port.negotiated.is_some()).is_some()
             || !solved
         {

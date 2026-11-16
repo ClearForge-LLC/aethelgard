@@ -1228,10 +1228,6 @@ pub enum IrValidationError {
     )]
     SerialNegotiatedOffCrsf { id: String, role: &'static str },
     #[error(
-        "serial port `{id}` declares `negotiated` with an empty `source`: cite where the negotiated rate comes from"
-    )]
-    SerialNegotiatedSourceEmpty { id: String },
-    #[error(
         "serial port `{id}` declares `negotiated` at {baud}, a cited CRSF baud, not a negotiated one ({citation}); declare null"
     )]
     SerialNegotiatedAtCitedBaud {
@@ -1455,7 +1451,6 @@ impl IrValidationError {
             Self::SerialFramingShape { .. } => "SerialFramingShape",
             Self::SerialFramingContradictsRole { .. } => "SerialFramingContradictsRole",
             Self::SerialNegotiatedOffCrsf { .. } => "SerialNegotiatedOffCrsf",
-            Self::SerialNegotiatedSourceEmpty { .. } => "SerialNegotiatedSourceEmpty",
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
@@ -1579,7 +1574,6 @@ impl IrValidationError {
             | Self::SerialFramingShape { id, .. }
             | Self::SerialFramingContradictsRole { id, .. }
             | Self::SerialNegotiatedOffCrsf { id, .. }
-            | Self::SerialNegotiatedSourceEmpty { id }
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id } => Some(id),

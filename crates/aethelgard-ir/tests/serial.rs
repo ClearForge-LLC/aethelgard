@@ -353,7 +353,7 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
     let negotiated = |p: &mut Value| {
         p["framing"]["baud"] = json!(432000);
         p["negotiated"] =
-            json!({"source": "the receiver's CRSF 0x70 speed proposal, vendor manual §4"});
+            json!({"source": "the receiver's CRSF 0x70 speed proposal, vendor manual section 4"});
     };
     for edit in [
         (|_: &mut Value| {}) as Edit,
@@ -419,7 +419,7 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
         );
     }
     // The declaration itself, each refusal by name.
-    let declared: [(Edit, &str); 4] = [
+    let declared: [(Edit, &str); 3] = [
         (
             |p| {
                 p["role"] = json!("console");
@@ -427,13 +427,6 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
                 p["negotiated"] = json!({"source": "s"});
             },
             "SerialNegotiatedOffCrsf",
-        ),
-        (
-            |p| {
-                p["framing"]["baud"] = json!(432000);
-                p["negotiated"] = json!({"source": " "});
-            },
-            "SerialNegotiatedSourceEmpty",
         ),
         (
             |p| p["negotiated"] = json!({"source": "s"}),
@@ -1236,4 +1229,73 @@ fn a_version_6_topology_without_serial_ports_is_refused_as_a_version() {
     assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");
     v["schema_version"] = json!(aethelgard_ir::SOLVED_SCHEMA_VERSION);
     assert!(serde_json::from_value::<SolvedTopology>(v).is_err());
+}
+
+/// Adversarial pass 4, ADV4-3 (the PM's ruling): a negotiated rate's source
+/// is held to the repository's rule for a source (the stackup's: 1 to 200
+/// bytes of printable ASCII, no space at either end), in `validate` and in
+/// `SolvedTopology::validate`. The adversary's inputs were accepted: a
+/// zero-width space, a NUL, a newline and tab, and a megabyte; and the
+/// rule's edges besides. Each is refused as `InvalidSource` naming the
+/// path, never the value; a plain citation, 200 bytes, is accepted and
+/// solves.
+#[test]
+fn adversarial_4_a_negotiated_source_is_held_to_the_source_rule() {
+    let at = |source: &str| {
+        let mut p = crsf(|p| p["framing"]["baud"] = json!(432000));
+        p["negotiated"] = json!({ "source": source });
+        p
+    };
+    let long = "a".repeat(1_000_000);
+    let over = "a".repeat(201);
+    for source in [
+        "\u{200B}",
+        "\u{0}",
+        "\n\t-",
+        long.as_str(),
+        over.as_str(),
+        "",
+        " ",
+        " ExpressLRS",
+        "ExpressLRS ",
+        "caf\u{e9}",
+        "a\u{7f}",
+    ] {
+        let e = refused_ports(vec![at(source)]);
+        assert_eq!(
+            (e.kind(), e.path()),
+            ("InvalidSource", Some("serial_ports[0].negotiated.source")),
+            "{source:?}: {e}"
+        );
+        // The message is the rule's, with the path and nothing of the value.
+        assert_eq!(
+            e.to_string(),
+            "`serial_ports[0].negotiated.source` is not a source: 1 to 200 bytes of printable ASCII, no space at either end"
+        );
+    }
+    let cited = "ExpressLRS options.cpp rcvr-uart-baud, the receiver's 432000 setting";
+    let edge = "a".repeat(200);
+    for source in [cited, "x", edge.as_str()] {
+        let v = spec_json(vec![at(source)]);
+        let t = solved(v);
+        assert_eq!(
+            t.serial_ports["RC"]
+                .negotiated
+                .as_ref()
+                .map(|n| n.source.as_str()),
+            Some(source)
+        );
+        assert!(t.validate().is_ok());
+        // The solved topology re-checks it: the same source made invalid
+        // there is refused as a mismatch of the port.
+        let mut bad = serde_json::to_value(&t).unwrap();
+        bad["serial_ports"]["RC"]["negotiated"]["source"] = json!("\u{200B}");
+        let bad: SolvedTopology = serde_json::from_value(bad).unwrap();
+        let e = bad.validate().unwrap_err();
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("SerialPortMismatch", Some("RC")),
+            "{e}"
+        );
+    }
 }
