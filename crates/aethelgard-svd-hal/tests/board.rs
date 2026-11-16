@@ -221,7 +221,10 @@ fn the_firmware_follows_the_judges_record_layout() {
     // `AET-WO-4230` D10 (reduction-pass finding): the brown-out word is the
     // judge's word, the one after the boot word.
     assert!(
-        main.contains(&format!(".add({}).write_volatile(optsr)", BROWN_OUT_OFFSET / 4)),
+        main.contains(&format!(
+            ".add({}).write_volatile(optsr)",
+            BROWN_OUT_OFFSET / 4
+        )),
         "the brown-out word at the judge's offset {BROWN_OUT_OFFSET}"
     );
     // The array holds the boot word, then one record per read: the BME280's
