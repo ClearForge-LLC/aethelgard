@@ -1175,6 +1175,24 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
                 _ => Err(format!("segment [{s:#x}, {e:#x}) is not in 32 bits")),
             })
             .collect::<Result<_, String>>()?,
+        brown_out: Reading {
+            address: hex_u32(&boot.brown_out.address)?,
+            mask: hex_u32(&boot.brown_out.mask)?,
+            expected: hex_u32(&boot.brown_out.expected)?,
+            observed: boot
+                .brown_out
+                .observed
+                .as_deref()
+                .map(hex_u32)
+                .transpose()?,
+        },
+        // At most as many as a record carries: a cut list still fails.
+        flash_access: boot.brown_out.flash_access.as_ref().map(|v| {
+            v.iter()
+                .take(aethelgard_chaos::record::MAX_WITNESS_LINES)
+                .cloned()
+                .collect()
+        }),
     });
     for r in &boot.registers {
         out.push(Record::RegisterObserved {

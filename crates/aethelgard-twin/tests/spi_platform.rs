@@ -45,12 +45,14 @@ fn with_imu() -> SolvedTopology {
     t
 }
 
-/// The lines of `text` from the multiplexer's declaration on, without
-/// comments or blank lines.
+/// The lines of `text` from the multiplexer's declaration to the brown-out
+/// level's presentation, which always closes the platform (`AET-WO-4230`
+/// D10), without comments or blank lines.
 fn spi_declarations(text: &str) -> Vec<&str> {
     let from = text.find("spi1mux: SPI.SPIMultiplexer").expect(text);
     text[from..]
         .lines()
+        .take_while(|l| *l != "flashController:")
         .filter(|l| !l.trim().is_empty() && !l.starts_with("//"))
         .collect()
 }

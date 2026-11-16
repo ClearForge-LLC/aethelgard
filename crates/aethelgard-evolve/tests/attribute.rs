@@ -169,6 +169,13 @@ fn boot(word: u32) -> Record {
         instructions_observed: Some(10_000_000),
         pc: Some(0x0800_0596),
         executable: vec![(0, 0x1000_0000)],
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: Some(0),
+        },
+        flash_access: Some(Vec::new()),
     }
 }
 
@@ -642,6 +649,13 @@ fn a_core_outside_the_archived_segments_is_software_on_healthy_buses() {
         instructions_observed: Some(10_000_000),
         pc: Some(pc),
         executable,
+        brown_out: aethelgard_chaos::record::Reading {
+            address: 0x2000_0004,
+            mask: 0xC,
+            expected: 0,
+            observed: Some(0),
+        },
+        flash_access: Some(Vec::new()),
     };
     let segments = vec![(0x0800_0000, 0x0800_1000)];
     replace(
@@ -1249,6 +1263,13 @@ fn each_finding_selects_only_the_events_that_show_it() {
             instructions_observed: Some(9_999_999),
             pc: Some(0x0800_0596),
             executable: vec![(0, 0x1000_0000)],
+            brown_out: aethelgard_chaos::record::Reading {
+                address: 0x2000_0004,
+                mask: 0xC,
+                expected: 0,
+                observed: Some(0),
+            },
+            flash_access: Some(Vec::new()),
         },
     );
     replace(
@@ -1421,6 +1442,13 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
                         instructions_observed: Some(9_999_999),
                         pc: Some(0x0800_0596),
                         executable: vec![(0, 0x1000_0000)],
+                        brown_out: aethelgard_chaos::record::Reading {
+                            address: 0x2000_0004,
+                            mask: 0xC,
+                            expected: 0,
+                            observed: Some(0),
+                        },
+                        flash_access: Some(Vec::new()),
                     },
                 )
             }),
@@ -1660,4 +1688,56 @@ fn a_masked_identity_check_counts_as_passing() {
     assert_eq!(masked(0xFFC8), Rule::I1);
     // 0xFF00 & 0x3F == 0: a real mismatch.
     assert_ne!(masked(0xFF00), Rule::I1);
+}
+
+/// `AET-WO-4230` D10: kind 10's brown-out word not the declared level, or
+/// flash controller accesses the bring-up never makes, are the firmware's
+/// (`S2`) on healthy buses, as the campaign's other boot failures are. A
+/// verdict that does not name them is refused by replay before attribution
+/// (`aethelgard-chaos` `check_run`).
+#[test]
+fn a_brown_out_word_or_a_flash_access_is_software_on_healthy_buses() {
+    let edit = |word: u32, flash: Option<Vec<String>>| {
+        let mut r = healthy();
+        for x in &mut r {
+            if let Record::BootObserved {
+                brown_out,
+                flash_access,
+                ..
+            } = x
+            {
+                brown_out.expected = 0xC;
+                brown_out.observed = Some(word);
+                *flash_access = flash.clone();
+            }
+        }
+        r
+    };
+    for (word, flash, kind) in [
+        (
+            0x0406_AAF0,
+            Some(Vec::new()),
+            "brown_out_level_not_programmed",
+        ),
+        (
+            0xFFFF_FFFF,
+            Some(Vec::new()),
+            "brown_out_level_not_programmed",
+        ),
+        (
+            0x0406_AAFC,
+            Some(vec!["the firmware wrote the flash controller".to_owned()]),
+            "flash_controller_access",
+        ),
+        (0x0406_AAFC, None, "flash_controller_access"),
+    ] {
+        let mut r = edit(word, flash.clone());
+        replace(&mut r, is_verdict, verdict(&[(kind, 1)]));
+        let a = attributed(&r);
+        assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S2), "{kind}");
+        assert_eq!(kinds(&a.symptoms), [10], "{kind}");
+    }
+    // The declared level read back, every access the one read: a pass.
+    let r = edit(0x0406_AAFC, Some(Vec::new()));
+    assert_eq!(attributed(&r).rule, Rule::N1);
 }

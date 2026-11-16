@@ -55,6 +55,26 @@ pub const PC_OUTSIDE_FINDING: &str = "pc_outside_firmware";
 /// The boot judge's finding for a core parked inside the firmware but off
 /// every self-loop, made only when `pc` is inside (`AET-WO-2204` D3).
 pub const SELF_LOOP_FINDING: &str = "pc_not_on_self_loop";
+/// The boot judge's finding for a boot record whose brown-out word is not
+/// the declared level, or was never recorded (`AET-WO-4230` §1.6, D10:
+/// `BrownOutLevelNotProgrammed`), which kind 10 archives.
+pub const BROWN_OUT_FINDING: &str = "brown_out_level_not_programmed";
+/// The boot judge's finding for a flash controller accessed otherwise than
+/// by the bring-up's one read of `FLASH_OPTSR_CUR` (`AET-WO-4230` D10).
+pub const FLASH_ACCESS_FINDING: &str = "flash_controller_access";
+// belt-and-suspenders: `aethelgard-twin` `boot::RECORD_UNSET`, which this
+// crate does not depend on; the CLI's tests archive the twin's fill.
+/// The judge's fill of the boot record's words before the core runs: a
+/// brown-out word still at it was never recorded, whatever its `BOR_LEV`
+/// bits (3) say.
+pub const RECORD_UNSET: u32 = 0xFFFF_FFFF;
+
+/// True when kind 10's brown-out word, read, is the judge's fill or its
+/// `BOR_LEV` is not the declared level (`AET-WO-4230` D10).
+pub fn brown_out_fails(r: &record::Reading) -> bool {
+    r.observed
+        .is_some_and(|o| o == RECORD_UNSET || o & r.mask != r.expected)
+}
 
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -858,6 +878,30 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         return Err(
             "the verdict names pc_not_on_self_loop for a pc outside the firmware or unread",
         );
+    }
+    // The brown-out word and the flash controller (`AET-WO-4230` D10): once
+    // the boot word is set, each finding exactly when kind 10 shows it, as
+    // an error; before it, none.
+    let (brown, flash) = records
+        .iter()
+        .find_map(|r| match r {
+            Record::BootObserved {
+                brown_out,
+                flash_access,
+                ..
+            } => Some((
+                booted && brown_out_fails(brown_out),
+                booted && flash_access.as_deref() != Some(&[]),
+            )),
+            _ => None,
+        })
+        .unwrap_or_default();
+    for (kind, want) in [(BROWN_OUT_FINDING, brown), (FLASH_ACCESS_FINDING, flash)] {
+        if any_severity(kind) != u64::from(want) || count(kind) != u64::from(want) {
+            return Err(
+                "the verdict's brown-out and flash controller findings do not match the boot's",
+            );
+        }
     }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,

@@ -769,7 +769,9 @@ fn a_value_one_bit_off_fails_as_an_identity_mismatch() {
 fn record_on(platform: &Path, elf: &Path) -> (String, String) {
     let boot_word = aethelgard_twin::boot::boot_word().unwrap();
     let unset = aethelgard_twin::boot::RECORD_UNSET;
-    let (status_at, value_at) = (boot_word + 4, boot_word + 8);
+    // U2's record, after the boot word and the brown-out word (`AET-WO-4230`).
+    let status_at = boot_word + aethelgard_twin::boot::RECORD_OFFSET;
+    let value_at = status_at + 4;
     let commands = [
         "emulation SetSeed 2100".to_owned(),
         "mach create".to_owned(),
