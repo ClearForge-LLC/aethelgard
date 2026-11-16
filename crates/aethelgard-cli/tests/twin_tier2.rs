@@ -2119,6 +2119,65 @@ fn m2_a_dma_start_of_cen_fails_closed_by_name() {
     ));
 }
 
+/// The Sentinel-02-shaped board with `edits` applied to `main.rs` beside
+/// [`RAW_ADV`]: its verdict, and each port's injection instant, which must
+/// keep the chain's order (adversarial pass 1, L1/L2): CRSF in only after
+/// MAVLINK's eight frame bytes, 200 us apart, have come back.
+fn sentinel_02_chain(label: &str, edits: &[(&str, &str)]) -> Value {
+    let (platform, spec, elf) = motor_board(
+        "sentinel-02-shaped",
+        label,
+        |_| {},
+        |d| {
+            edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+            for (from, to) in edits {
+                edit(d, "src/main.rs", from, to);
+            }
+        },
+    );
+    let (_, v) = boot_on(label, &platform, &spec, &elf, "100ms");
+    assert!(
+        !kinds(&v).contains(&"serial_injection_out_of_order"),
+        "{label}: {v}"
+    );
+    let at: Vec<Option<u64>> = serial(&v)
+        .iter()
+        .map(|p| p["twin"]["injected_ns"].as_u64())
+        .collect();
+    let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+    assert_eq!(at[0], Some(bw + 100_000), "{label}: {v}");
+    if let Some(crsf) = at[1] {
+        assert!(crsf > bw + 100_000 + 7 * 200_000, "{label}: {at:?}");
+    }
+    v
+}
+
+/// Adversarial pass 1, L1 (S1): right after its boot word the firmware
+/// writes eight bytes of its own to MAVLINK's `TDR` before MAVLINK's frame
+/// goes in. The hook counted any `TDR` write, so CRSF went in beside
+/// MAVLINK, out of D4's order; it counts only bytes echoing the frame in
+/// order once the frame's first byte went in. The stray bytes are the
+/// capture's to judge.
+#[test]
+fn l1_bytes_written_before_the_frame_never_count_as_its_echo() {
+    let body = format!(
+        "{BOOT_WORD}\n    for b in 0..8u32 {{ while rd(0x4000_441c) & 0x80 == 0 {{}} wr(0x4000_4428, 0x30 + b); }}"
+    );
+    let v = sentinel_02_chain("l1-tdr-junk", &[(BOOT_WORD, &body)]);
+    assert!(kinds(&v).contains(&"serial_capture_forged"), "{v}");
+}
+
+/// Adversarial pass 1, L1 (S1b): MAVLINK's pattern sent after the boot
+/// word, not before: its bytes are not the frame's, so they never count;
+/// CRSF goes in after MAVLINK's echo, in order.
+#[test]
+fn l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo() {
+    let pat = "    for &byte in [0x4d, 0x41, 0x56, 0x4c, 0x49, 0x4e, 0x4b].iter().chain(PATTERN_TAIL.iter()) {\n        if usart2.send(&mut r, byte).is_err() {\n            break;\n        }\n    }\n";
+    let body = format!("{BOOT_WORD}\n{pat}");
+    let v = sentinel_02_chain("l1-pattern-late", &[(pat, ""), (BOOT_WORD, &body)]);
+    answer(&format!("l1 pattern late: kinds={:?}", kinds(&v)));
+}
+
 /// A `WFI` before the outputs start, woken by SysTick 1 ms later with
 /// interrupts masked (adversarial pass 1, A8): the core's instruction count
 /// lags its time from there on.

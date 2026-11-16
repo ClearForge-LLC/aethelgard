@@ -2434,6 +2434,16 @@ pub fn judge_boot(
         // quantum, summed in the specification's order, inside the run: known
         // only now (`AET-WO-2302` D4).
         findings.extend(observed.boot_word_ns.and_then(|bw| wire_past_run(plan, bw)));
+        // Each port in only after the one before it echoed its whole frame
+        // (adversarial pass 1, L2).
+        for (s, j) in plan.serial.iter().zip(&observed.injections) {
+            if let Some(why) = &j.out_of_order {
+                findings.push(Finding::plain(
+                    aethelgard_chaos::campaign::SERIAL_INJECTION_ORDER_FINDING,
+                    format!("{}: {why}", serial_who(s)),
+                ));
+            }
+        }
     }
     for d in &plan.image.identity.unmodelled {
         findings.push(Finding::info(
@@ -2852,12 +2862,46 @@ pub struct PortInjection {
     pub line: Option<usize>,
     /// Why no whole frame went in, for the echo's finding.
     pub why: Option<String>,
+    /// Why a byte of its frame went in before the port before it in the
+    /// chain had echoed its whole frame (`serial_injection_out_of_order`,
+    /// adversarial pass 1, L2); `None` when in order.
+    pub out_of_order: Option<String>,
 }
 
-/// Each port's injection from `hooks`, in a boot that started at `start_ns`:
-/// the first port not held open anchored at the boot word, each later one
-/// at the `FRAME_LEN`-th echoed byte of the last port before it not held
-/// open (`AET-WO-2302` D4, D5), each byte at its due count. A port held
+/// How many bytes port `j` wrote to its `TDR` that echo its `frame` in
+/// order, from its frame's first byte's line on (`AET-WO-2302` adversarial
+/// pass 1, L1/L2: a byte that is not the frame's next is never counted),
+/// and the line and instant of the `FRAME_LEN`-th: recounted from the
+/// logged bytes, never taken from the hook's own count.
+fn frame_echo(hooks: &[Seen], j: usize, frame: &[u8]) -> (u64, Option<(usize, u64)>) {
+    use crate::anchor::Hook;
+    let Some(from) = hooks.iter().find_map(|(i, h, _)| match h {
+        Hook::Inject { port, byte: 0, .. } if *port == j => Some(*i),
+        _ => None,
+    }) else {
+        return (0, None);
+    };
+    let mut n = 0usize;
+    for (i, h, ns) in hooks {
+        if let Hook::Tdr { port, value, .. } = h
+            && *port == j
+            && *i > from
+            && frame.get(n).is_some_and(|&b| u32::from(b) == *value)
+        {
+            n += 1;
+            if n == frame.len() {
+                return (n as u64, Some((*i, *ns)));
+            }
+        }
+    }
+    (n as u64, None)
+}
+
+/// Each port's injection from `hooks`: the first port not held open
+/// anchored at the boot word, each later one at the `FRAME_LEN`-th byte
+/// echoing its frame of the last port before it not held open
+/// (`AET-WO-2302` D4, D5), each byte at its due count; a port in before
+/// that byte is named ([`frame_echo`]). A port held
 /// open gets nothing, and says so. Bytes that are not exactly one frame in
 /// order (a boot word written twice), or any byte into a port held open,
 /// are no injection, and say why.
@@ -2908,16 +2952,25 @@ fn port_injections(
                 };
             };
             // The port before it in the chain: the last before it not held
-            // open (`AET-WO-2302` D5).
+            // open (`AET-WO-2302` D5), and its frame's echo.
             let before = (0..k).rev().find(|&j| !ports[j].open);
-            let echoed = hooks
-                .iter()
-                .filter_map(|(_, h, _)| match h {
-                    Hook::Echo { port, n, .. } if Some(*port) == before => Some(*n),
-                    _ => None,
-                })
-                .max()
-                .unwrap_or(0);
+            let (echoed, last) =
+                before.map_or((0, None), |j| frame_echo(hooks, j, &ports[j].frame));
+            // Any byte of this port's in before that echo was whole is out
+            // of the chain's order (L2), whatever else is wrong with it.
+            let out_of_order = before
+                .zip(bytes.first())
+                .filter(|(_, b)| last.is_none_or(|(l, _)| b.line < l))
+                .map(|(j, b)| {
+                    format!(
+                        "its frame's first byte went in at {} ns, {}; each port goes in only once the one before it has echoed its whole frame",
+                        b.ns,
+                        match last {
+                            Some((_, at)) => format!("before port {j}'s last echoed frame byte at {at} ns"),
+                            None => format!("while port {j} before it had echoed {echoed} of its {frame} frame bytes"),
+                        }
+                    )
+                });
             if p.open && bytes.is_empty() {
                 return PortInjection {
                     why: Some(
@@ -2958,6 +3011,7 @@ fn port_injections(
                         "{} byte writes went in that are not one frame in order from one anchor (the boot word written over another word more than once?)",
                         bytes.len()
                     )),
+                    out_of_order,
                     ..Default::default()
                 };
             }
@@ -2972,6 +3026,7 @@ fn port_injections(
                         bytes.len()
                     )
                 }),
+                out_of_order,
             }
         })
         .collect()
@@ -3885,9 +3940,14 @@ mod tests {
         for (j, b) in serial[0].frame.iter().enumerate() {
             let us = 100 + 100 * j;
             assert!(c.contains(&format!("FromMicroseconds({us}), ")), "{j}");
+            let start = if j == 0 {
+                ", __import__('sys').aethelgard_echo.__setitem__(0, 0)"
+            } else {
+                ""
+            };
             assert!(
                 c.contains(&format!(
-                    "sysbus.usart1 WriteChar {b:#04x}')) if cpu.ExecutedInstructions == a + {}",
+                    "sysbus.usart1 WriteChar {b:#04x}'){start}) if cpu.ExecutedInstructions == a + {}",
                     us * 100
                 )),
                 "{j}"
@@ -4512,12 +4572,14 @@ mod tests {
         let line = |count: u64, body: String| {
             at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"))
         };
+        let frame0 = p.port_hooks()[0].frame;
         let mut log = vec![line(3075, "BOOTWORD 2100b007 0 3075".into())];
         for j in 0..8u64 {
             let c = 3075 + 10_000 + 10_000 * j;
             let mux = if j == 0 { " 28a801 770" } else { "" };
             log.push(line(c, format!("INJECT 0 {j} 3075 {c}{mux}")));
-            log.push(line(c + 50, format!("ECHO 0 {} 5a {}", j + 1, c + 50)));
+            let b = frame0[j as usize];
+            log.push(line(c + 50, format!("TDR 0 {b:x} {}", c + 50)));
         }
         let echoed = 3075 + 10_000 + 70_000 + 50;
         for j in 0..8u64 {
@@ -4538,17 +4600,25 @@ mod tests {
         let j = read(&log);
         assert_eq!(
             j.iter()
-                .map(|j| (j.at_ns, j.bytes, j.mux, j.why.clone()))
+                .map(|j| (
+                    j.at_ns,
+                    j.bytes,
+                    j.mux,
+                    j.why.clone(),
+                    j.out_of_order.clone()
+                ))
                 .collect::<Vec<_>>(),
             [
-                (Some(130_750), 8, Some((0x28_a801, 0x770)), None),
-                (Some(931_250), 8, Some((0x28_a801, 0x770)), None),
+                (Some(130_750), 8, Some((0x28_a801, 0x770)), None, None),
+                (Some(931_250), 8, Some((0x28_a801, 0x770)), None, None),
             ]
         );
+        // Port 0's eighth echoed byte, the line port 1 is anchored at.
+        let last = format!("TDR 0 {:x} {echoed}", frame0[7]);
         // Port 0 echoed seven: port 1 never went in.
         let seven: Vec<String> = log
             .iter()
-            .filter(|l| !l.contains("ECHO 0 8 ") && !l.contains("INJECT 1 "))
+            .filter(|l| !l.ends_with(&last) && !l.contains("INJECT 1 "))
             .cloned()
             .collect();
         let j = read(&seven);
@@ -4561,6 +4631,58 @@ mod tests {
             "{:?}",
             j[1]
         );
+        // Adversarial pass 1, L1: bytes written to port 0's `TDR` that do
+        // not echo its frame in order (its frame before its first byte went
+        // in, a pattern byte, junk) are never counted.
+        let mut noisy = log.clone();
+        for (i, b) in frame0.iter().enumerate() {
+            noisy.insert(
+                1 + i,
+                line(3_080 + i as u64, format!("TDR 0 {b:x} {}", 3_080 + i)),
+            );
+        }
+        let at = noisy.iter().position(|l| l.ends_with(&last)).unwrap();
+        noisy.insert(at, line(echoed - 10, format!("TDR 0 4d {}", echoed - 10)));
+        let seen = |j: Vec<PortInjection>| {
+            j.into_iter()
+                .map(|j| (j.at_ns, j.bytes, j.mux, j.why, j.out_of_order))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(seen(read(&noisy)), seen(read(&log)));
+        // L2: port 1 in before port 0's last echoed frame byte (that line
+        // moved after it), or while port 0 had echoed seven, is named.
+        let mut early: Vec<String> = log
+            .iter()
+            .filter(|l| !l.ends_with(&last))
+            .cloned()
+            .collect();
+        early.push(line(
+            echoed + 900_000,
+            format!("TDR 0 {:x} {}", frame0[7], echoed + 900_000),
+        ));
+        let j = read(&early);
+        assert_eq!(j[1].at_ns, Some(931_250));
+        assert!(
+            j[1].out_of_order
+                .as_deref()
+                .is_some_and(|w| w.contains("before port 0's last echoed frame byte at 9831250 ns")),
+            "{:?}",
+            j[1]
+        );
+        let unechoed: Vec<String> = log
+            .iter()
+            .filter(|l| !l.ends_with(&last))
+            .cloned()
+            .collect();
+        let j = read(&unechoed);
+        assert!(
+            j[1].out_of_order.as_deref().is_some_and(
+                |w| w.contains("while port 0 before it had echoed 7 of its 8 frame bytes")
+            ),
+            "{:?}",
+            j[1]
+        );
+        assert_eq!(j[0].out_of_order, None);
         // No boot word observed: nothing went in, by name.
         let j = read(&log[1..1]);
         assert!(
@@ -4614,13 +4736,15 @@ mod tests {
         let line = |count: u64, body: String| {
             at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"))
         };
+        let bytes = serial[0].frame;
         let frame = |log: &mut Vec<String>, k: usize, anchor: u64, spacing: u64, echo: bool| {
             for j in 0..8u64 {
                 let c = anchor + 10_000 + spacing * j;
                 let mux = if j == 0 { " 28a801 770" } else { "" };
                 log.push(line(c, format!("INJECT {k} {j} {anchor} {c}{mux}")));
                 if echo {
-                    log.push(line(c + 50, format!("ECHO {k} {} 5a {}", j + 1, c + 50)));
+                    let b = bytes[j as usize];
+                    log.push(line(c + 50, format!("TDR {k} {b:x} {}", c + 50)));
                 }
             }
         };
@@ -4656,7 +4780,9 @@ mod tests {
         // Port 0 echoed seven: port 2 never went in, and names port 0.
         let seven: Vec<String> = log
             .iter()
-            .filter(|l| !l.contains("ECHO 0 8 ") && !l.contains("INJECT 2 "))
+            .filter(|l| {
+                !l.ends_with(&format!("TDR 0 {:x} {echoed}", bytes[7])) && !l.contains("INJECT 2 ")
+            })
             .cloned()
             .collect();
         let j = read(&serial, &seven);
@@ -4839,6 +4965,7 @@ mod tests {
             mux: Some((0x0028_A801, 0x0000_0770)),
             line: Some(0),
             why: None,
+            out_of_order: None,
         }];
         let none = [PortInjection::default()];
         let boot = console_boot();

@@ -16,8 +16,13 @@
 //!   character apart rounded up to a quantum, the RX pin's mux read in the
 //!   first byte's action;
 //! - each port's `TDR` but the last: each byte written after this boot's
-//!   boot word is counted, and the `FRAME_LEN`-th schedules the next port's
-//!   frame a quantum after it (sequential, D4).
+//!   boot word is logged, and, once the port's first frame byte went in,
+//!   each that echoes its frame in order is counted: the `FRAME_LEN`-th
+//!   schedules the next port's frame a quantum after it (sequential, D4).
+//!   A byte that is not the frame's next (a pattern sent late, junk) is
+//!   never counted (adversarial pass 1, L1); the judge recounts from the
+//!   logged bytes and names a port injected before its predecessor's last
+//!   echoed frame byte (L2).
 //!
 //! A port whose RX line the scenario holds open (D5, `serial_rx_open`) gets
 //! no frame and no `TDR` hook: the chain skips it, so the port after it goes
@@ -94,14 +99,9 @@ pub enum Hook {
         count: u64,
         mux: Option<(u32, u32)>,
     },
-    /// `ECHO <port> <n> <value> <count>`: the `n`-th `TDR` write of a port
-    /// after this boot's boot word.
-    Echo {
-        port: usize,
-        n: u64,
-        value: u32,
-        count: u64,
-    },
+    /// `TDR <port> <value> <count>`: a `TDR` write of a port after this
+    /// boot's boot word.
+    Tdr { port: usize, value: u32, count: u64 },
     /// `STALE STOP <timer> <anchor> <count>` or `STALE INJECT <port> <byte>
     /// <anchor> <count>`: an action whose count was not its anchor's plus
     /// its delay's, which did nothing.
@@ -138,7 +138,7 @@ impl Hook {
             | Self::Cleared { count, .. }
             | Self::BootWord { count, .. }
             | Self::Inject { count, .. }
-            | Self::Echo { count, .. }
+            | Self::Tdr { count, .. }
             | Self::Stale { count, .. } => *count,
         }
     }
@@ -228,10 +228,9 @@ pub fn parse(body: &str) -> Option<Option<Hook>> {
                 mux: Some((hex(m)?, hex(af)?)),
             })
         })(),
-        ["ECHO", p, n, v, c] => (|| {
-            Some(Hook::Echo {
+        ["TDR", p, v, c] => (|| {
+            Some(Hook::Tdr {
                 port: index(p)?,
-                n: dec(n)?,
                 value: hex(v)?,
                 count: dec(c)?,
             })
@@ -378,7 +377,8 @@ pub fn timer_hooks(t: &TimerHook) -> Vec<String> {
 }
 
 /// Port `k`'s frame, scheduled from the hook that anchors it: byte `j` a
-/// quantum and `j` spacings later, the RX pin's mux read with the first.
+/// quantum and `j` spacings later, the RX pin's mux read with the first,
+/// which also starts the port's echo count (0, from the boot word's -1).
 fn frame_actions(k: usize, p: &PortHook) -> String {
     let actions: Vec<String> = p
         .frame
@@ -395,10 +395,18 @@ fn frame_actions(k: usize, p: &PortHook) -> String {
                     "self.Log(LogLevel.Warning, '{PREFIX_TAG}INJECT {k} {j} %d %d' % (a, cpu.ExecutedInstructions))"
                 )
             };
-            let write = format!("monitor.Parse('sysbus.{} WriteChar {b:#04x}')", p.renode);
+            let mut act = format!(
+                "{log}, monitor.Parse('sysbus.{} WriteChar {b:#04x}')",
+                p.renode
+            );
+            if j == 0 {
+                act.push_str(&format!(
+                    ", __import__('sys').aethelgard_echo.__setitem__({k}, 0)"
+                ));
+            }
             action(
                 QUANTUM_NS + j as u64 * p.spacing_ns,
-                &format!("{log}, {write}"),
+                &act,
                 &format!("INJECT {k} {j}"),
             )
         })
@@ -408,14 +416,15 @@ fn frame_actions(k: usize, p: &PortHook) -> String {
 
 /// The hook on the boot word: each write logged with the word before it;
 /// on `BOOT_MAGIC` written over any other word, this boot's echo counts
-/// reset and the first port not held open has its frame scheduled.
+/// reset (-1: no frame in yet) and the first port not held open has its
+/// frame scheduled.
 pub fn boot_word_hook(boot_word: u32, ports: &[PortHook]) -> String {
     let mut py = format!(
         "from Antmicro.Renode.Time import TimeInterval; import sys; b = self.ReadDoubleWord({boot_word:#x}); self.Log(LogLevel.Warning, '{PREFIX_TAG}BOOTWORD %x %x %d' % (value, b, cpu.ExecutedInstructions)); go = value == {BOOT_MAGIC:#x} and b != {BOOT_MAGIC:#x}"
     );
     if let Some(first) = next_injected(ports, 0) {
         py.push_str(&format!(
-            "; go and setattr(sys, 'aethelgard_echo', [0] * {}); go and {}",
+            "; go and setattr(sys, 'aethelgard_echo', [-1] * {}); go and {}",
             ports.len(),
             frame_actions(first, &ports[first])
         ));
@@ -424,14 +433,17 @@ pub fn boot_word_hook(boot_word: u32, ports: &[PortHook]) -> String {
 }
 
 /// The hook on port `k`'s `TDR` (`k` neither held open nor the last port
-/// that is not): each write after this boot's boot word counted and logged,
-/// and the `FRAME_LEN`-th schedules the frame of the next port not held
-/// open.
+/// that is not): each write after this boot's boot word logged; once port
+/// `k`'s first frame byte went in, a write of the frame's next byte is
+/// counted (adversarial pass 1, L1: never a pattern byte or junk), and the
+/// `FRAME_LEN`-th schedules the frame of the next port not held open.
 pub fn echo_hook(k: usize, ports: &[PortHook], boot_word: u32) -> Option<String> {
     let p = ports.get(k).filter(|p| !p.open)?;
     let next = next_injected(ports, k + 1)?;
+    let frame: Vec<String> = p.frame.iter().map(|b| format!("{b:#x}")).collect();
     let py = format!(
-        "from Antmicro.Renode.Time import TimeInterval; import sys; e = getattr(sys, 'aethelgard_echo', None); ok = e is not None and self.ReadDoubleWord({boot_word:#x}) == {BOOT_MAGIC:#x}; ok and e.__setitem__({k}, e[{k}] + 1); ok and self.Log(LogLevel.Warning, '{PREFIX_TAG}ECHO {k} %d %x %d' % (e[{k}], value, cpu.ExecutedInstructions)); ok and e[{k}] == {FRAME_LEN} and {}",
+        "from Antmicro.Renode.Time import TimeInterval; import sys; e = getattr(sys, 'aethelgard_echo', None); ok = e is not None and self.ReadDoubleWord({boot_word:#x}) == {BOOT_MAGIC:#x}; ok and self.Log(LogLevel.Warning, '{PREFIX_TAG}TDR {k} %x %d' % (value, cpu.ExecutedInstructions)); f = [{}]; m = ok and 0 <= e[{k}] < {FRAME_LEN} and value == f[e[{k}]]; m and e.__setitem__({k}, e[{k}] + 1); m and e[{k}] == {FRAME_LEN} and {}",
+        frame.join(", "),
         frame_actions(next, &ports[next])
     );
     Some(hook(p.tdr, &py))
@@ -516,7 +528,7 @@ mod tests {
         let h = boot_word_hook(0x2000_0000, &ports);
         assert!(h.starts_with("sysbus AddWatchpointHook 0x20000000 DoubleWord Write \""));
         assert_eq!(h.matches('"').count(), 2, "{h}");
-        assert!(h.contains("go = value == 0x2100b007 and b != 0x2100b007; go and setattr(sys, 'aethelgard_echo', [0] * 2); go and ("));
+        assert!(h.contains("go = value == 0x2100b007 and b != 0x2100b007; go and setattr(sys, 'aethelgard_echo', [-1] * 2); go and ("));
         // Byte j a quantum and j spacings after the boot word, each stale-checked.
         for (j, b) in ports[0].frame.iter().enumerate() {
             let us = 100 + 1100 * j;
@@ -527,10 +539,17 @@ mod tests {
                 )),
                 "byte {j}"
             );
-            assert!(h.contains(&format!("monitor.Parse('sysbus.usart1 WriteChar {b:#04x}')) if cpu.ExecutedInstructions == a + {due} else self.Log(LogLevel.Warning, 'AETHELGARD-STALE INJECT 0 {j} %d %d'")), "byte {j}");
+            let start = if j == 0 {
+                ", __import__('sys').aethelgard_echo.__setitem__(0, 0)"
+            } else {
+                ""
+            };
+            assert!(h.contains(&format!("monitor.Parse('sysbus.usart1 WriteChar {b:#04x}'){start}) if cpu.ExecutedInstructions == a + {due} else self.Log(LogLevel.Warning, 'AETHELGARD-STALE INJECT 0 {j} %d %d'")), "byte {j}");
         }
-        // The RX pin's mux is read with the first byte, before it goes in.
-        assert!(h.contains("'AETHELGARD-INJECT 0 0 %d %d %x %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x58020400), self.ReadDoubleWord(0x58020424))), monitor.Parse('sysbus.usart1 WriteChar 0xba')"));
+        // The RX pin's mux is read with the first byte, before it goes in;
+        // then the port's echo count starts.
+        assert!(h.contains("'AETHELGARD-INJECT 0 0 %d %d %x %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x58020400), self.ReadDoubleWord(0x58020424))), monitor.Parse('sysbus.usart1 WriteChar 0xba'), __import__('sys').aethelgard_echo.__setitem__(0, 0)) if"));
+        assert_eq!(h.matches("__setitem__").count(), 1, "{h}");
         // Only the first port goes in from the boot word (D4).
         assert!(!h.contains("usart2"), "{h}");
         // Without a port, the hook only logs.
@@ -543,9 +562,10 @@ mod tests {
         let ports = [port("usart1", 0x4001_1028), port("usart2", 0x4000_4428)];
         let h = echo_hook(0, &ports, 0x2000_0000).unwrap();
         assert!(h.starts_with("sysbus AddWatchpointHook 0x40011028 DoubleWord Write \""));
-        // Counted only after this boot's boot word, which the reset re-arms.
-        assert!(h.contains("ok = e is not None and self.ReadDoubleWord(0x20000000) == 0x2100b007; ok and e.__setitem__(0, e[0] + 1)"));
-        assert!(h.contains("ok and e[0] == 8 and (self.Machine.ScheduleAction(TimeInterval.FromMicroseconds(100), lambda t, a=cpu.ExecutedInstructions: (self.Log(LogLevel.Warning, 'AETHELGARD-INJECT 1 0 %d %d %x %x'"));
+        // Logged only after this boot's boot word, which the reset re-arms;
+        // counted only when it is the frame's next byte, once the port's
+        // first byte went in (adversarial pass 1, L1).
+        assert!(h.contains("ok = e is not None and self.ReadDoubleWord(0x20000000) == 0x2100b007; ok and self.Log(LogLevel.Warning, 'AETHELGARD-TDR 0 %x %d' % (value, cpu.ExecutedInstructions)); f = [0xba, 0x17, 0xfc, 0xb3, 0x40, 0x9d, 0x9, 0x7a]; m = ok and 0 <= e[0] < 8 and value == f[e[0]]; m and e.__setitem__(0, e[0] + 1); m and e[0] == 8 and (self.Machine.ScheduleAction(TimeInterval.FromMicroseconds(100), lambda t, a=cpu.ExecutedInstructions: (self.Log(LogLevel.Warning, 'AETHELGARD-INJECT 1 0 %d %d %x %x'"), "{h}");
         assert!(h.contains("monitor.Parse('sysbus.usart2 WriteChar 0xba')"));
         // The last port schedules nothing.
         assert!(echo_hook(1, &ports, 0x2000_0000).is_none());
@@ -562,12 +582,12 @@ mod tests {
         ];
         ports[1].open = true;
         let bw = boot_word_hook(0x2000_0000, &ports);
-        assert!(bw.contains("[0] * 3"), "{bw}");
+        assert!(bw.contains("[-1] * 3"), "{bw}");
         assert!(bw.contains("'AETHELGARD-INJECT 0 0 %d %d %x %x'"));
         assert!(!bw.contains("usart2") && !bw.contains("uart4"), "{bw}");
         // Port 0's last echoed byte schedules port 2's frame, not port 1's.
         let e0 = echo_hook(0, &ports, 0x2000_0000).unwrap();
-        assert!(e0.contains("ok and e[0] == 8 and (self.Machine.ScheduleAction(TimeInterval.FromMicroseconds(100), lambda t, a=cpu.ExecutedInstructions: (self.Log(LogLevel.Warning, 'AETHELGARD-INJECT 2 0 %d %d %x %x'"), "{e0}");
+        assert!(e0.contains("m and e[0] == 8 and (self.Machine.ScheduleAction(TimeInterval.FromMicroseconds(100), lambda t, a=cpu.ExecutedInstructions: (self.Log(LogLevel.Warning, 'AETHELGARD-INJECT 2 0 %d %d %x %x'"), "{e0}");
         assert!(e0.contains("monitor.Parse('sysbus.uart4 WriteChar 0xba')"));
         assert!(!e0.contains("usart2"), "{e0}");
         // The open port has no hook, nor does the last port.
@@ -627,6 +647,14 @@ mod tests {
             }))
         );
         assert_eq!(
+            p("[WARNING] sysbus: AETHELGARD-TDR 0 ba 13125"),
+            Some(Some(Hook::Tdr {
+                port: 0,
+                value: 0xba,
+                count: 13_125
+            }))
+        );
+        assert_eq!(
             p("[WARNING] sysbus: AETHELGARD-STALE STOP 1 2167 168997"),
             Some(Some(Hook::Stale {
                 what: Stale::Stop { timer: 1 },
@@ -654,6 +682,8 @@ mod tests {
             "[WARNING] sysbus: AETHELGARD-INJECT 0 0 3075 13075",
             "[WARNING] sysbus: AETHELGARD-STOP 1 3067 203067",
             "[WARNING] sysbus: AETHELGARD-STALE NOW 1 2 3",
+            "[WARNING] sysbus: AETHELGARD-TDR 0 ba",
+            "[WARNING] sysbus: AETHELGARD-ECHO 0 1 ba 13125",
             "[WARNING] sysbus: AETHELGARD-",
         ] {
             assert_eq!(p(bad), Some(None), "{bad}");

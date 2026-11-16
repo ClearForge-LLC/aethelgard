@@ -1475,6 +1475,10 @@ pub const JUDGE_STOP_MISMATCH_FINDING: &str = "judge_stop_mismatch";
 /// The ports' summed wire time from one quantum after the boot word, past
 /// the run's end (`AET-WO-2302` D4): known only after the run.
 pub const SERIAL_WIRE_PAST_RUN_FINDING: &str = "serial_wire_past_run";
+/// A port's frame byte injected before the port before it in the chain had
+/// echoed its whole frame (`AET-WO-2302` D4, adversarial pass 1, L2),
+/// recounted from the logged `TDR` bytes.
+pub const SERIAL_INJECTION_ORDER_FINDING: &str = "serial_injection_out_of_order";
 
 /// The serial port findings the boot judge gives (`AET-WO-4300b`): the
 /// silicon check of a port's `BRR` and framing, and the twin's witness of its
