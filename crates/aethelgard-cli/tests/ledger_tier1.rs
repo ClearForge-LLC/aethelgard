@@ -289,3 +289,56 @@ fn the_reference_s_bench_rows_are_pinned() {
         "f25e1c1a5a4e46b6c66cd46b766deb6cf0a5aaa08e76dcea772d9c12cf114664"
     );
 }
+
+/// The verdict carries the ledger and the silicon findings: `verify
+/// --against` an empty directory differs before any gate runs, and prints
+/// the verdict with both, its fab keys never after them. The largest
+/// fixture's line stays far under the MCP path's 1 MiB stdout cap.
+#[test]
+fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
+    let empty = std::env::temp_dir().join(format!("aet-4230-c2-{}", std::process::id()));
+    fs::create_dir_all(&empty).unwrap();
+    let run = |spec: &Path| {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(["verify", "--spec"])
+            .arg(spec)
+            .arg("--against")
+            .arg(&empty)
+            .stdin(std::process::Stdio::null())
+            .output()
+            .unwrap();
+        assert_eq!(
+            out.status.code(),
+            Some(1),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        out.stdout
+    };
+    let line = run(&root().join("examples/sentinel-01-minimal.json"));
+    let v: serde_json::Value = serde_json::from_slice(&line).unwrap();
+    assert_eq!(v["against"], "differs");
+    assert_eq!(v["ledger"]["total"], 264);
+    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 264);
+    assert_eq!(v["ledger"]["counts"]["by_class"]["independent-rule"], 67);
+    assert_eq!(v["ledger"]["evidence"].as_object().unwrap().len(), 5);
+    assert_eq!(v["silicon"]["holds"], true);
+    assert_eq!(v["silicon"]["spi"][0]["peripheral"], "SPI1");
+    assert_eq!(v["silicon"]["i2c"][0]["peripheral"], "I2C1");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["kind"] != "silicon_rule_fails")
+    );
+    // In the line's own order: after the findings, the last keys without a
+    // fab flag (the fab keys would follow them).
+    let text = String::from_utf8(line).unwrap();
+    let at = |key: &str| text.find(&format!("\"{key}\":")).unwrap();
+    assert!(at("findings") < at("silicon") && at("silicon") < at("ledger"));
+    assert!(!text.contains("\"against_fab\":") && !text.contains("\"fab\":"));
+    let large = run(&root().join("crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json"));
+    assert!(large.len() < 512 * 1024, "{} bytes", large.len());
+    fs::remove_dir_all(&empty).unwrap();
+}
