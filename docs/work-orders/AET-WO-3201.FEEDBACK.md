@@ -47,3 +47,32 @@ Labels: **measured** (run on this branch), **read** (read at source, file:line a
   - `PER_EVENT`'s length in evolve;
   - `propose::facts`: 4230 adds the domain maximum on the same lines where I take the speed from `i2c_speeds`;
   - `judge_boot`: 4230 inserts directly above "The identity reads". My F15 change touches only the `else` arm, through a helper.
+
+# The build
+
+## What changed, item by item
+
+- **B1, replay binds every solved line** (`chaos/src/campaign.rs`, `check_run`).
+  - Each line of each kind 15 is bound by exactly one record: its kind 7, its kind 8, or, for a held line, its held-low kind 9.
+  - The held-low fault now binds the override's own line: SCL is `lines[0]` and SDA `lines[1]`, both enforced by kind 15's check. Before, any net of the override's bus was accepted.
+  - The forgery `2205` found (every rise and the fault dropped, the verdict rewritten to pass) is refused. So is one line's rise dropped, a line bound only by another bus's rises, and a held line measured as well as faulted.
+- **B2, replay binds the boot word** (`check_run`).
+  - A boot that was read names `boot_word_missing` exactly once, as an error, when its word is not the firmware's, and never otherwise.
+  - A boot that read nothing names the bound it was killed at, once, as an error. A read boot names none.
+  - The constants `BOOT_WORD_FINDING` and `BOUND_FINDINGS` are in `campaign.rs`. The judge's no-boot-word path uses the first.
+- **B3, closed severity** (`chaos/src/record.rs`). `SEVERITIES = ["error", "info"]` is checked exactly in kind 14's `Record::check`, which runs on write and on read. Another case, whitespace, `warning` or an empty string is refused, with no byte of the format changed.
+- **The outside-window finding in replay.** `identity_read_outside_window` is refused unless the boot was read without its boot word on a short (DShot) window, and at most once per read archived `invalid`. `campaign::short_window` is the one statement of "a DShot output gives the short window"; `check_motor_joins` uses it too.
+- **F15, the judge** (`cli/src/renode.rs`, the `else` arm only). With no boot word, each record whose status says its wait expired is named, as `{bus}_timeout`, by `identity_finding` itself (`timeouts_without_the_boot_word`). A mismatch or the fill is not judged before the fixed point. `boot_word_missing` stays.
+- **F-B10, the mismatch kinds.**
+  - The judge names a mismatch `{bus}_{step}_mismatch`, where the step is `identity`, `configure` or `data`.
+  - Evolve selects each kind by the record's step, through `record::step_index`, so a data read's mismatch named as an identity mismatch selects nothing and is `I1`.
+  - Their scope and rules are the identity mismatch's: the device's bus for I2C, the device for SPI.
+- **Q7, rule `I7`** (`evolve/src/lib.rs`).
+  - **Selection.** `identity_read_outside_window` selects each kind 12 or 21 still at the judge's fill: status `invalid`, and every value word `0xFFFFFFFF`. It does so only in a run whose boot was read without its boot word on a short window. The count must be exact.
+  - **Decision.** Such a record has a scope of its own, `Window`, which decides `I7`, indeterminate, with the record as its evidence (kinds 12, 21). Nothing is proposed (`INV-05`).
+- **Motor witnesses are judged once the boot word is set** (evolve).
+  - Found while building `I7`: evolve selected an unbooted run's `unwitnessed` kind 26 as a failure. But the judge names motor witness findings only after the boot word, and `check_run` binds them that way ("before it, none"). So every unbooted motor run was `I1` by an unexplained event.
+  - Fix: the two motor witness kinds and the motor evidence select a witness only when booted, as the serial ones already did.
+- **F-B5.** `Field`'s `mask`, `solved` and `observed` are `u64`, and so is `Expectation::mask`. An SPI read of 5 to 8 bytes keeps its whole value, with a 64-bit mask; 32-bit fields are unchanged in value and in text.
+- **R2.** `propose` writes through `tree::write`, and `write_out` is gone. `tree::write`'s emptiness message no longer says "generate", since it now serves `propose`, `generate` and `fab`.
+- **`1205` review.** `propose::facts` reads the declared speed from the topology's `i2c_speeds`, so the specification is no longer passed to it.
