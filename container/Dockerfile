@@ -6,11 +6,18 @@
 #
 # KiCad 10.0.7, official image, index digest; Debian 13 (trixie), amd64 only.
 # It already carries ngspice and libngspice0 44.2+ds-1 and ca-certificates.
+# Its vendor, url and authors labels describe KiCad's image, not this one, so
+# the LABEL below replaces them; a Dockerfile cannot delete an inherited label,
+# so authors is set empty (AET-WO-4403 D6, ruled on #176).
 FROM kicad/kicad:10.0.7@sha256:3224d1bf143185ecc1bd3a1082a36f37f0f4e59d707983a16515a845e3737fc6
 
 LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelgard" \
       org.opencontainers.image.description="Aethelgard tools: KiCad, Renode, ngspice, Kani, Rust" \
-      org.opencontainers.image.licenses="MIT OR Apache-2.0"
+      org.opencontainers.image.licenses="GPL-3.0-or-later AND CC-BY-SA-4.0" \
+      org.opencontainers.image.documentation="https://github.com/ClearForge-LLC/aethelgard/blob/main/container/TOOLS-SOURCES.md" \
+      org.opencontainers.image.vendor="ClearForge LLC" \
+      org.opencontainers.image.url="https://github.com/ClearForge-LLC/aethelgard" \
+      org.opencontainers.image.authors=""
 
 USER root
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -69,3 +76,14 @@ RUN cargo install --locked kani-verifier --version 0.68.0 \
 # beside the libraries it covers. The file is byte-identical to the copy
 # vendored in aethelgard-kicad-lib (AET-WO-1300 D10, AET-WO-1900).
 COPY KICAD-LICENSE.md /usr/share/kicad/LICENSE.md
+
+# The written source offer (AET-WO-4403): KiCad, Renode's LGPL parts and the
+# rest, and every Debian package by source and version, read from dpkg last so
+# it lists exactly what the image holds. check-sources.sh judges both against
+# the built image. The licences label names the principal components (KiCad
+# and its libraries); the documentation label points at the full list, and the
+# publish job sets it to this file at the commit it publishes.
+COPY TOOLS-SOURCES.md /SOURCES.md
+RUN dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\thttps://snapshot.debian.org/package/${source:Package}/${source:Version}/\n' > /tmp/dpkg.tsv \
+ && LC_ALL=C sort -o /SOURCES-debian.tsv /tmp/dpkg.tsv \
+ && rm /tmp/dpkg.tsv
