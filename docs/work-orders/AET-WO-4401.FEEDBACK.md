@@ -42,7 +42,7 @@ All **[inferred]**.
 | Revision label `8030fa5…` | **Held.** `org.opencontainers.image.revision=8030fa5c61567868f6a223ed334011cb685b773d`, image 2,672,836,018 bytes [measured]. |
 | Smoke passes, 60–150 s, under 16 GiB | **Held, faster.** `ardupilot-build.sh smoke` under `--network none`: `ANSWER smoke board=MatekH743 jobs=20 wall_ms=34561 flash_bytes=1550452`. It ran in `capped-run --mem 16G`, which read back `memory.max=17179869184 memory.swap.max=0 pids.max=8192` [measured]. On CI, the `pinned` job of run 43838686771 (first push, `c8d94f6`) printed `ANSWER pinned revision=8030fa5c…` and `ANSWER smoke board=MatekH743 jobs=4 wall_ms=158440 flash_bytes=1550452`. The flash size matches Furnace byte for byte [measured]. |
 | pip is `python3-pip-whl 25.1.1+dfsg-1`, pulled in by `python3.13-venv` | **Held.** `dpkg-query`: `python3-pip-whl 25.1.1+dfsg-1`. `apt-cache depends python3.13-venv` lists `python3-pip-whl` and `python3-setuptools-whl 78.1.1-0.1`. `/opt/venv/bin/pip --version` reports `pip 25.1.1`. The wheel's sha256 is `20568e5d…cd9c` [measured]. |
-| Today's check passes `submodule --remote`, `fetch`, `pull`, `pipx`; refuses unhashed pip only generically | **Held** [measured]. `origin/main`'s script, run on each fixture, exits 0 on every one except `pip-unhashed`, which it refuses with "fetches outside the checked curl, clone and pip shapes". The full log is in §5. |
+| Today's check passes `submodule --remote`, `fetch`, `pull`, `pipx`; refuses unhashed pip only generically | **Held** [measured]. `origin/main`'s script, run on each fixture, exits 0 on every one except `pip-unhashed`, which it refuses with "fetches outside the checked curl, clone and pip shapes". The per-fixture results are in §5's table. |
 | The adversarial vectors get past a line-by-line check | **Held, and worse than predicted.** On main, a `git clone` split over a continuation also gets past the clone *shape* check (`continuation-clone`), and `python3 -mpip install` gets past the deny-list (`pip-module`). |
 
 ## 3. What was built
@@ -73,7 +73,8 @@ All **[inferred]**.
 - **F1, a consumer job.** No job pulled the image before this work order, and the board jobs must keep building this PR's Dockerfile, so I added `pinned` as the one consumer. It is also the CI witness for §7's "pulls and smokes on CI". Cost: about 2 minutes and a 2.7 GB pull on each `ardupilot-image` run.
 - **F2, git is allow-listed, not deny-listed.** Refusing only `fetch`, `pull` and `submodule --remote` by name would let `git $G`, `git -c alias.f=fetch f` and `git $(echo fetch)` through. Any other git subcommand is refused by a generic message. The by-name messages are kept for the four forms.
 - **F3, the venv rule.** It is not asked for in §1.2, but without it, dropping the `python3-pip-whl` line would silently unpin pip again.
-- **F4, the heredoc, escape, carriage-return and COPY-script refusals** close §5's vectors outright rather than parse them. No Dockerfile in the repository uses any of the four [read].
+- **F4, the heredoc, escape, carriage-return and COPY-script refusals** close §5's vectors outright rather than parse them. No Dockerfile in the repository uses any of the four [read]. The COPY rule reads a source beside the Dockerfile, which is the build context for the tools and ArduPilot images. `engine-image` builds with context `.`, so a future `COPY` in `engine.Dockerfile` would be refused as "not a file beside this Dockerfile" until the rule learns that context. It has no `COPY` today.
+- **F5, where the drift refusal lives.** §1.1 says "add the same drift refusal `container/IMAGE` has, if `check-pins.sh` has one for it". `check-pins.sh` does have one, but it fires only for a Dockerfile that builds `FROM ${TOOLS_IMAGE}`, and nothing builds from the ArduPilot image. So I put the refusal in the consumer's step in `ardupilot-image.yml`, where `engine-image.yml` puts its own `[ -r ]` check. **Its only test is the extraction run in §3; no committed test guards that regex.** The alternative is a `check-pins.sh --image FILE` mode with fixtures. That would put the refusal under the harness and mutation, at the cost of a second interface on the script. That is the architect's call.
 
 ## 5. Adversarial pass, targeted (§5)
 
@@ -108,3 +109,33 @@ The "before" column is `origin/main`'s `check-pins.sh` (`8030fa5`); the "after" 
 - **Q3, other unpinned apt dependencies.** Only packages named in the block are pinned. `python3.13-venv` (`3.13.5-2+deb13u5`) and `python3-setuptools-whl` (`78.1.1-0.1`, installed but never put in the venv) come in as dependencies at whatever version trixie serves, as does every other dependency in both images. The work order asked only for pip.
 - **Q4, CRLF in Docker.** I did not measure whether BuildKit joins a line ending in `\` plus a carriage return. The refusal does not depend on the answer [inferred].
 - **The roadmap §7.1 row** for 4400a A7 (`roadmap.md:534`) can be closed. Its remainder is what the header now declares. The steering documents are protected, so this is the architect's edit.
+
+## 7. Gates
+
+- **CLAUDE.md gates on Furnace** [measured], in `systemd-run --user --scope -p MemoryMax=32G -p MemorySwapMax=0`, at `86dfc5a`:
+  - `cargo fmt --all -- --check` passed.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed.
+  - `cargo test --workspace` (6 streams): 1,742 passed and 0 failed, across 110 test binaries.
+  - This work order changes no crate.
+- **CI on `86dfc5a`** [measured]: all four workflows green.
+  - `ardupilot-image` 43839682508:
+    - `image`, which builds the image with the pinned `python3-pip-whl`: `ANSWER image_bytes=2634069282 nproc=4`; `ANSWER smoke board=MatekH743 jobs=4 wall_ms=160028 flash_bytes=1550452`; `ANSWER d4 control: refused with GITHUB_ACTIONS=true`. All 17 fixtures and the three Dockerfiles printed `ok`.
+    - `pinned`: `ANSWER pinned revision=8030fa5c…`; smoke `wall_ms=258697 flash_bytes=1550452`.
+    - Step G: `ANSWER board=step-g jobs=4 wall_ms=263562`. The three seeds passed, and `pinout` passed.
+  - `tools-image` 43839682618: `image` passed, so the tools Dockerfile passes the new check and builds.
+  - `engine-image` 43839682519: `image` passed.
+  - `ci` 43839682505: `gates` passed. `tools` passed with `ANSWER tier2_tests_passed=155 floor=155`.
+- **`TIER2_MIN` is unchanged (155).** This work order adds no tier-2 test.
+- **Shard times** on `86dfc5a`, in seconds:
+
+  | Shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|---|
+  | `86dfc5a` | 1182 | **1243** | 1187 | 968 | 1091 | 1001 | 1128 | 871 |
+  | main `8030fa5` (run 43805854131) | 896 | 1034 | 1133 | 902 | 1069 | 912 | 1136 | 1064 |
+
+  - Shard 1 is over 20 minutes on this run. Under the ruling on #152 (comment 6906540406) that is a measurement, not a failure, unless the one re-run of the head is over too.
+  - The plan is unchanged: no test, weight or `ci/` file moves in this diff.
+  - On `main`'s run for `8030fa5`, shard 1 took 1034 s and was not the slowest shard (shard 6 was, at 1136 s), so the refit rule does not fire.
+  - The READY head's own run is the one that decides.
+- **Reduction pass (diff): −1 line net · 0 duplicates removed · 1 dead path removed** (`--exec-path` in git's option-skip list; that option takes no separate argument) **· 0 protected kept · 1 finding** (the generic physical deny-list overlaps the new by-name rules but stays load-bearing: it catches a one-line clone with no commit test, and `pip download`).
+- **Furnace scratch.** `~/.cache/aet-4401` keeps the predictions-era logs, `mut/run.py` with `mut/result.txt`, and `pr-title-body.md`. The probe trees and mutant copies are removed. The pulled 2.7 GB image is removed at the close.
