@@ -129,10 +129,7 @@ const GOOD_REGISTERS: [&str; 24] = [
 fn injection(start_ns: u64) -> String {
     let line = |count: u64, body: String| {
         let ns = start_ns + 10 * count;
-        format!(
-            "[00:00:00.{:09}] [WARNING] sysbus: AETHELGARD-{body}\n",
-            ns
-        )
+        format!("[00:00:00.{:09}] [WARNING] sysbus: AETHELGARD-{body}\n", ns)
     };
     let mut s = line(2575, "BOOTWORD 2100b007 0 2575".to_owned());
     for j in 0..8u64 {
@@ -2748,7 +2745,10 @@ fn a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time() {
     let out = scenario("d.json", 99_900_000);
     let v = expect_refusal(&out, 2, "DroopRefused");
     let message = v["error"]["message"].as_str().unwrap();
-    assert!(message.contains("past the boot's 100000000 ns"), "{message}");
+    assert!(
+        message.contains("past the boot's 100000000 ns"),
+        "{message}"
+    );
     assert!(!work.archive.exists(), "an archive was made");
     let out = scenario("early.json", 3_000_000);
     assert!(

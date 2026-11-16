@@ -125,7 +125,11 @@ fn witness(label: &str, af: u8) -> Record {
         tx_at_send: Some((0b10, af)),
         // Port after port (`AET-WO-2302` D4): the console's frame a quantum
         // after the boot word, the next once the console has echoed.
-        injected_ns: Some(if label == "CONSOLE" { 130_750 } else { 2_000_000 }),
+        injected_ns: Some(if label == "CONSOLE" {
+            130_750
+        } else {
+            2_000_000
+        }),
     }
 }
 

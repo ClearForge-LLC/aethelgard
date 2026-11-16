@@ -140,7 +140,8 @@ fn dec(s: &str) -> Option<u64> {
 fn hex(s: &str) -> Option<u32> {
     let ok = !s.is_empty()
         && s.len() <= 8
-        && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         && (s == "0" || !s.starts_with('0'));
     ok.then(|| u32::from_str_radix(s, 16).ok()).flatten()
 }
@@ -444,7 +445,9 @@ mod tests {
         // read again, in that order.
         let stop = h.find("AETHELGARD-STOP 1 %d %d %x %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x40010000), self.ReadDoubleWord(0x4001002c))").unwrap();
         let silence = h.find("monitor.Parse('logLevel 3 sysbus.gpioPortA.pa8obs'), monitor.Parse('logLevel 3 sysbus.gpioPortA.pa9obs')").unwrap();
-        let clear = h.find("self.WriteDoubleWord(0x40010000, self.ReadDoubleWord(0x40010000) & 0xfffffffe)").unwrap();
+        let clear = h
+            .find("self.WriteDoubleWord(0x40010000, self.ReadDoubleWord(0x40010000) & 0xfffffffe)")
+            .unwrap();
         let cleared = h.find("'AETHELGARD-CLEARED 1 %d %d %x' % (a, cpu.ExecutedInstructions, self.ReadDoubleWord(0x40010000))").unwrap();
         assert!(stop < silence && silence < clear && clear < cleared);
     }
@@ -472,7 +475,9 @@ mod tests {
             let us = 100 + 1100 * j;
             let due = 100 * us;
             assert!(
-                h.contains(&format!("FromMicroseconds({us}), lambda t, a=cpu.ExecutedInstructions: (")),
+                h.contains(&format!(
+                    "FromMicroseconds({us}), lambda t, a=cpu.ExecutedInstructions: ("
+                )),
                 "byte {j}"
             );
             assert!(h.contains(&format!("monitor.Parse('sysbus.usart1 WriteChar {b:#04x}')) if cpu.ExecutedInstructions == a + {due} else self.Log(LogLevel.Warning, 'AETHELGARD-STALE INJECT 0 {j} %d %d'")), "byte {j}");
@@ -540,7 +545,10 @@ mod tests {
         );
         // Not ours.
         assert_eq!(p("[WARNING] sysbus: AETCEN 2167"), None);
-        assert_eq!(p("[NOISY] gpioPortA.pa8obs: LED state changed to True"), None);
+        assert_eq!(
+            p("[NOISY] gpioPortA.pa8obs: LED state changed to True"),
+            None
+        );
         // Ours, but not exactly a shape: refused, never read past.
         for bad in [
             "[WARNING] sysbus: AETHELGARD-CR1 1 81 0",

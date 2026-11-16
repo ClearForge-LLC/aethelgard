@@ -420,7 +420,12 @@ impl BootPlan<'_> {
             .into_iter()
             .filter_map(|n| {
                 let prefix = format!("TIM{n}.");
-                let cr1 = self.image.registers.iter().find(|r| r.name == format!("TIM{n}.CR1"))?.address;
+                let cr1 = self
+                    .image
+                    .registers
+                    .iter()
+                    .find(|r| r.name == format!("TIM{n}.CR1"))?
+                    .address;
                 Some(crate::anchor::TimerHook {
                     timer: n,
                     cr1,
@@ -472,7 +477,9 @@ impl BootPlan<'_> {
     fn boot_hooks(&self) -> Vec<String> {
         let ports = self.port_hooks();
         let mut c = vec![crate::anchor::boot_word_hook(self.boot_word, &ports)];
-        c.extend((0..ports.len()).filter_map(|k| crate::anchor::echo_hook(k, &ports, self.boot_word)));
+        c.extend(
+            (0..ports.len()).filter_map(|k| crate::anchor::echo_hook(k, &ports, self.boot_word)),
+        );
         c
     }
 
@@ -2641,8 +2648,8 @@ fn anchor_findings(
 ) -> Vec<Finding> {
     use aethelgard_chaos::campaign::{
         JUDGE_STOP_MISMATCH_FINDING, JUDGE_STOP_MISSING_FINDING, MOTOR_ANCHOR_ORDER_FINDING,
-        MOTOR_ANCHOR_REPEATED_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING,
-        MOTOR_EDGE_AFTER_FINDING, MOTOR_EDGE_BEFORE_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING,
+        MOTOR_ANCHOR_REPEATED_FINDING, MOTOR_ANCHOR_UNOBSERVED_FINDING, MOTOR_EDGE_AFTER_FINDING,
+        MOTOR_EDGE_BEFORE_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING,
     };
     let mut out = Vec::new();
     for t in timers {
@@ -3748,10 +3755,7 @@ mod tests {
         let two = measured(2, &[0]);
         let w = witness_motor(&m, Some(Some(two.clone())), 100_000_000);
         assert_eq!(w.status, "stopped");
-        assert_eq!(
-            witness_findings_of(&m, &w)[0].kind,
-            "motor_timing_mismatch"
-        );
+        assert_eq!(witness_findings_of(&m, &w)[0].kind, "motor_timing_mismatch");
         // Within a period and a grain of the end, it covers the window.
         let end = two[2].0 + 639_744 + 10;
         assert_eq!(witness_motor(&m, Some(Some(two)), end).status, "witnessed");
@@ -3833,7 +3837,13 @@ mod tests {
         for (j, b) in serial[0].frame.iter().enumerate() {
             let us = 100 + 100 * j;
             assert!(c.contains(&format!("FromMicroseconds({us}), ")), "{j}");
-            assert!(c.contains(&format!("sysbus.usart1 WriteChar {b:#04x}')) if cpu.ExecutedInstructions == a + {}", us * 100)), "{j}");
+            assert!(
+                c.contains(&format!(
+                    "sysbus.usart1 WriteChar {b:#04x}')) if cpu.ExecutedInstructions == a + {}",
+                    us * 100
+                )),
+                "{j}"
+            );
         }
         assert!(c.contains("self.ReadDoubleWord(0x58020000), self.ReadDoubleWord(0x58020024)"));
         assert!(!c.contains("INJECT-BEGIN"));
@@ -3908,7 +3918,10 @@ mod tests {
         let c = p.commands();
         let bw = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
         let echo = crate::anchor::echo_hook(0, &p.port_hooks(), 0x2000_0000).unwrap();
-        assert!(c.contains(&format!("{bw}; {echo}; emulation RunFor \"0.100000000\"")), "{c}");
+        assert!(
+            c.contains(&format!("{bw}; {echo}; emulation RunFor \"0.100000000\"")),
+            "{c}"
+        );
         assert!(!bw.contains("usart2"));
         assert!(echo.starts_with("sysbus AddWatchpointHook 0x40011028 DoubleWord Write"));
         for j in 0..8u64 {
@@ -3977,7 +3990,9 @@ mod tests {
         let reset = c.split("machine Reset").nth(1).unwrap();
         let reset = reset.split("cpu IsHalted false").next().unwrap();
         assert!(
-            reset.contains("logLevel -1 sysbus.gpioPortA.pa8obs; logLevel -1 sysbus.gpioPortA.pa9obs"),
+            reset.contains(
+                "logLevel -1 sysbus.gpioPortA.pa8obs; logLevel -1 sysbus.gpioPortA.pa9obs"
+            ),
             "{reset}"
         );
     }
@@ -4007,10 +4022,7 @@ mod tests {
     }
 
     fn at(ns: u64, body: &str) -> String {
-        format!(
-            "[00:00:00.{:09}] {body}",
-            ns
-        )
+        format!("[00:00:00.{:09}] {body}", ns)
     }
 
     /// A DShot boot as Renode logs it (build probe P5's shape): U2's
@@ -4022,21 +4034,39 @@ mod tests {
             at(10_000, "[NOISY] i2c1.u2: Write D0"),
             at(10_000, "[NOISY] i2c1.u2: Read 60"),
             at(30_620, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 3067"),
-            at(30_750, "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 3075"),
+            at(
+                30_750,
+                "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 3075",
+            ),
         ];
         for k in 0..4716u64 {
             let rise = 30_670 + 490 + k * 424;
-            log.push(at(rise, "[NOISY] gpioPortA.pa9obs: LED state changed to True"));
-            log.push(at(rise + 160, "[NOISY] gpioPortA.pa9obs: LED state changed to False"));
+            log.push(at(
+                rise,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to True",
+            ));
+            log.push(at(
+                rise + 160,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to False",
+            ));
         }
-        log.push(at(2_030_670, "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81 81"));
-        log.push(at(2_030_670, "[WARNING] sysbus: AETHELGARD-CLEARED 2 3067 203067 80"));
+        log.push(at(
+            2_030_670,
+            "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81 81",
+        ));
+        log.push(at(
+            2_030_670,
+            "[WARNING] sysbus: AETHELGARD-CLEARED 2 3067 203067 80",
+        ));
         log
     }
 
     /// The judge's anchor findings on `log`, a boot started at `start_ns`
     /// and read to 100 ms, and the output's witness.
-    fn judge_anchors(log: &[String], start_ns: u64) -> Result<(Vec<Finding>, MotorWitness), String> {
+    fn judge_anchors(
+        log: &[String],
+        start_ns: u64,
+    ) -> Result<(Vec<Finding>, MotorWitness), String> {
         let (image, motors) = dshot_parts();
         let p = BootPlan {
             motors: &motors,
@@ -4059,15 +4089,21 @@ mod tests {
             .map(|(i, _)| i)
             .max();
         let bw = hooks.iter().find_map(|(i, h)| match h {
-            crate::anchor::Hook::BootWord { value, before, count }
-                if *value == aethelgard_twin::boot::BOOT_MAGIC && *before == 0 =>
-            {
-                Some((*i, *count))
-            }
+            crate::anchor::Hook::BootWord {
+                value,
+                before,
+                count,
+            } if *value == aethelgard_twin::boot::BOOT_MAGIC && *before == 0 => Some((*i, *count)),
             _ => None,
         });
         let mut f = witness_findings_of(&motors[0], &w);
-        f.extend(anchor_findings(&p, &timers, std::slice::from_ref(&w), last_device, bw));
+        f.extend(anchor_findings(
+            &p,
+            &timers,
+            std::slice::from_ref(&w),
+            last_device,
+            bw,
+        ));
         Ok((f, w))
     }
 
@@ -4107,18 +4143,30 @@ mod tests {
         };
         // An edge after the window's end (the stop did not silence it).
         assert_eq!(
-            kinds(with(&|l| l.push(at(2_030_700, "[NOISY] gpioPortA.pa9obs: LED state changed to True")))),
+            kinds(with(&|l| l.push(at(
+                2_030_700,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to True"
+            )))),
             ["motor_edge_after_window"]
         );
         // An edge before the anchor, in the same boot (the firmware emits
         // before its anchor, WO §5).
         assert_eq!(
-            kinds(with(&|l| l.insert(2, at(20_000, "[NOISY] gpioPortA.pa9obs: LED state changed to True")))),
+            kinds(with(&|l| l.insert(
+                2,
+                at(
+                    20_000,
+                    "[NOISY] gpioPortA.pa9obs: LED state changed to True"
+                )
+            ))),
             ["motor_edge_before_anchor"]
         );
         // A second rise of CEN in one boot.
         assert_eq!(
-            kinds(with(&|l| l.push(at(2_500_000, "[WARNING] sysbus: AETHELGARD-CR1 2 81 80 250000")))),
+            kinds(with(&|l| l.push(at(
+                2_500_000,
+                "[WARNING] sysbus: AETHELGARD-CR1 2 81 80 250000"
+            )))),
             ["motor_anchor_repeated"]
         );
         // The anchor before the last device step's witness, after the boot
@@ -4131,7 +4179,12 @@ mod tests {
             kinds(with(&|l| l.swap(2, 3))),
             ["motor_anchor_out_of_order"]
         );
-        assert_eq!(kinds(with(&|l| { l.remove(3); })), ["motor_anchor_out_of_order"]);
+        assert_eq!(
+            kinds(with(&|l| {
+                l.remove(3);
+            })),
+            ["motor_anchor_out_of_order"]
+        );
         // No stop in the boot, a stop that left CEN set, a stop's read-back
         // off the solved values.
         let no_stop = with(&|l| {
@@ -4141,19 +4194,31 @@ mod tests {
         assert_eq!(
             kinds(with(&|l| {
                 let n = l.len();
-                l[n - 1] = at(2_030_670, "[WARNING] sysbus: AETHELGARD-CLEARED 2 3067 203067 81");
+                l[n - 1] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-CLEARED 2 3067 203067 81",
+                );
             })),
             ["judge_stop_missing"]
         );
         assert_eq!(
             kinds(with(&|l| {
                 let n = l.len();
-                l[n - 2] = at(2_030_670, "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81 82");
+                l[n - 2] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81 82",
+                );
             })),
             ["judge_stop_mismatch"]
         );
         // Edges with no anchor observed (a CR1 write narrower than a word).
-        let (f, w) = judge_anchors(&with(&|l| { l.remove(2); }), 0).unwrap();
+        let (f, w) = judge_anchors(
+            &with(&|l| {
+                l.remove(2);
+            }),
+            0,
+        )
+        .unwrap();
         assert_eq!(w.status, "unanchored");
         assert_eq!(kinds_of(&f), ["motor_anchor_unobserved"]);
     }
@@ -4167,17 +4232,34 @@ mod tests {
         let mut log = vec![
             at(10_000, "[NOISY] i2c1.u2: Write D0"),
             at(10_000, "[NOISY] i2c1.u2: Read 60"),
-            at(99_072_300, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 9907235"),
-            at(99_072_430, "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 9907243"),
+            at(
+                99_072_300,
+                "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 9907235",
+            ),
+            at(
+                99_072_430,
+                "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 9907243",
+            ),
         ];
         for k in 0..2187u64 {
             let rise = 99_072_350 + 490 + k * 424;
-            log.push(at(rise, "[NOISY] gpioPortA.pa9obs: LED state changed to True"));
-            log.push(at(rise + 160, "[NOISY] gpioPortA.pa9obs: LED state changed to False"));
+            log.push(at(
+                rise,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to True",
+            ));
+            log.push(at(
+                rise + 160,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to False",
+            ));
         }
         let (f, w) = judge_anchors(&log, 0).unwrap();
         assert_eq!(w.end_ns, 99_072_350 + 2_000_000);
-        assert_eq!(kinds_of(&f), ["motor_timing_mismatch", "motor_window_past_run"], "{:?}", messages(&f));
+        assert_eq!(
+            kinds_of(&f),
+            ["motor_timing_mismatch", "motor_window_past_run"],
+            "{:?}",
+            messages(&f)
+        );
     }
 
     /// F5 (`AET-WO-2302` §5): a reset restarts the count, and the earlier
@@ -4190,20 +4272,44 @@ mod tests {
         let mut log = vec![
             at(shift(10_000), "[NOISY] i2c1.u2: Write D0"),
             at(shift(10_000), "[NOISY] i2c1.u2: Read 60"),
-            at(shift(21_620), "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 2167"),
-            at(shift(21_750), "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 2175"),
+            at(
+                shift(21_620),
+                "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 2167",
+            ),
+            at(
+                shift(21_750),
+                "[WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 2175",
+            ),
         ];
         for k in 0..4716u64 {
             let rise = shift(21_670 + 490 + k * 424);
-            log.push(at(rise, "[NOISY] gpioPortA.pa9obs: LED state changed to True"));
-            log.push(at(rise + 160, "[NOISY] gpioPortA.pa9obs: LED state changed to False"));
+            log.push(at(
+                rise,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to True",
+            ));
+            log.push(at(
+                rise + 160,
+                "[NOISY] gpioPortA.pa9obs: LED state changed to False",
+            ));
         }
         // Measured: due at 202 167 instructions, it fired at 168 997.
-        let stale = at(2_021_670, "[WARNING] sysbus: AETHELGARD-STALE STOP 2 2167 168997");
-        let i = log.iter().position(|l| l.as_str() > stale.as_str()).unwrap();
+        let stale = at(
+            2_021_670,
+            "[WARNING] sysbus: AETHELGARD-STALE STOP 2 2167 168997",
+        );
+        let i = log
+            .iter()
+            .position(|l| l.as_str() > stale.as_str())
+            .unwrap();
         log.insert(i, stale);
-        log.push(at(shift(2_021_670), "[WARNING] sysbus: AETHELGARD-STOP 2 2167 202167 81 81"));
-        log.push(at(shift(2_021_670), "[WARNING] sysbus: AETHELGARD-CLEARED 2 2167 202167 80"));
+        log.push(at(
+            shift(2_021_670),
+            "[WARNING] sysbus: AETHELGARD-STOP 2 2167 202167 81 81",
+        ));
+        log.push(at(
+            shift(2_021_670),
+            "[WARNING] sysbus: AETHELGARD-CLEARED 2 2167 202167 80",
+        ));
         let (f, w) = judge_anchors(&log, start).unwrap();
         assert_eq!(kinds_of(&f), Vec::<&str>::new(), "{:?}", messages(&f));
         assert_eq!(w.anchor_ns, Some(start + 21_670));
@@ -4211,7 +4317,10 @@ mod tests {
         log.truncate(log.len() - 2);
         let (f, _) = judge_anchors(&log, start).unwrap();
         assert_eq!(kinds_of(&f), ["judge_stop_missing"]);
-        assert!(f[0].message.contains("1 stale stop(s) of an earlier boot did nothing"));
+        assert!(
+            f[0].message
+                .contains("1 stale stop(s) of an earlier boot did nothing")
+        );
     }
 
     /// Every line of ours is read whole: one in no shape it writes, or whose
@@ -4220,10 +4329,20 @@ mod tests {
     fn a_hook_line_out_of_shape_or_out_of_place_is_refused() {
         let mut log = dshot_log();
         log[2] = at(30_620, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0");
-        assert!(judge_anchors(&log, 0).err().unwrap().contains("in no shape"));
+        assert!(
+            judge_anchors(&log, 0)
+                .err()
+                .unwrap()
+                .contains("in no shape")
+        );
         let mut log = dshot_log();
         log[2] = at(130_620, "[WARNING] sysbus: AETHELGARD-CR1 2 81 0 3067");
-        assert!(judge_anchors(&log, 0).err().unwrap().contains("stamped 130620 ns"));
+        assert!(
+            judge_anchors(&log, 0)
+                .err()
+                .unwrap()
+                .contains("stamped 130620 ns")
+        );
         // The same boot read from the wrong start.
         assert!(judge_anchors(&dshot_log(), 100_000).is_err());
     }
@@ -4241,7 +4360,9 @@ mod tests {
         slow.spacing_ns = Some(1_100_000);
         serial.push(slow);
         let p = serial_plan(&image, &[], &serial);
-        let line = |count: u64, body: String| at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"));
+        let line = |count: u64, body: String| {
+            at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"))
+        };
         let mut log = vec![line(3075, "BOOTWORD 2100b007 0 3075".into())];
         for j in 0..8u64 {
             let c = 3075 + 10_000 + 10_000 * j;
@@ -4266,7 +4387,9 @@ mod tests {
         };
         let j = read(&log);
         assert_eq!(
-            j.iter().map(|j| (j.at_ns, j.bytes, j.mux, j.why.clone())).collect::<Vec<_>>(),
+            j.iter()
+                .map(|j| (j.at_ns, j.bytes, j.mux, j.why.clone()))
+                .collect::<Vec<_>>(),
             [
                 (Some(130_750), 8, Some((0x28_a801, 0x770)), None),
                 (Some(931_250), 8, Some((0x28_a801, 0x770)), None),
@@ -4280,10 +4403,22 @@ mod tests {
             .collect();
         let j = read(&seven);
         assert_eq!(j[1].at_ns, None);
-        assert!(j[1].why.as_deref().unwrap().contains("echoed 7 of its 8 bytes"), "{:?}", j[1]);
+        assert!(
+            j[1].why
+                .as_deref()
+                .unwrap()
+                .contains("echoed 7 of its 8 bytes"),
+            "{:?}",
+            j[1]
+        );
         // No boot word observed: nothing went in, by name.
         let j = read(&log[1..1].to_vec());
-        assert!(j[0].why.as_deref().unwrap().contains("no write of the boot word"));
+        assert!(
+            j[0].why
+                .as_deref()
+                .unwrap()
+                .contains("no write of the boot word")
+        );
         // A byte twice (a boot word written over another word twice): not
         // one frame, so no injection.
         let mut twice = log.clone();
@@ -4293,13 +4428,22 @@ mod tests {
         let three: Vec<String> = log.iter().take(7).cloned().collect();
         let j = read(&three);
         assert_eq!((j[0].at_ns, j[0].bytes), (Some(130_750), 3));
-        assert!(j[0].why.as_deref().unwrap().contains("3 of its 8 bytes went in"));
+        assert!(
+            j[0].why
+                .as_deref()
+                .unwrap()
+                .contains("3 of its 8 bytes went in")
+        );
         // The ports' wire time from the boot word's quantum, past the run:
         // named after it (`serial_wire_past_run`); inside it, not.
         assert!(wire_past_run(&p, 30_750).is_none());
         let named = wire_past_run(&p, 99_000_000).unwrap();
         assert_eq!(named.kind, "serial_wire_past_run");
-        assert!(named.message.contains("from one quantum after the boot word at 99000000 ns"));
+        assert!(
+            named
+                .message
+                .contains("from one quantum after the boot word at 99000000 ns")
+        );
     }
 
     /// `4300` D8: the silicon check is the topology's, reported apart; a port
@@ -4363,7 +4507,14 @@ mod tests {
             .chain(&boot[8..])
             .cloned()
             .collect();
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[late]), &[None]);
+        let w = serial_witnesses(
+            &p,
+            &regs,
+            &routed,
+            &captured(&whole),
+            Some(&[late]),
+            &[None],
+        );
         assert_eq!(w[0].tx_at_send, Some((0, 0)));
         let f = serial_findings_of(&serial[0], &w[0], 0, None);
         assert_eq!(names(&f), ["serial_pattern_missing"]);
@@ -4376,7 +4527,14 @@ mod tests {
         // Adversarial F3: a PRESC write, judged by the access log.
         let mut presc = boot.clone();
         presc.insert(4, aethelgard_twin::serial::access(PRESC).unwrap());
-        let w = serial_witnesses(&p, &regs, &routed, &captured(&whole), Some(&[presc]), &[None]);
+        let w = serial_witnesses(
+            &p,
+            &regs,
+            &routed,
+            &captured(&whole),
+            Some(&[presc]),
+            &[None],
+        );
         let f = serial_findings_of(&serial[0], &w[0], 0, None);
         assert_eq!(names(&f), ["serial_tag_mismatch"]);
         assert!(

@@ -1296,7 +1296,11 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             timer: stop.timer.clone(),
             anchor_ns: stop.anchor_ns,
             at_ns: stop.at_ns,
-            read_back: stop.read_back.iter().map(reading).collect::<Result<_, _>>()?,
+            read_back: stop
+                .read_back
+                .iter()
+                .map(reading)
+                .collect::<Result<_, _>>()?,
             cr1_after: stop.cr1_after.as_deref().map(hex_u32).transpose()?,
         });
     }

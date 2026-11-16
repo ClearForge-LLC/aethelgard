@@ -584,7 +584,11 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
 /// `DSHOT_WINDOW_NS`, derived by replay from the records, never the board's
 /// whole boot; the judge's stop (kind 30) sits at its end; and a window past
 /// the boot, or one with no stop, is named once per timer.
-fn dshot_run(anchor: Option<u64>, stop: Option<(u64, u32)>, findings: Vec<(&str, u64)>) -> Vec<Record> {
+fn dshot_run(
+    anchor: Option<u64>,
+    stop: Option<(u64, u32)>,
+    findings: Vec<(&str, u64)>,
+) -> Vec<Record> {
     let mut r = run("witnessed", true, true, vec![]);
     r[3] = Record::MotorOutputSolved {
         label: "M2".into(),
@@ -618,7 +622,12 @@ fn dshot_run(anchor: Option<u64>, stop: Option<(u64, u32)>, findings: Vec<(&str,
         high_ns: 160,
         grain_ns: 10,
         quantum_ns: 100_000,
-        status: if anchor.is_some() { "witnessed" } else { "unanchored" }.into(),
+        status: if anchor.is_some() {
+            "witnessed"
+        } else {
+            "unanchored"
+        }
+        .into(),
         rises,
         falls: rises,
         first_ns: anchor.map(|a| a + 490),
@@ -701,7 +710,10 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
             }
         },
         |s: &mut Record| {
-            if let Record::JudgeStop { anchor_ns, at_ns, .. } = s {
+            if let Record::JudgeStop {
+                anchor_ns, at_ns, ..
+            } = s
+            {
                 (*anchor_ns, *at_ns) = (*anchor_ns + 10, *at_ns + 10);
             }
         },
@@ -721,8 +733,16 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
     // No stop, or one that left CEN set: `judge_stop_missing`, once.
     let missing = vec![(JUDGE_STOP_MISSING_FINDING, 1)];
     assert!(check_run(&dshot_run(Some(a), None, vec![])).is_err());
-    assert!(check_run(&dshot_run(Some(a), None, missing.clone())).unwrap().matched);
-    assert!(check_run(&dshot_run(Some(a), Some((end, 0x81)), missing)).unwrap().matched);
+    assert!(
+        check_run(&dshot_run(Some(a), None, missing.clone()))
+            .unwrap()
+            .matched
+    );
+    assert!(
+        check_run(&dshot_run(Some(a), Some((end, 0x81)), missing))
+            .unwrap()
+            .matched
+    );
     // F2's late anchor: 99.07 ms plus 2 ms is past the boot, named.
     let late = 99_072_350;
     let mut r = dshot_run(Some(late), None, vec![(MOTOR_WINDOW_PAST_RUN_FINDING, 1)]);
@@ -739,7 +759,10 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         (*status, *rises, *falls, *off_grid) = ("stopped".into(), 2187, 2187, 4373);
         *last_ns = Some(late + 490 + 2186 * 424);
     }
-    r[0] = scenario(false, &[MOTOR_MISMATCH_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING]);
+    r[0] = scenario(
+        false,
+        &[MOTOR_MISMATCH_FINDING, MOTOR_WINDOW_PAST_RUN_FINDING],
+    );
     let n = r.len() - 1;
     r[n] = Record::Verdict {
         pass: false,

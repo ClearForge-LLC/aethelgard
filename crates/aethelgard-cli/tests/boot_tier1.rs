@@ -1892,7 +1892,8 @@ fn a_pin_off_its_af_does_not_count_its_bytes() {
 #[test]
 fn the_injection_s_lines_are_read_whole_and_in_place() {
     let capture = capture_of(&elf());
-    let first = "[00:00:00.000125750] [WARNING] sysbus: AETHELGARD-INJECT 0 0 2575 12575 28a801 770\n";
+    let first =
+        "[00:00:00.000125750] [WARNING] sysbus: AETHELGARD-INJECT 0 0 2575 12575 28a801 770\n";
     let second = "[00:00:00.000225750] [WARNING] sysbus: AETHELGARD-INJECT 0 1 2575 22575\n";
     // No lines (the boot word never observed), a byte twice (the boot word
     // written over another word twice), a byte missing in the middle: the
@@ -2158,7 +2159,9 @@ fn a_console_too_slow_for_the_boot_is_refused_before_it() {
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
         m.contains("serial port `CONSOLE` (USART1, 1200 8N1)")
-            && m.contains("from the earliest injection at 100000 ns, past MAX_VIRTUAL_NS of 100000000 ns"),
+            && m.contains(
+                "from the earliest injection at 100000 ns, past MAX_VIRTUAL_NS of 100000000 ns"
+            ),
         "{m}"
     );
 }

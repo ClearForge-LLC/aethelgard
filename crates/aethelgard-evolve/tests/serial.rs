@@ -180,7 +180,11 @@ fn witness(label: &str, echo: Echo, tx: (u8, u8)) -> Record {
         tx_at_send: Some(tx),
         // Trace 13 (`AET-WO-2302` D4): the console's frame a quantum after the
         // boot word, the GPS port's once the console has echoed.
-        injected_ns: Some(if label == "CONSOLE" { 130_750 } else { 2_000_000 }),
+        injected_ns: Some(if label == "CONSOLE" {
+            130_750
+        } else {
+            2_000_000
+        }),
     }
 }
 
