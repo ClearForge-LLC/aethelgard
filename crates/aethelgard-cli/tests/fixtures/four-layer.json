@@ -1,5 +1,6 @@
 {
   "schema_version": 11,
+  "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "sentinel-01-4l",
   "mcu": {

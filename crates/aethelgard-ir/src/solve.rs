@@ -2287,6 +2287,7 @@ mod differential {
             diff_pairs: vec![],
             power: None,
             accept_lifecycle: Vec::new(),
+            acknowledge_unwitnessed: Vec::new(),
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),

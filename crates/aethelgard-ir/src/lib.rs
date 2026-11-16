@@ -26,7 +26,7 @@ pub mod speeds;
 pub mod thermal;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
-pub use serial::{Framing, Parity, SerialPort, SerialRole, SolvedSerialPort};
+pub use serial::{Framing, Parity, PeerDeviationSource, SerialPort, SerialRole, SolvedSerialPort};
 pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,8 +55,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// (`AET-WO-4300d3`, renumbered from 9 by the same rule): `hot_plug`,
 /// `junction`, `controls` and `dc_bias_derating`. Version 11 requires
 /// `peer_deviation_ppm` on every serial port, the remote transmitter's clock
-/// deviation, taken by `AET-WO-4230` (renumbered from 10 by the same rule,
-/// merging after `4300d3`). Nothing supplies any of them for an older file.
+/// deviation, with its `peer_deviation_source`, and `acknowledge_unwitnessed`
+/// (an empty list acknowledges none), taken by `AET-WO-4230` (renumbered from
+/// 10 by the same rule, merging after `4300d3`). Nothing supplies any of them
+/// for an older file.
 pub const SPECIFICATION_SCHEMA_VERSION: u32 = 11;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
@@ -103,6 +105,13 @@ pub struct Specification {
     pub accept_lifecycle: Vec<LifecycleAcceptance>,
     /// Each serial port: a USART or UART the solver assigns (`AET-WO-4300b`).
     pub serial_ports: Vec<SerialPort>,
+    /// Each register's fields that no independent rule and no measured model
+    /// reaction witnesses, acknowledged by register and class with the reason
+    /// (`AET-WO-4230` R1, the architect's ruling on PR #161, comment
+    /// 6911424608). `validate` refuses a malformed entry; the CLI refuses a
+    /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
+    /// list acknowledges none.
+    pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -117,6 +126,76 @@ pub struct LifecycleAcceptance {
 
 /// The longest acknowledgement statement, in bytes.
 pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
+
+/// One acknowledgement of unwitnessed ledger fields (`AET-WO-4230` R1, the
+/// architect's ruling on PR #161, comment 6911424608): the register as the
+/// ledger names it (`SPI1.CFG1`), the class its rows carry
+/// ([`UnwitnessedClass`], held as written so that `validate` refuses an
+/// unknown one by name), the exact fields it covers, and why the board is
+/// fabricated with them unwitnessed. At most one entry per register and
+/// class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct UnwitnessedAcknowledgement {
+    pub register: String,
+    pub class: String,
+    pub fields: Vec<String>,
+    pub reason: String,
+}
+
+impl UnwitnessedAcknowledgement {
+    /// The class, typed; `None` for a name `validate` refuses.
+    pub fn class_kind(&self) -> Option<UnwitnessedClass> {
+        UnwitnessedClass::parse(&self.class)
+    }
+}
+
+/// The ledger classes whose rows an acknowledgement covers (`AET-WO-4230`
+/// contract D9): neither an independent rule nor a measured model reaction
+/// judges them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub enum UnwitnessedClass {
+    #[serde(rename = "ignored-by-model")]
+    IgnoredByModel,
+    #[serde(rename = "same-source")]
+    SameSource,
+    #[serde(rename = "silicon-only")]
+    SiliconOnly,
+}
+
+impl UnwitnessedClass {
+    /// Every class, in the order the ruling names them.
+    pub const ALL: [Self; 3] = [Self::IgnoredByModel, Self::SameSource, Self::SiliconOnly];
+
+    /// The name the specification and the ledger use.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::IgnoredByModel => "ignored-by-model",
+            Self::SameSource => "same-source",
+            Self::SiliconOnly => "silicon-only",
+        }
+    }
+
+    /// The class `name` names exactly, if any.
+    pub fn parse(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|c| c.name() == name)
+    }
+}
+
+/// Whether `register` has the ledger's shape for a register: a peripheral
+/// and a register name joined by one `.`, each an upper-case letter followed
+/// by upper-case letters, digits or `_` (`SPI1.CFG1`, `FLASH.OPTSR_CUR`).
+fn register_name_ok(register: &str) -> bool {
+    let segment = |s: &str| {
+        let b = s.as_bytes();
+        b.first().is_some_and(u8::is_ascii_uppercase)
+            && b.iter()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || *c == b'_')
+    };
+    register
+        .split_once('.')
+        .is_some_and(|(p, r)| segment(p) && segment(r))
+}
 
 /// The banner every verdict, generated file and fabrication package carries
 /// when the board uses an `eol` or `nrnd` part (`AET-WO-4210`, ruled by Scotty
@@ -658,6 +737,7 @@ pub(crate) use object_only;
 object_only!(
     Specification,
     LifecycleAcceptance,
+    UnwitnessedAcknowledgement,
     Mcu,
     VoltageDomain,
     Signal,
@@ -1174,6 +1254,30 @@ pub enum IrValidationError {
     )]
     LifecycleAcceptanceUnused { id: String },
     #[error(
+        "`acknowledge_unwitnessed` names register `{id}`, which is not a peripheral and a register joined by one `.`, each an upper-case letter then upper-case letters, digits or `_` (`SPI1.CFG1`)"
+    )]
+    UnwitnessedRegisterMalformed { id: String },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as class `{class}`: the class is `ignored-by-model`, `same-source` or `silicon-only` (AET-WO-4230 R1)"
+    )]
+    UnwitnessedClassUnknown { id: String, class: String },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as `{class}` with no fields: an entry names the exact fields it covers"
+    )]
+    UnwitnessedFieldsEmpty { id: String, class: String },
+    #[error(
+        "`acknowledge_unwitnessed` names field `{field}` of register `{id}` as `{class}` twice"
+    )]
+    UnwitnessedFieldTwice {
+        id: String,
+        class: String,
+        field: String,
+    },
+    #[error(
+        "`acknowledge_unwitnessed` acknowledges register `{id}` as `{class}` twice: one entry per register and class"
+    )]
+    UnwitnessedAcknowledgedTwice { id: String, class: String },
+    #[error(
         "device `{id}` is a `{part}` on an {bus_kind} bus, but the part is an {part_kind} part ({citation})"
     )]
     PartOnWrongBus {
@@ -1334,6 +1438,15 @@ pub enum IrValidationError {
         declared_ppm: u32,
         cited_ppm: u32,
         citation: String,
+    },
+    #[error(
+        "serial port `{id}` has role `{role}` and calls its `peer_deviation_ppm` of {declared_ppm} `cited`: only an `rc_crsf` port's figure of {cited_ppm} ppm, the spread of the two CRSF bauds the repository cites, is cited; declare any other figure `declared` (AET-WO-4230 R2)"
+    )]
+    PeerDeviationNotCited {
+        id: String,
+        role: &'static str,
+        declared_ppm: u32,
+        cited_ppm: u32,
     },
     #[error(
         "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
@@ -1535,6 +1648,11 @@ impl IrValidationError {
             Self::LifecycleAcceptedTwice { .. } => "LifecycleAcceptedTwice",
             Self::LifecycleStatementInvalid { .. } => "LifecycleStatementInvalid",
             Self::LifecycleAcceptanceUnused { .. } => "LifecycleAcceptanceUnused",
+            Self::UnwitnessedRegisterMalformed { .. } => "UnwitnessedRegisterMalformed",
+            Self::UnwitnessedClassUnknown { .. } => "UnwitnessedClassUnknown",
+            Self::UnwitnessedFieldsEmpty { .. } => "UnwitnessedFieldsEmpty",
+            Self::UnwitnessedFieldTwice { .. } => "UnwitnessedFieldTwice",
+            Self::UnwitnessedAcknowledgedTwice { .. } => "UnwitnessedAcknowledgedTwice",
             Self::UnjudgedSpiConstraint { .. } => "UnjudgedSpiConstraint",
             Self::PartOnWrongBus { .. } => "PartOnWrongBus",
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
@@ -1561,6 +1679,7 @@ impl IrValidationError {
             Self::SerialNegotiatedOffCrsf { .. } => "SerialNegotiatedOffCrsf",
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
             Self::PeerDeviationBelowCited { .. } => "PeerDeviationBelowCited",
+            Self::PeerDeviationNotCited { .. } => "PeerDeviationNotCited",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
@@ -1665,6 +1784,11 @@ impl IrValidationError {
             | Self::LifecycleAcceptedTwice { id }
             | Self::LifecycleStatementInvalid { id }
             | Self::LifecycleAcceptanceUnused { id }
+            | Self::UnwitnessedRegisterMalformed { id }
+            | Self::UnwitnessedClassUnknown { id, .. }
+            | Self::UnwitnessedFieldsEmpty { id, .. }
+            | Self::UnwitnessedFieldTwice { id, .. }
+            | Self::UnwitnessedAcknowledgedTwice { id, .. }
             | Self::UnjudgedSpiConstraint { id }
             | Self::PartOnWrongBus { id, .. }
             | Self::I2cAddressNotOffered { id, .. }
@@ -1687,6 +1811,7 @@ impl IrValidationError {
             | Self::SerialNegotiatedOffCrsf { id, .. }
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
             | Self::PeerDeviationBelowCited { id, .. }
+            | Self::PeerDeviationNotCited { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }
@@ -2521,7 +2646,68 @@ impl Specification {
             motor_shape(m)?;
         }
         // 13c: each serial port, in document order (`AET-WO-4300b`).
-        serial::validate(&self.serial_ports)
+        serial::validate(&self.serial_ports)?;
+        // 13d: each unwitnessed acknowledgement's shape (`AET-WO-4230` R1).
+        self.validate_unwitnessed()
+    }
+
+    /// Step 13d (`AET-WO-4230` R1), each entry in document order: a register
+    /// of the ledger's shape, a class of [`UnwitnessedClass`], at least one
+    /// field and none twice, a reason by the repository's rule for a source
+    /// ([`board::source`], `InvalidSource` naming
+    /// `acknowledge_unwitnessed[i].reason`), and no second entry for the same
+    /// register and class. Whether each field is one the ledger has for that
+    /// register and class needs the pin table: the CLI's `validate` judges it
+    /// (`UnwitnessedAcknowledgementStale`).
+    fn validate_unwitnessed(&self) -> Result<(), IrValidationError> {
+        use IrValidationError as E;
+        let mut entries = BTreeSet::new();
+        for (i, a) in self.acknowledge_unwitnessed.iter().enumerate() {
+            let id = || a.register.clone();
+            if !register_name_ok(&a.register) {
+                return Err(E::UnwitnessedRegisterMalformed { id: id() });
+            }
+            let Some(class) = a.class_kind() else {
+                return Err(E::UnwitnessedClassUnknown {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            };
+            if a.fields.is_empty() {
+                return Err(E::UnwitnessedFieldsEmpty {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            }
+            let mut fields = BTreeSet::new();
+            if let Some(field) = a.fields.iter().find(|f| !fields.insert(f.as_str())) {
+                return Err(E::UnwitnessedFieldTwice {
+                    id: id(),
+                    class: a.class.clone(),
+                    field: field.clone(),
+                });
+            }
+            board::source(&a.reason, &format!("acknowledge_unwitnessed[{i}].reason"))?;
+            if !entries.insert((a.register.as_str(), class)) {
+                return Err(E::UnwitnessedAcknowledgedTwice {
+                    id: id(),
+                    class: a.class.clone(),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// The entry acknowledging `register`'s rows of `class`, if any (at most
+    /// one, once `validate` has passed).
+    pub fn unwitnessed_acknowledgement(
+        &self,
+        register: &str,
+        class: UnwitnessedClass,
+    ) -> Option<&UnwitnessedAcknowledgement> {
+        self.acknowledge_unwitnessed
+            .iter()
+            .find(|a| a.register == register && a.class_kind() == Some(class))
     }
 
     /// Step 2, in the order the README lists.

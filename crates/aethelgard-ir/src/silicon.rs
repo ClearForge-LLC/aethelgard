@@ -222,14 +222,22 @@ const CR1_SSI: u32 = 1 << 12;
 const CFG1_MBR_SHIFT: u32 = 28;
 const CFG1_CRCSIZE_RESET: u32 = 0b00111 << 16;
 const CFG1_DSIZE_8BIT: u32 = 0b00111;
-/// `SPI_CFG2` (§50.11.4, p. 2221–2222): `SSM` bit 26, `MASTER` bit 22; reset
-/// `0x0000 0000` (`CPOL` = `CPHA` = 0, mode 0; `COMM` `00` full duplex; `SP`
-/// `000` Motorola; `SSOE` 0).
+/// `SPI_CFG2` (§50.11.4, p. 2221–2222): `AFCNTR` bit 31, `SSM` bit 26,
+/// `MASTER` bit 22; reset `0x0000 0000` (`CPOL` = `CPHA` = 0, mode 0; `COMM`
+/// `00` full duplex; `SP` `000` Motorola; `SSOE` 0). `AFCNTR` (p. 2221,
+/// rendered): "This bit is taken into account when SPE=0 only … 1: the
+/// peripheral keeps always control of all associated GPIOs", so SCK and MOSI
+/// stay driven while the chip select is low and `SPE` is not yet set or
+/// already cleared; "This bit must be never used at slave mode", and every
+/// controller here is a master (the architect's ruling on PR #161, comment
+/// 6911424608, Q-D).
+const CFG2_AFCNTR: u32 = 1 << 31;
 const CFG2_SSM: u32 = 1 << 26;
 const CFG2_MASTER: u32 = 1 << 22;
 
 /// The whole words the bring-up writes for one SPI controller (contract D4,
-/// with `CFG1`'s `CRCSIZE` at its reset value, p. 2219).
+/// with `CFG1`'s `CRCSIZE` at its reset value, p. 2219, and `CFG2`'s
+/// `AFCNTR` set, round 2 R4).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SpiWords {
     /// `SSI`: with `SSM` set, NSS reads high, so a master raises no mode
@@ -241,7 +249,7 @@ pub struct SpiWords {
     pub cr1_start: u32,
     /// `MBR << 28 | CRCSIZE 8 bits (reset) | DSIZE 8 bits`.
     pub cfg1: u32,
-    /// `MASTER | SSM`.
+    /// `MASTER | SSM | AFCNTR`.
     pub cfg2: u32,
     /// The RCC offset of the controller's select register and the whole word
     /// written there: every solved controller's field in that register set
@@ -274,7 +282,7 @@ pub fn spi_words(
         cr1_enable: CR1_SSI | CR1_SPE,
         cr1_start: CR1_SSI | CR1_SPE | CR1_CSTART,
         cfg1: u32::from(c.mbr) << CFG1_MBR_SHIFT | CFG1_CRCSIZE_RESET | CFG1_DSIZE_8BIT,
-        cfg2: CFG2_MASTER | CFG2_SSM,
+        cfg2: CFG2_MASTER | CFG2_SSM | CFG2_AFCNTR,
         kernel_select: (offset, word),
     })
 }
@@ -623,6 +631,71 @@ pub fn check_i2c(peripheral: &str, t: &SolvedI2cTiming) -> I2cFinding {
     }
 }
 
+// ---------------------------------------------------------------- USART
+
+/// `USART_BRR.BRR[15:0]`, a 16-bit field (RM0433 Rev 9 §48.8.5, p. 2082),
+/// holding `USARTDIV`: "In case of oversampling by 16 and 8, USARTDIV must
+/// be greater than or equal to 16" (§48.5.7, the note on p. 2035).
+const BRR_MIN: u32 = 16;
+const BRR_MAX: u32 = 0xFFFF;
+
+/// What [`check_brr`] found for one USART: exact integers, nothing rounded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct BrrFinding {
+    pub kernel_hz: u64,
+    pub baud: u32,
+    pub brr: u32,
+    /// `|BRR · baud − kernel_hz|`: `baud` times how far `BRR` lies from
+    /// `USARTDIV`, the exact `kernel_hz / baud`.
+    pub residue: u64,
+    /// `baud > 0` and `2 · residue ≤ baud`: `BRR` is within one half of
+    /// `USARTDIV`, so it is a nearest whole `USARTDIV`.
+    pub nearest: bool,
+    /// `16 ≤ BRR ≤ 0xFFFF`.
+    pub in_range: bool,
+    pub holds: bool,
+}
+
+/// The rule for a USART's `BRR` (`AET-WO-4230` R3, the architect's ruling on
+/// PR #161, comment 6911424608, Q-H). With oversampling by 16, `BRR` is
+/// `USARTDIV` (RM0433 Rev 9 §48.5.7, p. 2034–2035: "In case of oversampling
+/// by 16, … Tx/Rx baud = usart_ker_ck_pres / USARTDIV", "When OVER8 = 0,
+/// BRR = USARTDIV"), so the word a kernel
+/// clock of `kernel_hz` needs for `baud` is the whole number nearest
+/// `kernel_hz / baud`. Checked by an inequality, never by dividing:
+/// `2 · |BRR · baud − kernel_hz| ≤ baud`, with `BRR` in its field's range.
+/// It shares nothing with the solver's `serial::solve_brr`, which rounds a
+/// quotient; at an exact half both neighbours hold.
+pub fn check_brr(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
+    let residue = (u128::from(brr) * u128::from(baud)).abs_diff(u128::from(kernel_hz));
+    let nearest = baud > 0 && 2 * residue <= u128::from(baud);
+    let in_range = (BRR_MIN..=BRR_MAX).contains(&brr);
+    BrrFinding {
+        kernel_hz,
+        baud,
+        brr,
+        residue: u64::try_from(residue).unwrap_or(u64::MAX),
+        nearest,
+        in_range,
+        holds: nearest && in_range,
+    }
+}
+
+// ---------------------------------------------------------------- GPIO
+
+/// `GPIOx_PUPDR.PUPDy[1:0]` (RM0433 Rev 9 §11.4.4, p. 542): `00` no
+/// pull-up or pull-down, `01` pull-up, `10` pull-down, `11` reserved.
+const PUPDR_PULL_DOWN: u32 = 0b10;
+
+/// The `PUPDR` field of every motor-output pin: pull-down, written in the
+/// port's first GPIO init as part of the whole word, so that a motor line is
+/// held low from then until `start_outputs` (the architect's ruling on
+/// PR #161, comment 6911424608, Q-G: "PUPDR pull-down (`10`) on every
+/// motor-output pin in the first GPIO init, whole word").
+pub fn motor_output_pupd() -> u32 {
+    PUPDR_PULL_DOWN
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,7 +819,9 @@ mod tests {
         assert_eq!(w.cr1_enable, 0x0000_1001);
         assert_eq!(w.cr1_start, 0x0000_1201);
         assert_eq!(w.cfg1, 0x1007_0007);
-        assert_eq!(w.cfg2, 0x0440_0000);
+        // MASTER (22), SSM (26) and AFCNTR (31), every other field 0.
+        assert_eq!(w.cfg2, 0x8440_0000);
+        assert_eq!(w.cfg2 >> 31, 1, "AFCNTR");
         // SPI123SEL = 100 at bits 14:12 of RCC_D2CCIP1R (0x050).
         assert_eq!(w.kernel_select, (0x050, 0x0000_4000));
         // SPI4 shares the register: SPI45SEL = 011 at bits 18:16, and SPI1's
@@ -946,5 +1021,76 @@ mod tests {
         };
         assert!(!check_i2c("I2C1", &analog_off).holds);
         assert!(!check_i2c("I2C5", &t).holds);
+    }
+
+    #[test]
+    fn brr_is_the_nearest_whole_usartdiv_by_the_inequality() {
+        // 64 MHz / 115200 = 555.56: 556 · 115200 = 64,051,200, 51,200 over,
+        // 2 · 51,200 = 102,400 ≤ 115,200. 555 is 64,000 under (128,000 >
+        // 115,200) and 557 166,400 over: both fail.
+        let f = check_brr(64_000_000, 115_200, 556);
+        assert_eq!(
+            (f.residue, f.nearest, f.in_range, f.holds),
+            (51_200, true, true, true)
+        );
+        for wrong in [555, 557] {
+            assert!(!check_brr(64_000_000, 115_200, wrong).holds, "{wrong}");
+        }
+        assert_eq!(check_brr(64_000_000, 115_200, 555).residue, 64_000);
+        // 420000: 152 · 420000 = 63,840,000, 160,000 under, 320,000 ≤
+        // 420,000; 151 is 580,000 under and 153 260,000 over (520,000).
+        let f = check_brr(64_000_000, 420_000, 152);
+        assert_eq!((f.residue, f.holds), (160_000, true));
+        assert_eq!(check_brr(64_000_000, 420_000, 153).residue, 260_000);
+        for wrong in [151, 153] {
+            assert!(!check_brr(64_000_000, 420_000, wrong).holds, "{wrong}");
+        }
+        // 100000: 640 exactly; 639 and 641 are 100,000 off, 200,000 > 100,000.
+        assert_eq!(check_brr(64_000_000, 100_000, 640).residue, 0);
+        assert!(!check_brr(64_000_000, 100_000, 639).holds);
+        assert!(!check_brr(64_000_000, 100_000, 641).holds);
+    }
+
+    #[test]
+    fn at_an_exact_half_both_neighbours_hold() {
+        // 1,024,000 baud: USARTDIV = 62.5. 62 · 1,024,000 = 63,488,000 and
+        // 63 · 1,024,000 = 64,512,000, each 512,000 away: 2 · 512,000 =
+        // 1,024,000, the baud, so `≤` holds for both and `<` for neither.
+        for brr in [62, 63] {
+            let f = check_brr(64_000_000, 1_024_000, brr);
+            assert_eq!((f.residue, f.holds), (512_000, true), "{brr}");
+        }
+        assert!(!check_brr(64_000_000, 1_024_000, 61).holds);
+        assert!(!check_brr(64_000_000, 1_024_000, 64).holds);
+    }
+
+    #[test]
+    fn brr_is_16_to_0xffff() {
+        // 4 Mbaud: 16 exactly, the least BRR the field takes.
+        let f = check_brr(64_000_000, 4_000_000, 16);
+        assert_eq!((f.residue, f.in_range, f.holds), (0, true, true));
+        // 4,266,667 baud: 15 · 4,266,667 = 64,000,005, 5 over, nearest, but
+        // below 16.
+        let f = check_brr(64_000_000, 4_266_667, 15);
+        assert_eq!(
+            (f.residue, f.nearest, f.in_range, f.holds),
+            (5, true, false, false)
+        );
+        // 0xFFFF holds; 0x10000 is nearest (1000 · 65,536 = 65,536,000) but
+        // past the 16-bit field.
+        assert!(check_brr(65_535_000, 1_000, 0xFFFF).holds);
+        let f = check_brr(65_536_000, 1_000, 0x1_0000);
+        assert_eq!((f.residue, f.nearest, f.in_range), (0, true, false));
+        // A zero baud has no USARTDIV, even on a zero kernel.
+        assert!(!check_brr(0, 0, 16).holds);
+        assert!(!check_brr(64_000_000, 0, 16).holds);
+        // No overflow at the extremes.
+        let f = check_brr(u64::MAX, u32::MAX, u32::MAX);
+        assert!(!f.holds);
+    }
+
+    #[test]
+    fn a_motor_output_pin_is_pulled_down() {
+        assert_eq!(motor_output_pupd(), 0b10);
     }
 }

@@ -5,7 +5,8 @@ use common::devs;
 use aethelgard_ir::{
     AnalogLine, I2cBus, I2cDevice, IrValidationError as E, Mcu, NetConstraint, PinAssignment,
     Signal, SolvedClock, SolvedI2cDevice, SolvedI2cTiming, SolvedSpiController, SolvedSpiDevice,
-    SolvedTopology, Specification, SpiBus, SpiDevice, SpiKernel, SpiLine, VoltageDomain,
+    SolvedTopology, Specification, SpiBus, SpiDevice, SpiKernel, SpiLine,
+    UnwitnessedAcknowledgement, UnwitnessedClass, VoltageDomain,
 };
 use std::collections::BTreeMap;
 
@@ -25,6 +26,7 @@ fn valid() -> Specification {
     let json = serde_json::json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
+        "acknowledge_unwitnessed": [],
         "net_classes": [],
         "diff_pairs": [],
         "power": null,
@@ -837,12 +839,12 @@ fn full_document() -> serde_json::Value {
          "tx": {"net": "CONSOLE_TX", "pin": null}, "rx": {"net": "CONSOLE_RX", "pin": null},
          "role": "console",
          "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
-         "negotiated": null, "peer_deviation_ppm": 5000},
+         "negotiated": null, "peer_deviation_ppm": 5000, "peer_deviation_source": "declared"},
         {"label": "SBUS", "peripheral": "USART2",
          "tx": {"net": "SBUS_TX", "pin": "PD5"}, "rx": {"net": "SBUS_RX", "pin": "PD6"},
          "role": "rc_sbus",
          "framing": {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true},
-         "negotiated": null, "peer_deviation_ppm": 5000}
+         "negotiated": null, "peer_deviation_ppm": 5000, "peer_deviation_source": "declared"}
     ]);
     // Each serial line leaves the board at a connector.
     for (reference, port) in [("J7", "CONSOLE"), ("J8", "SBUS")] {
@@ -854,6 +856,12 @@ fn full_document() -> serde_json::Value {
                 {"pin": "4", "net": "GND", "offboard": null}]}
         ));
     }
+    // `AET-WO-4230` R1: an acknowledgement's shape is judged here; whether
+    // the ledger has these fields is the CLI's `validate`.
+    v["acknowledge_unwitnessed"] = json!([
+        {"register": "SPI1.CFG2", "class": "ignored-by-model", "fields": ["CPHA", "CPOL"],
+         "reason": "Renode stores neither (a tag): the bench reads them back"}
+    ]);
     v
 }
 
@@ -2549,6 +2557,151 @@ fn an_eol_part_is_refused_unless_acknowledged_at_its_status() {
     assert!(banner.iter().all(|l| l.contains("EOL badge")), "{banner:?}");
     // A board of `active` parts has no banner.
     assert!(valid().lifecycle_banner().unwrap().is_empty());
+}
+
+/// An entry of `acknowledge_unwitnessed` for `register` and `class`.
+fn unwitnessed(register: &str, class: &str, fields: &[&str]) -> UnwitnessedAcknowledgement {
+    UnwitnessedAcknowledgement {
+        register: register.into(),
+        class: class.into(),
+        fields: fields.iter().map(|f| (*f).into()).collect(),
+        reason: "Renode does not store it (FEEDBACK s2): the bench row reads it".into(),
+    }
+}
+
+/// `AET-WO-4230` R1 (the architect's ruling on PR #161, comment 6911424608):
+/// `acknowledge_unwitnessed` is required, and each entry's shape is refused
+/// by name at `validate`, in document order. The ledger's own register and
+/// field names, and all three classes, pass.
+#[test]
+fn an_unwitnessed_acknowledgement_s_shape_is_refused_by_name() {
+    let ok = [
+        unwitnessed("SPI1.CFG1", "same-source", &["MBR", "DSIZE"]),
+        unwitnessed("SPI1.CFG1", "ignored-by-model", &["CRCSIZE"]),
+        unwitnessed("FLASH.OPTSR_CUR", "silicon-only", &["BOR_LEV"]),
+        unwitnessed("SCB.CPACR", "same-source", &["CP10", "CP11"]),
+        unwitnessed("USART1.BRR", "same-source", &["DIV_MANTISSA"]),
+    ];
+    let mut spec = valid();
+    spec.acknowledge_unwitnessed = ok.to_vec();
+    assert_eq!(spec.validate(), Ok(()));
+    assert_eq!(
+        spec.unwitnessed_acknowledgement("SPI1.CFG1", UnwitnessedClass::IgnoredByModel),
+        Some(&ok[1])
+    );
+    assert_eq!(
+        spec.unwitnessed_acknowledgement("SPI1.CFG1", UnwitnessedClass::SiliconOnly),
+        None
+    );
+    for c in UnwitnessedClass::ALL {
+        assert_eq!(UnwitnessedClass::parse(c.name()), Some(c));
+        assert_eq!(serde_json::to_value(c).unwrap(), c.name());
+    }
+
+    let refused =
+        |entries: Vec<UnwitnessedAcknowledgement>| refusal(|s| s.acknowledge_unwitnessed = entries);
+    // A register not of the ledger's shape.
+    for bad in [
+        "",
+        "SPI1",
+        "spi1.CFG1",
+        "SPI1.",
+        ".CFG1",
+        "SPI1.CFG1.MBR",
+        "SPI1 .CFG1",
+        "1SPI.CFG1",
+        "SPI1.CFG-1",
+    ] {
+        let e = refused(vec![unwitnessed(bad, "same-source", &["MBR"])]);
+        assert_refusal(e, "UnwitnessedRegisterMalformed", Some(bad));
+    }
+    // A class outside the three, the two witnessed classes included.
+    for bad in [
+        "independent-rule",
+        "observed",
+        "Same-Source",
+        "same_source",
+        "",
+    ] {
+        let e = refused(vec![unwitnessed("SPI1.CFG1", bad, &["MBR"])]);
+        assert_refusal(e.clone(), "UnwitnessedClassUnknown", Some("SPI1.CFG1"));
+        assert!(e.to_string().contains(&format!("class `{bad}`")), "{e}");
+    }
+    // No fields.
+    let e = refused(vec![unwitnessed("SPI1.CFG1", "same-source", &[])]);
+    assert_refusal(e, "UnwitnessedFieldsEmpty", Some("SPI1.CFG1"));
+    // A field twice.
+    let e = refused(vec![unwitnessed(
+        "SPI1.CFG1",
+        "same-source",
+        &["MBR", "DSIZE", "MBR"],
+    )]);
+    assert_refusal(e.clone(), "UnwitnessedFieldTwice", Some("SPI1.CFG1"));
+    assert!(e.to_string().contains("field `MBR`"), "{e}");
+    // A reason by the repository's rule for a source (`board::source`): 1 to
+    // 200 bytes of printable ASCII, no space at either end.
+    for bad in [
+        "",
+        " ",
+        "   ",
+        " why",
+        "why ",
+        "tab\there",
+        "µs",
+        &"x".repeat(201),
+    ] {
+        let mut a = unwitnessed("SPI1.CFG1", "same-source", &["MBR"]);
+        a.reason = bad.to_owned();
+        let e = refused(vec![ok[0].clone(), a]);
+        assert_eq!(e.kind(), "InvalidSource", "{bad:?}: {e}");
+        assert_eq!(
+            e.path(),
+            Some("acknowledge_unwitnessed[1].reason"),
+            "{bad:?}"
+        );
+    }
+    let mut a = unwitnessed("SPI1.CFG1", "same-source", &["MBR"]);
+    a.reason = "x".repeat(200);
+    let mut spec = valid();
+    spec.acknowledge_unwitnessed = vec![a];
+    assert_eq!(spec.validate(), Ok(()));
+    // Two entries for one register and class, even with other fields.
+    let e = refused(vec![
+        unwitnessed("SPI1.CFG1", "same-source", &["MBR"]),
+        unwitnessed("SPI1.CFG2", "same-source", &["MBR"]),
+        unwitnessed("SPI1.CFG1", "same-source", &["DSIZE"]),
+    ]);
+    assert_refusal(e.clone(), "UnwitnessedAcknowledgedTwice", Some("SPI1.CFG1"));
+    assert!(e.to_string().contains("`same-source`"), "{e}");
+}
+
+/// `acknowledge_unwitnessed` and each entry's four keys are required
+/// (`INV-06`); an unknown key is refused.
+#[test]
+fn an_unwitnessed_acknowledgement_s_keys_are_each_required() {
+    let whole = serde_json::json!({"register": "SPI1.CFG1", "class": "same-source",
+                                   "fields": ["MBR"], "reason": "why"});
+    assert!(serde_json::from_value::<UnwitnessedAcknowledgement>(whole.clone()).is_ok());
+    for key in ["register", "class", "fields", "reason"] {
+        let mut cut = whole.clone();
+        cut.as_object_mut().unwrap().remove(key);
+        let err = serde_json::from_value::<UnwitnessedAcknowledgement>(cut).unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("missing field `{key}`")),
+            "{err}"
+        );
+    }
+    let mut extra = whole;
+    extra["note"] = serde_json::json!("x");
+    assert!(serde_json::from_value::<UnwitnessedAcknowledgement>(extra).is_err());
+    let mut v = serde_json::to_value(valid()).unwrap();
+    v.as_object_mut().unwrap().remove("acknowledge_unwitnessed");
+    let err = serde_json::from_value::<Specification>(v).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("missing field `acknowledge_unwitnessed`"),
+        "{err}"
+    );
 }
 
 /// `AET-WO-4230`: the version-8 fields, each refused by name, never defaulted.

@@ -84,7 +84,7 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
            "rx": {"net": format!("{label}_RX"), "pin": rx},
            "role": "console",
            "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
-           "negotiated": null, "peer_deviation_ppm": 0})
+           "negotiated": null, "peer_deviation_ppm": 0, "peer_deviation_source": "declared"})
 }
 
 /// A specification holding `ports`, each port's TX and RX on pins 1 and 2 of
@@ -106,6 +106,7 @@ fn spec_json(ports: Vec<Value>) -> Value {
     json!({
         "schema_version": aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
         "accept_lifecycle": [],
+        "acknowledge_unwitnessed": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
         "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0},
@@ -180,6 +181,7 @@ fn every_key_of_a_serial_port_is_required() {
         "role",
         "framing",
         "peer_deviation_ppm",
+        "peer_deviation_source",
     ] {
         let mut p = port("C", None, None, None);
         p.as_object_mut().unwrap().remove(key);
@@ -200,6 +202,15 @@ fn every_key_of_a_serial_port_is_required() {
         p[field] = bad;
         assert!(serde_json::from_value::<Specification>(spec_json(vec![p])).is_err());
     }
+    // `peer_deviation_source` is `cited` or `declared`, exactly.
+    for bad in ["Cited", "datasheet", ""] {
+        let mut p = port("C", None, None, None);
+        p["peer_deviation_source"] = json!(bad);
+        assert!(serde_json::from_value::<Specification>(spec_json(vec![p])).is_err());
+    }
+    let mut p = port("C", None, None, None);
+    p["peer_deviation_source"] = json!(null);
+    assert!(serde_json::from_value::<Specification>(spec_json(vec![p])).is_err());
     let mut p = port("C", None, None, None);
     p["framing"]["parity"] = json!("mark");
     assert!(serde_json::from_value::<Specification>(spec_json(vec![p])).is_err());
@@ -347,6 +358,7 @@ fn crsf(edit: fn(&mut Value)) -> Value {
     p["role"] = json!("rc_crsf");
     p["framing"]["baud"] = json!(420000);
     p["peer_deviation_ppm"] = json!(8002);
+    p["peer_deviation_source"] = json!("cited");
     edit(&mut p);
     p
 }
@@ -1448,6 +1460,66 @@ fn a_crsf_port_s_peer_deviation_is_at_least_the_cited_spread() {
     ));
 }
 
+/// `AET-WO-4230` R2 (the architect's ruling on Q-A): a figure is `cited`
+/// only on an `rc_crsf` port and only as the cited spread, 8,002 ppm; any
+/// other `cited` figure is refused by name (`PeerDeviationNotCited`). Every
+/// other figure is `declared`, the CRSF spread included.
+#[test]
+fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
+    // Cited at the spread, on CRSF: held.
+    assert_eq!(parse(spec_json(vec![crsf(|_| {})])).validate(), Ok(()));
+    // Declared, on CRSF at or above the spread, and on any other role.
+    for ppm in [8_002, 8_003, 20_000] {
+        let mut p = crsf(|p| p["peer_deviation_source"] = json!("declared"));
+        p["peer_deviation_ppm"] = json!(ppm);
+        assert_eq!(parse(spec_json(vec![p])).validate(), Ok(()), "{ppm}");
+    }
+    // Cited on CRSF at a figure that is not the spread: above it (below it
+    // is `PeerDeviationBelowCited`, judged first).
+    for ppm in [8_003, 10_000, u32::MAX] {
+        let mut p = crsf(|_| {});
+        p["peer_deviation_ppm"] = json!(ppm);
+        let e = refused_ports(vec![p]);
+        assert!(
+            matches!(&e, IrValidationError::PeerDeviationNotCited { id, role: "rc_crsf",
+                declared_ppm, cited_ppm: 8_002 } if id == "RC" && *declared_ppm == ppm),
+            "{ppm}: {e}"
+        );
+        assert_eq!((e.kind(), e.id()), ("PeerDeviationNotCited", Some("RC")));
+    }
+    let e = refused_ports(vec![crsf(|p| p["peer_deviation_ppm"] = json!(8_001))]);
+    assert_eq!(e.kind(), "PeerDeviationBelowCited", "{e}");
+    // Cited on every other role, even at 8,002 ppm: the repository holds no
+    // citation for the peer of a console, MAVLink, GPS or SBUS port.
+    for role in ["console", "mavlink", "gps", "rc_sbus"] {
+        for ppm in [0, 5_000, 8_002] {
+            let mut p = port("C", None, None, None);
+            p["role"] = json!(role);
+            if role == "rc_sbus" {
+                p["framing"] = json!({"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true});
+            }
+            p["peer_deviation_ppm"] = json!(ppm);
+            assert_eq!(
+                parse(spec_json(vec![p.clone()])).validate(),
+                Ok(()),
+                "{role}"
+            );
+            p["peer_deviation_source"] = json!("cited");
+            let e = refused_ports(vec![p]);
+            assert!(
+                matches!(&e, IrValidationError::PeerDeviationNotCited { id, role: r,
+                    declared_ppm, .. } if id == "C" && *r == role && *declared_ppm == ppm),
+                "{role} {ppm}: {e}"
+            );
+        }
+    }
+    // The second port is judged too, in document order.
+    let mut second = port("D", None, None, None);
+    second["peer_deviation_source"] = json!("cited");
+    let e = refused_ports(vec![port("C", None, None, None), second]);
+    assert_eq!((e.kind(), e.id()), ("PeerDeviationNotCited", Some("D")));
+}
+
 /// A version-9 file, which has no `peer_deviation_ppm`, is refused, never
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
@@ -1500,4 +1572,47 @@ fn a_version_10_specification_is_refused() {
         .unwrap()
         .remove("peer_deviation_ppm");
     assert!(serde_json::from_value::<Specification>(v).is_err());
+}
+
+/// `AET-WO-4230` R3 (Q-H): every serial port of every specification in the
+/// repository, at the reset clock's 64 MHz USART kernel, gets from the
+/// solver's `solve_brr` a `BRR` the independent `silicon::check_brr` holds,
+/// and the word one off either way fails it.
+#[test]
+fn check_brr_holds_the_solver_s_brr_on_every_fixture_s_port() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let files = [
+        "examples/sentinel-01-minimal.json",
+        "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+        "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+    ];
+    let kernel = aethelgard_ir::serial::kernel_hz(&SolvedClock::reset(), "USART1").unwrap();
+    let mut seen = Vec::new();
+    for file in files {
+        let spec: Specification =
+            serde_json::from_slice(&std::fs::read(root.join(file)).unwrap()).unwrap();
+        for p in &spec.serial_ports {
+            let baud = p.framing.baud;
+            let brr = solve_brr(kernel, baud).unwrap();
+            let f = aethelgard_ir::silicon::check_brr(kernel, baud, brr);
+            assert!(f.holds, "{file} {}: {f:?}", p.label);
+            for wrong in [brr - 1, brr + 1] {
+                let f = aethelgard_ir::silicon::check_brr(kernel, baud, wrong);
+                assert!(!f.holds, "{file} {} {wrong}: {f:?}", p.label);
+            }
+            seen.push((p.label.clone(), baud, brr));
+        }
+    }
+    let seen: Vec<(&str, u32, u32)> = seen.iter().map(|(l, b, r)| (l.as_str(), *b, *r)).collect();
+    assert_eq!(
+        seen,
+        [
+            ("CONSOLE", 115_200, 556),
+            ("CONSOLE", 9_600, 6_667),
+            ("MAVLINK", 57_600, 1_111),
+            ("GPS", 115_200, 556),
+            ("CRSF", 420_000, 152),
+            ("SBUS", 100_000, 640),
+        ]
+    );
 }

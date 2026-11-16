@@ -1,5 +1,6 @@
 {
   "schema_version": 11,
+  "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "motors-dshot600-console",
   "mcu": {
@@ -269,7 +270,8 @@
         "inverted": false
       },
       "negotiated": null,
-      "peer_deviation_ppm": 5000
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
     }
   ]
 }
