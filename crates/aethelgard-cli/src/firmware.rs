@@ -215,7 +215,7 @@ fn classify(code: i32, finished: Option<bool>) -> Option<bool> {
 /// root must not read through a path that uid chose: the file is resolved
 /// beneath `target` alone, with no `..`, no symlink at any component and no
 /// magic link, and must be a regular file.
-fn read_beneath(target: &Path, file: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
+pub(crate) fn read_beneath(target: &Path, file: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
     use rustix::fs::{CWD, Mode, OFlags, ResolveFlags, openat, openat2};
     let rel = file
         .strip_prefix(target)

@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 11,
   "accept_lifecycle": [],
   "project_name": "sentinel-02-own",
   "mcu": {
@@ -283,5 +283,6 @@
   "net_classes": [],
   "diff_pairs": [],
   "motor_outputs": [],
-  "power": null
+  "power": null,
+  "serial_ports": []
 }

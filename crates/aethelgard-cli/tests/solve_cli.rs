@@ -39,12 +39,22 @@ use sha2::{Digest, Sha256};
 /// 7 (`power`, `mcu.bor_level`) and solved version 6 (`power`) moved them
 /// (`e61864b9…` and `33b079d1…` before); and in `AET-WO-4210`, whose
 /// specification version 8 (`accept_lifecycle`) moved only the specification's
-/// sha256 after `4300d`'s (`c7688dca…` and `fe4252eb…` before); and in
-/// `AET-WO-4300g`, whose specification version 9 (`mcu.supply_source`, the
-/// programming path's connectors in each fixture) moved the specification's
-/// sha256 (`8646b4b0…` and `c7df9caf…` before).
-const REFERENCE_DIGEST: &str = "b4be986e8166acecb734a9dbea5ece9825e42c6bb0b501460e9d7160659f93b8";
-const STRESS_DIGEST: &str = "941493a73597a6561142c0edbd077eb4ee7fae6bfd3fdefd6b80ee4fcf7099e0";
+/// sha256 after `4300d`'s (`c7688dca…` and `fe4252eb…` before); and
+/// re-taken in `AET-WO-4300b`, merging after both (specification version 9,
+/// solved version 7, `serial_ports`, and the reference's console port),
+/// which moved them (`8646b4b0…41bd` and `c7df9caf…b4d8` before): with the
+/// version set back to 6, `serial_ports` and the console's two assignments
+/// removed and `main`'s specification sha256 put back, each output's digest
+/// is `main`'s exactly (`the_reference_s_console_moves_no_other_assignment`).
+/// Re-taken for the serial port's required `negotiated` key (ruled on PR
+/// #152, §9 Q1; `7faed6e0…276a` before): with `,"negotiated":null` removed and
+/// the specification's old sha256 put back, the output's digest is the old
+/// one exactly. Re-taken in `AET-WO-4300d3` (specification version 10,
+/// `power`'s judgement declarations), which moved only the specification's
+/// sha256: with `main`'s put back, each output's digest is `main`'s exactly
+/// (`5c2aeff0…dd22` and `84de8b88…016d` before).
+const REFERENCE_DIGEST: &str = "097279028a910d985d17b54f392ef1b08606448b47c1fe3bb6c7ae1a9ea923ba";
+const STRESS_DIGEST: &str = "fdc06258c65bceab15ac18c536419edc2440467397b4111ebb14d7ea7d12f367";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -215,6 +225,67 @@ fn the_reference_solves_to_the_expected_pins() {
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.schema_version, aethelgard_ir::SOLVED_SCHEMA_VERSION);
+}
+
+#[test]
+fn the_reference_s_console_moves_no_other_assignment() {
+    // `AET-WO-4300b` §1.7: the console takes USART1 beside what the
+    // reference solved before it, which is what it solves without it.
+    let (with, _) = solved(&reference());
+    let dir = Dir::new("no-console");
+    let file = edited(&dir, |d| {
+        d["serial_ports"] = json!([]);
+        d["connectors"] = json!([]);
+    });
+    let (without, _) = solved(&file);
+    let mut rest = with.assignments.clone();
+    let tx = rest.remove("CONSOLE_TX").unwrap();
+    let rx = rest.remove("CONSOLE_RX").unwrap();
+    assert_eq!(rest, without.assignments);
+    assert_eq!(with.gpio, without.gpio);
+    assert_eq!(
+        (tx.pin.as_str(), tx.signal.as_str(), tx.alternate_function),
+        ("PA9", "USART1_TX", 7)
+    );
+    assert_eq!(
+        (rx.pin.as_str(), rx.signal.as_str(), rx.alternate_function),
+        ("PA10", "USART1_RX", 7)
+    );
+    let console = &with.serial_ports["CONSOLE"];
+    assert_eq!((console.brr, console.error_ppm), (556, -799));
+    assert!(without.serial_ports.is_empty());
+}
+
+#[test]
+fn the_four_port_fixture_solves_on_distinct_peripherals() {
+    let file = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/serial-four.json");
+    let (t, a) = solved(&file);
+    let (_, b) = solved(&file);
+    assert_eq!(a, b);
+    let ports: Vec<_> = t
+        .serial_ports_in_order()
+        .into_iter()
+        .map(|(label, p, tx, rx)| {
+            (
+                label,
+                p.peripheral.as_str(),
+                tx.pin.as_str(),
+                rx.pin.as_str(),
+                p.brr,
+            )
+        })
+        .collect();
+    assert_eq!(
+        ports,
+        [
+            ("MAVLINK", "USART1", "PA9", "PA10", 1111),
+            ("GPS", "USART2", "PA2", "PA3", 556),
+            ("CRSF", "USART3", "PB10", "PB11", 152),
+            ("SBUS", "UART4", "PA0", "PA1", 640),
+        ]
+    );
+    // UART4 took PA0, so the chip select takes the next free pin.
+    assert_eq!(t.gpio["FLASH_CS"], "PA11");
 }
 
 #[test]

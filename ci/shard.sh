@@ -45,6 +45,18 @@ DEFAULT_WEIGHT=0.05
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
 #  4. ci/SHARDS stays 8 (Scotty, 2026-11-14). Rebalance with the block whole (ci/colocate.tsv), and
 #     check the plan with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds.
+#  5. (AET-WO-4300b, architect's ruling on PR #152, comment 6903399822, Q10.) A CPU-heavy test (Kani, verify,
+#     board_tier2, the colocated blocks, twin_tier2's timing test) is weighed at its WORST IN-SHARD time over the
+#     measured normal runs, not its alone time: cargo runs test binaries one after another and a binary's tests in
+#     parallel threads, so a block's in-shard time is its libtest `finished in`; a test serialized behind a lock
+#     (board_tier2, verify_2k2_tier2 ONE_AT_A_TIME) is its `ok` timestamp less the previous lock-holder's; any other
+#     CPU-heavy test is its `ok` timestamp less its binary's `Running` line (an upper bound).
+#     The clause: plan every shard's test step at or under 1006 s, and the head's final run green with every shard
+#     under 20 min; if one shard is over while the plan holds, ONE re-run of the same head decides; a shard over on
+#     both runs is real and needs a refit. MEASURED (runs 43771580225, 43774296207): the in-shard weights total about
+#     8,368 s against 8 x 1,006 = 8,048 s, so NO 8-shard plan fits the 1,006 s line (assign plans 1,046 s per shard).
+#     INTERIM ruling (architect, 2026-11-16 01:20 UTC): keep 8 shards with these weights (about 1,046 s planned) and
+#     judge by the measurement clause alone; ci/SHARDS 9 (planned 930-947 s) is put to Scotty, not set here.
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }

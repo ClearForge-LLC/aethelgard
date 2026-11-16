@@ -402,12 +402,15 @@ pub struct Output {
 /// as written, so a run that fits is read exactly as without a filter. Past
 /// the budget, a log line (one that starts with `[`, Renode's timestamp) is
 /// counted and dropped, except the first after the budget that contains each
-/// of `keep`; every other line is kept. What is kept is still capped at
-/// [`MAX_CAPTURE`].
+/// of `keep`; every other line is kept. A log line `discard` takes is dropped
+/// wherever it falls, uncounted and before the budget: one the judge never
+/// reads (`AET-WO-4300b` fix 1, Renode's access log of a read). What is kept
+/// is still capped at [`MAX_CAPTURE`].
 #[derive(Clone, Copy)]
 pub struct LogFilter {
     pub budget: usize,
     pub keep: &'static [&'static str],
+    pub discard: fn(&str) -> bool,
 }
 
 impl Output {
@@ -638,18 +641,8 @@ impl Filtered {
         let Some(filter) = self.filter else {
             return self.keep(bytes);
         };
+        // Whole lines, so that `discard` reads each one whole.
         while !bytes.is_empty() {
-            if self.partial.is_empty() && self.buf.len() < filter.budget {
-                // Under the budget, whole chunks up to the next line end.
-                let take = match bytes.iter().position(|&b| b == b'\n') {
-                    Some(i) => i + 1,
-                    None => bytes.len(),
-                };
-                let (now, rest) = bytes.split_at(take);
-                self.keep(now);
-                bytes = rest;
-                continue;
-            }
             match bytes.iter().position(|&b| b == b'\n') {
                 Some(i) => {
                     self.partial.extend_from_slice(&bytes[..=i]);
@@ -670,13 +663,20 @@ impl Filtered {
         }
     }
 
-    /// One whole line past the budget.
+    /// One whole line: discarded if `discard` takes it, kept under the
+    /// budget, past it by [`LogFilter`]'s rule.
     fn line(&mut self, filter: LogFilter) {
         let line = std::mem::take(&mut self.partial);
         if !line.starts_with(b"[") {
             return self.keep(&line);
         }
         let text = String::from_utf8_lossy(&line);
+        if (filter.discard)(text.trim_end_matches(['\n', '\r'])) {
+            return;
+        }
+        if self.buf.len() < filter.budget {
+            return self.keep(&line);
+        }
         if let Some(i) = filter
             .keep
             .iter()
@@ -1679,6 +1679,7 @@ mod tests {
     const FILTER: LogFilter = LogFilter {
         budget: 64,
         keep: &["aborted", "locked"],
+        discard: |l| l.ends_with("discarded"),
     };
 
     fn read(filter: Option<LogFilter>, chunks: &[&[u8]]) -> Option<(Vec<u8>, u64)> {
@@ -1721,6 +1722,29 @@ mod tests {
         let all = format!("{head}{tail}");
         let bytes: Vec<&[u8]> = all.as_bytes().chunks(1).collect();
         assert_eq!(read(Some(FILTER), &bytes).unwrap().1, 3);
+    }
+
+    /// A line `discard` takes is dropped under the budget and past it,
+    /// uncounted, however it arrives; only a whole log line is taken.
+    #[test]
+    fn a_discarded_line_is_dropped_wherever_it_falls_and_never_counted() {
+        let text = "[1] read discarded\n[2] [INFO] b\nvalue discarded\n[3] discarded";
+        for split in 0..text.len() {
+            let (a, b) = text.as_bytes().split_at(split);
+            let (kept, dropped) = read(Some(FILTER), &[a, b]).unwrap();
+            assert_eq!(
+                String::from_utf8(kept).unwrap(),
+                "[2] [INFO] b\nvalue discarded\n",
+                "{split}"
+            );
+            assert_eq!(dropped, 0);
+        }
+        let head = format!("{}\n", "x".repeat(70));
+        let all = format!("{head}[t] discarded\n[t] noise\n");
+        assert_eq!(
+            read(Some(FILTER), &[all.as_bytes()]),
+            Some((head.into_bytes(), 1))
+        );
     }
 
     /// Without a filter, and with one for lines it keeps, the cap still holds.

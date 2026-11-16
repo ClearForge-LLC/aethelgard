@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 11,
   "accept_lifecycle": [],
   "project_name": "sentinel-01-4l-power",
   "mcu": {
@@ -265,5 +265,6 @@
   ],
   "diff_pairs": [],
   "motor_outputs": [],
-  "power": null
+  "power": null,
+  "serial_ports": []
 }

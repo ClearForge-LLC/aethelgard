@@ -103,25 +103,43 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `893fb13d…c4a6` there. The boot image was re-taken in `AET-WO-4220`, whose
 /// `StepCheck` names each step (`label`): with its three `label: "identity"`
 /// fields removed, the image's text hashes to the old `0e4d72ee…c8a2` exactly.
-/// Re-taken in `AET-WO-4300g` (version 9): the firmware, the platform and the
-/// faulted platform were `d114ae78…c455`, `849eb6bc…4397` and `b24f53eb…9e35`;
-/// the boot image is unchanged.
+/// Re-taken in `AET-WO-4300b`, merging after `4300d` and `4210`
+/// (specification version 9, solved version 7, `serial_ports`): the
+/// reference gains its console (USART1 on PA9/PA10). With the console and
+/// its connector removed and `main`'s hash passed to `solve`, all four were
+/// `main`'s digests exactly (`d114ae78…c455`, `849eb6bc…4397`,
+/// `b24f53eb…9e35`, then `0e4d72ee…c8a2`), so the console alone moved them.
+/// The boot image again at `4300b`'s merge after `4220`: it was
+/// `80c36d58…ce16`, and with the `label: "identity"` fields removed it still
+/// is exactly; with the console removed and `main`'s hash passed, all four are
+/// `main`'s now (the boot image `a03116d6…6b64`). The boot image again with
+/// `CR1.FIFOEN` (the PM's ruling on adversarial pass 2, H1): it was
+/// `224dfd8a…f501`, and with `USART1.CR1.FIFOEN` dropped from its
+/// unobservable list it still is exactly. Re-taken for the port's required
+/// `negotiated` key (ruled on PR #152, §9 Q1): with the key dropped from the
+/// hashed document, the three moved digests were `72acc1b5…bbc1`,
+/// `6b61b761…b403` and `2716e538…4530` exactly (the specification's sha256
+/// alone moved them); the boot image did not move. Re-taken in
+/// `AET-WO-4300d3` (specification version 10, `power`'s declarations), which
+/// changes no generator: the three moved with the specification's sha256 alone
+/// (`1564c394…3474`, `0a8e3b2b…9734`, `a93b7c45…1fd4` before); the boot image
+/// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "a3b7b0fa6c93823a8365fe5e58719c8abd9d4c3c2a267c55302182fb812d43ba",
+        "d2e17ffbde888cd4a54809b5028e7e208d1780caf70eeb103e8e4b354ac752d7",
     ),
     (
         "platform",
-        "7c014c136dc1f30802b46c7d0e3f580592054b0347e44b663fa1fa66794f6dbe",
+        "ce78f102f919f91e51ea2dc609f14bd2ae894d211ad7961d08496904b09d4a16",
     ),
     (
         "platform faulted",
-        "371c345deef410a1ba877bec69e3074f2e749ddccba94069b4db2f4f3d567ac2",
+        "d311c246b7fa0eb6cfc97031a933d024564ef6a7968fa0d4b554656067a67aec",
     ),
     (
         "boot image",
-        "a03116d62e833cf8128e8bb677de97ff249186c743fa5393a94d7274ea206b64",
+        "71c4fd53166f028d0613d0fcf529445a12145fc548754d28d69fc08d5dbe09a7",
     ),
 ];
 

@@ -213,15 +213,6 @@
 @@ find
 		)
 		(property "Value" "VDD_3V3"
-			(at 109.22 80.264 0)
-@@ replace
-		)
-		(property "Value" "unconnected\055V"
-			(at 109.22 80.264 0)
-@@ end
-@@ find
-		)
-		(property "Value" "VDD_3V3"
 			(at 144.78 80.264 0)
 @@ replace
 		)
@@ -235,7 +226,7 @@
 @@ replace
 		)
 		(property "Value" "unconnected\055V"
-			(at 287.02 80.264 0)
+			(at 287.02 92.964 0)
 @@ end
 @@ find
 		)
@@ -425,4 +416,13 @@
 		)
 		(property "Value" "unconnected\055V"
 			(at 154.94 263.144 0)
+@@ end
+@@ find
+		)
+		(property "Value" "VDD_3V3"
+			(at 190.5 125.984 0)
+@@ replace
+		)
+		(property "Value" "unconnected\055V"
+			(at 190.5 125.984 0)
 @@ end

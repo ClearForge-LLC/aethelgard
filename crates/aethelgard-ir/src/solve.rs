@@ -6,6 +6,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::motor::{self, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput, TimingError};
+use crate::serial::{self, SolvedSerialPort};
 use crate::{
     AnalogLine, IrValidationError, PinAssignment, PinTable, Signal, SolvedI2cDevice,
     SolvedSpiDevice, SolvedTopology, Specification, SpiLine, electrical,
@@ -135,6 +136,42 @@ pub enum SolveError {
         output: String,
         reason: &'static str,
     },
+    #[error(
+        "serial port `{port}` fixes TX on `{tx_pin}` and RX on `{rx_pin}`, and no USART or UART it may use carries both: a port's two lines are one peripheral's"
+    )]
+    SerialPinsSplit {
+        port: String,
+        tx_pin: String,
+        rx_pin: String,
+    },
+    #[error("no USART or UART can serve serial port `{port}`: {}", .reasons.join("; "))]
+    NoSerialPeripheral { port: String, reasons: Vec<String> },
+    #[error(
+        "{} cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)",
+        quoted(.claimants)
+    )]
+    SerialPortsInfeasible { claimants: Vec<String> },
+    #[error(
+        "serial port `{port}`: the solved clock gives no kernel clock for `{peripheral}` (RM0433 Rev 9 §8.7.21, `RCC_D2CCIP2R` at reset)"
+    )]
+    SerialClock { port: String, peripheral: String },
+    #[error(
+        "serial port `{port}`: {baud} baud needs a BRR outside 16 to 0xFFFF on a {kernel_hz} Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"
+    )]
+    SerialBaudOutOfRange {
+        port: String,
+        baud: u32,
+        kernel_hz: u64,
+    },
+    #[error(
+        "serial port `{port}`: the solved baud's error, {error_ppm} ppm, is not below the receiver's tolerance of {tolerance_ppm} ppm ({row})"
+    )]
+    SerialBaudTolerance {
+        port: String,
+        row: String,
+        error_ppm: i64,
+        tolerance_ppm: u32,
+    },
 }
 
 fn quoted(names: &[String]) -> String {
@@ -173,6 +210,12 @@ impl SolveError {
             Self::TimerRateConflict { .. } => "TimerRateConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
             Self::MotorTiming { .. } => "MotorTiming",
+            Self::SerialPinsSplit { .. } => "SerialPinsSplit",
+            Self::NoSerialPeripheral { .. } => "NoSerialPeripheral",
+            Self::SerialPortsInfeasible { .. } => "SerialPortsInfeasible",
+            Self::SerialClock { .. } => "SerialClock",
+            Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
+            Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
         }
     }
 
@@ -197,9 +240,15 @@ impl SolveError {
             Self::BusCapacitanceOverLimit { net, .. } | Self::NoAdcPin { net } => Some(net),
             Self::NoTimerChannel { output, .. } | Self::MotorTiming { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
-            Self::Infeasible { .. } | Self::NoFreePin { .. } | Self::MotorsInfeasible { .. } => {
-                None
-            }
+            Self::SerialPinsSplit { port, .. }
+            | Self::NoSerialPeripheral { port, .. }
+            | Self::SerialClock { port, .. }
+            | Self::SerialBaudOutOfRange { port, .. }
+            | Self::SerialBaudTolerance { port, .. } => Some(port),
+            Self::Infeasible { .. }
+            | Self::NoFreePin { .. }
+            | Self::MotorsInfeasible { .. }
+            | Self::SerialPortsInfeasible { .. } => None,
         }
     }
 
@@ -232,7 +281,14 @@ impl SolveError {
                 vec![output.clone()]
             }
             Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
-            Self::MotorsInfeasible { claimants } => claimants.clone(),
+            Self::MotorsInfeasible { claimants } | Self::SerialPortsInfeasible { claimants } => {
+                claimants.clone()
+            }
+            Self::SerialPinsSplit { port, .. }
+            | Self::NoSerialPeripheral { port, .. }
+            | Self::SerialClock { port, .. }
+            | Self::SerialBaudOutOfRange { port, .. }
+            | Self::SerialBaudTolerance { port, .. } => vec![port.clone()],
         }
     }
 }
@@ -288,6 +344,7 @@ fn solve_inner(
         clock: SolvedClock::reset(),
         motor_outputs: BTreeMap::new(),
         power: None,
+        serial_ports: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec)?;
@@ -308,6 +365,7 @@ fn solve_inner(
     let timing = motor_timing(spec, &out.clock)?;
     let model = Model::new(spec, table)?;
     model.check_motors(budget)?;
+    model.check_serial(budget)?;
     let all: Vec<usize> = (0..model.buses.len()).collect();
     let mut search = Search::new(&model, all.clone(), forced);
     let found = search.run(budget);
@@ -359,10 +417,30 @@ fn solve_inner(
             },
         );
     }
+    // The serial ports, placed inside the search after the motor outputs:
+    // each on its peripheral's TX and RX pins, with its BRR solved for the
+    // reset clock and held to the receiver's tolerance.
+    for (i, u) in model.serial.iter().enumerate() {
+        let (p, (tx, tx_af), (rx, rx_af)) = search.serial_chosen[i].expect("every port placed");
+        for (sig, pin, af) in [(&u.tx, tx, tx_af), (&u.rx, rx, rx_af)] {
+            out.assignments.insert(
+                sig.net.to_owned(),
+                PinAssignment {
+                    pin: pin.to_owned(),
+                    peripheral: p.to_owned(),
+                    signal: format!("{p}_{}", sig.name),
+                    alternate_function: af,
+                },
+            );
+        }
+        let declared = &spec.serial_ports[i];
+        let port = solved_port(u.label, i, p, declared, &out.clock)?;
+        out.serial_ports.insert(u.label.to_owned(), port);
+    }
     // Every cs last, in document order: a hand pin is already owned; the rest
-    // take the first free, unreserved pin in key order. The buses and the
-    // motor outputs use a fixed number of pins, so this greedy pass never
-    // loses a solution.
+    // take the first free, unreserved pin in key order. The buses, the motor
+    // outputs and the serial ports use a fixed number of pins, so this greedy
+    // pass never loses a solution.
     for cs in &model.cs {
         let pin = match cs.hand {
             Some(pin) => pin,
@@ -428,6 +506,68 @@ fn solve_inner(
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
     Ok(out)
+}
+
+/// Serial port `label`, placed on `peripheral`: its kernel clock, its `BRR`
+/// ([`serial::solve_brr`]) and the static check ([`serial::check_silicon`]),
+/// each refused by name.
+fn solved_port(
+    label: &str,
+    index: usize,
+    peripheral: &str,
+    declared: &crate::SerialPort,
+    clock: &SolvedClock,
+) -> Result<SolvedSerialPort, SolveError> {
+    let baud = declared.framing.baud;
+    let kernel = serial::kernel_hz(clock, peripheral).ok_or_else(|| SolveError::SerialClock {
+        port: label.to_owned(),
+        peripheral: peripheral.to_owned(),
+    })?;
+    let brr = serial::solve_brr(kernel, baud).ok_or_else(|| SolveError::SerialBaudOutOfRange {
+        port: label.to_owned(),
+        baud,
+        kernel_hz: kernel,
+    })?;
+    let port = SolvedSerialPort {
+        index: u32::try_from(index).expect("fewer ports than u32::MAX"),
+        peripheral: peripheral.to_owned(),
+        tx: declared.tx.net.clone(),
+        rx: declared.rx.net.clone(),
+        role: declared.role,
+        framing: declared.framing.clone(),
+        negotiated: declared.negotiated.clone(),
+        kernel_hz: kernel,
+        brr,
+        actual_millibaud: serial::actual_millibaud(kernel, brr),
+        error_ppm: serial::error_ppm(kernel, brr, baud),
+    };
+    // belt-and-suspenders: a solved BRR is the nearest, at least 16, so its
+    // error is at most 1 / 32 and below every row (`serial::within`); this
+    // refuses rather than emits if the clock or the table ever changes that.
+    let check = serial::check_silicon(clock, &port);
+    if !check.holds {
+        let (row, tolerance_ppm) = check.tolerance.map_or_else(
+            || ("no row of the table".to_owned(), 0),
+            |r| {
+                (
+                    format!(
+                        "{}, {}, M = {:02b}",
+                        serial::TOLERANCE_SOURCE,
+                        r.table,
+                        r.m_bits
+                    ),
+                    r.tolerance_ppm,
+                )
+            },
+        );
+        return Err(SolveError::SerialBaudTolerance {
+            port: label.to_owned(),
+            row,
+            error_ppm: check.error_ppm,
+            tolerance_ppm,
+        });
+    }
+    Ok(port)
 }
 
 /// Each motor output's `PSC`, `ARR` and `CCR` on the clock the firmware runs
@@ -732,10 +872,27 @@ struct Motor<'s, 't> {
 /// A timer channel on a pin: `(timer, channel, pin, af)`.
 type Channel<'t> = (u32, u32, &'t str, u8);
 
+/// One serial port: its label, its declared peripheral, and its `TX` and
+/// `RX` signals.
+struct Uart<'s, 't> {
+    label: &'s str,
+    path: String,
+    peripheral: Option<&'s str>,
+    tx: Sig<'s, 't>,
+    rx: Sig<'s, 't>,
+}
+
+/// A placed serial port: its peripheral, then its TX and RX `(pin, af)`.
+type UartPlaced<'t> = (&'static str, (&'t str, u8), (&'t str, u8));
+
 struct Model<'s, 't> {
     buses: Vec<Bus<'s, 't>>,
     cs: Vec<Sig<'s, 't>>,
     motors: Vec<Motor<'s, 't>>,
+    serial: Vec<Uart<'s, 't>>,
+    /// The peripherals of `serial::PERIPHERALS` the table offers (both
+    /// `<P>_TX` and `<P>_RX` on some pin), in that order.
+    uart_instances: Vec<&'static str>,
     /// Every unreserved timer channel of the table, by timer, channel, then
     /// pin in key order.
     channels: Vec<Channel<'t>>,
@@ -862,6 +1019,28 @@ impl<'s, 't> Model<'s, 't> {
                 key: (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz)),
             });
         }
+        let mut serial = Vec::new();
+        for (i, p) in spec.serial_ports.iter().enumerate() {
+            let path = format!("serial_ports[{i}]");
+            let (tx_path, rx_path) = (format!("{path}.tx"), format!("{path}.rx"));
+            serial.push(Uart {
+                label: &p.label,
+                peripheral: p.peripheral.as_deref(),
+                tx: Sig {
+                    name: "TX",
+                    net: &p.tx.net,
+                    hand: hand(&p.tx, &tx_path)?,
+                    path: tx_path,
+                },
+                rx: Sig {
+                    name: "RX",
+                    net: &p.rx.net,
+                    hand: hand(&p.rx, &rx_path)?,
+                    path: rx_path,
+                },
+                path,
+            });
+        }
         let mut channels: Vec<Channel<'t>> = table
             .pins
             .iter()
@@ -876,10 +1055,29 @@ impl<'s, 't> Model<'s, 't> {
 
         let i2c_instances = instances(table, Kind::I2c);
         let spi_instances = instances(table, Kind::Spi);
+        let carried = |wanted: &str| {
+            table
+                .pins
+                .values()
+                .any(|p| p.alternate_functions.contains_key(wanted))
+        };
+        let uart_instances: Vec<&'static str> = serial::PERIPHERALS
+            .into_iter()
+            .filter(|p| carried(&format!("{p}_TX")) && carried(&format!("{p}_RX")))
+            .collect();
         let mut candidates = BTreeMap::new();
-        for (kind, list) in [(Kind::I2c, &i2c_instances), (Kind::Spi, &spi_instances)] {
+        let uart_signals: &[&'static str] = &["TX", "RX"];
+        let groups = [
+            (Kind::I2c.signals(), i2c_instances.clone()),
+            (Kind::Spi.signals(), spi_instances.clone()),
+            (
+                uart_signals,
+                uart_instances.iter().map(|p| (*p).to_owned()).collect(),
+            ),
+        ];
+        for (signals, list) in groups {
             for inst in list {
-                for name in kind.signals() {
+                for name in signals {
                     let wanted = format!("{inst}_{name}");
                     let pins = table
                         .pins
@@ -899,6 +1097,8 @@ impl<'s, 't> Model<'s, 't> {
             buses,
             cs,
             motors,
+            serial,
+            uart_instances,
             channels,
             i2c_instances,
             spi_instances,
@@ -938,6 +1138,16 @@ impl<'s, 't> Model<'s, 't> {
                     peripheral: p.to_owned(),
                     first,
                     second: claimant,
+                });
+            }
+        }
+        // `validate` refused a serial peripheral outside `serial::PERIPHERALS`
+        // and one named twice; the table may still lack one.
+        for u in &self.serial {
+            if let Some(p) = u.peripheral.filter(|p| !self.uart_instances.contains(p)) {
+                return Err(SolveError::UnknownPeripheral {
+                    peripheral: p.to_owned(),
+                    claimant: u.path.clone(),
                 });
             }
         }
@@ -1069,6 +1279,87 @@ impl<'s, 't> Model<'s, 't> {
             return Ok(false);
         }
         search.motor_active = subset.to_vec();
+        search.serial_active = Vec::new();
+        let found = search.run(budget);
+        if let Some(pos) = search.exceeded {
+            return Err(self.budget_error(&search, pos));
+        }
+        Ok(found)
+    }
+
+    /// The checks on the serial ports before the search, in the README's
+    /// order: each alone, beside every hand pin, can take a peripheral and
+    /// two pins (a fixed TX and RX on no common peripheral is named
+    /// apart); and together, beside every hand pin and no bus or motor
+    /// output, they can all be placed.
+    fn check_serial(&self, budget: &mut Budget) -> Result<(), SolveError> {
+        let alone = Search::beside_hand_pins(self);
+        for (u, port) in self.serial.iter().enumerate() {
+            if !alone.uart_options(u).is_empty() {
+                continue;
+            }
+            let allowed: Vec<&'static str> = self
+                .uart_instances
+                .iter()
+                .copied()
+                .filter(|p| port.peripheral.is_none_or(|d| d == *p))
+                .collect();
+            let carrying = |sig: &Sig<'s, 't>, pin: &str| -> BTreeSet<&'static str> {
+                allowed
+                    .iter()
+                    .copied()
+                    .filter(|p| self.pins_for(p, sig.name).iter().any(|(q, _)| *q == pin))
+                    .collect()
+            };
+            if let (Some(tx), Some(rx)) = (port.tx.hand, port.rx.hand) {
+                let (t, r) = (carrying(&port.tx, tx), carrying(&port.rx, rx));
+                if !t.is_empty() && !r.is_empty() && t.is_disjoint(&r) {
+                    return Err(SolveError::SerialPinsSplit {
+                        port: port.label.to_owned(),
+                        tx_pin: tx.to_owned(),
+                        rx_pin: rx.to_owned(),
+                    });
+                }
+            }
+            let reasons = if allowed.is_empty() {
+                vec!["the table offers no USART or UART with both TX and RX".to_owned()]
+            } else {
+                allowed.iter().map(|p| alone.uart_reason(port, p)).collect()
+            };
+            return Err(SolveError::NoSerialPeripheral {
+                port: port.label.to_owned(),
+                reasons,
+            });
+        }
+        let all: Vec<usize> = (0..self.serial.len()).collect();
+        if self.serial_fit(&all, budget)? {
+            return Ok(());
+        }
+        let mut set = all;
+        let mut i = 0;
+        while i < set.len() {
+            let mut without = set.clone();
+            without.remove(i);
+            if self.serial_fit(&without, budget)? {
+                i += 1;
+            } else {
+                set = without;
+            }
+        }
+        Err(SolveError::SerialPortsInfeasible {
+            claimants: set
+                .iter()
+                .map(|&u| self.serial[u].label.to_owned())
+                .collect(),
+        })
+    }
+
+    /// Whether the serial ports in `subset` can all be placed beside every
+    /// hand pin, with no bus or motor output placed.
+    fn serial_fit(&self, subset: &[usize], budget: &mut Budget) -> Result<bool, SolveError> {
+        let mut search = Search::beside_hand_pins(self);
+        search.motor_active = Vec::new();
+        search.serial_active = subset.to_vec();
         let found = search.run(budget);
         if let Some(pos) = search.exceeded {
             return Err(self.budget_error(&search, pos));
@@ -1080,6 +1371,8 @@ impl<'s, 't> Model<'s, 't> {
         SolveError::BudgetExceeded {
             bus: if pos == MOTORS {
                 "motor_outputs".to_owned()
+            } else if pos == SERIAL {
+                "serial_ports".to_owned()
             } else {
                 self.buses[search.active[pos]].id.to_owned()
             },
@@ -1107,17 +1400,22 @@ impl<'s, 't> Model<'s, 't> {
             }
         }
         let buses = set.iter().map(|&b| self.buses[b].id.to_owned());
-        if self.motors.is_empty() {
+        if self.motors.is_empty() && self.serial.is_empty() {
             return SolveError::Infeasible {
                 buses: buses.collect(),
             };
         }
-        // `check_motors` placed every output beside the hand pins, so the
-        // conflict is between these buses and the outputs.
-        SolveError::MotorsInfeasible {
-            claimants: buses
-                .chain(self.motors.iter().map(|m| m.label.to_owned()))
-                .collect(),
+        // `check_motors` and `check_serial` placed every output and every
+        // port beside the hand pins, so the conflict is between these buses
+        // and the outputs or ports, which stay in every search.
+        let claimants = buses
+            .chain(self.motors.iter().map(|m| m.label.to_owned()))
+            .chain(self.serial.iter().map(|u| u.label.to_owned()))
+            .collect();
+        if self.serial.is_empty() {
+            SolveError::MotorsInfeasible { claimants }
+        } else {
+            SolveError::SerialPortsInfeasible { claimants }
         }
     }
 }
@@ -1130,6 +1428,8 @@ struct Budget {
 /// The position [`Search::tick`] records when the motor outputs spend the
 /// budget, where a bus's position is recorded otherwise.
 const MOTORS: usize = usize::MAX;
+/// The same, for the serial ports.
+const SERIAL: usize = usize::MAX - 1;
 
 /// A placed bus: its instance, and per signal its `(pin, af)`.
 type Placed<'t> = (String, Vec<(&'t str, u8)>);
@@ -1155,6 +1455,12 @@ struct Search<'m, 's, 't> {
     /// The timer channels taken, and each timer's shared key and outputs.
     channels_used: BTreeSet<(u32, u32)>,
     timer_keys: BTreeMap<u32, ((MotorProtocol, Option<u32>), usize)>,
+    /// The serial ports placed once every motor output is, in order.
+    serial_active: Vec<usize>,
+    /// Per serial port, its placement once placed.
+    serial_chosen: Vec<Option<UartPlaced<'t>>>,
+    /// The peripherals the placed serial ports hold.
+    serial_taken: BTreeSet<&'static str>,
 }
 
 impl<'m, 's, 't> Search<'m, 's, 't> {
@@ -1174,6 +1480,11 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
                 used.insert(pin, m.path.clone());
             }
         }
+        for sig in model.serial.iter().flat_map(|u| [&u.tx, &u.rx]) {
+            if let Some(pin) = sig.hand {
+                used.insert(pin, sig.path.clone());
+            }
+        }
         let n = active.len();
         Search {
             model,
@@ -1188,11 +1499,14 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             motor_chosen: vec![None; model.motors.len()],
             channels_used: BTreeSet::new(),
             timer_keys: BTreeMap::new(),
+            serial_active: (0..model.serial.len()).collect(),
+            serial_chosen: vec![None; model.serial.len()],
+            serial_taken: BTreeSet::new(),
         }
     }
 
     /// A search with no bus active, and every hand pin owned: the buses',
-    /// the chip selects' and the motor outputs'.
+    /// the chip selects', the motor outputs' and the serial ports'.
     fn beside_hand_pins(model: &'m Model<'s, 't>) -> Self {
         let mut s = Self::new(model, Vec::new(), false);
         for sig in model.buses.iter().flat_map(|b| &b.signals) {
@@ -1358,7 +1672,7 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
     /// search.
     fn motor(&mut self, pos: usize) -> bool {
         if pos == self.motor_active.len() {
-            return true;
+            return self.serial(0);
         }
         let m = self.motor_active[pos];
         let options: Vec<Channel<'t>> = self.channels_for(m).collect();
@@ -1387,6 +1701,100 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             self.channels_used.remove(&(n, k));
             if !owned {
                 self.used.remove(pin);
+            }
+        }
+        false
+    }
+
+    /// The placements serial port `u` could take now, in order: each
+    /// peripheral it may use (its own, or each the table offers in
+    /// `serial::PERIPHERALS` order) not taken, then its TX pins, then its RX
+    /// pins, each in key order, each its hand pin or free.
+    fn uart_options(&self, u: usize) -> Vec<UartPlaced<'t>> {
+        let port = &self.model.serial[u];
+        let pins = |p: &str, sig: &Sig<'s, 't>| -> Vec<(&'t str, u8)> {
+            self.model
+                .pins_for(p, sig.name)
+                .iter()
+                .copied()
+                .filter(|(pin, _)| sig.hand.is_none_or(|h| h == *pin) && self.free(pin, &sig.path))
+                .collect()
+        };
+        let mut out = Vec::new();
+        for &p in &self.model.uart_instances {
+            if port.peripheral.is_some_and(|d| d != p) || self.serial_taken.contains(p) {
+                continue;
+            }
+            let rxs = pins(p, &port.rx);
+            for tx in pins(p, &port.tx) {
+                for &rx in rxs.iter().filter(|rx| rx.0 != tx.0) {
+                    out.push((p, tx, rx));
+                }
+            }
+        }
+        out
+    }
+
+    /// Why serial port `port` cannot take peripheral `p` now: a fixed pin
+    /// that does not carry its signal, or a signal with no free pin.
+    fn uart_reason(&self, port: &Uart<'s, 't>, p: &str) -> String {
+        for sig in [&port.tx, &port.rx] {
+            let name = format!("{p}_{}", sig.name);
+            let pins = self.model.pins_for(p, sig.name);
+            match sig.hand {
+                Some(h) if !pins.iter().any(|(q, _)| *q == h) => {
+                    return format!("{p}: `{name}` is not on pin `{h}`");
+                }
+                Some(_) => {}
+                None if pins.is_empty() => {
+                    return format!("{p}: the table has no unreserved pin for `{name}`");
+                }
+                None if pins.iter().all(|(q, _)| !self.free(q, &sig.path)) => {
+                    return format!(
+                        "{p}: every pin for `{name}` is held by hand ({})",
+                        pins.iter()
+                            .map(|(q, _)| format!("`{q}` by `{}`", self.used[q]))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                }
+                None => {}
+            }
+        }
+        format!("{p}: its TX and RX can only take one pin")
+    }
+
+    /// Places the serial ports from position `pos` of `serial_active` on,
+    /// trying each one's placements in order; the last one placed ends the
+    /// search.
+    fn serial(&mut self, pos: usize) -> bool {
+        if pos == self.serial_active.len() {
+            return true;
+        }
+        let u = self.serial_active[pos];
+        let (tx_path, rx_path) = {
+            let port = &self.model.serial[u];
+            (port.tx.path.clone(), port.rx.path.clone())
+        };
+        for c @ (p, (tx, _), (rx, _)) in self.uart_options(u) {
+            if !self.tick(SERIAL) {
+                return false;
+            }
+            let owned = (self.used.contains_key(tx), self.used.contains_key(rx));
+            self.used.insert(tx, tx_path.clone());
+            self.used.insert(rx, rx_path.clone());
+            self.serial_taken.insert(p);
+            self.serial_chosen[u] = Some(c);
+            if self.serial(pos + 1) {
+                return true;
+            }
+            self.serial_chosen[u] = None;
+            self.serial_taken.remove(p);
+            if !owned.0 {
+                self.used.remove(tx);
+            }
+            if !owned.1 {
+                self.used.remove(rx);
             }
         }
         false
@@ -1646,6 +2054,7 @@ mod differential {
             ],
             net_constraints,
             motor_outputs: vec![],
+            serial_ports: vec![],
         }
     }
 

@@ -22,8 +22,10 @@ SPIDEV dataflash SPI1 DEVID1 FLASH_CS MODE3 20*MHZ 20*MHZ  # [T] bus, cs; [S] sp
 define HAL_LOGGING_DATAFLASH_ENABLED 1                     # [N] role of part W25Q64JV (a parts-table fact)
 
 BARO BMP280 I2C:0:0x76         # [T] U2 part BME280 -> driver BMP280 (a mapping), I2C_ORDER index 0, address 118
-SERIAL_ORDER USART3            # [N] step F: one USART is required (4300b)
-PD8 USART3_TX USART3           # [N] step F: pins of a UART the topology lacks (4300b)
+SERIAL_ORDER USART1 USART3     # [T] serial_ports.CONSOLE.peripheral first (AET-WO-4300b); USART3 [N], kept for the allow list
+PA9 USART1_TX USART1           # [T] assignments.CONSOLE_TX (AET-WO-4300b)
+PA10 USART1_RX USART1          # [T] assignments.CONSOLE_RX (AET-WO-4300b)
+PD8 USART3_TX USART3           # [N] step F: a UART the topology lacks, allowed by step-g.allow.json
 PD9 USART3_RX USART3           # [N] step F
 define HAL_USE_ADC FALSE       # [N] step C: no ADC pin in the topology (4300d)
 define HAL_STORAGE_SIZE 16384  # [N] step D: parameter storage size, no source

@@ -175,6 +175,7 @@ fn preconditions(report: &Report, planned: &[String], covered: Coverage) -> Vec<
         ),
         fab::Precondition {
             no_device: covered.no_device,
+            no_fault_kind: covered.no_fault_kind,
             ..fab::Precondition::of("campaign_faults_every_bus_and_rail", covered.unmet)
         },
         support_judged(&report.gates),
@@ -629,6 +630,8 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
 enum Target {
     I2c(String),
     Spi(String),
+    /// A serial port, by label: no fault kind reaches one yet (ruled on #155).
+    Serial(String),
     Rail(String),
 }
 
@@ -637,6 +640,7 @@ impl Target {
         match self {
             Self::I2c(b) => format!("I2C bus `{b}`"),
             Self::Spi(b) => format!("SPI bus `{b}`"),
+            Self::Serial(l) => format!("serial port `{l}`"),
             Self::Rail(r) => format!("rail `{r}`"),
         }
     }
@@ -826,10 +830,16 @@ struct Coverage {
     unmet: Vec<String>,
     /// Each bus no device uses: never `met`, and it does not block (ruled (c)).
     no_device: Vec<String>,
+    /// Each serial port, named `no fault kind yet: serial`: never `met`, and
+    /// it does not block. A narrow, temporary exemption (ruled on #155): it
+    /// ends when the battery-sag / chaos work order lands a serial fault kind
+    /// (an RX line held, or open).
+    no_fault_kind: Vec<String>,
 }
 
-/// Coverage, in the specification's order: I2C buses, SPI buses, then rails
-/// (each voltage domain, and the battery when a power tree is declared).
+/// Coverage, in the specification's order: I2C buses, SPI buses, serial
+/// ports (each named in `no_fault_kind`, never blocking: ruled on #155), then
+/// rails (each voltage domain, and the battery when a power tree is declared).
 /// Before any gate `outcome` is `None` and a seeded fault counts as it is
 /// declared; after the gates `outcome[i]` says whether scenario `i`'s run
 /// passed the gate, and only those count. A tolerable fault covers its
@@ -877,6 +887,11 @@ fn coverage(
         } else if !covered.contains(&target) {
             c.unmet.push(target.name());
         }
+    }
+    for p in &spec.serial_ports {
+        let target = Target::Serial(p.label.clone());
+        c.no_fault_kind
+            .push(format!("{} (no fault kind yet: serial)", target.name()));
     }
     for v in &spec.voltage_domains {
         let target = Target::Rail(v.id.clone());
@@ -1879,6 +1894,49 @@ mod tests {
             ["rail `VDD_5V` (not the MCU's supply: no fault kind droops it)"]
         );
         assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
+    }
+
+    /// Ruled on #155: each serial port is named `no fault kind yet: serial`,
+    /// in the specification's order, and never blocks, whatever is seeded;
+    /// the row with them and nothing unmet reads `met`, in the verdict and
+    /// the manifest alike (one `Precondition`).
+    #[test]
+    fn a_serial_port_is_named_without_a_fault_kind_and_does_not_block() {
+        let (spec, t) = solved(S1);
+        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
+        let c = coverage(&spec, &t, &seeded(&spec, &t, &set), None);
+        assert!(c.unmet.is_empty(), "{:?}", c.unmet);
+        assert_eq!(
+            c.no_fault_kind,
+            ["serial port `CONSOLE` (no fault kind yet: serial)"]
+        );
+        let c = coverage(&spec, &t, &seeded(&spec, &t, &[BASELINE]), None);
+        assert!(
+            !c.unmet.iter().any(|u| u.contains("serial")),
+            "{:?}",
+            c.unmet
+        );
+        let row = fab::Precondition {
+            no_fault_kind: c.no_fault_kind,
+            ..fab::Precondition::of("campaign_faults_every_bus_and_rail", Vec::new())
+        };
+        assert_eq!(
+            serde_json::to_value(&row).unwrap(),
+            json!({"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
+                "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]})
+        );
+        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/serial-four.json");
+        let c = coverage(&spec, &t, &[], None);
+        assert!(
+            !c.unmet.iter().any(|u| u.contains("serial")),
+            "{:?}",
+            c.unmet
+        );
+        assert_eq!(
+            c.no_fault_kind,
+            ["MAVLINK", "GPS", "CRSF", "SBUS"]
+                .map(|l| format!("serial port `{l}` (no fault kind yet: serial)"))
+        );
     }
 
     /// What a scenario seeds: a value equal to the specification's is no

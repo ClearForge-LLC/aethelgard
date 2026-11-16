@@ -484,8 +484,13 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
         ["cpu_aborted"],
         "an aborted machine reports exactly cpu_aborted: {v}"
     );
+    // The test claims the machine returns instead of hanging (Renode grew
+    // about 55 MB/s without the bound), not that the 30 s bound
+    // (`renode::BOOT_BOUNDS`) is precise: the 30 s of slack covers start-up
+    // and reaping under a loaded runner (35.13 s on CI beside a Kani test;
+    // ruled on PR #152, comment 6903399822).
     assert!(
-        took.as_secs() < 30 + 5,
+        took.as_secs() < 30 + 30,
         "an aborted machine returns inside the bound: {took:?}"
     );
 }
@@ -1240,13 +1245,21 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     // alternating warnings after the boot word, one read of the gated
     // GPIOC.MODER about 600 lines before the run's end (pair 199,461 of the
     // 199,761 measured). Its line reaches the judge, and the markers and
-    // values come through whole (a verdict, not exit 5).
+    // values come through whole (a verdict, not exit 5). Since `AET-WO-4300b`
+    // the console's echo runs between the boot word and the loop, waiting for
+    // the frame injected at 100 us, so the loop starts later: its last pair
+    // in the 10 ms boot is 197,874 (measured by bisection on this read's
+    // pair, C1 `flood-bisect.sh`), and the read is 300 pairs before it, as
+    // before. Since adversarial pass 4 (ADV4-2) the frame's bytes go in a
+    // quantum apart, so the echo ends about 700 us later: the last pair is
+    // 183,981 (re-measured by the same bisection, fix 4), the read at
+    // 183,681.
     let elf = mutant("flood-locked", |d| {
         edit(
             d,
             "src/main.rs",
             "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
-            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 199461 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183681 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
@@ -2039,6 +2052,925 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     let _ = fs::remove_dir_all(&archive);
 }
 
+// ---------------------------------------------------------------- AET-WO-4300b
+
+fn serial(v: &Value) -> &Vec<Value> {
+    v["boot"]["serial"].as_array().unwrap()
+}
+
+/// `AET-WO-4300b` §2: the console, USART1 on PA9/PA10 at 115200 8N1, sends
+/// its pattern once and echoes the frame injected one quantum in; its
+/// registers read back, Renode's access log shows its 24 writes (the
+/// bring-up's 4, 12 pattern bytes, 8 echoed) with PA9 routed at the first
+/// `TDR` write, and silicon's tolerance holds (measured, FEEDBACK P2.1,
+/// P3.1, P4.2; fix 1).
+#[test]
+fn the_console_sends_its_pattern_and_echoes_its_frame() {
+    let (code, v) = boot("console", "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    let ports = serial(&v);
+    assert_eq!(ports.len(), 1);
+    let c = &ports[0];
+    assert_eq!(c["label"], "CONSOLE");
+    assert_eq!(
+        (&c["peripheral"], &c["brr"]),
+        (&"USART1".into(), &556.into())
+    );
+    let t = &c["twin"];
+    assert_eq!(t["patterns"], 1, "{c}");
+    assert_eq!(t["echo"], "witnessed", "{c}");
+    assert_eq!(t["echoed"], 8);
+    assert_eq!(t["stray"], false);
+    assert_eq!(t["capture_bytes"], 20);
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF7");
+    assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b10, AF7");
+    assert_eq!(t["usart_writes"], 24, "{c}");
+    assert_eq!(t["tags_unexpected"], serde_json::json!([]), "{c}");
+    assert_eq!(c["silicon"]["holds"], true);
+    for r in v["boot"]["registers"].as_array().unwrap() {
+        if r["name"].as_str().unwrap().starts_with("USART1.") {
+            assert_eq!(r["observed"], r["expected"], "{r}");
+        }
+    }
+}
+
+/// `AET-WO-4300b` §1.7 and §2: the four-port fixture (MAVLINK 57600,
+/// GPS 115200, CRSF 420000 8N1; SBUS 100000 8E2 inverted) witnesses every
+/// port's pattern and echo; SBUS's `M0`, `RXINV` and `TXINV` are seen only
+/// in the words its own USART's access log shows written (FEEDBACK P2.2,
+/// P4.1, P4.2; fix 1).
+#[test]
+fn the_four_port_fixture_witnesses_every_port_and_sbus_s_tags() {
+    let (platform, spec, elf) = motor_board("serial-four", "serial-four", |_| {}, |_| {});
+    let (code, v) = boot_on("serial four", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    let ports = serial(&v);
+    let labels: Vec<&str> = ports.iter().map(|p| p["label"].as_str().unwrap()).collect();
+    assert_eq!(labels, ["MAVLINK", "GPS", "CRSF", "SBUS"]);
+    for p in ports {
+        let t = &p["twin"];
+        assert_eq!(
+            (&t["patterns"], &t["echo"]),
+            (&1.into(), &"witnessed".into()),
+            "{p}"
+        );
+        assert_eq!(p["silicon"]["holds"], true, "{p}");
+        assert_eq!(t["tags_missing"], serde_json::json!([]), "{p}");
+        assert_eq!(t["tags_unexpected"], serde_json::json!([]), "{p}");
+        if p["label"] == "SBUS" {
+            assert_eq!(
+                t["tags_needed"],
+                serde_json::json!(["CR1.M0", "CR2.RXINV", "CR2.TXINV"])
+            );
+        }
+        let label = p["label"].as_str().unwrap();
+        assert_eq!(
+            t["usart_writes"].as_u64(),
+            // The bring-up's 4, the pattern (label then 5 bytes), 8 echoed.
+            Some(4 + label.len() as u64 + 5 + 8),
+            "{p}"
+        );
+        assert_eq!(t["tx_at_send"], t["tx_at_end"], "{p}");
+    }
+}
+
+/// `AET-WO-4300b` §1.5 and §1.7: the four-port fixture's campaign
+/// (`scenarios/serial/serial-four.json`, `expect: pass`) passes with every
+/// port witnessed, archives its kinds 27 to 29, replays, and `attribute`
+/// names none.
+#[test]
+fn the_four_port_fixture_s_campaign_passes_and_replays() {
+    let (_, _, elf) = motor_board("serial-four", "serial-campaign", |_| {}, |_| {});
+    let archive = std::env::temp_dir().join(format!(
+        "aet-4300b-t2-{}-serial-archive",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&archive);
+    let start = Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .args([
+            "campaign",
+            "--scenarios",
+            "scenarios/serial/serial-four.json",
+        ])
+        .arg("--firmware")
+        .arg(&elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    answer(&format!(
+        "campaign serial-four: exit={:?} wall_s={:.2} {lines:?}",
+        out.status.code(),
+        start.elapsed().as_secs_f64()
+    ));
+    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    let line = &lines[0];
+    assert_eq!(
+        (&line["verdict"], &line["matched"]),
+        (&"pass".into(), &true.into()),
+        "{line}"
+    );
+    let run = line["run"].as_str().unwrap();
+    let records = aethelgard_chaos::replay_dir(Path::new(run))
+        .unwrap()
+        .state
+        .records;
+    let count = |k: u64| records.iter().filter(|r| r.kind() == k).count();
+    assert_eq!((count(27), count(28), count(29)), (4, 4, 4), "{records:?}");
+    for r in &records {
+        if let aethelgard_chaos::record::Record::SerialWitness { label, echo, .. } = r {
+            assert_eq!(echo, "witnessed", "{label}");
+        }
+    }
+    let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+    assert_eq!(code, Some(0), "{replayed}");
+    assert_eq!(replayed["matched"], true, "{replayed}");
+    let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
+    assert_eq!(code, Some(0), "{attributed}");
+    assert_eq!(attributed["rule"], "N1", "{attributed}");
+    let _ = fs::remove_dir_all(&archive);
+}
+
+/// `AET-WO-4300b` §2, forgery 1: a firmware that writes `TDR` with `UE`
+/// clear sends nothing; the pattern is missing and `CR1` reads without `UE`
+/// (FEEDBACK P2.3).
+#[test]
+fn a_tdr_store_with_ue_clear_sends_no_pattern() {
+    let elf = mutant_of_board_rs(
+        "ue-clear",
+        "        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000d); // CR1 | UE\n",
+        "",
+    );
+    let (code, v) = boot_elf("ue clear", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_pattern_missing"), "{v}");
+    assert!(k.contains(&"register_mismatch"), "{v}");
+    assert_eq!(serial(&v)[0]["twin"]["patterns"], 0, "{v}");
+}
+
+/// `AET-WO-4300b` §2, forgery 2: bytes in the capture the firmware never
+/// received. An echo that sends a constant without reading `RDR` cannot
+/// send the frame, which is derived from the firmware's own sha256: the
+/// bytes after the pattern are stray (FEEDBACK P6.2).
+#[test]
+fn an_echo_the_firmware_never_received_is_forged() {
+    let elf = mutant("echo-const", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {",
+            "let Some(byte) = Some(0x11u8) else {",
+        )
+    });
+    let (code, v) = boot_elf("echo const", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_capture_forged"), "{v}");
+    assert!(k.contains(&"serial_echo_missing"), "{v}");
+    assert!(!k.contains(&"serial_pattern_missing"), "{v}");
+}
+
+/// `AET-WO-4300b` §2, forgery 3: the four-port board's MAVLINK USART sends
+/// GPS's label. Each capture must hold its own port's pattern.
+#[test]
+fn a_pattern_on_the_wrong_port_fails() {
+    let bytes = |s: &str| {
+        s.bytes()
+            .map(|b| format!("{b:#04x}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let (mavlink, gps) = (bytes("MAVLINK"), bytes("GPS"));
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "serial-wrong-port",
+        |_| {},
+        |d| {
+            edit(
+                d,
+                "src/main.rs",
+                &format!("[{mavlink}]"),
+                &format!("[{gps}]"),
+            )
+        },
+    );
+    let (code, v) = boot_on("serial wrong port", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let ports = serial(&v);
+    assert_eq!(ports[0]["twin"]["patterns"], 0, "{v}");
+    for p in &ports[1..] {
+        assert_eq!(p["twin"]["echo"], "witnessed", "{p}");
+    }
+    let k = kinds(&v);
+    assert!(k.contains(&"serial_pattern_missing"), "{v}");
+    assert!(k.contains(&"serial_capture_forged"), "{v}");
+}
+
+/// `AET-WO-4300b` §1.6 (`serial_rx_dead`): the console's RX pin on AF8.
+/// Renode's USART has no pin on its path, so the frame still comes back
+/// (FEEDBACK P5.1); the judge reads PA10's mux at the injection, does not
+/// count the echo, and the read-back names `GPIOA.AFRH`.
+#[test]
+fn the_console_s_rx_on_the_wrong_af_keeps_the_pattern_and_loses_the_echo() {
+    let elf = mutant_of_board_rs(
+        "rx-af8",
+        "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000700);",
+        "r.modify(TOKEN, Block::GpioA, 0x24, |v| (v & !0x00000f00) | 0x00000800);",
+    );
+    let (code, v) = boot_elf("rx af8", &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let mut k = kinds(&v);
+    k.sort();
+    assert_eq!(k, ["register_mismatch", "serial_echo_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["patterns"], 1, "{v}");
+    assert_eq!(t["echo"], "not_counted", "{v}");
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF8", "{v}");
+}
+
+/// A copy of the reference board crate with `from` replaced by `to` once in
+/// its `src/board.rs`, and its firmware built from it.
+fn mutant_of_board_rs(name: &str, from: &str, to: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("aet-4300b-t2-{}-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let src = root().join("boards/sentinel-01");
+    for rel in [
+        "Cargo.toml",
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/board.rs",
+        "src/proofs.rs",
+        "firmware/Cargo.toml",
+        "firmware/Cargo.lock",
+        "firmware/.cargo/config.toml",
+        "firmware/link.x",
+        "firmware/src/main.rs",
+    ] {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::copy(src.join(rel), &to).unwrap();
+    }
+    edit(&dir, "src/board.rs", from, to);
+    mutant_of(&dir, name, |_| {})
+}
+
+// ------------------------------------- adversarial pass 1 (fix 1, ported)
+
+/// A copy of the reference board crate with each `board` edit applied once to
+/// `src/board.rs`, and its firmware built with each `fw` edit to `src/main.rs`.
+fn adv_reference(name: &str, board: &[(&str, &str)], fw: &[(&str, &str)]) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("aet-4300b-adv-{}-{name}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let src = root().join("boards/sentinel-01");
+    for rel in [
+        "Cargo.toml",
+        "Cargo.lock",
+        "src/lib.rs",
+        "src/board.rs",
+        "src/proofs.rs",
+        "firmware/Cargo.toml",
+        "firmware/Cargo.lock",
+        "firmware/.cargo/config.toml",
+        "firmware/link.x",
+        "firmware/src/main.rs",
+    ] {
+        let to = dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::copy(src.join(rel), &to).unwrap();
+    }
+    for (f, t) in board {
+        edit(&dir, "src/board.rs", f, t);
+    }
+    let fw: Vec<(String, String)> = fw
+        .iter()
+        .map(|(a, b)| (a.to_string(), b.to_string()))
+        .collect();
+    mutant_of(&dir, name, move |d| {
+        for (f, t) in &fw {
+            edit(d, "src/main.rs", f, t);
+        }
+    })
+}
+
+/// The finding of `kind`'s messages in `v`.
+fn messages<'a>(v: &'a Value, kind: &str) -> Vec<&'a str> {
+    v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == kind)
+        .map(|f| f["message"].as_str().unwrap())
+        .collect()
+}
+
+/// Adversarial F4 (ADV-1): PA9 stays an input while the pattern goes out and
+/// is put on AF7 afterwards. The pattern never reached the pin: the TX pin's
+/// mux at the first `TDR` write, rebuilt from the access log, is not routed.
+#[test]
+fn adv_1_a_tx_pin_routed_only_after_the_pattern_fails() {
+    let elf = adv_reference(
+        "tx-late",
+        &[(
+            "r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x000c0000) | 0x00080000);",
+            "r.modify(TOKEN, Block::GpioA, 0x00, |v| v & !0x000c0000);",
+        )],
+        &[(
+            "    let mut buf0 = [0u8; 1];\n",
+            "    unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }\n    let mut buf0 = [0u8; 1];\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv tx late", &elf, "100ms");
+    answer(&format!("ADV-1 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_pattern_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+}
+
+/// Adversarial F3 (ADV-2): USART1's `PRESC` set to /2 before `UE`; Renode
+/// stores no `PRESC`, but its access log shows the write.
+#[test]
+fn adv_2_a_presc_write_in_the_bring_up_fails() {
+    let elf = adv_reference(
+        "presc",
+        &[(
+            "        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000c); // CR1\n",
+            "        r.write(TOKEN, Block::Usart1, 0x2c, 0x00000001); // PRESC /2\n        r.write(TOKEN, Block::Usart1, 0x00, 0x2000000c); // CR1\n",
+        )],
+        &[],
+    );
+    let (code, v) = boot_elf("adv presc", &elf, "100ms");
+    answer(&format!("ADV-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        serial(&v)[0]["twin"]["tags_unexpected"],
+        serde_json::json!(["0x1 to 0x2C"]),
+        "{v}"
+    );
+}
+
+/// Adversarial F3 (ADV-2b): `UE` cleared, `PRESC` /2, `UE` set again, from
+/// `main.rs`, where no harness of the board crate looks.
+#[test]
+fn adv_2b_a_presc_write_from_main_after_the_bring_up_fails() {
+    let elf = adv_reference(
+        "presc-main",
+        &[],
+        &[(
+            "    // Serial port 0, `CONSOLE`, on USART1: its label's bytes, then the tail.\n",
+            "    unsafe { let b = 0x4001_1000usize; ((b) as *mut u32).write_volatile(0x0c); ((b + 0x2c) as *mut u32).write_volatile(1); ((b) as *mut u32).write_volatile(0x0d); }\n    // Serial port 0, `CONSOLE`, on USART1: its label's bytes, then the tail.\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv presc main", &elf, "100ms");
+    answer(&format!("ADV-2b code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        serial(&v)[0]["twin"]["tags_unexpected"],
+        serde_json::json!(["CR1 0xC after UE", "0x1 to 0x2C", "CR1 0xD after UE"]),
+        "{v}"
+    );
+}
+
+/// Adversarial F1 (ADV-3): SBUS's `CR1` written with `M0`, then again
+/// without it before `UE`: the word on silicon is 8 bits, 7 data and parity.
+#[test]
+fn adv_3_sbus_s_m0_cleared_before_ue_fails() {
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "adv-m0-cleared",
+        |d| {
+            edit(
+                d,
+                "src/board.rs",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000040c); // CR1, M0 cleared\n        r.write(TOKEN, Block::Uart4, 0x00, 0x2000040d); // CR1 | UE, no M0\n",
+            )
+        },
+        |_| {},
+    );
+    let (code, v) = boot_on("adv m0 cleared", &platform, &spec, &elf, "100ms");
+    answer(&format!("ADV-3 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        serial(&v)[3]["twin"]["tags_missing"],
+        serde_json::json!(["CR1.M0"]),
+        "{v}"
+    );
+}
+
+/// Adversarial F2 (ADV-4): SBUS's `CR2` written without inversion before
+/// `UE`, and with `TXINV` and `RXINV` only after, when RM0433 makes them
+/// read-only.
+#[test]
+fn adv_4_sbus_s_inversion_written_after_ue_fails() {
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "adv-inv-after-ue",
+        |d| {
+            edit(
+                d,
+                "src/board.rs",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2\n",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00002000); // CR2, not inverted\n",
+            );
+            edit(
+                d,
+                "src/board.rs",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n",
+                "        r.write(TOKEN, Block::Uart4, 0x00, 0x2000140d); // CR1 | UE\n        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2 inverted, UE set\n",
+            );
+        },
+        |_| {},
+    );
+    let (code, v) = boot_on("adv inv after ue", &platform, &spec, &elf, "100ms");
+    answer(&format!("ADV-4 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    let t = &serial(&v)[3]["twin"];
+    assert_eq!(
+        t["tags_missing"],
+        serde_json::json!(["CR2.RXINV", "CR2.TXINV"]),
+        "{v}"
+    );
+    assert_eq!(
+        t["tags_unexpected"],
+        serde_json::json!(["CR2 0x32000 after UE"]),
+        "{v}"
+    );
+}
+
+/// Adversarial F12 (ADV-5): the console's pattern also sent on USART2
+/// through PA2, everything put back to reset afterwards: a USART the
+/// topology does not name, captured all the same.
+#[test]
+fn adv_5_a_pattern_on_a_usart_no_port_names_is_forged() {
+    let elf = adv_reference(
+        "unnamed",
+        &[],
+        &[(
+            "    let mut buf0 = [0u8; 1];\n",
+            "    unsafe {\n        let rcc = 0x5802_4400usize; let en = (rcc + 0xe8) as *mut u32; en.write_volatile(en.read_volatile() | (1 << 17));\n        let ga = 0x5802_0000usize; let moder = ga as *mut u32; let afrl = (ga + 0x20) as *mut u32;\n        let (m0, a0) = (moder.read_volatile(), afrl.read_volatile());\n        afrl.write_volatile((a0 & !0xf00) | 0x700); moder.write_volatile((m0 & !0x30) | 0x20);\n        let u = 0x4000_4400usize; ((u + 0x0c) as *mut u32).write_volatile(556); (u as *mut u32).write_volatile(0x09);\n        for &b in [0x43u8, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45, 0x00, 0xfe, 0x7f, 0x80, 0xff].iter() { ((u + 0x28) as *mut u32).write_volatile(u32::from(b)); }\n        (u as *mut u32).write_volatile(0); ((u + 0x0c) as *mut u32).write_volatile(0);\n        moder.write_volatile(m0); afrl.write_volatile(a0); en.write_volatile(en.read_volatile() & !(1 << 17));\n    }\n    let mut buf0 = [0u8; 1];\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv unnamed", &elf, "100ms");
+    answer(&format!("ADV-5 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_capture_forged"], "{v}");
+    let m = messages(&v, "serial_capture_forged");
+    assert!(
+        m[0].starts_with(
+            "`usart2.bin` holds 12 byte(s) (43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF), sent on a USART no serial port"
+        ),
+        "{m:?}"
+    );
+}
+
+/// The PM's ruling on F4's residual: PA9 routed for the pattern's first
+/// byte, made an input for the other eleven, routed again before the end.
+/// Since adversarial pass 3 (the PM's ruling on ADV3-4) the TX pin is
+/// sampled at the first `TDR` write alone, routed here, and the interval
+/// rule fails it: once solved, PA9's fields never change in the boot. Since
+/// pass 4 (ADV4-4) the witness says so too: `tx_at_send` is PA9's mux when
+/// it left AF7 once solved, and the pattern does not count.
+#[test]
+fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "tx-unrouted",
+        &[],
+        &[
+            (
+                "    for &byte in [0x43, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45].iter().chain(PATTERN_TAIL.iter()) {\n        if usart1.send(&mut r, byte).is_err() {",
+                "    for (k, &byte) in [0x43, 0x4f, 0x4e, 0x53, 0x4f, 0x4c, 0x45].iter().chain(PATTERN_TAIL.iter()).enumerate() {\n        if k == 1 { unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x000c0000); } }\n        if usart1.send(&mut r, byte).is_err() {",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv tx unrouted", &elf, "100ms");
+    answer(&format!("ADV-1b code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["patterns"], 1, "{v}");
+    assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+    assert_eq!(t["echo"], "witnessed", "{v}");
+    assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
+    assert!(
+        messages(&v, "serial_pattern_missing")
+            .iter()
+            .any(|m| m.contains(
+                "after it was solved the TX pin went to PA9 MODER 0b00, AF7, not MODER 0b10 on AF7"
+            )),
+        "{v}"
+    );
+}
+
+// ------------------------------------------------- adversarial pass 2 (ADV2)
+
+/// The unexpected writes kind 28 shows for the port, as the verdict names
+/// them.
+fn unexpected(v: &Value) -> Vec<String> {
+    serial(v)[0]["twin"]["tags_unexpected"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .map(|x| x.as_str().unwrap_or_default().to_owned())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// ADV2-1 (A1, the PM's ruling): GPIOA reset through `RCC_AHB4RSTR` after
+/// the bring-up routed PA9, the pattern sent with PA9 in its reset mode, then
+/// every GPIOA word written back. The reset leaves no line in GPIOA's access
+/// log, so the RCC's is read: the reset fails by name, since pass 3 (ADV3-1)
+/// as a write to a register that is not an enable register.
+#[test]
+fn adv2_1_a_gpio_reset_through_the_rcc_fails() {
+    let elf = adv_reference(
+        "rcc-gpio-reset",
+        &[],
+        &[
+            (
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    let saved: [u32; 10] = core::array::from_fn(|i| unsafe { (0x5802_0000 as *const u32).add(i).read_volatile() });\n    unsafe { let rst = 0x5802_4488 as *mut u32; rst.write_volatile(1); rst.write_volatile(0); }\n",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { let g = 0x5802_0000 as *mut u32; for i in [1usize, 2, 3, 5, 8, 9, 0] { g.add(i).write_volatile(saved[i]); } }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv2 rcc gpio reset", &elf, "100ms");
+    answer(&format!("ADV2-1 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        [
+            "RCC.AHB4RSTR 0x1 written, not an enable register",
+            "RCC.AHB4RSTR 0x0 written, not an enable register"
+        ],
+        "{v}"
+    );
+}
+
+/// ADV2-2 (A2, the PM's ruling): PA9 made open-drain with a pull-down
+/// after the bring-up routed it: on silicon the TX line never drives high.
+/// The pin's `OTYPER`, `OSPEEDR` and `PUPDR`, rebuilt from the access log,
+/// must be the bring-up's at the first `TDR` write and at the end, and never
+/// change once solved (pass 3).
+#[test]
+fn adv2_2_an_open_drain_pulled_down_tx_fails() {
+    let elf = adv_reference(
+        "tx-open-drain",
+        &[],
+        &[(
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { let g = 0x5802_0000 as *mut u32; g.add(1).write_volatile(g.add(1).read_volatile() | 1 << 9); g.add(3).write_volatile((g.add(3).read_volatile() & !(3 << 18)) | 2 << 18); }\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 tx open drain", &elf, "100ms");
+    answer(&format!("ADV2-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        [
+            "PA9 OT set in OTYPER, a bit Renode does not store",
+            "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved",
+            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the first TDR write",
+            "PA9 OTYPER 1, OSPEEDR 0b00, PUPDR 0b10 at the end"
+        ],
+        "{v}"
+    );
+}
+
+/// ADV2-3 (held): one `SYSRESETREQ` at the very start. Renode does not
+/// reboot the firmware (no reset macro), so the boot word is never set.
+#[test]
+fn adv2_3_a_software_reset_at_start_fails() {
+    let elf = adv_reference(
+        "sysresetreq",
+        &[],
+        &[(
+            "    let mut r = unsafe { Mmio::new() };\n",
+            "    unsafe { let f = 0x2000_0200 as *mut u32; if f.read_volatile() != 0xA5A5_0001 { f.write_volatile(0xA5A5_0001); (0xE000_ED0C as *mut u32).write_volatile(0x05FA_0004); loop { core::hint::spin_loop(); } } }\n    let mut r = unsafe { Mmio::new() };\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 sysresetreq", &elf, "100ms");
+    answer(&format!("ADV2-3 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(kinds(&v).contains(&"boot_word_missing"), "{v}");
+}
+
+/// ADV2-4 (held): one unaligned 32-bit `STR` at `GPIOA + 0x22`, over AFRH's
+/// low half (PA9's AFSEL to 0), the pattern, then AFRH written back whole:
+/// the rebuild cannot apply it, so the TX pin is not routed at its sends;
+/// since pass 3 the interval rule names both pins of the word too, and
+/// since pass 4 (ADV4-4) the RX pin changed once solved is never witnessed.
+#[test]
+fn adv2_4_an_unaligned_store_into_afrh_fails() {
+    let elf = adv_reference(
+        "afrh-unaligned",
+        &[],
+        &[
+            (
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+                "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { core::arch::asm!(\"str {v}, [{a}]\", v = in(reg) 0x0700_5550u32, a = in(reg) 0x5802_0022u32, options(nostack)); }\n",
+            ),
+            (
+                "    let mut buf0 = [0u8; 1];\n",
+                "    unsafe { (0x5802_0024 as *mut u32).write_volatile(0x770); }\n    let mut buf0 = [0u8; 1];\n",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv2 afrh unaligned", &elf, "100ms");
+    answer(&format!("ADV2-4 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        [
+            "serial_tag_mismatch",
+            "serial_pattern_missing",
+            "serial_echo_missing"
+        ],
+        "{v}"
+    );
+    assert_eq!(serial(&v)[0]["twin"]["echo"], "not_counted", "{v}");
+    assert!(
+        unexpected(&v)
+            .iter()
+            .any(|x| x.starts_with("PA9 MODER/AFR not rebuilt")
+                && x.ends_with("after it was solved")),
+        "{v}"
+    );
+}
+
+/// ADV2-5 (L2, the PM's ruling): PA9 locked by the `LCKR` key sequence in
+/// its reset mode before the HAL routes it. Renode ignores the routing
+/// writes the access log shows and says so: the refusal fails by name, and
+/// the rebuild does not apply the refused writes.
+#[test]
+fn adv2_5_a_locked_tx_pin_fails() {
+    let elf = adv_reference(
+        "lckr",
+        &[],
+        &[(
+            "    let pa9 = gpioa.pa9.into_usart1_tx(&mut r);\n",
+            "    unsafe { let l = 0x5802_001C as *mut u32; l.write_volatile(0x10200); l.write_volatile(0x200); l.write_volatile(0x10200); let _ = l.read_volatile(); let _ = l.read_volatile(); }\n    let pa9 = gpioa.pa9.into_usart1_tx(&mut r);\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 lckr", &elf, "100ms");
+    answer(&format!("ADV2-5 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        [
+            "register_mismatch",
+            "register_mismatch",
+            "serial_tag_mismatch",
+            "serial_pattern_missing"
+        ],
+        "{v}"
+    );
+    assert!(
+        unexpected(&v)
+            .iter()
+            .any(|x| x == "gpioPortA refused a write to 0x0 (a locked pin)"),
+        "{v}"
+    );
+    assert_eq!(
+        serial(&v)[0]["twin"]["tx_at_send"],
+        "PA9 MODER 0b00, AF0",
+        "{v}"
+    );
+}
+
+/// ADV2-6 (the PM's ruling on fix 2's A2 hole): PA9 made open-drain (OT9
+/// set), then `OTYPER` read-modify-written before the pattern. Renode stores
+/// no `OT` bit, so the read gives 0 and the log shows 0 written back; on
+/// silicon the read gives OT9 and the pin stays open-drain. A write that sets
+/// a bit Renode does not store, where the solved value has it clear, fails.
+#[test]
+fn adv2_6_an_open_drain_tx_read_modify_written_fails() {
+    let elf = adv_reference(
+        "tx-open-drain-rmw",
+        &[],
+        &[(
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n",
+            "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n    unsafe { let g = 0x5802_0004 as *mut u32; g.write_volatile(g.read_volatile() | 1 << 9); let v = g.read_volatile(); g.write_volatile(v); }\n",
+        )],
+    );
+    let (code, v) = boot_elf("adv2 tx open drain rmw", &elf, "100ms");
+    answer(&format!("ADV2-6 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        [
+            "PA9 OT set in OTYPER, a bit Renode does not store",
+            "PA9 MODER 0b10, AF7, OTYPER 1, OSPEEDR 0b00, PUPDR 0b00 after it was solved"
+        ],
+        "{v}"
+    );
+}
+
+// ------------------------------------------------- adversarial pass 3 (ADV3)
+
+/// The finding the interval rule names for PA9 made an input once solved.
+const ADV3_PA9_UNROUTED: &str =
+    "PA9 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved";
+
+/// One boot of the reference with `line` inserted right after the console's
+/// bring-up, in `main.rs`.
+fn adv3_after_bring_up(name: &str, line: &str) -> (Option<i32>, Value) {
+    let at = "    let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);\n";
+    let elf = adv_reference(name, &[], &[(at, &format!("{at}{line}\n"))]);
+    boot_elf(name, &elf, "100ms")
+}
+
+/// ADV3-1 (the PM's ruling): after the bring-up, `RCC_D2CFGR.D2PPRE2` = /2:
+/// APB2 at 32 MHz halves USART1's `rcc_pclk2` kernel clock, 57 600 baud on
+/// silicon; Renode stores it and its USART ignores it. Before the ruling it
+/// passed (adversarial pass 3's verdict, code 0). The bring-up writes the
+/// RCC's enable registers alone.
+#[test]
+fn adv3_1_an_apb2_prescaler_after_the_bring_up_fails() {
+    let (code, v) = adv3_after_bring_up(
+        "adv3-d2ppre2",
+        "    unsafe { (0x5802_441C as *mut u32).write_volatile(0x400); }",
+    );
+    answer(&format!("ADV3-1 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["RCC.D2CFGR 0x400 written, not an enable register"],
+        "{v}"
+    );
+}
+
+/// ADV3-1b: after the bring-up, `RCC_D2CCIP2R.USART16SEL` = `100`
+/// (`csi_ker_ck`, CSI off at reset: no kernel clock on silicon); Renode
+/// stores no such field. Passed before the ruling.
+#[test]
+fn adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails() {
+    let (code, v) = adv3_after_bring_up(
+        "adv3-usart16sel",
+        "    unsafe { (0x5802_4454 as *mut u32).write_volatile(0x20); }",
+    );
+    answer(&format!("ADV3-1b code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        unexpected(&v),
+        ["RCC.D2CCIP2R 0x20 written, not an enable register"],
+        "{v}"
+    );
+}
+
+/// ADV3-2 (the PM's ruling): SBUS's `CR2` read back before `UE` and written
+/// XORed with `TXINV|RXINV`. Renode returns `CR2` without its tags
+/// (`0x2000`), so the log shows `0x32000` written twice; silicon returns
+/// `0x32000` and is left `0x2000`, not inverted. Passed before the ruling.
+/// The bring-up reads `ISR` and `RDR` alone.
+#[test]
+fn adv3_2_sbus_s_cr2_read_back_and_xored_fails() {
+    let (platform, spec, elf) = motor_board(
+        "serial-four",
+        "adv3-inv-xor",
+        |d| {
+            edit(
+                d,
+                "src/board.rs",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2\n",
+                "        r.write(TOKEN, Block::Uart4, 0x04, 0x00032000); // CR2\n        { let v = r.read(TOKEN, Block::Uart4, 0x04); r.write(TOKEN, Block::Uart4, 0x04, v ^ 0x00030000); }\n",
+            )
+        },
+        |_| {},
+    );
+    let (code, v) = boot_on("adv3-2", &platform, &spec, &elf, "100ms");
+    answer(&format!("ADV3-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    let sbus = &serial(&v)[3];
+    assert_eq!(sbus["label"], "SBUS", "{v}");
+    assert_eq!(
+        sbus["twin"]["tags_unexpected"],
+        serde_json::json!(["ReadUInt32 from CR2 (0x4)"]),
+        "{v}"
+    );
+}
+
+/// ADV3-4 (the PM's ruling): PA9 routed just before each `TDR` write of the
+/// pattern and the echo and made an input right after it, routed again
+/// before the end. Renode emits the byte at the write; silicon shifts it out
+/// over the next character, from the FIFO. Passed before the ruling: every
+/// `TDR` write saw PA9 routed. Once solved, a pin's fields never change.
+/// Since pass 4 (ADV4-4) the witness says so too: `tx_at_send` is PA9's
+/// mux when it left AF7, and the pattern does not count.
+#[test]
+fn adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails() {
+    let route = "unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }";
+    let unroute = "unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x000c0000); }";
+    let pat_from = "chain(PATTERN_TAIL.iter()) {\n        if usart1.send(&mut r, byte).is_err() {";
+    let pat_to = format!(
+        "chain(PATTERN_TAIL.iter()) {{\n        {route}\n        let sent = usart1.send(&mut r, byte);\n        {unroute}\n        if sent.is_err() {{"
+    );
+    let echo_from = "        if usart1.send(&mut r, byte).is_err() {\n            break;\n        }\n    }\n    // No sleep";
+    let echo_to = format!(
+        "        {route}\n        let sent = usart1.send(&mut r, byte);\n        {unroute}\n        if sent.is_err() {{\n            break;\n        }}\n    }}\n    {route}\n    // No sleep"
+    );
+    let elf = adv_reference(
+        "adv3-tx-gap",
+        &[],
+        &[(pat_from, pat_to.as_str()), (echo_from, echo_to.as_str())],
+    );
+    let (code, v) = boot_elf("adv3-4", &elf, "100ms");
+    answer(&format!("ADV3-4 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+    assert_eq!(t["echo"], "witnessed", "{v}");
+    assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
+}
+
+/// ADV3-5 (the PM's ruling): after the first echoed byte is read, PA10 made
+/// an input; the other seven, queued in Renode at the injection, read and
+/// echoed; PA10 routed again before the end. On silicon bytes 2 to 8 arrive
+/// after PA10 left its AF and are lost. Passed before the ruling: PA10 was
+/// routed at the injection. Since pass 4 (ADV4-4) the witness says so too:
+/// the echo is `not_counted`, never `witnessed`.
+#[test]
+fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "adv3-rx-gap",
+        &[],
+        &[
+            (
+                "        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n",
+                "        let Some(byte) = usart1.receive(&mut r, ECHO_POLLS) else {\n            break;\n        };\n        unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile(p.read_volatile() & !0x00300000); }\n",
+            ),
+            (
+                "    // No sleep",
+                "    unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x00300000) | 0x00200000); }\n    // No sleep",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv3-5", &elf, "100ms");
+    answer(&format!("ADV3-5 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_echo_missing"],
+        "{v}"
+    );
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(t["echo"], "not_counted", "{v}");
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF7", "{v}");
+    assert!(
+        messages(&v, "serial_echo_missing")
+            .iter()
+            .any(|m| m.contains("after it was solved the RX pin went to PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00")),
+        "{v}"
+    );
+    assert_eq!(
+        unexpected(&v),
+        ["PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"],
+        "{v}"
+    );
+}
+
+// ---------------------------------------------------------------- AET-WO-4220
+
 /// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our
 /// own, `sentinel-02-own.json`: the BMP581 (U7) on I2C1 beside the BME280
 /// and the TMP117, the ICM-42688-P (U5) on its own SPI bus beside the
@@ -2261,5 +3193,46 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
             "configure 3",
             "data"
         ]
+    );
+}
+
+// ------------------------------------------------- adversarial pass 4 (ADV4)
+
+/// ADV4-2 (the PM's ruling): the echo waits `ECHO_POLLS` for the first byte
+/// and 2 polls (a few hundred ns) for each later one. Renode queued the
+/// frame at one instant, so all eight were echoed and the boot passed
+/// (adversarial pass 4's verdict, code 0); silicon's bytes arrive a
+/// character apart (86 876 ns at 115 200 8N1). The composition now writes
+/// byte `k` at the injection plus `k` characters rounded up to a quantum:
+/// the second byte is not there after 2 polls, so one byte comes back.
+#[test]
+fn adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails() {
+    let elf = adv_reference(
+        "adv4-short-poll",
+        &[],
+        &[
+            ("for _ in 0..FRAME_LEN {", "for i in 0..FRAME_LEN {"),
+            (
+                "usart1.receive(&mut r, ECHO_POLLS)",
+                "usart1.receive(&mut r, if i == 0 { ECHO_POLLS } else { 2 })",
+            ),
+        ],
+    );
+    let (code, v) = boot_elf("adv4-2", &elf, "100ms");
+    answer(&format!("ADV4-2 code={code:?} kinds={:?}", kinds(&v)));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_echo_missing"], "{v}");
+    let t = &serial(&v)[0]["twin"];
+    assert_eq!(
+        (&t["echo"], &t["echoed"]),
+        (&"partial".into(), &1.into()),
+        "{v}"
+    );
+    assert_eq!(t["tags_unexpected"], serde_json::json!([]), "{v}");
+    assert!(
+        messages(&v, "serial_echo_missing")
+            .iter()
+            .any(|m| m.contains("1 of the frame's 8 bytes")),
+        "{v}"
     );
 }

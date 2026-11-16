@@ -46,7 +46,7 @@ pub const STOCK_FILE: &str = "platforms/cpus/stm32h7.repl";
 /// The stock instances of [`STOCK_FILE`] a solved peripheral can be, as
 /// (ST name, Renode name, Renode model, Renode's `sysbus` address), read from
 /// the file at the hash in [`RENODE_FILES`].
-pub const STOCK: [(&str, &str, &str, u32); 16] = [
+pub const STOCK: [(&str, &str, &str, u32); 24] = [
     ("GPIOA", "gpioPortA", "GPIOPort.STM32_GPIOPort", 0x5802_0000),
     ("GPIOB", "gpioPortB", "GPIOPort.STM32_GPIOPort", 0x5802_0400),
     ("GPIOC", "gpioPortC", "GPIOPort.STM32_GPIOPort", 0x5802_0800),
@@ -63,6 +63,17 @@ pub const STOCK: [(&str, &str, &str, u32); 16] = [
     ("I2C3", "i2c3", "I2C.STM32F7_I2C", 0x4000_5C00),
     ("I2C4", "i2c4", "I2C.STM32F7_I2C", 0x5800_1C00),
     ("SPI4", "spi4", "SPI.STM32H7_SPI", 0x4001_3400),
+    // Each USART and UART of `aethelgard_ir::serial::PERIPHERALS`
+    // (`AET-WO-4300b`): listed, never added. `lpuart1` is stock too, and no
+    // port may use it.
+    ("USART1", "usart1", "UART.STM32F7_USART", 0x4001_1000),
+    ("USART2", "usart2", "UART.STM32F7_USART", 0x4000_4400),
+    ("USART3", "usart3", "UART.STM32F7_USART", 0x4000_4800),
+    ("UART4", "uart4", "UART.STM32F7_USART", 0x4000_4C00),
+    ("UART5", "uart5", "UART.STM32F7_USART", 0x4000_5000),
+    ("USART6", "usart6", "UART.STM32F7_USART", 0x4001_1400),
+    ("UART7", "uart7", "UART.STM32F7_USART", 0x4000_7800),
+    ("UART8", "uart8", "UART.STM32F7_USART", 0x4000_7C00),
 ];
 
 /// How the header names a model of our own and its pin, before

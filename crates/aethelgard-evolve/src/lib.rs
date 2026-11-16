@@ -74,6 +74,21 @@ pub enum Rule {
     /// electrical on a timer's pin, so no rule attributes a motor symptom to
     /// the electrical half.
     S4,
+    /// The symptom's serial port was the firmware's doing (`AET-WO-4300b`):
+    /// a register field the port owns read back other than the solved
+    /// topology (its TX or RX pin's mode or alternate function, its pins'
+    /// ports' or its USART's clock gate, or a register of its USART); or the
+    /// firmware's writes, rebuilt from Renode's access log, failed the
+    /// port's judgement (kind 28's tags: a word wrong at `UE` or changed
+    /// after it, a write or a read the bring-up never makes, an RCC write
+    /// but to an enable register or one clearing a gate it set, a pin
+    /// misconfigured, changed once solved, or locked); or its TX pin was not
+    /// routed at a boot's first `TDR` write (kind 29's `tx_at_send`;
+    /// adversarial pass 2, M1; pass 3). Each is direct evidence of a write
+    /// (a read: of a firmware that reads what it must not). The twin models nothing
+    /// electrical on a USART's pins, so no rule attributes a serial symptom
+    /// to the electrical half.
+    S5,
     /// The run passed.
     N1,
     /// A failing finding has no archived event that shows it, or an event
@@ -89,23 +104,31 @@ pub enum Rule {
     I4,
     /// Some symptoms are electrical and others software.
     I5,
+    /// The symptom's serial port shows no write of the firmware's wrong (no
+    /// wrong register field it owns, no failing write judgement, no unrouted
+    /// send; an access log that could not be read shows none), or its static
+    /// framing check failed, which is the topology's (`AET-WO-4300b`): never
+    /// software by elimination.
+    I6,
 }
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 12] = [
+    pub const ALL: [Rule; 14] = [
         Self::E1,
         Self::E2,
         Self::S1,
         Self::S2,
         Self::S3,
         Self::S4,
+        Self::S5,
         Self::N1,
         Self::I1,
         Self::I2,
         Self::I3,
         Self::I4,
         Self::I5,
+        Self::I6,
     ];
 
     /// The rule whose [`id`](Self::id) is `id`, so a reader of an attribution
@@ -122,19 +145,21 @@ impl Rule {
             Self::S2 => "S2",
             Self::S3 => "S3",
             Self::S4 => "S4",
+            Self::S5 => "S5",
             Self::N1 => "N1",
             Self::I1 => "I1",
             Self::I2 => "I2",
             Self::I3 => "I3",
             Self::I4 => "I4",
             Self::I5 => "I5",
+            Self::I6 => "I6",
         }
     }
 
     pub fn domain(self) -> Domain {
         match self {
             Self::E1 | Self::E2 => Domain::Electrical,
-            Self::S1 | Self::S2 | Self::S3 | Self::S4 => Domain::Software,
+            Self::S1 | Self::S2 | Self::S3 | Self::S4 | Self::S5 => Domain::Software,
             Self::N1 => Domain::None,
             _ => Domain::Indeterminate,
         }
@@ -149,11 +174,13 @@ impl Rule {
             Self::S2 => &[7, 10, 11],
             Self::S3 => &[21, 22],
             Self::S4 => &[11, 26],
+            Self::S5 => &[11, 28, 29],
             Self::N1 | Self::I1 => &[],
             Self::I2 => &[15],
             Self::I3 => &[7, 8, 9],
             Self::I4 => &[7, 25, 26],
-            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26],
+            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29],
+            Self::I6 => &[28, 29],
         }
     }
 }
@@ -235,6 +262,9 @@ pub enum View {
     /// Kind 26: a motor output's twin witness and what it showed
     /// (`AET-WO-4300a`): a symptom, never a solved expectation of its own.
     MotorWitness { label: String, status: String },
+    /// Kind 29: a serial port's twin witness and its echo (`AET-WO-4300b`):
+    /// a symptom, never a solved expectation of its own.
+    SerialWitness { label: String, echo: String },
     /// Any other kind.
     Other,
 }
@@ -414,6 +444,30 @@ struct Motor<'a> {
     channel: u8,
 }
 
+/// One solved serial port (kind 27, `AET-WO-4300b`) and the register
+/// fields it owns: the bus join's fields for its TX and RX pins and its
+/// USART's gate, from the header, and every register of its USART's block
+/// (`usart`, `[start, end)`).
+struct Serial<'a> {
+    label: &'a str,
+    /// `None` when the header lacks a fact the port names: it then owns
+    /// nothing, as a bus that cannot join does.
+    joined: Option<Joined>,
+    usart: (&'a str, u32, u32),
+}
+
+/// The bits of `reading` (of register `name`) that serial port `s` owns in
+/// its USART's block: every bit the reading judges, the block's registers
+/// being the port's alone; 0 outside it.
+fn usart_bits(s: &Serial<'_>, name: &str, reading: &Reading) -> u32 {
+    let (usart, start, end) = s.usart;
+    let inside = name
+        .strip_prefix(usart)
+        .is_some_and(|rest| rest.starts_with('.'))
+        && (start..end).contains(&reading.address);
+    if inside { reading.mask } else { 0 }
+}
+
 /// Where a symptom is: on a bus, for a device of it or not, or on the board.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scope<'a> {
@@ -425,6 +479,11 @@ enum Scope<'a> {
     /// A motor output's failing static check (kind 25): the topology's
     /// timing, never the firmware's (second adversarial review, F1).
     MotorStatic(usize),
+    /// A serial port, by its position among the kind 27s (`AET-WO-4300b`).
+    Serial(usize),
+    /// A serial port's failing static framing check (kind 28): the
+    /// topology's, never the firmware's.
+    SerialStatic(usize),
     Board,
 }
 
@@ -432,7 +491,12 @@ struct Run<'a> {
     records: &'a [Record],
     buses: Vec<Bus<'a>>,
     motors: Vec<Motor<'a>>,
+    serial: Vec<Serial<'a>>,
     rcc: (u32, u32),
+    /// The boot word is set: the judge read the serial witnesses and tags.
+    booted: bool,
+    /// The resets the run rendered and released.
+    releases: u64,
 }
 
 /// The bytes of a witness line `[NOISY] {device}: {what} {bytes}`, as the
@@ -475,7 +539,7 @@ fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> b
 }
 
 /// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 18] = [
+const PER_EVENT: [&str; 23] = [
     campaign::PAST_CEILING_FINDING,
     campaign::STUCK_HIGH_FINDING,
     campaign::HELD_LOW_FINDING,
@@ -494,6 +558,11 @@ const PER_EVENT: [&str; 18] = [
     campaign::MOTOR_STATIC_FINDING,
     campaign::MOTOR_UNWITNESSED_FINDING,
     campaign::MOTOR_MISMATCH_FINDING,
+    campaign::SERIAL_STATIC_FINDING,
+    campaign::SERIAL_PATTERN_FINDING,
+    campaign::SERIAL_ECHO_FINDING,
+    campaign::SERIAL_FORGED_FINDING,
+    campaign::SERIAL_TAG_FINDING,
 ];
 
 impl<'a> Run<'a> {
@@ -833,10 +902,111 @@ impl<'a> Run<'a> {
                     .iter()
                     .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
             )
+            .chain(
+                self.serial
+                    .iter()
+                    .flat_map(|s| s.joined.iter().flat_map(|j| &j.owned)),
+            )
             .filter(|o| o.name == name && o.address == r.address)
             .fold(0, |m, o| m | o.mask)
-            | self.timer_owned(name, r);
+            | self.timer_owned(name, r)
+            | self.usart_owned(name, r);
         mismatch(r) & !owned
+    }
+
+    /// The bits of a USART register reading that some serial port owns.
+    fn usart_owned(&self, name: &str, r: &Reading) -> u32 {
+        self.serial
+            .iter()
+            .fold(0, |bits, s| bits | usart_bits(s, name, r))
+    }
+
+    /// Whether serial port `s` owns a wrong field of `reading`: its pins' or
+    /// gates' (as a bus owns its own), or a wrong bit of its USART's block.
+    /// Another port's fields of a shared register are never this port's.
+    fn serial_owned_wrong(&self, s: usize, name: &str, reading: &Reading) -> bool {
+        let port = &self.serial[s];
+        port.joined
+            .iter()
+            .flat_map(|j| &j.owned)
+            .any(|o| wrong(o, name, reading))
+            || mismatch(reading) & usart_bits(port, name, reading) != 0
+    }
+
+    /// Software evidence for serial port `s`: each register it owns that is
+    /// wrong; once the boot word is set, its framing check whose write
+    /// judgement failed (read and not held: an unread one shows no write),
+    /// and its witness whose TX pin was rebuilt unrouted at a boot's first
+    /// `TDR` write (adversarial pass 2, M1).
+    fn serial_software(&self, s: usize) -> Vec<usize> {
+        let label = self.serial[s].label;
+        let tx_af = match self.serial_port(label) {
+            Some(Record::SerialPortSolved { tx_af, .. }) => Some(*tx_af),
+            _ => None,
+        };
+        self.indices(|r| match r {
+            Record::RegisterObserved { name, reading } => self.serial_owned_wrong(s, name, reading),
+            Record::SerialFramingCheck {
+                label: l,
+                tags: Some(t),
+                ..
+            } => self.booted && l == label && !t.holds(),
+            Record::SerialWitness {
+                label: l,
+                tx_at_send: Some(m),
+                ..
+            } => {
+                self.booted && l == label && tx_af.is_some_and(|af| !campaign::routed(Some(*m), af))
+            }
+            _ => false,
+        })
+    }
+
+    /// The solved port (kind 27) labelled `label`.
+    fn serial_port(&self, label: &str) -> Option<&'a Record> {
+        self.records
+            .iter()
+            .find(|r| matches!(r, Record::SerialPortSolved { label: l, .. } if l == label))
+    }
+
+    /// The finding kinds kind 29 `witness` gives, as replay derives them:
+    /// none before the boot word is set.
+    fn serial_witness_findings(&self, witness: &Record) -> Vec<&'static str> {
+        match witness {
+            Record::SerialWitness { label, .. } if self.booted => self
+                .serial_port(label)
+                .map(|p| campaign::serial_witness_findings(p, witness, self.releases))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Whether kind 28 `check`'s tags failed, or went unread, in a run whose
+    /// boot word is set.
+    fn serial_tags_failed(&self, check: &Record) -> bool {
+        matches!(check, Record::SerialFramingCheck { tags, .. }
+            if self.booted && tags.as_ref().is_none_or(|t| !t.holds()))
+    }
+
+    /// Serial port `s`'s failing records: its framing check when it does
+    /// not hold or its tags failed, and its witness when it gives a finding.
+    /// A passing one is never evidence (`4300a` M).
+    fn serial_failing(&self, s: usize) -> Vec<usize> {
+        let label = self.serial[s].label;
+        self.indices(|r| match r {
+            Record::SerialFramingCheck {
+                label: l, holds, ..
+            } => l == label && (!holds || self.serial_tags_failed(r)),
+            Record::SerialWitness { label: l, .. } => {
+                l == label && !self.serial_witness_findings(r).is_empty()
+            }
+            _ => false,
+        })
+    }
+
+    /// The position among the kind 27s of the port labelled `label`.
+    fn serial_named(&self, label: &str) -> Option<usize> {
+        self.serial.iter().position(|s| s.label == label)
     }
 
     /// The bits of a timer register reading that some motor output owns.
@@ -922,6 +1092,14 @@ impl<'a> Run<'a> {
             }
             Record::MotorTimingCheck { label, .. } => Scope::MotorStatic(self.motor_named(label)?),
             Record::MotorWitness { label, .. } => Scope::Motor(self.motor_named(label)?),
+            Record::SerialFramingCheck {
+                label,
+                holds: false,
+                ..
+            } => Scope::SerialStatic(self.serial_named(label)?),
+            Record::SerialFramingCheck { label, .. } | Record::SerialWitness { label, .. } => {
+                Scope::Serial(self.serial_named(label)?)
+            }
             Record::RegisterObserved { name, reading } => {
                 let on: Vec<usize> = (0..self.buses.len())
                     .filter(|&b| self.owned_wrong(b, name, reading))
@@ -931,16 +1109,25 @@ impl<'a> Run<'a> {
                 let motors: Vec<usize> = (0..self.motors.len())
                     .filter(|&m| self.motor_owned_wrong(m, name, reading))
                     .collect();
-                match (on.as_slice(), motors.as_slice()) {
-                    ([b], []) if self.unowned(name, reading) == 0 => Scope::Bus(*b, None),
-                    ([], [m, ..])
-                        if self.unowned(name, reading) == 0
+                // A register wrong in serial ports' fields alone is theirs
+                // (`AET-WO-4300b`): the first of them stands for it (one
+                // symptom, one decision), as a timer's register does for its
+                // outputs; each port's own symptoms cite it too.
+                let ports: Vec<usize> = (0..self.serial.len())
+                    .filter(|&s| self.serial_owned_wrong(s, name, reading))
+                    .collect();
+                let unowned = self.unowned(name, reading);
+                match (on.as_slice(), motors.as_slice(), ports.as_slice()) {
+                    ([b], [], []) if unowned == 0 => Scope::Bus(*b, None),
+                    ([], [m, ..], [])
+                        if unowned == 0
                             && motors
                                 .iter()
                                 .all(|&o| self.motors[o].timer.0 == self.motors[*m].timer.0) =>
                     {
                         Scope::Motor(*m)
                     }
+                    ([], [], [s, ..]) if unowned == 0 => Scope::Serial(*s),
                     _ => Scope::Board,
                 }
             }
@@ -1017,6 +1204,21 @@ impl<'a> Run<'a> {
                 matches!(r, Record::MotorWitness { status, .. }
                     if status == "mismatch" || status == "batched" || status == "stopped")
             }),
+            campaign::SERIAL_STATIC_FINDING => {
+                self.indices(|r| matches!(r, Record::SerialFramingCheck { holds: false, .. }))
+            }
+            campaign::SERIAL_TAG_FINDING => self.indices(|r| self.serial_tags_failed(r)),
+            campaign::SERIAL_PATTERN_FINDING | campaign::SERIAL_ECHO_FINDING => {
+                self.indices(|r| self.serial_witness_findings(r).contains(&kind))
+            }
+            // A capture directory holding what no port wrote is forged too and
+            // names no port, so the count may pass the witnesses.
+            campaign::SERIAL_FORGED_FINDING => {
+                return Some((
+                    self.indices(|r| self.serial_witness_findings(r).contains(&kind)),
+                    false,
+                ));
+            }
             "register_mismatch" => self.indices(
                 |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
             ),
@@ -1106,6 +1308,24 @@ impl<'a> Run<'a> {
                         software.into_iter().chain(witness).collect(),
                         vec![],
                     )
+                }
+            }
+            // A failing static framing check is the topology's (`4300a` F1).
+            Scope::SerialStatic(s) => (Rule::I6, self.serial_failing(s), vec![]),
+            Scope::Serial(s) => {
+                let software = self.serial_software(s);
+                if software.is_empty() {
+                    (Rule::I6, self.serial_failing(s), vec![])
+                } else {
+                    let witness: Vec<usize> = self
+                        .serial_failing(s)
+                        .into_iter()
+                        .filter(|&i| {
+                            matches!(self.records[i], Record::SerialWitness { .. })
+                                && !software.contains(&i)
+                        })
+                        .collect();
+                    (Rule::S5, [software, witness].concat(), vec![])
                 }
             }
             Scope::Board if !faulted.is_empty() => (Rule::I3, faults_of(&faulted), vec![]),
@@ -1223,11 +1443,50 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             });
         }
     }
+    let usart_size = f.layout("USART")?.size;
+    let mut serial = Vec::new();
+    for r in records {
+        if let Record::SerialPortSolved {
+            label,
+            peripheral,
+            tx,
+            tx_af,
+            rx,
+            rx_af,
+            ..
+        } = r
+        {
+            let line = |pin: &String, af: &u8| BusLine {
+                signal: String::new(),
+                net: label.clone(),
+                pin: pin.clone(),
+                alternate_function: *af,
+                ceiling_ps: 0,
+            };
+            let base = f.base(peripheral).ok();
+            serial.push(Serial {
+                label,
+                joined: join(&f, peripheral, &[line(tx, tx_af), line(rx, rx_af)]).ok(),
+                usart: (
+                    peripheral.as_str(),
+                    base.unwrap_or(0),
+                    base.map_or(0, |b| b + usart_size),
+                ),
+            });
+        }
+    }
+    let booted = records.iter().any(|r| {
+        matches!(r, Record::BootObserved { boot_word, .. }
+            if boot_word.observed == Some(boot_word.expected))
+    });
     let state = Run {
         records,
         buses,
         motors,
+        serial,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
+        booted,
+        releases: campaign::released(records),
     };
     Ok((state, summary.pass))
 }
@@ -1304,6 +1563,11 @@ impl RunView<'_> {
                             .iter()
                             .flat_map(|m| m.joined.iter().flat_map(|j| &j.owned)),
                     )
+                    .chain(
+                        run.serial
+                            .iter()
+                            .flat_map(|s| s.joined.iter().flat_map(|j| &j.owned)),
+                    )
                     .filter(|o| {
                         o.name == *name
                             && o.address == reading.address
@@ -1334,6 +1598,18 @@ impl RunView<'_> {
                         mask: timer,
                         solved: reading.expected & timer,
                         observed: reading.observed.map(|v| v & timer),
+                        wrong: true,
+                    });
+                }
+                // A serial port's USART register, as one.
+                let usart = run.usart_owned(name, reading);
+                if mismatch(reading) & usart != 0 {
+                    fields.push(Field {
+                        register: name.clone(),
+                        address: reading.address,
+                        mask: usart,
+                        solved: reading.expected & usart,
+                        observed: reading.observed.map(|v| v & usart),
                         wrong: true,
                     });
                 }
@@ -1374,6 +1650,10 @@ impl RunView<'_> {
             Record::MotorWitness { label, status, .. } => View::MotorWitness {
                 label: label.clone(),
                 status: status.clone(),
+            },
+            Record::SerialWitness { label, echo, .. } => View::SerialWitness {
+                label: label.clone(),
+                echo: echo.clone(),
             },
             _ => View::Other,
         };

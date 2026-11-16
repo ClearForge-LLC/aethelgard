@@ -314,10 +314,10 @@ fn the_old_and_new_paths_agree_on_the_reference() {
             .collect::<Vec<_>>(),
         // AET-WO-1307 K2 (ruled): the reference's routed board changed with
         // the inward escape, order B and the courtyard rule; was
-        // [46_800, 58_235, 18_521, 17_188] (AET-WO-1305 §3, AET-WO-4300c); moved
-        // again in AET-WO-4300g (the support network), from
-        // [50_576, 43_749, 16_972, 13_772].
-        [43_317, 46_927, 16_724, 17_774],
+        // [46_800, 58_235, 18_521, 17_188] (AET-WO-1305 §3, AET-WO-4300c).
+        // AET-WO-4300b: the console's nets reroute SCK and MOSI; SPI was
+        // [16_972, 13_772] (extract_tier1 says how).
+        [50_576, 43_749, 15_534, 17_567],
         "the reference's bounds (AET-WO-1305 §3, AET-WO-4300c, AET-WO-1307 K2) moved"
     );
     fs::remove_dir_all(&dir).unwrap();

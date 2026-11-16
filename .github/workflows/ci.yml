@@ -272,7 +272,17 @@ jobs:
       # barometer fixture replaces the ICM-20948 fixture's test (minus 1, plus 1),
       # plus one seeded fault per part and an interrupt armed after the boot
       # word (plus 3); in board_tier2.rs, the fixture's transfers prove (plus 1).
-      # 126: plus 12 from AET-WO-4220: in twin_tier2.rs, the Sentinel-02 fixture
+      # 121: plus 7 from AET-WO-4300b in twin_tier2.rs (the console's pattern and
+      # echo; the four-port fixture's ports and SBUS's tags; three forgeries: a TDR
+      # store with UE clear, an echo never received, a pattern on the wrong port;
+      # serial_rx_dead's dead echo; the four-port fixture's campaign and replay).
+      # 127: plus 6 from AET-WO-4300b's first adversarial pass in twin_tier2.rs
+      # (ADV-1 TX routed after the pattern, ADV-2 and ADV-2b PRESC, ADV-3 SBUS's M0
+      # cleared before UE, ADV-4 its inversion after UE, ADV-5 a pattern on a USART
+      # no port names).
+      # 128: plus 1 from the PM's ruling on F4's residual in twin_tier2.rs (ADV-1b
+      # PA9 routed for the first byte only, rerouted before the end).
+      # 140: plus 12 from AET-WO-4220: in twin_tier2.rs, the Sentinel-02 fixture
       # with the models of our own witnessed end to end, its data read without
       # the cited wait, its platform listed with an unpinned one refused, and
       # its campaign archived with each configuration as its own step and
@@ -281,16 +291,32 @@ jobs:
       # datasheet resets, ArduPilot's probe, rounding, data-ready, a model that
       # does not compile, the BMP581's deep start-up and read pointer, the
       # datasheets' access timing (plus 7).
+      # 145: plus 5 from AET-WO-4300b's second adversarial pass in twin_tier2.rs
+      # (ADV2-1 a GPIO reset through the RCC, ADV2-2 an open-drain pulled-down TX,
+      # ADV2-3 a SYSRESETREQ at start, ADV2-4 an unaligned store into AFRH,
+      # ADV2-5 a locked TX pin).
+      # 146: plus 1 from the PM's ruling on fix 2's A2 hole in twin_tier2.rs
+      # (ADV2-6 PA9's OT set, then OTYPER read-modify-written).
+      # 151: plus 5 from adversarial pass 3 in twin_tier2.rs (ADV3-1 D2CFGR
+      # written, ADV3-1b D2CCIP2R written, ADV3-2 SBUS's CR2 read back,
+      # ADV3-4 PA9 unrouted between TDR writes, ADV3-5 PA10 unrouted after
+      # the first byte); recounted in the image (shard.sh parse, 151).
+      # 152: plus 1 from AET-WO-3303 in twin_tier2.rs (Kani proves every part of
+      # both motor fixtures' schedule; main's 126 -> 127); recounted in the image
+      # after the merge (shard.sh parse, 152).
+      # 154: plus 2 from AET-WO-4300d2, merged into AET-WO-4300b (board_tier2.rs and
+      # with_tools.rs, as main's 127 -> 129 states below).
       # 127: plus 1 from AET-WO-3303 (twin_tier2.rs: Kani proves every part of
       # both motor fixtures, the whole-schedule harness split).
       # 129: plus 2 from AET-WO-4300d2: board_tier2.rs (the Sentinel-02 power
       # fixture passes ERC and DRC with parity, its loop rules measured, and
       # extract; a loop part moved off its pin fails DRC by its rule) and
       # with_tools.rs (KiCad writes the pinned drill files: one tool per drill).
-      # 130: plus 1 from AET-WO-4300g in board_tier2.rs (the reference passes
-      # the support gate on KiCad's own netlist; a VDD capacitor moved off its
-      # pin fails it by that role).
-      TIER2_MIN: "131"
+      # 157: plus 2 on AET-WO-4300g's branch, merged after 155: 1 from
+      # AET-WO-4300g in board_tier2.rs (the reference passes the support gate
+      # on KiCad's own netlist; a VDD capacitor moved off its pin fails it by
+      # that role) and 1 from AET-WO-1310 (merged into that branch, PR #160).
+      TIER2_MIN: "157"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

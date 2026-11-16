@@ -1,0 +1,18 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/usart_pin_unconfigured.rs:21:56
+   |
+21 |     let _usart1 = usart1.configure(&mut r, &clock, tx, a.pa10);
+   |                          ---------                     ^^^^^^ expected `PA10<AlternateFunction<7>>`, found `PA10<Unconfigured>`
+   |                          |
+   |                          arguments to this method are incorrect
+   |
+   = note: expected struct `PA10<AlternateFunction<7>>`
+              found struct `PA10<Unconfigured>`
+note: method defined here
+  --> tests/ui/fail/../serial-four/board.rs
+   |
+   |     pub fn configure<R: Registers>(
+   |            ^^^^^^^^^
+...
+   |         _rx: PA10<AlternateFunction<7>>,
+   |         -------------------------------
