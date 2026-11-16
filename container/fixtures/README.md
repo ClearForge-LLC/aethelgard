@@ -19,3 +19,7 @@ These files are tool-calibration inputs, not board artifacts. No specification p
 ## The engine image
 
 `ghcr.io/clearforge-llc/aethelgard` is the pinned tools image plus the `aethelgard` binary (`AET-WO-1501`) and, beside it, `aethelgard-bridge` (`AET-WO-2200`), published from `main` as `:<commit sha>` only, never `latest`. Pull and run it by digest, which the `engine-image` run summary prints for each publish: `docker run --rm -i --network none -v "$PWD:/repo:ro" -w /repo ghcr.io/clearforge-llc/aethelgard@sha256:<digest> aethelgard validate --file examples/sentinel-01-minimal.json`.
+
+## The pin check's fixtures
+
+`check-pins/` holds Dockerfiles that `container/check-pins.sh` must refuse (`AET-WO-4401`). The forms are the four that 4400a's A7 left open (`git submodule update --remote`, `git fetch` and `git pull`, `pipx`, a `pip install` without `--require-hashes`), a venv whose pip is unpinned, and the ways the adversarial pass tried to slip a form past the check. Each `# expect:` line names one refusal. `container/test-check-pins.sh` requires exactly those refusals and no others, and requires the three real Dockerfiles to pass. `copy-script.sh` is never run: it is the script that `copy-script.Dockerfile` copies in.
