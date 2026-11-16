@@ -113,8 +113,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # INV-06: a missing or malformed pin fails here by name. The check and
-      # its regex live in container/check-ardupilot-pin.sh (AET-WO-4402).
+      # INV-06: a missing or malformed pin fails here by name.
       - name: read the pin
         run: |
           pin=$(bash container/check-ardupilot-pin.sh container/ARDUPILOT-IMAGE)
