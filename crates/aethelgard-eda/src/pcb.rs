@@ -988,19 +988,7 @@ fn footprint(
     Ok(Sx::List(out))
 }
 
-/// A reference as KiCad compares references: ASCII case folded, and the
-/// trailing number without its leading zeros (`U01` is `U1`). Two parts with
-/// one key are a duplicate to KiCad (adversarial pass F4).
-fn reference_key(reference: &str) -> String {
-    let upper = reference.to_ascii_uppercase();
-    let stem = upper.trim_end_matches(|c: char| c.is_ascii_digit());
-    let digits = upper[stem.len()..].trim_start_matches('0');
-    match (upper.len() > stem.len(), digits.is_empty()) {
-        (false, _) => upper,
-        (true, true) => format!("{stem}0"),
-        (true, false) => format!("{stem}{digits}"),
-    }
-}
+use aethelgard_ir::names::reference_key;
 
 /// Each part's footprint, pads and geometry.
 fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {

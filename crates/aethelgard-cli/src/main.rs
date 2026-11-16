@@ -278,6 +278,11 @@ struct Refusal {
 struct RefusalBody {
     kind: &'static str,
     id: Option<String>,
+    /// Who is in conflict, for a refusal `solve` printed with `claimants`
+    /// before `validate` made it (`MissingBusConstraint`, `AET-WO-1206`): the
+    /// same bytes from every command. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    claimants: Option<Box<[String]>>,
     /// The JSON path of the refused field (`InvalidIdentifier` only); absent otherwise.
     #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<String>,
@@ -291,6 +296,7 @@ impl Refusal {
             error: RefusalBody {
                 kind,
                 id: id.map(str::to_owned),
+                claimants: None,
                 path: None,
                 message,
             },
@@ -299,6 +305,11 @@ impl Refusal {
 
     fn at(mut self, path: Option<&str>) -> Self {
         self.error.path = path.map(str::to_owned);
+        self
+    }
+
+    fn claimed(mut self, claimants: Vec<String>) -> Self {
+        self.error.claimants = (!claimants.is_empty()).then(|| claimants.into_boxed_slice());
         self
     }
 }
@@ -2012,7 +2023,9 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
     })?;
     spec.validate().map_err(|err| {
         (
-            Refusal::new(err.kind(), err.id(), err.to_string()).at(err.path()),
+            Refusal::new(err.kind(), err.id(), err.to_string())
+                .at(err.path())
+                .claimed(err.claimants()),
             EXIT_INVALID_SPEC,
         )
     })?;

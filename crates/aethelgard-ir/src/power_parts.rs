@@ -250,6 +250,29 @@ pub struct Translator {
     pub controls: Vec<ControlRule>,
 }
 
+impl Translator {
+    /// The four pins a crossing carries, as the emitter draws them: the
+    /// outputs of the first three A-to-B channels (SCK, MOSI, CS) and the
+    /// input of the first B-to-A channel (MISO). `None` when the part has
+    /// fewer (`AET-WO-1206`: one list for the emitter and `validate`).
+    pub fn crossing_lines(&self) -> Option<[&str; 4]> {
+        let mut a = self
+            .channels
+            .iter()
+            .filter(|c| c.direction == Direction::AToB);
+        let miso = self
+            .channels
+            .iter()
+            .find(|c| c.direction == Direction::BToA)?;
+        Some([
+            a.next()?.output.as_str(),
+            a.next()?.output.as_str(),
+            a.next()?.output.as_str(),
+            miso.input.as_str(),
+        ])
+    }
+}
+
 /// A thin-film or thick-film resistor series: every value of the series
 /// shares these limits.
 #[derive(Debug, Clone, PartialEq, Eq)]

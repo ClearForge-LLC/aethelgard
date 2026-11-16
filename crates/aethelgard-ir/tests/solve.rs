@@ -10,9 +10,9 @@ mod common;
 use common::devs;
 
 use aethelgard_ir::{
-    AnalogLine, I2cBus, Mcu, NetConstraint, Pin, PinSource, PinTable, RESERVED_PINS, Signal,
-    SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine, VoltageDomain, solve,
-    solve_with_limit,
+    AnalogLine, I2cBus, IrValidationError, Mcu, NetConstraint, Pin, PinSource, PinTable,
+    RESERVED_PINS, Signal, SolveError, SolvedTopology, Specification, SpiBus, SpiDevice, SpiLine,
+    VoltageDomain, solve, solve_with_limit,
 };
 
 const PART: &str = "TEST_PART";
@@ -106,7 +106,8 @@ fn spi(id: &str) -> SpiBus {
 fn device(reference: &str, bus: &str) -> SpiDevice {
     SpiDevice {
         reference: reference.into(),
-        part: "FLASH".into(),
+        // A part with a row (`AET-WO-1206` §1.8: a part without one is refused).
+        part: "W25Q64JVxIQ".into(),
         supply: "VDD_3V3".into(),
         bus: bus.into(),
         cs: signal(&format!("{reference}_CS"), None),
@@ -625,70 +626,121 @@ fn the_ceiling_follows_the_mapping_at_each_boundary() {
     }
 }
 
-/// As ruled (WO §1.2, §5.3): the smaller declared rise time sets the ceiling.
-/// AET-WO-1202 FEEDBACK F1 argues the bus is as slow as its worse line, i.e.
-/// the larger value; if that is ruled, every assertion here inverts.
+/// `AET-WO-1206` §1.7 (amendment, 2026-11-16): a mode is legal only when
+/// both lines' declared rise times meet it, so the worse (larger) one sets
+/// the ceiling, whichever line it is. Before, the smaller did (`AET-WO-1202`
+/// FEEDBACK F1 argued this inversion); each boundary is taken both ways.
 #[test]
-fn the_stricter_line_sets_the_ceiling_whichever_it_is() {
-    assert_eq!(
-        ok(&i2c_spec(100_000, 120, 1000)).i2c_ceilings["I"],
-        1_000_000
-    );
-    assert_eq!(
-        ok(&i2c_spec(100_000, 1000, 120)).i2c_ceilings["I"],
-        1_000_000
-    );
-    // At 1 MHz, the stricter line (120 ns) beats the looser one (300 ns).
-    assert_eq!(
-        ok(&i2c_spec(1_000_000, 120, 300)).i2c_ceilings["I"],
-        1_000_000
-    );
-    assert_eq!(
-        ok(&i2c_spec(1_000_000, 300, 120)).i2c_ceilings["I"],
-        1_000_000
-    );
+fn the_worse_line_sets_the_ceiling_whichever_it_is() {
+    for (fast, slow, hz) in [
+        (120, 121, 400_000),
+        (300, 301, 100_000),
+        (120, 1000, 100_000),
+    ] {
+        for (sda, scl) in [(fast, slow), (slow, fast)] {
+            let t = ok(&i2c_spec(100_000, sda, scl));
+            assert_eq!(t.i2c_ceilings["I"], hz, "{sda} ns, {scl} ns");
+            assert_eq!(t.validate(), Ok(()), "{sda} ns, {scl} ns");
+        }
+    }
+    // Equal lines at each boundary keep the mapping.
+    for (ns, hz) in [(120, 1_000_000), (300, 400_000), (1000, 100_000)] {
+        assert_eq!(ok(&i2c_spec(100_000, ns, ns)).i2c_ceilings["I"], hz);
+    }
+    // 1000/1001: either line past every mode refuses, naming the worse.
+    for (sda, scl) in [(1000, 1001), (1001, 1000)] {
+        assert_eq!(
+            refused(&i2c_spec(100_000, sda, scl)),
+            SolveError::RiseTimeTooSlow {
+                bus: "I".into(),
+                rise_time_ns: 1001
+            }
+        );
+    }
+}
+
+/// The amendment's own case: SDA declared 1000 ns and SCL 120 ns (and the
+/// reverse) at 1 MHz solved before; the worse line's ceiling is 100 kHz.
+#[test]
+fn one_slow_line_refuses_a_fast_bus() {
+    for (sda, scl) in [(1000, 120), (120, 1000)] {
+        let err = refused(&i2c_spec(1_000_000, sda, scl));
+        assert_eq!(
+            err,
+            SolveError::InvalidSpecification(IrValidationError::BusTooFast {
+                bus: "I".into(),
+                speed_hz: 1_000_000,
+                ceiling_hz: 100_000
+            }),
+            "{sda} ns, {scl} ns"
+        );
+    }
+    // At each mode boundary, one line a nanosecond over refuses the faster
+    // mode, whichever line it is.
+    for (fast, slow, speed, ceiling) in
+        [(120, 121, 1_000_000, 400_000), (300, 301, 400_000, 100_000)]
+    {
+        for (sda, scl) in [(fast, slow), (slow, fast)] {
+            assert_eq!(
+                refused(&i2c_spec(speed, sda, scl)),
+                SolveError::InvalidSpecification(IrValidationError::BusTooFast {
+                    bus: "I".into(),
+                    speed_hz: speed,
+                    ceiling_hz: ceiling
+                }),
+                "{sda} ns, {scl} ns"
+            );
+            ok(&i2c_spec(ceiling, sda, scl));
+        }
+    }
 }
 
 #[test]
 fn a_line_with_no_constraint_is_refused_naming_the_first_in_document_order() {
+    // `validate` refuses it (step 17, `AET-WO-1206` §1.2), and `solve`
+    // reports that refusal by the same kind, id and claimant as before.
     let mut s = i2c_spec(100_000, 300, 300);
     s.net_constraints.clear();
+    let missing = IrValidationError::MissingBusConstraint {
+        bus: "I".into(),
+        net: "I_SDA".into(),
+    };
+    assert_eq!(s.validate(), Err(missing.clone()));
     let err = refused(&s);
-    assert_eq!(
-        err,
-        SolveError::MissingBusConstraint {
-            bus: "I".into(),
-            net: "I_SDA".into()
-        }
-    );
+    assert_eq!(err, SolveError::InvalidSpecification(missing));
     assert_eq!(err.kind(), "MissingBusConstraint");
     assert_eq!(err.id(), Some("I"));
     assert_eq!(err.claimants(), ["I"]);
+    assert_eq!(
+        err.to_string(),
+        "I2C bus `I` has no net constraint on `I_SDA`, so it has no rise time to bound its speed"
+    );
     // Only SCL missing: SCL is named; one line never stands for both.
     let mut s = i2c_spec(100_000, 300, 300);
     s.net_constraints.retain(|c| c.net_name == "I_SDA");
     assert_eq!(
         refused(&s),
-        SolveError::MissingBusConstraint {
+        SolveError::InvalidSpecification(IrValidationError::MissingBusConstraint {
             bus: "I".into(),
             net: "I_SCL".into()
-        }
+        })
     );
 }
 
 #[test]
 fn a_rise_time_slower_than_every_mode_is_refused() {
+    // The worse line is named (`AET-WO-1206` §1.7); before, the better was.
     let err = refused(&i2c_spec(100_000, 1001, 2000));
     assert_eq!(
         err,
         SolveError::RiseTimeTooSlow {
             bus: "I".into(),
-            rise_time_ns: 1001
+            rise_time_ns: 2000
         }
     );
     assert_eq!(
         err.to_string(),
-        "I2C bus `I` allows a rise time of 1001 ns, slower than any I2C mode (1000 ns at most)"
+        "I2C bus `I` allows a rise time of 2000 ns, slower than any I2C mode (1000 ns at most)"
     );
 }
 
@@ -740,11 +792,11 @@ fn with_pull_up(speed_hz: u32, ohms: u32) -> Specification {
 fn the_pull_up_floor_at_3v3_and_400khz() {
     assert_eq!(
         refused(&with_pull_up(400_000, 966)),
-        SolveError::PullUpBelowSinkFloor {
+        SolveError::InvalidSpecification(IrValidationError::PullUpBelowSinkFloor {
             bus: "I".into(),
             pull_up_ohms: 966,
             floor_ohms: 967
-        }
+        })
     );
     ok(&with_pull_up(400_000, 967));
     ok(&basic());
@@ -797,11 +849,11 @@ fn the_capacitance_limit_per_mode() {
     ok(&with_capacitance(400_000, 400_000, 400_000));
     assert_eq!(
         refused(&with_capacitance(400_000, 401_000, 100_000)),
-        SolveError::BusCapacitanceOverLimit {
+        SolveError::InvalidSpecification(IrValidationError::BusCapacitanceOverLimit {
             net: "I_SDA".into(),
             capacitance_femtofarads: 401_000,
             limit_femtofarads: 400_000
-        }
+        })
     );
     let err = refused(&with_capacitance(100_000, 100_000, 401_000));
     assert_eq!(err.id(), Some("I_SCL"));
@@ -842,10 +894,10 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
         bus: "I".into(),
         address,
     };
-    // The BME280 offers two addresses; the third device is a part the table
-    // does not hold, so it has no limit to keep.
-    let mut u2 = dev("U2", 0x40);
-    u2.part = "HDC1080".into();
+    // The BME280 offers two addresses; the third device is a TMP117 (a part
+    // with no row is refused, `AET-WO-1206` §1.8).
+    let mut u2 = dev("U2", 0x48);
+    u2.part = "TMP117".into();
     devs(&mut s).i2c = vec![dev("U10", 0x76), dev("U3", 0x77), u2];
     let t = ok(&s);
     t.validate().unwrap();
@@ -860,7 +912,7 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
         [
             ("U10", 0, 0x76, peripheral.as_str()),
             ("U3", 1, 0x77, peripheral.as_str()),
-            ("U2", 2, 0x40, peripheral.as_str())
+            ("U2", 2, 0x48, peripheral.as_str())
         ]
     );
     assert_eq!(t.i2c_devices["U3"].bus, "I");

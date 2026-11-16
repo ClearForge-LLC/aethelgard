@@ -26,6 +26,12 @@ fn scratch(label: &str) -> PathBuf {
 /// repository root, with an empty `PATH`; returns the exit code, the one-line
 /// JSON report, and whether the output directory exists afterwards.
 fn generate(label: &str, edit: impl FnOnce(&mut Value)) -> (Option<i32>, Value, bool) {
+    let (code, stdout, created) = generate_raw(label, edit);
+    (code, serde_json::from_str(&stdout).unwrap(), created)
+}
+
+/// [`generate`], with stdout exactly as printed.
+fn generate_raw(label: &str, edit: impl FnOnce(&mut Value)) -> (Option<i32>, String, bool) {
     let dir = scratch(label);
     let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     edit(&mut spec);
@@ -44,8 +50,7 @@ fn generate(label: &str, edit: impl FnOnce(&mut Value)) -> (Option<i32>, Value, 
         .unwrap();
     let stdout = String::from_utf8(run.stdout).unwrap();
     assert_eq!(stdout.lines().count(), 1, "{stdout}");
-    let report = serde_json::from_str(&stdout).unwrap();
-    (run.status.code(), report, out.exists())
+    (run.status.code(), stdout, out.exists())
 }
 
 #[test]
@@ -97,16 +102,16 @@ fn rename(v: &mut Value, old: &str, new: &str) {
     }
 }
 
-/// `validate --file` on the reference with `edit` applied: the exit code and
-/// stdout exactly as printed.
-fn validate(label: &str, edit: impl FnOnce(&mut Value)) -> (Option<i32>, String) {
+/// `<command> --file` (`validate`, `solve`) on the reference with `edit`
+/// applied: the exit code and stdout exactly as printed.
+fn run_file(command: &str, label: &str, edit: impl FnOnce(&mut Value)) -> (Option<i32>, String) {
     let dir = scratch(label);
     let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     edit(&mut spec);
     let path = dir.join("spec.json");
     fs::write(&path, spec.to_string()).unwrap();
     let run = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .args(["validate", "--file"])
+        .args([command, "--file"])
         .arg(&path)
         .env("PATH", "")
         .stdin(Stdio::null())
@@ -204,6 +209,22 @@ fn moved() -> Vec<Moved> {
             "ReservedName",
             json!("U4_WP"),
         ),
+        // A serial line the emitter never compared with its own nets: before,
+        // `generate` accepted this and drew J1 pad 1 and U1 pad 101 onto the
+        // MCU's VCAP1 net (FEEDBACK, measured); now both refuse it.
+        (
+            "a5-serial-vcap",
+            |s| rename(s, "CONSOLE_TX", "U1_VCAP1"),
+            "ReservedName",
+            json!("U1_VCAP1"),
+        ),
+        // §1.8 (amendment 2): a part with no row in the parts table.
+        (
+            "part-no-row",
+            |s| rename(s, "TMP117", "LM75"),
+            "UnknownPart",
+            json!("U3"),
+        ),
         // `4100` F1: an I2C line with no net constraint.
         (
             "bus-constraint",
@@ -219,17 +240,99 @@ fn moved() -> Vec<Moved> {
     ]
 }
 
-/// `AET-WO-1206`, the behaviour before it: `validate` passes each edit and
-/// `generate` refuses it, exit 2, before writing anything.
+/// `AET-WO-1206`: `validate` refuses each edit `generate` refuses, exit 2,
+/// printing byte for byte what `generate` prints, before anything is written.
+/// The commit before the change (`58c2438`) held the old behaviour here:
+/// `validate` exit 0 on every row, `generate` refusing with this kind and `id`.
 #[test]
-fn aet_1206_validate_passes_what_generate_refuses() {
+fn aet_1206_validate_refuses_what_generate_refuses_byte_for_byte() {
     for (label, edit, kind, id) in moved() {
-        let (code, v, created) = generate(&format!("1206-g-{label}"), edit);
+        let (code, generated, created) = generate_raw(&format!("1206-g-{label}"), edit);
+        let v: Value = serde_json::from_str(&generated).unwrap();
         assert_eq!(code, Some(2), "{label}: {v}");
         assert_eq!(v["error"]["kind"], kind, "{label}: {v}");
         assert_eq!(v["error"]["id"], id, "{label}: {v}");
         assert!(!created, "{label}: generate created its output directory");
-        let (code, out) = validate(&format!("1206-v-{label}"), edit);
+        let (code, validated) = run_file("validate", &format!("1206-v-{label}"), edit);
+        assert_eq!(code, Some(2), "{label}: {validated}");
+        assert_eq!(validated, generated, "{label}");
+    }
+}
+
+/// `MissingBusConstraint` keeps `solve`'s `claimants` from every command:
+/// before `AET-WO-1206`, `solve`, `emit` and `generate` printed exactly this.
+#[test]
+fn aet_1206_a_missing_bus_constraint_prints_solves_bytes_from_every_command() {
+    let (_, edit, _, _) = moved()
+        .into_iter()
+        .find(|m| m.0 == "bus-constraint")
+        .unwrap();
+    let expected = "{\"ok\":false,\"error\":{\"kind\":\"MissingBusConstraint\",\"id\":\"SENSORS\",\"claimants\":[\"SENSORS\"],\"message\":\"I2C bus `SENSORS` has no net constraint on `I2C_SCL`, so it has no rise time to bound its speed\"}}\n";
+    for command in ["validate", "solve"] {
+        let (code, out) = run_file(command, &format!("1206-bus-{command}"), edit);
+        assert_eq!((code, out.as_str()), (Some(2), expected), "{command}");
+    }
+    let (code, out, _) = generate_raw("1206-bus-generate", edit);
+    assert_eq!((code, out.as_str()), (Some(2), expected));
+}
+
+/// `AET-WO-1206` §1.5 (`AET-WO-1205` F1): `solve`'s three bus refusals are
+/// validation's variants now, and print exactly what `solve` printed before,
+/// each pinned from the binary at `8030fa5`.
+#[test]
+fn aet_1206_one_error_set_keeps_solves_bytes() {
+    type Pin = (&'static str, fn(&mut Value), &'static str);
+    let pins: [Pin; 3] = [
+        (
+            "too-fast",
+            |s| s["i2c_buses"][0]["speed_hz"] = 1_000_000.into(),
+            r#"{"ok":false,"error":{"kind":"BusTooFast","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` runs at 1000000 Hz, above its rise-time ceiling of 400000 Hz"}}"#,
+        ),
+        (
+            "pull-up",
+            |s| s["i2c_buses"][0]["pull_up_ohms"] = 100.into(),
+            r#"{"ok":false,"error":{"kind":"PullUpBelowSinkFloor","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` has a pull-up of 100 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)"}}"#,
+        ),
+        (
+            "capacitance",
+            |s| {
+                for c in s["net_constraints"].as_array_mut().unwrap() {
+                    if c["net_name"] == "I2C_SDA" {
+                        c["max_capacitance_femtofarads"] = 500_000.into();
+                    }
+                }
+            },
+            r#"{"ok":false,"error":{"kind":"BusCapacitanceOverLimit","id":"I2C_SDA","claimants":["I2C_SDA"],"message":"I2C line `I2C_SDA` has a capacitance of 500000 fF, over its bus's limit of 400000 fF (UM10204)"}}"#,
+        ),
+    ];
+    for (label, edit, expected) in pins {
+        let (code, out) = run_file("solve", &format!("1206-f1-{label}"), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
+        // `validate` alone does not solve, so it still passes these.
+        let (code, out) = run_file("validate", &format!("1206-f1v-{label}"), edit);
         assert_eq!(code, Some(0), "{label}: {out}");
+    }
+}
+
+/// `AET-WO-1206` §1.6: eda's `UnsupportedAddress` is kept. `validate`
+/// refuses a strap the part does not offer (`I2cAddressNotOffered`, step
+/// 14), so `generate` never reaches it; a library caller of
+/// `aethelgard_eda::schematic::emit` handing it a deserialized, unvalidated
+/// specification does, so the emitter still refuses rather than draw a strap
+/// the part cannot take.
+#[test]
+fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
+    use aethelgard_ir::Specification;
+    let mut v: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let valid: Specification = serde_json::from_value(v.clone()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    for (index, part, address) in [(0, "BME280", 0x50), (1, "TMP117", 0x50)] {
+        v["i2c_devices"][index]["address"] = address.into();
+        let spec: Specification = serde_json::from_value(v.clone()).unwrap();
+        assert_eq!(spec.validate().unwrap_err().kind(), "I2cAddressNotOffered");
+        let e = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap_err();
+        assert_eq!(e.kind(), "UnsupportedAddress", "{part}: {e}");
+        v = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     }
 }

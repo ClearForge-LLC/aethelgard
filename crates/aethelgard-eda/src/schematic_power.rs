@@ -223,28 +223,6 @@ fn supply(b: &mut Builder<'_>, name: &str) -> Conn {
     })
 }
 
-/// Every reference the power tree declares, for the emitter's reference
-/// claims (`design`).
-pub(crate) fn references(p: &Power) -> Vec<&String> {
-    let mut out = vec![&p.input.reference];
-    for r in &p.regulators {
-        out.push(&r.reference);
-        if let Some(d) = &r.feedback {
-            out.extend([&d.top.reference, &d.bottom.reference]);
-        }
-        out.extend(r.external.iter().map(|e| &e.reference));
-    }
-    for s in &p.sense {
-        out.extend([&s.top.reference, &s.bottom.reference]);
-        out.extend(s.reservoir.iter().map(|c| &c.reference));
-    }
-    for c in &p.crossings {
-        out.extend([&c.reference, &c.cs_pull_up.reference]);
-        out.extend(c.external.iter().map(|e| &e.reference));
-    }
-    out
-}
-
 /// The nets the specification spells inside its power tree.
 pub(crate) fn spelled(p: &Power) -> Vec<String> {
     p.sense.iter().map(|s| s.net.clone()).collect()
@@ -288,27 +266,17 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
     let Kind::Translator(t) = &row(reference, part)?.kind else {
         return Err(refuse(reference, format!("`{part}` is not a translator")));
     };
-    let a: Vec<_> = t
-        .channels
-        .iter()
-        .filter(|c| c.direction == Direction::AToB)
-        .collect();
-    let back: Vec<_> = t
-        .channels
-        .iter()
-        .filter(|c| c.direction == Direction::BToA)
-        .collect();
-    let ([sck, mosi, cs, ..], [miso, ..]) = (a.as_slice(), back.as_slice()) else {
+    let Some([sck, mosi, cs, miso]) = t.crossing_lines() else {
         return Err(refuse(
             reference,
             format!("`{part}` has no three A-to-B channels and one B-to-A channel"),
         ));
     };
     Ok(vec![
-        (Line::Sck, sck.output.clone()),
-        (Line::Mosi, mosi.output.clone()),
-        (Line::Cs, cs.output.clone()),
-        (Line::Miso, miso.input.clone()),
+        (Line::Sck, sck.to_owned()),
+        (Line::Mosi, mosi.to_owned()),
+        (Line::Cs, cs.to_owned()),
+        (Line::Miso, miso.to_owned()),
     ])
 }
 
