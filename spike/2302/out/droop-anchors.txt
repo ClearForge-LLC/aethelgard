@@ -1,8 +1,0 @@
-(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  mach create;  machine LoadPlatformDescription @/var/lib/aethe
-[00:00:00.000021620] [WARNING] sysbus: AETCEN 2167
-[00:00:00.000021750] [WARNING] sysbus: AETBW 2100b007 2175
-AETHELGARD-RELEASE-0
-[00:00:00.000353320] [WARNING] sysbus: AETCEN 2167
-AETHELGARD-PROBE-BEGIN-0
-[00:00:00.002021670] [WARNING] sysbus: AETSCHED 168997
-[00:00:00.002353370] [WARNING] sysbus: AETSCHED 202167

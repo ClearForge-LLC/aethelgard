@@ -1,9 +1,0 @@
-s02-late/late.log:(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  include @/var/lib/aethelgard/aethelgard-91-
-s02-late/late.log:[00:00:00.099072300] [WARNING] sysbus: AETCEN 9907235
-s02-late/late.log:[00:00:00.099072430] [WARNING] sysbus: AETBW 9907243
-sentinel-02-shaped/sched-log.log:(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  include @/var/lib/aethelgard
-sentinel-02-shaped/sched-log.log:[00:00:00.039072280] [WARNING] sysbus: AETCEN 3907233
-sentinel-02-shaped/sched-log.log:[00:00:00.039072410] [WARNING] sysbus: AETBW 3907241
-sentinel-02-shaped/sched-log.log:[00:00:00.041072330] [WARNING] sysbus: AETSCHED 4107233
-sentinel-02-shaped/stop1.log:(monitor) emulation SetSeed 2100;  emulation SetGlobalQuantum "0.000100000";  include @/var/lib/aethelgard/aet
-sentinel-02-shaped/stop1.log:[00:00:00.041072330] [WARNING] sysbus: AETSTOP 4107233 CR1=81
