@@ -188,15 +188,15 @@ Every element of the recommendation is built, as ruled. Lever 1 and U1 are not.
 
 ## 10. Measured results [measured]
 
-**Byte identity.** Every board that routes on the base (`4bb6814`) is byte-identical: the 9 fixture boards (`emit-all`, `~/.cache/aet-1310/emit/build6` against `base`), and every case of the adversarial harness that base routed (§11). The boards that change are the four that now route: `d1-24-i2c`, `pair-standin`, `solve/stress` and `sentinel-02-power`.
+**Byte identity.** Every board that routes on the base (`4bb6814`) is byte-identical. The 9 fixture boards were compared at the head, after the reduction pass: `emit-all`, `~/.cache/aet-1310/emit/head` against `base`. Every case of the adversarial harness that base routed was compared at `698ebc1` (§11). The boards that change are the four that now route: `d1-24-i2c`, `pair-standin`, `solve/stress` and `sentinel-02-power`.
 
 **4300g's twelve tests.** All 8 tier-1 and all 4 tier-2 pass, with no fixture edit and no re-pinning. The tier-2 run was in the pinned image under `capped-run` (caps read back: 8 GiB, swap 0, 8192 tasks).
 
 **The power fixture's gates (tier 2, in the image):** ERC pass, no finding; DRC with parity by the specification's rules, pass, no finding, every loop rule passing; the support gate, pass; `extract` refuses by name (`TranslatorPinUnbounded`, `4300d2` D6 (b)).
 
-**The fully wired QFN-24 (A's limit at the spike).** At each of the placer's 25 µm residues, turned 0° and 90° (and, measured once, 180° and 270°): 100 / 100 route, against 36 / 100 at the spike. Every 2nd and every 3rd pad wired: 100 / 100.
+**The fully wired QFN-24 (A's limit at the spike).** At each of the placer's 25 µm residues, turned 0° and 90°, 50 / 50 route at the head (the committed test, CI). With 180° and 270° added, 100 / 100 routed, measured at `build3`, before the adversarial fixes (`698ebc1`). The spike gave 36 / 100. Every 2nd and every 3rd pad wired: 100 / 100 (`build3`).
 
-**Router wall time** (release, best of 3, against base): every board that routes on the base is within noise (d3 5.7 s against 6.1 s); the newly routing boards take 0.3 s (pair-standin) to 6.6 s (`sentinel-02-power`).
+**Router wall time** (release, best of 3, at the head, against base; `~/.cache/aet-1310/timing/per-board-head.txt`): every board that routes on the base is within noise (d3 6.0 s against 6.1 s). The newly routing boards take 0.3 s (pair-standin) to 7.1 s (`sentinel-02-power`).
 
 ## 11. Adversarial pass (full; a fresh Opus subagent, frozen at `1422c3b`) [measured]
 
@@ -232,7 +232,7 @@ Untestable at tier 1, and taken to tier 2 (§12): KiCad's view of the exact 200 
 - The new `board_tier2::the_full_power_fixture_routes_and_passes_every_gate_it_reaches` passes: KiCad agrees with the exact rounded clearance (U5's corner pads, 0.218 mm) and with the off-grid escapes at exactly 200 µm.
 - Neighbours O1 or D4 could disturb, all passing: `board_tier2::{the_power_fixture_passes_erc_drc_its_loop_rules_and_extract, the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails, connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers, four_layer_fixture_passes_every_gate_and_its_package_holds}`.
 
-**Mutation pass (diff-sized):** 19 mutants, one per guard this work order adds or changes, each run against the suite it lives in (`~/.cache/aet-1310/tools/mutate.py`, `~/.cache/aet-1310/mutants-all.json`). **19 killed.**
+**Mutation pass (diff-sized):** 19 mutants, one per guard this work order adds or changes, each run against the suite it lives in (`~/.cache/aet-1310/tools/mutate.py`). **19 killed.** `mutants-all.json` records 18 at `0a17ba9`. M15 survived there, and was killed on its re-run after its test was added (`mutants-M15.json`).
 - **Three survived a first run, and each now has a test that kills it:**
   - lanes held at the bare clearance (`an_escape_never_takes_a_reached_pads_way_out`);
   - the sealed predicate ignoring own-net terminals (`a_pocket_with_two_terminals_of_one_net_routes_on_the_grid`);
@@ -283,4 +283,34 @@ Untestable at tier 1, and taken to tier 2 (§12): KiCad's view of the exact 200 
 - **The 0.45 mm boxing, a trade measured:** a side of six 0.25 mm pads at 0.45 mm, all wired, routes at 6 of 15 residues and is refused by name at the rest. Before the fix, 9 of 15 routed, by escapes jogging back past the end of a reserve.
 - **`schematic::anchored`**, a new read-only `pub fn` in the emitter's crate, is what D2's guard reads.
 - **The base:** `wo/aet-4300g-support` is still at `4bb6814`. 1310 asked 4300g's owner (inbox, 03:40 UTC) to merge `main`. The architect's 04:50 note has 4300g merge `main` (taking specification 11) before 1310 lands in it. This PR is tested against the base as it stands, and `TIER2_MIN` is recounted when the base moves.
+- **Lone pads, a fork taken:** "refused by name, never left to chance" is built for runs of two or more pads (`PadEscapeExhausted`). A lone pad with no escape keeps today's `Unroutable`, which names it ("has no node clear"); this keeps the 300 µm class and 250 µm clearance refusals as they were (§8).
+- **The JSON kind:** no committed test drives `PadEscapeExhausted` through `emit`'s error. The tier-1 tests assert `route::Unroutable`'s `exhausted` field. The kind was seen through the CLI (`{"kind":"PadEscapeExhausted","id":"U1",…}`) in `~/.cache/aet-1310/logs/ws-build3.log`, before lone pads were exempted.
 - **4220b:** the BMP581's corner gap on the inferred centres is exactly the floor (§3), the ruling's binding note.
+
+## 15. CI on the head, and close: READY
+
+**CI on `db6813d`** (PR #160, against `wo/aet-4300g-support` at `4bb6814`): every check green [measured].
+- `gates` 12m15s; `cli`, `image` and the four `ardupilot` jobs pass.
+- **The tools shards** (the 04:35 rule: a balanced plan is the gate, 20 minutes a target; the plan is 977 s on each shard):
+
+  | shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|---|
+  | time | 16m56s | 14m52s | 13m55s | 16m38s | 18m28s | 19m06s | 15m34s | 14m53s |
+
+  Every shard is under 20 minutes. The slowest is shard 5, at 4.7 minutes above the fastest; no refit is triggered on one run.
+- **The aggregate:** `ANSWER tier2_tests_passed=131 floor=131` (exact), with 1808 tests passed across 1804 names.
+
+**The READY commit changes this file only.** Its CI is the same code's.
+
+**Close.**
+- The ruling is built in full.
+- 4300g's 8 tier-1 and 4 tier-2 failing tests pass, with no fixture edit and no re-pinning.
+- Every board that routes on the base still routes, byte-identically, and passes its gates. The ICM-20948 power fixture routes and passes every gate it reaches.
+- D4's cause is found and fixed in the emitter.
+- The adversarial findings are fixed, and every mutant is killed.
+- **Scratch:** removed, except what this file cites, all in `~/.cache/aet-1310/`:
+  - the spike: `spike-1310.patch` and `spike-tests/`;
+  - the adversary's harness and outputs: `adv/`;
+  - `emit/` (base, the spike's variants, `build6`, `head`, `g62*`);
+  - `timing/`, `logs/`, `tools/`, `mutants-*.json`;
+  - `pr-title-body.md`, the title and body for the architect.
