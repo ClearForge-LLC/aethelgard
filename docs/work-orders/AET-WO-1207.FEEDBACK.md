@@ -247,3 +247,34 @@ Reduction pass (diff): −9 lines net in the pass (the build itself deleted 65 l
   - **Checked:** the step's include check, run locally on the packaged `ir` crate, finds all four targets.
   - That run's other jobs finished green at the time it was read: `cli`, `pinned`, `pinout`, both images, the four `ardupilot` jobs, and tools shards 1, 3, 4, 5 and 7 (19:33 to 24:32).
 
+- **CI on PR #178 at `0019d70`** (run 43926160268): **green** [measured].
+  - **Green jobs:** `gates` (fmt, clippy, tier 1, the package step), all eight `tools-shard` jobs, the `tools` aggregate (`tier2_tests_passed=160 floor=160`: `TIER2_MIN` is exact and unchanged), `shards`, `cli`, `pinned`, `pinout`, `engine-image`, `ardupilot-image` and its four `ardupilot` jobs.
+  - **Shard times:**
+
+    | Shard | Time |
+    |---|---|
+    | 0 | 23:01 |
+    | 1 | 22:59 |
+    | 2 | 28:41 |
+    | 3 | 29:30 |
+    | 4 | 31:16 |
+    | 5 | 25:32 |
+    | 6 | 24:25 |
+    | 7 | 18:03 |
+
+    `gates` took 25:07. Seven shards are over the 20-minute clause, so its one re-run does not apply to one shard. The same hour's runs of other branches are as slow [measured, from their run timings]:
+    - `4211`: run 43920671965, shards 20 to 31 min, `gates` 23; run 43926463946, shards 18 to 28, `gates` 17.
+    - `4403`: run 43923548434, shards 20 to 36, `gates` 23.
+
+    So the slowness is the runners shared by four builders, not this change. This work order adds no tier-2 test and no `ci/` weight, and the `shards` job's plan is `main`'s. The READY commit changes only this file, and its own run is the one the architect reads.
+- **Disk:**
+  - No agent worktree was created (the adversarial subagent ran without one), and the mutants ran in this worktree, each restored.
+  - **Kept, as the evidence this document cites:** `~/.cache/aet-1207/` (538 MB). It holds:
+    - `baseline/` and `new/`, the `1178ca8` and branch binaries;
+    - `tools/`;
+    - the verdict records `v-base`, `v-new` and `v-new2`;
+    - `reach*/`, `twobus/` and `sub/`;
+    - `mut/`, with both runs;
+    - `adv/`: the 8,609 specifications, `results.json`, `REPORT.md` and the library and `modes` probes;
+    - `pr-title-body.md`.
+- **Tokens:** minted per push (the branch and the PR; the fix; the READY commit) and revoked after each, every revocation `HTTP 204`.
