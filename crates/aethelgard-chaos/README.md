@@ -79,22 +79,21 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 6. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 13. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
 bytes changed in that one header byte only. `AET-WO-2205` added the header's
 `tools`, the window on kinds 7 and 8, kind 10's executable segments and kind
 19's slimmed witness at version 6; the golden trace's header gained its sixth
-item, an empty `tools`. An older trace is refused, not read under version 6's
-rules. Versions 7 to 13 added the SPI records (`AET-WO-4200`, kinds 21 to 23),
+item, an empty `tools`. Versions 7 to 13 added the SPI records (`AET-WO-4200`, kinds 21 to 23),
 the motor records (`AET-WO-4300a`, kinds 24 to 26), each device step's own
 records (`AET-WO-4210`, `AET-WO-4220`), the serial records (`AET-WO-4300b`,
 kinds 27 to 29), kind 10's brown-out word and flash accesses (`AET-WO-4230`),
 and the anchored windows (`AET-WO-2302`: kind 26's anchor, the edges outside
 its window and its timer's `CEN` rises, kind 29's injection instant, kind 30);
-the trace header now carries version 13 (`event::TRACE_VERSION`), and any
-other version is refused by name. The mirror record
+an older trace is refused by name (`event::TRACE_VERSION`), never read under
+version 13's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
