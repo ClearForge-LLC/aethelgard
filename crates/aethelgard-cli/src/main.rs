@@ -1194,15 +1194,17 @@ fn prove(
     spec: Option<&Path>,
 ) -> Result<verdict::Verdict, run::Stop> {
     input::dir_check(crate_dir)?;
-    // A --spec that cannot be generated is refused before any tool is looked for.
+    // A --spec that cannot be generated, and a crate the pre-flight refuses
+    // (`AET-WO-1603` §1.2), are refused before any tool is looked for.
     let generated = spec.map(generated_board).transpose()?;
+    let scratch = Scratch::new()?;
+    let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
+    firmware::preflight(&input.copy, &input.copy)?;
     let cargo = run::Tool::find("cargo")?;
     let cargo_kani = run::Tool::find("cargo-kani")?;
     let kani_home = run::required_var("KANI_HOME", true)?;
     let rustup_home = run::required_var("RUSTUP_HOME", true)?;
     let path_var = run::required_var("PATH", false)?;
-    let scratch = Scratch::new()?;
-    let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
     // The copy, as copied and before Kani touches it, against the generated
     // crate: every file, none missing and none extra (`AET-WO-3301` §1.4).
     let provenance = provenance(&input.copy, generated.as_ref())?;
@@ -1235,8 +1237,9 @@ fn prove(
         cwd: cwd.to_path_buf(),
         status: scratch.root.join(status),
         read_only: read_only.clone(),
-        // Cargo starts its own children with stdin from /dev/null.
-        read_write: vec![PathBuf::from("/dev/null")],
+        // Cargo starts its own children with stdin from /dev/null, which
+        // every tool may read and write (`run::confine`).
+        read_write: Vec::new(),
     };
     let version = version(invocation(
         run::args(["kani", "--version"]),

@@ -1623,9 +1623,15 @@ fn ids_are_the_tool_s(status: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// The one device every tool may open, for reading and writing only:
+/// `Stdio::null()` opens it, and without it every child a Rust tool starts
+/// that way fails with `EACCES` (`AET-WO-2301` B2, `AET-WO-1603` §1.5).
+const DEV_NULL: &str = "/dev/null";
+
 /// Applies Landlock to this process: filesystem rights through ABI 3 are
 /// required; where the kernel can, TCP bind and connect are denied (ABI 4+)
 /// and signals and abstract Unix sockets are scoped to the tool (ABI 6+).
+/// [`DEV_NULL`] is read and written by every tool.
 fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<i32, String> {
     let fs_rights = AccessFs::from_all(ABI::V3);
     let status = Ruleset::default()
@@ -1639,6 +1645,12 @@ fn confine(read_only: &[PathBuf], read_write: &[PathBuf]) -> Result<i32, String>
         .and_then(|r| r.create())
         .and_then(|r| r.add_rules(path_beneath_rules(read_only, AccessFs::from_read(ABI::V3))))
         .and_then(|r| r.add_rules(path_beneath_rules(read_write, fs_rights)))
+        .and_then(|r| {
+            r.add_rules(path_beneath_rules(
+                [DEV_NULL],
+                AccessFs::ReadFile | AccessFs::WriteFile,
+            ))
+        })
         .and_then(|r| r.restrict_self())
         .map_err(|e| e.to_string())?;
     let abi = match status.landlock {

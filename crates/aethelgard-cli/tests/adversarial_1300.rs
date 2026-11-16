@@ -2,8 +2,10 @@
 //! Each `attack_*` case was measured against KiCad 10.0.7 in the tools image
 //! and failed open before the fix; each asserts the secure outcome.
 
+#[path = "common/stub.rs"]
+mod stub;
+
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -98,8 +100,7 @@ exit 0
 "#
     );
     let stub = tb.join("kicad-cli");
-    fs::write(&stub, script).unwrap();
-    fs::set_permissions(&stub, fs::Permissions::from_mode(0o755)).unwrap();
+    stub::write_executable(&stub, script);
     tb
 }
 

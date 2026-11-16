@@ -390,3 +390,178 @@ fn a_crowd_of_long_names_reads_in_bounded_time() {
         "MalformedElf"
     );
 }
+
+/// AET-WO-1603 §1.4: the reader sees what the preprocessor sees. `#if 0` and
+/// `#if 1` are evaluated exactly: a definition in a dead branch is no
+/// definition, one in a live branch is. Any other conditional around one of
+/// the 33 macros is refused, `HwdefConditionalUnsupported`, never read
+/// through, whatever spelling the directive takes.
+#[test]
+fn a_definition_inside_a_conditional_is_evaluated_exactly_or_refused() {
+    let text = common::header(&step_g_words());
+    let real = header::read(&text).unwrap();
+    let start = text.find("#define VAL_GPIOA_MODER").unwrap();
+    let end = start + text[start..].find("\n\n").unwrap() + 1;
+    let (head, def, tail) = (&text[..start], &text[start..end], &text[end..]);
+    let wrapped = |open: &str, close: &str| format!("{head}{open}\n{def}{close}\n{tail}");
+    let refused = |t: &str| header::read(t).unwrap_err();
+
+    // Dead: the only definition is gone.
+    let dead = refused(&wrapped("#if 0", "#endif"));
+    assert_eq!(dead.kind(), "MalformedHeader");
+    assert_eq!(dead.id().as_deref(), Some("VAL_GPIOA_MODER"));
+    // Live, exactly: `#if 1`, the `#else` of `#if 0`, an `#elif 1` after it.
+    for (open, close) in [
+        ("#if 1", "#endif"),
+        ("#if 0\n#else", "#endif"),
+        ("#if 0\n#elif 1", "#endif"),
+        ("#if 0\n#elif 0\n#else", "#endif"),
+    ] {
+        assert_eq!(header::read(&wrapped(open, close)).unwrap(), real, "{open}");
+    }
+    // A decoy in a dead branch beside the real definition is not a second one.
+    let decoy = format!(
+        "#if 0\n{}#endif\n{text}",
+        def.replace("INPUT(0U)", "OUTPUT(0U)")
+    );
+    assert_eq!(header::read(&decoy).unwrap(), real);
+    // An `#elif 0` is dead even after a branch the reader cannot evaluate.
+    let elif0 = format!(
+        "#ifdef X\n#elif 0\n{}#endif\n{text}",
+        def.replace("INPUT(0U)", "OUTPUT(0U)")
+    );
+    assert_eq!(header::read(&elif0).unwrap(), real);
+    // Dead after a taken branch, whatever its own condition says.
+    let after = refused(&wrapped("#if 1\n#else", "#endif"));
+    assert_eq!(after.id().as_deref(), Some("VAL_GPIOA_MODER"));
+    assert_eq!(after.kind(), "MalformedHeader");
+
+    // Anything else around one of the 33 is refused by name.
+    for (open, groups) in [
+        ("#ifdef STM32H7", 1),
+        ("#ifndef STM32H7", 1),
+        ("#if defined(STM32H7)", 1),
+        ("#if 2", 1),
+        ("#if (1)", 1),
+        ("#if 0x1", 1),
+        ("#if 0\n#elif STM32H7", 1),
+        ("#if 0\n#elifdef X", 1),
+        ("#ifdef A\n#else", 1),
+        ("# if X", 1),
+        ("#\tifdef X", 1),
+        ("  #  ifndef X", 1),
+        ("%:ifdef X", 1),
+        ("#if 1\n#if X", 2),
+        ("#if X\n#if 1", 2),
+    ] {
+        let e = refused(&wrapped(open, &vec!["#endif"; groups].join("\n")));
+        assert_eq!(e.kind(), "HwdefConditionalUnsupported", "{open}: {e}");
+        assert_eq!(e.id().as_deref(), Some("VAL_GPIOA_MODER"), "{open}");
+    }
+    // A region that holds none of the 33 is not read, so not refused: the
+    // shape of ArduPilot's generated header (step-g L7-9, L180-184, L1447-1455).
+    let others = format!(
+        "#ifndef TRUE\n#define TRUE 1\n#endif\n\
+         #if defined(STM32_I2C_I2C1_RX_DMA_STREAM) && defined(STM32_I2C_I2C1_TX_DMA_STREAM)\n#define HAL_I2C1_CONFIG {{ 1 }}\n#else\n#define HAL_I2C1_CONFIG {{ 0 }}\n#endif\n\
+         {text}#ifndef AP_TERRAIN_AVAILABLE\n#define AP_TERRAIN_AVAILABLE 0\n#endif\n#if AP_TERRAIN_AVAILABLE\n#ifndef D\n#define D \"x\"\n#endif\n#endif\n"
+    );
+    assert_eq!(header::read(&others).unwrap(), real);
+}
+
+/// AET-WO-1603 §1.4 and §5: continuations are spliced and comments removed
+/// before a directive is recognised, as GCC does: a directive inside a
+/// comment, or carried onto a comment's line by a backslash, is no
+/// directive; a definition swallowed by a directive's continuation is no
+/// definition; and the structure must balance.
+#[test]
+fn a_directive_is_recognised_only_where_the_preprocessor_sees_one() {
+    let text = common::header(&step_g_words());
+    let real = header::read(&text).unwrap();
+    let refused = |t: &str| header::read(t).unwrap_err();
+    // A name in a comment is no mention; a directive in a line comment is no
+    // directive.
+    let noted = format!("// VAL_GPIOA_MODER is below. #if 0\n{text}");
+    assert_eq!(header::read(&noted).unwrap(), real);
+    // In a block comment: no region opens.
+    assert_eq!(
+        header::read(&format!("/*\n#if 0\n*/\n{text}")).unwrap(),
+        real
+    );
+    // A line comment ended by a backslash swallows the next line: here the
+    // `#if 0`, so the `#endif` below has nothing to close.
+    let e = refused(&format!("// note \\\n#if 0\n{text}#endif\n"));
+    assert_eq!(e.kind(), "MalformedHeader", "{e}");
+    // A backslash then blanks, which GCC splices with a warning, is refused
+    // wherever it is (4400a adversarial case 73).
+    let e = refused(&format!("// note \\ \t\n#if 0\n{text}#endif\n"));
+    assert_eq!(e.kind(), "MalformedHeader", "{e}");
+    assert!(
+        e.to_string().contains("backslash followed by blanks"),
+        "{e}"
+    );
+    let blank = text.replacen("PIN_MODE_INPUT(1U) | \\\n", "PIN_MODE_INPUT(1U) | \\ \n", 1);
+    assert_ne!(blank, text);
+    assert_eq!(refused(&blank).id().as_deref(), Some("line 4"));
+    // A `#define` carried onto an `#ifdef` line by a backslash is part of its
+    // condition, so no definition (GCC: extra tokens after `#ifdef`).
+    let start = text.find("#define VAL_GPIOA_MODER").unwrap();
+    let hidden = format!("{}#ifdef X \\\n{}#endif\n", &text[..start], &text[start..]);
+    let e = refused(&hidden);
+    assert_eq!(e.kind(), "MalformedHeader", "{e}");
+    assert_eq!(e.id().as_deref(), Some("VAL_GPIOA_MODER"));
+    // A `#if 0` carried into another definition's value is no directive.
+    let carried = format!("#define OTHER 1 \\\n#if 0\n{text}");
+    assert_eq!(header::read(&carried).unwrap(), real);
+    // A definition only inside a comment is no definition.
+    let commented = text.replacen("#define VAL_GPIOA_MODER", "/*\n#define VAL_GPIOA_MODER", 1);
+    let commented = commented.replacen(
+        "\n\n#define VAL_GPIOA_AFRL",
+        "\n*/\n\n#define VAL_GPIOA_AFRL",
+        1,
+    );
+    assert_eq!(refused(&commented).id().as_deref(), Some("VAL_GPIOA_MODER"));
+    // Unbalanced or unterminated structure is refused.
+    for bad in [
+        format!("{text}#if 1\n"),
+        format!("{text}#endif\n"),
+        format!("{text}#else\n"),
+        format!("#if 0\n#else\n#else\n#endif\n{text}"),
+        format!("#if 0\n#else\n#elif 1\n#endif\n{text}"),
+        format!("{text}/* open"),
+        format!("{text}#define LAST 1 \\"),
+    ] {
+        assert_eq!(refused(&bad).kind(), "MalformedHeader", "{bad:.40}");
+    }
+    // CRLF line ends are line ends.
+    assert_eq!(header::read(&text.replace('\n', "\r\n")).unwrap(), real);
+}
+
+/// AET-WO-1603 adversarial A3 and A8: what the reader does not model is
+/// refused, never read: a byte outside printable ASCII and tab (a lone CR,
+/// which GCC takes as a line end; U+00A0 and U+0085, which Rust trims and GCC
+/// keeps), a trigraph, a C++ raw string, `__has_include`'s header-name, and
+/// another file or line number (`#include`, `#line`). A comment spanning
+/// lines is one space, so what follows its end continues the line it began
+/// on: a `#if 0` there is no directive.
+#[test]
+fn what_the_reader_does_not_model_is_refused() {
+    let text = common::header(&step_g_words());
+    let real = header::read(&text).unwrap();
+    for bad in [
+        "// x\r#if 0\n",
+        "#define N\u{a0}1\n",
+        "#define N\u{85}1\n",
+        "// ??/\n",
+        "#define S R\"(x)\"\n",
+        "#if __has_include(<a.h>)\n#endif\n",
+        "#include <hal.h>\n",
+        "#line 10\n",
+        "#define T 1\x0c\n",
+    ] {
+        let e = header::read(&format!("{bad}{text}")).unwrap_err();
+        assert_eq!(e.kind(), "MalformedHeader", "{bad:?}: {e}");
+        assert_eq!(e.id().as_deref(), Some("line 1"), "{bad:?}: {e}");
+    }
+    let joined = format!("#define X /*\n*/ #if 0\n{text}");
+    assert_eq!(header::read(&joined).unwrap(), real);
+}

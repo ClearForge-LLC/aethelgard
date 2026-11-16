@@ -6,10 +6,13 @@
 //! environment inside Landlock, so a stub uses shell builtins or absolute paths and writes only
 //! where it is told to (`-o <report>` for KiCad).
 
+#[path = "common/stub.rs"]
+mod stub;
+
 use std::ffi::OsStr;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{PermissionsExt, symlink};
+use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -46,10 +49,10 @@ impl Dir {
         path
     }
 
-    /// Writes an executable `#!/bin/sh` script.
+    /// Writes an executable `#!/bin/sh` script, from a child process
+    /// (`common/stub.rs`).
     fn script(&self, name: &str, body: &str) {
-        let path = self.write(name, format!("#!/bin/sh\n{body}\n").as_bytes());
-        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+        stub::write_executable(&self.join(name), format!("#!/bin/sh\n{body}\n"));
     }
 }
 
@@ -1873,4 +1876,40 @@ fn a_relative_path_entry_is_refused() {
             "{r}"
         );
     }
+}
+
+/// AET-WO-1603 §1.6 (`AET-WO-4220` F15): a stub written while sibling
+/// threads fork without pause always execs. 200 in a row, and nothing retries
+/// on `ETXTBSY`: the race is removed, not absorbed (`common/stub.rs`).
+#[test]
+fn a_stub_written_while_other_threads_fork_always_execs() {
+    use std::sync::atomic::AtomicBool;
+    static STOP: AtomicBool = AtomicBool::new(false);
+    let dir = Dir::new("etxtbsy");
+    let forkers: Vec<_> = (0..4)
+        .map(|_| {
+            std::thread::spawn(|| {
+                while !STOP.load(Ordering::Relaxed) {
+                    Command::new("/bin/true").status().unwrap();
+                }
+            })
+        })
+        .collect();
+    let results: Vec<_> = (0..200)
+        .map(|i| {
+            let path = dir.join(&format!("stub{i}"));
+            stub::write_executable(&path, "#!/bin/sh\nexit 0\n");
+            Command::new(&path).status().map(|s| s.success())
+        })
+        .collect();
+    STOP.store(true, Ordering::Relaxed);
+    for f in forkers {
+        f.join().unwrap();
+    }
+    let failed: Vec<_> = results
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !matches!(r, Ok(true)))
+        .collect();
+    assert!(failed.is_empty(), "{} of 200: {failed:?}", failed.len());
 }
