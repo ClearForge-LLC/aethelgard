@@ -52,9 +52,12 @@ use sha2::{Digest, Sha256};
 /// one exactly. Re-taken in `AET-WO-4230` (solved version 8:
 /// `spi_controllers`, `i2c_timings`, `bor_level`; `5c2aeff0…3dd22` and
 /// `84de8b88…3b016d` before): with the version set back to 7 and the three
-/// keys removed, each output's digest is the old one exactly.
-const REFERENCE_DIGEST: &str = "8c6a06473da6383fcc39c9a8100d283e562aa52db2da7d42163bae332af456f8";
-const STRESS_DIGEST: &str = "e79f725a926331d3ec34c1d34613cb96d61592d0a1816189ecdc77bc3b3c286b";
+/// keys removed, each output's digest is the old one exactly. Moved again in
+/// `AET-WO-4230` slice A2a (specification version 10, `peer_deviation_ppm` on
+/// the console, which moved the specification's sha256 and the topology's
+/// `serial_ports`; `8c6a0647…56f8` and `e79f725a…286b` before).
+const REFERENCE_DIGEST: &str = "3427fca7218f86e86e402d142ca6c521dd375b3611d9d359a3f6fd6d83d9a0ff";
+const STRESS_DIGEST: &str = "6fe3171bd06aeb02fe4236e0327218f8090e2da853a7498b8b4a84d0002e922b";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -488,7 +491,7 @@ fn each_ceiling_refusal_is_exit_2_naming_the_bus() {
         (
             |d| d["i2c_buses"][0]["pull_up_ohms"] = 24.into(),
             "PullUpBelowSinkFloor",
-            "I2C bus `SENSORS` has a pull-up of 24 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)",
+            "I2C bus `SENSORS` has a pull-up of 24 ohms, below the 1022 ohm floor its rail and mode set (UM10204 sink current)",
         ),
     ];
     for (edit, kind, message) in cases {

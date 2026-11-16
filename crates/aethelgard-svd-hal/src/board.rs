@@ -6279,6 +6279,7 @@ mod tests {
                     },
                     framing: framing.clone(),
                     negotiated: None,
+                    peer_deviation_ppm: 0,
                     kernel_hz: kernel,
                     brr,
                     actual_millibaud: serial::actual_millibaud(kernel, brr),

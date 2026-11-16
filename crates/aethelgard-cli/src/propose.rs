@@ -194,16 +194,22 @@ struct Proposed {
 fn facts(spec: &Specification, t: &SolvedTopology) -> Result<BTreeMap<String, BusFacts>, String> {
     let mut out: BTreeMap<String, BusFacts> = BTreeMap::new();
     for (net, a) in &t.analog_lines {
-        let speed = spec
+        let bus = spec
             .i2c_buses
             .iter()
             .find(|b| b.id == a.bus)
-            .map(|b| b.speed_hz)
             .ok_or_else(|| format!("bus `{}` is not in the specification", a.bus))?;
+        // The floor is judged at the domain's maximum rail, as `solve` does
+        // (`AET-WO-4230` §1.5); the topology carries only the nominal.
+        let maximum = spec
+            .voltage_domains
+            .iter()
+            .find(|d| d.id == bus.domain)
+            .map_or(a.domain_millivolts, aethelgard_ir::maximum_millivolts);
         let f = BusFacts {
             pull_up_ohms: a.pull_up_ohms,
             domain_millivolts: a.domain_millivolts,
-            floor_ohms: i2c_pull_up_floor_ohms(speed, a.domain_millivolts),
+            floor_ohms: i2c_pull_up_floor_ohms(bus.speed_hz, maximum),
         };
         if *out.entry(a.bus.clone()).or_insert(f) != f {
             return Err(format!(

@@ -735,19 +735,33 @@ fn with_pull_up(speed_hz: u32, ohms: u32) -> Specification {
     s
 }
 
-/// `AET-WO-1203` §3: at 3.3 V and 400 kHz, 966 ohms is refused and 967 solves.
+/// `AET-WO-1203` §3, with `AET-WO-4230` §1.5 (review A8): the floor is taken
+/// at the domain's maximum, 3.3 V + 5 % = 3465 mV, so at 400 kHz 1021 ohms is
+/// refused and 1022 solves; at the nominal rail it was 966 and 967.
 #[test]
 fn the_pull_up_floor_at_3v3_and_400khz() {
     assert_eq!(
-        refused(&with_pull_up(400_000, 966)),
+        refused(&with_pull_up(400_000, 1021)),
         SolveError::PullUpBelowSinkFloor {
             bus: "I".into(),
-            pull_up_ohms: 966,
-            floor_ohms: 967
+            pull_up_ohms: 1021,
+            floor_ohms: 1022
         }
     );
-    ok(&with_pull_up(400_000, 967));
+    ok(&with_pull_up(400_000, 1022));
     ok(&basic());
+    // The tolerance is the domain's own: at 0.1 % the maximum is 3304 mV
+    // (ceil(2904 / 3 mA) = 968 ohms), at 50 % it is 4950 mV (1517).
+    let mut s = with_pull_up(400_000, 968);
+    s.voltage_domains[0].tolerance_permille = 1;
+    ok(&s);
+    s.i2c_buses[0].pull_up_ohms = 967;
+    assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor");
+    let mut s = with_pull_up(400_000, 1516);
+    s.voltage_domains[0].tolerance_permille = 500;
+    assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor");
+    s.i2c_buses[0].pull_up_ohms = 1517;
+    ok(&s);
 }
 
 /// The review's A2 inputs.
@@ -761,24 +775,26 @@ fn the_reviews_24_50_and_100_ohm_pull_ups_are_refused() {
     }
     assert_eq!(
         refused(&with_pull_up(400_000, 24)).to_string(),
-        "I2C bus `I` has a pull-up of 24 ohms, below the 967 ohm floor its rail and mode set (UM10204 sink current)"
+        "I2C bus `I` has a pull-up of 24 ohms, below the 1022 ohm floor its rail and mode set (UM10204 sink current)"
     );
 }
 
 #[test]
 fn the_pull_up_floor_follows_the_bus_rail_and_mode() {
-    // Fast-mode Plus sinks 20 mA: 145 ohms at 3.3 V.
-    ok(&with_pull_up(1_000_000, 145));
+    // Fast-mode Plus sinks 8 mA, not 20 (DS12117 Rev 10 Table 50), at the
+    // 3465 mV maximum: ceil(3065 / 8 mA) = 384 ohms.
+    ok(&with_pull_up(1_000_000, 384));
     assert_eq!(
-        refused(&with_pull_up(1_000_000, 144)).kind(),
+        refused(&with_pull_up(1_000_000, 383)).kind(),
         "PullUpBelowSinkFloor"
     );
-    // 1.8 V reads VOL as 0.2 x VDD at 2 mA, in every mode: 720 ohms.
+    // 1.8 V reads VOL as 0.2 x VDD at 2 mA, in every mode, at the 1890 mV
+    // maximum: 756 ohms.
     for speed in [100_000, 400_000, 1_000_000] {
-        let mut s = with_pull_up(speed, 720);
+        let mut s = with_pull_up(speed, 756);
         s.voltage_domains[0].nominal_millivolts = 1800;
         ok(&s);
-        s.i2c_buses[0].pull_up_ohms = 719;
+        s.i2c_buses[0].pull_up_ohms = 755;
         assert_eq!(refused(&s).kind(), "PullUpBelowSinkFloor", "{speed}");
     }
 }

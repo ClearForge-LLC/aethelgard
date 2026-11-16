@@ -267,6 +267,20 @@ pub fn solve_timing(
     Ok((narrow(psc), narrow(ticks - 1), narrow(ccr)))
 }
 
+/// HSI's deviation from its nominal 64 MHz at the fastest it can run, in
+/// ppm, rounded up: DS12117 Rev 10 Table 36 (rev Y, p. 128) = Table 133 (rev
+/// V, p. 232): `fHSI` max 64.3 MHz at 3.3 V and 30 °C (+4,688 ppm, rounded
+/// away from zero from 4,687.5), `ΔVDD` +0.03 % (+300), `ΔTEMP` +1 % over
+/// TJ −40 °C to TJmax (+10,000), summed. The junction temperature is not
+/// bounded by any declaration, so the wider row is taken (`AET-WO-4230`).
+/// The serial check reads it; `solve` and `silicon` keep their own copies
+/// (`RUL-20`).
+pub const HSI_FAST_PPM: u32 = 14_984;
+/// HSI's deviation at the slowest it can run, in ppm, rounded up: `fHSI` min
+/// 63.7 MHz (−4,688), `ΔVDD` −0.12 % (−1,200), `ΔTEMP` −2 % (−20,000), the
+/// same tables, summed.
+pub const HSI_SLOW_PPM: u32 = 25_894;
+
 /// What [`check_silicon`] found for one output, in picoseconds where a time
 /// is named (`period_ps` and `high_ps` are floors; the verdict is exact).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -279,12 +293,24 @@ pub struct SiliconTiming {
     pub period_ps: u64,
     /// `CCR` ticks: the high time of PWM mode 1.
     pub high_ps: u64,
+    /// The period and the high time at HSI's slowest and fastest
+    /// ([`HSI_SLOW_PPM`], [`HSI_FAST_PPM`]): the same cycle counts on a
+    /// kernel clock of `kernel × (1 − slow)` (floored) and
+    /// `kernel × (1 + fast)` (ceiled), floors in picoseconds.
+    pub period_slowest_ps: u64,
+    pub period_fastest_ps: u64,
+    pub high_slowest_ps: u64,
+    pub high_fastest_ps: u64,
     /// The declared period: `1 s / rate` for PWM, `1 s / bit rate` for DShot.
     pub nominal_period_ps: u64,
     /// The declared high time: the idle pulse for PWM, 3/8 of a bit for
     /// DShot's `0`.
     pub nominal_high_ps: u64,
-    /// Every rule held. The rules: the period within half a tick of the
+    /// Every rule held, at the nominal clock only: the worst-case figures
+    /// above do not enter `holds`. No source this repository holds gives a
+    /// DShot or PWM receiver's timing tolerance, so whether a flight
+    /// controller accepts these figures at HSI's extremes is the
+    /// architect's question (`AET-WO-4230` §1.8), not a judgement made here. The rules: the period within half a tick of the
     /// nominal; for PWM the high time exactly the idle pulse and the range's
     /// maximum strictly inside the period; for DShot the high time within
     /// half a tick of 3/8 of the nominal bit.
@@ -308,6 +334,11 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
     let tick_ps = ps(psc1);
     let period_ps = ps(arr1 * psc1);
     let high_ps = ps(ccr * psc1);
+    let slow = kernel * u128::from(1_000_000 - HSI_SLOW_PPM) / 1_000_000;
+    let fast = (kernel * u128::from(1_000_000 + HSI_FAST_PPM)).div_ceil(1_000_000);
+    let ps_at = |cycles: u128, k: u128| {
+        u64::try_from(cycles * 1_000_000_000_000 / k.max(1)).unwrap_or(u64::MAX)
+    };
     let (holds, nominal_period_ps, nominal_high_ps) =
         match (output.protocol.bit_rate(), &output.pwm) {
             (Some(bit_rate), _) => {
@@ -349,6 +380,10 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
         tick_ps,
         period_ps,
         high_ps,
+        period_slowest_ps: ps_at(arr1 * psc1, slow),
+        period_fastest_ps: ps_at(arr1 * psc1, fast),
+        high_slowest_ps: ps_at(ccr * psc1, slow),
+        high_fastest_ps: ps_at(ccr * psc1, fast),
         nominal_period_ps,
         nominal_high_ps,
         holds,
@@ -524,5 +559,42 @@ mod tests {
         assert!(!check_silicon(&c, 1, &solved(MotorProtocol::Dshot600, None, (0, 107, 40))).holds);
         assert!(!check_silicon(&c, 1, &solved(MotorProtocol::Dshot600, None, (0, 106, 41))).holds);
         assert!(check_silicon(&c, 2, &solved(MotorProtocol::Dshot300, None, (0, 212, 80))).holds);
+    }
+
+    /// `AET-WO-4230` §1.8: the worst-case period and high time at HSI's two
+    /// extremes (62,342,784 Hz slow, 64,958,976 Hz fast on 64 MHz), floors in
+    /// picoseconds, and `holds` unchanged by them.
+    #[test]
+    fn the_worst_case_period_and_high_time_at_hsi_s_extremes() {
+        let c = SolvedClock::reset();
+        let t = check_silicon(
+            &c,
+            1,
+            &solved(
+                MotorProtocol::Pwm,
+                Some(pwm(400, 1000, 2000)),
+                (63, 2499, 1000),
+            ),
+        );
+        assert!(t.holds);
+        assert_eq!((t.period_ps, t.high_ps), (2_500_000_000, 1_000_000_000));
+        assert_eq!(
+            (t.period_slowest_ps, t.high_slowest_ps),
+            (2_566_455_806, 1_026_582_322)
+        );
+        assert_eq!(
+            (t.period_fastest_ps, t.high_fastest_ps),
+            (2_463_093_014, 985_237_205)
+        );
+        let d = check_silicon(&c, 1, &solved(MotorProtocol::Dshot600, None, (0, 106, 40)));
+        assert!(d.holds);
+        assert_eq!(
+            (d.period_slowest_ps, d.high_slowest_ps),
+            (1_716_317, 641_613)
+        );
+        assert_eq!(
+            (d.period_fastest_ps, d.high_fastest_ps),
+            (1_647_193, 615_773)
+        );
     }
 }

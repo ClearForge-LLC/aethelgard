@@ -1716,7 +1716,7 @@ fn propose_on_the_47k_run_changes_only_the_pull_up_to_2700_in_identical_bytes_tw
             &json!(3_982_300),
             &json!(300_000),
             &json!(2832),
-            &json!(967),
+            &json!(1022),
             &json!(2700),
             &json!(228_771)
         ]
@@ -2099,8 +2099,9 @@ printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_3
 "#;
 
 /// Adversarial B1: a 400 kHz bus whose 120 ns rise ceiling would allow
-/// 1 MHz. The floor is judged at the bus's declared speed, 967 ohms at 3.3 V,
-/// never at the 20 mA floor of the speed the ceiling allows (145 ohms).
+/// 1 MHz. The floor is judged at the bus's declared speed, 1022 ohms at the
+/// 3.3 V domain's 3465 mV maximum, never at the Fast-mode Plus floor of the
+/// speed the ceiling allows (384 ohms).
 #[test]
 fn the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings() {
     let tb = toolbox(&faulted());
@@ -2128,15 +2129,15 @@ fn the_floor_is_judged_at_the_buss_declared_speed_not_its_ceilings() {
     let out = propose(&tb.0, work.cwd(), &run, "s.json", &out_dir);
     assert_eq!(out.status.code(), Some(1), "{:?}", lines(&out));
     let p = read_json(&out_dir.join("proposal.json"));
-    // 2,200 × 96,000 / 500,100 = 422 ohms: below the 967 ohm floor.
+    // 2,200 × 96,000 / 500,100 = 422 ohms: below the 1022 ohm floor.
     let s = &p["sizing"][0];
     assert_eq!(
         (&p["outcome"], &s["rp_min_ohms"], &s["r_target_ohms"]),
-        (&json!("no_proposal"), &json!(967), &json!(422))
+        (&json!("no_proposal"), &json!(1022), &json!(422))
     );
     // The floor proposals are held to is the gate's: `solve` takes a pull-up
     // at `rp_min_ohms` on this bus and refuses one ohm less.
-    for (ohms, code) in [(967, 0), (966, 2)] {
+    for (ohms, code) in [(1022, 0), (1021, 2)] {
         spec["i2c_buses"][0]["pull_up_ohms"] = json!(ohms);
         work.dir.write("edge.json", spec.to_string().as_bytes());
         let out = run_cli(
@@ -2844,6 +2845,7 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
                         role: SerialRole::Gps,
                         framing: framing.clone(),
                         negotiated: None,
+                        peer_deviation_ppm: 0,
                         kernel_hz: kernel,
                         brr,
                         actual_millibaud: aethelgard_ir::serial::actual_millibaud(kernel, brr),

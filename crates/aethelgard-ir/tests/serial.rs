@@ -84,7 +84,7 @@ fn port(label: &str, peripheral: Option<&str>, tx: Option<&str>, rx: Option<&str
            "rx": {"net": format!("{label}_RX"), "pin": rx},
            "role": "console",
            "framing": {"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false},
-           "negotiated": null})
+           "negotiated": null, "peer_deviation_ppm": 0})
 }
 
 /// A specification holding `ports`, each port's TX and RX on pins 1 and 2 of
@@ -172,7 +172,15 @@ fn placed(t: &SolvedTopology, label: &str) -> (String, String, String) {
 
 #[test]
 fn every_key_of_a_serial_port_is_required() {
-    for key in ["label", "peripheral", "tx", "rx", "role", "framing"] {
+    for key in [
+        "label",
+        "peripheral",
+        "tx",
+        "rx",
+        "role",
+        "framing",
+        "peer_deviation_ppm",
+    ] {
         let mut p = port("C", None, None, None);
         p.as_object_mut().unwrap().remove(key);
         let e = serde_json::from_value::<Specification>(spec_json(vec![p])).unwrap_err();
@@ -338,6 +346,7 @@ fn crsf(edit: fn(&mut Value)) -> Value {
     let mut p = port("RC", None, None, None);
     p["role"] = json!("rc_crsf");
     p["framing"]["baud"] = json!(420000);
+    p["peer_deviation_ppm"] = json!(8002);
     edit(&mut p);
     p
 }
@@ -355,11 +364,7 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
         p["negotiated"] =
             json!({"source": "the receiver's CRSF 0x70 speed proposal, vendor manual section 4"});
     };
-    for edit in [
-        (|_: &mut Value| {}) as Edit,
-        |p| p["framing"]["baud"] = json!(416666),
-        negotiated,
-    ] {
+    for edit in [(|_: &mut Value| {}) as Edit, negotiated] {
         let p = crsf(edit);
         assert_eq!(spec(vec![p.clone()]).validate(), Ok(()), "{p}");
         // The declaration reaches the solved port.
@@ -370,6 +375,21 @@ fn a_crsf_port_s_baud_is_a_cited_one_or_declared_negotiated_and_the_rest_is_refu
         );
         assert_eq!(t.validate(), Ok(()));
     }
+    // 416666 validates, but no `BRR` on the 64 MHz HSI clock leaves room for
+    // HSI's worst case and the cited 8,002 ppm of spread: 154 is 2,596 ppm
+    // slow, HSI's 25,894 takes it to 28,423 ppm, and with 8,002 of spread that is
+    // 36,425, not below Table 407's
+    // 33,300. `solve` refuses it, naming each term.
+    let p = crsf(|p| p["framing"]["baud"] = json!(416666));
+    assert_eq!(spec(vec![p.clone()]).validate(), Ok(()));
+    let e = solve_refused(spec_json(vec![p]));
+    assert!(
+        matches!(&e, SolveError::SerialBaudTolerance { port, quantization_ppm: 2_596,
+            hsi_ppm: 25_894, receiver_ppm: 28_423, peer_deviation_ppm: 8_002,
+            worst_case_ppm: 36_425,
+            tolerance_ppm: 33_300, .. } if port == "RC"),
+        "{e}"
+    );
     // The solved topology is held to the same: a negotiated port's
     // declaration dropped, or its source emptied, disagrees with it.
     let good = solved(spec_json(vec![crsf(negotiated)]));
@@ -632,7 +652,10 @@ fn adversarial_f8_ds_009_s_gps_ports_take_only_a_gps() {
         g["role"] = json!(role);
         // Each role's own framing, so only the connector can refuse it.
         match role {
-            "rc_crsf" => g["framing"]["baud"] = json!(420000),
+            "rc_crsf" => {
+                g["framing"]["baud"] = json!(420000);
+                g["peer_deviation_ppm"] = json!(8002);
+            }
             "rc_sbus" => {
                 g["framing"] = json!({"baud": 100000, "data_bits": 8, "parity": "even",
                     "stop_bits": 2, "inverted": true});
@@ -781,6 +804,7 @@ fn a_null_port_takes_the_first_usart_with_free_pins_and_its_solved_brr() {
                 inverted: false
             },
             negotiated: None,
+            peer_deviation_ppm: 0,
             kernel_hz: 64_000_000,
             brr: 556,
             actual_millibaud: 115_107_913,
@@ -1027,12 +1051,14 @@ fn adversarial_2_the_tolerance_is_strict_at_its_edge_in_exact_integers() {
 }
 
 #[test]
-fn adversarial_2_no_baud_a_brr_reaches_fails_the_tolerance_on_the_reset_clock() {
+fn adversarial_2_the_worst_case_never_understates_and_is_judged_strictly_on_the_reset_clock() {
     // Each BRR's lowest and highest baud on 64 MHz, for every word: the
-    // nearest BRR's error is at most 1 / (2 BRR), below every row.
+    // nearest BRR's error is at most 1 / (2 BRR), below every row; HSI's
+    // deviation then takes the small BRRs past it.
     let clock = SolvedClock::reset();
     let k: u64 = 64_000_000;
     let mut checked = 0;
+    let mut held = 0;
     for brr in 16u32..=0xFFFF {
         let n = u64::from(brr);
         let (lo, hi) = (2 * k / (2 * n + 1) + 1, 2 * k / (2 * n - 1));
@@ -1055,17 +1081,36 @@ fn adversarial_2_no_baud_a_brr_reaches_fails_the_tolerance_on_the_reset_clock() 
                     role: SerialRole::Console,
                     framing,
                     negotiated: None,
+                    peer_deviation_ppm: 0,
                     kernel_hz: k,
                     brr,
                     actual_millibaud: 0,
                     error_ppm: 0,
                 };
-                assert!(check_silicon(&clock, &p).holds, "{baud} {data_bits}");
+                let c = check_silicon(&clock, &p);
+                let row = c.tolerance.unwrap();
+                // The quantization alone is inside the row (as before)...
+                assert!(within(k, brr, baud, row.tolerance_ppm), "{baud}");
+                // ...and the verdict is the strict comparison of the worst
+                // case at HSI's two extremes, recomputed here (peer 0).
+                let d = u128::from(brr) * u128::from(baud);
+                let at = |ppm: u128| (u128::from(k) * ppm).abs_diff(d * 1_000_000).div_ceil(d);
+                let exact = at(1_000_000 + 14_984).max(at(1_000_000 - 25_894));
+                assert_eq!(u128::from(c.worst_case_ppm), exact, "{baud}");
+                assert_eq!(
+                    c.holds,
+                    c.worst_case_ppm < u64::from(row.tolerance_ppm),
+                    "{baud} {data_bits}"
+                );
+                held += usize::from(c.holds);
                 checked += 1;
             }
         }
     }
     assert!(checked > 50_000, "{checked}");
+    // HSI's worst case alone is 2.6 %: the small BRRs, whose rounding error is
+    // largest, no longer hold; the large ones do.
+    assert!(held > 0 && held < checked, "{held} of {checked}");
 }
 
 #[test]
@@ -1298,4 +1343,136 @@ fn adversarial_4_a_negotiated_source_is_held_to_the_source_rule() {
             "{e}"
         );
     }
+}
+
+/// `AET-WO-4230` §1.8: the tolerance is judged on the worst case, quantization
+/// plus HSI's deviation in the direction that adds plus the peer's declared
+/// deviation, strictly below the row (RM0433 Rev 9 Table 407, 33,300 ppm for
+/// an 8-bit word at `BRR[3:0]` ≠ 0). 115200 on 64 MHz is `BRR` 556, 799 ppm
+/// slow, so the slow HSI (25,894) adds.
+#[test]
+fn the_serial_check_sums_quantization_hsi_and_the_peer_strictly_below_the_row() {
+    let held = |peer: u32| {
+        let mut p = port("C", None, None, None);
+        p["peer_deviation_ppm"] = json!(peer);
+        let t = solved_or_err(spec_json(vec![p]));
+        t.map(|t| check_silicon(&t.clock, &t.serial_ports["C"]))
+    };
+    // The row is 33,300: 33,300 − 26,673 = 6,627 ppm of peer fills it.
+    let c = held(5_000).unwrap();
+    assert_eq!(
+        (c.quantization_ppm, c.hsi_ppm, c.peer_deviation_ppm),
+        (800, 25_894, 5_000)
+    );
+    // The slow HSI and the slow quantization share a sign: they add, less
+    // their product (799.3 × 25,894 / 10⁶ = 20.7): 26,673 ppm of receiver.
+    assert_eq!(c.receiver_ppm, 26_673);
+    assert_eq!((c.worst_case_ppm, c.margin_ppm), (31_673, Some(1_627)));
+    assert_eq!(c.tolerance.unwrap().tolerance_ppm, 33_300);
+    assert!(c.holds);
+    assert_eq!(held(6_626).unwrap().margin_ppm, Some(1));
+    // One more ppm reaches the row, which is not below it: `solve` refuses.
+    let e = held(6_627).unwrap_err();
+    assert!(
+        matches!(&e, SolveError::SerialBaudTolerance { port, quantization_ppm: 800,
+            hsi_ppm: 25_894, receiver_ppm: 26_673, peer_deviation_ppm: 6_627,
+            worst_case_ppm: 33_300,
+            tolerance_ppm: 33_300, .. } if port == "C"),
+        "{e}"
+    );
+}
+
+/// The worse of HSI's two extremes is taken, in exact integers. At 57600
+/// (`BRR` 1111, 100 ppm fast) the fast HSI gives 15,086 ppm but the slow one
+/// 25,797 (HSI pulls the baud back across the declared one, so its
+/// 25,894 shrinks by the 100 and the product): the slow bound is the worse.
+/// At 3,878,788 on `BRR` 16 (31,250 ppm fast, the solver's own rounding limit)
+/// the fast HSI adds its 14,984 and the product to the error: 46,703 ppm, the
+/// slow one only 4,547. An exact hit (100000 at `BRR` 640) takes the slow
+/// bound, the larger.
+#[test]
+fn the_check_takes_the_worse_of_hsi_s_two_extremes() {
+    let t = solved(spec_json(vec![port("C", None, None, None)]));
+    let at = |baud: u32, brr: u32| {
+        let mut p = t.serial_ports["C"].clone();
+        p.framing.baud = baud;
+        p.brr = brr;
+        check_silicon(&t.clock, &p)
+    };
+    let c = at(57_600, 1111);
+    assert_eq!(
+        (c.quantization_ppm, c.hsi_ppm, c.receiver_ppm),
+        (101, 25_894, 25_797)
+    );
+    let c = at(3_878_788, 16);
+    assert_eq!(
+        (c.quantization_ppm, c.hsi_ppm, c.receiver_ppm),
+        (31_250, 14_984, 46_703)
+    );
+    // 46,703 is over Table 406's 37,500: refused, though the quantization
+    // alone (31,250) is inside it.
+    assert!(!c.holds);
+    assert_eq!(c.margin_ppm, Some(37_500 - 46_703));
+    let c = at(100_000, 640);
+    assert_eq!(
+        (c.quantization_ppm, c.hsi_ppm, c.receiver_ppm),
+        (0, 25_894, 25_894)
+    );
+}
+
+/// An `rc_crsf` port declares a peer deviation of at least the spread of the
+/// two bauds `CRSF_BAUDS` cites: 3,334 / 416,666 = 8,001.6, 8,002 ppm.
+#[test]
+fn a_crsf_port_s_peer_deviation_is_at_least_the_cited_spread() {
+    assert_eq!(aethelgard_ir::serial::crsf_cited_spread_ppm(), 8_002);
+    let e = refused_ports(vec![crsf(|p| p["peer_deviation_ppm"] = json!(8_001))]);
+    assert!(
+        matches!(&e, IrValidationError::PeerDeviationBelowCited { id, declared_ppm: 8_001,
+            cited_ppm: 8_002, citation } if id == "RC"
+            && citation.contains(CRSF_SOURCE) && citation.contains(CRSF_ELRS_SOURCE)),
+        "{e}"
+    );
+    assert_eq!((e.kind(), e.id()), ("PeerDeviationBelowCited", Some("RC")));
+    assert_eq!(parse(spec_json(vec![crsf(|_| {})])).validate(), Ok(()));
+    // Only an `rc_crsf` port is held to it.
+    let mut p = port("C", None, None, None);
+    p["peer_deviation_ppm"] = json!(0);
+    assert_eq!(parse(spec_json(vec![p])).validate(), Ok(()));
+    // The solved topology is re-checked: a port edited under the cited spread.
+    let mut t = solved(spec_json(vec![crsf(|_| {})]));
+    assert_eq!(t.validate(), Ok(()));
+    t.serial_ports.get_mut("RC").unwrap().peer_deviation_ppm = 8_001;
+    assert!(matches!(
+        t.validate(),
+        Err(IrValidationError::SerialPortMismatch { .. })
+    ));
+}
+
+/// A version-9 file, which has no `peer_deviation_ppm`, is refused, never
+/// defaulted; a version-9 file that has it is refused by its version.
+#[test]
+fn a_version_9_specification_is_refused() {
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 10);
+    let mut v = spec_json(vec![port("C", None, None, None)]);
+    v["schema_version"] = json!(9);
+    let e = refused(v.clone());
+    assert!(
+        matches!(
+            e,
+            IrValidationError::UnsupportedSchemaVersion {
+                version: 9,
+                expected: 10
+            }
+        ),
+        "{e}"
+    );
+    v["serial_ports"][0]
+        .as_object_mut()
+        .unwrap()
+        .remove("peer_deviation_ppm");
+    assert!(serde_json::from_value::<Specification>(v).is_err());
+}
+
+fn solved_or_err(v: Value) -> Result<SolvedTopology, SolveError> {
+    solve(&parse(v), &table(), HASH)
 }
