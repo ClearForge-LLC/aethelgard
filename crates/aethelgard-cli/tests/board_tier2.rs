@@ -26,10 +26,16 @@ use std::time::Instant;
 use serde_json::Value;
 
 const HARNESS: &str = "proofs::every_valid_sequence";
+/// The cheapest harness that runs SPI1's whole bring-up (the reset clock,
+/// GPIOA, the kernel selects, `enable_spi1`, `init`) through the image, so a
+/// seed there fails it in seconds where [`HARNESS`] takes minutes (`AET-WO-4230`
+/// Q-K, measured in the image: the missing clock enable fails in 3 s here,
+/// 228 s there).
+const SPI_SETUP: &str = "proofs::spi1_transfer_refuses_too_many_frames";
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
-fn prove(label: &str, crate_dir: &Path, code: i32) -> Value {
+fn prove(label: &str, crate_dir: &Path, harness: &str, code: i32) -> Value {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let start = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
@@ -38,7 +44,7 @@ fn prove(label: &str, crate_dir: &Path, code: i32) -> Value {
             "--crate",
             crate_dir.to_str().unwrap(),
             "--harness",
-            HARNESS,
+            harness,
         ])
         .stdin(Stdio::null())
         .output()
@@ -56,7 +62,7 @@ fn prove(label: &str, crate_dir: &Path, code: i32) -> Value {
     let v: Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(out.status.code(), Some(code), "{v}");
     assert_eq!(v["check"], "prove");
-    assert_eq!(v["harness"], HARNESS);
+    assert_eq!(v["harness"], harness);
     assert_eq!(
         v["tool"]["version"],
         "Kani Rust Verifier 0.68.0 (cargo plugin)"
@@ -89,9 +95,9 @@ fn seeded(label: &str, from: &str, to: &str) -> PathBuf {
     dir
 }
 
-fn fails_on(label: &str, from: &str, to: &str, kind: &str, message: &str) {
+fn fails_on(label: &str, harness: &str, from: &str, to: &str, kind: &str, message: &str) {
     let dir = seeded(label, from, to);
-    let v = prove(label, &dir, 1);
+    let v = prove(label, &dir, harness, 1);
     fs::remove_dir_all(&dir).unwrap();
     assert_eq!(v["verdict"], "fail");
     let messages: Vec<&str> = v["findings"]
@@ -106,7 +112,7 @@ fn fails_on(label: &str, from: &str, to: &str, kind: &str, message: &str) {
 
 #[test]
 fn the_generated_board_proves() {
-    let v = prove("board", &board(), 0);
+    let v = prove("board", &board(), HARNESS, 0);
     assert_eq!(v["verdict"], "pass");
     assert_eq!(v["findings"], serde_json::json!([]));
 }
@@ -239,6 +245,7 @@ fn the_own_parts_fixture_s_transfers_prove_within_its_scripts() {
 fn a_wrong_alternate_function_fails() {
     fails_on(
         "seed-wrong-af",
+        HARNESS,
         "(v & !0x0f000000) | 0x04000000",
         "(v & !0x0f000000) | 0x05000000",
         "proof_failed",
@@ -250,6 +257,7 @@ fn a_wrong_alternate_function_fails() {
 fn a_missing_clock_enable_fails() {
     fails_on(
         "seed-no-clock",
+        SPI_SETUP,
         "r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);",
         "",
         "proof_failed",
@@ -261,6 +269,7 @@ fn a_missing_clock_enable_fails() {
 fn a_write_past_the_block_fails() {
     fails_on(
         "seed-past-block",
+        HARNESS,
         // `write_byte`'s write, named by its signature: `transfer` (AET-WO-2202)
         // also writes TXDR with the same expression.
         "r: &mut R, byte: u8) {\n        r.write(TOKEN, Block::I2c1, 0x28, u32::from(byte));",
@@ -279,7 +288,7 @@ fn a_vacuous_harness_fails() {
         "r.write(TOKEN, Block::Spi1, 0x0c, 0x84400000);",
         "#[cfg(kani)]\n        kani::assume(false);\n        r.write(TOKEN, Block::Spi1, 0x0c, 0x84400000);",
     );
-    let v = prove("seed-vacuous", &dir, 1);
+    let v = prove("seed-vacuous", &dir, SPI_SETUP, 1);
     fs::remove_dir_all(&dir).unwrap();
     assert_eq!(v["verdict"], "fail");
     assert_eq!(v["tool"]["exit_code"], 0, "{v}");
