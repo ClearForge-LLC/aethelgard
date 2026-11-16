@@ -47,7 +47,7 @@ leaves behind; it must not orphan a committed run).
 
 - **`trace.cbor`**, a CBOR sequence (RFC 8742): the header, then one item per
   event, no enclosing array, so it can be appended to.
-  - Header: `["aethelgard-trace", 6, run_id, "ns", artifacts, tools]`. `run_id`
+  - Header: `["aethelgard-trace", 13, run_id, "ns", artifacts, tools]`. `run_id`
     is 16 bytes. `artifacts` is `[name, sha256]` pairs sorted by name, names
     unique, each hash 32 bytes: what the run judged (`INV-03`). An artifact name
     is 1 to 1,024 bytes of printable ASCII, space allowed. `tools` is `[name,
@@ -66,7 +66,7 @@ leaves behind; it must not orphan a committed run).
     | 2 | interrupt | `line` ≤ 1023 |
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
-    | 5–15 | a campaign record | see "Campaign records" |
+    | 5–30 | a campaign record | see "Campaign records" |
 
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
@@ -87,7 +87,14 @@ bytes changed in that one header byte only. `AET-WO-2205` added the header's
 `tools`, the window on kinds 7 and 8, kind 10's executable segments and kind
 19's slimmed witness at version 6; the golden trace's header gained its sixth
 item, an empty `tools`. An older trace is refused, not read under version 6's
-rules. The mirror record
+rules. Versions 7 to 13 added the SPI records (`AET-WO-4200`, kinds 21 to 23),
+the motor records (`AET-WO-4300a`, kinds 24 to 26), each device step's own
+records (`AET-WO-4210`, `AET-WO-4220`), the serial records (`AET-WO-4300b`,
+kinds 27 to 29), kind 10's brown-out word and flash accesses (`AET-WO-4230`),
+and the anchored windows (`AET-WO-2302`: kind 26's anchor, the edges outside
+its window and its timer's `CEN` rises, kind 29's injection instant, kind 30);
+the trace header now carries version 13 (`event::TRACE_VERSION`), and any
+other version is refused by name. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -176,7 +183,7 @@ before writing its own, so a crash between the two never orphans the run
 
 ## Campaign records
 
-Kinds 5 to 20 (`src/record.rs`) are the records `aethelgard campaign` archives
+Kinds 5 to 30 (`src/record.rs`) are the records `aethelgard campaign` archives
 for one scenario's run, in the order of "The run rules" below. Every field is an unsigned or negative
 integer, a byte string, a text string, or an array of them: no float, no map.
 A flag is 0 or 1. An optional value is an array of zero or one element. A
@@ -190,7 +197,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
 | 9 | `bridge.fault_state` | `bus`, `fault`, `source` (1–128 bytes), `[cause…]`, `[net…]` (sorted), `firmware_sees` (0–1,024 bytes) |
-| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?`, `executable`: the firmware's executable segments as `[start, end)` pairs at their physical address, sorted, disjoint, nonempty, at most 16 |
+| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?`, `executable`: the firmware's executable segments as `[start, end)` pairs at their physical address, sorted, disjoint, nonempty, at most 16; the boot record's brown-out word's `reading` and the flash controller's accesses the bring-up never makes (`[line…]?`, `AET-WO-4230` D10) |
 | 11 | a register | `name`, `reading` |
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C device witness (`AET-WO-2204`) | `peripheral`, `reference`, `device`, `[expected line…]`, `[observed line…]?`, `[absent address…]` (at most 16 lines, each 1–256 printable bytes) |
@@ -201,10 +208,20 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 18 | `bridge.reset_rendered` | `at_ns`, `released`, `[cause…]` (sorted threshold names), `rendering` (the monitor recipe that stood in for the supervisor: the model's rendering, never a measured reset) |
 | 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the first identity read's witness lines since the release (`[line…]?`), read at the recovery bound after a release |
 | 20 | expected counts | `[[kind, count]…]` (sorted, unique), only when the scenario declares `expect_counts` |
+| 21 | an SPI step's read (`AET-WO-4200`, kind 12's analogue) | `reference`, `peripheral`, `select`, `address` (its multiplexer address), `step`, `write` (bytes), `width`, `expected`, `mask`, `observed?`, `status?` |
+| 22 | an SPI step's witness (kind 13's analogue) | `peripheral`, `reference`, `device`, `step`, `[expected line…]`, `[observed line…]?`, `[unrouted line…]`: the multiplexer's lines inside the step's chip-select window, attribution's evidence, never a witness |
+| 23 | a solved SPI controller (kind 15's analogue) | `peripheral`, `[[reference, address, select]…]` in the specification's order |
+| 24 | a solved motor output (`AET-WO-4300a`) | `label`, `timer`, `channel`, `pin`, `alternate_function`, `protocol`, `psc`, `arr`, `ccr`, `pwm?` (`[rate_hz, min_us, max_us]`) |
+| 25 | a motor output's static check for silicon | `label`, `kernel_hz`, `period_ps`, `high_ps`, `nominal_period_ps`, `nominal_high_ps`, `holds` |
+| 26 | a motor output's twin witness | `label`, `observer`, `period_ns`, `high_ns`, `grain_ns`, `quantum_ns`, `status`, `rises`, `falls`, `first_ns?`, `last_ns?`, `end_ns`, `span_ns?`, `off_grid`, `batched`; since trace 13 (`AET-WO-2302`) `anchor_ns?` (its timer's first `CEN` rise in the boot; the window ends `DSHOT_WINDOW_NS` after it for DShot, at the boot's end for PWM), `edges_before`, `edges_after` and `cen_rises` (its timer's `CEN` rises: 0 exactly when no anchor; equal across a timer's outputs) |
+| 27 | a solved serial port (`AET-WO-4300b`) | `label`, `index`, `peripheral`, `tx`, `tx_af`, `rx`, `rx_af`, `role`, `framing` `[baud, data_bits, parity, stop_bits, inverted]`, `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm` |
+| 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
+| 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
+| 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32), `cr1_after?` |
 
-Kinds 5 to 9, 15, 16 and 20 are at virtual time 0, decided before the boot
-(`Record::before_boot`); 17 to 19 at their own time (`Record::timestamp`); 10
-to 14 at the boot's end. Kind 15 is written from
+Kinds 5 to 9, 15, 16, 20, 23, 24, 25 and 27 are at virtual time 0, decided
+before the boot (`Record::before_boot`); 17 to 19 at their own time
+(`Record::timestamp`); the rest at the boot's end. Kind 15 is written from
 the solved topology alone (`i2c_devices`, `assignments`, `analog_lines`),
 never from the firmware or the specification; `ceiling_ps` is per line because
 `analog_lines` holds each net's own rise-time ceiling. The bridge's nanoseconds become picoseconds in the CLI: a measured
