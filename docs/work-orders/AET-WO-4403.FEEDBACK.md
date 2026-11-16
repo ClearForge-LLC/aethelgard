@@ -225,3 +225,26 @@ Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9
   - This PR's scope is unchanged.
 - **Acceptance stays as D1 ruled:** the first clause is met on `main`'s first publish after merge.
 - **Signal:** READY. `main` `2add53d` (docs #179) is merged in, and every ruling (D1–D6) is applied or recorded. CI was last green on all three workflows at `e403af9`; since then, only `main` and FEEDBACK have changed.
+
+# D5 follow-up: the GPLv2-only Debian sources mirrored (branch `wo/aet-4403-debian-src`)
+
+**The first ghcr proof of these mirrors comes on `main`'s first publish after merge, as D1(a) ruled for the GCC mirror.** This branch was cut from `main` `3dcd242`, after #176 merged as `938b7f4`.
+
+## D5.0 After #176 merged (proven on main)
+
+`ardupilot-image` push run 43944349355 is green.
+- **`publish`** found the pin absent (404), took Arm's tarball by sha256, and pushed the mirror at exactly `sha256:00f5fb5b…`. It re-fetched the mirror anonymously, then pushed the image `aethelgard-ardupilot@sha256:7b7ebed3…`.
+- **`source`**, with no credentials, fetched the manifest and the 200 406 637-byte tarball by the pinned digest.
+- **Furnace** fetched it anonymously at 20:06:37Z.
+
+The three main-only items D1 called [inferred] are therefore measured. The record is `~/.cache/aet-4403/post-merge.md`.
+
+## D5.1 Process note and predictions
+
+**Process.** The first measurements ran before any prediction was committed: the GPL-2-only classifier on the published ArduPilot image (`7b7ebed3`) and on the tools image pinned in `container/IMAGE`, and the free-text blind-spot scan. They are reported as measured in D5.2. The predictions below cover only what is still unmeasured.
+
+All **[inferred]**:
+- **The tools image published from `938b7f4`** has the same 669 dpkg packages as its pin (the fresh CI build of #176 had 669). The classifier gives the same 47 flagged source packages, about 389 MB, and the same 22 blind-spot packages, about 188 MB.
+- **Every flagged (source, version)** has a `.dsc` on snapshot.debian.org whose `Checksums-Sha256` matches the files snapshot serves.
+- **ghcr accepts one artifact per (source, version)** in the image's own package, in the GCC mirror's manifest shape, with one layer per source file.
+- **From a GitHub runner, snapshot.debian.org** serves a ~10 MB subset in under a minute. The full ~370 MB for the ArduPilot image fits `publish`'s 20 minutes only if snapshot is fast. That is unmeasured, and it decides the timeout.
