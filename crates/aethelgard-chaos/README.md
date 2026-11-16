@@ -194,7 +194,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 11 | a register | `name`, `reading` |
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C device witness (`AET-WO-2204`) | `peripheral`, `reference`, `device`, `[expected line…]`, `[observed line…]?`, `[absent address…]` (at most 16 lines, each 1–256 printable bytes) |
-| 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; `pass` exactly when every severity is `info`) |
+| 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; each severity exactly `error` or `info`, refused otherwise on write and on read, `AET-WO-3201`; `pass` exactly when every severity is `info`) |
 | 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference). A `pin` is `P`, a capital letter and 0 to 15 with no leading zero (`record::split_pin`); an `alternate_function` is at most 15 |
 | 16 | `analog.rail_declared` (`AET-WO-2301`) | the droop's own values (`domain`, `floor_millivolts`, `start_ns`, `fall_ns`, `hold_ns`, `rise_ns`, `source_milliohms`, `load_milliamps`, `bor_level`), then the domain's `nominal_millivolts` and `tolerance_permille` and the emitter's `decoupling_picofarads`: everything the rail is computed from |
 | 17 | `analog.rail_crossing_computed` | `domain`, `level` (`VBOR3_falling`…), `microvolts`, `at_ps`, `falling`: one crossing ngspice computed |
@@ -304,14 +304,25 @@ refuses:
   whose `peripheral` is not that device's bus's;
 - a bus fault naming a net with no measurement past its ceiling (or stuck
   high), a measurement past its ceiling that faulted no bus, a held-low fault
-  without its override, or an override without its fault;
+  without its override of that line, or an override without its fault;
+- a line of a solved bus not bound by exactly one record: its kind 7, its
+  kind 8, or, for a line a scenario holds low (never measured), its held-low
+  kind 9 (`AET-WO-3201` B1);
 - a verdict whose count of `analog_rise_exceeds_ceiling`,
   `analog_line_stuck_high` or `i2c_line_held_low` findings differs from those
   records (so a passing verdict beside a bus fault, too);
 - a verdict that names `pc_outside_firmware` when kind 10's `pc` is inside its
   executable segments, or does not when it is outside them (`AET-WO-2205`
   §1.5). The segments are the judge's; replay cannot bind them to the ELF,
-  which is not archived (`RUL-19` (3)).
+  which is not archived (`RUL-19` (3));
+- a verdict whose `boot_word_missing` is not exactly one error when kind 10
+  was read without its boot word, and none otherwise; a boot that read
+  nothing (killed at a bound) whose verdict does not name that bound once, as
+  an error (`cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`),
+  or a read boot that names one (`AET-WO-3201` B2);
+- `identity_read_outside_window` named other than of a boot read without its
+  boot word on a short (DShot) window, or more times than the reads archived
+  `invalid`.
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

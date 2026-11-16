@@ -3743,6 +3743,55 @@ mod tests {
         assert!(reads_outside_window(checks, &unset, MAX_VIRTUAL_NS, MAX_VIRTUAL_NS).is_empty());
     }
 
+    /// `AET-WO-3201` (`3100` F15): with no boot word, a record that says its
+    /// wait expired is still named, as the booted path names it; a mismatch,
+    /// the fill or a passing read is not judged before the fixed point.
+    #[test]
+    fn a_timed_out_read_is_named_without_the_boot_word() {
+        use aethelgard_twin::boot::{RECORD_UNSET, STATUS_OK, STATUS_TXIS};
+        let image = image();
+        let checks = &image.identity.checks;
+        let i2c = checks
+            .iter()
+            .position(|c| matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. }))
+            .unwrap();
+        let mut records = vec![(RECORD_UNSET, u64::from(RECORD_UNSET)); checks.len()];
+        assert!(timeouts_without_the_boot_word(checks, &records).is_empty());
+        records[i2c] = (STATUS_OK, 0x1);
+        assert!(timeouts_without_the_boot_word(checks, &records).is_empty());
+        records[i2c] = (STATUS_TXIS, 0);
+        let named = timeouts_without_the_boot_word(checks, &records);
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0].kind, "i2c_timeout");
+        assert_eq!(
+            named[0].message,
+            identity_finding(&checks[i2c], STATUS_TXIS, 0)
+                .unwrap()
+                .message
+        );
+    }
+
+    /// `AET-WO-3201` (`4210` F-B10): a mismatch is named by its step, so a
+    /// data read's is never dressed as the identity's.
+    #[test]
+    fn a_mismatch_is_named_by_its_step() {
+        use aethelgard_ir::parts::StepKind;
+        use aethelgard_twin::boot::STATUS_OK;
+        let image = image();
+        let mut c = image.identity.checks[0].clone();
+        let bus = bus_word(&c);
+        for (step, name) in [
+            (StepKind::Identity, "identity"),
+            (StepKind::Configure, "configure"),
+            (StepKind::Data, "data"),
+        ] {
+            c.step = step;
+            let value = !c.expected & aethelgard_ir::parts::width_mask(c.width);
+            let f = identity_finding(&c, STATUS_OK, value).unwrap();
+            assert_eq!(f.kind, format!("{bus}_{name}_mismatch"));
+        }
+    }
+
     #[test]
     fn a_log_line_loses_its_host_timestamp_and_nothing_else() {
         assert_eq!(
