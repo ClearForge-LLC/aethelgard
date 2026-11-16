@@ -662,13 +662,16 @@ fn mcu_rail(s: &mut Value, millivolts: u32) {
         .retain(|d| d["part"] == "TMP117");
 }
 
-/// `AET-WO-1208` §1.2 (`1207` F2): an MCU rail of 5.0 V is outside the MCU
-/// row's operating range, DS12117 Table 111's 1.62 to 3.6 V, and `validate`
-/// refuses it by name, citing the row, as does `generate` before writing
-/// anything. Before (`bb72efc`), both passed and `generate` wrote a board.
+/// `AET-WO-1208` §1.2 (`1207` F2), by the architect's ruling on PR #182
+/// (F1/F5): an MCU rail of 5.0 V is outside the MCU row's operating range,
+/// DS12117 Table 111's 1.62 to 3.6 V. With no power tree, step 22 judges it
+/// by step 16's consumer rule, so `validate` and `generate` refuse it as
+/// `DomainOutsideConsumer`, citing Table 111 and the BOR level's Table 115
+/// row, before writing anything. Before (`bb72efc`), both passed and
+/// `generate` wrote a board.
 #[test]
 fn aet_1208_the_mcu_rail_is_judged_against_its_row() {
-    let expected = r#"{"ok":false,"error":{"kind":"McuSupplyOutsideRange","id":"VDD_3V3","message":"the MCU `STM32H753ZITx` is on `VDD_3V3`, declared 4995 to 5005 mV, outside its operating range of 1620 to 3600 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
+    let expected = r#"{"ok":false,"error":{"kind":"DomainOutsideConsumer","id":"VDD_3V3","message":"DomainOutsideConsumer: `VDD_3V3`: the domain's 4995 to 5005 mV is not inside STM32H753ZITx (MCU)'s 1620 to 3600 mV with its minimum above the consumer's floor of 2680 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032; VBOR3 falling max ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 212, Table 115, VBOR3 falling max 2.68 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
     let edit = |s: &mut Value| mcu_rail(s, 5000);
     for args in [&["validate", "--file"][..], &["generate", "--spec"]] {
         let (code, out, created) = run_on(SPEC, args, &format!("1208-mcu-{}", args[0]), edit);
@@ -702,21 +705,23 @@ fn aet_1208_the_emitter_draws_only_what_validate_passes() {
     }
 }
 
-/// `AET-WO-1208` F1 (the architect's ruling on PR #182), the behaviour
-/// before: an MCU rail of 1.9 V ± 1 % with `bor_level` 3, whose VBOR3 falls
-/// at up to 2.68 V (DS12117 Table 115), so the MCU stays in reset, passes
-/// `validate` and `generate` writes a board (`~/.cache/aet-1208/reach/
-/// bor3-1900-nospi.json`).
+/// `AET-WO-1208` F1 (the architect's ruling on PR #182): an MCU rail of
+/// 1.9 V ± 1 % with `bor_level` 3, whose VBOR3 falls at up to 2.68 V
+/// (DS12117 Table 115), would hold the MCU in reset. With no power tree,
+/// step 22 refuses it by step 16's consumer rule, from `validate` and from
+/// `generate` before it writes anything. Before (`88ca5b0`), both passed and
+/// `generate` wrote a board (`~/.cache/aet-1208/reach/bor3-1900-nospi.json`).
 #[test]
 fn aet_1208_a_rail_below_the_bor_floor_is_refused() {
+    let expected = r#"{"ok":false,"error":{"kind":"DomainOutsideConsumer","id":"VDD_3V3","message":"DomainOutsideConsumer: `VDD_3V3`: the domain's 1881 to 1919 mV is not inside STM32H753ZITx (MCU)'s 1620 to 3600 mV with its minimum above the consumer's floor of 2680 mV (ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 209, Table 111, VDD 1.62 to 3.6 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032; VBOR3 falling max ST DS12117, STM32H753xI datasheet 10 (January 2026), p. 212, Table 115, VBOR3 falling max 2.68 V, sha256 607b9eadaef1c54f93e02d7cea58c862a1552bda47c848d96f2de5c0ee84c032)"}}"#;
     let edit = |s: &mut Value| {
         mcu_rail(s, 1900);
         s["voltage_domains"][0]["tolerance_permille"] = 10.into();
         s["mcu"]["bor_level"] = 3.into();
     };
-    let (code, out, _) = run_on(SPEC, &["validate", "--file"], "1208-bor-v", edit);
-    assert_eq!(code, Some(0), "{out}");
-    let (code, out, created) = run_on(SPEC, &["generate", "--spec"], "1208-bor-g", edit);
-    assert_eq!(code, Some(0), "{out}");
-    assert!(created);
+    for args in [&["validate", "--file"][..], &["generate", "--spec"]] {
+        let (code, out, created) = run_on(SPEC, args, &format!("1208-bor-{}", args[0]), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{args:?}");
+        assert!(!created, "generate created its output directory");
+    }
 }

@@ -1696,20 +1696,6 @@ pub enum IrValidationError {
         worst_case_ppm: u64,
         tolerance_ppm: u32,
     },
-    /// Step 22 (`AET-WO-1208` §1.2, `1207` F2): the MCU's supply domain,
-    /// across its declared tolerance, outside the MCU row's operating range.
-    #[error(
-        "the MCU `{part}` is on `{supply}`, declared {min_millivolts} to {max_millivolts} mV, outside its operating range of {part_min_millivolts} to {part_max_millivolts} mV ({citation})"
-    )]
-    McuSupplyOutsideRange {
-        supply: String,
-        part: String,
-        min_millivolts: u32,
-        max_millivolts: u32,
-        part_min_millivolts: i64,
-        part_max_millivolts: i64,
-        citation: String,
-    },
 }
 
 impl IrValidationError {
@@ -1863,7 +1849,6 @@ impl IrValidationError {
             Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
-            Self::McuSupplyOutsideRange { .. } => "McuSupplyOutsideRange",
         }
     }
 
@@ -2034,7 +2019,6 @@ impl IrValidationError {
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
             }
-            Self::McuSupplyOutsideRange { supply, .. } => Some(supply),
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
             Self::PartWithoutRow { reference, .. } => Some(reference),
@@ -2367,8 +2351,8 @@ impl Specification {
         names::check(self)?;
         // 21 (`AET-WO-1207` §1.2, `AET-WO-1208` §1.3)
         self.solve_static()?;
-        // 22 (`AET-WO-1208` §1.2)
-        self.mcu_supply()
+        // 22 (`AET-WO-1208` §1.2, F1/F5 as ruled on PR #182)
+        power::mcu_without_tree(self)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset
@@ -2490,42 +2474,6 @@ impl Specification {
                     });
                 }
             }
-        }
-        Ok(())
-    }
-
-    /// Step 22 (`AET-WO-1208` §1.2, `1207` F2): the MCU's supply domain, its
-    /// declared minimum and maximum, inside the operating range its
-    /// power-parts row cites (DS12117 Rev 10 Table 111, VDD 1.62 to 3.6 V).
-    /// After step 21, so a refusal `main` printed for the same rail keeps its
-    /// name: a power tree's `DomainOutsideConsumer` (step 16) and
-    /// `SupplyOutsideSpeedTable` (step 21) come first. A part with no MCU row
-    /// is the emitter's to refuse.
-    fn mcu_supply(&self) -> Result<(), IrValidationError> {
-        let table = power_parts::table()?;
-        let (Some(row), Some(domain)) = (
-            table.get(&self.mcu.part),
-            self.voltage_domains
-                .iter()
-                .find(|d| d.id == self.mcu.supply),
-        ) else {
-            return Ok(());
-        };
-        let power_parts::Kind::Mcu(m) = &row.kind else {
-            return Ok(());
-        };
-        let (min, max) = (minimum_millivolts(domain), maximum_millivolts(domain));
-        let range = &m.vdd_millivolts.range;
-        if i64::from(min) < range.min || i64::from(max) > range.max {
-            return Err(IrValidationError::McuSupplyOutsideRange {
-                supply: domain.id.clone(),
-                part: row.part.clone(),
-                min_millivolts: min,
-                max_millivolts: max,
-                part_min_millivolts: range.min,
-                part_max_millivolts: range.max,
-                citation: table.cite(&m.vdd_millivolts.at),
-            });
         }
         Ok(())
     }
