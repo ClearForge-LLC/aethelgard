@@ -184,3 +184,19 @@ Reduction pass (diff): −4 net in the last commit · 1 duplicate removed (the e
 - **D5, GPLv2-only Debian packages.** GPLv2 §3 has no third-party-server clause like GPLv3 §6(d). It counts source "from the same place" only, so pointing at snapshot.debian.org is weaker for them **[inferred, not legal advice]**. Mirroring the Debian sources costs about 0.6 GB beside the ArduPilot image and 3.0 GB beside the tools image [measured]. The work order names Debian's archive as the route, so I did not.
 - **D6, the tools image's inherited labels.** `vendor=KiCad`, `url=https://kicad.org` and `authors=<KiCad's devlist>` come from the base and describe ClearForge's image as KiCad's. Left alone (outside "point at it"); a one-line override if you want it.
 - **F3, the engine image** is `FROM` the tools image. At the next re-pin it will carry `/SOURCES.md` and the tools image's `documentation` label, though not its `licenses` label, which it overrides. It is private today; if it is ever published it needs its own offer for the CLI it adds.
+
+## 8. The signal corrected: READY → STOPPED
+
+**The first acceptance clause is not met on this PR.** It reads: "An anonymous client can fetch the mirrored GCC source by its pinned digest. CI proves this with a job that does exactly that, with no credentials".
+
+- On `c3c9525`, the job that does exactly that, `source`, was skipped. `source-rehearsal` fetched from a registry on the runner, and from ghcr only an existing image, never the mirror itself.
+- The mirror cannot exist on ghcr before a `main` publish, because `RUL-15` gives `packages: write` to `main`'s `publish` job alone.
+- Pushing it any other way would need a credential the workflow does not hold, which is a §7 stop.
+- So `c3c9525`'s READY claimed more than CI showed. This commit replaces it with STOPPED: the push after a READY that kickoff item 7 allows only on request, made because the earlier signal overclaimed.
+
+**Ruling needed:**
+- **(a) Merge, then prove (recommended).** `main`'s `publish` pushes the mirror and re-fetches it anonymously before the image. `source` then fetches it with no credentials. The re-pin follow-up runs `source` on pull requests. The clause is met on `main`'s first run, not on this PR.
+- **(b) Amend `RUL-15` for one publish of the mirror from this PR's run.** Its content is fixed by the committed manifest and the pinned sha256. Then `source` runs here.
+- **(c) Another route you name.**
+
+Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9525`.
