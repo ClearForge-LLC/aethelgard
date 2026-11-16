@@ -10,7 +10,9 @@
 #       the tools image no longer carries its base's vendor, url and authors.
 #   check-sources.sh inside KIND               inside the image, with this
 #       directory at /container: /SOURCES.md is container/<KIND>-SOURCES.md
-#       byte for byte, /SOURCES-debian.tsv is the image's dpkg database, and
+#       byte for byte, /SOURCES-debian.tsv is the image's dpkg database,
+#       /SOURCES-debian-gpl2.tsv is container/<KIND>-DEBIAN-GPL2.tsv and holds
+#       every source package debian-gpl2.py flags in this image (D5), and
 #       every version the image holds is the one its row names.
 #
 # KIND is ardupilot or tools. A refusal is printed by name, exit 1 (INV-06).
@@ -19,8 +21,8 @@ export LC_ALL=C
 die() { echo "check-sources: $*" >&2; exit 1; }
 mode=${1:-}; kind=${2:-}
 case $kind in
-  ardupilot) doc=ARDUPILOT-SOURCES.md licences='GPL-3.0-or-later' ;;
-  tools) doc=TOOLS-SOURCES.md licences='GPL-3.0-or-later AND CC-BY-SA-4.0' ;;
+  ardupilot) doc=ARDUPILOT-SOURCES.md gpl2=ARDUPILOT-DEBIAN-GPL2.tsv licences='GPL-3.0-or-later' ;;
+  tools) doc=TOOLS-SOURCES.md gpl2=TOOLS-DEBIAN-GPL2.tsv licences='GPL-3.0-or-later AND CC-BY-SA-4.0' ;;
   *) die "usage: check-sources.sh labels|inside ardupilot|tools ..." ;;
 esac
 
@@ -52,6 +54,15 @@ cmp -s "$f" "/container/$doc" || die "$f is not container/$doc byte for byte"
 dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\thttps://snapshot.debian.org/package/${source:Package}/${source:Version}/\n' \
   | sort | cmp -s - /SOURCES-debian.tsv || die "/SOURCES-debian.tsv is not this image's dpkg database"
 echo "ok   /SOURCES.md is container/$doc; /SOURCES-debian.tsv lists all $(wc -l < /SOURCES-debian.tsv) dpkg packages"
+
+# D5 (ruled by Scotty on #176): every source package with GPL-2.0-only code is
+# mirrored next to the image, at the exact version this image holds.
+[ -f /SOURCES-debian-gpl2.tsv ] || die "/SOURCES-debian-gpl2.tsv is missing from the image"
+cmp -s /SOURCES-debian-gpl2.tsv "/container/$gpl2" || die "/SOURCES-debian-gpl2.tsv is not container/$gpl2 byte for byte"
+python3 -I /container/debian-src.py check /SOURCES-debian-gpl2.tsv >/dev/null || die "/SOURCES-debian-gpl2.tsv is refused (above)"
+missing=$(python3 -I /container/debian-gpl2.py | cut -f1,2 | sort -u | comm -23 - <(cut -f1,2 /SOURCES-debian-gpl2.tsv | sort -u))
+[ -z "$missing" ] || die "container/$gpl2 does not mirror these GPL-2.0-only sources this image holds: $(tr '\t\n' '= ' <<< "$missing")"
+echo "ok   every GPL-2.0-only source package in this image ($(python3 -I /container/debian-gpl2.py | wc -l)) is in container/$gpl2"
 
 # cell NAME COLUMN: that cell of the table row whose first cell is exactly NAME
 # (columns: 1 component, 2 version in this image, 3 licence, 4 source).
