@@ -53,8 +53,8 @@ Furnace, 2026-11-16 16:41–17:40 UTC. Raw evidence in `~/.cache/aet-4403/` (inv
 | The manifest digest is computable before the push | **Held [measured].** oras 1.3.6 pushed the committed bytes to distribution 3.1.2 inside a `--network none` container and reported `sha256:00f5fb5b…31c8`, the pin. `oras pull` and `gcc-source.sh fetch` both returned Arm's exact bytes. |
 
 **GTK# `3.24.24.95` (the one source not tagged upstream).** Its package and assembly name no commit (no SourceLink, no `.snupkg`, nuspec `repository` without `commit`). The image's `GtkSharp.dll` is byte-identical to the nupkg's `lib/net6.0/GtkSharp.dll` [measured]. The commit `964cb9c` is **[inferred], from premises each [read]:**
-1. GtkSharp's workflow triggers only on `push` and `pull_request`.
-2. `build.cake` names a build `3.24.24.$GITHUB_RUN_NUMBER` and appends `-develop` unless `GITHUB_REF` is `refs/heads/master`.
+1. GtkSharp's workflow at `964cb9c` triggers only on `push` and `pull_request`.
+2. `build.cake` at `964cb9c` names a build `3.24.24.$GITHUB_RUN_NUMBER` and appends `-develop` unless `GITHUB_REF` is `refs/heads/master`.
 3. A re-run keeps its run number, so run 95 is a fresh run of a push to `master`.
 4. GitHub Packages shows `3.24.24.95` created 2023-05-08 16:59:03Z, the CI's own push step.
 5. `master`'s head at 16:55:59Z became `964cb9c` (the merge of PR #402) and is still `964cb9c`.
@@ -101,7 +101,7 @@ How the build reads it **[inferred; not legal advice]**:
 
 ## 5. Adversarial pass (targeted, §5) and mutations
 
-All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv/`.
+All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv/`. They predate the reduction pass: they call the `push` and `arm` subcommands since removed, and the tail images and tarball they mounted were deleted at clean-up. After the reduction, the full `publish` path (Arm, push, fetch, a second publish, `oras pull`) and the push-digest refusal through `publish` were re-run and held.
 
 - **A tarball whose sha256 is not the pin's.** These are refused by name:
   - a manifest whose layer sha256 differs from Arm's real file (`arm`: "…is not sha256:…; refused", and the file is deleted);
@@ -134,13 +134,46 @@ All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv/`.
 
 **Local gates [measured], Furnace, capped scope (32 GiB, swap 0):** `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` exit 0, no failure. No crate changed; the merge of `main` (`311398d`) brought docs only. `check-pins.sh` passes on all three Dockerfiles, and `test-check-pins.sh`, `test-check-ardupilot-pin.sh` and `test-check-gcc-source.sh` pass. TIER2_MIN is untouched (main's 160).
 
-CI_PLACEHOLDER
+**CI on `794a1cc` (PR #176), all green [measured]:**
+- **`ardupilot-image` [run 43917454424](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43917454424):**
+  - `image` builds fresh and reads back the labels and `/SOURCES.md`: 171 dpkg packages, every version matched.
+  - `pinned`, the four boards and `pinout` pass.
+  - `source-rehearsal`:
+    - **The full publish path:** 404, then Arm's tarball (sha256 `2721e414…`, 200 406 637 bytes), oras pushes it at `sha256:00f5fb5b…`, and it is fetched anonymously.
+    - **A second `publish`:** "already mirrored".
+    - **`oras pull`:** the same bytes.
+    - **ghcr's anonymity, both ways:** `aethelgard-ardupilot@a4818a04…`'s manifest and config are fetched anonymously, and `aethelgard-engine` is refused: "the token endpoint answered HTTP 403".
+  - `publish` and `source` are skipped, as on any PR (D1).
+- **`tools-image` [run 43917454461](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43917454461):**
+  - `image` builds fresh and reads back the offer: 669 dpkg packages; KiCad `10.0.7`, Renode `1.17.0`, GTK# `3.24.24.95` and NetMQ `4.0.1.12` matched; Renode's 10 GNU-licensed parts named.
+  - The workspace gates inside the image pass.
+- **`ci` [run 43917454907](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43917454907):** `gates` and `tools` pass. Shard times, a measurement under the 04:35 rule:
+  - shard 0: 24:30
+  - shard 1: 19:57
+  - shard 2: 28:37
+  - shard 3: 30:09
+  - shard 4: 28:50
+  - shard 5: 23:12
+  - shard 6: 22:59
+  - shard 7: 27:31
+
+  This work order changes no test and no `ci/` file, so the plan is main's.
 
 Reduction pass (diff): −4 net in the last commit · 1 duplicate removed (the empty config's digest, a second copy of the manifest's) · 3 dead paths removed (the `arm` and `push` subcommands, which nothing calls, and a workflow step that repeated what `gcc-source.sh` runs first) · 2 protected kept (the realm check, labelled `belt-and-suspenders`; the dpkg format string written in both Dockerfiles and in the check, because the check must regenerate independently) · 1 finding below (F3). An earlier cut, `fetch`'s `cmp` against the committed manifest, was load-bearing: a REF with another digest would have passed. It became "the REF's digest must be the pin".
 
 ## 7. Decisions and questions for the architect
 
-- **D1, sequencing (the main one).** `RUL-15` lets only `main` push, so this PR cannot show ghcr serving the mirror anonymously. `source-rehearsal` proves the scripts on the runner, and ghcr's anonymity both ways, on this PR. The first ghcr proof is `source` on main's first publish after merge. If `source` fails there, the image was not pushed, because the mirror step runs first. The follow-up PR that re-pins `ARDUPILOT-IMAGE` and `IMAGE` should make `source` run on pull requests too, against the then-real pin, and drop the rehearsal's dependence on Arm's host.
+- **D1, sequencing (the main one).** `RUL-15` lets only `main` push, so this PR cannot show ghcr serving the mirror anonymously.
+  - **What this PR proves.** `source-rehearsal` proves the scripts on the runner, and ghcr's anonymity both ways.
+  - **What gates the image.** The first ghcr proof comes on main's first publish after merge. Inside `publish`, the mirror is pushed and then fetched anonymously before the image push, and that re-fetch is what stops the image if the mirror fails. `source` runs after the image is pushed: the separate, credential-free proof.
+  - **Three things only `main` exercises, all [inferred] today:**
+    - oras using `docker/login-action`'s credentials against ghcr;
+    - ghcr accepting this artifact manifest (empty config, `application/octet-stream` layer, `artifactType`) in a container package;
+    - build-push-action's `labels:` overriding the Dockerfile's `documentation` LABEL, which the `labels … "$GITHUB_SHA"` check in both `publish` jobs requires.
+
+    Each fails closed, but a failure stops image publishing on every `main` push until it is fixed, so that first run is worth watching.
+  - **Arm's host on every PR.** Until then, `source-rehearsal` starts from an empty registry and downloads from Arm on every pull request that triggers `ardupilot-image`, which is any `crates/**` change by any builder. An Arm outage would turn those PRs red, which cuts against D-2's intent.
+  - **The follow-up.** The PR that re-pins `ARDUPILOT-IMAGE` and `IMAGE` should come straight after the merge. It should run `source` on pull requests against the then-real pin, and seed the rehearsal from the mirror instead of Arm.
 - **D2, `KICAD-LICENSE.md` not edited (deviation from §1.4).** It must stay byte-identical to `crates/aethelgard-kicad-lib/data/kicad-10.0.7/LICENSE.md` (`workspace_shape.rs:878`, `smoke.sh:121`), and that copy is KiCad's own text, outside the fence. So KiCad itself (GPL-3.0-or-later, tag, commit, recipe) is named in `TOOLS-SOURCES.md` instead. If you want it in a licence file, a new `container/KICAD-PROGRAM-LICENSE.md` is the route.
 - **D3, the commitment in "How long".** Both offers say ClearForge LLC keeps the mirror and offer as long as it serves an image that names them, and mirrors any third-party source that disappears. The second is what §6(d)'s last sentence obliges, and Scotty should confirm the public wording. Third-party-only sources today:
   - KiCad and its libraries (two hosts);
