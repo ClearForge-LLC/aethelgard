@@ -317,9 +317,14 @@ refuses:
   which is not archived (`RUL-19` (3));
 - a verdict whose `boot_word_missing` is not exactly one error when kind 10
   was read without its boot word, and none otherwise; a boot that read
-  nothing (killed at a bound) whose verdict does not name that bound once, as
-  an error (`cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`),
-  or a read boot that names one (`AET-WO-3201` B2);
+  nothing whose verdict does not name why once, as an error (killed at a
+  bound: `cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`; or not
+  loaded: `platform_load_error` or `firmware_load_error`), or a read boot that
+  names one (`AET-WO-3201` B2);
+- a verdict that judges an identity read's record (a mismatch of any step,
+  `*_record_invalid`, `*_transaction_unwitnessed`) of a boot without its boot
+  word: the judge names a record before the fixed point only by its timeout
+  or outside the window (`AET-WO-3201`, adversarial F2);
 - `identity_read_outside_window` named other than of a boot read without its
   boot word on a short (DShot) window, or more times than the reads archived
   `invalid`.

@@ -58,9 +58,33 @@ pub const SELF_LOOP_FINDING: &str = "pc_not_on_self_loop";
 /// The boot judge's finding for a boot that was read and whose boot word is
 /// not the firmware's, made once (`AET-WO-3201` B2).
 pub const BOOT_WORD_FINDING: &str = "boot_word_missing";
-/// The findings of a boot killed at a bound, with nothing read: the CLI's
-/// `renode::bounded` names exactly one (`AET-WO-3201` B2).
-pub const BOUND_FINDINGS: [&str; 3] = ["cpu_aborted", "memory_cap_exceeded", "wall_bound_exceeded"];
+/// The findings of a boot that read nothing, one of which the judge names
+/// (`AET-WO-3201` B2): killed at a bound (the CLI's `renode::bounded`), or a
+/// platform or firmware that did not load (`renode::judge_boot`; adversarial
+/// pass, F1).
+pub const UNREAD_FINDINGS: [&str; 5] = [
+    "cpu_aborted",
+    "firmware_load_error",
+    "memory_cap_exceeded",
+    "platform_load_error",
+    "wall_bound_exceeded",
+];
+/// The identity reads' findings the judge makes only once the boot word is
+/// set (`renode::judge_boot`): a record is judged at the fixed point, and
+/// before it only a timeout or a read outside the window is named
+/// (`AET-WO-3201`; adversarial pass, F2).
+pub const BOOTED_READ_FINDINGS: [&str; 10] = [
+    "i2c_configure_mismatch",
+    "i2c_data_mismatch",
+    "i2c_identity_mismatch",
+    "i2c_record_invalid",
+    "i2c_transaction_unwitnessed",
+    "spi_configure_mismatch",
+    "spi_data_mismatch",
+    "spi_identity_mismatch",
+    "spi_record_invalid",
+    "spi_transaction_unwitnessed",
+];
 /// The boot judge's finding for an identity read whose record is still
 /// unset when a short window ends, made only when the boot word is not set
 /// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule).
@@ -919,7 +943,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     // The boot word as the judge names it (`AET-WO-3201` B2): a boot that
     // was read names `boot_word_missing` exactly when its word is not the
     // firmware's, as an error; a boot that read nothing was killed at a
-    // bound, and names that bound, once.
+    // bound or did not load, and names why, once (adversarial F1).
     let read = records.iter().any(
         |r| matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some()),
     );
@@ -927,12 +951,18 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if any_severity(BOOT_WORD_FINDING) != missing || count(BOOT_WORD_FINDING) != missing {
         return Err("the verdict's boot_word_missing does not match the boot word");
     }
-    let bounds: u64 = BOUND_FINDINGS.iter().map(|k| any_severity(k)).sum();
-    let bounds_failing: u64 = BOUND_FINDINGS.iter().map(|k| count(k)).sum();
-    if bounds != u64::from(!read) || bounds_failing != bounds {
+    let unread: u64 = UNREAD_FINDINGS.iter().map(|k| any_severity(k)).sum();
+    let unread_failing: u64 = UNREAD_FINDINGS.iter().map(|k| count(k)).sum();
+    if unread != u64::from(!read) || unread_failing != unread {
         return Err(
-            "a boot that read nothing names no bound it was killed at, or a read one names one",
+            "a boot that read nothing does not name once why (a bound or a load error), or a read one does",
         );
+    }
+    // A record is judged only at the fixed point: without the boot word, no
+    // finding of a record's value, validity or witness (adversarial F2), as
+    // for the motor outputs and serial ports below.
+    if !booted && BOOTED_READ_FINDINGS.iter().any(|k| any_severity(k) > 0) {
+        return Err("the verdict judges an identity read's record of a boot without its boot word");
     }
     // An identity read outside the window (`AET-WO-4300a` D1) is named only
     // of a boot that was read without its boot word on a short window, at

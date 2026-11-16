@@ -2701,7 +2701,7 @@ const UNBOUND: &str =
     "a solved line has no computed rise, stuck-high record or held-low fault, or more than one";
 const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
 const BOUND: &str =
-    "a boot that read nothing names no bound it was killed at, or a read one names one";
+    "a boot that read nothing does not name once why (a bound or a load error), or a read one does";
 const OUTSIDE: &str = "the verdict names identity_read_outside_window for no invalid record of an unbooted short window";
 
 /// `records` with its verdict's findings replaced, `pass` as they say.
@@ -2814,7 +2814,13 @@ fn a_boot_that_read_nothing_names_its_bound() {
     let mut r = unread();
     r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
     assert!(check_run(&with_findings(r, &[])).is_err());
-    for bound in ["cpu_aborted", "memory_cap_exceeded", "wall_bound_exceeded"] {
+    for bound in [
+        "cpu_aborted",
+        "firmware_load_error",
+        "memory_cap_exceeded",
+        "platform_load_error",
+        "wall_bound_exceeded",
+    ] {
         let mut f = others.to_vec();
         f.push((bound, "error", 1));
         f.sort();
@@ -2930,4 +2936,37 @@ fn identity_read_outside_window_is_bound_to_an_unbooted_short_window() {
         .filter(|f| f.0 != "boot_word_missing")
         .collect();
     assert_eq!(check_run(&with_findings(r, &booted)).unwrap_err(), OUTSIDE);
+}
+
+/// Adversarial F2: without the boot word the judge names a record only by
+/// its timeout (or outside the window); a verdict that judges its value,
+/// validity or witness is a rewrite, refused, so it can never move the run
+/// from `I1` to a confident rule.
+#[test]
+fn a_record_judged_without_the_boot_word_is_refused() {
+    let unbooted = || good_with_boot(|w, _, _| w.observed = Some(0));
+    let base = [
+        (PAST, "error", 2),
+        ("boot_word_missing", "error", 1),
+        ("device_unmodelled", "info", 1),
+        ("i2c_timeout", "error", 1),
+    ];
+    check_run(&with_findings(unbooted(), &base)).unwrap();
+    for kind in aethelgard_chaos::campaign::BOOTED_READ_FINDINGS {
+        let mut f = base.to_vec();
+        f.push((kind, "error", 1));
+        f.sort();
+        assert_eq!(
+            check_run(&with_findings(unbooted(), &f)).unwrap_err(),
+            "the verdict judges an identity read's record of a boot without its boot word",
+            "{kind}"
+        );
+        // Booted, the same kind is the judge's to name (replay binds no count).
+        let mut f: Vec<_> = f
+            .into_iter()
+            .filter(|x| x.0 != "boot_word_missing")
+            .collect();
+        f.sort();
+        assert!(check_run(&with_findings(good(), &f)).is_ok(), "{kind}");
+    }
 }

@@ -1282,9 +1282,11 @@ impl<'a> Run<'a> {
             "register_mismatch" => self.indices(
                 |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
             ),
+            // A boot that was read, as `check_run` binds the finding; an
+            // unread one names why it read nothing instead (adversarial F3).
             campaign::BOOT_WORD_FINDING => self.indices(|r| {
                 matches!(r, Record::BootObserved { boot_word, .. }
-                    if boot_word.observed != Some(boot_word.expected))
+                    if boot_word.observed.is_some_and(|o| o != boot_word.expected))
             }),
             campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
             "cpu_halted" => self.indices(|r| {
@@ -1573,6 +1575,8 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         serial,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
         booted,
+        // belt-and-suspenders: `check_run` already refuses the finding off
+        // a short window; this states the judge's rule where it is used.
         late: !booted
             && campaign::short_window(records)
             && records.iter().any(|r| {

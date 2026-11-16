@@ -704,7 +704,8 @@ fn a_late_read_is_only_the_unset_record_of_an_unbooted_short_window() {
 }
 
 /// The same unset record on the PWM board's long window, unbooted, claimed
-/// as invalid: decided on its bus, never `I7` (the window is not short).
+/// as invalid: the judge never judges a record before the boot word, so
+/// `replay` refuses the verdict (adversarial F2), and it is never `I7`.
 #[test]
 fn an_unset_record_on_the_long_window_is_never_i7() {
     let mut r = run(
@@ -722,7 +723,10 @@ fn an_unset_record_on_the_long_window_is_never_i7() {
             _ => {}
         }
     }
-    let a = attribute(&archived(&r)).unwrap();
-    assert_ne!(a.rule, Rule::I7, "{a:?}");
-    assert!(a.evidence.iter().all(|e| e.kind != 12), "{a:?}");
+    assert!(matches!(
+        attribute(&archived(&r)),
+        Err(aethelgard_evolve::AttributeError::NotACampaignRun(
+            "the verdict judges an identity read's record of a boot without its boot word"
+        ))
+    ));
 }

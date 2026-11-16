@@ -113,3 +113,33 @@ In evolve, B2's unnamed missing boot word was `I1` and is now refused (`a_boot_w
 - `I7`'s conditions, unbooted and on a short window. The first survived because the booted variant's `I4` sorted below the mutant's `I7`, so the test now asserts the exact rule and its rises.
 
 No mutant was run on `propose`'s speed source: the topology's speed and the specification's are one value on every honest input, so a mutant there would be equivalent.
+
+## Adversarial pass, full (a fresh read-only Opus subagent, on a frozen copy of `b7b6a24`)
+
+It forged runs as Rust tests: `~/.cache/aet-3201/adv-src/crates/{aethelgard-evolve,aethelgard-chaos}/tests/adv3201.rs`, 14 + 1 tests, kept for rerun. I spot-checked F1 at source before fixing it.
+
+**The four required attacks HELD (measured).**
+- **A kind-15 line bound by another bus's or line's record** is refused: a relabelled bus, another bus's net, a dropped rise, a second rise on the other line, an unmeasured second bus, a held-low fault on the wrong line, a held-low fault naming both nets or another bus's net, and a held line also measured.
+- **A severity in another case or with whitespace** is refused on write, and on read through a re-sealed archive: `Error`, ` error`, `error `, `info\n`, `warning`, `ERROR`, `Info`, `error\0`, a fullwidth `ｅ`, `err`, `errors`, `fatal`.
+- **A boot word written after the window** is refused with the outside-window finding beside it. So is the finding on a PWM board, on an unread boot, on a timeout status, and at `info`. The honest late DShot run is `I7`. A record not at the fill, a 6-byte record with a 32-bit fill, or the finding omitted, is each `I1`.
+- **A data mismatch dressed as an identity mismatch**, and the reverse, configure included, for I2C and for SPI: each is `I1` with the kind and the event unexplained. Named honestly, each is decided.
+
+**Findings, all fixed:**
+- **F1, should-fix: a regression of mine, and a wrong §1.1 answer.**
+  - §1.1 said a boot that read nothing is only a boot killed at a bound. That is wrong. `judge_boot`'s load-error branch (`renode.rs:1844-1860`) returns an unread boot naming `platform_load_error` or `firmware_load_error`, and `boot_tier1.rs:688-692` measures exactly that shape. So B2 as built refused an honest verdict, and `campaign` would have exited internal on it. No seeded case and no tier-2 run reaches it, which is why my runs did not show it.
+  - **Fixed:** `UNREAD_FINDINGS` holds the three bounds and the two load errors. An unread boot names exactly one of them, as an error. The test iterates all five.
+- **F2, should-fix: older than this work order, inside the fence.**
+  - Rewriting the verdict alone moved a run from `I1` to a confident `S1`. The run is unbooted, its record `ok` with a wrong value, its witness wrong. The judge names nothing of the record, so it is honestly `I1`. Adding `i2c_identity_mismatch` and `i2c_transaction_unwitnessed` made it `S1`, which breaks `3100` A1.
+  - **Fixed in replay, not evolve:** `check_run` refuses any of `BOOTED_READ_FINDINGS` (a mismatch of any step, `*_record_invalid`, `*_transaction_unwitnessed`) in a run without its boot word. That is the judge's rule, as the motor and serial gates already state it. A timeout and the outside-window finding stay allowed unbooted.
+  - **Why not evolve:** gating evolve's selections instead would turn the honest `I1` into `S2`, a more confident answer.
+  - The same fix closes the adversary's 3.6 (an unset record named `i2c_record_invalid` unbooted gave `I7`). Evolve's short-window condition on `I7` is now a second statement of replay's rule, labelled `belt-and-suspenders:`.
+- **F3, low:** evolve's `boot_word_missing` selected an unread boot, which replay forbids naming, so every honest killed boot listed its boot as an unexplained event. **Fixed:** it selects a read boot whose word is wrong.
+
+**Re-measured after the fixes** (the adversary's tests against the fixed code, `~/.cache/aet-3201/adv/rerun-after-fix.txt`):
+- 3.6 and 7.1 (F2) are refused;
+- the unread boots 5.1 (pass, no finding) and 5.10 (a bound twice) are still refused, with the new message;
+- the load-error runs (F1) are accepted.
+
+The five assertions that fail there are the adversary's pins of the old behaviour.
+
+**Residual, not fixed (backlog): the adversary's 5.8.** A booted, passing run whose registers and identity records are set to unread (status and value `None`) replays as `N1`. The judge reads all of them or none, as kind 10's "all read or all unread" rule says for the boot. A like rule across kinds 10 to 13, 21 and 22 would close it. That is a new cross-record rule outside the B items, so it is not built here.
