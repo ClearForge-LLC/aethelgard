@@ -223,11 +223,6 @@ fn supply(b: &mut Builder<'_>, name: &str) -> Conn {
     })
 }
 
-/// The nets the specification spells inside its power tree.
-pub(crate) fn spelled(p: &Power) -> Vec<String> {
-    p.sense.iter().map(|s| s.net.clone()).collect()
-}
-
 /// Each crossing's device: the reference of the one SPI device on its bus,
 /// with its B-side nets, which the device is drawn on instead of the bus's.
 ///

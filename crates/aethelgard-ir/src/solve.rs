@@ -33,27 +33,13 @@ pub enum SolveError {
     /// The bus refusals `BusTooFast`, `PullUpBelowSinkFloor` and
     /// `BusCapacitanceOverLimit` are validation's own variants, raised here
     /// too (`AET-WO-1205` F1, `AET-WO-1206` §1.5: one error set); each keeps
-    /// its kind, `id`, claimant and message.
+    /// its kind, `id`, claimant and message. `RiseTimeTooSlow`,
+    /// `SupplyOutsideSpeedTable` and `MissingSpiConstraint` are `validate`'s
+    /// alone (step 21, `AET-WO-1207` §1.2), which `solve` calls first.
     #[error("{0}")]
     InvalidSpecification(IrValidationError),
     #[error("the specification is for part `{spec}`, the pin table for `{table}`")]
     PartMismatch { spec: String, table: String },
-    #[error(
-        "SPI bus `{bus}` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
-    )]
-    MissingSpiConstraint { bus: String, net: String },
-    #[error(
-        "SPI bus `{bus}` is on a supply of {min_millivolts} to {max_millivolts} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
-    )]
-    SupplyOutsideSpeedTable {
-        bus: String,
-        min_millivolts: u32,
-        max_millivolts: u32,
-    },
-    #[error(
-        "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
-    )]
-    RiseTimeTooSlow { bus: String, rise_time_ns: u32 },
     #[error("`{claimant}` names pin `{pin}`, which the pin table does not have")]
     UnknownPin { pin: String, claimant: String },
     #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
@@ -185,9 +171,6 @@ impl SolveError {
         match self {
             Self::InvalidSpecification(e) => e.kind(),
             Self::PartMismatch { .. } => "PartMismatch",
-            Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
-            Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
-            Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedPin { .. } => "ReservedPin",
             Self::UnknownPeripheral { .. } => "UnknownPeripheral",
@@ -225,9 +208,6 @@ impl SolveError {
             | Self::PeripheralClaimedTwice { peripheral, .. } => Some(peripheral),
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
-            | Self::MissingSpiConstraint { bus, .. }
-            | Self::SupplyOutsideSpeedTable { bus, .. }
-            | Self::RiseTimeTooSlow { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. } => Some(bus),
             Self::NoAdcPin { net } => Some(net),
@@ -261,9 +241,6 @@ impl SolveError {
             }
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
-            | Self::MissingSpiConstraint { bus, .. }
-            | Self::SupplyOutsideSpeedTable { bus, .. }
-            | Self::RiseTimeTooSlow { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. } => vec![bus.clone()],
             Self::NoAdcPin { net } => vec![net.clone()],
@@ -348,7 +325,7 @@ fn solve_inner(
         .map(|b| (b.id.clone(), b.speed_hz))
         .collect();
     i2c_electrical(spec)?;
-    let spi_lines = spi_lines(spec)?;
+    let spi_lines = spi_lines(spec);
     if spec.mcu.part != table.part {
         return Err(SolveError::PartMismatch {
             spec: spec.mcu.part.clone(),
@@ -915,42 +892,25 @@ fn spi_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String
 }
 
 /// Each SPI bus's SCK and MOSI, with what the output speed check reads,
-/// copied from the specification in document order (`AET-WO-4300c` D2). A
-/// line with no constraint refuses: nothing is defaulted (`INV-06`). Every
-/// bus is on the MCU's supply (`validate`'s step 5a), whose minimum selects
-/// the VDD band.
-fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveError> {
+/// copied from the specification in document order (`AET-WO-4300c` D2).
+/// Every bus is on the MCU's supply (`validate`'s step 5a), whose minimum
+/// selects the VDD band; step 21 held that supply inside the table's bands
+/// and refused a line with no constraint: nothing is defaulted (`INV-06`).
+fn spi_lines(spec: &Specification) -> BTreeMap<String, SpiLine> {
     let supply = spec
         .voltage_domains
         .iter()
         .find(|d| d.id == spec.mcu.supply)
         .expect("Specification::validate checked the MCU's supply");
-    let (min, max) = (
-        crate::minimum_millivolts(supply),
-        crate::maximum_millivolts(supply),
-    );
-    let (bottom, top) = (
-        crate::speeds::BANDS_MILLIVOLTS[0].0,
-        crate::speeds::BANDS_MILLIVOLTS[1].1,
-    );
+    let min = crate::minimum_millivolts(supply);
     let mut out = BTreeMap::new();
     for bus in &spec.spi_buses {
-        // The table's bands bound the whole supply, not only its minimum
-        // (adversarial 2): above 3.6 V no row holds.
-        if min < bottom || max > top {
-            return Err(SolveError::SupplyOutsideSpeedTable {
-                bus: bus.id.clone(),
-                min_millivolts: min,
-                max_millivolts: max,
-            });
-        }
         for (signal, net) in [("SCK", &bus.sck.net), ("MOSI", &bus.mosi.net)] {
-            let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
-                return Err(SolveError::MissingSpiConstraint {
-                    bus: bus.id.clone(),
-                    net: net.clone(),
-                });
-            };
+            let c = spec
+                .net_constraints
+                .iter()
+                .find(|c| &c.net_name == net)
+                .expect("Specification::validate checked every SPI line's constraint");
             out.insert(
                 net.clone(),
                 SpiLine {
@@ -964,14 +924,15 @@ fn spi_lines(spec: &Specification) -> Result<BTreeMap<String, SpiLine>, SolveErr
             );
         }
     }
-    Ok(out)
+    out
 }
 
 /// Each I2C bus's ceiling, from the worse of its two lines' declared
 /// `max_rise_time_nanoseconds`, in document order: a mode is legal only when
-/// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` (step 19)
-/// has refused a line with no constraint. Pull-up and capacitance are not
-/// read; that physics is the twin's.
+/// both lines meet its rise time (`AET-WO-1206` §1.7). `validate` has
+/// refused a line with no constraint (step 19) and a rise time no mode
+/// allows (step 21). Pull-up and capacitance are not read; that physics is
+/// the twin's.
 fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveError> {
     let mut out = BTreeMap::new();
     for bus in &spec.i2c_buses {
@@ -984,12 +945,8 @@ fn i2c_ceilings(spec: &Specification) -> Result<BTreeMap<String, u32>, SolveErro
                 .expect("Specification::validate checked every I2C line's constraint");
             t_max = t_max.max(c.max_rise_time_nanoseconds);
         }
-        let Some(ceiling) = electrical::ceiling_hz(t_max) else {
-            return Err(SolveError::RiseTimeTooSlow {
-                bus: bus.id.clone(),
-                rise_time_ns: t_max,
-            });
-        };
+        let ceiling = electrical::ceiling_hz(t_max)
+            .expect("Specification::validate checked every I2C bus's rise time (step 21)");
         if bus.speed_hz > ceiling {
             return Err(SolveError::InvalidSpecification(
                 IrValidationError::BusTooFast {

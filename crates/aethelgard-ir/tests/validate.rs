@@ -479,16 +479,14 @@ fn refuses_tolerance_out_of_range() {
         assert_eq!(err.id(), Some("VDD_3V3"));
     }
     for value in [1, 500] {
-        let mut spec = valid();
-        spec.voltage_domains[0].tolerance_permille = value;
         // At 500 permille the rail spans 1650 to 4950 mV, outside every
-        // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`); only
-        // the tolerance's own range is under test here, so the board has no
-        // device (a part with no row is refused, `AET-WO-1206` §1.8).
-        devs(&mut spec).i2c.clear();
-        devs(&mut spec).spi.clear();
-        spec.accept_lifecycle.clear();
-        assert_eq!(spec.validate(), Ok(()));
+        // listed part's supply (`SupplyOutsidePart`, `AET-WO-4300c`) and
+        // DS12117 Table 149's bands for an SPI bus on it
+        // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
+        // tolerance's own range is under test here, so the board has no
+        // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
+        // bus.
+        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
     }
 }
 
@@ -3098,15 +3096,26 @@ fn a_net_or_domain_the_emitter_names_is_refused() {
 /// the fabrication package's `<project>-*`).
 #[test]
 fn a_project_named_for_a_windows_device_is_refused() {
-    for name in ["con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9"] {
+    // `com0` and `lpt0` (`AET-WO-1207` §1.3, `1206` F7) passed before, in
+    // the list below (`4c61fad`).
+    for name in [
+        "con", "prn", "aux", "nul", "com1", "com9", "lpt1", "lpt9", "com0", "lpt0",
+    ] {
         let err = refusal(|s| s.project_name = name.into());
         assert_invalid_identifier(err.clone(), "project_name");
         assert!(err.to_string().contains("Windows"), "{err}");
+        // The message lists the range each name is in (adversarial: it
+        // listed `com1` to `com9` while refusing `com0`).
+        assert!(
+            err.to_string()
+                .contains("`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`"),
+            "{err}"
+        );
     }
     for name in [
         "com10",
-        "com0",
-        "lpt0",
+        "com00",
+        "lpt01",
         "con-x",
         "console",
         "nul1",
@@ -3118,7 +3127,16 @@ fn a_project_named_for_a_windows_device_is_refused() {
     }
     // The stem is what Windows matches: before the first `.`, without
     // trailing spaces, in any case.
-    for name in ["CON", "Con.", "con.txt", "con .txt", "nul.tar.gz", "COM1 "] {
+    for name in [
+        "CON",
+        "Con.",
+        "con.txt",
+        "con .txt",
+        "nul.tar.gz",
+        "COM1 ",
+        "com0.txt",
+        "LPT0 ",
+    ] {
         assert!(aethelgard_ir::names::windows_reserved(name), "{name}");
     }
     for name in ["cons", ".con", "com", "lpt10", "con_x"] {
@@ -3143,5 +3161,115 @@ fn two_references_with_one_kicad_key_are_refused() {
             id: "u2".into(),
             first: "U2".into()
         }
+    );
+}
+
+/// Sets the I2C lines' declared rise times.
+fn rise_times(spec: &mut Specification, sda: u32, scl: u32) {
+    for c in &mut spec.net_constraints {
+        match c.net_name.as_str() {
+            "I2C_SDA" => c.max_rise_time_nanoseconds = sda,
+            "I2C_SCL" => c.max_rise_time_nanoseconds = scl,
+            _ => {}
+        }
+    }
+}
+
+/// `AET-WO-1207` §1.2 (`1206` F3): step 21 refuses an I2C bus whose worse
+/// line no mode allows, by `solve`'s kind, `id`, claimant and message, at the
+/// boundary both ways. Before, `validate` passed it and `solve` refused it
+/// (`4c61fad`; the CLI pins hold `1178ca8`'s bytes).
+#[test]
+fn aet_1207_step_21_refuses_a_rise_time_no_mode_allows() {
+    for (sda, scl, worse) in [
+        (1000, 1001, 1001),
+        (1001, 1000, 1001),
+        (300, u32::MAX, u32::MAX),
+    ] {
+        let err = refusal(|s| rise_times(s, sda, scl));
+        assert_refusal(err.clone(), "RiseTimeTooSlow", Some("SENSORS"));
+        assert_eq!(err.claimants(), ["SENSORS"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "I2C bus `SENSORS` allows a rise time of {worse} ns, slower than any I2C mode (1000 ns at most)"
+            )
+        );
+    }
+    let mut spec = valid();
+    spec.i2c_buses[0].speed_hz = 100_000;
+    rise_times(&mut spec, 1000, 1000);
+    assert_eq!(spec.validate(), Ok(()));
+}
+
+/// The MCU rail at `nominal` and `tolerance`, with no device (each part's
+/// supply would bound it first, `SupplyOutsidePart`), so no acknowledgement
+/// of one (`AET-WO-4211`), and, unless `spi`, no SPI bus either.
+fn bare_rail(nominal: u32, tolerance: u16, spi: bool) -> Specification {
+    let mut spec = valid();
+    spec.voltage_domains[0].nominal_millivolts = nominal;
+    spec.voltage_domains[0].tolerance_permille = tolerance;
+    devs(&mut spec).i2c.clear();
+    devs(&mut spec).spi.clear();
+    spec.accept_lifecycle.clear();
+    if !spi {
+        spec.spi_buses.clear();
+        spec.net_constraints
+            .retain(|c| !c.net_name.starts_with("SPI_"));
+    }
+    spec
+}
+
+/// Step 21 refuses an SPI bus on an MCU supply outside DS12117 Table 149's
+/// bands, 1620 to 3600 mV, across the whole tolerance (the minimum rounded
+/// down, the maximum up), at each edge both ways; with no SPI bus there is
+/// nothing to judge, as in `solve`. Before, `validate` passed each.
+#[test]
+fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
+    // 1800 mV ± 10.0 % is 1620 to 1980; ± 10.1 % is 1618 to 1982.
+    // 3000 mV ± 20.0 % is 2400 to 3600; ± 20.1 % is 2397 to 3603.
+    for (nominal, tolerance) in [(1800, 100), (3000, 200)] {
+        assert_eq!(bare_rail(nominal, tolerance, true).validate(), Ok(()));
+    }
+    for (nominal, tolerance, min, max) in [(1800, 101, 1618, 1982), (3000, 201, 2397, 3603)] {
+        let err = bare_rail(nominal, tolerance, true).validate().unwrap_err();
+        assert_refusal(err.clone(), "SupplyOutsideSpeedTable", Some("FLASH"));
+        assert_eq!(err.claimants(), ["FLASH"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SPI bus `FLASH` is on a supply of {min} to {max} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
+            )
+        );
+        assert_eq!(bare_rail(nominal, tolerance, false).validate(), Ok(()));
+    }
+}
+
+/// Step 21 refuses an SPI bus with no net constraint on its SCK, then its
+/// MOSI, naming the net; in `solve`'s order, after the I2C buses' rise times
+/// and, on one bus, after its supply. Before, `validate` passed each.
+#[test]
+fn aet_1207_step_21_refuses_an_spi_line_with_no_constraint() {
+    for net in ["SPI_SCK", "SPI_MOSI"] {
+        let err = refusal(|s| s.net_constraints.retain(|c| c.net_name != net));
+        assert_refusal(err.clone(), "MissingSpiConstraint", Some("FLASH"));
+        assert_eq!(err.claimants(), ["FLASH"]);
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "SPI bus `FLASH` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
+            )
+        );
+    }
+    let err = refusal(|s| {
+        s.net_constraints.retain(|c| c.net_name != "SPI_SCK");
+        rise_times(s, 300, 1001);
+    });
+    assert_eq!(err.kind(), "RiseTimeTooSlow", "{err}");
+    let mut spec = bare_rail(3000, 201, true);
+    spec.net_constraints.retain(|c| c.net_name != "SPI_SCK");
+    assert_eq!(
+        spec.validate().unwrap_err().kind(),
+        "SupplyOutsideSpeedTable"
     );
 }

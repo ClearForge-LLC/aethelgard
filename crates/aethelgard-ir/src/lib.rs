@@ -1631,6 +1631,39 @@ pub enum IrValidationError {
         names::VENDORED_PARTS
     )]
     PartWithoutRow { reference: String, part: String },
+    /// Step 21 (`AET-WO-1207` §1.2, `1206` F3): the refusal `solve` made, by
+    /// its name, message and claimant.
+    #[error(
+        "I2C bus `{bus}` allows a rise time of {rise_time_ns} ns, slower than any I2C mode (1000 ns at most)"
+    )]
+    RiseTimeTooSlow { bus: String, rise_time_ns: u32 },
+    /// Step 21: as [`IrValidationError::RiseTimeTooSlow`].
+    #[error(
+        "SPI bus `{bus}` is on a supply of {min_millivolts} to {max_millivolts} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
+    )]
+    SupplyOutsideSpeedTable {
+        bus: String,
+        min_millivolts: u32,
+        max_millivolts: u32,
+    },
+    /// Step 21: as [`IrValidationError::RiseTimeTooSlow`].
+    #[error(
+        "SPI bus `{bus}` has no net constraint on `{net}`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"
+    )]
+    MissingSpiConstraint { bus: String, net: String },
+    /// Step 14 (`AET-WO-1207` §1.5, Grok 2026-11-16 row 5): a device whose
+    /// part's row lists SPI modes without the one the generated firmware
+    /// drives, [`parts::DRIVEN_SPI_MODE`].
+    #[error(
+        "device `{id}` is a `{part}`, which accepts SPI modes {modes:?} ({citation}), not mode {driven}, the one the generated firmware drives (CFG2 CPOL 0, CPHA 0)"
+    )]
+    SpiModeNotDriven {
+        id: String,
+        part: String,
+        modes: Vec<u8>,
+        driven: u8,
+        citation: String,
+    },
 }
 
 impl IrValidationError {
@@ -1777,17 +1810,25 @@ impl IrValidationError {
             Self::ReservedName(_) => "ReservedName",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
             Self::PartWithoutRow { .. } => "UnknownPart",
+            Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
+            Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
+            Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
+            Self::SpiModeNotDriven { .. } => "SpiModeNotDriven",
         }
     }
 
     /// Who is in conflict, as `solve`'s refusal names them: the bus of the
-    /// four bus refusals `solve` made (`AET-WO-1206` §1.5), the line of
-    /// `BusCapacitanceOverLimit`, and nothing for every other refusal.
+    /// seven bus refusals `solve` made (`AET-WO-1206` §1.5, `AET-WO-1207`
+    /// §1.2), the line of `BusCapacitanceOverLimit`, and nothing for every
+    /// other refusal.
     pub fn claimants(&self) -> Vec<String> {
         match self {
             Self::MissingBusConstraint { bus, .. }
             | Self::BusTooFast { bus, .. }
-            | Self::PullUpBelowSinkFloor { bus, .. } => vec![bus.clone()],
+            | Self::PullUpBelowSinkFloor { bus, .. }
+            | Self::RiseTimeTooSlow { bus, .. }
+            | Self::SupplyOutsideSpeedTable { bus, .. }
+            | Self::MissingSpiConstraint { bus, .. } => vec![bus.clone()],
             Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
             _ => Vec::new(),
         }
@@ -1929,7 +1970,11 @@ impl IrValidationError {
             Self::NoProgrammingPath { supply }
             | Self::SupplyHasNoSource { supply, .. }
             | Self::SupplyHasTwoSources { supply, .. } => Some(supply),
-            Self::MissingBusConstraint { bus, .. } => Some(bus),
+            Self::MissingBusConstraint { bus, .. }
+            | Self::RiseTimeTooSlow { bus, .. }
+            | Self::SupplyOutsideSpeedTable { bus, .. }
+            | Self::MissingSpiConstraint { bus, .. } => Some(bus),
+            Self::SpiModeNotDriven { id, .. } => Some(id),
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
             Self::PartWithoutRow { reference, .. } => Some(reference),
@@ -2169,7 +2214,7 @@ pub fn check_identifier(kind: IdentifierKind, value: &str) -> Result<(), &'stati
     Ok(())
 }
 
-const WINDOWS_RULE: &str = "a project name may not be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com1` to `com9`, `lpt1` to `lpt9`) in any case: `generate` names files after it, and Windows cannot open such a file (`AET-WO-1102` A7)";
+const WINDOWS_RULE: &str = "a project name may not be a Windows reserved device name (`con`, `prn`, `aux`, `nul`, `com0` to `com9`, `lpt0` to `lpt9`) in any case: `generate` names files after it, and Windows cannot open such a file (`AET-WO-1102` A7)";
 
 const OBSERVER_RULE: &str = "a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)";
 
@@ -2259,7 +2304,60 @@ impl Specification {
         // 19 (`AET-WO-1206` §1.2)
         self.bus_constraints()?;
         // 20 (`AET-WO-1206` §1.3)
-        names::check(self)
+        names::check(self)?;
+        // 21 (`AET-WO-1207` §1.2)
+        self.speed_inputs()
+    }
+
+    /// Step 21: what `solve` refused from the specification alone before
+    /// `AET-WO-1207` (`1206` F3), in `solve`'s order. Each I2C bus's worse
+    /// line has a rise time some I2C mode allows (step 19 checked both lines
+    /// carry a constraint); then each SPI bus has its MCU supply inside
+    /// DS12117 Table 149's bands (every SPI bus is on the MCU's supply, step
+    /// 5a; the bands bound the whole supply, not only its minimum) and its
+    /// SCK and MOSI carry a net constraint, whose load the output speed is
+    /// chosen for (`AET-WO-4300c` D2). Nothing is defaulted (`INV-06`).
+    fn speed_inputs(&self) -> Result<(), IrValidationError> {
+        for bus in &self.i2c_buses {
+            let rise_time_ns = [&bus.sda.net, &bus.scl.net]
+                .into_iter()
+                .filter_map(|net| self.net_constraints.iter().find(|c| &c.net_name == net))
+                .map(|c| c.max_rise_time_nanoseconds)
+                .max()
+                .unwrap_or(0);
+            if electrical::ceiling_hz(rise_time_ns).is_none() {
+                return Err(IrValidationError::RiseTimeTooSlow {
+                    bus: bus.id.clone(),
+                    rise_time_ns,
+                });
+            }
+        }
+        let (bottom, top) = (speeds::BANDS_MILLIVOLTS[0].0, speeds::BANDS_MILLIVOLTS[1].1);
+        let supply = self
+            .voltage_domains
+            .iter()
+            .find(|d| d.id == self.mcu.supply);
+        for bus in &self.spi_buses {
+            if let Some(supply) = supply {
+                let (min, max) = (minimum_millivolts(supply), maximum_millivolts(supply));
+                if min < bottom || max > top {
+                    return Err(IrValidationError::SupplyOutsideSpeedTable {
+                        bus: bus.id.clone(),
+                        min_millivolts: min,
+                        max_millivolts: max,
+                    });
+                }
+            }
+            for net in [&bus.sck.net, &bus.mosi.net] {
+                if !self.net_constraints.iter().any(|c| &c.net_name == net) {
+                    return Err(IrValidationError::MissingSpiConstraint {
+                        bus: bus.id.clone(),
+                        net: net.clone(),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Step 19: each I2C bus's SDA then SCL carries a net constraint, in
@@ -2435,7 +2533,7 @@ impl Specification {
                     .iter()
                     .find(|b| b.id == d.bus)
                     .map_or(0, |b| b.speed_hz);
-                check_spi_clock(&d.reference, p, speed_hz)?;
+                check_spi_device(&d.reference, p, speed_hz)?;
             }
         }
         self.validate_lifecycle(table)
@@ -3075,24 +3173,40 @@ fn check_i2c_address(
 }
 
 /// The part is an SPI one and its clock limit is not below `speed_hz`.
-fn check_spi_clock(
+fn check_spi_device(
     reference: &str,
     p: &parts::Part,
     speed_hz: u32,
 ) -> Result<(), IrValidationError> {
-    let parts::Bus::Spi { max_clock_hz, .. } = &p.bus else {
+    let parts::Bus::Spi {
+        modes,
+        max_clock_hz,
+    } = &p.bus
+    else {
         return Err(wrong_bus(reference, p, "SPI"));
     };
-    if speed_hz <= *max_clock_hz {
-        return Ok(());
+    if speed_hz > *max_clock_hz {
+        return Err(IrValidationError::SpiClockAbovePart {
+            id: reference.to_owned(),
+            part: p.part.clone(),
+            speed_hz,
+            max_clock_hz: *max_clock_hz,
+            citation: cite(&p.citations.bus),
+        });
     }
-    Err(IrValidationError::SpiClockAbovePart {
-        id: reference.to_owned(),
-        part: p.part.clone(),
-        speed_hz,
-        max_clock_hz: *max_clock_hz,
-        citation: cite(&p.citations.bus),
-    })
+    // The row's modes against the one the generated firmware drives
+    // (`AET-WO-1207` §1.5): the table refuses an empty list, a mode above 3
+    // and a mode listed twice, so this is the only judgement left.
+    if !modes.contains(&parts::DRIVEN_SPI_MODE) {
+        return Err(IrValidationError::SpiModeNotDriven {
+            id: reference.to_owned(),
+            part: p.part.clone(),
+            modes: modes.clone(),
+            driven: parts::DRIVEN_SPI_MODE,
+            citation: cite(&p.citations.bus),
+        });
+    }
+    Ok(())
 }
 
 /// What the emitter appends to a device's lowercased reference to name the
@@ -3238,7 +3352,7 @@ impl SolvedTopology {
                     .values()
                     .find(|l| l.bus == d.bus)
                     .map_or(0, |l| l.rate_hz);
-                check_spi_clock(reference, p, rate_hz)?;
+                check_spi_device(reference, p, rate_hz)?;
             }
         }
         Ok(())

@@ -7259,4 +7259,40 @@ mod tests {
         assert!(!proofs.contains("fn every_valid_sequence_"));
         assert!(!proofs.contains("fn rely("));
     }
+
+    /// `AET-WO-1207` §1.5: the one SPI mode the generated firmware drives is
+    /// `aethelgard_ir::parts::DRIVEN_SPI_MODE`, the mode `validate` holds every
+    /// SPI device's row to (`SpiModeNotDriven`). `CFG2`'s `CPOL` and `CPHA`,
+    /// at the header's positions, are that mode's two bits in the word
+    /// [`spi_code`] composes, for every kernel and divider: the mode is one
+    /// fixed value, whatever the solve or the part.
+    #[test]
+    fn the_cfg2_word_drives_the_spi_mode_validate_judges() {
+        let f = cmsis::register_facts().unwrap();
+        let s = spi_facts(&f, &f.layout("SPI").unwrap()).unwrap();
+        let cpol = f.position("SPI_CFG2_CPOL_Pos").unwrap();
+        let cpha = f.position("SPI_CFG2_CPHA_Pos").unwrap();
+        let master = f.position("SPI_CFG2_MASTER_Pos").unwrap();
+        let enable = f.position("SPI_CR1_SPE_Pos").unwrap();
+        assert_eq!((cpol, cpha), (25, 24));
+        for kernel in [SpiKernel::PerCk, SpiKernel::HsiKerCk] {
+            for mbr in 0..=7 {
+                let c = SolvedSpiController {
+                    kernel,
+                    kernel_hz: 64_000_000,
+                    declared_hz: 1_000_000,
+                    mbr,
+                    achieved_hz: 1_000_000,
+                    achieved_max_hz: 1_000_000,
+                };
+                let cfg2 = spi_code(&c, &s, enable, master).cfg2;
+                let mode = ((cfg2 >> cpol) & 1) << 1 | ((cfg2 >> cpha) & 1);
+                assert_eq!(
+                    mode,
+                    u32::from(aethelgard_ir::parts::DRIVEN_SPI_MODE),
+                    "{kernel:?} MBR {mbr}: CFG2 {cfg2:#010x}"
+                );
+            }
+        }
+    }
 }

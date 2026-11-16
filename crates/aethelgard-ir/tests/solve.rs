@@ -676,10 +676,10 @@ fn the_worse_line_sets_the_ceiling_whichever_it_is() {
     for (sda, scl) in [(1000, 1001), (1001, 1000)] {
         assert_eq!(
             refused(&i2c_spec(100_000, sda, scl)),
-            SolveError::RiseTimeTooSlow {
+            SolveError::InvalidSpecification(IrValidationError::RiseTimeTooSlow {
                 bus: "I".into(),
                 rise_time_ns: 1001
-            }
+            })
         );
     }
 }
@@ -758,10 +758,10 @@ fn a_rise_time_slower_than_every_mode_is_refused() {
     let err = refused(&i2c_spec(100_000, 1001, 2000));
     assert_eq!(
         err,
-        SolveError::RiseTimeTooSlow {
+        SolveError::InvalidSpecification(IrValidationError::RiseTimeTooSlow {
             bus: "I".into(),
             rise_time_ns: 2000
-        }
+        })
     );
     assert_eq!(
         err.to_string(),
