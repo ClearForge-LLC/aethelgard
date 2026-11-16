@@ -3472,6 +3472,30 @@ fn expect_field(acc: &mut BTreeMap<u32, (u32, u32)>, reg: u32, pos: u32, width: 
     e.1 |= value << pos;
 }
 
+/// The `TIMINGR` the oracle expects where the schedule starts an I2C
+/// peripheral at `modes[k]`, the modes this generator admits at a declared
+/// speed of `declared_hz`, in order (the adversarial pass's F3). At the last,
+/// the mode the firmware starts the bus at (`firmware::highest`), it is the
+/// topology's word for the mode the independent rule gives the declared
+/// speed, `aethelgard_ir::silicon::i2c_start_mode`, never the admitted
+/// mode's: a generator that starts a bus above or below the rule's mode
+/// writes another word there, and the proof fails. At a lower admitted mode
+/// it is that mode's own word. `None` when the rule gives no mode or the
+/// topology no word for it.
+fn oracle_timingr(
+    timing: &SolvedI2cTiming,
+    declared_hz: u32,
+    modes: &[&str],
+    k: usize,
+) -> Option<u32> {
+    let mode = if k + 1 == modes.len() {
+        silicon::i2c_start_mode(u64::from(declared_hz))?
+    } else {
+        modes.get(k)?
+    };
+    timing.timingr.get(mode).copied()
+}
+
 /// The oracle's words of SPI peripheral `name` (`AET-WO-4230` §1.3, D4): the
 /// independent rule's, `aethelgard_ir::silicon::spi_words`, never this
 /// generator's composition ([`spi_code`], [`kernel_selects`]).
@@ -5032,7 +5056,7 @@ fn emit_schedule(
         };
         match p.kind {
             Kind::I2c => {
-                let (_, admitted) = &speeds[name];
+                let (hz, admitted) = &speeds[name];
                 let m = name.to_ascii_lowercase();
                 let modes: Vec<&str> = admitted.iter().map(|&i| I2C_MODES[i].0).collect();
                 let _ = writeln!(w, "                let speed: u8 = kani::any();");
@@ -5046,12 +5070,19 @@ fn emit_schedule(
                     };
                     let _ = writeln!(w, "{open}");
                     // The topology's word, which `check_silicon` held to
-                    // `aethelgard_ir::silicon::check_i2c`; read here on its own.
-                    let _ = writeln!(
-                        w,
-                        "                    {m}_timingr = {:#010x};",
-                        plan.i2c[name].timingr[*mode]
-                    );
+                    // `aethelgard_ir::silicon::check_i2c`, for the mode the
+                    // oracle takes ([`oracle_timingr`]); read here on its own.
+                    match oracle_timingr(&plan.i2c[name], *hz, &modes, k) {
+                        Some(word) => {
+                            let _ = writeln!(w, "                    {m}_timingr = {word:#010x};");
+                        }
+                        None => {
+                            let _ = writeln!(
+                                w,
+                                "                    kani::assert(false, \"aethelgard_ir::silicon::i2c_start_mode gives {name} no mode at {hz} Hz\");"
+                            );
+                        }
+                    }
                     start(
                         w,
                         &format!("{m}_speed::{mode}, _"),
@@ -6325,6 +6356,57 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Each `init` the schedule harness makes on I2C1 at a mode, with the
+    /// `TIMINGR` the oracle expects set just before it, in order.
+    fn started(proofs: &str) -> Vec<(u32, String)> {
+        let lines: Vec<&str> = proofs.lines().map(str::trim).collect();
+        lines
+            .windows(2)
+            .filter_map(|w| {
+                let word = w[0].strip_prefix("i2c1_timingr = 0x")?.strip_suffix(';')?;
+                let mode = w[1].split("i2c1_speed::").nth(1)?.split(',').next()?;
+                Some((u32::from_str_radix(word, 16).ok()?, mode.to_owned()))
+            })
+            .collect()
+    }
+
+    /// `AET-WO-4230` R3-fix (the adversarial pass's F3, mutant M3): where the
+    /// schedule starts a bus at the mode the firmware starts it at (the
+    /// generator's highest admitted), the oracle expects the topology's
+    /// `TIMINGR` for the mode the independent rule gives the declared speed
+    /// (`silicon::i2c_start_mode`), not the admitted mode's. A generator that
+    /// admitted Fast-mode Plus on a 400 kHz bus starts it there, and the
+    /// oracle still expects Fast400k's word, which that `init` does not
+    /// write: the proof fails.
+    #[test]
+    fn the_oracle_expects_the_rule_s_start_mode_s_word_where_a_bus_starts() {
+        let mut s = solved();
+        set_speed(&mut s, "BUS", 400_000);
+        let table = table();
+        let plan = Plan::new("b", &s, &table).unwrap();
+        let rf = cmsis::register_facts().unwrap();
+        let facts = Facts::new(&plan, &rf).unwrap();
+        let words = |admitted: Vec<usize>| {
+            let speeds: Speeds = BTreeMap::from([("I2C1".to_owned(), (400_000, admitted))]);
+            started(&emit_proofs(&plan, &facts, &speeds).unwrap())
+        };
+        let (sm, fm) = (0x50D3_2A40, 0x10C7_123C);
+        let pairs = |p: &[(u32, &str)]| -> Vec<(u32, String)> {
+            p.iter().map(|(w, m)| (*w, (*m).to_owned())).collect()
+        };
+        assert_eq!(
+            words(vec![0, 1]),
+            pairs(&[(sm, "Standard100k"), (fm, "Fast400k")])
+        );
+        // M3's admission: Fm+ at the top, Fast400k's word expected there.
+        assert_eq!(
+            words(vec![0, 1, 2]),
+            pairs(&[(sm, "Standard100k"), (fm, "Fast400k"), (fm, "FastPlus1M")])
+        );
+        // A generator that started the bus below the rule's mode.
+        assert_eq!(words(vec![0]), pairs(&[(fm, "Standard100k")]));
     }
 
     #[test]

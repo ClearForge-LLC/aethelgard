@@ -24,11 +24,11 @@
 
 use std::collections::BTreeMap;
 
-use aethelgard_ir::{PinTable, SolvedTopology};
+use aethelgard_ir::{PinTable, SolvedTopology, silicon};
 
 use super::{
-    BoardError, Facts, I2C_MODES, Kind, Plan, Role, clock_fields, port_pupdr, spi_code,
-    timer_writes, usart_values,
+    BoardError, Facts, Kind, Plan, Role, clock_fields, port_pupdr, spi_code, timer_writes,
+    usart_values,
 };
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
@@ -107,14 +107,15 @@ pub fn register_fields(
     let plan = Plan::new("register-fields", solved, table)?;
     let f = cmsis::register_facts()?;
     let facts = Facts::new(&plan, &f)?;
-    // The mode the firmware starts every I2C peripheral at: the highest the
-    // lowest declared speed admits (`generate`, `firmware::highest`).
+    // The mode the firmware starts every I2C peripheral at: the one the
+    // independent rule gives the lowest declared speed
+    // (`silicon::i2c_start_mode`, the adversarial pass's F3 and F5), which
+    // the proofs hold `generate`'s `firmware::highest` to.
     let mode = solved
         .i2c_speeds
         .values()
         .min()
-        .and_then(|&hz| I2C_MODES.iter().rev().find(|m| m.1 <= hz))
-        .map(|m| m.0);
+        .and_then(|&hz| silicon::i2c_start_mode(u64::from(hz)));
     let mut out = Vec::new();
     for r in registers(&plan, &facts, mode)? {
         out.extend(rows(&f, &r)?);

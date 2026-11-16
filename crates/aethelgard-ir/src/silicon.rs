@@ -377,6 +377,20 @@ pub const I2C_LIMITS: [I2cLimits; 3] = [
     },
 ];
 
+/// The UM10204 mode a bus whose specification declares `declared_hz` starts
+/// at (the adversarial pass's F3): the fastest of [`I2C_LIMITS`] whose SCL
+/// frequency is at most the declared speed, so that no SCL the bus runs is
+/// above what its devices declared (RM0433 Rev 9 Table 390 gives each mode's
+/// timings at its own SCL frequency); `None` below Standard-mode's 100 kHz.
+/// Chosen by the largest frequency that fits, never by a list's order.
+pub fn i2c_start_mode(declared_hz: u64) -> Option<&'static str> {
+    I2C_LIMITS
+        .iter()
+        .filter(|l| l.scl_hz <= declared_hz)
+        .max_by_key(|l| l.scl_hz)
+        .map(|l| l.mode)
+}
+
 /// `tAF`, the analog filter's delay: DS12117 Rev 10 Table 94 (rev Y,
 /// p. 188) gives 50 to 260 ns, Table 192 (rev V, p. 298) 50 to 80 ns; the
 /// revision is not declared, so the widest, 50 to 260.
@@ -1138,6 +1152,21 @@ mod tests {
         // No overflow at the extremes.
         let f = divider(u64::MAX, u32::MAX, u32::MAX);
         assert!(!f.holds);
+    }
+
+    #[test]
+    fn a_bus_starts_at_the_fastest_mode_at_or_under_its_declared_speed() {
+        for (hz, mode) in [
+            (99_999, None),
+            (100_000, Some("Standard100k")),
+            (399_999, Some("Standard100k")),
+            (400_000, Some("Fast400k")),
+            (999_999, Some("Fast400k")),
+            (1_000_000, Some("FastPlus1M")),
+            (3_400_000, Some("FastPlus1M")),
+        ] {
+            assert_eq!(i2c_start_mode(hz), mode, "{hz}");
+        }
     }
 
     #[test]
