@@ -333,3 +333,45 @@ What held under attack:
 - **The reference's ledger: 289 rows:**
   - by class: 67 `independent-rule`, 58 `observed`, 83 `same-source`, 80 `ignored-by-model`, 1 `silicon-only`;
   - 164 fields acknowledged; 0 unacknowledged.
+
+## 18. Reduction pass, refit, and the residuals that remain
+
+**Reduction pass (diff): −10 net · 1 duplicate removed · 2 dead paths removed · 3 protected kept · 7 findings below.** Done by a fresh subagent; merged in `4837604`.
+- **The duplicate:** `solve`'s `i2c_modes()` is inlined.
+- **The dead paths:** a stale note on `STATUS_EOT`, and a repeated assert in the completeness test.
+- **Protected and now labelled `belt-and-suspenders:`:** the HSI bounds in `solve.rs` and in `silicon.rs`, and `silicon.rs`'s RM0433 bit positions.
+- **Q-K's first question (does every prove-heavy test need the full harness set?):**
+  - `prove` already takes exactly one harness, and every `prove`-based tier-2 test names one.
+  - `verify` must prove every harness by design, so it is not reduced.
+  - `board_tier2`'s `a_missing_clock_enable_fails` and `a_vacuous_harness_fails` now prove `spi1_transfer_refuses_too_many_frames`, which runs SPI1's whole bring-up, with their assertions unchanged. Measured in the image: about 4 s each, from about 228 s.
+  - A real-Kani partial "N of M" covers line is now pinned only at tier 1 (`tools_tier1`).
+- **Findings, reported and not edited:**
+  - two more HSI copies, unlabelled: `motor.rs:278`, which `serial.rs` and `motor::check_silicon` share, and the generator's own in `svd-hal` `board.rs:173`;
+  - `solve.rs`'s `I2C_MODES` beside `silicon`'s `I2C_LIMITS`, unlabelled;
+  - the motor fixtures may prove I2C1 and SPI1 parts twice (about 58 s each, not diffed);
+  - `every_valid_sequence` (158–245 s per seed) is the time cost, and splitting it is a generator change;
+  - the gap in the record-layout agreement test was **closed by the PM** (`f50e43b`: `STATUS_EOT` and the brown-out word's offset, with a killed mutant).
+
+**Refit (Q-K, `ci/shard.sh` rule 5, `a9387c2`):** every CPU-heavy test is weighed at its worst in-shard time in run 43875567562 (head `2bb9ee4`, all green).
+- The two retargeted seeds are weighed at max(1.5 × in-image, 10 s) = 10 s each.
+- `colocate.tsv`'s blocks moved: `attribute_seeded` 965 s, `against_fab_tier2` 1144 s, `verify_47k_tier2` 430 s, `campaign_tier2` 55 s.
+- **The plan:** all 8 shards at 1,390.2 s, **mean 1,390.22 s, the largest 0.001 % over the mean** (the gate: at most 10 %).
+- That is about 23 minutes of test step per shard, over the 20-minute target: a measurement, not a failure (Scotty's ruling).
+- The tools job limit is 45 minutes (`0ab99be`).
+- Not measured: 146 tests with no weight row plan at the 0.05 s default. Their in-shard upper bounds total about 380 s, about 3 % of the plan. Real weights need rule 1's alone-time run.
+
+**Residuals still open after round 2** (from §9, with the round-2 changes):
+- the twin presents Renode's `OPTSR` image, not silicon's (Q-J's three values cited);
+- Fm+'s data-valid maximum is unmet at `tAF` max (no fixture declares Fm+);
+- the ES0392 delay is sized, not witnessed;
+- `reset_clock` callable twice after the select;
+- TIM and USART get no dummy read after their enable;
+- `SolvedTopology::validate`'s pull-up check runs at the nominal;
+- replay's copy of the serial check judges quantization only;
+- the ICP10111 data command's missing wait;
+- the hand-copied `CORE` rows;
+- `choose_speed` runs on the declared rate;
+- the I2C `CR2` and ENR rows are `observed` from other platforms;
+- `D2CKRDY` is not polled (Q-F);
+- the ledger's values are re-derived from the generator's plan, not read from its text (adversarial F5);
+- the oracle's register offsets come from ST's header as svd-hal parses it (adversarial F6).
