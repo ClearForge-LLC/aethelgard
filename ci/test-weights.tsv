@@ -382,3 +382,9 @@ unittests src/main.rs	renode::tests::a_serial_port_failing_silicon_s_check_is_na
 unittests src/main.rs	renode::tests::a_serial_witness_is_read_from_its_capture_pins_and_log	1.419
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.734
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	1.965
+# AET-WO-1310: Furnace, each alone (tier 1 on the host, tier 2 in the pinned image), times 2.8.
+tests/power_board_tier1.rs	the_crossing_is_drawn_and_its_limits_are_refused_by_name	52.800
+tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	3.400
+tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
+tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
+tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	31.800

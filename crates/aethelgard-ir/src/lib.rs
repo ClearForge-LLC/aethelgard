@@ -52,13 +52,24 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// (`AET-WO-4300b`, renumbered from 7 by the same rule); an empty list
 /// declares none. Version 10 adds `power`'s judgement declarations
 /// (`AET-WO-4300d3`, renumbered from 9 by the same rule): `hot_plug`,
-/// `junction`, `controls` and `dc_bias_derating`. Nothing supplies any of them for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 10;
+/// `junction`, `controls` and `dc_bias_derating`. Version 11 requires
+/// `mcu.supply_source` (`AET-WO-4300g`, renumbered from 9 by the same rule):
+/// the connector pin the supply enters by, or `null` under a regulator.
+/// Nothing supplies any of them for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 11;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
 
-/// The top-level specification, version 9 (`RUL-14`). Arrays keep the order a
+/// The MCU's debug nets (`AET-WO-4300g`): the emitter puts SWDIO (`PA13`)
+/// and SWCLK (`PA14`) on these, and NRST on [`NRST`], and a connector pin may
+/// name any of them. No other declared net may take one, in any case.
+pub const SWDIO: &str = "SWDIO";
+pub const SWCLK: &str = "SWCLK";
+pub const NRST: &str = "NRST";
+pub const DEBUG_NETS: [&str; 3] = [SWDIO, SWCLK, NRST];
+
+/// The top-level specification, version 11 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -171,6 +182,19 @@ pub struct Mcu {
     pub hse_hz: u32,
     /// `0` (RM0433's factory default) to `3`.
     pub bor_level: u8,
+    /// Where the supply enters the board when no regulator of `power` drives
+    /// it: one declared connector's pin on the supply (`AET-WO-4300g`).
+    /// Required as a key; `null` when a regulator's output is the supply.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub supply_source: Option<SupplySource>,
+}
+
+/// A connector pin the supply enters by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SupplySource {
+    pub connector: String,
+    pub pin: String,
 }
 
 /// The highest BOR level the option bytes can select (RM0433, `BOR_LEV`).
@@ -600,6 +624,7 @@ object_only!(
     Specification,
     LifecycleAcceptance,
     Mcu,
+    SupplySource,
     VoltageDomain,
     Signal,
     I2cBus,
@@ -1272,6 +1297,16 @@ pub enum IrValidationError {
         net: String,
     },
     #[error(
+        "no declared connector carries `SWDIO`, `SWCLK`, `GND` and the MCU's supply `{supply}` together, so nothing can program the part: declare one, a DS-009 debug port or an explicit pin map (`AET-WO-4300g`)"
+    )]
+    NoProgrammingPath { supply: String },
+    #[error("the MCU's supply `{supply}` has no source: {why} (`AET-WO-4300g`)")]
+    SupplyHasNoSource { supply: String, why: String },
+    #[error(
+        "the MCU's supply `{supply}` has two declared sources: `mcu.supply_source` names a connector pin, and regulator `{regulator}` outputs it too; a supply has one (`AET-WO-4300g` D3, ruled)"
+    )]
+    SupplyHasTwoSources { supply: String, regulator: String },
+    #[error(
         "connector `{id}` pin `{pin}` is on an I2C or SPI line (a bus line or a chip select) and declares no off-board capacitance (null or 0); ruling D8 requires one on every such pin, so that a bound over the line can count the cable and the remote pins (`RUL-19` (1))"
     )]
     ConnectorBudgetMissing { id: String, pin: String },
@@ -1463,6 +1498,9 @@ impl IrValidationError {
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
             Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::NoProgrammingPath { .. } => "NoProgrammingPath",
+            Self::SupplyHasNoSource { .. } => "SupplyHasNoSource",
+            Self::SupplyHasTwoSources { .. } => "SupplyHasTwoSources",
             Self::ConnectorBudgetMissing { .. } => "ConnectorBudgetMissing",
             Self::ConnectorBudgetNotApplicable { .. } => "ConnectorBudgetNotApplicable",
             Self::ConnectorReferenceReserved { .. } => "ConnectorReferenceReserved",
@@ -1602,6 +1640,9 @@ impl IrValidationError {
             | Self::ConnectorPinContradictsStandard { id, .. }
             | Self::ConnectorSerialRoleContradictsStandard { id, .. } => Some(id),
             Self::SerialPortNotAtConnector { label, .. } => Some(label),
+            Self::NoProgrammingPath { supply }
+            | Self::SupplyHasNoSource { supply, .. }
+            | Self::SupplyHasTwoSources { supply, .. } => Some(supply),
         }
     }
 
@@ -1914,7 +1955,10 @@ impl Specification {
         // 15
         connectors::validate(self)?;
         // 16 (`AET-WO-4300d`)
-        power::check(self).map(|_| ())
+        power::check(self)?;
+        // 17, 18 (`AET-WO-4300g`)
+        connectors::programming_path(self)?;
+        connectors::supply_source(self)
     }
 
     /// Step 14 (`AET-WO-4300c` §1.5, F11): each device's part against the
@@ -2332,7 +2376,17 @@ impl Specification {
         // Names are compared with case folded: KiCad's ERC refuses labels that
         // differ only in case (`similar_labels`, `similar_label_and_power`).
         let folded_domains: BTreeSet<String> = domains.iter().map(|d| d.to_lowercase()).collect();
-        let mut folded_nets = BTreeSet::new();
+        // The MCU's debug nets are the engine's (`AET-WO-4300g`): a declared
+        // net or domain spelling one, in any case, is refused.
+        let mut folded_nets: BTreeSet<String> =
+            DEBUG_NETS.iter().map(|n| n.to_lowercase()).collect();
+        if let Some(d) = self
+            .voltage_domains
+            .iter()
+            .find(|d| folded_nets.contains(&d.id.to_lowercase()))
+        {
+            return Err(E::NetShadowsDomain { id: d.id.clone() });
+        }
         let mut nets = BTreeSet::new();
         let signals = self
             .i2c_buses
@@ -2419,6 +2473,10 @@ impl Specification {
         })?;
         plain(&self.mcu.part, || "mcu.part".into())?;
         plain(&self.mcu.supply, || "mcu.supply".into())?;
+        if let Some(s) = &self.mcu.supply_source {
+            plain(&s.connector, || "mcu.supply_source.connector".into())?;
+            plain(&s.pin, || "mcu.supply_source.pin".into())?;
+        }
         for (i, domain) in self.voltage_domains.iter().enumerate() {
             plain(&domain.id, || format!("voltage_domains[{i}].id"))?;
         }

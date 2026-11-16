@@ -10,8 +10,8 @@
 @@ replace
 	)
 	(gr_rect
-		(start 74 114)
-		(end 75 115)
+		(start 76 100)
+		(end 77 101)
 		(stroke (width 0.1) (type solid))
 		(fill yes)
 		(layer "F.Cu")
