@@ -5,7 +5,7 @@ AET-WO-3400's probes. Nothing here is engine code; a build deletes this director
 From the repository root, on `main`:
 
 1. `cargo build --release -p aethelgard-cli`
-2. `python3 -I spike/3400/make_variants.py` writes `variants/v0.json` … `v5.json`. V0 is `examples/sentinel-01-minimal.json` byte for byte; each later variant only adds to it (`relaxations.py` checks that).
+2. `python3 -I spike/3400/make_variants.py` writes `variants/v0.json` … `v7.json` and the four-layer `v0-4l.json` … `v7-4l.json` (the same specification with `board` taken from `crates/aethelgard-cli/tests/fixtures/four-layer.json`, the amendment's S2). V0 is `examples/sentinel-01-minimal.json` byte for byte; each later variant only adds to it (`relaxations.py` checks that).
 3. `spike/3400/run.sh <variant>` (e.g. `v5`, or the probe `p-nrst`) writes `results/<variant>/` with one `<step>.json`, `.exit` and `.stderr` per step:
    - `1-validate`, `2-generate`, `3-emit`, `4-erc` and `5-drc` (`--spec`) are the work order's five commands;
    - `0-solve`, `6-drc-parity`, `7-support` and `8-extract` are extras.
@@ -16,4 +16,4 @@ From the repository root, on `main`:
    It is saved as `results/<variant>/9-rename.txt`. `AET_3400_SKIP_CLASSES=1` is the negative control.
 5. `python3 -I spike/3400/relaxations.py` diffs every variant against V0 (`results/relaxations.txt`).
 
-`probes/t8-boot0-on-swd.*` holds the one refusal measured outside a variant: BOOT0 on a connector pin.
+`sources/` holds the research behind S1 and S4 (dated, with URLs), the KiCad listings from the pinned image, and the gates. `probes/t8-boot0-on-swd.*` holds the one refusal measured outside a variant: BOOT0 on a connector pin.

@@ -14,7 +14,21 @@ Labels used throughout: **[measured]** (run here, output in `spike/3400/results/
 - **Not measured: the board recommended for ordering.** V5 plus E0–E2 and `4220b` (test points, BOOT0 and reset, the hot-plug capacitor, and the ICM-42688-P and BMP581) has not been routed on two layers. Main cannot express those rows, so no variant holds all the *must* rows (T4, F2, and T1's jumper form). V7 is the nearest proxy: an IMU in a 0.4 mm-pitch QFN on its own bus, behind a translator, routes and passes the five commands. The two-layer verdict for the ordered board belongs to the build work order that adds them, and is the §7 condition this spike can only approach.
 - **Most of the test features cannot be expressed** [read at source, measured by probe]. Test points, jumpers, shunts, a BOOT0 header, a reset switch, input capture, `MCO`, USB, FDCAN and the flight sensors' footprints each need an engine work order (§7).
 - **One gap on `main` matters for ordering Sentinel-01** (F1): the emitter does not draw `power.input.hot_plug`, the bulk capacitor that `BatteryInputUndamped` credits. It also gives that capacitor's reference, `C1`, to a 100 nF decoupler. This is a known backlog row (4300d3 D5, roadmap §7.1 L635, "before `4500`"). With Sentinel-01 first, its deadline moves before Sentinel-01's order.
-- **Recommendation, short:** order V5's content plus three small engine work orders: test points, BOOT0/reset, and the hot-plug draw. Unhold `4220b` for Sentinel-01. Take J1 (the witness fixture) as the job after bring-up, not J2. §7 has the table.
+- **Amended (§0, Scotty 22:30 UTC), measured in §10:**
+  - Every variant also routes and passes the five commands at four layers, with the same outline, 14–31 % less track and SNVSAN3F item 5 no longer flagged.
+  - The witness (W1–W6) needs a capture-port role and USB FS. Both fit V5's free pins (port G, PA11/PA12). ULPI and RMII would need SPI1 and CRSF re-pinned.
+  - I2C can only be sniffed by the analyzer path (RM0433 chapter 47 has no monitor mode).
+  - The DMA sample rate is not in ST's documents; it has to be measured on the Nucleo.
+  - **Path: (a) the lean probe now (US$33 for six at OSH Park, no engine work), then the loaded board as Sentinel-03 at four layers, (c)** (§10.4).
+- **Recommendation, short (as amended):**
+  - Order the lean probe (V0, `main`'s reference) now.
+  - Build the loaded board as **Sentinel-03 at four layers**:
+    - V5's content;
+    - the witness's capture port and USB FS;
+    - E0 (the hot-plug draw), E1 (test points), E2 (BOOT0 and reset);
+    - `4220b` unheld, with Sentinel-03 as its consumer before Sentinel-02.
+  - J1 (the witness) is the job; J2 is not taken.
+  - §7 (written before the amendment) holds the loaded board's tiers; §10.4 holds the path.
 - **Gates** (`spike/3400/sources/gates.txt`), on `d324028`, the merge of `main` at `ecc8d01`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 0, with 1947 passed and 0 failed. Earlier, on `53bb75b`: the same, with 1942 passed.
 
 ## 1. Predictions (committed before any variant was run)
@@ -264,7 +278,7 @@ These need test points on SW, the rails and the bus lines (T4). Four layers have
 | E5 | A capture-input role solved to a timer channel, and `mcu.clock_out` | M | T7, J1's DShot reading |
 | `4300e1` | USB static, as roadmap §5 | M–L | F5 |
 
-**Recommended before Sentinel-01 is ordered: E0, E1, E2 and `4220b`.** E0 is a correctness gap on the board as specified. E1 is the instrument without which the board measures nothing. E2 is small. `4220b` puts the flight sensors on our copper first. E3–E5 make a richer bench board, but none is needed to order Sentinel-02.
+**Recommended before the loaded board is ordered (Sentinel-03 under the amendment, §10.4): E0, E1, E2 and `4220b`.** The lean probe (a) needs none of them. E0 is a correctness gap on the board as specified. E1 is the instrument without which the board measures nothing. E2 is small. `4220b` puts the flight sensors on our copper first. E3–E5 make a richer bench board, but none is needed to order Sentinel-02.
 
 ### 7.3 The later job
 
@@ -312,3 +326,109 @@ These need test points on SW, the rails and the bus lines (T4). Four layers have
   - the NRST probe lives in `variants/p-nrst.json`;
   - the diff-printing branch of the rename probe runs only on a failing seed 0;
   - nothing else is removable without losing a rerun path.
+
+## 10. The amendment (WO §0, Scotty 2026-11-16 22:30 UTC): the witness board, four layers, the cost
+
+Predictions are §1.5, committed as `8ee7c93` before any run below. Sources are in `spike/3400/sources/`:
+- `research-W-silicon.md`: RM0433 Rev 9, DS12117 Rev 10, ES0392 Rev 16 and the pin XML, quoted with pages;
+- `research-W-parts.md`, `research-S4.md`: web, dated 2026-11-16;
+- `kicad-w-parts.txt`: the pinned image's KiCad 10.0.7;
+- `digikey-sg-reads.md`: my spot-checks. Each matched.
+
+### 10.1 S1, the witness rows
+
+| # | What it settles (cited) | Specification 12? | Parts: KiCad 10.0.7, lifecycle, price (digikey.sg, 2026-11-16) | Pins on V5; conflicts | Class |
+|---|---|---|---|---|---|
+| W1 probe header | 16 channels, a ground per pair (a 2 × 12 header, or 2 × 10 with a ground per four), direction-controlled translation per 8 channels, input ESD | **No.** There is no GPIO or capture-port role, and a connector cannot carry an undeclared net (`ConnectorNetUnknown`, §2.1 T8). Addition: a `capture_ports` role (a port's pins solved together, with a translator per byte, its direction pin and its target-side domain), plus translator rows in a parts table | **SN74LXC8T245PWR:** both ports 1.1–5.5 V, so 1.8, 3.3 and 5 V targets are covered (TI ACTIVE); **SGD** 2.41 / 1.772 (re-read); no KiCad symbol (`SN74LVC8T245`, 1.65–5.5 V, is in `Logic_LevelTranslator`; the pinout match is [inferred]); TSSOP-24 footprint in the library. SN74AVC8T245 stops at 3.6 V, so not for 5 V targets. TXS0108E (auto-direction): 1.2 Mbps open-drain, by TI's page (research-W-parts). **TPD8E003DQDR:** TI ACTIVE, **SGD** 2.47 / 1.565; no KiCad symbol. 2 × 10 header (Würth 61302021121): **SGD?** 1.82 / 1.55 | **16 pins of one port** (W2). On V5, ports D and G are fully bonded on LQFP-144 and unused by the solve [read at source: pin XML and `results/v5/0-solve.json`]. Port G is preferred: port D holds FDCAN1's PD0/PD1. A port-wide capture wants all 16 pins of one port, which also rules out port A and port B | **job: must** for J1 |
+| W2 analyzer capture | Timer update → DMAMUX1 → DMA1/2, peripheral `GPIOx_IDR` to memory (RM0433 §17.3, Tables 124/125: TIMx_UP inputs; §2.1.6: DMA1/2 reach AHB4 and every SRAM but the TCMs). IDR may be read by byte or half-word (RM0433 §11.3.1, L20852 checked), so 8 and 16 channels cost one transfer per sample either way | Firmware, plus W1's role | — | — | **job** |
+| ↳ rate | **Not derivable from ST's documents** [read at source: no throughput figure in chapters 15–17 or DS12117]. The ceiling is one sample per AHB clock (HCLK ≤ 240 MHz at VOS0, rev V); the realised rate depends on the D2-to-D3 AHB path and arbitration. **It has to be measured on the Nucleo: Scotty's bench.** My 10–25 MS/s prediction stays unverified | | | | |
+| ↳ depth | AXI SRAM 512 KiB → **524,288 samples at 8 channels, 262,144 at 16** [read at source: RM0433 Table 7; computed]. SRAM1–3 add 288 KiB, contiguous. NDT is at most 65,535, so a deep buffer needs circular or double-buffer mode (§15.2). ES0392 2.2.10: an AXI SRAM read corruption on rev Y/W silicon, with a workaround | | | | |
+| W3 host link | **USB FS** on chip: PA11/PA12 (OTG_HS2's FS PHY), 12 Mbit/s, free on V5. **USB HS** needs an external ULPI PHY: DS12117 §3.41 "an external PHY device connected to the ULPI is required". Its 12 signals each have **one** pin on LQFP-144, and four collide with V5 (CK PA5 = SPI1_SCK; D0 PA3 = CRSF_RX; D3/D4 PB10/PB11 = EXT I2C2). **Ethernet RMII** at 100 Mbit/s: 9 signals plus MDIO/MDC. CRS_DV (PA7 = SPI1_MOSI) and MDIO (PA2 = CRSF_TX) have no alternate pin; TX_EN/TXD0/TXD1 move to PG11/PG13/PG12. MII is unavailable on this package (ES0392 2.2.27) | **No** (`4300e1` unwritten) | USB FS: USB4105-GF-A **SGD?** 1.10, USBLC6-2SC6 **SGD?** 0.74 (both footprints in the library). ULPI: USB3300-EZK **SGD** 2.37 (KiCad symbol); USB3320C-EZK **SGD** 2.98 (no symbol). RMII: LAN8742A-CZ **SGD** 2.10 (`Interface_Ethernet:LAN8742A`); Würth 7499010211A MagJack **SGD** 11.96 / 11.761 (`Connector:RJ45_Wuerth_7499010211A`). PHY crystals: unsourced. Microchip's pages returned 403 | FS: 2. ULPI: 12, needing SPI1, CRSF_RX and I2C2 to move. RMII: 11, needing SPI1 and CRSF_TX to move | **FS: must** for J1; HS and RMII: defer |
+| ↳ streaming | FS at 12 Mbit/s. In practice about 1 MB/s bulk [inferred, not cited]. That suits SUMP's capture-then-upload model (W6), not real-time streaming of 16 channels above about 0.5 MS/s [inferred]. ULPI and RMII would want a reference plane (§10.2's four layers) [inferred] | | | | |
+| W4 protocol capture | SPI as a receive-only slave (`COMM = 10`, RM0433 §50.4.5: "MISO output is disabled"). Two instances sniff MOSI and MISO, one with `IOSWP` [inferred]. USART receiver only (`RE` without `TE`, §48). Timer input capture with DMA. **I2C: RM0433 chapter 47 has no monitor, listen or sniff mode** (checked, L76288–78755). A target that matches its address ACKs it and, unless `NOSTRETCH`, stretches SCL (§47.4.8), so an I2C peripheral cannot observe without taking part. **I2C is sniffed through W2's path** | No (needs capture and target roles) | Uses W1 or J5–J8 | SPI slave pins on a spare SPI | **job** |
+| W5 stimulus | I2C target up to Fm+ 1 MHz; `NOSTRETCH` forbids `SBC` and puts the data deadlines before the ninth SCL. ES0392 2.19.8: OVR is not set on underrun. SPI slave: receiver ≤ 100 MHz, **transmitter ≤ 29–31 MHz** (DS12117 Table 194, rev V). CRSF source: the serial port's TX (expressible today). DShot reader: input capture at 4.17 ns per tick at 240 MHz, about 400 ticks per DShot600 bit [computed] | Partly: the CRSF TX only | — | J5 (TIM1, capture-capable), J6, J8 | **job** |
+| W6 host protocol | **SUMP, as sigrok's `ols` driver speaks it, over USB CDC.** sigrok.org documents the command set (reset 0x00, run 0x01, ID 0x02, XON/XOFF; 5-byte 0x80–0x82, 0xc0–0xce) for up to 32 channels, so 16 fit. The driver ships in stock PulseView 0.4.2. sigrok-pico's protocol is in neither PulseView 0.4.2 nor sigrok-cli 0.7.2 (research-W-parts). The "1ALS" ID reply and the metadata tokens are to be checked in libsigrok's source before building | Firmware only | — | — | **job: must** |
+
+**What the witness needs on the board now, so it is not a respin.** A 16-pin port kept whole (port G), USB FS on PA11/PA12, J5's TIM1 pins and J8, all of which V5 already leaves free. ULPI or RMII would mean re-pinning SPI1 and CRSF first. That is a pinning change, not measured here.
+
+### 10.2 S2 at four layers [measured]
+
+The `-4l` variants are each 2L variant with `board` replaced by `four-layer.json`'s (S-P-P-S, In1.Cu `GND`, In2.Cu `VDD_3V3`). The relaxation diff names that `board` change and nothing else.
+
+| Variant | five commands | parity | support | extract | Outline | Router: segments / track / vias / rip-ups | Renamings |
+|---|---|---|---|---|---|---|---|
+| V0-4L | 0 ×5, no finding | 0 | 0 | 0 | 44.10 × 48.50 (same) | 393 / 414 mm / 104 / 1 (2L: 549 / 597 / 101 / 18) | 20/20 |
+| V1-4L | 0 ×5 | 0 | 0 | 0 | 61.75 × 107.40 | 635 / 815 mm / 143 / 1 | 20/20 |
+| V2-4L | 0 ×5 | 0 | 0 | 0 | 89.50 × 107.40 | 797 / 1282 mm / 200 / 2 | 20/20 |
+| V3-4L | 0 ×5 | 0 | 0 | 0 | 113.10 × 107.60 | 889 / 1675 mm / 217 / 4 | 20/20 |
+| V4-4L | 0 ×5 | 0 | 0 | **1**: XEXT 53.3/57.8 pF > 50 | 113.10 × 107.60 | 874 / 1715 mm / 219 / 4 | 20/20 |
+| V5-4L | 0 ×5 | 0 | 0 | 0 | 100.05 × 107.60 | 863 / 1448 mm / 213 / 2 | 20/20 |
+| V6-4L | 0 ×5 | 0 | 0 | 0 | 100.05 × 107.60 | 870 / 1445 mm / 206 / 18 | 20/20 |
+| V7-4L | 0 ×5 | 0 | 0 | **2**: `TranslatorPinUnbounded` | 100.05 × 118.95 | 1156 / 2084 mm / 286 / 55 | 20/20 |
+
+- **Every loaded variant routes at both layer counts,** so the amended §7 clause (report a loaded board that will not route at 2L) did not fire.
+- **Four layers cut track by 14–31 % (V0 31 %; the loaded variants 14–25 %) and rip-ups to almost none,** with the same outline (the placer does not read the layer count, as predicted).
+- **SNVSAN3F item 5's "not met" is gone** from every 4L power variant's `power.conditions`.
+- **`extract` hardly moves:** I2C bounds within 4.5 pF of 2L (both ways), SPI unchanged or lower. **My prediction was wrong** (bounds rise, SPI fails at 4L): the plane's cap is offset by shorter routes.
+- `findings == []` in every gate for every 4L variant.
+
+### 10.3 S4, the cost of three configurations
+
+Every price is a page read on 2026-11-16 or arithmetic on one. A blank in a figure is on Scotty's list (§10.5).
+- **(a)** V0 at 2L, the lean probe.
+- **(b)** V6 at 2L, the largest variant passing every gate: the WO's "loaded board".
+- **(c)** V6-4L.
+
+| | (a) lean, 2L | (b) loaded, 2L | (c) loaded, 4L |
+|---|---|---|---|
+| Outline, area [measured] | 44.10 × 48.50 mm, 21.4 cm² (3.315 in²) | 100.05 × 107.60 mm, 107.7 cm² (16.687 in²) | the same as (b) |
+| **OSH Park**, rate read at source (2L $5, 4L $10 per in² per set of 3); computed. 5 boards = 2 sets (6); 10 = 4 sets (12), sets of 3 assumed | **US$33.15 / US$66.31** | **US$166.87 / US$333.75** | **US$333.75 / US$667.49** |
+| Second fab (JLCPCB, PCBWay) | unknown: interactive quote only (Scotty's list) | unknown, as (a); PCBWay's published $5/10 pcs promo is ≤ 100 × 100 mm, which (b) exceeds | unknown, as (a) |
+| **Assembly, JLCPCB Economic** (read at source) | $8.18 setup + $1.53 stencil per order; 241 pads × $0.0016 = $0.39 per board [computed; pads as joints, inferred]; extended-part fees $3.07 each, count unknown | $8.18 + $1.53; 356 pads × $0.0016 = $0.57 per board. Through-hole XT30 (2 joints): Standard's hand rate $0.0164 per joint plus $3.58 per order (Economic's not read) | as (b); Economic's eligibility at 4L not stated (Scotty's list) |
+| **BOM per board, priced lines** (digikey.sg q1; q10 where a board uses ≥ 10; **SGD** or **SGD?** per line in the research files) | **SGD 52.89** for 28 of 34 rows: MCU 29.15, BME280 5.97, TMP117 8.63, W25Q64 6.01, 2 × SM04B-GHS 1.06, SM06B-SRSS 0.93, 17 × 100 nF 0402 0.58, 3 × 10 k 0402 0.42, 4.7 µF 0402 0.14. Unknown: 2 × 1 µF and 2 × 2.2 µF 0402 (obsolete or not found), 2 × 2.2 k 0402 (not searched) | **SGD 95.86** for 54 of 71 rows: (a)'s lines plus 2 × LMR33630 7.92, 2 × IHLP5050 5.84, 2 × GCM32EC71H106 2.74, TLV75518 0.58, 1 more SM04B and 3 × SM06B-GHS 2.54, 4 × GRM32ER61C226 10.32 and 4 × GRM32ER71A226 11.48 (both **"Not For New Designs"**), 3 × GCM188 100 nF 0.81, 2 × GCM188 220 nF 0.46, 2 more 10 k 0402. Unknown: 4 × GRM188R71C105KA12 (**obsolete** at digikey.sg; a `power-parts.json` row), 4 × TNPW0603 values, 2 × CRCW0603, 1 µF/2.2 µF/2.2 k 0402s, XT30PW-M | as (b) |
+| Witness add-on (W1 16-channel, W3 USB FS), not in any variant | — | SGD 13.42: 2 × SN74LXC8T245 4.82, 2 × TPD8E003 4.94, header **SGD?** 1.82, USB4105 **SGD?** 1.10, USBLC6 **SGD?** 0.74; series resistors unpriced | as (b) |
+| Engine work orders before ordering [sizes inferred] | **none.** V0 is `main`'s reference, and `verify --fab-out` (P3) emits its package. E1 (test points, S–M) is optional and would make it a better probe | E0 hot-plug draw (S); E1 test points (S–M); E2 BOOT0/reset (S); `4220b` (L, as written); W1 capture-port role and translator rows (M); W3 USB FS, `4300e1` (M–L); W4/W5 capture and target roles (E5 and more, M–L); the W2/W6 firmware (Rust, J1's application, L) | as (b); four layers add no engine work [measured: every gate passes] |
+| **Calendar to the order** [inferred from this project's cadence: several work orders merged on 2026-11-16 alone] | **0 engine days;** the order is Scotty's purchase | **about 1–2 weeks** for E0–E2 and `4220b` with two builders in parallel. The witness's own work orders (capture role, USB FS, firmware) take about 2–4 weeks more, but they need not precede the order if W1's port and USB FS are on the copper | as (b) |
+
+**Not summed across currencies.** Fab and assembly are USD; parts are SGD; no conversion is claimed.
+
+### 10.4 S3, the path: recommend (a) now, and the loaded board as Sentinel-03 at four layers, (c)
+
+**(a) now.**
+- Zero engine work and US$33 for six boards.
+- It falsifies what roadmap §3 says Sentinel-01 is for on our own copper (the extractor, the router, the support gate, programming, SPI bring-up) within the fabrication lead time (OSH Park's page: 9–12 days, 2L).
+- Its scars feed back into the engine work orders the loaded board needs anyway, before that board is drawn.
+
+**Then Sentinel-03 = (c), not (b).**
+- At two layers the buck runs with SNVSAN3F item 5 "not met" (§5), so its power-tree evidence does not transfer to Sentinel-02, whose four layers are ruled.
+- ULPI and RMII would want planes.
+- (c) is measured to pass every gate with the same outline, and SNVSAN3F item 5 is no longer flagged.
+- The difference is US$167 per six boards at OSH Park.
+- Sentinel-03 at four layers teaches the power tree, the flight sensors (`4220b`) and the witness in Sentinel-02's own stackup class, before Sentinel-02 is committed.
+
+**(b) is dominated by (c).** It costs the same engine work, saves about US$167 in fabrication per six boards, and teaches less about Sentinel-02.
+
+**If only one board is wanted, take (c).** It delays first copper by the 1–2 weeks of E0–E2 and `4220b`.
+
+### 10.5 For Scotty to fetch (pages Furnace could not use)
+
+1. **Second-fab quotes for (a), (b) and (c) at 5 and 10 boards:** JLCPCB https://cart.jlcpcb.com/quote, PCBWay https://www.pcbway.com/orderonline.aspx, or Aisler (404 and redirect loop from here).
+2. **OSH Park:** whether Prototype copies come in other than sets of 3; area rounding; copper weight.
+3. **JLCPCB assembly:** Economic eligibility by size and layers; whether $3.07 is per unique extended part; basic or extended for each BOM line (https://jlcpcb.com/parts).
+4. **Parts:**
+   - AMASS XT30PW-M (LCSC);
+   - live replacements and prices for GRM188R71C105KA12 (obsolete; a cited `power-parts.json` row), GRM155R61A105KE15D (obsolete), a 2.2 µF and a 2.2 kΩ 0402;
+   - TNPW0603 at 102 k, 25.5 k, 105 k and 46.4 k; CRCW0603 at 10 k and 100 k.
+5. **Maker lifecycles behind sign-in or 403:**
+   - Winbond W25Q64JV (already held by Scotty's 4211 evidence);
+   - Microchip USB3300/USB3320C and LAN8742A, with their crystal and reference-clock needs;
+   - ST AN2606 (the bootloader's pins), STM32H753ZI, USBLC6-2SC6;
+   - GCT USB4105.
+6. **The W2 sample rate:** a timer-paced DMA from `GPIOD->IDR` on the Nucleo at 8 and 16 bits, raising the rate until samples drop. No ST document gives it.
+7. **Murata's own lifecycle** for GRM32ER71A226KE20 and GRM32ER61C226KE20 (digikey.sg says "Not For New Designs"); both are `power-parts.json` rows.
+
+### 10.6 Added questions
+
+- **Q6.** The path: (a) now and Sentinel-03 at four layers (recommended), or (c) only?
+- **Q7.** The probe header: 16 channels on 2 × 12 with a ground per pair, or on 2 × 10 with a ground per four? And which port for the 16 inputs? **Port G is recommended:** port D carries FDCAN1's PD0/PD1, kept free for J2. Port G costs RMII's alternate TX pins PG11–PG14; PB11–PB13 remain.
+- **Q8.** Distributors list two lifecycle states for `power-parts.json` rows (GRM188R71C105KA12 obsolete; GRM32ER*226KE20 "Not For New Designs"), and nothing in the engine judges a power part's lifecycle. Should `4210`'s `accept_lifecycle` extend to the power parts table? That would be its own work order.

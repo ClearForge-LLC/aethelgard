@@ -1,0 +1,20 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p150499-i159512638.scope memory.max=2147483648 memory.swap.max=0 pids.max=8192
+## 74LXC8T245|SN74LXC8T245:  :: 
+## 74LVC8T245|SN74LVC8T245: Logic_LevelTranslator.kicad_sym  :: (symbol "SN74LVC8T245" 
+## TXS0108E: Logic_LevelTranslator.kicad_sym  :: (symbol "TXS0108EPW" 
+## TPD8E003:  :: 
+## USB3320|USB3300: Interface_USB.kicad_sym  :: (symbol "USB3300-EZK" 
+## LAN8742: Interface_Ethernet.kicad_sym  :: (symbol "LAN8742A" 
+## RJ45|7499010211: Connector.kicad_sym  :: (symbol "RJ45" (symbol "RJ45_Wuerth_7499010211A" 
+TSSOP-20_4.4x6.5mm_P0.65mm.kicad_mod
+TSSOP-24_4.4x7.8mm_P0.65mm.kicad_mod
+HVQFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm.kicad_mod
+Maxim_WSON-8-1EP_3x2mm_P0.5mm_EP1.75x1.63mm.kicad_mod
+QFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm.kicad_mod
+QFN-32-1EP_5x5mm_P0.5mm_EP3.3x3.3mm.kicad_mod
+TQFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm.kicad_mod
+WQFN-24-1EP_4x4mm_P0.5mm_EP2.6x2.6mm.kicad_mod
+RJ45_Amphenol_54602-x08_Horizontal.kicad_mod
+RJ45_Amphenol_RJHSE5380-08.kicad_mod
+RJ45_Amphenol_RJHSE5380.kicad_mod
+PinHeader_2x10_P2.54mm_Vertical.kicad_mod

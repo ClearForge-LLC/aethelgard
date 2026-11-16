@@ -21,6 +21,7 @@ POWER = ROOT / "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json"
 MOTORS = ROOT / "crates/aethelgard-cli/tests/fixtures/motors-dshot600.json"
 SERIAL = ROOT / "crates/aethelgard-cli/tests/fixtures/serial-four.json"
 CONNS = ROOT / "crates/aethelgard-cli/tests/fixtures/connectors.json"
+FOUR = ROOT / "crates/aethelgard-cli/tests/fixtures/four-layer.json"
 
 # The off-board load the fixtures declare for a JST lead (connectors.json, serial-four.json).
 JST_OFFBOARD = ("condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), the mated contact (5 pF) "
@@ -182,6 +183,14 @@ def main():
     base = json.loads(raw)
     for name, f in (("v1", v1), ("v2", v2), ("v3", v3), ("v4", v4), ("v5", v5), ("v6", v6), ("v7", v7)):
         (OUT / f"{name}.json").write_text(json.dumps(f(base), indent=2) + "\n")
+    # The amendment (WO section 0): every variant again at four layers, S-P-P-S as AET-WO-4100 built it.
+    # Only `board` is replaced, by four-layer.json's (OSH Park's stackup, In1.Cu GND, In2.Cu VDD_3V3).
+    four = load(FOUR)["board"]
+    for name in ("v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7"):
+        v = json.loads((OUT / f"{name}.json").read_text())
+        v["board"] = copy.deepcopy(four)
+        v["project_name"] += "-4l"
+        (OUT / f"{name}-4l.json").write_text(json.dumps(v, indent=2) + "\n")
     print("wrote", sorted(p.name for p in OUT.glob("v*.json")), file=sys.stderr)
 
 
