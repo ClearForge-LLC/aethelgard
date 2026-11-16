@@ -121,9 +121,31 @@ const GOOD_REGISTERS: [&str; 24] = [
     "0x00000000",
 ];
 
-/// The reads at the injection instant (`AET-WO-4300b`): the console's RX
-/// pin, PA10, in AF mode on AF7, as measured.
-const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
+/// The lines the CLI's own hooks log in a boot that started at `start_ns`
+/// (`AET-WO-2302` D4, the shapes measured in build probe P5): the boot word
+/// at instruction 2575, then each frame byte a quantum and a character
+/// (100 us at 115 200 8N1) apart from it, the first with the console's RX
+/// pin, PA10, in AF mode on AF7.
+fn injection(start_ns: u64) -> String {
+    let line = |count: u64, body: String| {
+        let ns = start_ns + 10 * count;
+        format!(
+            "[00:00:00.{:09}] [WARNING] sysbus: AETHELGARD-{body}\n",
+            ns
+        )
+    };
+    let mut s = line(2575, "BOOTWORD 2100b007 0 2575".to_owned());
+    for j in 0..8u64 {
+        let c = 2575 + 10_000 + 10_000 * j;
+        let mux = if j == 0 { " 28a801 770" } else { "" };
+        s.push_str(&line(c, format!("INJECT 0 {j} 2575 {c}{mux}")));
+    }
+    s
+}
+
+/// The boot word's hook in a stub's accepted command line: the CLI's own
+/// Python, between its double quotes (`AET-WO-2302`).
+const HOOK: &str = r#"sysbus AddWatchpointHook 0x20000000 DoubleWord Write \""*"\""#;
 
 /// The console's bring-up as Renode 1.17.0's access log shows it
 /// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
@@ -197,7 +219,7 @@ fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
     );
     s.push_str(FLASH_ACCESS);
     s.push_str(CONSOLE_ACCESS);
-    s.push_str(INJECTION);
+    s.push_str(&injection(0));
     s.push_str(log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
     for r in reads {
@@ -276,7 +298,7 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.099200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
@@ -2369,11 +2391,16 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
         "AETHELGARD-RELEASE-0\n{before}AETHELGARD-PROBE-BEGIN-0\n{}\nAETHELGARD-PROBE-END-0\n",
         probe.join("\n")
     );
-    out.push_str(&transcript(
-        &format!("{after}{GOOD_SPI_WITNESS}"),
-        &reads.iter().map(String::as_str).collect::<Vec<_>>(),
-        CPU_LISTING,
-    ));
+    // The hooks are added at the release, and their lines are this boot's,
+    // counted from its start (`AET-WO-2302`).
+    out.push_str(
+        &transcript(
+            &format!("{after}{GOOD_SPI_WITNESS}"),
+            &reads.iter().map(String::as_str).collect::<Vec<_>>(),
+            CPU_LISTING,
+        )
+        .replacen(&injection(0), &injection(1_227_990), 1),
+    );
     let out = tb.write("renode.out", out.as_bytes());
     let capture = capture_lines(&tb.write("capture.bin", &droop_capture_of(&elf())));
     let body = format!(
@@ -2382,7 +2409,7 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {build}\n'; exit 0; fi
 [ $# = 7 ] || exit 98
 case "$7" in
-  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+  *"emulation RunFor \"0.001014430\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.000213550\"; {HOOK}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.000000010\"; emulation RunFor \"0.000099990\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
@@ -2678,44 +2705,57 @@ fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
     assert!(!work.archive.exists(), "an archive was made");
 }
 
-/// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside
-/// `DSHOT_WINDOW_NS`. A droop whose effects run past it is refused by name,
-/// with its time, before any run, never cut short.
+/// `AET-WO-2302`, ruled (a-i): a board with a DShot output boots
+/// `MAX_VIRTUAL_NS` like any other (it booted `DSHOT_WINDOW_NS`, and a droop
+/// at 3 ms was refused past it, under `AET-WO-4300a` D1). A droop whose
+/// effects run past the boot is refused by name, with its time, before any
+/// run, never cut short; one at 3 ms is not refused.
 #[test]
-fn a_droop_past_a_dshot_board_s_window_is_refused_with_its_time() {
+fn a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time() {
     let tb = toolbox(&good());
-    let droop = json!({"droop": {
-        "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 3000000,
-        "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
-    }});
+    let droop = |start: u64| {
+        json!({"droop": {
+            "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": start,
+            "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+            "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+        }})
+    };
     let work = Work::new();
     work.dir.write(
         "spec.json",
         &std::fs::read(root().join("crates/aethelgard-cli/tests/fixtures/motors-dshot600.json"))
             .unwrap(),
     );
-    let doc = json!({
-        "schema_version": 2,
-        "name": "late",
-        "base": "spec.json",
-        "expect": "pass",
-        "expect_findings": [],
-        "overrides": [droop],
-    });
-    work.dir.write("d.json", doc.to_string().as_bytes());
-    let out = campaign(
-        &cli(Some(DROOP_BRIDGE)),
-        &tb.0,
-        &work.dir.0,
-        &["d.json"],
-        &work.firmware,
-        &work.archive,
-    );
+    let scenario = |file: &str, start: u64| {
+        let doc = json!({
+            "schema_version": 2,
+            "name": "late",
+            "base": "spec.json",
+            "expect": "pass",
+            "expect_findings": [],
+            "overrides": [droop(start)],
+        });
+        work.dir.write(file, doc.to_string().as_bytes());
+        campaign(
+            &cli(Some(DROOP_BRIDGE)),
+            &tb.0,
+            &work.dir.0,
+            &[file],
+            &work.firmware,
+            &work.archive,
+        )
+    };
+    let out = scenario("d.json", 99_900_000);
     let v = expect_refusal(&out, 2, "DroopRefused");
     let message = v["error"]["message"].as_str().unwrap();
-    assert!(message.contains("past the boot's 2000000 ns"), "{message}");
+    assert!(message.contains("past the boot's 100000000 ns"), "{message}");
     assert!(!work.archive.exists(), "an archive was made");
+    let out = scenario("early.json", 3_000_000);
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("DroopRefused"),
+        "{}",
+        String::from_utf8_lossy(&out.stdout)
+    );
 }
 
 // ---------------------------------------------------------------- AET-WO-4300b

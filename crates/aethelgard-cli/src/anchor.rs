@@ -191,7 +191,7 @@ pub fn parse(body: &str) -> Option<Option<Hook>> {
                 count: dec(c)?,
             })
         })(),
-        ["INJECT", p, k, a, c] => (|| {
+        ["INJECT", p, k, a, c] if *k != "0" => (|| {
             Some(Hook::Inject {
                 port: index(p)?,
                 byte: index(k)?,
@@ -552,6 +552,7 @@ mod tests {
             "[WARNING] sysbus: AETHELGARD-CR1 1 8A 0 3067",
             "[WARNING] sysbus: AETHELGARD-CR1 1 100000000 0 3067",
             "[WARNING] sysbus: AETHELGARD-INJECT 0 1 3075 13075 a000a000 44000000",
+            "[WARNING] sysbus: AETHELGARD-INJECT 0 0 3075 13075",
             "[WARNING] sysbus: AETHELGARD-STOP 1 3067 203067",
             "[WARNING] sysbus: AETHELGARD-STALE NOW 1 2 3",
             "[WARNING] sysbus: AETHELGARD-",
