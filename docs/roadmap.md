@@ -342,6 +342,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - `AET-WO-1603`: sandbox and tool-input hardening (review 2 A15, `2301` B2, `4220` F15).
   - `AET-WO-1206`: `validate` refuses what `generate` refuses (`4100` F1, `1102` A2/A4/A5/A7, `1205` F1, the `4300c` guards).
   - `AET-WO-3201`: evolve, replay and the judge (`2205` B1–B3 and M1, `3100` F15, `4300a` Q7, `4210` F-B5/F-B10, `3301` R2).
+  - `AET-WO-4401`: the ArduPilot image's pin and the static check's blind spots (`4400a` D-4, A7).
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars. **Ruled 2026-11-15:** four copper layers (Scotty, `4300d2` D4); no 1.8 V domain, because every chosen sensor takes 3.3 V I/O (review B5; `4220` P2.1, F14), while the power fixture keeps its LDO and translator as test coverage; every precondition of `AET-WO-3303` and `4230` holds before anything is ordered. **Ruled by Scotty 2026-11-15: Sentinel-02 is an indoor drone for now.**
   - Position from optical flow with a downward rangefinder, so it needs no GPS.
   - Altitude from the rangefinder, because a barometer is unreliable indoors.
@@ -573,9 +574,9 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The certified discrete Thomson flow for supply R (`1303` D5 (b)). Triggered only when a real board has a supply pin the via-pad remedy cannot cover; B4 showed the closed form's coverage moves with a one-pitch stitching shift | 1308 B4 | deferred; trigger: Sentinel-02 (`AET-WO-4500`) |
 | A per-class clearance field, and the pair skew and breakout bounds (`PAIR_SKEW_NM` 2 mm, `PAIR_BREAKOUT_NM` 4 mm, engine constants today) as specification fields, once an interface cites a number | 1308 F2, F6 | `AET-WO-4300e1` |
 | Name the fixed pair as the blocker when a pair's copper stops a neighbouring net from routing (it fails closed, naming another net) | 1308 A4 | unowned; the next eda work order |
-| The ArduPilot image's pip comes from Debian's `python3-pip-whl` (version unpinned); `git submodule update --remote`, `git fetch`/`pull` and `pipx` pass the static Dockerfile check | 4400a A7 | unowned; the next container work order |
+| The ArduPilot image's pip comes from Debian's `python3-pip-whl` (version unpinned); `git submodule update --remote`, `git fetch`/`pull` and `pipx` pass the static Dockerfile check | 4400a A7 | `AET-WO-4401` (written 2026-11-16) |
 | Arm's GCC (GPL) in the published ArduPilot image: mirror the exact corresponding-source tarball by sha256 rather than rely on Arm's host (GPLv3 §6(d) obliges us to keep it available) | 4400a D-2 | **Scotty ruled yes, 2026-11-15:** mirror it; `AET-WO-4400b`, with D-4 |
-| `container/ARDUPILOT-IMAGE` set from the first `main` publish's digest (`RUL-15`) | 4400a D-4 | the PR after the first publish, or `AET-WO-4400b` |
+| `container/ARDUPILOT-IMAGE` set from the first `main` publish's digest (`RUL-15`) | 4400a D-4 | `AET-WO-4401` (written 2026-11-16; `main` published `sha256:a6d8a4e5…1383a` from `8030fa5`) |
 | A through-hole barrel priced as S4 prices a via's; a relieved pad on a supply path refused until its spokes are priced | 1309 D2 | `AET-WO-1303` build |
 | A board mixing DShot with PWM below about 260 Hz fails closed (two model periods exceed the 2 ms window); a longer window for mixed boards | 4300a Q6 | deferred; trigger: a real board that mixes them |
 | An evolve rule for `identity_read_outside_window` (indeterminate, decided by the unset record); `I1` until then | 4300a Q7 | `AET-WO-3201` (written 2026-11-16) |
