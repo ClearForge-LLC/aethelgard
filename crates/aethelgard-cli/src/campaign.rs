@@ -122,6 +122,18 @@ pub(crate) fn absent(overrides: &[Override]) -> std::collections::BTreeSet<Strin
         .collect()
 }
 
+/// The serial ports a scenario holds open on their RX line (`AET-WO-2302`
+/// D5), by label, each checked against the solved topology by [`effective`].
+pub(crate) fn open(overrides: &[Override]) -> std::collections::BTreeSet<String> {
+    overrides
+        .iter()
+        .filter_map(|o| match o {
+            Override::SerialRxOpen { port } => Some(port.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A line the scenario holds low: its bus and the line's net.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeldLow {
@@ -183,6 +195,10 @@ pub(crate) fn apply_overrides(
             // behind its chip select (`absent`, `AET-WO-4200` D4). [`effective`]
             // refuses one the solved topology has no SPI device for (`RUL-16`).
             Override::SpiDeviceAbsent { .. } => {}
+            // Nor does an open RX line: the composition injects nothing into
+            // that port (`open`, `AET-WO-2302` D5). [`effective`] refuses one
+            // the solved topology has no serial port for.
+            Override::SerialRxOpen { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -410,6 +426,20 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
             EXIT_INVALID_SPEC,
         ));
     }
+    if let Some(p) = open(&scenario.overrides)
+        .into_iter()
+        .find(|p| !topology.serial_ports.contains_key(p))
+    {
+        return Err(refuse(
+            "UnknownSerialPort",
+            Some(&p),
+            format!(
+                "scenario `{}`: the specification declares no serial port `{p}`",
+                scenario.name
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     Ok(Effective {
         spec,
         held,
@@ -586,6 +616,7 @@ fn run_one(
             scenario: p.scenario.name.clone(),
             held: p.held,
             absent: absent(&p.scenario.overrides),
+            open: open(&p.scenario.overrides),
             rail: p.rail,
         }),
     )

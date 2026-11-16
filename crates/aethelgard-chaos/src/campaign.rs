@@ -24,11 +24,12 @@ use crate::record::{
 };
 use crate::replay::State;
 
-/// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
+/// The scenario format versions read: 1 (static scenarios, unchanged); 2,
 /// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`,
-/// and since `AET-WO-4200` the `spi_device_absent` override; a version 1 file
-/// may use none of them.
-pub const SCENARIO_VERSIONS: [u32; 2] = [1, 2];
+/// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
+/// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override. A
+/// file may use only what its version admits.
+pub const SCENARIO_VERSIONS: [u32; 3] = [1, 2, 3];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
 pub const MAX_OVERRIDES: usize = 32;
@@ -180,6 +181,8 @@ struct RawOverride {
     droop: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     spi_device_absent: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    serial_rx_open: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -304,6 +307,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         line_held_low,
         droop,
         spi_device_absent,
+        serial_rx_open,
     } = raw;
     let others = bus.is_some()
         || net.is_some()
@@ -311,6 +315,16 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         || max_capacitance_femtofarads.is_some()
         || line_held_low.is_some()
         || droop.is_some();
+    if let Some(p) = serial_rx_open {
+        if others || spi_device_absent.is_some() {
+            return Err(schema(
+                "an open serial RX line override is exactly {serial_rx_open: port}".to_owned(),
+            ));
+        }
+        return Ok(Override::SerialRxOpen {
+            port: text(p, "serial_rx_open")?,
+        });
+    }
     if let Some(r) = spi_device_absent {
         if others {
             return Err(schema(
@@ -358,7 +372,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop} or {spi_device_absent}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent} or {serial_rx_open}"
                 .to_owned(),
         )),
     }
@@ -560,6 +574,7 @@ fn target(o: &Override) -> (u8, &str) {
         // One droop per scenario, whatever its domain.
         Override::Droop(_) => (4, ""),
         Override::SpiDeviceAbsent { reference } => (5, reference),
+        Override::SerialRxOpen { port } => (6, port),
     }
 }
 
@@ -643,6 +658,14 @@ impl Scenario {
             return Err(schema(
                 "a droop override, an absent SPI device and expect_counts need schema_version 2"
                     .to_owned(),
+            ));
+        }
+        let v3_only = overrides
+            .iter()
+            .any(|o| matches!(o, Override::SerialRxOpen { .. }));
+        if v3_only && raw.schema_version < 3 {
+            return Err(schema(
+                "an open serial RX line needs schema_version 3".to_owned(),
             ));
         }
         if expect_counts.len() > MAX_EXPECTED {
@@ -1656,12 +1679,34 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             );
         }
     }
+    // A port the scenario holds open (`AET-WO-2302` D5) is a solved port,
+    // and nothing went into it; the chain skips it.
+    let open: BTreeSet<&str> = match records.first() {
+        Some(Record::Scenario { overrides, .. }) => overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::SerialRxOpen { port } => Some(port.as_str()),
+                _ => None,
+            })
+            .collect(),
+        _ => BTreeSet::new(),
+    };
+    if open.iter().any(|p| !labels.contains(p)) {
+        return Err("an open serial RX line names no solved serial port");
+    }
+    if witnesses.iter().any(|w| {
+        matches!(w, Record::SerialWitness { label, injected_ns, rx_at_injection, .. }
+            if open.contains(label.as_str()) && (injected_ns.is_some() || rx_at_injection.is_some()))
+    }) {
+        return Err("a frame went into a serial port whose RX line the scenario holds open");
+    }
     // The injections are sequential (`AET-WO-2302` D4): a port goes in only
-    // after the port before it, inside the boot.
+    // after the port before it that is not held open, inside the boot.
     let injected: Vec<Option<u64>> = witnesses
         .iter()
-        .map(|w| match w {
-            Record::SerialWitness { injected_ns, .. } => *injected_ns,
+        .filter_map(|w| match w {
+            Record::SerialWitness { label, .. } if open.contains(label.as_str()) => None,
+            Record::SerialWitness { injected_ns, .. } => Some(*injected_ns),
             _ => None,
         })
         .collect();

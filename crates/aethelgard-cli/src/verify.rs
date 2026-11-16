@@ -196,7 +196,6 @@ fn preconditions(report: &Report, planned: &[String], covered: Coverage) -> Vec<
         ),
         fab::Precondition {
             no_device: covered.no_device,
-            no_fault_kind: covered.no_fault_kind,
             ..fab::Precondition::of("campaign_faults_every_bus_and_rail", covered.unmet)
         },
         support_judged(&report.gates),
@@ -651,7 +650,8 @@ fn bind(gate: &str, what: &str, want: &str, have: &Value) -> Result<(), ExitCode
 enum Target {
     I2c(String),
     Spi(String),
-    /// A serial port, by label: no fault kind reaches one yet (ruled on #155).
+    /// A serial port, by label: reached by `serial_rx_open` (`AET-WO-2302`
+    /// D5), detected by its mechanism.
     Serial(String),
     Rail(String),
 }
@@ -682,6 +682,7 @@ struct Mechanism {
 const RISE: &[&str] = &["analog_rise_exceeds_ceiling", "i2c_timeout"];
 const HELD: &[&str] = &["i2c_line_held_low", "i2c_timeout"];
 const ABSENT: &[&str] = &["spi_identity_mismatch", "spi_transaction_unwitnessed"];
+const OPEN: &[&str] = &["serial_echo_missing"];
 
 /// What one scenario seeds, judged against the specification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -770,6 +771,17 @@ fn stress(
                 }),
             ))
         }
+        Override::SerialRxOpen { port } => {
+            let p = spec.serial_ports.iter().find(|p| &p.label == port)?;
+            Some((
+                Some(Target::Serial(p.label.clone())),
+                Some(Mechanism {
+                    kinds: OPEN,
+                    rule: "E3",
+                    subjects: [format!("port:{port}")].into(),
+                }),
+            ))
+        }
         Override::Droop(d) => {
             // Below the domain's tolerance band: inside it the rail stays in
             // its specification (§4 F3). A droop names no mechanism: an
@@ -802,14 +814,17 @@ fn classify(
             return Seeded::Baseline;
         }
         // A scenario that also eases something covers nothing: its net change
-        // may ease the target it stresses (adversary 2, F2). A held line or an
-        // absent device is never a fault to survive: an absent IMU or flash
-        // must be caught, not survived (ruled (a); adversary 2, F4).
+        // may ease the target it stresses (adversary 2, F2). A held line, an
+        // absent device or an open RX line is never a fault to survive: an
+        // absent IMU or flash must be caught, not survived (ruled (a);
+        // adversary 2, F4), and so must a port that hears nothing.
         use aethelgard_chaos::record::Override;
         let intolerable = scenario.overrides.iter().any(|o| {
             matches!(
                 o,
-                Override::LineHeldLow { .. } | Override::SpiDeviceAbsent { .. }
+                Override::LineHeldLow { .. }
+                    | Override::SpiDeviceAbsent { .. }
+                    | Override::SerialRxOpen { .. }
             )
         });
         if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
@@ -844,29 +859,26 @@ fn classify(
     }
 }
 
-/// The campaign's coverage of every declared bus and rail.
+/// The campaign's coverage of every declared bus, serial port and rail.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct Coverage {
-    /// Each bus or rail no fault covers, named with why where no kind can.
+    /// Each bus, port or rail no fault covers, named with why where no kind
+    /// can.
     unmet: Vec<String>,
     /// Each bus no device uses: never `met`, and it does not block (ruled (c)).
     no_device: Vec<String>,
-    /// Each serial port, named `no fault kind yet: serial`: never `met`, and
-    /// it does not block. A narrow, temporary exemption (ruled on #155): it
-    /// ends when the battery-sag / chaos work order lands a serial fault kind
-    /// (an RX line held, or open).
-    no_fault_kind: Vec<String>,
 }
 
 /// Coverage, in the specification's order: I2C buses, SPI buses, serial
-/// ports (each named in `no_fault_kind`, never blocking: ruled on #155), then
-/// rails (each voltage domain, and the battery when a power tree is declared).
-/// Before any gate `outcome` is `None` and a seeded fault counts as it is
-/// declared; after the gates `outcome[i]` says whether scenario `i`'s run
-/// passed the gate, and only those count. A tolerable fault covers its
-/// target; a detected one covers its bus only when the campaign holds a
-/// baseline (ruled (a)). Rails other than the MCU's supply and the battery
-/// stay `unmet` until a fault kind reaches them (ruled (b)).
+/// ports, then rails (each voltage domain, and the battery when a power tree
+/// is declared). Before any gate `outcome` is `None` and a seeded fault
+/// counts as it is declared; after the gates `outcome[i]` says whether
+/// scenario `i`'s run passed the gate, and only those count. A tolerable
+/// fault covers its target; a detected one covers its bus or port only when
+/// the campaign holds a baseline (ruled (a)). A serial port is covered only
+/// by a detected `serial_rx_open` (`AET-WO-2302` D5, ending the exemption
+/// ruled on #155). Rails other than the MCU's supply and the battery stay
+/// `unmet` until a fault kind reaches them (ruled (b)).
 fn coverage(
     spec: &aethelgard_ir::Specification,
     topology: &aethelgard_ir::SolvedTopology,
@@ -911,8 +923,9 @@ fn coverage(
     }
     for p in &spec.serial_ports {
         let target = Target::Serial(p.label.clone());
-        c.no_fault_kind
-            .push(format!("{} (no fault kind yet: serial)", target.name()));
+        if !covered.contains(&target) {
+            c.unmet.push(target.name());
+        }
     }
     for v in &spec.voltage_domains {
         let target = Target::Rail(v.id.clone());
@@ -1938,7 +1951,7 @@ mod tests {
         overrides: Value,
     ) -> aethelgard_chaos::campaign::Scenario {
         aethelgard_chaos::campaign::Scenario::parse(
-            json!({"schema_version": 2, "name": "x", "base": "b.json",
+            json!({"schema_version": 3, "name": "x", "base": "b.json",
                 "expect": if expect_pass { "pass" } else { "fail" },
                 "expect_findings": findings, "overrides": overrides})
             .to_string()
@@ -1964,38 +1977,52 @@ mod tests {
     const TOLERATED_I2C: &str = "scenarios/sentinel-01/seeded/pullup-3k3.json";
     const RAIL: &str = "scenarios/sentinel-01/droop-bor3.json";
     const ABSENT_U4: &str = "scenarios/sentinel-01/seeded/spi-absent-u4.json";
+    const OPEN_CONSOLE: &str = "scenarios/sentinel-01/seeded/serial-rx-open-console.json";
+    const CONSOLE: &str = "serial port `CONSOLE`";
 
-    /// `AET-WO-3303` D1, ruled: each declared bus and rail is named until a
-    /// fault covers it. A tolerable fault covers its target; a detected one
-    /// its bus only beside a baseline; before the gates as declared, after
-    /// them only when the run passed the gate. The reference's seeded set
-    /// covers everything.
+    /// `AET-WO-3303` D1, ruled: each declared bus, serial port and rail is
+    /// named until a fault covers it. A tolerable fault covers its target; a
+    /// detected one its bus or port only beside a baseline; before the
+    /// gates as declared, after them only when the run passed the gate. The
+    /// reference's seeded set covers everything.
     #[test]
     fn coverage_needs_a_survived_or_a_detected_fault_beside_a_baseline() {
         let (spec, t) = solved(S1);
-        let all = ["I2C bus `SENSORS`", "SPI bus `FLASH`", "rail `VDD_3V3`"];
+        let all = [
+            "I2C bus `SENSORS`",
+            "SPI bus `FLASH`",
+            CONSOLE,
+            "rail `VDD_3V3`",
+        ];
         let unmet = |files: &[&str], outcome: Option<&[bool]>| {
             coverage(&spec, &t, &seeded(&spec, &t, files), outcome).unmet
         };
         assert_eq!(unmet(&[BASELINE], None), all);
-        assert_eq!(unmet(&[TOLERATED_I2C, RAIL], None), ["SPI bus `FLASH`"]);
+        assert_eq!(
+            unmet(&[TOLERATED_I2C, RAIL], None),
+            ["SPI bus `FLASH`", CONSOLE]
+        );
         // A detected fault without a baseline covers nothing.
         assert_eq!(
-            unmet(&[TOLERATED_I2C, RAIL, ABSENT_U4], None),
-            ["SPI bus `FLASH`"]
+            unmet(&[TOLERATED_I2C, RAIL, ABSENT_U4, OPEN_CONSOLE], None),
+            ["SPI bus `FLASH`", CONSOLE]
         );
-        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
+        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, OPEN_CONSOLE, BASELINE];
         assert!(unmet(&set, None).is_empty());
-        assert!(unmet(&set, Some(&[true; 4])).is_empty());
+        assert!(unmet(&set, Some(&[true; 5])).is_empty());
         // After the gates, a detection that failed covers nothing, nor does
         // one beside a baseline that failed.
         assert_eq!(
-            unmet(&set, Some(&[true, true, false, true])),
+            unmet(&set, Some(&[true, true, false, true, true])),
             ["SPI bus `FLASH`"]
         );
         assert_eq!(
-            unmet(&set, Some(&[true, true, true, false])),
-            ["SPI bus `FLASH`"]
+            unmet(&set, Some(&[true, true, true, false, true])),
+            [CONSOLE]
+        );
+        assert_eq!(
+            unmet(&set, Some(&[true, true, true, true, false])),
+            ["SPI bus `FLASH`", CONSOLE]
         );
         // A droop inside the tolerance band covers nothing (§4 F3).
         assert_eq!(
@@ -2003,7 +2030,7 @@ mod tests {
                 &["scenarios/sentinel-01/droop-tolerated.json", TOLERATED_I2C],
                 None
             ),
-            ["SPI bus `FLASH`", "rail `VDD_3V3`"]
+            ["SPI bus `FLASH`", CONSOLE, "rail `VDD_3V3`"]
         );
     }
 
@@ -2039,46 +2066,85 @@ mod tests {
         assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
     }
 
-    /// Ruled on #155: each serial port is named `no fault kind yet: serial`,
-    /// in the specification's order, and never blocks, whatever is seeded;
-    /// the row with them and nothing unmet reads `met`, in the verdict and
-    /// the manifest alike (one `Precondition`).
+    /// `AET-WO-2302` D5, ending the exemption ruled on #155: each serial
+    /// port is `unmet`, in the specification's order, until a detected
+    /// `serial_rx_open` on it stands beside a baseline; one port's open line
+    /// covers that port alone, and nothing is named outside `unmet`.
     #[test]
-    fn a_serial_port_is_named_without_a_fault_kind_and_does_not_block() {
+    fn a_serial_port_is_covered_only_by_its_own_detected_open_rx_line() {
         let (spec, t) = solved(S1);
         let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
         let c = coverage(&spec, &t, &seeded(&spec, &t, &set), None);
-        assert!(c.unmet.is_empty(), "{:?}", c.unmet);
-        assert_eq!(
-            c.no_fault_kind,
-            ["serial port `CONSOLE` (no fault kind yet: serial)"]
-        );
-        let c = coverage(&spec, &t, &seeded(&spec, &t, &[BASELINE]), None);
-        assert!(
-            !c.unmet.iter().any(|u| u.contains("serial")),
-            "{:?}",
-            c.unmet
-        );
+        assert_eq!(c.unmet, [CONSOLE]);
+        assert!(c.no_device.is_empty());
         let row = fab::Precondition {
-            no_fault_kind: c.no_fault_kind,
-            ..fab::Precondition::of("campaign_faults_every_bus_and_rail", Vec::new())
+            no_device: c.no_device,
+            ..fab::Precondition::of("campaign_faults_every_bus_and_rail", c.unmet)
         };
         assert_eq!(
             serde_json::to_value(&row).unwrap(),
-            json!({"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
-                "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]})
+            json!({"precondition": "campaign_faults_every_bus_and_rail", "state": "unmet",
+                "unmet": [CONSOLE]})
         );
         let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/serial-four.json");
-        let c = coverage(&spec, &t, &[], None);
+        let ports = ["MAVLINK", "GPS", "CRSF", "SBUS"].map(|l| format!("serial port `{l}`"));
+        let serial_unmet = |s: &[Seeded]| -> Vec<String> {
+            coverage(&spec, &t, s, None)
+                .unmet
+                .into_iter()
+                .filter(|u| u.starts_with("serial"))
+                .collect()
+        };
+        assert_eq!(serial_unmet(&[]), ports);
+        let open = |port: &str| {
+            json_scenario(
+                false,
+                &["serial_echo_missing"],
+                json!([{ "serial_rx_open": port }]),
+            )
+        };
+        let gps = classify(&spec, &t, &open("GPS"));
         assert!(
-            !c.unmet.iter().any(|u| u.contains("serial")),
-            "{:?}",
-            c.unmet
+            matches!(&gps, Seeded::Detect(Target::Serial(p), m)
+                if p == "GPS" && m.rule == "E3" && m.kinds == ["serial_echo_missing"]
+                    && m.subjects == ["port:GPS".to_owned()].into()),
+            "{gps:?}"
+        );
+        let base = classify(&spec, &t, &json_scenario(true, &[], json!([])));
+        assert_eq!(base, Seeded::Baseline);
+        assert_eq!(
+            serial_unmet(&[gps.clone(), base.clone()]),
+            ["MAVLINK", "CRSF", "SBUS"].map(|l| format!("serial port `{l}`"))
+        );
+        // Without the baseline, the detection covers nothing (ruled (a)).
+        assert_eq!(serial_unmet(&[gps]), ports);
+        // An open line expected to pass is never survived; one declaring a
+        // kind outside its mechanism, or opening two ports, counts for
+        // nothing.
+        let c = |s: &aethelgard_chaos::campaign::Scenario| classify(&spec, &t, s);
+        assert_eq!(
+            c(&json_scenario(
+                true,
+                &[],
+                json!([{"serial_rx_open": "GPS"}])
+            )),
+            Seeded::Tolerable(Vec::new())
         );
         assert_eq!(
-            c.no_fault_kind,
-            ["MAVLINK", "GPS", "CRSF", "SBUS"]
-                .map(|l| format!("serial port `{l}` (no fault kind yet: serial)"))
+            c(&json_scenario(
+                false,
+                &["serial_echo_missing", "serial_pattern_missing"],
+                json!([{"serial_rx_open": "GPS"}])
+            )),
+            Seeded::Other
+        );
+        assert_eq!(
+            c(&json_scenario(
+                false,
+                &["serial_echo_missing"],
+                json!([{"serial_rx_open": "GPS"}, {"serial_rx_open": "CRSF"}])
+            )),
+            Seeded::Other
         );
     }
 
@@ -2177,6 +2243,7 @@ mod tests {
         let rise = mech("scenarios/sentinel-01/pullup-47k.json");
         let held = mech("scenarios/sentinel-01/seeded/held-low-scl.json");
         let absent = mech(ABSENT_U4);
+        let open = mech(OPEN_CONSOLE);
         let cases: Value = serde_json::from_slice(
             &std::fs::read(
                 Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -2193,7 +2260,7 @@ mod tests {
                 .iter()
                 .map(|f| f.as_str().unwrap())
                 .collect();
-            let Some(m) = [&rise, &held, &absent]
+            let Some(m) = [&rise, &held, &absent, &open]
                 .into_iter()
                 .find(|m| !findings.is_empty() && findings.iter().all(|k| m.kinds.contains(k)))
             else {
@@ -2216,6 +2283,7 @@ mod tests {
         }
         for want in [
             "spi-absent-u4",
+            "serial-rx-open-console",
             "held-low-scl",
             "pullup-47k",
             "cap-220p-2k2",
@@ -2228,6 +2296,23 @@ mod tests {
                 "masked": [], "subjects": subjects})
         };
         assert!(detection(&absent, &run, &a(json!(["device:U4"]))).is_ok());
+        // An open RX line is detected by `E3`, with its port alone as subject.
+        let echo = failed(json!(["serial_echo_missing"]));
+        let e3 = |subjects: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": "E3", "unexplained": [],
+                "masked": [], "subjects": subjects})
+        };
+        assert!(detection(&open, &echo, &e3(json!(["port:CONSOLE"]))).is_ok());
+        assert!(detection(&open, &echo, &e3(json!(["port:CONSOLE", "port:GPS"]))).is_err());
+        assert!(
+            detection(
+                &open,
+                &echo,
+                &json!({"ok": false, "domain": "indeterminate", "rule": "I6",
+                    "unexplained": [], "masked": [], "subjects": ["port:CONSOLE"]})
+            )
+            .is_err()
+        );
         assert!(detection(&absent, &run, &a(json!(["device:U4", "device:U2"]))).is_err());
         assert!(detection(&absent, &run, &a(json!([]))).is_err());
         assert!(detection(&rise, &run, &a(json!(["device:U4"]))).is_err());

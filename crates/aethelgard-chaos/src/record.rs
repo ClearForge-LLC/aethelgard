@@ -183,6 +183,11 @@ pub enum Override {
     /// `[4, reference]`: an SPI device left absent behind its chip select,
     /// which stays wired (`AET-WO-4200` D4).
     SpiDeviceAbsent { reference: String },
+    /// `[5, port]`: a serial port's RX line open on the board (`AET-WO-2302`
+    /// D5, ruled (ii)): the composition injects nothing into that port, and
+    /// the port after it in the sequential chain goes in after the port
+    /// before it instead.
+    SerialRxOpen { port: String },
 }
 
 /// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
@@ -892,6 +897,7 @@ fn override_value(o: &Override) -> Value {
             v
         }
         Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
+        Override::SerialRxOpen { port } => vec![u(5), t(port)],
     })
 }
 
@@ -949,6 +955,7 @@ fn override_from(v: &Value) -> Option<Override> {
         4 => Override::SpiDeviceAbsent {
             reference: f.text()?,
         },
+        5 => Override::SerialRxOpen { port: f.text()? },
         _ => return None,
     };
     f.end()?;
@@ -1891,6 +1898,7 @@ impl Record {
                     Override::MaxCapacitance { net, .. } => name_ok(net),
                     Override::Droop(d) => name_ok(&d.domain),
                     Override::SpiDeviceAbsent { reference } => name_ok(reference),
+                    Override::SerialRxOpen { port } => name_ok(port),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");

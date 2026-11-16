@@ -18,14 +18,16 @@ pub const SPEC: &str = "examples/sentinel-01-minimal.json";
 
 /// The reference's seeded set for a package (`AET-WO-3303` D1, ruled): a
 /// tolerated fault on `SENSORS` (3.3 kΩ) and on `VDD_3V3` (a droop past BOR
-/// level 3, recovered), `FLASH`'s absent flash detected by its mechanism, and
-/// the no-fault baseline.
+/// level 3, recovered), `FLASH`'s absent flash detected by its mechanism, the
+/// no-fault baseline, and `CONSOLE`'s open RX line detected by its mechanism
+/// (`AET-WO-2302` D5).
 #[allow(dead_code)]
-pub const SEEDED: [&str; 4] = [
+pub const SEEDED: [&str; 5] = [
     "scenarios/sentinel-01/seeded/pullup-3k3.json",
     "scenarios/sentinel-01/droop-bor3.json",
     "scenarios/sentinel-01/seeded/spi-absent-u4.json",
     "scenarios/sentinel-01/pullup-2k2.json",
+    "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
 ];
 
 pub fn root() -> PathBuf {

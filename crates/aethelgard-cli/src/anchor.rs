@@ -17,6 +17,14 @@
 //!   boot word is counted, and the `FRAME_LEN`-th schedules the next port's
 //!   frame a quantum after it (sequential, D4).
 //!
+//! A port whose RX line the scenario holds open (D5, `serial_rx_open`) gets
+//! no frame and no `TDR` hook: the chain skips it, so the port after it goes
+//! in a quantum after the last echoed byte of the port before it that is
+//! not open (or after the boot word, when none is). The firmware still
+//! polls the open port for its echo while that frame waits in Renode's
+//! queue, so the next port's pacing is not tested in such a run (F1's lost
+//! test, never a false pass); its echo is still judged.
+//!
 //! Every action is checked stale first (F5): it acts only when the core's
 //! executed instructions are exactly its anchor's plus its delay's, and
 //! otherwise logs that it did nothing. A rendered reset restarts the count,
@@ -112,6 +120,16 @@ pub enum Stale {
 }
 
 impl Hook {
+    /// Whether a scheduled action logged the line (a stop, its `CEN`
+    /// cleared, an injected byte, a stale action), rather than a hook on a
+    /// write.
+    pub fn scheduled(&self) -> bool {
+        matches!(
+            self,
+            Self::Stop { .. } | Self::Cleared { .. } | Self::Inject { .. } | Self::Stale { .. }
+        )
+    }
+
     /// The core's executed instructions when the line was logged.
     pub fn count(&self) -> u64 {
         match self {
@@ -279,6 +297,14 @@ pub struct PortHook {
     pub frame: [u8; FRAME_LEN],
     /// The bytes' spacing, a whole number of quanta.
     pub spacing_ns: u64,
+    /// The scenario holds its RX line open: nothing goes in (D5).
+    pub open: bool,
+}
+
+/// The first port at or after `k` that is not held open: the next in the
+/// sequential chain.
+fn next_injected(ports: &[PortHook], k: usize) -> Option<usize> {
+    (k..ports.len()).find(|&j| !ports[j].open)
 }
 
 /// The monitor's form of a watchpoint hook on writes of a word.
@@ -373,29 +399,31 @@ fn frame_actions(k: usize, p: &PortHook) -> String {
 
 /// The hook on the boot word: each write logged with the word before it;
 /// on `BOOT_MAGIC` written over any other word, this boot's echo counts
-/// reset and the first port's frame scheduled.
+/// reset and the first port not held open has its frame scheduled.
 pub fn boot_word_hook(boot_word: u32, ports: &[PortHook]) -> String {
     let mut py = format!(
         "from Antmicro.Renode.Time import TimeInterval; import sys; b = self.ReadDoubleWord({boot_word:#x}); self.Log(LogLevel.Warning, '{PREFIX_TAG}BOOTWORD %x %x %d' % (value, b, cpu.ExecutedInstructions)); go = value == {BOOT_MAGIC:#x} and b != {BOOT_MAGIC:#x}"
     );
-    if let Some(first) = ports.first() {
+    if let Some(first) = next_injected(ports, 0) {
         py.push_str(&format!(
             "; go and setattr(sys, 'aethelgard_echo', [0] * {}); go and {}",
             ports.len(),
-            frame_actions(0, first)
+            frame_actions(first, &ports[first])
         ));
     }
     hook(boot_word, &py)
 }
 
-/// The hook on port `k`'s `TDR` (`k` not the last): each write after this
-/// boot's boot word counted and logged, and the `FRAME_LEN`-th schedules
-/// port `k + 1`'s frame.
+/// The hook on port `k`'s `TDR` (`k` neither held open nor the last port
+/// that is not): each write after this boot's boot word counted and logged,
+/// and the `FRAME_LEN`-th schedules the frame of the next port not held
+/// open.
 pub fn echo_hook(k: usize, ports: &[PortHook], boot_word: u32) -> Option<String> {
-    let (p, next) = (ports.get(k)?, ports.get(k + 1)?);
+    let p = ports.get(k).filter(|p| !p.open)?;
+    let next = next_injected(ports, k + 1)?;
     let py = format!(
         "from Antmicro.Renode.Time import TimeInterval; import sys; e = getattr(sys, 'aethelgard_echo', None); ok = e is not None and self.ReadDoubleWord({boot_word:#x}) == {BOOT_MAGIC:#x}; ok and e.__setitem__({k}, e[{k}] + 1); ok and self.Log(LogLevel.Warning, '{PREFIX_TAG}ECHO {k} %d %x %d' % (e[{k}], value, cpu.ExecutedInstructions)); ok and e[{k}] == {FRAME_LEN} and {}",
-        frame_actions(k + 1, next)
+        frame_actions(next, &ports[next])
     );
     Some(hook(p.tdr, &py))
 }
@@ -421,6 +449,7 @@ mod tests {
             rx: (0x5802_0400, 0x5802_0424),
             frame: [0xba, 0x17, 0xfc, 0xb3, 0x40, 0x9d, 0x09, 0x7a],
             spacing_ns: 1_100_000,
+            open: false,
         }
     }
 
@@ -502,6 +531,50 @@ mod tests {
         assert!(h.contains("monitor.Parse('sysbus.usart2 WriteChar 0xba')"));
         // The last port schedules nothing.
         assert!(echo_hook(1, &ports, 0x2000_0000).is_none());
+    }
+
+    /// `AET-WO-2302` D5: a port held open gets no frame and no `TDR` hook;
+    /// the chain skips it, and every line keeps the port's own index.
+    #[test]
+    fn the_chain_skips_a_port_held_open() {
+        let mut ports = [
+            port("usart1", 0x4001_1028),
+            port("usart2", 0x4000_4428),
+            port("uart4", 0x4000_4c28),
+        ];
+        ports[1].open = true;
+        let bw = boot_word_hook(0x2000_0000, &ports);
+        assert!(bw.contains("[0] * 3"), "{bw}");
+        assert!(bw.contains("'AETHELGARD-INJECT 0 0 %d %d %x %x'"));
+        assert!(!bw.contains("usart2") && !bw.contains("uart4"), "{bw}");
+        // Port 0's last echoed byte schedules port 2's frame, not port 1's.
+        let e0 = echo_hook(0, &ports, 0x2000_0000).unwrap();
+        assert!(e0.contains("ok and e[0] == 8 and (self.Machine.ScheduleAction(TimeInterval.FromMicroseconds(100), lambda t, a=cpu.ExecutedInstructions: (self.Log(LogLevel.Warning, 'AETHELGARD-INJECT 2 0 %d %d %x %x'"), "{e0}");
+        assert!(e0.contains("monitor.Parse('sysbus.uart4 WriteChar 0xba')"));
+        assert!(!e0.contains("usart2"), "{e0}");
+        // The open port has no hook, nor does the last port.
+        assert!(echo_hook(1, &ports, 0x2000_0000).is_none());
+        assert!(echo_hook(2, &ports, 0x2000_0000).is_none());
+        // The first port held open: the boot word schedules the next.
+        ports[1].open = false;
+        ports[0].open = true;
+        let bw = boot_word_hook(0x2000_0000, &ports);
+        assert!(bw.contains("'AETHELGARD-INJECT 1 0 %d %d %x %x'"), "{bw}");
+        assert!(bw.contains("monitor.Parse('sysbus.usart2 WriteChar 0xba')"));
+        assert!(!bw.contains("usart1"), "{bw}");
+        assert!(echo_hook(0, &ports, 0x2000_0000).is_none());
+        assert!(
+            echo_hook(1, &ports, 0x2000_0000)
+                .unwrap()
+                .contains("INJECT 2 0")
+        );
+        // Every port held open: the boot word only logs.
+        for p in &mut ports {
+            p.open = true;
+        }
+        let bw = boot_word_hook(0x2000_0000, &ports);
+        assert!(!bw.contains("ScheduleAction") && !bw.contains("aethelgard_echo"));
+        assert!((0..3).all(|k| echo_hook(k, &ports, 0x2000_0000).is_none()));
     }
 
     #[test]

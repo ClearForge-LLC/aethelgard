@@ -464,6 +464,7 @@ impl BootPlan<'_> {
                     rx: (p.rx.moder.1, p.rx.afr.1),
                     frame: p.frame,
                     spacing_ns: p.spacing_ns?,
+                    open: p.open,
                 })
             })
             .collect::<Option<Vec<_>>>()
@@ -1158,10 +1159,14 @@ pub struct Serial {
     /// What the RCC's writes may be: its enable registers alone, never
     /// clearing the gate of the port's USART or of its pins' GPIO ports.
     pub rcc: aethelgard_twin::serial::RccRule,
+    /// The scenario holds the port's RX line open (`AET-WO-2302` D5): no
+    /// frame goes in, and the next port goes in after the port before it.
+    pub open: bool,
 }
 
 /// Every serial port of `topology`, in the specification's order, for the
-/// firmware whose file's sha256 is `firmware`.
+/// firmware whose file's sha256 is `firmware`; none held open (the boot
+/// marks the ones its scenario holds open).
 pub fn serials(
     topology: &aethelgard_ir::SolvedTopology,
     firmware: &[u8; 32],
@@ -1195,6 +1200,7 @@ pub fn serials(
                     &[&port.tx, &port.rx],
                 )?,
                 port,
+                open: false,
             })
         })
         .collect()
@@ -2446,11 +2452,13 @@ pub fn judge_boot(
 
 /// Each line of ours in `boot` ([`crate::anchor`]), with its position in
 /// `boot`, each count placed at its stamp: an instruction count's instant is
-/// `start_ns` plus 10 ns an instruction, and its line is stamped at or before
-/// it, inside one quantum (measured: a hook's line up to 60 ns early, an
-/// action's exact). Anything else is refused, never read past: a line of
-/// ours not exactly one of its shapes, or a count the boot's start does not
-/// place at its stamp (`AET-WO-2302`).
+/// `start_ns` plus 10 ns an instruction. A scheduled action's line (a stop,
+/// its `CEN` cleared, an injected byte, a stale action) is stamped exactly
+/// there, as every probe measured it; a hook's line at or before it, inside
+/// one quantum (measured up to 60 ns early). Anything else is refused, never
+/// read past: a line of ours not exactly one of its shapes, or a count the
+/// boot's start does not place at its stamp (`AET-WO-2302`; the PM's
+/// decision on S1's open question 3).
 fn hooks_of(boot: &[&str], start_ns: u64) -> Result<Vec<(usize, crate::anchor::Hook)>, String> {
     let mut out = Vec::new();
     for (i, line) in boot.iter().enumerate() {
@@ -2467,7 +2475,12 @@ fn hooks_of(boot: &[&str], start_ns: u64) -> Result<Vec<(usize, crate::anchor::H
             )
         })?;
         let at = crate::anchor::instant(start_ns, hook.count());
-        if stamp > at || at - stamp >= aethelgard_twin::boot::QUANTUM_NS {
+        let placed = if hook.scheduled() {
+            stamp == at
+        } else {
+            stamp <= at && at - stamp < aethelgard_twin::boot::QUANTUM_NS
+        };
+        if !placed {
             return Err(format!(
                 "`{}`: its count places it at {at} ns in a boot started at {start_ns} ns, but it is stamped {stamp} ns",
                 body.escape_debug()
@@ -2836,10 +2849,12 @@ pub struct PortInjection {
 }
 
 /// Each port's injection from `hooks`, in a boot that started at `start_ns`:
-/// port 0's anchored at the boot word, port `k`'s at port `k - 1`'s
-/// `FRAME_LEN`-th echoed byte, each byte at its due count. Bytes that are
-/// not exactly one frame in order (a boot word written twice) are no
-/// injection, and say why.
+/// the first port not held open anchored at the boot word, each later one
+/// at the `FRAME_LEN`-th echoed byte of the last port before it not held
+/// open (`AET-WO-2302` D4, D5), each byte at its due count. A port held
+/// open gets nothing, and says so. Bytes that are not exactly one frame in
+/// order (a boot word written twice), or any byte into a port held open,
+/// are no injection, and say why.
 fn port_injections(
     plan: &BootPlan<'_>,
     hooks: &[(usize, crate::anchor::Hook)],
@@ -2879,27 +2894,37 @@ fn port_injections(
                     _ => None,
                 })
                 .collect();
-            let echoed = hooks
-                .iter()
-                .filter_map(|(_, h)| match h {
-                    Hook::Echo { port, n, .. } if k > 0 && *port == k - 1 => Some(*n),
-                    _ => None,
-                })
-                .max()
-                .unwrap_or(0);
             let Some(p) = ports.get(k) else {
                 return PortInjection {
                     why: Some("its frame's spacing cannot be computed".to_owned()),
                     ..Default::default()
                 };
             };
+            // The port before it in the chain: the last before it not held
+            // open (`AET-WO-2302` D5).
+            let before = (0..k).rev().find(|&j| !ports[j].open);
+            let echoed = hooks
+                .iter()
+                .filter_map(|(_, h)| match h {
+                    Hook::Echo { port, n, .. } if Some(*port) == before => Some(*n),
+                    _ => None,
+                })
+                .max()
+                .unwrap_or(0);
+            if p.open && bytes.is_empty() {
+                return PortInjection {
+                    why: Some(
+                        "the scenario holds its RX line open (serial_rx_open)".to_owned(),
+                    ),
+                    ..Default::default()
+                };
+            }
             if bytes.is_empty() {
-                let why = match (k, boot_word) {
-                    (0, None) => "no write of the boot word was observed by its hook".to_owned(),
-                    (0, Some(_)) => "the boot ended before the boot word's quantum".to_owned(),
-                    _ if echoed < frame as u64 => format!(
-                        "port {} before it echoed {echoed} of its {frame} bytes, and each port goes in only once the one before it has echoed its whole frame",
-                        k - 1
+                let why = match (before, boot_word) {
+                    (None, None) => "no write of the boot word was observed by its hook".to_owned(),
+                    (None, Some(_)) => "the boot ended before the boot word's quantum".to_owned(),
+                    (Some(j), _) if echoed < frame as u64 => format!(
+                        "port {j} before it echoed {echoed} of its {frame} bytes, and each port goes in only once the one before it has echoed its whole frame",
                     ),
                     _ => "the boot ended before its quantum after the port before it".to_owned(),
                 };
@@ -2918,7 +2943,8 @@ fn port_injections(
                                 aethelgard_twin::boot::QUANTUM_NS + j as u64 * p.spacing_ns,
                             )
             }) && bytes.len() <= frame
-                && bytes[0].mux.is_some();
+                && bytes[0].mux.is_some()
+                && !p.open;
             if !one_frame {
                 return PortInjection {
                     why: Some(format!(
@@ -4360,6 +4386,38 @@ mod tests {
         );
         // The same boot read from the wrong start.
         assert!(judge_anchors(&dshot_log(), 100_000).is_err());
+        // A hook's line may be stamped up to a quantum early (the `CR1`
+        // line above is 50 ns early); a scheduled action's line is exact
+        // (the PM's decision on S1's open question 3): one grain early or
+        // late, a stop, its clearing, a stale stop or an injected byte is
+        // refused.
+        assert!(judge_anchors(&dshot_log(), 0).is_ok());
+        let n = dshot_log().len();
+        for (i, ns, body) in [
+            (n - 2, 2_030_660, "STOP 2 3067 203067 81 81"),
+            (n - 2, 2_030_680, "STOP 2 3067 203067 81 81"),
+            (n - 1, 2_030_660, "CLEARED 2 3067 203067 80"),
+            (n - 1, 2_030_660, "STALE STOP 2 3067 203067"),
+            (n - 1, 2_030_660, "INJECT 0 1 3075 203067"),
+        ] {
+            let mut log = dshot_log();
+            log[i] = at(ns, &format!("[WARNING] sysbus: AETHELGARD-{body}"));
+            let e = judge_anchors(&log, 0).err().unwrap_or_default();
+            assert!(e.contains(&format!("stamped {ns} ns")), "{body}: {e}");
+        }
+        let mut log = dshot_log();
+        log[n - 1] = at(
+            2_030_660,
+            "[WARNING] sysbus: AETHELGARD-STALE STOP 2 3067 203066",
+        );
+        log[n - 2] = at(
+            2_030_660,
+            "[WARNING] sysbus: AETHELGARD-INJECT 0 1 3075 203066",
+        );
+        assert!(
+            judge_anchors(&log, 0).is_ok(),
+            "exact action lines of any shape are read"
+        );
     }
 
     /// `AET-WO-2302` D4: each port's injection from the lines: port 0 from
@@ -4458,6 +4516,97 @@ mod tests {
             named
                 .message
                 .contains("from one quantum after the boot word at 99000000 ns")
+        );
+    }
+
+    /// `AET-WO-2302` D5: a port held open gets nothing and says why; the
+    /// port after it goes in at the echo of the last port before it not held
+    /// open (or at the boot word); a byte into a port held open is no
+    /// injection.
+    #[test]
+    fn a_port_held_open_is_skipped_by_name() {
+        let t = console_topology();
+        let image = aethelgard_twin::boot::expected(&t).unwrap();
+        let mut serial = console();
+        for renode in ["usart2", "uart4"] {
+            let mut p = serial[0].clone();
+            p.port.renode = renode;
+            p.spacing_ns = Some(1_100_000);
+            serial.push(p);
+        }
+        let line = |count: u64, body: String| {
+            at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"))
+        };
+        let frame = |log: &mut Vec<String>, k: usize, anchor: u64, spacing: u64, echo: bool| {
+            for j in 0..8u64 {
+                let c = anchor + 10_000 + spacing * j;
+                let mux = if j == 0 { " 28a801 770" } else { "" };
+                log.push(line(c, format!("INJECT {k} {j} {anchor} {c}{mux}")));
+                if echo {
+                    log.push(line(c + 50, format!("ECHO {k} {} 5a {}", j + 1, c + 50)));
+                }
+            }
+        };
+        let read = |serial: &[Serial], log: &[String]| {
+            let p = serial_plan(&image, &[], serial);
+            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+            let hooks = hooks_of(&lines, 0).unwrap();
+            let bw = hooks.iter().find_map(|(i, h)| match h {
+                crate::anchor::Hook::BootWord { count, .. } => Some((*i, *count)),
+                _ => None,
+            });
+            port_injections(&p, &hooks, 0, bw)
+                .into_iter()
+                .map(|j| (j.at_ns, j.bytes, j.why))
+                .collect::<Vec<_>>()
+        };
+        let open = Some("the scenario holds its RX line open (serial_rx_open)".to_owned());
+        // The middle port open: port 2 goes in at port 0's echo.
+        serial[1].open = true;
+        let mut log = vec![line(3075, "BOOTWORD 2100b007 0 3075".into())];
+        frame(&mut log, 0, 3075, 10_000, true);
+        let echoed = 3075 + 10_000 + 70_000 + 50;
+        frame(&mut log, 2, echoed, 110_000, false);
+        assert_eq!(
+            read(&serial, &log),
+            [
+                (Some(130_750), 8, None),
+                (None, 0, open.clone()),
+                (Some(931_250), 8, None),
+            ]
+        );
+        // Port 0 echoed seven: port 2 never went in, and names port 0.
+        let seven: Vec<String> = log
+            .iter()
+            .filter(|l| !l.contains("ECHO 0 8 ") && !l.contains("INJECT 2 "))
+            .cloned()
+            .collect();
+        let j = read(&serial, &seven);
+        assert_eq!(j[1].2, open);
+        assert!(
+            j[2].2
+                .as_deref()
+                .is_some_and(|w| w.starts_with("port 0 before it echoed 7 of its 8 bytes")),
+            "{j:?}"
+        );
+        // The first port open: port 1 goes in at the boot word.
+        serial[1].open = false;
+        serial[0].open = true;
+        let mut log = vec![line(3075, "BOOTWORD 2100b007 0 3075".into())];
+        frame(&mut log, 1, 3075, 110_000, false);
+        let j = read(&serial, &log);
+        assert_eq!(j[0], (None, 0, open.clone()));
+        assert_eq!((j[1].0, j[1].1, &j[1].2), (Some(130_750), 8, &None));
+        // A byte into the port held open: no injection, said so.
+        let mut forged = log.clone();
+        frame(&mut forged, 0, 3075, 10_000, false);
+        let j = read(&serial, &forged);
+        assert_eq!(j[0].0, None);
+        assert!(
+            j[0].2
+                .as_deref()
+                .is_some_and(|w| w.contains("not one frame")),
+            "{j:?}"
         );
     }
 

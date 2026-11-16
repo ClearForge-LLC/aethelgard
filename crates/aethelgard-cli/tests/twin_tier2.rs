@@ -2403,6 +2403,110 @@ fn the_four_port_fixture_s_campaign_passes_and_replays() {
     let _ = fs::remove_dir_all(&archive);
 }
 
+/// `AET-WO-2302` D5: an open RX line (`serial_rx_open`) on the four-port
+/// fixture, the first port's (MAVLINK) and a later one's (CRSF). Each run
+/// fails by `serial_echo_missing` alone, on the open port alone: nothing
+/// went into it, and every other port, the chain skipping the open one, is
+/// witnessed. It replays, and `attribute` names it `electrical` by `E3`,
+/// evidence the port's kinds 28 and 29, with the port as its only subject.
+#[test]
+fn an_open_rx_line_is_detected_by_name_and_attributed_e3() {
+    let (_, _, elf) = motor_board("serial-four", "serial-open", |_| {}, |_| {});
+    let archive = std::env::temp_dir().join(format!(
+        "aet-2302-t2-{}-serial-open-archive",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&archive);
+    let start = Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .args([
+            "campaign",
+            "--scenarios",
+            "scenarios/serial/serial-four-open-mavlink.json",
+            "scenarios/serial/serial-four-open-crsf.json",
+        ])
+        .arg("--firmware")
+        .arg(&elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    answer(&format!(
+        "campaign serial-four open: exit={:?} wall_s={:.2} {lines:?}",
+        out.status.code(),
+        start.elapsed().as_secs_f64()
+    ));
+    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    for (line, open) in lines.iter().zip(["MAVLINK", "CRSF"]) {
+        assert_eq!(
+            (&line["verdict"], &line["matched"], &line["findings"]),
+            (
+                &"fail".into(),
+                &true.into(),
+                &serde_json::json!(["serial_echo_missing"])
+            ),
+            "{line}"
+        );
+        let run = line["run"].as_str().unwrap();
+        let records = aethelgard_chaos::replay_dir(Path::new(run))
+            .unwrap()
+            .state
+            .records;
+        let mut seen = Vec::new();
+        for r in &records {
+            if let aethelgard_chaos::record::Record::SerialWitness {
+                label,
+                echo,
+                injected_ns,
+                rx_at_injection,
+                ..
+            } = r
+            {
+                seen.push(label.as_str());
+                if label == open {
+                    assert_eq!(echo, "missing", "{open}: {r:?}");
+                    assert_eq!((injected_ns, rx_at_injection), (&None, &None), "{r:?}");
+                } else {
+                    assert_eq!(echo, "witnessed", "{open}: {label}: {r:?}");
+                    assert!(injected_ns.is_some(), "{r:?}");
+                }
+            }
+        }
+        assert_eq!(seen, ["MAVLINK", "GPS", "CRSF", "SBUS"]);
+        let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+        assert_eq!(code, Some(0), "{replayed}");
+        assert_eq!(replayed["matched"], true, "{replayed}");
+        let (code, a) = aethelgard(&["attribute", "--archive", run]);
+        assert_eq!(code, Some(0), "{a}");
+        assert_eq!(
+            (&a["domain"], &a["rule"], &a["subjects"], &a["masked"]),
+            (
+                &"electrical".into(),
+                &"E3".into(),
+                &serde_json::json!([format!("port:{open}")]),
+                &serde_json::json!([])
+            ),
+            "{a}"
+        );
+        let kinds: Vec<u64> = a["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["kind"].as_u64().unwrap())
+            .collect();
+        assert_eq!(kinds, [28, 29], "{a}");
+    }
+    let _ = fs::remove_dir_all(&archive);
+}
+
 /// `AET-WO-4300b` §2, forgery 1: a firmware that writes `TDR` with `UE`
 /// clear sends nothing; the pattern is missing and `CR1` reads without `UE`
 /// (FEEDBACK P2.3).

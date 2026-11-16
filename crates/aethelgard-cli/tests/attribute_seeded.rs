@@ -878,6 +878,9 @@ mod tier2 {
             // A device absent behind its chip select: a board fault no value
             // fixes (`AET-WO-4200`, `E2`).
             (_, "spi-absent-u4") => Want::ModelSlot,
+            // An open RX line: a board fault no value fixes (`AET-WO-2302`
+            // D5, `E3`).
+            (_, "serial-rx-open-console") => Want::ModelSlot,
             // R_target = R × 240,000 / rise ≈ 2,832 Ω for every pull-up case,
             // the 47 kOhm trap included (E1 masks its wrong address).
             (

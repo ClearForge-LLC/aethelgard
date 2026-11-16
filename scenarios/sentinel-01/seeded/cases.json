@@ -763,6 +763,27 @@
       "masked": []
     },
     {
+      "name": "serial-rx-open-console",
+      "scenario": "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
+      "mutant": null,
+      "domain": "electrical",
+      "rule": "E3",
+      "findings": [
+        "serial_echo_missing"
+      ],
+      "evidence": [
+        [
+          36,
+          28
+        ],
+        [
+          37,
+          29
+        ]
+      ],
+      "masked": []
+    },
+    {
       "name": "trap-indeterminate-leave-390p",
       "scenario": "scenarios/sentinel-01/seeded/cap-390p-sda-2k2.json",
       "mutant": "leave-firmware",

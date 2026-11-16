@@ -1030,6 +1030,34 @@ fn an_unknown_bus_is_refused() {
     refused_before_running(&[("s.json", s)], &["s.json"], 2, "UnknownBus");
 }
 
+/// `AET-WO-2302` D5: an open RX line on a port the specification does not
+/// declare is refused before any run (`INV-06`), and a version-2 file may
+/// not open one at all.
+#[test]
+fn an_open_rx_line_on_an_unknown_port_is_refused() {
+    let mut s = json_of(&scenario(
+        "case",
+        "fail",
+        &["serial_echo_missing"],
+        json!([{ "serial_rx_open": "NOPE" }]),
+    ));
+    s["schema_version"] = json!(3);
+    let v = refused_before_running(
+        &[("s.json", s.to_string())],
+        &["s.json"],
+        2,
+        "UnknownSerialPort",
+    );
+    assert_eq!(v["error"]["id"], "NOPE", "{v}");
+    s["schema_version"] = json!(2);
+    refused_before_running(
+        &[("s.json", s.to_string())],
+        &["s.json"],
+        2,
+        "SchemaViolation",
+    );
+}
+
 #[test]
 fn a_zero_pull_up_is_refused_as_an_invalid_specification() {
     let s = scenario(

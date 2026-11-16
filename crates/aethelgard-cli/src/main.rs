@@ -470,6 +470,7 @@ fn main() -> ExitCode {
                         scenario: String::new(),
                         held: Vec::new(),
                         absent: Default::default(),
+                        open: Default::default(),
                         rail: None,
                     }),
                 )
@@ -1283,6 +1284,9 @@ struct Boot {
     held: Vec<campaign::HeldLow>,
     /// The SPI devices the scenario leaves absent (`AET-WO-4200` D4).
     absent: std::collections::BTreeSet<String>,
+    /// The serial ports the scenario holds open on their RX line
+    /// (`AET-WO-2302` D5), by label.
+    open: std::collections::BTreeSet<String>,
     /// A campaign scenario's declared droop (`AET-WO-2301`); `None` otherwise.
     rail: Option<analog::Rail>,
 }
@@ -1385,7 +1389,10 @@ fn ready(
             firmware.sha256
         ))
     })?;
-    let serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
+    let mut serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
+    for s in &mut serial {
+        s.open = boot.open.contains(&s.port.label);
+    }
     let capture = match serial.is_empty() {
         true => None,
         false => Some(capture_dir(scratch)?),

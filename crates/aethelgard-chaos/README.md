@@ -185,7 +185,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 
 | kind | record | payload |
 |---|---|---|
-| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]` or `[2, bus, line]` (0 SDA, 1 SCL) |
+| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps, bor_level]` (a droop), `[4, reference]` (an absent SPI device) or `[5, port]` (an open serial RX line, `AET-WO-2302` D5) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
 | 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
@@ -224,17 +224,24 @@ apart from anything generated (`INV-07`):
 
 - Every key is required (but `expect_counts`) and no other is allowed, at
   either level; a duplicate key, a positional array or `null` in a key an
-  override does not use is refused. `schema_version` is 1 or 2; only 2 admits
-  `droop` and `expect_counts` (`AET-WO-2301`), and a version-1 file reads as
-  it always did. `name` is 1 to 64 bytes of `0x21`–`0x7E`.
+  override does not use is refused. `schema_version` is 1, 2 or 3, and a file
+  may use only what its version admits (`SchemaViolation` otherwise): version
+  2 (`AET-WO-2301`, `AET-WO-4200`) admits `droop`, `spi_device_absent` and
+  `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`.
+  A version-1 file reads as it always did. `name` is 1 to 64 bytes of
+  `0x21`–`0x7E`.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),
   `{net, max_capacitance_femtofarads}` (a `u64`), or `{bus, line_held_low}`
-    (`"sda"` or `"scl"`), or, in version 2, `{droop: {domain, floor_millivolts,
+  (`"sda"` or `"scl"`); in version 2 or 3, `{droop: {domain, floor_millivolts,
   start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps,
-  bor_level}}`, every field required and bounded. Two overrides of one thing,
-  or two droops, are refused
-  (`DuplicateOverride`); at most 32 overrides and 16 expected kinds, so the
-  scenario's record fits the event bound.
+  bor_level}}`, every field required and bounded, or `{spi_device_absent:
+  reference}`; in version 3, `{serial_rx_open: port}`, a serial port's label.
+  Every id is 1 to 64 bytes of `0x21`–`0x7E`. Two overrides of one thing
+  (one bus's pull-up, one net, one line, one device, one port), or two
+  droops, are refused (`DuplicateOverride`); at most 32 overrides and 16
+  expected kinds, so the scenario's record fits the event bound.
+- `expect_counts` (version 2 or 3) is an object of finding kinds to counts,
+  at most 16, a kind named twice refused.
 - `expect` is `pass` or `fail`. A failing scenario names the finding kinds it
   fails with in `expect_findings`; a passing one names none
   (`ExpectContradiction`).
@@ -245,7 +252,13 @@ apart from anything generated (`INV-07`):
   `aethelgard-ir`'s own kind. `line_held_low` changes nothing in the
   specification; it returns the held line, which the analog pre-pass faults
   without measuring (its finding is `i2c_line_held_low`, its fault's cause
-  `scenario.line_held_low`).
+  `scenario.line_held_low`). `spi_device_absent` and `serial_rx_open` change
+  nothing in the specification either: the platform leaves the device out
+  behind its chip select, and the composition injects no frame into the port
+  (`UnknownDevice`, `UnknownSerialPort` for an id the solved topology lacks).
+  Replay binds an open port to its records: it names a solved port (kind 27),
+  its witness (kind 29) shows no frame gone in and no RX mux read at an
+  injection, and the sequential injection skips it.
 
 **A droop** (`AET-WO-2301`, ruled on PR #107) changes nothing in the
 specification. The runner resolves it to the MCU's supply (`DroopNotMcuSupply`

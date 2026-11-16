@@ -397,13 +397,12 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "the manifest names each scenario and its sha256"
     );
     // `AET-WO-3303` §2: the reference package's verdict, and its manifest,
-    // list every precondition as met; FLASH's absent device was detected by
-    // its mechanism (its `attribute` gate passed). Its console port is named
-    // `no fault kind yet: serial` and does not block (ruled on #155).
+    // list every precondition as met; FLASH's absent device and the
+    // console's open RX line were each detected by its mechanism (each
+    // `attribute` gate passed, `AET-WO-2302` D5).
     let met = serde_json::json!([
         {"precondition": "every_harness_proved", "state": "met"},
-        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
-            "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]},
+        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met"},
         {"precondition": "mcu_support_network_judged", "state": "met"},
         {"precondition": "every_gate_passed", "state": "met"},
     ]);
@@ -416,6 +415,18 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             .iter()
             .any(|g| g["gate"] == "attribute"
                 && g["scenario"] == "spi-absent-u4"
+                && g["verdict"] == "pass"),
+        "{v}"
+    );
+    // The console's port met by its open RX line, detected by `E3`
+    // (`AET-WO-2302` D5).
+    assert!(
+        v["gates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g["gate"] == "attribute"
+                && g["scenario"] == "serial-rx-open-console"
                 && g["verdict"] == "pass"),
         "{v}"
     );

@@ -897,6 +897,101 @@ fn the_ports_go_in_one_after_another_inside_the_boot() {
     }
 }
 
+/// `AET-WO-2302` D5: a port the scenario holds open (`serial_rx_open`)
+/// gets nothing, and the chain skips it: the port after it goes in alone,
+/// and the open port's echo is missing by its own record. Replay refuses a
+/// frame or a mux read at an injection into an open port, an open port no
+/// solved port names, and a skip the scenario does not declare.
+#[test]
+fn an_open_port_gets_nothing_and_the_chain_skips_it() {
+    use aethelgard_chaos::record::Override;
+    fn open(port: &str) -> impl Fn(&mut Vec<Record>) + '_ {
+        move |r: &mut Vec<Record>| {
+            if let Record::Scenario { overrides, .. } = &mut r[0] {
+                overrides.push(Override::SerialRxOpen { port: port.into() });
+            }
+        }
+    }
+    let console_open = |r: &mut Vec<Record>| {
+        set_witness(r, WITNESS_CONSOLE, |c, e, rx, _| {
+            *c = Some(SerialCapture {
+                patterns: 1,
+                cut: 0,
+                echoed: 0,
+                stray: false,
+                len: 12,
+            });
+            *e = "missing".into();
+            *rx = None;
+        });
+    };
+    // The console held open: nothing went in, its echo is missing, and SBUS
+    // went in after the boot word with the console skipped.
+    let skipped = |r: &mut Vec<Record>| {
+        console_open(r);
+        if let Record::SerialWitness { injected_ns, .. } = &mut r[WITNESS_SBUS] {
+            *injected_ns = Some(130_750);
+        }
+    };
+    let r = judged(edit(skipped), &[(SERIAL_ECHO_FINDING, 1)]);
+    // Without the override, a port goes in only after the one before it.
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a serial port's frame went in before the port before it, without it, or past the boot"
+    );
+    let mut r = r;
+    open("CONSOLE")(&mut r);
+    let s = check_run(&r).unwrap();
+    assert!(
+        s.matched && s.failing_kinds == [SERIAL_ECHO_FINDING],
+        "{s:?}"
+    );
+    // A frame, or a mux read at an injection, into the open port.
+    let mut forged = r.clone();
+    if let Record::SerialWitness { injected_ns, .. } = &mut forged[WITNESS_CONSOLE] {
+        *injected_ns = Some(130_750);
+    }
+    assert_eq!(
+        check_run(&forged).unwrap_err(),
+        "a frame went into a serial port whose RX line the scenario holds open"
+    );
+    let mut forged = r.clone();
+    if let Record::SerialWitness {
+        rx_at_injection, ..
+    } = &mut forged[WITNESS_CONSOLE]
+    {
+        *rx_at_injection = Some((0b10, 7));
+    }
+    assert!(check_run(&forged).is_err());
+    // An open port no solved port names.
+    let mut unknown = r.clone();
+    open("GPS")(&mut unknown);
+    assert_eq!(
+        check_run(&unknown).unwrap_err(),
+        "an open serial RX line names no solved serial port"
+    );
+    // The last port held open: the console goes in as ever, SBUS gets
+    // nothing.
+    let mut last = judged(
+        edit(|r| {
+            set_witness(r, WITNESS_SBUS, |c, e, rx, _| {
+                *c = Some(SerialCapture {
+                    patterns: 1,
+                    cut: 0,
+                    echoed: 0,
+                    stray: false,
+                    len: 9,
+                });
+                *e = "missing".into();
+                *rx = None;
+            });
+        }),
+        &[(SERIAL_ECHO_FINDING, 1)],
+    );
+    open("SBUS")(&mut last);
+    assert!(ok(&last));
+}
+
 #[test]
 fn a_serial_record_that_joins_no_solved_port_is_refused() {
     assert!(check_run(&run()).is_ok());
