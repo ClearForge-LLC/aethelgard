@@ -237,3 +237,37 @@ Firmware and verdicts change on every board, each change named in §3 and §5:
 - Specification 11 (`peer_deviation_ppm`; 4300d3 took 10 on `main`).
 - Topology 8; parts schema 6; power parts 2 (`main`'s); trace 12.
 - `TIER2_MIN` 156: C2's completeness test is the one new tier-2 test, counted on the host. 4300g, which also takes specification 11, renumbers if it merges second.
+
+## 12. CI on the PR head (run 43826691595, head `3a779b0`)
+
+| Job | Result | Minutes |
+|---|---|---|
+| `gates` | success | 15.6 |
+| tools-shard 0 | success | 28.1 |
+| tools-shard 1 | **cancelled at the 30-min job limit**, inside `against_fab_tier2` (its first test passed) | 30.2 |
+| tools-shard 2 | failure: `the_imu_and_barometer_fixture_runs_every_script_step_witnessed` (Q-E) | 22.6 |
+| tools-shard 3 | success | 25.4 |
+| tools-shard 4 | failure: `a_seeded_imu_fault_is_named_by_its_step`, `a_seeded_barometer_fault_is_named_by_its_step` (Q-E) | 27.1 |
+| tools-shard 5 | success | 23.7 |
+| tools-shard 6 | **cancelled at the 30-min job limit**, inside `verify_2k2_tier2` | 30.2 |
+| tools-shard 7 | success | 18.7 |
+
+- **The failures are exactly Q-E's three tests.** No other test failed on any shard.
+- **The two cancellations are a planning consequence of this branch.** Every `prove`-heavy tier-2 test grew: a seventh harness (the flash read), a 14-step schedule proof where it was 13, the MODF and image rules, and the ES0392 rounds. The in-shard weights (4300b's) now under-plan the shards holding `verify_2k2_tier2` and `against_fab_tier2`.
+- **A measured refit is owed, and it is not done here.** The shards' times sum to about 206 minutes, so a balanced plan lands near 26 minutes per shard, under the job limit. The refit (`ci/shard.sh`'s rule 5, worst in-shard times) runs on the head after the ruling, since the acknowledgement form changes the tests again. Until then, the cancelled shards' remaining tests were run in the pinned image on Furnace (§4): every tier-2 suite passes there except Q-E's three.
+- **Q-K:** refit only, or also lift the 30-minute job limit, given that 20 minutes is now a target and not a gate (Scotty's ruling, 04:35)?
+
+## 13. Where it stands
+
+**STOPPED at WO §7's third condition:** the reference's ledger has 264 rows (§7).
+
+The architect's ruling is needed on:
+- the acknowledgement form (the proposal: per register and class, 26 entries on the reference);
+- the questions Q-A to Q-K (§8, §12).
+
+After the ruling:
+- build the acknowledgement field and `UnwitnessedFieldNotAcknowledged`, and acknowledge the reference;
+- apply the rulings;
+- refit the shards;
+- run the full adversarial pass (fresh subagent, read-only) and the reduction pass;
+- then READY.
