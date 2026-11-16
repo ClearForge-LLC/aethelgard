@@ -921,6 +921,7 @@ fn every_admitted_identifier_character_survives_every_output() {
         {"precondition": "every_harness_proved", "state": "met"},
         {"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
             "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]},
+        {"precondition": "mcu_support_network_judged", "state": "met"},
         {"precondition": "every_gate_passed", "state": "met"},
     ]);
     assert_eq!(v["fab"]["preconditions"], met, "{v}");
