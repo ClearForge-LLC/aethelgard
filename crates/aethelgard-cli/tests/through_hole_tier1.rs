@@ -735,6 +735,22 @@ fn a_drill_file_that_lies_is_refused_by_name() {
             moved,
             "tool T1 (0.254 mm) has 11 hits, where the board holds 12: the thermal-via array under U5 pad 9, 0.554 mm pad (12)",
         ),
+        // `AET-WO-1311` §1.3: every count and diameter as the board's, and
+        // two holes exchanged between tools, or one moved by a micrometre.
+        (
+            "a via and a pad exchanged between tools",
+            &xt30,
+            x.replace("X122.375Y-115.125", "X@")
+                .replace("X102.0Y-106.0", "X122.375Y-115.125")
+                .replace("X@", "X102.0Y-106.0"),
+            "tool T1 (0.3 mm) drills at (102, 106) mm where the board's next hole is at (121.375, 103.125) mm",
+        ),
+        (
+            "a hole moved by a micrometre",
+            &xt30,
+            x.replace("X113.0Y-106.0", "X113.001Y-106.0"),
+            "tool T2 (1 mm) drills at (113.001, 106) mm where the board's next hole is at (113, 106) mm",
+        ),
         (
             "a slot under a tool",
             &xt30,

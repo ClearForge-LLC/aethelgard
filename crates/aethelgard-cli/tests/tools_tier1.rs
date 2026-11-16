@@ -145,6 +145,8 @@ enum Version {
     Empty,
     /// Prints a line and exits nonzero.
     Fails,
+    /// Prints this line and exits 0.
+    Prints(&'static str),
 }
 
 impl Version {
@@ -153,6 +155,7 @@ impl Version {
             Version::Good => format!("printf '%s\\n' '{good_line}'; exit 0"),
             Version::Empty => "exit 0".into(),
             Version::Fails => "printf 'boom\\n'; exit 3".into(),
+            Version::Prints(line) => format!("printf '%s\\n' '{line}'; exit 0"),
         }
     }
 }
@@ -500,6 +503,28 @@ fn kicad_version_printing_nothing_is_tool_unusable() {
     k.install(&tb);
     let b = board();
     refused_id(&drc(&tb, &b.path), 4, "ToolUnusable", "kicad-cli");
+}
+
+/// `AET-WO-1311` (the Grok review's rows 3 and 12): `check drc` and `check
+/// erc` run KiCad 10.0.7 only, as `fab` does; any other version, however
+/// near, is refused before the check runs.
+#[test]
+fn a_kicad_other_than_10_0_7_is_tool_unusable() {
+    for printed in [
+        "10.0.8", "10.0.6", "9.0.7", "10.0.7-1", "10.0.7.1", "10.0.70",
+    ] {
+        let tb = Dir::new("tb");
+        let mut k = Kicad::new(0, Some(drc_report(vec![])));
+        k.version = Version::Prints(printed);
+        k.install(&tb);
+        let b = board();
+        refused_id(&drc(&tb, &b.path), 4, "ToolUnusable", "kicad-cli");
+        let mut k = Kicad::new(0, Some(erc_report(vec![])));
+        k.version = Version::Prints(printed);
+        k.install(&tb);
+        let s = schematic();
+        refused_id(&erc(&tb, &s.path), 4, "ToolUnusable", "kicad-cli");
+    }
 }
 
 #[test]
