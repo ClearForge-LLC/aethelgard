@@ -61,7 +61,7 @@ pub enum EmitError {
         reference: String,
         part: String,
         address: u8,
-        allowed: &'static str,
+        allowed: String,
     },
     #[error("the solved topology has no pin for net `{0}`")]
     UnsolvedNet(String),
@@ -117,6 +117,46 @@ impl EmitError {
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
             Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
         }
+    }
+}
+
+/// The connection `d`'s address strap takes (`AET-WO-1311` §1.5, `4200`
+/// F12). The addresses are the parts table's (`parts.json`
+/// `bus.i2c.addresses`, cited), in the order the row lists them; `targets`
+/// are the strap's connections in that same order, the one layout fact the
+/// emitter keeps. A row whose count of addresses is not the emitter's count
+/// of straps is refused, never matched in part (`INV-06`).
+fn strapped(d: &aethelgard_ir::I2cDevice, targets: &[Conn]) -> Result<Conn, EmitError> {
+    let table = aethelgard_ir::parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
+    let addresses = match table.get(&d.part).map(|p| &p.bus) {
+        Some(aethelgard_ir::parts::Bus::I2c { addresses }) => addresses,
+        _ => {
+            return Err(EmitError::Internal(format!(
+                "{} ({}): the parts table has no I2C row for it",
+                d.reference, d.part
+            )));
+        }
+    };
+    if addresses.len() != targets.len() {
+        return Err(EmitError::Internal(format!(
+            "{}: the parts table lists {} addresses, and the emitter draws {} straps",
+            d.part,
+            addresses.len(),
+            targets.len()
+        )));
+    }
+    match addresses.iter().position(|a| *a == d.address) {
+        Some(i) => Ok(targets[i].clone()),
+        None => Err(EmitError::UnsupportedAddress {
+            reference: d.reference.clone(),
+            part: d.part.clone(),
+            address: d.address,
+            allowed: addresses
+                .iter()
+                .map(|a| format!("{a} ({a:#04X})"))
+                .collect::<Vec<_>>()
+                .join(", "),
+        }),
     }
 }
 
@@ -744,18 +784,9 @@ pub(crate) fn design(
         let gnd = b.ground();
         let (lib_id, conns) = match d.part.as_str() {
             "BME280" => {
-                let sdo = match d.address {
-                    0x76 => b.strap(&d.reference, "SDO", gnd.clone())?,
-                    0x77 => b.strap(&d.reference, "SDO", rail.clone())?,
-                    address => {
-                        return Err(EmitError::UnsupportedAddress {
-                            reference: d.reference.clone(),
-                            part: d.part.clone(),
-                            address,
-                            allowed: "118 (0x76) and 119 (0x77)",
-                        });
-                    }
-                };
+                // SDO to GND, then to VDDIO (BME280 datasheet §6.2).
+                let target = strapped(d, &[gnd.clone(), rail.clone()])?;
+                let sdo = b.strap(&d.reference, "SDO", target)?;
                 (
                     "Sensor:BME280",
                     [
@@ -772,20 +803,8 @@ pub(crate) fn design(
                 )
             }
             "TMP117" => {
-                let add0 = match d.address {
-                    0x48 => gnd.clone(),
-                    0x49 => rail.clone(),
-                    0x4A => sda.clone(),
-                    0x4B => scl.clone(),
-                    address => {
-                        return Err(EmitError::UnsupportedAddress {
-                            reference: d.reference.clone(),
-                            part: d.part.clone(),
-                            address,
-                            allowed: "72 to 75 (0x48 to 0x4B)",
-                        });
-                    }
-                };
+                // ADD0 to GND, V+, SDA, then SCL (TMP117 datasheet Table 7-2).
+                let add0 = strapped(d, &[gnd.clone(), rail.clone(), sda.clone(), scl.clone()])?;
                 (
                     "Sensor_Temperature:TMP117xxDRV",
                     [
@@ -1388,6 +1407,65 @@ mod tests {
     }
 
     use super::*;
+
+    /// `AET-WO-1311` §1.5 (`4200` F12): each address takes the strap the
+    /// datasheet gives it, by the parts table's order, pinned here so a
+    /// reordered row fails; a count that disagrees, or an address the row
+    /// does not offer, is refused.
+    #[test]
+    fn a_strap_follows_the_parts_tables_addresses() {
+        let device = |part: &str, address: u8| aethelgard_ir::I2cDevice {
+            reference: "U9".into(),
+            part: part.into(),
+            supply: "VDD_3V3".into(),
+            bus: "B".into(),
+            address,
+        };
+        let to = |n: &str| Conn::Net(n.into());
+        let bme = [to("GND"), to("VDDIO")];
+        assert_eq!(strapped(&device("BME280", 0x76), &bme).unwrap(), to("GND"));
+        assert_eq!(
+            strapped(&device("BME280", 0x77), &bme).unwrap(),
+            to("VDDIO")
+        );
+        let tmp = [to("GND"), to("V+"), to("SDA"), to("SCL")];
+        for (address, want) in [(0x48, "GND"), (0x49, "V+"), (0x4A, "SDA"), (0x4B, "SCL")] {
+            assert_eq!(
+                strapped(&device("TMP117", address), &tmp).unwrap(),
+                to(want)
+            );
+        }
+        let e = strapped(&device("TMP117", 0x48), &tmp[..3]).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("lists 4 addresses, and the emitter draws 3"),
+            "{e}"
+        );
+        let e = strapped(&device("BME280", 0x48), &bme).unwrap_err();
+        assert_eq!(e.kind(), "UnsupportedAddress");
+        assert!(e.to_string().contains("118 (0x76), 119 (0x77)"), "{e}");
+    }
+
+    /// No I2C address of any parts-table row is written in this file: the
+    /// table is the one list (`AET-WO-1311` §1.5).
+    #[test]
+    fn the_emitter_keeps_no_copy_of_an_address() {
+        let code = include_str!("schematic.rs");
+        let code = &code[..code.find("#[cfg(test)]").unwrap()];
+        let table = aethelgard_ir::parts::table().unwrap();
+        let mut checked = 0;
+        for part in table.parts() {
+            if let aethelgard_ir::parts::Bus::I2c { addresses } = &part.bus {
+                for a in addresses {
+                    for text in [format!("{a:#04x}"), format!("{a:#04X}"), format!("{a} (")] {
+                        assert!(!code.contains(&text), "{}: {text}", part.part);
+                    }
+                    checked += 1;
+                }
+            }
+        }
+        assert!(checked >= 6, "{checked}");
+    }
 
     #[test]
     fn resistances_read_as_schematics_write_them() {

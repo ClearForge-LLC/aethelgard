@@ -39,6 +39,27 @@ impl Check {
 
 const TOOL: &str = "kicad-cli";
 
+/// The one KiCad every gate that runs `kicad-cli` is written against:
+/// `check drc`, `check erc` and `fab` refuse another (`AET-WO-1311`, the
+/// Grok review's row 3 and 12: the strict reader passes a child it does not
+/// know, which only another KiCad would read).
+pub const KICAD_VERSION: &str = "10.0.7";
+
+/// `kicad-cli version`'s first line, refused unless it is
+/// [`KICAD_VERSION`]: a gate does not judge with a KiCad it was not
+/// measured against (`ToolUnusable`, exit 4).
+pub fn pinned(printed: String) -> Result<String, Stop> {
+    if printed == KICAD_VERSION {
+        return Ok(printed);
+    }
+    Err(Stop::unusable(
+        TOOL,
+        format!(
+            "`{TOOL} version` printed {printed:?}; the gates are written against KiCad {KICAD_VERSION} and run no other"
+        ),
+    ))
+}
+
 /// The stem the gate gives the copy and every file it writes beside it.
 pub const STEM: &str = "input";
 
