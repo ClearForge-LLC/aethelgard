@@ -221,3 +221,16 @@ Reduction pass (diff): +1 net in source (measured, `git diff --numstat`; rustfmt
    - `"info"` and `"error"` across crates;
    - `"spi_identity_mismatch"` in `verify.rs`.
 5. **`I2`'s "a line with no computed rise" is now refused by replay** before attribution. The clause stays in evolve as a second statement, so the CLI README's rule table now says so.
+
+## CI (PR #167, run 43850749076, head `d6654e8`)
+
+**Green:** `gates`, `shards`, all eight tools shards, the aggregate `tools` (its `TIER2_MIN` 157 check included), and the `cli`, `image`, `pinned`, `pinout` and four `ardupilot` jobs.
+
+Tools shards, start to end:
+
+| Shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|---|
+| Time | 19:37 | **24:20** | 21:31 | 18:25 | 16:25 | 16:22 | 20:44 | 18:45 |
+
+- Shards 1, 2 and 6 passed 20 minutes. By the eight-shard rule (2026-11-16 04:35) that is a measurement, not a failure.
+- **No refit is triggered.** The plan is unchanged, and shard 1 leads shard 2 by 2:49, under the rule's 3 minutes, on one run. Shard 1 was the slowest here; the next run decides whether it is again.
