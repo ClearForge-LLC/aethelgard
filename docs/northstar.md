@@ -21,7 +21,22 @@ The defect therefore surfaces at the most expensive moment: after fabrication, w
 
 One-shot generative design makes this worse, not better. A hallucinated line of software fails to compile in seconds. A hallucinated pin assignment or an unrecovered bus lockup is invisible until the fabrication lead time and the parts budget have been spent, or until deployed units fail in the field.
 
-**This project has no scar of its own yet.** No Aethelgard board has been fabricated, so there is no incident to cite. The evidence above is the general pattern of the industry (respins, bring-up delays, field truck-rolls), which is weaker than a specific failure. The first fabricated reference board will produce the first real evidence, and the architecture's corrections table should record it either way.
+**The first scar: first silicon, 2026-11-16** (`AET-WO-3302`, ratified by Scotty the same day). The reference firmware the twin had passed was flashed onto a NUCLEO-H753ZI and its registers read back by a debugger, against predictions written before the run.
+
+- **What agreed:** the register image, the boot word and the brown-out level, every row the twin judged except one.
+- **The one that did not: SPI1.**
+  - The generated firmware enabled SPI1 as a master with software slave management off.
+  - On silicon the internal slave-select read low, so the controller raised a mode fault (`MODF`) and cleared both `MASTER` and `SPE`. No clock could ever leave the pin.
+  - Renode models no `MODF`, so **the twin passed what the silicon refused.**
+- **What it would have cost:** a board built on that verdict would have arrived with a dead SPI bus, its flash and every SPI sensor unreachable. That is the defect §2 describes, found on a development board in an afternoon instead of after a fabrication.
+- **The fix:** `SSM` and `SSI` are written before `SPE`, judged by a rule that shares no code with the generator (`AET-WO-4230`). The verdict now carries a ledger that names every register field the twin cannot see.
+
+**A second, smaller divergence from the same session.**
+- The H7 times its I2C clock-high from its own pin's threshold, about 1.7 V, not from 0.7·VDD.
+- With a weak pull-up, the controller keeps clocking while a compliant peer would see no valid clock.
+- The campaign's rise-time verdict, which uses the peer's threshold, was right. The twin's model of the controller is not.
+
+Rows for the sensors on the bus are added when they run. The first fabricated board (Sentinel-01) will add its own, and the architecture's corrections table records each one.
 
 ### 2.1 Why the existing tooling did not already solve this
 
@@ -79,6 +94,7 @@ Each carries its reason, because the reason is what stops it being relitigated e
 |---|---|---|---|
 | 2026-10-14 | — | Initial draft | Seed. Synthesized from the five Argon session captures; `INV-07` and `NG-04`, `NG-05` added by Claude with reasons stated inline |
 | 2026-10-19 | status | Ratified | Scotty merged PR #1 with `INV-07`, `NG-04`, and `NG-05` called out in the review summary, and delegated the remaining open questions to Claude. No invariant text changed |
+| 2026-11-16 | §2 | The first scar written in: SPI1's `MODF` on first silicon, which the twin passed, and the H7's I2C clock-synchronisation threshold (`AET-WO-3302` B8, B3–B5) | Scotty ratified it on 2026-11-16, which lifts the specification freeze (roadmap §6) |
 
 ## 8. Provenance
 
