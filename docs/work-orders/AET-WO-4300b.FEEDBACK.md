@@ -314,7 +314,7 @@ The refit's weights stay committed, since they are this rule's measurement; the 
   - B, the blocks at their worst over these and the refit's two runs (`attribute_seeded` 873): 1,065–1,066 s;
   - most favourable, `twin_tier2`'s three shard-7 tests counted at the binary's 374 s, not 374 + 54 + 53: 1,032 s;
   - with 9 shards: 930 s (A) or 947 s (B).
-  So no weights or rule text are committed; the next step, (c) or (a), is the architect's and Scotty's. `ci/SHARDS` stays 8.
+- **Interim ruling (architect, 2026-11-16 01:20 UTC, relayed by the operator), built.** Plan A is committed, not a relaxation of the claim but an interim: 8 shards, the in-shard weights (`ci/test-weights.tsv`, `ci/colocate.tsv`), about 1,046 s planned on every shard (`assign 8`, guard ok), and the head judged by the measurement clause alone (green, every shard under 20 minutes, one re-run deciding). `ci/shard.sh`'s REFIT RULE step 5 states the method, the measured total (about 8,368 s against 8 × 1,006 = 8,048 s), that no 8-shard plan fits the 1,006 s line, and that `ci/SHARDS` 9 (930–947 s) is put to Scotty. `ci/SHARDS` stays 8; this work order does not set 9.
 - **Shard 7's timing test** (`twin_tier2::an_aborted_machine_returns_inside_the_bound_as_cpu_aborted`, 35.13 s against `30 + 5` on `cb07f59`): the slack is `30 + 30`, with the ruling's comment: the test claims the machine returns instead of hanging, not that the bound is precise. Mutants in the pinned image, one container, the test alone (`~/.cache/aet-4300b/round5/mut/`):
   - none: pass in 15.5 s;
   - `BOOT_BOUNDS.wall` 30 s → 3,600 s: **still passes, in 16.0 s**: Renode's RSS reaches the 1 GiB cap first (about 55 MB/s from about 400 MB), and the reaper kills it at the memory bound, still reported `cpu_aborted`;
