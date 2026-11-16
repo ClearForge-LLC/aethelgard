@@ -65,19 +65,19 @@ fn the_reference_has_a_row_for_every_listed_field_and_no_other() {
     let (t, table) = reference();
     let fields = register_fields(&t, &table).unwrap();
     let l = ledger::build(&t, &table).unwrap();
-    let mut want: Vec<String> = fields
-        .iter()
-        .map(|f| match f.access {
-            FieldAccess::Written => f.id(),
-            FieldAccess::Reset => format!("{}@reset", f.id()),
-        })
-        .collect();
+    // The generated Reset's FPU enable first (the tier-2 completeness test
+    // found it), then the generator's list, then each controller's MODF.
+    let mut want: Vec<String> = vec!["SCB.CPACR.CP10".to_owned(), "SCB.CPACR.CP11".to_owned()];
+    want.extend(fields.iter().map(|f| match f.access {
+        FieldAccess::Written => f.id(),
+        FieldAccess::Reset => format!("{}@reset", f.id()),
+    }));
     want.push("SPI1.SR.MODF@reset".to_owned());
     let have: Vec<String> = l.rows.iter().map(|r| r.id.clone()).collect();
     assert_eq!(have, want, "one row per field, in the generator's order");
     assert_eq!(l.total, l.rows.len());
     // Each row carries its field's place and value as the generator listed it.
-    for (r, f) in l.rows.iter().zip(&fields) {
+    for (r, f) in l.rows[2..].iter().zip(&fields) {
         assert_eq!(
             (r.pos, r.width, r.value),
             (f.pos, f.width, f.value),
@@ -91,14 +91,14 @@ fn the_reference_has_a_row_for_every_listed_field_and_no_other() {
 #[test]
 fn the_reference_s_counts_are_pinned() {
     let l = reference_ledger();
-    assert_eq!(l.total, 262);
+    assert_eq!(l.total, 264);
     let by_class: BTreeMap<&str, usize> = l.counts.by_class.clone();
     assert_eq!(
         by_class,
         BTreeMap::from([
             ("independent-rule", 67),
             ("observed", 58),
-            ("same-source", 57),
+            ("same-source", 59),
             ("ignored-by-model", 79),
             ("silicon-only", 1),
         ])
@@ -107,6 +107,7 @@ fn the_reference_s_counts_are_pinned() {
     assert_eq!(
         by_family,
         BTreeMap::from([
+            ("CORE".to_owned(), 2),
             ("FLASH".to_owned(), 1),
             ("GPIO".to_owned(), 95),
             ("I2C".to_owned(), 46),
@@ -282,9 +283,9 @@ fn the_reference_s_bench_rows_are_pinned() {
     // SPI123SEL is read at reset, then written: only the written row is judged.
     assert!(!rows.contains("D2CCIP1R"));
     assert_eq!(rows.lines().count(), on.len() + 2);
-    assert_eq!(on.len(), 118);
+    assert_eq!(on.len(), 120);
     assert_eq!(
         sha(&rows),
-        "748242e011f8ee57f6f9d971073806229b2329c17ed2d56e9e7e8a026054a67b"
+        "f25e1c1a5a4e46b6c66cd46b766deb6cf0a5aaa08e76dcea772d9c12cf114664"
     );
 }

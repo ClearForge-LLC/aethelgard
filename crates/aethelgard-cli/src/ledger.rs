@@ -538,6 +538,18 @@ fn table() -> Vec<Entry> {
         ));
     }
 
+    // ---- CORE: the FPU enable in the generated `Reset`.
+    t.push(e(
+        "CORE",
+        "CPACR",
+        "CP#",
+        W,
+        Same,
+        "none independent: written by the generated Reset's assembly (svd-hal board/firmware.rs), outside every Kani harness, and judged by no aethelgard-ir rule",
+        "",
+        "found by the tier-2 completeness test (AET-WO-4230 §5.4), not by svd-hal's register_fields; whether Renode's core faults a float instruction with CPACR clear is not held, so no reaction is claimed",
+    ));
+
     // ---- FLASH: the brown-out level.
     t.push(e(
         "FLASH",
@@ -1371,7 +1383,27 @@ fn id_of(f: &FieldUse) -> String {
 /// of each SPI controller), each classed by `table`.
 pub fn register_rows(fields: &[FieldUse], table: &[Entry]) -> Result<Vec<LedgerRow>, LedgerError> {
     let facts = cmsis::register_facts().map_err(|e| LedgerError::Fields(e.to_string()))?;
-    let mut uses: Vec<FieldUse> = fields.to_vec();
+    // The generated `Reset` enables the FPU before `main` (svd-hal
+    // board/firmware.rs: `ldr r0, =0xE000ED88`, `orr r1, r1, #0x00F00000`,
+    // `str`): a read-modify-write of `CPACR`'s CP10 and CP11 (bits 21:20 and
+    // 23:22) to full access, `0b11`. `register_fields` lists only the board
+    // crate's register writes, so the tier-2 completeness test found this one
+    // missing (AET-WO-4230 §5.4).
+    let mut uses: Vec<FieldUse> = [("CP10", 20u8), ("CP11", 22)]
+        .into_iter()
+        .map(|(field, pos)| FieldUse {
+            family: "CORE".into(),
+            register: "SCB.CPACR".into(),
+            offset: CPACR_OFFSET,
+            field: field.into(),
+            pos,
+            width: 2,
+            access: FieldAccess::Written,
+            value: Some(0b11),
+            whole_word: false,
+        })
+        .collect();
+    uses.extend_from_slice(fields);
     // The controllers' mode-fault flag, which the bring-up depends on staying
     // at reset (the architect's first-silicon note).
     let spis: Vec<String> = fields
@@ -1428,9 +1460,18 @@ pub fn register_rows(fields: &[FieldUse], table: &[Entry]) -> Result<Vec<LedgerR
     Ok(out)
 }
 
+/// The system control block's base and `CPACR`'s offset in it: the address
+/// the generated `Reset` writes, `0xE000ED88` (ST's device header does not
+/// define the core's blocks; CMSIS's `core_cm7.h` is not vendored).
+const SCB_BASE: u32 = 0xE000_ED00;
+const CPACR_OFFSET: u32 = 0x88;
+
 /// The bus address of `instance`'s register block: the flash controller's is
 /// `FLASH_R_BASE`, not the memory at `FLASH_BASE` (svd-hal board.rs).
 pub fn base(facts: &cmsis::RegisterFacts, instance: &str) -> Option<u32> {
+    if instance == "SCB" {
+        return Some(SCB_BASE);
+    }
     let name = if instance == "FLASH" {
         "FLASH_R"
     } else {
@@ -1607,7 +1648,7 @@ pub fn bench_rows(ledger: &Ledger) -> String {
         let why = match r.class {
             Class::IgnoredByModel => "the model stores or acts on none of it",
             Class::SiliconOnly => "no model: the twin presents the declared value",
-            _ => "only the generated oracle checks it; the model does not react",
+            _ => "no independent rule judges it, and the model does not react",
         };
         let _ = writeln!(
             out,

@@ -3305,6 +3305,10 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         if source == "flashController" {
             return Some("FLASH".into());
         }
+        // Renode's `nvic` is the whole system control space from 0xE000E000.
+        if source == "nvic" {
+            return Some("SCS".into());
+        }
         if let Some(port) = source.strip_prefix("gpioPort") {
             return Some(format!("GPIO{port}"));
         }
@@ -3359,7 +3363,8 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
             unknown.insert(format!("{} @ {:#x}", a.source, a.offset));
             continue;
         };
-        let Some(base) = aethelgard_cli::ledger::base(&facts, &inst) else {
+        let scs = (inst == "SCS").then_some(0xE000_E000u32);
+        let Some(base) = scs.or_else(|| aethelgard_cli::ledger::base(&facts, &inst)) else {
             unknown.insert(format!("{inst} @ {:#x}", a.offset));
             continue;
         };
@@ -3379,8 +3384,9 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
     ));
     assert!(writes > 50, "the boot was logged: {writes} writes\n{text}");
     assert!(
-        unknown.is_empty(),
-        "writes to peripherals the ledger has no instance for: {unknown:?}"
+        unknown.is_empty() && uncovered.is_empty(),
+        "writes to peripherals the ledger has no instance for: {unknown:?}\nwritten bits no ledger row covers:\n{}",
+        uncovered.join("\n")
     );
     assert!(
         uncovered.is_empty(),
