@@ -267,6 +267,13 @@ Reduction pass (diff): −9 lines net in the pass (the build itself deleted 65 l
     - `4403`: run 43923548434, shards 20 to 36, `gates` 23.
 
     So the slowness is the runners shared by four builders, not this change. This work order adds no tier-2 test and no `ci/` weight, and the `shards` job's plan is `main`'s. The READY commit changes only this file, and its own run is the one the architect reads.
+- **Merge of `main` at `55ed4c4` (`4211`, #173), after that run.** The W25Q64JV row is NRND, and every specification placing it carries an `accept_lifecycle` entry.
+  - **One conflict,** in `refuses_tolerance_out_of_range`, resolved to this branch's `bare_rail`. That helper, and the CLI test's `bare_spi_bus`, now clear `accept_lifecycle` with the devices they remove, as `4211`'s own edit of that test did: an acknowledgement of a part no longer placed is refused.
+  - **After the merge** [measured]:
+    - **Bytes:** against a baseline built from `55ed4c4` itself (`~/.cache/aet-1207/baseline2/`, `v-b2` against `v-n3`), 153 of 153 records are identical, including 210 generated files from 15 specifications.
+    - **Tests:** the five pinned rows still print `1178ca8`'s bytes from `solve`, `generate` and `validate`.
+    - **Gates** (`992611a`): `cargo fmt --all -- --check` clean; clippy `--workspace --all-targets --features aethelgard-cli/with-tools -D warnings` clean; `cargo test --workspace --no-fail-fast` 117 binaries, 0 failures.
+  - The temporary `main` worktree and its 1.6 GB target are removed.
 - **Disk:**
   - No agent worktree was created (the adversarial subagent ran without one), and the mutants ran in this worktree, each restored.
   - **Kept, as the evidence this document cites:** `~/.cache/aet-1207/` (538 MB). It holds:
@@ -278,3 +285,4 @@ Reduction pass (diff): −9 lines net in the pass (the build itself deleted 65 l
     - `adv/`: the 8,609 specifications, `results.json`, `REPORT.md` and the library and `modes` probes;
     - `pr-title-body.md`.
 - **Tokens:** minted per push (the branch and the PR; the fix; the READY commit) and revoked after each, every revocation `HTTP 204`.
+- **The READY commit** is this file only, on `992611a`. It is the last push, and its CI run is the one the architect reads.
