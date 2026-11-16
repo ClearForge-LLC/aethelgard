@@ -398,16 +398,16 @@ fn serial_pins_take_00_with_their_own_reason() {
     assert!(pa2.contains(
         "pub fn into_usart2_tx<R: Registers>(self, r: &mut R) -> PA2<AlternateFunction<7>> {"
     ));
-    // OSPEEDR 00, PUPDR none, AFRL AF7, MODER AF; push-pull is the port's
-    // whole OTYPER, which `split` writes and no pin touches (`AET-WO-4230`).
+    // OSPEEDR 00, AFRL AF7, MODER AF; push-pull is the port's whole OTYPER
+    // and no pull its whole PUPDR (PA2 bits 5:4 `00`, the debug pulls kept),
+    // which `split` writes and no pin touches (`AET-WO-4230` D5, R5).
     assert!(!pa2.contains("Block::GpioA, 0x04"), "{pa2}");
-    assert!(
-        item(board, "impl GpioA<Clocked> {")
-            .contains("        r.write(TOKEN, Block::GpioA, 0x04, 0x00000000);\n")
-    );
+    assert!(!pa2.contains("Block::GpioA, 0x0c"), "{pa2}");
+    let split = item(board, "impl GpioA<Clocked> {");
+    assert!(split.contains("        r.write(TOKEN, Block::GpioA, 0x04, 0x00000000);\n"));
+    assert!(split.contains("        r.write(TOKEN, Block::GpioA, 0x0c, 0x64000000);\n"));
     for line in [
         "r.modify(TOKEN, Block::GpioA, 0x08, |v| v & !0x00000030);",
-        "r.modify(TOKEN, Block::GpioA, 0x0c, |v| v & !0x00000030);",
         "r.modify(TOKEN, Block::GpioA, 0x20, |v| (v & !0x00000f00) | 0x00000700);",
         "r.modify(TOKEN, Block::GpioA, 0x00, |v| (v & !0x00000030) | 0x00000020);",
     ] {
@@ -638,7 +638,8 @@ fn what_the_generator_cannot_write_is_refused() {
 /// every board on purpose (the reset clock read first and taken by I2C and
 /// SPI, `OTYPER` written whole, the enables read back, the SPI `EOT` wait;
 /// then the solved SPI and I2C words written whole, the kernel selection, the
-/// erratum delay and the brown-out word).
+/// erratum delay and the brown-out word; in round 2, `CFG2.AFCNTR` and
+/// `PUPDR` written whole by `split`).
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -670,7 +671,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/board.rs",
-        "9d34e02a3e247a372906b5c49dc804412210b1ef438bc850c331752cb4eacbf7",
+        "2f5240457f3527f1f00e70a74f529560c31ae7d0c799a68aa9ad5386ae67a456",
     ),
     (
         "src/lib.rs",
@@ -678,7 +679,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "7ffcb0bf6bb7e2fa8ff26846b2c5ea5a63cc1ffb94486e99c8ce498eebd4c252",
+        "162eebdad9f07230170948a1c05cc83449667a4bf329f3dfc863e4acc7447e08",
     ),
 ];
 
