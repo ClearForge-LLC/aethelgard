@@ -224,3 +224,4 @@ Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9
   - It gets the same anonymous-fetch proof.
   - This PR's scope is unchanged.
 - **Acceptance stays as D1 ruled:** the first clause is met on `main`'s first publish after merge.
+- **Signal:** READY. `main` `2add53d` (docs #179) is merged in, and every ruling (D1–D6) is applied or recorded. CI was last green on all three workflows at `e403af9`; since then, only `main` and FEEDBACK have changed.
