@@ -2541,7 +2541,9 @@ fn adv_5_a_pattern_on_a_usart_no_port_names_is_forged() {
 /// byte, made an input for the other eleven, routed again before the end.
 /// Since adversarial pass 3 (the PM's ruling on ADV3-4) the TX pin is
 /// sampled at the first `TDR` write alone, routed here, and the interval
-/// rule fails it: once solved, PA9's fields never change in the boot.
+/// rule fails it: once solved, PA9's fields never change in the boot. Since
+/// pass 4 (ADV4-4) the witness says so too: `tx_at_send` is PA9's mux when
+/// it left AF7 after that write, and the pattern does not count.
 #[test]
 fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     let elf = adv_reference(
@@ -2561,12 +2563,24 @@ fn adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails() {
     let (code, v) = boot_elf("adv tx unrouted", &elf, "100ms");
     answer(&format!("ADV-1b code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
     let t = &serial(&v)[0]["twin"];
     assert_eq!(t["patterns"], 1, "{v}");
     assert_eq!(t["tx_at_end"], "PA9 MODER 0b10, AF7", "{v}");
-    assert_eq!(t["tx_at_send"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
+    assert_eq!(t["echo"], "witnessed", "{v}");
     assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
+    assert!(
+        messages(&v, "serial_pattern_missing")
+            .iter()
+            .any(|m| m
+                .contains("after a boot's first TDR write the TX pin went to PA9 MODER 0b00, AF7")),
+        "{v}"
+    );
 }
 
 // ------------------------------------------------- adversarial pass 2 (ADV2)
@@ -2866,6 +2880,8 @@ fn adv3_2_sbus_s_cr2_read_back_and_xored_fails() {
 /// before the end. Renode emits the byte at the write; silicon shifts it out
 /// over the next character, from the FIFO. Passed before the ruling: every
 /// `TDR` write saw PA9 routed. Once solved, a pin's fields never change.
+/// Since pass 4 (ADV4-4) the witness says so too: `tx_at_send` is PA9's
+/// mux when it left AF7, and the pattern does not count.
 #[test]
 fn adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails() {
     let route = "unsafe { let p = 0x5802_0000 as *mut u32; p.write_volatile((p.read_volatile() & !0x000c0000) | 0x00080000); }";
@@ -2886,9 +2902,13 @@ fn adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails() {
     let (code, v) = boot_elf("adv3-4", &elf, "100ms");
     answer(&format!("ADV3-4 code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_pattern_missing"],
+        "{v}"
+    );
     let t = &serial(&v)[0]["twin"];
-    assert_eq!(t["tx_at_send"], "PA9 MODER 0b10, AF7", "{v}");
+    assert_eq!(t["tx_at_send"], "PA9 MODER 0b00, AF7", "{v}");
     assert_eq!(t["echo"], "witnessed", "{v}");
     assert_eq!(unexpected(&v), [ADV3_PA9_UNROUTED], "{v}");
 }
@@ -2897,7 +2917,8 @@ fn adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails() {
 /// an input; the other seven, queued in Renode at the injection, read and
 /// echoed; PA10 routed again before the end. On silicon bytes 2 to 8 arrive
 /// after PA10 left its AF and are lost. Passed before the ruling: PA10 was
-/// routed at the injection.
+/// routed at the injection. Since pass 4 (ADV4-4) the witness says so too:
+/// the echo is `not_counted`, never `witnessed`.
 #[test]
 fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
     let elf = adv_reference(
@@ -2917,9 +2938,20 @@ fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
     let (code, v) = boot_elf("adv3-5", &elf, "100ms");
     answer(&format!("ADV3-5 code={code:?} kinds={:?}", kinds(&v)));
     assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_tag_mismatch"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_tag_mismatch", "serial_echo_missing"],
+        "{v}"
+    );
     let t = &serial(&v)[0]["twin"];
-    assert_eq!(t["echo"], "witnessed", "{v}");
+    assert_eq!(t["echo"], "not_counted", "{v}");
+    assert_eq!(t["rx_at_injection"], "PA10 MODER 0b10, AF7", "{v}");
+    assert!(
+        messages(&v, "serial_echo_missing")
+            .iter()
+            .any(|m| m.contains("after the injection the RX pin went to PA10 MODER 0b00, AF7")),
+        "{v}"
+    );
     assert_eq!(
         unexpected(&v),
         ["PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"],

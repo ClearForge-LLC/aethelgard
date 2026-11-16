@@ -1443,8 +1443,8 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             );
         }
     }
-    for (port, witness) in ports.iter().zip(&witnesses) {
-        if !serial_echo(port, witness, booted) {
+    for ((port, check), witness) in ports.iter().zip(&checks).zip(&witnesses) {
+        if !serial_echo(port, check, witness, booted) {
             return Err("a serial witness's echo is not what its capture and its RX pin give");
         }
         if !serial_tx_read(port, witness, records) {
@@ -1596,8 +1596,10 @@ fn serial_silicon(port: &Record, check: &Record) -> bool {
 /// capture and its RX pin at the injection, joined to kind 27 `port`: not
 /// judged without the boot word; else the whole frame after the patterns
 /// with the RX pin read is witnessed when that pin was on its AF and not
-/// counted otherwise; some of it is partial; anything else is missing.
-fn serial_echo(port: &Record, witness: &Record, booted: bool) -> bool {
+/// counted otherwise, or not counted when kind 28 `check`'s tags were read
+/// and failed (the interval rule unrouted the pin after the injection);
+/// some of it is partial; anything else is missing.
+fn serial_echo(port: &Record, check: &Record, witness: &Record, booted: bool) -> bool {
     let (
         Record::SerialPortSolved { rx_af, .. },
         Record::SerialWitness {
@@ -1624,7 +1626,13 @@ fn serial_echo(port: &Record, witness: &Record, booted: bool) -> bool {
         (true, Some(_)) if echoed > 0 => "partial",
         (true, _) => "missing",
     };
-    echo == want
+    // Adversarial pass 4, ADV4-4: a frame back whole on a pin routed at the
+    // injection is not counted when the RX pin was unrouted after it, which
+    // the interval rule names among kind 28's unexpected writes: the tags
+    // must have been read and failed.
+    let unrouted_after =
+        matches!(check, Record::SerialFramingCheck { tags: Some(t), .. } if !t.holds());
+    echo == want || (want == "witnessed" && echo == "not_counted" && unrouted_after)
 }
 
 /// Each serial port's frame, kind 29's, against the one the judge injects

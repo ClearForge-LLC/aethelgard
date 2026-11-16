@@ -1160,15 +1160,25 @@ pub struct SerialWitness {
     pub tx_at_end: Option<(u32, u32)>,
     /// The TX pin's `MODER` and `AFR` at the first `TDR` write of each boot,
     /// rebuilt from the access log: the first boot's that is not routed,
-    /// else the last's; `None` when no boot wrote `TDR`, a boot's could not
-    /// be rebuilt, or the log could not be read whole (adversarial F4).
+    /// else the first that left the AF after one ([`Self::tx_after_send`]:
+    /// the bytes were still on the wire), else the last's; `None` when no
+    /// boot wrote `TDR`, a boot's could not be rebuilt, or the log could not
+    /// be read whole (adversarial F4; pass 4, ADV4-4).
     pub tx_at_send: Option<(u32, u32)>,
+    /// The TX pin's `MODER` and `AFR` at the first write after a boot's
+    /// first `TDR` write that left it off its AF, when that is
+    /// [`Self::tx_at_send`] (every boot's first `TDR` write saw it routed),
+    /// and the RX pin's at the first after the injection (`None` inside
+    /// where the rebuild could not say); each `None` when it stayed routed
+    /// or the log could not be read whole (adversarial pass 4, ADV4-4).
+    pub tx_after_send: Option<Option<(u32, u32)>>,
+    pub rx_after_injection: Option<Option<(u32, u32)>>,
     /// The writes judged against the bring-up; `None` when the log could not
     /// be read whole.
     pub tags: Option<aethelgard_twin::serial::TagJudgement>,
     /// `witnessed`, `missing`, `partial`, `not_counted` (the frame came back
-    /// with the RX pin off its AF at the injection) or `not_judged` (no boot
-    /// word).
+    /// with the RX pin off its AF at the injection, or taken off it after:
+    /// [`Self::rx_after_injection`]) or `not_judged` (no boot word).
     pub echo: &'static str,
 }
 
@@ -1342,6 +1352,19 @@ fn serial_findings_of(
         out.push(Finding::plain(
             SERIAL_PATTERN_FINDING,
             match w.tx_at_end {
+                _ if c.patterns > 0
+                    && sent.is_none()
+                    && w.tx_after_send.is_some() =>
+                {
+                    format!(
+                        "{who}: the pattern was captured, but after a boot's first TDR write the TX pin went to {}, not MODER 0b10 on AF{}, while its bytes were on the wire: they never all reached the pin",
+                        w.tx_at_send.map_or_else(
+                            || "a mux the access log does not rebuild (not a word write)".to_owned(),
+                            |(m, a)| s.tx.describe(m, a)
+                        ),
+                        s.tx.alternate_function
+                    )
+                }
                 _ if c.patterns > 0 && sent.is_none() => format!(
                     "{who}: the pattern was captured, but at a boot's first TDR write the TX pin was at {}, not MODER 0b10 on AF{}: it never reached the pin",
                     w.tx_at_send.map_or_else(
@@ -1367,13 +1390,23 @@ fn serial_findings_of(
         "witnessed" | "not_judged" => {}
         "not_counted" => out.push(Finding::plain(
             SERIAL_ECHO_FINDING,
-            format!(
-                "{who}: the frame came back, but at the injection the RX pin was at {}, not MODER 0b10 on AF{}: no byte reached the receiver",
-                w.rx_at_injection
-                    .map(|(m, a)| s.rx.describe(m, a))
-                    .unwrap_or_default(),
-                s.rx.alternate_function
-            ),
+            match (w.rx_at_injection, w.rx_after_injection) {
+                (Some((m, a)), Some(after)) if s.rx.routed(m, a) => format!(
+                    "{who}: the frame came back, but after the injection the RX pin went to {}, not MODER 0b10 on AF{}, while the frame's bytes were arriving a character apart: they never all reached the receiver",
+                    after.map_or_else(
+                        || "a mux the access log does not rebuild (not a word write)".to_owned(),
+                        |(m, a)| s.rx.describe(m, a)
+                    ),
+                    s.rx.alternate_function
+                ),
+                _ => format!(
+                    "{who}: the frame came back, but at the injection the RX pin was at {}, not MODER 0b10 on AF{}: no byte reached the receiver",
+                    w.rx_at_injection
+                        .map(|(m, a)| s.rx.describe(m, a))
+                        .unwrap_or_default(),
+                    s.rx.alternate_function
+                ),
+            },
         )),
         _ => out.push(Finding::plain(
             SERIAL_ECHO_FINDING,
@@ -2334,11 +2367,22 @@ fn serial_witnesses(
                 .map(|b| aethelgard_twin::serial::parse(b, &s.pattern, &s.frame));
             let rx_at_injection = injection.get(2 * k..2 * k + 2).map(|w| (w[0], w[1]));
             let tx_at_end = image(s.tx.moder.1).zip(image(s.tx.afr.1));
+            let at = inject_at.filter(|_| rx_at_injection.is_some());
+            let rx_after_injection = boots
+                .and_then(|b| aethelgard_twin::serial::rx_unrouted_after_injection(&s.rx, at, b));
+            let tx_after_send = boots.and_then(|b| {
+                aethelgard_twin::serial::tx_unrouted_after_send(
+                    &s.tx,
+                    s.port.renode,
+                    s.bringup.tdr,
+                    b,
+                )
+            });
             let echo = match (&parsed, rx_at_injection) {
                 (Some(c), Some((m, a)))
                     if c.echoed == aethelgard_twin::serial::FRAME_LEN && !c.stray =>
                 {
-                    if s.rx.routed(m, a) {
+                    if s.rx.routed(m, a) && rx_after_injection.is_none() {
                         "witnessed"
                     } else {
                         "not_counted"
@@ -2347,8 +2391,11 @@ fn serial_witnesses(
                 (Some(c), Some(_)) if c.echoed > 0 && !c.stray => "partial",
                 _ => "missing",
             };
-            // The first boot's mux that is not routed, else the last's; `None`
-            // when a boot's could not be rebuilt or no boot wrote `TDR`.
+            // The first boot's mux that is not routed at its first `TDR`
+            // write, else the mux that first left the AF after one (ADV4-4),
+            // else the last boot's; `None` when a boot's could not be rebuilt
+            // or no boot wrote `TDR`.
+            let mut tx_after_send = tx_after_send;
             let tx_at_send = boots.and_then(|b| {
                 let sent =
                     aethelgard_twin::serial::tx_at_send(&s.tx, s.port.renode, s.bringup.tdr, b);
@@ -2356,8 +2403,13 @@ fn serial_witnesses(
                     .iter()
                     .find(|m| !m.is_some_and(|(m, a)| s.tx.routed(m, a)))
                 {
-                    Some(bad) => *bad,
-                    None => sent.last().copied().flatten(),
+                    Some(bad) => {
+                        // Named at its first `TDR` write: the later change
+                        // is the tags' alone.
+                        tx_after_send = None;
+                        *bad
+                    }
+                    None => tx_after_send.unwrap_or_else(|| sent.last().copied().flatten()),
                 }
             });
             SerialWitness {
@@ -2366,11 +2418,12 @@ fn serial_witnesses(
                 rx_at_injection,
                 tx_at_end,
                 tx_at_send,
+                tx_after_send,
+                rx_after_injection,
                 tags: boots.map(|b| {
                     use aethelgard_twin::serial::{judge_pins, judge_rcc, judge_writes};
                     let mut j = judge_writes(&s.bringup, s.port.renode, b);
                     let tdr = s.bringup.tdr;
-                    let at = inject_at.filter(|_| rx_at_injection.is_some());
                     for x in judge_rcc(&s.rcc, b).into_iter().chain(judge_pins(
                         &s.tx,
                         &s.rx,

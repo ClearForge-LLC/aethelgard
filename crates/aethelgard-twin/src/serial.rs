@@ -849,6 +849,58 @@ pub fn tx_at_send(
     out
 }
 
+/// The pin's `MODER` and `AFR` words at the first write, at or after
+/// `boot[from]`, that takes it off its solved AF, rebuilt as [`tx_at_send`]
+/// rebuilds them (`None` inside once a write the rebuild cannot apply
+/// reached either); `None` when no write from there takes it off.
+fn unrouted_from(pin: &PinMux, boot: &[Access], from: usize) -> Option<Option<(u32, u32)>> {
+    let mut words = PinWords::reset(pin);
+    let routed = |w: &PinWords| w.moder.zip(w.afr).is_some_and(|(m, f)| pin.routed(m, f));
+    for (i, a) in boot.iter().enumerate() {
+        let was = routed(&words);
+        words.apply(pin, a);
+        if i >= from && was && !routed(&words) {
+            return Some(words.moder.zip(words.afr));
+        }
+    }
+    None
+}
+
+/// What the witness says once the interval rule ([`judge_pins`]) has named
+/// a pin unrouted (`AET-WO-4300b` adversarial pass 4, ADV4-4): the TX pin's
+/// `MODER` and `AFR` at the first write after a boot's first `TDR` write
+/// that left it off its AF, in the first boot with one, so the pattern does
+/// not count (`tx_at_send` carries it); `None` when every boot kept it
+/// routed from its first `TDR` write to its end. A pin changed in its type,
+/// speed or pull alone stays routed here: that is the tags' finding, as at
+/// the first `TDR` write.
+pub fn tx_unrouted_after_send(
+    tx: &PinMux,
+    usart: &str,
+    tdr: u32,
+    boots: &[Vec<Access>],
+) -> Option<Option<(u32, u32)>> {
+    boots.iter().find_map(|boot| {
+        let first = boot
+            .iter()
+            .position(|a| a.write && a.source == usart && a.offset == tdr)?;
+        unrouted_from(tx, boot, first + 1)
+    })
+}
+
+/// The RX pin's `MODER` and `AFR` at the first write of the last boot, from
+/// the injection (`inject_at`, how many of its accesses precede it) on, that
+/// left it off its AF (ADV4-4): the frame's later bytes, a character apart,
+/// reach no receiver on silicon, so the echo is not counted. `None` when no
+/// frame went in or the pin stayed routed to the end.
+pub fn rx_unrouted_after_injection(
+    rx: &PinMux,
+    inject_at: Option<usize>,
+    boots: &[Vec<Access>],
+) -> Option<Option<(u32, u32)>> {
+    unrouted_from(rx, boots.last()?, inject_at?)
+}
+
 /// A pin's words in its GPIO port, rebuilt in log order from the words the
 /// access log shows written: `MODER` and its `AFR` word from `0` (never
 /// routed), `OTYPER`, `OSPEEDR` and `PUPDR` from their reset values
@@ -2202,6 +2254,84 @@ mod tests {
     /// Adversarial pass 3, ADV3-4 and 5 (the PM's ruling): once a pin's five
     /// fields first all hold their solved values in a boot, no later write
     /// in that boot changes any; before that, any order of writes is free.
+    /// Adversarial pass 4, ADV4-4: what the witness says once the interval
+    /// rule names a pin unrouted. The TX pin taken off its AF after a boot's
+    /// first `TDR` write gives its mux then, in the first boot with one; the
+    /// RX pin taken off it after the injection, in the last boot, gives its
+    /// mux then; a change before the first `TDR` write or the injection, or
+    /// of the type, speed or pull alone, gives nothing here (the tags name
+    /// it).
+    #[test]
+    fn adversarial_4_adv4_4_a_pin_unrouted_after_it_carries_bytes_is_named() {
+        let (tx, rx) = (
+            PinMux::of("PA9", 7).unwrap(),
+            PinMux::of("PA10", 7).unwrap(),
+        );
+        let send = w("usart1", 0x28, 0x43);
+        let (both, rx_only, tx_only) = (
+            w("gpioPortA", 0, 0x28_0000),
+            w("gpioPortA", 0, 0x20_0000),
+            w("gpioPortA", 0, 0x08_0000),
+        );
+        let tx_after = |boots: &[Vec<Access>]| tx_unrouted_after_send(&tx, "usart1", 0x28, boots);
+        // ADV3-4's shape: PA9 an input between TDR writes.
+        let mut gap = console_pins();
+        gap.extend([send.clone(), rx_only.clone(), both.clone(), send.clone()]);
+        assert_eq!(tx_after(&[gap.clone()]), Some(Some((0x20_0000, 0x770))));
+        // In a boot before the last, and in the first boot that has one.
+        let mut good = console_pins();
+        good.push(send.clone());
+        assert_eq!(
+            tx_after(&[good.clone(), gap.clone()]),
+            Some(Some((0x20_0000, 0x770)))
+        );
+        assert_eq!(tx_after(&[good.clone(), good.clone()]), None);
+        // Before the first TDR write, unrouted and routed again: nothing.
+        let mut early = console_pins();
+        early.extend([rx_only.clone(), both.clone(), send.clone()]);
+        assert_eq!(tx_after(&[early]), None);
+        // Open drain after the first TDR write: still routed.
+        let mut drain = good.clone();
+        drain.push(w("gpioPortA", 0x4, 1 << 9));
+        assert_eq!(tx_after(&[drain.clone()]), None);
+        // A write the rebuild cannot apply: off its AF, not rebuilt.
+        let mut half = good.clone();
+        half.push(Access {
+            bits: 16,
+            ..w("gpioPortA", 0, 0x0028)
+        });
+        assert_eq!(tx_after(&[half]), Some(None));
+        // No TDR write: nothing to carry.
+        assert_eq!(tx_after(&[console_pins()]), None);
+        // ADV3-5's shape: PA10 an input after the injection.
+        let mut rx_gap = console_pins();
+        let at = rx_gap.len();
+        rx_gap.extend([send.clone(), tx_only.clone(), send.clone(), both.clone()]);
+        assert_eq!(
+            rx_unrouted_after_injection(&rx, Some(at), &[rx_gap.clone()]),
+            Some(Some((0x08_0000, 0x770)))
+        );
+        // Unrouted before the injection and routed again: the read at the
+        // injection decides, nothing here; no frame, nothing; only the last
+        // boot holds the frame.
+        assert_eq!(
+            rx_unrouted_after_injection(&rx, Some(rx_gap.len()), &[rx_gap.clone()]),
+            None
+        );
+        assert_eq!(
+            rx_unrouted_after_injection(&rx, None, &[rx_gap.clone()]),
+            None
+        );
+        assert_eq!(
+            rx_unrouted_after_injection(&rx, Some(at), &[rx_gap, good.clone()]),
+            None
+        );
+        // A pull-up on PA10 after the injection: still routed.
+        let mut pulled = good;
+        pulled.push(w("gpioPortA", 0xC, 0b01 << 20));
+        assert_eq!(rx_unrouted_after_injection(&rx, Some(0), &[pulled]), None);
+    }
+
     #[test]
     fn adversarial_3_adv3_4_5_a_solved_pin_never_changes() {
         let (tx, rx) = (

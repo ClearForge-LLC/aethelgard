@@ -322,7 +322,8 @@ pub struct SerialTwinReport {
     pub echo: Option<&'static str>,
     /// The RX pin at the injection, the TX pin at the end, and the TX pin at
     /// a boot's first `TDR` write (the first boot's not routed, else the
-    /// last's): `PA10 MODER 0b10, AF7`.
+    /// first that left the AF after one, else the last's): `PA10 MODER 0b10,
+    /// AF7`.
     pub rx_at_injection: Option<String>,
     pub tx_at_end: Option<String>,
     pub tx_at_send: Option<String>,

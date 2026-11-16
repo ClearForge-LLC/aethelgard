@@ -45,8 +45,9 @@ pub const SERIAL_PARITIES: [&str; 3] = ["none", "even", "odd"];
 pub const SERIAL_TAGS: [&str; 4] = ["CR1.M0", "CR1.M1", "CR2.RXINV", "CR2.TXINV"];
 
 /// What kind 29's `echo` may say (`AET-WO-4300b`): the frame came back
-/// whole with the RX pin on its AF at the injection; did not come back; came
-/// back in part; came back with the RX pin off its AF; or was not judged,
+/// whole with the RX pin on its AF from the injection on; did not come back;
+/// came back in part; came back with the RX pin off its AF at the injection
+/// or taken off it after (adversarial pass 4, ADV4-4); or was not judged,
 /// because the boot word was never set.
 pub const SERIAL_ECHO_STATUSES: [&str; 5] = [
     "witnessed",
@@ -67,6 +68,13 @@ pub const SERIAL_TAIL_LEN: usize = 5;
 /// The most unexpected writes kind 28 carries: the CLI cuts a longer list,
 /// which still fails the port's tags, so the event fits the bound.
 pub const MAX_SERIAL_UNEXPECTED: usize = 16;
+
+/// The longest text of one of them, in bytes of printable ASCII: the access
+/// log's judge writes at most 80 (the interval rule's `PK15 MODER/AFR not
+/// rebuilt, OTYPER/OSPEEDR/PUPDR not rebuilt after it was solved`), past the
+/// 64 the other names keep (`AET-WO-4300b` adversarial pass 4, ADV4-4: at
+/// 64, a run in which the rule fired could not be archived).
+pub const MAX_SERIAL_UNEXPECTED_BYTES: usize = 128;
 
 /// A serial port's framing as kind 27 carries it, from the specification
 /// through the solved topology (`AET-WO-4300b` §1.1).
@@ -120,7 +128,7 @@ pub struct SerialCapture {
 /// carries it (`AET-WO-4300b` adversarial F1–F3): its USART's writes in the
 /// last boot, each needed tag not set in its word at `UE`, and everything
 /// else the writes did that the bring-up does not (at most
-/// [`MAX_SERIAL_UNEXPECTED`]).
+/// [`MAX_SERIAL_UNEXPECTED`], each at most [`MAX_SERIAL_UNEXPECTED_BYTES`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SerialTags {
     pub writes: u64,
@@ -565,10 +573,13 @@ pub enum Record {
     /// `MODER` and `AFSEL` fields at the injection (absent when no frame went
     /// in), the TX pin's at the end (as kind 11 reads its registers), and
     /// the TX pin's at the first `TDR` write of each boot, rebuilt from the
-    /// access log: the first boot's that is not routed, else the last's
-    /// (absent when no boot wrote `TDR`, a boot's could not be rebuilt, or the
-    /// log could not be read whole; adversarial F4). Archived after kind 28,
-    /// once Renode has run.
+    /// access log: the first boot's that is not routed, else the first that
+    /// left the AF after a boot's first `TDR` write, else the last's (absent
+    /// when no boot wrote `TDR`, a boot's could not be rebuilt, or the log
+    /// could not be read whole; adversarial F4, pass 4 ADV4-4). The echo is
+    /// `not_counted` too when the RX pin left its AF after the injection,
+    /// which kind 28's tags name. Archived after kind 28, once Renode has
+    /// run.
     SerialWitness {
         label: String,
         capture: Option<SerialCapture>,
@@ -2221,7 +2232,10 @@ impl Record {
                     !j.missing.iter().all(|m| tags_needed.contains(m))
                         || !canonical(&j.missing)
                         || j.unexpected.len() > MAX_SERIAL_UNEXPECTED
-                        || !j.unexpected.iter().all(|x| text_ok(x, 1, 64))
+                        || !j
+                            .unexpected
+                            .iter()
+                            .all(|x| text_ok(x, 1, MAX_SERIAL_UNEXPECTED_BYTES))
                 }) {
                     Err(
                         "a serial framing check's tag judgement names a tag the framing does not need as missing, or too many or malformed unexpected ones",

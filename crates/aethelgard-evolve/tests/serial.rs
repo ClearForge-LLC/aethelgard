@@ -639,6 +639,43 @@ fn a_failing_write_judgement_or_an_unrouted_send_is_software_s5() {
     );
 }
 
+/// Adversarial pass 4, ADV4-4, in ADV3-5's shape: PA10 taken off AF7 after
+/// the injection. The frame came back whole on a pin routed at the
+/// injection, so the echo is `not_counted` and the interval rule's note
+/// fails kind 28: the echo's finding and the tags' are the firmware's, S5 by
+/// kind 28, with the witness the echo's finding selects.
+#[test]
+fn adversarial_4_an_rx_pin_unrouted_after_the_injection_is_software_s5() {
+    let mut r = run(
+        &Case {
+            console_tags_hold: false,
+            ..Case::default()
+        },
+        &[(SERIAL_TAG_FINDING, 1), (SERIAL_ECHO_FINDING, 1)],
+    );
+    for x in r.iter_mut() {
+        match x {
+            Record::SerialFramingCheck {
+                label,
+                tags: Some(t),
+                ..
+            } if label == "CONSOLE" => {
+                t.unexpected = vec![
+                    "PA10 MODER 0b00, AF7, OTYPER 0, OSPEEDR 0b00, PUPDR 0b00 after it was solved"
+                        .into(),
+                ];
+            }
+            Record::SerialWitness { label, echo, .. } if label == "CONSOLE" => {
+                *echo = "not_counted".into();
+            }
+            _ => {}
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 28 CONSOLE", "kind 29 CONSOLE"]);
+}
+
 /// `4300a` F1: a failing static check is the topology's, not the
 /// firmware's, whatever else of the port's is wrong.
 #[test]

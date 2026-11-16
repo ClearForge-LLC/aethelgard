@@ -1201,3 +1201,57 @@ fn an_archived_witness_must_carry_its_firmware_s_frame() {
     }
     assert!(check_serial_frames(&FW, &run()).is_err());
 }
+
+/// Adversarial pass 4, ADV4-4 (the PM's ruling), in the shapes of pass 3's
+/// ADV3-4 and ADV3-5: once the interval rule names a pin unrouted after it
+/// was solved (kind 28), the witness says so too. The RX pin made an input
+/// after the injection: the echo came back whole on a pin routed at the
+/// injection, `not_counted`, and the run needs the echo's finding beside
+/// the tags'; the TX pin made an input between `TDR` writes: `tx_at_send`
+/// carries that mux, and the run needs the pattern's finding. The note, at
+/// its longest, fits kind 28's text rule. A `not_counted` on a routed pin
+/// with tags that hold is a record the judge never writes.
+#[test]
+fn adversarial_4_a_pin_unrouted_once_solved_is_never_witnessed() {
+    let note = |pin: &str| {
+        format!("{pin} MODER/AFR not rebuilt, OTYPER/OSPEEDR/PUPDR not rebuilt after it was solved")
+    };
+    let with = |pin: &str, f: &dyn Fn(&mut Vec<Record>)| {
+        edit(|r| {
+            if let Record::SerialFramingCheck { tags: Some(t), .. } = &mut r[CHECK_CONSOLE] {
+                t.unexpected = vec![note(pin)];
+            }
+            f(r);
+        })
+    };
+    // ADV3-5's shape: PA10 unrouted after the injection.
+    let rx = with("PK15", &|r| {
+        set_witness(r, WITNESS_CONSOLE, |_, e, _, _| *e = "not_counted".into());
+    });
+    assert_eq!(rx[CHECK_CONSOLE].check(), Ok(()));
+    assert!(ok(&judged(
+        rx.clone(),
+        &[(SERIAL_TAG_FINDING, 1), (SERIAL_ECHO_FINDING, 1)]
+    )));
+    assert!(!ok(&judged(rx.clone(), &[(SERIAL_TAG_FINDING, 1)])));
+    // ADV3-4's shape: PA9 an input between TDR writes, so `tx_at_send` is
+    // its mux then.
+    let tx = with("PK15", &|r| {
+        if let Record::SerialWitness { tx_at_send, .. } = &mut r[WITNESS_CONSOLE] {
+            *tx_at_send = Some((0b00, 7));
+        }
+    });
+    assert!(ok(&judged(
+        tx.clone(),
+        &[(SERIAL_TAG_FINDING, 1), (SERIAL_PATTERN_FINDING, 1)]
+    )));
+    assert!(!ok(&judged(tx, &[(SERIAL_TAG_FINDING, 1)])));
+    // `not_counted` on a pin routed at the injection, with tags that hold.
+    let forged = edit(|r| {
+        set_witness(r, WITNESS_CONSOLE, |_, e, _, _| *e = "not_counted".into());
+    });
+    assert_eq!(
+        check_run(&judged(forged, &[(SERIAL_ECHO_FINDING, 1)])).map(|s| s.matched),
+        Err("a serial witness's echo is not what its capture and its RX pin give")
+    );
+}
