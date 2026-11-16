@@ -165,4 +165,4 @@ The five assertions that fail there are the adversary's pins of the old behaviou
 - `"info"` and `"error"` are bare literals across chaos, evolve and the CLI. `SEVERITIES` now closes the set, and a `pub const` per severity would end the scatter.
 - `verify.rs` holds `"spi_identity_mismatch"` literals.
 
-Reduction pass (diff): −9 net · 3 duplicates removed · 0 dead paths removed · 3 protected kept · 3 findings above
+Reduction pass (diff): +1 net in source (measured, `git diff --numstat`; rustfmt spreads the merged arm over more lines, so the cut is copies, not lines), plus the 42-line test · 3 duplicates removed · 0 dead paths removed · 3 protected kept · 3 findings above
