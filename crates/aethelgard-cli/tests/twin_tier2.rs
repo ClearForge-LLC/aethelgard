@@ -3394,11 +3394,6 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         "writes to peripherals the ledger has no instance for: {unknown:?}\nwritten bits no ledger row covers:\n{}",
         uncovered.join("\n")
     );
-    assert!(
-        uncovered.is_empty(),
-        "written bits no ledger row covers:\n{}",
-        uncovered.join("\n")
-    );
 }
 
 /// AET-WO-1603 §1.1 and §1.3: no route from a firmware into what the judge

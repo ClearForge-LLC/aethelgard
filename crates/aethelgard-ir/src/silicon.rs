@@ -15,6 +15,11 @@
 //! judges, and a USART's [`SolvedClock`] (`INV-01`); it never reads the
 //! generated firmware (`INV-07`).
 //!
+//! belt-and-suspenders: every RM0433 bit position and reset value below
+//! restates what `aethelgard-svd-hal` reads from the CMSIS header, written
+//! from RM0433 so the generator's oracle takes its words from a second
+//! source (contract D1, D4).
+//!
 //! **The worst case is judged** (`AET-WO-4230` §1.8, contract amendment 1).
 //! Every kernel clock here is HSI-derived, and HSI strays by DS12117 Rev 10
 //! Table 36 (rev Y) / Table 133 (rev V): ±0.3 MHz at 3.3 V 30 °C, −0.12/+0.03 %
@@ -29,6 +34,9 @@ use serde::Serialize;
 
 use crate::{SolvedClock, SolvedI2cTiming, SolvedSpiController, SpiKernel};
 
+// belt-and-suspenders: `solve.rs` holds its own copy of these bounds, so an
+// error in one copy is a disagreement the rule finds, not a shared blind spot
+// (contract D1, amendment 1, `RUL-20`).
 /// HSI's worst-case deviations, ppm (DS12117 Rev 10 Table 36 rev Y = Table
 /// 133 rev V, rendered; the PM's sum, contract "Measured facts"). This
 /// module's own copy.

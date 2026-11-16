@@ -590,6 +590,9 @@ fn solved_port(
     Ok(port)
 }
 
+// belt-and-suspenders: `aethelgard_ir::silicon` holds its own copy of these
+// bounds, so the rule that judges the solver's MBR and TIMINGR never shares
+// a constant with it (contract D1, amendment 1, `RUL-20`).
 /// HSI's worst-case deviations, ppm: DS12117 Rev 10 Table 36 (rev Y) =
 /// Table 133 (rev V), ±0.3 MHz at 3.3 V 30 °C, −0.12/+0.03 % over VDD and
 /// −2/+1 % over TJ −40 °C to TJmax, summed (`AET-WO-4230` contract,
@@ -776,17 +779,13 @@ pub(crate) fn synthesize_timingr(kernel_hz: u64, mode: &str) -> Option<u32> {
     None
 }
 
-/// The mode names of [`I2C_MODES`], in order.
-pub(crate) fn i2c_modes() -> impl Iterator<Item = &'static str> {
-    I2C_MODES.iter().map(|m| m.0)
-}
-
 /// I2C `peripheral`'s solved timing on `clock`; `None` if it has no kernel
 /// clock or a mode has no `TIMINGR`.
 pub(crate) fn i2c_timing(clock: &SolvedClock, peripheral: &str) -> Option<SolvedI2cTiming> {
     let kernel_hz = i2c_kernel_hz(clock, peripheral)?;
-    let timingr = i2c_modes()
-        .map(|mode| synthesize_timingr(kernel_hz, mode).map(|w| (mode.to_owned(), w)))
+    let timingr = I2C_MODES
+        .iter()
+        .map(|&(mode, ..)| synthesize_timingr(kernel_hz, mode).map(|w| (mode.to_owned(), w)))
         .collect::<Option<_>>()?;
     Some(SolvedI2cTiming {
         kernel_hz,

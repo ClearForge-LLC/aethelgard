@@ -52,8 +52,7 @@ pub const STATUS_STOP: u32 = 0x2202_0004;
 /// An SPI read whose wait for `SR.RXP` expired (`AET-WO-4200`).
 pub const STATUS_RXP: u32 = 0x2202_0005;
 /// An SPI read whose wait for `SR.EOT` expired after its last frame
-/// (`AET-WO-4230`). `aethelgard_twin::boot` has no constant for it yet, so its
-/// judge reads it as neither a status nor its fill: a failed read either way.
+/// (`AET-WO-4230`).
 pub const STATUS_EOT: u32 = 0x2202_0006;
 
 // belt-and-suspenders: the judge holds its own copies of the pattern and the
