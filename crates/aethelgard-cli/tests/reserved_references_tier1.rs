@@ -368,3 +368,136 @@ fn aet_1206_the_emitters_address_guard_is_reachable_by_a_library_caller() {
         v = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     }
 }
+
+/// Removes the net constraint on `net`.
+fn unconstrain(s: &mut Value, net: &str) {
+    s["net_constraints"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["net_name"] != net);
+}
+
+/// The reference's MCU rail at `millivolts` (tolerance 0.1 %), with the SPI
+/// device and its chip-select constraint gone and only the I2C devices of
+/// `keep`: a bus no device's part bounds.
+fn bare_spi_bus(s: &mut Value, millivolts: u32, keep: &[&str]) {
+    s["voltage_domains"][0]["nominal_millivolts"] = millivolts.into();
+    s["voltage_domains"][0]["tolerance_permille"] = 1.into();
+    s["spi_devices"] = Value::Array(Vec::new());
+    unconstrain(s, "FLASH_CS");
+    s["i2c_devices"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| keep.iter().any(|k| d["part"] == *k));
+}
+
+/// `AET-WO-1207` §1.2 (`1206` F3): the three refusals `solve` made from the
+/// specification alone, each with the bytes the binary at `1178ca8` printed
+/// from `solve` and `generate`.
+fn aet_1207_pins() -> [(&'static str, fn(&mut Value), &'static str); 5] {
+    [
+        (
+            "rise",
+            |s| {
+                for c in s["net_constraints"].as_array_mut().unwrap() {
+                    if c["net_name"] == "I2C_SCL" {
+                        c["max_rise_time_nanoseconds"] = 1001.into();
+                    }
+                }
+            },
+            r#"{"ok":false,"error":{"kind":"RiseTimeTooSlow","id":"SENSORS","claimants":["SENSORS"],"message":"I2C bus `SENSORS` allows a rise time of 1001 ns, slower than any I2C mode (1000 ns at most)"}}"#,
+        ),
+        (
+            "sck",
+            |s| unconstrain(s, "SPI_SCK"),
+            r#"{"ok":false,"error":{"kind":"MissingSpiConstraint","id":"FLASH","claimants":["FLASH"],"message":"SPI bus `FLASH` has no net constraint on `SPI_SCK`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"}}"#,
+        ),
+        (
+            "mosi",
+            |s| unconstrain(s, "SPI_MOSI"),
+            r#"{"ok":false,"error":{"kind":"MissingSpiConstraint","id":"FLASH","claimants":["FLASH"],"message":"SPI bus `FLASH` has no net constraint on `SPI_MOSI`, so its pin's output speed has no declared load to be chosen for (`AET-WO-4300c` D2)"}}"#,
+        ),
+        (
+            "supply-low",
+            |s| bare_spi_bus(s, 1600, &[]),
+            r#"{"ok":false,"error":{"kind":"SupplyOutsideSpeedTable","id":"FLASH","claimants":["FLASH"],"message":"SPI bus `FLASH` is on a supply of 1598 to 1602 mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"}}"#,
+        ),
+        (
+            "supply-high",
+            |s| bare_spi_bus(s, 3800, &["TMP117"]),
+            r#"{"ok":false,"error":{"kind":"SupplyOutsideSpeedTable","id":"FLASH","claimants":["FLASH"],"message":"SPI bus `FLASH` is on a supply of 3796 to 3804 mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"}}"#,
+        ),
+    ]
+}
+
+/// `AET-WO-1207` §1.2, the behaviour before: `solve` and `generate` refuse
+/// each with the pinned bytes, and `validate` passes it (a specification
+/// that acknowledges nothing; with the reference's acknowledgements it
+/// refuses them as stale, having no ledger for a topology that does not
+/// solve).
+#[test]
+fn aet_1207_validate_refuses_what_solve_refused_byte_for_byte() {
+    for (label, edit, expected) in aet_1207_pins() {
+        let (code, out) = run_file("solve", &format!("1207-s-{label}"), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
+        let (code, out, created) = generate_raw(&format!("1207-g-{label}"), edit);
+        assert_eq!((code, out.trim_end()), (Some(2), expected), "{label}");
+        assert!(!created, "{label}: generate created its output directory");
+        let (code, out) = run_file("validate", &format!("1207-v-{label}"), |s| {
+            edit(s);
+            s["acknowledge_unwitnessed"] = Value::Array(Vec::new());
+        });
+        assert_eq!(code, Some(0), "{label}: {out}");
+        let (code, out) = run_file("validate", &format!("1207-va-{label}"), edit);
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(code, Some(2), "{label}: {out}");
+        assert_eq!(
+            v["error"]["kind"], "UnwitnessedAcknowledgementStale",
+            "{label}: {out}"
+        );
+    }
+}
+
+/// `spec` with `old` renamed `new` throughout, solved before the rename, and
+/// the topology renamed the same: what a library caller holding an
+/// unvalidated specification hands `aethelgard_eda::schematic::emit`.
+fn emit_renamed(
+    spec: &str,
+    old: &str,
+    new: &str,
+) -> Result<aethelgard_eda::schematic::Emission, aethelgard_eda::schematic::EmitError> {
+    use aethelgard_ir::{SolvedTopology, Specification};
+    let mut v: Value = serde_json::from_slice(&fs::read(root().join(spec)).unwrap()).unwrap();
+    let valid: Specification = serde_json::from_value(v.clone()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    let mut t = serde_json::to_value(&solved).unwrap();
+    rename(&mut v, old, new);
+    rename(&mut t, old, new);
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    assert!(
+        spec.validate().is_err(),
+        "{old} -> {new}: validate refuses it"
+    );
+    let solved: SolvedTopology = serde_json::from_value(t).unwrap();
+    aethelgard_eda::schematic::emit(&spec, &solved, &table)
+}
+
+/// `AET-WO-1207` §1.4 (`1206` F1), the behaviour before: the emitter's
+/// `spelled` omitted serial and motor nets, so a library caller of
+/// `schematic::emit` naming one for an emitter net got a board, the net
+/// shorted to the MCU's own (`validate` refuses it, `generate` never gets
+/// there).
+#[test]
+fn aet_1207_the_emitter_refuses_a_serial_or_motor_net_named_for_its_own() {
+    const MOTORS: &str = "crates/aethelgard-cli/tests/fixtures/motors-pwm.json";
+    for (spec, old, new) in [
+        (SPEC, "CONSOLE_TX", "U1_VCAP1"),
+        (SPEC, "CONSOLE_RX", "gnd"),
+        (MOTORS, "MOTOR1", "U1_VCAP2"),
+        (MOTORS, "MOTOR2", "GND"),
+    ] {
+        let emitted = emit_renamed(spec, old, new);
+        assert!(emitted.is_ok(), "{old} -> {new}: {:?}", emitted.err());
+    }
+}

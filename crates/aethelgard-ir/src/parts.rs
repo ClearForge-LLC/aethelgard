@@ -1279,4 +1279,40 @@ mod tests {
         assert_eq!(identity("W25Q128").unwrap(), None);
         assert_eq!(identity(BARE_W25Q64JV).unwrap(), None);
     }
+
+    /// The embedded table with the W25Q64JVxIQ row's `bus.spi.modes` set to
+    /// `modes`, parsed as a table is.
+    fn with_flash_modes(modes: &[u8]) -> PartsTable {
+        let mut doc: serde_json::Value = serde_json::from_str(PARTS_JSON).unwrap();
+        let row = doc["parts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|p| p["part"] == "W25Q64JVxIQ")
+            .unwrap();
+        row["bus"]["spi"]["modes"] = serde_json::json!(modes);
+        parse_parts(&doc.to_string()).unwrap()
+    }
+
+    /// The reference specification, whose one SPI device, `U4`, is a
+    /// W25Q64JVxIQ.
+    fn reference() -> crate::Specification {
+        serde_json::from_str(include_str!("../../../examples/sentinel-01-minimal.json")).unwrap()
+    }
+
+    /// `AET-WO-1207` §1.5 (Grok 2026-11-16 row 5), the behaviour before: a
+    /// row's `modes` are parsed and never read, so a device whose part
+    /// accepts no mode the controller drives passes step 14.
+    #[test]
+    fn aet_1207_a_device_whose_modes_exclude_the_driven_one_is_refused() {
+        let spec = reference();
+        for modes in [&[1u8, 2, 3][..], &[3], &[2]] {
+            let table = with_flash_modes(modes);
+            assert_eq!(spec.validate_parts(&table), Ok(()), "{modes:?}");
+        }
+        for modes in [&[0u8][..], &[3, 0], &[0, 1, 2, 3]] {
+            let table = with_flash_modes(modes);
+            assert_eq!(spec.validate_parts(&table), Ok(()), "{modes:?}");
+        }
+    }
 }
