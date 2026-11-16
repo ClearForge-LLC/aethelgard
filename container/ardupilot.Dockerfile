@@ -73,6 +73,9 @@ COPY ARDUPILOT-LICENSE.md /opt/ARDUPILOT-LICENSE.md
 # check-sources.sh judges both against the built image. The publish job sets
 # the documentation label to this file at the commit it publishes.
 COPY ARDUPILOT-SOURCES.md /SOURCES.md
+# D5 (ruled by Scotty on #176): the GPL-2.0-only Debian sources, mirrored
+# next to this image, one row per file with its sha256 and the artifact's digest.
+COPY ARDUPILOT-DEBIAN-GPL2.tsv /SOURCES-debian-gpl2.tsv
 RUN dpkg-query -W -f '${binary:Package}\t${Version}\t${source:Package}\t${source:Version}\thttps://snapshot.debian.org/package/${source:Package}/${source:Version}/\n' > /tmp/dpkg.tsv \
  && LC_ALL=C sort -o /SOURCES-debian.tsv /tmp/dpkg.tsv \
  && rm /tmp/dpkg.tsv

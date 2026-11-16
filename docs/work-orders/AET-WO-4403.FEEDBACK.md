@@ -225,3 +225,187 @@ Nothing else changes. Everything in §§4–6 is built, and CI is green at `c3c9
   - This PR's scope is unchanged.
 - **Acceptance stays as D1 ruled:** the first clause is met on `main`'s first publish after merge.
 - **Signal:** READY. `main` `2add53d` (docs #179) is merged in, and every ruling (D1–D6) is applied or recorded. CI was last green on all three workflows at `e403af9`; since then, only `main` and FEEDBACK have changed.
+
+# D5 follow-up: the GPLv2-only Debian sources mirrored (branch `wo/aet-4403-debian-src`)
+
+**The first ghcr proof of these mirrors comes on `main`'s first publish after merge, as D1(a) ruled for the GCC mirror.** This branch was cut from `main` `3dcd242`, after #176 merged as `938b7f4`.
+
+## D5.0 After #176 merged (proven on main)
+
+`ardupilot-image` push run 43944349355 is green.
+- **`publish`** found the pin absent (404), took Arm's tarball by sha256, and pushed the mirror at exactly `sha256:00f5fb5b…`. It re-fetched the mirror anonymously, then pushed the image `aethelgard-ardupilot@sha256:7b7ebed3…`.
+- **`source`**, with no credentials, fetched the manifest and the 200 406 637-byte tarball by the pinned digest.
+- **Furnace** fetched it anonymously at 20:06:37Z.
+
+The three main-only items D1 called [inferred] are therefore measured. The record is `~/.cache/aet-4403/post-merge.md`.
+
+## D5.1 Process note and predictions
+
+**Process.** The first measurements ran before any prediction was committed: the GPL-2-only classifier on the published ArduPilot image (`7b7ebed3`) and on the tools image pinned in `container/IMAGE`, and the free-text blind-spot scan. They are reported as measured in D5.2. The predictions below cover only what is still unmeasured.
+
+All **[inferred]**:
+- **The tools image published from `938b7f4`** has the same 669 dpkg packages as its pin (the fresh CI build of #176 had 669). The classifier gives the same 47 flagged source packages, about 389 MB, and the same 22 blind-spot packages, about 188 MB.
+- **Every flagged (source, version)** has a `.dsc` on snapshot.debian.org whose `Checksums-Sha256` matches the files snapshot serves.
+- **ghcr accepts one artifact per (source, version)** in the image's own package, in the GCC mirror's manifest shape, with one layer per source file.
+- **From a GitHub runner, snapshot.debian.org** serves a ~10 MB subset in under a minute. The full ~370 MB for the ArduPilot image fits `publish`'s 20 minutes only if snapshot is fast. That is unmeasured, and it decides the timeout.
+
+## D5.2 Measured against the predictions
+
+Furnace, 2026-11-16 20:10–20:45 UTC. Every container ran under `~/bin/capped-run` (8 GiB, swap 0). Evidence is in `~/.cache/aet-4403/` (`flag-*.tsv`, `freetext-*.tsv`, `debsrc/`, `adv5/`).
+
+| Prediction | Result |
+|---|---|
+| The tools image from `938b7f4` has the pin's 669 packages and the same flags | **Held [measured].** `aethelgard-tools@sha256:581c440f…` (`tools-image` push run 43944349951, green with the D6 labels at `938b7f4`) has 669 dpkg packages. Classifier v2 flags 69 source packages, 42 by DEP-5 and 27 by free text: the earlier 47 plus the 22 free-text ones. |
+| Each `.dsc`'s `Checksums-Sha256` matches snapshot's files | **Held, after one fix [measured].** Every file of the 97 flagged (source, version) pairs was downloaded. Its sha1 is snapshot's, and its sha256 and size are its `.dsc`'s. One quirk: `libxnvctrl` and `nvidia-settings` share an orig tarball, which snapshot lists under both names, so the builder takes each name from the `.dsc`. The `.dsc` files themselves are verified only against snapshot's sha1 [read: nothing else stands behind them]. |
+| ghcr accepts one artifact per package in the GCC shape | **Held on the runner's registry; ghcr is [inferred] until main's first publish.** The GCC artifact of the same shape is on ghcr since run 43944349355, so I expect it to hold. |
+| Snapshot is fast enough for `publish`'s budget | **From Furnace: 19–23 MB/s [measured]** (367 MB in 19 s, 577 MB in 25 s). **From a runner: unmeasured.** `source-rehearsal` times a 77 kB subset as an ANSWER line. `publish` gets 40 minutes on ArduPilot (was 20); the tools job already has 60. |
+
+**The 1 GB gate.** The ArduPilot image needs 28 source packages, 88 files, **367 422 181 bytes**; the tools image 69 packages, 220 files, **576 929 209 bytes**. That is **944 351 390 bytes in all**, under 1 GB, so no stop.
+- The total counts each image's own package separately: 26 source packages are in both.
+- It is the conservative count. Every free-text copyright file that names GPL version 2 is mirrored rather than judged.
+- The DEP-5-only count was 627 MB. LGPL-2-only packages (16 more, about 156 MB) are not in the ruling and not built (Q2).
+
+The GPL-2.0-only source packages [measured, classifier v2]:
+- **ArduPilot image:** audit, base-passwd, bzip2, debian-archive-keyring, e2fsprogs, gcc-14, gcc-defaults, git, glibc, gnutls28, hostname, krb5, libselinux, libsemanage, libsepol, libtasn1-6, linux, mawk, netbase, nettle, pam, python3-defaults, python3.13, rsync, rtmpdump, systemd, sysvinit, util-linux.
+- **Tools image:** every row of `container/TOOLS-DEBIAN-GPL2.tsv`.
+
+## D5.3 What was built
+
+- **The re-pin (first commit, ruled 20:20 UTC).** `container/ARDUPILOT-IMAGE` → `sha256:7b7ebed3…`, published from `938b7f4` with `/SOURCES.md`.
+  - It pulled on Furnace at 20:20Z, revision label `938b7f4540417e598126a5593e7f04ba8fdb8d00`.
+  - `git diff 938b7f4 3dcd242 -- container/` is empty.
+  - The fixture `ardupilot-pin/pin` keeps the old digest: the newline and symlink fixtures are compared with it, and the committed pin is checked on its own.
+- **The D1 follow-up.**
+  - `source` now runs on pull requests too, fetching the real GCC pin anonymously; its Debian step runs on `main`.
+  - `gcc-source.sh publish` seeds a missing mirror from the published one, so Arm's host is no longer asked. It answered **HTTP 503** in a rehearsal here at 20:33Z [measured]; the next try succeeded.
+- **`container/debian-gpl2.py`** flags a source package for GPL-2.0-only code by one of two rules:
+  - a DEP-5 Files paragraph with a bare `GPL-2` conjunct (no `+`, no `or`; Debian's own `debian/*` counts);
+  - any free-text copyright that names GPL version 2.
+- **`container/{ARDUPILOT,TOOLS}-DEBIAN-GPL2.tsv`** are the tables, built by `debian-src.py table` from the published images' flags. Each image carries its own table at `/SOURCES-debian-gpl2.tsv`.
+- **`container/debian-src.py`:**
+  - `check` re-derives every tag and manifest digest. It has 18 fixtures in `test-debian-src.sh`.
+  - `publish` pushes only the packages whose manifest is absent, after verifying each file from snapshot by sha1, sha256 and size.
+  - `fetch` is anonymous and verifies every blob.
+  - Tags are `debian-src.<source>__<version>`, with `+ ~ :` written `_p _t _e`. They are injective over the names and versions `check` admits, and a tag is never moved: `oci-mirror.sh push` refuses one that already names another digest.
+- **`container/oci-mirror.sh`** is the registry code, moved out of `gcc-source.sh` and generalised to any number of layers. `gcc-source.sh` keeps only the GCC-specific parts, and its `fetch` interface is unchanged.
+- **`check-sources.sh inside`** checks three things: `/SOURCES-debian-gpl2.tsv` is the committed table, it passes `check`, and every package the classifier flags in that image is in it.
+- **Workflows:**
+  - Both `publish` jobs mirror the Debian sources before the image.
+  - `tools-image` gains a credential-free `source` job.
+  - `source-rehearsal` publishes and fetches two real packages through the same scripts.
+- **The offers.** Both `SOURCES.md` files name the Debian mirror and how to fetch it. The approved "How long" wording (D3) changed only to say "mirrors" and to cover the tools image's new mirror: "None of them is deleted" replaces "Neither is deleted". Please confirm that edit to approved text.
+
+## D5.4 Adversarial pass and mutations
+
+All [measured] on Furnace. Harnesses are in `~/.cache/aet-4403/adv5/` and `rehearse/run3.sh` and `run4.sh`.
+- **Coverage.** A table missing `hostname`, and a table holding a stale `hostname 3.24` that passes `check`, are both refused in the image: "does not mirror these GPL-2.0-only sources this image holds: hostname=3.25".
+- **Snapshot's bytes.** A table with a sha256 that snapshot cannot serve is refused at `publish`, before any push; the registry stays empty.
+- **A lying mirror.** A blob corrupted in the registry is refused by `fetch`.
+  - **Finding F-D5a:** `publish` checks only that the manifest is present (`--head`), so it reports "0 pushed now" over that mirror. The full check is the `source` job, which runs on `main` right after `publish`, but after the image push.
+  - **Why:** verifying every blob before each image push would re-download 367–577 MB on every `main` push.
+  - **Your call:** move the full fetch into `publish` if the cost is acceptable.
+- **The tag never moves.** Another manifest under `hostname`'s tag is refused by name.
+- **Publish twice.** The second run pushes nothing (`0 pushed now`). Anonymous fetch verifies every file and discards it.
+- **Mutations of `debian-src.py check`'s 14 refusals.** 13 were killed by the fixtures. The 14th, the tag-collision refusal, survived because it is unreachable (the map is injective over admitted input), so it was removed (reduction).
+
+## D5.5 Questions for the architect
+
+- **Q1, drift.** The Debian tables pin exact versions, and transitive Debian packages float in a fresh build. When trixie updates one that is flagged, every PR that builds the image fails in `check-sources` until someone regenerates the table. That needs `debian-src.py table` on a workstation and a PR, and that version is mirrored at the next `main` publish. Failing closed is the honest choice, but it can turn other builders' PRs red. The same holds for a snapshot.debian.org outage during a `main` publish.
+- **Q2, LGPL-2.x-only.** LGPL-2.1 §4 has the same "same place" wording as GPLv2 §3. Including it would mirror 16 more source packages, about 156 MB, about 1.10 GB in all, which is over the 1 GB line. Not built.
+- **Q3, the tools image pin.** `container/IMAGE` still pins `c69ff9bc…`, which has no `/SOURCES.md`; the image published from `938b7f4` is `581c440f…`. The ruling re-pinned only `ARDUPILOT-IMAGE`. Re-pinning `IMAGE` moves CI's tier-2 runs and the engine image, so it is yours to schedule.
+
+## D5.6 Gates
+
+- **Local [measured]**, Furnace, capped scope:
+  - `cargo fmt --all -- --check` clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  - `cargo test --workspace` exit 0, no failure. No crate changed.
+  - `check-pins.sh` passes on all three Dockerfiles, and so do `test-check-pins.sh`, `test-check-ardupilot-pin.sh`, `test-check-gcc-source.sh` and `test-debian-src.sh`.
+- **Reduction pass (diff): −1 dead path · 1 duplicate removed · 1 protected kept · 1 finding.**
+  - The dead path was the tag-collision refusal, unreachable.
+  - The duplicate was the registry code, which lived only in `gcc-source.sh` and is now shared by both mirrors through `oci-mirror.sh` instead of copied.
+  - The protected one is the realm check, labelled `belt-and-suspenders`.
+  - The finding: the empty config descriptor is a constant in `check-gcc-source.sh` and `debian-src.py`, and in the committed GCC manifest. It is a fixed fact of the OCI spec and each check verifies it; left as is.
+
+## D5.7 CI on `ccdecb6` (PR #181), all green [measured]
+
+- **`ardupilot-image` [run 43950185629](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185629):**
+  - `image` builds fresh: all 28 flagged GPL-2.0-only source packages are in the table.
+  - **`source` ran on a pull request for the first time** (the D1 follow-up). It fetched `sha256:00f5fb5b…` and the 200 406 637-byte tarball from ghcr with no credentials.
+  - `source-rehearsal` seeded the GCC tarball from the published ghcr mirror, not Arm. It published and fetched `base-passwd` and `hostname` from snapshot.debian.org (`ANSWER debian_rehearsal bytes=77086 s=1`). It fetched the re-pinned image `7b7ebed3…` anonymously and refused `aethelgard-engine` by name (HTTP 403).
+- **`tools-image` [run 43950185755](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185755):** the fresh build's 69 flagged packages are all in the table, and the labels include D6. `publish` and `source` are skipped, as on any PR.
+- **`ci` [run 43950185531](https://github.com/ClearForge-LLC/aethelgard/actions/runs/43950185531):** green. Shard times (main's plan; this branch changes no test and no `ci/` file):
+  - shard 0: 20:48
+  - shard 1: 21:35
+  - shard 2: 28:27
+  - shard 3: 23:37
+  - shard 4: 28:08
+  - shard 5: 32:21
+  - shard 6: 26:11
+  - shard 7: 25:28
+- **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge, as D1(a) ruled.
+
+## D5.8 Rulings on D5.3–D5.5 (architect, PR #181, 2026-11-16 21:30 UTC), and their build
+
+- **The wording edit: accepted.**
+- **F-D5a: accepted as is,** as a known gap. The mirror is content-addressed, so a manifest present at the pinned digest names exactly those layers. The full anonymous fetch is `source`, right after `publish`.
+- **Q1, drift: fail closed only where we convey.** A table that misses a package the image flags refuses `main`'s `publish` before any push. On pull requests it is a warning annotation and an `ANSWER debian_drift …` line. `debian-src.py check` stays fail-closed everywhere. The root fix, pinning apt to a snapshot timestamp, joins `4401` Q3's backlog row.
+- **Q2, LGPL-2.x-only: include it.** Only "-only" variants count; "or later" can be taken under LGPLv3 / GPLv3 §6(d), whose third-party-server route `SOURCES.md` gives. The stop is lifted to 1.25 GB for this PR.
+- **Q3:** both pins are re-pinned in `wo/aet-4403-repin` after this merges.
+
+**Predictions for Q2, before measuring** (all **[inferred]**, from the first classifier's LGPL-2-only count at D5.2):
+- **ArduPilot image:** at most 1 more source package, about 0.7 MB.
+- **Tools image:** at most 15 more, about 156 MB. Fewer if some are already flagged by free text.
+- **Total:** at most about 1.10 GB, under 1.25 GB.
+
+**Q2, measured** (2026-11-16 21:35–21:50 UTC; classifier v3 on the images published from `938b7f4`):
+
+| Image | Source packages | Files | Bytes |
+|---|---|---|---|
+| ArduPilot | 29 (+1: libseccomp) | 92 | 368 132 091 |
+| Tools | 84 (+15) | 274 | 732 653 749 |
+| **Total** | | | **1 100 785 840 (1.101 GB), under the 1.25 GB stop** |
+
+- **The predictions held.** At most +1 and +15 were predicted, about 1.10 GB in all.
+- **The tools image's 15 new packages:** codec2, gst-plugins-bad1.0, gst-plugins-good1.0, libassuan, libinstpatch, libpgm, libseccomp, libssh, mpg123, ngspice, opencascade, openni2, shine, taglib, webkit2gtk.
+- **Every file verified.** Each file of every package matches snapshot's sha1 and its `.dsc`'s sha256, and every row of the D5 tables survives into the new ones.
+- **Every manifest digest changed.** The artifacts' description now reads "GPL-2.0-only or LGPL-2.x-only code". Nothing Debian had been published, so no tag moved.
+- **Snapshot's throughput varies [measured]:**
+  - 56 MB/s for the ArduPilot table (all but one file cached);
+  - about 0.5 MB/s for the tools image's 156 MB of new files (335 s).
+
+  At that worst rate a first `publish` takes about 13 min for the ArduPilot image (budget 40) and about 25 min for the tools image (budget 60).
+
+**Q1, built.**
+- `check-sources.sh inside KIND [--drift warn]`. By default a package missing from the table refuses; both `publish` jobs run that, before any push.
+- The `image` jobs, which run on pull requests, pass `--drift warn`: a `::warning` annotation and `ANSWER debian_drift kind=… missing=N packages=…`, exit 0.
+- `debian-src.py check` still refuses in both modes.
+
+Measured in both published images, rebuilt RUN-free with the new offer and tables:
+- with no drift, it passes (29 and 84);
+- with `libseccomp` dropped, the default mode refuses by name, and `--drift warn` warns, prints the ANSWER line and passes;
+- with a broken table, `--drift warn` still refuses;
+- an unknown option is refused.
+
+**Q2, built.**
+- `debian-gpl2.py` also flags DEP-5 conjuncts LGPL-2 / LGPL-2.1, with ".0", "-only" or neither, and never "+" (unit-checked on 11 spellings).
+- Free text was already covered: "General Public License" also matches the Lesser and Library variants.
+- Both `SOURCES.md` files name the three licences and why "or later" code goes by the third-party route.
+- Both tables and the 18 fixtures are regenerated, and `test-debian-src.sh` passes.
+
+**Gates.** Since the cargo gates passed on this branch at `ccdecb6`, only `container/` and FEEDBACK have changed; no crate changed. All four container suites pass, and so does `check-pins.sh` on all three Dockerfiles.
+
+**CI on `7773004`, all green [measured]:**
+- **`ardupilot-image` run 43960888563:** the fresh build's 29 flagged packages are all in the table, with no drift. `source` fetched the GCC mirror anonymously on the PR. `ANSWER debian_rehearsal bytes=77086 s=1`.
+- **`tools-image` run 43960888564:** 84 of 84 in the table, no drift.
+- **`ci` run 43960888546:** green. Shard times (main's plan; no test or `ci/` change):
+  - shard 0: 20:26
+  - shard 1: 29:11
+  - shard 2: 26:38
+  - shard 3: 22:39
+  - shard 4: 30:20
+  - shard 5: 22:50
+  - shard 6: 24:04
+  - shard 7: 30:30
+- **`main` `d6410b8` (docs #183) is merged in;** docs only.
+- **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge (D1(a)). Q3's re-pin PR follows that merge.

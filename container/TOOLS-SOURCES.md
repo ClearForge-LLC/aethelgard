@@ -17,14 +17,24 @@ Each component under the GNU GPL or LGPL is listed with its version in this imag
 | Packet.Net | Renode's `PacketDotNet.dll`, from Renode `v1.17.0`'s `lib/Packet.Net` at `20e0f2fe40743fed4e6a81bb8fe9523c257f168b` | LGPL-3.0 | <https://github.com/antmicro/Packet.Net> at that commit; included by the recursive clone above. |
 | GTK# | NuGet `3.24.24.95` of GtkSharp, AtkSharp, CairoSharp, GdkSharp, GioSharp, GLibSharp and PangoSharp (the `net6.0` assemblies), in `/opt/renode` | LGPL-2.0 (Library GPL version 2) | <https://github.com/GtkSharp/GtkSharp>, branch `master` at commit `964cb9c31506adf7c1c68fe8a6ac8c8076237f3a`. GtkSharp tagged no release after `3.24.24.34`, and its package names no commit. Its CI numbers a build of a push to `master` `3.24.24.<run>`. It published `3.24.24.95` to GitHub Packages at 2023-05-08 16:59 UTC, three minutes after this commit became `master`'s head, which it has stayed since. |
 | NetMQ | NuGet `4.0.1.12`, in `/opt/renode` | LGPL-3.0 | <https://github.com/zeromq/netmq>, tag `4.0.1.12`, commit `cdf17750c947b562fe3f11c025bd16b7003acff3` (the commit its NuGet package names). |
-| Debian 13 packages | every installed package, listed at `/SOURCES-debian.tsv` | each under its own licence, in `/usr/share/doc/<package>/copyright`; many are under the GPL or LGPL | By source package and exact version, in the archive of every version Debian has published. Each line of `/SOURCES-debian.tsv` gives the binary package, its version, its source package and source version, and that source's page on `snapshot.debian.org`. While a version is still current, `apt-get source <source>=<version>` fetches it from Debian's mirrors. |
+| Debian 13 packages | every installed package, listed at `/SOURCES-debian.tsv` | each under its own licence, in `/usr/share/doc/<package>/copyright`; many are under the GPL or LGPL | By source package and exact version, in the archive of every version Debian has published. Each line of `/SOURCES-debian.tsv` gives the binary package, its version, its source package and source version, and that source's page on `snapshot.debian.org`. While a version is still current, `apt-get source <source>=<version>` fetches it from Debian's mirrors. **Every source package with code under GPL-2.0-only, LGPL-2.0-only or LGPL-2.1-only is also mirrored next to this image,** byte for byte, because GPLv2 §3 and LGPL-2.1 §4 count source only from the same place. Code under a version 2 "or later" licence can be taken under GPLv3 or LGPLv3, whose §6(d) allows the third-party route above. `/SOURCES-debian-gpl2.tsv` lists each one's files with their sha256. Each package is an OCI artifact at `ghcr.io/clearforge-llc/aethelgard-tools@sha256:<that file's last column>`, tag `debian-src.<source>__<version>` (`+`, `~` and `:` written `_p`, `_t` and `_e`). |
 
 No other part of the image is under the GPL or LGPL:
 - **Rust 1.99.1** and Kani's `nightly-2026-08-21`, through rustup: MIT OR Apache-2.0. Their GPL licence texts cover parts of Rust's source tree that these components do not install.
 - **Kani 0.68.0:** MIT OR Apache-2.0. It bundles CBMC (BSD-4-Clause) and kissat (MIT); see `/opt/kani/kani-0.68.0/license-notes.txt`.
 
+## Fetching the mirrored Debian sources
+
+No account or token is needed. Every package of `container/TOOLS-DEBIAN-GPL2.tsv`, with `curl` only, from a checkout of the repository:
+
+```
+python3 container/debian-src.py fetch ghcr.io/clearforge-llc/aethelgard-tools container/TOOLS-DEBIAN-GPL2.tsv DIR
+```
+
+Or one package with oras: `oras pull ghcr.io/clearforge-llc/aethelgard-tools@sha256:<its manifest_sha256>`.
+
 ## How long
 
-- **ClearForge LLC keeps this offer available** for as long as it offers any image that names it from `ghcr.io/clearforge-llc`.
-- **The sources above are on third parties' servers.** If one of those servers stops serving the exact version named here, ClearForge LLC mirrors that version next to the image.
+- **ClearForge LLC keeps the mirrored Debian sources and this offer available** for as long as it offers any image that names them from `ghcr.io/clearforge-llc`. None of them is deleted while such an image remains.
+- **The other sources above are on third parties' servers.** If one of those servers stops serving the exact version named here, ClearForge LLC mirrors that version next to the image.
 - **To ask for any of it,** open an issue at <https://github.com/ClearForge-LLC/aethelgard/issues>.
