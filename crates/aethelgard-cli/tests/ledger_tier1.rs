@@ -653,3 +653,33 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     assert!(rows.iter().all(|r| r["acknowledged"] != true));
     fs::remove_dir_all(&empty).unwrap();
 }
+
+/// `AET-WO-4230` R3: the verdict's silicon findings hold `check_brr` for
+/// every serial port's USART, and a BRR one off (inside the tolerance the
+/// solver's rule allows) fails `holds` and is named.
+#[test]
+fn silicon_judges_every_usart_s_brr_by_the_independent_inequality() {
+    let (mut t, _) = fixture("serial-four");
+    let s = ledger::silicon(&t);
+    assert!(s.holds);
+    let ports: Vec<&str> = s.usart.iter().map(|f| f.port.as_str()).collect();
+    assert_eq!(ports, ["CRSF", "GPS", "MAVLINK", "SBUS"]);
+    assert!(ledger::silicon_failures(&s).is_empty());
+    t.serial_ports.get_mut("GPS").unwrap().brr += 1;
+    let s = ledger::silicon(&t);
+    assert!(!s.holds);
+    let failing: Vec<&str> = s
+        .usart
+        .iter()
+        .filter(|f| !f.brr.holds)
+        .map(|f| f.port.as_str())
+        .collect();
+    assert_eq!(failing, ["GPS"]);
+    let named = ledger::silicon_failures(&s);
+    assert_eq!(named.len(), 1);
+    assert!(
+        named[0].contains("(GPS): aethelgard_ir::silicon::check_brr does not hold"),
+        "{}",
+        named[0]
+    );
+}
