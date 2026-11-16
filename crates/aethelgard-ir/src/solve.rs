@@ -776,17 +776,13 @@ pub(crate) fn synthesize_timingr(kernel_hz: u64, mode: &str) -> Option<u32> {
     None
 }
 
-/// The mode names of [`I2C_MODES`], in order.
-pub(crate) fn i2c_modes() -> impl Iterator<Item = &'static str> {
-    I2C_MODES.iter().map(|m| m.0)
-}
-
 /// I2C `peripheral`'s solved timing on `clock`; `None` if it has no kernel
 /// clock or a mode has no `TIMINGR`.
 pub(crate) fn i2c_timing(clock: &SolvedClock, peripheral: &str) -> Option<SolvedI2cTiming> {
     let kernel_hz = i2c_kernel_hz(clock, peripheral)?;
-    let timingr = i2c_modes()
-        .map(|mode| synthesize_timingr(kernel_hz, mode).map(|w| (mode.to_owned(), w)))
+    let timingr = I2C_MODES
+        .iter()
+        .map(|&(mode, ..)| synthesize_timingr(kernel_hz, mode).map(|w| (mode.to_owned(), w)))
         .collect::<Option<_>>()?;
     Some(SolvedI2cTiming {
         kernel_hz,
