@@ -214,8 +214,9 @@ pub fn kernel_hz(clock: &SolvedClock, peripheral: &str) -> Option<u64> {
 /// `[1/2 − 1/(4·BRR + 2), 1/2)` this gives `BRR` and the least error
 /// `BRR + 1`. On the 64 MHz kernel clock some whole baud falls there at every
 /// `BRR` from 16 to 265 and at a few up to 2606 (computed over every baud);
-/// no declared baud does (FEEDBACK §9 Q5, accepted on PR #152). `None` outside `BRR`'s range: at least 16 (RM0433 Rev 9 §48.8.5,
-/// "BRR[15:0] … must be greater than or equal to 16") and at most `0xFFFF`.
+/// no declared baud does (FEEDBACK §9 Q5, accepted on PR #152). `None` outside `BRR`'s range: at least 16 (RM0433 Rev 9
+/// §48.5.7, the note on p. 2035: "In case of oversampling by 16 and 8, USARTDIV must be greater than or equal to 16")
+/// and at most `0xFFFF` (`BRR[15:0]`, §48.8.5, p. 2082).
 pub fn solve_brr(kernel_hz: u64, baud: u32) -> Option<u32> {
     let baud = u64::from(baud);
     if baud == 0 {

@@ -1948,7 +1948,10 @@ fn bytes(write: &[u8]) -> String {
 }
 
 fn validate(file: Option<&Path>) -> ExitCode {
-    match read_spec(file) {
+    match read_spec(file).and_then(|(spec, sha256)| {
+        acknowledgements_current(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
+        Ok((spec, sha256))
+    }) {
         Ok((spec, _)) => emit(
             &ValidReport {
                 ok: true,
@@ -1960,6 +1963,43 @@ fn validate(file: Option<&Path>) -> ExitCode {
             0,
         ),
         Err((refusal, code)) => emit(&refusal, code),
+    }
+}
+
+/// `AET-WO-4230` R1: every `acknowledge_unwitnessed` entry names only
+/// fields the witness ledger has for its register and class, the ledger
+/// computed as `verify` computes it (pin table, solve, the generator's field
+/// list, the classification). With entries but no ledger (the part has no
+/// pin table, the specification does not solve, or the generator refuses
+/// it), the first entry stands for nothing and is refused.
+fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
+    use aethelgard_cli::ledger;
+    let Some(first) = spec.acknowledge_unwitnessed.first() else {
+        return Ok(());
+    };
+    let built = aethelgard_svd_hal::pin_table(&spec.mcu.part)
+        .map_err(|e| e.to_string())
+        .and_then(|table| {
+            let topology = aethelgard_ir::solve(spec, &table, sha256).map_err(|e| e.to_string())?;
+            ledger::build(&topology, &table).map_err(|e| e.message())
+        });
+    match built {
+        Ok(l) => match ledger::stale(&l, spec) {
+            None => Ok(()),
+            Some(s) => Err(
+                Refusal::new(ledger::Stale::KIND, Some(&s.register), s.message())
+                    .at(Some(&s.path())),
+            ),
+        },
+        Err(why) => Err(Refusal::new(
+            ledger::Stale::KIND,
+            Some(&first.register),
+            format!(
+                "`acknowledge_unwitnessed` acknowledges register `{}`, but no witness ledger exists for this specification ({why}): an acknowledgement stands only for the ledger's rows (AET-WO-4230 R1)",
+                first.register
+            ),
+        )
+        .at(Some("acknowledge_unwitnessed[0].fields"))),
     }
 }
 

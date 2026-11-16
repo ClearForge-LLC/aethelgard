@@ -30,6 +30,13 @@
 //! the same call prints without `--fab-out`; that line is this verdict
 //! without its final `fab` key. `--against-fab D` derives the package the
 //! same way and compares it with `D`.
+//!
+//! **The witness ledger (`AET-WO-4230` §1.7, R1).** Built before any gate,
+//! each unwitnessed row marked acknowledged or not by the specification; a
+//! stale acknowledgement is refused as `validate` refuses it, and either fab
+//! flag refuses an unacknowledged row before any gate
+//! (`UnwitnessedFieldNotAcknowledged`), so no package is written with a row
+//! nobody acknowledged.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
@@ -46,7 +53,7 @@ use crate::fab;
 use crate::input::hex;
 use crate::run;
 use crate::tree::{self, Difference};
-use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
+use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
 
 /// `RUL-19` (1), in the verdict itself.
 const RISE_TIMES: &str = "computed from declared values";
@@ -78,12 +85,20 @@ struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     campaign: Option<Vec<Run>>,
     findings: Vec<Finding>,
-    /// Each SPI and I2C controller's independent rule (`AET-WO-4230` §1.7);
-    /// one that does not hold is also an error finding by name.
+    /// Every serial port whose peer deviation is declared, not cited, with
+    /// its figure (`AET-WO-4230` R2, the architect's ruling on Q-A).
+    declared_peers: Vec<aethelgard_cli::ledger::DeclaredPeer>,
+    /// Each SPI and I2C controller's independent rule and each USART's `BRR`
+    /// rule (`AET-WO-4230` §1.7, R3); one that does not hold is also an error
+    /// finding by name.
     silicon: aethelgard_cli::ledger::Silicon,
-    /// The witness ledger (`AET-WO-4230` §1.7, `RUL-20`): every field the
-    /// generated firmware writes or leaves at reset, classed.
+    /// The witness ledger (`AET-WO-4230` §1.7, `RUL-20`): every register
+    /// field the generated firmware writes or leaves at reset, classed, each
+    /// unwitnessed row marked acknowledged or not (R1).
     ledger: aethelgard_cli::ledger::Ledger,
+    /// What the twin cannot judge outside the register fields (the
+    /// architect's ruling on Q-I): never acknowledged, never blocking.
+    twin_limits: Vec<aethelgard_cli::ledger::LedgerRow>,
     /// `--against-fab`: whether the directory matched the package. With
     /// `fab`, always the last keys, so the verdict without them is the line
     /// a call without the fab flags prints (the manifest's `verdict_sha256`).
@@ -997,11 +1012,23 @@ pub fn verify(
         .map(|(p, t)| (p.clone(), tree::sha256(t.as_bytes())))
         .collect();
     // The ledger before any gate: a field it cannot class is refused, never
-    // guessed (`AET-WO-4230` §1.7, §5.4).
-    let ledger = match aethelgard_cli::ledger::build(&topology, &table) {
+    // guessed (`AET-WO-4230` §1.7, §5.4). A stale acknowledgement is refused
+    // as `validate` refuses it; every unwitnessed row is then marked (R1).
+    let (mut ledger, twin_limits) = match aethelgard_cli::ledger::build(&topology, &table)
+        .and_then(|l| Ok((l, aethelgard_cli::ledger::twin_limits(&topology)?)))
+    {
         Ok(l) => l,
         Err(e) => return refuse(e.kind(), e.id(), e.message(), EXIT_INTERNAL),
     };
+    if let Some(s) = aethelgard_cli::ledger::stale(&ledger, &spec) {
+        return refuse(
+            aethelgard_cli::ledger::Stale::KIND,
+            Some(&s.register),
+            s.message(),
+            EXIT_INVALID_SPEC,
+        );
+    }
+    let unacknowledged = aethelgard_cli::ledger::acknowledge(&mut ledger, &spec);
     let silicon = aethelgard_cli::ledger::silicon(&topology);
     let project = spec.project_name.clone();
     let mut report = Report {
@@ -1020,8 +1047,10 @@ pub fn verify(
         gates: Vec::new(),
         campaign: None,
         findings: silicon_findings(&silicon),
+        declared_peers: aethelgard_cli::ledger::declared_peers(&spec),
         silicon,
         ledger,
+        twin_limits,
         against_fab: None,
         fab: None,
         lifecycle_unheld,
@@ -1109,6 +1138,20 @@ pub fn verify(
                     short.unmet.join(", ")
                 ),
                 EXIT_UNREADABLE,
+            );
+        }
+        // Every unwitnessed ledger row acknowledged by name (`AET-WO-4230`
+        // R1, the architect's ruling): none is fabricated unread.
+        if let Some(first) = unacknowledged.first() {
+            return refuse(
+                "UnwitnessedFieldNotAcknowledged",
+                Some(first),
+                format!(
+                    "no package: {} unwitnessed ledger row(s) no `acknowledge_unwitnessed` entry names for its register and class: {}",
+                    unacknowledged.len(),
+                    unacknowledged.join(", ")
+                ),
+                EXIT_INVALID_SPEC,
             );
         }
     }
@@ -1664,20 +1707,39 @@ mod tests {
             achieved_hz: 64_000_000 >> (mbr + 1),
             achieved_max_hz: 64_958_976 >> (mbr + 1),
         };
-        let silicon = |mbr| {
+        // `AET-WO-4230` R3: the console's BRR, 556 the nearest whole divider
+        // of 64 MHz at 115200 baud, 557 one off.
+        let silicon_brr = |mbr, brr| {
             let spi = vec![aethelgard_ir::silicon::check_spi("SPI1", &controller(mbr))];
-            let holds = spi.iter().all(|f| f.holds);
+            let usart = vec![aethelgard_cli::ledger::UsartFinding {
+                port: "CONSOLE".into(),
+                peripheral: "USART1".into(),
+                brr: aethelgard_ir::silicon::check_brr(64_000_000, 115_200, brr),
+            }];
+            let holds = spi.iter().all(|f| f.holds) && usart.iter().all(|f| f.brr.holds);
             aethelgard_cli::ledger::Silicon {
                 spi,
                 i2c: Vec::new(),
+                usart,
                 holds,
             }
         };
+        let silicon = |mbr| silicon_brr(mbr, 556);
         let mut gate = not_run("erc");
         gate.verdict = "pass";
         let gates = [gate];
         assert!(silicon_findings(&silicon(1)).is_empty());
         assert!(passes(&silicon_findings(&silicon(1)), &gates));
+        let brr = silicon_findings(&silicon_brr(1, 557));
+        assert_eq!(brr.len(), 1);
+        assert!(
+            brr[0].message.starts_with("USART1 (CONSOLE): ")
+                && brr[0].message.contains("check_brr")
+                && brr[0].message.contains("nearest false"),
+            "{}",
+            brr[0].message
+        );
+        assert!(!passes(&brr, &gates));
         let failing = silicon_findings(&silicon(0));
         assert_eq!(failing.len(), 1);
         assert_eq!(failing[0].kind, "silicon_rule_fails");

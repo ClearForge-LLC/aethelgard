@@ -414,3 +414,162 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
     assert!(!out.exists());
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `spec` written as `spec.json` in a scratch directory, beside the
+/// reference's seeded set rebased on it, so the campaign's preconditions are
+/// met and the run reaches the acknowledgement check; then `verify` with
+/// `flag`, from that directory, with an empty `PATH`.
+fn rebased_verify(label: &str, spec: &Value, flag: &str) -> (Option<i32>, Value, PathBuf) {
+    let dir = scratch(label);
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("spec.json"), spec.to_string()).unwrap();
+    let mut args = vec![
+        "verify".to_owned(),
+        "--spec".to_owned(),
+        "spec.json".to_owned(),
+        "--scenarios".to_owned(),
+    ];
+    for (i, path) in SCENARIOS.iter().enumerate() {
+        let mut scenario: Value =
+            serde_json::from_slice(&fs::read(root().join(path)).unwrap()).unwrap();
+        scenario["base"] = "spec.json".into();
+        let name = format!("scenario-{i}.json");
+        fs::write(dir.join(&name), scenario.to_string()).unwrap();
+        args.push(name);
+    }
+    // `--fab-out` absent, `--against-fab` an existing empty directory.
+    let out_dir = dir.join("pkg");
+    if flag == "--against-fab" {
+        fs::create_dir_all(&out_dir).unwrap();
+    }
+    args.extend([flag.to_owned(), "pkg".to_owned()]);
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(&args)
+        .current_dir(&dir)
+        .env("PATH", "")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1, "{stdout}");
+    (
+        out.status.code(),
+        serde_json::from_str(&stdout).unwrap(),
+        out_dir,
+    )
+}
+
+fn reference() -> Value {
+    serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap()
+}
+
+/// `AET-WO-4230` R1 (the architect's ruling on PR #161): each fab flag refuses
+/// a specification that leaves any unwitnessed ledger row unacknowledged
+/// (`UnwitnessedFieldNotAcknowledged`, exit 2), naming every such row id,
+/// before any gate and before anything is written. Here a whole entry is
+/// dropped (`GPIOB.OTYPER`, 16 rows) and one field of another
+/// (`GPIOA.MODER`'s `MODER0`, which is what a field the generator newly
+/// writes in an acknowledged register looks like to the check).
+#[test]
+fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one() {
+    let mut spec = reference();
+    let entries = spec["acknowledge_unwitnessed"].as_array_mut().unwrap();
+    entries.retain(|a| a["register"] != "GPIOB.OTYPER");
+    let moder = entries
+        .iter_mut()
+        .find(|a| a["register"] == "GPIOA.MODER")
+        .unwrap();
+    moder["fields"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|f| f != "MODER0");
+    for flag in ["--fab-out", "--against-fab"] {
+        let (code, v, out) = rebased_verify("unacknowledged", &spec, flag);
+        assert_eq!(code, Some(2), "{flag}: {v}");
+        assert_eq!(v["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{v}");
+        let m = v["error"]["message"].as_str().unwrap();
+        let mut named: Vec<String> = (0..16).map(|i| format!("GPIOB.OTYPER.OT{i}")).collect();
+        named.push("GPIOA.MODER.MODER0".into());
+        assert!(m.contains("17 unwitnessed ledger row(s)"), "{m}");
+        for id in &named {
+            assert!(
+                m.contains(&format!("{id},")) || m.ends_with(id.as_str()),
+                "{id}: {m}"
+            );
+        }
+        assert_eq!(
+            v["error"]["id"], "GPIOB.OTYPER.OT0",
+            "the first in the ledger's order: {v}"
+        );
+        if flag == "--fab-out" {
+            assert!(!out.exists(), "nothing is created");
+        } else {
+            assert_eq!(fs::read_dir(&out).unwrap().count(), 0);
+        }
+    }
+}
+
+/// R1, a new field in an acknowledged register: the reference with the
+/// 4-layer fixture's acknowledgements, which are the reference's board
+/// without its console port. Every entry is current (none stale), but the
+/// console's pins add fields to acknowledged registers (`GPIOA.MODER`'s
+/// `MODER9`, `MODER10`, `GPIOA.OSPEEDR`'s `OSPEED9`, `OSPEED10`) beside the
+/// registers no entry names (`GPIOA.AFRH`, the USART's): each is named.
+#[test]
+fn a_new_field_in_an_acknowledged_register_is_refused_on_the_fab_path() {
+    let four: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/four-layer.json")).unwrap(),
+    )
+    .unwrap();
+    let mut spec = reference();
+    spec["acknowledge_unwitnessed"] = four["acknowledge_unwitnessed"].clone();
+    let (code, v, out) = rebased_verify("new-field", &spec, "--fab-out");
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    for id in [
+        "GPIOA.MODER.MODER9",
+        "GPIOA.MODER.MODER10",
+        "GPIOA.OSPEEDR.OSPEED9",
+        "GPIOA.OSPEEDR.OSPEED10",
+        "GPIOA.AFRH.AFSEL9",
+        "USART1.CR2.STOP",
+    ] {
+        assert!(m.contains(id), "{id}: {m}");
+    }
+    // 47 more unwitnessed rows than the 4-layer board's 117.
+    assert!(m.contains("47 unwitnessed ledger row(s)"), "{m}");
+    assert!(!m.contains("GPIOA.MODER.MODER0"), "{m}");
+    assert!(!out.exists());
+}
+
+/// The reference, acknowledged, passes the check: with `--against` an empty
+/// directory the run reaches the tree comparison and fails there, writing
+/// nothing, so no package precondition before it refused.
+#[test]
+fn the_acknowledged_reference_passes_the_check_before_any_gate() {
+    let dir = scratch("acknowledged");
+    let empty = dir.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let out = dir.join("pkg");
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
+        SCENARIOS[3],
+        "--against",
+        s(&empty),
+        "--fab-out",
+        s(&out),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs", "{v}");
+    assert_eq!(v["fab"]["status"], "not_written", "{v}");
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    assert!(!out.exists());
+    fs::remove_dir_all(&dir).unwrap();
+}

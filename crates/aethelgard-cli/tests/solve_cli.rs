@@ -63,7 +63,10 @@ use sha2::{Digest, Sha256};
 /// sha256: with `9832b91e…8081` put back, the reference's output hashes to
 /// `447caa7d…46bc`, the old digest, exactly; with `3236b135…76c0` put back,
 /// the stress fixture's hashes to `6d3bb760…8b02`, its old digest, exactly.
-const REFERENCE_DIGEST: &str = "f83c83a06a8ea06f93b4286e00a08fa54ae7aef4ad15c3e36aa6e0c2734ce8ae";
+/// Moved once more by the reference's acknowledgements (`AET-WO-4230` R1,
+/// slice R2-cli), its specification's sha256 alone: with `7f2be55f…dd9e` put
+/// back, the reference's output hashes to `f83c83a0…e8ae`, the old digest.
+const REFERENCE_DIGEST: &str = "42f26fce89c613b3de9c9ccb97fd7d92a9638d7ceae62cf58d6a74c51430ad34";
 const STRESS_DIGEST: &str = "1725d65176fed0735af72d99b1008c431c25547d2ff4fb7083748d5c31050d1f";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about

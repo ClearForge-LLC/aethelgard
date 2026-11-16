@@ -137,19 +137,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// port's `peer_deviation_source` in the hashed document), which changes no
 /// generator: the three moved with the specification's sha256 alone
 /// (`2f7d00e8…df67`, `87f7aa19…ed24`, `61e7224b…bb06` before); the boot image
-/// did not move.
+/// did not move. Moved once more by the reference's acknowledgements
+/// (`AET-WO-4230` R1, slice R2-cli), which change no generator: the
+/// specification's sha256 alone (`0ae37256…7df4`, `ee09ef30…29f1`,
+/// `d0e7995a…cda3` before); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "0ae37256a4f4fc99af42d5d85149b53ed0afec1a37a47a3cba8642059fe57df4",
+        "59c7e081dc22278e7c3575926e812ea0345de8288222df39d87bf4a3b766ccdb",
     ),
     (
         "platform",
-        "ee09ef30a44294b3127437e7ce8f68ac8e304755a0c3b1c160343acb511f29f1",
+        "a9b14d567ee259ff349d8ea4d978497ac7ddffb43436f2916387da9953633246",
     ),
     (
         "platform faulted",
-        "d0e7995a7ae068539fcda0a58175495446a1b60e71d9715874f662d30e0ecda3",
+        "892382d5cef5f574a43c50a6c0cc59955b2ad955182c7e7028f1a0c5c58571cf",
     ),
     (
         "boot image",
