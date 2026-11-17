@@ -1074,13 +1074,29 @@ impl<'a> Run<'a> {
         let label = self.serial[s].label;
         let open = matches!(self.records.first(), Some(Record::Scenario { overrides, .. })
             if overrides.iter().any(|o| matches!(o, Override::SerialRxOpen { port } if port == label)));
+        // belt-and-suspenders: `self.booted` (mutant E02 survives) - a serial
+        // finding is named only once the boot word is set (the judge, and
+        // `check_run`'s binding), so without it the witness below never shows
+        // `serial_echo_missing` alone.
         if !(open && self.booted) {
             return None;
         }
+        // belt-and-suspenders: `holds: true` (E03) - a failing framing check is
+        // decided first as `Scope::SerialStatic`, rule I6; `t.holds()` (E04) -
+        // a wrong write the port owns is decided first as software evidence
+        // (`serial_software`), rule S5; `tags: Some(_)` (E05) - unread tags
+        // leave `tx_at_send` unset at replay, so the pattern finding joins the
+        // echo's and the witness below fails. Each is stated here so E3 never
+        // rests on a rule ordering elsewhere.
         let check = self.records.iter().position(|r| {
             matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
                 if l == label && t.holds())
         })?;
+        // belt-and-suspenders: `injected_ns: None` (E06) and
+        // `rx_at_injection: None` (E07) - replay already refuses a frame or a
+        // mux read into a port the scenario holds open
+        // (`aethelgard_chaos::campaign`, `check_serial_joins`), and `attribute`
+        // takes only a replayed run.
         let witness = self.records.iter().position(|r| {
             matches!(r, Record::SerialWitness { label: l, injected_ns: None, rx_at_injection: None, .. }
                 if l == label

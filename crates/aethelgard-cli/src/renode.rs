@@ -2598,6 +2598,14 @@ pub struct StopSeen {
     pub cleared: Option<u32>,
 }
 
+/// A DShot output's evidence window's end, from its anchor (its timer's first
+/// `CEN` rise in the boot): `DSHOT_WINDOW_NS` after it, where the judge's stop
+/// runs. The one place the window's end is computed (the architect's ruling
+/// R1 on PR #175).
+fn dshot_window_end(anchor_ns: u64) -> u64 {
+    anchor_ns + aethelgard_twin::boot::DSHOT_WINDOW_NS
+}
+
 /// Each hooked timer's witness from `hooks` (the boot's lines of ours) in a
 /// boot that ends at `end_ns`. A DShot stop's instant is its window's end,
 /// its anchor's plus `DSHOT_WINDOW_NS`: the count it ran at is exactly its
@@ -2624,7 +2632,7 @@ fn timer_witnesses(plan: &BootPlan<'_>, hooks: &[Seen], end_ns: u64) -> Vec<Time
                 .collect();
             let anchor = rises.first().copied();
             let window_end = anchor.map(|(_, _, at)| match t.dshot {
-                true => at + aethelgard_twin::boot::DSHOT_WINDOW_NS,
+                true => dshot_window_end(at),
                 false => end_ns,
             });
             let stop = anchor.filter(|_| t.dshot).and_then(|(_, a, at)| {
@@ -2648,7 +2656,7 @@ fn timer_witnesses(plan: &BootPlan<'_>, hooks: &[Seen], end_ns: u64) -> Vec<Time
                     _ => None,
                 });
                 Some(StopSeen {
-                    at_ns: at + aethelgard_twin::boot::DSHOT_WINDOW_NS,
+                    at_ns: dshot_window_end(at),
                     words,
                     cleared,
                 })
@@ -2779,7 +2787,7 @@ fn anchor_findings(
         if !t.dshot {
             continue;
         }
-        let end = at_ns + aethelgard_twin::boot::DSHOT_WINDOW_NS;
+        let end = dshot_window_end(at_ns);
         if end > plan.virtual_ns {
             out.push(Finding::plain(
                 MOTOR_WINDOW_PAST_RUN_FINDING,
