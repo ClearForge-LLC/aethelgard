@@ -4,6 +4,11 @@ Builder: Claude (strong tier, the `3400` builder), worktree `~/aethelgard-3400`,
 
 Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
+**Status (2026-11-17 ~02:50 UTC): STOPPED, waiting.**
+- §1 is done, and ruled on PR #190 (Q1 (i), Q2, Q3; §7).
+- §2 (bench access, the package with it, `ORDER.md`, `BENCH.md`) waits for `AET-WO-1312` (#191, open) and `AET-WO-1801` (#188, open, its version bump held for a window). After each lands, merge `main`, regenerate the board and the package (§8), then build §2 and signal READY.
+- Nothing is pushed after this commit unless the architect asks.
+
 ## 1. Predictions
 
 ### 1.0 Out of order, stated
