@@ -3651,6 +3651,39 @@ mod tests {
         aethelgard_twin::boot::expected(&topology).unwrap()
     }
 
+    /// Each port's injection `port_injections` reads from `log`, a boot of
+    /// no sleep whose first boot word is the chain's anchor.
+    fn injections(p: &BootPlan<'_>, log: &[String]) -> Vec<PortInjection> {
+        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        let (hooks, slept) = hooks_of(&lines, 0).unwrap();
+        assert_eq!(slept, None);
+        let bw = hooks.iter().find_map(|(i, h, ns)| match h {
+            crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
+            _ => None,
+        });
+        port_injections(p, &hooks, bw)
+    }
+
+    /// A tool run that ended with code 0 and printed `stdout`, `dropped`
+    /// log lines lost.
+    fn output(stdout: Vec<u8>, dropped: u64) -> Output {
+        Output {
+            ended: crate::run::Ended::Code(0),
+            stdout,
+            stderr: Vec::new(),
+            sandbox: crate::run::SandboxReport {
+                landlock_abi: 0,
+                tcp_confined: false,
+                scoped: false,
+                sockets_denied: true,
+                uid_boundary: false,
+                uid_boundary_unmet: None,
+            },
+            dropped_log_lines: dropped,
+            peak_rss_kib: None,
+        }
+    }
+
     /// The booted platform's U2, as the listing names it.
     static INSTANCES: std::sync::LazyLock<Vec<(String, String)>> =
         std::sync::LazyLock::new(|| vec![("u2".to_owned(), "BME280".to_owned())]);
@@ -3714,21 +3747,7 @@ mod tests {
                     Could not compile assembly from: /w/models/BMP581.cs\n\
                     /w/models/BMP581.cs(13,27): error CS1002: ; expected\n\
                     [INFO] machine-0: Disposed.\n";
-        let out = Output {
-            ended: crate::run::Ended::Code(0),
-            stdout: text.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            sandbox: crate::run::SandboxReport {
-                landlock_abi: 0,
-                tcp_confined: false,
-                scoped: false,
-                sockets_denied: true,
-                uid_boundary: false,
-                uid_boundary_unmet: None,
-            },
-            dropped_log_lines: 0,
-            peak_rss_kib: None,
-        };
+        let out = output(text.as_bytes().to_vec(), 0);
         let image = image();
         for stop in [
             judge_boot(0, &out, &plan(&image, &[]), &Captured::default())
@@ -4389,6 +4408,28 @@ mod tests {
             })),
             ["judge_stop_mismatch"]
         );
+        // A stop that read fewer words back than its timer has registers,
+        // and a stop of another anchor than the timer's (no stop of its own).
+        assert_eq!(
+            kinds(with(&|l| {
+                let n = l.len();
+                l[n - 2] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81",
+                );
+            })),
+            ["judge_stop_mismatch"]
+        );
+        assert_eq!(
+            kinds(with(&|l| {
+                let n = l.len();
+                l[n - 2] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-STOP 2 3066 203067 81 81",
+                );
+            })),
+            ["judge_stop_missing"]
+        );
         // Edges with no anchor observed (a CR1 written by DMA).
         let (f, w) = judge_anchors(
             &with(&|l| {
@@ -4663,16 +4704,7 @@ mod tests {
             let mux = if j == 0 { " 28a801 770" } else { "" };
             log.push(line(c, format!("INJECT 1 {j} {echoed} {c}{mux}")));
         }
-        let read = |log: &[String]| {
-            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
-            assert_eq!(slept, None);
-            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
-                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
-                _ => None,
-            });
-            port_injections(&p, &hooks, bw)
-        };
+        let read = |log: &[String]| injections(&p, log);
         let j = read(&log);
         assert_eq!(
             j.iter()
@@ -4825,15 +4857,7 @@ mod tests {
             }
         };
         let read = |serial: &[Serial], log: &[String]| {
-            let p = serial_plan(&image, &[], serial);
-            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
-            assert_eq!(slept, None);
-            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
-                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
-                _ => None,
-            });
-            port_injections(&p, &hooks, bw)
+            injections(&serial_plan(&image, &[], serial), log)
                 .into_iter()
                 .map(|j| (j.at_ns, j.bytes, j.why))
                 .collect::<Vec<_>>()
@@ -4933,21 +4957,7 @@ mod tests {
                 text.push_str(&format!("{v:#x}\n"));
             }
             text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
-            let out = Output {
-                ended: crate::run::Ended::Code(0),
-                stdout: text.into_bytes(),
-                stderr: Vec::new(),
-                sandbox: crate::run::SandboxReport {
-                    landlock_abi: 0,
-                    tcp_confined: false,
-                    scoped: false,
-                    sockets_denied: true,
-                    uid_boundary: false,
-                    uid_boundary_unmet: None,
-                },
-                dropped_log_lines: dropped,
-                peak_rss_kib: None,
-            };
+            let out = output(text.into_bytes(), dropped);
             let (f, _, o) = judge_boot(0, &out, &p, &Captured::default()).unwrap();
             let failing: Vec<String> = f
                 .iter()
@@ -4993,6 +5003,90 @@ mod tests {
             failing.contains(&"motor_output_unwitnessed".to_owned()),
             "{failing:?}"
         );
+    }
+
+    /// `AET-WO-2302` D4, through `judge_boot` whole: the two serial findings
+    /// only the run decides are named by it. A boot whose frames and echoes
+    /// from the boot word run past the boot's end names
+    /// `serial_wire_past_run`; a second port's frame written before the
+    /// first has echoed its eighth byte names `serial_injection_out_of_order`
+    /// (adversarial pass 1, L2); a boot in order and inside its end names
+    /// neither.
+    #[test]
+    fn judge_boot_names_a_wire_past_the_run_and_an_injection_out_of_order() {
+        let t = console_topology();
+        let image = aethelgard_twin::boot::expected(&t).unwrap();
+        let mut serial = console();
+        let mut slow = serial[0].clone();
+        slow.port.renode = "usart2";
+        slow.spacing_ns = Some(1_100_000);
+        serial.push(slow);
+        let judge = |p: &BootPlan<'_>, log: &[String]| {
+            let mut text = String::new();
+            for l in log {
+                text.push_str(l);
+                text.push('\n');
+            }
+            text.push_str("AETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(aethelgard_twin::boot::BOOT_MAGIC),
+                    Read::Instructions => aethelgard_twin::boot::MIPS * p.virtual_ns / 1000,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
+                    Read::Record(_, _) => 0x60,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = output(text.into_bytes(), 0);
+            let (f, _, _) = judge_boot(0, &out, p, &Captured::default()).unwrap();
+            f.into_iter().map(|f| f.kind).collect::<Vec<_>>()
+        };
+        let line = |count: u64, body: String| {
+            at(count * 10, &format!("[WARNING] sysbus: AETHELGARD-{body}"))
+        };
+        let p = serial_plan(&image, &[], &serial);
+        let frame0 = p.port_hooks()[0].frame;
+        // Port 0 in from the boot word and echoed whole, port 1 after it.
+        let mut log = vec![line(3075, "BOOTWORD 2100b007 0 3075".into())];
+        for j in 0..8u64 {
+            let c = 3075 + 10_000 + 10_000 * j;
+            let mux = if j == 0 { " 28a801 770" } else { "" };
+            log.push(line(c, format!("INJECT 0 {j} 3075 {c}{mux}")));
+            log.push(line(
+                c + 50,
+                format!("TDR 0 {:x} {}", frame0[j as usize], c + 50),
+            ));
+        }
+        let echoed = 3075 + 10_000 + 70_000 + 50;
+        for j in 0..8u64 {
+            let c = echoed + 10_000 + 110_000 * j;
+            let mux = if j == 0 { " 28a801 770" } else { "" };
+            log.push(line(c, format!("INJECT 1 {j} {echoed} {c}{mux}")));
+        }
+        let named = |kinds: &[String], kind: &str| kinds.iter().any(|k| k == kind);
+        let kinds = judge(&p, &log);
+        assert!(!named(&kinds, "serial_wire_past_run"), "{kinds:?}");
+        assert!(!named(&kinds, "serial_injection_out_of_order"), "{kinds:?}");
+        // The same boot ending before the frames and echoes can: 1 ms.
+        let short = BootPlan {
+            virtual_ns: 1_000_000,
+            ..serial_plan(&image, &[], &serial)
+        };
+        assert!(named(&judge(&short, &log), "serial_wire_past_run"));
+        // Port 0 echoes only its first byte before port 1's frame goes in.
+        let mut early = vec![log[0].clone()];
+        early.extend(log[1..3].iter().cloned());
+        early.extend(log[17..].iter().cloned());
+        let kinds = judge(&p, &early);
+        assert!(named(&kinds, "serial_injection_out_of_order"), "{kinds:?}");
     }
 
     /// `4300` D8: the silicon check is the topology's, reported apart; a port

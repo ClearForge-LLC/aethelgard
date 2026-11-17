@@ -47,7 +47,7 @@ pub const MAX_VIRTUAL_NS: u64 = 100_000_000;
 /// (`AET-WO-2302`, ruled (a-i)): every board boots [`MAX_VIRTUAL_NS`], and
 /// a DShot timer is witnessed from the first write that sets its `CEN` in
 /// the boot the judge reads to this long after it, when the judge's own
-/// scheduled action reads the timer back, silences its observers and clears
+/// scheduled action reads the timer back and clears
 /// `CEN`. 2 ms holds four DShot600 channels' log (2.80 MB of the 8 MiB
 /// budget) and memory (4.7 MiB of RSS per ms of DShot; `AET-WO-2302`
 /// FEEDBACK §3); it was the board's whole boot under `AET-WO-4300a` D1.

@@ -144,20 +144,19 @@ impl Hook {
     }
 }
 
-/// A decimal field: digits, no leading zero but `0` itself.
+/// A decimal field: digits, no leading zero but `0` itself, and in a `u64`
+/// (`parse` refuses the rest).
 fn dec(s: &str) -> Option<u64> {
-    let ok = !s.is_empty()
-        && s.len() <= 20
-        && s.bytes().all(|b| b.is_ascii_digit())
-        && (s == "0" || !s.starts_with('0'));
+    let ok =
+        !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()) && (s == "0" || !s.starts_with('0'));
     ok.then(|| s.parse().ok()).flatten()
 }
 
 /// A hexadecimal word as Python's `%x` writes it: lower case, no prefix, no
-/// leading zero but `0` itself.
+/// leading zero but `0` itself, and in a `u32` (`from_str_radix` refuses the
+/// rest).
 fn hex(s: &str) -> Option<u32> {
     let ok = !s.is_empty()
-        && s.len() <= 8
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         && (s == "0" || !s.starts_with('0'));

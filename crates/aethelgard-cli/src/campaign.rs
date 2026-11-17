@@ -39,9 +39,6 @@ struct Prepared {
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
-    /// The boot's length and the constant that states it: `MAX_VIRTUAL_NS`
-    /// on every board (`AET-WO-2302`).
-    window: (u64, &'static str),
 }
 
 pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -250,10 +247,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         None => None,
     };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
-    let window = (
-        aethelgard_twin::boot::MAX_VIRTUAL_NS,
-        aethelgard_twin::boot::WINDOW,
-    );
     Ok(Prepared {
         path: path.to_path_buf(),
         base_sha256: digest(&base),
@@ -263,7 +256,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         held,
         rail,
         run_id,
-        window,
     })
 }
 
@@ -483,7 +475,7 @@ struct CampaignSummary {
     check: &'static str,
     scenarios: usize,
     matched: usize,
-    /// The longest window any scenario booted for; each line names its own.
+    /// Every scenario's boot, `MAX_VIRTUAL_NS` (`AET-WO-2302`).
     virtual_time_ns: u64,
     trace_bytes: u64,
 }
@@ -544,7 +536,6 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
     }
 
     let (mut matched, mut total) = (0, 0u64);
-    let longest = prepared.iter().map(|p| p.window.0).max().unwrap_or(0);
     for p in prepared {
         let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive) {
             Ok(done) => done,
@@ -565,7 +556,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
             check: "campaign",
             scenarios: scenarios.len(),
             matched,
-            virtual_time_ns: longest,
+            virtual_time_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
             trace_bytes: total,
         },
         if all { 0 } else { EXIT_FAIL },
@@ -612,7 +603,7 @@ fn run_one(
         Some(Boot {
             firmware: firmware.to_path_buf(),
             topology: p.topology,
-            virtual_ns: p.window.0,
+            virtual_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
             absent: absent(&p.scenario.overrides),
@@ -682,7 +673,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = record.timestamp(p.window.0);
+            let timestamp = record.timestamp(aethelgard_twin::boot::MAX_VIRTUAL_NS);
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -711,8 +702,8 @@ fn run_one(
             state_sequence_hash: hex(archived.state_hash),
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
-            virtual_time_ns: p.window.0,
-            window: p.window.1,
+            virtual_time_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
+            window: aethelgard_twin::boot::WINDOW,
             uid_boundary,
             uid_boundary_unmet,
         },

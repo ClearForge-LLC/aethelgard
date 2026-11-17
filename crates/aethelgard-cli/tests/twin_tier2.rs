@@ -71,6 +71,38 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     (out.status.code(), value)
 }
 
+/// `aethelgard campaign` over `scenarios` (under the repository root) on
+/// `elf`, archived at a fresh directory named for `tag`: the archive, the
+/// exit code and every line of its stdout.
+fn run_campaign(tag: &str, scenarios: &[&str], elf: &Path) -> (PathBuf, Option<i32>, Vec<Value>) {
+    let archive = std::env::temp_dir().join(format!("aet-t2-{}-{tag}-archive", std::process::id()));
+    let _ = fs::remove_dir_all(&archive);
+    let start = Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .arg("campaign")
+        .arg("--scenarios")
+        .args(scenarios)
+        .arg("--firmware")
+        .arg(elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    answer(&format!(
+        "campaign {tag}: exit={:?} wall_s={:.2} {lines:?}",
+        out.status.code(),
+        start.elapsed().as_secs_f64()
+    ));
+    (archive, out.status.code(), lines)
+}
+
 fn topology() -> SolvedTopology {
     let (code, v) = aethelgard(&["solve", "--file", spec().to_str().unwrap()]);
     assert_eq!(code, Some(0), "solving the spec exits 0: {v}");
@@ -2015,6 +2047,9 @@ fn f2_a_late_dshot_anchor_fails_by_name() {
 
 /// The raw-register code adversarial pass 1's mutants use (`AET-WO-2302`):
 /// a word write and read, a 16-bit store and a spin of `n` iterations.
+/// The raw-register code the forgeries put where the outputs start, in the
+/// firmware's own crate: a word and a half-word write, a word read and a
+/// spin of `n` iterations.
 const RAW_ADV: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn rd(a: u32) -> u32 { unsafe { core::ptr::read_volatile(a as *const u32) } }\nfn wr16(a: u32, v: u16) { unsafe { core::ptr::write_volatile(a as *mut u16, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
 /// The generated firmware's start of its outputs and write of its boot
 /// word.
@@ -2282,29 +2317,8 @@ fn m1_a_core_that_slept_without_its_boot_word_is_cpu_halted() {
             && halted.contains("the core slept or stopped before it"),
         "{halted}"
     );
-    let archive =
-        std::env::temp_dir().join(format!("aet-2302-t2-{}-m1-archive", std::process::id()));
-    let _ = fs::remove_dir_all(&archive);
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
-            "scenarios/motors/dshot600.json",
-            "--firmware",
-        ])
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let stdout = String::from_utf8(out.stdout).unwrap();
-    answer(&format!(
-        "campaign m1: exit={:?} {stdout}",
-        out.status.code()
-    ));
-    let line: Value = serde_json::from_str(stdout.lines().next().unwrap()).unwrap();
+    let (archive, _, lines) = run_campaign("m1", &["scenarios/motors/dshot600.json"], &elf);
+    let line = &lines[0];
     assert_eq!(line["verdict"], "fail", "{line}");
     let (code, replayed) = aethelgard(&["replay", "--archive", line["run"].as_str().unwrap()]);
     assert_eq!(code, Some(0), "{replayed}");
@@ -2327,10 +2341,6 @@ fn m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement() {
     assert!(!m.contains("AETHELGARD-"), "{m}");
 }
 
-/// The raw-register code the forgeries put where the outputs start: a
-/// write and a spin of `n` iterations, in the firmware's own crate.
-const RAW: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
-
 /// `AET-WO-4300a` §5 item 1, through Renode: PA8..PA11 driven by `BSRR`
 /// stores with the timer never started, and the `UG` + `BSRR` pair the 4300
 /// spike left unmeasured (an update event and a store edge in one quantum).
@@ -2350,7 +2360,7 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
             label,
             |_| {},
             |d| {
-                edit(d, "src/main.rs", "#[panic_handler]", RAW);
+                edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
                 edit(d, "src/main.rs", start, body);
             },
         );
@@ -2555,36 +2565,15 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
 #[test]
 fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     let (_, _, elf) = motor_board("motors-dshot600", "campaign", |_| {}, |_| {});
-    let archive =
-        std::env::temp_dir().join(format!("aet-4300a-t2-{}-dshot-archive", std::process::id()));
-    let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
+    let (archive, code, lines) = run_campaign(
+        "motors-dshot600",
+        &[
             "scenarios/motors/dshot600.json",
             "scenarios/motors/dshot600-droop.json",
-        ])
-        .arg("--firmware")
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    answer(&format!(
-        "campaign motors-dshot600: exit={:?} wall_s={:.2} {lines:?}",
-        out.status.code(),
-        start.elapsed().as_secs_f64()
-    ));
-    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+        ],
+        &elf,
+    );
+    assert_eq!(code, Some(0), "{lines:?}");
     assert_eq!(lines.len(), 3, "{lines:?}");
     for line in &lines[..2] {
         assert_eq!(line["verdict"], "pass", "{line}");
@@ -2717,37 +2706,9 @@ fn the_four_port_fixture_witnesses_every_port_and_sbus_s_tags() {
 #[test]
 fn the_four_port_fixture_s_campaign_passes_and_replays() {
     let (_, _, elf) = motor_board("serial-four", "serial-campaign", |_| {}, |_| {});
-    let archive = std::env::temp_dir().join(format!(
-        "aet-4300b-t2-{}-serial-archive",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
-            "scenarios/serial/serial-four.json",
-        ])
-        .arg("--firmware")
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    answer(&format!(
-        "campaign serial-four: exit={:?} wall_s={:.2} {lines:?}",
-        out.status.code(),
-        start.elapsed().as_secs_f64()
-    ));
-    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+    let (archive, code, lines) =
+        run_campaign("serial-four", &["scenarios/serial/serial-four.json"], &elf);
+    assert_eq!(code, Some(0), "{lines:?}");
     assert_eq!(lines.len(), 2, "{lines:?}");
     let line = &lines[0];
     assert_eq!(
@@ -2785,38 +2746,15 @@ fn the_four_port_fixture_s_campaign_passes_and_replays() {
 #[test]
 fn an_open_rx_line_is_detected_by_name_and_attributed_e3() {
     let (_, _, elf) = motor_board("serial-four", "serial-open", |_| {}, |_| {});
-    let archive = std::env::temp_dir().join(format!(
-        "aet-2302-t2-{}-serial-open-archive",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
+    let (archive, code, lines) = run_campaign(
+        "serial-open",
+        &[
             "scenarios/serial/serial-four-open-mavlink.json",
             "scenarios/serial/serial-four-open-crsf.json",
-        ])
-        .arg("--firmware")
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    answer(&format!(
-        "campaign serial-four open: exit={:?} wall_s={:.2} {lines:?}",
-        out.status.code(),
-        start.elapsed().as_secs_f64()
-    ));
-    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+        ],
+        &elf,
+    );
+    assert_eq!(code, Some(0), "{lines:?}");
     assert_eq!(lines.len(), 3, "{lines:?}");
     for (line, open) in lines.iter().zip(["MAVLINK", "CRSF"]) {
         assert_eq!(

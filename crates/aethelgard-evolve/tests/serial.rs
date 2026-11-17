@@ -1004,3 +1004,39 @@ fn propose_leaves_an_open_rx_line_to_the_model_slot() {
         ans.outcome
     );
 }
+
+/// Mutation sweep of `E3` (`AET-WO-2302` D5): an open RX line beside a port
+/// whose silicon framing check fails is not shown to be the port's one
+/// fault (I6, never electrical), and beside writes the access log shows
+/// wrong it is the firmware's (S5): mutants `holds: true` and `t.holds()`
+/// survived the cases above.
+#[test]
+fn an_open_rx_line_beside_a_failing_framing_check_or_wrong_writes_is_not_e3() {
+    let rule = |case: Case, findings: &[(&str, u64)]| {
+        let r = open(run(&case, findings), "CONSOLE", true);
+        let a = attributed(&r);
+        (a.domain, a.rule)
+    };
+    assert_eq!(
+        rule(
+            Case {
+                console_holds: false,
+                console: Echo::Missing,
+                ..Case::default()
+            },
+            &[(SERIAL_ECHO_FINDING, 1), (SERIAL_STATIC_FINDING, 1)],
+        ),
+        (Domain::Indeterminate, Rule::I6)
+    );
+    assert_eq!(
+        rule(
+            Case {
+                console_tags_hold: false,
+                console: Echo::Missing,
+                ..Case::default()
+            },
+            &[(SERIAL_ECHO_FINDING, 1), (SERIAL_TAG_FINDING, 1)],
+        ),
+        (Domain::Software, Rule::S5)
+    );
+}
