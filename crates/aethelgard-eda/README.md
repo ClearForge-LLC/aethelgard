@@ -32,6 +32,16 @@ Any other part is refused, never approximated (`INV-06`).
 
 Ground and unconnected nets are not counted, and ties go to the lower reference. "Beside" means the first free spot, in rings of 0.25 mm out from a target, where the part's keep-out box (its courtyard, silkscreen and reference text, every glyph as wide as KiCad's widest, `m`) clears every placed one by 0.5 mm, or by 1 mm when both are ICs, so that the router has room between their pads (`AET-WO-1302`). The target is the anchor's lowest-numbered pad on the first net they share (signal nets before rails), so a decoupling capacitor sits by the power pin its rail names. Every part the placer places is at rotation 0 on the front. The outline is a rectangle 2 mm outside every keep-out box, so every courtyard keeps more than the board-edge clearance (`rules::FLOOR_NM`).
 
+A part anchored to an IC (a buck's input capacitor, CBOOT, an MCU support part) goes straight after that IC, in the emitter's draw sequence for it (`Anchor::seq`, `AET-WO-1313c` F1), never in the parts list's order.
+
+**Under a declared bound** (`board.max_outline_um`, `AET-WO-1313`, `AET-WO-1313c`), and only there, no name and no list position decides a placement:
+- a canonical rank, from footprints, ownership, the draw sequence and the net graph (colour refinement), takes the place of reference order everywhere above; a reference breaks only a tie that remains between parts alike in all of those;
+- a part's target is the centroid of its anchor's pads on every net they share;
+- each IC's group (the IC and every non-IC part placed beside it) is then compacted toward the MCU, a 0.25 mm step at a time, sidestepping up to 10 mm, keeping the gaps above, every pair's approach strip and the parts' x-range;
+- the connectors go on the left and right edges, cable out, in the rank's order.
+
+A bound the parts cannot fit is refused before placement (`OutlineTooSmall`); one the placer cannot reach is refused with the outline it reached (`OutlineUnreachable`), and nothing is written. With no bound the board is unchanged, byte for byte.
+
 **The router** (`route::route`) is integer-only, and its copper is a function of the placed pads alone:
 - **Grid:** 0.125 mm, which divides the LQFP's 0.5 mm pitch, so every LQFP pad centre is a node. Moves are axis-aligned on F.Cu and B.Cu, with a via between; the search is A* over (layer, node, entering direction), with a cost per step (B.Cu three times F.Cu's), per bend and per via. Ties go to the lower state index.
 - **Spacing:** every track (0.2 mm) and via keeps 0.2 mm from foreign copper, pads with no net included, and 0.5 mm from the board edge (KiCad 10.0.7's default edge clearance, measured); holes keep 0.25 mm. On the grid each reach carries a 10 µm margin, which a compile-time assertion proves covers the chord between two nodes.

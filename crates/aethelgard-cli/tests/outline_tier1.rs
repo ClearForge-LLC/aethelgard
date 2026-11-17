@@ -4,12 +4,16 @@
 //! before any placement, and one the placer cannot reach is refused by
 //! `emit` by name, writing nothing (§5: never a partial board).
 
+mod common;
+
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
+use aethelgard_eda::pcb::{self, GAP_NM, IC_GAP_NM, Rect};
 use aethelgard_eda::schematic::{self, EmitError};
-use aethelgard_eda::strict;
+use aethelgard_eda::{library, sexpr, strict};
 use aethelgard_ir::{PinTable, SolvedTopology, Specification};
+use common::rename;
 use serde_json::{Value, json};
 
 const FIXTURE: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
@@ -169,4 +173,221 @@ fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
         "{verdict}"
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A board's outline and every footprint's library name, origin and
+/// rotation, sorted: the placement with every name taken out.
+fn name_free(board: &str) -> Vec<String> {
+    let tree = sexpr::parse(board).unwrap();
+    let rect = tree.child("gr_rect").unwrap();
+    let mut v: Vec<String> = tree
+        .children("footprint")
+        .map(|fp| {
+            let at = fp.child("at").unwrap();
+            format!(
+                "{} {} {} {}",
+                fp.arg(1).unwrap(),
+                at.arg(1).unwrap(),
+                at.arg(2).unwrap(),
+                at.arg(3).unwrap_or("0")
+            )
+        })
+        .collect();
+    v.sort();
+    v.insert(
+        0,
+        sexpr::write(rect.child("start").unwrap()).trim().to_owned(),
+    );
+    v.insert(
+        1,
+        sexpr::write(rect.child("end").unwrap()).trim().to_owned(),
+    );
+    v
+}
+
+/// The outline's width and height in nanometres.
+fn outline_nm(board: &str) -> Rect {
+    let tree = sexpr::parse(board).unwrap();
+    let rect = tree.child("gr_rect").unwrap();
+    let at = |head: &str, i: usize| sexpr::nm(rect.child(head).unwrap().arg(i).unwrap()).unwrap();
+    Rect {
+        x0: at("start", 1),
+        y0: at("start", 2),
+        x1: at("end", 1),
+        y1: at("end", 2),
+    }
+}
+
+/// `AET-WO-1313c` §5, `1313b`'s `gaps.py` as a test: every keep-out box,
+/// rebuilt from the board and the library as the placer drew it, is inside
+/// the outline, and every two are at least [`GAP_NM`] apart, [`IC_GAP_NM`]
+/// when both are ICs (the placer's `is_ic`: neither a `Device:` part, a
+/// test point nor a switch, read from the schematic's symbols).
+fn assert_gaps(e: &schematic::Emission) {
+    let sch = sexpr::parse(&e.schematic).unwrap();
+    let lib_of: std::collections::BTreeMap<String, String> = sch
+        .children("symbol")
+        .map(|s| {
+            (
+                s.property("Reference").unwrap().to_owned(),
+                s.child("lib_id").unwrap().arg(1).unwrap().to_owned(),
+            )
+        })
+        .collect();
+    let ic = |lib: &str| {
+        !lib.starts_with("Device:") && lib != "Connector:TestPoint" && !lib.starts_with("Switch:")
+    };
+    let board = sexpr::parse(&e.board).unwrap();
+    let outline = outline_nm(&e.board);
+    let mut keeps: Vec<(String, bool, Rect)> = Vec::new();
+    for fp in board.children("footprint") {
+        let reference = fp.property("Reference").unwrap().to_owned();
+        let at = fp.child("at").unwrap();
+        let theta: u16 = at.arg(3).unwrap_or("0").parse().unwrap();
+        let (x, y) = (
+            sexpr::nm(at.arg(1).unwrap()).unwrap(),
+            sexpr::nm(at.arg(2).unwrap()).unwrap(),
+        );
+        // The library's footprint, with its reference on the layer the
+        // board prints it on, as the placer drew it (`reference_on_fab`).
+        let layer = |f: &sexpr::Sx| {
+            f.children("property")
+                .find(|p| p.arg(1) == Some("Reference"))
+                .and_then(|p| p.child("layer"))
+                .and_then(|l| l.arg(1))
+                .map(str::to_owned)
+        };
+        let mut lib = library::footprint(fp.arg(1).unwrap()).unwrap();
+        let on = layer(fp).unwrap();
+        for c in lib.items_mut().unwrap().iter_mut() {
+            if c.head() == Some("property") && c.arg(1) == Some("Reference") {
+                for f in c.items_mut().unwrap().iter_mut() {
+                    if f.head() == Some("layer") {
+                        *f = sexpr::Sx::List(vec![sexpr::Sx::atom("layer"), sexpr::Sx::str(&on)]);
+                    }
+                }
+            }
+        }
+        assert_eq!(layer(&lib).as_deref(), Some(on.as_str()), "{reference}");
+        let k = pcb::geometry_at(&lib, &reference, theta).unwrap().keep;
+        let k = Rect {
+            x0: k.x0 + x,
+            y0: k.y0 + y,
+            x1: k.x1 + x,
+            y1: k.y1 + y,
+        };
+        assert!(outline.contains(k), "{reference} leaves the outline");
+        keeps.push((reference.clone(), ic(&lib_of[&reference]), k));
+    }
+    assert!(keeps.len() > 50, "{} footprints", keeps.len());
+    for (i, (ra, ia, a)) in keeps.iter().enumerate() {
+        for (rb, ib, b) in &keeps[i + 1..] {
+            let gap = if *ia && *ib { IC_GAP_NM } else { GAP_NM };
+            assert!(
+                !a.grow(gap).overlaps(*b),
+                "{ra} and {rb} are closer than {gap} nm"
+            );
+        }
+    }
+}
+
+/// `AET-WO-1313c` §5: every loop rule of the power tree (each buck's input
+/// capacitors, CBOOT, the inductor, ...) holds on the placed board, judged
+/// by the loop gate `check drc --spec` runs (`loops::judge`), after
+/// compaction moved each buck's group whole.
+fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable, board: &str) {
+    let rules = aethelgard_eda::loops::rules(spec, solved, table).unwrap();
+    assert!(!rules.is_empty());
+    let tree = strict::board(board).unwrap();
+    let (b, _) =
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(spec)).unwrap();
+    for l in aethelgard_eda::loops::judge(&b, &rules).unwrap() {
+        assert_eq!(
+            l.verdict, "pass",
+            "{} beside {}: {:?}",
+            l.part, l.ic, l.pads
+        );
+    }
+}
+
+/// The fixture's placement with every name taken out ([`name_free`]), as
+/// `AET-WO-1313b`'s prototype placed it (`spike/1313b/placer.patch`,
+/// `AET_1313B=kms`, at `457d644`; byte-identical, FEEDBACK §1.3). Re-pin it
+/// only with the change that moves it, named in that change's FEEDBACK.
+const FIXTURE_PLACEMENT_SHA256: &str =
+    "5e30de786b428a91ba2f6a953f934fbe1626ec5c57d46b881ee1d3f5757c75dc";
+
+/// `AET-WO-1313c` §2: the fixture places at `1313b`'s measured outline,
+/// 85.25 x 80.95 mm (FEEDBACK §2.1, (k)+(m)+(s)), at the prototype's every
+/// position, with every placer gap and every loop rule kept after
+/// compaction.
+#[test]
+fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
+    use sha2::{Digest, Sha256};
+    let (spec, solved, table) = solved(&fixture());
+    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let o = outline_nm(&e.board);
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_250_000, 80_950_000));
+    let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(digest, FIXTURE_PLACEMENT_SHA256);
+    assert_gaps(&e);
+    assert_loops(&spec, &solved, &table, &e.board);
+}
+
+/// `AET-WO-1313c` §2: twenty order-only renamings (references permuted
+/// within their letters and length, bus nets prefixed) place the fixture
+/// identically once names are taken out.
+#[test]
+fn order_only_renamings_place_the_fixture_the_same_way() {
+    let place = |v: &Value| {
+        let (spec, solved, table) = solved(v);
+        name_free(&schematic::emit(&spec, &solved, &table).unwrap().board)
+    };
+    let base = fixture();
+    let want = place(&base);
+    let seeds: Vec<u64> = (1..=20).collect();
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    std::thread::scope(|s| {
+        for chunk in seeds.chunks(seeds.len().div_ceil(threads)) {
+            let (base, want) = (&base, &want);
+            s.spawn(move || {
+                for &seed in chunk {
+                    let renamed = rename::order_only(base, seed);
+                    assert_ne!(&renamed, base, "seed {seed} renames nothing");
+                    assert_eq!(&place(&renamed), want, "seed {seed}");
+                }
+            });
+        }
+    });
+}
+
+/// `AET-WO-1313c` §2, size samples: every reference prefixed by 2, 6 or 8
+/// characters (`rename_len.py`). The `extract` margin is the geometry's,
+/// not the method's, so no size is promised: each sample either places
+/// inside the bound with every placer gap kept (its gates are tier 2's), or
+/// is refused by name, writing nothing.
+#[test]
+fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
+    for len in [2, 6, 8] {
+        let v = rename::sized(&fixture(), len);
+        let (spec, solved, table) = solved(&v);
+        match schematic::emit(&spec, &solved, &table) {
+            Ok(e) => {
+                let o = outline_nm(&e.board);
+                assert!(
+                    o.x1 - o.x0 <= 100_000_000 && o.y1 - o.y0 <= 100_000_000,
+                    "{len}: {o:?}"
+                );
+                assert_gaps(&e);
+                assert_loops(&spec, &solved, &table, &e.board);
+            }
+            Err(e) => assert!(
+                matches!(e.kind(), "OutlineUnreachable" | "OutlineTooSmall"),
+                "{len}: {e}"
+            ),
+        }
+    }
 }
