@@ -3651,6 +3651,39 @@ mod tests {
         aethelgard_twin::boot::expected(&topology).unwrap()
     }
 
+    /// Each port's injection `port_injections` reads from `log`, a boot of
+    /// no sleep whose first boot word is the chain's anchor.
+    fn injections(p: &BootPlan<'_>, log: &[String]) -> Vec<PortInjection> {
+        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        let (hooks, slept) = hooks_of(&lines, 0).unwrap();
+        assert_eq!(slept, None);
+        let bw = hooks.iter().find_map(|(i, h, ns)| match h {
+            crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
+            _ => None,
+        });
+        port_injections(p, &hooks, bw)
+    }
+
+    /// A tool run that ended with code 0 and printed `stdout`, `dropped`
+    /// log lines lost.
+    fn output(stdout: Vec<u8>, dropped: u64) -> Output {
+        Output {
+            ended: crate::run::Ended::Code(0),
+            stdout,
+            stderr: Vec::new(),
+            sandbox: crate::run::SandboxReport {
+                landlock_abi: 0,
+                tcp_confined: false,
+                scoped: false,
+                sockets_denied: true,
+                uid_boundary: false,
+                uid_boundary_unmet: None,
+            },
+            dropped_log_lines: dropped,
+            peak_rss_kib: None,
+        }
+    }
+
     /// The booted platform's U2, as the listing names it.
     static INSTANCES: std::sync::LazyLock<Vec<(String, String)>> =
         std::sync::LazyLock::new(|| vec![("u2".to_owned(), "BME280".to_owned())]);
@@ -3714,21 +3747,7 @@ mod tests {
                     Could not compile assembly from: /w/models/BMP581.cs\n\
                     /w/models/BMP581.cs(13,27): error CS1002: ; expected\n\
                     [INFO] machine-0: Disposed.\n";
-        let out = Output {
-            ended: crate::run::Ended::Code(0),
-            stdout: text.as_bytes().to_vec(),
-            stderr: Vec::new(),
-            sandbox: crate::run::SandboxReport {
-                landlock_abi: 0,
-                tcp_confined: false,
-                scoped: false,
-                sockets_denied: true,
-                uid_boundary: false,
-                uid_boundary_unmet: None,
-            },
-            dropped_log_lines: 0,
-            peak_rss_kib: None,
-        };
+        let out = output(text.as_bytes().to_vec(), 0);
         let image = image();
         for stop in [
             judge_boot(0, &out, &plan(&image, &[]), &Captured::default())
@@ -4663,16 +4682,7 @@ mod tests {
             let mux = if j == 0 { " 28a801 770" } else { "" };
             log.push(line(c, format!("INJECT 1 {j} {echoed} {c}{mux}")));
         }
-        let read = |log: &[String]| {
-            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
-            assert_eq!(slept, None);
-            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
-                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
-                _ => None,
-            });
-            port_injections(&p, &hooks, bw)
-        };
+        let read = |log: &[String]| injections(&p, log);
         let j = read(&log);
         assert_eq!(
             j.iter()
@@ -4825,15 +4835,7 @@ mod tests {
             }
         };
         let read = |serial: &[Serial], log: &[String]| {
-            let p = serial_plan(&image, &[], serial);
-            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
-            let (hooks, slept) = hooks_of(&lines, 0).unwrap();
-            assert_eq!(slept, None);
-            let bw = hooks.iter().find_map(|(i, h, ns)| match h {
-                crate::anchor::Hook::BootWord { .. } => Some((*i, *ns)),
-                _ => None,
-            });
-            port_injections(&p, &hooks, bw)
+            injections(&serial_plan(&image, &[], serial), log)
                 .into_iter()
                 .map(|j| (j.at_ns, j.bytes, j.why))
                 .collect::<Vec<_>>()
@@ -4933,21 +4935,7 @@ mod tests {
                 text.push_str(&format!("{v:#x}\n"));
             }
             text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
-            let out = Output {
-                ended: crate::run::Ended::Code(0),
-                stdout: text.into_bytes(),
-                stderr: Vec::new(),
-                sandbox: crate::run::SandboxReport {
-                    landlock_abi: 0,
-                    tcp_confined: false,
-                    scoped: false,
-                    sockets_denied: true,
-                    uid_boundary: false,
-                    uid_boundary_unmet: None,
-                },
-                dropped_log_lines: dropped,
-                peak_rss_kib: None,
-            };
+            let out = output(text.into_bytes(), dropped);
             let (f, _, o) = judge_boot(0, &out, &p, &Captured::default()).unwrap();
             let failing: Vec<String> = f
                 .iter()
