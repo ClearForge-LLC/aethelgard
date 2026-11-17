@@ -517,3 +517,4 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
   - host: `fmt`, `clippy -D warnings` with and without `with-tools`, 2 055 tier-1 tests passed, 0 failed;
   - in the pinned image: `twin_tier2` 82/82 pinned to 4 CPUs (A6's own call 16.47 s), `campaign_tier2` 9/9, `with_tools` 31/31, `models_tier2` 7/7, `attribute_seeded` 11/11;
   - the long suites (`board_tier2`, the verify suites, `against_fab_tier2`) run in CI.
+- **Docs-only `main` merged last** (`d3a0aa3d`, #195: AET-WO-4400b2, architecture §3). It touches no code, test or CI file, so the gates above stand.
