@@ -83,3 +83,170 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
 | P12 | The console as a second witness | the banner, then `INS: unable to initialise driver` / `Config Error: …` repeated, if the console works. ArduPilot prints no line per barometer found at boot, so the console cannot witness the baro probe |
 | P13 | Cost | 1–4 s of wall per simulated second at the twin's 100 MIPS (inferred: ArduPilot idles most of the time); Renode about 400–500 MiB |
 | P14 | The judge, rule by rule (predicted) | boot word: **fail** (never written); 100 MIPS × time: **fail** (`WFI` in the idle thread, `cpu_halted`); self-loop: **fail**; solved registers: **mixed** (pin modes and AFs as solved, since ArduPilot's `gpio_default_config` comes from the same topology; RCC enables differ: ArduPilot enables more than the solved set, so `cold` registers fail); `--for` ≤ 100 ms: **cannot be judged**, nothing ArduPilot does reaches its probes within 100 ms; the `4210` witness: **fail** within 100 ms |
+
+## The (h), reported first (measured and read at source)
+
+**ArduPilot never probes the ICM-42688-P, because the generated `hwdef.dat` has no `IMU` line. At 5.2055 s of virtual time it prints `INS: unable to initialise driver` and enters `config_error`.** This is the work order's §7 stop. Nothing was worked past it.
+
+- **The line.**
+  - The `hwdef.dat` from CI (sha256 `e69033da…`) holds `SPIDEV icm42688 SPI2 DEVID1 IMU_CS MODE0 2*MHZ 2*MHZ` and no `IMU Invensensev3 SPI:icm42688 ROTATION_…`.
+  - Its header says why: `Not emitted: U5 (ICM42688P): no IMU line; its rotation is a mechanical fact no specification declares (its SPIDEV icm42688 is emitted)`.
+- **The generator's rule:** `crates/aethelgard-hwdef/src/lib.rs` L760 and L866 (4400b FEEDBACK L47: `IMU` takes `<driver> SPI:<spidev> <rotation>`, and no `rotation` field exists in `aethelgard-ir`).
+- **ArduPilot's reading.**
+  - `AP_InertialSensor.cpp` L1220–1318: only `HAL_INS_PROBE_LIST` probes IMUs on a board like this one, because `AP_FEATURE_BOARD_DETECT` is 0 off FMUv3 (`AP_BoardConfig_config.h` L6–11). With no `IMU` line it is undefined, so `_backend_count == 0`, and the boot ends in `AP_BoardConfig::config_error("INS: unable to initialise driver")`.
+  - **In the artifact itself:** the ELF holds no `Invensensev3` symbol at all (`readelf -s`: 0 matches), so the driver is not even compiled in. It does hold the string `INS: unable to initialise driver`.
+- **Two witnesses agree.**
+  - The console prints `INS: unable to initialise driver` (byte 477 of USART1's capture; its first byte written at 5.205549320 s).
+  - The ICM-42688-P model's own log holds **no transaction in 15 s** (`spike/4400c/out/r2/models.log`: 0 `spi2.spi2mux.u5` lines after reset).
+- **What a build would do** (for the architect; nothing chosen): give the specification a declared IMU orientation, so the generator can emit the `IMU` line; or emit `ROTATION_NONE` and state it. The second is a fact no specification declares, so it is the architect's question, not the builder's.
+
+## Results — measured after the predictions (`f89a7847`)
+
+**How it ran (measured).**
+- Every container went through `spike/4400c/sh/img.sh`: `~/bin/capped-run --mem 8G`, `--network none`, TMPDIR unset, one at a time.
+- The caps were read back before each container started (`spike/4400c/out/caps.log`): `memory.max=8589934592 memory.swap.max=0 pids.max=8192`.
+- **The CLI's setup, not a reconstruction.** The unmodified CLI booted this board's own generated Rust firmware (`aethelgard generate` and `build` on `sentinel-02-own.json`; `simulate --for 100ms`: `pass`, finding `device_unmodelled` only). Its Renode argv was copied from `/proc` (`spike/4400c/out/renode-argv.txt`, `spike/4400c/sh/gen.sh`).
+- `spike/4400c/drive.py` replays that script under the CLI's own `renode.config` (synchronous logging, virtual timestamps), with **only the ELF swapped**.
+- Left out, as deviations:
+  - the boot-word watchpoint hook and its serial injection;
+  - the single `RunFor 0.1` and the judge's reads, replaced by steps of 100–500 ms, each followed by the driver's reads.
+
+  Kept: the cold RCC writes, the boot-word fills, the device `logLevel -1` lines, the access logging, the capture backends (USART1's capture is the console), and the sensor stimuli.
+- Runs:
+  - `r1`: 2 s in 100 ms steps;
+  - `r2`: 15 s in 500 ms steps;
+  - `r3`: a 3 s diagnostic with one platform overlay;
+  - `r4`: 100 ms with the judge's register reads.
+
+  Evidence for each, except the 10 MB Renode logs, is in `spike/4400c/out/`.
+
+### §1.2 The stall table
+
+| # | Virtual time | Where | Class | What | Worked past? |
+|---|---|---|---|---|---|
+| — | 0 → 9.37 ms | ChibiOS start-up: PWR, RCC, the PLLs, flash, `SWS`, MPU, DMAMUX | — | **no stall.** `Storage: Using flash pages 14 and 15`, `Initialised Storage type=2`, then the banner `Init ArduCopter V4.7.2 (fb773567)` (its first byte at 9.37 ms), and `Firmware change: erasing EEPROM... done` | — |
+| 1 | 0.1635 → 1.797 s | `logger.init` → `AP_Logger_Flash_JEDEC::probe`, SPI1 | **(p)** | **The model answers, the firmware does not receive it.** `u4`'s own lines: JEDEC `0x9F` → `EF`, `40`, `17`, `10` at 0.179610600 s. The console: `Unknown SPI Flash 0x00F0BB03`, and the logger disables itself; the boot continues. **Cause, measured:** the twin's emitted `spi1` and `spi2` declare no `DMARecieve -> dmamux1@…` line, which Renode 1.17.0's own `spi4` does (`stm32h7.repl` L197). ArduPilot receives SPI1 on DMA2 stream 1, DMAMUX request 37 (`stm32_dmamux.h` L72). With the overlay `spike/4400c/overlay-spi-dma.repl` (`spi1: DMARecieve -> dmamux1@37`, `spi2: … @39`), run `r3` prints `SPI Flash 0x00EF4017 found pages=32768 erase=64k` and the logger comes up | only in diagnostic `r3`, which stopped at 3 s, before the (h). A build would emit these lines in `aethelgard-twin`. The same gap would garble the IMU's SPI2 reads on any board whose `IMU` line exists |
+| 2 | 3.774 s | `compass.init` | **(x)**, not a stall | `No Compass backends available`. The board declares no compass; roadmap §5 makes it optional and disabled indoors | not a stall |
+| 3 | **5.2055 s** | `startup_INS_ground` → `ins.init` → `detect_backends` | **(h)** | `INS: unable to initialise driver`, then `config_error`; the core thereafter mostly in `__idle_thread` (PC `0x08100858`), sending MAVLink heartbeats on SERIAL0 | **no: the §7 stop** |
+
+- **What did not stall, against P4 and P5:**
+  - `4400a`'s D8 stall (one byte on USART3 on Renode's stock platform) does not happen here. Every console byte is a CPU store to `TDR` from `UARTDriver::write_pending_bytes_DMA`+0x13e (1,038 of 1,038 logged writes). Renode's `usart1` declares no DMA request line (`stm32h7.repl` L298–304), so no transmit DMA is involved. Why 4400a's run stopped was not chased.
+  - The storage erase on bank 2 completed.
+- **EXTI:** `C1IMR1` reads `0xFFC00000` straight after load (lines 22 and 26 unmasked), so P4(c) and P8's condition are both out (measured).
+
+### §1.3 The probe, witnessed
+
+**Virtual times (measured, the models' own lines):**
+- SPI1 dataflash: status `0x05` at 0.163538800 s, JEDEC `0x9F` at 0.179610600 s;
+- **BME280** identity at **1.973600630 s**;
+- **BMP581** identity at **1.973786350 s**;
+- the first BMP581 data read at 2.013765940 s;
+- **no IMU traffic in 15 s.**
+
+ArduPilot's own clock runs 1.25× the virtual time: TIM5 counts 125,000 per 100 ms virtual, `PSC` = 199 against Renode's fixed 250 MHz (P6, measured). So ArduPilot believes the barometer probe happened at about 2.47 s.
+
+**Against each part's `4210` script** (`crates/aethelgard-ir/data/parts.json`), with each expected line in the judge's own format (`crates/aethelgard-twin/src/model.rs` L208–218, L798–830; never from ArduPilot's source):
+
+| Part | Step | Expected line (the judge's) | ArduPilot's traffic (`r2`, 15 s) | |
+|---|---|---|---|---|
+| BME280 (U2) | identity | `[NOISY] i2c1.u2: Write D0`, `[NOISY] i2c1.u2: Read 60` | exactly these, at 1.973600630 s, once | **satisfied** |
+| BME280 | (no further step: `script: null`) | — | `Write 88` / `Read` 24 calibration bytes; `Write F4 57`; `Write F5 8`; 813 data reads `Write F7` + `Read`; 20 further `F4` and `F5` accesses | not named by any script |
+| BMP581 (U7) | identity | `[NOISY] i2c1.u7: read 0x01 -> 0x50` | exactly this, at 1.973786350 s | **satisfied** |
+| BMP581 | configure | `[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81` (a two-byte burst), then 10 ms settle | **never.** ArduPilot writes `0x37 <- 0x00`, `0x36 <- 0x72`, `0x37 <- 0x3D`, three single-byte writes with other values | **violated** (as `i2c_configure_mismatch` would name it) |
+| BMP581 | data | `[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62` (25 °C, 101,325 Pa) | exactly this line, 1,626 times, from 2.013765940 s | **satisfied**, though only after a configure the script does not name |
+| BMP581 | (not named) | — | `read 0x28 -> 0x02` (STATUS), `read 0x27 -> 0x10` (INT_STATUS) before configuring; 40 reads of `0x36` and 41 of `0x37` later | not named by any script |
+| ICM-42688-P (U5) | identity, configure, data | `[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47`, … | **nothing**: the (h) | not reached |
+| W25Q64JV (U4) | identity (`0x9F` → `0xEF4017`, `script: null`) | served by `GenericSpiFlash` | the model served it; the firmware read `0x00F0BB03` (stall 1). With the (p) overlay it read `0x00EF4017` | served, not received |
+
+- **SPI transfer lengths and `SPI_MAX_FRAMES`:** not reached for the IMU, which ArduPilot's FIFO reads would exercise. The dataflash's JEDEC transfer is 1 + 4 bytes (the model's lines). No IMU frame exists to measure.
+- **The console as a second witness (`INV-07`).** ArduPilot prints no line per barometer found, so the console cannot witness the barometer probe (P12, measured: the console holds no `BMP` or `Baro` text). It witnesses only:
+  - the dataflash outcome, which agrees with the model only once the (p) overlay is in;
+  - `No Compass backends available`;
+  - `INS: unable to initialise driver`, which agrees with the ICM model's silence.
+
+  None of these lines witnesses anything on its own.
+
+### §1.4 The owned rows
+
+| Row | Reached? | Measured or why not |
+|---|---|---|
+| `SPI_MAX_FRAMES` 8 against FIFO reads up to 129 B (`4220` D-B4, F-B5) | **no** | the (h): no IMU driver runs. Stall 1 shows that SPI receive by DMA does not work on the emitted platform at all, so a build meets that first |
+| The judge's DShot stop as a twin artifact (`2302` D2) | **no, unreachable on this board** | `sentinel-02-own.json` declares no motor output (`motor_outputs: []`; `HAL_USE_PWM FALSE`). `serial-dshot-9600`, which CI also builds, has DShot; not run here, as scoped |
+| RC at 420000 against ArduPilot's 416666 (#189 F3) | **no, unreachable** | no RC port on this board |
+| Each port's protocol and options (`4400b2` D2) | **SERIAL0 only** | SERIAL0 runs MAVLink 2: 36 frames with magic `0xFD`, `msgid 0` (heartbeat) and one `msgid 111`, in 15 s. USART1 `BRR` reads `0x271` (625), written at 3.2 ms. ArduPilot intends `DEFAULT_SERIAL0_BAUD 115200`, so its USART1 kernel clock after the prescaler is 72 MHz (inferred: 625 × 115200). Renode's `usart1` model is fixed at 200 MHz (`stm32h7.repl` L303), so a baud derived from the model's frequency would read 320,000 (inferred) |
+
+### §1.5 The judge, rule by rule
+
+From the unmodified CLI (P1), and otherwise from `r4`: the judge's own register list read after 100 ms, its window (`spike/4400c/out/r4/judge-reads.json`, measured). **These are the spike's reads of each rule's observable, not the judge's verdict**, which refuses before any boot.
+
+| Rule (CLI README, *Booting firmware*) | This boot | What a build would need (options, none chosen; `INV-07` weakenings named) |
+|---|---|---|
+| A `PT_LOAD` only in flash or DTCM, at both addresses (`elf.rs` L149–163) | **fails**: `FirmwareOutsideMemory`, `.data` at virtual `0x30002200` (exit 3, measured) | admit D2 SRAM1–3 and AXI SRAM from ST's header for a foreign firmware. No witness is weakened, since the rule guards loading, not booting |
+| The boot word `0x2100B007` at `0x20000000` | **fails**: `0x0` at 100 ms; ArduPilot writes none | (a) an ArduPilot hook, which would no longer be unmodified ArduPilot; (b) a different witness of "booted", for example a model's identity line (firmware-independent, `INV-07`-sound) or the console banner (**weakens:** firmware-chosen text witnesses nothing alone); (c) a separate judge for foreign firmware |
+| 100 MIPS × the virtual time | **fails**: 9,661,939 of 10,000,000 at 100 ms; 157,154,916 of 1,500,000,000 (10.5 %) at 15 s; the core sleeps in `__idle_thread` (`cpu_halted`) | count only while the core is not halted, or drop the rule for a foreign firmware. **Weakens:** the rule is today's witness that the core kept executing inside the firmware |
+| The core in thread mode after the boot word (`ICSR.VECTACTIVE` 0) | **observable passes** at 100 ms (`ICSR` `0x800`), but there is no boot word to anchor it | keeps its meaning only with a new "booted" anchor |
+| `PC` on a `yield; b.n` self-loop | **fails**: `0x0805F482` (`AP_Param::find_var_info_group`) at 100 ms; `__idle_thread` later | none fits an RTOS. Drop it for a foreign firmware (**weakens** the "parked" witness, D3) or replace it by "`PC` in `__idle_thread`", read from the ELF's symbols |
+| Each solved pin's `MODER`, `AFRL`, `AFRH` | **passes**, 6 of 6 (`GPIOA` and `GPIOB` equal to the solved values) | unchanged. `gpio_default_config` comes from the same topology (`4400b`) |
+| USART1 `CR1`, `CR2`, `CR3`, `BRR` | **fails** 3 of 4: `CR1` `0x10D` against `0x0D` (`PEIE`); `CR3` `0xC0` against `0x00` (DMA enables); `BRR` `0x271` against `0x22C`. `CR2` passes | the expectation is the generated firmware's (HSI, its own `BRR`). A foreign firmware needs an expectation from the solved baud and *its own* clock tree, or a `BRR`-free baud check on the wire |
+| Each cold RCC enable register, exactly | **fails** 6 of 9: `AHB1ENR` `0x1`, `AHB2ENR` `0x40`, `AHB4ENR` `0x7FF`, `APB1LENR` `0x8`, `APB2ENR` `0x10`, `APB4ENR` `0x10002`, against `0`, `0`, `0x3`, `0x204000`, `0x1010`, `0x10000`. At 100 ms ArduPilot has not yet enabled I2C1, SPI1 or SPI2, and it enables more besides | "at least the solved bits", read once the drivers start, or not judged for a foreign firmware. **Weakens:** the exact set witnesses that nothing unsolved was clocked |
+| `SysTick.CSR` | **fails**: `0x5`, against expected `0` | a foreign RTOS's tick is its own; not judged |
+| `NVIC.ISER0`–`4` all 0 | **fails** 3 of 5: `ISER0` `0x80808FC0`, `ISER1` `0x40139`, `ISER3` `0x4000000` | not judged for a foreign firmware, or judged against an allowlist from the topology |
+| `--for` at most 100 ms | **cannot be judged**: nothing ArduPilot does that a witness reads happens in 100 ms (barometer at 1.97 s, INS at 5.21 s) | a longer window for a foreign firmware: at least about 2.1 s to see both barometers' data steps. Measured cost: 1.09 s of wall per simulated second (`r2`, 15 s in 16.33 s of steps) and a peak Renode RSS of 460 MiB (45 % of the 1 GiB bound), so 2.5 s fits the 30 s wall bound with room |
+| The `4210` witness, in order, from the models' own lines | **fails**: within 100 ms nothing; at 15 s BME280 identity satisfied, BMP581 identity and data satisfied, BMP581 configure violated, ICM-42688-P absent (the (h)) | a script per firmware, or an identity-and-data-only witness for a foreign firmware. **Weakens:** the configure step is the witness that the driver set the part as the script requires |
+| `device_unmodelled` (TMP117) | the same: info | unchanged |
+| The serial witness (`2302`: the generated firmware's pattern, then the echo of injected frames) | **fails**: SERIAL0 carries MAVLink 2, not the pattern | a witness of the declared framing (baud, bits) independent of the payload |
+
+### Measurements
+
+| Quantity | Value | |
+|---|---|---|
+| Wall per simulated second | 1.09 s (`r2`, 15 s; 0.07–2.0 s per 500 ms step); 1.85 s (`r1`, 2 s, start-up included) | measured |
+| Peak Renode RSS | 460 MiB (`r2`); 447 MiB (`r1`) | measured |
+| Instructions | 10.5 % of 100 MIPS × time at 15 s; the core idles | measured |
+| ArduPilot's clock against virtual time | 1.25× (TIM5 at 1.25 MHz: `PSC` 199 against the model's fixed 250 MHz) | measured |
+| Virtual time to the banner, the dataflash probe, the barometers, INS | 9.37 ms; 0.1635 s; 1.9736 s; 5.2055 s | measured |
+
+## Each prediction beside its result
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| P1 | `FirmwareOutsideMemory` at virtual `0x30002200`, before any boot | exactly that, exit 3 | held |
+| P2 | ChibiOS's start-up passes | passes; banner at 9.37 ms | held |
+| P3 | one `\n`, then nothing | the whole storage report and banner, then 1,038 bytes in 15 s | missed |
+| P4 | the first stall at the console's first DMA transmit, (m) | none: every console byte is a CPU store to `TDR`, and USART1 has no DMA line in Renode's platform. EXTI line 26 is unmasked (`C1IMR1` `0xFFC00000`), and TIM5's compare interrupt runs ArduPilot's clock | missed |
+| P5 | storage on bank 2 stalls, (m) | `Initialised Storage type=2`; the erase completed | missed |
+| P6 | ArduPilot's clock 1.25× the virtual time | 1.25× (TIM5 `PSC` 199 at 250 MHz) | held |
+| P7 | the dataflash probe before the barometer, stalling if SPI DMA has a gap | probed at 0.16 s, and SPI receive DMA has a gap; not a stall but a garbled ID, a **(p)**: the emitted platform lacks the DMA request lines | held in substance; the class is (p), not (m) |
+| P8 | the barometer probes, if EXTI line 22 is unmasked | unmasked; both probed at 1.9736 s | held |
+| P9 | BME280 identity satisfied; BMP581 identity satisfied, configure violated, data matched once ArduPilot reads in normal mode | exactly that | held |
+| P10 | the IMU never probed: the (h), and the stop | `INS: unable to initialise driver` at 5.2055 s; no ICM traffic; stopped | held |
+| P11 | `SPI_MAX_FRAMES`, DShot and RC rows unreachable; SERIAL0 is MAVLink 2 | as predicted. `BRR` is `0x271` | held |
+| P12 | the console cannot witness the barometer | no barometer text on the console | held |
+| P13 | 1–4 s of wall per simulated second; 400–500 MiB | 1.09–1.85 s; 447–460 MiB | held |
+| P14 | the judge's rules, mostly failing | as the table in §1.5; pins pass, `ICSR` observable passes | held |
+
+## Decisions needed
+
+- **D1 (architect; the (h)).** How the generated `hwdef.dat` gets an `IMU` line:
+  - (a) a declared IMU orientation in the specification (`aethelgard-ir`), from which the generator emits `IMU Invensensev3 SPI:icm42688 ROTATION_…`;
+  - (b) emit `ROTATION_NONE` and state it as the generator's constant, which is a fact no specification declares.
+
+  Until then, unmodified ArduPilot on the generated board can never pass `ins.init`, on the twin or on copper.
+- **D2 (architect; stall 1, (p)).** `aethelgard-twin` emits SPI receive DMA lines (`DMARecieve -> dmamux1@37` and `@39` for SPI1 and SPI2), as Renode's own `spi4` does. Measured to fix the dataflash ID. Whether transmit DMA also needs a line was not measured: the receive line alone sufficed for a JEDEC read.
+- **D3 (architect; §1.5).** Which option per rule, if foreign firmware is to be judged. The ones that weaken a witness are named in the table: the console banner as "booted", dropping the instruction count, dropping the self-loop, "at least" RCC bits, and identity-and-data-only scripts.
+- **D4 (architect).** The window for a foreign firmware. Measured: barometer data at 2.01 s virtual, at 1.09 s of wall per simulated second and 460 MiB.
+- **D5 (architect).** The RC and DShot rows need a board that has them. `serial-dshot-9600`, which CI builds, has DShot and serial ports. It was not run, as scoped.
+
+## §7 checked
+
+- **An (h) stall:** reached at 5.2055 s and stopped there. It is reported first, with the line, the generator's rule and ArduPilot's reading. Nothing ran past it: run `r3`'s overlay addresses stall 1 and stops at 3 s.
+- **Booting needs a change to a crate, model or image:** no. The boot reached the (h) unmodified; the one overlay is diagnostic and lives in `spike/4400c/`.
+- **§2 is the stop:** this.
+
+## Gates (spike)
+
+- **No crate, model, workflow or `container/` file changed:** `git diff --stat ac5f8c82 -- crates models .github container` is empty.
+- **The ELF is not in git.** It is named by its sha256 above, with the command and the CI run that build it.
+- **Evidence:** `spike/4400c/out/`. Each run's step reads, setup, model lines and USART1 capture are there, with the captured CLI argv, both `simulate` outputs and `caps.log`. The scripts are `spike/4400c/drive.py` and `spike/4400c/sh/`.
+
+**STOPPED at §2**, 2026-11-17, for the architect's ruling on D1–D5. The PR is a record only. Its title and body are in `~/.cache/aet-4400c/pr-title-body.md`.
