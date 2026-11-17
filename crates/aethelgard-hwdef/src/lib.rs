@@ -291,7 +291,7 @@ fn speed_token(ospeedr: u8) -> &'static str {
 /// rounded down to a whole kHz, so ArduPilot is never asked for more.
 fn spidev_speed(hz: u64) -> String {
     let khz = hz / 1000;
-    if khz % 1000 == 0 {
+    if khz.is_multiple_of(1000) {
         format!("{}*MHZ", khz / 1000)
     } else {
         format!("{khz}*KHZ")
@@ -865,4 +865,32 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
         let _ = writeln!(out, "{line:width$}  # {source}");
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D6: SPIDEV states whole kHz, rounded down, as MHz when exact.
+    #[test]
+    fn spidev_speeds_round_down_to_a_whole_khz() {
+        assert_eq!(spidev_speed(16_000_000), "16*MHZ");
+        assert_eq!(spidev_speed(15_999_999), "15999*KHZ");
+        assert_eq!(spidev_speed(2_000_000), "2*MHZ");
+        assert_eq!(spidev_speed(312_500), "312*KHZ");
+        assert_eq!(spidev_speed(1_000), "1*KHZ");
+    }
+
+    /// `AP_SerialManager::map_baudrate` at the bauds a console declares:
+    /// SERIAL0's `baud / 1000` maps back for these, and not for 14,400.
+    #[test]
+    fn serial0_bauds_map_back_as_ardupilot_maps_them() {
+        for baud in [
+            9_600, 57_600, 115_200, 230_400, 460_800, 921_600, 100_000, 420_000,
+        ] {
+            assert_eq!(map_baudrate(baud / 1000), baud, "{baud}");
+        }
+        assert_eq!(map_baudrate(14_400 / 1000), 14_000);
+        assert_eq!(map_baudrate(0), 57_600);
+    }
 }

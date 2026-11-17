@@ -1833,7 +1833,8 @@ fn mcu_of(v: &mut Value) -> &mut Value {
 /// a missing `flash_kilobytes`.
 #[test]
 fn a_malformed_mcu_ardupilot_column_is_refused() {
-    let cases: [(fn(&mut Value), &str); 5] = [
+    type Edit = (fn(&mut Value), &'static str);
+    let cases: [Edit; 5] = [
         (
             |m| {
                 m["ardupilot"]["spi_kernel_hz"]

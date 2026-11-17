@@ -1171,7 +1171,8 @@ fn an_ardupilot_id_other_than_the_identity_is_refused() {
 /// a missing key (`null` is "no line").
 #[test]
 fn a_malformed_ardupilot_column_is_refused_by_name() {
-    let cases: [(&str, fn(&mut Value), &str); 8] = [
+    type Case = (&'static str, fn(&mut Value), &'static str);
+    let cases: [Case; 8] = [
         (
             "BME280",
             |p| p["ardupilot"]["kind"] = "compass".into(),

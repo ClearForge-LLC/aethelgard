@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use toml::{Table, Value};
 
-const MEMBERS: [&str; 10] = [
+const MEMBERS: [&str; 11] = [
     "crates/aethelgard-ir",
     "crates/aethelgard-eda",
     "crates/aethelgard-kicad-lib",
@@ -19,6 +19,7 @@ const MEMBERS: [&str; 10] = [
     "crates/aethelgard-chaos",
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
+    "crates/aethelgard-hwdef",
     "crates/aethelgard-cli",
     "models/renode",
 ];
@@ -106,7 +107,7 @@ fn forbids_unsafe(file: &syn::File) -> bool {
 }
 
 #[test]
-fn members_are_exactly_the_ten_parts() {
+fn members_are_exactly_the_eleven_parts() {
     let root = manifest("");
     let members: Vec<&str> = root["workspace"]["members"]
         .as_array()
@@ -175,7 +176,7 @@ fn ir_depends_on_no_other_member() {
 /// here, dev and build dependencies included (`dependency_names` reads all
 /// three tables).
 #[test]
-fn the_members_depending_on_ir_are_exactly_the_five_the_fence_knows() {
+fn the_members_depending_on_ir_are_exactly_the_six_the_fence_knows() {
     let dependants: Vec<&str> = MEMBERS
         .into_iter()
         .filter(|m| {
@@ -191,6 +192,7 @@ fn the_members_depending_on_ir_are_exactly_the_five_the_fence_knows() {
             "crates/aethelgard-svd-hal",
             "crates/aethelgard-twin",
             "crates/aethelgard-pincheck",
+            "crates/aethelgard-hwdef",
             "crates/aethelgard-cli"
         ]
     );

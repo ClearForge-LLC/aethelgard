@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PUBLISHED: [&str; 9] = [
+const PUBLISHED: [&str; 10] = [
     "crates/aethelgard-ir",
     "crates/aethelgard-svd-hal",
     "crates/aethelgard-eda",
@@ -13,6 +13,7 @@ const PUBLISHED: [&str; 9] = [
     "crates/aethelgard-chaos",
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
+    "crates/aethelgard-hwdef",
     "crates/aethelgard-cli",
     "models/renode",
 ];

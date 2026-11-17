@@ -47,7 +47,7 @@ fn refused(err: CheckRefusal) -> Stop {
     let code = match err {
         // Two witnesses of one image that disagree: never a verdict (RUL-10).
         CheckRefusal::DecodesDisagree { .. } => EXIT_TOOL_ERROR,
-        CheckRefusal::InvalidPin { .. } => EXIT_INVALID_SPEC,
+        CheckRefusal::InvalidPin { .. } | CheckRefusal::NoPinSpeed { .. } => EXIT_INVALID_SPEC,
         CheckRefusal::UnsupportedPart { .. } => EXIT_INTERNAL,
         CheckRefusal::Elf { .. }
         | CheckRefusal::Header { .. }
