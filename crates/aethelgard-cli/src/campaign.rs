@@ -39,8 +39,6 @@ struct Prepared {
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
     run_id: [u8; 16],
-    /// The board's window and the constant that states it (`AET-WO-4300a` D1).
-    window: (u64, &'static str),
 }
 
 pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -121,6 +119,18 @@ pub(crate) fn absent(overrides: &[Override]) -> std::collections::BTreeSet<Strin
         .collect()
 }
 
+/// The serial ports a scenario holds open on their RX line (`AET-WO-2302`
+/// D5), by label, each checked against the solved topology by [`effective`].
+pub(crate) fn open(overrides: &[Override]) -> std::collections::BTreeSet<String> {
+    overrides
+        .iter()
+        .filter_map(|o| match o {
+            Override::SerialRxOpen { port } => Some(port.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 /// A line the scenario holds low: its bus and the line's net.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeldLow {
@@ -182,6 +192,10 @@ pub(crate) fn apply_overrides(
             // behind its chip select (`absent`, `AET-WO-4200` D4). [`effective`]
             // refuses one the solved topology has no SPI device for (`RUL-16`).
             Override::SpiDeviceAbsent { .. } => {}
+            // Nor does an open RX line: the composition injects nothing into
+            // that port (`open`, `AET-WO-2302` D5). [`effective`] refuses one
+            // the solved topology has no serial port for.
+            Override::SerialRxOpen { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -233,7 +247,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         None => None,
     };
     let run_id = rules::run_id(&scenario.sha256, &specification_sha256, firmware_sha256);
-    let window = aethelgard_twin::boot::window(&topology);
     Ok(Prepared {
         path: path.to_path_buf(),
         base_sha256: digest(&base),
@@ -243,7 +256,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         held,
         rail,
         run_id,
-        window,
     })
 }
 
@@ -298,9 +310,8 @@ fn resolve_droop(
         droop,
         domain.nominal_millivolts,
         decoupling_picofarads,
-        // A droop past the board's window is refused with its time, never
-        // cut short (`AET-WO-4300a` D1).
-        aethelgard_twin::boot::window(topology).0,
+        // A droop past the boot is refused with its time, never cut short.
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
     )?;
     Ok(crate::analog::Rail {
         droop: droop.clone(),
@@ -407,6 +418,20 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
             EXIT_INVALID_SPEC,
         ));
     }
+    if let Some(p) = open(&scenario.overrides)
+        .into_iter()
+        .find(|p| !topology.serial_ports.contains_key(p))
+    {
+        return Err(refuse(
+            "UnknownSerialPort",
+            Some(&p),
+            format!(
+                "scenario `{}`: the specification declares no serial port `{p}`",
+                scenario.name
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
     Ok(Effective {
         spec,
         held,
@@ -450,7 +475,7 @@ struct CampaignSummary {
     check: &'static str,
     scenarios: usize,
     matched: usize,
-    /// The longest window any scenario booted for; each line names its own.
+    /// Every scenario's boot, `MAX_VIRTUAL_NS` (`AET-WO-2302`).
     virtual_time_ns: u64,
     trace_bytes: u64,
 }
@@ -511,7 +536,6 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
     }
 
     let (mut matched, mut total) = (0, 0u64);
-    let longest = prepared.iter().map(|p| p.window.0).max().unwrap_or(0);
     for p in prepared {
         let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive) {
             Ok(done) => done,
@@ -532,7 +556,7 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
             check: "campaign",
             scenarios: scenarios.len(),
             matched,
-            virtual_time_ns: longest,
+            virtual_time_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
             trace_bytes: total,
         },
         if all { 0 } else { EXIT_FAIL },
@@ -579,10 +603,11 @@ fn run_one(
         Some(Boot {
             firmware: firmware.to_path_buf(),
             topology: p.topology,
-            virtual_ns: p.window.0,
+            virtual_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
             scenario: p.scenario.name.clone(),
             held: p.held,
             absent: absent(&p.scenario.overrides),
+            open: open(&p.scenario.overrides),
             rail: p.rail,
         }),
     )
@@ -648,7 +673,7 @@ fn run_one(
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
         for record in records {
-            let timestamp = record.timestamp(p.window.0);
+            let timestamp = record.timestamp(aethelgard_twin::boot::MAX_VIRTUAL_NS);
             writer.append(&Event::Record { timestamp, record })?;
         }
         writer.commit()
@@ -677,8 +702,8 @@ fn run_one(
             state_sequence_hash: hex(archived.state_hash),
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
-            virtual_time_ns: p.window.0,
-            window: p.window.1,
+            virtual_time_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
+            window: aethelgard_twin::boot::WINDOW,
             uid_boundary,
             uid_boundary_unmet,
         },
@@ -906,6 +931,7 @@ fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
             rx_at_injection: w.rx_fields,
             tx_at_end: w.tx_fields,
             tx_at_send: w.tx_send_fields,
+            injected_ns: w.injected_ns.filter(|_| w.rx_fields.is_some()),
         });
     }
     out
@@ -1262,8 +1288,27 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
     // (`AET-WO-4300a`).
     for m in &boot.motor {
         let w = &m.twin;
-        let (Some(status), Some(rises), Some(falls), Some(off_grid), Some(batched), Some(end_ns)) =
-            (w.status, w.rises, w.falls, w.off_grid, w.batched, w.end_ns)
+        let (
+            Some(status),
+            Some(rises),
+            Some(falls),
+            Some(off_grid),
+            Some(batched),
+            Some(end_ns),
+            Some(edges_before),
+            Some(edges_after),
+            Some(cen_rises),
+        ) = (
+            w.status,
+            w.rises,
+            w.falls,
+            w.off_grid,
+            w.batched,
+            w.end_ns,
+            w.edges_before,
+            w.edges_after,
+            w.cen_rises,
+        )
         else {
             continue;
         };
@@ -1283,6 +1328,24 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             span_ns: w.span_ns,
             off_grid,
             batched,
+            anchor_ns: w.anchor_ns,
+            edges_before,
+            edges_after,
+            cen_rises,
+        });
+    }
+    // Kind 30, each judge's stop (`AET-WO-2302` D2).
+    for stop in &boot.stops {
+        out.push(Record::JudgeStop {
+            timer: stop.timer.clone(),
+            anchor_ns: stop.anchor_ns,
+            at_ns: stop.at_ns,
+            read_back: stop
+                .read_back
+                .iter()
+                .map(reading)
+                .collect::<Result<_, _>>()?,
+            cr1_after: stop.cr1_after.as_deref().map(hex_u32).transpose()?,
         });
     }
     out.extend(serial_records(&boot.serial));
@@ -1436,6 +1499,7 @@ fn subject(r: &Record) -> String {
         Record::MotorOutputSolved { label, .. }
         | Record::MotorTimingCheck { label, .. }
         | Record::MotorWitness { label, .. } => format!("output:{label}"),
+        Record::JudgeStop { timer, .. } => format!("timer:{timer}"),
         Record::SerialPortSolved { label, .. }
         | Record::SerialFramingCheck { label, .. }
         | Record::SerialWitness { label, .. } => format!("port:{label}"),
@@ -1530,6 +1594,7 @@ mod tests {
             rx_at_injection: None,
             tx_at_end: None,
             tx_at_send: None,
+            injected_ns: None,
         };
         assert_eq!(subject(&witness), "port:CONSOLE");
     }

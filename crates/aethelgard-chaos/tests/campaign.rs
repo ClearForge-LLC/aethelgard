@@ -136,10 +136,87 @@ fn a_duplicate_key_inside_an_override_is_refused() {
 }
 
 #[test]
-fn schema_version_three_is_unsupported() {
+fn schema_version_four_is_unsupported() {
     let mut v: Value = serde_json::from_slice(&pass_doc(json!([]))).unwrap();
-    v["schema_version"] = json!(3);
+    v["schema_version"] = json!(4);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
+    // Version 3 reads a version-1 file's content as it always did.
+    v["schema_version"] = json!(3);
+    assert!(parse(&v).is_ok());
+}
+
+/// `AET-WO-2302` D5: `{serial_rx_open: port}` is exactly that, a label of 1
+/// to 64 printable ASCII bytes, in version 3 alone; one port opened twice is
+/// a duplicate, two ports are two overrides; and kind 5 archives it as
+/// `[5, port]`.
+#[test]
+fn an_open_serial_rx_line_is_exactly_its_port_in_version_3() {
+    let v3 = |overrides: Value| {
+        let mut v: Value =
+            serde_json::from_slice(&doc(overrides, "fail", json!(["serial_echo_missing"])))
+                .unwrap();
+        v["schema_version"] = json!(3);
+        v
+    };
+    let s = parse(&v3(json!([{ "serial_rx_open": "CONSOLE" }]))).unwrap();
+    assert_eq!(
+        s.overrides,
+        [Override::SerialRxOpen {
+            port: "CONSOLE".into()
+        }]
+    );
+    for version in [1, 2] {
+        let mut v = v3(json!([{ "serial_rx_open": "CONSOLE" }]));
+        v["schema_version"] = json!(version);
+        let e = parse(&v).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{version}");
+        assert!(e.message.contains("schema_version 3"), "{}", e.message);
+    }
+    for bad in [
+        json!([{ "serial_rx_open": "CONSOLE", "bus": "SENSORS" }]),
+        json!([{ "serial_rx_open": "CONSOLE", "spi_device_absent": "U4" }]),
+        json!([{ "serial_rx_open": "CONSOLE", "net": null }]),
+        json!([{ "serial_rx_open": "" }]),
+        json!([{ "serial_rx_open": "has space" }]),
+        json!([{ "serial_rx_open": 1 }]),
+        json!([{ "serial_rx_open": null }]),
+        json!([{ "serial_rx_open": "C".repeat(65) }]),
+    ] {
+        assert_eq!(
+            parse(&v3(bad.clone())).unwrap_err().kind,
+            "SchemaViolation",
+            "{bad}"
+        );
+    }
+    let twice = v3(json!([{ "serial_rx_open": "GPS" }, { "serial_rx_open": "GPS" }]));
+    let e = parse(&twice).unwrap_err();
+    assert_eq!(
+        (e.kind, e.id.as_deref()),
+        ("DuplicateOverride", Some("GPS"))
+    );
+    let two = parse(&v3(
+        json!([{ "serial_rx_open": "GPS" }, { "serial_rx_open": "CRSF" }]),
+    ));
+    assert_eq!(two.unwrap().overrides.len(), 2);
+    // A port and an SPI device of one name are two things.
+    assert!(
+        parse(&v3(
+            json!([{ "serial_rx_open": "U4" }, { "spi_device_absent": "U4" }])
+        ))
+        .is_ok()
+    );
+    // Kind 5 carries it as `[5, port]`, and reads it back.
+    let record = s.record();
+    let fields = record.fields();
+    let overrides = fields.last().unwrap();
+    assert_eq!(
+        cbor::to_bytes(overrides),
+        cbor::to_bytes(&cbor::Value::Array(vec![cbor::Value::Array(vec![
+            cbor::Value::Uint(5),
+            cbor::Value::Text("CONSOLE".into()),
+        ])]))
+    );
+    assert_eq!(Record::from_fields(record.kind(), &fields), Some(record));
 }
 
 #[test]

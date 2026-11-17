@@ -34,10 +34,13 @@ pub const VERSION: u64 = 1;
 /// `AET-WO-4300b` added kinds 27 to 29 (a solved serial port, its static
 /// framing judgement, and its twin witness), renumbered from 10 by the same
 /// rule; 12 since `AET-WO-4230`: kind 10 carries the boot record's
-/// brown-out word and the flash controller's accesses (D10). An archive of
+/// brown-out word and the flash controller's accesses (D10); 13 since
+/// `AET-WO-2302`: every board boots 100 ms with per-witness windows, so
+/// kind 26 carries its anchor beside its window's end, kind 29 its
+/// injection's instant, and kind 30 records each judge's stop. An archive of
 /// any other version is refused by name (`Fault::Version`), as 2204 refused
 /// version 4.
-pub const TRACE_VERSION: u64 = 12;
+pub const TRACE_VERSION: u64 = 13;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

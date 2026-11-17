@@ -43,27 +43,20 @@ pub const SEED: u32 = 2100;
 /// Renode's 100 MIPS (R5).
 pub const MAX_VIRTUAL_NS: u64 = 100_000_000;
 
-/// The bound on the boot of a board with a DShot output (`AET-WO-4300a` D1,
-/// ruled (a)): four DShot600 channels for 100 ms flood the log (139.6 MB,
-/// 17 times its budget) and cost 10.8 s of timer events; 2 ms fits (37,748
-/// lines, 2.80 MB, 2.64 s on Furnace; FEEDBACK P5.2). Every other board
-/// keeps [`MAX_VIRTUAL_NS`].
+/// The length of a DShot output's evidence window, from its timer's anchor
+/// (`AET-WO-2302`, ruled (a-i)): every board boots [`MAX_VIRTUAL_NS`], and
+/// a DShot timer is witnessed from the first write that sets its `CEN` in
+/// the boot the judge reads to this long after it, when the judge's own
+/// scheduled action reads the timer back and clears
+/// `CEN`. 2 ms holds four DShot600 channels' log (2.80 MB of the 8 MiB
+/// budget) and memory (4.7 MiB of RSS per ms of DShot; `AET-WO-2302`
+/// FEEDBACK §3); it was the board's whole boot under `AET-WO-4300a` D1.
 pub const DSHOT_WINDOW_NS: u64 = 2_000_000;
 
-/// The bound on a boot of `topology`'s board, and the name of the constant
-/// that states it: [`DSHOT_WINDOW_NS`] when any motor output is DShot, else
-/// [`MAX_VIRTUAL_NS`].
-pub fn window(topology: &SolvedTopology) -> (u64, &'static str) {
-    if topology
-        .motor_outputs
-        .values()
-        .any(|m| m.protocol.bit_rate().is_some())
-    {
-        (DSHOT_WINDOW_NS, "DSHOT_WINDOW_NS")
-    } else {
-        (MAX_VIRTUAL_NS, "MAX_VIRTUAL_NS")
-    }
-}
+/// The name of the constant that bounds every board's boot, as the verdict
+/// and the campaign line state it (`AET-WO-2302`: the per-board boot window
+/// is gone).
+pub const WINDOW: &str = "MAX_VIRTUAL_NS";
 
 /// The core's speed in the emitted platform: Renode 1.17.0's default, which
 /// the platform never changes (spike S4: `cpu PerformanceInMips` reads 100,
