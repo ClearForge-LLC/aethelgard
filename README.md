@@ -2,7 +2,7 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phases P0 to P2 are complete. P3's work has merged, and its exit gate waits on the bench rows that need the sensors (first silicon ran on 2026-11-16). P4's flight-controller work is under way. **Use the engine image by its digest, as the Quickstart below does: it is the supported interface.** The crates.io release, version 0.1.0, predates P2 and cannot read today's specification. 0.2.0 will replace it. From one specification, `aethelgard` does five things:
+**Status:** phases P0 to P2 are complete. P3's work has merged, and its exit gate waits on the bench rows that need the sensors (first silicon ran on 2026-11-16). P4's flight-controller work is under way. **Use the engine image by its digest, as the Quickstart below does: it is the supported interface.** The crates.io release is 0.2.0 (2026-11-17), all ten crates: `cargo install aethelgard-cli --version 0.2.0 --locked` installs `aethelgard`, which reads specification 13. Like every release it is a pinned snapshot with no update promise (`RUL-21`), and `main` moves past it. From one specification, `aethelgard` does five things:
 
 - solves the pin assignment;
 - emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
@@ -70,6 +70,16 @@ echo "quickstart ok"
 <!-- quickstart:end -->
 
 ## Running it
+
+**From crates.io, with no image:** `cargo install aethelgard-cli --version 0.2.0 --locked`. `validate` and `solve` are pure Rust and need no external tool; the release reads specification 13:
+
+```bash
+aethelgard validate < examples/sentinel-01-minimal.json   # {"ok":true,...}, exit 0
+```
+
+Everything that runs KiCad, Renode, ngspice or Kani (`check erc`, `check drc`, the twin, `prove`, `verify`) needs those tools, which the image above carries, and runs them only inside the CLI's own sandbox; without them the CLI refuses with a named kind and a nonzero exit (the codes are in [`crates/aethelgard-cli/README.md`](crates/aethelgard-cli/README.md)). For a checked board, use the image.
+
+From a clone:
 
 Check a specification. It prints one line of JSON and exits 0 when the specification is valid, nonzero otherwise; the codes are in [`crates/aethelgard-cli/README.md`](crates/aethelgard-cli/README.md).
 
