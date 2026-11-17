@@ -4,6 +4,14 @@ on:
   pull_request:
   push:
     branches: [main]
+  # AET-WO-3401 Q1 (i), ruled on PR #190: runs the bench-package job (below)
+  # on any branch; `write` makes it write the package instead of comparing.
+  workflow_dispatch:
+    inputs:
+      write:
+        description: "bench-package: write fab/sentinel-01-bench/package as an artifact (verify --fab-out) instead of comparing"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -355,3 +363,54 @@ jobs:
       # Raise TIER2_MIN with the tier-2 tests; never lower it to pass.
       - name: the tier-2 canary, and the guard across the shards
         run: bash ci/shard.sh aggregate shards "$(tr -d '[:space:]' < ci/SHARDS)" "$TIER2_MIN"
+
+  # AET-WO-3401 Q1 (i), ruled on PR #190: the fabrication package of Sentinel-01
+  # as ordered (examples/sentinel-01.json, boards/sentinel-01-bench) derived
+  # again, byte for byte, by `verify --against-fab` against the committed
+  # fab/sentinel-01-bench/package. One verify (510-579 s on CI for the
+  # comparable reference), so it runs on main's push and on workflow_dispatch,
+  # never per pull request; per PR, bench_board_tier1.rs binds the package to
+  # its inputs and board_tier2.rs gates the board, in seconds. A red main from
+  # this job is fixed forward (roadmap section 6, main is green).
+  # The verdict, and so MANIFEST.json, names each gate's sandbox, so the
+  # committed package is the one this job writes (dispatch with `write`, then
+  # commit the artifact's files), never one written on another machine.
+  bench-package:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RUN: >-
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
+        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
+      # The scenarios in the order MANIFEST.json records (bench_board_tier1.rs, SCENARIOS).
+      VERIFY: >-
+        target/debug/aethelgard verify --spec examples/sentinel-01.json
+        --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
+        scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      # The bridge builds beside the aethelgard binary, where the CLI looks for it.
+      - name: build the CLI and the analog bridge, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
+
+      - name: verify --against-fab, the committed package derived again
+        if: ${{ !inputs.write }}
+        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --against-fab fab/sentinel-01-bench/package
+
+      - name: verify --fab-out, the package written for committing
+        if: ${{ inputs.write }}
+        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package
+
+      - name: keep the written package
+        if: ${{ inputs.write }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: bench-package
+          path: target/bench-package/
+          if-no-files-found: error
+          retention-days: 7
