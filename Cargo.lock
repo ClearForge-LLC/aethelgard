@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "aethelgard-chaos"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "rustix",
  "serde",
@@ -15,7 +15,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-eda",
@@ -40,7 +40,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-eda"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-ir",
  "aethelgard-kicad-lib",
@@ -50,7 +50,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-evolve"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-svd-hal",
@@ -58,7 +58,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-ir"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -68,11 +68,11 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-kicad-lib"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "aethelgard-pincheck"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-ir",
  "serde",
@@ -82,11 +82,11 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-renode-models"
-version = "0.1.0"
+version = "0.2.0"
 
 [[package]]
 name = "aethelgard-svd-hal"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-cli",
  "aethelgard-ir",
@@ -101,7 +101,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-twin"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "aethelgard-ir",
  "aethelgard-renode-models",

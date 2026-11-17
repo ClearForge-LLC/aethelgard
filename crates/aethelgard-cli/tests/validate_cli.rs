@@ -219,7 +219,7 @@ fn usage_error_exits_64_with_json() {
 fn version_prints_name_and_version() {
     let output = run(&["--version"], b"");
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, b"aethelgard 0.1.0\n");
+    assert_eq!(output.stdout, b"aethelgard 0.2.0\n");
 }
 
 /// `AET-WO-4230` R1: `validate` refuses an acknowledgement naming what the
