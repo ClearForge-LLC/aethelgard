@@ -29,3 +29,69 @@ These were read, not run, before any prediction below was written. JLCPCB's page
 | P6 | the bounded memory boot on Furnace | ends 5–15 s after start, `memory.peak_rss_kib` > `memory.bound_kib` (1,048,576) | inferred |
 | P7 | `extract` on a spec with `TP1` on `I2C_SDA` | today: the verdict names no probe; after §1.5, one condition naming `TP1` and `I2C_SDA` | read (R6) |
 | P8 | `cargo test` on the CLI after §1.5 | no existing tier-1 golden moves; a tier-2 package golden carrying a test point on a bounded line would move (`FAB-NOTES.md`) | inferred |
+
+## 2. Measured
+
+- **M1 · `doctor` on Furnace's host** (`target/debug/aethelgard doctor`, `TMPDIR` unset, outside the image): exit `1`; `scratch` `/home/forge/.cache/aethelgard`; `sandbox` `{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"tool_uid"}`; missing `kicad-cli`, `renode`, the bridge, `cargo-kani`, and `RUSTUP_HOME` (unset in this shell, so cargo is found but not probed). P1 held, except that cargo was not probed: P1 did not foresee the unset variable.
+- **M2 · `doctor`'s tier 1** (`tests/doctor_tier1.rs`, 13 tests, stub tools on a `PATH` of their own and a stub bridge beside a hard-linked copy of the binary): everything present → exit `0`; one tool missing; cargo missing (named once for `build`, `prove`, `verify`); a missing variable; tools off their pins; a tool that will not say its version; an unsafe scratch (`TMPDIR=/tmp`: `ScratchUnsafe` naming `/tmp`, every tool found but none run, a marker stub never ran); an inherited descriptor (the sandbox `null`, `SandboxUnavailable` `descriptors`, no probe ran); a stub that tries to read a file outside its grant prints the version, not the file (the probe ran confined); the bridge absent, from another tree, refused by the loader (exit 127, the loader's line named), and exiting 0 with no request. P2 and P3 held.
+- **M3 · The snapshot on the real tree** (`~/.cache/aet-1604/mut/M1-extract-rev.txt`): a required `--rev` added to `extract` fails `the_served_tool_list_is_the_committed_snapshot` with `tool `extract`: field `/inputSchema/properties/rev/description` added ("MUTANT")`, `…/properties/rev/type` added and `…/required/2` added (`"rev"`). P5 held.
+- **M4 · The memory-cap boot** on Furnace: 5.05 s, `memory.peak_rss_kib` above `memory.bound_kib`. P6 held.
+- **M5 · `extract` on the bench fixture** (`tests/fixtures/sentinel-01-bench.json`, emitted): four conditions, `TP1` on `I2C_SDA`, `TP2` on `I2C_SCL`, `TP3` on `SPI_SCK`, `TP4` on `SPI_MOSI`; none for `TP5`–`TP12`. Without `TP1` in the specification the board has no `TP1`, `I2C_SDA`'s `pad_count` drops from 5 to 4, and its condition goes. P7 held.
+- **M6 · The gates:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (Furnace, capped scope). Clippy's first run caught `RUL-16`'s compiled fence: the first build of §1.5 read `Specification::declared_test_points`, which `crates/aethelgard-cli/clippy.toml` disallows ("a test point is drawn on the board only; nothing solves it, and no runner reads it"). §1.5 now reads the test pads from the board it judges (D8).
+
+## 3. Decisions taken
+
+- **D1 · The sandbox probe is this executable, asked `--version` through `run::Invocation`.** `run.rs` has no standalone probe (R1), and §7's second stop forbids writing one. The trampoline's own status line, from a real confinement, is the probe, so `doctor` reports exactly what the trampoline achieved and never calls `landlock` or `seccompiler` itself. It needs no external tool, so the sandbox is reported even when no tool is installed. §7 did not fire, because no new probe was needed.
+- **D2 · Exit `1` when something is missing, not `4`.** Exit `4` is "never a verdict", and its stdout is a refusal (`{"ok":false,"error":…}`). `doctor` reports; it does not refuse. Through `mcp`, `1` is a successful call, so a client reads the report either way. The README's exit-code table names `doctor` in rows `0` and `1`.
+- **D3 · One definition of each tool's setup.** `firmware::toolchain` (cargo for `build`), `kani_toolchain` (`prove`), and `renode_tool`, `renode_env`, `renode_config` and `renode_pinned` (`simulate`) were factored out of their subcommands, which now call them, and `doctor` calls the same functions. No emitted byte moves (M6).
+- **D4 · ngspice.** No `ngspice` binary is looked up, only the bridge, which has no version mode (R4). `doctor` runs it with no request, requires the identity this CLI was built against (`analog::identified`), then the usage exit `2`, and reports `ngspice_loaded: true`, since the bridge links `libngspice.so.0` by soname. It does not report ngspice's version. See Q1.
+- **D5 · The scratch is judged by `main.rs`'s `scratch_base`** (R2). §1.1 names `run.rs`; this is the check every tool call applies, so it is the one §1.1 means.
+- **D6 · The snapshot** is `tests/mcp-tools.json`, the wire `tools/list` as a client receives it, pretty-printed. It is compared value by value, and each difference is named by tool and JSON pointer. It is rewritten with the repository's existing convention, `AETHELGARD_BLESS=1` (as in `svd-hal`'s goldens): `AETHELGARD_BLESS=1 cargo test -p aethelgard-cli --test mcp_snapshot_tier1`. CI never sets it.
+- **D7 · `boot_tier1`'s bound is 50 s,** with the reason in a comment: 10 s of margin below the stub's 60 s sleep, as the sibling wall-bound test has. The reaper's record carries the peak it killed at, not a time (R5), so the test now also asserts `memory.peak_rss_kib > memory.bound_kib` from that record. Adding a time to the record would move emitted bytes, so it was not done.
+- **D8 · Test pads come from the board, never the specification** (`RUL-16`). They are every footprint the board draws as `TestPoint:TestPoint_Pad_D1.0mm` (`1312`'s, `eda/schematic.rs` `TEST_POINT_FOOTPRINT`, which is private to `eda`) with a pad on the line's board net, by reference, in the lines' order. The condition is one line per pad: "`` `TP1` is a test pad on `I2C_SDA`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance ``". The constant is duplicated from `eda`, which is out of the fence; the bench tests fail if the footprint changes.
+
+## 4. §1.3 — the fabricator formats' column map (STOP)
+
+**Sources.** All dated 2026-11-17 and kept in `~/.cache/aet-1604/jlcpcb/`. Every quoted string was grepped in the saved HTML.
+- JLCPCB, "Bill of Materials(BOM) File for PCB Assembly", https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly ("Last updated on Sep 09, 2026") [read].
+- JLCPCB, "Pick & Place File for PCB Assembly", https://jlcpcb.com/help/article/pick-place-file-for-pcb-assembly ("Last updated on Sep 09, 2026") [read].
+- JLCPCB, "How To Export BOM and Pick & Place Files From KiCad 10", https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad ("Last updated on Nov 10, 2026") [read].
+- The two sample files those pages link, `Sample-BOM_JLCSMT.xlsx` (sha256 `f6fa6b2c…`) and `Sample-CPL_JLCSMT.xlsx` (sha256 `6cc4f67e…`), read cell by cell [read].
+- **Our side:** PR #190 at `9bb5bb7`, `fab/sentinel-01-bench/package/` (`sentinel-01-bench-pos.csv`, `sentinel-01-bench.bom.csv`); `main`'s `cli/src/fab.rs` (`kicad-cli pcb export pos --format csv --units mm --side both`) and `eda/src/bom.rs` (`Reference,Value,Footprint,Symbol,Note`) [read].
+
+**What JLCPCB asks for** [read].
+- BOM: "Comment (e.g. 10k, 470uF), Designator (e.g. R1, C2), Footprint (e.g. 0805, 1206) and the JLCPCB / LCSC Part #". The sample's header is `Comment,Designator,Footprint,JLCPCB Part #（optional）`, with full-width parentheses, and it groups designators of one part in one cell (`R5,R6`).
+- CPL: "Designator, Mid X, Mid Y, Rotation and Layer". The sample's header is `Designator,Mid X,Mid Y,Layer,Rotation`, its values carry a unit (`95.0518mm`), and Layer is `T` or `B`. The pick-and-place page says "Top / Bottom", "Required units: Metric(mm)" and "Positive values are counter clockwise". The KiCad page says "KiCad writes headers Ref, PosX, PosY, Rot, Side, which you then rename to Designator, Mid X, Mid Y, Rotation, Layer for JLCPCB".
+
+**The map, from what `verify --fab-out` writes today** (Sentinel-01's bench board, 39 parts).
+
+| JLCPCB column | Filled from | Fillable without a guess? | Label |
+|---|---|---|---|
+| BOM `Comment` | `.bom.csv` `Value` (`100n`, `10k`, `STM32H753ZITx`) | **Yes** as a copy of the value. But a passive's value does not determine a part (voltage, dielectric and tolerance are in no input), and `U3`'s value `TMP117xxDRV` is a family with a wildcard, not an orderable part | measured |
+| BOM `Designator` | `.bom.csv` `Reference` | **Yes.** The BOM and placement sets are equal (39 each). Grouping is open (O5): 13 distinct (value, footprint) pairs | measured |
+| BOM `Footprint` | `.bom.csv` `Footprint` (`Capacitor_SMD:C_0402_1005Metric`) | **Yes,** in KiCad's naming; JLCPCB's examples use its own (`0805`, `R0603`) | measured |
+| BOM `JLCPCB Part #` | **nothing**: `parts.json` has no fabricator part number for any part, and passives have no parts row at all | **No** for all 39 parts. Empty, and named | read |
+| CPL `Designator` | `-pos.csv` `Ref` | **Yes** | measured |
+| CPL `Mid X`, `Mid Y` | `-pos.csv` `PosX`, `PosY`: the footprint anchor in mm | **Yes.** Each of the nine footprints' anchor is its pad box's centre (`~/.cache/aet-1604/anchors.txt`). `PosY` is negative, in the Gerbers' own frame: Edge_Cuts runs Y −75.85 to −130.70 and every part lies inside it. A horizontal connector's body centroid is not its pad-box centre | measured; body centroid inferred |
+| CPL `Layer` | `-pos.csv` `Side` (`top`; all 39 parts are on top) | **Yes;** the spelling is open (O3) | measured |
+| CPL `Rotation` | `-pos.csv` `Rot`: KiCad's rotation, −90 to 180 | **Only in KiCad's frame.** Each footprint's offset between KiCad's zero orientation and JLCPCB's library orientation is in no input (nine footprints). JLCPCB's own Fabrication Toolkit "fixes part rotations/positions for JLCPCB", so the offsets exist | read (offsets exist); offsets unknown |
+
+**Unfillable without a guess** (`INV-06`): (U1) **the fabricator part number**, for every part; (U2) **each footprint's rotation offset** into JLCPCB's frame.
+
+**Open for the ruling** (each read at source, none chosen):
+- **O1 · Rotation.**
+  - (a) KiCad's rotation as is, with the frame named in `FAB-NOTES.md` and the placement preview checked by eye. This is JLCPCB's own documented KiCad route ("rename"), and what `3401`'s ORDER.md §3 already says.
+  - (b) Empty and named: the upload then likely refuses or asks.
+  - (c) A per-footprint offset table measured against JLCPCB's library: new work, outside this order.
+  - The adversarial case "a column filled with a plausible guess" bears on (a): it writes a measured value in KiCad's frame under JLCPCB's heading.
+- **O2 · The part-number header:** the sample's `JLCPCB Part #（optional）` (full-width parentheses), or the KiCad page's "LCSC Part #".
+- **O3 · Layer:** the sample's `T`/`B`, the page's `Top`/`Bottom`, or KiCad's `top`/`bottom`.
+- **O4 · Units and range:** append `mm` as the sample does, or bare numbers; rotation normalised to 0–359 (the sample has `270`) or KiCad's signed −90.
+- **O5 · Designators:** one row per reference as now, or grouped by (value, footprint) as the sample does, quoted, since a grouped cell holds commas.
+- **O6 · File names:** for example `<project>-jlcpcb-bom.csv` and `<project>-jlcpcb-cpl.csv`, each described in `FAB-NOTES.md` and `MANIFEST.json`, beside the existing two.
+
+## 5. Questions for the architect
+
+- **Q1 · ngspice's version** (§1.1 lists it). It is reachable only from a measurement's answers, or from a version mode in the bridge (`bridge/` is outside this fence, and its sources are digest-pinned, `BRIDGE_SOURCE_SHA256`). `doctor` reports `ngspice_loaded` and no version (D4). A bridge `--version` that asks libngspice itself would close it in a later order.
+- **Q2 · §1.5 against §2.** `verify` copies `extract`'s conditions into `FAB-NOTES.md` (R7), so a package whose board has a test pad on a bounded line changes in `FAB-NOTES.md` and in `MANIFEST.json`'s hash of it, beyond §2's "only the two new files". No golden on `main` moves (the bench tier-2 test asserts exit code and verdict only). PR #190's committed `fab/sentinel-01-bench/package/` will move when it is regenerated after this merges. Is that within §1.5's "extract's new condition line", as read here?
+- **Q3 · `boot_tier1`'s "the reaper's own record where 2302 made that available":** `2302` made the peak available, not a time (R5). The test asserts the peak; the wall bound stays the test's own clock (D7).
