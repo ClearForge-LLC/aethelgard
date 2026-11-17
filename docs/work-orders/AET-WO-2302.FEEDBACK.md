@@ -451,3 +451,22 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
       - Residual: other tier-2 binaries (`campaign_tier2`, `with_tools`) still boot in parallel. They are green on both CI runs and their boots are reference-sized; no lock was added there without a failure.
   - **Q5 (backlog, older than 2302, A2-2):** replay should require exactly one kind 26 per kind 24 in a booted run.
   - **Q6:** `E3` yields to `S5`, with nothing masked (§15): confirm.
+
+## §19 CI and the close
+
+- **CI run 44016616340 on `831139c1`: green.** `gates` 24.5 min; the eight tools shards 23.3–33.6 min (0: 28.7, 1: 29.3, 2: 23.3, 3: 24.1, 4: 27.0, 5: 33.6, 6: 27.0, 7: 31.1). `engine-image` and `ardupilot-image` are green too.
+- **Refit rule:** no refit is triggered.
+  - The plan is balanced at 1 665 s per shard.
+  - The slowest shard was 3 on run 1, 4 on run 2 and 5 on run 3, never the same shard on two consecutive runs. On run 3, shard 5 led shard 7 by 2.5 min, under the rule's 3.
+  - The interim weights stand until a refit is due.
+- **The bound's margin on CI, with one Renode at a time** (115 calls printed across the shards):
+  - `simulate` held its turn for a median of 6.57 s;
+  - this work order's heaviest boot, the Sentinel-02-shaped board witnessed whole, held it 18.61 s, 62 % of the 30 s bound;
+  - the longest was 26.13 s: the pre-existing `an_aborted_machine_returns_inside_the_bound_as_cpu_aborted` (`2100` A6), which is built to run until its machine aborts and returned inside the bound;
+  - `prove` (Kani, unbounded) held the turn for up to 74.93 s.
+- **Earlier runs:**
+  - run 44007663813 on `9261c79d`: shard 0 red, Q4;
+  - run 44012579895 on `40f381e7`: shard 0 red, Q4b.
+
+  Both were measured to their cause before any change; neither was re-run.
+- **Housekeeping:** every worker worktree and target is removed, and `~/.cache/aet-2302` keeps only logs and evidence (146 MB).
