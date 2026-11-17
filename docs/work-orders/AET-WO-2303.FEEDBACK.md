@@ -121,3 +121,196 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
 | Q13 | The CLI's `aethelgard replay` | **Refuses** a campaign run directory holding a kind 3 sample: `NotACampaignRun`, "a campaign run holds an event that is not a campaign record" (`campaign.rs` `check_archived`, read at source). The campaign archive has no place for per-quantum state today. Only a new record kind and its run rules would give it one, and that is a crate change |
 | Q14 | The verdict from the records | The bridge's actions (each reset and release) can be re-derived from the recorded per-quantum `VDD_3V3` samples alone, with no solver. A spike re-judge reproduces them exactly |
 | Q15 | The loop | With R_pack large enough that the motors' current pulls `V_bat` under the regulator's dropout, the run shows a reboot loop: reset, `CEN` cleared, recovery, boot, `CEN` set, sag, reset. A period of a few ms to tens of ms, set by the firmware's time from release to `CEN` |
+
+## Results — measured after the predictions (`975b6f9c`)
+
+**How it ran (measured).**
+- Every container ran through `spike/2303/sh/img.sh`: `~/bin/capped-run --mem 8G`, `--network none`, TMPDIR unset, one container at a time.
+- Each container's caps were read back inside the scope before it started: `memory.max=8589934592 memory.swap.max=0 pids.max=8192` (`~/.cache/aet-2303/caps.log`).
+- Image: `container/IMAGE`, the pinned tools image (Renode 1.17.0, ngspice 44.2).
+- The CLI, the bridge and the probe were built in it from this branch: the CLI and the bridge unmodified, the probe from `spike/2303/lockstep` and `spike/2303/ngspice`.
+
+**The board, the firmware and the setup (measured).**
+- `aethelgard generate` and `aethelgard build` on `sentinel-02-shaped.json`, then `aethelgard simulate --for 100ms`: `pass`, 7.9 s wall.
+- While it ran, its Renode argv (the whole monitor script) was copied from `/proc` (`spike/2303/sh/gen.sh`).
+- The probe replays that script's setup:
+  - every command before the first watchpoint hook;
+  - the CLI's scratch paths mapped to copies of the same files: the emitted `.repl`, the built ELF, and the two C# models.
+- It then runs the quanta itself. Left out, as deviations:
+  - the hooks, which are the judge's witness machinery: the TIM1 anchor with its +2 ms stop, the boot word's serial injection, and the TDR echo;
+  - `logLevel -1` on devices and observers, `LogPeripheralAccess`, and the capture backends.
+- **What the firmware does is unchanged.** The boot word `0x2100B007` and TIM1 `CEN` both appear at 39.08 ms, against `2302`'s 39.072 ms for the anchor (`spike/2302/out/phases-sentinel-02-shaped.json` at `83f20420`). `CR1` reads `0x81` (`ARPE | CEN`) and `CCR1` reads `0x28` (40, the zero bit's 3/8, `4300a`).
+- The per-quantum line is `RunFor 10 µs; ReadDoubleWord boot word; ReadDoubleWord TIM1_CR1; ReadDoubleWord TIM1_CCR1; echo`, the same line every quantum.
+
+**The two cases (spike-declared deck, §Predictions).**
+- `healthy`: R_pack 0.05 Ω.
+- `weak`: R_pack 1.0 Ω, the fault.
+- The motors' current is 10 A while `CEN` is set, through a 1 ms lag.
+
+### §1.2 The prototype's run: one board, one fault, 10 µs quanta (measured)
+
+**The loop closes (measured, `weak`, `~/.cache/aet-2303/runs/weak-100ms-1/actions.txt`).**
+
+| Time | Who | What |
+|---|---|---|
+| 39.08 ms | Renode | the boot word written; TIM1 `CR1` = `0x81`; the motors' current starts to rise |
+| 40.74 ms | bridge | `VDD_3V3` 2.5902 V < BOR3 (`V_bat` 3.0952 V): reset asserted, as the CLI renders it; `CR1` reads 0, so the load falls |
+| 40.80 ms | bridge | `VDD_3V3` 2.7294 V > 2.70 V: released with the nudge |
+| 79.88 ms | Renode | booted again; `CEN` set again |
+| 81.54 ms | bridge | reset asserted again: a reboot loop, period 40.80 ms |
+
+- Over 1 s, 24 resets, each 1.66 ms after its `CEN`.
+- The `healthy` case sags `V_bat` by 0.5 V and never resets.
+- Two firmwares on this board would draw different waveforms; this one draws a reboot loop. That is row 8's dependence, measured, with a spike-declared load.
+
+**The archive, per simulated second (measured, the real `TraceWriter`; `~/.cache/aet-2303/runs/*/run.json`).**
+- Each run writes three traces from the same boundaries:
+  - **samples:** `V_bat` and `VDD_3V3` as kind 3, and the firmware's `CR1` as kind 0, at three events a quantum;
+  - **records:** the same three as stand-in records (no per-quantum record kind exists), each rail as kind 17 (`RailCrossing`, level `quantum`) and `CR1` as kind 9 (`RegisterObserved`), at three a quantum;
+  - **events:** only the changes: `CR1` changes and the bridge's resets and releases.
+
+| Run | Simulated | Samples: bytes (B/s) | Records: bytes, written | Events: bytes (count) | Renode RSS, start → end | Wall |
+|---|---|---|---|---|---|---|
+| `healthy` ×2 | 100 ms | 506,139 (5.06 MB/s) | 992,707, 30,000 | 133 (2) | 426 → 441 MiB | 20.6, 22.7 s |
+| `weak` ×2 | 100 ms | 500,380 (5.00 MB/s) | 986,948, 30,000 | 506 (11) | 427 → 442 MiB | 12.7, 13.3 s |
+| `healthy` | 1 s | 5,096,139 (5.10 MB/s) | 2,177,242, **65,536 then refused at 218.46 ms** | 133 (2) | 430 → 462 MiB | **235.1 s** |
+| `weak` | 1 s | 5,004,054 (5.00 MB/s) | 2,160,139, **65,536 then refused at 218.46 ms** | 4,906 (121) | 426 → 450 MiB | **87.1 s** |
+| The CLI's own static campaign run, for scale (`s02-baseline`) | 100 ms | — | 6,662 B, 91 events | — | — | — |
+
+- **Per quantum:** 50–51 B as samples (16.7–17.0 B an event) and 99 B as records (33 B each).
+- **Past 4.295 s the samples cost 6.20 MB/s, not 5.0.** A timestamp past 2³² ns takes CBOR's 9-byte integer instead of the 5-byte one.
+  - Measured with the real writer on the measured run's events, repeated with their timestamps moved on (`synth`): 5,003,386 B at 1 s, 25,862,794 at 5 s, then +6,203,340 B every second.
+- **Two runs of each 100 ms case are byte-identical** in all three traces (sha256: `healthy` samples `25ff88e4…`, `weak` samples `01deef20…`).
+- **The wall time is Renode's.**
+  - Renode busy 220.1 s and ngspice 14.4 s of `healthy`'s 235.1 s; Renode 73.1 s and ngspice 13.4 s of `weak`'s 87.1 s.
+  - The difference is DShot running: 960.9 ms against 40.1 ms of `CEN` set, about **0.16 s of wall per ms of DShot**, inferred from the two (`2302` measured 0.10).
+  - Without DShot, lock-step costs about 0.73 ms a quantum (`weak`: Renode 73.1 s over 100,000 quanta, 4 % of it DShot), under `2301`'s 1.4 ms.
+- **Renode's memory does not grow with DShot under per-quantum lock-step:** +32 MiB over 961 ms of DShot, about 0.03 MiB per ms, not `2302`'s 4.7 MiB per ms.
+  - With the CLI's witness logging kept (`FULL_SETUP`: `LogPeripheralAccess` on USART2, USART3, GPIOA, GPIOB and RCC, the capture backends, devices at `logLevel -1`, observers silenced as `2302` silenced them), healthy at 100 ms: 434 → 448 MiB, flat from 40 to 100 ms while DShot runs. The samples trace is byte-identical to the run without it (`25ff88e4…`).
+  - The cause of `2302`'s growth is not established here. Inferred: it may belong to one long `RunFor` (the CLI's) rather than to DShot. That was not measured.
+- **Renode's own log** carries two INFO lines a quantum ("Machine resumed", "Machine paused"): 10.3–10.5 MB per simulated second (measured, the file `renode.log`).
+  - Inferred: as a file under the sandbox's 64 MiB `RLIMIT_FSIZE` (`2301` P5) that is about 6 s of simulated time. Through the build's stream filter it is counted, not kept.
+- **The probe's own memory** (libngspice in-process) peaked at 130 MB for 1 s in both cases, against 18 MB for 50 ms (measured, `VmHWM`).
+  - Inferred: ngspice keeps every accepted point of the `tran` in memory, so the analog side grows about 130 MB per simulated second. A bridge bounded at 1 GiB would pass it at about 8 s.
+  - Inferred, not measured: `.save` of only the sampled nodes would shrink it.
+
+**Replay (measured).**
+
+| What | Result |
+|---|---|
+| `replay_dir`, every trace of every run | `ok`; the state-sequence hash reproduces; the same hash on both runs of a case |
+| The bridge's actions re-derived from the recorded `VDD_3V3` samples alone, with no solver (`replay` mode) | equal to the recorded actions: 4 of 4 at 100 ms, 48 of 48 at 1 s (`weak`); 0 of 0 (`healthy`) |
+| A byte of a mid-run sample flipped (event 15,000 of 30,000: `VBAT` at 50.01 ms) | `HashMismatch` (the trace's sha256) |
+| The same, with the manifest re-sealed over the flipped trace | **`ReplayDiverged`**: the state-sequence hash chain covers every per-quantum sample |
+| The fold, at `MAX_RECORDS` | records: peak 44.5 MB replaying 65,536 records against 10.6 MB for the 300,000 samples, so about 500 B held a record (inferred from the difference); samples fold to one map entry a net |
+| A samples trace of 267,793,054 B (44 s, `synth`) | `ok`, 2.1 s, peak RSS 269 MiB |
+| A samples trace of 367,046,494 B (60 s, `synth`) | the **writer wrote it**; `replay_dir` refuses it, `TraceTooLarge` |
+| **The CLI's `aethelgard replay`** on a real Sentinel-02-shaped campaign run (91 events) with one kind 3 sample spliced in and re-sealed | **`NotACampaignRun`**: "a campaign run holds an event that is not a campaign record", exit 3 |
+| The same with 1,000 per-quantum stand-in records (kind 17) spliced in | **`NotACampaignRun`**: "the records are not in the campaign's order", exit 3 |
+| The same run, unspliced | `ok`, `pass`, matched |
+
+**Fit: where a run stops (measured unless marked).**
+
+| Limit | Samples shape (kinds 3 and 0) | Records shape (three a quantum) |
+|---|---|---|
+| `MAX_RECORDS` (65,536) | never: samples fold to one entry a net | **0.2185 s** (measured, both cases). One combined record a quantum: 0.655 s (inferred) |
+| 256 MiB (`MAX_TRACE_BYTES`) | **44.10 s** (measured with the real writer, on events repeated from the measured run) | never reached first |
+| The campaign reader (`check_archived`) | **0 s**: refused outright | **0 s**: refused outright (order) |
+| CI's 10 minutes a tier-2 test | about 2.5 s with DShot running throughout (235 s/s), about 6.9 s for the reboot loop (87 s/s) (inferred from the measured rates) | same |
+| The analog side's memory at a 1 GiB bound | about 8 s (inferred, 130 MB/s) | same |
+| Renode's memory (the CLI's 1 GiB bound) | not met: +32 MiB in 1 s, flat under DShot with or without the witness logging (measured) | same |
+
+## §1.3 It does not fit: the options, without choosing
+
+**What does not fit (measured above):**
+- Today's campaign archive holds no per-quantum data at all: `aethelgard replay` refuses both shapes.
+- Per-quantum records pass `MAX_RECORDS` at 0.22 s.
+- Per-quantum samples, if admitted, pass 256 MiB at 44.1 s, and the writer would not stop them.
+- At 10 µs the lock-step costs 87–235 s of wall per simulated second, so a CI tier-2 test holds 2.5–7 s of simulated time.
+
+So a firmware-dependent fault cannot be archived by today's campaign at any length. Every option below changes `aethelgard-chaos`, the CLI's campaign rules, or both, and none is built here.
+
+| Option | What it is | What it costs (measured or inferred) | Sampling under `INV-04`? |
+|---|---|---|---|
+| **(a1) Larger bounds: admit per-quantum samples** | `check_archived` admits kinds 3 and 0 (or a new per-quantum kind) in a dynamic run, with the trace version bumped | 5.0 MB/s, then 6.2 MB/s past 4.29 s; no fold growth; 256 MiB at 44.1 s. The writer must refuse at the reader's bound, which it does not today (finding F3) | **No.** Every quantum's exchanged values are recorded |
+| **(a2) Larger bounds: per-quantum records, `MAX_RECORDS` raised** | Three records a quantum, or one combined | About 500 B held a record. One second at 10 µs is 300,000 records (about 150 MB of fold), or 100,000 combined (about 50 MB). A 10 s run is 0.5–1.5 GB (inferred from the measured fold) | **No** |
+| **(b) A coarser quantum, its error stated** | Lock-step at 100 µs, the twin's own `QUANTUM_NS` | See the measurement below: bytes and wall about 10× smaller, a `CEN` change seen up to one quantum late, a crossing up to one quantum late, an excursion shorter than a quantum missed (`2301` F7) | **No** by itself: nothing computed is dropped. It is a coarser model, so `RUL-17`'s "about 10 µs" is the architect's |
+| **(c) Record only around events** | Lock-step at 10 µs, keeping only the quanta around a `CEN` change, a crossing or a reset (the `events` trace: 506 B per 100 ms, 4.9 KB per second here) | Under 5 KB/s | **Yes.** Per-quantum state the run computed would be dropped and could not be replayed without the solvers. That is Scotty's (`2301` P4, as written there). The re-judge above shows that the *decisions* replay from the samples. Whether they would from the events alone is the question this option puts to Scotty |
+| **(d) Not in the work order's list, named only:** re-plan the schedule at each firmware command | `2301`'s schedule, solved again from each `CR1` write (a watchpoint hook gives its exact time), so no per-quantum state exists | Inferred: event-sized archives, as `2301` D8. But a crossing that falls inside a Renode segment the firmware has already run past cannot be undone: `2302` measured that no Renode call ends `RunFor` early, and Renode has no cheap rollback. Not measured | No per-quantum state, as D8 ruled for the schedule; the architect's |
+
+**Option (b), measured: the `weak` case at 1, 10 and 100 µs quanta** (`~/.cache/aet-2303/runs/weak-*`). 1 µs is the reference; ngspice's own crossing is finer still.
+
+| Quantum | First reset asserted | Released | `VDD_3V3` when asserted | Loop period | Resets in 1 s | Samples | Wall per simulated second |
+|---|---|---|---|---|---|---|---|
+| 1 µs | 40.724 ms | 40.775 ms | 2.6082 V | 40.775 ms | — (100 ms run: 2) | 50.0 MB/s (5,002,996 B per 100 ms) | 918 s (91.8 s per 100 ms) |
+| 10 µs | 40.740 ms (+16 µs) | 40.800 ms (+25 µs) | 2.5902 V | 40.800 ms | 24 | 5.00 MB/s | 87.1 s |
+| 100 µs | 40.800 ms (+76 µs) | 40.900 ms (+125 µs) | 2.5120 V (98 mV deeper past BOR3 than at 1 µs) | 40.900 ms | 24 | 0.50 MB/s | 20.2 s |
+
+- The error is one quantum at most at each step:
+  - the motors see the firmware's `CEN` up to a quantum late;
+  - the bridge sees the crossing up to a quantum late;
+  - the rail has gone deeper by then.
+- The loop's period moves by 0.3 % at 100 µs, and the count of resets in 1 s does not change.
+- At 100 µs, the records shape is 30,000 a second, so `MAX_RECORDS` comes at 2.18 s (inferred from the rate).
+- The re-judge reproduces every action at every quantum (4 of 4, 48 of 48).
+
+## The spike's table: each prediction beside its result
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| Q1 | Three per-quantum quantities | Three: `V_bat`, `VDD_3V3`, `CR1` | held |
+| Q2 | Samples: 6.0 MB/s ±15 % | **5.00–5.10 MB/s** up to 4.29 s; 6.20 MB/s after it | missed by 1–2 points under the band; the 9-byte timestamp past 2³² ns was not predicted |
+| Q3 | Records: 9.3 MB/s ±15 % | 9.87–9.93 MB/s | held |
+| Q4 | One combined record: 3.5–4.5 MB/s | not measured: no record kind holds three values, and the stand-ins would measure a made-up layout | open |
+| Q5 | Events under 100 KB/s | 4.9 KB/s with 24 reboot cycles a second; 133 B per run without | held |
+| Q6 | 300,000 records a simulated second | 300,000 (three a quantum) | held |
+| Q7 | `MAX_RECORDS` at 0.22 s | **0.2185 s** (record 65,537 refused), both cases | held |
+| Q8 | 256 MiB at about 45 s | **44.10 s** | held |
+| Q9 | 150–250 s of wall per simulated second | 235 s with DShot throughout; **87 s** for the reboot loop | held for DShot; missed for the loop (lock-step costs 0.73 ms a quantum here, not 1.4) |
+| Q10 | Renode passes 1 GiB before 0.25 s of DShot (4.7 MiB/ms) | **+32 MiB in 961 ms of DShot**; flat with the CLI's witness logging too | missed: `2302`'s figure does not reproduce under lock-step |
+| Q11 | Two runs byte-identical | yes, all three traces, both cases | held |
+| Q12 | A flipped sample is refused | `HashMismatch`; re-sealed, `ReplayDiverged` | held |
+| Q13 | `aethelgard replay` refuses kind 3 in a campaign run | `NotACampaignRun`; per-quantum stand-in records are refused too (order) | held, and wider than predicted |
+| Q14 | The actions re-derive from the samples alone | 4/4, 48/48, at every quantum | held |
+| Q15 | A reboot loop of a few to tens of ms | 40.80 ms, set by the firmware's 39.08 ms from release to `CEN` | held |
+
+## Findings
+
+- **F1 · The campaign archive has no place for per-quantum data · `aethelgard-chaos` `check_archived` · high for `4500` · measured.** `aethelgard replay` refuses a real Sentinel-02 run with one kind 3 sample in it (`NotACampaignRun`, not a campaign record), and with per-quantum stand-in records (not in the campaign's order). A firmware-dependent fault cannot be archived today at any length. Any build needs a format and rules change, which is the trace version.
+- **F2 · Per-quantum records pass `MAX_RECORDS` at 0.2185 s · `replay.rs` L74 · high · measured.** Samples (kinds 3 and 0) fold to one entry a net and never meet it.
+- **F3 · `TraceWriter` writes past the reader's 256 MiB bound · `archive.rs` `append` (no `MAX_TRACE_BYTES` check; the reader's is L329) · medium for `INV-04` · measured.** It wrote 367,046,494 B, which `replay_dir` then refused (`TraceTooLarge`). A long dynamic run would leave an archive that cannot replay. Static campaigns, at about 1 KB a run, never come near it.
+- **F4 · Timestamps past 2³² ns cost 4 B more an event · CBOR's integer widths · low · measured.** 5.0 MB/s becomes 6.2 MB/s past 4.29 s simulated.
+- **F5 · `2302`'s DShot window and a firmware-dependent load contradict each other · `twin/src/boot.rs` L46–54, `cli/src/anchor.rs` · medium for a build · read at source.** The judge clears TIM1 `CEN` at the anchor plus 2 ms, so a load that follows the firmware's timer would see the judge's stop and not the firmware's behaviour. The probe left the stop out. A build would have to choose.
+- **F6 · Renode logs two INFO lines a quantum ("Machine resumed", "Machine paused") · Renode 1.17.0 · medium · measured: 10.3–10.5 MB of log per simulated second at 10 µs.** Inferred: as a file under the sandbox's 64 MiB `RLIMIT_FSIZE` (`2301` P5) that is about 6 s. Through the build's stream filter it is counted, not kept.
+- **F7 · The analog side's memory grows with simulated time · libngspice `tran` vectors · medium · measured 130 MB peak for 1 s (18 MB for 50 ms); the cause is inferred.** ngspice keeps every accepted point. Inferred: about 8 s against a 1 GiB bound, unless only the sampled nodes are saved (not measured).
+- **F8 · Lock-step at 10 µs costs 0.73 ms a quantum without DShot, and DShot adds about 0.16 s of wall per ms · measured, inferred from two runs.** 87–235 s per simulated second: a CI tier-2 test holds 2.5–7 s of simulated time.
+- **F9 · Nothing in the repository declares an ESC's supply current · `aethelgard-ir`, parts tables · high for row 8 · read at source.** The prototype's 10 A while `CEN` is set is spike-declared. Under `INV-06` a build halts without a declared source, and with today's zero-throttle firmware a real ESC draws only its idle current.
+- **F10 · The CLI's DShot observers at `logLevel -1` split the probe's console lines · 2301 F8 again · low · measured: the probe hung at quantum 4,299, 4 ms into DShot.** A per-quantum monitor protocol must not share the console with noisy sources.
+
+## Decisions needed
+
+- **D1 (architect, then Scotty for `4500`).** Row 8, the battery under the motors:
+  - (i) firmware-dependent, by per-quantum lock-step, measured here;
+  - (ii) declared, as `2301`'s droop: a current profile as a stimulus. It cannot show the reboot loop measured here, because the load would not stop at the reset.
+
+  The P4 exit gate says "a static fault campaign", so (ii), or leaving row 8 to the battery-sag work order, keeps `4500` within its gate.
+- **D2 (architect, Scotty for any that sample).** Which option of §1.3, if (i): (a1), (a2), (b), (c) or (d). Only (c) is sampling under `INV-04`.
+- **D3 (architect).** F3: the writer refuses at the reader's bound. It belongs to whichever work order first writes a dynamic trace; static campaigns never reach it.
+- **D4 (architect).** F9: where an ESC's supply current comes from (a parts row, a specification field, a scenario field). `INV-06`: absent means halt.
+- **D5 (architect).** F5: under lock-step, whether the judge's DShot stop moves to the run's end.
+
+## §7 checked
+
+- **"The prototype needs a bridge change that cannot be made under `spike/2303/`":** it did not.
+  - The probe owns Renode and libngspice itself, as `2301`'s did, and reads the real `aethelgard-chaos` as a path dependency.
+  - Nothing outside `spike/2303/` and this file changed: `git diff --stat main -- crates bridge` is empty.
+  - **What a build would change is not the bridge but the archive** (F1, F3): the campaign reader's rules and the trace version, in `aethelgard-chaos` and the CLI's campaign.
+- **§2 is the stop:** this is it.
+
+## Gates (spike)
+
+- **No crate changed:** `git diff --stat ecc6be95 -- crates bridge Cargo.toml Cargo.lock` is empty.
+- **The probe** builds in the pinned image with no warnings (`cargo build --release --manifest-path spike/2303/lockstep/Cargo.toml`). `spike/2303/lockstep` is `cargo fmt`-clean. `spike/2303/ngspice` is `2301`'s FFI copied unchanged from `a451cd15` and is not `fmt`-clean, as it was not there.
+- **Evidence:** every run directory and log is in `~/.cache/aet-2303/` on Furnace (runs, `m4.log`, `m5.log`, `m6.log`, `caps.log`); the scripts that made them are in `spike/2303/sh/`.
+
+**STOPPED at §2** for the architect's ruling on D1–D5.
