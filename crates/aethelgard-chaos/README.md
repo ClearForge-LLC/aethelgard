@@ -47,7 +47,7 @@ leaves behind; it must not orphan a committed run).
 
 - **`trace.cbor`**, a CBOR sequence (RFC 8742): the header, then one item per
   event, no enclosing array, so it can be appended to.
-  - Header: `["aethelgard-trace", 6, run_id, "ns", artifacts, tools]`. `run_id`
+  - Header: `["aethelgard-trace", 13, run_id, "ns", artifacts, tools]`. `run_id`
     is 16 bytes. `artifacts` is `[name, sha256]` pairs sorted by name, names
     unique, each hash 32 bytes: what the run judged (`INV-03`). An artifact name
     is 1 to 1,024 bytes of printable ASCII, space allowed. `tools` is `[name,
@@ -66,7 +66,7 @@ leaves behind; it must not orphan a committed run).
     | 2 | interrupt | `line` ≤ 1023 |
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
-    | 5–15 | a campaign record | see "Campaign records" |
+    | 5–30 | a campaign record | see "Campaign records" |
 
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
@@ -79,15 +79,21 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 6. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 13. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
 bytes changed in that one header byte only. `AET-WO-2205` added the header's
 `tools`, the window on kinds 7 and 8, kind 10's executable segments and kind
 19's slimmed witness at version 6; the golden trace's header gained its sixth
-item, an empty `tools`. An older trace is refused, not read under version 6's
-rules. The mirror record
+item, an empty `tools`. Versions 7 to 13 added the SPI records (`AET-WO-4200`, kinds 21 to 23),
+the motor records (`AET-WO-4300a`, kinds 24 to 26), each device step's own
+records (`AET-WO-4210`, `AET-WO-4220`), the serial records (`AET-WO-4300b`,
+kinds 27 to 29), kind 10's brown-out word and flash accesses (`AET-WO-4230`),
+and the anchored windows (`AET-WO-2302`: kind 26's anchor, the edges outside
+its window and its timer's `CEN` rises, kind 29's injection instant, kind 30);
+an older trace is refused by name (`event::TRACE_VERSION`), never read under
+version 13's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -176,7 +182,7 @@ before writing its own, so a crash between the two never orphans the run
 
 ## Campaign records
 
-Kinds 5 to 20 (`src/record.rs`) are the records `aethelgard campaign` archives
+Kinds 5 to 30 (`src/record.rs`) are the records `aethelgard campaign` archives
 for one scenario's run, in the order of "The run rules" below. Every field is an unsigned or negative
 integer, a byte string, a text string, or an array of them: no float, no map.
 A flag is 0 or 1. An optional value is an array of zero or one element. A
@@ -185,12 +191,12 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 
 | kind | record | payload |
 |---|---|---|
-| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]` or `[2, bus, line]` (0 SDA, 1 SCL) |
+| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps, bor_level]` (a droop), `[4, reference]` (an absent SPI device) or `[5, port]` (an open serial RX line, `AET-WO-2302` D5) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
 | 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
 | 9 | `bridge.fault_state` | `bus`, `fault`, `source` (1–128 bytes), `[cause…]`, `[net…]` (sorted), `firmware_sees` (0–1,024 bytes) |
-| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?`, `executable`: the firmware's executable segments as `[start, end)` pairs at their physical address, sorted, disjoint, nonempty, at most 16 |
+| 10 | the boot | `image_sha256`, the boot word's `reading`, `instructions_expected`, `instructions_observed?`, `pc?`, `executable`: the firmware's executable segments as `[start, end)` pairs at their physical address, sorted, disjoint, nonempty, at most 16; the boot record's brown-out word's `reading` and the flash controller's accesses the bring-up never makes (`[line…]?`, `AET-WO-4230` D10) |
 | 11 | a register | `name`, `reading` |
 | 12 | an I2C identity read | `reference`, `address`, `register` (each ≤ 255), `expected`, `observed?`, `status?` (text) |
 | 13 | an I2C device witness (`AET-WO-2204`) | `peripheral`, `reference`, `device`, `[expected line…]`, `[observed line…]?`, `[absent address…]` (at most 16 lines, each 1–256 printable bytes) |
@@ -201,10 +207,20 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 18 | `bridge.reset_rendered` | `at_ns`, `released`, `[cause…]` (sorted threshold names), `rendering` (the monitor recipe that stood in for the supervisor: the model's rendering, never a measured reset) |
 | 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the first identity read's witness lines since the release (`[line…]?`), read at the recovery bound after a release |
 | 20 | expected counts | `[[kind, count]…]` (sorted, unique), only when the scenario declares `expect_counts` |
+| 21 | an SPI step's read (`AET-WO-4200`, kind 12's analogue) | `reference`, `peripheral`, `select`, `address` (its multiplexer address), `step`, `write` (bytes), `width`, `expected`, `mask`, `observed?`, `status?` |
+| 22 | an SPI step's witness (kind 13's analogue) | `peripheral`, `reference`, `device`, `step`, `[expected line…]`, `[observed line…]?`, `[unrouted line…]`: the multiplexer's lines inside the step's chip-select window, attribution's evidence, never a witness |
+| 23 | a solved SPI controller (kind 15's analogue) | `peripheral`, `[[reference, address, select]…]` in the specification's order |
+| 24 | a solved motor output (`AET-WO-4300a`) | `label`, `timer`, `channel`, `pin`, `alternate_function`, `protocol`, `psc`, `arr`, `ccr`, `pwm?` (`[rate_hz, min_us, max_us]`) |
+| 25 | a motor output's static check for silicon | `label`, `kernel_hz`, `period_ps`, `high_ps`, `nominal_period_ps`, `nominal_high_ps`, `holds` |
+| 26 | a motor output's twin witness | `label`, `observer`, `period_ns`, `high_ns`, `grain_ns`, `quantum_ns`, `status`, `rises`, `falls`, `first_ns?`, `last_ns?`, `end_ns`, `span_ns?`, `off_grid`, `batched`; since trace 13 (`AET-WO-2302`) `anchor_ns?` (its timer's first `CEN` rise in the boot; the window ends `DSHOT_WINDOW_NS` after it for DShot, at the boot's end for PWM), `edges_before`, `edges_after` and `cen_rises` (its timer's `CEN` rises: 0 exactly when no anchor; equal across a timer's outputs) |
+| 27 | a solved serial port (`AET-WO-4300b`) | `label`, `index`, `peripheral`, `tx`, `tx_af`, `rx`, `rx_af`, `role`, `framing` `[baud, data_bits, parity, stop_bits, inverted]`, `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm` |
+| 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
+| 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
+| 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32: exactly kind 11's registers of the timer, in its order, each at its address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's is cleared by the stop), `cr1_after?` |
 
-Kinds 5 to 9, 15, 16 and 20 are at virtual time 0, decided before the boot
-(`Record::before_boot`); 17 to 19 at their own time (`Record::timestamp`); 10
-to 14 at the boot's end. Kind 15 is written from
+Kinds 5 to 9, 15, 16, 20, 23, 24, 25 and 27 are at virtual time 0, decided
+before the boot (`Record::before_boot`); 17 to 19 at their own time
+(`Record::timestamp`); the rest at the boot's end. Kind 15 is written from
 the solved topology alone (`i2c_devices`, `assignments`, `analog_lines`),
 never from the firmware or the specification; `ceiling_ps` is per line because
 `analog_lines` holds each net's own rise-time ceiling. The bridge's nanoseconds become picoseconds in the CLI: a measured
@@ -224,17 +240,24 @@ apart from anything generated (`INV-07`):
 
 - Every key is required (but `expect_counts`) and no other is allowed, at
   either level; a duplicate key, a positional array or `null` in a key an
-  override does not use is refused. `schema_version` is 1 or 2; only 2 admits
-  `droop` and `expect_counts` (`AET-WO-2301`), and a version-1 file reads as
-  it always did. `name` is 1 to 64 bytes of `0x21`–`0x7E`.
+  override does not use is refused. `schema_version` is 1, 2 or 3, and a file
+  may use only what its version admits (`SchemaViolation` otherwise): version
+  2 (`AET-WO-2301`, `AET-WO-4200`) admits `droop`, `spi_device_absent` and
+  `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`.
+  A version-1 file reads as it always did. `name` is 1 to 64 bytes of
+  `0x21`–`0x7E`.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),
   `{net, max_capacitance_femtofarads}` (a `u64`), or `{bus, line_held_low}`
-    (`"sda"` or `"scl"`), or, in version 2, `{droop: {domain, floor_millivolts,
+  (`"sda"` or `"scl"`); in version 2 or 3, `{droop: {domain, floor_millivolts,
   start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps,
-  bor_level}}`, every field required and bounded. Two overrides of one thing,
-  or two droops, are refused
-  (`DuplicateOverride`); at most 32 overrides and 16 expected kinds, so the
-  scenario's record fits the event bound.
+  bor_level}}`, every field required and bounded, or `{spi_device_absent:
+  reference}`; in version 3, `{serial_rx_open: port}`, a serial port's label.
+  Every id is 1 to 64 bytes of `0x21`–`0x7E`. Two overrides of one thing
+  (one bus's pull-up, one net, one line, one device, one port), or two
+  droops, are refused (`DuplicateOverride`); at most 32 overrides and 16
+  expected kinds, so the scenario's record fits the event bound.
+- `expect_counts` (version 2 or 3) is an object of finding kinds to counts,
+  at most 16, a kind named twice refused.
 - `expect` is `pass` or `fail`. A failing scenario names the finding kinds it
   fails with in `expect_findings`; a passing one names none
   (`ExpectContradiction`).
@@ -245,7 +268,13 @@ apart from anything generated (`INV-07`):
   `aethelgard-ir`'s own kind. `line_held_low` changes nothing in the
   specification; it returns the held line, which the analog pre-pass faults
   without measuring (its finding is `i2c_line_held_low`, its fault's cause
-  `scenario.line_held_low`).
+  `scenario.line_held_low`). `spi_device_absent` and `serial_rx_open` change
+  nothing in the specification either: the platform leaves the device out
+  behind its chip select, and the composition injects no frame into the port
+  (`UnknownDevice`, `UnknownSerialPort` for an id the solved topology lacks).
+  Replay binds an open port to its records: it names a solved port (kind 27),
+  its witness (kind 29) shows no frame gone in and no RX mux read at an
+  injection, and the sequential injection skips it.
 
 **A droop** (`AET-WO-2301`, ruled on PR #107) changes nothing in the
 specification. The runner resolves it to the MCU's supply (`DroopNotMcuSupply`

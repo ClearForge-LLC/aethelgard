@@ -794,10 +794,18 @@ fn every_admitted_identifier_character_survives_every_output() {
             serde_json::json!([]),
             serde_json::json!([{ "bus": sensors, "pull_up_ohms": 2200 }]),
         ),
+        // The console's open RX line, detected (`AET-WO-2302` D5).
+        (
+            "open.json",
+            "open",
+            "fail",
+            serde_json::json!(["serial_echo_missing"]),
+            serde_json::json!([{ "serial_rx_open": "CONSOLE" }]),
+        ),
     ];
     for (file, name, expect, findings, overrides) in &seeded {
         let scenario = serde_json::json!({
-            "schema_version": 2,
+            "schema_version": 3,
             "name": name,
             // Only a relative `base` inside the current directory is accepted
             // (`BaseOutsideRoot`): here, next to the scenario.
@@ -823,6 +831,7 @@ fn every_admitted_identifier_character_survives_every_output() {
             "droop.json",
             "absent.json",
             "baseline.json",
+            "open.json",
             "--fab-out",
             pkg.to_str().unwrap(),
         ])
@@ -927,13 +936,12 @@ fn every_admitted_identifier_character_survives_every_output() {
         damage.push("the verdict names another scenario".into());
     }
     assert!(damage.is_empty(), "{}", damage.join("\n"));
-    // Ruled on #155: the reference's console port is named in the coverage
-    // row, `no fault kind yet: serial`, and does not block; every
-    // precondition is met, in the verdict and the manifest alike.
+    // `AET-WO-2302` D5: the console's open RX line, detected beside the
+    // baseline, covers its port; every precondition is met, in the verdict
+    // and the manifest alike.
     let met = serde_json::json!([
         {"precondition": "every_harness_proved", "state": "met"},
-        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met",
-            "no_fault_kind": ["serial port `CONSOLE` (no fault kind yet: serial)"]},
+        {"precondition": "campaign_faults_every_bus_and_rail", "state": "met"},
         {"precondition": "mcu_support_network_judged", "state": "met"},
         {"precondition": "every_gate_passed", "state": "met"},
     ]);

@@ -233,9 +233,10 @@ impl Proposer for Rules {
         let a = input.attribution;
         match a.rule {
             Rule::E1 => past_ceiling(input),
-            // A device absent behind its chip select is a board fault no
-            // value change fixes: no rule, as for a held line (`AET-WO-4200`).
-            Rule::E2 => None,
+            // A device absent behind its chip select, or an open RX line, is
+            // a board fault no value change fixes: no rule, as for a held
+            // line (`AET-WO-4200`, `AET-WO-2302` D5).
+            Rule::E2 | Rule::E3 => None,
             Rule::S1 | Rule::S2 | Rule::S3 | Rule::S4 | Rule::S5 => Some(report(input)),
             rule => Some(no(format!(
                 "attribution rule {} (`{}`): attribution precedes mutation, so nothing is proposed (INV-05)",

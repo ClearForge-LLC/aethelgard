@@ -13,12 +13,14 @@ use serde_json::Value;
 const SPEC: &str = "examples/sentinel-01-minimal.json";
 /// The reference's seeded set (`AET-WO-3303` D1, ruled): a tolerated fault on
 /// `SENSORS` and on `VDD_3V3`, `FLASH`'s absent device detected by its
-/// mechanism, and the no-fault baseline.
-const SCENARIOS: [&str; 4] = [
+/// mechanism, the no-fault baseline, and `CONSOLE`'s open RX line detected
+/// by its mechanism (`AET-WO-2302` D5).
+const SCENARIOS: [&str; 5] = [
     "scenarios/sentinel-01/seeded/pullup-3k3.json",
     "scenarios/sentinel-01/droop-bor3.json",
     "scenarios/sentinel-01/seeded/spi-absent-u4.json",
     "scenarios/sentinel-01/pullup-2k2.json",
+    "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
 ];
 
 fn root() -> PathBuf {
@@ -75,6 +77,7 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
             SCENARIOS[1],
             SCENARIOS[2],
             SCENARIOS[3],
+            SCENARIOS[4],
             "--fab-out",
             s(dir),
         ]);
@@ -108,6 +111,7 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--fab-out",
         s(&absent),
     ]);
@@ -126,6 +130,7 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--against-fab",
         s(&absent),
     ]);
@@ -140,6 +145,7 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--fab-out",
         s(&absent),
         "--against-fab",
@@ -168,6 +174,7 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             SCENARIOS[1],
             SCENARIOS[2],
             SCENARIOS[3],
+            SCENARIOS[4],
             "--fab-out",
             s(&dir),
         ]);
@@ -186,6 +193,7 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             SCENARIOS[1],
             SCENARIOS[2],
             SCENARIOS[3],
+            SCENARIOS[4],
             "--fab-out",
             s(&dir),
         ]);
@@ -211,6 +219,7 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--against",
         s(&tree),
         "--fab-out",
@@ -229,6 +238,7 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--against",
         s(&tree),
         "--against-fab",
@@ -278,6 +288,7 @@ fn an_unacknowledged_eol_part_is_refused_on_the_fab_path_by_name() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--fab-out",
         s(&out),
     ]);
@@ -303,21 +314,40 @@ fn a_campaign_that_misses_a_bus_or_rail_is_refused_by_name() {
     // `--against-fab` names an existing directory; it is left empty.
     let existing = scratch("coverage-against");
     fs::create_dir_all(&existing).unwrap();
-    let all: &[&str] = &["I2C bus `SENSORS`", "SPI bus `FLASH`", "rail `VDD_3V3`"];
-    let cases: [(&[&str], &[&str]); 5] = [
+    let all: &[&str] = &[
+        "I2C bus `SENSORS`",
+        "SPI bus `FLASH`",
+        "serial port `CONSOLE`",
+        "rail `VDD_3V3`",
+    ];
+    let cases: [(&[&str], &[&str]); 7] = [
         (&[SCENARIOS[3]], all),
         (&[SCENARIOS[2]], all),
         (
             &[SCENARIOS[0], SCENARIOS[3]],
-            &["SPI bus `FLASH`", "rail `VDD_3V3`"],
+            &["SPI bus `FLASH`", "serial port `CONSOLE`", "rail `VDD_3V3`"],
         ),
         (
             &[SCENARIOS[1], SCENARIOS[3]],
-            &["I2C bus `SENSORS`", "SPI bus `FLASH`"],
+            &[
+                "I2C bus `SENSORS`",
+                "SPI bus `FLASH`",
+                "serial port `CONSOLE`",
+            ],
         ),
         (
             &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2]],
-            &["SPI bus `FLASH`"],
+            &["SPI bus `FLASH`", "serial port `CONSOLE`"],
+        ),
+        // `AET-WO-2302` D5: the console is covered only by its own open RX
+        // line detected beside the baseline.
+        (
+            &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2], SCENARIOS[3]],
+            &["serial port `CONSOLE`"],
+        ),
+        (
+            &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2], SCENARIOS[4]],
+            &["SPI bus `FLASH`", "serial port `CONSOLE`"],
         ),
     ];
     for flag in ["--fab-out", "--against-fab"] {
@@ -561,6 +591,7 @@ fn the_acknowledged_reference_passes_the_check_before_any_gate() {
         SCENARIOS[1],
         SCENARIOS[2],
         SCENARIOS[3],
+        SCENARIOS[4],
         "--against",
         s(&empty),
         "--fab-out",

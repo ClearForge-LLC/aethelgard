@@ -344,10 +344,13 @@ jobs:
       # 162: plus 1 from AET-WO-1312 in board_tier2.rs (the bench board, with
       # a test point on every net, BOOT0 and NRST on J2 and a reset switch,
       # passes every gate at two and four layers), merged after 161.
-      # 163: plus 1 from AET-WO-3401 in board_tier2.rs (Sentinel-01 as ordered,
+      # 176: plus 14 from AET-WO-2302 (twin_tier2: the 100 ms windows, the
+      # adversarial passes' H1/M1/M2/L1/A2-3 cases, the open RX line; less the
+      # 2 ms DShot boot test).
+      # 177: plus 1 from AET-WO-3401 in board_tier2.rs (Sentinel-01 as ordered,
       # examples/sentinel-01.json, passes every board gate with no finding),
-      # merged after 162.
-      TIER2_MIN: "163"
+      # merged after 176.
+      TIER2_MIN: "177"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

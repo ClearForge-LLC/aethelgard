@@ -646,10 +646,6 @@ pub struct Precondition {
     /// (`AET-WO-3303` D1, ruled (c)).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub no_device: Vec<String>,
-    /// Coverage: each serial port, named `no fault kind yet: serial` and not
-    /// blocking, until a serial fault kind exists (ruled on #155).
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub no_fault_kind: Vec<String>,
 }
 
 impl Precondition {
@@ -660,7 +656,6 @@ impl Precondition {
             state,
             unmet,
             no_device: Vec::new(),
-            no_fault_kind: Vec::new(),
         }
     }
 }

@@ -19,7 +19,7 @@ pub mod propose;
 
 use aethelgard_chaos::Replayed;
 use aethelgard_chaos::campaign::{self, HELD_LOW};
-use aethelgard_chaos::record::{BusLine, Reading, Record, split_pin};
+use aethelgard_chaos::record::{BusLine, Override, Reading, Record, split_pin};
 use aethelgard_svd_hal::cmsis::{self, RegisterError, RegisterFacts};
 
 /// The half a failing run is attributed to.
@@ -55,6 +55,17 @@ pub enum Rule {
     /// address and found nothing there, and the model logged nothing
     /// (`AET-WO-4200` D4).
     E2,
+    /// The symptom's serial port is one whose RX line the scenario holds
+    /// open (kind 5's `serial_rx_open`, `AET-WO-2302` D5), and the port
+    /// shows exactly that: its witness (kind 29) has no frame gone in and
+    /// no RX mux read at an injection (replay binds both to the override),
+    /// and its echo missing; its framing check (kind 28) holds and its
+    /// writes, read whole, hold their judgement; its pattern went out on
+    /// its TX pin; and no field it owns is wrong (no software cause, so
+    /// nothing is masked). With nothing injected the RX pin's mux at an
+    /// injection is not read: its mux is the end's (kind 11, owned fields
+    /// right) and the writes' (kind 28's tags: once solved, never changed).
+    E3,
     /// The symptom's bus is computed healthy (its rises, computed from the
     /// declared values, are within their ceilings), and the firmware's own state on
     /// that bus differs from the solved topology.
@@ -86,8 +97,8 @@ pub enum Rule {
     /// routed at a boot's first `TDR` write (kind 29's `tx_at_send`;
     /// adversarial pass 2, M1; pass 3). Each is direct evidence of a write
     /// (a read: of a firmware that reads what it must not). The twin models nothing
-    /// electrical on a USART's pins, so no rule attributes a serial symptom
-    /// to the electrical half.
+    /// electrical on a USART's pins: only a declared open RX line (`E3`)
+    /// attributes a serial symptom to the electrical half.
     S5,
     /// The run passed.
     N1,
@@ -120,9 +131,10 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 15] = [
+    pub const ALL: [Rule; 16] = [
         Self::E1,
         Self::E2,
+        Self::E3,
         Self::S1,
         Self::S2,
         Self::S3,
@@ -148,6 +160,7 @@ impl Rule {
         match self {
             Self::E1 => "E1",
             Self::E2 => "E2",
+            Self::E3 => "E3",
             Self::S1 => "S1",
             Self::S2 => "S2",
             Self::S3 => "S3",
@@ -166,7 +179,7 @@ impl Rule {
 
     pub fn domain(self) -> Domain {
         match self {
-            Self::E1 | Self::E2 => Domain::Electrical,
+            Self::E1 | Self::E2 | Self::E3 => Domain::Electrical,
             Self::S1 | Self::S2 | Self::S3 | Self::S4 | Self::S5 => Domain::Software,
             Self::N1 => Domain::None,
             _ => Domain::Indeterminate,
@@ -178,6 +191,7 @@ impl Rule {
         match self {
             Self::E1 => &[7, 8, 9],
             Self::E2 => &[22],
+            Self::E3 => &[28, 29],
             Self::S1 => &[7, 11, 13],
             Self::S2 => &[7, 10, 11],
             Self::S3 => &[21, 22],
@@ -1050,6 +1064,47 @@ impl<'a> Run<'a> {
         })
     }
 
+    /// `E3`'s evidence for serial port `s` (`AET-WO-2302` D5): its framing
+    /// check and its witness, when the scenario (kind 5) holds its RX line
+    /// open, the boot word is set, the check holds with its writes read and
+    /// held, and the witness shows nothing gone in, no mux read at an
+    /// injection, its pattern out and its echo missing and nothing else.
+    /// `None` otherwise. The caller requires no software evidence on it.
+    fn serial_open(&self, s: usize) -> Option<Vec<usize>> {
+        let label = self.serial[s].label;
+        let open = matches!(self.records.first(), Some(Record::Scenario { overrides, .. })
+            if overrides.iter().any(|o| matches!(o, Override::SerialRxOpen { port } if port == label)));
+        // belt-and-suspenders: `self.booted` (mutant E02 survives) - a serial
+        // finding is named only once the boot word is set (the judge, and
+        // `check_run`'s binding), so without it the witness below never shows
+        // `serial_echo_missing` alone.
+        if !(open && self.booted) {
+            return None;
+        }
+        // belt-and-suspenders: `holds: true` (E03) - a failing framing check is
+        // decided first as `Scope::SerialStatic`, rule I6; `t.holds()` (E04) -
+        // a wrong write the port owns is decided first as software evidence
+        // (`serial_software`), rule S5; `tags: Some(_)` (E05) - unread tags
+        // leave `tx_at_send` unset at replay, so the pattern finding joins the
+        // echo's and the witness below fails. Each is stated here so E3 never
+        // rests on a rule ordering elsewhere.
+        let check = self.records.iter().position(|r| {
+            matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
+                if l == label && t.holds())
+        })?;
+        // belt-and-suspenders: `injected_ns: None` (E06) and
+        // `rx_at_injection: None` (E07) - replay already refuses a frame or a
+        // mux read into a port the scenario holds open
+        // (`aethelgard_chaos::campaign`, `check_serial_joins`), and `attribute`
+        // takes only a replayed run.
+        let witness = self.records.iter().position(|r| {
+            matches!(r, Record::SerialWitness { label: l, injected_ns: None, rx_at_injection: None, .. }
+                if l == label
+                    && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
+        })?;
+        Some(vec![check, witness])
+    }
+
     /// The position among the kind 27s of the port labelled `label`.
     fn serial_named(&self, label: &str) -> Option<usize> {
         self.serial.iter().position(|s| s.label == label)
@@ -1378,7 +1433,9 @@ impl<'a> Run<'a> {
             Scope::SerialStatic(s) => (Rule::I6, self.serial_failing(s), vec![]),
             Scope::Serial(s) => {
                 let software = self.serial_software(s);
-                if software.is_empty() {
+                if let Some(evidence) = self.serial_open(s).filter(|_| software.is_empty()) {
+                    (Rule::E3, evidence, vec![])
+                } else if software.is_empty() {
                     (Rule::I6, self.serial_failing(s), vec![])
                 } else {
                     let witness: Vec<usize> = self
