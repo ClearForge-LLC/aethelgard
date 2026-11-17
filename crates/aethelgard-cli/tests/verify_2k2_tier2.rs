@@ -495,8 +495,16 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             .starts_with("- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs"),
         "{lifecycle}"
     );
-    // The notes describe every other file, and only those.
-    let described: Vec<&str> = notes
+    // The notes' file list describes every other file, and only those. It is
+    // read from its own section: `AET-WO-1604` §1.3's JLCPCB section has
+    // bullets that start with a backtick too (the same reading `AET-WO-3402`
+    // gives it for its acknowledged rows).
+    let files = notes
+        .split_once("## Files\n")
+        .and_then(|(_, rest)| rest.split_once("\n## "))
+        .map(|(section, _)| section)
+        .expect("FAB-NOTES.md has a file list");
+    let described: Vec<&str> = files
         .lines()
         .filter_map(|l| l.strip_prefix("- `")?.split('`').next())
         .collect();
