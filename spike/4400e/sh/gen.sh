@@ -17,14 +17,16 @@ rm -f $O/renode-argv.*
 ( for _ in $(seq 1 3000); do
     for p in /proc/[0-9]*; do
       c=$(tr '\0' '\n' < $p/cmdline 2>/dev/null) || continue
-      case "$c" in *LoadPlatformDescription*) printf '%s' "$c" > $O/renode-argv.txt; exit 0;; esac
+      case "$c" in *LoadPlatformDescription*) printf '%s' "$c" > $O/renode-argv.txt
+        d=$(printf '%s' "$c" | grep -o 'LoadPlatformDescription @[^;]*' | head -1 | sed 's/LoadPlatformDescription @//')
+        cp "$d" $O/platform-booted.repl 2>/dev/null; exit 0;; esac
     done
     sleep 0.02
   done ) &
 $A simulate --platform $R --firmware $O/fw.elf --spec $F --for 100ms > $O/simulate-rust.json 2>&1; echo "simulate(rust) exit=$?"
 wait
 python3 -I -c "import json; v=json.load(open('$O/simulate-rust.json')); print('verdict', v.get('verdict'), sorted({f['kind'] for f in v.get('findings',[])}))"
-if [ -f /cache/ci-elf/arducopter.elf ]; then
+if [ -f /cache/ci-elf/sentinel-02/arducopter.elf ]; then
   echo "== simulate --firmware on CI's ArduPilot ELF"
-  $A simulate --platform $R --firmware /cache/ci-elf/arducopter.elf --spec $F --for 100ms > $O/simulate-ardupilot.json 2>&1; echo "simulate(ardupilot) exit=$?"; cat $O/simulate-ardupilot.json
+  $A simulate --platform $R --firmware /cache/ci-elf/sentinel-02/arducopter.elf --spec $F --for 100ms > $O/simulate-ardupilot.json 2>&1; echo "simulate(ardupilot) exit=$?"; cat $O/simulate-ardupilot.json
 fi

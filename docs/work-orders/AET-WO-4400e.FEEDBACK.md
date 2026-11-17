@@ -49,3 +49,240 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
 | P11 | The rules of today's judge | as `4400c` §1.5 (the boot word, instructions, self-loop, cold RCC, `SysTick`, `NVIC` and USART1 fail; pins pass), measured again on this ELF |
 | P12 | The model divergences | ArduPilot's clock still runs 1.25× virtual time (TIM5 at a fixed 250 MHz); USART1 `BRR` is still `0x271` |
 | P13 | The generated `sentinel-02-own` firmware under today's judge (the CLI script's capture) | `pass`, with `device_unmodelled` only |
+
+## STOPPED at §1.1 — the stop, reported first
+
+**The judge cannot reach "the ICM-42688-P read" on this twin.** Three blockers stand in the way, each labelled. The first meets the work order's §7 condition "the held USART line and its hard fault come first". The first two also meet "a witness needs a model change".
+
+**B1 — measured: ArduPilot hard-faults 0.672 ms after the IMU probe, deterministically.**
+- **When:** `HardFault_Handler` is entered at **3.570806620 s** virtual, every time. That holds in seven hooked runs (`r1`–`r7`) and in `j2`, which has no hook at all (`ICSR` `0x803` and `PC` in `CrashCatcher_getc` at 3.6 s).
+- **Fault status:** `CFSR` `0x00020000` (UsageFault `INVSTATE`), `HFSR` `0x40000000` (`FORCED`), `MMFAR` and `BFAR` 0 (`r2`).
+- **The frame:** `EXC_RETURN` `0xFFFFFFED`, so a thread frame on PSP. PSP is `0x30015E50`, and the frame reads `R0 30015E78`, `R1 300160E8`, `R2 30015EF8`, `LR 08000EDF` (`r3`).
+- **What that is (read at source):**
+  - The frame stands in ChibiOS's context switch, `__port_switch`, whose `ldmia sp!, {r4–r11, pc}` at `0x08000EC4` pops the next thread's saved PC.
+  - **`R0`, the thread switched to, is `ch0`** (`0x30015E78`, ChibiOS's OS instance: the ready list's header), not a thread.
+  - **`R1`, the thread switched from, is the idle thread** (inside `ch_c0_idle_thread_wa`).
+  - `LR` is in `__port_switch_from_isr`.
+
+  So a preemption switched from the idle thread to an empty ready list's header.
+- **The sequence (`r6`, `r7`, every vector hooked):**
+  - Each of the IMU's SPI transactions ends in DMA1 stream 2's interrupt (SPI2 receive, exception 29), then a preemption.
+  - After the last configure write (`PWR_MGMT0 ← 0x0F` at 3.570800570 s), ArduPilot's main thread sleeps (`delay_microseconds(300)`, `AP_InertialSensor_Invensensev3.cpp` L901–902).
+  - The idle thread's `svc 0` exits a preemption (exception 11 at 3.570805990 s). A second `chSchDoPreemption` follows at 3.570806100 s **with no interrupt before it**, and the fault comes 0.5 µs later.
+  - The PC `0x08000EC6` in that frame falls inside the 4-byte `ldmia`, so it is Renode's rendering of the fault, not an instruction boundary. Nothing here is reasoned from it.
+- **Narrowed, not ruled out:** ChibiOS's interrupt epilogue builds the thread-mode frame only when `ICSR.RETTOBASE` is 1 (`chcore.c` L315). At 35 of 35 entries of DMA1 stream 2's interrupt, Renode's state was consistent:
+  - `EXC_RETURN` `0xFFFFFFED` (to thread mode);
+  - `ICSR` `0x81D` (`VECTACTIVE` 29, `RETTOBASE` 1);
+  - `SHCSR.SVCALLACT` 0, so not nested in the SVC handler.
+
+  The epilogue reads `RETTOBASE` at the ISR's exit, which was not sampled, and TIM5's interrupts were not sampled at all.
+- **Cause: not established.** It is either the twin's Cortex-M emulation (tlib's exception and FPU-frame handling, a Renode change) or ArduPilot/ChibiOS. Inferred, not measured: the same ArduPilot runs this driver on silicon at every boot of a board with an ICM-42688-P.
+- **Its relation to `4400c2` D3** (the held USART line's fault): **inferred to be the same fault.**
+  - It has the same `CFSR` and `HFSR`, also in `HardFault_Handler` after a run of DMA interrupts.
+  - `4400c2` recorded no thread frame, so the identity is not shown.
+  - **If it is the same fault, the USART receive line is not what manufactures it:** here no USART receive line is emitted (`4400c2`'s ruling held it).
+  - One run settles it: `4400c2`'s repro (`spike/4400c2/sh/crash.sh` at `5a1bccaf`, reachable from PR #204's head `1061fd4a`, not from `main`, which squash-merged it) with this branch's PSP-frame hook (`spike/4400e/stubs-fault2.txt`). It is left for the ruling.
+- **On the console:** `CRASH ENCOUNTERED` / `Enable logging and then press any key to start dump.` ArduPilot's CrashCatcher then polls USART1 for a key: the dump would need SERIAL0 receive. The judge does not.
+
+**B2 — read at source; the boot never reached it: our ICM-42688-P model has no FIFO, and ArduPilot reads its IMU only through the FIFO.**
+- `models/renode/ICM42688P.cs` L7–8: "Not modelled: the FIFO (FIFO_COUNT reads 0, FIFO_DATA reads its reset 0xFF)".
+- ArduPilot's `read_fifo` reads `FIFO_COUNTH` (`0x2E`) and stops on a zero count (`AP_InertialSensor_Invensensev3.cpp` L583–590). It never reads the data registers (`0x1D`…) that the part table's data step names.
+- `AP_InertialSensor::wait_for_sample` leaves its loop only when a sample has arrived (L2058–2120). So past B1 the main thread would wait in `init_gyro` for good.
+- **P7 is unmeasured, not held:** B1 comes first, and no run reached `read_fifo` (0 `0x2E` reads; its hook never fired in `r3`).
+- **The model change it needs:** a FIFO in `ICM42688P.cs` (`FIFO_COUNTH`/`L` and `FIFO_DATA` packets at the configured ODR). That is this project's own model (`AET-WO-4220`), outside this order's fence. Whether it counts as the work order's "Renode model change" is the architect's to say.
+- **Not proposed** (for the ruling, not chosen): taking a `FIFO_COUNT` poll as the "read" witness. It is a weakening, since it carries no data.
+
+**B3 — measured, a rule question rather than a blocker:**
+- Renode's `STM32H7_SPI` logs `[ERROR] spi<n>: Attempted to set peripheral into SPI slave mode. Only master mode is supported` once per ArduPilot SPI transaction but one: SPI1 16 for 17 chip-select windows, SPI2 18 for 19 (`j1b`) and 34 for 35 (`j2`).
+- Under today's rules each is `renode_error_log`, and inside a step `spi_step_error`.
+- Which register write triggers it was not read: the pinned model's source is not on this host, and the run logs no SPI access.
+
+**SERIAL0 receive:** **not needed** by any witness, measured. Every probe and read below happens with nothing sent to the board. Only CrashCatcher's dump waits for a key.
+
+**What was not done:**
+- Nothing was worked past B1.
+- `r2`–`r7` are observation-only diagnostics made after the stop condition was met: execution hooks, plus USART1's access logging off. They change no state, and each stops at 3.6 s.
+- No crate, model, workflow or `container/` file changed: `git diff --stat 0829fe83 -- crates models .github container` is empty.
+
+## §1.1 Results — measured after the predictions (`62b2b444`)
+
+**The ELF (not in git):** `arducopter.elf`, sha256 `a799dfb6633537e74a8c3b7d8b6a464f185c255e377a612b7f9fcf8378dab1ef`, 2,502,044 B.
+- **Source:** CI's own, the artifact `generated-sentinel-02` of `ardupilot-image` run 44148995663 on `main` at `0829fe83`, the base of this branch.
+- **Its `hwdef.dat`** (sha256 `8da4cb01…`) holds `IMU Invensensev3 SPI:icm42688 ROTATION_ROLL_180_YAW_90`. The ELF holds 31 `Invensensev3` symbols.
+- **Its `PT_LOAD`s** (`readelf -lW`, read at source):
+  - code in flash at `0x08000000` (`0x13CCA8` B);
+  - `.data` at virtual `0x30002200`, physical `0x0813CCA8` (4,132 B);
+  - `.crash_log`, `NOBITS` in flash at `0x0813DCCC` (`0x82334` B);
+  - `.bss` at `0x30003228`, `.heap` at `0x30016284` to `0x30040000`;
+  - `.mstack` and `.pstack` at `0x30000000`.
+
+**How it ran (measured):**
+- Every container went through `spike/4400e/sh/img.sh`, under `~/bin/capped-run --mem 8G`, one at a time. The caps were read back each time (`memory.max=8589934592 memory.swap.max=0 pids.max=8192`, `spike/4400e/out/caps.log`).
+- **The CLI's script, not a reconstruction.** The unmodified CLI generated `sentinel-02-own`, built its Rust firmware and booted it: `simulate --for 100ms` gives `pass`, with `device_unmodelled` only (P13). Its Renode argv came from `/proc`, as `4400c` did (`spike/4400e/sh/gen.sh`, `out/renode-argv.txt`). The platform the CLI booted is byte-identical to the emitted `.repl`.
+- `spike/4400e/drive.py` (from `4400c`'s) replays that script under the CLI's `renode.config`, with **only the ELF swapped**. Left out are the boot-word hook and its serial injection, and the judge's reads, which follow the run instead.
+- **The judge's shape:** one `RunFor`, no hook, the CLI's own log levels and access logging. These are runs `j1` (3.570 s), `j1b` (3.5705 s) and `j2` (3.6 s).
+- P1: unmodified, `simulate --firmware` refuses this ELF before any boot: `FirmwareOutsideMemory`, "a PT_LOAD of 4132 bytes at virtual address 0x30002200" (exit 3). **Held.**
+
+### The witnesses, each at its virtual time (`j1b`, no hook; the models' own lines, matched as the judge matches them)
+
+| Witness | Line (after the stamp) | Virtual time |
+|---|---|---|
+| The run's first model line | `[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation` (a status read) | 0.161918280 s |
+| W25Q64JV (`u4`) identity, JEDEC `0x9F` | `…u4: Handled command: Operation: ReadID, returning 0xEF`, then `0x40`, `0x17` | 0.161938610 s |
+| BME280 (`u2`) identity | `[NOISY] i2c1.u2: Write D0`, `[NOISY] i2c1.u2: Read 60` | 0.342585230 s |
+| BMP581 (`u7`) identity | `[NOISY] i2c1.u7: read 0x01 -> 0x50` | 0.342780210 s |
+| BMP581 first data read | `[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62` (the stimulus, 25 °C and 101,325 Pa) | 0.382745850 s |
+| BME280 first data read | `[NOISY] i2c1.u2: Write F7`, `[NOISY] i2c1.u2: Read 0 0 90 80 0 D0` | 0.382787270 s |
+| **ICM-42688-P (`u5`) identity** | `[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47` | **3.570134680 s** |
+| ICM-42688-P first data read | **none** (B1, then B2) | — |
+
+- The console says `SPI Flash 0x00EF4017 found pages=32768 erase=64k` (`4400c2`'s lines, no overlay), then `Dataflash: erase done (1795 ms)` and `No Compass backends available`. It prints nothing about the INS before B1.
+- The barometers read on every 8–16 ms from their timer callbacks: 400 `0x1D` reads of the BMP581 and 200 `F7` reads of the BME280 by 3.5705 s.
+- The configuration collapses repeated log entries, but no run's log holds a repeat marker (measured), so every count is whole.
+
+### Each device against its `4210` script (`crates/aethelgard-ir/data/parts.json`)
+
+| Part | Step | The script (the judge's expected line) | ArduPilot's traffic | |
+|---|---|---|---|---|
+| W25Q64JV | identity (`0x9F` → `EF4017`; `script: null`) | the flash model's `ReadID` lines | served, and the firmware received it | **satisfied**. The identity is in the device's **second** chip-select window, after a status read (`0x05`), so today's rule "the k-th window holds the k-th step" puts a status read where the identity is expected |
+| BME280 | identity | `Write D0`, `Read 60` | exactly this, once | **satisfied** |
+| BME280 | (no data step: `script: null`) | — | `Write 88` and 24 calibration bytes; `Write F4 57`; `Write F5 8`; then `Write F7` and 6 bytes, periodically | **no data step exists to judge** |
+| BMP581 | identity | `read 0x01 -> 0x50` | exactly this | **satisfied** |
+| BMP581 | configure (`0x36 ← 0x40 0x81`, a burst) | `write 0x36 <- 0x40 0x81` | `read 0x28`, `read 0x27`, then `write 0x37 <- 0x00`, `write 0x36 <- 0x72`, `write 0x37 <- 0x3D`: three single-byte writes | **violated** (`i2c_configure_mismatch`), as in `4400c` |
+| BMP581 | data (`0x1D`, 6 bytes) | `read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62` | exactly this, from 0.3827 s | **satisfied** |
+| ICM-42688-P | identity (`0xF5`, i.e. `0x75` read → `0x47`) | `bank 0 read 0x75 -> 0x47` | exactly this, at 3.5701 s | **satisfied** |
+| ICM-42688-P | configure (`0x4C ← 0xC0`, `0x50 ← 0x66`, `0x4E ← 0x03`, each its own write) | those three lines | `0x16 ← 0x80`, `0x5F ← 0x07`, **`0x4C ← 0xC0`**, `0x4B ← 0x02`, `0x4E ← 0x00`, `0x4F ← 0x05`, `0x50 ← 0x05`, then the bank 1 and bank 2 filter writes through `0x76`, `0x4D` (read `0x91`, write `0x51`), and `0x4E ← 0x0F` | **violated:** `0x50` gets `0x05` (±16 g, 8 kHz) and `0x4E` gets `0x0F` (gyro and accelerometer low-noise), never `0x66` and `0x03`. **No model warning:** every register ArduPilot touches is modelled (P6's warning half missed) |
+| ICM-42688-P | data (`0x9D`, i.e. `0x1D` read, 6 bytes) | `bank 0 read 0x1D -> …` | never (B1; at source, ArduPilot never reads `0x1D` at all) | **not reached** |
+
+### The window: three bounds (`j1`, `j1b`, `j2`, one `RunFor`, no hook, Furnace)
+
+| Run | Virtual | Wall in `RunFor` | Wall, Renode's start to quit | Peak RSS (tree, every 100 ms) | Log bytes | Bytes the CLI's filter counts (of 8 MiB) |
+|---|---|---|---|---|---|---|
+| `j1` | 3.570 s | 4.94 s | 8.63 s | 500.3 MiB (49 % of 1 GiB) | 4.50 MB | — |
+| `j1b` | 3.5705 s (after the ICM identity, 0.3 ms before B1) | 5.02 s | 8.74 s | 500.5 MiB | 4.61 MB | 4.06 MB (48 %) |
+| `j2` | 3.6 s (B1 inside) | 6.81 s | 10.44 s | 522.4 MiB | 117.5 MB | **4.13 MB**: CrashCatcher's `ISR` polling is an access line the judge never reads, discarded uncounted (`renode.rs` `LOG_FILTER`, `twin/src/serial.rs` `is_unjudged_access`) |
+
+- **`j1b` is clean only because it ends 0.3 ms before B1.** No window is proposed that ends between the probe and the fault.
+- **Today's judge would name B1 itself:** `core_in_exception` (`ICSR` `0x803` at `j2`'s end). It is not a log flood, since the flood is discarded.
+- **Cost past the IMU's start is not measured**, because no run reached it.
+  - Measured: SPI2 writes 210 log lines for 19 transactions, about 11 per transaction, at the CLI's levels.
+  - Projected (inferred): ArduPilot's backend polls at its sample rate, about three transactions per millisecond (count, data, register check). That is about 3.6 MB per simulated second of IMU, so the 8 MiB budget, 4.06 MB of which is already used at 3.57 s, binds about 1.2 s after the IMU starts. Wall time binds later.
+  - A window has to end within that. Any rule that "reads continue to the window's end" is bounded by it.
+- The wall figures are Furnace's. The README records a boot Furnace finished that a CI shard killed at 30 s. A CI shard's time is unmeasured.
+
+### Today's judge, rule by rule, on this ELF (from its finding kinds in source; observables read after `j1b`, `out/runs/j1b/judge-reads.json`)
+
+| Rule (finding kind) | This boot | Proposal for a foreign judge (the weakening named, `INV-07`) |
+|---|---|---|
+| `PT_LOAD` only in flash or DTCM, both addresses (`FirmwareOutsideMemory`) | **refused before boot**, `.data` at `0x30002200` | **replace:** the regions below (memory rule). It guards loading, so no witness weakens |
+| boot word (`boot_word_missing`) | `0x0`; ArduPilot writes none | **replace** by "booted" (below) |
+| 100 MIPS × time (`cpu_halted`) | 73,148,106 of 357,050,000 (20.5 %); the core idles in `__idle_thread` | **drop. Weakens:** no witness that the core kept executing. Partly **replaced** by a liveness witness: each periodic device's data read inside the window's last *k* ms (the barometers' 8–16 ms period) |
+| `ICSR.VECTACTIVE` 0 (`core_in_exception`) | `0x800` at 3.5705 s; **`0x803` at 3.6 s, which names B1** | **keep**, at the window's end |
+| final `PC` in an executable `PT_LOAD` | `0x080F88FC` (`.text`) | **keep** |
+| `PC` on a `yield; b.n` self-loop (`pc_not_on_self_loop`) | not a self-loop (RTOS) | **drop. Weakens** the "parked" witness |
+| solved pins' `MODER`, `AFRL`, `AFRH` (`register_mismatch`) | **6 of 6 equal** | **keep** |
+| USART1 `CR1`, `CR2`, `CR3`, `BRR` (`register_mismatch`) | `CR2` passes. `CR1` `0x10D` against `0x0D` (`PEIE`); `CR3` `0xC0` (DMA enables); `BRR` `0x271` against `0x22C` | **replace:** `CR1`'s frame bits (`M0`, `M1`, `PCE`, `PS`, `UE`, `TE`) and `CR2.STOP` against the solved framing. Drop `CR3` and `BRR`. **Weakens:** the baud is unjudged; `BRR` depends on ArduPilot's clock tree, and Renode's `usart1` is fixed at 200 MHz (the owned divergence row) |
+| each cold RCC register, exactly (`register_mismatch`) | exact: 4 of 9 fail. **"The solved bits set": 9 of 9 pass.** Extra bits: DMA1/2, RNG, `GPIOC`–`K`, TIM5, `SYSCFG` | **replace** by "at least the solved bits". **Weakens:** an unsolved peripheral clocked is not caught |
+| `SysTick.CSR` (mask `0x10003`) | `0x5` | **drop** (ArduPilot ticks on TIM5). **Weakens** "no interrupt armed" |
+| `NVIC.ISER0`–`4` all 0 | `0x8080FFC0`, `0x02040139`, 0, `0x04000000`, 0 | **drop. Weakens** "no interrupt armed" |
+| `--for` ≤ 100 ms | nothing ArduPilot does is witnessed by 100 ms (first model line at 0.16 s) | **replace** by the foreign window (below) |
+| device identity and steps (`i2c_identity_mismatch`, `i2c_transaction_unwitnessed`, `i2c_configure_mismatch`, `i2c_data_mismatch`, `spi_identity_mismatch`, `spi_transaction_unwitnessed`, …) | see the script table | **replace** (per-device witness, below) |
+| SPI's k-th chip-select window holds the k-th step | the W25Q's identity is in its second window | **replace:** a step is the first window whose line matches it, in order, never across devices. **Weakens:** extra transactions before a step are not refused |
+| a device's `[WARNING]` fails its step | `u4` warns `Transmission finished in the unexpected state: RecognizeOperation` (`4210` F11's known line) | **keep**, with today's one exception |
+| `renode_error_log`, `i2c_step_error`, `spi_step_error` | **B3:** one `[ERROR]` per SPI transaction but one | **decision needed** (D4): keep, so ArduPilot fails by name until the model stops logging it; or exempt that exact text, which weakens: the SPI model's own error channel is ignored for that message |
+| `renode_log_flood` (8 MiB counted) | 4.06 MB at 3.57 s; the fault's flood is uncounted | **keep**; it bounds the window |
+| `wall_bound_exceeded`, `memory_cap_exceeded`, `cpu_aborted` | 8.7–10.4 s and 500–522 MiB on Furnace | **keep** |
+| `device_unmodelled` (U3, TMP117) | info, as the generated firmware's | **keep** |
+| serial pattern and echo (`serial_pattern_missing`, `serial_echo_missing`, …) | SERIAL0 carries MAVLink 2; an echo needs receive | **drop** for a foreign firmware. **Weakens:** no serial witness. The framing check above stays, and receive stays held |
+
+### The memory rule (read at source)
+
+- A foreign firmware's `PT_LOAD`, at both its physical and its virtual address, must lie inside one of these. Each base is the header's define, and each size the one its comment states, as `elf.rs` takes DTCM's 128 KB today:
+  - `FLASH_BANK1_BASE` to `FLASH_END`;
+  - `D1_ITCMRAM_BASE` (64 KB);
+  - `D1_DTCMRAM_BASE` (128 KB);
+  - `D1_AXISRAM_BASE` (512 KB);
+  - `D2_AHBSRAM_BASE` (288 KB);
+  - `D3_SRAM_BASE` (64 KB);
+  - `D3_BKPSRAM_BASE` (4 KB).
+- Renode 1.17.0's `stm32h7.repl` maps each of these at the same base with the same size (`itcm`, `dtcm`, `axiSram`, `sram1`–`3` at `0x30000000`/`…20000`/`…40000` totalling 288 KB, `sram4`, `backupSram`, `flashBank1`/`2`).
+- ArduPilot's segments all fit: flash, and D2 SRAM `0x30000000`–`0x30040000`.
+- `D2_AXISRAM_BASE` (`0x10000000`, the H7's alias) is left out, since Renode maps nothing there.
+
+### Moved bytes, by declaration (read at source)
+
+| Declaration | What moves | |
+|---|---|---|
+| **(a) a `simulate` flag** (for example `--foreign`) | `crates/aethelgard-cli/tests/mcp-tools.json` (the `simulate` tool's schema gains a property, and `--for`'s description, "at most 100ms on every board", changes if the bound becomes per judge); the README's *Booting firmware* section | **no verdict, no specification, no board, no package** |
+| (b) a specification field | specification 16 → 17: every `specification_sha256`, so both boards' generated crates, every fixture, the bench package's `MANIFEST.json`, and every golden that pins a specification digest (the `4400d` pattern) | everything |
+| (c) a manifest beside the ELF | nothing committed, but a new input: a reader, a `RUL-13` bound and a new refusal | none, plus a new attack surface |
+
+- Under any of the three, **no generated-firmware verdict moves**: today's judge is not touched.
+- Measured on the current CLI: `sentinel-02-own`'s generated firmware gives `pass` with `device_unmodelled` only. Its verdict is the baseline a build compares byte for byte.
+
+### Each prediction beside its result
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| P1 | `FirmwareOutsideMemory` at `0x3000xxxx` | exactly, `0x30002200`, exit 3 | held |
+| P2 | no stall in start-up; the banner at about 9.4 ms | the banner and storage lines as in `4400c` | held |
+| P3 | `SPI Flash 0x00EF4017 found`; first model line about 0.164 s, JEDEC about 0.180 s | found; first line 0.1619 s, JEDEC 0.16194 s | held; times earlier |
+| P4 | BME280 about 0.344 s, BMP581 about 0.2 ms later, its data about 40 ms after | 0.342585 s, 0.342780 s, 0.382746 s | held |
+| P5 | ICM identity `bank 0 read 0x75 -> 0x47` at 2.5–4.5 s | 3.570134680 s | held |
+| P6 | configure violated; unmodelled-register warnings | violated; **no warning** | half held |
+| P7 | no data read; `0x2E` polls; main thread waits in `init_gyro`; the stop | **not reached:** B1 at 3.5708 s comes first, so no `0x2E` poll and no `init_gyro`. Still a stop, by B1 | **missed** (B2 is still read at source) |
+| P8 | the barometers read on | on until B1 | held until B1 |
+| P9 | SERIAL0 receive not needed | not needed (only CrashCatcher's dump waits for a key) | held |
+| P10 | window 4–5 s; wall 5–12 s; 450–650 MiB | to the ICM identity: 3.5705 s, 8.7 s, 500 MiB. Past it unmeasurable (B1) | held as far as reached |
+| P11 | today's rules as in `4400c` | as `4400c`, plus `renode_error_log` (B3) and the SPI window rule | held, with two rules more |
+| P12 | 1.25× clock; `BRR` `0x271` | `TIM5` `PSC` 199, `CNT` 4,462,994 µs at 3.5705 s (1.2499×); `BRR` `0x271` | held |
+| P13 | the generated firmware `pass`, `device_unmodelled` only | exactly | held |
+
+## The proposal (for the ruling; nothing built)
+
+- **D1 — B1, the hard fault (the architect's).** It blocks the positive case of §2: no witness of "the ICM read" exists before it. Options:
+  - **(a)** Chase it as its own order, in Renode's Cortex-M exception and FPU-frame handling, ChibiOS's port, or both. Start from this repro: `sentinel-02-own`, CI's ELF, 3.5708 s, with the hooks in `spike/4400e/stubs-*.txt`. First run the one `4400c2` repro that settles whether D3 is the same fault.
+  - **(b)** Build the foreign judge now, with "booted" and "probed" only, and the IMU's read held. The positive case then cannot pass: ArduPilot fails by name (`core_in_exception`) inside any window past 3.5708 s. That is a judge that is correct but has no passing case.
+- **D2 — B2, the FIFO (the architect's):** whether our own `ICM42688P.cs` gains a FIFO (outside this fence), or the IMU's read witness for a foreign firmware is something else. A `FIFO_COUNT` poll carries no data, so it is not proposed.
+- **D3 — the declaration:** **recommended (a), a `simulate` flag.**
+  - It is chosen on the command line, never inferred (`INV-06`). The verdict records `boot.judge: "foreign"`, so a foreign pass can never be read as a generated one.
+  - It moves one golden, the MCP snapshot, and no specification or package.
+  - Without the flag, ArduPilot is refused as today (`FirmwareOutsideMemory`). With it, the generated firmware is judged by the foreign judge, and its verdict says so.
+- **D4 — B3, the SPI `[ERROR]`:** keep `renode_error_log` (ArduPilot fails by name until Renode's model changes), or exempt that one exact message for every judge (a weakening).
+- **D5 — "booted":**
+  - **recommended:** the first identity transaction a declared device's model logs (here the W25Q's, 0.1619 s), together with `core_in_exception` and the final `PC` in an executable `PT_LOAD` at the window's end;
+  - **refused:** the console banner;
+  - **not proposed:** `RCC_CFGR.SWS` (a model reaction, but to a register the firmware writes).
+- **D6 — the per-device witness. "Identity and data only" is not firmware-neutral here:**
+  - the BME280 has no data step in the part table;
+  - the ICM's table data step (`0x1D`) is a read ArduPilot never makes, FIFO or not.
+  - **(i)** The part table gains data steps for the reads a driver may make (the BME280's `0xF7`; the ICM's FIFO), outside this fence, in `aethelgard-ir`. Lost: the configure step, which witnesses that the driver set the part as the script requires (the BMP581's and the ICM's are both violated today).
+  - **(ii)** A script per firmware, with ArduPilot's own sequences as data (the configure step kept for ArduPilot). Lost: firmware-independence, since each foreign firmware needs its own script.
+- **D7 — the window:** the ICM's first data read plus the liveness margin. **Not proposed until B1 and B2 resolve:** past the IMU's start the 8 MiB budget, not wall time, binds first (projected about 1.2 s), and the cost there was not reachable.
+
+## The owned roadmap §7.1 rows
+
+- **TIM5 at a fixed 250 MHz** (ArduPilot's clock 1.25×): measured again (1.2499×).
+  - The foreign judge's times are virtual, so the divergence only shifts when ArduPilot's own delays end (INS at 3.57 s virtual is 4.46 s on its clock).
+  - **Re-owned** to architecture §2's divergence list; not closed.
+- **`usart1` at 200 MHz:** `BRR` `0x271` measured again. The proposal drops `BRR` for a foreign firmware, so the row stays a bench row. **Re-owned.**
+- **The BMP581 configure row:** measured violated again. It closes by D6: (i) drops the configure step for a foreign firmware (weakening named); (ii) carries ArduPilot's own sequence.
+- **`4400c2` D2 and D3, the USART line:** receive is not needed (P9), so the line stays held. **But D3's hard fault is, inferred, B1, and B1 needs no USART line.** It is reported here and re-owned to D1.
+
+## Evidence
+
+- In git, under `spike/4400e/`:
+  - `drive.py`, `analyze.py`, `budget.py`;
+  - `sh/`;
+  - the `stubs-*.txt` hook files;
+  - `out/`, which holds:
+    - the CLI's argv and both `simulate` outputs;
+    - `caps.log`;
+    - per run, `steps.json`, `setup.cmds` and the USART1 capture;
+    - `j1b`'s judge reads and its device lines (`models.log`);
+    - each diagnostic run's hook lines from 3.5694 s (`hooks-near-fault.log`);
+    - the witness summaries `j1b-witness.json` and `j2-witness.json`.
+- The ELF is not in git. It is named by sha256 above, with the CI run that built it.
+- The Renode logs of `r1` (1.4 GB) and `j2` (117 MB) were deleted after their figures were taken.
+
+**STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D7. `main` is `0829fe83`, unchanged since this branch was cut. Title and body: `~/.cache/aet-4400e/pr-title-body.md`.

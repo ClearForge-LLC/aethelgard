@@ -1,0 +1,5 @@
+[00:00:03.569445940] [WARNING] cpu: AET4400E-HOOK AP_InertialSensor::init
+[00:00:03.570051360] [WARNING] cpu: AET4400E-HOOK AP_InertialSensor::detect_backends
+[00:00:03.570100930] [WARNING] cpu: AET4400E-HOOK AP_InertialSensor_Invensensev3::probe
+[00:00:03.570109460] [WARNING] cpu: AET4400E-HOOK AP_InertialSensor_Invensensev3::hardware_init
+[00:00:03.570113340] [WARNING] cpu: AET4400E-HOOK AP_InertialSensor_Invensensev3::check_whoami

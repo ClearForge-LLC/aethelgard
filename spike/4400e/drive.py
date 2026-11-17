@@ -1,4 +1,7 @@
-"""AET-WO-4400c spike driver (inside the tools image, python3 -I).
+"""AET-WO-4400e spike driver, from 4400c's (inside the tools image, python3 -I).
+
+4400e adds: a peak-RSS sampler (every 100 ms, the reaper's period, the tree's VmRSS summed) and
+the console log's byte count per step; the sentinel prefix is AET4400E.
 
 Boots CI's unmodified ArduPilot ELF on the platform `aethelgard-twin` emits for
 sentinel-02-own, with the CLI's own Renode config (crates/aethelgard-cli/src/
@@ -101,7 +104,7 @@ serial = [0]
 
 def ex(commands, wait=600):
     serial[0] += 1
-    s = f"AET4400C-{serial[0]}"
+    s = f"AET4400E-{serial[0]}"
     p.stdin.write("\n".join(commands) + f"\necho \"{s}\"\n")
     p.stdin.flush()
     vals = []
@@ -168,6 +171,16 @@ READS = [
     ("RCC_CFGR", "sysbus ReadDoubleWord 0x58024410"),
 ]
 
+peak = [0]
+
+
+def sampler():
+    while p.poll() is None:
+        peak[0] = max(peak[0], rss_kib())
+        time.sleep(0.1)
+
+
+threading.Thread(target=sampler, daemon=True).start()
 t_start = time.time()
 for c in mapped:
     ex([c])
@@ -190,8 +203,11 @@ while t_ns < end_ns:
     row["wall_s"] = round(wall, 3)
     row["rss_kib"] = rss_kib()
     row["console_bytes"] = os.path.getsize(cap) if os.path.exists(cap) else 0
+    log.flush()
+    row["log_bytes"] = os.path.getsize(os.path.join(OUT, "console.log"))
+    row["peak_rss_kib"] = peak[0]
     steps.append(row)
-    print(json.dumps({k: (hex(v) if isinstance(v, int) and k not in ("t_ns", "INSN", "rss_kib", "console_bytes") else v) for k, v in row.items()}), flush=True)
+    print(json.dumps({k: (hex(v) if isinstance(v, int) and k not in ("t_ns", "INSN", "rss_kib", "console_bytes", "log_bytes", "peak_rss_kib") else v) for k, v in row.items()}), flush=True)
 # JUDGE_READS: "name address" lines, read once after the last step (the judge's own register list).
 jr = os.environ.get("JUDGE_READS")
 if jr:
@@ -210,5 +226,6 @@ try:
     p.wait(timeout=30)
 except subprocess.TimeoutExpired:
     p.kill()
-json.dump({"after_load": after_load, "steps": steps, "wall_total_s": round(time.time() - t_start, 3)},
+json.dump({"after_load": after_load, "steps": steps, "wall_total_s": round(time.time() - t_start, 3),
+           "peak_rss_kib": peak[0]},
           open(os.path.join(OUT, "steps.json"), "w"), indent=1)

@@ -1,0 +1,12 @@
+# AET-WO-4400e: execution hooks only (observation; no state changed). Addresses from the CI ELF's symbols
+# (sha256 a799dfb6...), Thumb bit cleared.
+cpu AddHook 0x08035B14 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor::init')"
+cpu AddHook 0x08035A4C "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor::detect_backends')"
+cpu AddHook 0x08036A70 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor_Invensensev3::probe')"
+cpu AddHook 0x080368FC "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor_Invensensev3::hardware_init')"
+cpu AddHook 0x080364F4 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor_Invensensev3::check_whoami')"
+cpu AddHook 0x08034C10 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor::_init_gyro')"
+cpu AddHook 0x08034608 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor::wait_for_sample')"
+cpu AddHook 0x08034ADC "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_InertialSensor::update')"
+cpu AddHook 0x08020490 "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_BoardConfig::config_error')"
+cpu AddHook 0x0802039C "self.Log(LogLevel.Warning, 'AET4400E-HOOK AP_BoardConfig::throw_error')"
