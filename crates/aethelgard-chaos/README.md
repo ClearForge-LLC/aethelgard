@@ -380,7 +380,11 @@ refuses:
   decides them: `motor_anchor_out_of_order`'s other cases (the anchor against
   the last device step's witness, or no boot word seen by its hook),
   `serial_wire_past_run` when the first port took no frame, and
-  `serial_injection_out_of_order` (the logged `TDR` bytes).
+  `serial_injection_out_of_order` (the logged `TDR` bytes);
+- a motor witness `stopped` whose edges are not continuous on the model's
+  sequence (`campaign::witness_continuous`: its last rise `rises - 1`
+  periods after its first within its span, its falls as many as its rises
+  or one fewer), which the judge never gives (`AET-WO-2302b`, ADV-M1).
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

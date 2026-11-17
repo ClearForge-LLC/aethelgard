@@ -93,7 +93,10 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         }
         "mismatch" => span_ns = Some(400),
         "batched" => batched = 3,
-        "stopped" => last_ns = Some(50_000_000),
+        // A rise every period to 49.9 ms, short of the window's end.
+        "stopped" => {
+            (rises, falls, last_ns, off_grid) = (78, 77, Some(639_750 + 77 * 639_744), 155);
+        }
         "unanchored" => (first_ns, last_ns, span_ns) = (None, None, None),
         _ => {}
     }

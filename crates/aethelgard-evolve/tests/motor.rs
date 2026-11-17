@@ -1446,3 +1446,52 @@ fn proposed(r: &[Record], a: &Attribution) -> Outcome {
     };
     propose::propose(&[&Rules], &input).outcome
 }
+
+// ---- AET-WO-2302b fix round: the adversarial pass's findings, held ----
+
+/// The refusal `check_run` gives a kind 26 whose status its counts do not
+/// allow.
+const WITNESS_REFUSED: &str =
+    "a motor witness's status is not what its counts and its output's timing give";
+
+/// ADV-M1: replay refuses a `stopped` witness that is not continuous, as
+/// the judge's `witness_motor` gives none: 10 rises over 0.93 ms at a 424 ns
+/// period (not spaced), or a rise every period with five falls missing (not
+/// alternating). Each beside the same witness unmodified, which replay
+/// accepts and `H1` takes, so the refusal is this guard's.
+#[test]
+fn adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous() {
+    let findings = [
+        (MOTOR_MISMATCH_FINDING, 1),
+        (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
+    ];
+    let control = dshot(&findings, &late(2187));
+    assert_eq!(attributed(&control).rule, Rule::H1);
+    let gapped = dshot(&findings, &|r| {
+        late(2187)(r);
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                off_grid,
+                ..
+            } = w
+            {
+                (*rises, *falls, *off_grid) = (10, 10, 19);
+            }
+        });
+    });
+    assert_eq!(campaign::check_run(&gapped).err(), Some(WITNESS_REFUSED));
+    let unpaired = dshot(&findings, &|r| {
+        late(2187)(r);
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                falls, off_grid, ..
+            } = w
+            {
+                (*falls, *off_grid) = (*falls - 5, *off_grid - 5);
+            }
+        });
+    });
+    assert_eq!(campaign::check_run(&unpaired).err(), Some(WITNESS_REFUSED));
+}

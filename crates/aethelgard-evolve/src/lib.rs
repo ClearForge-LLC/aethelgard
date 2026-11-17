@@ -1309,9 +1309,10 @@ impl<'a> Run<'a> {
 
     /// `H1`'s evidence for output `m`'s failing witness, when the run's end
     /// cut it (`AET-WO-2302b`): its DShot timer's window, from its anchor,
-    /// passes `MAX_VIRTUAL_NS`, and its witness is `stopped` with its last
-    /// rise within a period and a grain of the run's end, where a rise was
-    /// due every period until it. The output ran until the run ended: the
+    /// passes `MAX_VIRTUAL_NS`, and its witness is `stopped`, continuous (a
+    /// rise every period from its first to its last), with its last rise
+    /// within a period and a grain of the run's end, where a rise was due
+    /// every period until it. The output ran until the run ended: the
     /// twin's bound, not the firmware's. `None` otherwise.
     fn cut_by_run(&self, m: usize) -> Option<Vec<usize>> {
         let motor = &self.motors[m];
@@ -1331,8 +1332,12 @@ impl<'a> Run<'a> {
         // belt-and-suspenders: `motor.dshot` (mutant M14 survives) - a PWM
         // window ends at the run's end, so its `stopped` witness's last rise
         // is more than a period before it and the last condition fails.
+        // belt-and-suspenders: `witness_continuous` - replay refuses a
+        // `stopped` witness that is not continuous (`check_run`'s
+        // `witness_consistent`, ADV-M1) before `attribute` reads it.
         (motor.dshot
             && status == "stopped"
+            && campaign::witness_continuous(&self.records[w])
             && a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS) > max
             && last.saturating_add(*period_ns).saturating_add(*grain_ns) >= max)
             .then(|| vec![motor.at, w])
