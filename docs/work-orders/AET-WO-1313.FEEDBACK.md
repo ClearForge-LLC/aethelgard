@@ -476,3 +476,7 @@ Reduction pass (diff): âˆ’1 copy (one `bound_nm` for two mm-to-nm conversions) Â
 - **`main` `7b1ce09` merged** (4400b2 #196, the 4400c record #202), with a merge commit, clean.
   - 4400b2 changed only a test module in `svd-hal/src/board.rs`, and nothing under `boards/` or `fab/`, so Sentinel-01's package stands.
   - On the merge: fmt and both clippy runs are clean; `cargo test --workspace` gives **2080 passed, 0 failed**; `TIER2_MIN` 178, exact, counted in the image.
+- **`main` `9d91ea4` merged** (2302b #205, docs #201), with a merge commit, clean. The shared files `ci/test-weights.tsv` and the CLI README merged without conflict.
+  - Gates on the merge: fmt; clippy, plain and with `aethelgard-cli/with-tools`; `cargo test --workspace` **2106 passed, 0 failed** (`bench_board_tier1` included, so the committed package stands).
+  - **The shard guard in the pinned image** (`ci/shard.sh plan`): guard ok, 2300 test names, 2306 listed occurrences, 8 shards.
+  - `TIER2_MIN` 178, exact, from the same list.
