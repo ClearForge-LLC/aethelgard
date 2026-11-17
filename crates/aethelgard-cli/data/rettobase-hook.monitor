@@ -1,0 +1,1 @@
+sysbus SetHookAfterPeripheralRead sysbus.nvic "value = __import__('System').UInt64((int(value) & ~0x800) | (0x800 if self.GetType().GetField('activeIRQs', __import__('System.Reflection').Reflection.BindingFlags.NonPublic | __import__('System.Reflection').Reflection.BindingFlags.Instance).GetValue(self).Count <= 1 else 0)) if offset == 0xD04 else value"
