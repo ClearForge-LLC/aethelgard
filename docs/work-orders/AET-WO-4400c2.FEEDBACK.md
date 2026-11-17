@@ -11,7 +11,7 @@ Branch `wo/aet-4400c2-twin-dma`, from `main` at `26e4c620`. The work order is re
   - `STM32_Timer.cs`: **no DMA request GPIO.** `UDE`, `CC1DE`–`CC4DE` and `TDE` are tags (L224–230); its GPIOs are interrupts only (L572–582).
   - `STM32_DMAMUX.cs`: `OnGPIO(number)` sets every output channel whose `DMAREQ_ID` equals `number` (L25–35). So a line wired to `dmamux1@N` serves a firmware only if `N` is the silicon's request ID.
   - Renode's own `stm32h7.repl` wires exactly one such line, `spi4: DMARecieve -> dmamux1@83` (L197). It wires none for `i2c1`–`i2c3` or any USART.
-- **The request IDs:** RM0433 Rev 9, Table 124, "DMAMUX1: assignment of multiplexer inputs to resources", p. 697 (local copy sha256 `672a9433d6602da224e5215f571beed2be0e683cb025526f4afe9db61c26b6a0`).
+- **The request IDs:** RM0433 Rev 9, Table 124, "DMAMUX1: assignment of multiplexer inputs to resources", p. 697. Read from `pdftotext` of the PDF with sha256 `672a9433d6602da224e5215f571beed2be0e683cb025526f4afe9db61c26b6a0` (`~/.cache/aet-4230/ds/rm0433-rev9.pdf`). RM0433 covers the H742, H743/753 and H750, with one DMAMUX1 mapping (§17.3.2: "hardwired"; channels 0–7 to DMA1, 8–15 to DMA2). Table 125 (p. 698) bears the same title; every request ID used here reads the same in both tables' rows (measured by extracting both). ChibiOS's `stm32_dmamux.h` L72–77 agrees (37–42).
   - Receive: `spi1_rx_dma` 37, `spi2_rx_dma` 39, `spi3_rx_dma` 61, `spi4_rx_dma` 83, `spi5_rx_dma` 85;
   - `i2c1_rx_dma` 33, `i2c2_rx_dma` 35, `i2c3_rx_dma` 73;
   - `usart1_rx_dma` 41, `usart2_rx_dma` 43, `usart3_rx_dma` 45, `uart4_rx_dma` 63, `uart5_rx_dma` 65, `usart6_rx_dma` 71, `uart7_rx_dma` 79, `uart8_rx_dma` 81.
@@ -59,23 +59,27 @@ Branch `wo/aet-4400c2-twin-dma`, from `main` at `26e4c620`. The work order is re
 | `p5-wrong` (adversarial) | `spi1 … @39`, `spi2 … @37`, `usart1 … @43` | `Unknown SPI Flash 0x00F0BB03` | — | none; 0 DMA reads | as `p0` |
 
 - **SPI's receive line is needed (measured).** With it in the file and no overlay, ArduPilot finds the dataflash. Without it, or on the wrong number, it reads garbage. Q1 and Q2 hold, and §2's first acceptance line is met on a candidate file.
-- **USART1's receive line is needed, but it is not enough (measured).** Without it the DMA never reads `RDR`, so ArduPilot can never receive on SERIAL0. With it the DMA moves every byte, but ArduPilot hands a buffer on only at transfer-complete (64 bytes, `RX_BOUNCE_BUFSIZE`, `UARTDriver.h` L25) or at the USART's IDLE interrupt (`UARTDriver.cpp` L592; the 1 kHz tick at L1113–1160 only re-arms a stopped stream). **Renode's `STM32F7_USART` never raises IDLE:** `IDLEIE`, `IDLE` and `IDLECF` are tags (L154, L231, L253). So a frame under 64 bytes is never delivered; one that fills the buffer is answered. That is a **model change, §7's flag**, outside the platform description.
+- **USART1's receive line is needed, but it is not enough (measured).** Without it the DMA never reads `RDR`, so ArduPilot can never receive on SERIAL0. With it the DMA moves every byte, but ArduPilot hands a buffer on only at transfer-complete (64 bytes, `RX_BOUNCE_BUFSIZE`, `UARTDriver.h` L25) or at the USART's IDLE interrupt (`UARTDriver.cpp` L592; the 1 kHz tick at L1113–1160 only re-arms a stopped stream). **Renode's `STM32F7_USART` never raises IDLE:** `IDLEIE`, `IDLE` and `IDLECF` are tags (L154, L231, L253). Measured: ArduPilot writes `CR1` = `0x2000013D` at 3.2 ms, and Renode warns `Unhandled bits: [4, 29] … Tags: IDLEIE` (`out/runs/p2-spi-usart/usart1.log`). So a frame under 64 bytes is never delivered; one that fills the buffer is answered. That is a **model change, §7's flag**, outside the platform description.
 - **I2C1's receive line changes nothing for this ELF (measured):** ArduPilot uses no I2C DMA here (`SHARED_DMA_NONE`). It is a candidate only in the work order's "wherever Renode's model has the line" sense.
 - **A wrong number fails visibly (measured, `p5-wrong`):** swapping SPI1's and SPI2's numbers and moving USART1 to USART2's 43 brings back the garbled ID and stops every receive DMA. DMAMUX matches the request ID exactly (`STM32_DMAMUX.cs` L25–35).
 
 ### The hard fault behind USART1's line (measured; cause not established)
 
-- **The fault.** In `p2-spi-usart` with three frames at 1.5 s, ArduPilot answers, then faults at **1.601556130 s**: `HardFault_Handler`, `CFSR` `0x00020000` (UsageFault `INVSTATE`: a branch to an address with the Thumb bit clear, so a corrupted code pointer), `HFSR` `0x40000000` (`FORCED`), `LR` `0xFFFFFFED`.
-- **What prints.** CrashCatcher prints `CRASH ENCOUNTERED` / `Enable logging and then press any key to start dump.`, then polls USART1 (`CrashCatcher_getc`). With USART1's access logging on, that polling wrote a 5.4 GB log, which is not kept.
-- **Deterministic:** two further runs (`crash-a`, `crash-b`) fault at the same instant.
-- **Timing-dependent:**
-  - injected at 2.5 s instead (`crash-late`), there is no fault: `COMMAND_ACK`, `AUTOPILOT_VERSION` and a STATUSTEXT;
-  - without the SPI lines (`p4-usart`) there is no fault;
-  - with one 44-byte frame (`p2-spi-usart`) there is no fault.
+| Run | Lines | Injection at 1.5 s | Result |
+|---|---|---|---|
+| `p2-spi-usart-x3` | SPI + USART1 | 132 B written at one instant | `COMMAND_ACK` and `AUTOPILOT_VERSION`, **then HardFault at 1.601556130 s** |
+| `crash-a`, `crash-b` | the same | the same | **HardFault at 1.601556130 s** in both: deterministic |
+| `crash-late` | the same | at 2.5 s instead | no fault; `COMMAND_ACK`, `AUTOPILOT_VERSION`, a STATUSTEXT |
+| `p4-usart-x3` | USART1 only | 132 B at one instant | no fault; `COMMAND_ACK` |
+| **`paced`** | SPI + USART1 | **132 B paced at the declared baud** (86,806 ns a byte, 115200 8N1) | **HardFault at 1.511036822 s**: 11.04 ms in, at about byte 127, the second 64-byte buffer's turnover |
+| `paced-p4-x3` | USART1 only | 132 B paced | no fault; two `COMMAND_ACK`s and two `AUTOPILOT_VERSION`s (two buffers handed on) |
+| `paced-p2-x2` | SPI + USART1 | 88 B paced (one turnover) | no fault; one `COMMAND_ACK` |
 
-  1.6 s is where the dataflash logger starts `Chip erase` over SPI1's DMA in these runs.
-- **What Renode logged at the injection instant:** `dma1: Attempting to create DMA request with no data to send. Ignoring operation.` and `dma1: Error in DMA configuration detected. Ignoring transfer request.` (`out/runs/p2-spi-usart-x3/dma-errors.log`).
-- **Inferred, not established:** Renode's `STM32DMA` mishandles the receive stream's re-arm next to SPI DMA and corrupts memory. That would make it a twin artifact rather than ArduPilot's. A build that emits USART1's line exposes this for the first time.
+- **Every fault looks the same:** `HardFault_Handler`, `CFSR` `0x00020000` (UsageFault `INVSTATE`: a branch to an address with the Thumb bit clear, so a corrupted code pointer), `HFSR` `0x40000000` (`FORCED`), `MMFAR` and `BFAR` 0, `LR` `0xFFFFFFED`. CrashCatcher prints `CRASH ENCOUNTERED` / `Enable logging and then press any key to start dump.` and polls USART1 (`CrashCatcher_getc`). With USART1's access logging on, that polling wrote a 5.4 GB log in `p2-spi-usart-x3`; only its head, up to the fault, is kept (`out/runs/p2-spi-usart-x3/usart1-to-fault.log`).
+- **When it happens.** It needs the SPI lines, USART1's line, a second receive-buffer turnover, and the dataflash's SPI DMA busy: the chip erase runs from 0.167124 s to 1.602072 s in every run with the SPI lines (`erase started` and `erase done` on the console). The unpaced fault (1.601556 s) falls 0.5 ms before the erase ends; the paced one at the second turnover. An injection after the erase does not fault.
+- **The stimulus is not the cause.** Paced at the declared baud, the fault comes earlier, not later, so it is not an artifact of writing every byte at one instant.
+- **Renode's two DMA error lines do not discriminate.** `dma1: Attempting to create DMA request with no data to send` and `Error in DMA configuration detected` appear in every unpaced burst, faulting (`crash-a`) or not (`p4-usart-x3`, `crash-late`), and in no paced run.
+- **Inferred, not established:** Renode's `STM32DMA` mishandles USART1's receive stream (DMA1 stream 0) re-arming while SPI1's streams (DMA1 s1, DMA2 s1) are active, and corrupts memory. That would make it a twin artifact. The other reading, an ArduPilot fault on silicon, is not excluded.
 
 ### §1.1's table: each peripheral the twin emits or uses
 
@@ -97,12 +101,12 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 3. **For each solved I2C controller** (stock): `i2cN:` / `DmaReceive -> dmamux1@<i2cN_rx_dma>`. **No measured effect here**; emitted only if the ruling wants every line Renode's model has.
 4. **Nothing** for transmit or timers: no model line exists.
 
-## Moved goldens (read at source)
+## Moved goldens (read at source; not measured by a prototype emitter. Where lines 2 and 3 land in each file is unchecked)
 
 | File | Moves under | Why |
 |---|---|---|
 | `boards/sentinel-01/sentinel-01.repl` | 1, 2, 3 | it adds `spi1`, and its specification (`examples/sentinel-01-minimal.json`) declares `CONSOLE`, I2C `SENSORS` and SPI `FLASH` |
-| `boards/sentinel-01-bench/sentinel-01-bench.repl` | 1, 2, 3 | `examples/sentinel-01.json`: `CONSOLE`, I2C `SENSORS` and `EXT`, SPI `FLASH`. **`3402` re-blesses this board:** its inbox is told |
+| `boards/sentinel-01-bench/sentinel-01-bench.repl` | 1, 2, 3 | `examples/sentinel-01.json`: `CONSOLE`, I2C `SENSORS` and `EXT`, SPI `FLASH`. **`3402` re-blesses this board:** its inbox was told (`~/.cache/aet-bus/3402.md`, an appended note) that nothing has changed yet |
 | `crates/aethelgard-twin/src/tests.rs` L74–83 | 1 | it states `spi1`'s emitted text byte for byte |
 | `crates/aethelgard-cli/tests/generate_tier1.rs` L74–92 and the `attribute_seeded` regeneration guard (L54) | 1, 2, 3 | they compare `boards/sentinel-01/**` with a fresh `generate`; they move through the `.repl` above, not by code |
 
@@ -126,4 +130,12 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 
 - **D1 (architect).** Which of lines 1–3 to emit. Recommended: **1 now** (measured needed, no side effect seen). **2** with its fault named as a twin residual, or held until the fault is understood. **3** only for completeness.
 - **D2 (architect).** USART IDLE and timer DMA are Renode model gaps (§7). Where they go: a model of our own, upstream Renode, or backlog until a board needs them (`4400d`'s console receive, a DShot board).
-- **D3 (architect).** The hard fault: whether to chase it before line 2 is emitted.
+- **D3 (architect).** The hard fault: whether to chase it, a Renode DMA question, before line 2 is emitted.
+
+## Outside the fence, named
+
+- **`spike/4400c2/`** (`drive.py`, `candidates.py`, `summarize.py`, `sh/`, `out/`) is outside this work order's fence (`platform.rs`, its tests and goldens, `boards/*/*.repl`, FEEDBACK). It holds §1.1's measurements and their evidence.
+- **The build deletes it** (roadmap §6: a spike's build deletes it); FEEDBACK keeps the figures.
+- **§2's acceptance run uses `4400c`'s driver unchanged** (as merged with #202), not this one, which adds `PLATFORM` and injection.
+
+**STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D3. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.

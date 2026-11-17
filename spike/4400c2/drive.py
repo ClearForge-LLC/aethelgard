@@ -2,7 +2,7 @@
 
 Added for 4400c2: PLATFORM (env) names the platform file to load in place of the emitted one;
 INJECT_AT_S and INJECT_HEX (env) write those bytes into USART1's receiver, one `WriteChar` each,
-at the first step boundary at or after that virtual time.
+at the first step boundary at or after that virtual time; INJECT_PACE_NS spaces them by that time.
 
 
 Boots CI's unmodified ArduPilot ELF on the platform `aethelgard-twin` emits for
@@ -188,7 +188,14 @@ inject = bytes.fromhex(os.environ.get("INJECT_HEX", ""))
 injected_at = None
 while t_ns < end_ns:
     if inject_at is not None and injected_at is None and t_ns >= inject_at:
-        ex([f"sysbus.usart1 WriteChar 0x{b:02X}" for b in inject])
+        pace = int(os.environ.get("INJECT_PACE_NS", "0"))
+        if pace:
+            # One byte per character time at the declared baud: WriteChar, then RunFor one byte.
+            for b_ in inject:
+                ex([f"sysbus.usart1 WriteChar 0x{b_:02X}", f'emulation RunFor "0.{pace:09d}"'])
+            t_ns += pace * len(inject)
+        else:
+            ex([f"sysbus.usart1 WriteChar 0x{b:02X}" for b in inject])
         injected_at = t_ns
     n = min(STEP_MS * 1_000_000, end_ns - t_ns)
     w0 = time.time()
