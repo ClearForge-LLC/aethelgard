@@ -13,7 +13,11 @@ Run this from your own workstation, never Furnace, with your own crates.io token
   - crate scope `aethelgard-*`;
   - a short expiry.
 - **Log in.** Run `cargo login` and paste the token at the prompt, never as an argument. It should print `Login token for crates-io saved`.
-- **The whole release, without uploading.** Run `cargo publish --workspace --dry-run --locked`. For each of the ten crates it should print `Uploading aethelgard-<name> v0.2.0` and then `warning: aborting upload due to dry run`, and it should exit 0. *(Run on Furnace with the bump applied, 2026-11-17: exit 0 for all ten. That run proved the version and the packaging, with no token.)*
+- **The whole release, without uploading.** Run it in a fresh cargo home and target directory, so that no earlier dry run's cached 0.2.0 can stand in for today's (cargo treats a name and version as immutable; `AET-WO-1801` §9 met exactly this):
+  ```
+  d=$(mktemp -d); CARGO_HOME="$d/home" CARGO_TARGET_DIR="$d/target" cargo publish --workspace --dry-run --locked; echo "exit $?"; rm -rf "$d"
+  ```
+  It needs no token and downloads the dependencies again. For each of the ten crates it should print `Uploading aethelgard-<name> v0.2.0` and then `warning: aborting upload due to dry run`, and it should exit 0. *(Run on Furnace at the bump with `main` merged, 2026-11-17, in this hermetic form: exit 0 for all ten, with no token.)*
 
 ## 1. Publish, in this order
 

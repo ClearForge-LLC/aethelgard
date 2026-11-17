@@ -195,3 +195,39 @@ All [measured].
 - **Gates:** `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` exit 0; `cargo test --workspace` exit 0, no failure.
 
 **CI is the proof of the packaging step and of tier 2 at 0.2.0 (ruled),** recorded in the signal below.
+
+## 9. After AET-WO-4220b merged into main (`70d1621d`, #192)
+
+**CI on the bump `c9fc6a3` was green [measured]:**
+- `ci` run 43996920479: `ANSWER package_version=0.2.0`, all ten packaged, the CLI built from the packages validated Sentinel-01, and `ANSWER tier2_tests_passed=160 floor=160`. Shard times:
+  - shard 0: 30:21
+  - shard 1: 23:46
+  - shard 2: 29:07
+  - shard 3: 25:17
+  - shard 4: 35:40
+  - shard 5: 27:51
+  - shard 6: 26:38
+  - shard 7: 29:21
+- `ardupilot-image` and `engine-image` are green.
+
+**The merge of `main` (`70d1621d`).** It was clean; git merged `ci.yml` itself, and the result holds both changes: 4220b's licence rule for `aethelgard-kicad-lib`, and this PR's version read once. 4220b brings:
+- `aethelgard-kicad-lib`'s licence as `CC-BY-SA-4.0 AND (MIT OR Apache-2.0)` and its own symbols and footprints;
+- **specification 13** (`aethelgard-ir/src/lib.rs:68`).
+
+`RELEASE-0.2.0.md`'s notes now say specification 13 and cite `AET-WO-4220b`.
+
+**Measured at the merged head:**
+- **CI's packaging step, run verbatim:** exit 0, `ANSWER package_version=0.2.0`. `aethelgard-kicad-lib` is 43 325 bytes and 55 files; `aethelgard-cli` is 686 006 bytes and 181 files. The CLI built from the packages validated Sentinel-01.
+- **Gates:** `fmt` and `clippy` clean; `cargo test --workspace` exit 0, no failure.
+
+**Finding F1 (measured, fixed in the docs): a dry run of the same version can read a stale copy.**
+- **What happened.** `cargo publish --workspace --dry-run --locked` at the merged head failed (exit 101): `aethelgard-eda`'s verify could not find `aethelgard_ir::DeclaredPinCapacitance`, then `electrical::I2C_PIN_CI_FEMTOFARADS`.
+- **The cause.** Both exist in the tree. Cargo treats `aethelgard-ir@0.2.0` from the dry run's local registry as immutable, so it reused my earlier dry runs' unpacked copy (`~/.cargo/registry/src/-2a32fb34f9d6d7d5/aethelgard-ir-0.2.0`, which lacked the symbol) and their compiled crates.
+- **Measured.**
+  - Clearing only the unpacked copies, it failed again on the compiled ones.
+  - With a fresh target directory, it passed all ten.
+  - With a fresh `CARGO_HOME` and target directory both, it passed: exit 0, ten `Uploading`, ten aborted.
+- **Why it matters for the release.** The same staleness could make Scotty's dry run fail, or pass, for the wrong code, if he dry-ran once, pulled a newer `main` still at 0.2.0, and dry-ran again.
+- **The fix.** `docs/releasing.md` and `RELEASE-0.2.0.md` now give the dry run in a fresh `CARGO_HOME` and target directory, the form measured above. It needs no token. The per-crate `cargo publish` is not affected: once its dependencies are on crates.io, they really are immutable.
+
+**Signal: READY** once this push's CI is green.

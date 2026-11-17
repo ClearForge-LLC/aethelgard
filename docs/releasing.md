@@ -21,7 +21,7 @@ A published release is a pinned snapshot with no promise of updates (`RUL-21`).
 1. `git switch main && git pull`. `git status` is clean, and `git log -1` is the commit CI passed on: the release's bump commit, or a later one.
 2. CI's packaging step is green on that commit.
 3. `[workspace.package] version` in `Cargo.toml` is the release's version, and so is the `version` on every path entry in `[workspace.dependencies]`.
-4. **`cargo publish --workspace --dry-run --locked` succeeds.** It packages every crate, verifies each against the others' local packages (a version not yet on crates.io resolves to them), and stops before uploading. It prints `Uploading <crate> v<version>` and then `warning: aborting upload due to dry run` for each of the ten.
+4. **`cargo publish --workspace --dry-run --locked` succeeds, run in a fresh cargo home and target directory:** `d=$(mktemp -d); CARGO_HOME="$d/home" CARGO_TARGET_DIR="$d/target" cargo publish --workspace --dry-run --locked; rm -rf "$d"`. Cargo treats a name and version as immutable. It reuses an earlier dry run's unpacked copy and compiled crates of the same version even when the code has changed since, which can make the dry run fail, or pass, for the wrong code (`AET-WO-1801` §9). It needs no token. It packages every crate, verifies each against the others' local packages (a version not yet on crates.io resolves to them), and stops before uploading. It prints `Uploading <crate> v<version>` and then `warning: aborting upload due to dry run` for each of the ten.
 
 ## The order
 
