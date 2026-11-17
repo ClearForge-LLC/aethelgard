@@ -178,6 +178,13 @@ fn witness(label: &str, echo: Echo, tx: (u8, u8)) -> Record {
         rx_at_injection: Some((0b10, if echo == Echo::NotCounted { 8 } else { 7 })),
         tx_at_end: Some(tx),
         tx_at_send: Some(tx),
+        // Trace 13 (`AET-WO-2302` D4): the console's frame a quantum after the
+        // boot word, the GPS port's once the console has echoed.
+        injected_ns: Some(if label == "CONSOLE" {
+            130_750
+        } else {
+            2_000_000
+        }),
     }
 }
 
@@ -829,4 +836,207 @@ fn a_port_with_no_capture_is_indeterminate_by_its_witness() {
         "{a:?}"
     );
     assert_eq!(named(&r, &a), ["kind 29 GPS"]);
+}
+
+/// `r` with `port`'s RX line held open by its scenario (`AET-WO-2302` D5):
+/// nothing went into it (no instant, no mux read at an injection), and the
+/// port after it in the chain went in a quantum after the boot word. With
+/// `declared` false the scenario does not say so.
+fn open(mut r: Vec<Record>, port: &str, declared: bool) -> Vec<Record> {
+    for x in r.iter_mut() {
+        match x {
+            Record::Scenario { overrides, .. } if declared => {
+                overrides.push(Override::SerialRxOpen { port: port.into() });
+            }
+            Record::SerialWitness {
+                label,
+                rx_at_injection,
+                injected_ns,
+                ..
+            } if label == port => {
+                *rx_at_injection = None;
+                *injected_ns = None;
+            }
+            Record::SerialWitness {
+                label, injected_ns, ..
+            } if port == "CONSOLE" && label == "GPS" => *injected_ns = Some(130_750),
+            _ => {}
+        }
+    }
+    r
+}
+
+/// `AET-WO-2302` D5, E3: the console's RX line open on the board, its echo
+/// missing, and nothing else of the port's wrong: electrical, E3, by the
+/// port's framing check and its witness alone (only that port as subject);
+/// the GPS port after it, skipped to, is witnessed.
+#[test]
+fn an_open_rx_line_the_scenario_declares_is_electrical_e3_by_that_port_alone() {
+    let missing = Case {
+        console: Echo::Missing,
+        ..Case::default()
+    };
+    let r = open(run(&missing, &[(SERIAL_ECHO_FINDING, 1)]), "CONSOLE", true);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E3), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 28 CONSOLE", "kind 29 CONSOLE"]);
+    assert!(a.masked.is_empty(), "{a:?}");
+    // The last port open: the console goes in as ever.
+    let gps = Case {
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = open(run(&gps, &[(SERIAL_ECHO_FINDING, 1)]), "GPS", true);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E3), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 28 GPS", "kind 29 GPS"]);
+    // The same records without the scenario's override: no positive
+    // evidence of an open line, so I6, never electrical by elimination.
+    let r = open(run(&gps, &[(SERIAL_ECHO_FINDING, 1)]), "GPS", false);
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
+}
+
+/// E3 holds only on a port whose framing, writes and pattern hold, with no
+/// software cause: a firmware cause on the open port is S5 (the seeded
+/// `serial_rx_dead` stays S5); the pattern missing too, or the writes not
+/// read whole, leave the open line unshown (I6).
+#[test]
+fn an_open_rx_line_with_anything_else_of_the_port_s_wrong_is_not_e3() {
+    let r = open(
+        run(
+            &Case {
+                afrh: 0x870,
+                console: Echo::Missing,
+                ..Case::default()
+            },
+            &[("register_mismatch", 1), (SERIAL_ECHO_FINDING, 1)],
+        ),
+        "CONSOLE",
+        true,
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+    assert_eq!(named(&r, &a), ["GPIOA.AFRH", "kind 29 CONSOLE"]);
+    let silent = Case {
+        console: Echo::Silent,
+        ..Case::default()
+    };
+    let r = open(
+        run(
+            &silent,
+            &[(SERIAL_ECHO_FINDING, 1), (SERIAL_PATTERN_FINDING, 1)],
+        ),
+        "CONSOLE",
+        true,
+    );
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
+    let missing = Case {
+        console: Echo::Missing,
+        ..Case::default()
+    };
+    // Renode's access log not read whole: neither the writes nor the TX pin
+    // at its sends rebuilt.
+    let mut r = open(
+        run(
+            &missing,
+            &[
+                (SERIAL_ECHO_FINDING, 1),
+                (SERIAL_TAG_FINDING, 1),
+                (SERIAL_PATTERN_FINDING, 1),
+            ],
+        ),
+        "CONSOLE",
+        true,
+    );
+    for x in r.iter_mut() {
+        match x {
+            Record::SerialFramingCheck { label, tags, .. } if label == "CONSOLE" => *tags = None,
+            Record::SerialWitness {
+                label, tx_at_send, ..
+            } if label == "CONSOLE" => *tx_at_send = None,
+            _ => {}
+        }
+    }
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
+}
+
+/// `propose` answers E3 with no rule: an open RX line is a board fault no
+/// value change fixes.
+#[test]
+fn propose_leaves_an_open_rx_line_to_the_model_slot() {
+    let missing = Case {
+        console: Echo::Missing,
+        ..Case::default()
+    };
+    let r = open(run(&missing, &[(SERIAL_ECHO_FINDING, 1)]), "CONSOLE", true);
+    let replayed = archived(&r);
+    let a = attribute(&replayed).unwrap();
+    assert_eq!(a.rule, Rule::E3);
+    let v = view(&replayed).unwrap();
+    let evidence: Vec<Evidence> = a.evidence.iter().map(|e| v.event(*e).unwrap()).collect();
+    let buses = v.buses();
+    let input = Input {
+        attribution: &a,
+        evidence: &evidence,
+        buses: &buses,
+        facts: &BTreeMap::new(),
+    };
+    let ans = propose::propose(&[&Rules], &input);
+    assert!(
+        matches!(&ans.outcome, Outcome::NoProposal { reason, sizing }
+            if reason == propose::MODEL_SLOT && sizing.is_empty()),
+        "{:?}",
+        ans.outcome
+    );
+}
+
+/// Mutation sweep of `E3` (`AET-WO-2302` D5): an open RX line beside a port
+/// whose silicon framing check fails is not shown to be the port's one
+/// fault (I6, never electrical), and beside writes the access log shows
+/// wrong it is the firmware's (S5): mutants `holds: true` and `t.holds()`
+/// survived the cases above.
+#[test]
+fn an_open_rx_line_beside_a_failing_framing_check_or_wrong_writes_is_not_e3() {
+    let rule = |case: Case, findings: &[(&str, u64)]| {
+        let r = open(run(&case, findings), "CONSOLE", true);
+        let a = attributed(&r);
+        (a.domain, a.rule)
+    };
+    assert_eq!(
+        rule(
+            Case {
+                console_holds: false,
+                console: Echo::Missing,
+                ..Case::default()
+            },
+            &[(SERIAL_ECHO_FINDING, 1), (SERIAL_STATIC_FINDING, 1)],
+        ),
+        (Domain::Indeterminate, Rule::I6)
+    );
+    assert_eq!(
+        rule(
+            Case {
+                console_tags_hold: false,
+                console: Echo::Missing,
+                ..Case::default()
+            },
+            &[(SERIAL_ECHO_FINDING, 1), (SERIAL_TAG_FINDING, 1)],
+        ),
+        (Domain::Software, Rule::S5)
+    );
 }

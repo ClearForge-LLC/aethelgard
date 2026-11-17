@@ -10,8 +10,8 @@ use crate::event::{name_ok, text_ok};
 
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
-/// The last campaign kind.
-pub const LAST_KIND: u64 = 29;
+/// The last campaign kind (30, the judge's stop, since `AET-WO-2302`).
+pub const LAST_KIND: u64 = 30;
 
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
@@ -20,9 +20,9 @@ pub const MOTOR_PROTOCOLS: [&str; 3] = ["pwm", "dshot300", "dshot600"];
 /// What kind 26's `status` may say (`AET-WO-4300a`): the observer's edges
 /// were the model's sequence with an edge off the grid; were, on the grid
 /// alone; showed fewer than two rises; could not be read whole; did not fit
-/// the sequence; shared stamps; or stopped more than a period before the
-/// window's end.
-pub const MOTOR_STATUSES: [&str; 7] = [
+/// the sequence; shared stamps; stopped more than a period before the
+/// window's end; or were logged with no anchor observed (`AET-WO-2302`).
+pub const MOTOR_STATUSES: [&str; 8] = [
     "witnessed",
     "static_only",
     "unwitnessed",
@@ -30,6 +30,7 @@ pub const MOTOR_STATUSES: [&str; 7] = [
     "mismatch",
     "batched",
     "stopped",
+    "unanchored",
 ];
 
 /// The roles a serial port may declare (`AET-WO-4300b`), as kind 27 names
@@ -182,6 +183,11 @@ pub enum Override {
     /// `[4, reference]`: an SPI device left absent behind its chip select,
     /// which stays wired (`AET-WO-4200` D4).
     SpiDeviceAbsent { reference: String },
+    /// `[5, port]`: a serial port's RX line open on the board (`AET-WO-2302`
+    /// D5, ruled (ii)): the composition injects nothing into that port, and
+    /// the port after it in the sequential chain goes in after the port
+    /// before it instead.
+    SerialRxOpen { port: String },
 }
 
 /// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
@@ -520,7 +526,17 @@ pub enum Record {
     /// the model's period and high time, the stamp grain and the quantum, in
     /// ns, and what the observer showed (`status`, one of
     /// [`MOTOR_STATUSES`]; the counts; the first rise; the deviations'
-    /// spread; edges off the grid; edges sharing a stamp).
+    /// spread; edges off the grid; edges sharing a stamp). Since trace 13
+    /// (`AET-WO-2302`) its window: `anchor_ns`, its timer's first `CEN` rise
+    /// in the boot the judge reads (absent when none was observed), and
+    /// `end_ns`, `DSHOT_WINDOW_NS` after it for DShot and the boot's end for
+    /// PWM; replay derives both from the records. And the edges the window
+    /// left out, `edges_before` its anchor and `edges_after` its end, and
+    /// `cen_rises`, its timer's `CEN` rises in that boot (0 exactly when no
+    /// anchor was observed; one timer's outputs all carry the same), from
+    /// which replay binds `motor_edge_before_anchor`,
+    /// `motor_edge_after_window` and `motor_anchor_repeated` (adversarial
+    /// pass 1, L3).
     MotorWitness {
         label: String,
         observer: String,
@@ -538,6 +554,10 @@ pub enum Record {
         span_ns: Option<u64>,
         off_grid: u64,
         batched: u64,
+        anchor_ns: Option<u64>,
+        edges_before: u64,
+        edges_after: u64,
+        cen_rises: u64,
     },
     /// Kind 27: one solved serial port, from the solved topology alone
     /// (`AET-WO-4300b`): its label, its place in the specification, its
@@ -593,7 +613,10 @@ pub enum Record {
     /// could not be read whole; adversarial F4, pass 4 ADV4-4). The echo is
     /// `not_counted` too when the RX pin changed after it was solved,
     /// which kind 28's tags name. Archived after kind 28, once Renode has
-    /// run.
+    /// run. Since trace 13 (`AET-WO-2302` D4) `injected_ns`: the first frame
+    /// byte's instant, one quantum after the boot word for the first port
+    /// and after the port before's last echoed byte for each later one,
+    /// present exactly when `rx_at_injection` is.
     SerialWitness {
         label: String,
         capture: Option<SerialCapture>,
@@ -602,8 +625,29 @@ pub enum Record {
         rx_at_injection: Option<(u8, u8)>,
         tx_at_end: Option<(u8, u8)>,
         tx_at_send: Option<(u8, u8)>,
+        injected_ns: Option<u64>,
+    },
+    /// Kind 30: one judge's stop (`AET-WO-2302` D2, accepted): a DShot
+    /// timer (`TIM1`, kind 24's `timer`) at its window's end, `at_ns`,
+    /// `DSHOT_WINDOW_NS` after its anchor, `anchor_ns`; each of its solved
+    /// registers as the stop read it back before clearing `CEN` (as kind 11
+    /// reads one, at most [`MAX_STOP_REGISTERS`]); and `CR1` after it
+    /// (absent when the stop logged no read after it). The judge's own act
+    /// on the machine: after it, a firmware reading the timer sees it
+    /// stopped, a residual every such verdict names. Archived after kind 26.
+    JudgeStop {
+        timer: String,
+        anchor_ns: u64,
+        at_ns: u64,
+        read_back: Vec<Reading>,
+        cr1_after: Option<u32>,
     },
 }
+
+/// The most registers kind 30 reads back: a timer's solved registers
+/// (`CR1`, `CR2`, `SMCR`, `DIER`, `CCMR1`, `CCMR2`, `CCER`, `PSC`, `ARR`,
+/// `RCR`, four `CCRx`) with room.
+pub const MAX_STOP_REGISTERS: usize = 32;
 
 /// A pin's `MODER` and `AFSEL` fields, present or absent.
 fn mux(m: Option<(u8, u8)>) -> Value {
@@ -862,6 +906,7 @@ fn override_value(o: &Override) -> Value {
             v
         }
         Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
+        Override::SerialRxOpen { port } => vec![u(5), t(port)],
     })
 }
 
@@ -919,6 +964,7 @@ fn override_from(v: &Value) -> Option<Override> {
         4 => Override::SpiDeviceAbsent {
             reference: f.text()?,
         },
+        5 => Override::SerialRxOpen { port: f.text()? },
         _ => return None,
     };
     f.end()?;
@@ -964,6 +1010,7 @@ impl Record {
                 Self::SerialPortSolved { .. } => 22,
                 Self::SerialFramingCheck { .. } => 23,
                 Self::SerialWitness { .. } => 24,
+                Self::JudgeStop { .. } => 25,
             }
     }
 
@@ -1341,6 +1388,10 @@ impl Record {
                 span_ns,
                 off_grid,
                 batched,
+                anchor_ns,
+                edges_before,
+                edges_after,
+                cen_rises,
             } => vec![
                 t(label),
                 t(observer),
@@ -1357,6 +1408,10 @@ impl Record {
                 opt(*span_ns),
                 u(*off_grid),
                 u(*batched),
+                opt(*anchor_ns),
+                u(*edges_before),
+                u(*edges_after),
+                u(*cen_rises),
             ],
             Self::SerialPortSolved {
                 label,
@@ -1435,6 +1490,7 @@ impl Record {
                 rx_at_injection,
                 tx_at_end,
                 tx_at_send,
+                injected_ns,
             } => vec![
                 t(label),
                 Value::Array(
@@ -1456,6 +1512,20 @@ impl Record {
                 mux(*rx_at_injection),
                 mux(*tx_at_end),
                 mux(*tx_at_send),
+                opt(*injected_ns),
+            ],
+            Self::JudgeStop {
+                timer,
+                anchor_ns,
+                at_ns,
+                read_back,
+                cr1_after,
+            } => vec![
+                t(timer),
+                u(*anchor_ns),
+                u(*at_ns),
+                Value::Array(read_back.iter().map(reading).collect()),
+                opt(cr1_after.map(u64::from)),
             ],
         }
     }
@@ -1727,6 +1797,10 @@ impl Record {
                 span_ns: f.opt()?,
                 off_grid: f.uint()?,
                 batched: f.uint()?,
+                anchor_ns: f.opt()?,
+                edges_before: f.uint()?,
+                edges_after: f.uint()?,
+                cen_rises: f.uint()?,
             },
             27 => Self::SerialPortSolved {
                 label: f.text()?,
@@ -1790,6 +1864,21 @@ impl Record {
                 rx_at_injection: f.mux()?,
                 tx_at_end: f.mux()?,
                 tx_at_send: f.mux()?,
+                injected_ns: f.opt()?,
+            },
+            30 => Self::JudgeStop {
+                timer: f.text()?,
+                anchor_ns: f.uint()?,
+                at_ns: f.uint()?,
+                read_back: {
+                    let mut g = Fields(f.array()?.iter());
+                    let mut out = Vec::new();
+                    while g.0.len() > 0 {
+                        out.push(g.reading()?);
+                    }
+                    out
+                },
+                cr1_after: f.opt_u32()?,
             },
             _ => return None,
         };
@@ -1827,6 +1916,7 @@ impl Record {
                     Override::MaxCapacitance { net, .. } => name_ok(net),
                     Override::Droop(d) => name_ok(&d.domain),
                     Override::SpiDeviceAbsent { reference } => name_ok(reference),
+                    Override::SerialRxOpen { port } => name_ok(port),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");
@@ -2192,6 +2282,10 @@ impl Record {
                 grain_ns,
                 quantum_ns,
                 status,
+                anchor_ns,
+                edges_before,
+                edges_after,
+                cen_rises,
                 ..
             } => {
                 if !name_ok(label) || !name_ok(observer) {
@@ -2200,6 +2294,12 @@ impl Record {
                     Err("a motor witness's status is not one the judge gives")
                 } else if *grain_ns == 0 || *quantum_ns == 0 {
                     Err("a motor witness's grain or quantum is 0")
+                } else if anchor_ns.is_some() != (*cen_rises > 0)
+                    || (anchor_ns.is_none() && (*edges_before > 0 || *edges_after > 0))
+                {
+                    Err(
+                        "a motor witness names an anchor without a CEN rise, a rise without an anchor, or edges outside a window it does not have",
+                    )
                 } else {
                     Ok(())
                 }
@@ -2285,6 +2385,7 @@ impl Record {
                 rx_at_injection,
                 tx_at_end,
                 tx_at_send,
+                injected_ns,
                 ..
             } => {
                 let mux_ok = |m: &Option<(u8, u8)>| {
@@ -2300,6 +2401,30 @@ impl Record {
                     Err(
                         "a serial witness's counts do not fit its capture's length and its pattern's",
                     )
+                } else if injected_ns.is_some() != rx_at_injection.is_some() {
+                    Err(
+                        "a serial witness names its injection's instant without the RX pin's mux there, or the mux without the instant",
+                    )
+                } else {
+                    Ok(())
+                }
+            }
+            Self::JudgeStop {
+                timer,
+                anchor_ns,
+                at_ns,
+                read_back,
+                ..
+            } => {
+                let tim = timer
+                    .strip_prefix("TIM")
+                    .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()));
+                if !tim {
+                    Err("a judge's stop does not name a timer")
+                } else if at_ns <= anchor_ns {
+                    Err("a judge's stop is not after its anchor")
+                } else if read_back.is_empty() || read_back.len() > MAX_STOP_REGISTERS {
+                    Err("a judge's stop reads back no register, or too many")
                 } else {
                     Ok(())
                 }

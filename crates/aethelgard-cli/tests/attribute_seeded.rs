@@ -197,13 +197,6 @@ fn the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps(
         ("indeterminate", "I3"),
         "a core leaving the firmware beside the one-line 390 pF fault is the second I3 trap"
     );
-    // `AET-WO-3201` (`4300a` Q7): a read left unset by a short window is
-    // decided by its record.
-    assert_eq!(
-        trap(case("motors/dshot600.json", Some("identity-late"))),
-        ("indeterminate", "I7"),
-        "identity reads that start after the DShot window are the I7 case"
-    );
     for c in &m.cases {
         assert_eq!(
             c.findings.is_empty(),
@@ -878,6 +871,9 @@ mod tier2 {
             // A device absent behind its chip select: a board fault no value
             // fixes (`AET-WO-4200`, `E2`).
             (_, "spi-absent-u4") => Want::ModelSlot,
+            // An open RX line: a board fault no value fixes (`AET-WO-2302`
+            // D5, `E3`).
+            (_, "serial-rx-open-console") => Want::ModelSlot,
             // R_target = R × 240,000 / rise ≈ 2,832 Ω for every pull-up case,
             // the 47 kOhm trap included (E1 masks its wrong address).
             (

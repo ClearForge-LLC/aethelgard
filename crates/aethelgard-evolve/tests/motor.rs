@@ -104,6 +104,12 @@ fn witness_of(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         span_ns: edges.then_some(if status == "mismatch" { 400 } else { 8 }),
         off_grid: if edges { 311 } else { 0 },
         batched: 0,
+        // Trace 13 (`AET-WO-2302`): every output of the timer names its
+        // anchor, one period before the first rise.
+        anchor_ns: Some(6),
+        edges_before: 0,
+        edges_after: 0,
+        cen_rises: 1,
     }
 }
 
@@ -593,12 +599,15 @@ fn late_dshot(findings: &[(&str, u64)]) -> Vec<Record> {
                 (*period_ps, *high_ps) = (1_671_875, 625_000);
                 (*nominal_period_ps, *nominal_high_ps) = (1_666_666, 624_999);
             }
+            // Trace 13 (`AET-WO-2302`): a timer that never started has no
+            // anchor, and its witness runs to the boot's end.
             Record::MotorWitness {
                 period_ns,
                 high_ns,
-                end_ns,
+                anchor_ns,
+                cen_rises,
                 ..
-            } => (*period_ns, *high_ns, *end_ns) = (424, 160, 2_000_000),
+            } => (*period_ns, *high_ns, *anchor_ns, *cen_rises) = (424, 160, None, 0),
             Record::BootObserved {
                 boot_word,
                 instructions_expected,

@@ -43,6 +43,10 @@ fn run(property: &str) -> &'static Run {
             "scenarios/sentinel-01/droop-bor3.json",
             ONE_KIND,
             "scenarios/sentinel-01/pullup-2k2.json",
+            // The console's open RX line (`AET-WO-2302` D5): without it the
+            // console's port is uncovered and the run is refused before any
+            // gate.
+            "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
             "--fab-out",
             dir.to_str().unwrap(),
         ]);
