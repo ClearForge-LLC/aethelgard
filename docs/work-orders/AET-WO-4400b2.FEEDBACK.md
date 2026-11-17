@@ -253,3 +253,4 @@ Three tests outside pincheck and ir changed one assertion each, forced by F4 (§
 - **What changed since:** main's docs-only #198 merged in, and this section.
 - **Open for the architect:** D1–D3 (§5) and the three files outside the fence (§7).
 - The scratch kit is removed. The only file left is `~/.cache/aet-4400b2/pr-title-body.md`.
+- **After the ruling:** 32a4a2c9 builds D1 (a), merges main ac5f8c8, and confirms Sentinel-01 (§8). This READY commit follows it.
