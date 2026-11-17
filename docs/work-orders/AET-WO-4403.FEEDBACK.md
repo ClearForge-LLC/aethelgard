@@ -409,3 +409,56 @@ Measured in both published images, rebuilt RUN-free with the new offer and table
   - shard 7: 30:30
 - **`main` `d6410b8` (docs #183) is merged in;** docs only.
 - **Signal:** READY. The ghcr proof of the Debian mirrors comes on `main`'s first publish after merge (D1(a)). Q3's re-pin PR follows that merge.
+
+# Q3: both pins re-pinned to main's publish from `b29bdec` (branch `wo/aet-4403-repin`)
+
+Ruled on #181 (21:30 UTC) and kicked off at 22:40 UTC once #181 merged as `b29bdec`. The branch was cut from `main` `b29bdec`.
+
+## Q3.1 After #181 merged (proven on main)
+
+The record is `~/.cache/aet-4403/post-merge-d5.md`.
+- **`ardupilot-image` push run 43971968351, green:**
+  - `publish` found the GCC mirror already there. It pushed all 29 Debian packages (`ANSWER debian_mirror_s=220`), then the image `sha256:160f9955…`.
+  - `source`, with no credentials, fetched the GCC tarball and all 29 packages (92 files) and verified them.
+- **`tools-image` push run 43971968438, green:**
+  - `publish` pushed all 84 packages (`ANSWER debian_mirror_s=1026`, 17 min of 60), then the image `sha256:598501ab…`.
+  - `source` fetched and verified all 84 packages (274 files) anonymously.
+- **Furnace, a third client** (23:21–23:24Z): fetched both tables anonymously, rc 0.
+
+**The D5 acceptance (the ghcr anonymous fetch of the Debian mirrors) is met.**
+
+## Q3.2 The pins, checked as 4402 did [measured, Furnace 2026-11-16 23:26Z]
+
+- **`container/ARDUPILOT-IMAGE`** → `sha256:160f9955e066f513dc6e6cbce3dd59e4bf7c74f2f1d8a63215fd1ea88278d45f`. It pulls, and its revision label is `b29bdec8eca616b71753a033003b8271293e49fb`.
+- **`container/IMAGE`** → `sha256:598501abd610a9fd84935cc32c2878e7932eae4df8f774789eaea21ec3555625`. It pulls.
+- **Finding:** it has **no revision label**, because `tools-image.yml`'s `publish` has never set `org.opencontainers.image.revision` (ArduPilot's does). It is tied to `b29bdec` two other ways:
+  - its documentation label is `…/blob/b29bdec8…/container/TOOLS-SOURCES.md`, which `publish` writes from `github.sha`;
+  - the tag `ghcr.io/clearforge-llc/aethelgard-tools:b29bdec8…` resolves anonymously to exactly this digest (the ArduPilot tag likewise to `160f9955…`).
+
+  Adding the label is one line in `tools-image.yml`'s `publish` (`labels:`). That is a backlog row, not this PR, which only re-pins.
+- **`git diff b29bdec origin/main -- container/` is empty**, because `main` is `b29bdec`.
+- **In the new images [measured]:**
+  - `smoke.sh` passes in the tools image.
+  - `check-sources.sh inside` passes in both: 669 and 171 dpkg packages, with 84 and 29 flagged packages, all in their tables.
+  - `check-sources.sh labels` at `b29bdec` passes for both.
+- **CI is the tier-2 proof on the new tools image (ruled).** TIER2_MIN is unchanged. The `pinned` job pulls and smokes the new ArduPilot pin.
+
+**Finding (cosmetic):** `debian-src.py`'s lines are buffered when piped, so they can appear out of order between its children's. `flush=True` is the fix, for the next container work order.
+
+**Local gates [measured]:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` are clean; `cargo test --workspace` exits 0 with no failure. No crate changed.
+
+**CI on `6d998fe` (PR #186), all green [measured]:**
+- **`ci` run 43981016797:** tier 2 ran in the new tools image `598501ab…`: `ANSWER tier2_tests_passed=160 floor=160` and `ANSWER tools_total_passed=2129 names=2123`. Shard times (main's plan):
+  - shard 0: 22:47
+  - shard 1: 26:02
+  - shard 2: 25:26
+  - shard 3: 29:48
+  - shard 4: 25:49
+  - shard 5: 24:51
+  - shard 6: 28:31
+  - shard 7: 25:05
+- **`ardupilot-image` run 43981016870:** `pinned` pulled and smoked the new ArduPilot pin: `ANSWER pinned revision=b29bdec8eca616b71753a033003b8271293e49fb`, `ANSWER smoke board=MatekH743 … flash_bytes=1550452`.
+- **`tools-image` run 43981016690:** green.
+- **`engine-image`:** green, building on the new tools pin.
+- **`main` `7aaf431` (docs #185) is merged in;** docs only.
+- **Signal:** READY.
