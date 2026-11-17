@@ -136,6 +136,8 @@ fn what_cannot_be_lowered_is_refused() {
     // port is the topology's refusal; FDCAN1 has no model here.
     let mut can = edited("\"SPI1\"", "\"FDCAN1\"");
     can.spi_lines.clear();
+    // With no SPI line every stored speed is `0` (`AET-WO-4400b2` F4).
+    can.pin_speeds.values_mut().for_each(|v| *v = 0);
     assert_eq!(kind(can), "UnsupportedPeripheral");
     let mut usart = edited("\"SPI1\"", "\"USART1\"");
     usart.spi_lines.clear();

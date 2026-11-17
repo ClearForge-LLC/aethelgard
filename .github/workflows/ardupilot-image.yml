@@ -18,7 +18,8 @@
 # The `generated` jobs (AET-WO-4400b) solve each CI board's specification,
 # generate its hwdef.dat with `aethelgard generate hwdef`, hold it to the
 # committed file, and build it with unmodified ArduPilot. `pinout` judges all of
-# them with `aethelgard check pinout` (ruling D7). The jobs live here, not in
+# them with `aethelgard check pinout` (ruling D7): the GPIO image, and since
+# AET-WO-4400b2 ArduPilot's device tables, the identity judge. The jobs live here, not in
 # ci.yml, because they need this image, which only this workflow builds. They
 # run whenever the image, the check, the generator or anything the topology
 # comes from changes.
