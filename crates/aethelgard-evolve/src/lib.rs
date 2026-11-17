@@ -114,11 +114,11 @@ pub enum Rule {
     /// standing for the timer): the firmware started it again.
     S7,
     /// `motor_anchor_out_of_order`, in a boot whose boot word is set (kind
-    /// 10): the timer's anchor (kind 26's `anchor_ns`) is after the boot word
-    /// (placed by kind 29's first injection) or before the last device
-    /// step's witness: the firmware's own code order. Decided only where the
-    /// records say which timers the verdict names: every anchored timer, or
-    /// exactly those anchored after the boot word's instant.
+    /// 10): the timer's anchor (kind 26's `anchor_ns`) is after the boot
+    /// word's instant (placed by kind 29's first injection), which the
+    /// bring-up writes last: the firmware's own code order. Decided only when
+    /// the verdict names exactly the timers so anchored; its other cases are
+    /// in no record, and are unexplained by name.
     S8,
     /// `motor_edge_before_anchor`: the output's witness (kind 26) shows
     /// edges before its timer's anchor in the same boot (`edges_before`):
@@ -1342,9 +1342,10 @@ impl<'a> Run<'a> {
     /// (`AET-WO-2302b`): the boot word is set, its frame and echo are in the
     /// wire time that passes `MAX_VIRTUAL_NS` from the boot word's instant
     /// (`campaign::wire_past_run_ports`), its framing check holds with its
-    /// writes read and held, and its witness shows its echo missing and
-    /// nothing else. The evidence is the first injection (the instant), the
-    /// port's witness, and the summed ports' framings. `None` otherwise.
+    /// writes read and held, and its witness shows its echo missing or cut
+    /// short (never `not_counted`) and nothing else. The evidence is the
+    /// first injection (the instant), the port's witness, and the summed
+    /// ports' framings. `None` otherwise.
     fn wire_cut(&self, s: usize) -> Option<Vec<usize>> {
         let label = self.serial[s].label;
         if !(self.booted && campaign::wire_past_run_ports(self.records)?.contains(&label)) {
@@ -1354,9 +1355,13 @@ impl<'a> Run<'a> {
             matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
                 if l == label && t.holds())
         })?;
+        // The echo `missing` or `partial`: one `not_counted` came back with
+        // the RX pin off its AF at the injection, the pin's, not the bound's.
         let witness = self.records.iter().position(|r| {
-            matches!(r, Record::SerialWitness { label: l, .. }
-                if l == label && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
+            matches!(r, Record::SerialWitness { label: l, echo, .. }
+                if l == label
+                    && matches!(echo.as_str(), "missing" | "partial")
+                    && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
         })?;
         let mut evidence = vec![self.first_injection()?, witness];
         evidence.extend(self.wire_ports());
@@ -1398,6 +1403,13 @@ impl<'a> Run<'a> {
                 }
             }
             campaign::MOTOR_ANCHOR_ORDER_FINDING => {
+                // Only an anchor after the boot word's instant is in the
+                // records (kind 29's first injection places it, kind 26 the
+                // anchor); the kind's other cases, an anchor before the last
+                // device step's witness or no boot word seen by its hook,
+                // are the boot's log lines, which no record carries, so only
+                // the verdict would say them, and a verdict is never
+                // evidence (`AET-WO-2302b` adversarial pass).
                 // belt-and-suspenders: kind 10's boot word set - replay
                 // refuses the kind in a boot without it, so a boot that
                 // lost its word (a droop's reset among its causes) never
@@ -1406,42 +1418,28 @@ impl<'a> Run<'a> {
                     matches!(r, Record::BootObserved { boot_word, .. }
                         if boot_word.observed == Some(boot_word.expected))
                 });
-                let anchored: Vec<(usize, u64)> = self
+                let instant = campaign::boot_word_instant(self.records);
+                let after: Vec<usize> = self
                     .timers(false)
                     .into_iter()
-                    .filter_map(|(_, i)| Some((i, self.anchor(i)?)))
+                    .filter(|&(_, i)| self.anchor(i).zip(instant).is_some_and(|(a, b)| a > b))
+                    .map(|(_, i)| i)
                     .collect();
-                let instant = campaign::boot_word_instant(self.records);
-                let after: Vec<usize> = anchored
-                    .iter()
-                    .filter(|&&(_, a)| instant.is_some_and(|b| a > b))
-                    .map(|&(i, _)| i)
-                    .collect();
-                let cite = |i: usize| -> Vec<usize> {
-                    let mut e = [boot.clone(), vec![i]].concat();
-                    if after.contains(&i) {
-                        e.extend(self.first_injection());
+                if after.len() as u64 == count {
+                    for i in after {
+                        let evidence = [boot.clone(), vec![i]]
+                            .into_iter()
+                            .flatten()
+                            .chain(self.first_injection())
+                            .collect();
+                        each(&mut w, Rule::S8, i, evidence);
                     }
-                    e
-                };
-                // The records say which timers the verdict names only when
-                // it names those anchored after the boot word's instant, or
-                // every anchored timer.
-                let named: Vec<usize> = if !after.is_empty() && after.len() as u64 == count {
-                    after.clone()
-                } else if anchored.len() as u64 == count {
-                    anchored.iter().map(|&(i, _)| i).collect()
                 } else {
                     w.missing.push(format!(
-                        "{kind}: named {count} time(s) of {} anchored timer(s), {} anchored after the boot word's instant (kind 29's first injection): which timers the boot's order put out of order (before the last device step's witness, or with no boot word seen by its hook) is in no record",
-                        anchored.len(),
+                        "{kind}: named {count} time(s), {} timer(s) anchored after the boot word's instant (kind 29's first injection): the boot's order otherwise (an anchor before the last device step's witness, or no boot word seen by its hook) is in no record",
                         after.len()
                     ));
                     w.shown = count;
-                    Vec::new()
-                };
-                for i in named {
-                    each(&mut w, Rule::S8, i, cite(i));
                 }
             }
             campaign::MOTOR_WINDOW_PAST_RUN_FINDING => {

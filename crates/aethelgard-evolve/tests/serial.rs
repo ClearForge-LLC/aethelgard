@@ -1158,6 +1158,27 @@ fn h3_the_wire_time_past_the_run_is_the_harness_s_with_its_cut_echo() {
     let a = attributed(&r);
     assert_eq!(a.rule, Rule::I6, "{a:?}");
     assert_eq!(named(&r, &a), ["kind 29 GPS"]);
+    // The GPS port in the sum, its frame back with its RX pin off its AF at
+    // the injection (`not_counted`): the pin, not the bound, so its own
+    // `I6` names the run, never the harness.
+    let off = Case {
+        gps: Echo::NotCounted,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &off,
+            &[
+                (SERIAL_ECHO_FINDING, 1),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        Some(LATE_CONSOLE),
+        Some(LATE_CONSOLE + 900_000),
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I6, "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 29 GPS"]);
 }
 
 /// `H3` never fires when the first port took no frame: the boot word's
@@ -1350,8 +1371,9 @@ fn with_motor(c: &Case, anchor: u64, findings: &[(&str, u64)]) -> Vec<Record> {
 
 /// `S8` where the records place the boot word (the console's injection
 /// less a quantum, 30 750 ns): a timer anchored after it is out of order by
-/// that instant too, so the console's witness is cited beside the boot and
-/// the output's witness; one anchored before it is cited without it.
+/// that instant, cited beside the boot and the output's witness. One
+/// anchored before it shows nothing out of order in any record: the same
+/// finding is then unexplained by name, never software.
 #[test]
 fn s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant() {
     let order = [(campaign::MOTOR_ANCHOR_ORDER_FINDING, 1)];
@@ -1360,7 +1382,11 @@ fn s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant() {
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S8), "{a:?}");
     assert_eq!(named(&r, &a), ["kind 10", "kind 26", "kind 29 CONSOLE"]);
     let r = with_motor(&Case::default(), 6, &order);
-    let a = attributed(&r);
-    assert_eq!(a.rule, Rule::S8, "{a:?}");
-    assert_eq!(named(&r, &a), ["kind 10", "kind 26"]);
+    let a = attributed_any(&r);
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert!(
+        a.unexplained[0]
+            .starts_with("motor_anchor_out_of_order: named 1 time(s), 0 timer(s) anchored after"),
+        "{a:?}"
+    );
 }

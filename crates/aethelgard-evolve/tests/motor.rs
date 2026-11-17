@@ -843,10 +843,6 @@ fn stop_at(r: &[Record]) -> u64 {
     index_of(r, |x| matches!(x, Record::JudgeStop { .. }))
 }
 
-fn boot_at(r: &[Record]) -> u64 {
-    index_of(r, |x| matches!(x, Record::BootObserved { .. }))
-}
-
 fn indices(a: &[aethelgard_evolve::EventRef]) -> Vec<u64> {
     a.iter().map(|e| e.index).collect()
 }
@@ -919,30 +915,25 @@ fn s7_a_timer_started_twice_is_software_by_its_own_witness_alone() {
     assert!(!indices(&a.evidence).contains(&motor1_witness(&r)));
 }
 
-/// `S8`: both anchored timers named out of order: the records say which
-/// (every anchored timer), so each is the firmware's, with the boot word
-/// set (kind 10). Named once of two, with no boot word's instant in the
-/// records (no serial port), they cannot say which: unexplained by name,
-/// never a guess.
+/// `S8` never fires on the verdict alone: the records here hold no boot
+/// word's instant (no serial port), so an anchored timer named out of order,
+/// beside records identical to a passing run's, could only be the boot's
+/// log-line order, which no record carries. Rewriting a passing verdict so
+/// moves the run to `I1`, unexplained by name, never to software.
 #[test]
-fn s8_out_of_order_is_software_only_where_the_records_say_which_timer() {
-    let r = dshot(&[(campaign::MOTOR_ANCHOR_ORDER_FINDING, 2)], &|_| {});
-    let a = attributed(&r);
-    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S8), "{a:?}");
-    assert_eq!(
-        indices(&a.evidence),
-        [boot_at(&r), motor1_witness(&r), m2_witness(&r)]
-    );
-    let r = dshot(&[(campaign::MOTOR_ANCHOR_ORDER_FINDING, 1)], &|_| {});
-    let a = attributed_any(&r);
-    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I1));
-    assert_eq!(a.unexplained.len(), 1, "{a:?}");
-    assert!(
-        a.unexplained[0].starts_with(
-            "motor_anchor_out_of_order: named 1 time(s) of 2 anchored timer(s), 0 anchored after the boot word's instant"
-        ),
-        "{a:?}"
-    );
+fn s8_never_fires_on_a_rewritten_verdict_alone() {
+    for n in [1, 2] {
+        let r = dshot(&[(campaign::MOTOR_ANCHOR_ORDER_FINDING, n)], &|_| {});
+        let a = attributed_any(&r);
+        assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I1), "{n}");
+        assert!(a.evidence.is_empty());
+        assert_eq!(
+            a.unexplained,
+            [format!(
+                "motor_anchor_out_of_order: named {n} time(s), 0 timer(s) anchored after the boot word's instant (kind 29's first injection): the boot's order otherwise (an anchor before the last device step's witness, or no boot word seen by its hook) is in no record"
+            )]
+        );
+    }
 }
 
 /// `S9`: edges before the anchor, by the output's witness.

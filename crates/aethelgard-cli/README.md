@@ -542,7 +542,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 - `masked`, software evidence on an electrically faulted bus, listed and never used;
 - `unexplained`, failing finding kinds that no archived event shows; and, as `{kind}: {what the records lack}`, a window finding whose records cannot decide it (below).
 
-**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`.
+**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`, or `H4` by naming `serial_injection_out_of_order` (which replay cannot bind) in a run nothing else decides: indeterminate either way.
 
 | finding | its events |
 |---|---|
@@ -566,7 +566,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 |---|---|---|
 | `motor_anchor_unobserved` | each kind 26 `unanchored` (edges, no `CEN` rise) | `S6` |
 | `motor_anchor_repeated` | each timer's first kind 26 whose `cen_rises` is above 1 | `S7` |
-| `motor_anchor_out_of_order` | each anchored timer's first kind 26, when the verdict names every one; or exactly those anchored after the boot word's instant (one quantum before kind 29's first injection) | `S8` |
+| `motor_anchor_out_of_order` | each timer's first kind 26 anchored after the boot word's instant (one quantum before kind 29's first injection), when the verdict names exactly those | `S8` |
 | `motor_window_past_run` | each DShot timer's first anchored kind 26 whose anchor plus `DSHOT_WINDOW_NS` passes `MAX_VIRTUAL_NS` | `H1` |
 | `motor_edge_before_anchor` | each kind 26 with `edges_before` | `S9` |
 | `motor_edge_after_window` | each kind 26 with `edges_after`, with its timer's kind 30 at its anchor that left `CEN` cleared | `S10` |
@@ -576,7 +576,7 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `serial_injection_out_of_order` | each kind 29 injected after the chain's first | `H4` |
 
 Where the records cannot decide, the kind is unexplained by name with what they lack, never a guess (`INV-06`):
-- `motor_anchor_out_of_order` named for some anchored timers, not exactly those after the boot word's instant: which ones the boot's order put out of order (before the last device step's witness, or with no boot word seen by its hook) is in no record;
+- `motor_anchor_out_of_order` named other than exactly the timers anchored after the boot word's instant: its other cases (an anchor before the last device step's witness, or no boot word seen by its hook) are the boot's log lines, which no record carries, so only the verdict would say them;
 - `motor_edge_after_window` with no stop at the output's anchor that left `CEN` cleared (a PWM output's window, or a stop that did not run): the edges may be the timer still running;
 - `judge_stop_mismatch` of a register the stop did not read back: an unread register shows no write;
 - `serial_wire_past_run` when the first port took no frame: the boot word's instant is in no record;
@@ -641,13 +641,13 @@ For the twin's window findings (above), six software rules attribute the firmwar
 |---|---|---|---|
 | `S6` | software | the output's witness logged edges with no `CEN` rise by any CPU store of its timer's `CR1` in the boot the judge reads: the firmware drove the pin, or started the timer, by a GPIO or DMA write | 26 |
 | `S7` | software | the timer's `CEN` rose more than once in that boot: the firmware started it again | 26 |
-| `S8` | software | the boot word is set (kind 10) and the timer's anchor is out of the bring-up's order; kind 29's first injection is cited where it places the boot word before the anchor | 10, 26, 29 |
+| `S8` | software | the boot word is set (kind 10) and the timer's anchor (kind 26) is after the boot word's instant, which kind 29's first injection places: the bring-up writes the boot word last | 10, 26, 29 |
 | `S9` | software | the witness shows edges before its timer's anchor: the pin driven before the timer started | 26 |
 | `S10` | software | the witness shows edges after the window the judge's stop closed, `CEN` cleared (kind 30): the timer restarted or the pin driven after it | 26, 30 |
 | `S11` | software | the judge's stop, which left `CEN` cleared, read a solved register of the timer off its solved value: the firmware wrote the timer inside its window | 30 |
 | `H1` | indeterminate | the DShot window's end, its anchor plus `DSHOT_WINDOW_NS`, passes the run's `MAX_VIRTUAL_NS`; the output's `stopped` witness whose last rise reaches the run's end (a `motor_timing_mismatch`, with no register of the output's wrong) is the same bound's | 24, 26 |
 | `H2` | indeterminate | the judge's stop at the anchor plus `DSHOT_WINDOW_NS` did not run, or left `CEN` set (kind 30, cited when present) | 24, 26, 30 |
-| `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing, its framing and writes holding and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
+| `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing or cut short (never `not_counted`), its framing and writes holding and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
 | `H4` | indeterminate | the judge's sequential injection put a port's frame in out of order | 29 |
 
 A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms` but never in another rule's `evidence`, and `I5` never counts it. Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
@@ -694,7 +694,7 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 | `E1`, every piece of evidence a complete rise past its ceiling (kind 7) or a bus fault caused only by one (kind 9) | a proposal per faulted bus, sized below |
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
 | `E2`, `E3` | no rule: a device absent behind its chip select, or an open RX line, is a board fault no value change fixes |
-| `S1` to `S11` | a generator report, with no specification change. `S11` names the timer register its stop read back (kind 30, by kind 11's name); `S6` to `S10`'s evidence (kind 26, and kind 10 with its boot word set) shows no unmet solved expectation, so nothing is reported, saying so |
+| `S1` to `S11` | a generator report, with no specification change. `S11` names the timer register its stop read back (kind 30, by kind 11's name); `S6` to `S10`'s evidence (kinds 26 and 29, kind 10 with its boot word set, and `S10`'s kind 30 with nothing read back off its value) shows no unmet solved expectation, so nothing is reported, saying so |
 | `H1` to `H4` | nothing is proposed, naming the bound: the twin's own, never the device's (`INV-05`) |
 | `N1`, `I1` to `I6` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
