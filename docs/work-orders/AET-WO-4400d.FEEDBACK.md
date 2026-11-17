@@ -390,3 +390,9 @@ Gates on the merge:
 - fmt and host clippy pass.
 - `cargo test --workspace`: 2,167 tests pass. The one failure is `bench_board_tier1`'s package binding, the AWAITING-PACKAGE step.
 - In the tools image: clippy with tier 2 passes; `verify_2k2_tier2` passes 2/2 (1168 s); `with_tools` passes 32/32.
+
+**The package (architect, 16:30 UTC):** bench-package was written by CI on 51357430 (run 44126614524, artifact `bench-package`) and committed unchanged.
+- Against the committed package, only `FAB-NOTES.md`'s specification line and `MANIFEST.json`'s `specification_sha256`, `topology_sha256`, `verdict_sha256` and FAB-NOTES digest moved. The ELF and every fabrication file are byte-identical.
+- That run's two red jobs (gates, tools-shard 4) each failed only `bench_board_tier1`, the binding this package closes.
+- With it: `bench_board_tier1` passes 2/2, and the workspace passes 2,168 tests with 0 failures (132 binaries).
+- main's 9dbac49d since is docs only (AET-WO-4400e and the roadmap). It is not merged.
