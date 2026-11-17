@@ -244,4 +244,11 @@ Kept under `~/.cache/aet-4400c2/evidence/` on Furnace:
 
 **Tier 2** compiles to no test locally (the `with-tools` feature), so CI is its first run of this change. No tier-2 source pins the old platform's sha256 or digests (searched for each).
 
-**Pending CI**, recorded at the READY commit.
+**CI on `7931bce8`** (`main` `f845b6fd` merged):
+- `ci` run 44080759063 is **green**: `gates`, `shards`, and `tools` with all 8 shards; tier-2 `tools_total_passed=2309`, against `TIER2_MIN` 178.
+- `engine-image` 44080759128 is green.
+- **`ardupilot-image` 44080759085 was cancelled in one job:** `generated (serial-dshot-9600)` hung in its own "build the image" step after step 12/12 (`WORKDIR /opt/ardupilot`, 12:14:57) until its 20-minute limit (12:32:20, "The operation was canceled"). Every other job of that run passed: `generated (sentinel-01)` and `(sentinel-02)`, the four `ardupilot` seeds, `image`, `pinned`, `cli` and `source`.
+- **Not this change** (inferred from the log): the step builds the ArduPilot image and touches nothing this work order changes. The same job passed on `3146ea18` (run 44073800942).
+- The read-only token cannot re-run a job. This READY commit's own push starts a fresh `ardupilot-image` run.
+
+**READY**, 2026-11-17: built to the ruling, with no line held back unruled. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.
