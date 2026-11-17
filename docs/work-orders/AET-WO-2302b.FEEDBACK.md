@@ -129,3 +129,43 @@ Every attack was built from records that replay (`check_run`) accepts, written a
 - A mixed PWM-and-DShot timer is refused upstream by the IR (`TimerShared`).
 - Every windowed rule's count equals replay's counter for every run replay accepts, so no plain `I1` exists for the ten kinds.
 - Precedence for existing runs is unchanged, with one intended exception: a DShot `stopped` witness cut at the run's end was `I4` and is now `H1`.
+
+## §4 The fix round, the reduction, the gates
+
+- **The fix round** (one worker): every §3 finding is fixed, each in its own commit, with a test that failed before and passes after; ADV-M4 is documentation only.
+  - Permanent tests:
+    - `adv_m3_cen_set_again_after_the_judge_s_stop_is_unexplained_by_name`
+    - `adv_m3_with_cen_clear_at_the_end_s10_and_s7_stand`
+    - `adv_m3_a_stopped_timer_s_other_field_is_still_s4`
+    - `adv_s1_h3_never_takes_an_echo_whose_rx_pin_was_unrouted_at_the_injection`
+    - `adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous`
+    - `adv_m2_i5_cites_the_judge_s_stop_beside_an_electrical_fault`
+    - `adv_s4_replay_refuses_a_first_injection_under_a_quantum`
+    - `adv_m4_a_cut_witness_joins_s9_s_evidence_only_as_s9_s_own`
+    - `s9_never_fires_on_an_output_with_no_edge_before_its_anchor`
+  - **Mutants, one per new guard:**
+    - the build: 14, 13 killed. The survivor, `cut_by_run`'s DShot check, is equivalent and labelled `belt-and-suspenders:`.
+    - the fix round: the ADV-M3 guards 8, 7 killed. The survivor, the `CEN` mask in `motor_owned_wrong`, is decided first by `judge_only` and labelled. Each other fix's mutants were killed, including the spaced and alternating checks.
+- **Reduction pass (diff): −4 net · 3 duplicates removed · 0 dead paths removed · 6 protected kept · 4 findings.** A fresh worker ran it.
+  - **Removed duplicates:**
+    - the tests' `attributed` now calls `attributed_any`;
+    - the "DShot window ends past the run" check is one `campaign::dshot_window_past_run`, from 4 sites;
+    - the first non-open injection is one `campaign::first_injection`.
+  - **Findings kept:**
+    - S6 and S9 share a loop shape (taste);
+    - the per-variant rule tables predate this work order;
+    - the tests' `CEN_AGAIN` string pins the ruling's text independently. It is unlabelled, so the owner may label it.
+    - helpers duplicated across evolve's test files mostly predate this work order: a `tests/common` candidate at the phase gate.
+  - **Dead code counted by the work order's acceptance:** `I7` with `Scope::Window`, `Run.late`, `outside_window` and `unset_record` (evolve), and `short_window`, `OUTSIDE_WINDOW_FINDING` and their replay bound (chaos), with the four tests that only exercised them. That is about 230 lines (measured, §2).
+- **Gates on the final tree** (`main` at `26e4c620`, 4400b2, merged):
+  - host: `cargo fmt --all -- --check`, `clippy --workspace --all-targets -D warnings` with `with-tools` and without; `cargo test --workspace`: 2 096 passed, 0 failed.
+  - In the pinned image on the tree before that last docs-and-pincheck merge, which touched neither evolve nor chaos: `attribute_seeded` 11/11 (707 s, no seeded attribution changed) and `campaign_tier2` 9/9.
+  - The tier-2 count by CI's `TIER2_RE` is 177, exactly `TIER2_MIN` (`main`'s; this branch adds no tier-2 test).
+- **For the architect:**
+  - `judge_stop_mismatch` is classed software (§1), against the work order's harness example;
+  - ADV-M3's ruling (§3);
+  - departure 2 (§2): `H1`/`H3` take the companion symptoms the bound cut.
+- **Housekeeping:**
+  - every worker worktree and target is removed;
+  - `~/.cache/aet-2302b` keeps logs, the adversary's reproductions and the PR text;
+  - the old `~/aethelgard-2302` worktree is still there. Its teardown was denied by the auto-mode classifier, and the architect asked for it again at 08:30. It is left for the operator: `podman unshare rm -rf ~/aethelgard-2302 && git -C ~/aethelgard-2302b worktree prune`.
