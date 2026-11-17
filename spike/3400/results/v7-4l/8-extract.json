@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"TranslatorPinUnbounded","id":null,"message":"the design puts translator U13 on `IMU_SCK`, and its data pins' capacitance has no stated maximum (SCES935A p. 9, Cio)"}}
