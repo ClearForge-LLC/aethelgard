@@ -11,11 +11,12 @@ use sha2::{Digest, Sha256};
 
 use crate::sexpr::{self, Sx};
 
-/// Every vendored file's path under `data/kicad-10.0.7/` in
-/// `aethelgard-kicad-lib`, and the sha256 its bytes must have. The pins live
+/// Every file's path in `aethelgard-kicad-lib`'s `FILES` (KiCad's, under its
+/// `data/kicad-10.0.7/`, and our own, under `data/aethelgard/`), and the
+/// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 41] = [
+const PINS: [(&str, &str); 46] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -175,6 +176,27 @@ const PINS: [(&str, &str); 41] = [
     (
         "symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
         "1d1a1427556c4e89fc7d30fcbd418120ebbe9c0b774cabda08843ac5f6742848",
+    ),
+    // Our own (`AET-WO-4220b`, MIT OR Apache-2.0): `data/aethelgard/`.
+    (
+        "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
+        "5ee1738db4ee82b091bd24536bf2e74d8bfc6b4bc16b31cf5d3bcefcc05c2608",
+    ),
+    (
+        "footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
+        "56a4ce03c78f1409732c4d3783174b9865882608d6d0e1e4d218e15dc250ba82",
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym",
+        "1d85734054b68821e489173e838f6aeb31afe42c186b15ef0e93eb27781f666b",
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym",
+        "782551acb98cd228716af64e10aeac3ed0dcf65aba4130af92179062011c127a",
+    ),
+    (
+        "aethelgard/README.md",
+        "306da7fa0dfdedc3f53d4df12b6e5d7e6b3593df6d94fd765750220b8b3f9527",
     ),
     (
         "LICENSE.md",

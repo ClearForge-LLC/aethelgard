@@ -76,15 +76,11 @@ jobs:
             files=$(tar -tzf "$crate" | grep -v '/$' | sed 's|^[^/]*/||')
             size=$(stat -c %s "$crate")
             test "$size" -lt $((10 * 1024 * 1024)) || { echo "$c: $size bytes is over the 10 MiB crates.io limit"; exit 1; }
-            # kicad-lib is CC-BY-SA-4.0: KiCad's LICENSE.md is its licence, and it carries neither MIT nor Apache.
-            need="README.md"
+            # kicad-lib is CC-BY-SA-4.0 AND (MIT OR Apache-2.0): KiCad's files with KiCad's LICENSE.md,
+            # and our own (AET-WO-4220b) with ours and their README.
+            need="README.md LICENSE-MIT LICENSE-APACHE"
             if [ "$c" = aethelgard-kicad-lib ]; then
-              need="$need data/kicad-10.0.7/LICENSE.md"
-              for f in LICENSE-MIT LICENSE-APACHE; do
-                if printf '%s\n' "$files" | grep -qxF "$f"; then echo "$c: $f must not be in the package"; exit 1; fi
-              done
-            else
-              need="$need LICENSE-MIT LICENSE-APACHE"
+              need="$need data/kicad-10.0.7/LICENSE.md data/aethelgard/README.md"
             fi
             if [ "$c" = aethelgard-svd-hal ]; then
               need="$need data/st-cmsis-device-h7/LICENSE.md data/st-cmsis-device-h7/SOURCE.md data/st-open-pin-data/LICENSE data/st-open-pin-data/SOURCE.md"

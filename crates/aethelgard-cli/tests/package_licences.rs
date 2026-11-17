@@ -5,8 +5,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PUBLISHED: [&str; 9] = [
+const PUBLISHED: [&str; 10] = [
     "crates/aethelgard-ir",
+    // Our own symbols and footprints (`AET-WO-4220b`) are MIT OR Apache-2.0.
+    "crates/aethelgard-kicad-lib",
     "crates/aethelgard-svd-hal",
     "crates/aethelgard-eda",
     "crates/aethelgard-twin",
@@ -17,7 +19,8 @@ const PUBLISHED: [&str; 9] = [
     "models/renode",
 ];
 
-/// CC-BY-SA-4.0, with KiCad's own `LICENSE.md` as its licence: it carries neither.
+/// `CC-BY-SA-4.0 AND (MIT OR Apache-2.0)`: KiCad's files with KiCad's own
+/// `LICENSE.md`, and ours (`AET-WO-4220b`) with the two above.
 const KICAD_LIB: &str = "aethelgard-kicad-lib";
 
 fn root() -> PathBuf {
@@ -37,13 +40,8 @@ fn every_published_crate_holds_byte_identical_licence_files() {
 }
 
 #[test]
-fn kicad_lib_carries_its_own_licence_and_neither_of_ours() {
+fn kicad_lib_carries_kicads_licence_beside_ours() {
     let dir = root().join("crates").join(KICAD_LIB);
     assert!(dir.join("data/kicad-10.0.7/LICENSE.md").is_file());
-    for file in ["LICENSE-MIT", "LICENSE-APACHE"] {
-        assert!(
-            !dir.join(file).exists(),
-            "{KICAD_LIB} must not carry {file}"
-        );
-    }
+    assert!(dir.join("data/aethelgard/README.md").is_file());
 }

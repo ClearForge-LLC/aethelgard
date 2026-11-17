@@ -2311,7 +2311,7 @@ fn a_part_the_table_does_not_hold_is_refused() {
     assert_refusal(err.clone(), "UnknownPart", Some("U4"));
     assert_eq!(
         err.to_string(),
-        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, W25Q64JVxIQ, ICM20948"
+        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P"
     );
     devs(&mut spec).i2c[1].part = "LM75".into();
     assert_refusal(spec.validate().unwrap_err(), "UnknownPart", Some("U3"));
