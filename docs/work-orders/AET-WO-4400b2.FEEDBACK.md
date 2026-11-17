@@ -231,3 +231,13 @@ Three tests outside pincheck and ir changed one assertion each, forced by F4 (§
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (126 test binaries) all pass [measured].
 - No tier-2 test was added, so `TIER2_MIN` stays at main's 176 (2302, merged in).
 - No specification version moves.
+
+## 9. Status: READY
+
+- **CI** is green on 08f79cfa, with every job passing or skipping [measured]:
+  - `ci`, including the tier-2 shards at `TIER2_MIN` 176;
+  - `ardupilot-image`, including `pinout` on step G, the three seeds and the three generated boards;
+  - `engine-image` and `tools-image`.
+- **What changed since:** main's docs-only #198 merged in, and this section.
+- **Open for the architect:** D1–D3 (§5) and the three files outside the fence (§7).
+- The scratch kit is removed. The only file left is `~/.cache/aet-4400b2/pr-title-body.md`.
