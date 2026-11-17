@@ -568,10 +568,6 @@ fn place(
     }
     let order = grouped;
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
-    // For [`compact`]: each part's anchor, and the gap the placer gave it
-    // (its reserve, whether it is an IC, its place in the order).
-    let mut anchor_of: Vec<Option<usize>> = vec![None; items.len()];
-    let mut rule: Vec<Rule> = vec![Rule::default(); items.len()];
     // The approach to each declared pair's MCU pins, kept clear of every
     // part placed after the MCU (`AET-WO-4300g` D5, lever 2; `AET-WO-1310`).
     let mut approach: Vec<Rect> = Vec::new();
@@ -590,12 +586,6 @@ fn place(
                 keep: g.keep.shift(ORIGIN),
             });
             approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
-            // The MCU is an IC: every IC keeps `IC_GAP_NM` from it.
-            rule[i] = Rule {
-                reserve: None,
-                ic: true,
-                step,
-            };
             continue;
         }
         // The anchor: an IC already placed.
@@ -639,12 +629,6 @@ fn place(
                 (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
             })
             .max();
-        anchor_of[i] = Some(anchor);
-        rule[i] = Rule {
-            reserve,
-            ic: is_ic(item.part),
-            step,
-        };
         let taken: Vec<(Rect, i64)> = (0..items.len())
             .filter_map(|j| {
                 let both = is_ic(items[j].part) && is_ic(item.part);
@@ -683,7 +667,6 @@ fn place(
         });
     }
     let plan = if bounded {
-        compact(items, &mut placed, &anchor_of, &rule, &approach);
         BOUNDED_PLAN
     } else {
         EdgePlan::Bottom { gap: IC_GAP_NM }
@@ -694,109 +677,6 @@ fn place(
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
     Ok((placed, edges))
-}
-
-/// The gap the placer gave a part: an IC owning anchored parts keeps its
-/// reserve from every part placed before it, an IC [`IC_GAP_NM`] from every
-/// IC, any other part [`GAP_NM`]; the later of two parts' rule decides.
-#[derive(Clone, Copy, Default)]
-struct Rule {
-    reserve: Option<i64>,
-    ic: bool,
-    step: usize,
-}
-
-impl Rule {
-    fn gap(a: Rule, b: Rule) -> i64 {
-        let later = if a.step >= b.step { a } else { b };
-        match (later.reserve, a.ic && b.ic) {
-            (Some(r), _) => r,
-            (None, true) => IC_GAP_NM,
-            (None, false) => GAP_NM,
-        }
-    }
-}
-
-/// `AET-WO-1313` D1, (a): after the placer, each IC but the MCU, with every
-/// part placed beside it, moves as one rigid group, a [`STEP`] at a time
-/// toward the MCU's courtyard centre (x, then y), while every member keeps
-/// its [`Rule`] gap from every other part and stays out of the approach
-/// strips. Groups go in reference order, round after round, until none
-/// moves. A decoupling capacitor moves with its IC, so it stays by its pin.
-fn compact(
-    items: &[Item<'_>],
-    placed: &mut [Option<Placed>],
-    anchor_of: &[Option<usize>],
-    rule: &[Rule],
-    approach: &[Rect],
-) {
-    let Some(mcu) = (0..items.len())
-        .find(|&i| items[i].part.lib_id.starts_with("MCU_"))
-        .and_then(|i| placed[i].as_ref())
-        .map(|p| p.courtyard.centre())
-    else {
-        return;
-    };
-    let mut groups: Vec<(&str, Vec<usize>)> = (0..items.len())
-        .filter(|&i| {
-            is_ic(items[i].part) && !items[i].part.lib_id.starts_with("MCU_") && placed[i].is_some()
-        })
-        .map(|i| {
-            let mut members = vec![i];
-            members.extend((0..items.len()).filter(|&j| anchor_of[j] == Some(i)));
-            (items[i].part.reference.as_str(), members)
-        })
-        .collect();
-    groups.sort();
-    // Each move brings a group a STEP nearer the MCU on one axis, so the
-    // rounds end; the bound is the board's reach, 2 * RINGS steps.
-    for _ in 0..2 * RINGS {
-        let mut moved = false;
-        for (_, members) in &groups {
-            let Some(c) = members
-                .iter()
-                .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
-                .reduce(Rect::union)
-                .map(Rect::centre)
-            else {
-                continue;
-            };
-            for d in [
-                ((mcu.0 - c.0).signum() * STEP, 0),
-                (0, (mcu.1 - c.1).signum() * STEP),
-            ] {
-                if d == (0, 0) {
-                    continue;
-                }
-                let clear = members.iter().all(|&m| {
-                    let Some(p) = placed[m].as_ref() else {
-                        return true;
-                    };
-                    let k = p.keep.shift(d);
-                    approach.iter().all(|a| !a.overlaps(k))
-                        && (0..items.len()).all(|o| {
-                            members.contains(&o)
-                                || placed[o].as_ref().is_none_or(|q| {
-                                    !q.keep.overlaps(k.grow(Rule::gap(rule[m], rule[o])))
-                                })
-                        })
-                });
-                if clear {
-                    for &m in members {
-                        if let Some(p) = placed[m].as_mut() {
-                            p.origin = (p.origin.0 + d.0, p.origin.1 + d.1);
-                            p.keep = p.keep.shift(d);
-                            p.courtyard = p.courtyard.shift(d);
-                        }
-                    }
-                    moved = true;
-                }
-            }
-        }
-        if !moved {
-            break;
-        }
-    }
 }
 
 /// Where the connectors go (`AET-WO-1313` D1). With no bound declared, the
@@ -2382,34 +2262,6 @@ mod tests {
             ["U1", "U2", "U9", "R1"]
         );
         assert_eq!(names(placing_order(&items, true)), ["U1", "U9", "U2", "R1"]);
-    }
-
-    /// (a) keeps the placer's gaps: after compaction every IC is at least
-    /// [`IC_GAP_NM`] from the MCU and from every other IC (the MCU's 1 mm,
-    /// ruled D1), and no two keep-out boxes are nearer than [`GAP_NM`].
-    #[test]
-    fn compaction_keeps_every_ic_gap_including_the_mcus() {
-        let parts = vec![
-            mcu(&[("34", net("SDA")), ("35", net("SCL"))]),
-            bme("U2"),
-            bme("U3"),
-            bme("U4"),
-        ];
-        let items = items(&parts).unwrap();
-        let l = layout_of(&items, &[], &[], Some(bound(100, 100))).unwrap();
-        for (i, a) in l.placed.iter().enumerate() {
-            for b in &l.placed[i + 1..] {
-                let both_ic = is_ic(&parts[i])
-                    && parts.iter().any(|p| p.reference == b.reference && is_ic(p));
-                let gap = if both_ic { IC_GAP_NM } else { GAP_NM };
-                assert!(
-                    !a.keep.grow(gap).overlaps(b.keep),
-                    "{} is within {gap} nm of {}",
-                    a.reference,
-                    b.reference
-                );
-            }
-        }
     }
 
     /// Connectors go at the bottom edge, in reference order.
