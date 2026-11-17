@@ -378,7 +378,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 47] = [
+    const DATA: [&str; 51] = [
         "data/aethelgard/README.md",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
@@ -426,6 +426,11 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/symbols/power.kicad_symdir/+3V3.kicad_sym",
         "data/kicad-10.0.7/symbols/power.kicad_symdir/GND.kicad_sym",
         "data/kicad-10.0.7/symbols/power.kicad_symdir/PWR_FLAG.kicad_sym",
+        // `AET-WO-1312`: the test point and the reset switch.
+        "data/kicad-10.0.7/footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
+        "data/kicad-10.0.7/footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod",
+        "data/kicad-10.0.7/symbols/Connector.kicad_symdir/TestPoint.kicad_sym",
+        "data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);

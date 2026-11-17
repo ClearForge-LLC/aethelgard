@@ -45,6 +45,17 @@ pub(crate) const R: &str = "Device:R";
 pub(crate) const C: &str = "Device:C";
 const R_FOOTPRINT: &str = "Resistor_SMD:R_0402_1005Metric";
 const C_FOOTPRINT: &str = "Capacitor_SMD:C_0402_1005Metric";
+/// A test point (`AET-WO-1312`): KiCad's own symbol and a 1.0 mm pad, both
+/// vendored. The pad is bare copper, so nothing is bought or placed for it.
+pub(crate) const TEST_POINT: &str = "Connector:TestPoint";
+const TEST_POINT_FOOTPRINT: &str = "TestPoint:TestPoint_Pad_D1.0mm";
+/// The reset push-button (`AET-WO-1312`): KiCad's `SW_Push` symbol on C&K's
+/// PTS810 footprint, both vendored. The part is C&K PTS810 SJM 250 SMTR LFS
+/// (the footprint's own datasheet link, ckswitches.com pts810.pdf; listed
+/// "Active" by digikey.sg, read by `AET-WO-3400`, FEEDBACK T8).
+pub(crate) const SWITCH: &str = "Switch:SW_Push";
+const SWITCH_FOOTPRINT: &str = "Button_Switch_SMD:SW_SPST_PTS810";
+const SWITCH_VALUE: &str = "PTS810 SJM 250 SMTR LFS";
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum EmitError {
@@ -532,6 +543,18 @@ impl Builder<'_> {
         Conn::Rail(GND.to_owned())
     }
 
+    /// A net the specification declares, as a connector pin or test point
+    /// names it: `GND` or a domain as its rail, any other as a label.
+    fn declared(&mut self, net: &str) -> Conn {
+        if net == GND {
+            self.ground()
+        } else if self.spec.voltage_domains.iter().any(|d| d.id == net) {
+            self.rail(net)
+        } else {
+            Conn::Net(net.to_owned())
+        }
+    }
+
     /// A bidirectional pin strapped to a rail, through a resistor.
     fn strap(&mut self, reference: &str, pin: &str, rail: Conn) -> Result<Conn, EmitError> {
         let net = self.own_net(format!("{reference}_{pin}"))?;
@@ -581,7 +604,15 @@ pub fn emit_moved(
     let stack = crate::stack::Stack::of(spec);
     Ok(Emission {
         schematic: write_sheet(&spec.project_name, &parts, &rails)?,
-        bom: crate::bom::write(&parts.iter().map(BomRow::from).collect::<Vec<_>>()),
+        // A test point is a bare pad: its symbol is out of the BOM, as its
+        // footprint is (`AET-WO-1312`).
+        bom: crate::bom::write(
+            &parts
+                .iter()
+                .filter(|p| p.lib_id != TEST_POINT)
+                .map(BomRow::from)
+                .collect::<Vec<_>>(),
+        ),
         board: crate::pcb::write_moved(&spec.project_name, &parts, &stack, moves)?,
     })
 }
@@ -682,6 +713,7 @@ pub(crate) fn design(
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
+        .chain(spec.declared_test_points().iter().map(|t| &t.reference))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -990,7 +1022,74 @@ pub(crate) fn design(
         )?;
     }
     connectors(&mut b)?;
+    bench(&mut b, &mcu_ref)?;
     Ok((b.parts, b.rails))
+}
+
+/// Bench access (`AET-WO-1312`), after every other part so that no other
+/// part's reference moves: BOOT0's pull-down when a connector pin or test
+/// point carries `BOOT0` (anchored by the boot pin), the reset switch from
+/// `NRST` to `GND`, then each test point in document order, on its net as a
+/// connector pin would be.
+fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
+    let spec = b.spec;
+    if aethelgard_ir::bench::carries_boot0(spec) {
+        let pin = support::row(&spec.mcu.part)?
+            .group("BOOT0")
+            .first()
+            .cloned()
+            .ok_or_else(|| EmitError::Internal("the MCU's row has no BOOT0 pin".into()))?;
+        let gnd = b.ground();
+        b.passive(
+            'R',
+            ohms(aethelgard_ir::bench::BOOT0_PULL_DOWN_OHMS),
+            Conn::Net(aethelgard_ir::BOOT0.to_owned()),
+            gnd,
+        )?;
+        if let Some(r) = b.parts.last_mut() {
+            r.owner = Some(Owner {
+                ic: mcu.to_owned(),
+                anchor: Some(Anchor {
+                    pads: vec![("1".into(), pin)],
+                    loop_rule: None,
+                }),
+                decouples: false,
+            });
+        }
+    }
+    if let Some(reference) = aethelgard_ir::bench::switch_reference(spec) {
+        b.used
+            .claim(&reference)
+            .map_err(|holder| collision(&reference, holder, EmitError::DuplicateReference))?;
+        let gnd = b.ground();
+        b.parts.push(Part {
+            lib_id: SWITCH,
+            reference,
+            value: SWITCH_VALUE.to_owned(),
+            footprint: SWITCH_FOOTPRINT.to_owned(),
+            conns: BTreeMap::from([
+                ("1".into(), Conn::Net(aethelgard_ir::NRST.to_owned())),
+                ("2".into(), gnd),
+            ]),
+            note: None,
+            owner: None,
+            offboard: BTreeMap::new(),
+        });
+    }
+    for t in spec.declared_test_points() {
+        let conn = b.declared(&t.net);
+        b.parts.push(Part {
+            lib_id: TEST_POINT,
+            reference: t.reference.clone(),
+            value: "TestPoint".to_owned(),
+            footprint: TEST_POINT_FOOTPRINT.to_owned(),
+            conns: BTreeMap::from([("1".into(), conn)]),
+            note: None,
+            owner: None,
+            offboard: BTreeMap::new(),
+        });
+    }
+    Ok(())
 }
 
 /// Each declared connector, after every other part: a pin's net is drawn as
@@ -1009,9 +1108,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
         for p in &c.pins {
             let conn = match p.net.as_deref() {
                 None => Conn::NoConnect,
-                Some(GND) => b.ground(),
-                Some(n) if spec.voltage_domains.iter().any(|d| d.id == n) => b.rail(n),
-                Some(n) => Conn::Net(n.to_owned()),
+                Some(n) => b.declared(n),
             };
             conns.insert(p.pin.clone(), conn);
             if let Some(o) = &p.offboard {
@@ -1155,6 +1252,14 @@ impl Sheet<'_> {
         ];
         for flag in ["exclude_from_sim", "in_bom", "on_board"] {
             let val = sym.child(flag).and_then(|f| f.arg(1)).unwrap_or("yes");
+            // KiCad's test point symbol is in the BOM and its pad footprint is
+            // not; parity refuses the pair, and a bare pad is bought by no one
+            // (`AET-WO-1312`).
+            let val = if lib_id == TEST_POINT && flag == "in_bom" {
+                "no"
+            } else {
+                val
+            };
             v.push(Sx::node(flag, &[val]));
         }
         v.push(Sx::node("dnp", &["no"]));
