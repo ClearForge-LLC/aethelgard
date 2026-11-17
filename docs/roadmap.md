@@ -762,6 +762,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | A `GND` test pad cannot be placed beside the test points it serves: the placer puts it by its own rule, whatever the specification's order (Sentinel-01, 25.8–31.5 mm from TP11–TP14) | `3402` F1, Q2 (a), #203 | `AET-WO-1313b` (placement) |
 | Model divergences measured under unmodified ArduPilot: TIM5's model at a fixed 250 MHz (ArduPilot's clock runs 1.25× virtual time); `usart1` at a fixed 200 MHz | `4400c`, #202 | architecture §2, the next docs PR; the foreign-firmware judge |
 | ArduPilot's BMP581 driver configures with three single-byte writes (`0x37←00`, `0x36←72`, `0x37←3D`), never the `4210` script's `0x36 ← 0x40 0x81` | `4400c`, #202 | the foreign-firmware judge (a script per firmware, or identity and data only) |
+
 ## 8. Amendments
 
 | Date | Section | Change | Rationale |
