@@ -4408,6 +4408,28 @@ mod tests {
             })),
             ["judge_stop_mismatch"]
         );
+        // A stop that read fewer words back than its timer has registers,
+        // and a stop of another anchor than the timer's (no stop of its own).
+        assert_eq!(
+            kinds(with(&|l| {
+                let n = l.len();
+                l[n - 2] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-STOP 2 3067 203067 81",
+                );
+            })),
+            ["judge_stop_mismatch"]
+        );
+        assert_eq!(
+            kinds(with(&|l| {
+                let n = l.len();
+                l[n - 2] = at(
+                    2_030_670,
+                    "[WARNING] sysbus: AETHELGARD-STOP 2 3066 203067 81 81",
+                );
+            })),
+            ["judge_stop_missing"]
+        );
         // Edges with no anchor observed (a CR1 written by DMA).
         let (f, w) = judge_anchors(
             &with(&|l| {
