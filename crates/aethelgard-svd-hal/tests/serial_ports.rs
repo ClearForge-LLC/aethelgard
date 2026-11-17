@@ -42,6 +42,14 @@ fn strip_serial(solved: &mut SolvedTopology) {
     solved
         .assignments
         .retain(|_, a| !serial::PERIPHERALS.contains(&a.peripheral.as_str()));
+    // The stored speeds of the pins removed go too (`AET-WO-4400b` D2).
+    let kept: Vec<String> = solved
+        .assignments
+        .keys()
+        .chain(solved.gpio.keys())
+        .cloned()
+        .collect();
+    solved.pin_speeds.retain(|net, _| kept.contains(net));
 }
 
 /// What the CLI passes: the twin's model table.
@@ -87,6 +95,8 @@ fn insert_ports(solved: &mut SolvedTopology, ports: &[Port]) {
         let up = label.to_ascii_uppercase();
         let (tx_net, rx_net) = (format!("{up}_TX"), format!("{up}_RX"));
         for (net, pin, line) in [(&tx_net, tx, "TX"), (&rx_net, rx, "RX")] {
+            // A serial line's stored speed is `00` (`AET-WO-4400b` D2).
+            solved.pin_speeds.insert(net.clone(), 0);
             solved.assignments.insert(
                 net.clone(),
                 PinAssignment {

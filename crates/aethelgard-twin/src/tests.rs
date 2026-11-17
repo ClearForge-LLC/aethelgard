@@ -26,6 +26,8 @@ pub(crate) fn pre_serial() -> SolvedTopology {
     let mut t = bare();
     t.serial_ports.clear();
     t.assignments.retain(|net, _| !net.starts_with("CONSOLE_"));
+    // The removed pins' stored speeds go too (`AET-WO-4400b` D2).
+    t.pin_speeds.retain(|net, _| !net.starts_with("CONSOLE_"));
     t
 }
 

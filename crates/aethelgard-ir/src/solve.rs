@@ -490,36 +490,41 @@ fn solve_inner(
 /// other pin, which the speed check does not judge (`AET-WO-4300c` D1, D3,
 /// D4). A line no selectable speed serves is refused by name.
 fn pin_speeds(t: &SolvedTopology) -> Result<BTreeMap<String, u8>, SolveError> {
-    let table = crate::speeds::table().map_err(SolveError::InvalidSpecification)?;
-    let pins = t
-        .assignments
-        .iter()
-        .map(|(net, a)| (net, &a.pin))
-        .chain(t.gpio.iter());
     let mut out = BTreeMap::new();
-    for (net, pin) in pins {
-        let speed = match t.spi_lines.get(net) {
-            None => 0,
-            Some(line) => {
-                table
-                    .choose(
-                        pin,
-                        line.rate_hz,
-                        line.vdd_min_millivolts,
-                        line.capacitance_femtofarads,
-                        line.rise_time_ns,
-                    )
-                    .map_err(|refusal| SolveError::PinSpeed {
-                        net: net.clone(),
-                        pin: pin.clone(),
-                        refusal,
-                    })?
-                    .ospeedr
-            }
-        };
-        out.insert(net.clone(), speed);
+    for (net, pin) in solved_pins(t) {
+        out.insert(net.clone(), pin_speed(t, net, pin)?);
     }
     Ok(out)
+}
+
+/// Every solved pin, `assignments` then `gpio`, as (net, pin).
+pub(crate) fn solved_pins(t: &SolvedTopology) -> impl Iterator<Item = (&String, &String)> {
+    t.assignments
+        .iter()
+        .map(|(net, a)| (net, &a.pin))
+        .chain(t.gpio.iter())
+}
+
+/// One pin's speed, as [`pin_speeds`] gives it.
+pub(crate) fn pin_speed(t: &SolvedTopology, net: &str, pin: &str) -> Result<u8, SolveError> {
+    let Some(line) = t.spi_lines.get(net) else {
+        return Ok(0);
+    };
+    let table = crate::speeds::table().map_err(SolveError::InvalidSpecification)?;
+    table
+        .choose(
+            pin,
+            line.rate_hz,
+            line.vdd_min_millivolts,
+            line.capacitance_femtofarads,
+            line.rise_time_ns,
+        )
+        .map(|c| c.ospeedr)
+        .map_err(|refusal| SolveError::PinSpeed {
+            net: net.to_owned(),
+            pin: pin.to_owned(),
+            refusal,
+        })
 }
 
 /// Serial port `label`, placed on `peripheral`: its kernel clock, then

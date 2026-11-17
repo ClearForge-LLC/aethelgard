@@ -146,6 +146,7 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-cli/src/elf.rs", Role::Other),
     ("aethelgard-cli/src/firmware.rs", Role::Other),
     ("aethelgard-cli/src/generate.rs", Role::Other),
+    ("aethelgard-cli/src/hwdef.rs", Role::Other),
     ("aethelgard-cli/src/input.rs", Role::Other),
     ("aethelgard-cli/src/kani.rs", Role::Other),
     ("aethelgard-cli/src/ledger.rs", Role::Other),
