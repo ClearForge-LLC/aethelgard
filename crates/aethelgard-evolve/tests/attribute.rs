@@ -1605,12 +1605,13 @@ fn every_rule_is_found_by_its_id_and_nothing_else_is() {
     }
     let mut ids: Vec<&str> = Rule::ALL.iter().map(|r| r.id()).collect();
     ids.dedup();
-    // Sixteen since `AET-WO-2302` added `E3` (fifteen since `AET-WO-3201`
-    // added `I7`, fourteen since `AET-WO-4300b` added `S5` and `I6`, twelve
-    // since `AET-WO-4300a` added `S4`, eleven since `AET-WO-4200` added `E2`
-    // and `S3`).
-    assert_eq!(ids.len(), 16, "sixteen rules, sixteen distinct ids");
-    for other in ["", "e1", "E4", "S6", "I8", "I0", "N1 ", "i7"] {
+    // Twenty-five since `AET-WO-2302b` added `S6` to `S11` and `H1` to `H4`
+    // and removed `I7` (sixteen since `AET-WO-2302` added `E3`, fifteen
+    // since `AET-WO-3201` added `I7`, fourteen since `AET-WO-4300b` added
+    // `S5` and `I6`, twelve since `AET-WO-4300a` added `S4`, eleven since
+    // `AET-WO-4200` added `E2` and `S3`).
+    assert_eq!(ids.len(), 25, "twenty-five rules, twenty-five distinct ids");
+    for other in ["", "e1", "E4", "S12", "I7", "I0", "H0", "H5", "N1 ", "h1"] {
         assert_eq!(Rule::from_id(other), None, "`{other}` names no rule");
     }
 }

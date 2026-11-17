@@ -323,11 +323,19 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
         replay_dir(&dir),
         Err(E::TimestampRegressed { index: 1 })
     ));
-    // A timestamp that does not fit in a u64 is a codec refusal, not a wrap.
+    // A timestamp of u64::MAX, the most CBOR's eight bytes hold, decodes
+    // whole, never wrapped: this event is refused by its payload's length,
+    // after the codec read it (`AET-WO-2302b`: asserted by name).
     let mut big = vec![0x83, 0x00, 0x1b];
     big.extend([0xff; 8]);
     big.extend([0x00, 0x00]);
-    assert!(raw_with_event("tsmax-ok", big).is_err());
+    assert!(matches!(
+        raw_with_event("tsmax-ok", big),
+        Err(E::MalformedEvent {
+            reason: "event payload has the wrong length",
+            ..
+        })
+    ));
 }
 
 #[test]
