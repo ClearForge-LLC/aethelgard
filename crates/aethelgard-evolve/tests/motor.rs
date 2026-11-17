@@ -1495,3 +1495,37 @@ fn adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous() {
     });
     assert_eq!(campaign::check_run(&unpaired).err(), Some(WITNESS_REFUSED));
 }
+
+/// ADV-M2: `I5` names both halves' evidence, so a software window rule
+/// citing the judge's stop (kind 30: `S11`'s read-back off its value, or
+/// `S10`'s stop that cleared `CEN`) beside the reference bus past its
+/// ceiling (`E1`) is `I5` citing kind 30, which `I5` allows: every evidence
+/// kind is one the named rule allows ([`attributed`] checks it).
+#[test]
+fn adv_m2_i5_cites_the_judge_s_stop_beside_an_electrical_fault() {
+    let s11 = |r: &mut Vec<Record>| set_stop(r, |g, _| g[9].observed = Some(41));
+    let s10 = |r: &mut Vec<Record>| {
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness { edges_after, .. } = w {
+                *edges_after = 5;
+            }
+        })
+    };
+    for (kind, edit) in [
+        (
+            campaign::JUDGE_STOP_MISMATCH_FINDING,
+            &s11 as &dyn Fn(&mut Vec<Record>),
+        ),
+        (campaign::MOTOR_EDGE_AFTER_FINDING, &s10),
+    ] {
+        let mut r = dshot(&[(campaign::PAST_CEILING_FINDING, 2), (kind, 1)], edit);
+        fault_sensors(&mut r);
+        let a = attributed(&r);
+        assert_eq!(
+            (a.domain, a.rule),
+            (Domain::Indeterminate, Rule::I5),
+            "{a:?}"
+        );
+        assert!(indices(&a.evidence).contains(&stop_at(&r)), "{a:?}");
+    }
+}
