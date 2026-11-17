@@ -964,7 +964,7 @@ fn each_added_spi_wires_its_own_receive_request_and_spi6_names_its_absence() {
             "{p}: {block}"
         );
         match n {
-            Some(n) => assert!(block.contains(&format!("IRQ -> nvic@")) && block.ends_with(&format!("    DMARecieve -> dmamux1@{n}")), "{p}: {block}"),
+            Some(n) => assert!(block.contains("IRQ -> nvic@") && block.ends_with(&format!("    DMARecieve -> dmamux1@{n}")), "{p}: {block}"),
             None => assert!(text.contains(&format!("// {p}: {p}_BASE and {p}_IRQn from the header, no receive DMA line (its request is on DMAMUX2, which Renode does not declare);")), "{text}"),
         }
     }

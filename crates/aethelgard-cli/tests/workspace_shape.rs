@@ -509,6 +509,10 @@ const TWIN_RENODE_DATA: [&str; 5] = [
     "tests/renode-1.17.0/platforms/cpus/stm32h753.repl",
 ];
 
+/// The data files the twin reads at build time: the DMAMUX1 request table,
+/// transcribed with its citation from RM0433 Rev 9 Table 124 (`AET-WO-4400c2`).
+const TWIN_DATA: [&str; 1] = ["data/dmamux1-spi-rx.tsv"];
+
 /// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
 /// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
 /// no longer a re-export stub. Its files, manifest keys and dependencies are
@@ -523,10 +527,11 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
             || LICENCE_FILES.contains(&file.as_str())
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
-            || TWIN_RENODE_DATA.contains(&file.as_str());
+            || TWIN_RENODE_DATA.contains(&file.as_str())
+            || TWIN_DATA.contains(&file.as_str());
         assert!(allowed, "twin has a file outside the allowed set: {file}");
     }
-    for file in TWIN_RENODE_DATA {
+    for file in TWIN_RENODE_DATA.iter().chain(&TWIN_DATA) {
         assert!(root().join(TWIN).join(file).exists(), "missing {file}");
     }
     let twin = manifest(TWIN);

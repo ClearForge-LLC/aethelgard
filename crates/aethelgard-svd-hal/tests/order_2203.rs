@@ -159,6 +159,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// changes no generator of these: with the old specification's sha256
 /// (`12ea89f8…9a2e`) put back in each text, the three are `b4c0b9a0…8ec2`,
 /// `f0b5a670…d67f` and `ba58ff9e…cdad` exactly; the boot image did not move.
+/// Moved once more by `AET-WO-4400c2` (spi1's receive DMA request, ruled on
+/// PR #204): with its two edits undone (the `DMARecieve -> dmamux1@37` line
+/// and the comment's clause), both platform texts are `a81a65b3…5fdc` and
+/// `292791aa…d388` exactly (measured); `main.rs` and the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -166,11 +170,11 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform",
-        "a81a65b312fc0957c3f0eee45c415074a97e0cfffab2ff1b83b12f4f94a55fdc",
+        "ea5846dff2a098b9a99efd03eed9d9f9f2de2fefe87a05274d220e2aa37ac72a",
     ),
     (
         "platform faulted",
-        "292791aa1391c6eb8004dd58de32ae2681a4fa2e14d5b2cf21c5faf420b5d388",
+        "72948365372ff8e8daa69067acdb4e32de5766c0361be75e45a799c9c13ef2dc",
     ),
     (
         "boot image",
