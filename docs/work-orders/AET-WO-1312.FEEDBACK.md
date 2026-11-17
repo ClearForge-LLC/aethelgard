@@ -39,6 +39,7 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   - `order_2203`'s three (`b738cc97…912f`, `b27e162f…31cd`, `8e390d00…c21e`); the boot image did not move.
   - Each is recorded beside its constant, as earlier bumps did.
   - `crates/aethelgard-cli/README.md`'s example hash prefix moved too.
+  - `verify_2k2_tier2.rs` pins the reference's hash prefix in `FAB-NOTES.md` (`3f89077c` to `eebb4b90`). It runs only in the image, so my local suite missed it and CI's first run on this branch (shard 1) caught it [measured].
 - Version tests: `UnsupportedSchemaVersion` now expects 13, a version-12 file is refused by its version (library and CLI, with and without the new fields), and 12 joined the refused list.
 - `spike/3400/**` was not bumped (§3).
 
