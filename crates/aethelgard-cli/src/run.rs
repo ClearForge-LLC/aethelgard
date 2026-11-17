@@ -395,6 +395,9 @@ pub struct Output {
     pub sandbox: SandboxReport,
     /// Log lines a [`LogFilter`] dropped from stdout; 0 without one.
     pub dropped_log_lines: u64,
+    /// A bounded run's peak tree RSS in KiB, sampled with the memory bound
+    /// every 100 ms (`AET-WO-2302` D6); `None` for an unbounded run.
+    pub peak_rss_kib: Option<u64>,
 }
 
 /// A bounded reading of a tool's stdout for a tool whose log can flood it
@@ -577,6 +580,7 @@ impl Invocation<'_> {
             stderr,
             sandbox,
             dropped_log_lines,
+            peak_rss_kib: peak_of(&status),
         })
     }
 }
@@ -816,7 +820,9 @@ fn at_the_cap(dir: &Path) -> Option<PathBuf> {
 
 /// The status file holds one line about the sandbox, then one about how the
 /// tool ended: `sandbox abi=8 uid_boundary=1` then `ended code=0` or `ended signal=9`;
-/// or a single `unavailable …` or `spawn-error …` line.
+/// or a single `unavailable …` or `spawn-error …` line. A bounded run's
+/// reaper adds `peak rss_kib=N` after it: the highest tree RSS its samples
+/// saw (`AET-WO-2302` D6), read by [`peak_of`].
 fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop> {
     let mut lines = status.lines();
     let first = lines.next().unwrap_or_default();
@@ -864,6 +870,16 @@ fn parse_status(status: &str, tool: &str) -> Result<(SandboxReport, Ended), Stop
             )
         })?;
     Ok((sandbox, ended))
+}
+
+/// A bounded run's peak tree RSS in KiB, from its status file's third line
+/// (`peak rss_kib=N`); `None` without one, or when it is not exactly that.
+fn peak_of(status: &str) -> Option<u64> {
+    let digits = status.lines().nth(2)?.strip_prefix("peak rss_kib=")?;
+    let ok = !digits.is_empty()
+        && digits.bytes().all(|b| b.is_ascii_digit())
+        && (digits == "0" || !digits.starts_with('0'));
+    ok.then(|| digits.parse().ok()).flatten()
 }
 
 /// The internal arguments shared by the reaper and the trampoline:
@@ -967,6 +983,9 @@ pub fn reaper_main(args: &[OsString]) -> ! {
     let tool_group = Pid::from_child(&child);
     let started = Instant::now();
     let mut tick: u32 = 0;
+    // The highest tree RSS the bound's samples saw (`AET-WO-2302` D6),
+    // reported after how the tool ended.
+    let mut peak: u64 = 0;
     loop {
         match child.try_wait() {
             Ok(Some(ended)) => {
@@ -981,7 +1000,13 @@ pub fn reaper_main(args: &[OsString]) -> ! {
                 let appended = fs::OpenOptions::new()
                     .append(true)
                     .open(&internal.status)
-                    .and_then(|mut f| writeln!(f, "{line}"));
+                    .and_then(|mut f| {
+                        writeln!(f, "{line}")?;
+                        match internal.bounds {
+                            Some(_) => writeln!(f, "peak rss_kib={peak}"),
+                            None => Ok(()),
+                        }
+                    });
                 exit(if appended.is_ok() { 0 } else { 70 });
             }
             Ok(None) => {}
@@ -999,7 +1024,10 @@ pub fn reaper_main(args: &[OsString]) -> ! {
             // The memory is read every fifth tick (100 ms): a full /proc scan.
             let over = if started.elapsed() > b.wall {
                 Some("wall")
-            } else if tick.is_multiple_of(5) && tree_rss_kib() > b.rss_kib {
+            } else if tick.is_multiple_of(5) && {
+                peak = peak.max(tree_rss_kib());
+                peak > b.rss_kib
+            } {
                 Some("memory")
             } else {
                 None
@@ -1011,7 +1039,7 @@ pub fn reaper_main(args: &[OsString]) -> ! {
                 let appended = fs::OpenOptions::new()
                     .append(true)
                     .open(&internal.status)
-                    .and_then(|mut f| writeln!(f, "ended bound={which}"));
+                    .and_then(|mut f| writeln!(f, "ended bound={which}\npeak rss_kib={peak}"));
                 exit(if appended.is_ok() { 0 } else { 70 });
             }
             tick = tick.wrapping_add(1);

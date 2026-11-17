@@ -59,7 +59,36 @@ fn answer(line: &str) {
         .unwrap();
 }
 
+/// One Renode at a time in this binary (AET-WO-2302, CI run 44012579895, job
+/// 133802886211): libtest runs a binary's tests on every CPU, and four boots
+/// sharing GitHub's 4-vCPU runner each took 18-24 s of a 30 s reaper bound
+/// (`BOOT_BOUNDS`) where alone they take about 5 s; the Sentinel-02-shaped
+/// late-anchor boot reached 40.7 s and was killed (`wall_bound_exceeded`).
+/// Every call that runs Renode takes this turn, so each boot meets the bound
+/// under the condition it was measured for: one boot at a time.
+static RENODE_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn renode_turn() -> std::sync::MutexGuard<'static, ()> {
+    RENODE_TURN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+thread_local! {
+    /// The last `aethelgard` call's own time on this test's thread, from the
+    /// moment it held [`RENODE_TURN`] to its exit: never the queue before it.
+    /// Any timing of a call reads this, never a clock started before the
+    /// turn (READY head e3728ee5: the A6 test timed 62 s across the queue).
+    static LAST_CALL: std::cell::Cell<std::time::Duration> =
+        const { std::cell::Cell::new(std::time::Duration::ZERO) };
+}
+
+/// The last `aethelgard` call's own time on this thread ([`LAST_CALL`]).
+fn last_call() -> std::time::Duration {
+    LAST_CALL.with(std::cell::Cell::get)
+}
+
 fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
+    let _turn = renode_turn();
+    let held = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(args)
         .stdin(Stdio::null())
@@ -68,7 +97,46 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     let stdout = String::from_utf8(out.stdout).unwrap();
     let value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("{e}: {stdout} / {}", String::from_utf8_lossy(&out.stderr)));
+    LAST_CALL.with(|c| c.set(held.elapsed()));
+    answer(&format!(
+        "turn: {} held it {:.2} s",
+        args.first().copied().unwrap_or_default(),
+        last_call().as_secs_f64()
+    ));
     (out.status.code(), value)
+}
+
+/// `aethelgard campaign` over `scenarios` (under the repository root) on
+/// `elf`, archived at a fresh directory named for `tag`: the archive, the
+/// exit code and every line of its stdout.
+fn run_campaign(tag: &str, scenarios: &[&str], elf: &Path) -> (PathBuf, Option<i32>, Vec<Value>) {
+    let archive = std::env::temp_dir().join(format!("aet-t2-{}-{tag}-archive", std::process::id()));
+    let _ = fs::remove_dir_all(&archive);
+    let _turn = renode_turn();
+    let start = Instant::now();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(root())
+        .arg("campaign")
+        .arg("--scenarios")
+        .args(scenarios)
+        .arg("--firmware")
+        .arg(elf)
+        .arg("--archive")
+        .arg(&archive)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let lines: Vec<Value> = String::from_utf8(out.stdout)
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    answer(&format!(
+        "campaign {tag}: exit={:?} wall_s={:.2} {lines:?}",
+        out.status.code(),
+        start.elapsed().as_secs_f64()
+    ));
+    (archive, out.status.code(), lines)
 }
 
 fn topology() -> SolvedTopology {
@@ -193,7 +261,6 @@ fn boot_on(
     elf: &Path,
     time: &str,
 ) -> (Option<i32>, Value) {
-    let start = Instant::now();
     let (code, v) = aethelgard(&[
         "simulate",
         "--platform",
@@ -207,7 +274,7 @@ fn boot_on(
     ]);
     answer(&format!(
         "{label}: exit={code:?} wall_s={:.2} verdict={v}",
-        start.elapsed().as_secs_f64()
+        last_call().as_secs_f64()
     ));
     (code, v)
 }
@@ -475,9 +542,10 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
             "    unsafe { core::arch::asm!(\"ldr r0, =0x0A000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
         );
     });
-    let start = Instant::now();
     let (code, v) = boot_elf("A6 hole", &elf, "10ms");
-    let took = start.elapsed();
+    // The call's own time, from the moment it held the turn: never the queue
+    // behind other tests' Renode runs (`RENODE_TURN`, `last_call`).
+    let took = last_call();
     assert_eq!(code, Some(1), "an aborted machine exits 1: {v}");
     assert_eq!(
         kinds(&v),
@@ -537,7 +605,6 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
         );
         fs::write(&platform, emitted).unwrap();
         let run = |n: u32| {
-            let start = Instant::now();
             // 100 ms, so a timed-out read still reaches the boot word.
             let (code, v) = aethelgard(&[
                 "simulate",
@@ -552,7 +619,7 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
             ]);
             answer(&format!(
                 "2200 {ohms} ohm run {n}: exit={code:?} wall_s={:.2} analog={} faults={} i2c={} findings={}",
-                start.elapsed().as_secs_f64(),
+                last_call().as_secs_f64(),
                 v["analog"],
                 v["faults"],
                 v["boot"]["i2c"],
@@ -790,6 +857,7 @@ fn record_on(platform: &Path, elf: &Path) -> (String, String) {
         "quit".to_owned(),
     ]
     .join("; ");
+    let _turn = renode_turn();
     let out = Command::new("renode")
         .args(["--disable-gui", "--console", "--plain", "-e", &commands])
         .env("DOTNET_EnableDiagnostics", "0")
@@ -1255,13 +1323,17 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     // before. Since adversarial pass 4 (ADV4-2) the frame's bytes go in a
     // quantum apart, so the echo ends about 700 us later: the last pair is
     // 183,981 (re-measured by the same bisection, fix 4), the read at
-    // 183,681.
+    // 183,681. Since `AET-WO-2302` the frame goes in a quantum after the boot
+    // word, 25.75 us later than at 100 us, so the loop starts later again
+    // and 183,681 is past the run's end (measured: no locked access); at
+    // about 50 ns a pair that is some 515 pairs, and the read moves 600
+    // earlier, to 183,081, still deep in the flood.
     let elf = mutant("flood-locked", |d| {
         edit(
             d,
             "src/main.rs",
             "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
-            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183681 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183081 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
@@ -1357,6 +1429,7 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_vi
     let _ = fs::remove_dir_all(&dir);
     let renode = |home: &Path, config: Option<&Path>, commands: &str| {
         fs::create_dir_all(home).unwrap();
+        let _turn = renode_turn();
         let mut c = Command::new("renode");
         if let Some(path) = config {
             c.arg("--config").arg(path);
@@ -1773,32 +1846,537 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
     }
 }
 
-/// `AET-WO-4300a` §2 and FEEDBACK D1: DShot600's bit timing (PSC 0, ARR
-/// 106, CCR 40; 424 ns and 160 ns in the model) is witnessed in a 2 ms boot,
-/// the campaign's 100 ms boot being a decision for the architect.
+/// `AET-WO-4300a` §2: DShot600's bit timing (PSC 0, ARR 106, CCR 40; 424 ns
+/// and 160 ns in the model). `AET-WO-2302`, ruled (a-i): the board boots
+/// 100 ms like any other, and each output is witnessed inside its window,
+/// from TIM1's `CEN` to `DSHOT_WINDOW_NS` after it, when the judge's stop
+/// read TIM1 back at its solved values, silenced the observers and cleared
+/// `CEN`, which the end's read then expects; the verdict names that
+/// residual and the boot's peak memory share.
 #[test]
-fn the_dshot600_fixture_s_outputs_are_witnessed_in_a_two_millisecond_boot() {
+fn the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot() {
     let (platform, spec, elf) = motor_board("motors-dshot600", "dshot", |_| {}, |_| {});
-    let (code, v) = boot_on("motors dshot600", &platform, &spec, &elf, "2ms");
+    let (code, v) = boot_on("motors dshot600", &platform, &spec, &elf, "100ms");
     assert_eq!(code, Some(0), "{v}");
-    for m in motors(&v) {
+    assert_eq!(v["boot"]["window"], "MAX_VIRTUAL_NS", "{v}");
+    assert_eq!(v["boot"]["virtual_time_ns"], 100_000_000, "{v}");
+    windowed_dshot(&v, 1000);
+}
+
+/// Every DShot output of `v` witnessed inside its own window (`AET-WO-2302`):
+/// anchored, ending `DSHOT_WINDOW_NS` after its anchor, with more than
+/// `rises` rises; TIM1's stop at that end, its read-back at the solved
+/// values and `CR1` after it with `CEN` cleared, which the end's read
+/// expects; the residual named and the boot's memory share recorded.
+fn windowed_dshot(v: &Value, rises: u64) {
+    let mut anchors = Vec::new();
+    for m in motors(v) {
         let t = &m["twin"];
         assert_eq!(t["status"], "witnessed", "{m}");
         assert_eq!((&t["period_ns"], &t["high_ns"]), (&424.into(), &160.into()));
-        assert!(t["rises"].as_u64().unwrap() > 1000, "{m}");
+        assert!(t["rises"].as_u64().unwrap() > rises, "{m}");
+        let anchor = t["anchor_ns"].as_u64().unwrap();
+        assert_eq!(t["end_ns"].as_u64(), Some(anchor + 2_000_000), "{m}");
+        assert!(t["first_ns"].as_u64().unwrap() > anchor, "{m}");
+        assert_eq!(
+            (&t["edges_before"], &t["edges_after"]),
+            (&0.into(), &0.into()),
+            "{m}"
+        );
         assert_eq!(m["silicon"]["holds"], true);
+        anchors.push(anchor);
+    }
+    anchors.dedup();
+    assert_eq!(anchors.len(), 1, "one timer, one anchor: {anchors:?}");
+    let stops = v["boot"]["stops"].as_array().unwrap();
+    assert_eq!(stops.len(), 1, "{v}");
+    let stop = &stops[0];
+    assert_eq!(stop["timer"], "TIM1");
+    assert_eq!(stop["anchor_ns"].as_u64(), Some(anchors[0]));
+    assert_eq!(stop["at_ns"].as_u64(), Some(anchors[0] + 2_000_000));
+    for r in stop["read_back"].as_array().unwrap() {
+        assert_eq!(r["observed"], r["expected"], "{r}");
+    }
+    assert_eq!(stop["cr1_after"], "0x00000080", "{stop}");
+    let cr1 = v["boot"]["registers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "TIM1.CR1")
+        .unwrap();
+    assert_eq!(
+        (&cr1["expected"], &cr1["observed"]),
+        (&"0x00000080".into(), &"0x00000080".into())
+    );
+    assert_eq!(
+        v["boot"]["residuals"],
+        serde_json::json!([
+            "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact"
+        ])
+    );
+    let memory = &v["memory"];
+    let peak = memory["peak_rss_kib"].as_u64().unwrap();
+    assert_eq!(memory["bound_kib"], 1_048_576);
+    assert!(
+        peak > 0 && memory["share_permille"].as_u64() == Some(peak * 1000 / 1_048_576),
+        "{memory}"
+    );
+}
+
+/// `AET-WO-2302` D4: the DShot600 board with a 9600 8N1 console, refused
+/// before the boot under `AET-WO-4300b` (22.3 ms of wire time past the 2 ms
+/// window), now boots 100 ms: the outputs inside their window, the console's
+/// frame paced from one quantum after the boot word, echoed whole.
+#[test]
+fn the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot() {
+    let (platform, spec, elf) = motor_board("serial-dshot-9600", "dshot-9600", |_| {}, |_| {});
+    let (code, v) = boot_on("serial dshot 9600", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    windowed_dshot(&v, 1000);
+    let port = &serial(&v)[0];
+    let t = &port["twin"];
+    assert_eq!(t["echo"], "witnessed", "{port}");
+    let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+    assert_eq!(t["injected_ns"].as_u64(), Some(bw + 100_000), "{port}");
+    assert_eq!(t["injected_bytes"], 8);
+}
+
+/// Adversarial pass 2, A2-3 (`AET-WO-2302`): `serial_wire_past_run` is
+/// judged from the boot word, so it sums the console's paced frame
+/// (8 x 1 100 000 ns at 9600 8N1) and its one echoed character
+/// (1 041 719 ns), 9 841 719 ns, not its pattern, which the generated
+/// firmware sends before the boot word. The serial-dshot-9600 firmware with
+/// a spin of `RAW_ADV`'s three-instruction loop before its boot word puts
+/// the boot word at about 79.5 ms and 87 ms: each echo is witnessed whole
+/// inside the run and the board passes (the pattern-counting sum named
+/// both); at about 94.5 ms the frame cannot fit, named, and the echo is cut
+/// short, named (the adversary's 2.65M, 2.9M and 3.15M spins, measured).
+#[test]
+fn a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word() {
+    let late = |label: &str, spins: u32| {
+        let (platform, spec, elf) = motor_board(
+            "serial-dshot-9600",
+            label,
+            |_| {},
+            |d| {
+                edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+                edit(
+                    d,
+                    "src/main.rs",
+                    BOOT_WORD,
+                    &format!("    spin({spins});\n{BOOT_WORD}"),
+                );
+            },
+        );
+        let (code, v) = boot_on(label, &platform, &spec, &elf, "100ms");
+        let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+        (code, v, bw)
+    };
+    for (label, spins, from_ms) in [("a2-3-79ms", 2_650_000, 79), ("a2-3-87ms", 2_900_000, 87)] {
+        let (code, v, bw) = late(label, spins);
+        assert_eq!(bw / 1_000_000, from_ms, "{label}: the boot word at {bw} ns");
+        assert_eq!(code, Some(0), "{label}: {v}");
+        assert!(kinds(&v).is_empty(), "{label}: {v}");
+        let t = &serial(&v)[0]["twin"];
+        assert_eq!(t["echo"], "witnessed", "{label}: {t}");
+        assert_eq!(t["injected_ns"].as_u64(), Some(bw + 100_000), "{label}");
+        assert_eq!(t["injected_bytes"], 8, "{label}: {t}");
+        windowed_dshot(&v, 1000);
+    }
+    let (code, v, bw) = late("a2-3-94ms", 3_150_000);
+    assert_eq!(bw / 1_000_000, 94, "the boot word at {bw} ns");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"serial_wire_past_run") && k.contains(&"serial_echo_missing"),
+        "{v}"
+    );
+    let end = bw + 100_000 + 9_841_719;
+    assert!(
+        message(&v, "serial_wire_past_run").contains(&format!(
+            "its own 9841719 ns (1041719 ns a character) of 9841719 ns in all, ending at {end} ns"
+        )),
+        "{v}"
+    );
+}
+
+/// `AET-WO-2302` §1: the Sentinel-02-shaped fixture (`sentinel-02-own`'s
+/// BME280, TMP117 and BMP581 on I2C, W25Q64JV and ICM-42688-P on SPI,
+/// `motors-dshot600`'s four outputs, MAVLINK 57600 and CRSF 420000), which
+/// no 2 ms boot could witness, is witnessed whole in one 100 ms boot: every
+/// device step, every output inside its window after the 39 ms settle, and
+/// both ports, the second injected only once the first has echoed its
+/// frame (D4).
+#[test]
+fn the_sentinel_02_shaped_board_is_witnessed_whole() {
+    let (platform, spec, elf) = motor_board("sentinel-02-shaped", "sentinel-02", |_| {}, |_| {});
+    let (code, v) = boot_on("sentinel 02 shaped", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(0), "{v}");
+    windowed_dshot(&v, 1000);
+    let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+    let anchor = motors(&v)[0]["twin"]["anchor_ns"].as_u64().unwrap();
+    // The settle puts both past 39 ms, the anchor before the boot word.
+    assert!(anchor > 39_000_000 && anchor < bw, "{anchor} {bw}");
+    let ports = serial(&v);
+    assert_eq!(ports.len(), 2);
+    let at: Vec<u64> = ports
+        .iter()
+        .map(|p| {
+            assert_eq!(p["twin"]["echo"], "witnessed", "{p}");
+            p["twin"]["injected_ns"].as_u64().unwrap()
+        })
+        .collect();
+    assert_eq!(at[0], bw + 100_000);
+    // MAVLINK's eight bytes, 200 us apart, echoed before CRSF goes in.
+    assert!(at[1] > at[0] + 7 * 200_000, "{at:?}");
+    for c in v["boot"]["i2c"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(v["boot"]["spi"].as_array().unwrap())
+    {
+        assert_eq!(c["status"], "ok", "{c}");
     }
 }
 
-/// The raw-register code the forgeries put where the outputs start: a
-/// write and a spin of `n` iterations, in the firmware's own crate.
-const RAW: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
+/// F2 (`AET-WO-2302` §5, the late-anchor mutant): the Sentinel-02-shaped
+/// firmware with a 2 000 000-spin settle before `start_outputs` puts TIM1's
+/// `CEN` at 99.07 ms. 0.93 ms of DShot would pass a 100 ms window; the
+/// anchored window ends past the run, named, and the outputs stop short of
+/// its end.
+#[test]
+fn f2_a_late_dshot_anchor_fails_by_name() {
+    let (platform, spec, elf) = motor_board(
+        "sentinel-02-shaped",
+        "late-anchor",
+        |_| {},
+        |d| {
+            edit(
+                d,
+                "src/main.rs",
+                "    let _tim1 = tim1.start_outputs",
+                "    settle(2_000_000);\n    let _tim1 = tim1.start_outputs",
+            );
+        },
+    );
+    let (code, v) = boot_on("late anchor", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"motor_window_past_run"), "{v}");
+    let anchor = motors(&v)[0]["twin"]["anchor_ns"].as_u64().unwrap();
+    assert!(anchor > 98_000_000, "{anchor}");
+    for m in motors(&v) {
+        assert_eq!(m["twin"]["status"], "stopped", "{m}");
+    }
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "motor_window_past_run"
+                && f["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("past the boot's end at 100000000 ns")),
+        "{v}"
+    );
+}
+
+/// The raw-register code adversarial pass 1's mutants use (`AET-WO-2302`):
+/// a word write and read, a 16-bit store and a spin of `n` iterations.
+/// The raw-register code the forgeries put where the outputs start, in the
+/// firmware's own crate: a word and a half-word write, a word read and a
+/// spin of `n` iterations.
+const RAW_ADV: &str = "fn wr(a: u32, v: u32) { unsafe { core::ptr::write_volatile(a as *mut u32, v) } }\nfn rd(a: u32) -> u32 { unsafe { core::ptr::read_volatile(a as *const u32) } }\nfn wr16(a: u32, v: u16) { unsafe { core::ptr::write_volatile(a as *mut u16, v) } }\nfn spin(n: u32) { for _ in 0..n { core::hint::spin_loop(); } }\n\n#[panic_handler]";
+/// The generated firmware's start of its outputs and write of its boot
+/// word.
+const START: &str = "    let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);";
+const BOOT_WORD: &str =
+    "    unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };";
+
+/// One boot of the DShot600 fixture's firmware with `edits` (find,
+/// replace) applied to `main.rs` beside [`RAW_ADV`], and `board` to its board
+/// crate.
+fn dshot_mutant(
+    label: &str,
+    board: impl Fn(&Path),
+    edits: &[(&str, &str)],
+) -> (Option<i32>, Value) {
+    let (platform, spec, elf) = motor_board("motors-dshot600", label, board, |d| {
+        edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+        for (from, to) in edits {
+            edit(d, "src/main.rs", from, to);
+        }
+    });
+    boot_on(label, &platform, &spec, &elf, "100ms")
+}
+
+/// Every output of `v` has edges after its window's end and none before
+/// its anchor, each output named once by `motor_edge_after_window`
+/// (adversarial pass 1, H1).
+fn edges_after_window(label: &str, v: &Value) {
+    let named: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "motor_edge_after_window")
+        .collect();
+    assert_eq!(named.len(), 4, "{label}: {v}");
+    for m in motors(v) {
+        let t = &m["twin"];
+        assert!(t["edges_after"].as_u64().unwrap() > 0, "{label}: {m}");
+        assert_eq!(t["edges_before"], 0, "{label}: {m}");
+    }
+}
+
+/// Adversarial pass 1, H1a (`AET-WO-2302`): after TIM1's window, PA8..PA11
+/// switched to GPIO outputs and bit-banged through `BSRR`, then `MODER`
+/// restored to the solved alternate function. The judge's stop silenced
+/// the observers, so this passed; it silences nothing now, and every edge
+/// after the window is named.
+#[test]
+fn h1a_a_pin_bit_banged_after_the_window_fails_by_name() {
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    let m = rd(0x5802_0000);\n    wr(0x5802_0000, (m & !0x00ff_0000) | 0x0055_0000);\n    for _ in 0..50 {{ wr(0x5802_0018, 0x0F00); spin(30); wr(0x5802_0018, 0x0F00_0000); spin(30); }}\n    wr(0x5802_0000, m);"
+    );
+    let (code, v) = dshot_mutant("h1a-bit-bang", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1a", &v);
+}
+
+/// Adversarial pass 1, H1b: after the window, `CEN` set again by a 16-bit
+/// store, `CCR1`..`CCR4` made wrong for 50 000 spins, then restored and
+/// `CEN` cleared by a 16-bit store, so the end's read-back is clean.
+#[test]
+fn h1b_a_16_bit_restart_after_the_window_fails_by_name() {
+    let ccrs = "[0x4001_0034u32, 0x4001_0038, 0x4001_003c, 0x4001_0040]";
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    wr16(0x4001_0000, 0x81);\n    for a in {ccrs} {{ wr(a, 0x50); }}\n    spin(50_000);\n    for a in {ccrs} {{ wr(a, 0x28); }}\n    wr16(0x4001_0000, 0x80);"
+    );
+    let (code, v) = dshot_mutant("h1b-halfword-restart", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1b", &v);
+    // The 16-bit store's rise is observed too (M2): a second anchor.
+    assert!(kinds(&v).contains(&"motor_anchor_repeated"), "{v}");
+}
+
+/// Adversarial pass 1, H1c: after the window, DMA2 stream 0 (memory to
+/// memory) writes 0x81 into `TIM1.CR1`, 50 000 spins, then 0x80 the same
+/// way, and DMA2's clock restored: no hook sees a DMA write, but the edges
+/// it starts are named.
+#[test]
+fn h1c_a_dma_restart_after_the_window_fails_by_name() {
+    let body = format!(
+        "{BOOT_WORD}\n    spin(300_000);\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    for v in [0x81u32, 0x80] {{\n        unsafe {{ core::ptr::write_volatile(&raw mut src, v) }};\n        wr(0x4002_0410, 0);\n        wr(0x4002_0408, 0x3d);\n        wr(0x4002_0418, (&raw const src) as u32);\n        wr(0x4002_041c, 0x4001_0000);\n        wr(0x4002_0414, 1);\n        wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n        spin(50_000);\n    }}\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+    );
+    let (code, v) = dshot_mutant("h1c-dma-restart", |_| {}, &[(BOOT_WORD, &body)]);
+    assert_eq!(code, Some(1), "{v}");
+    edges_after_window("h1c", &v);
+}
+
+/// The board crate's word write that starts TIM1, which the M2 mutants
+/// replace.
+const CR1_WORD: &str = "r.write(TOKEN, Block::Tim1, 0x00, 0x00000081); // CR1";
+
+/// Adversarial pass 1, M2 (A6, A10): TIM1 started by a 16-bit, then a byte
+/// store of `CR1` alone. No word write set `CEN`, so no hook saw it: no
+/// anchor, no stop, and DShot ran the rest of the boot, flooding the log
+/// (97.5 % and 99.1 % of the memory bound). The `Word` and `Byte` hooks see
+/// each store: the window is anchored and stopped as a word store's, and
+/// the board passes in its window.
+#[test]
+fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
+    for (label, store) in [
+        (
+            "m2-halfword-start",
+            "unsafe { core::ptr::write_volatile(0x4001_0000 as *mut u16, 0x81) }; // CR1",
+        ),
+        (
+            "m2-byte-start",
+            "unsafe { core::ptr::write_volatile(0x4001_0000 as *mut u8, 0x81) }; // CR1",
+        ),
+    ] {
+        let (code, v) = dshot_mutant(label, |d| edit(d, "src/board.rs", CR1_WORD, store), &[]);
+        assert_eq!(code, Some(0), "{label}: {v}");
+        windowed_dshot(&v, 1000);
+    }
+}
+
+/// Adversarial pass 1, M2 (A9c): TIM1's word write removed and `CEN` set
+/// by DMA2 (memory to memory). A DMA write fires no hook, so DShot is never
+/// anchored or stopped and runs to the boot's end. The start is placed late,
+/// after a 3 230 000-spin wait (about 96.9 ms, inferred from the 30 ns a spin
+/// measured in A2-3), so about 3 ms of unanchored
+/// edges reach the judge inside the log budget: every output is named
+/// `motor_anchor_unobserved`, a forced outcome. An EARLY DMA start (about 98 ms
+/// of DShot) is the named residual: it fails closed only by a bound, the
+/// flood's names on Furnace (8.4 MB kept, 98.5 % of the memory bound) but
+/// `wall_bound_exceeded` on a CI shard (run 44007663813, job 133786836234:
+/// 34 s against the 30 s bound, 851 per mille of memory); the outcome
+/// depends on the machine's speed, so no test asserts it.
+#[test]
+fn m2_a_dma_start_of_cen_fails_closed_by_name() {
+    let body = format!(
+        "    spin(3_230_000);\n{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+    );
+    let (code, v) = dshot_mutant(
+        "m2-dma-start",
+        |d| edit(d, "src/board.rs", CR1_WORD, "// CR1 left to DMA"),
+        &[(START, &body)],
+    );
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert_eq!(
+        k.iter()
+            .filter(|k| **k == "motor_anchor_unobserved")
+            .count(),
+        4,
+        "{v}"
+    );
+    for bound in [
+        "renode_log_flood",
+        "wall_bound_exceeded",
+        "memory_cap_exceeded",
+    ] {
+        assert!(!k.contains(&bound), "{v}");
+    }
+    // No stop ran: `stops` is absent.
+    assert!(v["boot"]["stops"].is_null(), "{v}");
+    answer(&format!("m2 dma start, late: memory={}", v["memory"]));
+}
+
+/// The Sentinel-02-shaped board with `edits` applied to `main.rs` beside
+/// [`RAW_ADV`]: its verdict, and each port's injection instant, which must
+/// keep the chain's order (adversarial pass 1, L1/L2): CRSF in only after
+/// MAVLINK's eight frame bytes, 200 us apart, have come back.
+fn sentinel_02_chain(label: &str, edits: &[(&str, &str)]) -> Value {
+    let (platform, spec, elf) = motor_board(
+        "sentinel-02-shaped",
+        label,
+        |_| {},
+        |d| {
+            edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+            for (from, to) in edits {
+                edit(d, "src/main.rs", from, to);
+            }
+        },
+    );
+    let (_, v) = boot_on(label, &platform, &spec, &elf, "100ms");
+    assert!(
+        !kinds(&v).contains(&"serial_injection_out_of_order"),
+        "{label}: {v}"
+    );
+    let at: Vec<Option<u64>> = serial(&v)
+        .iter()
+        .map(|p| p["twin"]["injected_ns"].as_u64())
+        .collect();
+    let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+    assert_eq!(at[0], Some(bw + 100_000), "{label}: {v}");
+    if let Some(crsf) = at[1] {
+        assert!(crsf > bw + 100_000 + 7 * 200_000, "{label}: {at:?}");
+    }
+    v
+}
+
+/// Adversarial pass 1, L1 (S1): right after its boot word the firmware
+/// writes eight bytes of its own to MAVLINK's `TDR` before MAVLINK's frame
+/// goes in. The hook counted any `TDR` write, so CRSF went in beside
+/// MAVLINK, out of D4's order; it counts only bytes echoing the frame in
+/// order once the frame's first byte went in. The stray bytes are the
+/// capture's to judge.
+#[test]
+fn l1_bytes_written_before_the_frame_never_count_as_its_echo() {
+    let body = format!(
+        "{BOOT_WORD}\n    for b in 0..8u32 {{ while rd(0x4000_441c) & 0x80 == 0 {{}} wr(0x4000_4428, 0x30 + b); }}"
+    );
+    let v = sentinel_02_chain("l1-tdr-junk", &[(BOOT_WORD, &body)]);
+    assert!(kinds(&v).contains(&"serial_capture_forged"), "{v}");
+}
+
+/// Adversarial pass 1, L1 (S1b): MAVLINK's pattern sent after the boot
+/// word, not before: its bytes are not the frame's, so they never count;
+/// CRSF goes in after MAVLINK's echo, in order.
+#[test]
+fn l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo() {
+    let pat = "    for &byte in [0x4d, 0x41, 0x56, 0x4c, 0x49, 0x4e, 0x4b].iter().chain(PATTERN_TAIL.iter()) {\n        if usart2.send(&mut r, byte).is_err() {\n            break;\n        }\n    }\n";
+    let body = format!("{BOOT_WORD}\n{pat}");
+    let v = sentinel_02_chain("l1-pattern-late", &[(pat, ""), (BOOT_WORD, &body)]);
+    answer(&format!("l1 pattern late: kinds={:?}", kinds(&v)));
+}
+
+/// A `WFI` before the outputs start, woken by SysTick 1 ms later with
+/// interrupts masked (adversarial pass 1, A8): the core's instruction count
+/// lags its time from there on.
+fn wfi_before_start() -> String {
+    format!(
+        "    unsafe {{ core::arch::asm!(\"cpsid i\") }};\n    wr(0xE000_E014, 100_000);\n    wr(0xE000_E018, 0);\n    wr(0xE000_E010, 7);\n    unsafe {{ core::arch::asm!(\"wfi\") }};\n    wr(0xE000_E010, 0);\n    wr(0xE000_ED04, 1 << 25);\n    unsafe {{ core::arch::asm!(\"cpsie i\") }};\n{START}"
+    )
+}
+
+/// Adversarial pass 1, M1 (A8b): a core that sleeps before its outputs
+/// start and never writes its boot word lags its time, so each line of the
+/// CLI's hooks lags its stamp. That was an error of the tool (exit 5), so a
+/// firmware could abort a campaign; it is the verdict's `cpu_halted` again,
+/// with `boot_word_missing`, as before `AET-WO-2302`, naming the line. Its
+/// campaign run replays: the records' window and stop agree at the stamps.
+#[test]
+fn m1_a_core_that_slept_without_its_boot_word_is_cpu_halted() {
+    let body = wfi_before_start();
+    let (platform, spec, elf) = motor_board(
+        "motors-dshot600",
+        "m1-wfi-no-boot-word",
+        |_| {},
+        |d| {
+            edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+            edit(d, "src/main.rs", START, &body);
+            edit(d, "src/main.rs", BOOT_WORD, "");
+        },
+    );
+    let (code, v) = boot_on("m1 wfi, no boot word", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"cpu_halted") && k.contains(&"boot_word_missing"),
+        "{v}"
+    );
+    let halted = message(&v, "cpu_halted");
+    assert!(
+        halted.contains("AETHELGARD-CR1 1 81 0")
+            && halted.contains("the core slept or stopped before it"),
+        "{halted}"
+    );
+    let (archive, _, lines) = run_campaign("m1", &["scenarios/motors/dshot600.json"], &elf);
+    let line = &lines[0];
+    assert_eq!(line["verdict"], "fail", "{line}");
+    let (code, replayed) = aethelgard(&["replay", "--archive", line["run"].as_str().unwrap()]);
+    assert_eq!(code, Some(0), "{replayed}");
+    let _ = fs::remove_dir_all(&archive);
+}
+
+/// Adversarial pass 1, A8: the same sleep with the boot word written. The
+/// boot word set while the core executed fewer instructions than the run
+/// holds is exit 5 by `AET-WO-2100`'s ruled A10, unchanged; no line of the
+/// CLI's hooks is the cause any more.
+#[test]
+fn m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement() {
+    let (code, v) = dshot_mutant("m1-wfi", |_| {}, &[(START, &wfi_before_start())]);
+    assert_eq!(code, Some(5), "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.starts_with("the boot word is set but the core executed"),
+        "{m}"
+    );
+    assert!(!m.contains("AETHELGARD-"), "{m}");
+}
 
 /// `AET-WO-4300a` §5 item 1, through Renode: PA8..PA11 driven by `BSRR`
 /// stores with the timer never started, and the `UG` + `BSRR` pair the 4300
 /// spike left unmeasured (an update event and a store edge in one quantum).
 /// Neither is the model's sequence, and the read-back names the timer left
-/// stopped and the update interrupt armed.
+/// stopped and the update interrupt armed. Since `AET-WO-2302` the edges
+/// are judged inside their timer's window, which starts at its `CEN`: with
+/// the timer never started, no write set it, so the edges have no anchor
+/// and fail by that name, `unanchored`, before any sequence is judged.
 #[test]
 fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
     let start = "let _tim1 = tim1.start_outputs(&mut r, &clock, pa8, pa9, pa10, pa11);";
@@ -1810,14 +2388,14 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
             label,
             |_| {},
             |d| {
-                edit(d, "src/main.rs", "#[panic_handler]", RAW);
+                edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
                 edit(d, "src/main.rs", start, body);
             },
         );
         let (code, v) = boot_on(label, &platform, &spec, &elf, "100ms");
         assert_eq!(code, Some(1), "{label}: {v}");
         let k = kinds(&v);
-        assert!(k.contains(&"motor_timing_mismatch"), "{label}: {v}");
+        assert!(k.contains(&"motor_anchor_unobserved"), "{label}: {v}");
         assert!(k.contains(&"register_mismatch"), "{label}: {v}");
         assert!(
             v["findings"]
@@ -1827,11 +2405,14 @@ fn adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail() {
                 .any(|f| f["message"].as_str().unwrap().starts_with(register)),
             "{label}: {v}"
         );
-        // Stores in one quantum share its stamp (`batched`); spread over
-        // quanta they miss the sequence (`mismatch`): either way no pass.
+        // Store-made edges with no `CEN` rise: no anchor, never a pass
+        // (they were `batched` or `mismatch` against the whole boot's
+        // window before `AET-WO-2302`).
         for m in motors(&v) {
-            let status = m["twin"]["status"].as_str().unwrap();
-            assert!(["mismatch", "batched"].contains(&status), "{label}: {m}");
+            let t = &m["twin"];
+            assert_eq!(t["status"], "unanchored", "{label}: {m}");
+            assert!(t["rises"].as_u64().unwrap() > 0, "{label}: {m}");
+            assert_eq!(t["anchor_ns"], Value::Null, "{label}: {m}");
             // A store right after a timer access (the `UG` write) carries an
             // exact stamp, so a store edge can be off the grid (FEEDBACK M4):
             // the grid alone never passes or fails a witness.
@@ -1923,7 +2504,6 @@ fn kani_proves_every_part_of_both_motor_fixtures() {
         assert_eq!(parts, ["_i2c1", "_spi1", "_tim1"], "{fixture}");
         for part in parts {
             let harness = format!("proofs::every_valid_sequence{part}");
-            let start = Instant::now();
             let (code, v) = aethelgard(&[
                 "prove",
                 "--crate",
@@ -1933,7 +2513,7 @@ fn kani_proves_every_part_of_both_motor_fixtures() {
             ]);
             answer(&format!(
                 "prove {fixture} {harness}: exit={code:?} wall_s={:.2}",
-                start.elapsed().as_secs_f64()
+                last_call().as_secs_f64()
             ));
             assert_eq!(code, Some(0), "{fixture} {harness}: {v}");
             assert_eq!(v["verdict"], "pass", "{fixture} {harness}: {v}");
@@ -1951,7 +2531,6 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
         "proofs::tim1_start_writes_the_solved_values",
         "proofs::reset_clock_is_ok_exactly_at_reset",
     ] {
-        let start = Instant::now();
         let (code, v) = aethelgard(&[
             "prove",
             "--crate",
@@ -1961,7 +2540,7 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
         ]);
         answer(&format!(
             "prove {harness}: exit={code:?} wall_s={:.2}",
-            start.elapsed().as_secs_f64()
+            last_call().as_secs_f64()
         ));
         assert_eq!(code, Some(0), "{harness}: {v}");
         assert_eq!(v["verdict"], "pass", "{harness}: {v}");
@@ -2002,51 +2581,58 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
     );
 }
 
-/// `AET-WO-4300a` D1, ruled (a): the DShot600 fixture's campaign boots inside
-/// its board's `DSHOT_WINDOW_NS` (2 ms), named on its line; every output is
-/// witnessed and both identity reads complete inside it; replay agrees and
-/// `attribute` names none. A droop inside the window (a brownout reset at
-/// 100 µs, recovered) passes too (third adversarial review, F1).
+/// The DShot600 fixture's campaign, `AET-WO-2302` (a-i): every boot is
+/// `MAX_VIRTUAL_NS`, named on its line, every output witnessed inside its
+/// own window; replay agrees and `attribute` names none. A droop (a
+/// brownout reset at 100 µs, recovered) passes too (third adversarial
+/// review, F1): the window and the judge's stop (kind 30) are the last
+/// boot's, after the release; the first boot's stop fires in it stale and
+/// does nothing (F5).
 #[test]
 fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
     let (_, _, elf) = motor_board("motors-dshot600", "campaign", |_| {}, |_| {});
-    let archive =
-        std::env::temp_dir().join(format!("aet-4300a-t2-{}-dshot-archive", std::process::id()));
-    let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
+    let (archive, code, lines) = run_campaign(
+        "motors-dshot600",
+        &[
             "scenarios/motors/dshot600.json",
             "scenarios/motors/dshot600-droop.json",
-        ])
-        .arg("--firmware")
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    answer(&format!(
-        "campaign motors-dshot600: exit={:?} wall_s={:.2} {lines:?}",
-        out.status.code(),
-        start.elapsed().as_secs_f64()
-    ));
-    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+        ],
+        &elf,
+    );
+    assert_eq!(code, Some(0), "{lines:?}");
     assert_eq!(lines.len(), 3, "{lines:?}");
     for line in &lines[..2] {
         assert_eq!(line["verdict"], "pass", "{line}");
         assert_eq!(line["matched"], true, "{line}");
-        assert_eq!(line["virtual_time_ns"], 2_000_000, "{line}");
-        assert_eq!(line["window"], "DSHOT_WINDOW_NS", "{line}");
+        assert_eq!(line["virtual_time_ns"], 100_000_000, "{line}");
+        assert_eq!(line["window"], "MAX_VIRTUAL_NS", "{line}");
         let run = line["run"].as_str().unwrap();
+        let records = aethelgard_chaos::replay_dir(Path::new(run))
+            .unwrap()
+            .state
+            .records;
+        let released = records.iter().find_map(|r| match r {
+            aethelgard_chaos::record::Record::ResetRendered {
+                at_ns,
+                released: true,
+                ..
+            } => Some(*at_ns),
+            _ => None,
+        });
+        let stops: Vec<(u64, u64)> = records
+            .iter()
+            .filter_map(|r| match r {
+                aethelgard_chaos::record::Record::JudgeStop {
+                    anchor_ns, at_ns, ..
+                } => Some((*anchor_ns, *at_ns)),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(stops.len(), 1, "{records:?}");
+        assert_eq!(stops[0].1, stops[0].0 + 2_000_000);
+        if let Some(release) = released {
+            assert!(stops[0].0 > release, "{stops:?} {release}");
+        }
         let (code, replayed) = aethelgard(&["replay", "--archive", run]);
         assert_eq!(code, Some(0), "{replayed}");
         let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
@@ -2146,37 +2732,9 @@ fn the_four_port_fixture_witnesses_every_port_and_sbus_s_tags() {
 #[test]
 fn the_four_port_fixture_s_campaign_passes_and_replays() {
     let (_, _, elf) = motor_board("serial-four", "serial-campaign", |_| {}, |_| {});
-    let archive = std::env::temp_dir().join(format!(
-        "aet-4300b-t2-{}-serial-archive",
-        std::process::id()
-    ));
-    let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
-    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .current_dir(root())
-        .args([
-            "campaign",
-            "--scenarios",
-            "scenarios/serial/serial-four.json",
-        ])
-        .arg("--firmware")
-        .arg(&elf)
-        .arg("--archive")
-        .arg(&archive)
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
-    let lines: Vec<Value> = String::from_utf8(out.stdout)
-        .unwrap()
-        .lines()
-        .map(|l| serde_json::from_str(l).unwrap())
-        .collect();
-    answer(&format!(
-        "campaign serial-four: exit={:?} wall_s={:.2} {lines:?}",
-        out.status.code(),
-        start.elapsed().as_secs_f64()
-    ));
-    assert_eq!(out.status.code(), Some(0), "{lines:?}");
+    let (archive, code, lines) =
+        run_campaign("serial-four", &["scenarios/serial/serial-four.json"], &elf);
+    assert_eq!(code, Some(0), "{lines:?}");
     assert_eq!(lines.len(), 2, "{lines:?}");
     let line = &lines[0];
     assert_eq!(
@@ -2202,6 +2760,87 @@ fn the_four_port_fixture_s_campaign_passes_and_replays() {
     let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
     assert_eq!(code, Some(0), "{attributed}");
     assert_eq!(attributed["rule"], "N1", "{attributed}");
+    let _ = fs::remove_dir_all(&archive);
+}
+
+/// `AET-WO-2302` D5: an open RX line (`serial_rx_open`) on the four-port
+/// fixture, the first port's (MAVLINK) and a later one's (CRSF). Each run
+/// fails by `serial_echo_missing` alone, on the open port alone: nothing
+/// went into it, and every other port, the chain skipping the open one, is
+/// witnessed. It replays, and `attribute` names it `electrical` by `E3`,
+/// evidence the port's kinds 28 and 29, with the port as its only subject.
+#[test]
+fn an_open_rx_line_is_detected_by_name_and_attributed_e3() {
+    let (_, _, elf) = motor_board("serial-four", "serial-open", |_| {}, |_| {});
+    let (archive, code, lines) = run_campaign(
+        "serial-open",
+        &[
+            "scenarios/serial/serial-four-open-mavlink.json",
+            "scenarios/serial/serial-four-open-crsf.json",
+        ],
+        &elf,
+    );
+    assert_eq!(code, Some(0), "{lines:?}");
+    assert_eq!(lines.len(), 3, "{lines:?}");
+    for (line, open) in lines.iter().zip(["MAVLINK", "CRSF"]) {
+        assert_eq!(
+            (&line["verdict"], &line["matched"], &line["findings"]),
+            (
+                &"fail".into(),
+                &true.into(),
+                &serde_json::json!(["serial_echo_missing"])
+            ),
+            "{line}"
+        );
+        let run = line["run"].as_str().unwrap();
+        let records = aethelgard_chaos::replay_dir(Path::new(run))
+            .unwrap()
+            .state
+            .records;
+        let mut seen = Vec::new();
+        for r in &records {
+            if let aethelgard_chaos::record::Record::SerialWitness {
+                label,
+                echo,
+                injected_ns,
+                rx_at_injection,
+                ..
+            } = r
+            {
+                seen.push(label.as_str());
+                if label == open {
+                    assert_eq!(echo, "missing", "{open}: {r:?}");
+                    assert_eq!((injected_ns, rx_at_injection), (&None, &None), "{r:?}");
+                } else {
+                    assert_eq!(echo, "witnessed", "{open}: {label}: {r:?}");
+                    assert!(injected_ns.is_some(), "{r:?}");
+                }
+            }
+        }
+        assert_eq!(seen, ["MAVLINK", "GPS", "CRSF", "SBUS"]);
+        let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+        assert_eq!(code, Some(0), "{replayed}");
+        assert_eq!(replayed["matched"], true, "{replayed}");
+        let (code, a) = aethelgard(&["attribute", "--archive", run]);
+        assert_eq!(code, Some(0), "{a}");
+        assert_eq!(
+            (&a["domain"], &a["rule"], &a["subjects"], &a["masked"]),
+            (
+                &"electrical".into(),
+                &"E3".into(),
+                &serde_json::json!([format!("port:{open}")]),
+                &serde_json::json!([])
+            ),
+            "{a}"
+        );
+        let kinds: Vec<u64> = a["evidence"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["kind"].as_u64().unwrap())
+            .collect();
+        assert_eq!(kinds, [28, 29], "{a}");
+    }
     let _ = fs::remove_dir_all(&archive);
 }
 
@@ -3158,6 +3797,7 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
     let (dir, _, _) = own_board("campaign");
     let elf = mutant_of(&dir, "own-campaign", |_| {});
     let archive = dir.join("archive");
+    let _turn = renode_turn();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args([
             "campaign",
@@ -3174,6 +3814,8 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
         .stdin(Stdio::null())
         .output()
         .unwrap();
+    // The turn ends with Renode: `replay` below takes no turn of its own here.
+    drop(_turn);
     let stdout = String::from_utf8(out.stdout).unwrap();
     answer(&format!(
         "own campaign: exit={:?} {stdout}",
@@ -3299,6 +3941,7 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         "emulation RunFor \"0.100000000\"".to_owned(),
         "quit".to_owned(),
     ]);
+    let _turn = renode_turn();
     let out = Command::new("renode")
         .args([
             "--disable-gui",

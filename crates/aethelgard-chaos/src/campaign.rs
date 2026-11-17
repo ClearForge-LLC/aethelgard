@@ -20,15 +20,16 @@ use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
     self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
-    split_pin, step_index,
+    SerialFraming, split_pin, step_index,
 };
 use crate::replay::State;
 
-/// The scenario format versions read: 1 (static scenarios, unchanged) and 2,
+/// The scenario format versions read: 1 (static scenarios, unchanged); 2,
 /// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`,
-/// and since `AET-WO-4200` the `spi_device_absent` override; a version 1 file
-/// may use none of them.
-pub const SCENARIO_VERSIONS: [u32; 2] = [1, 2];
+/// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
+/// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override. A
+/// file may use only what its version admits.
+pub const SCENARIO_VERSIONS: [u32; 3] = [1, 2, 3];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
 pub const MAX_OVERRIDES: usize = 32;
@@ -180,6 +181,8 @@ struct RawOverride {
     droop: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     spi_device_absent: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    serial_rx_open: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -304,6 +307,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         line_held_low,
         droop,
         spi_device_absent,
+        serial_rx_open,
     } = raw;
     let others = bus.is_some()
         || net.is_some()
@@ -311,6 +315,16 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         || max_capacitance_femtofarads.is_some()
         || line_held_low.is_some()
         || droop.is_some();
+    if let Some(p) = serial_rx_open {
+        if others || spi_device_absent.is_some() {
+            return Err(schema(
+                "an open serial RX line override is exactly {serial_rx_open: port}".to_owned(),
+            ));
+        }
+        return Ok(Override::SerialRxOpen {
+            port: text(p, "serial_rx_open")?,
+        });
+    }
     if let Some(r) = spi_device_absent {
         if others {
             return Err(schema(
@@ -358,7 +372,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop} or {spi_device_absent}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent} or {serial_rx_open}"
                 .to_owned(),
         )),
     }
@@ -560,6 +574,7 @@ fn target(o: &Override) -> (u8, &str) {
         // One droop per scenario, whatever its domain.
         Override::Droop(_) => (4, ""),
         Override::SpiDeviceAbsent { reference } => (5, reference),
+        Override::SerialRxOpen { port } => (6, port),
     }
 }
 
@@ -643,6 +658,14 @@ impl Scenario {
             return Err(schema(
                 "a droop override, an absent SPI device and expect_counts need schema_version 2"
                     .to_owned(),
+            ));
+        }
+        let v3_only = overrides
+            .iter()
+            .any(|o| matches!(o, Override::SerialRxOpen { .. }));
+        if v3_only && raw.schema_version < 3 {
+            return Err(schema(
+                "an open serial RX line needs schema_version 3".to_owned(),
             ));
         }
         if expect_counts.len() > MAX_EXPECTED {
@@ -767,9 +790,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
             Record::MotorWitness { .. } => 14,
-            Record::SerialFramingCheck { .. } => 15,
-            Record::SerialWitness { .. } => 16,
-            Record::Verdict { .. } => 17,
+            Record::JudgeStop { .. } => 15,
+            Record::SerialFramingCheck { .. } => 16,
+            Record::SerialWitness { .. } => 17,
+            Record::Verdict { .. } => 18,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -789,7 +813,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if records.is_empty() || !ordered {
         return Err("the records are not in the campaign's order");
     }
-    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(17) == 1) {
+    if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(18) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
@@ -1047,6 +1071,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                     "unwitnessed" | "unreadable" => Some(MOTOR_UNWITNESSED_FINDING),
                     "mismatch" | "batched" | "stopped" => Some(MOTOR_MISMATCH_FINDING),
                     "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
+                    "unanchored" => Some(MOTOR_ANCHOR_UNOBSERVED_FINDING),
                     _ => None,
                 };
                 if let Some(kind) = kind {
@@ -1054,6 +1079,22 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                 }
             }
             _ => {}
+        }
+    }
+    // Each DShot timer's window and stop (`AET-WO-2302`), from the records
+    // once the boot word is set: a window past the boot, or an anchored
+    // window inside it with no judge's stop, each named once per timer; a
+    // stop that ran, cleared `CEN` and read a register back off its solved
+    // value, once per such register (and once for registers it did not
+    // read); a timer whose `CEN` rose more than once, once; and each
+    // output's edges before its anchor or after its window, once each
+    // (adversarial pass 1, L3).
+    if booted {
+        for (kind, n) in dshot_timer_findings(records)
+            .into_iter()
+            .chain(anchor_record_findings(records))
+        {
+            *motor_needed.entry(kind).or_default() += n;
         }
     }
     for kind in MOTOR_FINDINGS {
@@ -1092,6 +1133,29 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         .any(|(k, s, _)| s == "info" && SERIAL_FINDINGS.contains(&k.as_str()))
     {
         return Err("a serial finding has the wrong severity");
+    }
+    // What the boot word's instant decides (`AET-WO-2302` adversarial pass
+    // 2, A2-5), once the boot word is set; before it, neither is named.
+    let wire = if booted {
+        wire_past_run_count(records).map_or((0, 1), |n| (n, n))
+    } else {
+        (0, 0)
+    };
+    let order = if booted {
+        anchor_order_bounds(records)
+    } else {
+        (0, 0)
+    };
+    for (kind, (least, most)) in [
+        (SERIAL_WIRE_PAST_RUN_FINDING, wire),
+        (MOTOR_ANCHOR_ORDER_FINDING, order),
+    ] {
+        let n = any_severity(kind);
+        if n < least || n > most || count(kind) != n {
+            return Err(
+                "the verdict's serial_wire_past_run or motor_anchor_out_of_order does not match the boot word's instant",
+            );
+        }
     }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
@@ -1424,6 +1488,29 @@ pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
 /// `info`: the witness fit the model's sequence with every edge on the grid.
 pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
 
+/// The anchors' findings the boot judge gives (`AET-WO-2302`, ruled (a-i)):
+/// each motor timer's window anchors at its first `CEN` rise in the boot
+/// the judge reads, which must be observed (edges with none:
+/// `unanchored`), once, after the boot's last device step's witness and
+/// before its boot word; a DShot window must end inside the run, its stop
+/// must run and read back the solved registers; and no edge may fall
+/// before its anchor or after its window.
+pub const MOTOR_ANCHOR_UNOBSERVED_FINDING: &str = "motor_anchor_unobserved";
+pub const MOTOR_ANCHOR_REPEATED_FINDING: &str = "motor_anchor_repeated";
+pub const MOTOR_ANCHOR_ORDER_FINDING: &str = "motor_anchor_out_of_order";
+pub const MOTOR_WINDOW_PAST_RUN_FINDING: &str = "motor_window_past_run";
+pub const MOTOR_EDGE_BEFORE_FINDING: &str = "motor_edge_before_anchor";
+pub const MOTOR_EDGE_AFTER_FINDING: &str = "motor_edge_after_window";
+pub const JUDGE_STOP_MISSING_FINDING: &str = "judge_stop_missing";
+pub const JUDGE_STOP_MISMATCH_FINDING: &str = "judge_stop_mismatch";
+/// The ports' summed wire time from one quantum after the boot word, past
+/// the run's end (`AET-WO-2302` D4): known only after the run.
+pub const SERIAL_WIRE_PAST_RUN_FINDING: &str = "serial_wire_past_run";
+/// A port's frame byte injected before the port before it in the chain had
+/// echoed its whole frame (`AET-WO-2302` D4, adversarial pass 1, L2),
+/// recounted from the logged `TDR` bytes.
+pub const SERIAL_INJECTION_ORDER_FINDING: &str = "serial_injection_out_of_order";
+
 /// The serial port findings the boot judge gives (`AET-WO-4300b`): the
 /// silicon check of a port's `BRR` and framing, and the twin's witness of its
 /// pattern, its echo, its capture and its tags.
@@ -1627,7 +1714,166 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             );
         }
     }
+    // A port the scenario holds open (`AET-WO-2302` D5) is a solved port,
+    // and nothing went into it; the chain skips it.
+    let open = open_ports(records);
+    if open.iter().any(|p| !labels.contains(p)) {
+        return Err("an open serial RX line names no solved serial port");
+    }
+    if witnesses.iter().any(|w| {
+        matches!(w, Record::SerialWitness { label, injected_ns, rx_at_injection, .. }
+            if open.contains(label.as_str()) && (injected_ns.is_some() || rx_at_injection.is_some()))
+    }) {
+        return Err("a frame went into a serial port whose RX line the scenario holds open");
+    }
+    // The injections are sequential (`AET-WO-2302` D4): a port goes in only
+    // after the port before it that is not held open, inside the boot.
+    let injected: Vec<Option<u64>> = witnesses
+        .iter()
+        .filter_map(|w| match w {
+            Record::SerialWitness { label, .. } if open.contains(label.as_str()) => None,
+            Record::SerialWitness { injected_ns, .. } => Some(*injected_ns),
+            _ => None,
+        })
+        .collect();
+    let sequential = injected.windows(2).all(|w| match (w[0], w[1]) {
+        (Some(a), Some(b)) => a < b,
+        (None, Some(_)) => false,
+        _ => true,
+    });
+    if !sequential || injected.iter().flatten().any(|&t| t > TWIN_MAX_VIRTUAL_NS) {
+        return Err(
+            "a serial port's frame went in before the port before it, without it, or past the boot",
+        );
+    }
     Ok(())
+}
+
+/// The labels of the ports whose RX line the scenario (kind 5) holds open
+/// (`AET-WO-2302` D5).
+fn open_ports(records: &[Record]) -> BTreeSet<&str> {
+    match records.first() {
+        Some(Record::Scenario { overrides, .. }) => overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::SerialRxOpen { port } => Some(port.as_str()),
+                _ => None,
+            })
+            .collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+/// The boot word's instant as the records give it (`AET-WO-2302`
+/// adversarial pass 2, A2-5): the first port the chain injects, the first
+/// not held open, takes its frame one quantum after the boot word, so its
+/// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
+/// frame, or there is none.
+fn boot_word_instant(records: &[Record]) -> Option<u64> {
+    let open = open_ports(records);
+    records
+        .iter()
+        .find_map(|r| match r {
+            Record::SerialWitness {
+                label, injected_ns, ..
+            } if !open.contains(label.as_str()) => Some(*injected_ns),
+            _ => None,
+        })
+        .flatten()
+        .and_then(|t| t.checked_sub(TWIN_QUANTUM_NS))
+}
+
+/// One character's time on the wire in ns, rounded up, at a solved actual
+/// baud in thousandths, and a port's wire time after the boot word: its
+/// frame, `SERIAL_FRAME_LEN` bytes each a character rounded up to a whole
+/// quantum apart, and one echoed character (A2-3). `None` for a baud of 0
+/// or an overflow.
+// belt-and-suspenders: `aethelgard_twin::serial::{char_ns, spacing_ns}` and
+// `aethelgard-cli`'s `frame_echo_ns` state these; replay checks an archive
+// without the twin or the CLI, so it states them again.
+fn frame_echo_ns(framing: &SerialFraming, actual_millibaud: u64) -> Option<u64> {
+    let bits = 1 + u64::from(framing.word_bits()) + u64::from(framing.stop_bits);
+    let char_ns = (actual_millibaud > 0)
+        .then(|| bits.checked_mul(1_000_000_000_000))
+        .flatten()?
+        .div_ceil(actual_millibaud);
+    char_ns
+        .div_ceil(TWIN_QUANTUM_NS)
+        .checked_mul(TWIN_QUANTUM_NS)?
+        .checked_mul(SERIAL_FRAME_LEN as u64)?
+        .checked_add(char_ns)
+}
+
+/// How many times the judge names `serial_wire_past_run` of a booted run,
+/// where the records decide it (A2-5): none with no port the chain injects;
+/// once the first such port took its frame, one quantum after the boot
+/// word, whether the ports' frames and echoes (kind 27's framings, summed in
+/// the specification's order over the ports not held open) end past the
+/// boot from that instant: 1 or 0. `None` when that port took no frame, so
+/// the instant is not in the records.
+fn wire_past_run_count(records: &[Record]) -> Option<u64> {
+    let open = open_ports(records);
+    let ports: Vec<(&SerialFraming, u64)> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::SerialPortSolved {
+                label,
+                framing,
+                actual_millibaud,
+                ..
+            } if !open.contains(label.as_str()) => Some((framing, *actual_millibaud)),
+            _ => None,
+        })
+        .collect();
+    if ports.is_empty() {
+        return Some(0);
+    }
+    let injected = boot_word_instant(records)?.checked_add(TWIN_QUANTUM_NS)?;
+    let mut end = Some(injected);
+    let past = ports.iter().any(|&(f, baud)| {
+        end = end
+            .zip(frame_echo_ns(f, baud))
+            .and_then(|(e, w)| e.checked_add(w));
+        !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
+    });
+    Some(u64::from(past))
+}
+
+/// The timer of the motor output `label`, joined from kind 24.
+fn timer_of<'a>(records: &'a [Record], label: &str) -> Option<&'a str> {
+    records.iter().find_map(|m| match m {
+        Record::MotorOutputSolved {
+            label: l, timer, ..
+        } if l == label => Some(timer.as_str()),
+        _ => None,
+    })
+}
+
+/// The bounds on `motor_anchor_out_of_order` in a booted run the records
+/// give (A2-5): at most once per timer with an anchor (kind 26, joined to
+/// kind 24's timer); and, where the boot word's instant is in the records
+/// ([`boot_word_instant`]), at least once per timer whose anchor is after
+/// it, since the bring-up writes the boot word last. Its other cases, an
+/// anchor before the last device step's witness or no boot word seen by its
+/// hook, are the order of the boot's log lines, which no record carries.
+fn anchor_order_bounds(records: &[Record]) -> (u64, u64) {
+    let mut anchors: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        let Record::MotorWitness {
+            label,
+            anchor_ns: Some(a),
+            ..
+        } = r
+        else {
+            continue;
+        };
+        if let Some(t) = timer_of(records, label) {
+            anchors.insert(t, *a);
+        }
+    }
+    let after = boot_word_instant(records)
+        .map_or(0, |b| anchors.values().filter(|&&a| a > b).count() as u64);
+    (after, anchors.len() as u64)
 }
 
 /// Whether kind 29 `witness`'s TX pin at the end is the `MODER` and `AFSEL`
@@ -1825,13 +2071,122 @@ pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<()
     }
 }
 
-/// Every motor finding kind the records explain.
-const MOTOR_FINDINGS: [&str; 4] = [
+/// Every motor finding kind the records explain exactly.
+/// `motor_anchor_out_of_order` is bounded apart ([`anchor_order_bounds`]):
+/// its cases other than an anchor after the boot word are the order of the
+/// boot's log lines, which no record carries.
+const MOTOR_FINDINGS: [&str; 11] = [
     MOTOR_STATIC_FINDING,
     MOTOR_UNWITNESSED_FINDING,
     MOTOR_MISMATCH_FINDING,
     MOTOR_STATIC_ONLY_FINDING,
+    MOTOR_ANCHOR_UNOBSERVED_FINDING,
+    MOTOR_WINDOW_PAST_RUN_FINDING,
+    JUDGE_STOP_MISSING_FINDING,
+    JUDGE_STOP_MISMATCH_FINDING,
+    MOTOR_ANCHOR_REPEATED_FINDING,
+    MOTOR_EDGE_BEFORE_FINDING,
+    MOTOR_EDGE_AFTER_FINDING,
 ];
+
+/// The anchors' findings kinds 26 and 30 carry (`AET-WO-2302` adversarial
+/// pass 1, L3), as the judge names them once the boot word is set:
+/// `judge_stop_mismatch` once per register a stop that left `CEN` cleared
+/// read back off its solved value under its mask, and once more when it
+/// read fewer registers back than its timer has; `motor_anchor_repeated`
+/// once per timer whose `CEN` rose more than once (kind 26's `cen_rises`,
+/// one per timer, [`check_motor_joins`]); `motor_edge_before_anchor` and
+/// `motor_edge_after_window` once per output with such edges.
+fn anchor_record_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
+    let (mut mismatch, mut before, mut after) = (0, 0, 0);
+    let mut rises: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::JudgeStop {
+                read_back,
+                cr1_after: Some(c),
+                ..
+            } if c & 1 == 0 => {
+                let off = read_back
+                    .iter()
+                    .filter(|g| g.observed.is_some_and(|o| o & g.mask != g.expected))
+                    .count() as u64;
+                let short = read_back.iter().any(|g| g.observed.is_none());
+                mismatch += off + u64::from(short);
+            }
+            Record::MotorWitness {
+                label,
+                edges_before,
+                edges_after,
+                cen_rises,
+                ..
+            } => {
+                before += u64::from(*edges_before > 0);
+                after += u64::from(*edges_after > 0);
+                if let Some(t) = timer_of(records, label) {
+                    rises.insert(t, *cen_rises);
+                }
+            }
+            _ => {}
+        }
+    }
+    let repeated = rises.values().filter(|&&n| n > 1).count() as u64;
+    vec![
+        (JUDGE_STOP_MISMATCH_FINDING, mismatch),
+        (MOTOR_ANCHOR_REPEATED_FINDING, repeated),
+        (MOTOR_EDGE_BEFORE_FINDING, before),
+        (MOTOR_EDGE_AFTER_FINDING, after),
+    ]
+}
+
+/// Each DShot timer's window findings, from kinds 24, 26 and 30
+/// (`AET-WO-2302`): its anchored window past the boot
+/// (`motor_window_past_run`), or inside it with no judge's stop for that
+/// anchor (`judge_stop_missing`; a kind 30 whose `CR1` after it still has
+/// `CEN` set is no stop).
+fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
+    let mut anchors: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+    for r in records {
+        let Record::MotorOutputSolved {
+            label,
+            timer,
+            protocol,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        if !protocol.starts_with("dshot") {
+            continue;
+        }
+        let anchor = records.iter().find_map(|w| match w {
+            Record::MotorWitness {
+                label: l,
+                anchor_ns,
+                ..
+            } if l == label => *anchor_ns,
+            _ => None,
+        });
+        let slot = anchors.entry(timer.as_str()).or_insert(None);
+        *slot = slot.or(anchor);
+    }
+    let (mut past, mut missing) = (0, 0);
+    for (timer, anchor) in anchors {
+        let Some(at) = anchor else { continue };
+        if at.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS {
+            past += 1;
+        } else if !records.iter().any(|r| {
+            matches!(r, Record::JudgeStop { timer: t, anchor_ns, cr1_after: Some(c), .. }
+                if t == timer && *anchor_ns == at && c & 1 == 0)
+        }) {
+            missing += 1;
+        }
+    }
+    vec![
+        (MOTOR_WINDOW_PAST_RUN_FINDING, past),
+        (JUDGE_STOP_MISSING_FINDING, missing),
+    ]
+}
 
 /// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
 /// every output has exactly one static check and at most one witness, and
@@ -1845,15 +2200,14 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
             return Err("a motor output is solved twice");
         }
     }
-    // The board's window, from its outputs' protocols (`AET-WO-4300a` D1):
-    // every witness ends at it. Kind 10's instruction count is not tied to
-    // it: a droop's boot counts from the last reset's release (third
-    // adversarial review, F1).
-    let window = if short_window(records) {
-        TWIN_DSHOT_WINDOW_NS
-    } else {
-        TWIN_MAX_VIRTUAL_NS
-    };
+    // Each witness's window, from the records (`AET-WO-2302`): it starts at
+    // its anchor, which all outputs of a timer share, and ends
+    // `DSHOT_WINDOW_NS` after it for DShot and at the boot's end, 100 ms on
+    // every board, for PWM and without an anchor. Kind 10's instruction
+    // count is not tied to it: a droop's boot counts from the last reset's
+    // release (third adversarial review, F1).
+    let mut timer_anchor: BTreeMap<&str, Option<u64>> = BTreeMap::new();
+    let mut timer_rises: BTreeMap<&str, u64> = BTreeMap::new();
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -1877,8 +2231,38 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                 else {
                     return Err("a motor witness names no solved output");
                 };
-                if !matches!(r, Record::MotorWitness { end_ns, .. } if *end_ns == window) {
-                    return Err("a motor witness does not end at its board's window");
+                let Record::MotorOutputSolved {
+                    timer, protocol, ..
+                } = m
+                else {
+                    unreachable!("kind 24 by its label");
+                };
+                let Record::MotorWitness {
+                    anchor_ns,
+                    end_ns,
+                    first_ns,
+                    cen_rises,
+                    ..
+                } = r
+                else {
+                    unreachable!("matched");
+                };
+                let window = match (anchor_ns, protocol.starts_with("dshot")) {
+                    (Some(a), true) => a.checked_add(TWIN_DSHOT_WINDOW_NS),
+                    _ => Some(TWIN_MAX_VIRTUAL_NS),
+                };
+                if window != Some(*end_ns)
+                    || anchor_ns.is_some_and(|a| a >= *end_ns)
+                    || first_ns.zip(*anchor_ns).is_some_and(|(f, a)| f < a)
+                {
+                    return Err(
+                        "a motor witness's window is not its anchor's, or its first rise is before it",
+                    );
+                }
+                if *timer_anchor.entry(timer.as_str()).or_insert(*anchor_ns) != *anchor_ns
+                    || *timer_rises.entry(timer.as_str()).or_insert(*cen_rises) != *cen_rises
+                {
+                    return Err("two outputs of one timer name different anchors or CEN rises");
                 }
                 if !witness_consistent(m, r) {
                     return Err(
@@ -1903,6 +2287,92 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     if checked.len() != solved.len() {
         return Err("a solved motor output has no static timing check");
     }
+    // Each judge's stop (kind 30): a DShot timer's, once, at its witnesses'
+    // anchor plus `DSHOT_WINDOW_NS`, inside the boot.
+    let mut stopped: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        let Record::JudgeStop {
+            timer,
+            anchor_ns,
+            at_ns,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        let dshot = solved.values().any(|m| {
+            matches!(m, Record::MotorOutputSolved { timer: t, protocol, .. }
+                if t == timer && protocol.starts_with("dshot"))
+        });
+        if !dshot || !stopped.insert(timer.as_str()) {
+            return Err("a judge's stop names no DShot timer, or one twice");
+        }
+        if timer_anchor.get(timer.as_str()) != Some(&Some(*anchor_ns))
+            || anchor_ns.checked_add(TWIN_DSHOT_WINDOW_NS) != Some(*at_ns)
+            || *at_ns > TWIN_MAX_VIRTUAL_NS
+        {
+            return Err(
+                "a judge's stop is not at its timer's witnesses' anchor plus DSHOT_WINDOW_NS, inside the boot",
+            );
+        }
+        check_stop_read_back(records, r)?;
+    }
+    Ok(())
+}
+
+/// Kind 30 `stop`'s read-back is the run's own (`AET-WO-2302` adversarial
+/// pass 2, A2-1): exactly the timer's solved registers kind 11 lists (each
+/// named `TIMn.` and the register), in kind 11's order, each with kind 11's
+/// address, mask and expected value. The one difference is the judge's own
+/// act: a stop that left `CEN` cleared makes kind 11's `CR1` expect `CEN`
+/// clear after the boot, while the stop read `CR1` back against the solved
+/// value, `CEN` set, before it cleared `CEN`.
+fn check_stop_read_back(records: &[Record], stop: &Record) -> Result<(), &'static str> {
+    let Record::JudgeStop {
+        timer,
+        read_back,
+        cr1_after,
+        ..
+    } = stop
+    else {
+        return Ok(());
+    };
+    let prefix = format!("{timer}.");
+    let cr1 = format!("{timer}.CR1");
+    let solved: Vec<(&str, &Reading)> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::RegisterObserved { name, reading } if name.starts_with(&prefix) => {
+                Some((name.as_str(), reading))
+            }
+            _ => None,
+        })
+        .collect();
+    if solved.len() != read_back.len() {
+        return Err(
+            "a judge's stop does not read back exactly its timer's solved registers that kind 11 lists",
+        );
+    }
+    let stopped = cr1_after.is_some_and(|c| c & 1 == 0);
+    for ((name, k11), got) in solved.iter().zip(read_back) {
+        if got.address != k11.address || got.mask != k11.mask {
+            return Err(
+                "a judge's stop reads a register back at an address or under a mask that is not kind 11's for it",
+            );
+        }
+        // A stop follows its timer's anchor, a `CEN` rise to the solved
+        // `CR1`, which sets `CEN`: the stop expects it set, kind 11 cleared.
+        let same = if *name == cr1 && stopped {
+            got.expected & 1 == 1 && got.expected & !1 == k11.expected
+        } else {
+            got.expected == k11.expected
+        };
+        if !same {
+            return Err(
+                "a judge's stop reads a register back against a value that is not kind 11's for it",
+            );
+        }
+    }
     Ok(())
 }
 
@@ -1916,14 +2386,13 @@ const TWIN_CYCLE_NS: u64 = 4;
 const TWIN_GRAIN_NS: u64 = 10;
 const TWIN_QUANTUM_NS: u64 = 100_000;
 
-/// A boot's windows: 100 ms, or 2 ms for a board with a DShot output
-/// (`AET-WO-4300a` D1); and every timer's kernel clock, the reset clock's 64 MHz (RM0433 Table 57), the
-/// only clock a solved topology admits.
+/// Every board's boot, 100 ms, and a DShot output's window from its anchor,
+/// 2 ms (`AET-WO-2302`); and every timer's kernel clock, the reset clock's
+/// 64 MHz (RM0433 Table 57), the only clock a solved topology admits.
 // belt-and-suspenders: `aethelgard_twin::boot::{MAX_VIRTUAL_NS,
 // DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
-// these, and `aethelgard_twin::boot::window` the rule that picks the window
-// (any DShot output); replay checks an archive without the twin or
-// `aethelgard-ir` (RUL-16), so it states them again.
+// these; replay checks an archive without the twin or `aethelgard-ir`
+// (RUL-16), so it states them again.
 const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
 const RESET_KERNEL_HZ: u64 = 64_000_000;
@@ -2021,6 +2490,7 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
             span_ns,
             off_grid,
             batched,
+            anchor_ns,
             ..
         },
     ) = (m, w)
@@ -2074,6 +2544,13 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         "unreadable" => none,
         "batched" => *rises >= 2 && *batched > 0,
         "stopped" => shaped && !covers,
+        "unanchored" => {
+            anchor_ns.is_none()
+                && first_ns.is_none()
+                && last_ns.is_none()
+                && span_ns.is_none()
+                && rises.checked_add(*falls).is_some_and(|e| e > 0)
+        }
         // An unreadable log, or edges off the model's sequence.
         "mismatch" => none || *rises >= 2,
         _ => false,

@@ -248,8 +248,8 @@ fn a_droop_domain_must_be_1_to_64_printable_ascii_bytes() {
 }
 
 #[test]
-fn schema_version_three_is_unsupported_for_a_droop_too() {
-    let v = scenario_json(3, json!([{ "droop": droop_json() }]), None);
+fn schema_version_four_is_unsupported_for_a_droop_too() {
+    let v = scenario_json(4, json!([{ "droop": droop_json() }]), None);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
 }
 

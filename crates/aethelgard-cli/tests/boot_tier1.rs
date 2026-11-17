@@ -150,9 +150,24 @@ const NO_SERIAL_REGISTERS: [&str; 19] = [
     "0x00000000",
 ];
 
-/// The reads at the injection instant (`AET-WO-4300b`): the console's RX
-/// pin, PA10, in AF mode on AF7 (GPIOA's `MODER`, then `AFRH`), as measured.
-const INJECTION: &str = "AETHELGARD-INJECT-BEGIN\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-END\n";
+/// The lines the CLI's own hooks log in the reference's boot (`AET-WO-2302`
+/// D4, the shapes measured in build probe P5): the boot word at instruction
+/// 2575, then each frame byte a quantum and a character (100 us at 115 200
+/// 8N1) apart from it, the first with the console's RX pin, PA10, in AF mode
+/// on AF7 (GPIOA's `MODER`, then `AFRH`).
+const INJECTION: &str = "[00:00:00.000025750] [WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 2575\n\
+[00:00:00.000125750] [WARNING] sysbus: AETHELGARD-INJECT 0 0 2575 12575 28a801 770\n\
+[00:00:00.000225750] [WARNING] sysbus: AETHELGARD-INJECT 0 1 2575 22575\n\
+[00:00:00.000325750] [WARNING] sysbus: AETHELGARD-INJECT 0 2 2575 32575\n\
+[00:00:00.000425750] [WARNING] sysbus: AETHELGARD-INJECT 0 3 2575 42575\n\
+[00:00:00.000525750] [WARNING] sysbus: AETHELGARD-INJECT 0 4 2575 52575\n\
+[00:00:00.000625750] [WARNING] sysbus: AETHELGARD-INJECT 0 5 2575 62575\n\
+[00:00:00.000725750] [WARNING] sysbus: AETHELGARD-INJECT 0 6 2575 72575\n\
+[00:00:00.000825750] [WARNING] sysbus: AETHELGARD-INJECT 0 7 2575 82575\n";
+
+/// The boot word's hook in the stub's accepted command line: the CLI's own
+/// Python, between its double quotes (`AET-WO-2302`).
+const HOOK: &str = r#"sysbus AddWatchpointHook 0x20000000 DoubleWord Write \""*"\""#;
 
 /// The console's bring-up as Renode 1.17.0's access log shows it
 /// (`AET-WO-4300b` fix 1, measured): PA10's and PA9's AF7, their modes, then
@@ -307,7 +322,7 @@ if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000100000\"; echo \"AETHELGARD-INJECT-BEGIN\"; sysbus ReadDoubleWord 0x58020000; sysbus ReadDoubleWord 0x58020024; echo \"AETHELGARD-INJECT-END\"; sysbus.usart1 WriteChar 0x"*"; emulation RunFor \"0.009200000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -1425,8 +1440,10 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     let (code, v) = boot(&with_log(GOOD_RECORD, &format!("{GOOD_WITNESS}{flood}")));
     assert_eq!(code, Some(1), "{v}");
     // Every read, U4's on SPI too (`AET-WO-4200`), the console's writes and
-    // its TX pin at the first TDR write (`AET-WO-4300b`), and the flash
-    // controller's one read (`AET-WO-4230` D10): a dropped line could be one.
+    // its TX pin at the first TDR write (`AET-WO-4300b`), the flash
+    // controller's one read (`AET-WO-4230` D10), and the injection, read
+    // from the hooks' own log lines since `AET-WO-2302`: a dropped line could
+    // be one, so the echo is never counted.
     assert_eq!(
         kinds(&v),
         [
@@ -1434,12 +1451,20 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
             "i2c_transaction_unwitnessed",
             "spi_transaction_unwitnessed",
             "serial_tag_mismatch",
-            "serial_pattern_missing"
+            "serial_pattern_missing",
+            "serial_echo_missing"
         ],
         "{v}"
     );
     assert!(finding(&v, "renode_log_flood").is_some(), "{v}");
     assert_eq!(v["boot"]["i2c_witness"][0]["observed"], Value::Null);
+    assert!(
+        finding(&v, "serial_echo_missing").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("no frame went in: Renode's log could not be read whole"),
+        "{v}"
+    );
 }
 
 // `AET-WO-2204` D3: after the boot word, the core is in thread mode on a
@@ -1629,11 +1654,13 @@ fn two_devices_witness_their_own_reads_in_either_order() {
     );
 }
 
-/// `AET-WO-4300a` D1, ruled (a): a board with a DShot output boots inside
-/// `DSHOT_WINDOW_NS` (2 ms). `--for` past it is refused by name before any
-/// tool is looked for; at the window, the inputs pass to the missing tool.
+/// `AET-WO-2302`, ruled (a-i): every board boots `MAX_VIRTUAL_NS`, a board
+/// with a DShot output too (it booted `DSHOT_WINDOW_NS`, 2 ms, refused past
+/// it as `BootPastWindow`, under `AET-WO-4300a` D1). At 100 ms the inputs
+/// pass to the missing tool; past it `--for` itself is refused, as on every
+/// board.
 #[test]
-fn a_boot_past_a_dshot_board_s_window_is_refused_by_name() {
+fn a_dshot_board_boots_the_whole_100_ms() {
     let empty = Dir::new("empty-dshot");
     let input = Dir::new("in-dshot");
     let spec =
@@ -1667,18 +1694,16 @@ fn a_boot_past_a_dshot_board_s_window_is_refused_by_name() {
             ],
         )
     };
-    let out = boot("100ms");
-    let v = report(&out);
-    assert_eq!(out.status.code(), Some(3), "{v}");
-    assert_eq!(v["error"]["kind"], "BootPastWindow", "{v}");
-    let message = v["error"]["message"].as_str().unwrap();
-    assert!(
-        message.contains("DSHOT_WINDOW_NS of 2000000 ns"),
-        "{message}"
-    );
-    // At the window the inputs are good: the missing tool stops it (exit 4).
-    let out = boot("2ms");
-    assert_eq!(out.status.code(), Some(4), "{}", report(&out));
+    // The whole boot: the inputs are good, and the missing tool stops it
+    // (exit 4); 3 ms, once past the old window, the same.
+    for time in ["100ms", "3ms", "2ms"] {
+        let out = boot(time);
+        assert_eq!(out.status.code(), Some(4), "{time}: {}", report(&out));
+    }
+    // Past `MAX_VIRTUAL_NS`, `--for` is refused on this board as on any.
+    let out = boot("101ms");
+    assert_ne!(out.status.code(), Some(4));
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("BootPastWindow"));
 }
 
 // ---------------------------------------------------------------- AET-WO-4300b
@@ -1826,14 +1851,10 @@ fn anything_beside_the_ports_files_in_the_capture_directory_is_forged() {
 fn a_pin_off_its_af_does_not_count_its_bytes() {
     let capture = capture_of(&elf());
     for (moder, afr, at) in [
-        ("0x0028A801", "0x00000870", "PA10 MODER 0b10, AF8"),
-        ("0x0038A801", "0x00000770", "PA10 MODER 0b11, AF7"),
+        ("28a801", "870", "PA10 MODER 0b10, AF8"),
+        ("38a801", "770", "PA10 MODER 0b11, AF7"),
     ] {
-        let text = good().replacen(
-            INJECTION,
-            &format!("AETHELGARD-INJECT-BEGIN\n{moder}\n{afr}\nAETHELGARD-INJECT-END\n"),
-            1,
-        );
+        let text = good().replacen("28a801 770", &format!("{moder} {afr}"), 1);
         let (code, v) = boot_capture(&text, &capture, "");
         assert_eq!(code, Some(1), "{v}");
         assert_eq!(kinds(&v), ["serial_echo_missing"], "{v}");
@@ -1861,47 +1882,83 @@ fn a_pin_off_its_af_does_not_count_its_bytes() {
     );
 }
 
-/// The reads at the injection are trusted only between their own markers,
-/// once, before the reads, and only as bare values (as a probe's).
+/// `AET-WO-2302` D4: the injection is read from the CLI's own hook lines,
+/// whole and in place. A frame that did not go in once, whole and in order
+/// from the boot word, is no injection and fails the echo by name; a line of
+/// ours in no shape it writes, or stamped where its count does not place
+/// it, is refused as untrusted (exit 5). It took the place of the
+/// `INJECT-BEGIN`/`END` block (adversarial pass 2), each refusal of which
+/// has its counterpart here.
 #[test]
-fn the_injection_s_reads_are_one_whole_block_of_bare_values() {
+fn the_injection_s_lines_are_read_whole_and_in_place() {
     let capture = capture_of(&elf());
-    let block = |body: &str| format!("AETHELGARD-INJECT-BEGIN\n{body}AETHELGARD-INJECT-END\n");
-    for (what, text) in [
-        ("no block", good().replacen(INJECTION, "", 1)),
+    let first =
+        "[00:00:00.000125750] [WARNING] sysbus: AETHELGARD-INJECT 0 0 2575 12575 28a801 770\n";
+    let second = "[00:00:00.000225750] [WARNING] sysbus: AETHELGARD-INJECT 0 1 2575 22575\n";
+    // No lines (the boot word never observed), a byte twice (the boot word
+    // written over another word twice), a byte missing in the middle: the
+    // echo is not counted, named.
+    for (what, text, why) in [
         (
-            "two blocks",
-            good().replacen(INJECTION, &INJECTION.repeat(2), 1),
+            "no lines",
+            good().replacen(INJECTION, "", 1),
+            "no frame went in: no write of the boot word was observed by its hook",
         ),
+        (
+            "a byte twice",
+            good().replacen(second, &second.repeat(2), 1),
+            "not one frame in order from one anchor",
+        ),
+        (
+            "a byte missing",
+            good().replacen(second, "", 1),
+            "not one frame in order from one anchor",
+        ),
+    ] {
+        let (code, v) = boot_capture(&text, &capture, "");
+        assert_eq!(code, Some(1), "{what}: {v}");
+        assert_eq!(kinds(&v), ["serial_echo_missing"], "{what}: {v}");
+        assert_eq!(console(&v)["rx_at_injection"], Value::Null, "{what}: {v}");
+        let m = finding(&v, "serial_echo_missing").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .to_owned();
+        assert!(m.contains(why), "{what}: {m}");
+    }
+    // A missing read of the mux, text in a line, a line before its count's
+    // instant or a quantum after it: untrusted.
+    for (what, text) in [
         (
             "a missing read",
-            good().replacen(INJECTION, &block("0x0028A801\n"), 1),
+            good().replacen(first, &first.replace(" 28a801 770", ""), 1),
         ),
         (
-            "text in the block",
-            good().replacen(INJECTION, &block("0x0028A801\nhello\n0x00000770\n"), 1),
+            "text in a line",
+            good().replacen(first, &first.replace(" 770", " hello"), 1),
         ),
         (
-            "end before begin",
-            good().replacen(
-                INJECTION,
-                "AETHELGARD-INJECT-END\n0x0028A801\n0x00000770\nAETHELGARD-INJECT-BEGIN\n",
-                1,
-            ),
+            "stamped after its instant",
+            good().replacen(first, &first.replace("000125750", "000125760"), 1),
+        ),
+        (
+            "stamped a quantum early",
+            good().replacen(first, &first.replace("000125750", "000025750"), 1),
         ),
     ] {
         let (code, v) = boot_capture(&text, &capture, "");
         assert_eq!(code, Some(5), "{what}: {v}");
         assert_eq!(v["error"]["kind"], "ToolError", "{what}: {v}");
     }
-    // A whole log line inside it is the judge's reads', and skipped.
+    // A whole log line among them is another source's, and skipped.
     let text = good().replacen(
-        INJECTION,
-        &block("0x0028A801\n[00:00:00.000100000] [WARNING] sysbus: x\n0x00000770\n"),
+        second,
+        &format!("[00:00:00.000200000] [WARNING] sysbus: x\n{second}"),
         1,
     );
     let (code, v) = boot_capture(&text, &capture, "");
     assert_eq!(code, Some(0), "{v}");
+    assert_eq!(console(&v)["injected_ns"], 125_750, "{v}");
+    assert_eq!(v["boot"]["boot_word_ns"], 25_750, "{v}");
 }
 
 /// `AET-WO-4300b` §1.5, adversarial F1–F3: a write the bring-up never
@@ -1969,16 +2026,17 @@ fn a_write_the_bring_up_never_makes_fails_and_another_source_s_does_not_count() 
     );
 }
 
-/// The ruling's amendment 3: a `--for` too short to hold the injection and
-/// the quantum after it is not cut to fit. Nothing is injected, the run is
-/// one `RunFor`, and once the boot word is set the echo fails closed, by
-/// name. (A board whose window cannot hold it is refused before the boot.)
+/// The ruling's amendment 3, under `AET-WO-2302` D4: a `--for` too short to
+/// hold the injection, one quantum after the boot word, is not cut to fit.
+/// The run is one `RunFor` with the hooks; the frame never goes in, and
+/// once the boot word is set the echo fails closed, by name, and so does the
+/// ports' wire time past the run (`serial_wire_past_run`).
 #[test]
 fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
     let tb = Dir::new("tb-short");
     let reads = reads(
         "0x2100B007",
-        "0x0000000000003A98",
+        "0x0000000000002EE0",
         "0x00000064",
         &GOOD_REGISTERS,
     );
@@ -1986,18 +2044,23 @@ fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
         &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &reads.iter().map(String::as_str).collect::<Vec<_>>(),
     )
-    .replacen(INJECTION, "", 1);
+    .replacen(
+        INJECTION,
+        "[00:00:00.000025750] [WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 2575\n",
+        1,
+    );
     let out = tb.write("renode.out", text.as_bytes());
     let bytes = tb.write("capture.bin", &aethelgard_twin::serial::pattern("CONSOLE"));
     // A stub that checks the configuration, that the run is one `RunFor` of
-    // 150 us with no injection, and writes the capture.
+    // 120 us after the boot word's hook, no block of reads, and writes the
+    // capture.
     let stub = tb.0.join("renode");
     common::stub::write_executable(&stub, format!(
             r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
-case "$7" in *INJECT*|*WriteChar*) exit 98;; esac
-case "$7" in *"CreateFileBackend @"*"/capture/usart1.bin true; emulation RunFor \"0.000150000\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 99;; esac
+case "$7" in *INJECT-BEGIN*) exit 98;; esac
+case "$7" in *"CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.000120000\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 99;; esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
 /bin/cat '{}' > "$cap" || exit 95
 /bin/cat '{}'
@@ -2008,74 +2071,97 @@ cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1
         .as_bytes(),);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
-    let out = boot_with(&tb.0, &platform(), &fw, "150us");
+    let out = boot_with(&tb.0, &platform(), &fw, "120us");
     let v = report(&out);
     assert_eq!(out.status.code(), Some(1), "{v}");
-    assert_eq!(kinds(&v), ["serial_echo_missing"], "{v}");
+    assert_eq!(
+        kinds(&v),
+        ["serial_echo_missing", "serial_wire_past_run"],
+        "{v}"
+    );
     assert!(
         finding(&v, "serial_echo_missing").unwrap()["message"]
             .as_str()
             .unwrap()
-            .contains(
-                "no frame went in: the boot of 150000 ns ends before the injection at 100000 ns"
-            ),
+            .contains("no frame went in: the boot ended before the boot word's quantum"),
+        "{v}"
+    );
+    assert!(
+        finding(&v, "serial_wire_past_run").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .contains("from one quantum after the boot word at 25750 ns, passes the boot's end at 120000 ns"),
         "{v}"
     );
     assert_eq!(console(&v)["patterns"], 1, "{v}");
     assert_eq!(console(&v)["rx_at_injection"], Value::Null, "{v}");
 }
 
-/// The PM's ruling on adversarial F5: a port's pattern, the frame and one
-/// echoed character must fit between the injection and the board's window,
-/// judged before the boot. The DShot600 fixture with a 9600 8N1 console
-/// (`serial-dshot-9600.json`: BRR 6667, 9 599.520 baud, 1 041 719 ns a
-/// character; the pattern and one echoed character, 13 characters, and the
-/// frame's 8 bytes 1 100 000 ns apart as the composition paces them,
-/// adversarial pass 4 ADV4-2: 22 342 347 ns) ends at 22 442 347 ns from the
-/// injection at 100 000 ns, past `DSHOT_WINDOW_NS`: refused by name, and the
-/// stub (which exits 99 on any boot) is never asked for one.
+/// The PM's ruling on adversarial F5, under `AET-WO-2302`: a port's pattern,
+/// the frame and one echoed character are judged before the boot from the
+/// earliest instant the frame can go in, one quantum after the boot's start,
+/// against `MAX_VIRTUAL_NS`, which every board now boots. The DShot600
+/// fixture with a 9600 8N1 console (`serial-dshot-9600.json`: 22 342 347 ns
+/// on the wire) was refused against `DSHOT_WINDOW_NS`; it now fits, and its
+/// inputs pass to the stub. The same board at 1200 8N1 does not fit even
+/// from 100 us: refused by name, and the stub is never asked for a boot.
 #[test]
-fn a_console_too_slow_for_its_board_s_window_is_refused_before_the_boot() {
+fn a_console_too_slow_for_the_boot_is_refused_before_it() {
     let tb = toolbox("");
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
-    let spec = root().join("crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json");
-    // The platform the twin emits for it (`generate` starts no process).
-    let generated = input.0.join("gen");
-    let made = run(
-        &tb.0,
-        &[
-            OsStr::new("generate"),
-            OsStr::new("--spec"),
-            spec.as_os_str(),
-            OsStr::new("--out"),
-            generated.as_os_str(),
-        ],
+    let fixture = root().join("crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json");
+    let slow = input.write(
+        "serial-dshot-1200.json",
+        fs::read_to_string(&fixture)
+            .unwrap()
+            .replace("\"baud\": 9600", "\"baud\": 1200")
+            .as_bytes(),
     );
-    assert_eq!(made.status.code(), Some(0), "{made:?}");
-    let platform = generated.join("board/motors-dshot600-console.repl");
-    let out = run(
-        &tb.0,
-        &[
-            OsStr::new("simulate"),
-            OsStr::new("--platform"),
-            platform.as_os_str(),
-            OsStr::new("--firmware"),
-            fw.as_os_str(),
-            OsStr::new("--spec"),
-            spec.as_os_str(),
-            OsStr::new("--for"),
-            OsStr::new("2ms"),
-        ],
-    );
-    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(out.status.code(), Some(3), "{v}");
+    let simulate = |spec: &Path, label: &str| {
+        // The platform the twin emits for it (`generate` starts no process).
+        let generated = input.0.join(label);
+        let made = run(
+            &tb.0,
+            &[
+                OsStr::new("generate"),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--out"),
+                generated.as_os_str(),
+            ],
+        );
+        assert_eq!(made.status.code(), Some(0), "{made:?}");
+        let platform = generated.join("board/motors-dshot600-console.repl");
+        let out = run(
+            &tb.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                fw.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--for"),
+                OsStr::new("100ms"),
+            ],
+        );
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        (out.status.code(), v)
+    };
+    let (code, v) = simulate(&fixture, "gen-9600");
+    assert_ne!(code, Some(3), "{v}");
+    assert_ne!(v["error"]["kind"], "SerialWireTimePastWindow", "{v}");
+    let (code, v) = simulate(&slow, "gen-1200");
+    assert_eq!(code, Some(3), "{v}");
     assert_eq!(v["error"]["kind"], "SerialWireTimePastWindow", "{v}");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
-        m.contains("serial port `CONSOLE` (USART1, 9600 8N1)")
-            && m.contains("take 22342347 ns on the wire at 9599520 mbaud (1041719 ns a character, the frame's 1100000 ns apart), ending at 22442347 ns")
-            && m.contains("DSHOT_WINDOW_NS of 2000000 ns"),
+        m.contains("serial port `CONSOLE` (USART1, 1200 8N1)")
+            && m.contains(
+                "from the earliest injection at 100000 ns, past MAX_VIRTUAL_NS of 100000000 ns"
+            ),
         "{m}"
     );
 }

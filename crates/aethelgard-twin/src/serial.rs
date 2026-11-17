@@ -124,9 +124,7 @@ pub fn injection_ns(boot_start_ns: u64) -> u64 {
 
 /// Whether a boot of `virtual_ns` holds the instant `at_ns` and one quantum
 /// after it: the injection, or a board whose window cannot hold it is
-/// refused by name (the ruling's amendment 3); and the frames' last byte
-/// ([`last_byte_ns`]), after which the firmware echoes it, or nothing goes
-/// in: a frame is never cut short.
+/// refused by name (the ruling's amendment 3).
 pub fn fits(at_ns: u64, virtual_ns: u64) -> bool {
     at_ns
         .checked_add(boot::QUANTUM_NS)
@@ -153,13 +151,6 @@ pub fn spacing_ns(framing: &Framing, actual_millibaud: u64) -> Option<u64> {
     char_ns(framing, actual_millibaud)?
         .div_ceil(boot::QUANTUM_NS)
         .checked_mul(boot::QUANTUM_NS)
-}
-
-/// The instant a port's last frame byte goes in, for a frame injected at
-/// `injection_ns` with its bytes `spacing_ns` apart ([`spacing_ns`]).
-pub fn last_byte_ns(injection_ns: u64, spacing_ns: u64) -> Option<u64> {
-    let gaps = u64::try_from(FRAME_LEN - 1).ok()?;
-    injection_ns.checked_add(spacing_ns.checked_mul(gaps)?)
 }
 
 /// One character's time on the wire in ns, rounded up: its start bit, data
@@ -1526,11 +1517,6 @@ mod tests {
         assert!(fits(100_000, 200_000));
         assert!(!fits(100_000, 199_999));
         assert!(!fits(u64::MAX, u64::MAX));
-        // ADV4-2: the last of eight bytes a quantum apart, 700 000 ns after
-        // the first.
-        assert_eq!(last_byte_ns(100_000, 100_000), Some(800_000));
-        assert_eq!(last_byte_ns(u64::MAX, 1), None);
-        assert_eq!(last_byte_ns(0, u64::MAX), None);
     }
 
     #[test]
