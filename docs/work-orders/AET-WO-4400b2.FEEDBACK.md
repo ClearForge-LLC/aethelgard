@@ -228,11 +228,23 @@ Three tests outside pincheck and ir changed one assertion each, forced by F4 (§
 
 ## 8. Gates
 
-- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (126 test binaries) all pass [measured].
-- No tier-2 test was added, so `TIER2_MIN` stays at main's 176 (2302, merged in).
+- `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (126 test binaries; 127 after merging ac5f8c8, with `bench_board_tier1`) all pass [measured].
+- No tier-2 test was added, so `TIER2_MIN` stays at main's value: 177 after 3401 (#190) was merged in at ac5f8c8.
+- **F4 against Sentinel-01 as ordered (the ruling's condition) [measured after merging ac5f8c8]:**
+  - `solve --file examples/sentinel-01.json` exits 0. Its output, trimmed as the test hashes it, matches `fab/sentinel-01-bench/package/MANIFEST.json`'s `topology_sha256` (`d0468869…`).
+  - `generate hwdef --topology` on that topology runs F4's `validate` and accepts it.
+  - `bench_board_tier1` passes (2/2).
+  - The three gates were re-run after the merge (below).
 - No specification version moves.
 
 ## 9. Status: READY
+
+**Ruling (#196, comment 6943747101, 09:30 UTC 2026-11-17):** READY bb2501a8 accepted.
+- **D1 → (a):** one line in the CLI README's `check pinout` section, built: the `hwdef.h` facts are bound to the firmware only by coming from the same build directory as the ELF. (b) goes to the backlog.
+- **D2:** a follow-up, owned by 4400c.
+- **D3:** backlog.
+- **§7's three files outside the fence:** accepted.
+- **Before merge:** main ac5f8c8 was merged in and the Sentinel-01 confirmation is in §8.
 
 - **CI** is green on 08f79cfa, with every job passing or skipping [measured]:
   - `ci`, including the tier-2 shards at `TIER2_MIN` 176;
