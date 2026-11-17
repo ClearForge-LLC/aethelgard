@@ -1,0 +1,941 @@
+diff --git a/crates/aethelgard-eda/src/pcb.rs b/crates/aethelgard-eda/src/pcb.rs
+index ddd9fcb3..f6209787 100644
+--- a/crates/aethelgard-eda/src/pcb.rs
++++ b/crates/aethelgard-eda/src/pcb.rs
+@@ -545,9 +545,19 @@ fn is_bench(part: &Part) -> bool {
+ fn place(
+     items: &[Item<'_>],
+     pairs: &[[String; 2]],
+-    bounded: bool,
++    bound: Option<OutlineBound>,
+ ) -> Result<(Vec<Placed>, Edges), EmitError> {
+-    let order = placing_order(items, bounded);
++    let bounded = bound.is_some();
++    // SPIKE 1313b: a canonical, name-free rank of every item under a bound.
++    let canon: Option<Vec<usize>> = (bounded && spike('k')).then(|| canon_ranks(items));
++    let order = match &canon {
++        Some(rank) => {
++            let mut o = placing_order(items, bounded);
++            o.sort_by_key(|&i| rank[i]);
++            o
++        }
++        None => placing_order(items, bounded),
++    };
+     // An anchored part goes straight after its IC, in drawing order, before
+     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
+     // design with no anchor keeps the order above.
+@@ -559,7 +569,30 @@ fn place(
+     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
+         grouped.push(i);
+         let reference = items[i].part.reference.as_str();
+-        grouped.extend((0..items.len()).filter(|&j| anchored(j) == Some(reference)));
++        let mut own: Vec<usize> = (0..items.len())
++            .filter(|&j| anchored(j) == Some(reference))
++            .collect();
++        if canon.is_none() && spike('q') {
++            // SPIKE `q`: main's placer with only the anchored parts' order
++            // made the draw sequence instead of list order.
++            own.sort_by_key(|&j| {
++                items[j]
++                    .part
++                    .owner
++                    .as_ref()
++                    .and_then(|o| o.anchor.as_ref())
++                    .map_or(usize::MAX, |a| a.seq)
++            });
++        }
++        if let Some(rank) = &canon {
++            // The emitter's draw sequence, carried by the anchor, not the
++            // list's order.
++            own.sort_by_key(|&j| {
++                let a = items[j].part.owner.as_ref().and_then(|o| o.anchor.as_ref());
++                (a.map_or(usize::MAX, |a| a.seq), rank[j])
++            });
++        }
++        grouped.extend(own);
+     }
+     if grouped.len() != order.len() {
+         return Err(EmitError::Internal(
+@@ -568,6 +601,8 @@ fn place(
+     }
+     let order = grouped;
+     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
++    let mut anchor_of: Vec<Option<usize>> = vec![None; items.len()];
++    let mut rule: Vec<Rule> = vec![Rule::default(); items.len()];
+     // The approach to each declared pair's MCU pins, kept clear of every
+     // part placed after the MCU (`AET-WO-4300g` D5, lever 2; `AET-WO-1310`).
+     let mut approach: Vec<Rect> = Vec::new();
+@@ -586,6 +621,11 @@ fn place(
+                 keep: g.keep.shift(ORIGIN),
+             });
+             approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
++            rule[i] = Rule {
++                reserve: None,
++                ic: true,
++                step,
++            };
+             continue;
+         }
+         // The anchor: an IC already placed.
+@@ -603,9 +643,10 @@ fn place(
+             None => candidates
+                 .max_by(|&a, &b| {
+                     let count = |j: usize| item.shared(&items[j]).len();
+-                    count(a)
+-                        .cmp(&count(b))
+-                        .then_with(|| items[b].part.reference.cmp(&items[a].part.reference))
++                    count(a).cmp(&count(b)).then_with(|| match &canon {
++                        Some(rank) => rank[b].cmp(&rank[a]),
++                        None => items[b].part.reference.cmp(&items[a].part.reference),
++                    })
+                 })
+                 .ok_or_else(|| internal(&item.part.reference, "no IC to place beside"))?,
+         };
+@@ -629,6 +670,12 @@ fn place(
+                 (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
+             })
+             .max();
++        anchor_of[i] = Some(anchor);
++        rule[i] = Rule {
++            reserve,
++            ic: is_ic(item.part),
++            step,
++        };
+         let taken: Vec<(Rect, i64)> = (0..items.len())
+             .filter_map(|j| {
+                 let both = is_ic(items[j].part) && is_ic(item.part);
+@@ -645,7 +692,9 @@ fn place(
+             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
+             continue;
+         }
+-        let target = {
++        let target = if canon.is_some() {
++            spike_target(item, &items[anchor], at)
++        } else {
+             item.shared(&items[anchor])
+                 .first()
+                 .and_then(|net| items[anchor].pad_on(net))
+@@ -656,8 +705,13 @@ fn place(
+                 .as_ref()
+                 .map_or(ORIGIN, |p| p.courtyard.centre())
+         });
+-        let origin = spot(g, target, &taken)
+-            .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
++        let origin = if item.part.lib_id == schematic::TEST_POINT && spike('t') {
++            spike_test_pad(item, items, &placed, g, &taken)
++        } else {
++            None
++        }
++        .or_else(|| spot(g, target, &taken))
++        .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
+         placed[i] = Some(Placed {
+             reference: item.part.reference.clone(),
+             origin,
+@@ -666,6 +720,12 @@ fn place(
+             keep: g.keep.shift(origin),
+         });
+     }
++    if bounded && spike('s') {
++        compact_sidestep(items, &mut placed, &anchor_of, &rule, &approach, canon.as_deref());
++    }
++    if let (Some(b), true) = (bound, spike('p')) {
++        skyline(items, &mut placed, &anchor_of, b, canon.as_deref());
++    }
+     let plan = if bounded {
+         BOUNDED_PLAN
+     } else {
+@@ -704,6 +764,10 @@ fn connector_edges(items: &[Item<'_>], plan: EdgePlan) -> (Vec<(usize, u16)>, i6
+         .filter(|&i| schematic::is_connector(items[i].part))
+         .collect();
+     row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
++    if plan == EdgePlan::Sides && spike('k') {
++        let rank = canon_ranks(items);
++        row.sort_by_key(|&i| rank[i]);
++    }
+     match plan {
+         EdgePlan::Bottom { gap } => (row.into_iter().map(|i| (i, 0)).collect(), gap),
+         EdgePlan::Sides => {
+@@ -1387,7 +1451,7 @@ fn layout_of(
+     pairs: &[[String; 2]],
+     bound: Option<OutlineBound>,
+ ) -> Result<Layout, EmitError> {
+-    let (mut placed, edges) = place(items, pairs, bound.is_some())?;
++    let (mut placed, edges) = place(items, pairs, bound)?;
+     let edge = edges.bottom;
+     for (reference, origin, rotation) in moves {
+         if !matches!(rotation, 0 | 90 | 180 | 270) {
+@@ -1442,6 +1506,8 @@ fn layout_of(
+     if let Some(e) = edges.right {
+         outline.x1 = e;
+     }
++    spike_dump(items, &placed, outline);
++    STATS.with(|s| s.borrow_mut().clear());
+     if let Some(b) = bound {
+         // belt-and-suspenders: under either edge plan every keep-out box is
+         // inside the outline by construction (the core within its margin, each
+@@ -1527,10 +1593,74 @@ pub(crate) fn write_moved(
+     moves: &[Move],
+     bound: Option<OutlineBound>,
+ ) -> Result<String, EmitError> {
+-    let items = items(parts)?;
++    // SPIKE check: AET_1313B_SHUFFLE=<seed> permutes the parts before placement.
++    let mut shuffled: Vec<Part> = parts.to_vec();
++    if let Some(seed) = std::env::var("AET_1313B_SHUFFLE").ok().and_then(|s| s.parse::<u64>().ok()) {
++        let mut x = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
++        for i in (1..shuffled.len()).rev() {
++            x ^= x << 13;
++            x ^= x >> 7;
++            x ^= x << 17;
++            let j = usize::try_from(x % (i as u64 + 1)).unwrap_or(0);
++            shuffled.swap(i, j);
++        }
++    }
++    let parts = &shuffled[..];
++    // SPIKE headroom: AET_1313B_BLOCKS adds keep-out blocks for what the
++    // specification cannot say yet (`1313` §2, corrected in 1313b §1.1):
++    // placed through the method, never drawn or routed; outline only.
++    let blocks: Vec<(Part, f64, f64)> = if std::env::var("AET_1313B_BLOCKS").is_ok() {
++        [
++            ("Spike:Block", "BLK_W1A", 8.04, 8.30),
++            ("Spike:Block", "BLK_W1B", 8.04, 8.30),
++            ("Spike:Block", "BLK_W1H", 6.09, 26.40),
++            ("Spike:Block", "BLK_W3E", 4.10, 3.54),
++            ("Spike:Block", "BLK_E0", 9.0, 9.5),
++            ("Connector_Spike:Block", "BLK_W3J", 8.94, 10.64),
++        ]
++        .into_iter()
++        .map(|(lib, r, w, h)| {
++            (
++                Part {
++                    lib_id: lib,
++                    reference: r.to_owned(),
++                    value: "block".to_owned(),
++                    footprint: "Spike:Block".to_owned(),
++                    conns: BTreeMap::new(),
++                    note: None,
++                    owner: None,
++                    offboard: BTreeMap::new(),
++                },
++                w,
++                h,
++            )
++        })
++        .collect()
++    } else {
++        Vec::new()
++    };
++    let mut items = items(parts)?;
++    for (part, w, h) in &blocks {
++        let fp = sexpr::parse(&format!(
++            "(footprint \"block\" (fp_rect (start {:.3} {:.3}) (end {:.3} {:.3}) (stroke (width 0.05) (type default)) (fill no) (layer \"F.CrtYd\")))",
++            -w / 2.0,
++            -h / 2.0,
++            w / 2.0,
++            h / 2.0
++        ))
++        .map_err(|e| EmitError::Internal(format!("block: {e}")))?;
++        items.push(Item {
++            geometry: geometry(&fp, &part.reference)?,
++            part,
++            fp,
++            pads: BTreeMap::new(),
++        });
++    }
+     let pairs: Vec<[String; 2]> = stack.pairs.iter().map(|p| p.nets.clone()).collect();
+     let layout = layout_of(&items, moves, &pairs, bound)?;
+-    let mut order: Vec<usize> = (0..items.len()).collect();
++    let mut order: Vec<usize> = (0..items.len())
++        .filter(|&i| !items[i].part.footprint.starts_with("Spike:"))
++        .collect();
+     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+     // `place` returns each item's placement at the item's index.
+     let mut footprints = Vec::new();
+@@ -1732,6 +1862,604 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
+     out
+ }
+ 
++// ===================== SPIKE AET-WO-1313b (never merged) =====================
++
++/// `AET_1313B` holds the method letters: `k` canonical order and a name-free
++/// target (lowest-numbered shared pad), `m` the centroid target instead, `s`
++/// sidestep compaction, `p` skyline repacking, `t` the test-pad rule.
++fn spike(c: char) -> bool {
++    std::env::var("AET_1313B").is_ok_and(|s| s.contains(c))
++}
++
++thread_local! {
++    static STATS: std::cell::RefCell<Vec<(String, i64)>> = const { std::cell::RefCell::new(Vec::new()) };
++}
++
++fn stat(key: &str, by: i64) {
++    STATS.with(|s| {
++        let mut s = s.borrow_mut();
++        if let Some(e) = s.iter_mut().find(|(k, _)| k == key) {
++            e.1 += by;
++        } else {
++            s.push((key.to_owned(), by));
++        }
++    });
++}
++
++const FNV0: u64 = 0xcbf2_9ce4_8422_2325;
++fn fnv(mut h: u64, bytes: &[u8]) -> u64 {
++    for b in bytes {
++        h ^= u64::from(*b);
++        h = h.wrapping_mul(0x0100_0000_01b3);
++    }
++    h
++}
++
++fn real_net(n: &str) -> bool {
++    !n.starts_with("unconnected-")
++}
++
++/// Each item's canonical rank: a total order computed from footprints and
++/// the net graph, with the reference only to break what still ties.
++fn canon_ranks(items: &[Item<'_>]) -> Vec<usize> {
++    let mut nets: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
++    for (i, it) in items.iter().enumerate() {
++        for (num, (_, net)) in &it.pads {
++            if real_net(net) {
++                nets.entry(net.as_str()).or_default().push((i, num.as_str()));
++            }
++        }
++    }
++    let base: Vec<u64> = items
++        .iter()
++        .map(|it| fnv(fnv(FNV0, it.part.lib_id.as_bytes()), it.part.footprint.as_bytes()))
++        .collect();
++    let owner_of: Vec<Option<usize>> = items
++        .iter()
++        .map(|it| {
++            let o = it.part.owner.as_ref()?;
++            items.iter().position(|x| x.part.reference == o.ic)
++        })
++        .collect();
++    let mut colour = base.clone();
++    for _ in 0..3 {
++        let mut net_c: BTreeMap<&str, u64> = BTreeMap::new();
++        for (name, pads) in &nets {
++            let mut v: Vec<(u64, &str)> = pads.iter().map(|&(i, n)| (colour[i], n)).collect();
++            v.sort_unstable();
++            let mut h = FNV0;
++            for (c, n) in v {
++                h = fnv(fnv(fnv(h, &c.to_le_bytes()), n.as_bytes()), b"|");
++            }
++            net_c.insert(name, h);
++        }
++        colour = items
++            .iter()
++            .enumerate()
++            .map(|(i, it)| {
++                let mut v: Vec<(&str, u64)> = it
++                    .pads
++                    .iter()
++                    .filter(|(_, (_, n))| real_net(n))
++                    .map(|(num, (_, n))| (num.as_str(), net_c[n.as_str()]))
++                    .collect();
++                v.sort_unstable();
++                let mut h = base[i];
++                for (num, c) in v {
++                    h = fnv(fnv(h, num.as_bytes()), &c.to_le_bytes());
++                }
++                // Ownership: the owner's colour, whether it decouples, and
++                // the anchor's pad pairs (never the owner's name).
++                if let Some(o) = it.part.owner.as_ref() {
++                    if let Some(j) = owner_of[i] {
++                        h = fnv(h, &colour[j].to_le_bytes());
++                    }
++                    h = fnv(h, if o.decouples { b"d" } else { b"-" });
++                    if let Some(a) = o.anchor.as_ref() {
++                        h = fnv(h, &a.seq.to_le_bytes());
++                    }
++                    for (own, theirs) in o.anchor.iter().flat_map(|a| a.pads.iter()) {
++                        h = fnv(fnv(fnv(h, own.as_bytes()), b":"), theirs.as_bytes());
++                    }
++                }
++                h
++            })
++            .collect();
++    }
++    // Net-graph distance to the MCU over label nets (rails and GND reach all).
++    let mcu = items.iter().position(|it| it.part.lib_id.starts_with("MCU_"));
++    let mut dist = vec![usize::MAX; items.len()];
++    if let Some(m) = mcu {
++        dist[m] = 0;
++        let mut frontier = vec![m];
++        let mut d = 0;
++        while !frontier.is_empty() {
++            d += 1;
++            let mut next = Vec::new();
++            for &i in &frontier {
++                for (_, net) in items[i].pads.values() {
++                    if !net.starts_with('/') {
++                        continue;
++                    }
++                    for &(j, _) in &nets[net.as_str()] {
++                        if dist[j] == usize::MAX {
++                            dist[j] = d;
++                            next.push(j);
++                        }
++                    }
++                }
++            }
++            frontier = next;
++        }
++    }
++    let owns = |i: usize| {
++        let r = items[i].part.reference.as_str();
++        items.iter().any(|x| {
++            x.part
++                .owner
++                .as_ref()
++                .is_some_and(|o| o.anchor.is_some() && o.ic == r)
++        })
++    };
++    let gnd_tp = |i: usize| {
++        items[i].part.lib_id == schematic::TEST_POINT
++            && items[i].pads.values().all(|(_, n)| n == GND)
++    };
++    let mut order: Vec<usize> = (0..items.len()).collect();
++    order.sort_by(|&a, &b| {
++        let key = |i: usize| {
++            let p = items[i].part;
++            let c = items[i].geometry.courtyard;
++            (
++                !p.lib_id.starts_with("MCU_"),
++                !is_ic(p),
++                is_bench(p),
++                gnd_tp(i),
++                !owns(i),
++                std::cmp::Reverse(i128::from(c.x1 - c.x0) * i128::from(c.y1 - c.y0)),
++                dist[i],
++                colour[i],
++            )
++        };
++        // SPIKE check: AET_1313B_REVTIE reverses the last tie-break.
++        let tie = items[a].part.reference.cmp(&items[b].part.reference);
++        let tie = if std::env::var("AET_1313B_REVTIE").is_ok() { tie.reverse() } else { tie };
++        key(a).cmp(&key(b)).then(tie)
++    });
++    let mut rank = vec![0; items.len()];
++    for (r, &i) in order.iter().enumerate() {
++        rank[i] = r;
++    }
++    rank
++}
++
++/// The name-free target: `k`, the anchor's lowest-numbered pad on any shared
++/// net; `m`, the centroid of the anchor's pads on every shared net.
++fn spike_target(item: &Item<'_>, anchor: &Item<'_>, at: (i64, i64)) -> Option<(i64, i64)> {
++    let shared = item.shared(anchor);
++    let pads: Vec<(&String, (i64, i64))> = anchor
++        .pads
++        .iter()
++        .filter(|(_, (_, n))| shared.contains(n))
++        .map(|(num, (p, _))| (num, *p))
++        .collect();
++    if pads.is_empty() {
++        return None;
++    }
++    if spike('m') {
++        let n = i64::try_from(pads.len()).unwrap_or(1);
++        let (sx, sy) = pads.iter().fold((0, 0), |s, (_, p)| (s.0 + p.0, s.1 + p.1));
++        Some((at.0 + sx / n, at.1 + sy / n))
++    } else {
++        pads.iter()
++            .min_by_key(|(num, _)| pad_order(num))
++            .map(|(_, p)| (at.0 + p.0, at.1 + p.1))
++    }
++}
++
++/// A placed item's pads on board coordinates, with their nets.
++fn board_pads<'a>(it: &'a Item<'_>, p: &Placed) -> impl Iterator<Item = ((i64, i64), &'a str)> + 'a {
++    let (o, rot) = (p.origin, p.rotation);
++    it.pads.values().map(move |(at, n)| {
++        let r = route::rotate(rot, *at);
++        ((o.0 + r.0, o.1 + r.1), n.as_str())
++    })
++}
++
++/// `t`: a signal test pad at the free spot nearest to any placed pad of its
++/// net; a `GND` test pad beside the signal test pad farthest from every
++/// `GND` test pad so far (the first beside the one nearest all of them).
++fn spike_test_pad(
++    item: &Item<'_>,
++    items: &[Item<'_>],
++    placed: &[Option<Placed>],
++    g: Geometry,
++    taken: &[(Rect, i64)],
++) -> Option<(i64, i64)> {
++    let ((own, net), _) = item.pads.values().map(|(a, n)| ((*a, n.as_str()), ())).next()?;
++    let d2 = |a: (i64, i64), b: (i64, i64)| {
++        let (dx, dy) = (i128::from(a.0 - b.0), i128::from(a.1 - b.1));
++        dx * dx + dy * dy
++    };
++    let tps = |gnd: bool| -> Vec<(i64, i64)> {
++        items
++            .iter()
++            .zip(placed)
++            .filter(|(it, _)| it.part.lib_id == schematic::TEST_POINT)
++            .filter_map(|(it, p)| p.as_ref().map(|p| (it, p)))
++            .flat_map(|(it, p)| board_pads(it, p).collect::<Vec<_>>())
++            .filter(|(_, n)| (*n == GND) == gnd)
++            .map(|(a, _)| a)
++            .collect()
++    };
++    let targets: Vec<(i64, i64)> = if net == GND {
++        let signal = tps(false);
++        let grounds = tps(true);
++        let pick = if grounds.is_empty() {
++            signal.iter().min_by_key(|&&a| {
++                (signal.iter().map(|&b| d2(a, b)).max().unwrap_or(0), a.1, a.0)
++            })
++        } else {
++            signal.iter().max_by_key(|&&a| {
++                (
++                    grounds.iter().map(|&b| d2(a, b)).min().unwrap_or(0),
++                    std::cmp::Reverse(a.1),
++                    std::cmp::Reverse(a.0),
++                )
++            })
++        };
++        stat("tp_gnd_rule", 1);
++        pick.into_iter().copied().collect()
++    } else {
++        items
++            .iter()
++            .zip(placed)
++            .filter(|(it, _)| it.part.lib_id != schematic::TEST_POINT)
++            .filter_map(|(it, p)| p.as_ref().map(|p| (it, p)))
++            .flat_map(|(it, p)| board_pads(it, p).collect::<Vec<_>>())
++            .filter(|(_, n)| *n == net)
++            .map(|(a, _)| a)
++            .collect()
++    };
++    let mut best: Option<((i128, i64, i64), (i64, i64))> = None;
++    for t in targets {
++        if let Some(o) = spot(g, t, taken) {
++            let pad = (o.0 + own.0, o.1 + own.1);
++            let k = (d2(pad, t), t.1, t.0);
++            if best.is_none_or(|(b, _)| k < b) {
++                best = Some((k, o));
++            }
++        }
++    }
++    best.map(|(_, o)| o)
++}
++
++#[derive(Clone, Copy, Default)]
++struct Rule {
++    reserve: Option<i64>,
++    ic: bool,
++    step: usize,
++}
++
++impl Rule {
++    fn gap(a: Rule, b: Rule) -> i64 {
++        let later = if a.step >= b.step { a } else { b };
++        match (later.reserve, a.ic && b.ic) {
++            (Some(r), _) => r,
++            (None, true) => IC_GAP_NM,
++            (None, false) => GAP_NM,
++        }
++    }
++}
++
++/// Each non-MCU IC with every non-IC part anchored to it.
++fn groups(items: &[Item<'_>], placed: &[Option<Placed>], anchor_of: &[Option<usize>]) -> Vec<(usize, Vec<usize>)> {
++    (0..items.len())
++        .filter(|&i| is_ic(items[i].part) && !items[i].part.lib_id.starts_with("MCU_") && placed[i].is_some())
++        .filter(|&i| !schematic::is_connector(items[i].part))
++        .map(|i| {
++            let mut m = vec![i];
++            m.extend((0..items.len()).filter(|&j| anchor_of[j] == Some(i) && !is_ic(items[j].part)));
++            (i, m)
++        })
++        .collect()
++}
++
++fn shift(p: &mut Placed, d: (i64, i64)) {
++    p.origin = (p.origin.0 + d.0, p.origin.1 + d.1);
++    p.keep = p.keep.shift(d);
++    p.courtyard = p.courtyard.shift(d);
++}
++
++/// `s`: each group, a step at a time toward the MCU's courtyard centre: in y
++/// (or, when blocked, sideways to the nearest free column, left first, up to
++/// 10 mm, together with the step in y), then in x. The potential (|dy|, |dx|)
++/// falls lexicographically with every move, so it ends.
++fn compact_sidestep(
++    items: &[Item<'_>],
++    placed: &mut [Option<Placed>],
++    anchor_of: &[Option<usize>],
++    rule: &[Rule],
++    approach: &[Rect],
++    rank: Option<&[usize]>,
++) {
++    let Some(mcu) = (0..items.len())
++        .find(|&i| items[i].part.lib_id.starts_with("MCU_"))
++        .and_then(|i| placed[i].as_ref())
++        .map(|p| p.courtyard.centre())
++    else {
++        return;
++    };
++    let mut gs = groups(items, placed, anchor_of);
++    gs.sort_by_key(|(i, _)| rank.map_or(0, |r| r[*i]));
++    // A move never widens the core: every member stays inside the x-range
++    // the core had before compaction.
++    let Some(core) = placed.iter().flatten().map(|p| p.keep).reduce(Rect::union) else {
++        return;
++    };
++    let clear = |placed: &[Option<Placed>], members: &[usize], d: (i64, i64)| {
++        members.iter().all(|&m| {
++            let Some(p) = placed[m].as_ref() else { return true };
++            let k = p.keep.shift(d);
++            k.x0 >= core.x0
++                && k.x1 <= core.x1
++                && approach.iter().all(|a| !a.overlaps(k))
++                && (0..items.len()).all(|o| {
++                    members.contains(&o)
++                        || placed[o]
++                            .as_ref()
++                            .is_none_or(|q| !q.keep.overlaps(k.grow(Rule::gap(rule[m], rule[o]))))
++                })
++        })
++    };
++    for _ in 0..4 * RINGS {
++        let mut moved = false;
++        for (_, members) in &gs {
++            let Some(c) = members
++                .iter()
++                .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
++                .reduce(Rect::union)
++                .map(Rect::centre)
++            else {
++                continue;
++            };
++            // No step that would overshoot the MCU's centre.
++            let toward = |v: i64| if v.abs() >= STEP { v.signum() * STEP } else { 0 };
++            let sy = toward(mcu.1 - c.1);
++            let mut d = None;
++            if sy != 0 {
++                if clear(placed, members, (0, sy)) {
++                    d = Some((0, sy));
++                } else {
++                    'side: for j in 1..=40 {
++                        for s in [-1, 1] {
++                            let cand = (s * j * STEP, sy);
++                            if clear(placed, members, cand) {
++                                d = Some(cand);
++                                stat("sidesteps", 1);
++                                break 'side;
++                            }
++                        }
++                    }
++                }
++            }
++            if d.is_none() {
++                let sx = toward(mcu.0 - c.0);
++                if sx != 0 && clear(placed, members, (sx, 0)) {
++                    d = Some((sx, 0));
++                }
++            }
++            if let Some(d) = d {
++                for &m in members {
++                    if let Some(p) = placed[m].as_mut() {
++                        shift(p, d);
++                    }
++                }
++                stat("moves", 1);
++                moved = true;
++            }
++        }
++        if !moved {
++            break;
++        }
++    }
++}
++
++/// `p`: every group (an IC and its non-IC parts, rigid as the placer left
++/// them) repacked by its keep-out box into a skyline as wide as the bound
++/// less the side connector bands, under and beside the MCU's group, which
++/// stays; tallest first, then widest, then by rank; each at the lowest
++/// level, then leftmost. `w`: the strip's width is searched, from the full
++/// width down in 2 mm steps to the MCU group's, keeping the width whose
++/// estimated outline (core plus the side bands and the margins) has the
++/// least area, the narrower on a tie.
++fn skyline(
++    items: &[Item<'_>],
++    placed: &mut [Option<Placed>],
++    anchor_of: &[Option<usize>],
++    bound: OutlineBound,
++    rank: Option<&[usize]>,
++) {
++    let Some(mbox) = mcu_group_box(items, placed, anchor_of) else {
++        return;
++    };
++    let (sides, _) = connector_edges(items, BOUNDED_PLAN);
++    let band = |rot: u16| {
++        sides
++            .iter()
++            .filter(|&&(_, r)| r == rot)
++            .map(|&(i, _)| {
++                let g = items[i].geometry;
++                g.courtyard.y1 - g.keep.y0 + IC_GAP_NM
++            })
++            .max()
++            .unwrap_or(MARGIN_NM)
++    };
++    let bands = band(270) + band(90);
++    let (bw, _) = bound_nm(bound);
++    let full = bw - bands - 2 * SNAP;
++    let widths: Vec<i64> = if spike('w') {
++        (0..)
++            .map(|k| full - k * 2_000_000)
++            .take_while(|w| *w >= mbox.x1 - mbox.x0 + 2 * IC_GAP_NM)
++            .collect()
++    } else {
++        vec![full]
++    };
++    let mut best: Option<((i128, i64), i64)> = None;
++    for &w in &widths {
++        let mut trial = placed.to_vec();
++        if !pack(items, &mut trial, anchor_of, mbox, w, rank) {
++            continue;
++        }
++        let Some(core) = trial.iter().flatten().map(|p| p.keep).reduce(Rect::union) else {
++            continue;
++        };
++        let area = i128::from(core.x1 - core.x0 + bands) * i128::from(core.y1 - core.y0 + 2 * MARGIN_NM);
++        if best.is_none_or(|(k, _)| (area, w) < k) {
++            best = Some(((area, w), w));
++        }
++    }
++    if let Some((_, w)) = best {
++        stat("skyline_width_um", w / 1000);
++        pack(items, placed, anchor_of, mbox, w, rank);
++    }
++}
++
++/// The keep-out box of everything placed that no other group holds: the
++/// MCU's group.
++fn mcu_group_box(items: &[Item<'_>], placed: &[Option<Placed>], anchor_of: &[Option<usize>]) -> Option<Rect> {
++    let gs = groups(items, placed, anchor_of);
++    let in_group: BTreeSet<usize> = gs.iter().flat_map(|(_, m)| m.iter().copied()).collect();
++    (0..items.len())
++        .filter(|j| !in_group.contains(j))
++        .filter_map(|j| placed[j].as_ref().map(|p| p.keep))
++        .reduce(Rect::union)
++}
++
++/// The skyline packing at one strip `width`, centred on the MCU's group.
++fn pack(
++    items: &[Item<'_>],
++    placed: &mut [Option<Placed>],
++    anchor_of: &[Option<usize>],
++    mbox: Rect,
++    width: i64,
++    rank: Option<&[usize]>,
++) -> bool {
++    let gs = groups(items, placed, anchor_of);
++    let mcu = (0..items.len()).find(|&i| items[i].part.lib_id.starts_with("MCU_"));
++    let cx = mcu
++        .and_then(|i| placed[i].as_ref())
++        .map_or(mbox.centre().0, |p| p.courtyard.centre().0);
++    let x0 = (cx - width / 2).div_euclid(SNAP) * SNAP;
++    // Each group's target x: the mean x of the MCU's pads on the label nets
++    // its members carry (a group with none: the MCU's centre).
++    let mcu_pads: Vec<((i64, i64), &str)> = mcu
++        .and_then(|i| placed[i].as_ref().map(|p| board_pads(&items[i], p).collect()))
++        .unwrap_or_default();
++    let target_x = |members: &[usize]| -> i64 {
++        let nets: BTreeSet<&str> = members
++            .iter()
++            .flat_map(|&m| items[m].pads.values().map(|(_, n)| n.as_str()))
++            .filter(|n| n.starts_with('/'))
++            .collect();
++        let xs: Vec<i64> = mcu_pads.iter().filter(|(_, n)| nets.contains(n)).map(|(a, _)| a.0).collect();
++        if xs.is_empty() {
++            cx
++        } else {
++            xs.iter().sum::<i64>() / i64::try_from(xs.len()).unwrap_or(1)
++        }
++    };
++    let cols = usize::try_from(width / SNAP).unwrap_or(0);
++    let col_of = |x: i64| usize::try_from((x - x0).div_euclid(SNAP)).unwrap_or(0);
++    if mbox.x0 < x0 || mbox.x1 > x0 + width {
++        stat("skyline_mcu_too_wide", 1);
++        return false;
++    }
++    let mut level = vec![mbox.y0; cols];
++    for l in level
++        .iter_mut()
++        .take(col_of(mbox.x1 + IC_GAP_NM).min(cols))
++        .skip(col_of(mbox.x0 - IC_GAP_NM))
++    {
++        *l = mbox.y1 + IC_GAP_NM;
++    }
++    let up = |v: i64| -((-v).div_euclid(SNAP) * SNAP);
++    let mut boxes: Vec<(usize, Vec<usize>, Rect)> = gs
++        .into_iter()
++        .filter_map(|(i, m)| {
++            let b = m.iter().filter_map(|&j| placed[j].as_ref().map(|p| p.keep)).reduce(Rect::union)?;
++            Some((i, m, b))
++        })
++        .collect();
++    boxes.sort_by_key(|(i, _, b)| {
++        (
++            std::cmp::Reverse(b.y1 - b.y0),
++            std::cmp::Reverse(b.x1 - b.x0),
++            rank.map_or(0, |r| r[*i]),
++        )
++    });
++    for (_, members, b) in boxes {
++        let w = usize::try_from(up(b.x1 - b.x0 + IC_GAP_NM) / SNAP + 1).unwrap_or(usize::MAX);
++        if w > cols {
++            stat("skyline_group_too_wide", 1);
++            return false;
++        }
++        let tx = target_x(&members);
++        let half = (b.x1 - b.x0) / 2;
++        let Some((y, _, c)) = (0..=cols - w)
++            .map(|c| {
++                let centre = x0 + i64::try_from(c).unwrap_or(0) * SNAP + half;
++                (level[c..c + w].iter().copied().max().unwrap_or(0), (centre - tx).abs(), c)
++            })
++            .min()
++        else {
++            return false;
++        };
++        let tx = x0 + i64::try_from(c).unwrap_or(0) * SNAP;
++        let d = (up(tx - b.x0), up(y - b.y0));
++        for &m in &members {
++            if let Some(p) = placed[m].as_mut() {
++                shift(p, d);
++            }
++        }
++        let bottom = b.y1 + d.1 + IC_GAP_NM;
++        for l in &mut level[c..c + w] {
++            *l = bottom;
++        }
++    }
++    true
++}
++
++/// The spike's dump: the outline, every placement and pad, and the counters.
++fn spike_dump(items: &[Item<'_>], placed: &[Placed], outline: Rect) {
++    let Ok(path) = std::env::var("AET_1313B_DUMP") else {
++        return;
++    };
++    let r = |b: Rect| format!("[{},{},{},{}]", b.x0, b.y0, b.x1, b.y1);
++    let mut s = format!("{{\"outline\":{},\"parts\":[", r(outline));
++    for (n, (it, p)) in items.iter().zip(placed).enumerate() {
++        if n > 0 {
++            s.push(',');
++        }
++        let pads: Vec<String> = board_pads(it, p)
++            .filter(|(_, net)| real_net(net))
++            .map(|(a, net)| format!("[{},{},\"{}\"]", a.0, a.1, net.replace('"', "'")))
++            .collect();
++        s += &format!(
++            "{{\"ref\":\"{}\",\"lib\":\"{}\",\"fp\":\"{}\",\"at\":[{},{}],\"rot\":{},\"keep\":{},\"court\":{},\"pads\":[{}]}}",
++            p.reference, it.part.lib_id, it.part.footprint, p.origin.0, p.origin.1, p.rotation, r(p.keep), r(p.courtyard), pads.join(",")
++        );
++    }
++    s += "],\"stats\":{";
++    STATS.with(|st| {
++        let v: Vec<String> = st.borrow().iter().map(|(k, n)| format!("\"{k}\":{n}")).collect();
++        s += &v.join(",");
++    });
++    s += "}}";
++    let _ = std::fs::write(path, s);
++}
++
+ #[cfg(test)]
+ mod tests {
+     #[test]
+@@ -2247,6 +2975,7 @@ mod tests {
+             anchor: Some(schematic::Anchor {
+                 pads: vec![("1".into(), "3".into())],
+                 loop_rule: None,
++                seq: 0,
+             }),
+             decouples: false,
+         });
+diff --git a/crates/aethelgard-eda/src/schematic.rs b/crates/aethelgard-eda/src/schematic.rs
+index 5a2452f2..3f06b0ed 100644
+--- a/crates/aethelgard-eda/src/schematic.rs
++++ b/crates/aethelgard-eda/src/schematic.rs
+@@ -327,6 +327,17 @@ pub(crate) struct Owner {
+ pub(crate) struct Anchor {
+     pub(crate) pads: Vec<(String, String)>,
+     pub(crate) loop_rule: Option<(i64, &'static str)>,
++    /// SPIKE 1313b: this part's place in its IC's draw sequence, the
++    /// emitter's priority among the parts anchored to that IC.
++    pub(crate) seq: usize,
++}
++
++/// SPIKE 1313b: how many parts are anchored to `ic` so far.
++pub(crate) fn next_seq(parts: &[Part], ic: &str) -> usize {
++    parts
++        .iter()
++        .filter(|p| p.owner.as_ref().is_some_and(|o| o.ic == ic && o.anchor.is_some()))
++        .count()
+ }
+ 
+ /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
+@@ -1099,12 +1110,14 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
+             Conn::Net(aethelgard_ir::BOOT0.to_owned()),
+             gnd,
+         )?;
++        let seq = next_seq(&b.parts, mcu);
+         if let Some(r) = b.parts.last_mut() {
+             r.owner = Some(Owner {
+                 ic: mcu.to_owned(),
+                 anchor: Some(Anchor {
+                     pads: vec![("1".into(), pin)],
+                     loop_rule: None,
++                    seq,
+                 }),
+                 decouples: false,
+             });
+diff --git a/crates/aethelgard-eda/src/schematic_power.rs b/crates/aethelgard-eda/src/schematic_power.rs
+index de561afc..66383d01 100644
+--- a/crates/aethelgard-eda/src/schematic_power.rs
++++ b/crates/aethelgard-eda/src/schematic_power.rs
+@@ -64,6 +64,7 @@ const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at
+ 
+ /// Anchors the part just drawn to `ic`'s pads.
+ fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
++    let seq = super::next_seq(&b.parts, ic);
+     if let Some(p) = b.parts.last_mut() {
+         p.owner = Some(Owner {
+             ic: ic.to_owned(),
+@@ -73,6 +74,7 @@ fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, r
+                     .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
+                     .collect(),
+                 loop_rule: Some((bound_nm, rule)),
++                seq,
+             }),
+             decouples: false,
+         });
+diff --git a/crates/aethelgard-eda/src/schematic_support.rs b/crates/aethelgard-eda/src/schematic_support.rs
+index ab4d53ba..fcea1404 100644
+--- a/crates/aethelgard-eda/src/schematic_support.rs
++++ b/crates/aethelgard-eda/src/schematic_support.rs
+@@ -105,12 +105,14 @@ pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Co
+             })?;
+             let decouples = matches!(at, Conn::Rail(_));
+             b.passive('C', value.clone(), at, ground.clone())?;
++            let seq = super::next_seq(&b.parts, mcu);
+             if let Some(c) = b.parts.last_mut() {
+                 c.owner = Some(Owner {
+                     ic: mcu.to_owned(),
+                     anchor: Some(Anchor {
+                         pads: vec![("1".into(), pin.clone())],
+                         loop_rule: None,
++                        seq,
+                     }),
+                     decouples,
+                 });

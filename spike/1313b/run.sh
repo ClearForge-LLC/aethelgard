@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# AET-WO-1313 §1.3 gate runner. Usage, from a repository root that holds the CLI's sources:
+# AET-WO-1313 §1.3 gate runner (reused by AET-WO-1313b). Usage, from a repository root that holds the CLI's sources:
 #   spike/1313/run.sh <spec.json> <outdir>
 # Runs validate, generate, emit, check erc, check drc --spec, drc with --schematic parity,
 # check support and extract (3400's run.sh, the same steps), writing <outdir>/<step>.{json,stderr,exit}
 # and <outdir>/emit.seconds (emit's wall time on the host). AET_BIN names the CLI (a release build);
 # AET_ENV is passed into the CLI's environment on the host and in the container (the spike's
-# placement option, e.g. AET_1313_OPT=a,c). Host steps run in a capped systemd user scope; KiCad
+# placement method, e.g. AET_1313B=km). Host steps run in a capped systemd user scope; KiCad
 # steps run the same binary in the pinned tools image through ~/bin/capped-run (caps read back,
 # swap 0), TMPDIR unset inside, one container at a time.
 set -u
