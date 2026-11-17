@@ -71,7 +71,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// optional as that work order states (absent is no test point and no
 /// switch), so that a reader of version 13 refuses a file that may carry
 /// them by its version, never by an unknown key.
-/// Version 15 adds `board.max_outline_mm` (`AET-WO-1313`), optional by the
+/// Version 15 adds `board.max_outline_um` (`AET-WO-1313`), optional by the
 /// precedent ruled on PR #191 (Q1): absent is today's placer, judged as
 /// such, so that a reader of version 14 refuses a file that may carry it by
 /// its version, never by an unknown key.
@@ -1118,7 +1118,7 @@ pub enum IrValidationError {
         value: u32,
         floor: u32,
     },
-    #[error("`{path}` is {value} mm; an outline bound is from 1 to {max} mm (`AET-WO-1313`)")]
+    #[error("`{path}` is {value} um; an outline bound is from 1 to {max} um (`AET-WO-1313`)")]
     OutlineBound { path: String, value: u32, max: u32 },
     #[error("`{path}` is {value} um; this engine builds only {required} um vias")]
     UnsupportedViaRule {

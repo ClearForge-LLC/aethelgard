@@ -2203,7 +2203,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
     }
 }
 
-/// `AET-WO-1313` §2.1: a declared `board.max_outline_mm` that cannot hold
+/// `AET-WO-1313` §2.1: a declared `board.max_outline_um` that cannot hold
 /// the parts at all (one keep-out box, or their sum, against the bound less
 /// its margins) is refused by name before any placement, by the emitter's
 /// own judgement (`aethelgard_eda::schematic::bound_holds`). Drawing the
@@ -2212,7 +2212,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
 /// refuse by their names, as `validate` always has.
 fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     use aethelgard_eda::schematic::{EmitError, bound_holds};
-    if spec.board.max_outline_mm.is_none() {
+    if spec.board.max_outline_um.is_none() {
         return Ok(());
     }
     let Ok(table) = aethelgard_svd_hal::pin_table(&spec.mcu.part) else {
@@ -2223,7 +2223,7 @@ fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     };
     match bound_holds(spec, &topology, &table) {
         Err(e @ EmitError::OutlineTooSmall { .. }) => {
-            Err(Refusal::new(e.kind(), e.id(), e.to_string()).at(Some("board.max_outline_mm")))
+            Err(Refusal::new(e.kind(), e.id(), e.to_string()).at(Some("board.max_outline_um")))
         }
         _ => Ok(()),
     }

@@ -737,10 +737,7 @@ struct Edges {
 
 /// A bound's width and height in nanometres.
 fn bound_nm(b: OutlineBound) -> (i64, i64) {
-    (
-        i64::from(b.width) * 1_000_000,
-        i64::from(b.height) * 1_000_000,
-    )
+    (i64::from(b.width) * 1000, i64::from(b.height) * 1000)
 }
 
 /// `AET-WO-1313` §2.1: whether `bound` can hold `parts` at all, before any
@@ -753,8 +750,8 @@ pub(crate) fn bound_holds(parts: &[Part], bound: OutlineBound) -> Result<(), Emi
     let (bw, bh) = bound_nm(bound);
     let inner = (bw - 2 * MARGIN_NM, bh - 2 * MARGIN_NM);
     let refuse = |reference: Option<String>, why: String| EmitError::OutlineTooSmall {
-        width_mm: bound.width,
-        height_mm: bound.height,
+        width_um: bound.width,
+        height_um: bound.height,
         reference,
         why,
     };
@@ -1457,8 +1454,8 @@ fn layout_of(
         let (bw, bh) = bound_nm(b);
         if w > bw || h > bh {
             return Err(EmitError::OutlineUnreachable {
-                width_mm: b.width,
-                height_mm: b.height,
+                width_um: b.width,
+                height_um: b.height,
                 reached_um_w: w / 1000,
                 reached_um_h: h / 1000,
                 over_um_w: (w - bw).max(0) / 1000,
@@ -2123,8 +2120,12 @@ mod tests {
         ]
     }
 
+    /// A bound of `width` x `height` whole millimetres.
     fn bound(width: u32, height: u32) -> OutlineBound {
-        OutlineBound { width, height }
+        OutlineBound {
+            width: width * 1000,
+            height: height * 1000,
+        }
     }
 
     /// `AET-WO-1313` §2.1: a bound that cannot hold one part, or the parts'

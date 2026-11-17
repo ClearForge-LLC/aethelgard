@@ -1691,7 +1691,7 @@ fn the_ordered_board_passes_every_board_gate_with_no_finding() {
 }
 
 /// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
-/// `board.max_outline_mm` (100 x 100 mm) at four layers, with its connectors
+/// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
 /// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
 /// DRC by the specification's rules with and without schematic parity,
 /// `check support` and `extract`, each with no finding.

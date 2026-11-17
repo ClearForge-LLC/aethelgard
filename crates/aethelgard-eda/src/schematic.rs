@@ -102,10 +102,10 @@ pub enum EmitError {
     /// `AET-WO-1313`: the declared outline bound cannot hold the parts at
     /// all, judged before any placement: one part's keep-out box, or the sum
     /// of every keep-out box, against the bound less its margins.
-    #[error("board.max_outline_mm is {width_mm} x {height_mm} mm; {why}")]
+    #[error("board.max_outline_um is {} x {} mm; {why}", um(i64::from(*width_um)), um(i64::from(*height_um)))]
     OutlineTooSmall {
-        width_mm: u32,
-        height_mm: u32,
+        width_um: u32,
+        height_um: u32,
         /// The part that does not fit, or `None` when the sum does not.
         reference: Option<String>,
         why: String,
@@ -113,10 +113,10 @@ pub enum EmitError {
     /// `AET-WO-1313`: the placer packed the parts but its outline exceeds
     /// the declared bound; nothing is written. The outline reached and the
     /// shortfall are in micrometres.
-    #[error("board.max_outline_mm is {width_mm} x {height_mm} mm; the placer's best outline is {} x {} mm, over by {} x {} mm", um(*reached_um_w), um(*reached_um_h), um(*over_um_w), um(*over_um_h))]
+    #[error("board.max_outline_um is {} x {} mm; the placer's best outline is {} x {} mm, over by {} x {} mm", um(i64::from(*width_um)), um(i64::from(*height_um)), um(*reached_um_w), um(*reached_um_h), um(*over_um_w), um(*over_um_h))]
     OutlineUnreachable {
-        width_mm: u32,
-        height_mm: u32,
+        width_um: u32,
+        height_um: u32,
         reached_um_w: i64,
         reached_um_h: i64,
         over_um_w: i64,
@@ -636,7 +636,7 @@ pub fn emit_moved(
     spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
     let stack = crate::stack::Stack::of(spec);
-    let bound = spec.board.max_outline_mm;
+    let bound = spec.board.max_outline_um;
     if let Some(b) = bound {
         crate::pcb::bound_holds(&parts, b)?;
     }
@@ -663,7 +663,7 @@ pub fn bound_holds(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<(), EmitError> {
-    let Some(b) = spec.board.max_outline_mm else {
+    let Some(b) = spec.board.max_outline_um else {
         return Ok(());
     };
     let (parts, _) = design(spec, solved, table)?;

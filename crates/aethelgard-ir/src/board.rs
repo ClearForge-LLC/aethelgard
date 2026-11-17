@@ -42,9 +42,9 @@ pub const MAX_PERMITTIVITY_PERMILLE: u32 = 100_000;
 /// space included, with no space at either end.
 pub const MAX_SOURCE: usize = 200;
 
-/// The largest outline bound accepted, in millimetres: the placer searches
+/// The largest outline bound accepted, in micrometres: the placer searches
 /// at most a metre around a part (`pcb.rs`'s `RINGS`).
-pub const MAX_OUTLINE_MM: u32 = 1000;
+pub const MAX_OUTLINE_UM: u32 = 1_000_000;
 
 /// The copper layer counts this engine builds.
 pub const LAYER_COUNTS: [u8; 2] = [2, 4];
@@ -66,15 +66,22 @@ pub struct Board {
     pub layers: Vec<CopperLayer>,
     pub stackup: Stackup,
     pub rules: DesignRules,
-    /// The largest outline the placer may reach (`AET-WO-1313`), in whole
-    /// millimetres. Optional under the precedent ruled on PR #191 (Q1): its
-    /// absence is today's placer, judged as such, and is not written back.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_outline_mm: Option<OutlineBound>,
+    /// The largest outline the placer may reach (`AET-WO-1313`), in
+    /// micrometres (ruled F2: the board section's unit, `4100` D8). Optional
+    /// under the precedent ruled on PR #191 (Q1): its absence is today's
+    /// placer, judged as such, and is not written back. As for `test_points`
+    /// and `mcu.reset_switch`, an explicit `null` is refused, not read as
+    /// absent (ruled F4).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_outline_um: Option<OutlineBound>,
 }
 
-/// A declared outline bound: the board's width and height at most, in whole
-/// millimetres, each from 1 to [`MAX_OUTLINE_MM`].
+/// A declared outline bound: the board's width and height at most, in
+/// micrometres, each from 1 to [`MAX_OUTLINE_UM`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct OutlineBound {
@@ -335,22 +342,28 @@ impl Board {
                 });
             }
         }
-        if let Some(b) = &self.max_outline_mm {
+        if let Some(b) = &self.max_outline_um {
             for (value, path) in [
-                (b.width, "board.max_outline_mm.width"),
-                (b.height, "board.max_outline_mm.height"),
+                (b.width, "board.max_outline_um.width"),
+                (b.height, "board.max_outline_um.height"),
             ] {
-                if value == 0 || value > MAX_OUTLINE_MM {
+                if value == 0 || value > MAX_OUTLINE_UM {
                     return Err(E::OutlineBound {
                         path: path.into(),
                         value,
-                        max: MAX_OUTLINE_MM,
+                        max: MAX_OUTLINE_UM,
                     });
                 }
             }
         }
         Ok(())
     }
+}
+
+/// An optional key that is present must hold a value: `null` is refused as
+/// the wrong type, as `test_points` and `mcu.reset_switch` refuse it.
+fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
+    T::deserialize(d).map(Some)
 }
 
 fn bounded(value: u32, max: u32, path: String) -> Result<(), IrValidationError> {

@@ -247,78 +247,87 @@ fn rules_under_the_floor_or_other_vias_are_refused_by_name() {
     verdict(&v).unwrap();
 }
 
-/// `AET-WO-1313` §2.1: `board.max_outline_mm` is optional (PR #191 Q1): its
-/// absence is today's placer and is not written back; a bound of 1 to 1000
-/// whole millimetres a side is valid; anything else is refused by name.
+/// `AET-WO-1313` §2.1: `board.max_outline_um` is optional (PR #191 Q1): its
+/// absence is today's placer and is not written back; a bound of 1 to
+/// 1 000 000 micrometres a side is valid; anything else is refused by name.
 #[test]
 fn an_outline_bound_is_optional_and_refused_by_name_out_of_range() {
     let spec: Specification = serde_json::from_value(reference()).unwrap();
-    assert_eq!(spec.board.max_outline_mm, None);
+    assert_eq!(spec.board.max_outline_um, None);
     assert!(
         serde_json::to_value(&spec).unwrap()["board"]
-            .get("max_outline_mm")
+            .get("max_outline_um")
             .is_none()
     );
     let mut v = reference();
-    v["board"]["max_outline_mm"] = json!({"width": 100, "height": 1000});
+    v["board"]["max_outline_um"] = json!({"width": 1, "height": 1_000_000});
     verdict(&v).unwrap();
     let spec: Specification = serde_json::from_value(v).unwrap();
     assert_eq!(
-        serde_json::to_value(&spec).unwrap()["board"]["max_outline_mm"],
-        json!({"width": 100, "height": 1000})
+        serde_json::to_value(&spec).unwrap()["board"]["max_outline_um"],
+        json!({"width": 1, "height": 1_000_000})
     );
     for (field, value) in [
         ("width", 0),
         ("height", 0),
-        ("width", 1001),
-        ("height", 4096),
+        ("width", 1_000_001),
+        ("height", 4_096_000),
     ] {
         let e = refused(reference(), |v| {
-            v["board"]["max_outline_mm"] = json!({"width": 100, "height": 100});
-            v["board"]["max_outline_mm"][field] = json!(value);
+            v["board"]["max_outline_um"] = json!({"width": 100_000, "height": 100_000});
+            v["board"]["max_outline_um"][field] = json!(value);
         });
         assert_eq!(e.kind(), "OutlineBound", "{field} {value}");
         assert_eq!(
             e.path(),
-            Some(format!("board.max_outline_mm.{field}").as_str())
+            Some(format!("board.max_outline_um.{field}").as_str())
         );
     }
 }
 
+/// A malformed bound is a shape error; `null` too, as `test_points` and
+/// `mcu.reset_switch` refuse it (ruled F4).
 #[test]
 fn a_malformed_outline_bound_is_a_shape_error() {
     for bad in [
-        json!({"width": 100}),
-        json!({"width": 100, "height": 100, "depth": 1}),
-        json!({"width": 99.5, "height": 100}),
-        json!({"width": -1, "height": 100}),
-        json!([100, 100]),
+        json!({"width": 100_000}),
+        json!({"width": 100_000, "height": 100_000, "depth": 1}),
+        json!({"width": 99_999.5, "height": 100_000}),
+        json!({"width": -1, "height": 100_000}),
+        json!([100_000, 100_000]),
+        json!(null),
     ] {
         let mut v = reference();
-        v["board"]["max_outline_mm"] = bad.clone();
+        v["board"]["max_outline_um"] = bad.clone();
         assert!(
             serde_json::from_value::<Specification>(v).is_err(),
             "{bad} parsed"
         );
     }
-    // `null` is the absent bound: today's placer, as an absent key is.
-    let mut v = reference();
-    v["board"]["max_outline_mm"] = json!(null);
-    let spec: Specification = serde_json::from_value(v).unwrap();
-    assert_eq!(spec.board.max_outline_mm, None);
+    // The keys whose behaviour this follows refuse `null` the same way.
+    for (path, key) in [("", "test_points"), ("mcu", "reset_switch")] {
+        let mut v = reference();
+        let target = if path.is_empty() {
+            &mut v
+        } else {
+            &mut v[path]
+        };
+        target[key] = json!(null);
+        assert!(serde_json::from_value::<Specification>(v).is_err(), "{key}");
+    }
 }
 
 /// Specification 15 (`AET-WO-1313`): a version-14 file is refused by its
-/// version, with or without `board.max_outline_mm`, never read as today's
+/// version, with or without `board.max_outline_um`, never read as today's
 /// board.
 #[test]
 fn a_version_14_file_is_refused_by_its_version() {
     assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 15);
-    for bound in [None, Some(json!({"width": 100, "height": 100}))] {
+    for bound in [None, Some(json!({"width": 100_000, "height": 100_000}))] {
         let e = refused(reference(), |v| {
             v["schema_version"] = json!(14);
             if let Some(b) = bound {
-                v["board"]["max_outline_mm"] = b;
+                v["board"]["max_outline_um"] = b;
             }
         });
         assert!(

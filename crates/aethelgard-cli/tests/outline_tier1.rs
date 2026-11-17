@@ -1,4 +1,4 @@
-//! `AET-WO-1313`, tier 1: `board.max_outline_mm`. The Sentinel-03 fixture
+//! `AET-WO-1313`, tier 1: `board.max_outline_um`. The Sentinel-03 fixture
 //! emits inside its declared 100 x 100 mm bound with its connectors on the
 //! side edges; a bound that cannot hold the parts is refused by `validate`
 //! before any placement, and one the placer cannot reach is refused by
@@ -30,9 +30,10 @@ fn solved(v: &Value) -> (Specification, SolvedTopology, PinTable) {
     (spec, solved, table)
 }
 
+/// The fixture with a bound of `width` x `height` whole millimetres.
 fn with_bound(width: u32, height: u32) -> Value {
     let mut v = fixture();
-    v["board"]["max_outline_mm"] = json!({"width": width, "height": height});
+    v["board"]["max_outline_um"] = json!({"width": width * 1000, "height": height * 1000});
     v
 }
 
@@ -82,7 +83,7 @@ fn scratch(label: &str) -> PathBuf {
 #[test]
 fn the_fixture_fits_its_bound_with_connectors_on_the_side_edges() {
     let (spec, solved, table) = solved(&fixture());
-    assert!(spec.board.max_outline_mm.is_some());
+    assert!(spec.board.max_outline_um.is_some());
     let e = schematic::emit(&spec, &solved, &table).unwrap();
     let ((w, h), rotations) = outline_and_rotations(&e.board);
     assert!(w <= 100.0 && h <= 100.0, "{w} x {h}");
@@ -94,7 +95,7 @@ fn the_fixture_fits_its_bound_with_connectors_on_the_side_edges() {
     // connector on the bottom edge (D4; every corpus file is checked
     // byte for byte in FEEDBACK §5).
     let mut v = fixture();
-    v["board"].as_object_mut().unwrap().remove("max_outline_mm");
+    v["board"].as_object_mut().unwrap().remove("max_outline_um");
     let (spec, solved, table) = self::solved(&v);
     let e = schematic::emit(&spec, &solved, &table).unwrap();
     let ((w, _), rotations) = outline_and_rotations(&e.board);
