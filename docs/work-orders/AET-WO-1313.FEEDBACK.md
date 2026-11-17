@@ -1,6 +1,15 @@
 # AET-WO-1313 — FEEDBACK
 
-## 0. Status: STOPPED at §1.5 for the architect's ruling
+## 0. Status: STOPPED in §2 (the build) for a ruling on the compaction target (§5.3). The §1.5 stop below is kept as written.
+
+- **Correction, found while building (§5.3) [measured].** The spike's compaction (a) did not move groups toward the MCU's centre, as §2.3 says. It moved them toward the courtyard centre of the first placed part in the emitter's item order: on the fixture, C1, a capacitor 13 mm left of the MCU.
+  - Built as described (toward the MCU), compaction moves nothing on the fixture: **85.25 × 99.05 mm**, the same as (c) alone. Every gate passes, inside the 100 × 100 bound.
+  - Built with the spike's target, it reproduces the spike's **85.25 × 80.55**. But that target depends on the order of the parts list.
+  - The ruling accepted (a) on the spike's numbers. Every figure below that relies on (a)'s gain (80–83 mm heights, the robustness under 1307's prefix renamer, the quote's 86 × 81 and the spare room for the parts `main` cannot say) is the C1 target's, not the described method's.
+- The build otherwise stands as ruled; the bump to 15, the tier-2 test and `TIER2_MIN` wait for this ruling (§5.6).
+
+### The §1.5 status, as written at `ede77a8`
+
 
 - **The 100 × 100 mm target is reachable on top-side parts at four layers.** Recommended method, for the build: **(r)+(a)+(c)**: the bucks first, compaction, and every connector on the left and right edges. Its outline on the fixture is **85.25 × 80.80 mm**. Over 20 order-only renamings it is 84.75–87.70 × 80.05–82.80 mm, and all 20 fit. Under 1307's prefix renamer, which also grows the parts (the keep-out sum rises 31 %), 12 of 20 fit. Today's placer gives 100.05 × 115.75 [measured, §2.3, §2.4].
 - **But on the fixture as committed, no method that fits passes `extract` on every renaming.**
@@ -84,7 +93,7 @@ Together about 420–455 mm² of keep-out boxes [inferred], against the fixture'
 ### 2.3 The options on the fixture at four layers (§1.3) [measured: `results/options.tsv`]
 
 The spike's letters (`placer.patch`; every option runs only when its letter is set, with `AET_1313_BOUND=100,100`):
-- **(a)** compaction: after today's placer, each non-MCU IC with every part anchored beside it moves as one rigid group, a 0.25 mm step at a time, toward the MCU's centre (x, then y), while every member keeps the gap the placer gave it and stays out of the approach strips. Groups go in reference order, until none moves.
+- **(a)** compaction: after today's placer, each non-MCU IC with every part anchored beside it moves as one rigid group, a 0.25 mm step at a time, toward the MCU's centre (x, then y), while every member keeps the gap the placer gave it and stays out of the approach strips. Groups go in reference order, until none moves. **Correction (§5.3): the spike's code moved them toward the first placed part's centre (C1 on this fixture), not the MCU's; every (a) row below measures that.**
 - **(b)** bounded placer: each free candidate, from the first free ring out to 40 rings (10 mm) beyond it, is scored by how far the core's box would overflow the bound (less each used edge's connector band, the margins and two snaps), then by the box's area, then by ring order. Anchored parts (`place_anchored`) are not scored.
 - **(B)** the same, scored by overflow only: the first free spot that keeps the core inside the bound.
 - **(c)** connectors on the left and right edges, cable side out (rotation 270 left, 90 right). Each goes, in reference order, to the side with less length so far. **(C)** the same on the bottom and top.
@@ -231,6 +240,8 @@ Every row passed `validate`, `generate`, `emit`, `check erc`, `check drc --spec`
 
 ### 3.2 Recommendation: (r)+(a)+(c), only when `board.max_outline_mm` is declared
 
+**Corrected in §5.3:** (a)'s measured gain is the C1 target's; as described, (a) changes nothing on the fixture.
+
 1. **(r)** Place ICs that own anchored parts (the bucks) before other ICs; otherwise today's order. Their loop reserve then never has to clear parts already placed.
 2. **(a)** Compact: each IC's group slides rigidly toward the MCU while every gap holds. Decoupling capacitors move with their IC; `check support` passed in all 653 runs.
 3. **(c)** Split the connectors between the left and right edges, cable side out.
@@ -272,6 +283,8 @@ Why:
 
 ### 3.5 For Scotty's quote (no prices guessed)
 
+**Corrected in §5.3:** the 100 × 100 ask stands. Under the method as built the expected outline is about 85 × 99 mm, not 86 × 81, and the spare room below no longer holds.
+
 - **Outline to ask for:** **100 × 100 mm**, the bound the build will declare. The board will be at most that, or `emit` refuses.
   - The expected outline under the recommendation is about **86 × 81 mm**: 85.25 × 80.80 measured, 84.75–87.70 × 80.05–82.80 over order-only renamings.
   - The parts `main` cannot say yet (§2.1, about 420–455 mm² [inferred]) are expected to grow it while staying inside 100 × 100 [inferred]. The three largest empty rectangles of the recommended layout are 526, 455 and 405 mm², and the side edges have about 28–31 mm free each.
@@ -301,3 +314,79 @@ Why:
 | B3 | The fixture (no `SPI_*`/`IMU_*` test pads, IMU_CS on PB12, bound 100 × 100) | **85.25 × 80.55 mm**, every gate passing at four layers with no finding (the spike's `rac` row on the no-SPI-pad probe) |
 | B4 | `emit` on the fixture | under 5 s on Furnace; the tier-2 test under 60 s |
 | B5 | A bound just above the keep-out sum | `validate` accepts it; `emit` refuses it with `OutlineUnreachable`, naming the outline reached, and writes nothing |
+
+### 5.2 What is built (on this branch, at specification 14)
+
+- **`aethelgard-ir`** (`board.rs`, `lib.rs`): `board.max_outline_mm: { width, height }`, in whole millimetres.
+  - Optional under #191 Q1. Absent or `null` is no bound, and is not written back.
+  - Each side must be 1 to 1000 mm (`MAX_OUTLINE_MM`, the placer's metre of reach), or it is refused by name with `OutlineBound` and its path.
+- **`aethelgard-eda`** (`pcb.rs`, `schematic.rs`):
+  - **The pre-placement check** (`pcb::bound_holds`, run in `emit` before placement, `OutlineTooSmall`). Every keep-out box must fit, at some right angle, inside the bound less `MARGIN_NM` a side, and their areas must fit together.
+  - **Under a bound, the placer:**
+    - (r) puts ICs owning anchored parts first;
+    - (a) compacts toward the MCU's centre, with the MCU's 1 mm IC gap (`Rule`);
+    - places the connectors by one edge-plan function. `BOUNDED_PLAN = EdgePlan::Sides`, and (d) is `EdgePlan::Bottom { gap: GAP_NM }`, one line away, as ruled.
+  - **Then the outline is checked.** Every keep-out box must be inside it, or the emitter reports an internal error. If the outline exceeds the bound, `OutlineUnreachable` names the outline reached and the shortfall in µm, and nothing is written.
+  - **With no bound,** every new path is skipped: the bottom row at `IC_GAP_NM`, today's order.
+- **CLI `validate`:** runs the same check when a bound is declared and the specification solves (`OutlineTooSmall`, exit 2, at `board.max_outline_mm`).
+- **The fixture:** the measured no-SPI-pad probe, renamed `sentinel-03`, with `max_outline_mm` 100 × 100 (D3 (i), 22 test points, IMU_CS on PB12).
+- **Tests:**
+  - `aethelgard-ir/tests/board.rs`: the bound's range, shape and round trip;
+  - `pcb.rs` unit tests: both refusals, the side edges cable out, nothing outside the outline or overlapping, and no bound giving the bottom row;
+  - `aethelgard-cli/tests/outline_tier1.rs`: the fixture inside its bound, `validate` refusing 40 × 40 (the sum) and 20 × 200 (U1, named), `emit` refusing 60 × 60 by name and writing nothing.
+
+### 5.3 The finding that stops the build: (a)'s target [measured]
+
+**Diagnosis.** The spike's `compact` took its target as `placed.iter().flatten().next()`. That is the first placed part in the emitter's item order, which on the fixture is C1. I swapped that target into the build and emitted the fixture: **85.25 × 80.55**, the spike's `rac` figure on the no-pad probe, exactly. Restored to the MCU's centre, as §2.3 describes and the ruling built on, the build gives 85.25 × 99.05.
+
+| On the fixture, bound 100 × 100, four layers | Outline (mm) | Every gate |
+|---|---|---|
+| **as built: (r)+(a)+(c), (a) toward the MCU's centre** | **85.25 × 99.05** | **8/8**, no finding; `emit` 1.5 s |
+| the same, (a) toward the spike's target (C1) | 85.25 × 80.55 | not run as a build |
+| the same, (a) toward the core's box centre (one candidate, ordered by nothing) | 85.25 × 99.05 | not run |
+| (c) alone (spike, §2.3) | 85.25 × 99.05 on the probe | 8/8 |
+
+**As built, under the 20 + 20 renamings** (`spike/1313/renamings.sh` with the build binary; outlines read from the emitted boards):
+- **Order only** (`rename_perm`): 20/20 fit, at 84.75–87.70 × 97.40–99.55 mm, and 20/20 pass all eight gates.
+- **1307's prefix,** where the parts grow 31 %: 1/20 fits (92.80 × 99.80). The other 19 are refused by name with `OutlineUnreachable`, over by 1.30–8.45 mm in height. None writes a board.
+
+**Why the spike's target cannot be built as it ran.** It is whichever part comes first in the emitter's list. So the board would depend on the order of the parts, which `pcb.rs`'s `the_board_does_not_depend_on_the_parts_order` holds it never does today [inferred from the property; not run with the C1 target].
+
+**The fork, for the architect:**
+- **(i) As described.** On this fixture compaction moves nothing. If ruled, I recommend dropping (a), leaving (r)+(c), rather than shipping code that does nothing here.
+  - It fits the fixture at 85.25 × 99.05: 14.75 mm of width margin, 0.95 mm of height.
+  - It fits every order-only renaming.
+  - A grown board is refused by name, never written.
+- **(ii) As the spike measured.** Not buildable verbatim, because of the part-order dependence above.
+- **(iii) A compaction defined without part order** that recovers the 80 mm heights: for example, slide toward the MCU and, when blocked, step sideways to the nearest column that frees a step down. **Unmeasured**: a new spike, not adopted unruled. The one other target tried, the core's box centre, also moved nothing.
+- **The quote** (§3.5): ask for 100 × 100 still. The expected outline under (i) is about 85 × 99 mm. §3.5's spare room for the witness port, USB FS and E0 no longer holds in height: about 1 mm [inferred].
+
+### 5.4 Other forks in this stop
+
+- **F2. Whole millimetres.** The work order names the key `max_outline_mm`. The board section's other values are micrometres by `4100`'s D8. I followed the work order. If micrometres are wanted, the key becomes `max_outline_um`.
+- **F3. `validate` and an unsolvable specification.** `validate` runs the area check only when the specification solves and the emitter can draw it. Otherwise it returns ok, as it always has for those, and `solve` and `emit` refuse them by their own names. `emit` always runs the check before placement. Is that acceptable under `INV-06`, or should `validate` refuse a declared bound it cannot judge?
+- **F4. `null` is no bound,** as an absent key is (tested). The alternative is to refuse `null`.
+
+### 5.5 Measured on the build
+
+- **D4, before any bump.** Every specification in the corpus (the two examples, and every fixture under `crates/` with a `board` and an `mcu`) was run with `validate`, `emit` and `generate`, by `main`'s binary and this branch's. All are **byte-identical**, once the output paths each binary writes are normalised [measured]:
+  - first with the fixture still unbounded: 24 specifications, 467 files, 38 boards;
+  - again on the final code: the 23 existing specifications. The bounded fixture differs, as it should: `main` refuses its new key.
+- **The fixture** (KiCad steps in the pinned image through `~/bin/capped-run`): validate, generate, emit, ERC, DRC `--spec`, DRC with parity, support and `extract` all exit 0 with no finding; `emit` 1.5 s.
+- **Predictions (§5.1):**
+  - B1 right.
+  - B3 **wrong**: 85.25 × 99.05, not 80.55, which is the finding.
+  - B4 right: 1.5 s.
+  - B5 right: `outline_tier1.rs`, 60 × 60.
+  - B2 not yet run.
+- **Gates on this branch** (main `19741d2` merged): `cargo fmt --all -- --check` passes, `cargo clippy --workspace --all-targets -- -D warnings` passes, and `cargo test --workspace` gives 2062 passed, 0 failed, run in place.
+
+### 5.6 Waiting for the ruling
+
+- the bump to specification 15 and its golden hashes;
+- the tier-2 test (the fixture inside its bound, every gate at four layers);
+- `TIER2_MIN` 177, after 3401 if it merges first;
+- the full adversarial pass;
+- the reduction pass, which removes `spike/1313`.
+
+These depend on the method, or are the last steps before READY.
