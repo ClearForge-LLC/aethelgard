@@ -482,6 +482,7 @@ Nine workspace members, and `bridge/` outside the workspace for its `unsafe` FFI
 | `crates/aethelgard-evolve` | attribution from traces, mutation proposals | merging anything, bypassing a gate |
 | `crates/aethelgard-cli` | the `aethelgard` binary: subcommands over the crates and the external tools (`verify --fab-out` writes the fabrication package), and the `mcp` subcommand that exposes the same surface over stdio | raw credentials in source or logs |
 | `crates/aethelgard-kicad-lib` | vendored KiCad symbols and footprints, each with its licence and sha256 (`RUL-11`) | code that interprets them |
+| `crates/aethelgard-hwdef` | ArduPilot's `hwdef.dat` from a `SolvedTopology` and the parts tables, each line naming its source; `aethelgard generate hwdef` (`AET-WO-4400b`, ruled D8) | the `Specification` (`RUL-16`), and any code shared with `aethelgard-pincheck` (`INV-07`) |
 | `crates/aethelgard-pincheck` | `check pinout`: reads ArduPilot's linked ELF and `hwdef.h` and judges them against the solved topology (`AET-WO-4400a`) | any generator, so the check stays independent (`INV-07`, `RUL-20`) |
 
 **Seams that are security or blast-radius boundaries**, named because a module boundary and a trust boundary are maintained differently:
