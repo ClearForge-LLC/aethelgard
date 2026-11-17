@@ -1387,6 +1387,110 @@ fn the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails() {
     fs::remove_dir_all(&base).unwrap();
 }
 
+const BENCH: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json";
+
+/// `AET-WO-1312` §2: Sentinel-01 with a test point on every net §1.1 lists,
+/// BOOT0 and NRST on its SWD connector, and a reset switch passes `validate`,
+/// `generate`, `emit`, `check erc` and `check drc --spec` with no finding,
+/// parity included, at two layers and at four (the 4-layer fixture's board).
+/// The support gate judges BOOT0's pull-down and the switch from KiCad's own
+/// netlist, and `extract` bounds every line with its test pad on it.
+#[test]
+fn the_bench_board_passes_every_gate_at_two_and_four_layers() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-1312-bench-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let read =
+        |p: &str| -> Value { serde_json::from_slice(&fs::read(root().join(p)).unwrap()).unwrap() };
+    let mut four = read(BENCH);
+    four["board"] = read(FOUR)["board"].clone();
+    let four_path = base.join("bench-4l.json");
+    fs::write(&four_path, serde_json::to_vec_pretty(&four).unwrap()).unwrap();
+    for (label, spec, layers) in [("2l", root().join(BENCH), 2), ("4l", four_path, 4)] {
+        let spec_arg = spec.to_str().unwrap();
+        let (code, text) = aethelgard(&["validate", "--file", spec_arg]);
+        assert_eq!(code, Some(0), "{label}: validate: {text}");
+        let generated = base.join(format!("{label}-gen"));
+        let (code, text) = aethelgard(&[
+            "generate",
+            "--spec",
+            spec_arg,
+            "--out",
+            generated.to_str().unwrap(),
+        ]);
+        assert_eq!(code, Some(0), "{label}: generate: {text}");
+        let out = base.join(label);
+        let (code, text) =
+            aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+        let r = one(&text);
+        assert_eq!(code, Some(0), "{label}: emit: {r}");
+        let board = r["board"]["path"].as_str().unwrap().to_owned();
+        let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+        let board_text = fs::read_to_string(&board).unwrap();
+        assert_eq!(board_text.matches(" signal)").count(), layers, "{label}");
+        for tp in 1..=12 {
+            assert!(
+                board_text.contains(&format!("\"Reference\" \"TP{tp}\"")),
+                "{label}: TP{tp} is not on the board"
+            );
+        }
+        assert!(board_text.contains("\"Reference\" \"SW1\""), "{label}");
+
+        let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+        let erc = one(&text);
+        assert_eq!(code, Some(0), "{label}: erc: {erc}");
+        assert_eq!(erc["verdict"], "pass", "{label}: erc: {erc}");
+        assert_eq!(erc["findings"], Value::Array(vec![]), "{label}: erc");
+
+        for parity in [false, true] {
+            let mut args = vec!["check", "drc", "--board", &board, "--spec", spec_arg];
+            if parity {
+                args.extend(["--schematic", &sch]);
+            }
+            let (code, text) = aethelgard(&args);
+            let drc = one(&text);
+            assert_eq!(code, Some(0), "{label} parity={parity}: drc: {drc}");
+            assert_eq!(drc["verdict"], "pass", "{label}: drc: {drc}");
+            assert_eq!(drc["rules"], "specification", "{label}: drc: {drc}");
+            assert_eq!(drc["findings"], Value::Array(vec![]), "{label}: drc");
+        }
+
+        let (code, text) = aethelgard(&[
+            "check",
+            "support",
+            "--schematic",
+            &sch,
+            "--board",
+            &board,
+            "--spec",
+            spec_arg,
+        ]);
+        let v = one(&text);
+        assert_eq!(code, Some(0), "{label}: support: {v}");
+        assert_eq!(v["findings"], Value::Array(vec![]), "{label}: {v}");
+        let straps = v["support"]["straps"].to_string();
+        assert!(
+            straps.contains("BOOT0 (pin 138) on `/BOOT0`, pulled to `GND` by")
+                && straps.contains("(10k)"),
+            "{label}: {straps}"
+        );
+
+        let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+        let x = one(&text);
+        assert_eq!(code, Some(0), "{label}: extract: {x}");
+        assert_eq!(x["verdict"], "pass", "{label}: extract: {x}");
+        for line in x["lines"].as_array().unwrap() {
+            let pins = line["pins"].to_string();
+            assert!(
+                !pins.contains("TP"),
+                "{label}: a test pad counted as a pin: {line}"
+            );
+        }
+    }
+    fs::remove_dir_all(&base).unwrap();
+}
+
 /// `AET-WO-4220b` §2: the Sentinel-02-shaped fixture, its ICM-42688-P and
 /// BMP581 drawn from our own library (`Aethelgard_Sensor`), passes ERC with
 /// no finding, DRC by the specification's rules with schematic parity and no

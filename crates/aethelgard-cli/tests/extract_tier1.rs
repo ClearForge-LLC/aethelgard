@@ -564,7 +564,7 @@ fn what_the_reader_does_not_model_is_refused() {
             "footprint_unknown_child",
             once(
                 "\t\t(attr ",
-                "\t\t(fp_circle (center 0 0) (end 0.1 0) (layer \"F.SilkS\"))\n\t\t(attr ",
+                "\t\t(fp_curve (pts (xy 0 0) (xy 0.1 0) (xy 0.1 0.1) (xy 0 0.1)) (layer \"F.SilkS\"))\n\t\t(attr ",
             ),
             unmodelled,
         ),
