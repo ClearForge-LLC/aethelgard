@@ -24,7 +24,7 @@ fn digests() -> Vec<(&'static str, String)> {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let mut doc: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a});
+    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a, "pin_capacitance": null});
     doc["i2c_devices"] = serde_json::json!([
         dev("U10", "BME280", 0x76),
         dev("U3", "TMP117", 0x48),

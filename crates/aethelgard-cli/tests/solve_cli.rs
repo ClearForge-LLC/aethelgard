@@ -76,8 +76,13 @@ use sha2::{Digest, Sha256};
 /// back, the reference's output hashes to `5d64214d…d4fb`, and with
 /// `4c9aa762…762e` put back, the stress fixture's to `15dd2336…10c8`, the old
 /// digests, exactly.
-const REFERENCE_DIGEST: &str = "d751e1f4cfbc66008d655c135baa17aa44e4e272676e3a03c6159fa6be220dcf";
-const STRESS_DIGEST: &str = "00be83e163e9b28a0a0757be7ddf7d7f05d86ebbcd88c6d66b219f1e2da8eef6";
+/// Moved once more by `AET-WO-4220b` (specification version 13, each
+/// device's `pin_capacitance`), which moved only the specification's sha256:
+/// with `3f89077c…aee4` put back, the reference's output hashes to
+/// `d751e1f4…0dcf`, and with `7f8f17ed…baf9` put back, the stress fixture's
+/// to `00be83e1…eef6`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "2e19ebee5497d3b7e373eaabee50372ff0d3a111b84bc985001c59e4921b31d3";
+const STRESS_DIGEST: &str = "a59e85d78f006b35cbf48b1760838c79b4e635ff26bedeefd3e328b085407af7";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

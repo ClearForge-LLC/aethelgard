@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 13,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -168,28 +168,32 @@
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_0",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U101",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_1",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U102",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_2",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U103",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_3",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [
@@ -201,7 +205,8 @@
       "cs": {
         "net": "SPI_BUS_0_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U201",
@@ -211,7 +216,8 @@
       "cs": {
         "net": "SPI_BUS_0_CS1_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U202",
@@ -221,7 +227,8 @@
       "cs": {
         "net": "SPI_BUS_1_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U203",
@@ -231,7 +238,8 @@
       "cs": {
         "net": "SPI_BUS_1_CS1_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U204",
@@ -241,7 +249,8 @@
       "cs": {
         "net": "SPI_BUS_2_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U205",
@@ -251,7 +260,8 @@
       "cs": {
         "net": "SPI_BUS_2_CS1_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U206",
@@ -261,7 +271,8 @@
       "cs": {
         "net": "SPI_BUS_3_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U207",
@@ -271,7 +282,8 @@
       "cs": {
         "net": "SPI_BUS_3_CS1_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [

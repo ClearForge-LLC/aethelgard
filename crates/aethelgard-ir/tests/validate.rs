@@ -68,6 +68,7 @@ fn valid() -> Specification {
                 supply: "VDD_3V3".into(),
                 bus: "SENSORS".into(),
                 address: 118,
+                pin_capacitance: None,
             },
             I2cDevice {
                 reference: "U3".into(),
@@ -75,6 +76,7 @@ fn valid() -> Specification {
                 supply: "VDD_3V3".into(),
                 bus: "SENSORS".into(),
                 address: 72,
+                pin_capacitance: None,
             },
         ],
         "spi_devices": [SpiDevice {
@@ -83,6 +85,7 @@ fn valid() -> Specification {
             supply: "VDD_3V3".into(),
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
+            pin_capacitance: None,
         }],
         "connectors": [
             {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
@@ -165,7 +168,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3330,4 +3333,134 @@ fn aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor() {
     for (nominal, level) in [(2709, 3), (1698, 0)] {
         assert_eq!(bor_rail(nominal, 10, level).validate(), Ok(()), "{nominal}");
     }
+}
+
+// ------------------------------------------------- AET-WO-4220b: declared pin capacitance
+
+fn declared(femtofarads: u64) -> Option<aethelgard_ir::PinCapacitance> {
+    Some(aethelgard_ir::PinCapacitance {
+        declared: aethelgard_ir::DeclaredPinCapacitance {
+            femtofarads,
+            condition: "each pin at most UM10204's Ci".into(),
+            source: "UM10204 rev. 7.0 Table 10, p. 43".into(),
+        },
+    })
+}
+
+/// §1.2: a declaration within the parts table's own range (1 to 100 000 fF)
+/// is accepted on an I2C or an SPI device whose part cites no maximum;
+/// outside it, refused by name (step 14).
+#[test]
+fn a_declared_pin_capacitance_is_within_the_tables_range() {
+    for ff in [1, 10_000, 100_000] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].pin_capacitance = declared(ff);
+        assert_eq!(spec.validate(), Ok(()), "{ff}");
+    }
+    for ff in [0, 100_001, u64::MAX] {
+        let e = refusal(|s| devs(s).i2c[1].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceOutOfRange", Some("U3"));
+        assert!(
+            e.to_string()
+                .contains(&format!("{ff} fF, not 1 to 100000 fF")),
+            "{e}"
+        );
+    }
+}
+
+/// §1.2 (`AET-WO-4300c` D3): a part whose row cites a maximum is counted at
+/// it, and a declaration beside it, smaller or larger, is refused.
+#[test]
+fn a_declaration_never_stands_beside_a_cited_maximum() {
+    for ff in [1_000, 8_000, 20_000] {
+        let e = refusal(|s| devs(s).spi[0].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceAlreadyCited", Some("U4"));
+        assert!(e.to_string().contains("cites a maximum of 8000 fF"), "{e}");
+    }
+}
+
+/// Step 2: a declaration's condition and source are each held to the
+/// repository's rule for a source, by path.
+#[test]
+fn a_declarations_texts_are_sources_by_path() {
+    for bad in [
+        "",
+        " ",
+        " lead",
+        "trail ",
+        "tab\there",
+        "µF",
+        &"x".repeat(201),
+    ] {
+        for (field, path) in [
+            (
+                "condition",
+                "i2c_devices[0].pin_capacitance.declared.condition",
+            ),
+            ("source", "i2c_devices[0].pin_capacitance.declared.source"),
+        ] {
+            let e = refusal(|s| {
+                let mut c = declared(10_000);
+                let d = &mut c.as_mut().unwrap().declared;
+                if field == "condition" {
+                    d.condition = bad.to_owned();
+                } else {
+                    d.source = bad.to_owned();
+                }
+                devs(s).i2c[0].pin_capacitance = c;
+            });
+            assert_eq!(e.kind(), "InvalidSource", "{bad:?}: {e}");
+            assert_eq!(e.path(), Some(path), "{bad:?}");
+        }
+    }
+    let e = refusal(|s| {
+        let mut c = declared(10_000);
+        c.as_mut().unwrap().declared.source = String::new();
+        devs(s).spi[0].pin_capacitance = c;
+    });
+    assert_eq!(
+        e.path(),
+        Some("spi_devices[0].pin_capacitance.declared.source")
+    );
+}
+
+/// Version 13: every device carries the key, `null` or a declaration, and
+/// nothing supplies it; a version-12 file is refused by its version, with
+/// or without the key; a declaration holds exactly its three fields.
+#[test]
+fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
+    let json = serde_json::to_value(valid()).unwrap();
+    for (list, i) in [("i2c_devices", 0), ("spi_devices", 0)] {
+        let mut v = json.clone();
+        v[list][i]
+            .as_object_mut()
+            .unwrap()
+            .remove("pin_capacitance");
+        assert!(
+            serde_json::from_value::<Specification>(v).is_err(),
+            "{list}"
+        );
+    }
+    let mut v = json.clone();
+    v["i2c_devices"][0]["pin_capacitance"] = serde_json::json!({"declared": {"femtofarads": 1, "condition": "c", "source": "s", "maximum": 1}});
+    assert!(serde_json::from_value::<Specification>(v).is_err());
+    let mut v = json.clone();
+    v["i2c_devices"][0]["pin_capacitance"] = serde_json::json!({"maximum_femtofarads": 1});
+    assert!(serde_json::from_value::<Specification>(v).is_err());
+    let mut v = json;
+    v["schema_version"] = 12.into();
+    let e = serde_json::from_value::<Specification>(v)
+        .unwrap()
+        .validate()
+        .unwrap_err();
+    assert!(
+        matches!(
+            e,
+            E::UnsupportedSchemaVersion {
+                version: 12,
+                expected: 13
+            }
+        ),
+        "{e}"
+    );
 }

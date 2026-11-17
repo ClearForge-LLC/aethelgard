@@ -1575,7 +1575,7 @@ fn a_version_9_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 9,
-                expected: 12
+                expected: 13
             }
         ),
         "{e}"
@@ -1604,7 +1604,7 @@ fn a_version_10_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 10,
-                expected: 12
+                expected: 13
             }
         ),
         "{e}"
@@ -1631,7 +1631,7 @@ fn a_version_11_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 11,
-                expected: 12
+                expected: 13
             }
         ),
         "{e}"

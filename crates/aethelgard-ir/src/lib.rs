@@ -63,7 +63,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
 /// after `4300d3` and then `4300g`). Nothing supplies any of them for an
 /// older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
+/// Version 13 requires `pin_capacitance` on every I2C and SPI device, `null`
+/// or a declaration (`AET-WO-4220b`).
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 13;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -337,6 +339,10 @@ pub struct I2cDevice {
     pub supply: String,
     pub bus: String,
     pub address: u8,
+    /// Its pins' capacitance as the specification declares it, or `null`.
+    /// Required as a key (`INV-06`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,6 +353,32 @@ pub struct SpiDevice {
     pub supply: String,
     pub bus: String,
     pub cs: Signal,
+    /// As [`I2cDevice::pin_capacitance`].
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
+}
+
+/// A device's pin capacitance as the specification declares it (`AET-WO-4220b`;
+/// the `AET-WO-4220` D10 ruling, comment 6890080737): for a part whose
+/// datasheet prints a typical only, or nothing. `extract` counts it on every
+/// bounded line the part's pins sit on, under its condition, named as
+/// declared and never as a maximum (`RUL-19`). A part whose parts-table row
+/// cites a maximum is counted at that maximum (`AET-WO-4300c` D3), and a
+/// declaration for it is refused (`PinCapacitanceAlreadyCited`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct PinCapacitance {
+    pub declared: DeclaredPinCapacitance,
+}
+
+/// The value counted for each of the device's pins on a bounded line, the
+/// condition under which the bound then holds, and where the value comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct DeclaredPinCapacitance {
+    pub femtofarads: u64,
+    pub condition: String,
+    pub source: String,
 }
 
 /// The electrical bounds one net must stay within.
@@ -771,6 +803,8 @@ object_only!(
     SpiBus,
     I2cDevice,
     SpiDevice,
+    PinCapacitance,
+    DeclaredPinCapacitance,
     NetConstraint,
     PinAssignment,
     AnalogLine,
@@ -1664,6 +1698,28 @@ pub enum IrValidationError {
         driven: u8,
         citation: String,
     },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance outside the
+    /// parts table's own range ([`parts::MAX_PIN_FEMTOFARADS`]): zero would
+    /// drop the device's pins from every bound they sit on, and above it is
+    /// no signal pin.
+    #[error("device `{id}` declares a pin capacitance of {femtofarads} fF, not 1 to {maximum} fF")]
+    PinCapacitanceOutOfRange {
+        id: String,
+        femtofarads: u64,
+        maximum: u64,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance for a part
+    /// whose row cites a maximum, which a declaration never replaces
+    /// (`AET-WO-4300c` D3).
+    #[error(
+        "device `{id}` declares a pin capacitance, but its part `{part}` cites a maximum of {maximum_femtofarads} fF ({citation}), which a declaration never replaces"
+    )]
+    PinCapacitanceAlreadyCited {
+        id: String,
+        part: String,
+        maximum_femtofarads: u64,
+        citation: String,
+    },
     /// Step 21 (`AET-WO-1208` §1.3, `1207` F1): the refusal `solve` made, by
     /// its name, message and claimant. Every timer's kernel clock is one
     /// frequency on the reset clock, so the timing is the specification's.
@@ -1846,6 +1902,8 @@ impl IrValidationError {
             Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
             Self::SpiModeNotDriven { .. } => "SpiModeNotDriven",
+            Self::PinCapacitanceOutOfRange { .. } => "PinCapacitanceOutOfRange",
+            Self::PinCapacitanceAlreadyCited { .. } => "PinCapacitanceAlreadyCited",
             Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
@@ -2014,7 +2072,9 @@ impl IrValidationError {
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::MissingSpiConstraint { bus, .. } => Some(bus),
-            Self::SpiModeNotDriven { id, .. } => Some(id),
+            Self::SpiModeNotDriven { id, .. }
+            | Self::PinCapacitanceOutOfRange { id, .. }
+            | Self::PinCapacitanceAlreadyCited { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
@@ -2297,6 +2357,22 @@ fn optional_identifier(
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
     value.as_deref().map_or(Ok(()), |v| plain(v, path))
+}
+
+/// Step 2 (`AET-WO-4220b`): a declared pin capacitance's condition and source
+/// are each a source text ([`board::source`]).
+fn declared_texts(c: &Option<PinCapacitance>, at: &str) -> Result<(), IrValidationError> {
+    if let Some(c) = c {
+        board::source(
+            &c.declared.condition,
+            &format!("{at}.pin_capacitance.declared.condition"),
+        )?;
+        board::source(
+            &c.declared.source,
+            &format!("{at}.pin_capacitance.declared.source"),
+        )?;
+    }
+    Ok(())
 }
 
 fn signal_identifiers(signal: &Signal, path: &str) -> Result<(), IrValidationError> {
@@ -2652,6 +2728,39 @@ impl Specification {
                     .find(|b| b.id == d.bus)
                     .map_or(0, |b| b.speed_hz);
                 check_spi_device(&d.reference, p, speed_hz)?;
+            }
+        }
+        // `AET-WO-4220b` §1.2: a declaration is within the table's own range,
+        // and never stands beside a cited maximum. I2C then SPI, in
+        // document order.
+        let declared = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part, &d.pin_capacitance))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (&d.reference, &d.part, &d.pin_capacitance)),
+            );
+        for (reference, part, pin_capacitance) in declared {
+            let Some(c) = pin_capacitance else { continue };
+            let femtofarads = c.declared.femtofarads;
+            if !(1..=parts::MAX_PIN_FEMTOFARADS).contains(&femtofarads) {
+                return Err(IrValidationError::PinCapacitanceOutOfRange {
+                    id: reference.clone(),
+                    femtofarads,
+                    maximum: parts::MAX_PIN_FEMTOFARADS,
+                });
+            }
+            if let Some(p) = part_entry(table, reference, part)?
+                && let Some(maximum) = p.pin_capacitance_femtofarads
+            {
+                return Err(IrValidationError::PinCapacitanceAlreadyCited {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    maximum_femtofarads: maximum,
+                    citation: cite(&p.citations.pin_capacitance),
+                });
             }
         }
         self.validate_lifecycle(table)
@@ -3116,6 +3225,7 @@ impl Specification {
             plain(&device.part, || format!("{at}.part"))?;
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, device) in self.spi_devices.iter().enumerate() {
             let at = format!("spi_devices[{i}]");
@@ -3126,6 +3236,7 @@ impl Specification {
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
             signal_identifiers(&device.cs, &format!("{at}.cs"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, net) in self.net_constraints.iter().enumerate() {
             plain(&net.net_name, || format!("net_constraints[{i}].net_name"))?;

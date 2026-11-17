@@ -65,6 +65,12 @@ fn line(b: LineBound, declared: u64) -> Value {
         v["terms"]["offboard"] = t.offboard.into();
         v["offboard"] = b.offboard.into();
     }
+    // A pin counted at a declared value (`AET-WO-4220b`) is listed apart from
+    // `pins`, which are maxima; a line with none is unchanged.
+    if !b.declared_pins.is_empty() {
+        v["terms"]["declared_pins"] = t.declared_pins.into();
+        v["declared_pins"] = b.declared_pins.into();
+    }
     v
 }
 
@@ -116,6 +122,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if aethelgard_eda::schematic::declares_offboard(&spec) {
         conditions.push(bound::OFFBOARD.to_owned());
     }
+    conditions.extend(bound::declared_conditions(&spec));
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
@@ -145,7 +152,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
-                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}) exceeds the declared {} fF",
+                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}{}) exceeds the declared {} fF",
                 l["net"].as_str().unwrap_or_default(),
                 l["c_bound_femtofarads"],
                 l["terms"]["trace"],
@@ -155,6 +162,9 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                 l["terms"]
                     .get("offboard")
                     .map_or_else(String::new, |o| format!(", offboard {o}")),
+                l["terms"]
+                    .get("declared_pins")
+                    .map_or_else(String::new, |d| format!(", declared pins {d}")),
                 l["declared_femtofarads"]
             ),
         })

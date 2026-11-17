@@ -563,8 +563,13 @@ mod tests {
             "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 12);
-        assert_eq!(fp.matches("(lib ").count(), 11);
+        // Our own library (`AET-WO-4220b`) beside KiCad's, by one name.
+        assert!(sym.contains(
+            "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
+        ));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
+        assert_eq!(sym.matches("(lib ").count(), 13);
+        assert_eq!(fp.matches("(lib ").count(), 12);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

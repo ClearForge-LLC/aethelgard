@@ -318,6 +318,27 @@ pub fn declares_offboard(spec: &Specification) -> bool {
         .any(|c| c.pins.iter().any(|p| p.offboard.is_some()))
 }
 
+/// Each device's declared pin capacitance (`AET-WO-4220b`, the `AET-WO-4220`
+/// D10 ruling), by reference: I2C devices, then SPI devices, as the
+/// specification declares them. Here for the reason [`declares_offboard`] is.
+pub fn declared_pin_capacitance(
+    spec: &Specification,
+) -> Vec<(String, (String, aethelgard_ir::DeclaredPinCapacitance))> {
+    spec.declared_i2c_devices()
+        .iter()
+        .map(|d| (&d.reference, &d.part, &d.pin_capacitance))
+        .chain(
+            spec.declared_spi_devices()
+                .iter()
+                .map(|d| (&d.reference, &d.part, &d.pin_capacitance)),
+        )
+        .filter_map(|(reference, part, c)| {
+            c.as_ref()
+                .map(|c| (reference.clone(), (part.clone(), c.declared.clone())))
+        })
+        .collect()
+}
+
 /// Whether `part` is an off-board connector: placed last, at the board edge,
 /// and on a line counted as copper plus its declared budget, never at `Ci`.
 pub(crate) fn is_connector(part: &Part) -> bool {
@@ -799,7 +820,7 @@ pub(crate) fn design(
             // BST-BMP581-DS004-13 Table 28 and Fig. 26 (I2C), pp. 46 and 48:
             // VDDIO and VDD on the supply, each bypassed by 100 nF; the three
             // VSS to GND; SCK is SCL and SDI is SDA; SDO selects the address
-            // LSB (0x46 low, 0x47 high); CSB to VDDIO ("In I2C mode, the CSB
+            // LSB (low, then high: the parts table's order); CSB to VDDIO ("In I2C mode, the CSB
             // pin must be connected to VDDIO"); INT to GND, allowed "as long
             // as the IRQ pin is not activated" (Table 28 (a)), and the
             // bring-up leaves INT_CONFIG at its reset, `int_en` 0 (p. 52).
@@ -1469,6 +1490,7 @@ mod tests {
             supply: "VDD_3V3".into(),
             bus: "B".into(),
             address,
+            pin_capacitance: None,
         };
         let to = |n: &str| Conn::Net(n.into());
         let bme = [to("GND"), to("VDDIO")];
