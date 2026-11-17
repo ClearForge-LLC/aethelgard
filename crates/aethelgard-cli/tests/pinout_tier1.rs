@@ -29,6 +29,13 @@ fn run(
     topology: &str,
     allow: &str,
 ) -> (i32, String) {
+    // With hwdef.h the identity judge runs (`AET-WO-4400b2`), and it reads
+    // the ELF's serial table: the reference topology has no serial port, so
+    // one empty entry, as ArduPilot writes `{}`.
+    let mut elf = elf.clone();
+    if header.is_some() && elf.serial.is_none() {
+        elf.serial = Some(vec![[0; 44]]);
+    }
     fs::write(d.join("fw.elf"), elf.bytes()).unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
     cmd.args(["check", "pinout", "--topology", topology, "--elf"])

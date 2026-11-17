@@ -116,7 +116,11 @@ fn sections(bytes: &[u8]) -> Result<Vec<Section>, Refusal> {
 }
 
 /// Every symbol's value, size, type and section index whose name is [`SYMBOL`].
-fn symbols_named(bytes: &[u8], sections: &[Section]) -> Result<Vec<(u32, u32, u8, u16)>, Refusal> {
+fn symbols_named(
+    bytes: &[u8],
+    sections: &[Section],
+    symbol: &[u8],
+) -> Result<Vec<(u32, u32, u8, u16)>, Refusal> {
     let mut tables = sections.iter().filter(|s| s.kind == SHT_SYMTAB);
     let symtab = match (tables.next(), tables.next()) {
         (Some(t), None) => t,
@@ -151,7 +155,7 @@ fn symbols_named(bytes: &[u8], sections: &[Section]) -> Result<Vec<(u32, u32, u8
     )?;
     let entries = range(bytes, u64::from(symtab.offset), symtab.size, ".symtab")?;
     // A string table that ends in NUL terminates every name in it, so each
-    // compare below reads at most `SYMBOL.len() + 1` bytes: one scan to a NUL
+    // compare below reads at most `symbol.len() + 1` bytes: one scan to a NUL
     // per symbol made the read quadratic (review 2, A15.1).
     if names.last() != Some(&0) {
         return refuse("MalformedElf", "a symbol's name is not NUL-terminated");
@@ -166,7 +170,7 @@ fn symbols_named(bytes: &[u8], sections: &[Section]) -> Result<Vec<(u32, u32, u8
                 format!("a symbol's name offset {name_at} is outside its string table"),
             );
         };
-        if tail[..tail.len().min(SYMBOL.len() + 1)].strip_suffix(&[0]) == Some(SYMBOL) {
+        if tail[..tail.len().min(symbol.len() + 1)].strip_suffix(&[0]) == Some(symbol) {
             found.push((
                 u32_at(sym, 4),
                 u32_at(sym, 8),
@@ -264,6 +268,39 @@ fn loaded_offset(bytes: &[u8], value: u32, size: u32) -> Result<u64, Refusal> {
 
 /// Reads the reset GPIO configuration out of a linked ELF.
 pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
+    let data = object(bytes, SYMBOL, |size| {
+        (size != SYMBOL_SIZE)
+            .then(|| format!("{size} bytes, not {SYMBOL_SIZE} (11 ports x 7 words)"))
+    })?;
+    let words: Vec<u32> = data
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|w| u32::from_le_bytes(*w))
+        .collect();
+    let mut ports = [PortRegisters::default(); PORTS.len()];
+    for (port, w) in ports.iter_mut().zip(words.as_chunks::<7>().0) {
+        *port = PortRegisters {
+            moder: w[0],
+            otyper: w[1],
+            ospeedr: w[2],
+            pupdr: w[3],
+            odr: w[4],
+            afrl: w[5],
+            afrh: w[6],
+        };
+    }
+    Ok(GpioConfig { ports })
+}
+
+/// The bytes of the one `STT_OBJECT` named `symbol`, in allocated, read-only
+/// `PROGBITS`, located twice (its section and its `PT_LOAD`) and refused
+/// unless both agree; `bad_size` names a size the caller refuses.
+fn object<'a>(
+    bytes: &'a [u8],
+    symbol: &[u8],
+    bad_size: impl Fn(u32) -> Option<String>,
+) -> Result<&'a [u8], Refusal> {
     if bytes.len() < EHDR_LEN {
         return refuse(
             "Truncated",
@@ -300,8 +337,8 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
         );
     }
     let sections = sections(bytes)?;
-    let name = String::from_utf8_lossy(SYMBOL);
-    let (value, size, kind, shndx) = match symbols_named(bytes, &sections)?.as_slice() {
+    let name = String::from_utf8_lossy(symbol);
+    let (value, size, kind, shndx) = match symbols_named(bytes, &sections, symbol)?.as_slice() {
         [one] => *one,
         [] => return refuse("SymbolMissing", format!("no symbol {name} in .symtab")),
         many => {
@@ -317,11 +354,8 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
             format!("{name} has type {kind}, not STT_OBJECT"),
         );
     }
-    if size != SYMBOL_SIZE {
-        return refuse(
-            "SymbolSize",
-            format!("{name} is {size} bytes, not {SYMBOL_SIZE} (11 ports x 7 words)"),
-        );
+    if let Some(why) = bad_size(size) {
+        return refuse("SymbolSize", format!("{name} is {why}"));
     }
     let section = match sections.get(usize::from(shndx)) {
         Some(s) if shndx != 0 && shndx < SHN_LORESERVE => s,
@@ -375,24 +409,79 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
             ),
         );
     }
-    let data = range(bytes, by_segment, size, &name)?;
-    let words: Vec<u32> = data
-        .as_chunks::<4>()
+    range(bytes, by_segment, size, &name)
+}
+
+/// ArduPilot's serial table: `ChibiOS::UARTDriver::_serial_tab`, `const`
+/// in flash (`UARTDriver.cpp:53`), one `SerialDef` per SERIALn in order
+/// (`AET-WO-4400b2` §1.1).
+pub const SERIAL_SYMBOL: &[u8] = b"_ZN7ChibiOS10UARTDriver11_serial_tabE";
+
+/// `SerialDef`'s size at `Copter-4.7.2` with DMA (`UARTDriver.h:58-80`,
+/// `HAL_UART_NODMA` undefined): measured on the generated boards' ELFs.
+pub const SERIAL_DEF_LEN: u32 = 44;
+
+/// One `SerialDef`: an all-zero entry is ArduPilot's `{}` (no port).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SerialEntry {
+    /// The USART or UART number (`instance`, offset 4), 0 for `{}`.
+    pub instance: u8,
+    /// `is_usb` (offset 5).
+    pub is_usb: bool,
+    /// `tx_line` and `rx_line` (offsets 20 and 24): `PAL_LINE`, a GPIO
+    /// port's base address plus the pin.
+    pub tx_line: u32,
+    pub rx_line: u32,
+    /// Every byte zero.
+    pub empty: bool,
+    /// The driver pointer (offset 0) is the address of `SD<instance>`, the
+    /// serial driver the port runs on (`UARTDriver.cpp:474`): `instance`
+    /// alone names only its thread (adversarial A11).
+    pub driver_is_instance: bool,
+}
+
+/// The serial table, SERIAL0 first: a whole number of `SerialDef`s, at most
+/// ten (SERIAL0 to SERIAL9), each refused unless its padding is zero.
+pub fn serial_table(bytes: &[u8]) -> Result<Vec<SerialEntry>, Refusal> {
+    let data = object(bytes, SERIAL_SYMBOL, |size| {
+        (size == 0 || size % SERIAL_DEF_LEN != 0 || size > 10 * SERIAL_DEF_LEN).then(|| {
+            format!("{size} bytes, not 1 to 10 whole {SERIAL_DEF_LEN}-byte SerialDef entries")
+        })
+    })?;
+    let sections = sections(bytes)?;
+    let mut out = Vec::new();
+    for (i, e) in data
+        .as_chunks::<{ SERIAL_DEF_LEN as usize }>()
         .0
         .iter()
-        .map(|w| u32::from_le_bytes(*w))
-        .collect();
-    let mut ports = [PortRegisters::default(); PORTS.len()];
-    for (port, w) in ports.iter_mut().zip(words.as_chunks::<7>().0) {
-        *port = PortRegisters {
-            moder: w[0],
-            otyper: w[1],
-            ospeedr: w[2],
-            pupdr: w[3],
-            odr: w[4],
-            afrl: w[5],
-            afrh: w[6],
+        .enumerate()
+    {
+        // The layout's two padding gaps (after `dma_tx_stream_id`, and at the
+        // end) are zero in every entry ArduPilot writes.
+        if e[14..16] != [0, 0] || e[42..44] != [0, 0] {
+            return refuse(
+                "MalformedElf",
+                format!(
+                    "SerialDef entry {i} has bytes in its padding: not the layout this reader knows"
+                ),
+            );
+        }
+        let empty = e.iter().all(|b| *b == 0);
+        let driver_is_instance = !empty && {
+            let name = format!("SD{}", e[4]);
+            match symbols_named(bytes, &sections, name.as_bytes())?.as_slice() {
+                [(value, ..)] => *value == u32_at(e, 0),
+                _ => false,
+            }
         };
+        out.push(SerialEntry {
+            instance: e[4],
+            is_usb: e[5] != 0,
+            tx_line: u32_at(e, 20),
+            rx_line: u32_at(e, 24),
+            empty,
+            driver_is_instance,
+        });
     }
-    Ok(GpioConfig { ports })
+    Ok(out)
 }
