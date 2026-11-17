@@ -71,6 +71,16 @@ echo "quickstart ok"
 
 ## Running it
 
+**From crates.io, with no image:** `cargo install aethelgard-cli --version 0.2.0 --locked`. `validate` and `solve` are pure Rust and need no external tool; the release reads specification 13:
+
+```bash
+aethelgard validate < examples/sentinel-01-minimal.json   # {"ok":true,...}, exit 0
+```
+
+Everything that runs KiCad, Renode, ngspice or Kani (`check erc`, `check drc`, the twin, `prove`, `verify`) needs those tools, which the image above carries, and runs them only inside the CLI's own sandbox; without them the CLI refuses with a named kind and a nonzero exit (the codes are in [`crates/aethelgard-cli/README.md`](crates/aethelgard-cli/README.md)). For a checked board, use the image.
+
+From a clone:
+
 Check a specification. It prints one line of JSON and exits 0 when the specification is valid, nonzero otherwise; the codes are in [`crates/aethelgard-cli/README.md`](crates/aethelgard-cli/README.md).
 
 ```bash
