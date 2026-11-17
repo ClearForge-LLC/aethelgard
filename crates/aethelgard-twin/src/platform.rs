@@ -6,7 +6,8 @@
 //! instance other than `spi4`, at the header's base, with its interrupt wired
 //! (spike F2). It never redeclares a stock instance, since a duplicate
 //! registration breaks the load (`architecture.md` §2.9). The output is a
-//! function of the topology and the pinned header alone (`INV-01`).
+//! function of the topology, the pinned header and the cited DMAMUX1 table
+//! ([`DMAMUX1_SPI_RX`], `AET-WO-4400c2`) alone (`INV-01`).
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;

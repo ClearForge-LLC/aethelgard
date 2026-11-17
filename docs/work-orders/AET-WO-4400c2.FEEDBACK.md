@@ -145,7 +145,13 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 ## The ruling, applied
 
 - **D1, line 1 (SPI receive): built** (below).
-- **D1, line 2 (USART receive): held, not emitted.** It manufactures a deterministic hard fault. The repro for the backlog row the ruling names is the §1.1 runs `paced` and `crash-a`/`crash-b`: `p2-spi-usart`'s platform, three `COMMAND_LONG` frames at 1.5 s, with the scripts and evidence at `5a1bccaf` (`spike/4400c2/`, deleted after).
+- **D1, line 2 (USART receive): held, not emitted.** It manufactures a deterministic hard fault. The repro for the backlog row the ruling names, in full, since a squash merge drops `5a1bccaf`:
+  - the platform: today's emitted `sentinel-02-own.repl` plus `DMARecieve -> dmamux1@37` in `spi1`, `@39` in `spi2`, and the block `usart1:` / `    ReceiveDmaRequest -> dmamux1@41`;
+  - the firmware: CI's ArduPilot ELF (sha256 `c8a2c9fa…`, run 44051581563), under the CLI's own monitor script;
+  - the stimulus: at 1.5 s virtual, the 44-byte MAVLink 2 frame `fd20000000ffbe4c00000000144300000000000000000000000000000000000000000000000000020101632f` three times, either at one instant (`HardFault` at 1.601556130 s) or one byte per 86,806 ns (`HardFault` at 1.511036822 s);
+  - the signature: `CFSR` `0x00020000` (`INVSTATE`), `HFSR` `0x40000000`.
+
+  The scripts are at `5a1bccaf` (`spike/4400c2/`, deleted after).
 - **D1, line 3 (I2C receive): not emitted.** Recorded: no measured effect for this ELF (`p3` byte-identical to `p2`).
 - **D2, USART IDLE and timer DMA:** to the backlog and to architecture §2 as model divergences. Those are the architect's documents; they are recorded here and nothing protected was edited.
 - **`MANIFEST.json` (read at source):**
@@ -153,6 +159,15 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
   - Its `verdict_sha256` is the sha256 of `verify`'s verdict line (`fab.rs` L689), which lists every generated file's sha256 by path (`verify.rs` L70), the board's `.repl` included. **So `verdict_sha256` moves when the package is next written.**
   - This PR does not rewrite the package. `bench_board_tier1.rs` does not bind `verdict_sha256`, so per-PR CI stays green.
   - Main's `bench-package` job (`--against-fab`) would see the difference until the package is rewritten. 3402 re-blesses that package; whoever merges second regenerates (§3; 3402's inbox was told).
+
+## Outside the work order's stated fence, and why
+
+The fence is `aethelgard-twin` (`platform.rs`), its tests and goldens, `boards/*/*.repl` and FEEDBACK. Also changed:
+- **`crates/aethelgard-twin/src/lib.rs`:** the `MalformedDmaTable` error and its kind, for refusing a malformed row by name (`INV-06`).
+- **`crates/aethelgard-twin/data/dmamux1-spi-rx.tsv`, new:** the ruling's "numbers from the cited table as data".
+- **`crates/aethelgard-twin/README.md`:** one sentence naming the table.
+- **`crates/aethelgard-svd-hal/tests/order_2203.rs`:** it pins the emitted platform's digest, so it is a golden of the twin's output. 3402, which changes svd-hal, was told which two pins moved.
+- **`crates/aethelgard-cli/tests/workspace_shape.rs`:** it fixes the twin crate's files, so the new data file must be named there. It is in 1604's fence; 1604 was told.
 
 ## What was built
 
@@ -212,4 +227,20 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 - **F1 · §1.1's moved-golden list missed two guards · process · low.** `order_2203.rs` pins sha256 digests of the emitted platform, and `workspace_shape.rs` fixes the twin's files. Both were found by the gates, not by the grep for `.repl` text. Lesson: search for pinned digests of emitted output, not only for its text.
 - **F2 · `fab_tier1` refuses `BaseOutsideRoot` when `CARGO_TARGET_DIR` is outside the repository · environment · info.** Its scratch base must sit under the current directory. CI keeps `target/` in the repository; the gates here were rerun that way.
 
-**READY**, 2026-11-17: built to the ruling, with no line held back unruled.
+## Question for the architect
+
+- **Q1.** The emitted `.repl` header pins each Renode file and each model by sha256, but not RM0433, whose numbers it now carries (the table file pins the PDF's sha256 in its own comment). Should the header name the table file and its sha256? It would move every golden again, so it was not done here.
+
+## Evidence
+
+Kept under `~/.cache/aet-4400c2/evidence/` on Furnace:
+- `mutants.txt`, the five mutants rerun to file;
+- `accept-r3/`, the acceptance run's steps, USART1 capture and console text;
+- `verdicts/`, the four `simulate` verdicts, main against branch;
+- `gates.log` and `caps.log`.
+
+**The package gate** (`ci.yml`'s `cargo package --locked --no-verify` over every publishable crate, run here): `aethelgard-twin-0.2.0.crate` holds `data/dmamux1-spi-rx.tsv` and `tests/renode-1.17.0/platforms/cpus/stm32h7.repl`, so both `include_str!`s resolve from the package (the `AET-WO-1207` lesson).
+
+**Tier 2** compiles to no test locally (the `with-tools` feature), so CI is its first run of this change. No tier-2 source pins the old platform's sha256 or digests (searched for each).
+
+**Pending CI**, recorded at the READY commit.
