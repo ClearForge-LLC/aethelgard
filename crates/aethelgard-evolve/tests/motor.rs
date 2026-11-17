@@ -1714,3 +1714,27 @@ fn adv_m4_a_cut_witness_joins_s9_s_evidence_only_as_s9_s_own() {
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S9), "{a:?}");
     assert_eq!(indices(&a.evidence), [m2_witness(&r)]);
 }
+
+/// `S9` never fires on an output whose edges are all inside its window
+/// (`edges_before` 0): beside `MOTOR1`'s edges before its anchor, `S9`
+/// cites `MOTOR1`'s witness alone, never `M2`'s.
+#[test]
+fn s9_never_fires_on_an_output_with_no_edge_before_its_anchor() {
+    let r = dshot(&[(campaign::MOTOR_EDGE_BEFORE_FINDING, 1)], &|r| {
+        for x in r.iter_mut() {
+            if let Record::MotorWitness {
+                label,
+                edges_before,
+                ..
+            } = x
+                && label == "MOTOR1"
+            {
+                *edges_before = 3;
+            }
+        }
+    });
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S9), "{a:?}");
+    assert_eq!(indices(&a.evidence), [motor1_witness(&r)]);
+    assert_eq!(indices(&a.symptoms), [motor1_witness(&r)]);
+}
