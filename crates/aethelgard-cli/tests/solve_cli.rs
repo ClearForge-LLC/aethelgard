@@ -86,8 +86,12 @@ use sha2::{Digest, Sha256};
 /// reference's output hashes to `2e19ebee…31d3`, and with `8e9f9215…39cc`
 /// put back, the stress fixture's to `a59e85d7…7af7`, the old digests,
 /// exactly.
-const REFERENCE_DIGEST: &str = "9cfa82d398c598888eee9ef134c3d197a472d7b90ceee853603c9ad143822ed9";
-const STRESS_DIGEST: &str = "81831b32f2f07d6821a5ce13497e3efe41b99164312aa8fb689545cef0e81121";
+/// Moved by `AET-WO-4400b` (solved schema 9): with `"schema_version":8` put
+/// back and the trailing `mcu` and `pin_speeds` keys removed, the
+/// reference's output hashes to `9cfa82d3…2ed9` and the stress fixture's to
+/// `81831b32…1121`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "929dabce670b26090dd0194f977a1680db790c00ad7b28604e1923f231a2c8d1";
+const STRESS_DIGEST: &str = "3ec179d2f42f5dd90f7205aa547d9eecbe28521d443e3546892ebc59d71f1b1f";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

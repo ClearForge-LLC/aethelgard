@@ -423,9 +423,10 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `spi_lines` (`AET-WO-4300c`), version 5 `clock` and `motor_outputs`
 /// (`AET-WO-4300a`), version 6 `power` (`AET-WO-4300d`), version 7
 /// `serial_ports` (`AET-WO-4300b`), version 8 `spi_controllers`,
-/// `i2c_timings` and `bor_level` (`AET-WO-4230`); an older file is refused,
-/// never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 8;
+/// `i2c_timings` and `bor_level` (`AET-WO-4230`), version 9 `mcu` and
+/// `pin_speeds` (`AET-WO-4400b` D2); an older file is refused, never
+/// defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 9;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -501,6 +502,17 @@ pub struct SolvedTopology {
     /// `mcu.bor_level`, copied by `solve` so the twin presents it without
     /// reading the specification (`AET-WO-4230` §1.6, `RUL-16`).
     pub bor_level: u8,
+    /// `mcu.part`, copied by `solve`, so a generator names the MCU without
+    /// reading the specification (`AET-WO-4400b`, `RUL-16`).
+    pub mcu: String,
+    /// Each pin's output speed, keyed by its net (every key of `assignments`
+    /// and of `gpio`), as `OSPEEDR` (`0` or `1`; `10` and `11` are never
+    /// selected, `AET-WO-4300` D1): chosen by `solve` with
+    /// [`speeds::OutputSpeeds::choose`] for each line of `spi_lines`, and `0`
+    /// for every other pin (`AET-WO-4300c` D1, D3, D4). The generators and the
+    /// pinout check read it; neither chooses (`AET-WO-4400b` D2, `RUL-20`).
+    #[serde(deserialize_with = "unique_keys")]
+    pub pin_speeds: BTreeMap<String, u8>,
 }
 
 /// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
@@ -880,6 +892,10 @@ struct SolvedWire {
     i2c_timings: Option<BTreeMap<String, SolvedI2cTiming>>,
     #[serde(default)]
     bor_level: Option<u8>,
+    #[serde(default)]
+    mcu: Option<String>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    pin_speeds: Option<BTreeMap<String, u8>>,
 }
 
 /// A key that is present, whatever its value: `null` reads as `Some(None)`.
@@ -978,6 +994,17 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if !current => 0,
                     None => return Err(serde::de::Error::missing_field("bor_level")),
                 };
+                // The same for `mcu` and `pin_speeds`, which version 9 added.
+                let mcu = match w.mcu {
+                    Some(m) => m,
+                    None if !current => String::new(),
+                    None => return Err(serde::de::Error::missing_field("mcu")),
+                };
+                let pin_speeds = match w.pin_speeds {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("pin_speeds")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -996,6 +1023,8 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     spi_controllers,
                     i2c_timings,
                     bor_level,
+                    mcu,
+                    pin_speeds,
                 })
             }
         }
@@ -1391,6 +1420,10 @@ pub enum IrValidationError {
         "`spi_lines` and the solved SPI signals disagree at `{id}`: each solved SCK and MOSI has exactly one line, of its bus, with no zero value, and each bus one rate"
     )]
     SpiLineMismatch { id: String },
+    #[error(
+        "`pin_speeds` and the solved pins disagree at `{id}`: every net of `assignments` and `gpio` has exactly one speed, `0` or `1` (`10` and `11` are never selected)"
+    )]
+    PinSpeedMismatch { id: String },
     #[error(
         "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
         derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
@@ -1903,6 +1936,7 @@ impl IrValidationError {
             Self::I2cAddressNotOffered { .. } => "I2cAddressNotOffered",
             Self::SpiClockAbovePart { .. } => "SpiClockAbovePart",
             Self::SpiLineMismatch { .. } => "SpiLineMismatch",
+            Self::PinSpeedMismatch { .. } => "PinSpeedMismatch",
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
             Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
             Self::BusTooFast { .. } => "BusTooFast",
@@ -2083,6 +2117,7 @@ impl IrValidationError {
             | Self::I2cAddressNotOffered { id, .. }
             | Self::SpiClockAbovePart { id, .. }
             | Self::SpiLineMismatch { id }
+            | Self::PinSpeedMismatch { id }
             | Self::SpeedBusMismatch { id }
             | Self::MotorTimingShape { id }
             | Self::ZeroMotorRate { id }
@@ -3633,6 +3668,10 @@ impl SolvedTopology {
             }
         }
         plain(&self.clock.source, || "clock.source".into())?;
+        plain(&self.mcu, || "mcu".into())?;
+        for net in self.pin_speeds.keys() {
+            plain(net, || format!("pin_speeds.{net}"))?;
+        }
         for (net, a) in &self.assignments {
             if a.alternate_function > 15 {
                 return Err(E::AlternateFunctionOutOfRange {
@@ -3667,6 +3706,7 @@ impl SolvedTopology {
         self.validate_motor_outputs()?;
         serial::validate_solved(self)?;
         self.validate_controllers()?;
+        self.validate_pin_speeds()?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -3694,10 +3734,16 @@ impl SolvedTopology {
     /// the SPI and I2C peripherals of `assignments`, from `clock` and, for
     /// SPI, the lowest `rate_hz` of each controller's lines in `spi_lines`;
     /// a peripheral it derives nothing for is left out, which `validate`
-    /// then refuses. For a topology edited by hand, as a test builds one
-    /// (`AET-WO-4230`); `solve` fills both itself.
+    /// then refuses. It sets `pin_speeds` by `solve`'s own rule
+    /// (`AET-WO-4400b` D2), leaving out a pin no selectable speed serves,
+    /// which `validate` refuses too. For a topology edited by hand, as a test
+    /// builds one (`AET-WO-4230`); `solve` fills all three itself.
     pub fn derive_controllers(&mut self) {
         (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
+        let speeds: BTreeMap<String, u8> = solve::solved_pins(self)
+            .filter_map(|(net, pin)| Some((net.clone(), solve::pin_speed(self, net, pin).ok()?)))
+            .collect();
+        self.pin_speeds = speeds;
     }
 
     /// What [`SolvedTopology::derive_controllers`] sets.
@@ -3741,6 +3787,21 @@ impl SolvedTopology {
     /// `solve` derives from `clock` and, for SPI, the lowest `rate_hz` of the
     /// buses on it in `spi_lines` (`AET-WO-4230`). It does not judge those
     /// values for silicon: that is [`silicon`]'s rules (`RUL-20`).
+    /// `pin_speeds` is keyed by exactly the nets of `assignments` and `gpio`,
+    /// each `0` or `1` (`AET-WO-4400b` D2). The first stray or missing net,
+    /// in sorted order, is named.
+    fn validate_pin_speeds(&self) -> Result<(), IrValidationError> {
+        let pins: BTreeSet<&String> = self.assignments.keys().chain(self.gpio.keys()).collect();
+        let speeds: BTreeSet<&String> = self.pin_speeds.keys().collect();
+        if let Some(net) = pins.symmetric_difference(&speeds).next() {
+            return Err(IrValidationError::PinSpeedMismatch { id: (*net).clone() });
+        }
+        if let Some((net, _)) = self.pin_speeds.iter().find(|(_, v)| **v > 1) {
+            return Err(IrValidationError::PinSpeedMismatch { id: net.clone() });
+        }
+        Ok(())
+    }
+
     fn validate_controllers(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 

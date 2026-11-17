@@ -47,7 +47,7 @@ fn refused(err: CheckRefusal) -> Stop {
     let code = match err {
         // Two witnesses of one image that disagree: never a verdict (RUL-10).
         CheckRefusal::DecodesDisagree { .. } => EXIT_TOOL_ERROR,
-        CheckRefusal::InvalidPin { .. } => EXIT_INVALID_SPEC,
+        CheckRefusal::InvalidPin { .. } | CheckRefusal::NoPinSpeed { .. } => EXIT_INVALID_SPEC,
         CheckRefusal::UnsupportedPart { .. } => EXIT_INTERNAL,
         CheckRefusal::Elf { .. }
         | CheckRefusal::Header { .. }
@@ -62,6 +62,25 @@ fn refused(err: CheckRefusal) -> Stop {
     }
 }
 
+/// A topology's bytes as a `SolvedTopology`: the wrong shape is exit 2
+/// (`SchemaViolation`), not JSON exit 3 (`InvalidJson`). `generate hwdef`
+/// reads its input the same way.
+pub(crate) fn parse_topology(bytes: &[u8]) -> Result<aethelgard_ir::SolvedTopology, Stop> {
+    serde_json::from_slice(bytes).map_err(|err| {
+        let (code, kind) = if err.classify() == Category::Data {
+            (EXIT_INVALID_SPEC, "SchemaViolation")
+        } else {
+            (EXIT_UNREADABLE, "InvalidJson")
+        };
+        Stop {
+            code,
+            kind,
+            id: None,
+            message: format!("the topology: {err}"),
+        }
+    })
+}
+
 /// Reads every input, then judges.
 pub fn check(
     topology: &Path,
@@ -74,20 +93,7 @@ pub fn check(
     let header_bytes = hwdef_h.map(read).transpose()?;
     let allow_bytes = allow.map(read).transpose()?;
 
-    let topology: aethelgard_ir::SolvedTopology =
-        serde_json::from_slice(&topology_bytes).map_err(|err| {
-            let (code, kind) = if err.classify() == Category::Data {
-                (EXIT_INVALID_SPEC, "SchemaViolation")
-            } else {
-                (EXIT_UNREADABLE, "InvalidJson")
-            };
-            Stop {
-                code,
-                kind,
-                id: None,
-                message: format!("the topology: {err}"),
-            }
-        })?;
+    let topology = parse_topology(&topology_bytes)?;
     topology.validate().map_err(|err| Stop {
         code: EXIT_INVALID_SPEC,
         kind: err.kind(),

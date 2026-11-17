@@ -9,10 +9,13 @@
 #                         runner sets it, configure refuses step G's numeric
 #                         APJ_BOARD_ID. Passes only if it refuses with that message.
 #   boards NAME...        install /boards/NAME.hwdef.dat as the untracked board
-#                         Sentinel01, as the AET-WO-4400 spike did (S3), build
-#                         copter from a clean build directory, and copy the ELF
-#                         and hwdef.h to /out/NAME/. Reusing the directory saves
-#                         nothing (AET-WO-4400a FEEDBACK), so it is never reused.
+#                         NAME (AET-WO-4400b: each board under its own name, so
+#                         no two boards in one image share a board or build
+#                         directory), build copter from a clean build
+#                         directory, and copy the ELF and hwdef.h to /out/NAME/.
+#                         NAME is letters, digits, `-` and `_`. Reusing the
+#                         directory saves nothing (AET-WO-4400a FEEDBACK), so it
+#                         is never reused.
 #
 # Every ArduPilot build runs with GITHUB_ACTIONS unset (ruling D4 on PR #130):
 # ArduPilot refuses a numeric APJ_BOARD_ID when it is "true"
@@ -56,16 +59,18 @@ case ${1:-} in
   boards)
     shift
     for name in "$@"; do
-      mkdir -p "$board"
-      cp "/boards/$name.hwdef.dat" "$board/hwdef.dat"
-      rm -rf build/Sentinel01
+      [[ $name =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || { echo "bad board name: $name" >&2; exit 64; }
+      dir=libraries/AP_HAL_ChibiOS/hwdef/$name
+      mkdir -p "$dir"
+      cp "/boards/$name.hwdef.dat" "$dir/hwdef.dat"
+      rm -rf "build/$name"
       t=$(($(date +%s%N) / 1000000))
-      env -u GITHUB_ACTIONS ./waf configure --board Sentinel01
+      env -u GITHUB_ACTIONS ./waf configure --board "$name"
       env -u GITHUB_ACTIONS ./waf copter -j"$jobs"
       clean_tree --untracked-files=no
       mkdir -p "/out/$name"
-      cp build/Sentinel01/bin/arducopter "/out/$name/arducopter.elf"
-      cp build/Sentinel01/hwdef.h "/out/$name/hwdef.h"
+      cp "build/$name/bin/arducopter" "/out/$name/arducopter.elf"
+      cp "build/$name/hwdef.h" "/out/$name/hwdef.h"
       echo "ANSWER board=$name jobs=$jobs wall_ms=$(since "$t")"
     done
     ;;

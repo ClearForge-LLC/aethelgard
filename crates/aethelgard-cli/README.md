@@ -57,7 +57,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":8,"specification_sha256":"1963b05d…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":9,"specification_sha256":"1963b05d…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -113,6 +113,26 @@ Reads, validates and solves exactly as `solve` does, with the same refusals, the
 ```
 
 `topology_sha256` is the sha256 of the topology as `solve` prints it, without the newline: the hash `campaign` records.
+
+### `generate hwdef`
+
+```
+aethelgard generate hwdef --topology <solved.json> --out <hwdef.dat>
+```
+
+Writes ArduPilot `Copter-4.7.2`'s board definition for a `SolvedTopology`, from the topology and the parts tables alone (`aethelgard-hwdef`, `AET-WO-4400b`, `RUL-16`). Unmodified ArduPilot builds it as an untracked board directory, and `check pinout` judges the ELF it links. The crate's `README.md` gives every line, its source, the constants and the refusals. It starts no process. `<hwdef.dat>` must not exist; it is created, never through a symlink. It prints one line, exit `0`:
+
+```json
+{"ok":true,"generator":"hwdef","topology_sha256":"<64 hex>","hwdef_sha256":"<64 hex>","not_emitted":["U3 (TMP117): no ArduPilot line; …"]}
+```
+
+`not_emitted` names each fact the topology holds that no line states, and why; the file's header lists the same.
+
+| Exit | When |
+|---|---|
+| `0` | written |
+| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
+| `3` | the topology cannot be read or is not JSON, or `<hwdef.dat>` exists or cannot be written (`UnwritableOutput`) |
 
 ## The tool subcommands
 
@@ -412,13 +432,13 @@ aethelgard check pinout --topology <solved.json> --elf <firmware.elf> [--hwdef-h
 
 The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a linked STM32H753 firmware writes to its GPIO registers at reset (`gpio_default_config`, 308 bytes) against a `SolvedTopology`, in three directions: forward, reverse and package. The crate's `README.md` gives the rules. It starts no process and runs no tool, so it has no sandbox and no scratch. The package is the solver's own pin table for `STM32H753ZITx`, the one part whose register layout the check knows; a topology names no part yet.
 
-Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`), `pin`, `net` (or null), `expected` and `decoded`.
+Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `WrongOutputType`, `WrongSpeed`, `WrongPull`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`), `pin`, `net` (or null), `expected` and `decoded`.
 
 | Exit | When |
 |---|---|
 | `0` | no finding |
 | `1` | at least one finding |
-| `2` | the topology is well-formed JSON of the wrong shape (`SchemaViolation`), `validate` refuses it, or one of its pins is not `P[A-K]0-15` (`InvalidPin`) |
+| `2` | the topology is well-formed JSON of the wrong shape (`SchemaViolation`), `validate` refuses it, one of its pins is not `P[A-K]0-15` (`InvalidPin`), or it holds no stored speed for a pin (`NoPinSpeed`) |
 | `3` | an input cannot be read or is too large (`UnreadableInput`, `InputTooLarge`), or the topology is not JSON (`InvalidJson`). A malformed ELF by name: `Truncated`, `NotElf`, `WrongClass`, `WrongByteOrder`, `WrongType`, `WrongMachine`, `NoSectionTable`, `NoSymbolTable`, `NoProgramHeaders`, `MalformedElf`, `SymbolMissing`, `SymbolDuplicated`, `SymbolNotObject`, `SymbolSize`, `SymbolOutsideSection`, `SymbolNotLoaded`, `SectionTableDisagrees` when the section table and the `PT_LOAD` put the symbol at different file offsets, `SymbolNotInPlace` when that `PT_LOAD` is flashed at one address and run at another, and `SegmentsOverlap` when another `PT_LOAD` flashes bytes over the symbol. A symbol in a writable section is `SymbolOutsideSection`. `MalformedHeader` (`id` the macro, or `line N` for the file's structure: an unbalanced conditional, an unclosed comment, a continuation at the end or a backslash followed by blanks). `HwdefConditionalUnsupported` (`id` the macro): one of the 33 macros named inside a conditional other than exactly `#if 0` or `#if 1`, which the reader evaluates, after splicing continuations and removing comments, as the preprocessor does (`AET-WO-1603` §1.4). `MalformedAllowList`, and `AllowNamesTopologyPin`, an allow-list that would hide a topology pin |
 | `5` | `DecodesDisagree`: `hwdef.h` and the ELF give different `MODER`, `AFRL` or `AFRH` for a port (`id` such as `GPIOB_AFRL`). Never read as pass or fail |
 | `70` | the vendored pin table failed its own check |
@@ -688,7 +708,7 @@ What it assumes of the fabricated board, which the board file does not state:
 aethelgard check speeds --spec <path>
 ```
 
-Each pin the board crate configures, with the `OSPEEDR` value `generate` emits and why (`AET-WO-4300c`). No tool runs. The check judges the lines whose edges the MCU drives at the rate its peripheral sets, each SPI bus's SCK and MOSI. Each gets the slowest of `00` and `01` whose DS12117 Table 149 Fmax (note 3) meets the bus's `speed_hz`, and whose tr/tf meets the line's declared rise time. It is judged at:
+Each pin the board crate configures, with the `OSPEEDR` value the topology stores (`pin_speeds`, which `solve` chose and every generator reads, `AET-WO-4400b` D2) and why (`AET-WO-4300c`). A judged line holds only if the stored speed's own row meets its rate and rise time; an out-of-scope line fails unless stored as `00`. No tool runs. The check judges the lines whose edges the MCU drives at the rate its peripheral sets, each SPI bus's SCK and MOSI. Each gets the slowest of `00` and `01` whose DS12117 Table 149 Fmax (note 3) meets the bus's `speed_hz`, and whose tr/tf meets the line's declared rise time. It is judged at:
 - the VDD band its supply's minimum selects (nominal less tolerance; 2.7 V exactly is the lower band);
 - its declared capacitance, rounded up to 10, 30 or 50 pF.
 
@@ -803,7 +823,7 @@ Before it starts, it runs the trampoline's inherited-descriptor check. A descrip
 
 Generated at startup from the unbuilt `clap` command tree, never written by hand, so a new subcommand appears with no change to the `mcp` module (`INV-01`):
 
-- one tool per leaf subcommand, named by its path joined with `_`: `validate`, `solve`, `emit`, `generate`, `build`, `verify` (whose `scenarios` is repeatable and optional, and whose `fab-out` and `against-fab` are optional), `extract`, `check_drc`, `check_erc`, `check_speeds`, `prove` (whose optional `spec` gives `harness_provenance`), `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign`, `replay`, `attribute` and `propose`. `help` and `mcp` are never tools;
+- one tool per leaf subcommand, and one per command that also runs alone with its own arguments (`generate`, beside `generate hwdef`), named by its path joined with `_`: `validate`, `solve`, `emit`, `generate`, `generate_hwdef`, `build`, `verify` (whose `scenarios` is repeatable and optional, and whose `fab-out` and `against-fab` are optional), `extract`, `check_drc`, `check_erc`, `check_speeds`, `prove` (whose optional `spec` gives `harness_provenance`), `simulate` (whose optional `firmware`, `spec` and `for` are the boot), `campaign`, `replay`, `attribute` and `propose`. `help` and `mcp` are never tools;
 - the description is the subcommand's about text;
 - the input schema is an object with one **string** property per declared argument, keyed by its **long name** (`prove`'s directory is `crate`, not `crate_dir`), `required` exactly when `clap` requires it, and `additionalProperties` false. A repeatable argument (`campaign`'s `scenarios`) is a non-empty **array of strings** instead.
 
@@ -837,4 +857,4 @@ A `notifications/cancelled` for a call kills its child; the CLI's reaper then en
 npx @modelcontextprotocol/inspector aethelgard mcp
 ```
 
-lists the 18 tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
+lists the 19 tools, and a `validate` call with `file` set to `examples/sentinel-01-minimal.json` returns `isError` false.
