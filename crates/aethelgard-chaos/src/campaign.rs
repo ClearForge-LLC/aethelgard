@@ -2159,7 +2159,7 @@ fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
     let (mut past, mut missing) = (0, 0);
     for (timer, anchor) in anchors {
         let Some(at) = anchor else { continue };
-        if at.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS {
+        if dshot_window_past_run(at) {
             past += 1;
         } else if !records.iter().any(|r| {
             matches!(r, Record::JudgeStop { timer: t, anchor_ns, cr1_after: Some(c), .. }
@@ -2383,6 +2383,11 @@ pub const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 /// A DShot output's window from its anchor, 2 ms (`AET-WO-2302`), as
 /// [`TWIN_MAX_VIRTUAL_NS`] states it.
 pub const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+
+/// Whether a DShot window from `anchor` ends past the run's end.
+pub fn dshot_window_past_run(anchor: u64) -> bool {
+    anchor.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS
+}
 const RESET_KERNEL_HZ: u64 = 64_000_000;
 
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its

@@ -1392,7 +1392,7 @@ impl<'a> Run<'a> {
         (motor.dshot
             && status == "stopped"
             && campaign::witness_continuous(&self.records[w])
-            && a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS) > max
+            && campaign::dshot_window_past_run(*a)
             && last.saturating_add(*period_ns).saturating_add(*grain_ns) >= max)
             .then(|| vec![motor.at, w])
     }
@@ -1523,10 +1523,7 @@ impl<'a> Run<'a> {
             }
             campaign::MOTOR_WINDOW_PAST_RUN_FINDING => {
                 for (m, i) in self.timers(true) {
-                    if self.anchor(i).is_some_and(|a| {
-                        a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS)
-                            > campaign::TWIN_MAX_VIRTUAL_NS
-                    }) {
+                    if self.anchor(i).is_some_and(campaign::dshot_window_past_run) {
                         each(&mut w, Rule::H1, i, vec![self.motors[m].at, i]);
                     }
                 }
@@ -1568,10 +1565,10 @@ impl<'a> Run<'a> {
             campaign::JUDGE_STOP_MISSING_FINDING => {
                 for (m, i) in self.timers(true) {
                     let timer = self.motors[m].timer.0;
-                    let Some(a) = self.anchor(i).filter(|a| {
-                        a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS)
-                            <= campaign::TWIN_MAX_VIRTUAL_NS
-                    }) else {
+                    let Some(a) = self
+                        .anchor(i)
+                        .filter(|&a| !campaign::dshot_window_past_run(a))
+                    else {
                         continue;
                     };
                     let stop = self.stop(timer, a);
