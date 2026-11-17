@@ -713,17 +713,31 @@ fn replay(dir: &Path) {
             }
         }
     }
-    let recorded: Vec<String> = fs::read_to_string(dir.join("actions.txt"))
-        .unwrap()
-        .lines()
-        .filter(|l| l.contains(" bridge "))
-        .map(|l| {
-            let mut w = l.split_whitespace();
-            format!("{} {}", w.next().unwrap(), w.nth(1).unwrap())
+    // Against the archive's own ResetRendered records (trace-events), not a
+    // side file: a consistency check of the bridge's rule over its inputs.
+    let ev = fs::read(dir.join("trace-events/trace.cbor")).unwrap();
+    let recorded: Vec<String> = events_of(&ev)
+        .1
+        .into_iter()
+        .filter_map(|(e, _, _)| match e {
+            Event::Record {
+                record: Record::ResetRendered {
+                    at_ns, released, ..
+                },
+                ..
+            } => Some(format!(
+                "{at_ns} {}",
+                if released {
+                    "reset_released"
+                } else {
+                    "reset_asserted"
+                }
+            )),
+            _ => None,
         })
         .collect();
     println!(
-        "{{\"rejudge\":\"bridge actions from the VDD_3V3 samples alone\",\"derived\":{},\"recorded\":{},\"equal\":{}}}",
+        "{{\"rejudge\":\"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records\",\"derived\":{},\"recorded\":{},\"equal\":{}}}",
         derived.len(),
         recorded.len(),
         derived == recorded
@@ -790,8 +804,55 @@ fn splice(run: &Path, base: &Path) {
     let bytes = fs::read(run.join("trace.cbor")).unwrap();
     let (header, evs) = events_of(&bytes);
     let id: String = header.run_id.iter().map(|b| format!("{b:02x}")).collect();
-    let at = 1;
+    // Beside the run's own rail crossings (kind 17) when it has them, else
+    // after its first event.
+    let at = evs
+        .iter()
+        .rposition(|(e, _, _)| {
+            matches!(
+                e,
+                Event::Record {
+                    record: Record::RailCrossing { .. },
+                    ..
+                }
+            )
+        })
+        .map_or(1, |i| i + 1);
     let t = evs[at - 1].0.timestamp();
+    // In time order after the run's last droop record (rank 7 of
+    // `check_run`), so the campaign's order rule is met.
+    let last_ps = evs
+        .iter()
+        .filter_map(|(e, _, _)| match e {
+            Event::Record { record, .. } => match record {
+                Record::RailCrossing { at_ps, .. } => Some(*at_ps),
+                Record::ResetRendered { at_ns, .. } | Record::FirmwareObserved { at_ns, .. } => {
+                    Some(at_ns * 1000)
+                }
+                _ => None,
+            },
+            _ => None,
+        })
+        .max()
+        .unwrap_or(0);
+    let at = evs
+        .iter()
+        .rposition(|(e, _, _)| {
+            matches!(
+                e,
+                Event::Record {
+                    record: Record::RailCrossing { .. }
+                        | Record::ResetRendered { .. }
+                        | Record::FirmwareObserved { .. },
+                    ..
+                }
+            )
+        })
+        .map_or(at, |i| i + 1);
+    // The event's timestamp: the one before the insertion point (the
+    // writer refuses a timestamp that goes back).
+    let t = evs[at - 1].0.timestamp();
+    println!("{{\"inserted_at_event\":{at},\"of\":{}}}", evs.len());
     for (variant, extra) in [
         (
             "a",
@@ -810,7 +871,7 @@ fn splice(run: &Path, base: &Path) {
                         domain: "VDD_3V3".to_owned(),
                         level: "quantum".to_owned(),
                         microvolts: 3_300_000,
-                        at_ps: k * quantum_ns() * 1000,
+                        at_ps: last_ps + (k + 1) * quantum_ns() * 1000,
                         falling: false,
                     },
                 })
