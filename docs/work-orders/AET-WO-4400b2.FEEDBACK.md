@@ -229,5 +229,5 @@ Three tests outside pincheck and ir changed one assertion each, forced by F4 (§
 ## 8. Gates
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (126 test binaries) all pass [measured].
-- No tier-2 test was added, so `TIER2_MIN` stays at 162.
+- No tier-2 test was added, so `TIER2_MIN` stays at main's 176 (2302, merged in).
 - No specification version moves.
