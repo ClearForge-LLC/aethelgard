@@ -344,7 +344,7 @@ const LOCKED: [&str; 2] = [
 ///
 /// The command is `data/rettobase-hook.monitor`, one line with no newline, so
 /// the stubs of `tests/boot_tier1.rs` and `tests/campaign_tier1.rs` require
-/// exactly it in every boot's command line, and `tests/rettobase_tier2.rs`
+/// exactly it in every boot's command line, and `tests/twin_tier2.rs`
 /// runs exactly it in the pinned Renode.
 pub const RETTOBASE_HOOK: &str = include_str!("../data/rettobase-hook.monitor");
 
@@ -381,10 +381,6 @@ pub struct BootPlan<'a> {
     /// The boot's fresh capture directory, which the CLI made and Renode may
     /// add to: one file backend per port. `None` without a serial port.
     pub capture: Option<&'a std::path::Path>,
-    /// Whether [`RETTOBASE_HOOK`] goes in right after the platform loads:
-    /// every boot the CLI starts, while the pinned Renode is the one with the
-    /// bug (tested both ways: the tests' `RETTOBASE_BUGGY_BUILD`).
-    pub rettobase: bool,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -796,8 +792,7 @@ impl BootPlan<'_> {
     }
 
     /// The monitor commands: a fixed seed, the platform, the correction of the
-    /// pinned Renode's `ICSR.RETTOBASE` when [`BootPlan::rettobase`] says so
-    /// ([`RETTOBASE_HOOK`]), the firmware, the cold RCC, each modelled device's log level, each motor timer's hook
+    /// pinned Renode's `ICSR.RETTOBASE` ([`RETTOBASE_HOOK`]), the firmware, the cold RCC, each modelled device's log level, each motor timer's hook
     /// (`AET-WO-2302`), a fixed virtual time, then the reads between
     /// sentinels, then the listing. Both paths are this CLI's own copies.
     /// Without a droop, the boot word's and the ports' hooks go in before
@@ -818,12 +813,10 @@ impl BootPlan<'_> {
                 self.platform.display()
             ),
         ]);
-        // The NVIC exists once the platform is loaded; the hook is on its
-        // peripheral, so it survives every `machine Reset` a droop renders.
-        if self.rettobase {
-            c.push(RETTOBASE_HOOK.to_owned());
-        }
         c.extend([
+            // The NVIC exists once the platform is loaded; the hook is on its
+            // peripheral, so it survives every `machine Reset` a droop renders.
+            RETTOBASE_HOOK.to_owned(),
             format!("sysbus LoadELF @{}", self.firmware.display()),
             FLASH_LOG.to_owned(),
         ]);
@@ -3666,17 +3659,13 @@ mod tests {
     const RETTOBASE_RENODE_TARBALL_SHA256: &str =
         "4ba7c68b59e2447f188ef4b4b112fcccd2802582c460beedceb63b84e5605a5f";
 
-    /// `AET-WO-4400e3` §1.1: the correction goes in once, after the platform
-    /// loads (the NVIC exists then) and before the firmware does; a plan that
-    /// does not ask for it carries none. The hook is one monitor line that
-    /// touches `ICSR`'s offset and bit 11 only.
+    /// `AET-WO-4400e3` §1.1: every boot carries the correction once, after the
+    /// platform loads (the NVIC exists then) and before the firmware does. The
+    /// hook is one monitor line that touches `ICSR`'s offset and bit 11 only.
     #[test]
     fn the_rettobase_correction_follows_the_platform_and_precedes_the_firmware() {
         let image = image();
-        let mut p = plan(&image, &[]);
-        assert!(!p.commands().contains("SetHookAfterPeripheralRead"));
-        p.rettobase = true;
-        let c = p.commands();
+        let c = plan(&image, &[]).commands();
         assert_eq!(c.matches(RETTOBASE_HOOK).count(), 1, "{c}");
         let at = |what: &str| c.find(what).unwrap_or_else(|| panic!("{what} not in {c}"));
         assert!(at("machine LoadPlatformDescription") < at(RETTOBASE_HOOK));
@@ -3832,7 +3821,6 @@ mod tests {
             resets,
             serial: &[],
             capture: None,
-            rettobase: false,
         }
     }
 
