@@ -148,3 +148,23 @@ All [measured].
 - **On the local trial bump:** tier 1 passes once `validate_cli.rs:222` moves.
 - **TIER2_MIN** is untouched.
 - **Reduction pass (diff): nothing to remove.** The diff is two documents and this FEEDBACK. `docs/releasing.md` gained sections and lost none, and `RELEASE-0.2.0.md` states the order once, as a table that cites `docs/releasing.md` rather than repeating its reasons.
+
+## 7. CI and the signal
+
+- **CI on `a0d245c` (PR #188), green [measured]:**
+  - `ci` run 43988797732: the packaging step packaged all ten at 0.1.0, every `ok aethelgard-…` line within a few bytes of §2's. Tier 2 passed 160 of the floor of 160.
+  - `ardupilot-image` and `tools-image` are green.
+  - Shard times:
+    - shard 0: 24:12
+    - shard 1: 22:23
+    - shard 2: 22:43
+    - shard 3: 23:52
+    - shard 4: 25:15
+    - shard 5: 24:51
+    - shard 6: 25:49
+    - shard 7: 36:34
+
+    Shard 7 over 20 minutes is a measurement under the 04:35 rule, not a failure.
+- **`main` `bdf7ac0` (docs #187) is merged in;** docs only.
+- **3401's note.** 3401 adds a second committed board crate, `boards/sentinel-01-bench`. Generated board crates do not carry the engine's version: at the trial bump, `the_committed_board_crate_is_exactly_the_generated_one` still passed. So that crate does not move at the bump either [measured on `boards/sentinel-01`; inferred for the bench board].
+- **Signal: STOPPED, ready to bump; window closed.** The bump waits on two things: the window, which opens after `2302` merges, and Q1, the `ci.yml` literals.
