@@ -208,7 +208,7 @@ From the unmodified CLI (P1), and otherwise from `r4`: the judge's own register 
 | Peak Renode RSS | 460 MiB (`r2`); 447 MiB (`r1`) | measured |
 | Instructions | 10.5 % of 100 MIPS × time at 15 s; the core idles | measured |
 | ArduPilot's clock against virtual time | 1.25× (TIM5 at 1.25 MHz: `PSC` 199 against the model's fixed 250 MHz) | measured |
-| Virtual time to the banner, the dataflash probe, the barometers, INS | 9.37 ms; 0.1635 s; 1.9736 s; 5.2055 s | measured |
+| Virtual time to the banner, the dataflash probe, the barometers, INS | 9.37 ms; 0.1635 s; 1.9736 s (0.3443 s with the (p) overlay); 5.2055 s (`config_error` at 5.205148750 s) | measured |
 
 ## Each prediction beside its result
 
