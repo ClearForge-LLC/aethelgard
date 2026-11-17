@@ -1,2 +1,0 @@
-[00:00:01.500000000] [WARNING] dma1: Attempting to create DMA request with no data to send. Ignoring operation.
-[00:00:01.500000000] [WARNING] dma1: Error in DMA configuration detected. Ignoring transfer request.

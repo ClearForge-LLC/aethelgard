@@ -1,7 +1,0 @@
-renode-infrastructure cd4b002aac2398994c4a61a34a8b31b5700facf2 (submodule of renode f1dd1b4af, the pinned image build 1.17.0+20260907gitf1dd1b4af)
-bc3f13482c12a2b6869f8aa3aa34d359d4db2f7d3f85b53ca44edf8af9b0ead2  STM32H7_SPI.cs  src/Emulator/Peripherals/Peripherals/SPI/STM32H7_SPI.cs  456 lines
-d62666e19fe02e6167f37bf45100d59507b3c27f5558c7350efcf7371001f357  STM32F7_USART.cs  src/Emulator/Peripherals/Peripherals/UART/STM32F7_USART.cs  456 lines
-4c8e30b7267272913b98c9fd65f3b48316434d73f6dab92e9559a6a2e6e8822e  STM32F7_I2C.cs  src/Emulator/Peripherals/Peripherals/I2C/STM32F7_I2C.cs  524 lines
-7e99f48c1daae8c1f2e4eef22eb09617b96f0abf61be13b2bec4d96f1e7b328d  STM32_Timer.cs  src/Emulator/Peripherals/Peripherals/Timers/STM32_Timer.cs  1018 lines
-f710507563a884bc5bf82ac95917ba9046ff19c1f63876f3db723c3f95d2ad0b  STM32DMA.cs  src/Emulator/Peripherals/Peripherals/DMA/STM32DMA.cs  425 lines
-5d54137d8c671553c8a0cd4bdf383b66abf3d889431798b69269c55a3ba85983  STM32_DMAMUX.cs  src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32_DMAMUX.cs  130 lines

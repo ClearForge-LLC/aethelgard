@@ -1,8 +1,0 @@
-# AET-WO-4400c2 diagnostic: execution hooks on the fault handlers (observation only), and USART1's
-# access logging off (a polled console in CrashCatcher otherwise logs gigabytes). Addresses from
-# the ELF's symbols, Thumb bit cleared.
-sysbus LogPeripheralAccess sysbus.usart1 false
-cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400C2-HOOK HardFault_Handler PC=0x%x LR=0x%x' % (self.GetRegisterUnsafe(15).RawValue, self.GetRegisterUnsafe(14).RawValue))"
-cpu AddHook 0x080BEC44 "self.Log(LogLevel.Warning, 'AET4400C2-HOOK BusFault_Handler')"
-cpu AddHook 0x080BEC4C "self.Log(LogLevel.Warning, 'AET4400C2-HOOK MemManage_Handler')"
-cpu AddHook 0x080BEC48 "self.Log(LogLevel.Warning, 'AET4400C2-HOOK UsageFault_Handler')"
