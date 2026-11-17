@@ -226,7 +226,7 @@ fn attack_two_unconnected_pins_joined_on_one_net_do_not_pass_parity() {
         .unwrap()
         .push(serde_json::json!({
             "reference": "T_ALERT_Pad3", "part": "TMP117", "supply": "VDD_3V3",
-            "bus": "SENSORS", "address": 73
+            "bus": "SENSORS", "address": 73, "pin_capacitance": null
         }));
     let spec = t.0.join("spec.json");
     fs::write(&spec, serde_json::to_vec(&s).unwrap()).unwrap();
@@ -295,7 +295,7 @@ fn attack_wide_references_leave_the_emitted_board_clean() {
         ] {
             devices.push(serde_json::json!({
                 "reference": "", "part": part, "supply": "VDD_3V3",
-                "bus": format!("B{b}"), "address": address
+                "bus": format!("B{b}"), "address": address, "pin_capacitance": null
             }));
         }
     }

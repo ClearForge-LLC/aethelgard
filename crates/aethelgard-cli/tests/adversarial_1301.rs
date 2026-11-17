@@ -179,7 +179,7 @@ fn attack_a_wide_reference_stays_clear_of_every_other_part() {
             reference.truncate(64);
             devices.push(serde_json::json!({
                 "reference": reference, "part": part, "supply": "VDD_3V3",
-                "bus": format!("B{b}"), "address": address
+                "bus": format!("B{b}"), "address": address, "pin_capacitance": null
             }));
         }
     }
