@@ -4,10 +4,16 @@ Builder: Claude (strong tier, the `3400` builder), worktree `~/aethelgard-3400`,
 
 Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
-**Status (2026-11-17 ~02:50 UTC): STOPPED, waiting.**
-- §1 is done, and ruled on PR #190 (Q1 (i), Q2, Q3; §7).
-- §2 (bench access, the package with it, `ORDER.md`, `BENCH.md`) waits for `AET-WO-1312` (#191, open) and `AET-WO-1801` (#188, open, its version bump held for a window). After each lands, merge `main`, regenerate the board and the package (§8), then build §2 and signal READY.
-- Nothing is pushed after this commit unless the architect asks.
+**Status (2026-11-17 ~06:20 UTC): READY for review.**
+- **§1** is done and ruled (PR #190: Q1 (i), Q2, Q3).
+- **§2** is built (§10–§11):
+  - test points on every declared net (one GND: Q7), BOOT0 on J2 and the reset switch;
+  - every gate at two layers, with `extract` passing in the order chosen by F1;
+  - the package written by CI and committed;
+  - `ORDER.md` and `BENCH.md`;
+  - `spike/3400` deleted.
+- **Open:** Q4–Q7 (§12) and the quotes in `ORDER.md` §5.
+- The head is the READY commit. Nothing is pushed after it unless the architect asks. (The earlier STOPPED signal was `4891d231`.)
 
 ## 1. Predictions
 
@@ -281,3 +287,51 @@ There were two conflicts:
 - 935 s wall time; engine 0.2.0; 15 files.
 
 The placement file lists SW1 and no test pad, which is right: a bare pad places no part. The committed package is CI's (§8's rule), not this one.
+
+## 11. §2: the package, the adversarial pass, the reduction pass
+
+**The committed package [measured].**
+- `fab/sentinel-01-bench/package/` (15 files) is the artifact of `bench-package`'s write run **44025019904** on `f6553b10` (the second temporary commit, reverted by the next).
+- It was committed unchanged. Its manifest names this specification, its topology and its verdict (sha256 prefixes `e1e4f6a53ea0eadb`, `5f818dbf1fb82dc5`, `545eceebf58844e0`). The manifest's own sha256 begins `af420f89e9bd5bb2`.
+- **Furnace's package of the same tree** is byte-identical except `MANIFEST.json`, and in that file only `verdict_sha256` differs: the sandbox line, as in §8.
+- The per-PR binding test passes against it.
+- **S4 held:** the placement and BOM files gained SW1 and R8 (BOOT0's pull-down). The test pads place no part.
+- **S5 held:** the BOM has value and footprint only for the generic passives; SW1 carries 1312's part, PTS810 SJM 250 SMTR LFS.
+
+**Adversarial pass (work order §5, targeted):**
+- **A gate that passes only because the new bus has no device:**
+  - in §1, a declared 85 pF off-board load on EXT failed `extract` and 75 pF passed;
+  - on the final §2 board, 85 pF fails (113.6/112.5 pF) and 70 pF passes (98.6/97.5).
+  - The copper with its test pads now leaves about 71 pF per line before the declared 100 pF. `BENCH.md` states EXT's 20 pF off-board allowance and this budget.
+- **A BOM line whose maker part does not match the footprint emitted:** none (`ORDER.md` §2: each package suffix checked against the footprint the emitter wrote). The generic passives have no maker part to mismatch, and they are flagged ⚑.
+- **A bench row whose pass line cannot fail:**
+  - B1–B8 each name a reading that can fall outside it: attach, register words, `BOR_LEV` bits, `MODF` and `EF 40 17`, the VBOR3 windows, the rise-time upper bounds with `C_p` added, `V_th` within 1.7 ± 0.2 V, and BOOT0's 0.727 V / 1.161 V lines.
+  - B6 has an upper bound only: a rise faster than the bound does not falsify `extract`, which is an upper bound itself.
+  - B8's bootloader-protocol line is labelled a gap (AN2606 unread), so it is not claimed as a pass line.
+
+**Reduction pass (diff-sized):**
+- `bench_board_tier1.rs` keeps one run helper and one hash helper; its two tests share them.
+- The svd-hal comparison is one new test reusing `compare`.
+- The tier-2 test is one function.
+- `ci.yml` gains one job and one trigger input.
+- `ORDER.md` and `BENCH.md` repeat only the ruling's EXT sentence, which the ruling asks for in both.
+- `spike/3400` is removed (527 files).
+- Nothing else is removable without losing a rerun path or a ruled requirement.
+
+## 12. Questions for the architect
+
+- **Q4 (F1).** Should the placer's dependence on `test_points`' document order become a backlog item, beside 1307's name independence? Measured: SPI_MOSI's bound moves between 20.8 and 30.7 pF by order alone.
+- **Q5 (F3).** `FAB-NOTES.md` does not list the acknowledged ledger rows §2.2 names. Should a work order in `aethelgard-eda`'s `fab.rs` add them? Until then `BENCH.md` B2 reads them from the specification.
+- **Q6 (F2).** Should the package also carry the fabricator's BOM and placement formats? KiCad's and the emitter's are in it today.
+- **Q7.** A second GND test point is refused (`TestPointNetRepeated`). Accept J1–J4's GND pins as the other ground points, or should 1312's rule admit a repeated GND?
+
+## 13. Gates at READY [measured]
+
+On the tree of this READY commit (main `f57d9b6` merged):
+- `cargo fmt --all -- --check` 0;
+- `cargo clippy --workspace --all-targets -- -D warnings` 0;
+- `cargo test --workspace` 0, with 2002 passed and 0 failed;
+- in the pinned image: `cargo clippy … --features aethelgard-cli/with-tools -- -D warnings` 0, and `board_tier2.rs::the_ordered_board_passes_every_board_gate_with_no_finding` passes on the §2 board (3.24 s);
+- `TIER2_MIN` is 163: main's 162 plus this PR's one.
+
+The temporary commit's run (44025019904) was red only on the package-binding test, the expected stale package (the architect's inbox note, 05:38 UTC). CI on this head follows the push.

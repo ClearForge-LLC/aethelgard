@@ -6,6 +6,11 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 
 > **EXT is 3.3 V on pin 1, not DS-009 5 V. Plug in only 3.3 V-tolerant I2C devices.** (J4, the EXT port: DS-009 I2C's pinout, 1 VDD_3V3, 2 SCL, 3 SDA, 4 GND, with `standard: null`; ruled on PR #190, Q3.)
 
+> **EXT's load budget.**
+> - `extract`'s bound for EXT assumes at most **20 pF per line off-board**: J4's declared allowance, for the mated contact, a JST lead of up to 100 mm and one remote pin.
+> - Anything plugged into J4 that adds more is outside the bound the gates judged.
+> - The copper itself leaves about 71 pF per line before the declared 100 pF: a declared 70 pF off-board passes `extract`, and 85 pF fails it [measured on this board, 2026-11-17].
+
 ## Before any row
 
 - **Probe capacitance, `C_p`.** Read `C_p` from your probe's own data (a ×10 passive probe prints its input capacitance, typically about 10–15 pF) and write it down before the first rise-time row. A probe clipped to a test pad is an off-board load, outside `extract`'s bound (ruled on #191, Q2). So every rise-time pass line below adds `C_p` to the line.
