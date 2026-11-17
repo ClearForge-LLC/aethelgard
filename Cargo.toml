@@ -9,6 +9,7 @@ members = [
     "crates/aethelgard-chaos",
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
+    "crates/aethelgard-hwdef",
     "crates/aethelgard-cli",
     "models/renode",
 ]
@@ -35,6 +36,7 @@ aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.2.0" }
 aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.2.0" }
 aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.2.0" }
 aethelgard-pincheck = { path = "crates/aethelgard-pincheck", version = "0.2.0" }
+aethelgard-hwdef = { path = "crates/aethelgard-hwdef", version = "0.2.0" }
 aethelgard-renode-models = { path = "models/renode", version = "0.2.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"

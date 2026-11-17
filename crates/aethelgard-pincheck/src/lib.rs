@@ -111,6 +111,22 @@ impl GpioConfig {
         let af = (afr >> (4 * (pin.n % 8))) & 0xf;
         (Mode::from_bits(r.moder >> (2 * pin.n)), af as u8)
     }
+
+    /// A pin's `OTYPER` bit, `OSPEEDR` field and `PUPDR` field (RM0433
+    /// Rev 9 §11.4.2–11.4.4), as the bytes hold them (`AET-WO-4400b` §1.3).
+    pub fn drive(&self, pin: PinId) -> (u32, u32, u32) {
+        let r = &self.ports[pin.port];
+        (
+            (r.otyper >> pin.n) & 1,
+            (r.ospeedr >> (2 * pin.n)) & 3,
+            (r.pupdr >> (2 * pin.n)) & 3,
+        )
+    }
+}
+
+/// A two-bit field as RM0433 writes it, `00` to `11`.
+fn bits2(v: u32) -> String {
+    format!("{:02b}", v & 3)
 }
 
 fn decoded(mode: Mode, af: u8) -> String {
@@ -150,6 +166,10 @@ pub enum Refusal {
     UnsupportedPart { part: String },
     #[error("the topology's {net} is on `{pin}`, which is not a pin P[A-K]0-15")]
     InvalidPin { net: String, pin: String },
+    /// A valid topology holds a speed for every pin; one that does not was
+    /// not validated.
+    #[error("the topology holds no pin speed for {net}")]
+    NoPinSpeed { net: String },
 }
 
 impl Refusal {
@@ -162,6 +182,7 @@ impl Refusal {
             Self::DecodesDisagree { .. } => "DecodesDisagree",
             Self::UnsupportedPart { .. } => "UnsupportedPart",
             Self::InvalidPin { .. } => "InvalidPin",
+            Self::NoPinSpeed { .. } => "NoPinSpeed",
         }
     }
 
@@ -170,7 +191,7 @@ impl Refusal {
         match self {
             Self::Header { name, .. } | Self::Conditional { name, .. } => Some(name.clone()),
             Self::DecodesDisagree { port, register, .. } => Some(format!("GPIO{port}_{register}")),
-            Self::InvalidPin { net, .. } => Some(net.clone()),
+            Self::InvalidPin { net, .. } | Self::NoPinSpeed { net } => Some(net.clone()),
             Self::UnsupportedPart { part } => Some(part.clone()),
             Self::Elf { .. } | Self::Allow { .. } => None,
         }
@@ -360,6 +381,59 @@ pub fn judge(
         );
     }
 
+    let mut drive = Vec::new();
+    // `AET-WO-4400b` §1.3: each topology pin's output type, speed and pull,
+    // from the bytes, against the topology: the speed `solve` stored, and the
+    // output type and pull `aethelgard-ir`'s rules imply, which no generator
+    // calls (`RUL-20`).
+    for (&pin, (net, _)) in &named {
+        let (ot, speed, pupd) = elf.drive(pin);
+        let want_ot = u32::from(aethelgard_ir::silicon::implied_open_drain(topology, net));
+        let want_speed = topology
+            .pin_speeds
+            .get(net)
+            .map(|&v| u32::from(v))
+            .ok_or_else(|| Refusal::NoPinSpeed { net: net.clone() })?;
+        let want_pupd = aethelgard_ir::silicon::implied_pupd(topology, net);
+        let otype = |v| if v == 1 { "open-drain" } else { "push-pull" };
+        for (kind, want, got, show) in [
+            (
+                "WrongOutputType",
+                want_ot,
+                ot,
+                (otype(want_ot).to_owned(), otype(ot).to_owned()),
+            ),
+            (
+                "WrongSpeed",
+                want_speed,
+                speed,
+                (
+                    format!("OSPEEDR {}", bits2(want_speed)),
+                    format!("OSPEEDR {}", bits2(speed)),
+                ),
+            ),
+            (
+                "WrongPull",
+                want_pupd,
+                pupd,
+                (
+                    format!("PUPDR {}", bits2(want_pupd)),
+                    format!("PUPDR {}", bits2(pupd)),
+                ),
+            ),
+        ] {
+            if want != got {
+                drive.push(Finding {
+                    check: "forward",
+                    kind,
+                    pin: pin.to_string(),
+                    net: Some(net.clone()),
+                    expected: show.0,
+                    decoded: show.1,
+                });
+            }
+        }
+    }
     let mut findings = Vec::new();
     let mut finding =
         |check, kind, pin: PinId, net: Option<&String>, expected: String, (mode, af)| {
@@ -448,6 +522,7 @@ pub fn judge(
             named_by,
         });
     }
+    findings.extend(drive);
     Ok(Judgement {
         ok: findings.is_empty(),
         decodes: if header.is_some() {

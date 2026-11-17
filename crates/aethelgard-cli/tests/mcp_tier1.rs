@@ -43,6 +43,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "solve",
             "emit",
             "generate",
+            "generate_hwdef",
             "build",
             "verify",
             "extract",

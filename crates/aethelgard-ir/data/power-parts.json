@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "documents": {
     "SNVSAN3F": {
       "title": "TI LMR33630 datasheet SNVSAN3F",
@@ -107,6 +107,36 @@
       "title": "ST STM32_open_pin_data STM32H753ZITx.xml, commit 7d1f1514ed5583ec5007ad91236b4e1d377295b1",
       "revision": "7d1f1514",
       "sha256": "d167c0884383dd22adc1f25b712c4b12ed1cdf35d898af7edba34ce0e7f98a05",
+      "pending": null
+    },
+    "AP_CHIBIOS_HWDEF": {
+      "title": "ArduPilot libraries/AP_HAL_ChibiOS/hwdef/scripts/chibios_hwdef.py",
+      "revision": "Copter-4.7.2, fb773567896014da007bca58358704d4a0d8516f",
+      "sha256": "f906c95201f253ece2eeb80616a9c6f3f2b7b1429840fe2357957feceb7f86fa",
+      "pending": null
+    },
+    "AP_STM32H753XX": {
+      "title": "ArduPilot libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H753xx.py",
+      "revision": "Copter-4.7.2, fb773567896014da007bca58358704d4a0d8516f",
+      "sha256": "58fd32c3dd2c2049d541bb18189f16eb6fc6dc6c4cc04dba7c36a6bb4542c0b4",
+      "pending": null
+    },
+    "AP_STM32H7_MCUCONF": {
+      "title": "ArduPilot libraries/AP_HAL_ChibiOS/hwdef/common/stm32h7_mcuconf.h",
+      "revision": "Copter-4.7.2, fb773567896014da007bca58358704d4a0d8516f",
+      "sha256": "67f48e5f34466b6da633a54b3321dac44f7c7d4d6cf6065fad84a7059201a426",
+      "pending": null
+    },
+    "CHIBIOS_HAL_LLD_TYPE1": {
+      "title": "ChibiOS os/hal/ports/STM32/STM32H7xx/hal_lld_type1.h, as ArduPilot pins it",
+      "revision": "ChibiOS d103983f4362e5506bcf7062ccacf345fc0c0859",
+      "sha256": "d6dd1160d8dc69710457231e0197ea6386988e7a8cf2a3d7946183e3dd55eee3",
+      "pending": null
+    },
+    "AP_SPIDEVICE": {
+      "title": "ArduPilot libraries/AP_HAL_ChibiOS/SPIDevice.cpp",
+      "revision": "Copter-4.7.2, fb773567896014da007bca58358704d4a0d8516f",
+      "sha256": "e678f0ec0130536861e9fbefacf93b9ee3314bcd89f25f66fb5691150b244f26",
       "pending": null
     }
   },
@@ -1216,6 +1246,78 @@
                 }
               }
             ]
+          },
+          "flash_kilobytes": {
+            "value": 2048,
+            "at": {
+              "document": "DS12117",
+              "section": "p. 20, Table 2, flash memory 2 x 1 Mbyte; p. 25, 3.3.1, 2 Mbytes in two banks of eight 128-Kbyte sectors"
+            }
+          },
+          "ardupilot": {
+            "series": "STM32H7xx",
+            "mcu": "STM32H753xx",
+            "mcu_at": {
+              "document": "AP_CHIBIOS_HWDEF",
+              "section": "lines 2894-2897: `MCU <series> <type>` sets mcu_series and mcu_type, and the type names the AF table STM32H753xx.py"
+            },
+            "table_at": {
+              "document": "AP_STM32H753XX",
+              "section": "the AltFunction_map the MCU line imports"
+            },
+            "oscillator_hz": 0,
+            "oscillator_at": {
+              "document": "AP_STM32H7_MCUCONF",
+              "section": "lines 113-121 and 168-178: with STM32_HSECLK 0 the PLLs run from HSI, the only oscillator these clock rows hold for"
+            },
+            "spi_kernel_hz": {
+              "SPI1": {
+                "value": 80000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                }
+              },
+              "SPI2": {
+                "value": 80000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                }
+              },
+              "SPI3": {
+                "value": 80000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                }
+              },
+              "SPI4": {
+                "value": 72000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
+                }
+              },
+              "SPI5": {
+                "value": 72000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
+                }
+              },
+              "SPI6": {
+                "value": 72000000,
+                "at": {
+                  "document": "CHIBIOS_HAL_LLD_TYPE1",
+                  "section": "OSCILLATOR_HZ 0: SPI6 on PLL2_Q (mcuconf 345); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2661; mcuconf 118, 175, 177)"
+                }
+              }
+            },
+            "spi_divider_at": {
+              "document": "AP_SPIDEVICE",
+              "section": "lines 259-276: the bus clock / 2 halved at most 7 times to the first rate at or below the speed asked, so the slowest is the kernel / 256"
+            }
           }
         }
       }

@@ -1,0 +1,22 @@
+[package]
+name = "aethelgard-hwdef"
+description = "Aethelgard's ArduPilot board definition: hwdef.dat for unmodified ArduPilot, generated from the solved topology and the parts tables alone."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "README.md"
+keywords = ["ardupilot","hwdef","stm32","embedded","generator"]
+categories = ["embedded","development-tools"]
+
+# AET-WO-4400b D8: the generator depends on aethelgard-ir alone, and never on the
+# pinout check that judges its output (tests/separation.rs, both directions).
+[dependencies]
+aethelgard-ir.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
+[lints]
+workspace = true
