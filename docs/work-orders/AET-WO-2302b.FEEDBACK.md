@@ -38,19 +38,19 @@ Read at source for every row: `cli/src/renode.rs` (where the judge emits each ki
 | Rule | Kind | Evidence kinds | Subjects | Fires | Must not fire |
 |---|---|---|---|---|---|
 | `S6` | `motor_anchor_unobserved` | 26 | the output | `s6_edges_with_no_anchor_are_software_by_the_witness` | `s6_never_fires_on_an_output_with_no_edges` (that run is `I4`) |
-| `S7` | `motor_anchor_repeated` (per timer, `cen_rises` > 1) | 26 | the output | `s7_a_timer_started_twice_is_software_by_its_own_witness_alone` | the same test: the other timer is never cited |
+| `S7` | `motor_anchor_repeated` (per timer, `cen_rises` > 1); unexplained by name when the judge's stop cleared `CEN` and kind 11 reads it set at the end (ADV-M3) | 26 (11, 30) | the output | `s7_a_timer_started_twice_is_software_by_its_own_witness_alone` | the same test: the other timer is never cited; `adv_m3_cen_set_again_after_the_judge_s_stop_is_unexplained_by_name` |
 | `S8` | `motor_anchor_out_of_order` | 10, 26, 29 | the output, the boot, the port | `s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant` | `s8_never_fires_on_a_rewritten_verdict_alone` |
-| `S9` | `motor_edge_before_anchor` | 26 | the output | `s9_edges_before_the_anchor_are_software_by_the_witness` | inside the S6/S10 non-firing runs (no edge before) |
-| `S10` | `motor_edge_after_window` (kind 30 at the anchor has cleared `CEN`) | 26, 30 | the output, the timer | `s10_edges_after_the_window_are_software_only_once_the_stop_cleared_cen` | that test's stop-left-set half, and `s10_never_fires_with_no_stop_to_cite` |
+| `S9` | `motor_edge_before_anchor` | 26 | the output | `s9_edges_before_the_anchor_are_software_by_the_witness` | `s9_never_fires_on_an_output_with_no_edge_before_its_anchor` (added in the fix round) |
+| `S10` | `motor_edge_after_window` (kind 30 at the anchor has cleared `CEN`, and kind 11's end `CR1` reads `CEN` clear: ADV-M3) | 26, 30 (11) | the output, the timer | `s10_edges_after_the_window_are_software_only_once_the_stop_cleared_cen`, `adv_m3_with_cen_clear_at_the_end_s10_and_s7_stand` | that test's stop-left-set half, `s10_never_fires_with_no_stop_to_cite`, and the ADV-M3 re-enable (unexplained by name) |
 | `S11` | `judge_stop_mismatch` (a read-back off its solved value) | 30 | the timer | `s11_a_register_read_back_off_its_value_is_software_by_the_stop` | its unread-register half (unexplained by name) |
 
-**The harness refusal:** four rules, one per harness kind, each in domain `indeterminate`. Each names its bound through `Rule::bound()`. A harness rule names the run only when no other rule decided a symptom. Its events never join another rule's evidence, and `I5` never counts them.
+**The harness refusal:** four rules, one per harness kind, each in domain `indeterminate`. Each names its bound through `Rule::bound()`. A harness rule names the run only when no other rule decided a symptom. Its events join another rule's evidence only where the record is that rule's own (`H1`'s cut witness is `S9`'s evidence by its `edges_before`), never because of the harness (ADV-M4), and `I5` never counts them.
 
 | Rule | Kind | The bound it names | Evidence kinds |
 |---|---|---|---|
 | `H1` | `motor_window_past_run` | `DSHOT_WINDOW_NS` past `MAX_VIRTUAL_NS` | 24, 26 |
 | `H2` | `judge_stop_missing` | the judge's stop at anchor + `DSHOT_WINDOW_NS` | 24, 26, and 30 when present |
-| `H3` | `serial_wire_past_run` | `MAX_VIRTUAL_NS` against the wire time | 27, 29 |
+| `H3` | `serial_wire_past_run` (a port whose RX pin was on its alternate function at the injection, or was never injected: ADV-S1) | `MAX_VIRTUAL_NS` against the wire time | 27, 29 |
 | `H4` | `serial_injection_out_of_order` | the judge's sequential injection | 29 |
 
 - `propose` answers an `H` rule with nothing proposed and its bound named. The tests: `h1_*`, `h2_*`, `h1_h2_select_each_dshot_timer_by_its_own_window_and_stop`, `h3_*` (including `h3_never_masks_a_serial_fault`, beside `S5` and `E3`), `h4_*`, `a_harness_finding_never_masks_a_fault_nor_joins_its_evidence` (beside `S4`, `E1`, `I4`), and `propose_answers_a_harness_rule_with_its_bound_and_nothing_else`.
@@ -63,7 +63,7 @@ Read at source for every row: `cli/src/renode.rs` (where the judge emits each ki
    - The unbooted branch is unreachable: replay refuses every window kind before the boot word. It carries a `belt-and-suspenders:` comment rather than a branch.
 2. **Two existing kinds now go to a harness rule when, and only when, the bound cut them.**
    - `motor_timing_mismatch` (`I4` before) goes to `H1` when the DShot witness is `stopped`, its window passes the run, its last rise reaches the run's end, and no register is wrong.
-   - `serial_echo_missing` (`I6` before) goes to `H3` for a port in the past-run wire sum. The echo must be `missing` or `partial`, never `not_counted`, which the worker's own mutation run caught as a firmware fault refused as harness. Framing and tags must hold, with no `S5` or `E3` evidence.
+   - `serial_echo_missing` (`I6` before) goes to `H3` for a port in the past-run wire sum. The echo must be `missing` or `partial`, never `not_counted`, which the worker's own mutation run caught as a firmware fault refused as harness. Framing and tags must hold, the RX pin must have been routed at the injection (or the port never injected; ADV-S1), with no `S5` or `E3` evidence.
    - Without this, `H1` and `H3` could never name a real run: their findings always arrive with these companion symptoms.
 3. **`motor_edge_after_window` with no stop that cleared `CEN` is unexplained by name, not harness.** The edges may be the timer still running or the firmware, and no record tells which.
    - So `judge_stop_missing` with edges after the window is `I1` by name, never `H2`.
