@@ -296,6 +296,7 @@ pub fn eventually(what: &str, mut cond: impl FnMut() -> bool) {
 pub mod corpus;
 pub mod edges;
 pub mod power;
+pub mod rename;
 pub mod stub;
 pub mod th;
 pub mod verify;

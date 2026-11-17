@@ -1690,33 +1690,51 @@ fn the_ordered_board_passes_every_board_gate_with_no_finding() {
     fs::remove_dir_all(&base).unwrap();
 }
 
-/// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
-/// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
-/// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
-/// DRC by the specification's rules with and without schematic parity,
-/// `check support` and `extract`, each with no finding.
-#[test]
-fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&base);
-    fs::create_dir_all(&base).unwrap();
-    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+/// A board's outline (mm), and `extract`'s exit code and report.
+type Gated = ((f64, f64), Option<i32>, Value);
+
+/// Every gate on a specification that declares `board.max_outline_um`
+/// (`AET-WO-1313` §3, `AET-WO-1313c` §2), each sample in its own directory
+/// under `base`. `Err` is the refusal's kind when the specification is
+/// refused by name before a board exists: by `validate` (`OutlineTooSmall`),
+/// or by `generate` and `emit` alike (`OutlineUnreachable`), `emit` writing
+/// nothing. Otherwise the board is inside its bound at four layers and
+/// passes ERC, DRC by the specification's rules with and without schematic
+/// parity, and `check support`, each with no finding; the board's outline
+/// (mm) and `extract`'s exit code and report are returned for the caller to
+/// judge.
+fn bounded_gates(spec_path: &Path, base: &Path) -> Result<Gated, String> {
     let spec_arg = spec_path.to_str().unwrap();
     let (code, text) = aethelgard(&["validate", "--file", spec_arg]);
+    let v = one(&text);
+    if code == Some(2) && v["error"]["kind"] == "OutlineTooSmall" {
+        return Err("OutlineTooSmall".into());
+    }
     assert_eq!(code, Some(0), "validate: {text}");
     let generated = base.join("gen");
-    let (code, text) = aethelgard(&[
+    let (gen_code, gen_text) = aethelgard(&[
         "generate",
         "--spec",
         spec_arg,
         "--out",
         generated.to_str().unwrap(),
     ]);
-    assert_eq!(code, Some(0), "generate: {text}");
     let out = base.join("emitted");
     let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
     let r = one(&text);
+    if code == Some(2) {
+        let kind = r["error"]["kind"].as_str().unwrap().to_owned();
+        assert_eq!(kind, "OutlineUnreachable", "emit: {r}");
+        assert!(!out.exists(), "emit wrote into {}", out.display());
+        assert_eq!(gen_code, Some(2), "generate: {gen_text}");
+        assert_eq!(
+            one(&gen_text)["error"]["kind"],
+            kind.as_str(),
+            "generate: {gen_text}"
+        );
+        return Err(kind);
+    }
+    assert_eq!(gen_code, Some(0), "generate: {gen_text}");
     assert_eq!(code, Some(0), "emit: {r}");
     let board = r["board"]["path"].as_str().unwrap().to_owned();
     let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
@@ -1733,12 +1751,8 @@ fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
         )
     };
     let ((x0, y0), (x1, y1)) = (num("(start "), num("(end "));
-    assert!(
-        x1 - x0 <= 100.0 && y1 - y0 <= 100.0,
-        "{} x {}",
-        x1 - x0,
-        y1 - y0
-    );
+    let outline = (x1 - x0, y1 - y0);
+    assert!(outline.0 <= 100.0 && outline.1 <= 100.0, "{outline:?}");
 
     let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
     let erc = one(&text);
@@ -1770,9 +1784,103 @@ fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
     assert_eq!(code, Some(0), "support: {v}");
     assert_eq!(v["findings"], Value::Array(vec![]), "support: {v}");
     let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
-    let x = one(&text);
+    Ok((outline, code, one(&text)))
+}
+
+/// `extract`'s least slack, the declared bound less the computed one, over
+/// every line, in picofarads.
+fn least_slack_pf(x: &Value) -> f64 {
+    x["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            let d = l["declared_femtofarads"].as_i64().unwrap();
+            let c = l["c_bound_femtofarads"].as_i64().unwrap();
+            (d - c) as f64 / 1000.0
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+/// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
+/// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
+/// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
+/// DRC by the specification's rules with and without schematic parity,
+/// `check support` and `extract`, each with no finding.
+#[test]
+fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+    let (outline, code, x) = bounded_gates(&spec_path, &base).unwrap();
     assert_eq!(code, Some(0), "extract: {x}");
     assert_eq!(x["verdict"], "pass", "extract: {x}");
     assert_eq!(x["findings"], Value::Array(vec![]), "extract: {x}");
+    eprintln!(
+        "ANSWER 1313c-fixture outline {:.2} x {:.2} mm, least extract slack {:.1} pF",
+        outline.0,
+        outline.1,
+        least_slack_pf(&x)
+    );
+    fs::remove_dir_all(&base).unwrap();
+}
+
+/// `AET-WO-1313c` §2, size samples: every reference of the Sentinel-03
+/// fixture prefixed by 2, 6 or 8 characters (`common::rename::sized`, from
+/// `1313b`'s `rename_len.py`). The `extract` margin is the geometry's, not
+/// the method's (`1313b` §2.5), so no size is promised and no margin is
+/// claimed: each sample either passes every gate, or is refused by name, by
+/// `validate`, `generate` and `emit` before any board ([`bounded_gates`]),
+/// or by `extract`, whose every finding names a line over its declared
+/// bound; every other gate passes. Each sample's outcome, outline and least
+/// slack go to stderr (`ANSWER 1313c-size`) for FEEDBACK.
+#[test]
+fn each_size_sample_passes_every_gate_or_is_refused_by_name() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-1313c-size-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let fixture: Value = serde_json::from_str(
+        &fs::read_to_string(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    for len in [2, 6, 8] {
+        let dir = base.join(format!("len-{len}"));
+        fs::create_dir_all(&dir).unwrap();
+        let spec_path = dir.join("sentinel-03.json");
+        let v = common::rename::sized(&fixture, len);
+        fs::write(&spec_path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+        match bounded_gates(&spec_path, &dir) {
+            Err(kind) => eprintln!("ANSWER 1313c-size {len} refused {kind}"),
+            Ok((outline, code, x)) => {
+                let findings = x["findings"].as_array().unwrap();
+                if x["verdict"] == "pass" {
+                    assert_eq!(code, Some(0), "{len}: extract: {x}");
+                    assert!(findings.is_empty(), "{len}: extract: {x}");
+                } else {
+                    assert_eq!(x["verdict"], "fail", "{len}: extract: {x}");
+                    assert_eq!(code, Some(1), "{len}: extract: {x}");
+                    assert!(!findings.is_empty(), "{len}: extract: {x}");
+                    for f in findings {
+                        assert_eq!(f["kind"], "capacitance_over_declared_bound", "{len}: {f}");
+                    }
+                }
+                eprintln!(
+                    "ANSWER 1313c-size {len} {} outline {:.2} x {:.2} mm, least extract slack {:.1} pF",
+                    if findings.is_empty() {
+                        "passes"
+                    } else {
+                        "refused by extract"
+                    },
+                    outline.0,
+                    outline.1,
+                    least_slack_pf(&x)
+                );
+            }
+        }
+    }
     fs::remove_dir_all(&base).unwrap();
 }

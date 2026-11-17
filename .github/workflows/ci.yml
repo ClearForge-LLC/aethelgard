@@ -357,7 +357,14 @@ jobs:
       # and 270 degrees with its two keep-outs passes check drc --spec
       # --schematic with no finding: KiCad holds each turned keep-out to the
       # library footprint), merged after 178.
-      TIER2_MIN: "179"
+      # 180: plus 1 from AET-WO-1313c in board_tier2.rs (each Sentinel-03
+      # size sample passes every gate or is refused by name), merged after
+      # 4400d's 179.
+      # 183: plus 3 from AET-WO-4400e3 in twin_tier2.rs (the image's Renode
+      # is the build the RETTOBASE correction is for; the fixture's nested
+      # handler reads RETTOBASE 1 without it, and 0 with it, no other bit
+      # moving), merged after 1313c's 180.
+      TIER2_MIN: "183"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
