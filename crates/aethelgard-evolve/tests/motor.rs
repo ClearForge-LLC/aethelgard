@@ -292,11 +292,7 @@ fn archived(records: &[Record]) -> Replayed {
 }
 
 fn attributed(records: &[Record]) -> Attribution {
-    campaign::check_run(records).expect("the run is one check_run accepts");
-    let a = attribute(&archived(records)).unwrap();
-    for e in &a.evidence {
-        assert!(a.rule.evidence_kinds().contains(&e.kind), "{a:?}");
-    }
+    let a = attributed_any(records);
     assert!(a.unexplained.is_empty(), "{a:?}");
     a
 }
