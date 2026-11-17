@@ -18,6 +18,10 @@
     {
       "scenario": "pullup-2k2",
       "sha256": "a7eba545639d61551b25ef513559131710d9109d231a2b017ebb18b04266daa9"
+    },
+    {
+      "scenario": "serial-rx-open-console",
+      "sha256": "9687a7669ea45becd4b8e3be53c676049ede68a3032dbda82a1d0e879fc2b50a"
     }
   ],
   "preconditions": [
@@ -30,9 +34,6 @@
       "state": "met",
       "no_device": [
         "I2C bus `EXT` (no device: nothing to fault)"
-      ],
-      "no_fault_kind": [
-        "serial port `CONSOLE` (no fault kind yet: serial)"
       ]
     },
     {
@@ -44,7 +45,7 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "171ad507b3685d306bebb64016920d02dffa172889fb44e5d9ca8c8f5374a029",
+  "verdict_sha256": "9f61a1207c0b5fc1c60b3c390f769a45fc2b7e0f9a78487c0b0af8abe85f56bd",
   "files": {
     "FAB-NOTES.md": "ae303f2a610bbf62a20b7683ba7b53cac522b76878299ebe160237fa5a7df935",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
