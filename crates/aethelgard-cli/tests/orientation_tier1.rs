@@ -203,6 +203,10 @@ fn the_placed_imu_agrees_with_the_declared_orientation() {
             "{forward} {x}"
         );
         assert_eq!(theta, want_theta, "{forward} {x}");
+        // The DRC gate's own reading agrees (`route::declared`).
+        let stack = aethelgard_eda::stack::Stack::of(&spec);
+        aethelgard_eda::route::declared(&strict::board(&board).unwrap(), &stack)
+            .unwrap_or_else(|d| panic!("{forward} {x}: {}: {}", d.kind, d.message));
         // The F.Cu keep-out is the pad ring's, turned: 1.85 x 1.35 mm about
         // the origin at 0, its sides swapped at a quarter turn.
         let tree = strict::board(&board).unwrap();
@@ -286,4 +290,83 @@ fn an_orientation_off_the_top_side_is_refused_by_name() {
             "{e}"
         );
     }
+}
+
+/// `board` with U5's footprint text edited by `edit`.
+fn edited_u5(board: &str, edit: impl Fn(&str) -> String) -> String {
+    let parts: Vec<&str> = board.split("\n\t(footprint").collect();
+    let u5 = parts
+        .iter()
+        .position(|fp| fp.contains("(property \"Reference\" \"U5\""))
+        .unwrap();
+    let mut out = parts[0].to_owned();
+    for (i, fp) in parts.iter().enumerate().skip(1) {
+        out.push_str("\n\t(footprint");
+        out.push_str(&if i == u5 { edit(fp) } else { (*fp).to_owned() });
+    }
+    out
+}
+
+/// A footprint's text with an angle added to its own `(at x y)`.
+fn turned(fp: &str, theta: &str) -> String {
+    let i = fp.find("\n\t\t(at ").unwrap();
+    let j = i + fp[i..].find(')').unwrap();
+    format!("{} {theta}{}", &fp[..j], &fp[j..])
+}
+
+/// `AET-WO-4400d` §5: the board and the firmware disagree when a footprint is
+/// turned by hand after placement. `check drc --spec` holds the board's IMU
+/// footprint to the declaration before any tool runs, and refuses one turned,
+/// mirrored onto B.Cu, or missing, by name (`ImuOrientationDisagrees`).
+#[test]
+fn a_hand_turned_imu_footprint_is_refused_by_the_drc_gate() {
+    let v = fixture();
+    let (spec, solved, table) = solved(&v);
+    let board = schematic::emit(&spec, &solved, &table).unwrap().board;
+    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let judge = |b: &str| aethelgard_eda::route::declared(&strict::board(b).unwrap(), &stack);
+    judge(&board).unwrap();
+    // U5 is at 0 degrees: turned a quarter, a half, three quarters.
+    for theta in ["90", "180", "270"] {
+        let hand = edited_u5(&board, |fp| turned(fp, theta));
+        assert_ne!(hand, board);
+        let d = judge(&hand).unwrap_err();
+        assert_eq!(d.kind, "ImuOrientationDisagrees", "{theta}: {}", d.message);
+        assert!(d.message.starts_with("U5: "), "{}", d.message);
+    }
+    let mirrored = edited_u5(&board, |fp| {
+        fp.replacen("(layer \"F.Cu\")", "(layer \"B.Cu\")", 1)
+    });
+    assert_ne!(mirrored, board);
+    assert_eq!(
+        judge(&mirrored).unwrap_err().kind,
+        "ImuOrientationDisagrees"
+    );
+    let renamed = edited_u5(&board, |fp| fp.replacen("\"U5\"", "\"U50\"", 1));
+    assert_eq!(judge(&renamed).unwrap_err().kind, "ImuOrientationDisagrees");
+    // Through the CLI: refused by name before any tool is looked for.
+    let dir = root()
+        .join("target")
+        .join(format!("aet-4400d-turned-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let b = dir.join("b.kicad_pcb");
+    std::fs::write(&b, edited_u5(&board, |fp| turned(fp, "90"))).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args([
+            "check",
+            "drc",
+            "--board",
+            b.to_str().unwrap(),
+            "--spec",
+            FIXTURE,
+        ])
+        .current_dir(root())
+        .env("PATH", "/nonexistent")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["error"]["kind"], "ImuOrientationDisagrees", "{v}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

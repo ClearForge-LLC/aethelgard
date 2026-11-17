@@ -317,15 +317,49 @@ pub(crate) struct Part {
     pub(crate) seat: Option<Seat>,
 }
 
-/// What the placer turns an IMU's footprint by: the board's forward edge,
-/// the declared orientation, and the part's axes by its pins (`parts.json`
-/// `axes`, cited).
+/// What the placer turns an IMU's footprint by, and the DRC gate holds it
+/// to: the board's forward edge, the declared orientation, and the part's
+/// axes by its pins (`parts.json` `axes`, cited).
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Seat {
-    pub(crate) forward: aethelgard_ir::orientation::Edge,
-    pub(crate) orientation: aethelgard_ir::orientation::Orientation,
-    pub(crate) x_toward_pins: Vec<String>,
-    pub(crate) y_toward_pins: Vec<String>,
+pub struct Seat {
+    pub forward: aethelgard_ir::orientation::Edge,
+    pub orientation: aethelgard_ir::orientation::Orientation,
+    pub x_toward_pins: Vec<String>,
+    pub y_toward_pins: Vec<String>,
+}
+
+/// Each SPI device that declares an orientation, by reference, with its
+/// seat (`AET-WO-4400d`). `validate` holds the forward edge declared and the
+/// part's axes cited; their absence here is refused, never assumed.
+pub fn seats(spec: &Specification) -> Result<Vec<(String, Seat)>, EmitError> {
+    let mut out = Vec::new();
+    for d in spec.declared_spi_devices() {
+        let Some(orientation) = d.orientation else {
+            continue;
+        };
+        let missing = |what: &str| {
+            EmitError::Internal(format!("{}: {what}, which validate requires", d.reference))
+        };
+        let forward = spec
+            .board
+            .forward
+            .ok_or_else(|| missing("no board.forward"))?;
+        let table = aethelgard_ir::parts::table().map_err(EmitError::InvalidSpecification)?;
+        let axes = table
+            .get(&d.part)
+            .and_then(|p| p.axes.as_ref())
+            .ok_or_else(|| missing("no cited axes"))?;
+        out.push((
+            d.reference.clone(),
+            Seat {
+                forward,
+                orientation,
+                x_toward_pins: axes.x_toward_pins.clone(),
+                y_toward_pins: axes.y_toward_pins.clone(),
+            },
+        ));
+    }
+    Ok(out)
 }
 
 /// The IC a part belongs to (`AET-WO-4300d2` reduction finding 9: one
@@ -1090,33 +1124,16 @@ pub(crate) fn design(
                 });
             }
         }
-        // `AET-WO-4400d`: an IMU's declared orientation and its part's cited
-        // axes, which `validate` (above) holds present.
-        if let Some(orientation) = d.orientation {
-            let missing = |what: &str| {
-                EmitError::Internal(format!("{}: {what}, which validate requires", d.reference))
-            };
-            let forward = spec
-                .board
-                .forward
-                .ok_or_else(|| missing("no board.forward"))?;
-            let table = aethelgard_ir::parts::table().map_err(EmitError::InvalidSpecification)?;
-            let axes = table
-                .get(&d.part)
-                .and_then(|p| p.axes.as_ref())
-                .ok_or_else(|| missing("no cited axes"))?;
-            let part = b
-                .parts
-                .iter_mut()
-                .find(|p| p.reference == d.reference)
-                .ok_or_else(|| missing("no part drawn"))?;
-            part.seat = Some(Seat {
-                forward,
-                orientation,
-                x_toward_pins: axes.x_toward_pins.clone(),
-                y_toward_pins: axes.y_toward_pins.clone(),
-            });
-        }
+    }
+    // `AET-WO-4400d`: each IMU's declared orientation and its part's cited
+    // axes, for the placer.
+    for (reference, seat) in seats(spec)? {
+        let part = b
+            .parts
+            .iter_mut()
+            .find(|p| p.reference == reference)
+            .ok_or_else(|| EmitError::Internal(format!("{reference}: an IMU not drawn")))?;
+        part.seat = Some(seat);
     }
     if let Some(p) = &spec.power {
         power::draw(

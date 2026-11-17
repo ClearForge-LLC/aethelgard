@@ -753,6 +753,9 @@ fn baros(
     Ok(())
 }
 
+/// A rotation's matrix, row `i` board axis `i` in the driver's x, y, z.
+type Matrix = [[i8; 3]; 3];
+
 /// ArduPilot's axis-aligned `Rotation`s at the tag, each as the matrix
 /// `Vector3<T>::rotate` applies (`libraries/AP_Math/vector3.cpp`, each `case`
 /// evaluated on the basis vectors; `rotations.h` L27-83; `AET-WO-4400d`
@@ -760,7 +763,7 @@ fn baros(
 /// terms of the driver's x, y, z. Every name is here, aliases too (26 and
 /// 27), because a rotation is judged by what it does, not how it is spelled
 /// (ruled D4). This table is the judge's own (`RUL-20`).
-const ROTATIONS: [(&str, [[i8; 3]; 3]); 26] = [
+const ROTATIONS: [(&str, Matrix); 26] = [
     ("ROTATION_NONE", [[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
     ("ROTATION_YAW_90", [[0, -1, 0], [1, 0, 0], [0, 0, 1]]),
     ("ROTATION_YAW_180", [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]),
@@ -839,7 +842,7 @@ const ROTATIONS: [(&str, [[i8; 3]; 3]); 26] = [
 /// `ardupilot.frame` the parts table accepts): column `j` is chip axis `j`
 /// in the board frame, Y being Z × X. The board frame is the engine's
 /// constant: x forward, y right, z down through F.Cu (ruled D3).
-fn expected_matrix(o: &Orientation) -> [[i8; 3]; 3] {
+fn expected_matrix(o: &Orientation) -> Matrix {
     // Each direction as (axis, sign) in the board frame.
     let axis = |d: Toward| match d {
         Toward::Forward => (0, 1),
@@ -921,7 +924,7 @@ fn imus(
     // The topology's IMUs: (reference, driver, device, matrix), the matrix
     // `None` where no orientation is declared or the driver's frame is
     // uncited, which no rotation can match.
-    let want: Vec<(&str, String, String, Option<[[i8; 3]; 3]>)> = t
+    let want: Vec<(&str, String, String, Option<Matrix>)> = t
         .spi_devices_in_order()
         .into_iter()
         .filter_map(|(r, d)| {
@@ -940,7 +943,7 @@ fn imus(
             })
         })
         .collect();
-    let show_m = |m: &Option<[[i8; 3]; 3]>| match m {
+    let show_m = |m: &Option<Matrix>| match m {
         Some(m) => ROTATIONS
             .iter()
             .filter(|(_, r)| r == m)
