@@ -179,6 +179,7 @@ The §5 case "a fab-format column filled with a plausible guess" is in §7's tab
 ## 8. Gates and the reduction pass
 
 - **Gates:** on Furnace, at the READY head, in a capped scope: `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`; `cargo test --workspace --no-fail-fast`, with no failure; and the tier-2 targets compiled (`--features aethelgard-cli/with-tools --no-run`). Tier 2 itself runs in CI. No tier-2 test was added, so `TIER2_MIN` stays main's 177.
+- **Measured at `914ded8`, the head this READY commit adds only this line to:** fmt clean; clippy with `with-tools`, 0 diagnostics; the tier-2 targets compile; `cargo test --workspace --no-fail-fast`, 2,087 passed, 0 failed (`~/.cache/aet-1604/test-workspace-7.log`). `TIER2_MIN` is `177` on main and here. Main then moved to `a323aea` (#200, `spike/2303/` and its FEEDBACK only, which no test reads), merged in with a merge commit; `workspace_shape`, `readme_status`, `package_licences` and `strict_fence` pass after it.
 - **Reduction pass (diff):** −12 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 1 finding below.
   - Duplicate 1: `placement_rows` became a one-line wrapper, and `jlcpcb()` parses the placement file with the same check, so `derive` checked it twice. The wrapper and its call are gone, and its adversarial test now targets `eda::fab::placement` (M15 still killed).
   - Duplicate 2: `doctor`'s `unprobed()` rebuilt `absent()`'s line; it now calls `absent`.
