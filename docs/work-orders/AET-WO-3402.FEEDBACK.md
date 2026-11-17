@@ -230,3 +230,17 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
 4. READY.
 
 **Backlog** (the architect's): placer rule (a), putting a GND test pad beside a named test point → 1313b.
+
+## 10. Merges in the queue (1313, then 1604) [measured]
+
+**`f845b6f` (1313, specification 15):**
+- The merge had no textual conflict.
+- `AETHELGARD_BLESS=1` on `svd-hal --test board` rewrote nothing, so the auto-merged bench board is the generator's output at specification 15 with the per-peripheral speeds.
+- Workspace 2109 passed, 0 failed.
+
+**`2642ece` (1604):**
+- One conflict, `cli/tests/verify_2k2_tier2.rs`, resolved by keeping both sides: 3402's ledger-row check, and the `## Files` reading both WOs share, its comment naming both sections. `cli/src/fab.rs` merged cleanly, with `acknowledged:` kept beside 1604's `jlcpcb_notes`.
+- The first bless run reported 1 failure in 7. A rerun passed 7 of 7, and neither run changed a file. The failure did not recur, so I record it here rather than call it understood.
+- Gates: fmt 0, clippy 0, workspace **2138 passed, 0 failed**. `TIER2_MIN` is main's 178; 3402 adds no tier-2 test.
+
+**The package on the branch is now main's,** CI's write for 1604 (run 44079386736). It lacks 3402's ELF and FAB-NOTES rows, so `bench-package --against-fab` differs until the architect's dispatch writes it again.
