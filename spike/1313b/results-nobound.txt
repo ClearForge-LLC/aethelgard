@@ -1,3 +1,0 @@
-letters=- specs 24 byte-identical 24 files 371
-letters=kms specs 24 byte-identical 24 files 371
-letters=kmst specs 24 byte-identical 22 files 371 | differ: crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json examples/sentinel-01.json

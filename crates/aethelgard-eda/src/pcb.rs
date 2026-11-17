@@ -117,7 +117,7 @@ impl Rect {
             y1: self.y1.max(o.y1),
         }
     }
-    pub(crate) fn grow(self, d: i64) -> Rect {
+    pub fn grow(self, d: i64) -> Rect {
         Rect {
             x0: self.x0 - d,
             y0: self.y0 - d,
@@ -518,6 +518,18 @@ impl Item<'_> {
     }
 }
 
+/// The MCU, by its symbol's library.
+fn is_mcu(part: &Part) -> bool {
+    part.lib_id.starts_with("MCU_")
+}
+
+/// Whether `part` is anchored to the IC whose reference is `ic`.
+fn anchored_to(part: &Part, ic: &str) -> bool {
+    part.owner
+        .as_ref()
+        .is_some_and(|o| o.anchor.is_some() && o.ic == ic)
+}
+
 fn is_ic(part: &Part) -> bool {
     !part.lib_id.starts_with("Device:") && !is_bench(part)
 }
@@ -548,24 +560,51 @@ fn is_bench(part: &Part) -> bool {
 ///
 /// Connectors are left to [`place_connectors`], after every other part, so
 /// none is an anchor; the board's bottom edge is returned when there is one.
+///
+/// Under a declared bound (`AET-WO-1313c`), and only there, three things
+/// change, so that no name and no list position decides a placement:
+/// - (k) the canonical rank ([`canonical_rank`]) takes the place of
+///   reference order everywhere above, and in the connectors' edges;
+/// - (m) the target is the centroid of the anchor's pads on every shared
+///   net ([`centroid_target`]);
+/// - (s) the placed parts are compacted toward the MCU ([`compact`]) before
+///   the connectors go on.
 fn place(
     items: &[Item<'_>],
     pairs: &[[String; 2]],
     bounded: bool,
 ) -> Result<(Vec<Placed>, Edges), EmitError> {
-    let order = placing_order(items, bounded);
+    // Under a declared bound only, every choice that reference order makes
+    // below is the canonical rank's instead (`AET-WO-1313c`, (k)).
+    let rank = bounded.then(|| canonical_rank(items));
+    let rank = rank.as_deref();
+    let order = placing_order(items, rank);
     // An anchored part goes straight after its IC, in drawing order, before
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
-    // design with no anchor keeps the order above.
+    // design with no anchor keeps the order above. Drawing order is the
+    // anchor's own sequence, never the part's place in the list
+    // (`AET-WO-1313c` F1).
     let anchored = |i: usize| {
         let o = items[i].part.owner.as_ref()?;
-        o.anchor.as_ref().map(|_| o.ic.as_str())
+        o.anchor.as_ref().map(|a| (o.ic.as_str(), a.seq))
     };
     let mut grouped = Vec::with_capacity(order.len());
     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
         grouped.push(i);
         let reference = items[i].part.reference.as_str();
-        grouped.extend((0..items.len()).filter(|&j| anchored(j) == Some(reference)));
+        // `seq` is unique among one IC's anchored parts (the emitter counts
+        // them), so the reference never decides here: it only keeps a
+        // hand-built design that repeats a `seq` deterministic.
+        let mut own: Vec<(usize, &str, usize)> = (0..items.len())
+            .filter_map(|j| match anchored(j) {
+                Some((ic, seq)) if ic == reference => {
+                    Some((seq, items[j].part.reference.as_str(), j))
+                }
+                _ => None,
+            })
+            .collect();
+        own.sort_unstable();
+        grouped.extend(own.into_iter().map(|(_, _, j)| j));
     }
     if grouped.len() != order.len() {
         return Err(EmitError::Internal(
@@ -574,6 +613,10 @@ fn place(
     }
     let order = grouped;
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
+    // What compaction needs of each placed part: the IC it went beside, and
+    // the gap it kept from the parts placed before it.
+    let mut anchor_of: Vec<Option<usize>> = vec![None; items.len()];
+    let mut rule: Vec<Rule> = vec![Rule::default(); items.len()];
     // The approach to each declared pair's MCU pins, kept clear of every
     // part placed after the MCU (`AET-WO-4300g` D5, lever 2; `AET-WO-1310`).
     let mut approach: Vec<Rect> = Vec::new();
@@ -581,7 +624,7 @@ fn place(
         let item = &items[i];
         let g = item.geometry;
         if step == 0 {
-            if !item.part.lib_id.starts_with("MCU_") {
+            if !is_mcu(item.part) {
                 return Err(EmitError::Internal("the design has no MCU".into()));
             }
             placed[i] = Some(Placed {
@@ -592,6 +635,11 @@ fn place(
                 keep: g.keep.shift(ORIGIN),
             });
             approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
+            rule[i] = Rule {
+                reserve: None,
+                ic: true,
+                step,
+            };
             continue;
         }
         // The anchor: an IC already placed.
@@ -609,9 +657,10 @@ fn place(
             None => candidates
                 .max_by(|&a, &b| {
                     let count = |j: usize| item.shared(&items[j]).len();
-                    count(a)
-                        .cmp(&count(b))
-                        .then_with(|| items[b].part.reference.cmp(&items[a].part.reference))
+                    count(a).cmp(&count(b)).then_with(|| match rank {
+                        Some(rank) => rank[b].cmp(&rank[a]),
+                        None => items[b].part.reference.cmp(&items[a].part.reference),
+                    })
                 })
                 .ok_or_else(|| internal(&item.part.reference, "no IC to place beside"))?,
         };
@@ -624,26 +673,23 @@ fn place(
         let reference = item.part.reference.as_str();
         let reserve = items
             .iter()
-            .filter(|x| {
-                x.part
-                    .owner
-                    .as_ref()
-                    .is_some_and(|o| o.anchor.is_some() && o.ic == reference)
-            })
+            .filter(|x| anchored_to(x.part, reference))
             .map(|x| {
                 let k = x.geometry.keep;
                 (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
             })
             .max();
+        anchor_of[i] = Some(anchor);
+        rule[i] = Rule {
+            reserve,
+            ic: is_ic(item.part),
+            step,
+        };
         let taken: Vec<(Rect, i64)> = (0..items.len())
             .filter_map(|j| {
-                let both = is_ic(items[j].part) && is_ic(item.part);
-                let gap = match (reserve, both) {
-                    (Some(r), _) => r,
-                    (None, true) => IC_GAP_NM,
-                    (None, false) => GAP_NM,
-                };
-                placed[j].as_ref().map(|p| (p.keep, gap))
+                placed[j]
+                    .as_ref()
+                    .map(|p| (p.keep, Rule::gap(rule[i], rule[j])))
             })
             .chain(approach.iter().map(|&r| (r, 0)))
             .collect();
@@ -651,7 +697,9 @@ fn place(
             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
             continue;
         }
-        let target = {
+        let target = if bounded {
+            centroid_target(item, &items[anchor], at)
+        } else {
             item.shared(&items[anchor])
                 .first()
                 .and_then(|net| items[anchor].pad_on(net))
@@ -672,12 +720,15 @@ fn place(
             keep: g.keep.shift(origin),
         });
     }
+    if let Some(rank) = rank {
+        compact(items, &mut placed, &anchor_of, &rule, &approach, rank);
+    }
     let plan = if bounded {
         BOUNDED_PLAN
     } else {
         EdgePlan::Bottom { gap: IC_GAP_NM }
     };
-    let edges = place_connectors(items, &mut placed, plan)?;
+    let edges = place_connectors(items, &mut placed, plan, rank)?;
     let placed = placed
         .into_iter()
         .collect::<Option<Vec<_>>>()
@@ -692,8 +743,9 @@ fn place(
 enum EdgePlan {
     /// Every connector on the bottom edge, cable down, `gap` apart.
     Bottom { gap: i64 },
-    /// The left and right edges, cable out: each connector, in reference
-    /// order, to the side with less length so far (ties left).
+    /// The left and right edges, cable out: each connector, in the
+    /// canonical rank's order ([`canonical_rank`]), to the side with less
+    /// length so far (ties left).
     Sides,
 }
 
@@ -705,11 +757,18 @@ const BOUNDED_PLAN: EdgePlan = EdgePlan::Sides;
 /// Each connector's rotation under `plan`, cable side out: 0 on the bottom
 /// edge (the cable toward +y), 90 on the right, 270 on the left
 /// ([`route::rotate`]); and the gap between neighbours on one edge.
-fn connector_edges(items: &[Item<'_>], plan: EdgePlan) -> (Vec<(usize, u16)>, i64) {
+fn connector_edges(
+    items: &[Item<'_>],
+    plan: EdgePlan,
+    rank: Option<&[usize]>,
+) -> (Vec<(usize, u16)>, i64) {
     let mut row: Vec<usize> = (0..items.len())
         .filter(|&i| schematic::is_connector(items[i].part))
         .collect();
-    row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    match rank {
+        Some(rank) => row.sort_by_key(|&i| rank[i]),
+        None => row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference)),
+    }
     match plan {
         EdgePlan::Bottom { gap } => (row.into_iter().map(|i| (i, 0)).collect(), gap),
         EdgePlan::Sides => {
@@ -798,39 +857,372 @@ pub(crate) fn bound_holds(parts: &[Part], bound: OutlineBound) -> Result<(), Emi
 }
 
 /// The order [`place`] takes every part but the connectors in, before an
-/// anchored part is moved to follow its IC: the MCU, the other ICs, the
-/// passives, the bench parts, each in reference order. Under a declared
-/// bound (`AET-WO-1313` D1, (r)), an IC that owns anchored parts goes before
-/// the other ICs: its loop's reserve then never has to clear parts placed
-/// before it, which a renaming can otherwise put there (measured: FEEDBACK
-/// §2.4).
-fn placing_order(items: &[Item<'_>], bounded: bool) -> Vec<usize> {
+/// anchored part is moved to follow its IC. With no bound declared: the MCU,
+/// the other ICs, the passives, the bench parts, each in reference order.
+/// Under a declared bound, the canonical rank ([`canonical_rank`]), which
+/// keeps those four classes and puts an IC that owns anchored parts before
+/// the other ICs (`AET-WO-1313` D1, (r)).
+fn placing_order(items: &[Item<'_>], rank: Option<&[usize]>) -> Vec<usize> {
     let mut order: Vec<usize> = (0..items.len())
         .filter(|&i| !schematic::is_connector(items[i].part))
         .collect();
-    let owns_anchored = |i: usize| {
-        let r = items[i].part.reference.as_str();
-        items.iter().any(|x| {
-            x.part
-                .owner
-                .as_ref()
-                .is_some_and(|o| o.anchor.is_some() && o.ic == r)
+    match rank {
+        Some(rank) => order.sort_by_key(|&i| rank[i]),
+        None => order.sort_by(|&a, &b| {
+            let key = |i: usize| {
+                let p = items[i].part;
+                (!is_mcu(p), !is_ic(p), is_bench(p), p.reference.as_str())
+            };
+            key(a).cmp(&key(b))
+        }),
+    }
+    order
+}
+
+/// FNV-1a, 64 bits: the canonical rank's colours. Any fixed hash would do;
+/// this one is a few lines and needs no dependency.
+const FNV_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+
+fn fnv(mut h: u64, bytes: &[u8]) -> u64 {
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+/// How many rounds of colour refinement the canonical rank takes: each
+/// round sees one net further. Three is the prototype's, which `AET-WO-1313b`
+/// measured (§2.2). The colours' values order parts, not only tell them
+/// apart, so another count places differently: at four, the Sentinel-03
+/// fixture and every size sample move (measured, `AET-WO-1313c` FEEDBACK
+/// §3).
+const COLOUR_ROUNDS: usize = 3;
+
+/// `AET-WO-1313c`, (k): each item's canonical rank, a total order computed
+/// from footprints, ownership, the draw sequence ([`schematic::Anchor`]'s
+/// `seq`) and the net graph alone. A net's kind (a label net, a rail,
+/// ground, unconnected) is read from the form of its name, never its text;
+/// a reference decides only a tie that remains.
+///
+/// Each item's colour starts as a hash of its symbol and footprint, and is
+/// refined [`COLOUR_ROUNDS`] times from the colours on each of its pads'
+/// nets, its owner's colour, whether it decouples, and its anchor's
+/// sequence and pad pairs (Weisfeiler-Lehman colour refinement). The rank
+/// is by: the MCU; the other ICs; the passives; the bench parts, a `GND`
+/// test point last; an IC that owns anchored parts first (`AET-WO-1313`
+/// (r)); the larger courtyard first; the nearer to the MCU over label nets;
+/// the colour; the colours of the parts it owns; and last, the reference.
+fn canonical_rank(items: &[Item<'_>]) -> Vec<usize> {
+    let real = |n: &str| !n.starts_with("unconnected-");
+    let mut nets: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
+    for (i, it) in items.iter().enumerate() {
+        for (number, (_, net)) in &it.pads {
+            if real(net) {
+                nets.entry(net.as_str())
+                    .or_default()
+                    .push((i, number.as_str()));
+            }
+        }
+    }
+    let base: Vec<u64> = items
+        .iter()
+        .map(|it| {
+            fnv(
+                fnv(FNV_BASIS, it.part.lib_id.as_bytes()),
+                it.part.footprint.as_bytes(),
+            )
         })
+        .collect();
+    let owner_of: Vec<Option<usize>> = items
+        .iter()
+        .map(|it| {
+            let o = it.part.owner.as_ref()?;
+            items.iter().position(|x| x.part.reference == o.ic)
+        })
+        .collect();
+    let mut colour = base.clone();
+    for _ in 0..COLOUR_ROUNDS {
+        // A net's colour: its pads' colours and pad numbers, as a multiset.
+        let mut net_colour: BTreeMap<&str, u64> = BTreeMap::new();
+        for (name, pads) in &nets {
+            let mut v: Vec<(u64, &str)> = pads.iter().map(|&(i, n)| (colour[i], n)).collect();
+            v.sort_unstable();
+            let mut h = FNV_BASIS;
+            for (c, n) in v {
+                h = fnv(fnv(fnv(h, &c.to_le_bytes()), n.as_bytes()), b"|");
+            }
+            net_colour.insert(name, h);
+        }
+        colour = items
+            .iter()
+            .enumerate()
+            .map(|(i, it)| {
+                let mut v: Vec<(&str, u64)> = it
+                    .pads
+                    .iter()
+                    .filter(|(_, (_, n))| real(n))
+                    .map(|(number, (_, n))| (number.as_str(), net_colour[n.as_str()]))
+                    .collect();
+                v.sort_unstable();
+                let mut h = base[i];
+                for (number, c) in v {
+                    h = fnv(fnv(h, number.as_bytes()), &c.to_le_bytes());
+                }
+                // Ownership: the owner's colour, whether it decouples, the
+                // anchor's sequence and pad pairs; never the owner's name.
+                if let Some(o) = it.part.owner.as_ref() {
+                    if let Some(j) = owner_of[i] {
+                        h = fnv(h, &colour[j].to_le_bytes());
+                    }
+                    h = fnv(h, if o.decouples { b"d" } else { b"-" });
+                    if let Some(a) = o.anchor.as_ref() {
+                        h = fnv(h, &a.seq.to_le_bytes());
+                        for (own, theirs) in &a.pads {
+                            h = fnv(fnv(fnv(h, own.as_bytes()), b":"), theirs.as_bytes());
+                        }
+                    }
+                }
+                h
+            })
+            .collect();
+    }
+    // Each item's distance from the MCU in the net graph, over label nets
+    // only: a rail or ground reaches every part at once.
+    let mut distance = vec![usize::MAX; items.len()];
+    if let Some(m) = items.iter().position(|it| is_mcu(it.part)) {
+        distance[m] = 0;
+        let mut frontier = vec![m];
+        let mut d = 0;
+        while !frontier.is_empty() {
+            d += 1;
+            let mut next = Vec::new();
+            for &i in &frontier {
+                for (_, net) in items[i].pads.values() {
+                    if !net.starts_with('/') {
+                        continue;
+                    }
+                    for &(j, _) in &nets[net.as_str()] {
+                        if distance[j] == usize::MAX {
+                            distance[j] = d;
+                            next.push(j);
+                        }
+                    }
+                }
+            }
+            frontier = next;
+        }
+    }
+    let owns_anchored = |i: usize| {
+        items
+            .iter()
+            .any(|x| anchored_to(x.part, &items[i].part.reference))
     };
+    // What each item owns: its owned parts' colours, as a multiset. An IC's
+    // own colour never sees them, so two ICs alike in footprint and nets,
+    // owning different parts, would otherwise tie to their references.
+    let owned: Vec<u64> = (0..items.len())
+        .map(|i| {
+            let mut v: Vec<u64> = (0..items.len())
+                .filter(|&j| owner_of[j] == Some(i))
+                .map(|j| colour[j])
+                .collect();
+            v.sort_unstable();
+            v.iter().fold(FNV_BASIS, |h, c| fnv(h, &c.to_le_bytes()))
+        })
+        .collect();
+    let ground_test_point = |i: usize| {
+        items[i].part.lib_id == schematic::TEST_POINT
+            && items[i].pads.values().all(|(_, n)| n == GND)
+    };
+    let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| {
         let key = |i: usize| {
             let p = items[i].part;
+            let c = items[i].geometry.courtyard;
             (
-                !p.lib_id.starts_with("MCU_"),
+                !is_mcu(p),
                 !is_ic(p),
                 is_bench(p),
-                bounded && is_ic(p) && !owns_anchored(i),
-                p.reference.clone(),
+                ground_test_point(i),
+                !owns_anchored(i),
+                std::cmp::Reverse(i128::from(c.x1 - c.x0) * i128::from(c.y1 - c.y0)),
+                distance[i],
+                colour[i],
+                owned[i],
             )
         };
-        key(a).cmp(&key(b))
+        key(a)
+            .cmp(&key(b))
+            .then_with(|| items[a].part.reference.cmp(&items[b].part.reference))
     });
-    order
+    let mut rank = vec![0; items.len()];
+    for (r, &i) in order.iter().enumerate() {
+        rank[i] = r;
+    }
+    rank
+}
+
+/// `AET-WO-1313c`, (m): a part's target under a declared bound, the
+/// centroid of its anchor's pads on every net they share, from no pad's
+/// number or net's name; `None` when they share none.
+fn centroid_target(item: &Item<'_>, anchor: &Item<'_>, at: (i64, i64)) -> Option<(i64, i64)> {
+    let shared = item.shared(anchor);
+    let pads: Vec<(i64, i64)> = anchor
+        .pads
+        .values()
+        .filter(|(_, n)| shared.contains(n))
+        .map(|(p, _)| *p)
+        .collect();
+    let n = i64::try_from(pads.len()).ok().filter(|&n| n > 0)?;
+    let (sx, sy) = pads.iter().fold((0, 0), |s, p| (s.0 + p.0, s.1 + p.1));
+    Some((at.0 + sx / n, at.1 + sy / n))
+}
+
+/// The gap a placed part kept from the parts placed before it ([`place`]):
+/// its loop's reserve if it owns anchored parts, else [`IC_GAP_NM`] between
+/// two ICs, else [`GAP_NM`]; and when it was placed.
+#[derive(Clone, Copy, Default)]
+struct Rule {
+    reserve: Option<i64>,
+    ic: bool,
+    step: usize,
+}
+
+impl Rule {
+    /// The gap between two placed parts: the one placed later set it.
+    fn gap(a: Rule, b: Rule) -> i64 {
+        let later = if a.step >= b.step { a } else { b };
+        match (later.reserve, a.ic && b.ic) {
+            (Some(r), _) => r,
+            (None, true) => IC_GAP_NM,
+            (None, false) => GAP_NM,
+        }
+    }
+}
+
+/// Moves a placed part by `d`.
+fn shift(p: &mut Placed, d: (i64, i64)) {
+    p.origin = (p.origin.0 + d.0, p.origin.1 + d.1);
+    p.keep = p.keep.shift(d);
+    p.courtyard = p.courtyard.shift(d);
+}
+
+/// How far a group may step sideways, in [`STEP`]s, to find a free column
+/// for its step toward the MCU: 10 mm, the prototype's measured setting
+/// (`AET-WO-1313b` §2.2).
+const SIDESTEP_STEPS: i64 = 40;
+
+/// `AET-WO-1313c`, (s): sidestep compaction, under a declared bound only.
+/// A group is an IC other than the MCU with every non-IC part placed beside
+/// it, moved rigidly, so every anchored part keeps its place by its pins.
+/// In rank order, each group takes one [`STEP`] toward the MCU's courtyard
+/// centre in y, or, when that is blocked, the same step together with the
+/// nearest free sideways offset (left first, up to [`SIDESTEP_STEPS`]); or,
+/// with no step in y to take, one step in x. A step never overshoots the
+/// centre. A move must keep every member:
+/// - at the gap the placer kept ([`Rule::gap`]) from every part outside the
+///   group;
+/// - out of every approach strip ([`approaches`]);
+/// - inside the x-range the parts had before compaction, so the core never
+///   widens.
+fn compact(
+    items: &[Item<'_>],
+    placed: &mut [Option<Placed>],
+    anchor_of: &[Option<usize>],
+    rule: &[Rule],
+    approach: &[Rect],
+    rank: &[usize],
+) {
+    let mcu = items.iter().position(|it| is_mcu(it.part));
+    let Some(target) = mcu
+        .and_then(|i| placed[i].as_ref())
+        .map(|p| p.courtyard.centre())
+    else {
+        return;
+    };
+    // Connectors are not placed yet, so none is a group.
+    let mut groups: Vec<Vec<usize>> = (0..items.len())
+        .filter(|&i| Some(i) != mcu && is_ic(items[i].part) && placed[i].is_some())
+        .map(|i| {
+            let mut members = vec![i];
+            members.extend(
+                (0..items.len()).filter(|&j| anchor_of[j] == Some(i) && !is_ic(items[j].part)),
+            );
+            members
+        })
+        .collect();
+    groups.sort_by_key(|members| rank[members[0]]);
+    let Some(core) = placed.iter().flatten().map(|p| p.keep).reduce(Rect::union) else {
+        return;
+    };
+    let clear = |placed: &[Option<Placed>], members: &[usize], d: (i64, i64)| {
+        members.iter().all(|&m| {
+            let Some(p) = placed[m].as_ref() else {
+                return true;
+            };
+            let k = p.keep.shift(d);
+            k.x0 >= core.x0
+                && k.x1 <= core.x1
+                && approach.iter().all(|a| !a.overlaps(k))
+                && (0..items.len()).all(|o| {
+                    members.contains(&o)
+                        || placed[o]
+                            .as_ref()
+                            .is_none_or(|q| !q.keep.overlaps(k.grow(Rule::gap(rule[m], rule[o]))))
+                })
+        })
+    };
+    let toward = |v: i64| {
+        if v.abs() >= STEP {
+            v.signum() * STEP
+        } else {
+            0
+        }
+    };
+    // This ends: a group's potential, (|dy|, |dx|) from its keep-out box's
+    // centre to the target, falls strictly (lexicographically) with every
+    // move it makes, since a move in y takes one STEP off |dy| with no
+    // overshoot, and a move in x alone takes one STEP off |dx|; |dy| is
+    // bounded, and |dx| by the core's fixed x-range. A pass in which no
+    // group moves is the last.
+    loop {
+        let mut moved = false;
+        for members in &groups {
+            let Some(c) = members
+                .iter()
+                .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
+                .reduce(Rect::union)
+                .map(Rect::centre)
+            else {
+                continue;
+            };
+            let sy = toward(target.1 - c.1);
+            let mut d = None;
+            if sy != 0 {
+                d = std::iter::once((0, sy))
+                    .chain((1..=SIDESTEP_STEPS).flat_map(|j| [-1, 1].map(|s| (s * j * STEP, sy))))
+                    .find(|&d| clear(placed, members, d));
+            }
+            if d.is_none() {
+                let sx = toward(target.0 - c.0);
+                if sx != 0 && clear(placed, members, (sx, 0)) {
+                    d = Some((sx, 0));
+                }
+            }
+            if let Some(d) = d {
+                for &m in members {
+                    if let Some(p) = placed[m].as_mut() {
+                        shift(p, d);
+                    }
+                }
+                moved = true;
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
 }
 
 /// How far past the MCU's courtyard a pair's approach is kept clear, and how
@@ -987,8 +1379,9 @@ fn place_connectors(
     items: &[Item<'_>],
     placed: &mut [Option<Placed>],
     plan: EdgePlan,
+    rank: Option<&[usize]>,
 ) -> Result<Edges, EmitError> {
-    let (sides, gap) = connector_edges(items, plan);
+    let (sides, gap) = connector_edges(items, plan, rank);
     let mut edges = Edges::default();
     if sides.is_empty() {
         return Ok(edges);
@@ -1295,11 +1688,7 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         // The MCU's own reference too, when its support network rings it: on
         // the silkscreen, its box above the top row of pins pushed that row's
         // capacitors 2.49 mm out (`AET-WO-4300g` §3, measured).
-        let rings = parts.iter().any(|x| {
-            x.owner
-                .as_ref()
-                .is_some_and(|o| o.anchor.is_some() && o.ic == part.reference)
-        });
+        let rings = parts.iter().any(|x| anchored_to(x, &part.reference));
         if part.owner.as_ref().is_some_and(|o| o.anchor.is_some())
             || (rings && part.lib_id == schematic::MCU)
         {
@@ -2108,6 +2497,68 @@ mod tests {
         assert!(forward.starts_with("(kicad_pcb\n\t(version 20260206)"));
     }
 
+    /// Parts anchored to one IC, contending for the spots by the same pin:
+    /// each takes its place in the IC's draw sequence ([`Anchor::seq`]),
+    /// whatever the order of the parts list (`AET-WO-1313c` F1). The draw
+    /// sequence here runs against reference order, so neither the list nor
+    /// the references can stand in for it.
+    ///
+    /// [`Anchor::seq`]: schematic::Anchor
+    fn anchored_design() -> Vec<Part> {
+        let gnd = || Conn::Rail("GND".into());
+        let two = |lib: &'static str, fp: &str, r: &str, n: &str| {
+            part(lib, fp, r, &[("1", net(n)), ("2", gnd())])
+        };
+        let at = |p: Part, pin: &str, seq: usize| anchor_to(p, "U2", &[("1", pin)], None, seq);
+        vec![
+            mcu(&[("34", net("SDA")), ("35", net("SCL"))]),
+            bme("U2"),
+            at(two("Device:C", C0402, "C9", "SDA"), "3", 0),
+            at(two("Device:C", C0402, "C5", "SDA"), "3", 1),
+            at(two("Device:R", R0402, "R1", "SDA"), "3", 2),
+            at(two("Device:R", R0402, "R7", "SCL"), "4", 3),
+        ]
+    }
+
+    /// With anchored parts too, the board is a function of the parts, not of
+    /// their order: every rotation of the list, and its reverse.
+    #[test]
+    fn with_anchored_parts_the_board_does_not_depend_on_the_parts_order() {
+        let parts = anchored_design();
+        let stack = crate::stack::reference();
+        // The first in the draw sequence has first pick by U2's pin 3.
+        let l = layout(&parts).unwrap();
+        let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap().keep;
+        let pin = {
+            let u2 = l.placed.iter().find(|p| p.reference == "U2").unwrap();
+            let items = items(&parts).unwrap();
+            let (pad, _) = items[1].pads["3"];
+            (u2.origin.0 + pad.0, u2.origin.1 + pad.1)
+        };
+        let d2 = |k: Rect| {
+            let (x, y) = k.centre();
+            (x - pin.0).pow(2) + (y - pin.1).pow(2)
+        };
+        assert!(
+            d2(at("C9")) < d2(at("C5")),
+            "C9 (seq 0) did not have first pick"
+        );
+        same_in_every_order(&parts, |p| write("p", p, &stack).unwrap());
+    }
+
+    /// `board` gives the same bytes for every rotation of `parts`, and for
+    /// each reversed.
+    fn same_in_every_order(parts: &[Part], board: impl Fn(&[Part]) -> String) {
+        let forward = board(parts);
+        for k in 0..parts.len() {
+            let mut turned = parts.to_vec();
+            turned.rotate_left(k);
+            assert_eq!(forward, board(&turned), "rotated by {k}");
+            turned.reverse();
+            assert_eq!(forward, board(&turned), "rotated by {k}, reversed");
+        }
+    }
+
     /// A decoupling capacitor sits beside its own IC's power pin, not the
     /// MCU's, though both are on its rail.
     #[test]
@@ -2364,8 +2815,9 @@ mod tests {
         let l = layout_of(&items, &[], &[], Some(bound(100, 100))).unwrap();
         let o = l.outline;
         let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap();
-        // Reference order J1, J10, J3: left, right, left.
-        for (r, rotation) in [("J1", 270), ("J10", 90), ("J3", 270)] {
+        // The canonical rank, by courtyard (none carries a net): J10, J3,
+        // J1, each to the side with less length so far: left, right, right.
+        for (r, rotation) in [("J10", 270), ("J3", 90), ("J1", 90)] {
             let c = at(r);
             assert_eq!(c.rotation, rotation, "{r}");
             let gap = if rotation == 270 {
@@ -2437,6 +2889,7 @@ mod tests {
             anchor: Some(schematic::Anchor {
                 pads: vec![("1".into(), "3".into())],
                 loop_rule: None,
+                seq: 0,
             }),
             decouples: false,
         });
@@ -2448,11 +2901,12 @@ mod tests {
                 .map(|i| items[i].part.reference.as_str())
                 .collect()
         };
+        assert_eq!(names(placing_order(&items, None)), ["U1", "U2", "U9", "R1"]);
+        let rank = canonical_rank(&items);
         assert_eq!(
-            names(placing_order(&items, false)),
-            ["U1", "U2", "U9", "R1"]
+            names(placing_order(&items, Some(&rank))),
+            ["U1", "U9", "U2", "R1"]
         );
-        assert_eq!(names(placing_order(&items, true)), ["U1", "U9", "U2", "R1"]);
     }
 
     /// Connectors go at the bottom edge, in reference order.
@@ -2570,5 +3024,288 @@ mod tests {
             )
             .collect();
         layout(&all).expect("all four connector parts together do not place");
+    }
+
+    /// `part` anchored to `ic`'s pads, `seq` in its draw sequence.
+    fn anchor_to(
+        mut part: Part,
+        ic: &str,
+        pads: &[(&str, &str)],
+        loop_rule: Option<(i64, &'static str)>,
+        seq: usize,
+    ) -> Part {
+        part.owner = Some(schematic::Owner {
+            ic: ic.into(),
+            anchor: Some(schematic::Anchor {
+                pads: pads
+                    .iter()
+                    .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                    .collect(),
+                loop_rule,
+                seq,
+            }),
+            decouples: false,
+        });
+        part
+    }
+
+    const C0402: &str = "Capacitor_SMD:C_0402_1005Metric";
+
+    /// `AET-WO-1313c`: a design for the order tests under a bound. The MCU
+    /// with a part anchored to it; U2 and U3, which own anchored parts (U3's
+    /// with a loop rule), their draw sequences against reference order; U4,
+    /// which owns none; C20 and C21, which differ only in value, so only
+    /// the last tie-break tells them apart; a test point on a signal and one
+    /// on `GND`; two connectors on the side edges.
+    fn bounded_design() -> Vec<Part> {
+        let vdd = || Conn::Rail("VDD".into());
+        let gnd = || Conn::Rail("GND".into());
+        let two = |lib: &'static str, fp: &str, r: &str, one: Conn, two: Conn| {
+            part(lib, fp, r, &[("1", one), ("2", two)])
+        };
+        let mut c20 = two("Device:C", C0402, "C20", vdd(), gnd());
+        c20.value = "100n".into();
+        let mut c21 = two("Device:C", C0402, "C21", vdd(), gnd());
+        c21.value = "1u".into();
+        let tp = |r: &str, c: Conn| {
+            let mut p = part(
+                schematic::TEST_POINT,
+                "TestPoint:TestPoint_Pad_D1.0mm",
+                r,
+                &[("1", c)],
+            );
+            p.value = "TestPoint".into();
+            p
+        };
+        vec![
+            mcu(&[("34", net("SDA")), ("35", net("SCL")), ("36", net("INT"))]),
+            anchor_to(
+                two("Device:R", R0402, "R30", net("INT"), vdd()),
+                "U1",
+                &[("1", "36")],
+                None,
+                0,
+            ),
+            bme("U2"),
+            anchor_to(
+                two("Device:C", C0402, "C9", net("SDA"), gnd()),
+                "U2",
+                &[("1", "3")],
+                None,
+                0,
+            ),
+            anchor_to(
+                two("Device:C", C0402, "C5", net("SDA"), gnd()),
+                "U2",
+                &[("1", "3")],
+                None,
+                1,
+            ),
+            anchor_to(
+                two("Device:R", R0402, "R7", net("SCL"), vdd()),
+                "U2",
+                &[("1", "4")],
+                None,
+                2,
+            ),
+            bme("U3"),
+            anchor_to(
+                two("Device:C", C0402, "C12", vdd(), gnd()),
+                "U3",
+                &[("1", "2")],
+                Some((2_000_000, "a test's rule")),
+                0,
+            ),
+            anchor_to(
+                two("Device:R", R0402, "R12", net("SDA"), vdd()),
+                "U3",
+                &[("1", "3")],
+                None,
+                1,
+            ),
+            bme("U4"),
+            c20,
+            c21,
+            tp("TP1", net("SDA")),
+            tp("TP2", gnd()),
+            connector("SM04B-GHS-TB", "J1", Some("SCL")),
+            connector("SM06B-GHS-TB", "J2", None),
+        ]
+    }
+
+    /// Every reference renamed so that each class (its letters and its
+    /// length) runs in reverse: the canonical rank's last tie-break, and
+    /// every other order references could set, reversed. An owner follows
+    /// its IC's new name.
+    fn references_reversed(parts: &[Part]) -> Vec<Part> {
+        let class = |r: &str| {
+            (
+                r.chars()
+                    .take_while(char::is_ascii_alphabetic)
+                    .collect::<String>(),
+                r.len(),
+            )
+        };
+        let mut by_class: BTreeMap<(String, usize), Vec<String>> = BTreeMap::new();
+        for p in parts {
+            by_class
+                .entry(class(&p.reference))
+                .or_default()
+                .push(p.reference.clone());
+        }
+        let mut to: BTreeMap<String, String> = BTreeMap::new();
+        for refs in by_class.values_mut() {
+            refs.sort();
+            for (a, b) in refs.iter().zip(refs.iter().rev()) {
+                to.insert(a.clone(), b.clone());
+            }
+        }
+        parts
+            .iter()
+            .cloned()
+            .map(|mut p| {
+                p.reference = to[&p.reference].clone();
+                if let Some(o) = p.owner.as_mut() {
+                    o.ic = to[&o.ic].clone();
+                }
+                p
+            })
+            .collect()
+    }
+
+    /// A placement with every name taken out: the outline, and each part's
+    /// footprint, origin and rotation, sorted.
+    type NameFree = (Rect, Vec<(String, (i64, i64), u16)>);
+
+    fn name_free(parts: &[Part], l: &Layout) -> NameFree {
+        let mut v: Vec<_> = l
+            .placed
+            .iter()
+            .map(|p| {
+                let part = parts.iter().find(|x| x.reference == p.reference).unwrap();
+                (part.footprint.clone(), p.origin, p.rotation)
+            })
+            .collect();
+        v.sort();
+        (l.outline, v)
+    }
+
+    /// `AET-WO-1313c` §2: under a declared bound the board is a function of
+    /// the parts, not of their order: every rotation of the list, and its
+    /// reverse, places every part the same, and the reversed list writes the
+    /// same bytes. (Writing this bounded board takes over a second in a test
+    /// build, the writer's cost on its outline, so the bytes are compared
+    /// once.)
+    #[test]
+    fn under_a_bound_the_board_does_not_depend_on_the_parts_order() {
+        let parts = bounded_design();
+        let b = Some(bound(100, 100));
+        same_in_every_order(&parts, |p| {
+            let l = layout_of(&items(p).unwrap(), &[], &[], b).unwrap();
+            let mut placed: Vec<_> = l
+                .placed
+                .iter()
+                .map(|q| (&q.reference, q.origin, q.rotation))
+                .collect();
+            placed.sort();
+            format!("{:?} {placed:?}", l.outline)
+        });
+        let stack = crate::stack::reference();
+        let mut reversed = parts.clone();
+        reversed.reverse();
+        assert_eq!(
+            write_moved("p", &parts, &stack, &[], b).unwrap(),
+            write_moved("p", &reversed, &stack, &[], b).unwrap()
+        );
+    }
+
+    /// `AET-WO-1313c` §2: under a declared bound no reference decides where
+    /// anything goes. With every reference class reversed, the reversed
+    /// tie-break included, the placement is the same once names are taken
+    /// out. With no bound, reference order still decides (today's placer,
+    /// kept byte for byte), which this design shows, so the check is not
+    /// empty.
+    #[test]
+    fn under_a_bound_no_reference_decides_a_placement() {
+        let parts = bounded_design();
+        let renamed = references_reversed(&parts);
+        assert_ne!(
+            parts.iter().map(|p| &p.reference).collect::<Vec<_>>(),
+            renamed.iter().map(|p| &p.reference).collect::<Vec<_>>()
+        );
+        let place =
+            |p: &[Part], b| name_free(p, &layout_of(&items(p).unwrap(), &[], &[], b).unwrap());
+        let b = Some(bound(100, 100));
+        assert_eq!(place(&parts, b), place(&renamed, b));
+        assert_ne!(place(&parts, None), place(&renamed, None));
+    }
+
+    /// `AET-WO-1313c` §5: after compaction every keep-out box is inside the
+    /// outline and keeps the placer's gaps ([`GAP_NM`], [`IC_GAP_NM`]
+    /// between two ICs), and no part placed after the MCU enters a declared
+    /// pair's approach strip. U2 shares only SDA and SCL with the MCU, on the
+    /// pins beside the pair's, so its group, compacted toward the MCU's
+    /// centre, would cross the strip in front of the pair's pins.
+    #[test]
+    fn compaction_keeps_the_placers_gaps_and_the_approach_strips() {
+        let gnd = || Conn::Rail("GND".into());
+        let sensor = |r: &str| {
+            part(
+                "Sensor:BME280",
+                "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+                r,
+                &[("1", gnd()), ("3", net("SDA")), ("4", net("SCL"))],
+            )
+        };
+        let parts = vec![
+            mcu(&[
+                ("57", net("SDA")),
+                ("58", net("SCL")),
+                ("55", net("DP")),
+                ("56", net("DN")),
+            ]),
+            sensor("U2"),
+            anchor_to(
+                part("Device:C", C0402, "C1", &[("1", net("SDA")), ("2", gnd())]),
+                "U2",
+                &[("1", "3")],
+                Some((2_000_000, "a test's rule")),
+                0,
+            ),
+            sensor("U3"),
+        ];
+        let pairs = [["DP".to_owned(), "DN".to_owned()]];
+        let items = items(&parts).unwrap();
+        let l = layout_of(&items, &[], &pairs, Some(bound(100, 100))).unwrap();
+        let mcu = l.placed.iter().position(|p| p.reference == "U1").unwrap();
+        let strips = approaches(&items[0], l.placed[mcu].courtyard, &pairs);
+        assert!(!strips.is_empty());
+        for (i, a) in l.placed.iter().enumerate() {
+            assert!(
+                l.outline.x0 <= a.keep.x0
+                    && a.keep.x1 <= l.outline.x1
+                    && l.outline.y0 <= a.keep.y0
+                    && a.keep.y1 <= l.outline.y1,
+                "{} leaves the outline",
+                a.reference
+            );
+            if i != mcu {
+                assert!(
+                    strips.iter().all(|s| !s.overlaps(a.keep)),
+                    "{} enters an approach strip",
+                    a.reference
+                );
+            }
+            for (j, b) in l.placed.iter().enumerate().skip(i + 1) {
+                let both = is_ic(items[i].part) && is_ic(items[j].part);
+                let gap = if both { IC_GAP_NM } else { GAP_NM };
+                assert!(
+                    !a.keep.grow(gap).overlaps(b.keep),
+                    "{} and {} are closer than {gap} nm",
+                    a.reference,
+                    b.reference
+                );
+            }
+        }
     }
 }

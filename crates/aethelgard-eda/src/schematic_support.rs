@@ -24,7 +24,7 @@ use std::collections::BTreeMap;
 use aethelgard_ir::power_parts::{self, Kind, Support};
 use aethelgard_ir::{BOOT0, NRST, SWCLK, SWDIO};
 
-use super::{Anchor, Builder, Conn, EmitError, Owner};
+use super::{Builder, Conn, EmitError};
 
 /// The support network of `part`'s row, as the gate looks it up.
 pub(super) fn row(part: &str) -> Result<&'static Support, EmitError> {
@@ -105,16 +105,7 @@ pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Co
             })?;
             let decouples = matches!(at, Conn::Rail(_));
             b.passive('C', value.clone(), at, ground.clone())?;
-            if let Some(c) = b.parts.last_mut() {
-                c.owner = Some(Owner {
-                    ic: mcu.to_owned(),
-                    anchor: Some(Anchor {
-                        pads: vec![("1".into(), pin.clone())],
-                        loop_rule: None,
-                    }),
-                    decouples,
-                });
-            }
+            b.anchor_last(mcu, vec![("1".into(), pin.clone())], None, decouples);
         }
     }
     Ok(conns)
