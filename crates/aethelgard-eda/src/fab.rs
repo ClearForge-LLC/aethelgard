@@ -375,6 +375,35 @@ pub struct Notes<'a> {
     /// then each condition it names (`AET-WO-4300g` §1.6), as the gate
     /// states them. Empty, and no section, when no support gate ran.
     pub support: &'a [String],
+    /// The specification's `acknowledge_unwitnessed` entries, in its order
+    /// (`AET-WO-3402` §1.2): each register, class, fields and reason exactly
+    /// as the specification states them. Empty writes a line saying so.
+    pub acknowledged: &'a [aethelgard_ir::UnwitnessedAcknowledgement],
+}
+
+/// The section naming every ledger row the specification acknowledges as
+/// unwitnessed (`RUL-20`, `AET-WO-4230` R1): one line per entry, its
+/// register, class, fields and reason as written, so a reader can match each
+/// line to the specification's entry.
+pub fn acknowledged_section(rows: &[aethelgard_ir::UnwitnessedAcknowledgement]) -> String {
+    let mut out = String::from(
+        "## Acknowledged ledger rows\n\nThe witness ledger classes these register fields as judged by no independent rule, model or bench reading. The specification acknowledges each by name, with its reason, and the bench reads them (`RUL-20`):\n\n",
+    );
+    if rows.is_empty() {
+        out.push_str("- None: the specification acknowledges no unwitnessed ledger row.\n");
+    }
+    for r in rows {
+        let fields: Vec<String> = r.fields.iter().map(|f| format!("`{f}`")).collect();
+        out.push_str(&format!(
+            "- `{}` ({}): {}. {}\n",
+            r.register,
+            r.class,
+            fields.join(", "),
+            r.reason
+        ));
+    }
+    out.push('\n');
+    out
 }
 
 /// `nm` in millimetres, with no trailing zeros: 1_600_000 is `1.6`.
@@ -478,7 +507,7 @@ header carries no plating comment.
 - Copper to copper: {space} mm.
 - Via: {via} mm pad, {drill} mm drill.
 {classes}{power}{support}
-{lifecycle}## Files
+{lifecycle}{acknowledged}## Files
 
 {files}
 ## Licence
@@ -507,6 +536,7 @@ CC-BY-SA 4.0 with a design exception that covers designs made from them.
         power = section(POWER_INTRO, n.power),
         support = section(SUPPORT_INTRO, n.support),
         lifecycle = lifecycle,
+        acknowledged = acknowledged_section(n.acknowledged),
     )
 }
 
@@ -690,6 +720,7 @@ mod tests {
             drills: &[routed(DRILL_NM, VIA_NM, 64)],
             power: &conditions,
             support: &[],
+            acknowledged: &[],
         });
         assert!(
             text.contains("- Thermal vias under U10 pad 9: 3 x 4, 0.554 mm pad, 0.254 mm drill, 0.9 mm pitch.\n"),
@@ -720,6 +751,7 @@ mod tests {
             drills: &[routed(DRILL_NM, VIA_NM, 64)],
             power: &[],
             support: &[],
+            acknowledged: &[],
         })
     }
 
@@ -745,7 +777,7 @@ mod tests {
     fn the_notes_carry_the_verdicts_lifecycle_lines() {
         let line = "LIFECYCLE EOL: W25Q64JV (U4) is end of life by its vendor".to_owned();
         let text = sample_with(&crate::stack::reference(), std::slice::from_ref(&line));
-        assert!(text.contains(&format!("## Lifecycle\n\nThe verdict that names this package states, for the board's parts:\n\n- {line}\n\n## Files")), "{text}");
+        assert!(text.contains(&format!("## Lifecycle\n\nThe verdict that names this package states, for the board's parts:\n\n- {line}\n\n## Acknowledged ledger rows")), "{text}");
         assert!(!sample().contains("Lifecycle"));
     }
 
@@ -763,7 +795,45 @@ mod tests {
             drills,
             power: &[],
             support: &[],
+            acknowledged: &[],
         })
+    }
+
+    /// `AET-WO-3402` §1.2: each acknowledged row is one line carrying its
+    /// register, class, fields and reason exactly as written; none says so.
+    #[test]
+    fn the_acknowledged_rows_are_written_as_the_specification_states_them() {
+        let none = acknowledged_section(&[]);
+        assert!(
+            none.starts_with("## Acknowledged ledger rows\n\n"),
+            "{none}"
+        );
+        assert!(
+            none.contains("- None: the specification acknowledges no unwitnessed ledger row.\n"),
+            "{none}"
+        );
+        let rows = [
+            aethelgard_ir::UnwitnessedAcknowledgement {
+                register: "SPI1.SR".into(),
+                class: "ignored-by-model".into(),
+                fields: vec!["MODF".into()],
+                reason: "MODF is a tag in Renode.".into(),
+            },
+            aethelgard_ir::UnwitnessedAcknowledgement {
+                register: "GPIOB.MODER".into(),
+                class: "same-source".into(),
+                fields: vec!["MODER6".into(), "MODER7".into()],
+                reason: "PB6/PB7 alternate.".into(),
+            },
+        ];
+        let text = acknowledged_section(&rows);
+        assert!(
+            text.contains(
+                "- `SPI1.SR` (ignored-by-model): `MODF`. MODF is a tag in Renode.\n- `GPIOB.MODER` (same-source): `MODER6`, `MODER7`. PB6/PB7 alternate.\n"
+            ),
+            "{text}"
+        );
+        assert!(!text.contains("- None:"), "{text}");
     }
 
     fn routed(drill_nm: i64, via_nm: i64, n: usize) -> Drill {
