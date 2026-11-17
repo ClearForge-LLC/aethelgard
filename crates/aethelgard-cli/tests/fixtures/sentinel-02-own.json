@@ -200,6 +200,33 @@
           "offboard": null
         }
       ]
+    },
+    {
+      "reference": "J3",
+      "part": "SM04B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "CONSOLE_TX",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": "CONSOLE_RX",
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
     }
   ],
   "net_constraints": [
@@ -291,5 +318,29 @@
   "diff_pairs": [],
   "motor_outputs": [],
   "power": null,
-  "serial_ports": []
+  "serial_ports": [
+    {
+      "label": "CONSOLE",
+      "peripheral": null,
+      "tx": {
+        "net": "CONSOLE_TX",
+        "pin": null
+      },
+      "rx": {
+        "net": "CONSOLE_RX",
+        "pin": null
+      },
+      "role": "console",
+      "framing": {
+        "baud": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "inverted": false
+      },
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
+    }
+  ]
 }

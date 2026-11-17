@@ -130,6 +130,14 @@ pub enum SolveError {
         fast_hz: u64,
         floor_hz: u64,
     },
+    /// No selectable output speed serves a solved SPI line (`AET-WO-4400b`
+    /// D2: the choice moved here from the board generator).
+    #[error("net `{net}` on `{pin}` has no output speed: {refusal}")]
+    PinSpeed {
+        net: String,
+        pin: String,
+        refusal: crate::speeds::Refusal,
+    },
 }
 
 fn quoted(names: &[String]) -> String {
@@ -166,6 +174,12 @@ impl SolveError {
             Self::SerialClock { .. } => "SerialClock",
             Self::SpiKernelClockUnavailable { .. } => "SpiKernelClockUnavailable",
             Self::SpiSpeedBelowKernelRange { .. } => "SpiSpeedBelowKernelRange",
+            Self::PinSpeed { refusal, .. } => match refusal {
+                crate::speeds::Refusal::SupplyOutsideTable { .. } => "SupplyOutsideSpeedTable",
+                crate::speeds::Refusal::LoadAboveTable { .. } => "LoadAboveSpeedTable",
+                crate::speeds::Refusal::TooFastForPin { .. } => "RateAbovePinSpeed",
+                crate::speeds::Refusal::RiseFasterThanPin { .. } => "RiseTimeBelowPinSpeed",
+            },
         }
     }
 
@@ -183,7 +197,7 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. } => Some(bus),
-            Self::NoAdcPin { net } => Some(net),
+            Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => Some(net),
             Self::NoTimerChannel { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
             Self::SerialPinsSplit { port, .. }
@@ -214,7 +228,7 @@ impl SolveError {
             | Self::BudgetExceeded { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. } => vec![bus.clone()],
-            Self::NoAdcPin { net } => vec![net.clone()],
+            Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } => vec![output.clone()],
             Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
@@ -283,6 +297,8 @@ fn solve_inner(
         spi_controllers: BTreeMap::new(),
         i2c_timings: BTreeMap::new(),
         bor_level: spec.mcu.bor_level,
+        mcu: spec.mcu.part.clone(),
+        pin_speeds: BTreeMap::new(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec);
@@ -461,9 +477,48 @@ fn solve_inner(
             );
         }
     }
+    out.pin_speeds = pin_speeds(&out)?;
     // belt-and-suspenders: the search already keeps every rule `validate`
     // checks; this refuses rather than emits if a change to it ever breaks one.
     out.validate().map_err(SolveError::InvalidSpecification)?;
+    Ok(out)
+}
+
+/// Each solved pin's output speed (`AET-WO-4400b` D2): the slowest the
+/// output speed table allows for a line of `spi_lines` (each bus's SCK and
+/// MOSI, at its declared rate, supply, load and rise time), and `0` for every
+/// other pin, which the speed check does not judge (`AET-WO-4300c` D1, D3,
+/// D4). A line no selectable speed serves is refused by name.
+fn pin_speeds(t: &SolvedTopology) -> Result<BTreeMap<String, u8>, SolveError> {
+    let table = crate::speeds::table().map_err(SolveError::InvalidSpecification)?;
+    let pins = t
+        .assignments
+        .iter()
+        .map(|(net, a)| (net, &a.pin))
+        .chain(t.gpio.iter());
+    let mut out = BTreeMap::new();
+    for (net, pin) in pins {
+        let speed = match t.spi_lines.get(net) {
+            None => 0,
+            Some(line) => {
+                table
+                    .choose(
+                        pin,
+                        line.rate_hz,
+                        line.vdd_min_millivolts,
+                        line.capacitance_femtofarads,
+                        line.rise_time_ns,
+                    )
+                    .map_err(|refusal| SolveError::PinSpeed {
+                        net: net.clone(),
+                        pin: pin.clone(),
+                        refusal,
+                    })?
+                    .ospeedr
+            }
+        };
+        out.insert(net.clone(), speed);
+    }
     Ok(out)
 }
 

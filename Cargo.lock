@@ -20,6 +20,7 @@ dependencies = [
  "aethelgard-chaos",
  "aethelgard-eda",
  "aethelgard-evolve",
+ "aethelgard-hwdef",
  "aethelgard-ir",
  "aethelgard-pincheck",
  "aethelgard-svd-hal",
@@ -54,6 +55,15 @@ version = "0.1.0"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-svd-hal",
+]
+
+[[package]]
+name = "aethelgard-hwdef"
+version = "0.1.0"
+dependencies = [
+ "aethelgard-ir",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

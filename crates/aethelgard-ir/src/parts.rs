@@ -55,8 +55,10 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// every script a structured `configure.start_up` (a cited maximum and/or
 /// typical start-up time with the condition it is the start-up of, and its
 /// `citations.start_up`), against which `settle_us` is checked at load
-/// (`AET-WO-4230` §1.9, `SettleBelowStartUp`).
-pub const PARTS_SCHEMA_VERSION: u32 = 6;
+/// (`AET-WO-4230` §1.9, `SettleBelowStartUp`). Version 7 added `ardupilot`,
+/// what ArduPilot `Copter-4.7.2` calls the part, with the chip ID its driver
+/// accepts, which must be the part's own identity (`AET-WO-4400b` D4).
+pub const PARTS_SCHEMA_VERSION: u32 = 7;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -462,6 +464,36 @@ pub struct Part {
     /// The bring-up after the identity, or `None`: the identity alone.
     pub script: Option<Script>,
     pub citations: Citations,
+    /// What ArduPilot calls the part, or `None`: no `hwdef.dat` line names
+    /// it (`AET-WO-4400b` D4).
+    pub ardupilot: Option<ArduPilot>,
+}
+
+/// The `hwdef.dat` line a part takes in ArduPilot `Copter-4.7.2`
+/// (`AET-WO-4400b` D4).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ArduPilotKind {
+    /// A `BARO <driver> …` line.
+    Baro,
+    /// An `IMU <driver> SPI:<spidev> …` line.
+    Imu,
+    /// The SPI device the flash logger opens by name.
+    Dataflash,
+}
+
+/// What ArduPilot calls a part: its line, its driver, the `SPIDEV` name an
+/// SPI part takes, and the chip ID the driver accepts, which the parser
+/// holds equal to the part's own identity, so a driver that would refuse the
+/// chip is refused at load (the TMP117 case of the `4400` spike).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArduPilot {
+    pub kind: ArduPilotKind,
+    /// The backend's name; `None` for a dataflash.
+    pub driver: Option<String>,
+    /// The `SPIDEV` name; `Some` exactly for an SPI part.
+    pub spidev: Option<String>,
+    pub id: u32,
+    pub citation: Citation,
 }
 
 impl Part {
@@ -593,6 +625,21 @@ struct RawPart {
     #[serde(deserialize_with = "Option::deserialize")]
     script: Option<RawScript>,
     citations: RawCitations,
+    /// Required: `null` says no `hwdef.dat` line names the part.
+    #[serde(deserialize_with = "Option::deserialize")]
+    ardupilot: Option<RawArduPilot>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawArduPilot {
+    kind: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    driver: Option<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    spidev: Option<String>,
+    id: String,
+    at: RawCitation,
 }
 
 #[derive(Deserialize)]
@@ -1165,6 +1212,10 @@ fn part(raw: RawPart) -> Result<Part, String> {
         start_up: paired(c.start_up, script.is_some(), "start_up", "script")?,
         data: paired(c.data, script.is_some(), "data", "script")?,
     };
+    let ardupilot = match raw.ardupilot {
+        None => None,
+        Some(a) => Some(ardupilot(a, &bus, value)?),
+    };
     Ok(Part {
         part: raw.part,
         lifecycle,
@@ -1184,6 +1235,76 @@ fn part(raw: RawPart) -> Result<Part, String> {
         renode: raw.renode,
         script,
         citations,
+        ardupilot,
+    })
+}
+
+/// A name ArduPilot reads as a C token or a string: 1 to 32 of `[A-Za-z0-9_]`.
+fn token(value: &str, field: &str) -> Result<(), String> {
+    if value.is_empty()
+        || value.len() > 32
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_')
+    {
+        return Err(format!(
+            "`{field}` is `{value}`, not 1 to 32 of [A-Za-z0-9_]"
+        ));
+    }
+    Ok(())
+}
+
+/// The `ardupilot` column: a known kind; a driver exactly for a barometer or
+/// an IMU; an `SPIDEV` name exactly for an SPI part (lower case, as
+/// ArduPilot's own names are); an IMU only on SPI; and the chip ID equal to
+/// the part's identity value.
+fn ardupilot(raw: RawArduPilot, bus: &Bus, identity: u32) -> Result<ArduPilot, String> {
+    let kind = match raw.kind.as_str() {
+        "baro" => ArduPilotKind::Baro,
+        "imu" => ArduPilotKind::Imu,
+        "dataflash" => ArduPilotKind::Dataflash,
+        other => {
+            return Err(format!(
+                "`ardupilot.kind` is `{other}`, not `baro`, `imu` or `dataflash`"
+            ));
+        }
+    };
+    match (&raw.driver, kind) {
+        (Some(d), ArduPilotKind::Baro | ArduPilotKind::Imu) => token(d, "ardupilot.driver")?,
+        (None, ArduPilotKind::Dataflash) => {}
+        _ => {
+            return Err("`ardupilot.driver` is given exactly for a `baro` or an `imu`".to_owned());
+        }
+    }
+    let spi = matches!(bus, Bus::Spi { .. });
+    match &raw.spidev {
+        Some(n) if spi => {
+            token(n, "ardupilot.spidev")?;
+            if n.bytes().any(|b| b.is_ascii_uppercase()) {
+                return Err(format!("`ardupilot.spidev` is `{n}`, not lower case"));
+            }
+        }
+        None if !spi => {}
+        _ => {
+            return Err("`ardupilot.spidev` is given exactly for an SPI part".to_owned());
+        }
+    }
+    if !spi && kind != ArduPilotKind::Baro {
+        return Err("an I2C part's `ardupilot.kind` is `baro`".to_owned());
+    }
+    let id = hex(&raw.id, "ardupilot.id", u32::MAX)?;
+    if id != identity {
+        return Err(format!(
+            "`ardupilot.id` is {}, but the part's identity value is {identity:#X}: ArduPilot's driver would refuse the chip",
+            raw.id
+        ));
+    }
+    Ok(ArduPilot {
+        kind,
+        driver: raw.driver,
+        spidev: raw.spidev,
+        id,
+        citation: citation(raw.at, "ardupilot")?,
     })
 }
 

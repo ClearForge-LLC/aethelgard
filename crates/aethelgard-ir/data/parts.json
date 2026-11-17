@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "parts": [
     {
       "part": "BME280",
@@ -77,6 +77,19 @@
         "configure": null,
         "start_up": null,
         "data": null
+      },
+      "ardupilot": {
+        "kind": "baro",
+        "driver": "BMP280",
+        "spidev": null,
+        "id": "0x60",
+        "at": {
+          "document": "ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp",
+          "revision": "commit fb773567896014da007bca58358704d4a0d8516f",
+          "section": "lines 39 and 76: BME280_ID 0x60, which AP_Baro_BMP280's probe accepts beside the BMP280's 0x58",
+          "sha256": "d7a95a7ea929cf46aa2e467279b7f4478a6f425b8c503e8426c144dcef9f8ed3",
+          "pending": null
+        }
       }
     },
     {
@@ -218,6 +231,19 @@
           "revision": "1.13 (2025-04)",
           "section": "4.5 (T = raw / 2^16 degC, p = raw / 2^6 Pa), p. 22; 7.11-7.16 (0x1D to 0x22, XLSB first, signed 24-bit, reset 0x7F each), pp. 56-57; read (rendered)",
           "sha256": "ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439"
+        }
+      },
+      "ardupilot": {
+        "kind": "baro",
+        "driver": "BMP581",
+        "spidev": null,
+        "id": "0x50",
+        "at": {
+          "document": "ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp",
+          "revision": "commit fb773567896014da007bca58358704d4a0d8516f",
+          "section": "lines 23 and 99: BMP581_ID 0x50, the chip ID AP_Baro_BMP581's init accepts",
+          "sha256": "17607f994ff84782f482f0846d29245d9ff5c88f19b688166d2463fc90736bef",
+          "pending": null
         }
       }
     },
@@ -379,7 +405,8 @@
           "section": "8.18-8.19 (ACCEL_XOUT_H 0x2D to ACCEL_ZOUT_L 0x32, high byte first), p. 42; 3.2, table 2 (16,384 LSB/g at ACCEL_FS 0), p. 12; 10.15 (ACCEL_CONFIG resets with FS 00, +-2 g), p. 64. Two's complement is not stated: the stimuli are non-negative",
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         }
-      }
+      },
+      "ardupilot": null
     },
     {
       "part": "ICM42688P",
@@ -542,6 +569,19 @@
           "section": "14.5-14.9 (TEMP_DATA1 0x1D to ACCEL_DATA_Y0 0x22, reset 0x8000), pp. 65-66; 14.34 (SENSOR_DATA_ENDIAN 0: low byte first), p. 75; table 2 (16,384 LSB/g at +-2 g), p. 12; 14.5 (T = TEMP_DATA / 132.48 + 25), p. 66",
           "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a"
         }
+      },
+      "ardupilot": {
+        "kind": "imu",
+        "driver": "Invensensev3",
+        "spidev": "icm42688",
+        "id": "0x47",
+        "at": {
+          "document": "ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp",
+          "revision": "commit fb773567896014da007bca58358704d4a0d8516f",
+          "section": "lines 139 and 1011: INV3_ID_ICM42688_P 0x47, a WHOAMI AP_InertialSensor_Invensensev3 accepts as an ICM42688",
+          "sha256": "cdfbb0a199f7c1ba4ee60c539c26d721037a05e32c5b3e23c65de61046fc0199",
+          "pending": null
+        }
       }
     },
     {
@@ -663,7 +703,8 @@
           "section": "5.2-5.5, table 12 (0x7866, ultra low noise, temperature first; MSB first; the host may NACK after any byte), pp. 14-15; 5.9 and 5.11 sample code (T = -45 + 175/65536 x T_LSB), pp. 16, 18",
           "sha256": "249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58"
         }
-      }
+      },
+      "ardupilot": null
     },
     {
       "part": "TMP117",
@@ -735,7 +776,8 @@
         "configure": null,
         "start_up": null,
         "data": null
-      }
+      },
+      "ardupilot": null
     },
     {
       "part": "W25Q64JVxIQ",
@@ -806,6 +848,19 @@
         "configure": null,
         "start_up": null,
         "data": null
+      },
+      "ardupilot": {
+        "kind": "dataflash",
+        "driver": null,
+        "spidev": "dataflash",
+        "id": "0xEF4017",
+        "at": {
+          "document": "ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp",
+          "revision": "commit fb773567896014da007bca58358704d4a0d8516f",
+          "section": "lines 54, 65 and 140: JEDEC_ID_WINBOND_W25Q64 0xEF4017, on the SPI device the logger opens by the name `dataflash`",
+          "sha256": "0cbc8c946a2d186f1f8f618c5900c929b09b0e01ec2b57442206b32d1291bf2b",
+          "pending": null
+        }
       }
     }
   ]

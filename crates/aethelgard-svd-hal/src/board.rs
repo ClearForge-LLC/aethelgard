@@ -6285,6 +6285,8 @@ mod tests {
                 },
             )]),
             bor_level: 0,
+            mcu: "STM32H753ZITx".into(),
+            pin_speeds: BTreeMap::from([("CS".into(), 0), ("SCL".into(), 0), ("SDA".into(), 0)]),
         }
     }
 
