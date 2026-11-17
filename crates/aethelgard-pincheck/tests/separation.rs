@@ -88,3 +88,25 @@ fn only_the_cli_links_the_check() {
         .collect();
     assert_eq!(reaching, ["aethelgard-cli"]);
 }
+
+/// `AET-WO-4400b` D8, the other direction: the `hwdef.dat` generator reaches
+/// exactly `aethelgard-ir`, dev dependencies included, so it shares no code
+/// with the check that judges what ArduPilot builds from it; and the two
+/// reach neither each other.
+#[test]
+fn the_generator_reaches_only_the_ir_and_never_the_check() {
+    let graph = graph(true);
+    let reached: Vec<String> = reach(&graph, "aethelgard-hwdef").into_iter().collect();
+    assert_eq!(reached, ["aethelgard-ir"]);
+    assert!(!reach(&graph, "aethelgard-pincheck").contains("aethelgard-hwdef"));
+}
+
+#[test]
+fn only_the_cli_links_the_generator() {
+    let graph = graph(false);
+    let reaching: Vec<&String> = graph
+        .keys()
+        .filter(|m| reach(&graph, m).contains("aethelgard-hwdef"))
+        .collect();
+    assert_eq!(reaching, ["aethelgard-cli"]);
+}

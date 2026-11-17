@@ -74,6 +74,12 @@ fn leaves(root: &Command) -> Vec<Leaf> {
                 .get_subcommands()
                 .any(|s| !matches!(s.get_name(), "help" | "mcp"))
             {
+                // A command that also runs alone, with its own arguments
+                // (`generate --spec --out` beside `generate hwdef`,
+                // `AET-WO-4400b`), is a tool too.
+                if sub.get_arguments().any(|a| a.get_long().is_some()) {
+                    out.push(leaf(sub, path));
+                }
                 walk(sub, path, out);
             } else {
                 out.push(leaf(sub, path));
@@ -503,6 +509,7 @@ mod tests {
                 "solve",
                 "emit",
                 "generate",
+                "generate_hwdef",
                 "build",
                 "verify",
                 "extract",
@@ -559,7 +566,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 19);
+        assert_eq!(all.len(), 20);
     }
 
     #[test]

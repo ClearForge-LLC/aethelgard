@@ -30,8 +30,9 @@ use crate::IrValidationError;
 /// The table as embedded: `data/power-parts.json`.
 pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 
-/// The `schema_version` the parser reads.
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 3;
+/// The `schema_version` the parser reads. Version 4 gave the MCU row
+/// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 4;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -382,6 +383,28 @@ pub struct Mcu {
     pub spi_sck_low_shortfall_ns: Limit,
     /// The support network its datasheet draws (`AET-WO-4300g`).
     pub support: Support,
+    /// The embedded flash, KB (`AET-WO-4400b` D4).
+    pub flash_kilobytes: Limit,
+    /// What ArduPilot `Copter-4.7.2` calls the MCU and the SPI kernel clocks
+    /// it runs it at (`AET-WO-4400b` D4, D6).
+    pub ardupilot: McuArduPilot,
+}
+
+/// ArduPilot's names for the MCU (`MCU <series> <mcu>`), and, for the one
+/// `OSCILLATOR_HZ` these rows hold for, the kernel clock ArduPilot gives each
+/// SPI peripheral, which its divider halves from `kernel / 2` at most seven
+/// times (`spi_divider_at`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McuArduPilot {
+    pub series: String,
+    pub mcu: String,
+    pub mcu_at: At,
+    pub table_at: At,
+    pub oscillator_hz: u32,
+    pub oscillator_at: At,
+    /// Keyed `SPI1` to `SPI6`, each once.
+    pub spi_kernel_hz: BTreeMap<String, Limit>,
+    pub spi_divider_at: At,
 }
 
 /// The MCU's support network, as its datasheet draws it (`AET-WO-4300g`):
@@ -948,6 +971,22 @@ struct RawMcu {
     spi_input_setup_min_ns: RawLimit,
     spi_sck_low_shortfall_ns: RawLimit,
     support: RawSupport,
+    flash_kilobytes: RawLimit,
+    ardupilot: RawMcuArduPilot,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMcuArduPilot {
+    series: String,
+    mcu: String,
+    mcu_at: RawAt,
+    table_at: RawAt,
+    oscillator_hz: u32,
+    oscillator_at: RawAt,
+    #[serde(deserialize_with = "crate::unique_keys")]
+    spi_kernel_hz: BTreeMap<String, RawLimit>,
+    spi_divider_at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -1081,6 +1120,40 @@ struct RawThermalSources {
 /// The largest magnitude any value may take: no power part's figure comes
 /// near it in its unit, and anything above is a typo.
 pub const MAX_VALUE: i64 = 1_000_000_000_000;
+
+/// The MCU row's `ardupilot`: names ArduPilot reads as identifiers, and a
+/// kernel clock above zero for exactly `SPI1` to `SPI6`.
+fn mcu_ardupilot(m: RawMcuArduPilot, r: &mut Reader<'_>) -> Result<McuArduPilot, String> {
+    for (v, f) in [(&m.series, "series"), (&m.mcu, "mcu")] {
+        if v.is_empty() || v.len() > 32 || !v.bytes().all(|b| b.is_ascii_alphanumeric()) {
+            return Err(format!(
+                "`kind.mcu.ardupilot.{f}` is `{v}`, not 1 to 32 letters and digits"
+            ));
+        }
+    }
+    let want: BTreeSet<String> = (1..=6).map(|n| format!("SPI{n}")).collect();
+    let got: BTreeSet<String> = m.spi_kernel_hz.keys().cloned().collect();
+    if got != want {
+        return Err(
+            "`kind.mcu.ardupilot.spi_kernel_hz` is keyed by exactly SPI1 to SPI6".to_owned(),
+        );
+    }
+    let mut spi_kernel_hz = BTreeMap::new();
+    for (p, l) in m.spi_kernel_hz {
+        let field = format!("kind.mcu.ardupilot.spi_kernel_hz.{p}");
+        spi_kernel_hz.insert(p, r.positive(l, &field)?);
+    }
+    Ok(McuArduPilot {
+        series: m.series,
+        mcu: m.mcu,
+        mcu_at: r.at(m.mcu_at, "kind.mcu.ardupilot.mcu")?,
+        table_at: r.at(m.table_at, "kind.mcu.ardupilot.table")?,
+        oscillator_hz: m.oscillator_hz,
+        oscillator_at: r.at(m.oscillator_at, "kind.mcu.ardupilot.oscillator")?,
+        spi_kernel_hz,
+        spi_divider_at: r.at(m.spi_divider_at, "kind.mcu.ardupilot.spi_divider")?,
+    })
+}
 
 /// Reads values, recording each document cited so the parser can refuse a
 /// document nothing cites.
@@ -1882,6 +1955,8 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 spi_input_setup_min_ns: r
                     .positive(m.spi_input_setup_min_ns, "kind.mcu.spi_input_setup_min_ns")?,
                 support: support(m.support, r)?,
+                flash_kilobytes: r.positive(m.flash_kilobytes, "kind.mcu.flash_kilobytes")?,
+                ardupilot: mcu_ardupilot(m.ardupilot, r)?,
             }))
         }
     })

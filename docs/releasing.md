@@ -36,11 +36,12 @@ Dependencies first. The order is the dependency graph's: no crate comes before o
 7. `aethelgard-chaos`
 8. `aethelgard-evolve` (needs 4, 7)
 9. `aethelgard-pincheck` (needs 1)
-10. `aethelgard-cli` (needs 1, 4, 5, 6, 7, 8, 9)
+10. `aethelgard-hwdef` (needs 1; `AET-WO-4400b`, first published at the release after 0.2.0)
+11. `aethelgard-cli` (needs 1, 4, 5, 6, 7, 8, 9, 10)
 
 `aethelgard-svd-hal`'s dev-dependencies on `aethelgard-cli` and `aethelgard-twin` are path-only, so `cargo package` drops them from the published manifest, and they do not bind the order.
 
-The board crates are `publish = false`; do not publish them. No crate is published under the bare name `aethelgard`. After step 10, `cargo install aethelgard-cli` installs the `aethelgard` binary.
+The board crates are `publish = false`; do not publish them. No crate is published under the bare name `aethelgard`. After step 11, `cargo install aethelgard-cli` installs the `aethelgard` binary.
 
 `aethelgard-bridge` (`bridge/`) is never published. It is outside the workspace, `publish = false`, and versioned on its own. It links the tools image's `libngspice.so.0`, so it ships only in the engine image beside `aethelgard` (`AET-WO-2200`).
 

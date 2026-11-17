@@ -5,7 +5,7 @@
 mod common;
 
 use aethelgard_pincheck::{AllowList, Mode, Refusal, elf, header, judge};
-use common::{Elf, allow, lqfp_like, step_g_words, topology};
+use common::{Elf, allow, lqfp_like, step_g_defaults, step_g_words, topology};
 
 fn elf_kind(e: &Elf) -> &'static str {
     elf::read(&e.bytes()).unwrap_err().kind()
@@ -564,4 +564,88 @@ fn what_the_reader_does_not_model_is_refused() {
     }
     let joined = format!("#define X /*\n*/ #if 0\n{text}");
     assert_eq!(header::read(&joined).unwrap(), real);
+}
+
+/// `AET-WO-4400b` §1.3: ArduPilot's defaults on a hand-written step G are
+/// refused pin by pin: every topology pin's speed (`10`, where `solve` stored
+/// `00` or `01`) and the CS's pull-up. The allow-listed USART's pulls are not
+/// the topology's to judge.
+#[test]
+fn ardupilot_s_default_speeds_and_pulls_are_refused_by_name() {
+    assert_eq!(
+        findings(step_g_defaults(), &allow()),
+        [
+            "forward WrongSpeed PA0 FLASH_CS OSPEEDR 10",
+            "forward WrongPull PA0 FLASH_CS PUPDR 01",
+            "forward WrongSpeed PA5 SPI_SCK OSPEEDR 10",
+            "forward WrongSpeed PA6 SPI_MISO OSPEEDR 10",
+            "forward WrongSpeed PA7 SPI_MOSI OSPEEDR 10",
+            "forward WrongSpeed PB6 I2C_SCL OSPEEDR 10",
+            "forward WrongSpeed PB7 I2C_SDA OSPEEDR 10",
+        ]
+    );
+}
+
+/// Each drive field, wrong on one pin, is named with what the topology
+/// implies: an I2C line push-pull, an SPI line open-drain, a speed one step
+/// off either way, and a pull-down where none is implied.
+#[test]
+fn each_wrong_drive_field_is_refused_by_name() {
+    type Case = (fn(&mut [[u32; 7]; 11]), &'static str, &'static str);
+    let cases: [Case; 5] = [
+        (
+            |w| w[1][1] = 0x40,
+            "forward WrongOutputType PB7 I2C_SDA push-pull",
+            "open-drain",
+        ),
+        (
+            |w| w[0][1] = 1 << 5,
+            "forward WrongOutputType PA5 SPI_SCK open-drain",
+            "push-pull",
+        ),
+        (
+            |w| w[0][2] = 0x0000_0400,
+            "forward WrongSpeed PA7 SPI_MOSI OSPEEDR 00",
+            "OSPEEDR 01",
+        ),
+        (
+            |w| w[1][2] = 1 << 12,
+            "forward WrongSpeed PB6 I2C_SCL OSPEEDR 01",
+            "OSPEEDR 00",
+        ),
+        (
+            |w| w[0][3] = 2 << 12,
+            "forward WrongPull PA6 SPI_MISO PUPDR 10",
+            "PUPDR 00",
+        ),
+    ];
+    for (edit, want, expected) in cases {
+        let mut w = step_g_words();
+        edit(&mut w);
+        assert_eq!(findings(w, &allow()), [want]);
+        let config = elf::read(
+            &Elf {
+                words: w,
+                ..Elf::default()
+            }
+            .bytes(),
+        )
+        .unwrap();
+        let j = judge(&topology(), &lqfp_like(), &config, None, &allow()).unwrap();
+        assert_eq!(j.findings[0].expected, expected, "{want}");
+    }
+}
+
+/// A topology with no speed for a pin was never validated: refused by name,
+/// never judged as `00`.
+#[test]
+fn a_pin_with_no_stored_speed_is_refused() {
+    let mut t = topology();
+    t.pin_speeds.remove("SPI_SCK");
+    let config = elf::read(&Elf::default().bytes()).unwrap();
+    let err = judge(&t, &lqfp_like(), &config, None, &allow()).unwrap_err();
+    assert_eq!(
+        (err.kind(), err.id().as_deref()),
+        ("NoPinSpeed", Some("SPI_SCK"))
+    );
 }

@@ -21,6 +21,7 @@ with-tools = []
 [dependencies]
 aethelgard-chaos.workspace = true
 aethelgard-evolve.workspace = true
+aethelgard-hwdef.workspace = true
 aethelgard-ir.workspace = true
 aethelgard-pincheck.workspace = true
 aethelgard-svd-hal.workspace = true

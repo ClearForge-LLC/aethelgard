@@ -769,6 +769,29 @@ pub fn motor_output_pupd() -> u32 {
     PUPDR_PULL_DOWN
 }
 
+/// The `PUPDR` field the solved topology implies for the pin of `net`
+/// (`AET-WO-4400b` D3): pull-down on a motor output
+/// ([`motor_output_pupd`]), and no internal pull on every other pin. The
+/// specification declares no internal pull, and an I2C line's pull-up is
+/// external (`analog_lines[..].pull_up_ohms`). A pull a board needs is a
+/// declared fact, never a generator's default. The pinout check reads this;
+/// no generator calls it (`RUL-20`).
+pub fn implied_pupd(t: &crate::SolvedTopology, net: &str) -> u32 {
+    if t.motor_outputs.contains_key(net) {
+        motor_output_pupd()
+    } else {
+        0
+    }
+}
+
+/// Whether the pin of `net` is open-drain (`GPIOx_OTYPER.OTy` = 1, RM0433
+/// Rev 9 §11.4.2): exactly the solved I2C lines, the keys of `analog_lines`
+/// (`AET-WO-4400b`, `4400a` A11). The pinout check reads this; no generator
+/// calls it (`RUL-20`).
+pub fn implied_open_drain(t: &crate::SolvedTopology, net: &str) -> bool {
+    t.analog_lines.contains_key(net)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

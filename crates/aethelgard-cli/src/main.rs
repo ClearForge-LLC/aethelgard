@@ -11,6 +11,7 @@ mod elf;
 mod extract;
 mod fab;
 mod firmware;
+mod hwdef;
 mod input;
 mod kani;
 mod kicad;
@@ -86,14 +87,17 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
-    /// Validate and solve one Specification, then write everything it produces into an empty or absent directory: kicad/ (as emit writes it), and board/, the board crate with its firmware crate in board/firmware/ and the Renode platform board/<project_name>.repl. Starts no process.
+    /// Validate and solve one Specification, then write everything it produces into an empty or absent directory: kicad/ (as emit writes it), and board/, the board crate with its firmware crate in board/firmware/ and the Renode platform board/<project_name>.repl. Starts no process. With a subcommand, generate one artifact instead (hwdef).
+    #[command(args_conflicts_with_subcommands = true, subcommand_negates_reqs = true)]
     Generate {
+        #[command(subcommand)]
+        what: Option<GenerateCommand>,
         /// The specification file.
-        #[arg(long)]
-        spec: PathBuf,
+        #[arg(long, required = true)]
+        spec: Option<PathBuf>,
         /// The directory to write into; it must be empty or absent.
-        #[arg(long)]
-        out: PathBuf,
+        #[arg(long, required = true)]
+        out: Option<PathBuf>,
     },
     /// Build a board crate's firmware/ crate offline for the part, in the sandbox, and print the verdict with the ELF's sha256.
     Build {
@@ -213,6 +217,19 @@ enum Command {
     },
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
+}
+
+#[derive(Subcommand)]
+enum GenerateCommand {
+    /// Write ArduPilot's hwdef.dat for a SolvedTopology, from the topology and the parts tables alone (AET-WO-4400b). Starts no process.
+    Hwdef {
+        /// The SolvedTopology JSON.
+        #[arg(long)]
+        topology: PathBuf,
+        /// Where to write hwdef.dat; it must not exist.
+        #[arg(long)]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -387,7 +404,23 @@ fn main() -> ExitCode {
         Command::Validate { file } => return validate(file.as_deref()),
         Command::Solve { file } => return solve(&file),
         Command::Emit { file, out } => return emit_design(&file, &out),
-        Command::Generate { spec, out } => return generate_tree(&spec, &out),
+        Command::Generate {
+            what: Some(GenerateCommand::Hwdef { topology, out }),
+            ..
+        } => {
+            return match hwdef::generate(&topology, &out) {
+                Ok(r) => emit(&r, 0),
+                Err(stop) => stopped(stop),
+            };
+        }
+        Command::Generate {
+            what: None,
+            spec: Some(spec),
+            out: Some(out),
+        } => return generate_tree(&spec, &out),
+        Command::Generate { .. } => {
+            unreachable!("clap requires --spec and --out without a subcommand")
+        }
         Command::Build { crate_dir, out } => firmware::build(&crate_dir, &out),
         Command::Verify {
             spec,
