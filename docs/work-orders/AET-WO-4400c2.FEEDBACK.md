@@ -186,7 +186,7 @@ The fence is `aethelgard-twin` (`platform.rs`), its tests and goldens, `boards/*
 | `boards/sentinel-01/sentinel-01.repl` | `spi1`'s comment line reworded, and `    DMARecieve -> dmamux1@37` added (2 lines; regenerated with `AETHELGARD_BLESS=1 cargo test -p aethelgard-svd-hal --test board`) |
 | `boards/sentinel-01-bench/sentinel-01-bench.repl` | the same 2 lines (3402 told) |
 | `crates/aethelgard-twin/src/tests.rs` | `spi1`'s and `spi2`'s exact blocks gain their lines; three tests added (below) |
-| `crates/aethelgard-svd-hal/tests/order_2203.rs` | the two platform digests: `a81a65b3…` → `ea5846df…` and `292791aa…` → `72948365…`. **Proved:** with the two edits undone, the new texts hash to the old pins exactly (a throwaway test, measured and then deleted). `main.rs` and the boot image did not move |
+| `crates/aethelgard-svd-hal/tests/order_2203.rs` | the two platform digests. Before `1313` merged: `a81a65b3…` → `ea5846df…` and `292791aa…` → `72948365…`. After merging `1313` (specification 15, `f845b6fd`), whose own pins are `244791ab…` and `6cad35bc…`, they are `b2bc0dcf…` and `bfa37e13…`. **Proved both times:** with this work order's two edits undone, the new texts hash to `main`'s pins exactly (a throwaway test, measured and then deleted). `main.rs` and the boot image did not move |
 | `crates/aethelgard-cli/tests/workspace_shape.rs` | the twin's allowed files name `data/dmamux1-spi-rx.tsv` (`TWIN_DATA`) |
 | `fab/sentinel-01-bench/package/MANIFEST.json` | not in this PR; its `verdict_sha256` moves at the next package write (above) |
 
@@ -197,8 +197,8 @@ The fence is `aethelgard-twin` (`platform.rs`), its tests and goldens, `boards/*
 
 - **`4400c`'s `r3` on the emitted platform, with no overlay,** using `4400c`'s driver unchanged (`spike/4400c/drive.py`, sha256 `13a4f58b…`, on `main` through #202) and the CLI built from this branch: `SPI Flash 0x00EF4017 found pages=32768 erase=64k`. The emitted `sentinel-02-own.repl` carries `spi1 … @37` (L20) and `spi2 … @39` (L28).
 - **Generated-firmware verdicts are unchanged.** `simulate --for 100ms` on `boards/sentinel-01` and `boards/sentinel-01-bench`, `main`'s CLI and platform against this branch's: `pass` on both sides, for both boards. The verdicts differ only at `/input/sha256` (the platform), `/input/path` and `/boot/firmware/path`. The board's own Rust firmware on `sentinel-02-own`: `pass`, `device_unmodelled` only. The campaigns' scenarios are covered by CI's tier-2 suites, whose expectations this PR does not touch.
-- **Gates** (the tools image, target inside the repository as CI has it): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace`: 127 suites, 2,099 passed, 0 failed, measured after merging `main` at `9d91ea4a` (#205).
-- **`TIER2_MIN` stays 177:** no tier-2 test is added; the three new tests are tier 1.
+- **Gates** (the tools image, target inside the repository as CI has it): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace`: 128 suites, 2,109 passed, 0 failed, measured after merging `main` at `f845b6fd` (#197, `1313`). Before that merge: CI green on `3146ea18` (run 44073801009: `gates`, `shards` and `tools` with all 8 shards; tier-2 `tools_total_passed=2298` against `TIER2_MIN` 177; `ardupilot-image` 44073800942 and `engine-image` 44073801164 green).
+- **`TIER2_MIN` is `main`'s 178** (`1313`): this work order adds no tier-2 test; the three new tests are tier 1.
 
 ## Adversarial pass, targeted (§5): one mutant per guard, against `aethelgard-twin`'s tests
 
