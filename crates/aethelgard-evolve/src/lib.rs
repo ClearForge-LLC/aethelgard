@@ -173,7 +173,8 @@ pub enum Rule {
     /// `serial_wire_past_run`, the twin's bound: from the boot word's
     /// instant (kind 29's first injection), the ports' frames and echoes
     /// (kind 27's framings) end past `MAX_VIRTUAL_NS`. A port in that sum
-    /// past the run whose echo alone is missing is the same bound's.
+    /// past the run whose echo alone is missing is the same bound's, unless
+    /// its RX pin was off its AF at the injection: that is the pin's.
     H3,
     /// `serial_injection_out_of_order`, the judge's own act: its injection
     /// chain, one port after another (`AET-WO-2302` D4), put a port's frame
@@ -1348,7 +1349,8 @@ impl<'a> Run<'a> {
     /// wire time that passes `MAX_VIRTUAL_NS` from the boot word's instant
     /// (`campaign::wire_past_run_ports`), its framing check holds with its
     /// writes read and held, and its witness shows its echo missing or cut
-    /// short (never `not_counted`) and nothing else. The evidence is the
+    /// short (never `not_counted`) and nothing else, its RX pin on its AF at
+    /// the injection when one was read (kind 29's `rx_at_injection`). The evidence is the
     /// first injection (the instant), the port's witness, and the summed
     /// ports' framings. `None` otherwise.
     fn wire_cut(&self, s: usize) -> Option<Vec<usize>> {
@@ -1360,12 +1362,19 @@ impl<'a> Run<'a> {
             matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
                 if l == label && t.holds())
         })?;
-        // The echo `missing` or `partial`: one `not_counted` came back with
-        // the RX pin off its AF at the injection, the pin's, not the bound's.
+        // The echo `missing` or `partial`, with the RX pin on its AF at the
+        // injection when one was read: one `not_counted` came back with the
+        // RX pin off its AF there, and with it off, no echo is the pin's,
+        // not the bound's, whatever came back (ADV-S1).
+        let rx_af = match self.serial_port(label)? {
+            Record::SerialPortSolved { rx_af, .. } => *rx_af,
+            _ => return None,
+        };
         let witness = self.records.iter().position(|r| {
-            matches!(r, Record::SerialWitness { label: l, echo, .. }
+            matches!(r, Record::SerialWitness { label: l, echo, rx_at_injection, .. }
                 if l == label
                     && matches!(echo.as_str(), "missing" | "partial")
+                    && (rx_at_injection.is_none() || campaign::routed(*rx_at_injection, rx_af))
                     && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
         })?;
         let mut evidence = vec![self.first_injection()?, witness];
