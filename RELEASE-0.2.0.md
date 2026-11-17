@@ -69,7 +69,7 @@ It should print one JSON line starting `{"ok":true,"project_name":"sentinel-01",
 
 ## What 0.2.0 can do that 0.1.0 could not
 
-0.1.0 was published on 2026-11-09, after `AET-WO-1800` (merged as `e9b5b34`), and read specification version 1. 0.2.0 reads specification 12 (`crates/aethelgard-ir/src/lib.rs:66`), so a specification written for today's engine cannot be read by 0.1.0.
+0.1.0 was published on 2026-11-09, after `AET-WO-1800` (merged as `e9b5b34`), and read specification version 1. 0.2.0 reads specification 13 (`crates/aethelgard-ir/src/lib.rs:68`), so a specification written for today's engine cannot be read by 0.1.0.
 
 **Specification and solving**
 - A specification declares each I2C bus's speed. `solve` records it and refuses a bus too fast for its rise time (`AET-WO-1205`), and it refuses a pull-up below the UM10204 sink floor or a bus over its capacitance limit (`AET-WO-1203`).
@@ -81,6 +81,7 @@ It should print one JSON line starting `{"ok":true,"project_name":"sentinel-01",
 **Board generation**
 - Boards are emitted and routed at 2 or 4 layers from the declared stackup (`AET-WO-4100`).
 - The router escapes under dense parts, enforces courtyards, judges zones, and supports net classes, vias, coupled pairs, rotation and sub-grid escape (`AET-WO-1307`, `AET-WO-1308`, `AET-WO-1310`). Through-hole pads and thermal-via arrays are emitted and judged (`AET-WO-1309`).
+- `aethelgard-kicad-lib` carries the project's own symbols and footprints for the ICM-42688-P and BMP581, cited pin by pin, alongside KiCad's. It is now `CC-BY-SA-4.0 AND (MIT OR Apache-2.0)`. A part's declared pin capacitance (specification 13) is counted by `extract` as declared, never as a maximum (`AET-WO-4220b`).
 - The power tree is drawn and routed on the board (`AET-WO-4300d2`). The MCU's support network is drawn, and `check support` judges it from KiCad's netlist (`AET-WO-4300g`).
 
 **Firmware and the twin**

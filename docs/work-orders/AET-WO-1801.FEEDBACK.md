@@ -120,7 +120,7 @@ All [measured].
   - why CI keeps `--no-verify`.
 - **`RELEASE-0.2.0.md`** (repository root): Scotty's checklist, with the exact commands in order, what each should print, the dry runs done and the ones not possible, the verification by `cargo install aethelgard-cli --version 0.2.0` and `validate`, and the release notes.
 - **The release notes** are 21 capabilities, each cited to its work order. A subagent drafted them from `docs/roadmap.md`, `git log` and the READMEs; I checked its anchors:
-  - specification 12 at `aethelgard-ir/src/lib.rs:66`;
+  - specification 12 at `aethelgard-ir/src/lib.rs:66` at the time; 13 at `:68` after `AET-WO-4220b` merged (§9);
   - 1800 merged as `e9b5b34` on 2026-11-08, with the publish on 2026-11-09 (`3a2a4b5`);
   - `aethelgard-evolve` was `publish = false` at 1800;
   - every cited work order is on `main`.
