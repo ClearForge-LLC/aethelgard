@@ -454,12 +454,16 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         );
     }
     let notes = String::from_utf8(package["FAB-NOTES.md"].clone()).unwrap();
+    // The specification's sha256, of the file `verify` read: computed, not
+    // pinned, so a specification version bump does not move this test
+    // (`AET-WO-4400d`: the literal prefix `b9e95cdc` was version 15's).
+    let spec_sha256 = sha(&fs::read(root().join(SPEC)).unwrap());
     for want in [
         "70 um",
         "0.34 mm to 2 mm",
         "FR-4",
         "plated via, drilled 0.3 mm",
-        "b9e95cdc",
+        spec_sha256.as_str(),
     ] {
         assert!(notes.contains(want), "FAB-NOTES.md states {want}");
     }

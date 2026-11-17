@@ -363,3 +363,15 @@ Changes outside it, each a mechanical consequence of the ruled versions or of th
 - **Moved bytes against §2.4's prediction:**
   - Every set predicted moved, and nothing else, but `boards/sentinel-01/*` (§9).
   - The solved digests and `order_2203`'s pins each moved only by the specification's hash and version, measured by putting the old values back.
+
+## 11. CI on 8c48ba6d (architect, 13:05 UTC)
+
+Two reds on 8c48ba6d.
+- **Expected:** `bench_board_tier1`'s package binding. This order is last in the package queue.
+- **Real, missed here:**
+  - **The failure:** `verify_2k2_tier2`'s `verify_fab_out_writes_the_package_its_verdict_names_at_any_path` asserted that `FAB-NOTES.md` contains the literal `b9e95cdc`, version 15's hash prefix of `examples/sentinel-01-minimal.json`.
+  - **Why the local suite missed it:** my workspace runs do not build tier 2 (`--features with-tools`), and my in-image tier-2 run covered only `with_tools`.
+  - **Fixed:** the test now computes the specification's sha256 from the file `verify` reads, `sha(&fs::read(root().join(SPEC)))`, so no version bump moves it. A comment names what the old literal was.
+  - **Swept:** every specification at version 16 was hashed at its version-15 bytes (25 files). Each hash's 8-character prefix was searched across the tree. The only hits are comments that record the old values on purpose (`solve_cli.rs` and this test), plus the bench package, which waits on CI. No quoted hex of 8 or more digits remains in any tier-2 test.
+  - **Run in the tools image before READY:** the whole `verify_2k2_tier2` binary (result below).
+  - **Result:** in the pinned tools image, with the bridge built beside the CLI as CI's step builds it, both tests pass (1174 s): `verify_binds_the_reference_and_two_runs_print_the_same_bytes` and `verify_fab_out_writes_the_package_its_verdict_names_at_any_path`. A first run without the bridge stopped at `BridgeUnavailable`, which was this runner's setup, not the code.
