@@ -184,4 +184,4 @@ The peak RSS of `i1`, `a-c2`, `a2-c2` and `c-c2` was not sampled: `c2drive.py` g
 - **Sources read:** renode `f1dd1b4a`, renode-infrastructure `cd4b002a` and tlib `167decf9` (all fetched read-only from GitHub); ChibiOS `d103983f` and ArduPilot `fb773567` in the pinned image; RM0433 Rev 9 (sha256 `672a9433…`).
 - **No crate, model, workflow or `container/` file changed:** `git diff --stat 0829fe83 -- crates models .github container` is empty.
 
-**STOPPED at §2**, 2026-11-17: the cause is classed, the identity settled, D4 answered. For the ruling: which fix ((1), (2) or (3)), and D4's exemption. Title and body: `~/.cache/aet-4400e2/pr-title-body.md`.
+**STOPPED at §2**, 2026-11-17: the cause is classed, the identity settled, D4 answered. `main` `7d52d29e` (1313c, #211, eda placement; no file shared) is merged in. For the ruling: which fix ((1), (2) or (3)), and D4's exemption. Title and body: `~/.cache/aet-4400e2/pr-title-body.md`.
