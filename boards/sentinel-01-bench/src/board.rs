@@ -155,7 +155,7 @@ pub mod i2c1_speed {
         pub trait Sealed {}
     }
 
-    /// The speeds at or under `I2C1`'s declared speed of 100000 Hz.
+    /// The speeds at or under `I2C1`'s declared speed of 400000 Hz.
     /// Sealed: firmware cannot admit another.
     pub trait AtMostCeiling: sealed::Sealed {
         const TIMINGR: u32;
@@ -168,6 +168,11 @@ pub mod i2c1_speed {
     impl sealed::Sealed for Standard100k {}
     impl AtMostCeiling for Standard100k {
         const TIMINGR: u32 = 0x50d32a40;
+    }
+
+    impl sealed::Sealed for Fast400k {}
+    impl AtMostCeiling for Fast400k {
+        const TIMINGR: u32 = 0x10c7123c;
     }
 }
 

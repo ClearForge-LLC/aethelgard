@@ -1,0 +1,7 @@
+main emit s: median 1.9 max 3.8 (n=20)
+k emit s: median 2.7 max 2.7 (n=20)
+km emit s: median 3.4 max 3.4 (n=20)
+ks emit s: median 2.6 max 3.5 (n=20)
+kms emit s: median 3.1 max 3.2 (n=20)
+kp emit s: median 1.8 max 2.1 (n=20)
+kmp emit s: median 2.9 max 3.0 (n=20)

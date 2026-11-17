@@ -9,12 +9,13 @@
 // - Unmodelled SPI devices (no Renode 1.17.0 model): none.
 using "platforms/cpus/stm32h753.repl"
 
-// SPI1: SPI1_BASE and SPI1_IRQn from the header; the model is `spi4`'s.
+// SPI1: SPI1_BASE and SPI1_IRQn from the header, its receive DMA request RM0433 Table 124's; the model is `spi4`'s.
 spi1: SPI.STM32H7_SPI @ {
         sysbus 0x40013000;
         rcc RegistrationPeripheralAlias.SPI1
     }
     IRQ -> nvic@35
+    DMARecieve -> dmamux1@37
 
 // U2: Renode 1.17.0's `I2C.BME280`, at 0x76 on i2c1.
 u2: I2C.BME280 @ i2c1 0x76

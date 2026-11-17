@@ -610,7 +610,15 @@ fn every_valid_sequence() {
                         kani::cover!(true, "I2C1 wrote a byte");
                     }
                 } else {
-                    kani::assume(false);
+                    i2c1_timingr = 0x10c7123c;
+                    let mut bus = i.init::<i2c1_speed::Fast400k, _>(&mut img, clock.as_ref().unwrap(), pb6_done.take().unwrap(), pb7_done.take().unwrap());
+                    kani::cover!(true, "I2C1 started at Fast400k");
+                    if kani::any() {
+                        let levels = [img.gpioa[6], img.gpiob[6]];
+                        bus.write_byte(&mut img, kani::any());
+                        kani::assert(levels == [img.gpioa[6], img.gpiob[6]], "I2C1 write_byte touched a GPIO BSRR");
+                        kani::cover!(true, "I2C1 wrote a byte");
+                    }
                 }
                 i2c1_done = true;
             }

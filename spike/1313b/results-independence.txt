@@ -1,0 +1,7 @@
+- 867dde203eeac50e | 85.25 x 99.05 | shuffled 0/10 | tie reversed same | order-only renamings 0/20
+k b5bd195a2b3c4763 | 89.20 x 95.55 | shuffled 10/10 | tie reversed same | order-only renamings 20/20
+km 37ea3208d8d57c9c | 85.25 x 99.45 | shuffled 10/10 | tie reversed same | order-only renamings 20/20
+ks 56ed238b85567daf | 89.20 x 77.05 | shuffled 10/10 | tie reversed same | order-only renamings 20/20
+kms bd4b3210ec854c83 | 85.25 x 80.95 | shuffled 10/10 | tie reversed same | order-only renamings 20/20
+kp d8ee229a7ee6eb53 | 93.95 x 87.20 | shuffled 10/10 | tie reversed same | order-only renamings 20/20
+kmp e8e60842c317f76d | 88.85 x 83.90 | shuffled 10/10 | tie reversed same | order-only renamings 20/20

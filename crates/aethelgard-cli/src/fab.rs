@@ -348,6 +348,7 @@ fn notes(
         drills,
         power: &aethelgard_eda::loops::conditions(spec),
         support: stated.support,
+        acknowledged: &spec.acknowledge_unwitnessed,
     });
     text.push_str(&brown_out_step(spec.mcu.bor_level));
     text.push_str(&aethelgard_eda::fab::jlcpcb_notes(project));

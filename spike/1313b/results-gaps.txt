@@ -1,0 +1,4 @@
+main.json: outside none; closest IC pair 1.000 mm (J4/J2); closest other pair 0.500 mm (C18/U2); violations 0 []
+kms.json: outside none; closest IC pair 1.020 mm (J4/J5); closest other pair 0.500 mm (U1/C15); violations 0 []
+prefix-kms/l-0.json: outside none; closest IC pair 1.000 mm (U1/Q7758_U7); closest other pair 0.500 mm (U1/C14); violations 0 []
+kms-blocks.json: outside none; closest IC pair 1.000 mm (U1/U7); closest other pair 0.500 mm (C15/C26); violations 0 []

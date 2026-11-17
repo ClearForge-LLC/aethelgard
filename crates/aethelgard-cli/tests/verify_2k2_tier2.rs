@@ -499,10 +499,46 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             .starts_with("- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs"),
         "{lifecycle}"
     );
+    // `AET-WO-3402` §1.2: the acknowledged ledger rows, one line per entry of
+    // the specification, in its order, each its register, class, fields and
+    // reason exactly as written; a row that differs from its entry fails.
+    let section = notes
+        .split_once("## Acknowledged ledger rows\n")
+        .and_then(|(_, rest)| rest.split_once("\n## "))
+        .map(|(section, _)| section)
+        .expect("FAB-NOTES.md has the acknowledged ledger rows");
+    let written: Vec<&str> = section.lines().filter(|l| l.starts_with("- ")).collect();
+    let spec: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let want: Vec<String> = spec["acknowledge_unwitnessed"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            let fields: Vec<String> = a["fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|f| format!("`{}`", f.as_str().unwrap()))
+                .collect();
+            format!(
+                "- `{}` ({}): {}. {}",
+                a["register"].as_str().unwrap(),
+                a["class"].as_str().unwrap(),
+                fields.join(", "),
+                a["reason"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert!(!want.is_empty(), "the reference acknowledges rows");
+    assert_eq!(
+        written, want,
+        "FAB-NOTES.md's ledger rows are the specification's"
+    );
     // The notes' file list describes every other file, and only those. It is
-    // read from its own section: `AET-WO-1604` §1.3's JLCPCB section has
-    // bullets that start with a backtick too (the same reading `AET-WO-3402`
-    // gives it for its acknowledged rows).
+    // read from its own section: `AET-WO-3402` §1.2's acknowledged rows and
+    // `AET-WO-1604` §1.3's JLCPCB section have bullets that start with a
+    // backtick too.
     let files = notes
         .split_once("## Files\n")
         .and_then(|(_, rest)| rest.split_once("\n## "))
