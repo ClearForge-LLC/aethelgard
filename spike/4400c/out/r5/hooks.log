@@ -1,0 +1,8 @@
+(machine-0) cpu AddHook 0x08035D20 "self.Log(LogLevel.Warning, 'AET4400C-HOOK AP_InertialSensor::init')"
+(machine-0) cpu AddHook 0x08033FB0 "self.Log(LogLevel.Warning, 'AET4400C-HOOK AP_InertialSensor::detect_backends')"
+(machine-0) cpu AddHook 0x080203B4 "self.Log(LogLevel.Warning, 'AET4400C-HOOK AP_BoardConfig::config_error')"
+(machine-0) cpu AddHook 0x080202C0 "self.Log(LogLevel.Warning, 'AET4400C-HOOK AP_BoardConfig::throw_error')"
+[00:00:05.204391580] [WARNING] cpu: AET4400C-HOOK AP_InertialSensor::init
+[00:00:05.205016050] [WARNING] cpu: AET4400C-HOOK AP_InertialSensor::detect_backends
+[00:00:05.205148750] [WARNING] cpu: AET4400C-HOOK AP_BoardConfig::config_error
+[00:00:05.205148820] [WARNING] cpu: AET4400C-HOOK AP_BoardConfig::throw_error
