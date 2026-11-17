@@ -1,0 +1,12 @@
+# The DMAMUX1 request input of each SPI controller's receive DMA (AET-WO-4400c2, ruled on PR #204,
+# comment 6945751393: line 1, the numbers from the cited table as data).
+# Transcribed from RM0433 Rev 9, Table 124 "DMAMUX1: assignment of multiplexer inputs to
+# resources", p. 697 (PDF sha256 672a9433d6602da224e5215f571beed2be0e683cb025526f4afe9db61c26b6a0).
+# DMAMUX1 serves DMA1 and DMA2 (RM0433 §17.3.2); SPI6's request is on DMAMUX2 (Table 128, p. 700,
+# spi6_rx_dma 11), which Renode 1.17.0's stm32h7.repl does not declare, so SPI6 has no row.
+# Columns, tab-separated: ST's peripheral, the table's resource, its DMA request MUX input.
+SPI1	spi1_rx_dma	37
+SPI2	spi2_rx_dma	39
+SPI3	spi3_rx_dma	61
+SPI4	spi4_rx_dma	83
+SPI5	spi5_rx_dma	85

@@ -80,7 +80,7 @@ fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
     // brown-out level's presentation (`AET-WO-4230` D10).
     let presentation = boot::brown_out(&bare()).unwrap().presentation();
     assert!(text.ends_with(&format!(
-        "spi1: SPI.STM32H7_SPI @ {{\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }}\n    IRQ -> nvic@35\n{presentation}"
+        "spi1: SPI.STM32H7_SPI @ {{\n        sysbus 0x40013000;\n        rcc RegistrationPeripheralAlias.SPI1\n    }}\n    IRQ -> nvic@35\n    DMARecieve -> dmamux1@37\n{presentation}"
     )));
     let names: Vec<(String, bool)> = platform::instances(
         &pre_serial(),
@@ -116,7 +116,8 @@ fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
     let t = edited("\"SPI1", "\"SPI2").clone();
     let text = platform::emit(&t).unwrap();
     let block = format!(
-        "spi2: SPI.STM32H7_SPI @ {{\n        sysbus 0x{:08X};\n        rcc RegistrationPeripheralAlias.SPI2\n    }}\n    IRQ -> nvic@{}\n",
+        // `spi2_rx_dma` is DMAMUX1 input 39 (RM0433 Rev 9, Table 124).
+        "spi2: SPI.STM32H7_SPI @ {{\n        sysbus 0x{:08X};\n        rcc RegistrationPeripheralAlias.SPI2\n    }}\n    IRQ -> nvic@{}\n    DMARecieve -> dmamux1@39\n",
         f.base("SPI2").unwrap(),
         f.irq("SPI2").unwrap()
     );
@@ -904,4 +905,87 @@ fn the_flash_controller_is_read_once_and_never_written() {
             .is_empty()
     );
     assert!(j(&[vec![fresh], vec![read]]).is_empty());
+}
+
+/// `AET-WO-4400c2` (ruled on PR #204): the DMAMUX1 table is RM0433 Rev 9
+/// Table 124's rows for the SPI receive requests, one per controller DMAMUX1
+/// serves, each resource named as the table names it. Renode 1.17.0's own
+/// stock `spi4` entry, which this project did not write, wires the same
+/// number the table gives SPI4; and the file is pinned, so a changed number
+/// must be read again from the table and the pin moved with it.
+#[test]
+fn the_dmamux1_table_is_rm0433_s_spi_rows_and_renode_s_spi4_agrees() {
+    use sha2::{Digest, Sha256};
+    let rows = platform::dmamux1_spi_rx().unwrap();
+    assert_eq!(
+        rows.iter().map(|r| r.0).collect::<Vec<_>>(),
+        ["SPI1", "SPI2", "SPI3", "SPI4", "SPI5"]
+    );
+    let mut seen = std::collections::BTreeSet::new();
+    for (p, r, n) in &rows {
+        assert_eq!(*r, format!("{}_rx_dma", p.to_lowercase()));
+        // Table 124's inputs run 1 to 127.
+        assert!((1..=127).contains(n), "{p}: {n}");
+        assert!(seen.insert(*n), "{p}: {n} twice");
+    }
+    let stock = include_str!("../tests/renode-1.17.0/platforms/cpus/stm32h7.repl");
+    let spi4 = &stock[stock.find("spi4: SPI.STM32H7_SPI").unwrap()..];
+    let spi4 = &spi4[..spi4.find("\n\n").unwrap()];
+    assert!(spi4.contains("DMARecieve -> dmamux1@83"), "{spi4}");
+    assert_eq!(platform::spi_rx_request("SPI4").unwrap(), Some(83));
+    assert_eq!(
+        Sha256::digest(platform::DMAMUX1_SPI_RX.as_bytes())
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>(),
+        "bca3fc368d7547defcc0c7e56e9cb94dc0dc61f1243f6e36c84206e453b147ea"
+    );
+}
+
+/// Every SPI controller the twin adds carries its receive DMA line, the
+/// table's number for that controller, after its interrupt; SPI6, whose
+/// request is on DMAMUX2, carries none and its comment says why.
+#[test]
+fn each_added_spi_wires_its_own_receive_request_and_spi6_names_its_absence() {
+    for (p, n) in [
+        ("SPI1", Some(37)),
+        ("SPI2", Some(39)),
+        ("SPI3", Some(61)),
+        ("SPI5", Some(85)),
+        ("SPI6", None),
+    ] {
+        let text = platform::emit(&edited("\"SPI1", &format!("\"{p}"))).unwrap();
+        let name = p.to_lowercase();
+        let block = &text[text.find(&format!("{name}: SPI.STM32H7_SPI @ {{")).unwrap()..];
+        let block = &block[..block.find("\n\n").unwrap_or(block.len())];
+        assert_eq!(
+            block.matches("DMARecieve").count(),
+            usize::from(n.is_some()),
+            "{p}: {block}"
+        );
+        match n {
+            Some(n) => assert!(block.contains(&format!("IRQ -> nvic@")) && block.ends_with(&format!("    DMARecieve -> dmamux1@{n}")), "{p}: {block}"),
+            None => assert!(text.contains(&format!("// {p}: {p}_BASE and {p}_IRQn from the header, no receive DMA line (its request is on DMAMUX2, which Renode does not declare);")), "{text}"),
+        }
+    }
+}
+
+/// A table row that is not three tab-separated fields with a decimal input is
+/// refused by name, never read as a default (`INV-06`).
+#[test]
+fn a_malformed_dma_row_is_refused() {
+    for row in [
+        "SPI1\tspi1_rx_dma",
+        "SPI1\tspi1_rx_dma\t37\tx",
+        "SPI1\tspi1_rx_dma\t+37",
+        "SPI1\tspi1_rx_dma\t0x25",
+        "SPI1 spi1_rx_dma 37",
+    ] {
+        let e = platform::dma_rows(row).unwrap_err();
+        assert_eq!(e.kind(), "MalformedDmaTable", "{row}");
+    }
+    assert_eq!(
+        platform::dma_rows("# a comment\n\nSPI1\tspi1_rx_dma\t37").unwrap(),
+        [("SPI1", "spi1_rx_dma", 37)]
+    );
 }
