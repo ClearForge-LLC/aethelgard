@@ -1,0 +1,9 @@
+# AET-WO-4400e2 chain run (stubs-e-chain.txt): observation only. At the epilogue's fake-frame store (str r3, [r4, #24]) with two
+# or more exceptions active: the trampoline it stores (0x08000EDB __port_switch_from_isr | 0x08000EDE __port_exit_from_isr),
+# the frame's address and whether PSP lies in the idle thread's working area. At SVC_Handler: the thread frame's PC
+# when it is a trampoline (an SVC that will return into __port_switch_from_isr or __port_exit_from_isr).
+sysbus LogPeripheralAccess sysbus.usart1 false
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-FAULT CFSR=0x%x HFSR=0x%x FPCCR=0x%x FPCAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000EF34, 0xE000EF38)))"
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-PSPFRAME psp=0x%x %s' % (int(self.OtherSP.RawValue), ' '.join('%x' % machine.SystemBus.ReadDoubleWord(int(self.OtherSP.RawValue) + 4 * i) for i in range(8))))"
+cpu AddHook 0x08103504 "ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); psp=int(self.GetRegister(4).RawValue); (n>=2) and self.Log(LogLevel.Warning, 'AET4400E2-FAKEFRAME n=%d target=0x%x frame=0x%x in_idle_wa=%s VECT=%d' % (n, self.GetRegister(3).RawValue, psp, 0x30015EF8 <= psp < 0x30016128, machine.SystemBus.ReadDoubleWord(0xE000ED04)&0x1ff))"
+cpu AddHook 0x08103460 "psp=int(self.OtherSP.RawValue); pc=machine.SystemBus.ReadDoubleWord(psp+24); nx=machine.SystemBus.ReadDoubleWord(psp+104+24); (pc in (0x08000EDA, 0x08000EDB, 0x08000EDE, 0x08000EDC)) and (nx in (0x08000EDA, 0x08000EDB, 0x08000EDE, 0x08000EDC)) and self.Log(LogLevel.Warning, 'AET4400E2-SVC2 two trampoline frames stacked: psp=0x%x pc=0x%x next_pc=0x%x in_idle_wa=%s' % (psp, pc, nx, 0x30015EF8 <= psp < 0x30016128))"
