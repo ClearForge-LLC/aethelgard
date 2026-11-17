@@ -1,0 +1,9 @@
+// AET-WO-4400c deviation (diagnostic only): SPI1's and SPI2's receive DMA request lines, which
+// the twin's emitted spi1/spi2 entries omit and Renode 1.17.0's own spi4 entry carries
+// (`DMARecieve -> dmamux1@83`). Request numbers: ChibiOS os/hal/ports/STM32/STM32H7xx/
+// stm32_dmamux.h L72, L74 (SPI1_RX 37, SPI2_RX 39). A build would emit these in aethelgard-twin.
+spi1:
+    DMARecieve -> dmamux1@37
+
+spi2:
+    DMARecieve -> dmamux1@39
