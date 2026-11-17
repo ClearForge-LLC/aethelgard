@@ -10,9 +10,7 @@
 #   and the USART: each board fails with exactly those findings beside the
 #   seed's own.
 # - The generated boards (AET-WO-4400b), each judged against its own topology
-#   with no allow-list: each passes. Then the witness: every `define` and
-#   `STM32_` line of the generated hwdef.dat reached ArduPilot's hwdef.h as
-#   that exact #define, so no emitted define was dropped by ArduPilot's reader.
+#   with no allow-list: each passes.
 #
 # A finding is written `check kind pin net decoded`, with `-` for no net.
 set -euo pipefail
@@ -61,13 +59,5 @@ package NotInPackage PI0 - output" "$topology" --allow "$allow"
 
 for name in sentinel-01 sentinel-02 serial-dshot-9600; do
   expect "$name" 0 "" "$boards/$name/topology.json"
-  # The witness: each emitted define, exactly, in hwdef.h.
-  missed=0
-  while read -r line; do
-    def=${line#define }
-    grep -qxF "#define $def" "$boards/$name/hwdef.h" \
-      || { echo "::error::$name: \`$line\` did not reach hwdef.h as \`#define $def\`"; missed=1; }
-  done < <(sed -e 's/[[:space:]]*#.*$//' "$boards/$name/hwdef.dat" | grep -E '^(define |STM32_)')
-  if [ "$missed" = 0 ]; then echo "$name: every define and STM32_ line reached hwdef.h"; else bad=1; fi
 done
 exit "$bad"

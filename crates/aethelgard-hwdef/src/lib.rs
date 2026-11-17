@@ -80,6 +80,12 @@ pub enum Refusal {
         "serial ports `{first}` and `{second}` are both the console; ArduPilot has one SERIAL0"
     )]
     ConsoleTwice { first: String, second: String },
+    #[error(
+        "serial ports `{first}` and `{second}` are both RC input; ArduPilot attaches one RCIN port and drops the next (AP_SerialManager.cpp:536-541)"
+    )]
+    RcInputTwice { first: String, second: String },
+    #[error("SPI controller `{peripheral}` has no ArduPilot kernel clock in the MCU row")]
+    SpiKernelNotCited { peripheral: String },
     #[error("{count} serial ports; ArduPilot's DEFAULT_SERIALn defines run SERIAL0 to SERIAL9")]
     TooManySerialPorts { count: usize },
     #[error(
@@ -120,10 +126,6 @@ pub enum Refusal {
         second: String,
     },
     #[error(
-        "SPI controller `{peripheral}` achieves {hz} Hz, below 1 kHz, which SPIDEV cannot state"
-    )]
-    SpiSpeedTooLow { peripheral: String, hz: u64 },
-    #[error(
         "SPI controller `{peripheral}` at {hz} Hz is below {floor} Hz, ArduPilot's slowest on its {kernel_hz} Hz kernel (SPIDevice.cpp:259-276 halves kernel / 2 at most seven times), so ArduPilot would clock it faster"
     )]
     SpiBelowArduPilotDivider {
@@ -153,6 +155,8 @@ impl Refusal {
             Self::OscillatorNotCited { .. } => "OscillatorNotCited",
             Self::NoSerialPort => "NoSerialPort",
             Self::NoConsole => "NoConsole",
+            Self::RcInputTwice { .. } => "RcInputTwice",
+            Self::SpiKernelNotCited { .. } => "SpiKernelNotCited",
             Self::ConsoleTwice { .. } => "ConsoleTwice",
             Self::TooManySerialPorts { .. } => "TooManySerialPorts",
             Self::InvertedConsole { .. } => "InvertedConsole",
@@ -162,7 +166,6 @@ impl Refusal {
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::LabelCollision { .. } => "LabelCollision",
             Self::DuplicateSpidev { .. } => "DuplicateSpidev",
-            Self::SpiSpeedTooLow { .. } => "SpiSpeedTooLow",
             Self::SpiBelowArduPilotDivider { .. } => "SpiBelowArduPilotDivider",
             Self::NoSystemTimer => "NoSystemTimer",
             Self::SenseNotEmitted { .. } => "SenseNotEmitted",
@@ -174,7 +177,8 @@ impl Refusal {
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::UnknownMcu { part } | Self::UnsupportedSeries { part, .. } => Some(part),
-            Self::ConsoleTwice { second, .. } => Some(second),
+            Self::ConsoleTwice { second, .. } | Self::RcInputTwice { second, .. } => Some(second),
+            Self::SpiKernelNotCited { peripheral } => Some(peripheral),
             Self::InvertedConsole { port }
             | Self::FramingNotImplied { port, .. }
             | Self::ConsoleBaud { port, .. }
@@ -184,8 +188,7 @@ impl Refusal {
             | Self::SenseNotEmitted { net }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::DuplicateSpidev { second, .. } => Some(second),
-            Self::SpiSpeedTooLow { peripheral, .. }
-            | Self::SpiBelowArduPilotDivider { peripheral, .. } => Some(peripheral),
+            Self::SpiBelowArduPilotDivider { peripheral, .. } => Some(peripheral),
             Self::InvalidTopology(e) | Self::PartsTable(e) => e.id(),
             Self::OscillatorNotCited { .. }
             | Self::NoSerialPort
@@ -516,6 +519,17 @@ fn serial(
             });
         }
     }
+    let rc: Vec<&str> = ports
+        .iter()
+        .filter(|(_, p, _, _)| protocol(p.role) == "SerialProtocol_RCIN")
+        .map(|(label, ..)| *label)
+        .collect();
+    if let [first, second, ..] = rc.as_slice() {
+        return Err(Refusal::RcInputTwice {
+            first: (*first).to_owned(),
+            second: (*second).to_owned(),
+        });
+    }
     if ports.len() > 10 {
         return Err(Refusal::TooManySerialPorts { count: ports.len() });
     }
@@ -601,10 +615,16 @@ fn serial(
                 ),
             );
         }
-        l.push(
-            format!("define DEFAULT_SERIAL{n}_PROTOCOL {}", protocol(p.role)),
-            format!("[T] serial_ports.{label}.role {}", p.role.name()),
-        );
+        // SERIAL0's protocol default is a literal, MAVLink 2, and
+        // DEFAULT_SERIAL0_PROTOCOL is read only by its own `#ifndef`
+        // (AP_SerialManager.cpp:37-44, 180): emitted, it would be a line
+        // ArduPilot never reads (adversarial A4).
+        if n > 0 {
+            l.push(
+                format!("define DEFAULT_SERIAL{n}_PROTOCOL {}", protocol(p.role)),
+                format!("[T] serial_ports.{label}.role {}", p.role.name()),
+            );
+        }
         l.push(
             format!("define DEFAULT_SERIAL{n}_BAUD {}", p.framing.baud),
             format!("[T] serial_ports.{label}.framing.baud"),
@@ -656,7 +676,14 @@ fn i2c(
         format!("I2C_ORDER {}", order.join(" ")),
         "[T] i2c_devices in index order, then each device-less bus by peripheral",
     );
-    let slowest = t.i2c_speeds.values().min().copied().unwrap_or(100_000);
+    // `validate` gives every solved I2C bus a declared speed, so a bus in
+    // `order` has one.
+    let slowest = t
+        .i2c_speeds
+        .values()
+        .min()
+        .copied()
+        .expect("an I2C bus has a declared speed");
     l.push(
         format!("define HAL_I2C_MAX_CLOCK {slowest}"),
         "[T] the minimum of i2c_speeds: no bus runs faster than declared (ArduPilot has one clock, I2CDevice.cpp:53, 209)",
@@ -781,15 +808,17 @@ fn spi(
             });
         }
         let c = &t.spi_controllers[&d.peripheral];
-        if c.achieved_hz < 1000 {
-            return Err(Refusal::SpiSpeedTooLow {
+        let kernel = ap
+            .spi_kernel_hz
+            .get(&d.peripheral)
+            .ok_or_else(|| Refusal::SpiKernelNotCited {
                 peripheral: d.peripheral.clone(),
-                hz: c.achieved_hz,
-            });
-        }
-        let kernel = ap.spi_kernel_hz.get(&d.peripheral).map_or(0, |k| k.value);
+            })?
+            .value;
         let asked = c.achieved_hz / 1000 * 1000;
-        if u128::from(asked) * 256 < u128::try_from(kernel).unwrap_or(0) {
+        if u128::from(asked) * 256
+            < u128::try_from(kernel).expect("the parser holds every kernel above zero")
+        {
             return Err(Refusal::SpiBelowArduPilotDivider {
                 peripheral: d.peripheral.clone(),
                 hz: asked,

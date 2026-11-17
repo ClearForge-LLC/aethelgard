@@ -131,7 +131,7 @@ Writes ArduPilot `Copter-4.7.2`'s board definition for a `SolvedTopology`, from 
 | Exit | When |
 |---|---|
 | `0` | written |
-| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `DuplicateSpidev`, `SpiSpeedTooLow`, `SpiBelowArduPilotDivider`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
+| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
 | `3` | the topology cannot be read or is not JSON, or `<hwdef.dat>` exists or cannot be written (`UnwritableOutput`) |
 
 ## The tool subcommands
@@ -479,7 +479,7 @@ Each run line carries its boot's `uid_boundary` and, when it is `false`, `uid_bo
 ```json
 {"ok":true,"check":"replay","run_id":"011cc38d…","scenario":"pullup-47k","verdict":"fail","expect":"fail","matched":true,
  "findings":[…],"expect_findings":[…],"artifacts":{"base":"…","firmware":"…","scenario":"…","specification":"…","topology":"…"},
- "tools":{"aethelgard":"0.1.0","aethelgard-bridge":"91e72fcc…","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af"},
+ "tools":{"aethelgard":"0.2.0","aethelgard-bridge":"91e72fcc…","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af"},
  "event_count":16,"trace_bytes":1335,"state_sequence_hash":"0483991c…"}
 ```
 
@@ -673,7 +673,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
    Each copper term is the energy of one trial potential: 1 on the piece, falling linearly to 0 at the 0.2 mm clearance, where every other net's copper must be. With the permittivity at its maximum, that energy is an upper bound on the piece's capacitance (Chew, arXiv:2107.09672v2, §7.1.2). The constants, their derivation and their sources are in `aethelgard_eda::extract`.
 
 ```json
-{"ok":true,"verdict":"pass","check":"extract","engine_version":"0.1.0",
+{"ok":true,"verdict":"pass","check":"extract","engine_version":"0.2.0",
  "input":{"path":"<as given>","sha256":"<64 hex>"},"specification_sha256":"<64 hex>",
  "capacitance":"upper bound estimated from routed geometry","conditions":["scope: …","…"],
  "lines":[{"net":"I2C_SDA","board_net":"/I2C_SDA","bus":"SENSORS","verdict":"pass",
@@ -739,7 +739,7 @@ One verdict that binds a specification to every artifact it produced (`INV-01`, 
 A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit code, its `message` prefixed with the gate's name (`INV-06`). Otherwise it prints one line, exit `0` when every gate passed and `1` when any failed:
 
 ```json
-{"ok":true,"verdict":"pass","check":"verify","engine_version":"0.1.0","project_name":"sentinel-01",
+{"ok":true,"verdict":"pass","check":"verify","engine_version":"0.2.0","project_name":"sentinel-01",
  "specification_sha256":"<64 hex>","topology_sha256":"<64 hex>","files":{"board/Cargo.lock":"<64 hex>",…},
  "against":"identical","elf_sha256":"<64 hex>","rise_times":"computed from declared values",
  "gates":[{"gate":"erc","verdict":"pass","exit_code":0,"tool_version":"10.0.7","uid_boundary":true,"input_sha256":"<64 hex>","findings":[]},…,

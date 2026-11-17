@@ -137,6 +137,27 @@ fn what_ardupilot_cannot_run_is_refused_by_name() {
     );
     assert!(text.is_none());
 
+    // Adversarial A5: CRSF and SBUS both become RC input, and ArduPilot
+    // attaches one RCIN port and drops the next (AP_SerialManager.cpp:536-541).
+    let mut four: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/serial-four.json")).unwrap(),
+    )
+    .unwrap();
+    for p in four["serial_ports"].as_array_mut().unwrap() {
+        if p["role"] == "mavlink" {
+            p["role"] = "console".into();
+        }
+    }
+    let path = dir.join("four-console.json");
+    fs::write(&path, four.to_string()).unwrap();
+    let (code, v, text) = generate(&dir, "rc", &solve(path.to_str().unwrap()));
+    assert_eq!(
+        (code, v["error"]["kind"].as_str()),
+        (Some(2), Some("RcInputTwice")),
+        "{v}"
+    );
+    assert!(text.is_none());
+
     let mut spec: Value =
         serde_json::from_slice(&fs::read(root().join(BOARDS[0].1)).unwrap()).unwrap();
     spec["spi_buses"][0]["speed_hz"] = 300_000.into();

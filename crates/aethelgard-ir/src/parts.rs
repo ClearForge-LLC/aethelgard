@@ -482,9 +482,11 @@ pub enum ArduPilotKind {
 }
 
 /// What ArduPilot calls a part: its line, its driver, the `SPIDEV` name an
-/// SPI part takes, and the chip ID the driver accepts, which the parser
-/// holds equal to the part's own identity, so a driver that would refuse the
-/// chip is refused at load (the TMP117 case of the `4400` spike).
+/// SPI part takes, and the chip ID the driver accepts, cited at the tag. The
+/// parser holds the ID equal to the part's own identity, so a row that
+/// writes down the driver's true ID (TMP119's 0x2117 for a TMP117) is
+/// refused at load. It cannot check that the cited driver really accepts
+/// that ID: that rests on the citation (`AET-WO-4400b` adversarial A8).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArduPilot {
     pub kind: ArduPilotKind,

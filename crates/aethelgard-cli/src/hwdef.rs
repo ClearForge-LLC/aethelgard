@@ -8,7 +8,6 @@ use std::os::unix::fs::OpenOptionsExt as _;
 use std::path::Path;
 
 use serde::Serialize;
-use serde_json::error::Category;
 use sha2::{Digest, Sha256};
 
 use crate::input::hex;
@@ -35,19 +34,7 @@ pub fn generate(topology: &Path, out: &Path) -> Result<Report, Stop> {
         id: Some(topology.display().to_string()),
         message: r.error.message,
     })?;
-    let t: aethelgard_ir::SolvedTopology = serde_json::from_slice(&bytes).map_err(|err| {
-        let (code, kind) = if err.classify() == Category::Data {
-            (EXIT_INVALID_SPEC, "SchemaViolation")
-        } else {
-            (EXIT_UNREADABLE, "InvalidJson")
-        };
-        Stop {
-            code,
-            kind,
-            id: None,
-            message: format!("the topology: {err}"),
-        }
-    })?;
+    let t = crate::pinout::parse_topology(&bytes)?;
     if fs::symlink_metadata(out).is_ok() {
         return Err(unwritable(out, "it exists"));
     }

@@ -89,11 +89,19 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
             "HAL_USE_ADC",
             "4400 step C's refusal: STM32_ADC_ADC12_DMA_STREAM",
         ),
-        (
-            "DEFAULT_SERIAL",
-            "AP_SerialManager.cpp:37-152 (DEFAULT_SERIALn_PROTOCOL, _BAUD, _OPTIONS)",
-        ),
+        ("DEFAULT_SERIAL0_BAUD", "AP_SerialManager.cpp:172, 419"),
     ];
+    // SERIAL1 to SERIAL9 each read their PROTOCOL, BAUD and OPTIONS defaults
+    // in an AP_GROUPINFO (AP_SerialManager.cpp:191-395); SERIAL0 reads only
+    // its BAUD (its PROTOCOL default is a literal, line 180, and it has no
+    // OPTIONS), adversarial A4.
+    let serial_n = |d: &str| {
+        d.strip_prefix("DEFAULT_SERIAL").is_some_and(|r| {
+            let (n, k) = r.split_at(1);
+            n.bytes().all(|b| (b'1'..=b'9').contains(&b))
+                && ["_PROTOCOL", "_BAUD", "_OPTIONS"].contains(&k)
+        })
+    };
     const PIN_TOKENS: [&str; 6] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
@@ -126,8 +134,7 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
                 }
             } else if w[0] == "define" {
                 assert!(
-                    DEFINES.iter().any(|(d, _)| w[1] == *d
-                        || (d.ends_with("SERIAL") && w[1].starts_with("DEFAULT_SERIAL"))),
+                    DEFINES.iter().any(|(d, _)| w[1] == *d) || serial_n(w[1]),
                     "{name}: define {} in `{line}`",
                     w[1]
                 );
