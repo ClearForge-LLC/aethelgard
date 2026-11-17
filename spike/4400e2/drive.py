@@ -16,6 +16,8 @@ ELF is swapped. Lines left out of the captured script, each a deviation:
 Overlays (each a deviation, named in FEEDBACK) come from STUBS, a file of
 monitor commands sent after the setup and before the first step.
 
+RENODE (env, AET-WO-4400e2 deviation C) names another renode executable; default the image's.
+
 usage: drive.py OUT SECONDS STEP_MS [STUBS]
 """
 import json
@@ -82,7 +84,7 @@ if STUBS:
 open(os.path.join(OUT, "setup.cmds"), "w").write("\n".join(mapped + ["# stubs"] + stubs) + "\n")
 
 p = subprocess.Popen(
-    ["renode", "--config", os.path.join(OUT, "renode.config"), "--disable-gui", "--console", "--plain"],
+    [os.environ.get("RENODE", "renode"), "--config", os.path.join(OUT, "renode.config"), "--disable-gui", "--console", "--plain"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
     env={"HOME": HOME, "PATH": "/usr/local/bin:/usr/bin:/bin", "DOTNET_EnableDiagnostics": "0"},
     text=True, bufsize=1)
@@ -197,6 +199,12 @@ while t_ns < end_ns:
     ex([f'emulation RunFor "{n // 1_000_000_000}.{n % 1_000_000_000:09d}"'])
     wall = time.time() - w0
     t_ns += n
+    # AET-WO-4400e2: STUBS2 (env) sent once, after the first step that reaches STUBS2_AT_S (observation hooks
+    # for the last instants only).
+    if os.environ.get("STUBS2") and not getattr(sys, "_stubs2_done", False) and t_ns >= int(float(os.environ.get("STUBS2_AT_S", "0")) * 1e9):
+        sys._stubs2_done = True
+        for c2 in [l.strip() for l in open(os.environ["STUBS2"]) if l.strip() and not l.startswith("#")]:
+            ex([c2])
     vals = ex([r[1] for r in READS])
     row = dict(zip([r[0] for r in READS], vals))
     row["t_ns"] = t_ns

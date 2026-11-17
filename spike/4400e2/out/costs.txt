@@ -1,0 +1,15 @@
+i1 virtual_s 2.0 wall_s 89.964 peak_rss_mib None end_pc 0x8001432 icsr 0x803 log_bytes 3265175
+l1 virtual_s 3.6 wall_s 597.841 peak_rss_mib 500.0 end_pc 0x8001434 icsr 0x803 log_bytes 4665109
+a-c2 virtual_s 2.0 wall_s 91.483 peak_rss_mib None end_pc 0x8001432 icsr 0x803 log_bytes 5011539
+a-e virtual_s 4.0 wall_s 520.97 peak_rss_mib 530.1 end_pc 0x8001436 icsr 0x803 log_bytes 8746392
+a2-c2 virtual_s 2.0 wall_s 240.503 peak_rss_mib None end_pc 0x8100858 icsr 0x800 log_bytes 3494293
+a2-e virtual_s 4.0 wall_s 835.703 peak_rss_mib 534.6 end_pc 0x8103c3c icsr 0x800 log_bytes 11289273
+c-c2 virtual_s 2.0 wall_s 494.244 peak_rss_mib None end_pc 0x8100858 icsr 0x800 log_bytes 1118019
+c-e virtual_s 4.0 wall_s 1955.678 peak_rss_mib 637.2 end_pc 0x8103c3c icsr 0x800 log_bytes 2080996
+c2-e virtual_s 7.0 wall_s 16.987 peak_rss_mib 538.7 end_pc 0x8103c3c icsr 0x800 log_bytes 37506513
+ch-c2 virtual_s 1.61 wall_s 192.735 peak_rss_mib 500.2 end_pc 0x8001432 icsr 0x803 log_bytes 3318226
+ch-e018 virtual_s 0.02 wall_s 3.602 peak_rss_mib 499.6 end_pc 0x80603ce icsr 0x800 log_bytes 2110685
+d4 virtual_s 0.2 wall_s 3.908 peak_rss_mib 499.7 end_pc 0x8101f8a icsr 0x800 log_bytes 2387702
+m-c2 virtual_s 2.0 wall_s 240.464 peak_rss_mib 499.6 end_pc 0x8100858 icsr 0x800 log_bytes 3494023
+m-e virtual_s 4.0 wall_s 9.421 peak_rss_mib 500.1 end_pc 0x8103c3c icsr 0x800 log_bytes 11202989
+b-c2 virtual_s 2.0 wall_s 182.29 peak_rss_mib 499.7 end_pc 0x8001436 icsr 0x803 log_bytes 3266161
