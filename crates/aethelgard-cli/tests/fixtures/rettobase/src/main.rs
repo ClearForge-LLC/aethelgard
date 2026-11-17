@@ -15,7 +15,9 @@
 //! - word 0: [`DONE`], written last;
 //! - word 1: `ICSR` in Thread mode;
 //! - word 2: `ICSR` in IRQ 57's handler;
-//! - word 3: `ICSR` in IRQ 50's handler.
+//! - word 3: `ICSR` in IRQ 50's handler;
+//! - word 4: `NVIC_IABR1` in IRQ 50's handler, so a reader sees IRQ 57 active beneath it: the
+//!   nesting witnessed, not assumed.
 //!
 //! Both interrupts are disabled again before word 0 is written. Every address is the Armv7-M
 //! System Control Space's (`0xE000E000`), every IRQ number the STM32H753's vector table
@@ -36,6 +38,8 @@ const ICSR: u32 = 0xE000_ED04;
 const ISER1: u32 = 0xE000_E104;
 const ICER1: u32 = 0xE000_E184;
 const ISPR1: u32 = 0xE000_E204;
+/// `NVIC_IABR1`: the active bits of IRQs 32 to 63.
+const IABR1: u32 = 0xE000_E304;
 /// `NVIC_IPR`, one byte per IRQ.
 const IPR: u32 = 0xE000_E400;
 const OUTER: u32 = 57; // DMA2 stream 1
@@ -45,7 +49,7 @@ const INNER_PRIORITY: u8 = 0x70;
 
 #[unsafe(link_section = ".aethelgard_boot")]
 #[unsafe(no_mangle)]
-static mut RECORD: [u32; 4] = [0; 4];
+static mut RECORD: [u32; 5] = [0; 5];
 
 unsafe extern "C" {
     fn Reset() -> !;
@@ -142,6 +146,7 @@ unsafe extern "C" fn outer() {
 /// IRQ 50's handler, the inner one: IRQ 57's handler is active beneath it.
 unsafe extern "C" fn inner() {
     record(3, r(ICSR));
+    record(4, r(IABR1));
 }
 
 #[unsafe(no_mangle)]

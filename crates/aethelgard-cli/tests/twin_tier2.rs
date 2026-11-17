@@ -4126,13 +4126,25 @@ struct Nested {
     thread: u32,
     outer: u32,
     inner: u32,
+    /// `NVIC_IABR1` in the inner handler: bit 18 is IRQ 50, bit 25 IRQ 57.
+    active: u32,
+}
+
+/// The fixture's record with the CLI's correction or without it, each run
+/// once per process: two tests read the uncorrected run, and libtest runs
+/// them in parallel.
+fn nested(corrected: bool) -> &'static Nested {
+    static BARE: OnceLock<Nested> = OnceLock::new();
+    static CORRECTED: OnceLock<Nested> = OnceLock::new();
+    let once = if corrected { &CORRECTED } else { &BARE };
+    once.get_or_init(|| boot_nested(corrected))
 }
 
 /// One boot of the RETTOBASE fixture on Renode's own `stm32h753.repl`, with
 /// the CLI's correction (`data/rettobase-hook.monitor`) or without it: 10 ms,
-/// then the record's four words. The fixture is built once, offline, as the
+/// then the record's five words. The fixture is built once, offline, as the
 /// forge-log fixture is.
-fn nested(corrected: bool) -> Nested {
+fn boot_nested(corrected: bool) -> Nested {
     static ELF: OnceLock<PathBuf> = OnceLock::new();
     let elf = ELF.get_or_init(|| {
         let dir = root().join("crates/aethelgard-cli/tests/fixtures/rettobase");
@@ -4173,7 +4185,7 @@ fn nested(corrected: bool) -> Nested {
         "emulation RunFor \"0.010000000\"".to_owned(),
         "echo \"AET-4400E3-BEGIN\"".to_owned(),
     ]);
-    c.extend((0..4).map(|w| format!("sysbus ReadDoubleWord {:#x}", 0x2000_0000 + 4 * w)));
+    c.extend((0..5).map(|w| format!("sysbus ReadDoubleWord {:#x}", 0x2000_0000 + 4 * w)));
     c.extend(["echo \"AET-4400E3-END\"".to_owned(), "quit".to_owned()]);
     let out = Command::new("renode")
         .args(["--disable-gui", "--console", "--plain", "-e", &c.join("; ")])
@@ -4196,16 +4208,17 @@ fn nested(corrected: bool) -> Nested {
         .take_while(|l| *l != "AET-4400E3-END")
         .filter_map(|l| u32::from_str_radix(l.strip_prefix("0x")?, 16).ok())
         .collect();
-    assert_eq!(words.len(), 4, "the record's four words:\n{text}");
+    assert_eq!(words.len(), 5, "the record's five words:\n{text}");
     answer(&format!(
-        "4400e3 rettobase fixture corrected={corrected}: done={:#x} thread={:#x} outer={:#x} inner={:#x}",
-        words[0], words[1], words[2], words[3]
+        "4400e3 rettobase fixture corrected={corrected}: done={:#x} thread={:#x} outer={:#x} inner={:#x} iabr1={:#x}",
+        words[0], words[1], words[2], words[3], words[4]
     ));
     assert_eq!(words[0], 0x4400_E3D0, "the fixture finished:\n{text}");
     Nested {
         thread: words[1],
         outer: words[2],
         inner: words[3],
+        active: words[4],
     }
 }
 
@@ -4247,6 +4260,12 @@ fn the_pinned_image_s_renode_is_the_build_whose_rettobase_the_cli_corrects() {
 #[test]
 fn renode_1_17_0_reads_rettobase_1_in_a_handler_nested_over_an_external_interrupt() {
     let n = nested(false);
+    assert_eq!(
+        n.active & (1 << 18 | 1 << 25),
+        1 << 18 | 1 << 25,
+        "IRQ 57 is active beneath IRQ 50: nested ({:#x})",
+        n.active
+    );
     assert_eq!(
         vectactive(n.inner),
         16 + 50,
