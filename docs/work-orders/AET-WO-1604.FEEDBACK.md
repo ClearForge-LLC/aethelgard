@@ -185,3 +185,11 @@ The §5 case "a fab-format column filled with a plausible guess" is in §7's tab
   - Duplicate 2: `doctor`'s `unprobed()` rebuilt `absent()`'s line; it now calls `absent`.
   - **Finding R1 (outside the fence):** the test-pad footprint `TestPoint:TestPoint_Pad_D1.0mm` is stated twice. It is in `eda/schematic.rs` (`TEST_POINT_FOOTPRINT`, private) and in `cli/src/extract.rs` (`TEST_PAD`, D8). A `pub` on the `eda` constant would let the CLI use it; `schematic.rs` is outside this order's fence. The bench tests fail if the two drift.
 - **Disk:** no subagent worktree was made. `~/.cache/aet-1604/img/bin` (the 228 MB binary copy) is removed. Evidence is kept in `~/.cache/aet-1604/` (JLCPCB pages and samples, anchors, mutants, logs, the in-image `doctor` line).
+
+## 9. The review round (#199, comment 6944754739) and the package
+
+- **CI red on `f5d30d1`:** `verify_2k2_tier2` read every `FAB-NOTES.md` bullet starting with a backtick as a file name, and the JLCPCB section's `` `Mid X` `` bullet became one. As ruled, it now reads the file list from its `## Files` section only, the same change `3402` makes (whichever merges second resolves it). The notes are not reworded (`e5cf670`).
+- **`main` `26e4c62` (4400b2) merged** as `966534e`, pushed as AWAITING-PACKAGE. On Furnace, on the merged tree: fmt, clippy with `with-tools`, the tier-2 targets compiled, and 2,099 passed with 0 failed. CI is green on `966534e` (25 passed, 4 skipped).
+- **M11 · In the pinned image** (`~/.cache/aet-1604/img.sh`, `capped-run`: `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192`, read back), on `966534e`, with the CLI and the bridge built there:
+  - `verify_2k2_tier2`, 2 passed in 1,213 s;
+  - `against_fab_tier2`, 2 passed in 976 s (`~/.cache/aet-1604/img-tier2.log`).
