@@ -637,7 +637,11 @@ fn a_reset_with_an_empty_or_unsorted_or_repeated_cause_is_refused() {
         &["VBOR3", "VBOR3"],
         &["VBOR 3"],
     ] {
-        assert!(with_cause(bad).check().is_err(), "{bad:?}");
+        assert_eq!(
+            with_cause(bad).check(),
+            Err("a reset's causes are not sorted unique threshold names"),
+            "{bad:?}"
+        );
     }
 }
 
@@ -649,9 +653,10 @@ fn a_reset_rendering_must_be_1_to_1024_printable_ascii_bytes() {
         cause: vec!["VBOR3".into()],
         rendering: text,
     };
-    assert!(with_text(String::new()).check().is_err());
-    assert!(with_text("a\nb".into()).check().is_err());
-    assert!(with_text("x".repeat(1025)).check().is_err());
+    let refused = Err("a reset's rendering is not 1 to 1024 printable ASCII bytes");
+    assert_eq!(with_text(String::new()).check(), refused);
+    assert_eq!(with_text("a\nb".into()).check(), refused);
+    assert_eq!(with_text("x".repeat(1025)).check(), refused);
     assert!(with_text("x y".repeat(341)).check().is_ok());
     assert!(with_text("x".repeat(1024)).check().is_ok());
 }
@@ -662,14 +667,16 @@ fn expected_counts_must_be_sorted_unique_non_empty_names() {
         counts: v.iter().map(|(k, n)| ((*k).into(), *n)).collect(),
     };
     assert!(counts(&[("a", 1), ("b", 2)]).check().is_ok());
-    for bad in [
-        &[][..],
-        &[("b", 1), ("a", 1)],
-        &[("a", 1), ("a", 2)],
-        &[("a b", 1)],
-        &[("", 1)],
+    let kinds = "expected counts are not one or more finding kinds";
+    let sorted = "expected counts are not sorted unique by kind";
+    for (bad, why) in [
+        (&[][..], kinds),
+        (&[("b", 1), ("a", 1)], sorted),
+        (&[("a", 1), ("a", 2)], sorted),
+        (&[("a b", 1)], kinds),
+        (&[("", 1)], kinds),
     ] {
-        assert!(counts(bad).check().is_err(), "{bad:?}");
+        assert_eq!(counts(bad).check(), Err(why), "{bad:?}");
     }
 }
 
@@ -683,25 +690,28 @@ fn a_declared_rail_needs_a_floor_below_its_nominal_and_decoupling_and_a_domain_n
     };
     let keep: &dyn Fn(&mut Droop) = &|_| {};
     assert_eq!(rail(keep, NOMINAL_MV, DECOUPLING_PF).check(), Ok(()));
-    assert!(
-        rail(keep, 2400, DECOUPLING_PF).check().is_err(),
+    let floor = Err("a declared rail's floor is not below its nominal, or it has no decoupling");
+    assert_eq!(
+        rail(keep, 2400, DECOUPLING_PF).check(),
+        floor,
         "floor = nominal"
     );
-    assert!(
-        rail(keep, 2399, DECOUPLING_PF).check().is_err(),
+    assert_eq!(
+        rail(keep, 2399, DECOUPLING_PF).check(),
+        floor,
         "floor > nominal"
     );
-    assert!(rail(keep, NOMINAL_MV, 0).check().is_err(), "no decoupling");
-    assert!(
-        rail(&|d| d.domain = "bad name".into(), NOMINAL_MV, DECOUPLING_PF)
-            .check()
-            .is_err()
+    assert_eq!(rail(keep, NOMINAL_MV, 0).check(), floor, "no decoupling");
+    assert_eq!(
+        rail(&|d| d.domain = "bad name".into(), NOMINAL_MV, DECOUPLING_PF).check(),
+        Err("a droop's domain is not 1 to 64 printable ASCII bytes")
     );
 }
 
 #[test]
 fn a_crossing_must_name_a_domain_and_a_level() {
-    assert!(crossing("", 1, 1, true).check().is_err());
+    let refused = Err("a crossing's domain or level is not 1 to 64 printable ASCII bytes");
+    assert_eq!(crossing("", 1, 1, true).check(), refused);
     let r = Record::RailCrossing {
         domain: "bad domain".into(),
         level: "VBOR3_falling".into(),
@@ -709,7 +719,7 @@ fn a_crossing_must_name_a_domain_and_a_level() {
         at_ps: 1,
         falling: true,
     };
-    assert!(r.check().is_err());
+    assert_eq!(r.check(), refused);
 }
 
 // ---- 4. check_run's droop rules ----

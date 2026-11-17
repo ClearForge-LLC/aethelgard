@@ -492,7 +492,6 @@ unittests src/main.rs	renode::tests::a_droop_boot_runs_the_measured_recipe_at_th
 unittests src/main.rs	renode::tests::adversarial_1_store_made_edges_fail_and_a_single_pulse_is_too_few	0.816
 unittests src/main.rs	renode::tests::a_mismatch_is_named_by_its_step	0.815
 unittests src/main.rs	renode::tests::a_probe_is_read_only_between_its_own_whole_line_markers	1.043
-unittests src/main.rs	renode::tests::a_read_left_unset_by_a_short_window_is_named	0.512
 unittests src/main.rs	renode::tests::a_timed_out_read_is_named_without_the_boot_word	1.152
 unittests src/main.rs	renode::tests::models_of_our_own_are_included_before_the_platform_loads	1.246
 unittests src/main.rs	renode::tests::the_frames_bytes_go_in_a_character_apart_rounded_up_to_a_quantum	2.720

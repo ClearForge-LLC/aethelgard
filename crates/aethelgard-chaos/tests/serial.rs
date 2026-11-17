@@ -22,6 +22,21 @@ use common::*;
 
 const BOOT_WORD: u32 = 0x2100_B007;
 
+/// The refusals the tests below assert by name (`AET-WO-2302b`: a test
+/// that asserted only an error could pass on another guard's).
+const SERIAL_REFUSED: &str = "the verdict's serial findings do not match the serial records";
+const ECHO_REFUSED: &str = "a serial witness's echo is not what its capture and its RX pin give";
+const CHECK_REFUSED: &str = "a serial framing check is not what its solved port gives";
+const TX_END_REFUSED: &str =
+    "a serial witness's TX pin at the end is not what kind 11 read of its MODER and AFR";
+const CHECKS_REFUSED: &str =
+    "the serial framing checks are not one per solved port, in the ports' order";
+const WITNESSES_REFUSED: &str = "the serial witnesses are not one per solved port in the ports' order, or are absent from a run whose boot word is set";
+const PORTS_REFUSED: &str = "the solved serial ports are not in the specification's order, each with its own label, USART and pins";
+const TAGS_REFUSED: &str = "a serial framing check's tag judgement names a tag the framing does not need as missing, or too many or malformed unexpected ones";
+const COUNTS_REFUSED: &str =
+    "a serial witness's counts do not fit its capture's length and its pattern's";
+
 fn framing(baud: u32, parity: &str, stop_bits: u8, inverted: bool) -> SerialFraming {
     SerialFraming {
         baud,
@@ -393,15 +408,27 @@ fn a_witnessed_run_passes_and_each_failure_needs_its_own_finding() {
         assert!(ok(&judged(r.clone(), &findings)), "{what}");
         // The verdict that drops one, names it twice, or names another
         // kind is refused: the records explain the findings exactly.
-        assert!(check_run(&judged(r.clone(), &[])).is_err(), "{what}");
+        assert_eq!(
+            check_run(&judged(r.clone(), &[])).unwrap_err(),
+            SERIAL_REFUSED,
+            "{what}"
+        );
         for k in kinds.iter().filter(|k| **k != SERIAL_FORGED_FINDING) {
             let twice: Vec<(&str, u64)> =
                 kinds.iter().map(|x| (*x, 1 + u64::from(x == k))).collect();
-            assert!(check_run(&judged(r.clone(), &twice)).is_err(), "{what}");
+            assert_eq!(
+                check_run(&judged(r.clone(), &twice)).unwrap_err(),
+                SERIAL_REFUSED,
+                "{what}"
+            );
         }
         let mut other = findings.clone();
         other.push((SERIAL_TAG_FINDING, 1));
-        assert!(check_run(&judged(r, &other)).is_err(), "{what}");
+        assert_eq!(
+            check_run(&judged(r, &other)).unwrap_err(),
+            SERIAL_REFUSED,
+            "{what}"
+        );
     }
 }
 
@@ -424,7 +451,11 @@ fn adversarial_f4_f11_the_tx_pin_counts_at_its_first_send_and_at_the_end() {
             ok(&judged(r.clone(), &[(SERIAL_PATTERN_FINDING, 1)])),
             "{m:?}"
         );
-        assert!(check_run(&judged(r, &[])).is_err(), "{m:?}");
+        assert_eq!(
+            check_run(&judged(r, &[])).unwrap_err(),
+            SERIAL_REFUSED,
+            "{m:?}"
+        );
     }
     // PA9 analog at the end, as kind 11 read GPIOA.MODER too.
     let end = edit(|r| {
@@ -432,7 +463,7 @@ fn adversarial_f4_f11_the_tx_pin_counts_at_its_first_send_and_at_the_end() {
         set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b11, 7)));
     });
     assert!(ok(&judged(end.clone(), &[(SERIAL_PATTERN_FINDING, 1)])));
-    assert!(check_run(&judged(end, &[])).is_err());
+    assert_eq!(check_run(&judged(end, &[])).unwrap_err(), SERIAL_REFUSED);
     // ADV-R1: kind 11 reads PA9 in AF mode, kind 29 says it ended an input.
     let contradicted = edit(|r| {
         set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b00, 7)));
@@ -449,11 +480,14 @@ fn adversarial_f4_f11_the_tx_pin_counts_at_its_first_send_and_at_the_end() {
     }
     // The AF read contradicted, or a register kind 11 never read.
     let af = edit(|r| set_witness(r, WITNESS_CONSOLE, |_, _, _, tx| *tx = Some((0b10, 8))));
-    assert!(check_run(&judged(af, &[(SERIAL_PATTERN_FINDING, 1)])).is_err());
+    assert_eq!(
+        check_run(&judged(af, &[(SERIAL_PATTERN_FINDING, 1)])).unwrap_err(),
+        TX_END_REFUSED
+    );
     let unread = edit(|r| {
         r.remove(MODER + 2);
     });
-    assert!(check_run(&unread).is_err());
+    assert_eq!(check_run(&unread).unwrap_err(), TX_END_REFUSED);
     // Neither read nor witnessed at the end: tied, and the pattern fails.
     let neither = edit(|r| {
         r.drain(MODER..MODER + 3);
@@ -481,7 +515,10 @@ fn a_cut_pattern_needs_a_released_reset() {
         });
     });
     assert!(ok(&judged(cut.clone(), &[(SERIAL_FORGED_FINDING, 1)])));
-    assert!(check_run(&judged(cut.clone(), &[])).is_err());
+    assert_eq!(
+        check_run(&judged(cut.clone(), &[])).unwrap_err(),
+        SERIAL_REFUSED
+    );
     let reset = |released: bool| Record::ResetRendered {
         at_ns: 1_000_000,
         released,
@@ -536,16 +573,20 @@ fn a_witness_and_tags_are_judged_only_once_the_boot_word_is_set() {
         SERIAL_ECHO_FINDING,
         SERIAL_PATTERN_FINDING,
     ] {
-        assert!(
-            check_run(&not_booted("not_judged", &[(f, 1)])).is_err(),
+        assert_eq!(
+            check_run(&not_booted("not_judged", &[(f, 1)])).unwrap_err(),
+            SERIAL_REFUSED,
             "{f}"
         );
     }
     // An echo judged without the boot word, or not judged with it, is not
     // the judge's.
-    assert!(check_run(&not_booted("missing", &[])).is_err());
+    assert_eq!(
+        check_run(&not_booted("missing", &[])).unwrap_err(),
+        ECHO_REFUSED
+    );
     let r = edit(|r| set_witness(r, WITNESS_CONSOLE, |_, e, _, _| *e = "not_judged".into()));
-    assert!(check_run(&r).is_err());
+    assert_eq!(check_run(&r).unwrap_err(), ECHO_REFUSED);
     // Without the boot word the witnesses may be absent; with it, never.
     let mut r = not_booted("not_judged", &[]);
     r.drain(WITNESS_CONSOLE..=WITNESS_SBUS);
@@ -553,7 +594,7 @@ fn a_witness_and_tags_are_judged_only_once_the_boot_word_is_set() {
     let r = edit(|r| {
         r.drain(WITNESS_CONSOLE..=WITNESS_SBUS);
     });
-    assert!(check_run(&r).is_err());
+    assert_eq!(check_run(&r).unwrap_err(), WITNESSES_REFUSED);
 }
 
 #[test]
@@ -635,7 +676,11 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
             ok(&judged(r.clone(), &[(SERIAL_TAG_FINDING, 1)])),
             "{tags:?}"
         );
-        assert!(check_run(&judged(r, &[])).is_err(), "{tags:?}");
+        assert_eq!(
+            check_run(&judged(r, &[])).unwrap_err(),
+            SERIAL_REFUSED,
+            "{tags:?}"
+        );
     }
     // Past the most kind 28 carries, the record is malformed.
     let r = edit(|r| {
@@ -643,7 +688,7 @@ fn a_port_s_tags_fail_when_missing_unexpected_or_unread() {
             t.unexpected = vec!["0x1 to 0x2C".into(); 17];
         }
     });
-    assert!(r[CHECK_SBUS].check().is_err());
+    assert_eq!(r[CHECK_SBUS].check(), Err(TAGS_REFUSED));
 }
 
 /// `BRR` 557 for 115200 on 64 MHz: inside the tolerance, but not the
@@ -712,7 +757,11 @@ fn a_failing_static_check_is_named_once_booted_or_not() {
         }
         assert!(check_run(&judged(r.clone(), &f)).is_ok(), "booted {booted}");
         f.retain(|x| x.0 != SERIAL_STATIC_FINDING);
-        assert!(check_run(&judged(r, &f)).is_err(), "booted {booted}");
+        assert_eq!(
+            check_run(&judged(r, &f)).unwrap_err(),
+            SERIAL_REFUSED,
+            "booted {booted}"
+        );
     }
 }
 
@@ -736,8 +785,7 @@ fn replay_re_derives_the_static_check_from_the_solved_port() {
                 if let Record::SerialFramingCheck { $field, .. } = r {
                     *$field = $value;
                 }
-            })
-            .is_err()
+            }) == Err(CHECK_REFUSED)
         };
     }
     // A forged `holds` beside its own failing figures.
@@ -759,7 +807,7 @@ fn replay_re_derives_the_static_check_from_the_solved_port() {
             tags_needed.pop();
         }
     });
-    assert!(check_run(&r).is_err());
+    assert_eq!(check_run(&r).unwrap_err(), CHECK_REFUSED);
 }
 
 #[test]
@@ -789,7 +837,11 @@ fn a_port_whose_kernel_clock_is_not_the_reset_clock_fails_silicon() {
         r[CONSOLE] = port;
         r[CHECK_CONSOLE] = check.clone();
     });
-    assert!(check_run(&r).is_err(), "holds on another kernel clock");
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        CHECK_REFUSED,
+        "holds on another kernel clock"
+    );
     if let Record::SerialFramingCheck { holds, .. } = &mut check {
         *holds = false;
     }
@@ -820,7 +872,11 @@ fn a_port_and_its_check_forged_alike_are_refused() {
                 }
             }
         });
-        assert!(check_run(&r).is_err(), "{millibaud} {ppm}");
+        assert_eq!(
+            check_run(&r).unwrap_err(),
+            CHECK_REFUSED,
+            "{millibaud} {ppm}"
+        );
     }
 }
 
@@ -837,11 +893,17 @@ fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
         check_run(&r).map(|_| ())
     };
     // Witnessed with the RX pin off its AF, or not read at the injection.
-    assert!(forge(Box::new(|_, _, rx, _| *rx = Some((0b10, 8)))).is_err());
-    assert!(forge(Box::new(|_, _, rx, _| *rx = Some((0b11, 7)))).is_err());
-    assert!(forge(Box::new(|_, _, rx, _| *rx = None)).is_err());
+    assert_eq!(
+        forge(Box::new(|_, _, rx, _| *rx = Some((0b10, 8)))),
+        Err(ECHO_REFUSED)
+    );
+    assert_eq!(
+        forge(Box::new(|_, _, rx, _| *rx = Some((0b11, 7)))),
+        Err(ECHO_REFUSED)
+    );
+    assert_eq!(forge(Box::new(|_, _, rx, _| *rx = None)), Err(ECHO_REFUSED));
     // Witnessed with part of the frame, or with stray bytes.
-    assert!(
+    assert_eq!(
         forge(Box::new(|c, _, _, _| {
             *c = Some(SerialCapture {
                 patterns: 1,
@@ -850,10 +912,10 @@ fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
                 stray: false,
                 len: 19,
             });
-        }))
-        .is_err()
+        })),
+        Err(ECHO_REFUSED)
     );
-    assert!(
+    assert_eq!(
         forge(Box::new(|c, _, _, _| {
             *c = Some(SerialCapture {
                 patterns: 1,
@@ -862,14 +924,15 @@ fn replay_ties_each_echo_to_its_capture_and_rx_pin() {
                 stray: true,
                 len: 20,
             });
-        }))
-        .is_err()
+        })),
+        Err(ECHO_REFUSED)
     );
     // Not counted with the RX pin on its AF; partial with the whole frame;
     // missing with the whole frame back on a routed pin.
     for status in ["not_counted", "partial", "missing"] {
-        assert!(
-            forge(Box::new(move |_, e, _, _| *e = status.into())).is_err(),
+        assert_eq!(
+            forge(Box::new(move |_, e, _, _| *e = status.into())),
+            Err(ECHO_REFUSED),
             "{status}"
         );
     }
@@ -894,7 +957,11 @@ fn the_ports_go_in_one_after_another_inside_the_boot() {
             at(r, WITNESS_CONSOLE, console);
             at(r, WITNESS_SBUS, sbus);
         });
-        assert!(check_run(&r).is_err(), "{console:?} {sbus:?}");
+        assert_eq!(
+            check_run(&r).unwrap_err(),
+            "a serial port's frame went in before the port before it, without it, or past the boot",
+            "{console:?} {sbus:?}"
+        );
     }
 }
 
@@ -963,7 +1030,10 @@ fn an_open_port_gets_nothing_and_the_chain_skips_it() {
     {
         *rx_at_injection = Some((0b10, 7));
     }
-    assert!(check_run(&forged).is_err());
+    assert_eq!(
+        check_run(&forged).unwrap_err(),
+        "a frame went into a serial port whose RX line the scenario holds open"
+    );
     // An open port no solved port names.
     let mut unknown = r.clone();
     open("GPS")(&mut unknown);
@@ -999,31 +1069,55 @@ fn a_serial_record_that_joins_no_solved_port_is_refused() {
     let refused = |f: &dyn Fn(&mut Vec<Record>)| {
         let mut r = run();
         f(&mut r);
-        check_run(&r).is_err()
+        check_run(&r).map(|_| ())
     };
     // A check or a witness of a port nothing solved.
-    assert!(refused(&|r| {
-        if let Record::SerialFramingCheck { label, .. } = &mut r[CHECK_SBUS] {
-            *label = "GPS".into();
-        }
-    }));
-    assert!(refused(&|r| {
-        if let Record::SerialWitness { label, .. } = &mut r[WITNESS_SBUS] {
-            *label = "GPS".into();
-        }
-    }));
+    assert_eq!(
+        refused(&|r| {
+            if let Record::SerialFramingCheck { label, .. } = &mut r[CHECK_SBUS] {
+                *label = "GPS".into();
+            }
+        }),
+        Err(CHECKS_REFUSED)
+    );
+    assert_eq!(
+        refused(&|r| {
+            if let Record::SerialWitness { label, .. } = &mut r[WITNESS_SBUS] {
+                *label = "GPS".into();
+            }
+        }),
+        Err(WITNESSES_REFUSED)
+    );
     // A port with no check; a check twice; the checks out of the ports' order.
-    assert!(refused(&|r| {
-        r.remove(CHECK_SBUS);
-    }));
-    assert!(refused(&|r| r[CHECK_SBUS] = check_console()));
-    assert!(refused(&|r| r.swap(CHECK_CONSOLE, CHECK_SBUS)));
+    assert_eq!(
+        refused(&|r| {
+            r.remove(CHECK_SBUS);
+        }),
+        Err(CHECKS_REFUSED)
+    );
+    assert_eq!(
+        refused(&|r| r[CHECK_SBUS] = check_console()),
+        Err(CHECKS_REFUSED)
+    );
+    assert_eq!(
+        refused(&|r| r.swap(CHECK_CONSOLE, CHECK_SBUS)),
+        Err(CHECKS_REFUSED)
+    );
     // A witness twice, one missing, or out of order.
-    assert!(refused(&|r| r[WITNESS_SBUS] = witness("CONSOLE", 7)));
-    assert!(refused(&|r| {
-        r.remove(WITNESS_SBUS);
-    }));
-    assert!(refused(&|r| r.swap(WITNESS_CONSOLE, WITNESS_SBUS)));
+    assert_eq!(
+        refused(&|r| r[WITNESS_SBUS] = witness("CONSOLE", 7)),
+        Err(WITNESSES_REFUSED)
+    );
+    assert_eq!(
+        refused(&|r| {
+            r.remove(WITNESS_SBUS);
+        }),
+        Err(WITNESSES_REFUSED)
+    );
+    assert_eq!(
+        refused(&|r| r.swap(WITNESS_CONSOLE, WITNESS_SBUS)),
+        Err(WITNESSES_REFUSED)
+    );
     // Two ports on one USART, one pin, or one label, or out of the
     // specification's order.
     macro_rules! sbus_as {
@@ -1035,16 +1129,20 @@ fn a_serial_record_that_joins_no_solved_port_is_refused() {
             })
         };
     }
-    assert!(sbus_as!(peripheral => "USART1".into()));
-    assert!(sbus_as!(tx => "PA10".into()));
-    assert!(sbus_as!(label => "CONSOLE".into()));
-    assert!(sbus_as!(index => 0));
+    assert_eq!(sbus_as!(peripheral => "USART1".into()), Err(PORTS_REFUSED));
+    assert_eq!(sbus_as!(tx => "PA10".into()), Err(PORTS_REFUSED));
+    assert_eq!(sbus_as!(label => "CONSOLE".into()), Err(PORTS_REFUSED));
+    assert_eq!(sbus_as!(index => 0), Err(PORTS_REFUSED));
     // A witness after the verdict, a check before the boot.
-    assert!(refused(&|r| {
-        let w = r.remove(WITNESS_SBUS);
-        r.push(w);
-    }));
-    assert!(refused(&|r| r.swap(BOOT, CHECK_CONSOLE)));
+    let order = Err("the records are not in the campaign's order");
+    assert_eq!(
+        refused(&|r| {
+            let w = r.remove(WITNESS_SBUS);
+            r.push(w);
+        }),
+        order
+    );
+    assert_eq!(refused(&|r| r.swap(BOOT, CHECK_CONSOLE)), order);
 }
 
 #[test]
@@ -1060,14 +1158,17 @@ fn serial_capture_forged_is_bounded_from_below_and_never_info() {
         });
     });
     assert!(check_run(&judged(forged.clone(), &[(SERIAL_FORGED_FINDING, 2)])).is_ok());
-    assert!(check_run(&judged(forged, &[])).is_err());
+    assert_eq!(check_run(&judged(forged, &[])).unwrap_err(), SERIAL_REFUSED);
     // A run with no port has no capture directory, so none.
     let no_ports: Vec<Record> = run()
         .into_iter()
         .filter(|r| !matches!(r.kind(), 27..=29))
         .collect();
     assert!(check_run(&no_ports).is_ok());
-    assert!(check_run(&judged(no_ports, &[(SERIAL_FORGED_FINDING, 1)])).is_err());
+    assert_eq!(
+        check_run(&judged(no_ports, &[(SERIAL_FORGED_FINDING, 1)])).unwrap_err(),
+        SERIAL_REFUSED
+    );
     // Any serial finding at `info` is the wrong severity.
     let mut r = run();
     let last = r.len() - 1;
@@ -1075,7 +1176,10 @@ fn serial_capture_forged_is_bounded_from_below_and_never_info() {
         pass: true,
         findings: vec![(SERIAL_FORGED_FINDING.into(), "info".into(), 1)],
     };
-    assert!(check_run(&r).is_err());
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a serial finding has the wrong severity"
+    );
 }
 
 #[test]
@@ -1248,8 +1352,41 @@ fn the_field_rules_hold_on_write_and_read() {
             }
         }),
     ]);
-    for r in &bad {
-        assert!(r.check().is_err(), "{r:?}");
+    // Each refused by its own rule, in `bad`'s order.
+    let port_names = "a solved serial port's label, peripheral or pins are malformed, or its TX and RX share a pin";
+    let role = "a solved serial port's role or parity is not one a specification declares";
+    let framing_bad = "a solved serial port's framing is not a baud above 0, a 7- to 9-bit word and 1 or 2 stop bits";
+    let needed = "a serial framing check's needed tags are not tags, in order, once each";
+    let mux = "a serial witness's pin mode is above 3 or its alternate function above 15";
+    let instant = "a serial witness names its injection's instant without the RX pin's mux there, or the mux without the instant";
+    let why = [
+        port_names,
+        port_names,
+        "a solved serial port's alternate function is above 15",
+        role,
+        role,
+        framing_bad,
+        framing_bad,
+        "a solved serial port's kernel clock is 0 or its BRR outside 16 to 0xFFFF",
+        needed,
+        needed,
+        needed,
+        TAGS_REFUSED,
+        TAGS_REFUSED,
+        "a serial framing check's tolerance row is malformed",
+        "a serial witness's echo is not one the judge gives",
+        mux,
+        mux,
+        instant,
+        instant,
+        COUNTS_REFUSED,
+        COUNTS_REFUSED,
+        COUNTS_REFUSED,
+        COUNTS_REFUSED,
+    ];
+    assert_eq!(bad.len(), why.len());
+    for (r, why) in bad.iter().zip(why) {
+        assert_eq!(r.check(), Err(why), "{r:?}");
     }
     for r in [
         console(),
@@ -1282,7 +1419,7 @@ fn the_field_rules_hold_on_write_and_read() {
             c.len = 20 + 12
         }
     });
-    assert!(r.check().is_err());
+    assert_eq!(r.check(), Err(COUNTS_REFUSED));
 }
 
 #[test]
@@ -1352,7 +1489,10 @@ fn an_archived_witness_must_carry_its_firmware_s_frame() {
             "{name}"
         );
     }
-    assert!(check_serial_frames(&FW, &run()).is_err());
+    assert_eq!(
+        check_serial_frames(&FW, &run()),
+        Err("a serial witness's frame is not the one its firmware and label give")
+    );
 }
 
 /// Adversarial pass 4, ADV4-4 (the PM's ruling), in the shapes of pass 3's
@@ -1423,7 +1563,7 @@ fn adversarial_4_a_pin_unrouted_once_solved_is_never_witnessed() {
             t.unexpected = vec!["x".repeat(MAX_SERIAL_UNEXPECTED_BYTES + 1)];
         }
     });
-    assert!(over[CHECK_CONSOLE].check().is_err());
+    assert_eq!(over[CHECK_CONSOLE].check(), Err(TAGS_REFUSED));
     // `not_counted` on a pin routed at the injection, with tags that hold.
     let forged = edit(|r| {
         set_witness(r, WITNESS_CONSOLE, |_, e, _, _| *e = "not_counted".into());
