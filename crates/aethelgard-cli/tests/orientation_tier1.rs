@@ -342,6 +342,17 @@ fn a_hand_turned_imu_footprint_is_refused_by_the_drc_gate() {
         judge(&mirrored).unwrap_err().kind,
         "ImuOrientationDisagrees"
     );
+    // The board unchanged, judged against a declaration no footprint on
+    // F.Cu can meet: Z down, or X up.
+    for (x, z) in [("right", "down"), ("up", "forward")] {
+        let other: Specification = serde_json::from_value(declared("top", x, z)).unwrap();
+        let d = aethelgard_eda::route::declared(
+            &strict::board(&board).unwrap(),
+            &aethelgard_eda::stack::Stack::of(&other),
+        )
+        .unwrap_err();
+        assert_eq!(d.kind, "ImuOrientationDisagrees", "{x} {z}: {}", d.message);
+    }
     let renamed = edited_u5(&board, |fp| fp.replacen("\"U5\"", "\"U50\"", 1));
     assert_eq!(judge(&renamed).unwrap_err().kind, "ImuOrientationDisagrees");
     // Through the CLI: refused by name before any tool is looked for.

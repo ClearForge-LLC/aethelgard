@@ -990,6 +990,11 @@ fn spi(
                     }
                 };
                 let o = d.orientation.ok_or_else(|| refused(true))?;
+                // belt-and-suspenders: `validate` refuses an orientation on
+                // a part whose row cites no frame (`ImuAxesNotCited`), so a
+                // topology from `solve` never reaches this; one written by
+                // hand can, and its rotation would then rest on an assumed
+                // frame.
                 if a.frame.is_none() {
                     return Err(refused(false));
                 }

@@ -1938,6 +1938,44 @@ mod tests {
         Conn::Net(n.to_owned())
     }
 
+    /// `AET-WO-4400d`: a seated part's pads and geometry are carried at its
+    /// turn, so the parts placed by its pins (its capacitors) target the
+    /// turned pins, and its keep-out box is the turned one.
+    #[test]
+    fn a_seated_part_carries_its_pads_and_geometry_at_its_turn() {
+        use aethelgard_ir::orientation::{Edge, Orientation, Toward};
+        const FP: &str = "Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm";
+        let mut p = part(
+            "Aethelgard_Sensor:ICM-42688-P",
+            FP,
+            "U5",
+            &[("8", Conn::Rail("VDD_3V3".into())), ("12", net("IMU_CS"))],
+        );
+        let pins = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+        p.seat = Some(crate::schematic::Seat {
+            forward: Edge::Top,
+            orientation: Orientation {
+                x: Toward::Forward,
+                z: Toward::Up,
+            },
+            x_toward_pins: pins(&["8", "9", "10", "11"]),
+            y_toward_pins: pins(&["12", "13", "14"]),
+        });
+        let parts = [p];
+        let items = items(&parts).unwrap();
+        let fp = crate::library::footprint(FP).unwrap();
+        assert_eq!(items[0].rotation, 90);
+        let turned = geometry_at(&fp, "U5", 90).unwrap();
+        assert_eq!(items[0].geometry.courtyard, turned.courtyard);
+        assert_eq!(items[0].geometry.keep, turned.keep);
+        assert_ne!(
+            items[0].geometry.courtyard,
+            geometry(&fp, "U5").unwrap().courtyard
+        );
+        // Pad 8, (1.1625, 0.75) mm in the library, turned a quarter.
+        assert_eq!(items[0].pads["8"].0, (750_000, -1_162_500));
+    }
+
     /// The MCU with its supply pins wired as the schematic emitter wires
     /// them, plus `extra`.
     fn mcu(extra: &[(&str, Conn)]) -> Part {

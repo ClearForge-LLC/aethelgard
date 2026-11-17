@@ -209,3 +209,78 @@ Computed against 1313's tip, db8b210e; 1313 is not on main yet. A merge of main 
 | P8 | **failed**: the top side reaches four z-flipped rotations, not the four yaws |
 | P9 | held: `SolvedSpiDevice.orientation`, solved 10 |
 | P10 | held, with additions: `boards/sentinel-01-bench/*` and the inline solved topologies |
+
+## 4. The ruling, and what was built
+
+**Ruled on #207** (comment 6946857533, 11:33 UTC):
+- **D1 (a):** the axis pair.
+- **D2 (a):** zones turn with their pads, and the labelled guard becomes a test.
+- **D3 (a):** F.Cu up is the engine's constant.
+- **D4:** the lower alias, and the judge compares matrices.
+- **D5:** `sentinel-02-own` declares forward `top` and U5 `{x: right, z: up}`.
+
+Built on 1313's READY tip (cc11ec68, merged before it landed; main's f845b6f is that tree plus docs #206, merged since).
+
+- **`aethelgard-ir`.**
+  - `orientation.rs`: `Edge`, `Toward`, `Orientation`.
+  - `board.forward` and `SpiDevice.orientation`, each optional, with an explicit `null` refused (specification 16).
+  - `SolvedSpiDevice.orientation`, copied by `solve` (solved 10).
+  - `validate`, in step 13: `ImuAxesNotPerpendicular`, then `ForwardUndeclared`.
+  - `validate`, in step 14: `OrientationOnNonImu`, then `ImuAxesNotCited` (for `axes` or `ardupilot.frame`).
+  - `SolvedTopology::validate` refuses a copied pair not at right angles.
+  - Parts schema 9 adds:
+    - `axes` (`x_toward_pins`, `y_toward_pins`, `z: "top"`, cited to DS-000347 Fig. 16 and the p.54 top view), only on an `imu` row;
+    - `ardupilot.frame` (`{is: "chip", at}`, cited to `Invensensev3.cpp` L463–464 and L522–527), only on an `imu` row.
+
+    Each shape is refused at load by name.
+  - The README states D3 beside the fields.
+- **`aethelgard-hwdef`.**
+  - It emits `IMU <driver> SPI:<name> ROTATION_<x>`.
+  - The rotation comes from its own 24-row table, `ROTATIONS`, choosing the matrix whose columns are the chip's X, Y = Z × X and Z in the board frame. Of two aliases it writes the lower-numbered.
+  - With an IMU line present, the header names the board frame (D3).
+  - It refuses `ImuOrientationUndeclared` (`INV-06`) and `ImuFrameNotCited`.
+  - The `Not emitted: U5 …` line is gone.
+- **`aethelgard-pincheck`, the identity judge's sixth fact.**
+  - `HAL_INS_PROBE_LIST` is read as the compiler expands it, down to `ADD_BACKEND(AP_InertialSensor_<driver>::probe(*this,hal.spi->get_device("<name>"),ROTATION_<x>))`.
+  - The driver and the device are held against the parts row, and the rotation **by matrix** from the judge's own 26-row table, both aliases included (D4).
+  - The expected matrix is computed from the solved `{x, z}` by the judge's own arithmetic.
+  - The ELF must define the driver's `probe(AP_InertialSensor&, OwnPtr<Device>, Rotation)` under its mangled name (measured with `nm` on the built ELF, §5).
+  - A rotation that is not a right-angle enumerator, a rotation redefined as a macro, or a probe in another form is refused (`MalformedHeader`).
+  - Findings: `WrongImuProbe`, `WrongImuRotation`, `MissingImuProbe`, `UnexpectedImuProbe`, `ImuDriverNotLinked`.
+  - `identity::judge` now takes the ELF's bytes, not its decoded serial table, because it reads a symbol too.
+- **`aethelgard-eda`.**
+  - `schematic::seats` is the one reading of each IMU's seat (forward, orientation, cited pins), kept in `schematic.rs` so eda's pinned readers stay `schematic.rs` and `support.rs`.
+  - The placer gives a seated part the right angle that takes its footprint's pin-group axes (measured from the footprint's own pads) to the declared directions, or refuses `ImuRotationUnplaceable` (Z not up, X up or down, mirrored or diagonal pins, a pin with no pad).
+  - The part's pads and geometry are carried at that angle, so its capacitors target the turned pins.
+  - **D2:** footprint zones turn by `route::rotate`, as pads do. The labelled refusal is gone, and its intent is the tier-2 test `a_turned_keepout_is_where_kicad_draws_it`.
+  - **§5's hand-turned footprint:** `check drc --spec` holds each declared IMU's footprint to its declaration from the board's own pads, before any tool runs (`route::declared` → `ImuOrientationDisagrees`), with arithmetic of its own: the body-frame cross product.
+
+## 5. Acceptance (§2), measured
+
+Built in the pinned ArduPilot image (`Copter-4.7.2`, `fb773567`) by `container/ardupilot-build.sh boards <name>`, under `capped-run --mem 8G --network none`, one container at a time. Judged by this branch's `aethelgard check pinout --topology --elf --hwdef-h`.
+
+- **Generated `sentinel-02-own` with its `IMU` line** (`IMU Invensensev3 SPI:icm42688 ROTATION_ROLL_180_YAW_90`) builds unmodified ArduPilot in 21.9 s.
+  - `hwdef.h` L140: `#define HAL_INS_PROBE1  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device("icm42688"),ROTATION_ROLL_180_YAW_90))`.
+  - `hwdef.h` L144: `#define HAL_INS_PROBE_LIST HAL_INS_PROBE1`.
+  - The ELF holds 30 `AP_InertialSensor_Invensensev3` symbols (`nm`), among them `_ZN30AP_InertialSensor_Invensensev35probeER17AP_InertialSensorN6AP_HAL6OwnPtrINS2_6DeviceEEE8Rotation`.
+  - `check pinout`: `ok`, no finding, the identity judge included.
+- **The four mutations, each refused by name.** The first three are hand edits of the generated `hwdef.dat`, each built in unmodified ArduPilot (27–29 s):
+
+  | Mutation | Result |
+  |---|---|
+  | `IMU` line removed | `MissingImuProbe HAL_INS_PROBE_LIST`. Its ELF has **0** Invensensev3 symbols (4400c's (h), reproduced) |
+  | `ROTATION_ROLL_180` | `WrongImuRotation HAL_INS_PROBE1` [expected `ROTATION_ROLL_180_YAW_90 or ROTATION_PITCH_180_YAW_270` \| `ROTATION_ROLL_180`] |
+  | `SPI:dataflash` | `WrongImuProbe HAL_INS_PROBE1` [`Invensensev3 on SPI device icm42688` \| `… dataflash`] |
+  | no declared orientation (`board.forward` and U5's `orientation` removed) | `solve` passes. `generate hwdef` refuses `ImuOrientationUndeclared` (`U5`), exit 2, and no file is written |
+
+- **The placed footprint agrees with the declaration.** `orientation_tier1`'s `the_placed_imu_agrees_with_the_declared_orientation` reads only the emitted board: U5's `(at x y θ)`, its pads turned as KiCad turns them, and each axis from the pads' mean to the mean of the cited pins. It holds them to the declaration worked through the board frame.
+  - Seven declarations are covered: forward `top` with X right, forward, left and aft (0, 90, 180 and 270°); `right`/right; `bottom`/forward; `left`/aft.
+  - At each angle the F.Cu keep-out is the pad ring's turned box, centred on the origin.
+  - The DRC gate's own reading (`route::declared`) passes each one.
+- **The rotation tables, measured against ArduPilot's compiled code.** `Vector3<T>::rotate`'s body, verbatim from `vector3.cpp` at the tag, was compiled with host `g++` on a minimal `Vector3` beside `rotations.h` verbatim. Applied to the three basis vectors for every `Rotation` below `ROTATION_MAX`, it gives 26 right-angle names with 24 matrices.
+  - hwdef's 24 rows match exactly; it leaves out only the aliases 26 and 27, by D4.
+  - The judge's 26 rows match exactly.
+
+  This replaces §1.1's Python evaluation of the same source as the evidence.
+- **D2 in KiCad.** `with_tools`' `a_turned_keepout_is_where_kicad_draws_it` emits `sentinel-02-own` with U5 at 90, 180 and 270° and its two keep-outs. It routes, and `check drc --spec --schematic` passes with no finding (tools image, 10.8 s).
+  - **Mutant:** the zone not turned. KiCad reports `lib_footprint_mismatch` on U5 at 90°, so the test fails: killed.

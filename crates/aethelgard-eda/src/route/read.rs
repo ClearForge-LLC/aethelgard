@@ -611,17 +611,31 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
 /// expected directions are worked from the declaration here, in the board
 /// frame (x forward, y right, z down through F.Cu, ruled D3), Y = Z × X,
 /// each drawn as `a·forward + b·right` on the board seen from F.Cu, where
-/// right is forward turned clockwise; nothing is taken from the placer.
+/// right is forward turned clockwise; nothing is taken from the placer. A
+/// declaration with Z not up, or X up or down, draws an X or a Y no footprint
+/// on F.Cu has, so it disagrees with every board.
 fn imu_agrees(
     board: &strict::Node<'_>,
     reference: &str,
     seat: &crate::schematic::Seat,
 ) -> Result<(), String> {
     use aethelgard_ir::orientation::{Edge, Toward};
-    let fp = board
-        .all("footprint")
-        .find(|f| f.field("Reference").ok().flatten() == Some(reference))
-        .ok_or("the board has no footprint of that reference")?;
+    let mut found = Vec::new();
+    for f in board.all("footprint") {
+        if f.field("Reference").map_err(|e| e.to_string())? == Some(reference) {
+            found.push(f);
+        }
+    }
+    let fp = match found.as_slice() {
+        [fp] => fp.clone(),
+        [] => return Err("the board has no footprint of that reference".into()),
+        _ => {
+            return Err(format!(
+                "the board has {} footprints of that reference",
+                found.len()
+            ));
+        }
+    };
     let layer = one(&fp, "layer")?.and_then(|l| l.arg(1).map(str::to_owned));
     if layer.as_deref() != Some("F.Cu") {
         return Err(format!(
@@ -669,9 +683,6 @@ fn imu_agrees(
         z[2] * x[0] - z[0] * x[2],
         z[0] * x[1] - z[1] * x[0],
     ];
-    if z != [0, 0, -1] {
-        return Err("Z must point up, out of F.Cu, for any footprint on the front".into());
-    }
     let f: (i64, i64) = match seat.forward {
         Edge::Top => (0, -1),
         Edge::Right => (1, 0),

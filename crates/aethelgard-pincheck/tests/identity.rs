@@ -627,3 +627,20 @@ fn an_unknown_probe_form_or_rotation_is_refused() {
     let err = judge(&t, &redefined, &[EMPTY]).unwrap_err();
     assert_eq!(err.kind(), "MalformedHeader", "{err:?}");
 }
+
+/// The probe must be a function the ELF defines: a data object of that name
+/// is not the driver (adversarial: a symbol of the right name, the wrong kind).
+#[test]
+fn an_object_named_like_the_probe_is_not_the_driver() {
+    let (t, text) = declared();
+    let parts = aethelgard_ir::parts::table().unwrap();
+    let pre = header::preprocess(&text).unwrap();
+    let elf = Elf {
+        serial: Some(vec![serial_bytes(&EMPTY)]),
+        objects: vec![(INVENSENSEV3_PROBE.to_owned(), 0x0800_2000)],
+        ..Elf::default()
+    };
+    let found = identity::judge(&t, parts, &pre, &elf.bytes()).unwrap();
+    let kinds: Vec<&str> = found.iter().map(|f| f.kind).collect();
+    assert_eq!(kinds, ["ImuDriverNotLinked"], "{found:?}");
+}

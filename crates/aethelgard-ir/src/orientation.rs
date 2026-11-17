@@ -18,7 +18,7 @@ use std::fmt;
 
 /// The board edge the vehicle's nose points to, as the board file draws it
 /// seen from F.Cu: `top` is the edge at the least y (KiCad's y points down).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Edge {
     Top,
@@ -28,7 +28,7 @@ pub enum Edge {
 }
 
 /// A direction in the board frame.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Toward {
     Forward,

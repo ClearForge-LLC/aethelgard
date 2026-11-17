@@ -930,6 +930,9 @@ fn imus(
         .filter_map(|(r, d)| {
             let a = parts.get(&d.part)?.ardupilot.as_ref()?;
             (a.kind == ArduPilotKind::Imu).then(|| {
+                // belt-and-suspenders: `validate` refuses an orientation
+                // whose part cites no driver frame; a hand-written topology
+                // can still pair them, and no rotation is then right.
                 let m = d
                     .orientation
                     .filter(|_| a.frame.is_some())
