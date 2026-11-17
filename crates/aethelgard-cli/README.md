@@ -57,7 +57,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":9,"specification_sha256":"b9e95cdc…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":10,"specification_sha256":"21e1b9d5…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -442,7 +442,7 @@ The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a lin
 
 Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `identity` (`judged`, or `not judged: no hwdef.h`; `AET-WO-4400b2`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `WrongOutputType`, `WrongSpeed`, `WrongPull`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`; and, with `hwdef.h`, the identity judge's kinds under `check` `identity`, listed in `aethelgard-pincheck`'s README, `AET-WO-4400b2`), `pin`, `net` (or null), `expected` and `decoded`.
 
-The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer probes and bauds) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
+The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes, and bauds) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
 
 | Exit | When |
 |---|---|
@@ -730,6 +730,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
 2. **Read the board once, into memory**; its sha256 and the bound both come from those bytes. The reader is strict, so that it never reads a board otherwise than KiCad. Refused with exit `3`, before any estimate:
    - `BoardUnreadable`: not one KiCad S-expression, or what `route::read` refuses (a part rotated other than by a right angle, a non-front-SMD part, a track or via other than its net's class's or the board's);
    - `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees`, `ViaNotThrough` (`AET-WO-4100`; `ThicknessDisagrees` was `BoardThickness`): a board whose copper layer table (read by KiCad's ids), zones and planes, `(general (thickness …))` or vias are not the specification's declared board;
+   - `ImuOrientationDisagrees` (`AET-WO-4400d`): a declared IMU whose footprint is missing, not on F.Cu, or turned so that the part's cited axes (by pins, read from the board's own pads) do not point as the specification declares, as a footprint turned by hand after placement would;
    - `MalformedBoard`: what the strict reader refuses (`check drc` above), with `id` the path to the node: a repeated child KiCad holds once, or a footprint field named twice (a legacy `fp_text reference` beside the `Reference` property included);
    - `UnmodelledCopper`: an item, a child, a list with no keyword, or a repeated child the bound does not model, or a value count other than its own. This covers an arc; a graphic or text on copper; copper in a footprint other than its pads; a pad without `layers`, naming a layer other than by its canonical name, or shaped other than `rect` or `roundrect`; a padstack, drill or offset; a zone fill or local clearance; and a stackup;
    - `BoardTooLarge`: a coordinate or size beyond 250 mm;

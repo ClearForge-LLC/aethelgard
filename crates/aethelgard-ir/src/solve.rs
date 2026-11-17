@@ -952,6 +952,7 @@ fn spi_devices(spec: &Specification, solved: &SolvedTopology) -> BTreeMap<String
                 bus: d.bus.clone(),
                 peripheral: placed.peripheral.clone(),
                 cs: d.cs.net.clone(),
+                orientation: d.orientation,
             },
         );
     }
@@ -2199,6 +2200,7 @@ mod differential {
                     bus,
                     cs: signal(rng, format!("U{i}_cs"), pool),
                     pin_capacitance: None,
+                    orientation: None,
                 });
             }
         }

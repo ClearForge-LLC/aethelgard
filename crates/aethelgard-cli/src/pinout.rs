@@ -137,8 +137,7 @@ pub fn check(
             message: format!("the parts table is unusable: {err}"),
         })?;
         let pre = aethelgard_pincheck::header::preprocess(text).map_err(refused)?;
-        let serial = aethelgard_pincheck::elf::serial_table(&elf_bytes).map_err(refused)?;
-        let findings = aethelgard_pincheck::identity::judge(&topology, parts, &pre, &serial)
+        let findings = aethelgard_pincheck::identity::judge(&topology, parts, &pre, &elf_bytes)
             .map_err(refused)?;
         judgement = judgement.with_identity(findings);
     }

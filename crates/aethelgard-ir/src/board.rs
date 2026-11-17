@@ -78,6 +78,15 @@ pub struct Board {
         skip_serializing_if = "Option::is_none"
     )]
     pub max_outline_um: Option<OutlineBound>,
+    /// The edge the vehicle's nose points to (`AET-WO-4400d`,
+    /// [`crate::orientation`]). Optional, as `max_outline_um` is; required
+    /// when a device declares an orientation (`ForwardUndeclared`).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub forward: Option<crate::orientation::Edge>,
 }
 
 /// A declared outline bound: the board's width and height at most, in
@@ -362,7 +371,9 @@ impl Board {
 
 /// An optional key that is present must hold a value: `null` is refused as
 /// the wrong type, as `test_points` and `mcu.reset_switch` refuse it.
-fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(d: D) -> Result<Option<T>, D::Error> {
+pub(crate) fn present<'de, D: Deserializer<'de>, T: Deserialize<'de>>(
+    d: D,
+) -> Result<Option<T>, D::Error> {
     T::deserialize(d).map(Some)
 }
 

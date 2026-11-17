@@ -225,7 +225,7 @@ fn the_switch_skips_a_spelled_sw1_and_refuses_another_spelling_of_it() {
 /// without the new fields, never read as today's board.
 #[test]
 fn an_older_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 15);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 16);
     for base in [bench_json(), serde_json::from_str(V0).unwrap()] {
         for version in [12, 13] {
             let mut v = base.clone();
@@ -234,7 +234,7 @@ fn an_older_file_is_refused_by_its_version() {
                 refusal(&v),
                 E::UnsupportedSchemaVersion {
                     version,
-                    expected: 15
+                    expected: 16
                 }
             );
         }

@@ -16,6 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use aethelgard_ir::orientation::{Orientation, Toward};
 use aethelgard_ir::parts::{self, ArduPilotKind};
 use aethelgard_ir::power_parts::{self, Kind as PowerKind, McuArduPilot};
 use aethelgard_ir::serial::{Parity, SerialRole};
@@ -142,6 +143,17 @@ pub enum Refusal {
         "battery sense `{net}` is solved, but its divider ratio (SCALE) has no source in the topology (AET-WO-4400b D7)"
     )]
     SenseNotEmitted { net: String },
+    /// `AET-WO-4400d` (`INV-06`): an IMU's rotation is the declared
+    /// orientation's, never a default.
+    #[error(
+        "`{reference}` ({part}) is an IMU with no declared orientation; ArduPilot's IMU line needs its rotation (AET-WO-4400d)"
+    )]
+    ImuOrientationUndeclared { reference: String, part: String },
+    /// `AET-WO-4400d`: the driver's sample frame is a cited fact.
+    #[error(
+        "`{reference}` ({part}): the parts row cites no ardupilot.frame, so the driver's frame is unknown (AET-WO-4400d)"
+    )]
+    ImuFrameNotCited { reference: String, part: String },
 }
 
 impl Refusal {
@@ -170,6 +182,8 @@ impl Refusal {
             Self::NoSystemTimer => "NoSystemTimer",
             Self::SenseNotEmitted { .. } => "SenseNotEmitted",
             Self::PinNotEmitted { .. } => "PinNotEmitted",
+            Self::ImuOrientationUndeclared { .. } => "ImuOrientationUndeclared",
+            Self::ImuFrameNotCited { .. } => "ImuFrameNotCited",
         }
     }
 
@@ -188,6 +202,8 @@ impl Refusal {
             | Self::SenseNotEmitted { net }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::DuplicateSpidev { second, .. } => Some(second),
+            Self::ImuOrientationUndeclared { reference, .. }
+            | Self::ImuFrameNotCited { reference, .. } => Some(reference),
             Self::SpiBelowArduPilotDivider { peripheral, .. } => Some(peripheral),
             Self::InvalidTopology(e) | Self::PartsTable(e) => e.id(),
             Self::OscillatorNotCited { .. }
@@ -754,11 +770,112 @@ fn i2c(
     }
 }
 
+/// ArduPilot's axis-aligned rotations, as `Vector3<T>::rotate` computes them
+/// at the tag (`libraries/AP_Math/vector3.cpp`, evaluated case by case,
+/// `AET-WO-4400d` FEEDBACK §1.1): each name with its matrix, rows x, y, z, so
+/// that `v_board = M · v_driver`. Of two names for one matrix (26 is 14, 27 is
+/// 10, `rotations.h` L54-55) the lower-numbered is written (ruled D4).
+const ROTATIONS: [(&str, [[i8; 3]; 3]); 24] = [
+    ("ROTATION_NONE", [[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_90", [[0, -1, 0], [1, 0, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_180", [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_270", [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]),
+    ("ROTATION_ROLL_180", [[1, 0, 0], [0, -1, 0], [0, 0, -1]]),
+    (
+        "ROTATION_ROLL_180_YAW_90",
+        [[0, 1, 0], [1, 0, 0], [0, 0, -1]],
+    ),
+    ("ROTATION_PITCH_180", [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]),
+    (
+        "ROTATION_ROLL_180_YAW_270",
+        [[0, -1, 0], [-1, 0, 0], [0, 0, -1]],
+    ),
+    ("ROTATION_ROLL_90", [[1, 0, 0], [0, 0, -1], [0, 1, 0]]),
+    ("ROTATION_ROLL_90_YAW_90", [[0, 0, 1], [1, 0, 0], [0, 1, 0]]),
+    ("ROTATION_ROLL_270", [[1, 0, 0], [0, 0, 1], [0, -1, 0]]),
+    (
+        "ROTATION_ROLL_270_YAW_90",
+        [[0, 0, -1], [1, 0, 0], [0, -1, 0]],
+    ),
+    ("ROTATION_PITCH_90", [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]),
+    ("ROTATION_PITCH_270", [[0, 0, -1], [0, 1, 0], [1, 0, 0]]),
+    (
+        "ROTATION_ROLL_90_PITCH_90",
+        [[0, 1, 0], [0, 0, -1], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_180_PITCH_90",
+        [[0, 0, -1], [0, -1, 0], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_90",
+        [[0, -1, 0], [0, 0, 1], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_180",
+        [[-1, 0, 0], [0, 0, -1], [0, -1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_180",
+        [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_270",
+        [[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_180_PITCH_270",
+        [[0, 0, 1], [0, -1, 0], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_270",
+        [[0, 1, 0], [0, 0, 1], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_180_YAW_90",
+        [[0, 0, 1], [-1, 0, 0], [0, -1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_YAW_270",
+        [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+    ),
+];
+
+/// A board-frame direction as a unit vector: x forward, y right, z down
+/// (the engine's frame, F.Cu up; ruled D3).
+fn unit(d: Toward) -> [i8; 3] {
+    match d {
+        Toward::Forward => [1, 0, 0],
+        Toward::Aft => [-1, 0, 0],
+        Toward::Right => [0, 1, 0],
+        Toward::Left => [0, -1, 0],
+        Toward::Down => [0, 0, 1],
+        Toward::Up => [0, 0, -1],
+    }
+}
+
+/// The `ROTATION_…` for a declared orientation, with the driver passing the
+/// chip's axes unchanged (`ardupilot.frame` `chip`, the one frame the parts
+/// table accepts): the matrix whose columns are the chip's X, Y = Z × X and
+/// Z in the board frame. `None` only for axes not at right angles, which
+/// `SolvedTopology::validate` refuses first.
+fn rotation(o: &Orientation) -> Option<&'static str> {
+    let x = unit(o.x);
+    let z = unit(o.z);
+    let y = [
+        z[1] * x[2] - z[2] * x[1],
+        z[2] * x[0] - z[0] * x[2],
+        z[0] * x[1] - z[1] * x[0],
+    ];
+    let m = [[x[0], y[0], z[0]], [x[1], y[1], z[1]], [x[2], y[2], z[2]]];
+    ROTATIONS.iter().find(|(_, r)| *r == m).map(|(n, _)| *n)
+}
+
 /// The SPI buses: each controller's pins, each device's chip select and
 /// `SPIDEV` (from the parts table's name, on its controller's achieved
-/// rate), the logger's define, and an SPI barometer's `BARO` line. An IMU
-/// takes its `SPIDEV` and no `IMU` line: its rotation is a mechanical fact no
-/// specification declares.
+/// rate), the logger's define, an SPI barometer's `BARO` line, and an IMU's
+/// `IMU` line, its rotation computed from the declared orientation
+/// (`AET-WO-4400d`); an IMU with none is refused (`INV-06`).
 fn spi(
     t: &SolvedTopology,
     parts_table: &parts::PartsTable,
@@ -815,6 +932,7 @@ fn spi(
     let mut on_bus: BTreeMap<&str, u32> = BTreeMap::new();
     let mut dataflash = false;
     let mut baros = Vec::new();
+    let mut imus = Vec::new();
     for (reference, d) in &devices {
         let Some(a) = parts_table.get(&d.part).and_then(|p| p.ardupilot.as_ref()) else {
             not_emitted.push(format!(
@@ -862,10 +980,28 @@ fn spi(
         );
         match a.kind {
             ArduPilotKind::Dataflash => dataflash = true,
-            ArduPilotKind::Imu => not_emitted.push(format!(
-                "{reference} ({}): no IMU line; its rotation is a mechanical fact no specification declares (its SPIDEV {name} is emitted)",
-                d.part
-            )),
+            ArduPilotKind::Imu => {
+                let refused = |undeclared: bool| {
+                    let (reference, part) = ((*reference).to_owned(), d.part.clone());
+                    if undeclared {
+                        Refusal::ImuOrientationUndeclared { reference, part }
+                    } else {
+                        Refusal::ImuFrameNotCited { reference, part }
+                    }
+                };
+                let o = d.orientation.ok_or_else(|| refused(true))?;
+                // belt-and-suspenders: `validate` refuses an orientation on
+                // a part whose row cites no frame (`ImuAxesNotCited`), so a
+                // topology from `solve` never reaches this; one written by
+                // hand can, and its rotation would then rest on an assumed
+                // frame.
+                if a.frame.is_none() {
+                    return Err(refused(false));
+                }
+                let r = rotation(&o)
+                    .expect("validate refuses axes not at right angles; the 24 cover the rest");
+                imus.push((reference, d, a.driver.clone(), name, o, r));
+            }
             ArduPilotKind::Baro => baros.push((reference, d, a.driver.clone(), name)),
         }
     }
@@ -883,6 +1019,20 @@ fn spi(
             ),
             format!(
                 "[T] spi_devices.{reference} ({}); [P] its ardupilot driver",
+                d.part
+            ),
+        );
+    }
+    for (reference, d, driver, name, o, r) in imus {
+        l.push(
+            format!(
+                "IMU {} SPI:{name} {r}",
+                driver.expect("an imu row names its driver")
+            ),
+            format!(
+                "[T] spi_devices.{reference}.orientation (x {}, z {}) in the board frame [C]; [P] its ardupilot driver and frame ({})",
+                o.x.name(),
+                o.z.name(),
                 d.part
             ),
         );
@@ -908,6 +1058,11 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
         "Constants: APJ_BOARD_ID {APJ_BOARD_ID} (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE {HAL_STORAGE_SIZE} in the last two flash sectors; the system timer TIM5, else TIM2."
     ));
     c("Never emitted: DEFAULTGPIO (4400a D-1).");
+    if l.0.iter().any(|(line, _)| line.starts_with("IMU ")) {
+        c(
+            "Board frame (AET-WO-4400d D3): x toward board.forward, y to its right, z down through F.Cu to B.Cu; the board is mounted F.Cu up, and any other mounting is AHRS_ORIENTATION's.",
+        );
+    }
     for n in not_emitted {
         c(&format!("Not emitted: {n}."));
     }

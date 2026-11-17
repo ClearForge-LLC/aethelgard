@@ -25,6 +25,7 @@ It never reads a `Specification`.
 | `BARO <driver> I2C:<order index>:<address>` | `[T]` the device; `[P]` its driver |
 | the SPI pins, each chip select as `CS`, `SPIDEV <name> <SPIn> DEVID<k> <cs> MODE0 <hz> <hz>`, `define HAL_LOGGING_DATAFLASH_ENABLED 1` | `[T]` + `[P]`. The speed is the controller's `achieved_hz`, rounded down to a whole kHz. `DEVID` is the device's place on its bus, from 1. The mode is `parts::DRIVEN_SPI_MODE` |
 | `<pin> TIMn_CHk TIMn PWM(index+1)` | `[T]` `motor_outputs` |
+| `IMU <driver> SPI:<name> ROTATION_<x>` | `[T]` the device's declared `orientation`; `[P]` its driver, `SPIDEV` name and `ardupilot.frame` (`chip`); `[C]` the board frame (`AET-WO-4400d`). The rotation is the one whose matrix, as ArduPilot's `Vector3::rotate` computes it at the tag, takes the chip's X, Y = Z × X and Z to the board frame: x forward, y right, z down through F.Cu, the board mounted F.Cu up (ruled D3, named in the header). Of two names for one matrix, the lower-numbered (ruled D4) |
 | `define HAL_USE_ADC FALSE` | `[T]` no `power.sense` |
 
 **Every pin line** carries ArduPilot's own tokens (`chibios_hwdef.py:349-431`):
@@ -45,17 +46,17 @@ It never reads a `Specification`.
 - two devices with one `SPIDEV` name;
 - an SPI rate below ArduPilot's slowest on the cited kernel (kernel ÷ 256, `SPIDevice.cpp:259-276`), or an SPI peripheral with no cited kernel;
 - a topology with battery sense pins, because their `SCALE` has no source (`4400b` D7);
-- a solved pin no emitted line configures.
+- a solved pin no emitted line configures;
+- an IMU with no declared orientation (`ImuOrientationUndeclared`, `INV-06`), or whose parts row cites no driver frame (`ImuFrameNotCited`).
 
 **What it names and does not emit** (the header lists each, and the CLI's report carries them):
 - a device whose part has no `ardupilot` column. Today that is the TMP117, which ArduPilot's TMP119 driver refuses: 0x2117 against 0x0117;
-- an IMU's `IMU` line, because its rotation is a mechanical fact no specification declares. Its `SPIDEV` is emitted;
 - an RC-input port's baud and options, with what ArduPilot runs;
 - a motor output's protocol and PWM range, which are ArduPilot parameters (`MOT_PWM_TYPE`, `MOT_PWM_MIN/MAX`) for the `defaults.parm` work order;
 - `BIDIR`, which nothing declares.
 
 **What judges it.**
-- `check pinout`, on the ELF: mode, AF, `OTYPER`, `OSPEEDR` and `PUPDR` of every topology pin, the reverse direction and the package.
+- `check pinout`, on the ELF: mode, AF, `OTYPER`, `OSPEEDR` and `PUPDR` of every topology pin, the reverse direction and the package; with `hwdef.h`, the identity judge (`aethelgard-pincheck`), which reads each device table as the compiler expands it, the `IMU` probes and their rotations among them (`AET-WO-4400d`).
 - ArduPilot's own configure and compile, which refuse a pin with no such function in its AF table, a serial port with no pins, and a system timer a motor takes.
 - This crate's tests, which hold every emitted keyword and define to the exact names ArduPilot reads at the tag, each with its line.
 

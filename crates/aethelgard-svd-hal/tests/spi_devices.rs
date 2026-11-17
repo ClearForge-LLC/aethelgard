@@ -52,6 +52,7 @@ fn two_devices() -> (SolvedTopology, aethelgard_ir::PinTable) {
             bus: flash.bus,
             peripheral: flash.peripheral,
             cs: "IMU_CS".into(),
+            orientation: None,
         },
     );
     solved.derive_controllers();

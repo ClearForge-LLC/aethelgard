@@ -112,6 +112,7 @@ fn device(reference: &str, bus: &str) -> SpiDevice {
         bus: bus.into(),
         cs: signal(&format!("{reference}_CS"), None),
         pin_capacitance: None,
+        orientation: None,
     }
 }
 

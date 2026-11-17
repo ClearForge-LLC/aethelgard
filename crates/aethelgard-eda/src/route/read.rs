@@ -425,8 +425,8 @@ fn zone_is_outline(zone: &strict::Node<'_>, outline: Rect) -> Result<bool, Strin
 }
 
 /// A board that does not agree with the specification's declared board,
-/// named: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees` or
-/// `ViaNotThrough`.
+/// named: `LayersDisagree`, `PlanesDisagree`, `ThicknessDisagrees`,
+/// `ViaNotThrough` or `ImuOrientationDisagrees`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Disagrees {
     pub kind: &'static str,
@@ -595,6 +595,109 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
                 "the board declares thickness {thickness:?} nm; the specification declares {} nm",
                 stack.thickness.nominal_nm
             ),
+        ));
+    }
+    for (reference, seat) in &stack.imus {
+        imu_agrees(&board, reference, seat)
+            .map_err(|m| no("ImuOrientationDisagrees", format!("{reference}: {m}")))?;
+    }
+    Ok(())
+}
+
+/// `AET-WO-4400d` §5: a declared IMU's footprint holds the part's cited axes
+/// where the specification declares them, read from the board alone: the
+/// footprint on F.Cu, its pads where [`part`] reads them, each axis from the
+/// pads' mean to the mean of the pins the parts table names for it. The
+/// expected directions are worked from the declaration here, in the board
+/// frame (x forward, y right, z down through F.Cu, ruled D3), Y = Z × X,
+/// each drawn as `a·forward + b·right` on the board seen from F.Cu, where
+/// right is forward turned clockwise; nothing is taken from the placer. A
+/// declaration with Z not up, or X up or down, draws an X or a Y no footprint
+/// on F.Cu has, so it disagrees with every board.
+fn imu_agrees(
+    board: &strict::Node<'_>,
+    reference: &str,
+    seat: &crate::schematic::Seat,
+) -> Result<(), String> {
+    use aethelgard_ir::orientation::{Edge, Toward};
+    let mut found = Vec::new();
+    for f in board.all("footprint") {
+        if f.field("Reference").map_err(|e| e.to_string())? == Some(reference) {
+            found.push(f);
+        }
+    }
+    let fp = match found.as_slice() {
+        [fp] => fp.clone(),
+        [] => return Err("the board has no footprint of that reference".into()),
+        _ => {
+            return Err(format!(
+                "the board has {} footprints of that reference",
+                found.len()
+            ));
+        }
+    };
+    let layer = one(&fp, "layer")?.and_then(|l| l.arg(1).map(str::to_owned));
+    if layer.as_deref() != Some("F.Cu") {
+        return Err(format!(
+            "its footprint is on {layer:?}; a part on the back is mirrored, and the declaration is for F.Cu"
+        ));
+    }
+    let placed = part(&fp)?;
+    let centre = |pads: &[&Rect]| -> (i64, i64) {
+        let n = i64::try_from(pads.len().max(1)).unwrap_or(1);
+        let (x, y) = pads.iter().fold((0, 0), |s, r| {
+            (s.0 + (r.x0 + r.x1) / 2, s.1 + (r.y0 + r.y1) / 2)
+        });
+        (x / n, y / n)
+    };
+    let all: Vec<&Rect> = placed.pads.iter().map(|p| &p.rect).collect();
+    let c = centre(&all);
+    let axis = |pins: &[String]| -> Result<(i64, i64), String> {
+        let named: Vec<&Rect> = placed
+            .pads
+            .iter()
+            .filter(|p| pins.contains(&p.number))
+            .map(|p| &p.rect)
+            .collect();
+        if named.len() != pins.len() {
+            return Err(format!("its footprint lacks a pad of {}", pins.join(", ")));
+        }
+        let (x, y) = centre(&named);
+        Ok(((x - c.0).signum(), (y - c.1).signum()))
+    };
+    let board_x = axis(&seat.x_toward_pins)?;
+    let board_y = axis(&seat.y_toward_pins)?;
+    let body = |d: Toward| -> [i64; 3] {
+        match d {
+            Toward::Forward => [1, 0, 0],
+            Toward::Aft => [-1, 0, 0],
+            Toward::Right => [0, 1, 0],
+            Toward::Left => [0, -1, 0],
+            Toward::Down => [0, 0, 1],
+            Toward::Up => [0, 0, -1],
+        }
+    };
+    let (x, z) = (body(seat.orientation.x), body(seat.orientation.z));
+    let y = [
+        z[1] * x[2] - z[2] * x[1],
+        z[2] * x[0] - z[0] * x[2],
+        z[0] * x[1] - z[1] * x[0],
+    ];
+    let f: (i64, i64) = match seat.forward {
+        Edge::Top => (0, -1),
+        Edge::Right => (1, 0),
+        Edge::Bottom => (0, 1),
+        Edge::Left => (-1, 0),
+    };
+    let r = (-f.1, f.0);
+    let draw = |v: [i64; 3]| (v[0] * f.0 + v[1] * r.0, v[0] * f.1 + v[1] * r.1);
+    let (want_x, want_y) = (draw(x), draw(y));
+    if (board_x, board_y) != (want_x, want_y) {
+        return Err(format!(
+            "its footprint puts the chip's X toward {board_x:?} and Y toward {board_y:?} on the board (y down); the specification declares X {} and Z {} with forward the {:?} edge: X toward {want_x:?}, Y toward {want_y:?}",
+            seat.orientation.x.name(),
+            seat.orientation.z.name(),
+            seat.forward
         ));
     }
     Ok(())

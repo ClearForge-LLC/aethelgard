@@ -187,17 +187,7 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
     };
     let mut out = Vec::with_capacity(stripped.len());
     for (n, line) in stripped {
-        let directive = line
-            .trim_start()
-            .strip_prefix('#')
-            .or_else(|| line.trim_start().strip_prefix("%:"))
-            .map(str::trim_start);
-        let word = directive.map(|d| {
-            let end = d
-                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .unwrap_or(d.len());
-            (&d[..end], d[end..].trim())
-        });
+        let word = directive(&line).map(|(w, rest)| (w, rest.trim()));
         let here = match word {
             Some(("if" | "ifdef" | "ifndef", arg)) => {
                 let here = state(&groups);
@@ -257,17 +247,31 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
     Ok(out)
 }
 
+/// A directive's word and the text after it, with any blanks GCC allows
+/// around `#`, which may be spelled as the digraph `%:` (`AET-WO-4400d`
+/// adversarial: `%:define` redefined a probe the reader did not see).
+fn directive(line: &str) -> Option<(&str, &str)> {
+    let blank = [' ', '\t'];
+    let d = line.trim_start_matches(blank);
+    let d = d
+        .strip_prefix('#')
+        .or_else(|| d.strip_prefix("%:"))?
+        .trim_start_matches(blank);
+    let end = d
+        .find(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+        .unwrap_or(d.len());
+    Some((&d[..end], &d[end..]))
+}
+
 /// The text after `name` when `line` is `#define <name>` followed by a blank
 /// or the end, with any blanks GCC allows around `#` and `define`
 /// (`AET-WO-4400b2` adversarial A1: ArduPilot writes a `define` line's own
-/// spacing through).
+/// spacing through), `#` written either way ([`directive`]).
 fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     let blank = [' ', '\t'];
-    let rest = line
-        .trim_start_matches(blank)
-        .strip_prefix('#')?
-        .trim_start_matches(blank)
-        .strip_prefix("define")?;
+    let ("define", rest) = directive(line)? else {
+        return None;
+    };
     if !rest.starts_with(blank) {
         return None;
     }
@@ -459,6 +463,22 @@ impl Preprocessed {
                 name: name.to_owned(),
                 line: *n,
             });
+        }
+        // A compiled `#undef` or `#pragma` (`push_macro`, `pop_macro`) naming
+        // it may stand another definition in for the one read here: refused
+        // (`AET-WO-4400d` adversarial).
+        if let Some((n, _, l)) = self.0.iter().find(|(_, s, l)| {
+            *s == State::Live
+                && matches!(directive(l), Some(("undef" | "pragma", _)))
+                && mentions(l)
+        }) {
+            return refuse(
+                name,
+                format!(
+                    "is named by `{}` on line {n}, which the reader does not follow",
+                    l.trim()
+                ),
+            );
         }
         let defines: Vec<&str> = self
             .0

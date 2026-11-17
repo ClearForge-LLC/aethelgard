@@ -5,10 +5,14 @@
 //! - each motor's timer channel and `PWM(n)` index (`HAL_PWM_GROUPS`);
 //! - the I2C clock (`HAL_I2C_MAX_CLOCK`, on ArduPilot's own timings);
 //! - the serial order and pins (the ELF's `_serial_tab`) and each port's baud;
-//! - the barometer probes (`HAL_BARO_PROBE_LIST`).
+//! - the barometer probes (`HAL_BARO_PROBE_LIST`);
+//! - the IMU probes (`HAL_INS_PROBE_LIST`, `AET-WO-4400d`): each driver, its
+//!   SPI device, and its rotation, judged as a matrix against the declared
+//!   orientation; and the driver's probe linked into the ELF.
 //!
 //! Each table is read through the list macro the compiler expands
-//! (`SPIDevice.cpp:75`, `RCOutput.cpp:75`, `AP_Baro.cpp:666`), never through
+//! (`SPIDevice.cpp:75`, `RCOutput.cpp:75`, `AP_Baro.cpp:666`,
+//! `AP_InertialSensor.cpp:1220-1222`), never through
 //! numbered macros the list may not name (adversarial A4). The expected values
 //! come from the topology and `aethelgard-ir` alone; nothing here reads the
 //! generated `hwdef.dat`, and the crate shares no code with its generator
@@ -17,10 +21,11 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::SolvedTopology;
+use aethelgard_ir::orientation::{Orientation, Toward};
 use aethelgard_ir::parts::{ArduPilotKind, PartsTable};
 use aethelgard_ir::serial::SerialRole;
 
-use crate::elf::SerialEntry;
+use crate::elf::{self, SerialEntry};
 use crate::header::Preprocessed;
 use crate::{Finding, Refusal};
 
@@ -271,22 +276,24 @@ fn bus_list(h: &Preprocessed, name: &str, driver: &str) -> Result<Vec<u8>, Refus
     Ok(out)
 }
 
-/// Judges ArduPilot's device tables (`header`, and the ELF's `serial` table)
-/// against `t`, with `parts` naming each part's ArduPilot driver and SPI
-/// name. Every mismatch is a finding; a table in a form this reader does not
-/// know is refused by name.
+/// Judges ArduPilot's device tables (`header`, and the ELF's serial table
+/// and symbols) against `t`, with `parts` naming each part's ArduPilot
+/// driver and SPI name. Every mismatch is a finding; a table in a form this
+/// reader does not know is refused by name.
 pub fn judge(
     t: &SolvedTopology,
     parts: &PartsTable,
     header: &Preprocessed,
-    serial: &[SerialEntry],
+    elf_bytes: &[u8],
 ) -> Result<Vec<Finding>, Refusal> {
+    let serial = elf::serial_table(elf_bytes)?;
     let mut out = Out(Vec::new());
     spi(t, parts, header, &mut out)?;
     motors(t, header, &mut out)?;
     i2c_clock(t, header, &mut out)?;
-    serial_ports(t, header, serial, &mut out)?;
+    serial_ports(t, header, &serial, &mut out)?;
     baros(t, parts, header, &mut out)?;
+    imus(t, parts, header, elf_bytes, &mut out)?;
     Ok(out.0)
 }
 
@@ -746,9 +753,329 @@ fn baros(
     Ok(())
 }
 
+/// A rotation's matrix, row `i` board axis `i` in the driver's x, y, z.
+type Matrix = [[i8; 3]; 3];
+
+/// ArduPilot's axis-aligned `Rotation`s at the tag, each as the matrix
+/// `Vector3<T>::rotate` applies (`libraries/AP_Math/vector3.cpp`, each `case`
+/// evaluated on the basis vectors; `rotations.h` L27-83; `AET-WO-4400d`
+/// FEEDBACK §1.1): row `i` is board axis `i` (x forward, y right, z down) in
+/// terms of the driver's x, y, z. Every name is here, aliases too (26 and
+/// 27), because a rotation is judged by what it does, not how it is spelled
+/// (ruled D4). This table is the judge's own (`RUL-20`).
+const ROTATIONS: [(&str, Matrix); 26] = [
+    ("ROTATION_NONE", [[1, 0, 0], [0, 1, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_90", [[0, -1, 0], [1, 0, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_180", [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]),
+    ("ROTATION_YAW_270", [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]),
+    ("ROTATION_ROLL_180", [[1, 0, 0], [0, -1, 0], [0, 0, -1]]),
+    (
+        "ROTATION_ROLL_180_YAW_90",
+        [[0, 1, 0], [1, 0, 0], [0, 0, -1]],
+    ),
+    ("ROTATION_PITCH_180", [[-1, 0, 0], [0, 1, 0], [0, 0, -1]]),
+    (
+        "ROTATION_ROLL_180_YAW_270",
+        [[0, -1, 0], [-1, 0, 0], [0, 0, -1]],
+    ),
+    ("ROTATION_ROLL_90", [[1, 0, 0], [0, 0, -1], [0, 1, 0]]),
+    ("ROTATION_ROLL_90_YAW_90", [[0, 0, 1], [1, 0, 0], [0, 1, 0]]),
+    ("ROTATION_ROLL_270", [[1, 0, 0], [0, 0, 1], [0, -1, 0]]),
+    (
+        "ROTATION_ROLL_270_YAW_90",
+        [[0, 0, -1], [1, 0, 0], [0, -1, 0]],
+    ),
+    ("ROTATION_PITCH_90", [[0, 0, 1], [0, 1, 0], [-1, 0, 0]]),
+    ("ROTATION_PITCH_270", [[0, 0, -1], [0, 1, 0], [1, 0, 0]]),
+    (
+        "ROTATION_PITCH_180_YAW_90",
+        [[0, -1, 0], [-1, 0, 0], [0, 0, -1]],
+    ),
+    (
+        "ROTATION_PITCH_180_YAW_270",
+        [[0, 1, 0], [1, 0, 0], [0, 0, -1]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_90",
+        [[0, 1, 0], [0, 0, -1], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_180_PITCH_90",
+        [[0, 0, -1], [0, -1, 0], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_90",
+        [[0, -1, 0], [0, 0, 1], [-1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_180",
+        [[-1, 0, 0], [0, 0, -1], [0, -1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_180",
+        [[-1, 0, 0], [0, 0, 1], [0, 1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_270",
+        [[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_180_PITCH_270",
+        [[0, 0, 1], [0, -1, 0], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_270_PITCH_270",
+        [[0, 1, 0], [0, 0, 1], [1, 0, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_PITCH_180_YAW_90",
+        [[0, 0, 1], [-1, 0, 0], [0, -1, 0]],
+    ),
+    (
+        "ROTATION_ROLL_90_YAW_270",
+        [[0, 0, -1], [-1, 0, 0], [0, 1, 0]],
+    ),
+];
+
+/// The matrix taking the chip's axes to the board's for a declared
+/// orientation, the driver passing the chip's axes unchanged (the only
+/// `ardupilot.frame` the parts table accepts): column `j` is chip axis `j`
+/// in the board frame, Y being Z × X. The board frame is the engine's
+/// constant: x forward, y right, z down through F.Cu (ruled D3).
+fn expected_matrix(o: &Orientation) -> Matrix {
+    // Each direction as (axis, sign) in the board frame.
+    let axis = |d: Toward| match d {
+        Toward::Forward => (0, 1),
+        Toward::Aft => (0, -1),
+        Toward::Right => (1, 1),
+        Toward::Left => (1, -1),
+        Toward::Down => (2, 1),
+        Toward::Up => (2, -1),
+    };
+    let mut m = [[0i8; 3]; 3];
+    let (xa, xs) = axis(o.x);
+    let (za, zs) = axis(o.z);
+    m[xa][0] = xs;
+    m[za][2] = zs;
+    // Y = Z × X: on the remaining axis, with the sign the cross product
+    // gives (e_a × e_b = +e_c for (a, b, c) a cyclic order of 0, 1, 2).
+    let ya = 3 - xa - za;
+    let cyclic = (za + 1) % 3 == xa;
+    m[ya][1] = zs * xs * if cyclic { 1 } else { -1 };
+    m
+}
+
+/// The IMU probes the list compiles, in order, against the topology's IMUs
+/// (the SPI devices whose part's ArduPilot row is an IMU), in index order:
+/// each the row's driver, on its SPI device name, with a rotation whose
+/// matrix is the declared orientation's; and each driver's
+/// `probe(AP_InertialSensor&, OwnPtr<Device>, Rotation)` defined in the ELF
+/// under its mangled name (measured in the CI-built ELF, FEEDBACK §5).
+fn imus(
+    t: &SolvedTopology,
+    parts: &PartsTable,
+    h: &Preprocessed,
+    elf_bytes: &[u8],
+    out: &mut Out,
+) -> Result<(), Refusal> {
+    let mut probes = Vec::new();
+    for (name, stmt) in expand(h, "HAL_INS_PROBE_LIST", ';')? {
+        let parsed = (|| {
+            let call = inside(&stmt, "ADD_BACKEND(", ")")?;
+            let (driver, rest) = call
+                .strip_prefix("AP_InertialSensor_")?
+                .split_once("::probe(")?;
+            let a = args(rest.strip_suffix(')')?);
+            let [this, dev, rotation] = a.as_slice() else {
+                return None;
+            };
+            let dev = inside(dev, "hal.spi->get_device(\"", "\")")?;
+            (this == "*this" && is_name(driver) && is_name(dev) && is_name(rotation))
+                .then(|| (driver.to_owned(), dev.to_owned(), rotation.clone()))
+        })();
+        match parsed {
+            Some((driver, dev, rotation)) => {
+                // A rotation is an enumerator; a macro of that name would
+                // stand in for it (adversarial).
+                if h.value(&rotation)?.is_some() {
+                    return malformed(
+                        &rotation,
+                        "is defined as a macro, where ArduPilot's Rotation enumerator stands",
+                    );
+                }
+                let Some((_, m)) = ROTATIONS.iter().find(|(n, _)| *n == rotation) else {
+                    return malformed(
+                        &name,
+                        format!("names `{rotation}`, not one of ArduPilot's right-angle rotations"),
+                    );
+                };
+                probes.push((name, driver, dev, rotation, *m));
+            }
+            None => {
+                return malformed(
+                    &name,
+                    format!(
+                        "is not ADD_BACKEND(AP_InertialSensor_<driver>::probe(*this,hal.spi->get_device(\"<name>\"),ROTATION_<x>)): `{stmt}`"
+                    ),
+                );
+            }
+        }
+    }
+    // `HAL_SITL_INVENSENSEV3` compiles one more probe after the list, on
+    // I2C bus 1 at address 1, `ROTATION_NONE` (`AP_InertialSensor.cpp`
+    // L1223-1225): no topology declares it.
+    if h.value("HAL_SITL_INVENSENSEV3")?.is_some() {
+        out.push(
+            "UnexpectedImuProbe",
+            "HAL_SITL_INVENSENSEV3",
+            None,
+            "none".into(),
+            "Invensensev3 on I2C bus 1 at 0x01, ROTATION_NONE".into(),
+        );
+    }
+    // The topology's IMUs: (reference, driver, device, matrix), the matrix
+    // `None` where no orientation is declared or the driver's frame is
+    // uncited, which no rotation can match.
+    let want: Vec<(&str, String, String, Option<Matrix>)> = t
+        .spi_devices_in_order()
+        .into_iter()
+        .filter_map(|(r, d)| {
+            let a = parts.get(&d.part)?.ardupilot.as_ref()?;
+            (a.kind == ArduPilotKind::Imu).then(|| {
+                // belt-and-suspenders: `validate` refuses an orientation
+                // whose part cites no driver frame; a hand-written topology
+                // can still pair them, and no rotation is then right.
+                let m = d
+                    .orientation
+                    .filter(|_| a.frame.is_some())
+                    .map(|o| expected_matrix(&o));
+                (
+                    r,
+                    a.driver.clone().unwrap_or_default(),
+                    a.spidev.clone().unwrap_or_default(),
+                    m,
+                )
+            })
+        })
+        .collect();
+    let show_m = |m: &Option<Matrix>| match m {
+        Some(m) => ROTATIONS
+            .iter()
+            .filter(|(_, r)| r == m)
+            .map(|(n, _)| *n)
+            .collect::<Vec<_>>()
+            .join(" or "),
+        None => "an undeclared orientation".to_owned(),
+    };
+    for i in 0..want.len().max(probes.len()) {
+        let at = probes
+            .get(i)
+            .map_or_else(|| "HAL_INS_PROBE_LIST".to_owned(), |p| p.0.clone());
+        match (want.get(i), probes.get(i)) {
+            (Some((r, wd, wdev, wm)), Some((_, pd, pdev, pr, pm))) => {
+                if (wd, wdev) != (pd, pdev) {
+                    out.push(
+                        "WrongImuProbe",
+                        &at,
+                        Some(r),
+                        format!("{wd} on SPI device {wdev}"),
+                        format!("{pd} on SPI device {pdev}"),
+                    );
+                } else if wm.as_ref() != Some(pm) {
+                    out.push("WrongImuRotation", &at, Some(r), show_m(wm), pr.clone());
+                }
+                let probe = format!(
+                    "_ZN{}AP_InertialSensor_{pd}5probeER17AP_InertialSensorN6AP_HAL6OwnPtrINS2_6DeviceEEE8Rotation",
+                    "AP_InertialSensor_".len() + pd.len()
+                );
+                if !elf::defines_function(elf_bytes, &probe)? {
+                    out.push(
+                        "ImuDriverNotLinked",
+                        &at,
+                        Some(r),
+                        format!("{probe} defined"),
+                        "not in the ELF's symbol table".to_owned(),
+                    );
+                }
+            }
+            (None, None) => {}
+            (Some((r, wd, wdev, wm)), None) => {
+                out.push(
+                    "MissingImuProbe",
+                    &at,
+                    Some(r),
+                    format!("{wd} on SPI device {wdev}, {}", show_m(wm)),
+                    "none".into(),
+                );
+            }
+            (None, Some((_, pd, pdev, pr, _))) => {
+                out.push(
+                    "UnexpectedImuProbe",
+                    &at,
+                    None,
+                    "none".into(),
+                    format!("{pd} on SPI device {pdev}, {pr}"),
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The judge's own `{x, z}` matrices: every right-angle pair names one
+    /// of the table's rotations, the 24 pairs 24 different ones; the
+    /// sentinel-02-own declaration (D5) is `ROTATION_ROLL_180_YAW_90` or its
+    /// alias 27; and each matrix in the table is a rotation (determinant 1).
+    #[test]
+    fn each_declared_orientation_is_one_of_ardupilots_rotations() {
+        let all = [
+            Toward::Forward,
+            Toward::Aft,
+            Toward::Right,
+            Toward::Left,
+            Toward::Up,
+            Toward::Down,
+        ];
+        let mut seen = Vec::new();
+        for x in all {
+            for z in all.into_iter().filter(|z| *z != x && *z != x.opposite()) {
+                let m = expected_matrix(&Orientation { x, z });
+                assert!(ROTATIONS.iter().any(|(_, r)| *r == m), "{x:?} {z:?}");
+                assert!(!seen.contains(&m), "{x:?} {z:?}");
+                seen.push(m);
+            }
+        }
+        assert_eq!(seen.len(), 24);
+        let d5 = expected_matrix(&Orientation {
+            x: Toward::Right,
+            z: Toward::Up,
+        });
+        let names: Vec<&str> = ROTATIONS
+            .iter()
+            .filter(|(_, r)| *r == d5)
+            .map(|(n, _)| *n)
+            .collect();
+        assert_eq!(
+            names,
+            ["ROTATION_ROLL_180_YAW_90", "ROTATION_PITCH_180_YAW_270"]
+        );
+        for (n, m) in ROTATIONS {
+            let det = i32::from(m[0][0])
+                * (i32::from(m[1][1]) * i32::from(m[2][2])
+                    - i32::from(m[1][2]) * i32::from(m[2][1]))
+                - i32::from(m[0][1])
+                    * (i32::from(m[1][0]) * i32::from(m[2][2])
+                        - i32::from(m[1][2]) * i32::from(m[2][0]))
+                + i32::from(m[0][2])
+                    * (i32::from(m[1][0]) * i32::from(m[2][1])
+                        - i32::from(m[1][1]) * i32::from(m[2][0]));
+            assert_eq!(det, 1, "{n}");
+        }
+    }
 
     #[test]
     fn lines_numbers_and_arguments_read_as_c_and_ardupilot_write_them() {

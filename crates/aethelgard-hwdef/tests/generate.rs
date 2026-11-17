@@ -57,7 +57,7 @@ fn each_board_generates_its_committed_file() {
 #[test]
 fn every_emitted_keyword_is_one_ardupilot_reads() {
     // (keyword, where ArduPilot Copter-4.7.2 reads it)
-    const KEYWORDS: [(&str, &str); 11] = [
+    const KEYWORDS: [(&str, &str); 12] = [
         ("MCU", "chibios_hwdef.py:2894-2897"),
         ("OSCILLATOR_HZ", "chibios_hwdef.py:885"),
         ("FLASH_SIZE_KB", "chibios_hwdef.py:1022"),
@@ -72,6 +72,7 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("I2C_ORDER", "chibios_hwdef.py:1931-1942"),
         ("SPIDEV", "chibios_hwdef.py:2898, 1451-1485"),
         ("BARO", "hwdef.py:255, 557-589"),
+        ("IMU", "hwdef.py:248-249, 382-425"),
     ];
     // (define, where the tag reads it)
     const DEFINES: [(&str, &str); 6] = [
@@ -288,4 +289,92 @@ fn the_system_timer_avoids_every_motor_timer() {
     v["assignments"]["MOTOR2"]["signal"] = "TIM1_CH2".into();
     let t: SolvedTopology = serde_json::from_value(v).unwrap();
     assert!(generate(&t).unwrap().text.contains("STM32_ST_USE_TIMER 2"));
+}
+
+fn sentinel_02() -> Value {
+    serde_json::from_str(BOARDS[1].1).unwrap()
+}
+
+/// `AET-WO-4400d` D5: `sentinel-02-own` declares U5 with X right and Z up
+/// in the board frame, so the driver's chip frame is flipped about the
+/// board's forward-right diagonal: `ROTATION_ROLL_180_YAW_90`
+/// (`vector3.cpp` L80-82: `x = y; y = x; z = -z`), the lower alias of 27.
+#[test]
+fn the_imu_line_carries_the_declared_rotation() {
+    let text = generate(&topology(BOARDS[1].1)).unwrap().text;
+    let imu: Vec<&str> = text.lines().filter(|l| l.starts_with("IMU ")).collect();
+    assert_eq!(imu.len(), 1, "{text}");
+    assert!(
+        imu[0].starts_with("IMU Invensensev3 SPI:icm42688 ROTATION_ROLL_180_YAW_90 "),
+        "{}",
+        imu[0]
+    );
+    assert!(
+        text.contains("z down through F.Cu to B.Cu"),
+        "the D3 header"
+    );
+    assert!(!text.contains("Not emitted: U5"), "{text}");
+    // Each other declaration: every one of the 24 right-angle pairs names a
+    // rotation, no two the same, and turning the board's right into its
+    // forward turns `ROLL_180_YAW_90` into `ROLL_180`.
+    let words = ["forward", "aft", "right", "left", "up", "down"];
+    let mut names = std::collections::BTreeSet::new();
+    for x in words {
+        for z in words {
+            let mut v = sentinel_02();
+            v["spi_devices"]["U5"]["orientation"] = json!({"x": x, "z": z});
+            let t: SolvedTopology = serde_json::from_value(v).unwrap();
+            let perpendicular = x != z
+                && !matches!(
+                    (x, z),
+                    ("forward", "aft")
+                        | ("aft", "forward")
+                        | ("right", "left")
+                        | ("left", "right")
+                        | ("up", "down")
+                        | ("down", "up")
+                );
+            match generate(&t) {
+                Ok(h) => {
+                    assert!(perpendicular, "{x} {z}");
+                    let line = h
+                        .text
+                        .lines()
+                        .find(|l| l.starts_with("IMU "))
+                        .unwrap()
+                        .to_owned();
+                    let name = line.split_whitespace().nth(3).unwrap().to_owned();
+                    if (x, z) == ("forward", "up") {
+                        assert_eq!(name, "ROTATION_ROLL_180");
+                    }
+                    assert!(names.insert(name), "{x} {z}: {line}");
+                }
+                Err(e) => {
+                    assert!(!perpendicular, "{x} {z}: {e}");
+                    assert_eq!(e.kind(), "InvalidTopology", "{e}");
+                }
+            }
+        }
+    }
+    assert_eq!(names.len(), 24);
+}
+
+/// `INV-06`: an IMU with no declared orientation is refused by name, never
+/// given a default rotation.
+#[test]
+fn an_imu_with_no_declared_orientation_is_refused_by_name() {
+    let mut v = sentinel_02();
+    v["spi_devices"]["U5"]
+        .as_object_mut()
+        .unwrap()
+        .remove("orientation");
+    let e = refused(&v);
+    assert_eq!(
+        e,
+        Refusal::ImuOrientationUndeclared {
+            reference: "U5".into(),
+            part: "ICM42688P".into()
+        }
+    );
+    assert_eq!((e.kind(), e.id()), ("ImuOrientationUndeclared", Some("U5")));
 }
