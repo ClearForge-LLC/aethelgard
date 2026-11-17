@@ -74,6 +74,27 @@ fn line(b: LineBound, declared: u64) -> Value {
     v
 }
 
+/// One condition per test pad on a bounded line (`AET-WO-1604` §1.5, `1312`
+/// Q2), in the lines' order: the pad's copper is in the bound, as every
+/// pad's is, but a probe clipped to it is not. A line with no test pad, and
+/// a test pad on a net no line bounds, state nothing.
+fn probe_conditions(spec: &aethelgard_ir::Specification, lines: &[LineBound]) -> Vec<String> {
+    lines
+        .iter()
+        .flat_map(|b| {
+            spec.declared_test_points()
+                .iter()
+                .filter(move |t| t.net == b.net)
+                .map(move |t| {
+                    format!(
+                        "`{}` is a test pad on `{}`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance",
+                        t.reference, b.net
+                    )
+                })
+        })
+        .collect()
+}
+
 /// `aethelgard extract --board <pcb> --spec <spec>`.
 pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     let (spec, spec_sha256) = match crate::read_spec(Some(spec_path)) {
@@ -143,6 +164,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         }
     }
     conditions.extend(bound::declared_conditions(&spec));
+    conditions.extend(probe_conditions(&spec, &lines));
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
