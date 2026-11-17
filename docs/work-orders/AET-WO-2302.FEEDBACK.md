@@ -470,3 +470,18 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
 
   Both were measured to their cause before any change; neither was re-run.
 - **Housekeeping:** every worker worktree and target is removed, and `~/.cache/aet-2302` keeps only logs and evidence (146 MB).
+
+## §20 The READY head's red, and its cause (the architect's diagnosis, confirmed)
+
+- **What failed.** The READY head `e3728ee5` was red on shard 2 (job 133829516434). `an_aborted_machine_returns_inside_the_bound_as_cpu_aborted` (`2100` A6) took 62.45 s against its 30 + 30 s assertion.
+  - Its verdict was right: exit 1, only `cpu_aborted`, the machine aborted at 0.0008 s.
+- **The cause was my measurement, not the twin.** The test started its clock before `boot_elf`, which takes `RENODE_TURN` (53c036db) inside. So `took` included the queue behind other tests' Renode runs.
+- **The fix.** Every `aethelgard` call records its own time, from the moment it holds the turn to its exit (`last_call()`, per test thread), and every timing reads that, never a clock started before the turn.
+  - The A6 test asserts on it.
+  - `boot_on`'s and the 2200 runs' `wall_s`, and the two Kani loops' times, now print it.
+  - `run_campaign` starts its clock after the turn.
+- **The audit.** `RENODE_TURN` is used only in `twin_tier2.rs`. Of its seven clocks, only the A6 test asserted on a time; the rest only printed. The only clock left outside the turn times a `cargo build`, which takes no turn.
+- **Measured.** The whole `twin_tier2` binary in the pinned image, pinned to 4 CPUs (`taskset -c 0-3`, GitHub's runner size): 82 of 82 pass.
+  - A6's own call: 16.97 s.
+  - 87 `simulate` calls: median 4.49 s, longest 16.97 s (A6).
+- **No bound raised, no re-run.** The host gates pass: `fmt`, `clippy -D warnings` with and without `with-tools`, and 1 995 tier-1 tests.

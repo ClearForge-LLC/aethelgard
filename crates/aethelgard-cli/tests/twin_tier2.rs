@@ -72,6 +72,20 @@ fn renode_turn() -> std::sync::MutexGuard<'static, ()> {
     RENODE_TURN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
+thread_local! {
+    /// The last `aethelgard` call's own time on this test's thread, from the
+    /// moment it held [`RENODE_TURN`] to its exit: never the queue before it.
+    /// Any timing of a call reads this, never a clock started before the
+    /// turn (READY head e3728ee5: the A6 test timed 62 s across the queue).
+    static LAST_CALL: std::cell::Cell<std::time::Duration> =
+        const { std::cell::Cell::new(std::time::Duration::ZERO) };
+}
+
+/// The last `aethelgard` call's own time on this thread ([`LAST_CALL`]).
+fn last_call() -> std::time::Duration {
+    LAST_CALL.with(std::cell::Cell::get)
+}
+
 fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     let _turn = renode_turn();
     let held = Instant::now();
@@ -83,10 +97,11 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     let stdout = String::from_utf8(out.stdout).unwrap();
     let value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("{e}: {stdout} / {}", String::from_utf8_lossy(&out.stderr)));
+    LAST_CALL.with(|c| c.set(held.elapsed()));
     answer(&format!(
         "turn: {} held it {:.2} s",
         args.first().copied().unwrap_or_default(),
-        held.elapsed().as_secs_f64()
+        last_call().as_secs_f64()
     ));
     (out.status.code(), value)
 }
@@ -97,8 +112,8 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
 fn run_campaign(tag: &str, scenarios: &[&str], elf: &Path) -> (PathBuf, Option<i32>, Vec<Value>) {
     let archive = std::env::temp_dir().join(format!("aet-t2-{}-{tag}-archive", std::process::id()));
     let _ = fs::remove_dir_all(&archive);
-    let start = Instant::now();
     let _turn = renode_turn();
+    let start = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .current_dir(root())
         .arg("campaign")
@@ -246,7 +261,6 @@ fn boot_on(
     elf: &Path,
     time: &str,
 ) -> (Option<i32>, Value) {
-    let start = Instant::now();
     let (code, v) = aethelgard(&[
         "simulate",
         "--platform",
@@ -260,7 +274,7 @@ fn boot_on(
     ]);
     answer(&format!(
         "{label}: exit={code:?} wall_s={:.2} verdict={v}",
-        start.elapsed().as_secs_f64()
+        last_call().as_secs_f64()
     ));
     (code, v)
 }
@@ -528,9 +542,10 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
             "    unsafe { core::arch::asm!(\"ldr r0, =0x0A000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
         );
     });
-    let start = Instant::now();
     let (code, v) = boot_elf("A6 hole", &elf, "10ms");
-    let took = start.elapsed();
+    // The call's own time, from the moment it held the turn: never the queue
+    // behind other tests' Renode runs (`RENODE_TURN`, `last_call`).
+    let took = last_call();
     assert_eq!(code, Some(1), "an aborted machine exits 1: {v}");
     assert_eq!(
         kinds(&v),
@@ -590,7 +605,6 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
         );
         fs::write(&platform, emitted).unwrap();
         let run = |n: u32| {
-            let start = Instant::now();
             // 100 ms, so a timed-out read still reaches the boot word.
             let (code, v) = aethelgard(&[
                 "simulate",
@@ -605,7 +619,7 @@ fn p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes() {
             ]);
             answer(&format!(
                 "2200 {ohms} ohm run {n}: exit={code:?} wall_s={:.2} analog={} faults={} i2c={} findings={}",
-                start.elapsed().as_secs_f64(),
+                last_call().as_secs_f64(),
                 v["analog"],
                 v["faults"],
                 v["boot"]["i2c"],
@@ -2490,7 +2504,6 @@ fn kani_proves_every_part_of_both_motor_fixtures() {
         assert_eq!(parts, ["_i2c1", "_spi1", "_tim1"], "{fixture}");
         for part in parts {
             let harness = format!("proofs::every_valid_sequence{part}");
-            let start = Instant::now();
             let (code, v) = aethelgard(&[
                 "prove",
                 "--crate",
@@ -2500,7 +2513,7 @@ fn kani_proves_every_part_of_both_motor_fixtures() {
             ]);
             answer(&format!(
                 "prove {fixture} {harness}: exit={code:?} wall_s={:.2}",
-                start.elapsed().as_secs_f64()
+                last_call().as_secs_f64()
             ));
             assert_eq!(code, Some(0), "{fixture} {harness}: {v}");
             assert_eq!(v["verdict"], "pass", "{fixture} {harness}: {v}");
@@ -2518,7 +2531,6 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
         "proofs::tim1_start_writes_the_solved_values",
         "proofs::reset_clock_is_ok_exactly_at_reset",
     ] {
-        let start = Instant::now();
         let (code, v) = aethelgard(&[
             "prove",
             "--crate",
@@ -2528,7 +2540,7 @@ fn kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check() {
         ]);
         answer(&format!(
             "prove {harness}: exit={code:?} wall_s={:.2}",
-            start.elapsed().as_secs_f64()
+            last_call().as_secs_f64()
         ));
         assert_eq!(code, Some(0), "{harness}: {v}");
         assert_eq!(v["verdict"], "pass", "{harness}: {v}");
