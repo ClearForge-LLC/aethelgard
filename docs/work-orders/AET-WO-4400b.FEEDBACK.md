@@ -517,3 +517,14 @@ I recommend (a).
 - **F4** (`validate` re-derives `pin_speeds`, with svd-hal's test moved) goes with `4400b2`.
 - **F2** is a backlog row (A9).
 - **D8's docs** are the architect's: the architecture §3 row and the releasing order are his, after this merges. The order line I added (step 10) is in `docs/releasing.md`, which the ruling leaves to him; he may restate it.
+
+## 17. READY
+
+- **CI on `554cbe5b`** (F3 built, `main` at `2b43672`): green in all four workflows: `ci` with gates and all eight tier-2 shards, `ardupilot-image` with the three `generated` boards and `pinout`, `tools-image` and `engine-image`.
+- **`main` then moved** (1312 #191, specification 14; docs #194) and is merged in at `f425df94`. Only specification hashes moved:
+  - the two solve digests, proved again in their comment;
+  - the hwdef fixtures' topologies and the goldens' header line. No emitted line changed.
+- **The local re-gate passes:** fmt, clippy `-D warnings`, `cargo test --workspace` (125 binaries).
+- **CI on the READY head** is in the PR's checks. The architect merges on green.
+- **Disk:** every scratch tree of mine is removed, except `~/.cache/aet-4400b/pr-title-body.md`.
+- **Next:** `AET-WO-4400b2` (F1 and F4), on a new branch from `main` after this merges.
