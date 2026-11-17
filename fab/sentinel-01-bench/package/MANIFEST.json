@@ -1,0 +1,65 @@
+{
+  "project": "sentinel-01-bench",
+  "specification_sha256": "e1e4f6a53ea0eadb7c7130c5a76c3b1511b62f0b2bcd966020123ed6b3217615",
+  "topology_sha256": "d0468869cf2761f80c3990a6cf310c1dd9605a8b7469b0efb637efb52cc0a536",
+  "scenarios": [
+    {
+      "scenario": "pullup-3k3",
+      "sha256": "5b53d13549f58018f92800b2427ffd25cb991157a28698e9452e4c83c189d663"
+    },
+    {
+      "scenario": "droop-bor3",
+      "sha256": "5e35634c16d5f42828208db35b5e1c939271379b755d368ea3d61ebd52bbf21f"
+    },
+    {
+      "scenario": "spi-absent-u4",
+      "sha256": "00df10aa4a572932e71112d7b3a8bd3e851411d0f815c4b2678fab86ccbcbdc0"
+    },
+    {
+      "scenario": "pullup-2k2",
+      "sha256": "a7eba545639d61551b25ef513559131710d9109d231a2b017ebb18b04266daa9"
+    },
+    {
+      "scenario": "serial-rx-open-console",
+      "sha256": "9687a7669ea45becd4b8e3be53c676049ede68a3032dbda82a1d0e879fc2b50a"
+    }
+  ],
+  "preconditions": [
+    {
+      "precondition": "every_harness_proved",
+      "state": "met"
+    },
+    {
+      "precondition": "campaign_faults_every_bus_and_rail",
+      "state": "met",
+      "no_device": [
+        "I2C bus `EXT` (no device: nothing to fault)"
+      ]
+    },
+    {
+      "precondition": "mcu_support_network_judged",
+      "state": "met"
+    },
+    {
+      "precondition": "every_gate_passed",
+      "state": "met"
+    }
+  ],
+  "verdict_sha256": "9f61a1207c0b5fc1c60b3c390f769a45fc2b7e0f9a78487c0b0af8abe85f56bd",
+  "files": {
+    "FAB-NOTES.md": "ae303f2a610bbf62a20b7683ba7b53cac522b76878299ebe160237fa5a7df935",
+    "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
+    "sentinel-01-bench-B_Mask.gbs": "8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4",
+    "sentinel-01-bench-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",
+    "sentinel-01-bench-B_Silkscreen.gbo": "c33d6c7655263578ed865ab787c5ff4d141f3a821500e9293b7492099005c09e",
+    "sentinel-01-bench-Edge_Cuts.gm1": "766c7570a7760280d3c25d31a3d9f2e63470de6a56f3d41afd354c73c822d254",
+    "sentinel-01-bench-F_Cu.gtl": "e479681d8d56f18e9a3d90d38301e696b3a81f7ff56914831fe0fb8dc9450283",
+    "sentinel-01-bench-F_Mask.gts": "77096eda672cf3062eedb19df7e41154ee55211383553cef517fb39559d88dcb",
+    "sentinel-01-bench-F_Paste.gtp": "0a362a26f4846201a969a73f20e643d0a6a4852f2c1194f2c81022898832ebfb",
+    "sentinel-01-bench-F_Silkscreen.gto": "3e9ac114da35117797f46be5a096f025a4c1857e665bbc95967dd982e4619cc2",
+    "sentinel-01-bench-pos.csv": "185a6db011b3757aa74897c1c618bc197273b4cf06a8cb4b87c06f2166414c19",
+    "sentinel-01-bench.bom.csv": "a0ff99dd7d61429f63d2f199cf3444d70c6cbc1b3a09771f3fa07621bc11747f",
+    "sentinel-01-bench.drl": "099e9665d894813e1308cf755ab1afffdcd7b257a3e1a66ce2f4775be87ce2c8",
+    "sentinel-01-bench.elf": "c8ab92458ac8edd55752a6ed609c14bd9d6200542b7de6ca7580edc972fa19f9"
+  }
+}
