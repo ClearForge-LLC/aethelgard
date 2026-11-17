@@ -396,3 +396,15 @@ Gates on the merge:
 - That run's two red jobs (gates, tools-shard 4) each failed only `bench_board_tier1`, the binding this package closes.
 - With it: `bench_board_tier1` passes 2/2, and the workspace passes 2,168 tests with 0 failures (132 binaries).
 - main's 9dbac49d since is docs only (AET-WO-4400e and the roadmap). It is not merged.
+
+## 12. CI on READY b8a5db6c (architect, 17:30 UTC): the package gate
+
+**Red, real, mine:**
+- **The failure:** gates' "package every publishable crate" step refused `aethelgard-ir`. The unit test `an_imu_without_cited_axes_or_frame_is_refused_by_name` (`src/orientation.rs`) used `include_str!` on `aethelgard-cli/tests/fixtures/sentinel-02-own.json`, which sits outside the crate. The published crate could not build its own tests.
+- **Why it was missed:** earlier gates runs stopped at the expected `bench_board_tier1` red and never reached this step, and I never ran the step locally. Memory already held this lesson (1207's `include_str!` gate).
+- **Fixed:** the test builds its specification from the crate's own `tests/fixtures/sentinel-02-power.json`, in the same way `parts.rs`'s tests already do. It makes U5 the ICM-42688-P on VDD_3V3 with `{x: right, z: up}` and forward `top`, as ruled in D5, and drops the ICM20948's lifecycle acceptance, which would otherwise name no device. It first asserts that this specification passes `validate_parts`, so each `ImuAxesNotCited` comes from the removed citation alone.
+- **Swept:** every `src/` file of every crate, with newlines folded as CI folds them. No `include_str!` or `include_bytes!` target leaves its crate now. Integration tests under `tests/` that read the CLI's fixtures are outside the gate, as on main.
+- **Run locally before this push:**
+  - CI's step, extracted from `ci.yml` and run as written: `cargo package --locked --no-verify` for all 11 crates, the include-target loop, and `cargo install` of the CLI from the unpacked packages alone, offline. Then `validate` of the minimal example. All pass.
+  - The unpacked `aethelgard-ir-0.2.0` builds and passes its own lib tests (47/47).
+- **Package unchanged:** a test-only change. `bench_board_tier1` still passes 2/2; the workspace passes 2,168 tests with 0 failures; fmt and clippy pass.
