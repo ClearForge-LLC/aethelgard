@@ -1,0 +1,4 @@
+# AET-WO-4400c2 diagnostic: at HardFault entry, the SCB fault status and address registers
+# (CFSR 0xE000ED28, HFSR 0xE000ED2C, MMFAR 0xE000ED34, BFAR 0xE000ED38), observation only.
+sysbus LogPeripheralAccess sysbus.usart1 false
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400C2-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38)))"
