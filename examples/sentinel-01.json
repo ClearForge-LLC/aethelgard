@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [
     {
       "register": "FLASH.OPTSR_CUR",
@@ -430,7 +430,8 @@
     "supply_source": {
       "connector": "J3",
       "pin": "1"
-    }
+    },
+    "reset_switch": true
   },
   "voltage_domains": [
     {
@@ -497,14 +498,16 @@
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "U3",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [
@@ -516,7 +519,8 @@
       "cs": {
         "net": "FLASH_CS",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [
@@ -559,7 +563,7 @@
         },
         {
           "pin": "2",
-          "net": null,
+          "net": "BOOT0",
           "offboard": null
         },
         {
@@ -757,6 +761,64 @@
       "negotiated": null,
       "peer_deviation_ppm": 5000,
       "peer_deviation_source": "declared"
+    }
+  ],
+  "test_points": [
+    {
+      "net": "I2C_SDA",
+      "reference": "TP1"
+    },
+    {
+      "net": "I2C_SCL",
+      "reference": "TP2"
+    },
+    {
+      "net": "EXT_SDA",
+      "reference": "TP3"
+    },
+    {
+      "net": "EXT_SCL",
+      "reference": "TP4"
+    },
+    {
+      "net": "SPI_SCK",
+      "reference": "TP5"
+    },
+    {
+      "net": "SPI_MOSI",
+      "reference": "TP6"
+    },
+    {
+      "net": "SPI_MISO",
+      "reference": "TP7"
+    },
+    {
+      "net": "FLASH_CS",
+      "reference": "TP8"
+    },
+    {
+      "net": "CONSOLE_TX",
+      "reference": "TP9"
+    },
+    {
+      "net": "CONSOLE_RX",
+      "reference": "TP10"
+    },
+    {
+      "net": "VDD_3V3",
+      "reference": "TP11"
+    },
+    {
+      "net": "NRST",
+      "reference": "TP12"
+    },
+    {
+      "net": "BOOT0",
+      "reference": "TP13"
+    },
+    {
+      "net": "GND",
+      "reference": "TP14"
     }
   ]
 }

@@ -185,3 +185,18 @@ The two image workflows read only named example files (`sentinel-01-minimal.json
 - **The package is the current specification's.** It must be rewritten when 1801 moves `engine_version`, and when §2 adds bench access:
   1. dispatch `ci.yml` with `write: true` on the branch (once the job is on `main`), or repeat the temporary-commit round trip;
   2. commit the artifact.
+
+## 9. §2: predictions (committed before the §2 gate run)
+
+The §2 specification is built (§10). It validated before this section was written; nothing else has been run on it.
+- **S1.** All eight commands pass at two layers with no finding, as 1312's own fixture of this shape did (`sentinel-01-bench.json`, 13 test points).
+- **S2. The outline** grows by under 10 % in area over §1's 45.55 × 48.70 mm (1312 FEEDBACK item 4).
+- **S3. `extract`:** the I2C bounds rise by up to about 18 pF (1312 measured 43.3 → 61 pF on I2C_SDA), still under 100 pF.
+  - **The SPI lines are the risk:** declared at 30 pF, they bound at 16.7/18.0 pF today.
+  - I predict SPI_SCK and SPI_MOSI stay under 30 pF (60 %).
+  - If either does not, the declared bound is not raised to pass (§5's rule): the finding is recorded and the test pad's placement is the engine's to fix.
+- **S4.** `verify --fab-out` passes, and the package grows by the test pads' and the switch's rows in `-pos.csv` and `.bom.csv`.
+- **S5. The emitted BOM has value and footprint only for the new parts.**
+  - The test pads have no maker part: a bare pad, `TestPoint_Pad_D1.0mm`.
+  - The switch has its library footprint, and its maker part is the one 1312 cited.
+  - The BOOT0 pull-down is a 10 kΩ 0402.
