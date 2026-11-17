@@ -500,3 +500,20 @@ I recommend (a).
 - **One container at a time:** mine and the adversary's ran sequentially.
 - **Merges:** `main` was merged twice, at 4220b and at 1801. 4220b's merge turned the S02 console's J3 into an extract failure, measured; the console moved to J2.
 - **Disk:** every scratch tree of mine under `~/.cache` is removed before the signal except `~/.cache/aet-4400b/pr-title-body.md`. The datasheets stay in `~/.cache/aet-ds/`. No agent worktree was created: the adversary worked read-only here.
+
+## 16. The ruling on the second stop (PR #189, 04:59 UTC), and what this PR closes with
+
+- **F1: (a), as a follow-up.** `AET-WO-4400b2`, mine, on a new branch from `main` after this merges: a `hwdef.h` judge in `aethelgard-pincheck`, sharing no code with the generator. It will hold `HAL_SPI_DEVICEn`, `HAL_PWM_GROUPn`, `HAL_I2C_MAX_CLOCK`, the serial order and `BARO` against the topology. Its acceptance is M1c, A1 and A2, each refused by name.
+- **§2's third bullet, as narrowed by the ruling, for this PR:**
+  - **a swap across an alternate function** is caught by ArduPilot's own AF table, before an ELF exists (M1, measured);
+  - **a swap within the GPIO configuration** is caught by `check pinout` (M1b, M3c, M5, M6, measured);
+  - **chip-select, motor-channel and non-GPIO identity** belong to `4400b2`.
+- **F3: (a), built here.**
+  - An RC-input port (CRSF, SBUS) takes `DEFAULT_SERIALn_PROTOCOL SerialProtocol_RCIN` and no `_BAUD` or `_OPTIONS`.
+  - The header names the port, its SERIAL number, the declared baud and what ArduPilot runs, cited at the tag: CRSF at 416666 baud 8N1 (`AP_RCProtocol.cpp:351`), SBUS at 100000 8E2 with RX inverted (line 344). Both come from `apply_to_uart` (lines 326-336), which sets parity, stop bits and RXINV itself.
+  - **Test (`hwdef_tier1.rs`):** serial-four with its MAVLink port as the console and SBUS made a plain GPS port, solved and generated. CRSF's SERIAL has `_PROTOCOL` and neither `_BAUD` nor `_OPTIONS`, the header names 416666 against the declared 420000, and every other port keeps its baud.
+  - **Mutant:** with the RC branch disabled, that test fails [measured].
+  - The architect owns the backlog row for judging an RC port's tolerance at the baud the firmware runs.
+- **F4** (`validate` re-derives `pin_speeds`, with svd-hal's test moved) goes with `4400b2`.
+- **F2** is a backlog row (A9).
+- **D8's docs** are the architect's: the architecture §3 row and the releasing order are his, after this merges. The order line I added (step 10) is in `docs/releasing.md`, which the ruling leaves to him; he may restate it.

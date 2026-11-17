@@ -271,6 +271,17 @@ fn implied(role: SerialRole) -> (u8, Parity, u8, bool, Option<u32>) {
     }
 }
 
+/// What ArduPilot's RC input runs on a port of `role`, from its own serial
+/// configurations (`AP_RCProtocol.cpp` at the tag: SBUS line 344, CRSF line
+/// 351), or `None` for a port that is not RC input.
+fn rc_runs(role: SerialRole) -> Option<&'static str> {
+    match role {
+        SerialRole::RcCrsf => Some("CRSF at 416666 baud, 8N1 (AP_RCProtocol.cpp:351)"),
+        SerialRole::RcSbus => Some("SBUS at 100000 baud, 8E2, RX inverted (AP_RCProtocol.cpp:344)"),
+        _ => None,
+    }
+}
+
 fn parity_letter(p: Parity) -> char {
     match p {
         Parity::None => 'N',
@@ -430,7 +441,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         "[C] TIM5, else TIM2: a timer no motor output takes",
     );
 
-    serial(t, &mut l, speed)?;
+    serial(t, &mut l, &mut not_emitted, speed)?;
     i2c(t, parts_table, &mut l, &mut not_emitted, speed);
     spi(t, parts_table, ap, &mut l, &mut not_emitted, speed)?;
 
@@ -498,6 +509,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
 fn serial(
     t: &SolvedTopology,
     l: &mut Lines,
+    not_emitted: &mut Vec<String>,
     speed: impl Fn(&str) -> &'static str,
 ) -> Result<(), Refusal> {
     let ports = t.serial_ports_in_order();
@@ -624,6 +636,18 @@ fn serial(
                 format!("define DEFAULT_SERIAL{n}_PROTOCOL {}", protocol(p.role)),
                 format!("[T] serial_ports.{label}.role {}", p.role.name()),
             );
+        }
+        // F3 (ruled on PR #189): an RC-input port's UART is configured by
+        // AP_RCProtocol itself, never by its SERIALn baud or options
+        // (AP_RCProtocol.cpp:326-336, AP_SerialManager.cpp:536-543), so
+        // neither is emitted; the header names what ArduPilot runs instead.
+        if let Some(runs) = rc_runs(p.role) {
+            not_emitted.push(format!(
+                "{label} ({}) on SERIAL{n}: no DEFAULT_SERIAL{n}_BAUD or _OPTIONS; ArduPilot's RC input sets the UART itself and runs {runs}, not the declared {} baud",
+                p.role.name(),
+                p.framing.baud
+            ));
+            continue;
         }
         l.push(
             format!("define DEFAULT_SERIAL{n}_BAUD {}", p.framing.baud),

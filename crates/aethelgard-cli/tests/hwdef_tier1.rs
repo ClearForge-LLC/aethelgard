@@ -213,3 +213,58 @@ fn the_board_crate_s_speeds_equal_the_stored_ones() {
     }
     assert!(checked >= 12, "only {checked} specifications solved");
 }
+
+/// F3 (ruled on PR #189): an RC-input port takes no `DEFAULT_SERIALn_BAUD`
+/// or `_OPTIONS`, since ArduPilot's RC input sets its UART itself; the header
+/// names the declared baud and the one ArduPilot runs (CRSF 416666,
+/// `AP_RCProtocol.cpp:351`). Every other port keeps its baud.
+#[test]
+fn an_rc_port_takes_no_baud_and_the_header_names_what_runs() {
+    let dir = scratch("rc");
+    let mut four: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/serial-four.json")).unwrap(),
+    )
+    .unwrap();
+    for p in four["serial_ports"].as_array_mut().unwrap() {
+        match p["role"].as_str().unwrap() {
+            "mavlink" => p["role"] = "console".into(),
+            // One RC port only: SBUS becomes a plain 8N1 port.
+            "rc_sbus" => {
+                p["role"] = "gps".into();
+                p["framing"] = serde_json::json!({"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false});
+            }
+            _ => {}
+        }
+    }
+    let path = dir.join("one-rc.json");
+    fs::write(&path, four.to_string()).unwrap();
+    let (code, v, text) = generate(&dir, "one-rc", &solve(path.to_str().unwrap()));
+    assert_eq!(code, Some(0), "{v}");
+    let text = text.unwrap();
+    let rc = text
+        .lines()
+        .find(|l| l.starts_with("# Not emitted: CRSF (rc_crsf) on SERIAL"))
+        .unwrap_or_else(|| panic!("{text}"));
+    assert!(rc.contains("runs CRSF at 416666 baud"), "{rc}");
+    assert!(rc.contains("not the declared 420000 baud"), "{rc}");
+    let n = &rc["# Not emitted: CRSF (rc_crsf) on SERIAL".len()..][..1];
+    assert!(text.contains(&format!(
+        "define DEFAULT_SERIAL{n}_PROTOCOL SerialProtocol_RCIN"
+    )));
+    assert!(
+        !text.contains(&format!("define DEFAULT_SERIAL{n}_BAUD")),
+        "{text}"
+    );
+    assert!(
+        !text.contains(&format!("define DEFAULT_SERIAL{n}_OPTIONS")),
+        "{text}"
+    );
+    assert_eq!(
+        text.lines()
+            .filter(|l| l.starts_with("define DEFAULT_SERIAL") && l.contains("_BAUD "))
+            .count(),
+        3,
+        "{text}"
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}

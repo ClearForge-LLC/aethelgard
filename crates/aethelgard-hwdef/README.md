@@ -20,7 +20,7 @@ It never reads a `Specification`.
 | `define AP_BOOTLOADER_FLASHING_ENABLED 0`, `FLASH_RESERVE_START_KB 0` | `[C]` no bootloader (`4400` D3) |
 | `define HAL_STORAGE_SIZE 16384`, `STORAGE_FLASH_PAGE` | `[C]` the size; `[P]` + `[C]` the page, the last two 128 KB sectors (`flash_kilobytes / 128 − 2`), because storage uses page and page+1 (`Storage.cpp:331-336`) |
 | `STM32_ST_USE_TIMER` | `[C]` TIM5, else TIM2: a timer no motor output takes. Both taken is refused (`NoSystemTimer`) |
-| `SERIAL_ORDER`, the USART/UART pins, `define DEFAULT_SERIALn_PROTOCOL / _BAUD / _OPTIONS` | `[T]` `serial_ports`: the console first, as SERIAL0, then the specification's order. SERIAL0 takes `_BAUD` alone: its protocol default is a literal and it has no options, so those defines would be read by nothing (`AP_SerialManager.cpp:37-44, 172, 180`). `_OPTIONS` is `3` (RXINV, TXINV) on an inverted port |
+| `SERIAL_ORDER`, the USART/UART pins, `define DEFAULT_SERIALn_PROTOCOL / _BAUD / _OPTIONS` | `[T]` `serial_ports`: the console first, as SERIAL0, then the specification's order. SERIAL0 takes `_BAUD` alone: its protocol default is a literal and it has no options, so those defines would be read by nothing (`AP_SerialManager.cpp:37-44, 172, 180`). `_OPTIONS` is `3` (RXINV, TXINV) on an inverted port. An RC-input port (CRSF, SBUS) takes its `_PROTOCOL` alone: ArduPilot's RC input sets its UART itself (`AP_RCProtocol.cpp:326-352`), so the header names the declared baud and the one ArduPilot runs (CRSF 416666, SBUS 100000 8E2 inverted) instead (ruling F3, PR #189) |
 | `I2C_ORDER`, `define HAL_I2C_MAX_CLOCK`, the I2C pins | `[T]`: buses by their first device in index order, then device-less buses by peripheral. The clock is the minimum of `i2c_speeds`, so no bus runs faster than declared |
 | `BARO <driver> I2C:<order index>:<address>` | `[T]` the device; `[P]` its driver |
 | the SPI pins, each chip select as `CS`, `SPIDEV <name> <SPIn> DEVID<k> <cs> MODE0 <hz> <hz>`, `define HAL_LOGGING_DATAFLASH_ENABLED 1` | `[T]` + `[P]`. The speed is the controller's `achieved_hz`, rounded down to a whole kHz. `DEVID` is the device's place on its bus, from 1. The mode is `parts::DRIVEN_SPI_MODE` |
@@ -50,6 +50,7 @@ It never reads a `Specification`.
 **What it names and does not emit** (the header lists each, and the CLI's report carries them):
 - a device whose part has no `ardupilot` column. Today that is the TMP117, which ArduPilot's TMP119 driver refuses: 0x2117 against 0x0117;
 - an IMU's `IMU` line, because its rotation is a mechanical fact no specification declares. Its `SPIDEV` is emitted;
+- an RC-input port's baud and options, with what ArduPilot runs;
 - a motor output's protocol and PWM range, which are ArduPilot parameters (`MOT_PWM_TYPE`, `MOT_PWM_MIN/MAX`) for the `defaults.parm` work order;
 - `BIDIR`, which nothing declares.
 
@@ -58,7 +59,7 @@ It never reads a `Specification`.
 - ArduPilot's own configure and compile, which refuse a pin with no such function in its AF table, a serial port with no pins, and a system timer a motor takes.
 - This crate's tests, which hold every emitted keyword and define to the exact names ArduPilot reads at the tag, each with its line.
 
-**What nothing independent judges yet** (`AET-WO-4400b` FEEDBACK §11):
+**What nothing independent judges yet** (`AET-WO-4400b` FEEDBACK §11; ruled to `AET-WO-4400b2`, a `hwdef.h` judge):
 - which chip select belongs to which `SPIDEV`;
 - which motor is which `PWM(n)`;
 - `SERIAL_ORDER`, `HAL_I2C_MAX_CLOCK`, `BARO`, `SPIDEV` modes and speeds, and `DEFAULT_SERIALn_BAUD`.
