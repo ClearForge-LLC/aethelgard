@@ -1157,7 +1157,7 @@ fn solved() -> SolvedTopology {
             ("FLASH_CS".to_owned(), 0),
             ("I2C_SCL".to_owned(), 0),
             ("I2C_SDA".to_owned(), 0),
-            ("SPI_SCK".to_owned(), 0),
+            ("SPI_SCK".to_owned(), 1),
         ]
         .into(),
     }
@@ -2341,9 +2341,11 @@ fn solved_holds_the_flash_to_its_clock_after_a_bus_is_sped_up() {
         (c.declared_hz, c.mbr, c.achieved_hz, c.achieved_max_hz) =
             (rate_hz, 0, 32_000_000, 32_479_488);
     };
+    // At the part's own 104 MHz the part passes, and the stored speed is
+    // refused: no selectable speed serves it (`AET-WO-4400b2` F4).
     let mut ok = solved();
     sped_up(&mut ok, 104_000_000);
-    assert_eq!(ok.validate(), Ok(()));
+    assert_eq!(ok.validate().unwrap_err().kind(), "RateAbovePinSpeed");
     let err = solved_refusal(|t| sped_up(t, 104_000_001));
     assert_refusal(err.clone(), "SpiClockAbovePart", Some("U4"));
     assert!(err.to_string().contains("9.6"), "{err}");
@@ -2519,7 +2521,7 @@ fn a_peripheral_s_lines_share_one_label_and_one_rate() {
             },
         );
         t.spi_lines.insert("SPI_MOSI".to_owned(), spi_line("MOSI"));
-        t.pin_speeds.insert("SPI_MOSI".to_owned(), 0);
+        t.pin_speeds.insert("SPI_MOSI".to_owned(), 1);
         assert_eq!(t.validate(), Ok(()));
         forge(&mut t);
         assert_eq!(t.validate().unwrap_err().kind(), "SpiLineMismatch");
@@ -3365,9 +3367,50 @@ fn pin_speeds_hold_every_solved_pin_once_at_0_or_1() {
         });
         assert_refusal(err, "PinSpeedMismatch", Some("I2C_SCL"));
     }
-    let mut t = solved();
-    t.pin_speeds.insert("SPI_SCK".to_owned(), 1);
-    assert_eq!(t.validate(), Ok(()));
+    // `AET-WO-4400b2` F4: a stored speed is `solve`'s, re-derived; the
+    // reference SCK at 20 MHz and 30 pF is `01`.
+    let err = solved_refusal(|t| {
+        t.pin_speeds.insert("SPI_SCK".to_owned(), 0);
+    });
+    assert_refusal(err, "PinSpeedNotSolved", Some("SPI_SCK"));
+    let err = solved_refusal(|t| {
+        t.pin_speeds.insert("FLASH_CS".to_owned(), 1);
+    });
+    assert_refusal(err, "PinSpeedNotSolved", Some("FLASH_CS"));
+}
+
+/// `AET-WO-4400b2` F4, moved from svd-hal's
+/// `a_line_no_selectable_speed_serves_is_refused`: a solved SPI line whose
+/// rate needs `10` or `11`, or whose load is above the table, is refused by
+/// the topology itself, by the speed table's own kind, at every reader;
+/// nothing is sped up.
+#[test]
+fn a_line_no_selectable_speed_serves_is_refused_by_the_topology() {
+    // The line and its controller sped up together, so the controller
+    // agrees and the speed is what is judged.
+    let err = solved_refusal(|t| {
+        t.spi_lines.get_mut("SPI_SCK").unwrap().rate_hz = 80_000_001;
+        let c = t.spi_controllers.get_mut("SPI1").unwrap();
+        (c.declared_hz, c.mbr, c.achieved_hz, c.achieved_max_hz) =
+            (80_000_001, 0, 32_000_000, 32_479_488);
+    });
+    assert_refusal(err.clone(), "RateAbovePinSpeed", Some("SPI_SCK"));
+    assert!(err.to_string().contains("`SPI_SCK` on `PA5`"), "{err}");
+    let err = solved_refusal(|t| {
+        t.spi_lines
+            .get_mut("SPI_SCK")
+            .unwrap()
+            .capacitance_femtofarads = 50_001;
+    });
+    assert_refusal(err, "LoadAboveSpeedTable", Some("SPI_SCK"));
+    let err = solved_refusal(|t| {
+        t.spi_lines.get_mut("SPI_SCK").unwrap().rise_time_ns = 4;
+    });
+    assert_refusal(err, "RiseTimeBelowPinSpeed", Some("SPI_SCK"));
+    let err = solved_refusal(|t| {
+        t.spi_lines.get_mut("SPI_SCK").unwrap().vdd_min_millivolts = 1600;
+    });
+    assert_refusal(err, "SupplyOutsideSpeedTable", Some("SPI_SCK"));
 }
 
 // ------------------------------------------------- AET-WO-4220b: declared pin capacitance

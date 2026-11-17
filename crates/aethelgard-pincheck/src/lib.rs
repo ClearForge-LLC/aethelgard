@@ -8,6 +8,7 @@
 
 pub mod elf;
 pub mod header;
+pub mod identity;
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -314,6 +315,8 @@ pub struct Judgement {
     pub ok: bool,
     /// Whether `hwdef.h` was read and agreed, or only the ELF was read.
     pub decodes: &'static str,
+    /// Whether the identity judge ran (`AET-WO-4400b2`): it needs `hwdef.h`.
+    pub identity: &'static str,
     pub configured: Vec<ConfiguredPin>,
     pub findings: Vec<Finding>,
 }
@@ -530,7 +533,19 @@ pub fn judge(
         } else {
             "elf only"
         },
+        identity: "not judged: no hwdef.h",
         configured,
         findings,
     })
+}
+
+impl Judgement {
+    /// The judgement with the identity judge's findings added
+    /// (`AET-WO-4400b2`, [`identity::judge`]).
+    pub fn with_identity(mut self, findings: Vec<Finding>) -> Self {
+        self.ok &= findings.is_empty();
+        self.findings.extend(findings);
+        self.identity = "judged";
+        self
+    }
 }
