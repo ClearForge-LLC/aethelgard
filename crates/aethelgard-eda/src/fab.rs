@@ -653,9 +653,461 @@ fn stackup(st: &Stack, drills: &[Drill]) -> String {
     out
 }
 
+/// The header of JLCPCB's BOM, as its sample file `Sample-BOM_JLCSMT.xlsx`
+/// spells it, the part number's full-width parentheses included
+/// (`AET-WO-1604` §1.3, ruled on PR #199: the sample files are the format).
+pub const JLCPCB_BOM_HEADER: &str = "Comment,Designator,Footprint,JLCPCB Part #（optional）";
+
+/// The header of JLCPCB's placement file (CPL), as `Sample-CPL_JLCSMT.xlsx`
+/// spells it.
+pub const JLCPCB_CPL_HEADER: &str = "Designator,Mid X,Mid Y,Layer,Rotation";
+
+/// Why the JLCPCB files cannot be written.
+#[derive(Debug, PartialEq, Eq)]
+pub enum JlcpcbRefusal {
+    /// A part KiCad places on the bottom side, by reference. JLCPCB's pages
+    /// state no bottom-side convention (mirrored X, rotation seen from
+    /// below), so no row is written for it, and no file at all (ruled U3).
+    BottomSide(String),
+    /// An input that is not what KiCad or the emitter writes.
+    Malformed(String),
+}
+
+/// One row of KiCad's placement file (`kicad-cli pcb export pos --format csv
+/// --units mm`): reference, value, package, X, Y, rotation and side, each as
+/// KiCad printed it.
+#[derive(Debug, PartialEq, Eq)]
+pub struct Placed<'a> {
+    pub reference: &'a str,
+    pub value: &'a str,
+    pub package: &'a str,
+    pub x: &'a str,
+    pub y: &'a str,
+    pub rotation: &'a str,
+    pub side: &'a str,
+}
+
+/// KiCad's placement file, row by row. KiCad writes each row's reference,
+/// value and package in quotes without escaping a quote inside them, so a
+/// name holding `"` shifts every later column (adversarial): every row must
+/// be three quoted fields with no quote inside, then four unquoted ones;
+/// commas inside quotes are CSV's own.
+pub fn placement(csv: &[u8]) -> Result<Vec<Placed<'_>>, String> {
+    let text = std::str::from_utf8(csv).map_err(|_| "it is not UTF-8".to_owned())?;
+    let mut lines = text.lines();
+    if lines.next() != Some("Ref,Val,Package,PosX,PosY,Rot,Side") {
+        return Err("its header is not KiCad's CSV header".to_owned());
+    }
+    let mut rows = Vec::new();
+    for (n, row) in lines.enumerate() {
+        let bad = || {
+            format!(
+                "row {} is not three quoted fields and four plain ones",
+                n + 1
+            )
+        };
+        let mut rest = row;
+        let mut quoted = Vec::new();
+        for _ in 0..3 {
+            let inner = rest.strip_prefix('"').ok_or_else(bad)?;
+            let end = inner.find('"').ok_or_else(bad)?;
+            quoted.push(&inner[..end]);
+            rest = inner[end + 1..].strip_prefix(',').ok_or_else(bad)?;
+        }
+        let plain: Vec<&str> = rest.split(',').collect();
+        if plain.len() != 4 || plain.iter().any(|f| f.is_empty() || f.contains('"')) {
+            return Err(bad());
+        }
+        rows.push(Placed {
+            reference: quoted[0],
+            value: quoted[1],
+            package: quoted[2],
+            x: plain[0],
+            y: plain[1],
+            rotation: plain[2],
+            side: plain[3],
+        });
+    }
+    Ok(rows)
+}
+
+/// The emitter's BOM (`crate::bom`), read back strictly: its header, then
+/// CRLF records of five RFC 4180 fields. Returns reference, value and
+/// footprint of each row.
+fn bom_rows(csv: &[u8]) -> Result<Vec<[String; 3]>, String> {
+    let text = std::str::from_utf8(csv).map_err(|_| "the BOM is not UTF-8".to_owned())?;
+    let body = text
+        .strip_prefix(crate::bom::HEADER)
+        .and_then(|b| b.strip_prefix("\r\n"))
+        .ok_or("the BOM's header is not the emitter's")?;
+    let mut rows = Vec::new();
+    let mut fields: Vec<String> = Vec::new();
+    let mut field = String::new();
+    let mut chars = body.chars().peekable();
+    let mut start = true;
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if start && field.is_empty() => {
+                start = false;
+                loop {
+                    match chars.next() {
+                        Some('"') if chars.peek() == Some(&'"') => {
+                            chars.next();
+                            field.push('"');
+                        }
+                        Some('"') => break,
+                        Some(c) => field.push(c),
+                        None => return Err("the BOM ends inside a quoted field".to_owned()),
+                    }
+                }
+                if !matches!(chars.peek(), Some(',' | '\r')) {
+                    return Err("the BOM has text after a quoted field".to_owned());
+                }
+            }
+            '"' => return Err("the BOM has a quote inside an unquoted field".to_owned()),
+            ',' => {
+                fields.push(std::mem::take(&mut field));
+                start = true;
+            }
+            '\r' => {
+                if chars.next() != Some('\n') {
+                    return Err("the BOM has a bare CR".to_owned());
+                }
+                fields.push(std::mem::take(&mut field));
+                let [reference, value, footprint, _symbol, _note]: [String; 5] =
+                    std::mem::take(&mut fields)
+                        .try_into()
+                        .map_err(|f: Vec<String>| {
+                            format!("a BOM row has {} fields, not 5", f.len())
+                        })?;
+                rows.push([reference, value, footprint]);
+                start = true;
+            }
+            '\n' => return Err("the BOM has a bare LF".to_owned()),
+            c => {
+                start = false;
+                field.push(c);
+            }
+        }
+    }
+    if !field.is_empty() || !fields.is_empty() {
+        return Err("the BOM's last row has no CRLF".to_owned());
+    }
+    Ok(rows)
+}
+
+/// A reference's order among others: `C2` before `C10`. A reference that is
+/// not letters then digits sorts by its bytes after every one that is.
+fn natural(reference: &str) -> (bool, &str, u64, &str) {
+    let digits = reference.trim_start_matches(|c: char| !c.is_ascii_digit());
+    let prefix = &reference[..reference.len() - digits.len()];
+    match digits.parse::<u64>() {
+        Ok(n) if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) => {
+            (false, prefix, n, reference)
+        }
+        _ => (true, reference, 0, reference),
+    }
+}
+
+/// One CSV field, quoted by RFC 4180 when it holds a comma, a quote or a
+/// line break, or always when `always`.
+fn csv_field(s: &str, always: bool) -> String {
+    if always || s.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s.to_owned()
+    }
+}
+
+/// KiCad's rotation, in degrees as it prints them (`-90.000000`), normalised
+/// to 0 up to but not including 360, counter-clockwise as both KiCad and
+/// JLCPCB count it; whole degrees print without a fraction (`270`).
+fn rotation(kicad: &str) -> Option<String> {
+    const MICRO: i128 = 1_000_000;
+    let (negative, digits) = match kicad.strip_prefix('-') {
+        Some(d) => (true, d),
+        None => (false, kicad),
+    };
+    let (whole, frac) = digits.split_once('.').unwrap_or((digits, ""));
+    let numeric = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if whole.is_empty() || whole.len() > 12 || frac.len() > 6 || !numeric(whole) || !numeric(frac) {
+        return None;
+    }
+    let frac_micro = format!("{frac:0<6}").parse::<i128>().ok()?;
+    let mut micro = whole.parse::<i128>().ok()? * MICRO + frac_micro;
+    if negative {
+        micro = -micro;
+    }
+    let turn = 360 * MICRO;
+    let r = micro.rem_euclid(turn);
+    let (deg, rest) = (r / MICRO, r % MICRO);
+    Some(if rest == 0 {
+        deg.to_string()
+    } else {
+        format!("{deg}.{}", format!("{rest:06}").trim_end_matches('0'))
+    })
+}
+
+/// A coordinate as KiCad printed it, in millimetres: a plain decimal.
+fn coordinate(kicad: &str) -> Option<&str> {
+    let digits = kicad.strip_prefix('-').unwrap_or(kicad);
+    let (whole, frac) = digits.split_once('.').unwrap_or((digits, ""));
+    (!whole.is_empty()
+        && whole.bytes().all(|b| b.is_ascii_digit())
+        && frac.bytes().all(|b| b.is_ascii_digit()))
+    .then_some(kicad)
+}
+
+/// JLCPCB's BOM and placement file (`AET-WO-1604` §1.3, ruled on PR #199),
+/// from the emitter's BOM and KiCad's placement file, adding nothing either
+/// lacks (`INV-06`):
+///
+/// - **BOM**, one row per kind of part, grouped by value and footprint, in
+///   the order of each kind's first reference: `Comment` the value,
+///   `Designator` every reference of the kind, quoted, `Footprint` the KiCad
+///   footprint's name without its library, and the part number **empty for
+///   every part**, since no input names one;
+/// - **CPL**, one row per placed part in KiCad's order: `Mid X` and `Mid Y`
+///   KiCad's coordinates with `mm`, `Layer` `T`, and `Rotation` KiCad's,
+///   normalised to 0–359, in KiCad's frame with no per-footprint offset.
+///
+/// Each line ends CRLF. A part on the bottom side refuses both files by its
+/// reference. The two files must name exactly the same parts.
+pub fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(String, String), JlcpcbRefusal> {
+    use JlcpcbRefusal::{BottomSide, Malformed};
+    let placed = placement(pos).map_err(|e| Malformed(format!("the placement file: {e}")))?;
+    let mut cpl = format!("{JLCPCB_CPL_HEADER}\r\n");
+    for p in &placed {
+        let layer = match p.side {
+            "top" => "T",
+            "bottom" => return Err(BottomSide(p.reference.to_owned())),
+            other => return Err(Malformed(format!("`{}` is on side `{other}`", p.reference))),
+        };
+        let (Some(x), Some(y)) = (coordinate(p.x), coordinate(p.y)) else {
+            return Err(Malformed(format!(
+                "`{}` is at ({}, {}), not two decimals",
+                p.reference, p.x, p.y
+            )));
+        };
+        let r = rotation(p.rotation).ok_or_else(|| {
+            Malformed(format!(
+                "`{}`'s rotation `{}` is not a decimal",
+                p.reference, p.rotation
+            ))
+        })?;
+        cpl.push_str(&format!(
+            "{},{x}mm,{y}mm,{layer},{r}\r\n",
+            csv_field(p.reference, true)
+        ));
+    }
+    let rows = bom_rows(bom).map_err(Malformed)?;
+    let mut kinds: Vec<((String, String), Vec<String>)> = Vec::new();
+    for [reference, value, footprint] in rows {
+        let name = footprint
+            .split_once(':')
+            .map_or(footprint.as_str(), |(_, n)| n)
+            .to_owned();
+        let key = (value, name);
+        match kinds.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, refs)) => refs.push(reference),
+            None => kinds.push((key, vec![reference])),
+        }
+    }
+    for (_, refs) in &mut kinds {
+        refs.sort_by(|a, b| natural(a).cmp(&natural(b)));
+    }
+    kinds.sort_by(|a, b| natural(&a.1[0]).cmp(&natural(&b.1[0])));
+    let mut in_bom: Vec<&str> = kinds
+        .iter()
+        .flat_map(|(_, r)| r.iter().map(String::as_str))
+        .collect();
+    let mut in_cpl: Vec<&str> = placed.iter().map(|p| p.reference).collect();
+    in_bom.sort_unstable();
+    in_cpl.sort_unstable();
+    if in_bom != in_cpl {
+        return Err(Malformed(format!(
+            "the BOM names {in_bom:?} and the placement file {in_cpl:?}"
+        )));
+    }
+    let mut out = format!("{JLCPCB_BOM_HEADER}\r\n");
+    for ((value, footprint), refs) in &kinds {
+        out.push_str(&format!(
+            "{},{},{},\r\n",
+            csv_field(value, false),
+            csv_field(&refs.join(","), true),
+            csv_field(footprint, false),
+        ));
+    }
+    Ok((out, cpl))
+}
+
+/// The notes' section on the JLCPCB files: their sources, what each column
+/// is from, and what no input of this engine can fill.
+pub fn jlcpcb_notes(project: &str) -> String {
+    format!(
+        "
+## JLCPCB assembly files
+
+`{project}-jlcpcb-bom.csv` and `{project}-jlcpcb-cpl.csv` are the BOM and the
+placement file in JLCPCB's assembly upload formats, laid out as JLCPCB's
+sample files `Sample-BOM_JLCSMT.xlsx` and `Sample-CPL_JLCSMT.xlsx` lay them
+out, as read on 2026-11-17 from:
+
+- https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly (last updated 2026-09-09);
+- https://jlcpcb.com/help/article/pick-place-file-for-pcb-assembly (last updated 2026-09-09);
+- https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad (last updated 2026-11-10).
+
+They are made from `{project}.bom.csv` and `{project}-pos.csv` and add nothing
+to them:
+
+- The BOM has one row per kind of part, grouped by value and footprint.
+  `Comment` is the value, `Designator` every reference of the kind, and
+  `Footprint` the KiCad footprint's name without its library.
+- **`JLCPCB Part #（optional）` is empty for every part.** No input of this
+  engine names a fabricator's part number, so none is written. Choose each
+  part in JLCPCB's library before ordering. A passive's value alone (`100n`)
+  does not choose a part: its voltage rating, dielectric and tolerance are
+  in no input.
+- `Mid X` and `Mid Y` are KiCad's placement coordinates, in mm: each
+  footprint's anchor, in the Gerbers' own frame. `Layer` is `T`.
+- **`Rotation` is KiCad's, normalised to 0 to 359 degrees, counter-clockwise,
+  in KiCad's frame.** No per-footprint offset into JLCPCB's library
+  orientation is applied, because none is known. Check every part's
+  orientation in JLCPCB's placement preview, by eye, before ordering.
+- Test pads are in neither file: nothing is placed on them.
+- A part on the bottom side is never written: JLCPCB's pages state no
+  bottom-side convention, so `verify --fab-out` refuses such a board by name.
+"
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const POS_HEAD: &str = "Ref,Val,Package,PosX,PosY,Rot,Side\n";
+    const BOM_HEAD: &str = "Reference,Value,Footprint,Symbol,Note\r\n";
+
+    fn pos_row(r: &str, rot: &str, side: &str) -> String {
+        format!("\"{r}\",\"1k\",\"R_0402_1005Metric\",1.500000,-2.250000,{rot},{side}\n")
+    }
+
+    #[test]
+    fn rotation_is_kicads_normalised_to_a_turn() {
+        for (kicad, want) in [
+            ("0.000000", "0"),
+            ("-90.000000", "270"),
+            ("-180.000000", "180"),
+            ("360.000000", "0"),
+            ("-0.500000", "359.5"),
+            ("45.250000", "45.25"),
+            ("720", "0"),
+        ] {
+            assert_eq!(rotation(kicad).as_deref(), Some(want), "{kicad}");
+        }
+        for bad in ["", "-", "1e3", "90.0000001", "+90", "9 0", ".5"] {
+            assert_eq!(rotation(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn the_bom_groups_by_value_and_footprint_in_natural_order_and_quotes_designators() {
+        let bom = format!(
+            "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n\"A,\"\"B\",\"1k, 1%\",Resistor_SMD:R_0402_1005Metric,Device:R,note\r\nC3,1u,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n"
+        );
+        let pos = format!(
+            "{POS_HEAD}{}{}{}{}",
+            pos_row("C10", "0", "top"),
+            pos_row("C2", "0", "top"),
+            pos_row("A,\"B", "0", "top").replace("\\\"", "\""),
+            pos_row("C3", "0", "top")
+        );
+        // KiCad would not quote-escape `A,"B`; that row fails `placement`.
+        assert!(matches!(
+            jlcpcb(bom.as_bytes(), pos.as_bytes()),
+            Err(JlcpcbRefusal::Malformed(_))
+        ));
+        let pos = format!(
+            "{POS_HEAD}{}{}{}",
+            pos_row("C10", "0", "top"),
+            pos_row("C2", "0", "top"),
+            pos_row("C3", "0", "top")
+        );
+        let bom = format!(
+            "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC3,\"1u, X7R\",Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n"
+        );
+        let (b, c) = jlcpcb(bom.as_bytes(), pos.as_bytes()).unwrap();
+        assert_eq!(
+            b,
+            "Comment,Designator,Footprint,JLCPCB Part #（optional）\r\n100n,\"C2,C10\",C_0402_1005Metric,\r\n\"1u, X7R\",\"C3\",C_0402_1005Metric,\r\n"
+        );
+        assert_eq!(
+            c,
+            "Designator,Mid X,Mid Y,Layer,Rotation\r\n\"C10\",1.500000mm,-2.250000mm,T,0\r\n\"C2\",1.500000mm,-2.250000mm,T,0\r\n\"C3\",1.500000mm,-2.250000mm,T,0\r\n"
+        );
+    }
+
+    #[test]
+    fn a_bottom_side_part_is_refused_by_name_and_nothing_is_written() {
+        let pos = format!(
+            "{POS_HEAD}{}{}",
+            pos_row("R1", "0", "top"),
+            pos_row("R2", "90", "bottom")
+        );
+        let bom = format!(
+            "{BOM_HEAD}R1,1k,Resistor_SMD:R_0402_1005Metric,Device:R,\r\nR2,1k,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n"
+        );
+        assert_eq!(
+            jlcpcb(bom.as_bytes(), pos.as_bytes()),
+            Err(JlcpcbRefusal::BottomSide("R2".into()))
+        );
+    }
+
+    #[test]
+    fn the_two_files_must_name_the_same_parts_and_be_what_their_writers_write() {
+        let pos = format!("{POS_HEAD}{}", pos_row("R1", "0", "top"));
+        let bom = |rows: &str| format!("{BOM_HEAD}{rows}");
+        let r1 = "R1,1k,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n";
+        let r2 = "R2,1k,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n";
+        assert!(jlcpcb(bom(r1).as_bytes(), pos.as_bytes()).is_ok());
+        for (b, p) in [
+            (bom(&format!("{r1}{r2}")), pos.clone()),
+            (bom(""), pos.clone()),
+            (bom(r1).replace("\r\n", "\n"), pos.clone()),
+            (bom("R1,1k,F,S\r\n"), pos.clone()),
+            (bom("R1,\"1k\"x,F,S,\r\n"), pos.clone()),
+            (bom(r1).replace("Reference", "Ref"), pos.clone()),
+            (bom(r1), pos.replace("top", "both")),
+            (bom(r1), pos.replace("1.500000", "1,5")),
+            (bom(r1), pos.replace("-2.250000", "x")),
+        ] {
+            assert!(
+                matches!(
+                    jlcpcb(b.as_bytes(), p.as_bytes()),
+                    Err(JlcpcbRefusal::Malformed(_))
+                ),
+                "{b:?} {p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_notes_section_cites_the_pages_and_names_what_is_not_filled() {
+        let n = jlcpcb_notes("p");
+        for want in [
+            "`p-jlcpcb-bom.csv`",
+            "`p-jlcpcb-cpl.csv`",
+            "https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly",
+            "https://jlcpcb.com/help/article/pick-place-file-for-pcb-assembly",
+            "https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad",
+            "is empty for every part",
+            "in KiCad's frame",
+            "by eye",
+            "bottom side",
+        ] {
+            assert!(n.contains(want), "{want}");
+        }
+    }
 
     fn sample() -> String {
         sample_on(&crate::stack::reference())

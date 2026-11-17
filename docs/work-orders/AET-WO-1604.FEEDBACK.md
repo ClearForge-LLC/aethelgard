@@ -42,6 +42,9 @@ These were read, not run, before any prediction below was written. JLCPCB's page
 - **M7 · `doctor` inside the pinned tools image** (`container/IMAGE`, `aethelgard-tools@sha256:598501ab…`), run with `~/bin/capped-run --mem 8G -- --rm --network none`. The cap was read back in the scope: `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192`. The run used this branch's debug binary and a bridge built from the same bridge sources (digest `91e72fcc…`, from `~/.cache/aet-4300c`), both mounted read-only. Result: exit `0`, `missing` empty, `kicad-cli` `10.0.7`, `Renode v1.17.0`, the bridge `0.1.0` with `ngspice_loaded`, `cargo 1.99.1`, `Kani Rust Verifier 0.68.0 (cargo plugin)`, scratch `/var/lib/aethelgard`, Landlock ABI 8. `uid_boundary` is false with `user_namespace` on every probe: rootless podman's root is not the initial namespace's (`AET-WO-1601` R4). CI's runner is rootful, so the boundary is expected there. P4 held. Rerun at `bd9da55`, after F1, with the same result. Kept in `~/.cache/aet-1604/img/doctor-in-image.json`.
 - **M8 · The whole workspace** (`cargo test --workspace --no-fail-fast`, Furnace, capped scope): 2,076 passed, 0 failed. `mcp_tier1`'s README count (19 → 20 tools) and `strict_fence`'s module list (`doctor.rs`, role `Other`: it reads no KiCad file) moved with the new subcommand. No tier-2 test was added, so `TIER2_MIN` does not move.
 
+- **M9 · CI on PR #199 at `b91bede`** (§1.1, §1.2, §1.4, §1.5, before the §1.3 ruling): every job passed, the tier-2 shards and their aggregate included (`ANSWER tier2_tests_passed=176 floor=176`; `TIER2_MIN` exact). The shards run the workspace as root in the pinned image, so `doctor_tier1` ran as root there, and the refactored `prove`, `build` and `simulate` (D3) met their real tools there.
+- **M10 · Sentinel-01 as ordered** (`examples/sentinel-01.json`, merged with #190): `extract` on its emitted board adds six conditions the committed `FAB-NOTES.md` does not hold, `TP9`–`TP14` on `SPI_MOSI`, `SPI_SCK`, `EXT_SCL`, `EXT_SDA`, `I2C_SCL` and `I2C_SDA` (`~/.cache/aet-1604/sentinel-01-notes-delta.txt`). The package moves when regenerated, as Q2 ruled.
+
 ## 3. Decisions taken
 
 - **D1 · The sandbox probe is this executable, asked `--version` through `run::Invocation`.** `run.rs` has no standalone probe (R1), and §7's second stop forbids writing one. The trampoline's own status line, from a real confinement, is the probe, so `doctor` reports exactly what the trampoline achieved and never calls `landlock` or `seccompiler` itself. It needs no external tool, so the sandbox is reported even when no tool is installed. §7 did not fire, because no new probe was needed.
@@ -124,3 +127,37 @@ Each new guard was mutated once against the suite it lives in (`~/.cache/aet-160
 The §5 case "a fab-format column filled with a plausible guess" waits for the files, after the §1.3 ruling (§4, O1).
 
 **Status: STOPPED at §1.3** for the column map's ruling: U1–U3 and O1–O6 above, with Q1–Q3. §1.1, §1.2, §1.4 and §1.5 are built and pass the CLAUDE.md gates on Furnace. The reduction pass runs at the close, after the fab-format files are built.
+
+## 7. §1.3 as ruled (PR #199, comment 6943750741, 2026-11-17 09:30 UTC)
+
+**The ruling.** Build it. JLCPCB's sample files are the format; where the prose differs, the sample wins.
+- U1: the part-number column is present and empty for every part, and is named in `FAB-NOTES.md`.
+- O1 (a): KiCad's rotation, normalised to 0–359, with the frame named and the preview checked by eye.
+- U3: a bottom-side part refuses by name.
+- O2: header verbatim; O3: `T`/`B`; O4: `mm`; O5: grouped by (value, footprint), designators quoted; O6: `<project>-jlcpcb-bom.csv` and `-jlcpcb-cpl.csv`, in `MANIFEST.json` and `FAB-NOTES.md`.
+- Q1: backlog. Q2: within §1.5; whichever of `1604` and `3402` merges second regenerates `fab/sentinel-01-bench`. Q3: accepted.
+
+**Built.**
+- `aethelgard-eda/src/fab.rs` gains only new items, so `3402`'s change to `Notes` and `notes()` merges beside them:
+  - `placement()` reads KiCad's placement file. It was `placement_rows`'s check in the CLI, which now delegates to it, so there is one reader.
+  - `jlcpcb()` makes both files from the emitter's BOM and KiCad's placement file.
+  - `jlcpcb_notes()` is the notes section, appended by the CLI's `notes()` after the brown-out step, as that step is.
+- The CLI's `fab.rs` writes the two files in `derive`, so `--fab-out` writes them and `--against-fab` compares them. `describe()` lists them, so `FAB-NOTES.md`'s `## Files` and `MANIFEST.json` name them.
+
+**Decisions within the ruling.**
+- **D9 · `Footprint` is the KiCad footprint's name without its library** (`C_0402_1005Metric`, KiCad's own `Package` column). It is an exact substring of the emitter's column, not a JLCPCB package name, which no input carries.
+- **D10 · A bottom-side part is exit `3`, `BottomSidePart`,** with `id` the reference. Nothing is written. A refusal to write is not a tool error, and `3` is `verify`'s other package refusal (`UnwritableOutput`).
+- **D11 · Each line ends CRLF,** as the emitter's BOM (RFC 4180) does.
+- **D12 · Order.** BOM kinds are in the natural order of each kind's first reference (`C2` before `C10`), and references within a kind likewise. A reference that is not letters then digits sorts by its bytes after every one that is. CPL rows keep KiCad's order.
+- **D13 · Every designator is quoted in both files.** Other fields are quoted only when they hold a comma, a quote or a line break.
+- **D14 · The two files must name exactly the same parts,** or the export is exit `5`, `ToolError`. JLCPCB refuses an upload whose BOM and CPL disagree ("REF, DES designators don't exist in the CPL file").
+- **D15 · Coordinates are KiCad's digits as printed, plus `mm`.** No rounding to the sample's four decimals.
+
+**Tests.**
+- `eda` unit tests: rotation normalisation (−90 → 270, −0.5 → 359.5, 360 → 0; malformed refused); grouping, natural order and quoting (a value holding a comma); a bottom-side part refused by name; each malformed input refused (designator sets differ, an LF-only BOM, a short row, text after a quote, another header, side `both`, a coordinate that is not a decimal); the notes section citing the three pages.
+- CLI unit tests on KiCad 10.0.7's real placement file and the emitter's real BOM for Sentinel-01 as ordered (copied from the committed package at `ac5f8c8` into `tests/fixtures/fab/`):
+  - 13 kinds over 39 references; the first row is `100n,"C1,…,C22",C_0402_1005Metric,`;
+  - every row ends in the empty part number;
+  - every CPL row is KiCad's row with `mm`, `T` and its rotation normalised;
+  - the bottom-side refusal's exit, kind and id.
+- Tier 2: `verify_2k2_tier2` lists seventeen files and binds the two to `jlcpcb()` of the package's own BOM and placement file; `against_fab_tier2` expects 18 differences. No tier-2 test was added, so `TIER2_MIN` stays exact at main's 177.
