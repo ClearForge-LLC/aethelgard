@@ -87,6 +87,7 @@ tests/board_tier2.rs	a_wrong_alternate_function_fails	347.983
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.431
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.523
 tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	23.912
+tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	23.184
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	560.336
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	46.596
 tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	952.852
@@ -548,6 +549,7 @@ tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
 tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
 # AET-WO-4230 follow-up: against_fab_tier2 split out of ci/colocate.tsv. Each test alone runs the shared --fab-out verify, then its own --against-fab verify, one at a time: 2 x 579 s, the worst single verify of the block in runs 43889629997 and 43895706619 (510-579 s; an upper bound).
 # AET-WO-1312: board_tier2's the_bench_board_passes_every_gate_at_two_and_four_layers is a Furnace estimate, not a run: 8.54 s in the pinned image on Furnace, times 2.8 (AET-WO-1310's factor), 23.912; replace it at the next refit.
+# AET-WO-1313: board_tier2's the_sentinel_03_fixture_passes_every_gate_inside_its_bound is a Furnace estimate, not a run: 8.28 s in the pinned image on Furnace, times 2.8 (AET-WO-1310's factor), 23.184; replace it at the next refit.
 tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	1158.000
 tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	1158.000
 # AET-WO-2302 (interim, refit from this PR's CI run by rule 5 if the plan or the shards call for it): each new twin_tier2
