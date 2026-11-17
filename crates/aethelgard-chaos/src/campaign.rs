@@ -1742,23 +1742,29 @@ pub fn open_ports(records: &[Record]) -> BTreeSet<&str> {
     }
 }
 
-/// The boot word's instant as the records give it (`AET-WO-2302`
-/// adversarial pass 2, A2-5): the first port the chain injects, the first
-/// not held open, takes its frame one quantum after the boot word, so its
-/// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
+/// The first port the judge's chain injects, the first not held open, as
+/// its kind 29's index and `injected_ns`. `None` when that port took no
 /// frame, or there is none.
-pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
+pub fn first_injection(records: &[Record]) -> Option<(usize, u64)> {
     let open = open_ports(records);
     records
         .iter()
-        .find_map(|r| match r {
+        .enumerate()
+        .find_map(|(i, r)| match r {
             Record::SerialWitness {
                 label, injected_ns, ..
-            } if !open.contains(label.as_str()) => Some(*injected_ns),
+            } if !open.contains(label.as_str()) => Some(injected_ns.map(|t| (i, t))),
             _ => None,
         })
         .flatten()
-        .and_then(|t| t.checked_sub(TWIN_QUANTUM_NS))
+}
+
+/// The boot word's instant as the records give it (`AET-WO-2302`
+/// adversarial pass 2, A2-5): the first port the chain injects takes its
+/// frame one quantum after the boot word, so its kind 29 `injected_ns`
+/// less `QUANTUM_NS`. `None` when that port took no frame, or there is none.
+pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
+    first_injection(records)?.1.checked_sub(TWIN_QUANTUM_NS)
 }
 
 /// One character's time on the wire in ns, rounded up, at a solved actual
@@ -2159,7 +2165,7 @@ fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
     let (mut past, mut missing) = (0, 0);
     for (timer, anchor) in anchors {
         let Some(at) = anchor else { continue };
-        if at.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS {
+        if dshot_window_past_run(at) {
             past += 1;
         } else if !records.iter().any(|r| {
             matches!(r, Record::JudgeStop { timer: t, anchor_ns, cr1_after: Some(c), .. }
@@ -2383,6 +2389,11 @@ pub const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
 /// A DShot output's window from its anchor, 2 ms (`AET-WO-2302`), as
 /// [`TWIN_MAX_VIRTUAL_NS`] states it.
 pub const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+
+/// Whether a DShot window from `anchor` ends past the run's end.
+pub fn dshot_window_past_run(anchor: u64) -> bool {
+    anchor.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS
+}
 const RESET_KERNEL_HZ: u64 = 64_000_000;
 
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
