@@ -45,6 +45,10 @@ pub enum TwinError {
         "peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels, USARTn or UARTn of a serial port)"
     )]
     UnsupportedPeripheral { peripheral: String },
+    #[error(
+        "the DMAMUX1 table (`data/dmamux1-spi-rx.tsv`) has a row that is not ST's peripheral, the resource and a decimal input, tab-separated: `{row}`"
+    )]
+    MalformedDmaTable { row: String },
     #[error("`{peripheral}` is not in Renode's {file}, and only an SPI instance is added")]
     NotInRenode {
         peripheral: String,
@@ -114,6 +118,7 @@ impl TwinError {
             Self::InvalidTopology(_) => "InvalidTopology",
             Self::InvalidPin { .. } => "InvalidPin",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
+            Self::MalformedDmaTable { .. } => "MalformedDmaTable",
             Self::NotInRenode { .. } => "NotInRenode",
             Self::AddressMismatch { .. } => "AddressMismatch",
             Self::UnknownFaultedBus { .. } => "UnknownFaultedBus",

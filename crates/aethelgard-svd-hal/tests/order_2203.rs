@@ -164,6 +164,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`d38a84b3…`) put back for the new (`68466678…`) in each text, the three
 /// are `a60bdcac…a048`, `a81a65b3…5fdc` and `292791aa…d388` exactly; the
 /// boot image did not move.
+/// Moved once more by `AET-WO-4400c2` (spi1's receive DMA request, ruled on
+/// PR #204): with its two edits undone (the `DMARecieve -> dmamux1@37` line
+/// and the comment's clause), both platform texts are `244791ab…6b45` and
+/// `6cad35bc…e52a` exactly (measured, after `1313` merged); `main.rs` and the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
@@ -171,11 +175,11 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform",
-        "244791ab9bbc614601a5bdb04a7bd6ac6de50bd8046a38d8bf0ed5c57ade6b45",
+        "b2bc0dcf8e44243e6420a0787ac0dfed6625bff4160dd7be44028e3cd70dd676",
     ),
     (
         "platform faulted",
-        "6cad35bcd3355f21c6f707534b044208f4d0d1bddce468ff614fdc59fb0be52a",
+        "bfa37e131162b147d167b61057e30cc539d6fecfdeb212287226a3d1c33cae21",
     ),
     (
         "boot image",

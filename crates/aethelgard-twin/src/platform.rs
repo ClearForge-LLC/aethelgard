@@ -6,7 +6,8 @@
 //! instance other than `spi4`, at the header's base, with its interrupt wired
 //! (spike F2). It never redeclares a stock instance, since a duplicate
 //! registration breaks the load (`architecture.md` §2.9). The output is a
-//! function of the topology and the pinned header alone (`INV-01`).
+//! function of the topology, the pinned header and the cited DMAMUX1 table
+//! ([`DMAMUX1_SPI_RX`], `AET-WO-4400c2`) alone (`INV-01`).
 
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
@@ -75,6 +76,57 @@ pub const STOCK: [(&str, &str, &str, u32); 24] = [
     ("UART7", "uart7", "UART.STM32F7_USART", 0x4000_7800),
     ("UART8", "uart8", "UART.STM32F7_USART", 0x4000_7C00),
 ];
+
+/// The DMAMUX1 request input of each SPI controller's receive DMA, transcribed
+/// with its citation from RM0433 Rev 9, Table 124 (`AET-WO-4400c2`, ruled on
+/// PR #204, comment 6945751393: the numbers from the cited table as data).
+/// Renode 1.17.0's `STM32H7_SPI` raises `DMARecieve` for each word received
+/// with `RXDMAEN` set, and its `STM32_DMAMUX` serves the channel whose
+/// `DMAREQ_ID` equals the line's number, so a firmware that receives SPI by
+/// DMA (ArduPilot) reads nothing without the line (`AET-WO-4400c` stall 1).
+pub const DMAMUX1_SPI_RX: &str = include_str!("../data/dmamux1-spi-rx.tsv");
+
+/// The rows of [`DMAMUX1_SPI_RX`]: (ST's peripheral, the table's resource,
+/// its DMA request MUX input). A row that is not three tab-separated fields
+/// with a decimal input is refused by name.
+pub fn dmamux1_spi_rx() -> Result<Vec<(&'static str, &'static str, u32)>, TwinError> {
+    dma_rows(DMAMUX1_SPI_RX)
+}
+
+/// The rows of a table in [`DMAMUX1_SPI_RX`]'s format.
+pub(crate) fn dma_rows(text: &str) -> Result<Vec<(&str, &str, u32)>, TwinError> {
+    text.lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| {
+            let bad = || TwinError::MalformedDmaTable { row: l.to_owned() };
+            let mut f = l.split('\t');
+            let (Some(p), Some(r), Some(n), None) = (f.next(), f.next(), f.next(), f.next()) else {
+                return Err(bad());
+            };
+            if !n.bytes().all(|b| b.is_ascii_digit()) {
+                return Err(bad());
+            }
+            Ok((p, r, n.parse().map_err(|_| bad())?))
+        })
+        .collect()
+}
+
+/// The DMAMUX1 input of `peripheral`'s receive DMA. `None` for SPI6, whose
+/// request is on DMAMUX2 (RM0433 Table 128), which Renode 1.17.0's platform
+/// does not declare; the emitted entry says so. Any other SPI with no row is
+/// refused (`INV-06`).
+pub fn spi_rx_request(peripheral: &str) -> Result<Option<u32>, TwinError> {
+    if peripheral == "SPI6" {
+        return Ok(None);
+    }
+    dmamux1_spi_rx()?
+        .into_iter()
+        .find(|(p, _, _)| *p == peripheral)
+        .map(|(_, _, n)| Some(n))
+        .ok_or_else(|| TwinError::UnsupportedPeripheral {
+            peripheral: peripheral.to_owned(),
+        })
+}
 
 /// How the header names a model of our own and its pin, before
 /// `` `models/renode/<file>` sha256 `<64 hex>`. `` (`AET-WO-4220` D6).
@@ -718,10 +770,20 @@ pub fn emit_faulted(
     for i in instances.iter().filter(|i| i.added) {
         let base = facts.base(&i.peripheral)?;
         let irq = facts.irq(&i.peripheral)?;
+        let (source, dma) = match spi_rx_request(&i.peripheral)? {
+            Some(n) => (
+                "its receive DMA request RM0433 Table 124's;",
+                format!("    DMARecieve -> dmamux1@{n}\n"),
+            ),
+            None => (
+                "no receive DMA line (its request is on DMAMUX2, which Renode does not declare);",
+                String::new(),
+            ),
+        };
         let _ = write!(
             out,
-            "\n// {p}: {p}_BASE and {p}_IRQn from the header; the model is `spi4`'s.\n\
-             {name}: {SPI_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{p}\n    }}\n    IRQ -> nvic@{irq}\n",
+            "\n// {p}: {p}_BASE and {p}_IRQn from the header, {source} the model is `spi4`'s.\n\
+             {name}: {SPI_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{p}\n    }}\n    IRQ -> nvic@{irq}\n{dma}",
             p = i.peripheral,
             name = i.name,
         );
