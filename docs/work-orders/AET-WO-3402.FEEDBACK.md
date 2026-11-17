@@ -120,7 +120,7 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
 - `cargo fmt --all -- --check` 0;
 - `cargo clippy --workspace --all-targets -- -D warnings` 0;
 - `cargo test --workspace` 0, with 2060 passed and 0 failed.
-- In the pinned image: see §6.1.
+- In the pinned image: `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` 0. `verify_2k2_tier2` passes 2 of 2 in 1284 s: the reference's real `--fab-out` package carries the ledger rows, equal line for line to its specification's entries, and its file list matches.
 - `TIER2_MIN` is unchanged: no tier-2 test is added, and `verify_2k2_tier2.rs` gains assertions, not tests.
 
 **After the ruling:**
