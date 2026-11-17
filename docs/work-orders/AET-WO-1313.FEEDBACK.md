@@ -1,12 +1,28 @@
 # AET-WO-1313 — FEEDBACK
 
-## 0. Status: STOPPED in §2 (the build) for a ruling on the compaction target (§5.3). The §1.5 stop below is kept as written.
+## 0. Status: STOPPED, built in full as ruled, waiting on one CI dispatch (§5.8) and one finding (§5.3)
 
-- **Correction, found while building (§5.3) [measured].** The spike's compaction (a) did not move groups toward the MCU's centre, as §2.3 says. It moved them toward the courtyard centre of the first placed part in the emitter's item order: on the fixture, C1, a capacitor 13 mm left of the MCU.
-  - Built as described (toward the MCU), compaction moves nothing on the fixture: **85.25 × 99.05 mm**, the same as (c) alone. Every gate passes, inside the 100 × 100 bound.
-  - Built with the spike's target, it reproduces the spike's **85.25 × 80.55**. But that target depends on the order of the parts list.
-  - The ruling accepted (a) on the spike's numbers. Every figure below that relies on (a)'s gain (80–83 mm heights, the robustness under 1307's prefix renamer, the quote's 86 × 81 and the spare room for the parts `main` cannot say) is the C1 target's, not the described method's.
-- The build otherwise stands as ruled; the bump to 15, the tier-2 test and `TIER2_MIN` wait for this ruling (§5.6).
+- **The stop (§5.8).** 3401 merged while this was building. Specification 15 moves the hash of its `examples/sentinel-01.json`, and the committed `fab/sentinel-01-bench/package` is bound to that hash. By the ruling on #190 that package is only ever the one CI's `bench-package` job writes (`workflow_dispatch`, `write`), and this session cannot dispatch it.
+  - Until it is re-written on this branch, `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit` fails. It is the one failing test of 2069.
+  - **Asked:** dispatch `ci.yml` with `write` on `wo/aet-1313-outline`, and commit the artifact into `fab/sentinel-01-bench/package/`. Or rule another way.
+
+- **Built as ruled (PR #197, comment 6942817989):**
+  - `board.max_outline_mm`, specification 15;
+  - the placer under a bound: (r) owners first, (a) compaction with the MCU's 1 mm gap, (c) connectors on the side edges through one edge-plan function;
+  - `OutlineTooSmall` before placement, `OutlineUnreachable` after it;
+  - the fixture without `SPI_*`/`IMU_*` test pads, IMU_CS on PB12, bound 100 × 100.
+- **Acceptance, every item measured (§5.5):**
+  - the fixture passes every gate at four layers inside its bound, in tier 1 and in the tier-2 test in the image;
+  - every existing emitted file is byte-identical with no bound declared;
+  - the bump moves only specification hashes;
+  - every new refusal has a tier-1 test;
+  - fmt, clippy and the workspace suite pass;
+  - `TIER2_MIN` 178, counted in the image (176 + 3401's 1 + this work order's 1).
+- **The finding (§5.3) [measured].** The spike's compaction (a) moved groups toward the first placed part in the emitter's item order (C1 on the fixture), not the MCU's centre as §2.3 says.
+  - Built as ruled (toward the MCU), (a) moves nothing on the fixture, which emits at **85.25 × 99.05 mm**: inside 100 × 100, every gate passing, but with 0.95 mm of height to spare.
+  - The spike's 80 mm heights, its robustness under 1307's prefix renamer, and §3.5's 86 × 81 with spare room are the C1 target's.
+  - **Fork:** (i) drop (a), one commit that only removes code, recommended; or keep it as built. (ii) The spike's target is not buildable: it depends on part order. (iii) A new compaction is a new spike.
+  - The quote still asks for 100 × 100; expect about 85 × 99.
 
 ### The §1.5 status, as written at `ede77a8`
 
@@ -315,7 +331,7 @@ Why:
 | B4 | `emit` on the fixture | under 5 s on Furnace; the tier-2 test under 60 s |
 | B5 | A bound just above the keep-out sum | `validate` accepts it; `emit` refuses it with `OutlineUnreachable`, naming the outline reached, and writes nothing |
 
-### 5.2 What is built (on this branch, at specification 14)
+### 5.2 What is built
 
 - **`aethelgard-ir`** (`board.rs`, `lib.rs`): `board.max_outline_mm: { width, height }`, in whole millimetres.
   - Optional under #191 Q1. Absent or `null` is no bound, and is not written back.
@@ -335,7 +351,7 @@ Why:
   - `pcb.rs` unit tests: both refusals, the side edges cable out, nothing outside the outline or overlapping, and no bound giving the bottom row;
   - `aethelgard-cli/tests/outline_tier1.rs`: the fixture inside its bound, `validate` refusing 40 × 40 (the sum) and 20 × 200 (U1, named), `emit` refusing 60 × 60 by name and writing nothing.
 
-### 5.3 The finding that stops the build: (a)'s target [measured]
+### 5.3 The finding: (a)'s target [measured]
 
 **Diagnosis.** The spike's `compact` took its target as `placed.iter().flatten().next()`. That is the first placed part in the emitter's item order, which on the fixture is C1. I swapped that target into the build and emitted the fixture: **85.25 × 80.55**, the spike's `rac` figure on the no-pad probe, exactly. Restored to the MCU's centre, as §2.3 describes and the ruling built on, the build gives 85.25 × 99.05.
 
@@ -361,7 +377,7 @@ Why:
 - **(iii) A compaction defined without part order** that recovers the 80 mm heights: for example, slide toward the MCU and, when blocked, step sideways to the nearest column that frees a step down. **Unmeasured**: a new spike, not adopted unruled. The one other target tried, the core's box centre, also moved nothing.
 - **The quote** (§3.5): ask for 100 × 100 still. The expected outline under (i) is about 85 × 99 mm. §3.5's spare room for the witness port, USB FS and E0 no longer holds in height: about 1 mm [inferred].
 
-### 5.4 Other forks in this stop
+### 5.4 Other forks, for the architect
 
 - **F2. Whole millimetres.** The work order names the key `max_outline_mm`. The board section's other values are micrometres by `4100`'s D8. I followed the work order. If micrometres are wanted, the key becomes `max_outline_um`.
 - **F3. `validate` and an unsolvable specification.** `validate` runs the area check only when the specification solves and the emitter can draw it. Otherwise it returns ok, as it always has for those, and `solve` and `emit` refuse them by their own names. `emit` always runs the check before placement. Is that acceptable under `INV-06`, or should `validate` refuse a declared bound it cannot judge?
@@ -373,20 +389,64 @@ Why:
   - first with the fixture still unbounded: 24 specifications, 467 files, 38 boards;
   - again on the final code: the 23 existing specifications. The bounded fixture differs, as it should: `main` refuses its new key.
 - **The fixture** (KiCad steps in the pinned image through `~/bin/capped-run`): validate, generate, emit, ERC, DRC `--spec`, DRC with parity, support and `extract` all exit 0 with no finding; `emit` 1.5 s.
+- **The bump to 15 [measured].**
+  - The constant and its documentation (`lib.rs`, the IR README) moved, and the 23 specification files (22 existing and the fixture) moved from `"schema_version": 14` to `15` and nothing else.
+  - Every committed golden that carries a specification's sha256 moved by that hash alone, old hash for new: `boards/sentinel-01/**` (8 files), the hwdef fixtures (3), the svd-hal UI boards and the topology, the CLI README's example line, and `verify_2k2_tier2`'s FAB-NOTES prefix (`1963b05d` to `b9e95cdc`).
+  - **The pinned digests moved, and with the old hash put back they reproduce the old digests exactly:**
+    - `solve_cli`: `929dabce…`, `3ec179d2…`;
+    - `order_2203`: `a60bdcac…`, `a81a65b3…`, `292791aa…`; the boot image did not move.
+  - **The differential.** `main`'s binary ran on `main`'s version-14 files and this branch's on the version-15 files: `validate`, `solve`, `emit` and `generate`, with the old hash substituted by the new.
+    - All 23 existing specifications produce equal files: 563 files, 44 boards.
+    - Only `generate`'s report lines differ, because they digest files that carry the hash.
+  - **Version tests:**
+    - a version-14 file is refused by its version, with or without the bound, in the library and the CLI;
+    - 14 joined the refused list;
+    - the version-13 message expects 15;
+    - `prove`'s malformed-file test writes version 15.
+- **The tier-2 test** (`board_tier2.rs`: the fixture inside its bound, every gate at four layers, no finding) passes in the pinned image, in 8.28 s on Furnace.
+  - `TIER2_MIN` is 178, counted in the image: 176, plus 3401's test (merged), plus this one.
+  - Its weight, 23.184, is a Furnace estimate (× 2.8, as 1312's was).
+  - `verify_2k2_tier2` (its prefix moved) was not run locally: about 20 minutes a test. CI runs it.
 - **Predictions (§5.1):**
   - B1 right.
+  - B2 right: only hashes moved.
   - B3 **wrong**: 85.25 × 99.05, not 80.55, which is the finding.
-  - B4 right: 1.5 s.
+  - B4 right: `emit` 1.5 s; the tier-2 test 8.28 s.
   - B5 right: `outline_tier1.rs`, 60 × 60.
-  - B2 not yet run.
-- **Gates on this branch** (main `19741d2` merged): `cargo fmt --all -- --check` passes, `cargo clippy --workspace --all-targets -- -D warnings` passes, and `cargo test --workspace` gives 2062 passed, 0 failed, run in place.
+- **Gates on this branch.**
+  - Before 3401 merged (main `19741d2`): fmt and clippy pass, and `cargo test --workspace` gives 2066 passed, 0 failed, run in place. The 12 mutants were re-run after the reduction pass, with the same result.
+  - After merging `main` `a323aea` (3401 and the 2303 record):
+    - fmt passes;
+    - clippy passes, both plain and with `aethelgard-cli/with-tools`;
+    - `cargo test --workspace` gives **2068 passed, 1 failed**: the package binding of §5.8.
 
-### 5.6 Waiting for the ruling
+### 5.6 Adversarial pass (WO §5) [measured]
 
-- the bump to specification 15 and its golden hashes;
-- the tier-2 test (the fixture inside its bound, every gate at four layers);
-- `TIER2_MIN` 177, after 3401 if it merges first;
-- the full adversarial pass;
-- the reduction pass, which removes `spike/1313`.
+- **A part that leaves the board, sits over the edge, or overlaps another.**
+  - Every placement's keep-out boxes are checked against the outline under a bound. The guard is labelled `belt-and-suspenders:`, because no plan can trip it; its mutant survives (M5).
+  - The unit tests assert containment, no overlap, and each connector's cable side within 50 µm of its edge.
+  - The spike's geometry check covered 653 layouts.
+- **DRC passes but parity breaks, or a decoupling capacitor moves.** Compaction moves an IC's group rigidly, its capacitors with it. DRC with parity and `check support` pass on the fixture, in tier 1 and in tier 2.
+- **Nondeterminism.** The fixture was emitted twice on Furnace, and once by the same binary inside the pinned image (another OS and file system). All three are byte-identical (board `05bbef2c…`). A second machine of another kind was not tried; CI's tier-2 run is the next one.
+- **A bound just above the keep-out sum.** At 60 × 60 the area check passes and the placer cannot reach it. `emit` refuses it with `OutlineUnreachable`, exit 2, and writes nothing (`outline_tier1.rs`).
+- **A connector moved off the edge its cable needs.** Rotations 270 left and 90 right, cable side on its edge (unit test). With no bound, every connector stays at rotation 0 on the bottom (tier 1).
+- **Mutants: one per guard this work order adds, 12; 11 killed.**
+  - M1 the bound check, M2 the area sum, M3 the per-part fit, M4 the IR range, M6 the MCU's 1 mm in compaction, M7 (r), M8 the side balance, M9 `validate`'s call, M10 the left edge, M11 placement ignoring the bound, M12 the IC gap in compaction: all killed.
+  - M5 survives, the labelled guard above.
 
-These depend on the method, or are the last steps before READY.
+### 5.7 Reduction pass
+
+Reduction pass (diff): −1 copy (one `bound_nm` for two mm-to-nm conversions) · `spike/1313/` deleted (the spike's record stays at `ede77a8`; builds delete `spike/`) · 1 protected kept (M5's labelled guard) · 1 finding: (a) itself, which moves nothing on the fixture as ruled (§5.3, fork (i)).
+
+### 5.8 The stop: 3401's CI-written fabrication package [measured]
+
+- **The merge.** `main` `a323aea` (3401 READY, #190; the 2303 spike record, #200) was merged with a merge commit.
+  - `ci.yml`'s `TIER2_MIN` became 178; both comments were kept.
+  - `board_tier2.rs` is `main`'s file with this work order's test appended. No line of `main`'s was removed.
+- **The bump, for 3401's new files.**
+  - `examples/sentinel-01.json` moved from 14 to 15: its hash went from `e1e4f6a5…7615` to `411cef0c…e437`.
+  - `boards/sentinel-01-bench/**` (8 files) carries that hash and moved by it alone. `aethelgard-svd-hal/tests/board.rs` regenerates the crate and passes.
+- **The package.** `fab/sentinel-01-bench/package/` carries the old hash in `MANIFEST.json` (`specification_sha256`, and `topology_sha256` through the solve) and in `FAB-NOTES.md`. It also binds `verdict_sha256`, the digest of `verify`'s whole verdict, sandbox included, which no substitution can reproduce.
+  - The ruling on #190: "the committed package is the one this job writes (dispatch with `write`, then commit the artifact's files), never one written on another machine".
+  - So I left it untouched. It is the one red test, until the dispatch or a ruling.
+
