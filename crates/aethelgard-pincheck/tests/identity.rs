@@ -644,3 +644,47 @@ fn an_object_named_like_the_probe_is_not_the_driver() {
     let kinds: Vec<&str> = found.iter().map(|f| f.kind).collect();
     assert_eq!(kinds, ["ImuDriverNotLinked"], "{found:?}");
 }
+
+/// The adversarial pass's break (`AET-WO-4400d`): a probe redefined with the
+/// digraph `%:` for `#`, after an `#undef`, compiled as `ROTATION_ROLL_180`
+/// while the reader saw the first definition. `%:define` is now read as
+/// `#define` (a second definition is refused), and any compiled `#undef` or
+/// `#pragma` naming a name the judge reads is refused: it could stand in
+/// another definition. A header written with `%:` alone reads as with `#`.
+#[test]
+fn a_digraph_undef_or_pragma_cannot_hide_a_definition() {
+    let (t, text) = declared();
+    let redefine = "%:define HAL_INS_PROBE1 ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device(\"icm42688\"),ROTATION_ROLL_180))";
+    for extra in [
+        format!("#undef HAL_INS_PROBE1\n{redefine}"),
+        redefine.to_owned(),
+        " %: undef HAL_INS_PROBE_LIST".to_owned(),
+        "#pragma push_macro(\"HAL_INS_PROBE1\")".to_owned(),
+        "#undef HAL_SPI_DEVICE_LIST".to_owned(),
+    ] {
+        let err = judge(&t, &format!("{text}{extra}\n"), &[EMPTY]).unwrap_err();
+        assert_eq!(err.kind(), "MalformedHeader", "{extra}: {err:?}");
+    }
+    let digraph = text.replace("#define HAL_INS_PROBE1 ", "%:  define HAL_INS_PROBE1 ");
+    assert_ne!(digraph, text);
+    assert_eq!(judge(&t, &digraph, &[EMPTY]).unwrap(), Vec::<String>::new());
+    let wrong = digraph.replace("ROTATION_ROLL_180_YAW_90", "ROTATION_ROLL_180");
+    assert_eq!(
+        kinds(&judge(&t, &wrong, &[EMPTY]).unwrap()),
+        ["WrongImuRotation"]
+    );
+}
+
+/// `HAL_SITL_INVENSENSEV3` compiles a probe the list does not name
+/// (`AP_InertialSensor.cpp` L1223-1225); it is named, not passed.
+#[test]
+fn the_sitl_probe_define_is_named() {
+    let (t, text) = declared();
+    let found = judge(
+        &t,
+        &format!("{text}#define HAL_SITL_INVENSENSEV3 1\n"),
+        &[EMPTY],
+    )
+    .unwrap();
+    assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{found:?}");
+}

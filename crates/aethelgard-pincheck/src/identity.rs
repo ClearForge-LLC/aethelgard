@@ -921,6 +921,18 @@ fn imus(
             }
         }
     }
+    // `HAL_SITL_INVENSENSEV3` compiles one more probe after the list, on
+    // I2C bus 1 at address 1, `ROTATION_NONE` (`AP_InertialSensor.cpp`
+    // L1223-1225): no topology declares it.
+    if h.value("HAL_SITL_INVENSENSEV3")?.is_some() {
+        out.push(
+            "UnexpectedImuProbe",
+            "HAL_SITL_INVENSENSEV3",
+            None,
+            "none".into(),
+            "Invensensev3 on I2C bus 1 at 0x01, ROTATION_NONE".into(),
+        );
+    }
     // The topology's IMUs: (reference, driver, device, matrix), the matrix
     // `None` where no orientation is declared or the driver's frame is
     // uncited, which no rotation can match.

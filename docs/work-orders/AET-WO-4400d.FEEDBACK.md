@@ -284,3 +284,27 @@ Built in the pinned ArduPilot image (`Copter-4.7.2`, `fb773567`) by `container/a
   This replaces §1.1's Python evaluation of the same source as the evidence.
 - **D2 in KiCad.** `with_tools`' `a_turned_keepout_is_where_kicad_draws_it` emits `sentinel-02-own` with U5 at 90, 180 and 270° and its two keep-outs. It routes, and `check drc --spec --schematic` passes with no finding (tools image, 10.8 s).
   - **Mutant:** the zone not turned. KiCad reports `lib_footprint_mismatch` on U5 at 90°, so the test fails: killed.
+
+## 6. Mutations: one per new guard
+
+A fresh agent ran 34 mutants, one at a time, against the guards' own suites, on b82accc5 in a separate worktree and target. The list is in `~/.cache/aet-4400d/mut/results.txt` until the signal.
+- **29 killed by a test, and M25 by the compiler only.** M25 was then rerun cleanly (the arm emptied), and `the_imu_probe_is_judged_against_the_declared_orientation` kills it.
+- **Five survived, each now dealt with:**
+  - **M16**, hwdef's `ImuFrameNotCited`: the embedded table cites the frame for its one IMU, and `validate` refuses an uncited one (`ImuAxesNotCited`). Only a hand-written topology reaches the check, so it is now labelled `belt-and-suspenders:` and kept. The judge's matching filter carries the same label.
+  - **M24**, the probe must be `STT_FUNC`: `an_object_named_like_the_probe_is_not_the_driver` added (a data object of that name gives `ImuDriverNotLinked`). Re-run: killed.
+  - **M29 and M31**, a seated part's pads and geometry carried at its turn: `a_seated_part_carries_its_pads_and_geometry_at_its_turn` added (pad 8 at (0.75, −1.1625) mm at 90°, and the turned courtyard and keep box). Re-run: both killed.
+  - **M34**, the gate's "Z must point up" check: equivalent. Z down or X vertical already draws a Y or an X no F.Cu footprint has, so the comparison refuses it. The check is removed (§7), and a gate case for Z down and X up is added.
+- The D2 mutant (zones not turned) was run in the tools image: killed by KiCad (§5).
+
+## 7. Reduction pass (diff)
+
+- **Removed:**
+  - **The labelled guard at `pcb.rs` L1018–1027** ("a footprint with a keepout zone is not turned"), as ruled in D2. It is replaced, not deleted: its intent, a turned keep-out drawn where KiCad draws it, is `with_tools`' `a_turned_keepout_is_where_kicad_draws_it`, which kills its own mutant.
+  - **The gate's Z check** (M34, a duplicate of the direction comparison).
+  - **`PartialOrd`/`Ord` on `Edge` and `Toward`**, which nothing used.
+  - **The design's own reading of each IMU's seat.** It became `schematic::seats`, the one reading that the placer and the DRC gate's `Stack` both take, so the seat is one fact in one place. This also keeps eda's pinned readers of the declared lists at `schematic.rs` and `support.rs`.
+- **Protected and kept** (the redundancy is the design, not a copy to merge):
+  - **The board frame worked four times:** hwdef's `unit`, the judge's `expected_matrix`, the placer's `seat_rotation` and the gate's `imu_agrees`. The generator and the judge must share no code (`RUL-20`, D4). The placer and the gate must not either, because the gate judges the placer (`INV-07`).
+  - **The two rotation tables** (hwdef 24 rows, judge 26), for the same reason, both measured against ArduPilot's compiled code (§5).
+  - **Two `belt-and-suspenders:` frame checks** (M16 and the judge's filter).
+- **`Reduction pass (diff)`:** 3 removals (the guard, replaced by a test as ruled; the Z check; two derives) · 1 duplicate merged (the seat reading) · 0 dead paths left · 6 protected kept · 1 finding below (§9 F3).

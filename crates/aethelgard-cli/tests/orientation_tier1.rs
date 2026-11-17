@@ -174,6 +174,15 @@ fn solve_copies_the_declared_orientation() {
     });
     let e = skew.validate().unwrap_err();
     assert_eq!((e.kind(), e.id()), ("ImuAxesNotPerpendicular", Some("U5")));
+    // A hand-written orientation on the flash is refused, not ignored.
+    let mut stray = skew.clone();
+    stray.spi_devices.get_mut("U5").unwrap().orientation = None;
+    stray.spi_devices.get_mut("U4").unwrap().orientation = Some(Orientation {
+        x: Toward::Right,
+        z: Toward::Up,
+    });
+    let e = stray.validate().unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("OrientationOnNonImu", Some("U4")));
 }
 
 /// `AET-WO-4400d` §2: the emitted board's IMU footprint holds the part's

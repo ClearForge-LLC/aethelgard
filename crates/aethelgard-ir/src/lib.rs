@@ -4177,13 +4177,25 @@ impl SolvedTopology {
                 });
             }
             // `AET-WO-4400d`: a copied orientation holds as the
-            // specification's does.
-            if let Some(o) = d.orientation.filter(|o| !o.perpendicular()) {
-                return Err(E::ImuAxesNotPerpendicular {
-                    reference: reference.clone(),
-                    x: o.x.name().to_owned(),
-                    z: o.z.name().to_owned(),
-                });
+            // specification's does: at right angles, and only on an IMU.
+            if let Some(o) = d.orientation {
+                if !o.perpendicular() {
+                    return Err(E::ImuAxesNotPerpendicular {
+                        reference: reference.clone(),
+                        x: o.x.name().to_owned(),
+                        z: o.z.name().to_owned(),
+                    });
+                }
+                let imu = parts::table()?
+                    .get(&d.part)
+                    .and_then(|p| p.ardupilot.as_ref())
+                    .is_some_and(|a| a.kind == parts::ArduPilotKind::Imu);
+                if !imu {
+                    return Err(E::OrientationOnNonImu {
+                        reference: reference.clone(),
+                        part: d.part.clone(),
+                    });
+                }
             }
         }
         Ok(())
