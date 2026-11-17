@@ -159,6 +159,7 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
   - Its `verdict_sha256` is the sha256 of `verify`'s verdict line (`fab.rs` L689), which lists every generated file's sha256 by path (`verify.rs` L70), the board's `.repl` included. **So `verdict_sha256` moves when the package is next written.**
   - This PR does not rewrite the package. `bench_board_tier1.rs` does not bind `verdict_sha256`, so per-PR CI stays green.
   - Main's `bench-package` job (`--against-fab`) would see the difference until the package is rewritten. 3402 re-blesses that package; whoever merges second regenerates (§3; 3402's inbox was told).
+  - **After this PR merges:** `1313` regenerated the package on `main` (run 44058299670) without this line, so `bench-package` needs a `write` dispatch, and its files committed, for `main` to stay green. That is the architect's dispatch; this PR does not touch `fab/`.
 
 ## Outside the work order's stated fence, and why
 
