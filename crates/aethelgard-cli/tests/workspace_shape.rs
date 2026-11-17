@@ -371,12 +371,19 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
     }
 }
 
-/// `aethelgard-kicad-lib` holds KiCad 10.0.7's vendored files as bytes and
-/// nothing else (`AET-WO-1304`, `RUL-11`): its files are named one by one, it
-/// has no dependency, it is `CC-BY-SA-4.0`, and `src/lib.rs` is its only Rust.
+/// `aethelgard-kicad-lib` holds KiCad 10.0.7's vendored files and our own
+/// symbols and footprints as bytes and nothing else (`AET-WO-1304`,
+/// `RUL-11`, `AET-WO-4220b`): its files are named one by one, it has no
+/// dependency, it is `CC-BY-SA-4.0 AND (MIT OR Apache-2.0)` (KiCad's files
+/// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 42] = [
+    const DATA: [&str; 47] = [
+        "data/aethelgard/README.md",
+        "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
+        "data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
+        "data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym",
+        "data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym",
         "data/kicad-10.0.7/LICENSE.md",
         "data/kicad-10.0.7/README.md",
         "data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
@@ -422,6 +429,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
+    expected.extend(LICENCE_FILES);
     expected.sort();
     assert_eq!(files(&root().join(KICAD_LIB)), expected);
     let kicad = manifest(KICAD_LIB);
@@ -431,7 +439,10 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
             "kicad-lib sets [{key}]"
         );
     }
-    assert_eq!(kicad["package"]["license"].as_str(), Some("CC-BY-SA-4.0"));
+    assert_eq!(
+        kicad["package"]["license"].as_str(),
+        Some("CC-BY-SA-4.0 AND (MIT OR Apache-2.0)")
+    );
     assert!(dependency_names(&kicad).is_empty());
 }
 
