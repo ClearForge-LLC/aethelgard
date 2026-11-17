@@ -29,7 +29,7 @@ use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
 
 use aethelgard_ir::{SolvedTopology, SpiDevice};
 
-use super::{Anchor, Builder, Conn, EmitError, Owner, Part};
+use super::{Builder, Conn, EmitError, Part};
 
 use aethelgard_ir::power::BATTERY_NET;
 
@@ -64,19 +64,11 @@ const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at
 
 /// Anchors the part just drawn to `ic`'s pads.
 fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
-    if let Some(p) = b.parts.last_mut() {
-        p.owner = Some(Owner {
-            ic: ic.to_owned(),
-            anchor: Some(Anchor {
-                pads: pads
-                    .iter()
-                    .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
-                    .collect(),
-                loop_rule: Some((bound_nm, rule)),
-            }),
-            decouples: false,
-        });
-    }
+    let pads = pads
+        .iter()
+        .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
+        .collect();
+    b.anchor_last(ic, pads, Some((bound_nm, rule)), false);
 }
 
 /// Each SPI line a crossing carries, by the channel that carries it.

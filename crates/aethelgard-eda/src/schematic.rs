@@ -327,6 +327,10 @@ pub(crate) struct Owner {
 pub(crate) struct Anchor {
     pub(crate) pads: Vec<(String, String)>,
     pub(crate) loop_rule: Option<(i64, &'static str)>,
+    /// This part's place in its IC's draw sequence: the emitter's priority
+    /// among the parts anchored to that IC, which the placer follows
+    /// whatever the order of the parts list (`AET-WO-1313c` F1).
+    pub(crate) seq: usize,
 }
 
 /// Each connector part's symbol and footprint, both vendored (`AET-WO-4300f`
@@ -594,6 +598,37 @@ impl Builder<'_> {
         let net = self.own_net(format!("{reference}_{pin}"))?;
         self.passive('R', ohms(STRAP), Conn::Net(net.clone()), rail)?;
         Ok(Conn::Net(net))
+    }
+
+    /// Anchors the part just drawn to `ic`'s pads, next in `ic`'s draw
+    /// sequence ([`Anchor::seq`]).
+    fn anchor_last(
+        &mut self,
+        ic: &str,
+        pads: Vec<(String, String)>,
+        loop_rule: Option<(i64, &'static str)>,
+        decouples: bool,
+    ) {
+        let seq = self
+            .parts
+            .iter()
+            .filter(|p| {
+                p.owner
+                    .as_ref()
+                    .is_some_and(|o| o.ic == ic && o.anchor.is_some())
+            })
+            .count();
+        if let Some(p) = self.parts.last_mut() {
+            p.owner = Some(Owner {
+                ic: ic.to_owned(),
+                anchor: Some(Anchor {
+                    pads,
+                    loop_rule,
+                    seq,
+                }),
+                decouples,
+            });
+        }
     }
 
     fn decouple(&mut self, ic: &str, rail: &str, value: &str) -> Result<(), EmitError> {
@@ -1099,16 +1134,7 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             Conn::Net(aethelgard_ir::BOOT0.to_owned()),
             gnd,
         )?;
-        if let Some(r) = b.parts.last_mut() {
-            r.owner = Some(Owner {
-                ic: mcu.to_owned(),
-                anchor: Some(Anchor {
-                    pads: vec![("1".into(), pin)],
-                    loop_rule: None,
-                }),
-                decouples: false,
-            });
-        }
+        b.anchor_last(mcu, vec![("1".into(), pin)], None, false);
     }
     if let Some(reference) = aethelgard_ir::bench::switch_reference(spec) {
         b.used

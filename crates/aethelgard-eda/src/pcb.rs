@@ -550,16 +550,27 @@ fn place(
     let order = placing_order(items, bounded);
     // An anchored part goes straight after its IC, in drawing order, before
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
-    // design with no anchor keeps the order above.
+    // design with no anchor keeps the order above. Drawing order is the
+    // anchor's own sequence, never the part's place in the list
+    // (`AET-WO-1313c` F1).
     let anchored = |i: usize| {
         let o = items[i].part.owner.as_ref()?;
-        o.anchor.as_ref().map(|_| o.ic.as_str())
+        o.anchor.as_ref().map(|a| (o.ic.as_str(), a.seq))
     };
     let mut grouped = Vec::with_capacity(order.len());
     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
         grouped.push(i);
         let reference = items[i].part.reference.as_str();
-        grouped.extend((0..items.len()).filter(|&j| anchored(j) == Some(reference)));
+        let mut own: Vec<(usize, &str, usize)> = (0..items.len())
+            .filter_map(|j| match anchored(j) {
+                Some((ic, seq)) if ic == reference => {
+                    Some((seq, items[j].part.reference.as_str(), j))
+                }
+                _ => None,
+            })
+            .collect();
+        own.sort_unstable();
+        grouped.extend(own.into_iter().map(|(_, _, j)| j));
     }
     if grouped.len() != order.len() {
         return Err(EmitError::Internal(
@@ -1918,6 +1929,84 @@ mod tests {
         assert!(forward.starts_with("(kicad_pcb\n\t(version 20260206)"));
     }
 
+    /// Parts anchored to one IC, contending for the spots by the same pin:
+    /// each takes its place in the IC's draw sequence ([`Anchor::seq`]),
+    /// whatever the order of the parts list (`AET-WO-1313c` F1). The draw
+    /// sequence here runs against reference order, so neither the list nor
+    /// the references can stand in for it.
+    ///
+    /// [`Anchor::seq`]: schematic::Anchor
+    fn anchored_design() -> Vec<Part> {
+        let anchored = |lib: &'static str, fp: &str, r: &str, pin: &str, n: &str, seq: usize| {
+            let mut p = part(
+                lib,
+                fp,
+                r,
+                &[("1", net(n)), ("2", Conn::Rail("GND".into()))],
+            );
+            p.owner = Some(schematic::Owner {
+                ic: "U2".into(),
+                anchor: Some(schematic::Anchor {
+                    pads: vec![("1".into(), pin.into())],
+                    loop_rule: None,
+                    seq,
+                }),
+                decouples: false,
+            });
+            p
+        };
+        let c = "Capacitor_SMD:C_0402_1005Metric";
+        vec![
+            mcu(&[("34", net("SDA")), ("35", net("SCL"))]),
+            bme("U2"),
+            anchored("Device:C", c, "C9", "3", "SDA", 0),
+            anchored("Device:C", c, "C5", "3", "SDA", 1),
+            anchored("Device:R", R0402, "R1", "3", "SDA", 2),
+            anchored("Device:R", R0402, "R7", "4", "SCL", 3),
+        ]
+    }
+
+    /// With anchored parts too, the board is a function of the parts, not of
+    /// their order: every rotation of the list, and its reverse.
+    #[test]
+    fn with_anchored_parts_the_board_does_not_depend_on_the_parts_order() {
+        let parts = anchored_design();
+        let stack = crate::stack::reference();
+        let forward = write("p", &parts, &stack).unwrap();
+        // The first in the draw sequence has first pick by U2's pin 3.
+        let l = layout(&parts).unwrap();
+        let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap().keep;
+        let pin = {
+            let u2 = l.placed.iter().find(|p| p.reference == "U2").unwrap();
+            let items = items(&parts).unwrap();
+            let (pad, _) = items[1].pads["3"];
+            (u2.origin.0 + pad.0, u2.origin.1 + pad.1)
+        };
+        let d2 = |k: Rect| {
+            let (x, y) = k.centre();
+            (x - pin.0).pow(2) + (y - pin.1).pow(2)
+        };
+        assert!(
+            d2(at("C9")) < d2(at("C5")),
+            "C9 (seq 0) did not have first pick"
+        );
+        for k in 0..parts.len() {
+            let mut turned = parts.clone();
+            turned.rotate_left(k);
+            assert_eq!(
+                forward,
+                write("p", &turned, &stack).unwrap(),
+                "rotated by {k}"
+            );
+            turned.reverse();
+            assert_eq!(
+                forward,
+                write("p", &turned, &stack).unwrap(),
+                "rotated by {k}, reversed"
+            );
+        }
+    }
+
     /// A decoupling capacitor sits beside its own IC's power pin, not the
     /// MCU's, though both are on its rail.
     #[test]
@@ -2247,6 +2336,7 @@ mod tests {
             anchor: Some(schematic::Anchor {
                 pads: vec![("1".into(), "3".into())],
                 loop_rule: None,
+                seq: 0,
             }),
             decouples: false,
         });
