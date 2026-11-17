@@ -69,7 +69,7 @@ All **[inferred]**.
 ## 2. What was built
 
 - **`aethelgard-pincheck/src/identity.rs`, the judge.** It is called by `check pinout` whenever `--hwdef-h` is given. The verdict gains `identity` (`judged`, or `not judged: no hwdef.h`), and its findings carry `check: "identity"`. It reads:
-  - `hwdef.h` through the cross-check's own strict preprocessor reader (`header.rs`). Two accessors are new: `value`, a definition that may be named elsewhere; and `candidates`, every definition the preprocessor may compile, since `HAL_I2Cn_CONFIG` has one per DMA branch and the judge reads only the bus number, which every branch must give alike;
+  - `hwdef.h` through the cross-check's own strict preprocessor reader (`header.rs`). Two accessors are new: `value`, a definition that may be named elsewhere; and `candidates`, every definition the preprocessor may compile, since `HAL_I2Cn_CONFIG` has one per DMA branch and the judge reads only the bus number, which every branch must give alike. Each table is read through its list macro (`HAL_SPI_DEVICE_LIST`, `HAL_PWM_GROUPS`, `HAL_BARO_PROBE_LIST`), names in it expanded as the preprocessor does; a directive is matched with GCC's blanks, and an integer read as a C constant (§4);
   - the ELF's serial table through the GPIO reader's own checks (`elf.rs`'s `object`, generalised from `read`): one `STT_OBJECT` in read-only allocated `PROGBITS`, located by its section and its `PT_LOAD`, which must agree;
   - the parts table (`aethelgard-ir`), for each part's ArduPilot name.
 
@@ -77,10 +77,10 @@ All **[inferred]**.
 - **The rules, each from the topology or `ir`:**
   - **SPI:** each topology device whose part has an `ardupilot.spidev` has one `SPIDesc` of that name, on the solved controller, with its CS on the solved `gpio` pin, `MODE` = `DRIVEN_SPI_MODE`, and each speed in `(achieved_hz − 1 kHz, achieved_hz]`. Any other `SPIDesc` is unknown. `MHZ` and `KHZ` are read from `hwdef.h`, where ArduPilot writes them (`chibios_hwdef.py:2459-2460`), and refused in any other form.
   - **Motors:** each motor's `PWM(index+1)` on its `TIMt_CHk`; every other channel of every group disabled (255).
-  - **I2C:** `HAL_I2C_MAX_CLOCK`, or ArduPilot's default of 100 kHz, at most the slowest `i2c_speeds`.
+  - **I2C:** `HAL_I2C_MAX_CLOCK`, or ArduPilot's default of 100 kHz, at most the slowest `i2c_speeds`; and neither H7 `TIMINGR` redefined (`I2cTimingOverridden`, §4 A5).
   - **Serial:**
-    - the order: SERIAL0 the console, then the other ports in the specification's order, each on its solved peripheral number and TX/RX pins; every later entry `{}`;
-    - the bauds, for every port but RC input (whose UART `AP_RCProtocol` sets, `4400b` F3): SERIAL0's baud is its define, or 115200 when absent; SERIALn's is its define mapped by the judge's own copy of `map_baudrate`, since it shares no code with the generator, and must be stated.
+    - the order: SERIAL0 the console, then the other ports in the specification's order, each on its solved peripheral number, its driver pointer `SD<n>`, and TX/RX pins (§4 A11); every later entry `{}`;
+    - the bauds, for every port but RC input (whose UART `AP_RCProtocol` sets, `4400b` F3): SERIAL0's bauds are its define and then the define / 1000 mapped, which the GCS reopens it at (§4 A7), or 115200 when absent; SERIALn's is its define mapped by the judge's own copy of `map_baudrate`, since it shares no code with the generator, and must be stated.
   - **Barometers:** the topology's barometers (I2C devices whose row is `baro`), in index order, against the probes in order: the row's driver, the solved controller (through `HAL_I2C_DEVICE_LIST`) and the address.
 - **F4 (`aethelgard-ir`):**
   - `validate_pin_speeds` re-derives each stored speed with `solve::pin_speed`, the function `solve` itself uses. A different value is `PinSpeedNotSolved`. A line no selectable speed serves is `PinSpeedUnserved`, whose `kind()` is the speed table's own (`RateAbovePinSpeed`, `LoadAboveSpeedTable`, `RiseTimeBelowPinSpeed`, `SupplyOutsideSpeedTable`).
@@ -97,7 +97,7 @@ All **[inferred]**.
   - Each generated board passes.
   - Each hand board expects its GPIO findings plus, measured, `WrongSpiMode` (MODE3), `WrongSpiSpeed` (low and high, 20 MHz against the achieved 16 MHz) and `UnexpectedSerialPort SERIAL1` (USART3); seed-af also expects `WrongBaroProbe` (I2C4).
 - **Tests:**
-  - `pincheck/tests/identity.rs`, nine tests: every finding kind, §5's three cases, refusals of unknown table forms;
+  - `pincheck/tests/identity.rs`, eleven tests: every finding kind, §5's three cases, refusals of unknown table forms, the adversarial pass's forms (§4) and the ELF serial table's driver and padding;
   - the synthetic `hwdef.h` (`tests/common`) carries the reference board's tables, and the synthetic ELF can carry a serial table;
   - `ir`'s F4 tests.
 
@@ -113,7 +113,7 @@ Each is a one-line edit to a generated board, the board built in the pinned imag
 | A3 `HAL_I2C_MAX_CLOCK 400000` | same | `I2cClockAboveDeclared [at most 100000 Hz \| 400000 Hz]` |
 | A3 `BARO BMP280 I2C:0:0x77` | same | `WrongBaroProbe HAL_BARO_PROBE1 [BMP280 on I2C1 at 0x76 \| … at 0x77]` |
 | A3 `SPIDEV … MODE3 40*MHZ 40*MHZ` | same | `WrongSpiMode [MODE0 \| MODE3]`; `WrongSpiSpeed` low and high `[≤ 16000000 Hz \| 40000000 Hz]` |
-| A3 `DEFAULT_SERIAL0_BAUD 921600` | same | `WrongSerialBaud SERIAL0 [57600 baud \| 921600 baud]` |
+| A3 `DEFAULT_SERIAL0_BAUD 921600` | same | `WrongSerialBaud SERIAL0 [57600 baud \| 921600 baud, then 921600 baud]` (the first build printed one baud; §4 A7) |
 | (base, unmutated) | the four-port board | exit 0 |
 
 The four-port board is `serial-four.json` with its MAVLink port made the console, its SBUS port made a plain GPS port (`4400b` refuses two RC ports), and its bus at 100 kHz. It is solved and generated as committed, and built in 23 s. The generated `sentinel-01`, `sentinel-02` and `serial-dshot-9600` each pass, with `identity: judged` [measured].
@@ -133,6 +133,7 @@ It broke the first build in the ways below. Each fix was then re-judged with the
 | A1 | `#define` with any spacing but one blank was invisible; a `define  HAL_I2C_MAX_CLOCK 400000` (two blanks) builds and ran at 400 kHz | high | one matcher for every define (`header.rs` `defines`), with the blanks GCC allows | `adv-i2c-dbl`: `I2cClockAboveDeclared`; `adv-s01-baud-dbl`: `WrongSerialBaud`; tab and `  #  define` edits caught |
 | A2 | five `hwdef.h` facts are not bound to the ELF; a mutated ELF with a clean `hwdef.h` passes | medium | **not fixed:** decision D1 (§5) | |
 | A3 | a leading `0` was read as decimal; C reads octal | medium-low | `number` reads C integer constants (hex, octal, suffixes) | `adv-s01-baud-oct`: `WrongSerialBaud [115200 \| 39552, then 39000]`; `adv-spi-oct`: `WrongSpiSpeed` 7 168 000 Hz |
+| A3b | (found after the pass) Rust's parsers take a leading `+`, so `0+303240` read as octal 100 000 where C reads 303 240 | — | every character must be a digit of the radix | `define HAL_I2C_MAX_CLOCK 0+303240` on fc-base's `hwdef.h`: refused `MalformedHeader` (was exit 0) |
 | A4 | `HAL_BARO_PROBE_LIST` (what `AP_Baro` compiles) was never read, only `HAL_BARO_PROBEn`; also SPI and PWM | medium | every table is read through its list macro, names expanded as the preprocessor does | `adv-nobaro-list`: `UnexpectedBaroProbe`; an unlisted numbered macro is not judged (the compiler ignores it) |
 | A5 | `HAL_I2C_H7_100_TIMINGR` overridden: the declared 100 kHz bus ran at 400 kHz | medium | `I2cTimingOverridden` for either H7 timing defined in `hwdef.h` (`#ifndef`-guarded at `I2CDevice.cpp:65-69`, read) | `adv-timingr`: `I2cTimingOverridden` |
 | A6 | `DEFAULT_SERIALn_PROTOCOL` swapped (RC on the GPS UART) passes | medium | **not fixed:** outside §1.2's five facts; decision D2 | `adv-proto-swap` still exit 0 |
@@ -144,11 +145,33 @@ It broke the first build in the ways below. Each fix was then re-judged with the
 | A12 | SPI realised rate: ArduPilot's divider on its 80 MHz kernel runs 16 MHz at 10 MHz | info | ruled residual (`4400b` D6: request ≤ achieved); the window is the generator's rule restated | |
 | A13 | no CI ArduPilot build exercises a motor or CS mismatch | info | covered in tier 1 only; the mutations of §3 were measured locally | |
 
+**Reproductions** (the scratch kit is deleted before the signal). Each `.hwdef.dat` is one edit to a generated board, built with `container/ardupilot-build.sh boards` and judged against the base's topology:
+- **Bases:**
+  - `fc-base`: `examples/serial-four.json` with its MAVLink port made the console, its SBUS port made a GPS port at 8N1 115200, and the bus at 100 kHz; solved and generated.
+  - `S01`, `S02`, `D9600`: the committed `crates/aethelgard-hwdef/tests/fixtures/{sentinel-01,sentinel-02,serial-dshot-9600}`.
+- **A1:**
+  - `adv-i2c-dbl`: fc-base, `define HAL_I2C_MAX_CLOCK 100000` → `define  HAL_I2C_MAX_CLOCK 400000` (two blanks);
+  - `adv-s01-baud-dbl`: S01, `define  DEFAULT_SERIAL0_BAUD 921600`.
+- **A3:**
+  - `adv-s01-baud-oct`: S01, `define DEFAULT_SERIAL0_BAUD 0115200`;
+  - `adv-spi-oct`: fc-base, `SPIDEV dataflash SPI1 DEVID1 FLASH_CS MODE0 016000*KHZ 016000*KHZ`.
+- **A4, `adv-nobaro-list`:** fc-base's spec with U2 removed from `i2c_devices`, solved and generated, plus `define HAL_BARO_PROBE_LIST probe_i2c_dev(AP_Baro_BMP280::probe, 0, 119); RETURN_IF_NO_SPACE`.
+- **A5, `adv-timingr`:** fc-base plus `define HAL_I2C_H7_100_TIMINGR 0x00300F38`.
+- **A6, `adv-proto-swap`:** fc-base with `DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN` and `DEFAULT_SERIAL2_PROTOCOL SerialProtocol_GPS`.
+- **A7:** a `hwdef.h` edit, `DEFAULT_SERIAL0_BAUD 14400` against a console declared at 14400 (tier 1).
+- **A11:** fc-base's ELF, `_serial_tab` at 0x08132b6c (file offset = address − 0x08000340 + 0x10340):
+  - `fc-ptrswap`: entries 1 and 2's u32 at offset 0 exchanged (`&SD2` 0x3001652c ↔ `&SD3` 0x30016590);
+  - `fc-pad`: entry 1's bytes 14–15 set to `AA 55`.
+- **WO §5:**
+  - `adv-cs-mode`: S02's chip selects exchanged, plus `MODE3` on dataflash;
+  - `adv-motor-rot`: D9600 with `PWM(n)` → `PWM(n%4+1)` on PA8–PA11;
+  - `adv-nobaro`, `adv-noi2c`, `adv-baro2`, `adv-baro2b`: fc-base's spec with U2 removed; with every I2C bus, device, net and J2's standard removed; with U2 on a second bus EXT; and the same with U3 listed first.
+
 **Prediction check (§1).** Predictions 1 to 7 held [measured], with two qualifications:
 - Prediction 1's "same strict reader" missed A1, A3, A4 and A10.
 - Prediction 7: the moved test's topology refusal carries the speed table's own kinds, not `InvalidTopology`. `InvalidTopology` is what `generate hwdef` reports around it.
 
-**Mutations, one per guard this WO adds or changes** [measured]. Each was run against its crate's suite, and all 11 are killed:
+**Mutations, one per guard this WO adds or changes** [measured]. Each was run against its crate's suite, and all 12 are killed:
 - the define blanks;
 - octal;
 - list expansion;
@@ -159,6 +182,7 @@ It broke the first build in the ways below. Each fix was then re-judged with the
 - the driver in the port match;
 - the padding;
 - the driver compare;
+- the radix-digit check (A3b);
 - F4's `stored != solved`.
 
 ## 5. Decisions for the architect
@@ -193,7 +217,16 @@ It broke the first build in the ways below. Each fix was then re-judged with the
 
 Reduction pass (diff): −13 lines (`numbered`), against +127 net for the adversarial fixes in pincheck's sources [measured, `git diff --numstat`] · 2 duplicates removed · 1 dead path removed · 1 protected kept · 1 finding above.
 
-## 7. Gates
+## 7. Outside the fence
+
+The fence names pincheck, ir, svd-hal's one test, the workflow's `pinout` step, tests and FEEDBACK. Three more files changed, each needed to run the judge:
+- **`crates/aethelgard-cli/src/pinout.rs`** (+17 −1 lines): `check pinout` calls the judge when `--hwdef-h` is given. Without it nothing runs the judge. `2302` works in the CLI; its inbox has been told.
+- **`container/ardupilot-pinout.sh`:** the script the `pinout` step runs, with the hand boards' identity findings.
+- **`crates/aethelgard-cli/README.md`:** the verdict's `identity` field and the new finding kinds.
+
+Three tests outside pincheck and ir changed one assertion each, forced by F4 (§2).
+
+## 8. Gates
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` (126 test binaries) all pass [measured].
 - No tier-2 test was added, so `TIER2_MIN` stays at 162.

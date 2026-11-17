@@ -88,16 +88,22 @@ fn inside<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
 
 /// A C integer constant as GCC reads it (adversarial A3): `0x` hex, a
 /// leading `0` octal, else decimal, with `U` and `L` suffixes. `None` for
-/// anything else, or a value past `u64`.
+/// anything else, or a value past `u64`. Every character must be a digit of
+/// the radix: Rust's parsers take a leading `+`, which in C is an operator
+/// (`0+303240` is 303240, not octal 100000).
 fn number(s: &str) -> Option<u64> {
     let s = s.trim().trim_end_matches(['U', 'u', 'L', 'l']);
-    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
-        u64::from_str_radix(hex, 16).ok()
+    let (digits, radix) = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        (hex, 16)
     } else if let Some(octal) = s.strip_prefix('0').filter(|o| !o.is_empty()) {
-        u64::from_str_radix(octal, 8).ok()
+        (octal, 8)
     } else {
-        s.parse().ok()
+        (s, 10)
+    };
+    if digits.is_empty() || !digits.chars().all(|c| c.is_digit(radix)) {
+        return None;
     }
+    u64::from_str_radix(digits, radix).ok()
 }
 
 fn is_name(s: &str) -> bool {
@@ -770,6 +776,9 @@ mod tests {
         assert_eq!(number("400000UL"), Some(400_000));
         assert_eq!(number("0"), Some(0));
         assert_eq!(number("09"), None);
+        for signed in ["0+303240", "+400000", "0x+61A80", "-1", "0U"] {
+            assert_eq!(number(signed), (signed == "0U").then_some(0), "{signed}");
+        }
         assert_eq!(number("18446744073709551616"), None);
         assert_eq!(map_baudrate(57), 57_600);
         assert_eq!(map_baudrate(14), 14_000);
