@@ -716,6 +716,9 @@ const FOOTPRINT: &[(&str, bool)] = &[
     // The XT30PW-M's silkscreen and fabrication rings (`AET-WO-4300d2`): a
     // graphic, so one on a copper layer is still refused below.
     ("fp_arc", true),
+    // The test pad's silkscreen and courtyard circles (`AET-WO-1312`): a
+    // graphic, so one on a copper layer is still refused below.
+    ("fp_circle", true),
     // A vendored footprint's keepout (`AET-WO-4300d2` D2 (a)): no copper, so
     // nothing the bound adds; any other zone is copper and refused below.
     ("zone", true),
@@ -977,6 +980,10 @@ enum Load {
     /// An off-board connector (`AET-WO-4300f` D8): copper, no `Ci`, and the
     /// off-board capacitance its pins declare (`Role::offboard`).
     Connector,
+    /// A test point (`AET-WO-1312`): a bare pad, so its copper alone, bounded
+    /// as every pad's is; no part sits on it, so it has no `Ci`. A probe
+    /// clipped to it is outside the bound, as a part body is ([`CONDITIONS`]).
+    TestPad,
 }
 
 /// A connector's declared off-board capacitance for each of `pads`, the pads
@@ -1082,6 +1089,8 @@ pub fn lines(
                 let connector = crate::schematic::is_connector(part);
                 let load = if connector {
                     Load::Connector
+                } else if part.lib_id == crate::schematic::TEST_POINT {
+                    Load::TestPad
                 } else if passive {
                     Load::PullUp
                 } else {
@@ -1154,6 +1163,8 @@ pub fn lines(
                     .filter(|d| d.bus == bus.id);
                 let load = if part.lib_id == crate::schematic::MCU {
                     Load::Driver
+                } else if part.lib_id == crate::schematic::TEST_POINT {
+                    Load::TestPad
                 } else if crate::schematic::is_translator(part) {
                     // `AET-WO-4300d2` D6 (b): SCES935A p. 9 prints the TXU0304's
                     // Cio once per temperature range, across its MIN, TYP and
@@ -1318,7 +1329,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                     terms.pins = terms.pins.checked_add(ff).ok_or_else(|| overflow(net))?;
                 }
                 Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
-                Load::PullUp | Load::Connector => {}
+                Load::PullUp | Load::Connector | Load::TestPad => {}
             }
         }
     }

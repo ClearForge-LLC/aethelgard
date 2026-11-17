@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bench;
 pub mod board;
 pub mod classes;
 pub mod connectors;
@@ -71,10 +72,14 @@ pub const GND: &str = "GND";
 /// The MCU's debug nets (`AET-WO-4300g`): the emitter puts SWDIO (`PA13`)
 /// and SWCLK (`PA14`) on these, and NRST on [`NRST`], and a connector pin may
 /// name any of them. No other declared net may take one, in any case.
+/// `AET-WO-1312` adds [`BOOT0`]: a connector pin or test point that names it
+/// puts the boot pin on its own net, through a pull-down
+/// ([`bench::carries_boot0`]).
 pub const SWDIO: &str = "SWDIO";
 pub const SWCLK: &str = "SWCLK";
 pub const NRST: &str = "NRST";
-pub const DEBUG_NETS: [&str; 3] = [SWDIO, SWCLK, NRST];
+pub const BOOT0: &str = "BOOT0";
+pub const DEBUG_NETS: [&str; 4] = [SWDIO, SWCLK, NRST, BOOT0];
 
 /// The top-level specification, version 12 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
@@ -124,6 +129,11 @@ pub struct Specification {
     /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
     /// list acknowledges none.
     pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
+    /// Each test point: a pad on a declared net (`AET-WO-1312`). Absent or
+    /// empty declares none, as the work order states, and an empty list is
+    /// not written back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub test_points: Vec<bench::TestPoint>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -271,6 +281,10 @@ pub struct Mcu {
     /// Required as a key; `null` when a regulator's output is the supply.
     #[serde(deserialize_with = "Option::deserialize")]
     pub supply_source: Option<SupplySource>,
+    /// A push-button from `NRST` to `GND` (`AET-WO-1312`). Absent is `false`,
+    /// as the work order states, and `false` is not written back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_switch: bool,
 }
 
 /// A connector pin the supply enters by.
@@ -1517,6 +1531,20 @@ pub enum IrValidationError {
         net: String,
     },
     #[error(
+        "test point `{id}` names net `{net}`, which is no declared signal, voltage domain, `GND` or debug net: a test point cannot invent a net (`AET-WO-1312`)"
+    )]
+    TestPointNetUnknown { id: String, net: String },
+    #[error("test point `{id}` takes a reference that {other} already holds (`AET-WO-1312`)")]
+    TestPointReferenceTaken { id: String, other: String },
+    #[error(
+        "net `{id}` carries two test points, `{first}` and `{second}`; one is enough (`AET-WO-1312`)"
+    )]
+    TestPointNetRepeated {
+        id: String,
+        first: String,
+        second: String,
+    },
+    #[error(
         "no declared connector carries `SWDIO`, `SWCLK`, `GND` and the MCU's supply `{supply}` together, so nothing can program the part: declare one, a DS-009 debug port or an explicit pin map (`AET-WO-4300g`)"
     )]
     NoProgrammingPath { supply: String },
@@ -1822,6 +1850,9 @@ impl IrValidationError {
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
             Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::TestPointNetUnknown { .. } => "TestPointNetUnknown",
+            Self::TestPointReferenceTaken { .. } => "TestPointReferenceTaken",
+            Self::TestPointNetRepeated { .. } => "TestPointNetRepeated",
             Self::NoProgrammingPath { .. } => "NoProgrammingPath",
             Self::SupplyHasNoSource { .. } => "SupplyHasNoSource",
             Self::SupplyHasTwoSources { .. } => "SupplyHasTwoSources",
@@ -1997,6 +2028,9 @@ impl IrValidationError {
             | Self::ConnectorPinRepeated { id, .. }
             | Self::ConnectorPinMissing { id, .. }
             | Self::ConnectorNetUnknown { id, .. }
+            | Self::TestPointNetUnknown { id, .. }
+            | Self::TestPointReferenceTaken { id, .. }
+            | Self::TestPointNetRepeated { id, .. }
             | Self::ConnectorBudgetMissing { id, .. }
             | Self::ConnectorBudgetNotApplicable { id, .. }
             | Self::ConnectorReferenceReserved { id }
@@ -2340,6 +2374,8 @@ impl Specification {
         self.validate_parts(table)?;
         // 15
         connectors::validate(self)?;
+        // 15a (`AET-WO-1312`)
+        bench::validate(self)?;
         // 16 (`AET-WO-4300d`)
         power::check(self)?;
         // 17, 18 (`AET-WO-4300g`)
@@ -3144,7 +3180,12 @@ impl Specification {
             signal_identifiers(&p.tx, &format!("{at}.tx"))?;
             signal_identifiers(&p.rx, &format!("{at}.rx"))?;
         }
-        connectors::identifiers(self)
+        connectors::identifiers(self)?;
+        for (i, t) in self.test_points.iter().enumerate() {
+            plain(&t.net, || format!("test_points[{i}].net"))?;
+            plain(&t.reference, || format!("test_points[{i}].reference"))?;
+        }
+        Ok(())
     }
 }
 

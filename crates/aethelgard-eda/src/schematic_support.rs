@@ -13,6 +13,8 @@
 //!   to the supply, `VREF+` to `VDDA`'s);
 //! - `VCAP` pins each to its own net, `NRST` to [`NRST`], and the debug
 //!   pins to [`SWDIO`] and [`SWCLK`], which a declared connector carries.
+//! - `BOOT0`, when a connector pin or test point names it, to [`BOOT0`]
+//!   instead of its strap's group (`AET-WO-1312`).
 //!
 //! The support gate (`crate::support`) re-reads the emitted netlist against
 //! the same row; it never reads this module's choices (`RUL-20`).
@@ -20,7 +22,7 @@
 use std::collections::BTreeMap;
 
 use aethelgard_ir::power_parts::{self, Kind, Support};
-use aethelgard_ir::{NRST, SWCLK, SWDIO};
+use aethelgard_ir::{BOOT0, NRST, SWCLK, SWDIO};
 
 use super::{Anchor, Builder, Conn, EmitError, Owner};
 
@@ -61,6 +63,12 @@ pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Co
             ))
         })?;
         by_group.insert(strap.pin.as_str(), to);
+    }
+    // A connector pin or test point that names `BOOT0` takes the boot pin
+    // off its strap's wire onto its own net; `schematic::bench` draws the
+    // pull-down (`AET-WO-1312`).
+    if aethelgard_ir::bench::carries_boot0(b.spec) && !s.group(BOOT0).is_empty() {
+        by_group.insert(BOOT0, Conn::Net(b.own_net(BOOT0.to_owned())?));
     }
     let mut conns = BTreeMap::new();
     for (group, pins) in &s.pins {

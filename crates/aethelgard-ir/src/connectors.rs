@@ -295,6 +295,11 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     kinds
 }
 
+/// Every net a connector pin, or a test point (`AET-WO-1312`), may name.
+pub(crate) fn nameable(spec: &Specification) -> std::collections::BTreeSet<&str> {
+    net_kinds(spec).into_keys().collect()
+}
+
 /// The largest off-board budget one connector pin may declare: 1 µF, three
 /// orders above UM10204's 550 pF Fast-mode Plus bus limit, so no real line is
 /// refused, and small enough that no board's sum of terms overflows the

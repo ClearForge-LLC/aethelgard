@@ -165,8 +165,11 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             return Err(format!("{what}: its drill leaves no copper ring"));
         }
     }
-    // The front courtyard, as straight edges; an arc or circle in it is not
-    // modelled and is refused, never approximated.
+    // The front courtyard, as straight edges; an arc in it is not modelled
+    // and is refused, never approximated. A whole circle (`AET-WO-1312`: the
+    // test pad's) is taken as the square that holds it: the courtyard only
+    // keeps vias out, and a via outside the square is outside the circle, so
+    // the rule is never weakened, only kept wider.
     let mut courtyard = Vec::new();
     let at = |p: (i64, i64)| {
         let (x, y) = rotate(theta, p);
@@ -202,6 +205,24 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
                     })
                     .collect::<Result<Vec<_>, _>>()?;
                 courtyard.extend((0..c.len()).map(|i| (c[i], c[(i + 1) % c.len()])));
+            }
+            "fp_circle" => {
+                let c = xy_of(one(&g, "center")?, &what)?;
+                let e = xy_of(one(&g, "end")?, &what)?;
+                let (dx, dy) = (i128::from(e.0 - c.0), i128::from(e.1 - c.1));
+                let r = i64::try_from(crate::pcb::isqrt_up(dx * dx + dy * dy))
+                    .map_err(|_| format!("{what} is too large"))?;
+                if r == 0 {
+                    return Err(format!("{what} has no radius"));
+                }
+                let q = [
+                    (c.0 - r, c.1 - r),
+                    (c.0 + r, c.1 - r),
+                    (c.0 + r, c.1 + r),
+                    (c.0 - r, c.1 + r),
+                ]
+                .map(at);
+                courtyard.extend((0..4).map(|i| (q[i], q[(i + 1) % 4])));
             }
             _ => return Err(format!("{what} is not modelled")),
         }

@@ -5100,13 +5100,37 @@ mod tests {
                 "`arc` in its points",
             ),
             (
-                "(fp_circle (center 0 0) (end 1 0) (layer \"F.CrtYd\"))".into(),
+                "(fp_arc (start -1 0) (mid 0 -1) (end 1 0) (layer \"F.CrtYd\"))".into(),
                 "not modelled",
+            ),
+            (
+                "(fp_circle (center 0 0) (end 0 0) (layer \"F.CrtYd\"))".into(),
+                "no radius",
             ),
         ] {
             let e = part_of(&with(&yard)).unwrap_err();
             assert!(e.contains(want), "{yard}: {e}");
         }
+        // A whole circle is the square that holds it (`AET-WO-1312`): a via
+        // kept out of the square is out of the circle.
+        let circle = part_of(&with(
+            "(fp_circle (center 0 0) (end 0.6 0.8) (layer \"F.CrtYd\"))",
+        ))
+        .unwrap();
+        let corners: std::collections::BTreeSet<(i64, i64)> =
+            circle.courtyard.iter().map(|e| e.0).collect();
+        let xs: std::collections::BTreeSet<i64> = corners.iter().map(|c| c.0).collect();
+        let ys: std::collections::BTreeSet<i64> = corners.iter().map(|c| c.1).collect();
+        // Radius 1 mm about the part's origin: a 2 mm square.
+        assert_eq!(corners.len(), 4, "{corners:?}");
+        assert_eq!(
+            (
+                xs.last().unwrap() - xs.first().unwrap(),
+                ys.last().unwrap() - ys.first().unwrap()
+            ),
+            (2_000_000, 2_000_000),
+            "{corners:?}"
+        );
         let board = |copper: &str| {
             strict::board(&format!(
                 "(kicad_pcb (layers (0 \"F.Cu\" signal) (4 \"In1.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {copper})"
