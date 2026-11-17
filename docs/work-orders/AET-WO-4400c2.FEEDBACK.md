@@ -259,5 +259,11 @@ The architect's note (14:34 UTC, `~/.cache/aet-bus/4400c2.md`): 3402 merged (#20
 
 - **Merged** `main` `7d0763eb` as a merge commit, with no conflicts. 3402 moved the bench board's Rust and its package, not its `.repl`, and the board goldens bind unchanged after the merge (`board` test, no re-bless).
 - **Gates** (tools image, target inside the repository): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --no-fail-fast`: 130 suites, 2,141 passed, 0 failed.
-- **The package:** `fab/sentinel-01-bench/package/` is still `main`'s (3402's run 44091740015). With this branch's `.repl` its `verdict_sha256` differs, so it waits on the `bench-package` `write` dispatch on this branch. The READY commit carries that artifact unchanged.
+- **Pushed AWAITING-PACKAGE** `ac7f92e2`. Its CI is green: `ci` 44106155203, `ardupilot-image` 44106155244, `engine-image` 44106155130.
+- **The package is CI's write.** The architect dispatched `ci.yml` with `write: true` on `ac7f92e2`: run 44107025973, green in every job, artifact `bench-package` 14342400564. It was downloaded into an empty directory and committed **unchanged**.
+  - The same 17 files as `main`'s package (3402's run 44091740015).
+  - Byte-identical except `MANIFEST.json`, where exactly one field moved, `verdict_sha256`: `949cb3c3…7652` → `9ee308ba…9bc4`. That is the move predicted above (the verdict line lists the `.repl`'s sha256); the ELF, Gerbers, drill, BOMs, placement files and FAB-NOTES did not move.
+- **After the copy** (tools image): `bench_board_tier1` 2 passed and `fab_tier1` 11 passed, 0 failed.
+
+**READY**, 2026-11-17: built to the ruling, `main` `7d0763eb` merged, and the package is CI's write. Push nothing after this unless the architect asks.
 
