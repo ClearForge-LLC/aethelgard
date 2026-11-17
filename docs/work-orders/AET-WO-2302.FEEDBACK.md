@@ -491,3 +491,29 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
     - host: `fmt`, `clippy -D warnings` (with `with-tools`), 2 028 tier-1 tests passed, 0 failed;
     - the fixture validates;
     - in the pinned image, `twin_tier2` 82/82 pinned to 4 CPUs (A6's own call 16.36 s; 87 `simulate` calls, median 4.37 s) and `campaign_tier2` 9/9.
+
+## §21 The ruling on `f68f161`, and 4400b merged
+
+- **The ruling** (PR #175; inbox, 07:00 UTC): §15 confirmed in full, and Q6 (`E3` yields to `S5`).
+  - Follow-up `AET-WO-2302b`, after this merges:
+    - Q3: `attribute` rules for the new motor and serial kinds;
+    - Q2: remove `I7`, `short_window` and `OUTSIDE_WINDOW_FINDING`;
+    - finding 5: tighten the chaos tests' `.is_err()`.
+  - Backlog: Q1, finding 2, Q5.
+- **R1:** the DShot window's end is one function, `renode::dshot_window_end`. Its three sites (the witness's window end, the judge's stop instant, `motor_window_past_run`) now call it.
+- **R2:** `E3`'s guards E02–E07 are labelled `belt-and-suspenders:`, each with what decides its case first:
+  - `booted`: a serial finding is named only once the boot word is set;
+  - `holds`: rule I6, by `Scope::SerialStatic`;
+  - `t.holds()`: rule S5, by `serial_software`;
+  - tags `Some`: the pattern finding joins the echo's;
+  - the two injection `None`s: replay refuses a frame into an open port, `check_serial_joins`.
+- **`main` merged** (`56318a53`, 4400b: `generate hwdef`, pinout judgements, solved schema 9).
+  - It touched five files this branch changed: `ci.yml`, the CLI README, `main.rs`, `renode.rs` and `strict_fence.rs`. They merged with no conflict, both sides kept.
+  - `strict_fence.rs` registers both `anchor.rs` and 4400b's `hwdef.rs`.
+- **Tier 2 recounted in the image** (CI's `TIER2_RE` over `cargo test -- --list`): 176, exactly `TIER2_MIN`.
+  - The counts: `board_tier2` 22, `twin_tier2` 82, `with_tools` 31, `attribute_seeded` 11, `campaign_tier2` 9, `models_tier2` 7, `adversarial_1301_tools` 6, and 2 each for `adversarial_1302_tools`, `against_fab_tier2`, `verify_2k2_tier2` and `verify_47k_tier2`.
+  - 4400b added none.
+- **Re-gated on the merged tree with R1 and R2:**
+  - host: `fmt`, `clippy -D warnings` with and without `with-tools`, 2 055 tier-1 tests passed, 0 failed;
+  - in the pinned image: `twin_tier2` 82/82 pinned to 4 CPUs (A6's own call 16.47 s), `campaign_tier2` 9/9, `with_tools` 31/31, `models_tier2` 7/7, `attribute_seeded` 11/11;
+  - the long suites (`board_tier2`, the verify suites, `against_fab_tier2`) run in CI.
