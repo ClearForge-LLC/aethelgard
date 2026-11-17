@@ -28,10 +28,21 @@ fn board_dir() -> PathBuf {
     root().join("boards/sentinel-01")
 }
 
+/// Sentinel-01 as ordered (`AET-WO-3401` §1.3): its own directory, so the
+/// reference above stays P1's byte-for-byte fixture.
+fn bench_dir() -> PathBuf {
+    root().join("boards/sentinel-01-bench")
+}
+
 /// The `board/` part of what `aethelgard generate` writes, through the one
 /// composition function the CLI uses (`AET-WO-3301` §1.5).
 fn generated() -> BTreeMap<String, String> {
-    let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
+    generated_of("examples/sentinel-01-minimal.json")
+}
+
+/// [`generated`] for the specification at `spec`, from the repository root.
+fn generated_of(spec: &str) -> BTreeMap<String, String> {
+    let bytes = fs::read(root().join(spec)).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let sha: String = Sha256::digest(&bytes)
         .iter()
@@ -113,6 +124,25 @@ fn the_committed_board_crate_is_exactly_the_generated_one() {
         }
     }
     assert_eq!(compare(&board_dir(), &files), Vec::<String>::new());
+}
+
+/// `AET-WO-3401` §1.3: `boards/sentinel-01-bench` is exactly what
+/// `examples/sentinel-01.json` generates, as the reference's board is.
+#[test]
+fn the_committed_bench_board_crate_is_exactly_the_generated_one() {
+    let files = generated_of("examples/sentinel-01.json");
+    if std::env::var_os("AETHELGARD_BLESS").is_some() {
+        let dir = bench_dir();
+        if dir.exists() {
+            fs::remove_dir_all(&dir).unwrap();
+        }
+        for (path, text) in &files {
+            let p = dir.join(path);
+            fs::create_dir_all(p.parent().unwrap()).unwrap();
+            fs::write(p, text).unwrap();
+        }
+    }
+    assert_eq!(compare(&bench_dir(), &files), Vec::<String>::new());
 }
 
 #[test]
