@@ -1,0 +1,5 @@
+# AET-WO-4400e2 CANDIDATE FIX, monitor level (a diagnostic deviation on this branch): a read hook on Renode's NVIC that gives
+# ICSR (offset 0xD04) bit 11, RETTOBASE, its Armv7-M value: 1 only when at most one exception is active (IABR0-4 and SHCSR's
+# active bits), as upstream e7a8584c computes it (activeIRQs.Count() <= 1). Every other bit, VECTACTIVE included, is the
+# model's own; every other register passes unchanged.
+sysbus SetHookAfterPeripheralRead sysbus.nvic "value = __import__('System').UInt64((int(value) & ~0x800) | (0x800 if (sum(bin(sysbus.ReadDoubleWord(0xE000E300 + 4 * i)).count('1') for i in range(5)) + bin(sysbus.ReadDoubleWord(0xE000ED24) & 0xD8B).count('1')) <= 1 else 0)) if offset == 0xD04 else value"
