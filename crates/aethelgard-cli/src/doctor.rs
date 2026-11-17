@@ -159,13 +159,7 @@ pub fn doctor() -> ExitCode {
 /// With no scratch nothing can run, sandbox included: each tool is only
 /// looked for on `PATH` (or beside this executable, the bridge).
 fn unprobed() -> Vec<ToolLine> {
-    let found = |tool: &'static str, r: Result<run::Tool, Stop>| ToolLine {
-        tool,
-        path: r.ok().map(|t| t.path.display().to_string()),
-        version: None,
-        sandbox: None,
-        ngspice_loaded: None,
-    };
+    let found = |tool: &'static str, r: Result<run::Tool, Stop>| absent(tool, r.ok().as_ref());
     vec![
         found("kicad-cli", run::Tool::find("kicad-cli")),
         found("renode", run::Tool::find("renode")),

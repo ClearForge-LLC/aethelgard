@@ -985,6 +985,24 @@ to them:
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_placement_row_with_a_quote_inside_a_field_is_refused() {
+        let ok = "Ref,Val,Package,PosX,PosY,Rot,Side\n\"U4\",\"W25Q64JVSS\",\"SOIC-8\",82.55,-108.4,0.0,top\n";
+        assert_eq!(placement(ok.as_bytes()).map(|r| r.len()), Ok(1));
+        let comma = ok.replace("W25Q64JVSS", "A,B");
+        assert_eq!(placement(comma.as_bytes()).map(|r| r[0].value), Ok("A,B"));
+        for bad in [
+            ok.replace("\"U4\"", "\"U\"4,X\""),
+            ok.replace("\"U4\"", "U4"),
+            ok.replace(",top", ",top,x"),
+            ok.replace(",top", ""),
+            ok.replace(",0.0,", ",\"0\","),
+            ok.replace("Ref,", "Reference,"),
+        ] {
+            assert!(placement(bad.as_bytes()).is_err(), "{bad}");
+        }
+    }
+
     const POS_HEAD: &str = "Ref,Val,Package,PosX,PosY,Rot,Side\n";
     const BOM_HEAD: &str = "Reference,Value,Footprint,Symbol,Note\r\n";
 

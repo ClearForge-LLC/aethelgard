@@ -254,8 +254,8 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         .map_err(|m| Stop::tool_error(TOOL, format!("the drill file: {m}")))?;
     files.insert(format!("{}.drl", b.project), drill);
     let placement = read_output(TOOL, &pos)?;
-    placement_rows(&placement)
-        .map_err(|m| Stop::tool_error(TOOL, format!("the placement file: {m}")))?;
+    // Reads the placement file row by row (`aethelgard_eda::fab::placement`),
+    // refusing one KiCad's unescaped quotes would shift.
     let (jlcpcb_bom, jlcpcb_cpl) = jlcpcb(b.bom, &placement)?;
     files.insert(format!("{}-pos.csv", b.project), placement);
     files.insert(format!("{}.bom.csv", b.project), b.bom.to_vec());
@@ -597,12 +597,6 @@ pub fn pours(gerber: &[u8], net: &str) -> bool {
         .any(|(i, w)| w[0] == attribute && w[1] == "G36*" && lines[i + 2..].contains(&"G37*"))
 }
 
-/// KiCad's placement file, checked row by row as `aethelgard_eda::fab::placement`
-/// reads it (a name holding `"` would shift every later column).
-pub fn placement_rows(csv: &[u8]) -> Result<(), String> {
-    aethelgard_eda::fab::placement(csv).map(drop)
-}
-
 /// JLCPCB's BOM and placement file (`AET-WO-1604` §1.3, ruled on PR #199).
 /// A part on the bottom side refuses the package by its reference, exit 3,
 /// `BottomSidePart`: JLCPCB states no bottom-side convention, and no row is
@@ -839,24 +833,6 @@ mod tests {
         assert!(!pours(b"%TO.N,GND*%\nX1Y1D03*\nG37*\n", "GND"));
         assert!(!pours(b"%TO.N,GND*%\nG36*\nX1Y1D02*\n", "GND"));
         assert!(!pours(b"G36*\n%TO.N,GND*%\nG37*\n", "GND"));
-    }
-
-    #[test]
-    fn a_placement_row_with_a_quote_inside_a_field_is_refused() {
-        let ok = "Ref,Val,Package,PosX,PosY,Rot,Side\n\"U4\",\"W25Q64JVSS\",\"SOIC-8\",82.55,-108.4,0.0,top\n";
-        assert_eq!(placement_rows(ok.as_bytes()), Ok(()));
-        let comma = ok.replace("W25Q64JVSS", "A,B");
-        assert_eq!(placement_rows(comma.as_bytes()), Ok(()));
-        for bad in [
-            ok.replace("\"U4\"", "\"U\"4,X\""),
-            ok.replace("\"U4\"", "U4"),
-            ok.replace(",top", ",top,x"),
-            ok.replace(",top", ""),
-            ok.replace(",0.0,", ",\"0\","),
-            ok.replace("Ref,", "Reference,"),
-        ] {
-            assert!(placement_rows(bad.as_bytes()).is_err(), "{bad}");
-        }
     }
 
     #[test]

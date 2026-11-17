@@ -2,6 +2,8 @@
 
 **Branch:** `wo/aet-1604-cli-backlog` · **Base:** `ecc6be9` (`origin/main`) · **Builder:** Claude Code (Opus 5.5) as `forge` on Furnace, as project manager. · **Cadence:** build, with one measured stop (§1.3). · **Work order:** `docs/work-orders/AET-WO-1604.md` on `origin/claude/argon-repo-docs-synthesis-rjrb0d` (`e5a87ae`, docs PR #198).
 
+**Status: READY.** §1.1–§1.5 are built, §1.3 as ruled on PR #199 (§7). The gates, the adversarial pass (§6, §7) and the reduction pass (§8) are done.
+
 Labels: **measured** (run here), **read** (read at source), **inferred**.
 
 ## 0. Read at source before the predictions
@@ -124,9 +126,9 @@ Each new guard was mutated once against the suite it lives in (`~/.cache/aet-160
 
 **Finding F1 (fixed, `bd9da55`).** `doctor` first ran every probe in one scratch. That had two effects. A tool's probe could plant a file in its `HOME` that the next probe's tool read: measured, the `renode` stub saw `kicad-cli`'s file. And as root, `renode_config` wrote into a `tool/` directory the earlier probes had already handed to the tool uid; `simulate` always writes it before any tool runs. Each probe now gets a scratch of its own, as each subcommand gives its tool, and `each_probe_has_a_scratch_of_its_own` failed before the fix (measured) and passes after.
 
-The §5 case "a fab-format column filled with a plausible guess" waits for the files, after the §1.3 ruling (§4, O1).
+The §5 case "a fab-format column filled with a plausible guess" is in §7's table.
 
-**Status: STOPPED at §1.3** for the column map's ruling: U1–U3 and O1–O6 above, with Q1–Q3. §1.1, §1.2, §1.4 and §1.5 are built and pass the CLAUDE.md gates on Furnace. The reduction pass runs at the close, after the fab-format files are built.
+(Stopped at §1.3 for the column map's ruling, which came on PR #199 before the stop was pushed; §7.)
 
 ## 7. §1.3 as ruled (PR #199, comment 6943750741, 2026-11-17 09:30 UTC)
 
@@ -161,3 +163,24 @@ The §5 case "a fab-format column filled with a plausible guess" waits for the f
   - every CPL row is KiCad's row with `mm`, `T` and its rotation normalised;
   - the bottom-side refusal's exit, kind and id.
 - Tier 2: `verify_2k2_tier2` lists seventeen files and binds the two to `jlcpcb()` of the package's own BOM and placement file; `against_fab_tier2` expects 18 differences. No tier-2 test was added, so `TIER2_MIN` stays exact at main's 177.
+
+**Adversarial pass for §1.3** (`~/.cache/aet-1604/mut/run-fab.sh`, `summary-fab.txt`). Each guard was mutated once; every mutant was killed.
+
+| # | §5 case | mutant | killed by |
+|---|---|---|---|
+| M9 | a column filled with a plausible guess | the part number filled with the value | `the_jlcpcb_files_from_real_kicad_output_carry_nothing_invented` |
+| M10 | a guessed rotation offset | 90° added to every rotation | the same |
+| M11 | KiCad's sign kept | rotation not normalised (−90 stays) | the same |
+| M12 | a bottom-side row written | `bottom` written as `T` | `a_bottom_side_part_refuses_the_package_by_name` (CLI and `eda`) |
+| M13 | BOM and CPL naming different parts | the comparison skipped | `the_two_files_must_name_the_same_parts_and_be_what_their_writers_write` |
+| M14 | coordinates rounded | KiCad's digits cut to 7 characters | `the_jlcpcb_files_from_real_kicad_output_carry_nothing_invented` |
+| M15 | after the reduction (§8): a quote inside a plain placement field | the check dropped from `eda::fab::placement` | `a_placement_row_with_a_quote_inside_a_field_is_refused` (moved to `eda`) |
+
+## 8. Gates and the reduction pass
+
+- **Gates:** on Furnace, at the READY head, in a capped scope: `cargo fmt --all -- --check`; `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`; `cargo test --workspace --no-fail-fast`, with no failure; and the tier-2 targets compiled (`--features aethelgard-cli/with-tools --no-run`). Tier 2 itself runs in CI. No tier-2 test was added, so `TIER2_MIN` stays main's 177.
+- **Reduction pass (diff):** −12 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 1 finding below.
+  - Duplicate 1: `placement_rows` became a one-line wrapper, and `jlcpcb()` parses the placement file with the same check, so `derive` checked it twice. The wrapper and its call are gone, and its adversarial test now targets `eda::fab::placement` (M15 still killed).
+  - Duplicate 2: `doctor`'s `unprobed()` rebuilt `absent()`'s line; it now calls `absent`.
+  - **Finding R1 (outside the fence):** the test-pad footprint `TestPoint:TestPoint_Pad_D1.0mm` is stated twice. It is in `eda/schematic.rs` (`TEST_POINT_FOOTPRINT`, private) and in `cli/src/extract.rs` (`TEST_PAD`, D8). A `pub` on the `eda` constant would let the CLI use it; `schematic.rs` is outside this order's fence. The bench tests fail if the two drift.
+- **Disk:** no subagent worktree was made. `~/.cache/aet-1604/img/bin` (the 228 MB binary copy) is removed. Evidence is kept in `~/.cache/aet-1604/` (JLCPCB pages and samples, anchors, mutants, logs, the in-image `doctor` line).
