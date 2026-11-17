@@ -140,3 +140,43 @@ The two image workflows read only named example files (`sentinel-01-minimal.json
 - **Q1.** §1.3's package check: (i), (ii) or (iii) above?
 - **Q2.** May this work order add `scenarios/sentinel-01-bench/` (the four seeded scenarios rebased, changed only in `base`) when §2 commits the package?
 - **Q3.** D1: the EXT port has DS-009 I2C's pinout with 3.3 V on pin 1, because a `VDD_5V` domain with no regulator blocks the package. Accept, or should a 5 V rail with a fault kind wait for Sentinel-03?
+
+## 6. CI, the first push [measured]
+
+- **Run 43992120410 on `ecd31f4`** (§1, with the tier-2 test and `TIER2_MIN` 161): **green**, 22 checks pass and 3 skip (`publish` ×2 and `quickstart`, as on any PR).
+- **Shard times:**
+
+  | Shard | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+  |---|---|---|---|---|---|---|---|---|
+  | Time | 24m07s | 26m37s | 22m30s | 20m42s | 31m38s | 23m55s | 27m56s | 25m22s |
+
+  `gates` took 17m20s.
+- Shards over 20 minutes are a measurement under roadmap §6, not a refusal. This PR's tests add seconds, so the long shards are the runner's load that hour, not this change [inferred: every shard was over 20 minutes].
+
+## 7. The rulings (architect, PR #190, 2026-11-17 01:50 UTC) and what they changed
+
+- **Q1 (i).**
+  - **Per PR:** `bench_board_tier1.rs::the_committed_package_is_bound_to_its_specification_scenarios_and_emit` (tier 1, no tools) checks that the committed package's `MANIFEST.json` names this specification's sha256, `solve`'s topology sha256, and the four scenarios by name and sha256 in order. Every package file is checked against its manifest hash, with no file missing or extra. `emit`'s bill of materials must equal the package's byte for byte.
+  - **On `main`'s push and on `workflow_dispatch`:** `ci.yml`'s new `bench-package` job runs `verify --against-fab`.
+  - With the dispatch input `write`, the same job writes the package (`--fab-out`) and uploads it as an artifact. **This is how the committed package is made.**
+    - The verdict, and so `MANIFEST.json`'s `verdict_sha256`, names each gate's sandbox (CLI README, "The verdict states each gate's sandbox").
+    - A package written on Furnace under rootless podman would therefore never match `main`'s Docker run in `MANIFEST.json` alone.
+  - For this PR, one temporary commit ran the job in write mode on the pull request itself. `workflow_dispatch` needs the workflow on the default branch first [inferred]. The next commit removes the temporary trigger, and the job's final condition is `github.event_name != 'pull_request'`.
+  - 1801 is told, in its inbox, which parts of `ci.yml` this touches.
+- **Q2.** `scenarios/sentinel-01-bench/`: `pullup-3k3`, `droop-bor3`, `spi-absent-u4` and `pullup-2k2`. Each is a copy of the reference's scenario (`scenarios/sentinel-01/` and `scenarios/sentinel-01/seeded/`), **differing only in its `base` line** (`diff` shows one line per file; the line was replaced textually, not re-serialised).
+- **Q3.** Accepted. The connector keeps `standard: null`, as committed. `ORDER.md` and `BENCH.md` (§2) will carry the sentence the ruling gives.
+
+## 8. The committed package [measured]
+
+- **`fab/sentinel-01-bench/package/`** holds 15 files, 340 KB.
+  - It is the artifact `bench-package` wrote in run **43996638859** on `17af6d8`, the temporary commit, in CI's Docker environment.
+  - The artifact was downloaded with the read-only token, then committed unchanged. The next commit reverted the temporary trigger.
+- **Furnace's package of the same commit compared** (rootless podman, kept out of the tree):
+  - every file is byte-identical except `MANIFEST.json`;
+  - in `MANIFEST.json` every key is equal except `verdict_sha256`.
+  - So the sandbox's line in the verdict is the only environment-dependent byte, as the CLI README states. This is why the package must come from the job.
+- **The same run was red only where expected:** `gates` and tools-shard 1 each failed one test, `the_committed_package_is_bound_…` at `bench_board_tier1.rs:84`, the `MANIFEST.json` read of a package not yet committed. Everything else passed.
+- **Locally, with the package committed,** `bench_board_tier1.rs` passes (2 of 2).
+- **The package is the current specification's.** It must be rewritten when 1801 moves `engine_version`, and when §2 adds bench access:
+  1. dispatch `ci.yml` with `write: true` on the branch (once the job is on `main`), or repeat the temporary-commit round trip;
+  2. commit the artifact.
