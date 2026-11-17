@@ -139,3 +139,77 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 - **§2's acceptance run uses `4400c`'s driver unchanged** (as merged with #202), not this one, which adds `PLATFORM` and injection.
 
 **STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D3. `main` at `7b1ce095` (#202) is merged in, and the scratch trees (7.1 GB) are removed. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.
+
+# The build (§2), to the ruling on PR #204 (comment 6945751393)
+
+## The ruling, applied
+
+- **D1, line 1 (SPI receive): built** (below).
+- **D1, line 2 (USART receive): held, not emitted.** It manufactures a deterministic hard fault. The repro for the backlog row the ruling names is the §1.1 runs `paced` and `crash-a`/`crash-b`: `p2-spi-usart`'s platform, three `COMMAND_LONG` frames at 1.5 s, with the scripts and evidence at `5a1bccaf` (`spike/4400c2/`, deleted after).
+- **D1, line 3 (I2C receive): not emitted.** Recorded: no measured effect for this ELF (`p3` byte-identical to `p2`).
+- **D2, USART IDLE and timer DMA:** to the backlog and to architecture §2 as model divergences. Those are the architect's documents; they are recorded here and nothing protected was edited.
+- **`MANIFEST.json` (read at source):**
+  - `fab/sentinel-01-bench/package/MANIFEST.json` holds no `.repl` or board hash of its own (keys: `project`, `specification_sha256`, `topology_sha256`, `scenarios`, `preconditions`, `verdict_sha256`, `files`).
+  - Its `verdict_sha256` is the sha256 of `verify`'s verdict line (`fab.rs` L689), which lists every generated file's sha256 by path (`verify.rs` L70), the board's `.repl` included. **So `verdict_sha256` moves when the package is next written.**
+  - This PR does not rewrite the package. `bench_board_tier1.rs` does not bind `verdict_sha256`, so per-PR CI stays green.
+  - Main's `bench-package` job (`--against-fab`) would see the difference until the package is rewritten. 3402 re-blesses that package; whoever merges second regenerates (§3; 3402's inbox was told).
+
+## What was built
+
+- **`crates/aethelgard-twin/data/dmamux1-spi-rx.tsv`:** the SPI receive rows of RM0433 Rev 9 Table 124 (SPI1 37, SPI2 39, SPI3 61, SPI4 83, SPI5 85), each with the table's resource name. The citation, the PDF's sha256, and why SPI6 has no row are in the file.
+- **`platform.rs`:**
+  - `DMAMUX1_SPI_RX` (`include_str!`) and `dmamux1_spi_rx()`;
+  - `spi_rx_request(peripheral)`, which is `None` for SPI6 (DMAMUX2, which Renode does not declare) and refuses any other SPI with no row (`INV-06`);
+  - each SPI controller the twin adds gets `    DMARecieve -> dmamux1@<n>` after its `IRQ`, and its comment names the table; SPI6's comment names the absence instead.
+- **`lib.rs`:** the error `MalformedDmaTable`, for a row that is not three tab-separated fields with a decimal input.
+- **The emitter reads only the topology's solved SPI controllers and the cited table** (`RUL-16`).
+
+## Moved goldens (final, measured)
+
+| File | Change |
+|---|---|
+| `boards/sentinel-01/sentinel-01.repl` | `spi1`'s comment line reworded, and `    DMARecieve -> dmamux1@37` added (2 lines; regenerated with `AETHELGARD_BLESS=1 cargo test -p aethelgard-svd-hal --test board`) |
+| `boards/sentinel-01-bench/sentinel-01-bench.repl` | the same 2 lines (3402 told) |
+| `crates/aethelgard-twin/src/tests.rs` | `spi1`'s and `spi2`'s exact blocks gain their lines; three tests added (below) |
+| `crates/aethelgard-svd-hal/tests/order_2203.rs` | the two platform digests: `a81a65b3…` → `ea5846df…` and `292791aa…` → `72948365…`. **Proved:** with the two edits undone, the new texts hash to the old pins exactly (a throwaway test, measured and then deleted). `main.rs` and the boot image did not move |
+| `crates/aethelgard-cli/tests/workspace_shape.rs` | the twin's allowed files name `data/dmamux1-spi-rx.tsv` (`TWIN_DATA`) |
+| `fab/sentinel-01-bench/package/MANIFEST.json` | not in this PR; its `verdict_sha256` moves at the next package write (above) |
+
+- §1.1's list missed `order_2203.rs` and `workspace_shape.rs` (F1).
+- `generate_tier1.rs` and the `attribute_seeded` guard did not need editing: they compare against the committed board, which was regenerated.
+
+## Acceptance (measured)
+
+- **`4400c`'s `r3` on the emitted platform, with no overlay,** using `4400c`'s driver unchanged (`spike/4400c/drive.py`, sha256 `13a4f58b…`, on `main` through #202) and the CLI built from this branch: `SPI Flash 0x00EF4017 found pages=32768 erase=64k`. The emitted `sentinel-02-own.repl` carries `spi1 … @37` (L20) and `spi2 … @39` (L28).
+- **Generated-firmware verdicts are unchanged.** `simulate --for 100ms` on `boards/sentinel-01` and `boards/sentinel-01-bench`, `main`'s CLI and platform against this branch's: `pass` on both sides, for both boards. The verdicts differ only at `/input/sha256` (the platform), `/input/path` and `/boot/firmware/path`. The board's own Rust firmware on `sentinel-02-own`: `pass`, `device_unmodelled` only. The campaigns' scenarios are covered by CI's tier-2 suites, whose expectations this PR does not touch.
+- **Gates** (the tools image, target inside the repository as CI has it): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace`: 127 suites, 2,099 passed, 0 failed, measured after merging `main` at `9d91ea4a` (#205).
+- **`TIER2_MIN` stays 177:** no tier-2 test is added; the three new tests are tier 1.
+
+## Adversarial pass, targeted (§5): one mutant per guard, against `aethelgard-twin`'s tests
+
+| Mutant | Attacks | Killed by |
+|---|---|---|
+| M1: the table's 37 and 39 swapped | a line on the wrong DMAMUX number, a read on SPI2 instead of SPI1 | the table test (its sha256 pin), the per-controller test, and both exact-block tests |
+| M2: the table's citation lines deleted | a number with no citation | the table test (sha256 pin) |
+| M3: SPI6 given a guessed number (11) | a fabricated line where Renode has no DMAMUX2 | the per-controller test |
+| M4: the emitted line dropped | the fix silently undone | the per-controller test and both exact-block tests |
+| M5: the parser's digit check removed (`+37` accepted) | a malformed row read as a number | `a_malformed_dma_row_is_refused` |
+
+- **A verdict that moves:** measured above (none).
+- **Residual, named:**
+  - SPI1, 2, 3 and 5's numbers have no CI witness independent of RM0433. The tests' literals and the table are read from the same source, so a transcription error copied into both would pass.
+  - What holds them: the sha256 pin (any edit must be read again from the table), §1.1's runtime boot (wrong numbers fail visibly, `p5-wrong`) and ChibiOS's `stm32_dmamux.h` (37, 39 agree, read in the pinned ArduPilot image).
+  - SPI4's number is checked in CI against Renode's own file.
+
+## Reduction pass
+
+- `spike/4400c2/` is deleted (roadmap §6); its evidence stays at `5a1bccaf`.
+- One request lookup per added SPI controller (computed once, not twice).
+- Nothing else is removable: each of the three functions has a caller or a test that needs it.
+
+## Findings (build)
+
+- **F1 · §1.1's moved-golden list missed two guards · process · low.** `order_2203.rs` pins sha256 digests of the emitted platform, and `workspace_shape.rs` fixes the twin's files. Both were found by the gates, not by the grep for `.repl` text. Lesson: search for pinned digests of emitted output, not only for its text.
+- **F2 · `fab_tier1` refuses `BaseOutsideRoot` when `CARGO_TARGET_DIR` is outside the repository · environment · info.** Its scratch base must sit under the current directory. CI keeps `target/` in the repository; the gates here were rerun that way.
+
+**READY**, 2026-11-17: built to the ruling, with no line held back unruled.
