@@ -2166,17 +2166,21 @@ fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
 }
 
 /// Adversarial pass 1, M2 (A9c): TIM1's word write removed and `CEN` set
-/// by DMA2 (memory to memory) after the outputs' start. A DMA write fires
-/// no hook, so DShot is never stopped: the boot fails closed, by the
-/// flood's names when its log passes the filter's budget (measured: 8.4 MB
-/// kept, 1 773 188 lines dropped, 98.5 % of the memory bound), by
-/// `memory_cap_exceeded` if it passes the bound, or by
-/// `motor_anchor_unobserved` when the edges are read. The memory share is
-/// the named residual.
+/// by DMA2 (memory to memory). A DMA write fires no hook, so DShot is never
+/// anchored or stopped and runs to the boot's end. The start is placed late,
+/// after a 3 230 000-spin wait (about 96.9 ms, inferred from the 30 ns a spin
+/// measured in A2-3), so about 3 ms of unanchored
+/// edges reach the judge inside the log budget: every output is named
+/// `motor_anchor_unobserved`, a forced outcome. An EARLY DMA start (about 98 ms
+/// of DShot) is the named residual: it fails closed only by a bound, the
+/// flood's names on Furnace (8.4 MB kept, 98.5 % of the memory bound) but
+/// `wall_bound_exceeded` on a CI shard (run 44007663813, job 133786836234:
+/// 34 s against the 30 s bound, 851 per mille of memory); the outcome
+/// depends on the machine's speed, so no test asserts it.
 #[test]
 fn m2_a_dma_start_of_cen_fails_closed_by_name() {
     let body = format!(
-        "{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+        "    spin(3_230_000);\n{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
     );
     let (code, v) = dshot_mutant(
         "m2-dma-start",
@@ -2185,36 +2189,23 @@ fn m2_a_dma_start_of_cen_fails_closed_by_name() {
     );
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
-    let flood = v["findings"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|f| f["kind"] == "renode_log_flood");
-    if flood {
-        assert_eq!(
-            k.iter()
-                .filter(|k| **k == "motor_output_unwitnessed")
-                .count(),
-            4,
-            "{v}"
-        );
-    } else if k.contains(&"memory_cap_exceeded") {
-        // Measured at 98.5 % of the bound: killed at it, by name.
-    } else {
-        assert_eq!(
-            k.iter()
-                .filter(|k| **k == "motor_anchor_unobserved")
-                .count(),
-            4,
-            "{v}"
-        );
+    assert_eq!(
+        k.iter()
+            .filter(|k| **k == "motor_anchor_unobserved")
+            .count(),
+        4,
+        "{v}"
+    );
+    for bound in [
+        "renode_log_flood",
+        "wall_bound_exceeded",
+        "memory_cap_exceeded",
+    ] {
+        assert!(!k.contains(&bound), "{v}");
     }
     // No stop ran: `stops` is absent.
     assert!(v["boot"]["stops"].is_null(), "{v}");
-    answer(&format!(
-        "m2 dma start: flood={flood} memory={}",
-        v["memory"]
-    ));
+    answer(&format!("m2 dma start, late: memory={}", v["memory"]));
 }
 
 /// The Sentinel-02-shaped board with `edits` applied to `main.rs` beside

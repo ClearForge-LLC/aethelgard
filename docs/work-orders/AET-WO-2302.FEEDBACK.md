@@ -430,6 +430,12 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
   - **Q1:** a core that sleeps and then writes its boot word still exits 5, by `2100`'s ruled A10 ("boot word set but the core executed fewer"), so a firmware can abort a campaign that way. Unchanged by this work order; pinned by `m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement`.
   - **Q2:** `I7` and `short_window`: remove, or keep for a future short window? (§15)
   - **Q3:** the new motor and serial finding kinds have no `attribute` rule, so `attribute` reports them unexplained (`I1`). Add rules in evolve, outside this fence?
-  - **Q4:** the DMA-start test runs at 98.6 % of the memory bound. It accepts `memory_cap_exceeded` as well as the flood's names, but a wall-bound kill under CI load would fail it: a flake candidate.
+  - **Q4 (closed by measurement, after the first CI run):** the DMA-start test was red on shard 0 of run 44007663813 (job 133786836234).
+    - **Root cause, measured: the reaper's 30 s wall bound, not memory and not the fixture.** The verdict carried exactly one finding, `wall_bound_exceeded`, at 34 s, with peak memory at 851 ‰. Renode had exit -1 and every observed field was null, because a killed boot is never read.
+    - The fixture started DShot by DMA at about 22 µs. With no anchor there is no stop, so four DShot600 channels flooded for about 98 ms. That is the cost `4300a` measured (10.8 s of timer events per 100 ms on Furnace); Furnace finished in 16.8 s, while a loaded CI shard passed the bound.
+    - **The test asserted a race against the machine's speed**, which roadmap §6 forbids.
+    - **Fixed** by forcing the outcome: the DMA start now waits 3 230 000 spins (about 96.9 ms, inferred from the spin cost), so about 3 ms of unanchored edges stay inside the log budget, and every output is `motor_anchor_unobserved`. Measured 3 of 3 in the pinned image: 6.6–8.3 s, 41–43 % of the bound.
+    - The early start stays a named residual in the README. It fails closed only by a bound, and which bound depends on the machine: the flood's names on Furnace, `wall_bound_exceeded` on CI.
+    - No bound is raised and no re-run was asked for.
   - **Q5 (backlog, older than 2302, A2-2):** replay should require exactly one kind 26 per kind 24 in a booted run.
   - **Q6:** `E3` yields to `S5`, with nothing masked (§15): confirm.
