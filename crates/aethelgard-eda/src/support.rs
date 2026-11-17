@@ -468,10 +468,29 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             }
         }
     }
-    // 3. The straps.
+    // 3. The straps. A connector pin or test point that names `BOOT0` takes
+    // the boot pin off its strap onto its own net, through one pull-down to
+    // the strap's net judged against DS12117 (`AET-WO-1312`).
     let mut straps = Vec::new();
+    let boot0_carried = aethelgard_ir::bench::carries_boot0(spec);
+    let vdd = match table.get(&spec.mcu.part).map(|r| &r.kind) {
+        Some(Kind::Mcu(m)) => &m.vdd_millivolts.range,
+        _ => {
+            return Err(format!(
+                "the power parts table has no MCU row for `{}`",
+                spec.mcu.part
+            ));
+        }
+    };
     for strap in &s.straps {
         let pin = &s.group(&strap.pin)[0];
+        if boot0_carried && strap.pin == aethelgard_ir::BOOT0 {
+            match boot0_pull_down(spec, netlist, mcu, pin, group_net(&strap.to), vdd) {
+                Ok(how) => straps.push(how),
+                Err(why) => fail("strap_wrong", format!("{mcu} BOOT0 (pin {pin}): {why}")),
+            }
+            continue;
+        }
         let have = net(pin);
         let want = group_net(&strap.to);
         if have.is_some() && have == want {
@@ -572,6 +591,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             aethelgard_ir::SWDIO => debug("SWDIO"),
             aethelgard_ir::SWCLK => debug("SWCLK"),
             aethelgard_ir::NRST => debug("NRST"),
+            aethelgard_ir::BOOT0 => debug("BOOT0"),
             d if d == gnd || d == supply => Some(d.to_owned()),
             _ => return None,
         })
@@ -627,6 +647,105 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             ),
         );
     }
+    // 5a. Bench access (`AET-WO-1312`): each test point's pad on the net it
+    // declares, the boot and debug nets at the MCU's pin, and the reset switch
+    // between the MCU's NRST and `GND` when it is declared, and only then.
+    for t in spec.declared_test_points() {
+        // As a connector pin's (step 5); any other domain bare, a signal as
+        // its label.
+        let want = expected(&t.net).unwrap_or_else(|| {
+            Some(if spec.voltage_domains.iter().any(|v| v.id == t.net) {
+                t.net.clone()
+            } else {
+                crate::extract::board_net(&t.net)
+            })
+        });
+        let have = netlist.net(&t.reference, "1");
+        // A test point is KiCad's one-pin test point and nothing else
+        // (adversarial F4: a 0 ohm resistor declared as one shorted the
+        // supply to GND and passed).
+        let shape = netlist
+            .components
+            .get(&t.reference)
+            .is_some_and(|c| c.symbol.as_deref() == Some(crate::schematic::TEST_POINT))
+            && !netlist
+                .nets
+                .keys()
+                .any(|(r, p)| *r == t.reference && p != "1");
+        if !shape {
+            fail(
+                "test_point_off_net",
+                format!(
+                    "test point {} is not a one-pin `{}` in the netlist",
+                    t.reference,
+                    crate::schematic::TEST_POINT
+                ),
+            );
+        } else if want.is_none() || have != want.as_deref() {
+            fail(
+                "test_point_off_net",
+                format!(
+                    "test point {} is declared on `{}` and is on {} in the netlist, not {}",
+                    t.reference,
+                    t.net,
+                    quoted(have),
+                    quoted(want.as_deref())
+                ),
+            );
+        }
+    }
+    for (r, c) in &netlist.components {
+        if c.symbol.as_deref() == Some(crate::schematic::TEST_POINT)
+            && !spec
+                .declared_test_points()
+                .iter()
+                .any(|t| t.reference == *r)
+        {
+            fail(
+                "test_point_off_net",
+                format!("{r} is a test point the specification does not declare"),
+            );
+        }
+    }
+    let switches: Vec<&String> = netlist
+        .components
+        .iter()
+        .filter(|(_, c)| c.symbol.as_deref() == Some(crate::schematic::SWITCH))
+        .map(|(r, _)| r)
+        .collect();
+    let nrst = debug("NRST");
+    match (spec.mcu.reset_switch, switches.as_slice()) {
+        (false, []) => {}
+        (true, [sw]) => {
+            let mut pins = [netlist.net(sw, "1"), netlist.net(sw, "2")];
+            pins.sort_unstable();
+            let mut want = [nrst.as_deref(), Some(gnd)];
+            want.sort_unstable();
+            let other = netlist
+                .nets
+                .keys()
+                .any(|(r, p)| r == *sw && p != "1" && p != "2");
+            if nrst.is_none() || pins != want || other || netlist.components[*sw].unpopulated {
+                fail(
+                    "reset_switch_wrong",
+                    format!(
+                        "reset switch {sw} is on {} and {}, not between {mcu}'s NRST {} and `{gnd}`, or is unpopulated",
+                        quoted(pins[0]),
+                        quoted(pins[1]),
+                        quoted(nrst.as_deref())
+                    ),
+                );
+            }
+        }
+        (declared, found) => fail(
+            "reset_switch_wrong",
+            format!(
+                "mcu.reset_switch is {declared} and the netlist holds {} reset switch{}",
+                found.len(),
+                if found.len() == 1 { "" } else { "es" }
+            ),
+        ),
+    }
     // 6. The declared supply source.
     let supply_source = match &spec.mcu.supply_source {
         None => None,
@@ -670,9 +789,148 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     })
 }
 
+/// Resistances as schematics write them (`330`, `10k`, `2k2`, `1M`), in
+/// ohms; `None` for anything else.
+fn ohms(value: &str) -> Option<u64> {
+    let (whole, unit, frac) = match value.find(['k', 'M']) {
+        Some(i) => (&value[..i], &value[i..=i], &value[i + 1..]),
+        None => (value, "", ""),
+    };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(whole) || !(frac.is_empty() || digits(frac)) {
+        return None;
+    }
+    let scale: u64 = match unit {
+        "k" => 1_000,
+        "M" => 1_000_000,
+        _ if frac.is_empty() => 1,
+        _ => return None,
+    };
+    let frac_ohms = if frac.is_empty() {
+        0
+    } else {
+        let places = u32::try_from(frac.len()).ok()?;
+        let div = 10u64.checked_pow(places)?;
+        frac.parse::<u64>().ok()?.checked_mul(scale)? / div
+    };
+    whole
+        .parse::<u64>()
+        .ok()?
+        .checked_mul(scale)?
+        .checked_add(frac_ohms)
+}
+
+/// BOOT0 on its own net with exactly one resistor from it to `ground` (the
+/// strap's group's net), of a value [`aethelgard_ir::bench::judge_boot0_pull_down`]
+/// passes over the MCU's supply range (`AET-WO-1312`); the record's line, or why not.
+fn boot0_pull_down(
+    spec: &Specification,
+    netlist: &Netlist,
+    mcu: &str,
+    pin: &str,
+    ground: Option<String>,
+    vdd: &power_parts::Range,
+) -> Result<String, String> {
+    let Some(ground) = ground else {
+        return Err("its strap's ground net is not one net".into());
+    };
+    let Some(boot0) = netlist.net(mcu, pin) else {
+        return Err("it is on no net, so it floats".into());
+    };
+    if boot0 == ground {
+        return Err(format!(
+            "a connector pin or test point names BOOT0, and it is wired to `{ground}`, so nothing can drive it high"
+        ));
+    }
+    if netlist
+        .nets
+        .iter()
+        .any(|((r, p), n)| n == boot0 && r == mcu && p != pin)
+    {
+        return Err(format!("`{boot0}` is shared with another of {mcu}'s pins"));
+    }
+    let resistors: Vec<(&String, &Component)> = netlist
+        .components
+        .iter()
+        .filter(|(r, c)| {
+            let on = |n: &str| {
+                ["1", "2"]
+                    .iter()
+                    .filter(|p| netlist.net(r, p) == Some(n))
+                    .count()
+            };
+            c.symbol.as_deref() == Some(crate::schematic::R) && on(boot0) == 1 && on(&ground) == 1
+        })
+        .collect();
+    let [(reference, part)] = resistors.as_slice() else {
+        return Err(format!(
+            "{} resistors join `{boot0}` to `{ground}`, not one",
+            resistors.len()
+        ));
+    };
+    if part.unpopulated {
+        return Err(format!(
+            "its pull-down {reference} is unpopulated, so it floats"
+        ));
+    }
+    // Nothing else on the net but what the specification puts there: a
+    // connector pin or test point that names BOOT0 (adversarial F1: a
+    // pull-up beside the pull-down, or a device pin, passed).
+    let declared = |r: &str, p: &str| {
+        spec.declared_connectors().iter().any(|c| {
+            c.reference == r
+                && c.pins
+                    .iter()
+                    .any(|q| q.pin == p && q.net.as_deref() == Some(aethelgard_ir::BOOT0))
+        }) || spec
+            .declared_test_points()
+            .iter()
+            .any(|t| t.reference == r && p == "1" && t.net == aethelgard_ir::BOOT0)
+    };
+    if let Some((r, p)) = netlist.nets.iter().find_map(|((r, p), n)| {
+        (n == boot0 && r != mcu && r != *reference && !declared(r, p)).then_some((r, p))
+    }) {
+        return Err(format!(
+            "`{boot0}` also holds {r} pin {p}, which the specification does not put on BOOT0"
+        ));
+    }
+    let value = ohms(&part.value).ok_or_else(|| {
+        format!(
+            "its pull-down {reference} has value `{}`, not a resistance",
+            part.value
+        )
+    })?;
+    let (lo, hi) = (
+        u64::try_from(vdd.min).unwrap_or(0),
+        u64::try_from(vdd.max).unwrap_or(0),
+    );
+    aethelgard_ir::bench::judge_boot0_pull_down(value, lo, hi)
+        .map_err(|why| format!("its pull-down {reference} ({}): {why}", part.value))?;
+    Ok(format!(
+        "BOOT0 (pin {pin}) on `{boot0}`, pulled to `{ground}` by {reference} ({}), judged at {lo} to {hi} mV (DS12117 Tables 49 and 50)",
+        part.value
+    ))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::picofarads;
+    use super::{ohms, picofarads};
+
+    #[test]
+    fn resistances_read_as_schematics_write_them_and_nothing_else() {
+        for (v, r) in [
+            ("330", 330),
+            ("10k", 10_000),
+            ("2k2", 2_200),
+            ("1M", 1_000_000),
+            ("4M7", 4_700_000),
+        ] {
+            assert_eq!(ohms(v), Some(r), "{v}");
+        }
+        for v in ["", "k", "10K", "1.5k", "10k5k", "-1", "10 k", "1x", "100n"] {
+            assert_eq!(ohms(v), None, "{v}");
+        }
+    }
 
     #[test]
     fn values_read_as_schematics_write_them_and_nothing_else() {

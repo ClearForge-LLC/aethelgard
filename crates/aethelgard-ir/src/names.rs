@@ -18,7 +18,7 @@ use std::collections::BTreeSet;
 
 use crate::power::{self, BATTERY_NET};
 use crate::power_parts::{self, Kind};
-use crate::{GND, IrValidationError as E, NRST, SWCLK, SWDIO, Specification};
+use crate::{BOOT0, GND, IrValidationError as E, NRST, SWCLK, SWDIO, Specification};
 
 /// KiCad's prefix for a pad on no net. Its parity check matches it by
 /// prefix, case-sensitively, so the emitter refuses a net or rail that
@@ -29,15 +29,15 @@ pub const UNCONNECTED: &str = "unconnected-";
 /// `UnknownPart` refusal lists them. Each has a row in the parts table
 /// (`parts.json`), so `validate`'s refusal of a part with no row (step 14,
 /// `AET-WO-1206` §1.8) prints the emitter's message truthfully.
-pub const VENDORED_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
+pub const VENDORED_PARTS: &str = "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P";
 
 /// The nets the emitter names `<reference>_<suffix>` for a device of each
-/// part: a strap or a filter pin it draws a passive on (`BME280`'s `SDO`
-/// strap, the flash's `WP` and `HOLD` straps, the ICM-20948's `REGOUT`
-/// capacitor). A part not listed has none.
+/// part: a strap or a filter pin it draws a passive on (`BME280`'s and
+/// `BMP581`'s `SDO` strap, the flash's `WP` and `HOLD` straps, the
+/// ICM-20948's `REGOUT` capacitor). A part not listed has none.
 pub fn device_nets(part: &str) -> &'static [&'static str] {
     match part {
-        "BME280" => &["SDO"],
+        "BME280" | "BMP581" => &["SDO"],
         "W25Q64JVxIQ" => &["WP", "HOLD"],
         "ICM20948" => &["REGOUT"],
         _ => &[],
@@ -101,8 +101,9 @@ fn emitter_numbered(key: &str, mcu: &str) -> bool {
 }
 
 /// Every reference the specification declares, in the emitter's claim order:
-/// I2C devices, SPI devices, connectors, then the power tree's.
-fn references(spec: &Specification) -> Vec<&str> {
+/// I2C devices, SPI devices, connectors, the power tree's, then the test
+/// points (`AET-WO-1312`).
+pub(crate) fn references(spec: &Specification) -> Vec<&str> {
     spec.declared_i2c_devices()
         .iter()
         .map(|d| d.reference.as_str())
@@ -122,6 +123,11 @@ fn references(spec: &Specification) -> Vec<&str> {
                 .flat_map(power::references)
                 .map(String::as_str),
         )
+        .chain(
+            spec.declared_test_points()
+                .iter()
+                .map(|t| t.reference.as_str()),
+        )
         .collect()
 }
 
@@ -137,8 +143,9 @@ pub fn mcu_reference(spec: &Specification) -> String {
 
 /// Every net the schematic emitter names for itself, for `spec`: `GND`, the
 /// battery net when a power tree is declared, the MCU's support nets as its
-/// power-parts row draws them (`NRST`, `SWDIO`, `SWCLK` for each group the
-/// row has, and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), each
+/// power-parts row draws them (`NRST`, `SWDIO`, `SWCLK` and `BOOT0` for each
+/// group the row has, `BOOT0` drawn only when a connector or test point
+/// carries it (`AET-WO-1312`), and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), each
 /// device's [`device_nets`], each buck's [`BUCK_NETS`], and each crossing's
 /// four translated lines. The emitter refuses to name a net this list lacks.
 pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
@@ -152,6 +159,11 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
             if !m.support.group(net).is_empty() {
                 out.push(net.to_owned());
             }
+        }
+        // `BOOT0` is drawn on its own net only when a connector pin or test
+        // point carries it (`AET-WO-1312`); otherwise the strap wires it.
+        if crate::bench::carries_boot0(spec) && !m.support.group(BOOT0).is_empty() {
+            out.push(BOOT0.to_owned());
         }
         let mcu = mcu_reference(spec);
         out.extend((1..=m.support.group("VCAP").len()).map(|n| format!("{mcu}_VCAP{n}")));
@@ -241,6 +253,17 @@ pub(crate) fn check(spec: &Specification) -> Result<(), E> {
             both.sort_unstable();
             return Err(E::EmitterReference(both.join(" and ")));
         }
+    }
+    // The reset switch is numbered as the MCU is (`AET-WO-1312`): a reference
+    // KiCad takes for it but spelled otherwise (`sw1`, `SW01`) collides.
+    if let Some(sw) = crate::bench::switch_reference(spec)
+        && let Some(r) = references(spec)
+            .into_iter()
+            .find(|r| reference_key(r) == sw && *r != sw)
+    {
+        let mut both = [sw.as_str(), r];
+        both.sort_unstable();
+        return Err(E::EmitterReference(both.join(" and ")));
     }
     let own = own_nets(spec)?;
     // A power reference starting `unconnected-` names the emitter's own nets

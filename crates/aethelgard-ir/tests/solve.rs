@@ -111,6 +111,7 @@ fn device(reference: &str, bus: &str) -> SpiDevice {
         supply: "VDD_3V3".into(),
         bus: bus.into(),
         cs: signal(&format!("{reference}_CS"), None),
+        pin_capacitance: None,
     }
 }
 
@@ -164,7 +165,7 @@ fn spec(
         "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }) },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -934,6 +935,7 @@ fn devices_are_copied_with_their_peripheral_and_their_place_in_the_order() {
         supply: "VDD_3V3".into(),
         bus: "I".into(),
         address,
+        pin_capacitance: None,
     };
     // The BME280 offers two addresses; the third device is a TMP117 (a part
     // with no row is refused, `AET-WO-1206` §1.8).

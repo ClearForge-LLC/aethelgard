@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -165,7 +165,8 @@
       "cs": {
         "net": "SPI_BUS_0_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U201",
@@ -175,7 +176,8 @@
       "cs": {
         "net": "SPI_BUS_1_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U202",
@@ -185,7 +187,8 @@
       "cs": {
         "net": "SPI_BUS_2_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U203",
@@ -195,7 +198,8 @@
       "cs": {
         "net": "SPI_BUS_3_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U204",
@@ -205,7 +209,8 @@
       "cs": {
         "net": "SPI_BUS_4_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U205",
@@ -215,7 +220,8 @@
       "cs": {
         "net": "SPI_BUS_5_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U206",
@@ -225,7 +231,8 @@
       "cs": {
         "net": "SPI_BUS_6_CS0_NET",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [

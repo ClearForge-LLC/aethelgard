@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -208,7 +208,8 @@
       "cs": {
         "net": "CS0_NET",
         "pin": "PG9"
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U201",
@@ -218,7 +219,8 @@
       "cs": {
         "net": "CS1_NET",
         "pin": "PG12"
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U202",
@@ -228,7 +230,8 @@
       "cs": {
         "net": "CS2_NET",
         "pin": "PC11"
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [

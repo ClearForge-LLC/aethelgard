@@ -24,7 +24,7 @@ fn digests() -> Vec<(&'static str, String)> {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let mut doc: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a});
+    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a, "pin_capacitance": null});
     doc["i2c_devices"] = serde_json::json!([
         dev("U10", "BME280", 0x76),
         dev("U3", "TMP117", 0x48),
@@ -150,18 +150,27 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `LIFECYCLE NRND` line removed and the old specification's sha256 put back,
 /// the three are `c5003f4f…620b`, `875c5440…fbe8` and `63b028f0…bbf8` exactly;
 /// the boot image did not move.
+/// Moved once more by `AET-WO-4220b` (specification version 13, each device's
+/// `pin_capacitance`), which changes no generator of these: with the old
+/// specification's sha256 (`281a522a…`) put back for the new (`12ea89f8…`),
+/// the three texts are `main`'s byte for byte (`b738cc97…912f`,
+/// `b27e162f…31cd`, `8e390d00…c21e` before); the boot image did not move.
+/// Moved once more by `AET-WO-1312` (specification version 14), which
+/// changes no generator of these: with the old specification's sha256
+/// (`12ea89f8…9a2e`) put back in each text, the three are `b4c0b9a0…8ec2`,
+/// `f0b5a670…d67f` and `ba58ff9e…cdad` exactly; the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "b738cc97f1c9a28961ed60fe1443ca82a1f863c47403b2ca045e60ebdab2912f",
+        "a60bdcac104779b778baa96f61effc87ae5e7dd09083763707904136b228a048",
     ),
     (
         "platform",
-        "b27e162f812f4fb8d1a0fa36f7da50da748fafd863b9df4fe39d92126b7f31cd",
+        "a81a65b312fc0957c3f0eee45c415074a97e0cfffab2ff1b83b12f4f94a55fdc",
     ),
     (
         "platform faulted",
-        "8e390d008501678845571685a10ff815f86ffb1e55002bf19a417e8ba17ec21e",
+        "292791aa1391c6eb8004dd58de32ae2681a4fa2e14d5b2cf21c5faf420b5d388",
     ),
     (
         "boot image",

@@ -11,11 +11,12 @@ use sha2::{Digest, Sha256};
 
 use crate::sexpr::{self, Sx};
 
-/// Every vendored file's path under `data/kicad-10.0.7/` in
-/// `aethelgard-kicad-lib`, and the sha256 its bytes must have. The pins live
+/// Every file's path in `aethelgard-kicad-lib`'s `FILES` (KiCad's, under its
+/// `data/kicad-10.0.7/`, and our own, under `data/aethelgard/`), and the
+/// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 41] = [
+const PINS: [(&str, &str); 50] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -175,6 +176,43 @@ const PINS: [(&str, &str); 41] = [
     (
         "symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym",
         "1d1a1427556c4e89fc7d30fcbd418120ebbe9c0b774cabda08843ac5f6742848",
+    ),
+    // Our own (`AET-WO-4220b`, MIT OR Apache-2.0): `data/aethelgard/`.
+    (
+        "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
+        "5ee1738db4ee82b091bd24536bf2e74d8bfc6b4bc16b31cf5d3bcefcc05c2608",
+    ),
+    (
+        "footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
+        "56a4ce03c78f1409732c4d3783174b9865882608d6d0e1e4d218e15dc250ba82",
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym",
+        "1d85734054b68821e489173e838f6aeb31afe42c186b15ef0e93eb27781f666b",
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym",
+        "782551acb98cd228716af64e10aeac3ed0dcf65aba4130af92179062011c127a",
+    ),
+    (
+        "aethelgard/README.md",
+        "306da7fa0dfdedc3f53d4df12b6e5d7e6b3593df6d94fd765750220b8b3f9527",
+    ),
+    (
+        "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
+        "0c23d0140164aadb05dfa4a8e393e4311a75aa7c543552af4d0959f114bb6ed6",
+    ),
+    (
+        "footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod",
+        "6d602c576b4ab0de29fa4cc096f419a62e828ba45ceee30c1263d86b420b2b12",
+    ),
+    (
+        "symbols/Connector.kicad_symdir/TestPoint.kicad_sym",
+        "e983b0d2c450bc8c517b5bd83873bbe060f9e11e71dbb07951765a1b54f39a8e",
+    ),
+    (
+        "symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
+        "650beb4ee58eda52928926b1eb0ad8b11dedaacc9ad1334bb4d3a920c38c9814",
     ),
     (
         "LICENSE.md",
@@ -541,8 +579,13 @@ mod tests {
             "(lib (name \"Device\") (type \"KiCad\") (uri \"/s/lib/symbols/Device.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Package_QFP.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 12);
-        assert_eq!(fp.matches("(lib ").count(), 11);
+        // Our own library (`AET-WO-4220b`) beside KiCad's, by one name.
+        assert!(sym.contains(
+            "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
+        ));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
+        assert_eq!(sym.matches("(lib ").count(), 15);
+        assert_eq!(fp.matches("(lib ").count(), 14);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

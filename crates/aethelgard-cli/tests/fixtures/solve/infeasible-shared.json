@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "inf",
@@ -89,28 +89,32 @@
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_0",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U101",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_1",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U102",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_2",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U103",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "I2C_BUS_3",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [],

@@ -1,15 +1,17 @@
-//! `RUL-16` as a compiled fence (`AET-WO-1204`). The three accessors are the
-//! only way to read a specification's device lists and connectors (`AET-WO-4300f`); `cli`, `svd-hal` and
-//! `twin` each carry a `clippy.toml` that disallows all three. Clippy resolves a
+//! `RUL-16` as a compiled fence (`AET-WO-1204`). The four accessors are the
+//! only way to read a specification's device lists, connectors (`AET-WO-4300f`)
+//! and test points (`AET-WO-1312`); `cli`, `svd-hal` and `twin` each carry a
+//! `clippy.toml` that disallows all four. Clippy resolves a
 //! `disallowed-methods` path through the compiler, but a path that no longer
 //! names a function is only a warning, so a renamed accessor would leave the
 //! fence silently dead. This test is the other half: it names each accessor as
 //! a compiled item, so a rename fails to build until it is edited, and it
-//! reads the three files for exactly those three paths.
+//! reads the three files for exactly those four paths.
 
 use std::fs;
 use std::path::Path;
 
+use aethelgard_ir::bench::TestPoint;
 use aethelgard_ir::connectors::Connector;
 use aethelgard_ir::{I2cDevice, Specification, SpiDevice};
 
@@ -35,11 +37,12 @@ fn paths(text: &str) -> Vec<String> {
 }
 
 #[test]
-fn each_runner_disallows_exactly_the_three_accessors() {
+fn each_runner_disallows_exactly_the_four_accessors() {
     let mut want = vec![
         accessor!(declared_i2c_devices, I2cDevice).to_owned(),
         accessor!(declared_spi_devices, SpiDevice).to_owned(),
         accessor!(declared_connectors, Connector).to_owned(),
+        accessor!(declared_test_points, TestPoint).to_owned(),
     ];
     want.sort();
     let crates = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");

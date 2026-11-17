@@ -11,6 +11,7 @@
 # max(its in-image time on 6e8ce74 times 1.5, 10 s) = 10 s (measured 4.18 s and 3.57 s, libtest's `finished in`, alone, pinned image on Furnace).
 # twin_tier2's every_bit_the_reference_writes_is_covered_by_a_ledger_row (this branch; was a 5 s estimate): its `ok` less twin_tier2's `Running`, 31.045, an upper bound.
 # AET-WO-4230 follow-up refit (2026-11-16), rule 5, from normal runs 43889629997 (9b989a0) and 43895706619 (fdfd2b8), both green: every CPU-heavy test above at its worst in-shard time over the two runs, kept where 43875567562's row is larger and its code unchanged (lowered, code changed: board_tier2's a_missing_clock_enable_fails and a_vacuous_harness_fails, from the 10 s floor; twin_tier2's every_bit_...); each test with no row that measured 0.5 s or more gets one at its worst `ok` less its binary's `Running` over the two runs, an upper bound (144 rows); other rows and the four AET-WO-1310 estimates (all above their measured bounds) kept.
+# AET-WO-4220b: board_tier2's the_own_parts_fixture_passes_erc_drc_with_parity_and_extract is a Furnace estimate (6.47 s in the pinned image, times 2.8 as AET-WO-1310's), not a run, until the refit rule measures it.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.494
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	1.390
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.493
@@ -85,6 +86,7 @@ tests/board_tier2.rs	a_write_past_the_block_fails	350.648
 tests/board_tier2.rs	a_wrong_alternate_function_fails	347.983
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.431
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.523
+tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	23.912
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	560.336
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	46.596
 tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	952.852
@@ -92,6 +94,7 @@ tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_gener
 tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	19.070
 tests/board_tier2.rs	the_generated_board_proves	443.547
 tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	38.198
+tests/board_tier2.rs	the_own_parts_fixture_passes_erc_drc_with_parity_and_extract	18.116
 tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	67.309
 tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	6.877
 tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.987
@@ -546,5 +549,6 @@ tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	3.400
 tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
 tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
 # AET-WO-4230 follow-up: against_fab_tier2 split out of ci/colocate.tsv. Each test alone runs the shared --fab-out verify, then its own --against-fab verify, one at a time: 2 x 579 s, the worst single verify of the block in runs 43889629997 and 43895706619 (510-579 s; an upper bound).
+# AET-WO-1312: board_tier2's the_bench_board_passes_every_gate_at_two_and_four_layers is a Furnace estimate, not a run: 8.54 s in the pinned image on Furnace, times 2.8 (AET-WO-1310's factor), 23.912; replace it at the next refit.
 tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	1158.000
 tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	1158.000

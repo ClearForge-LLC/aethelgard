@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bench;
 pub mod board;
 pub mod classes;
 pub mod connectors;
@@ -63,7 +64,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
 /// after `4300d3` and then `4300g`). Nothing supplies any of them for an
 /// older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
+/// Version 13 requires `pin_capacitance` on every I2C and SPI device, `null`
+/// or a declaration (`AET-WO-4220b`).
+/// Version 14 adds `test_points` and `mcu.reset_switch` (`AET-WO-1312`,
+/// renumbered from 13 by the same rule, merging after `4220b`), each
+/// optional as that work order states (absent is no test point and no
+/// switch), so that a reader of version 13 refuses a file that may carry
+/// them by its version, never by an unknown key.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 14;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -71,12 +79,16 @@ pub const GND: &str = "GND";
 /// The MCU's debug nets (`AET-WO-4300g`): the emitter puts SWDIO (`PA13`)
 /// and SWCLK (`PA14`) on these, and NRST on [`NRST`], and a connector pin may
 /// name any of them. No other declared net may take one, in any case.
+/// `AET-WO-1312` adds [`BOOT0`]: a connector pin or test point that names it
+/// puts the boot pin on its own net, through a pull-down
+/// ([`bench::carries_boot0`]).
 pub const SWDIO: &str = "SWDIO";
 pub const SWCLK: &str = "SWCLK";
 pub const NRST: &str = "NRST";
-pub const DEBUG_NETS: [&str; 3] = [SWDIO, SWCLK, NRST];
+pub const BOOT0: &str = "BOOT0";
+pub const DEBUG_NETS: [&str; 4] = [SWDIO, SWCLK, NRST, BOOT0];
 
-/// The top-level specification, version 12 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 14 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
@@ -124,6 +136,12 @@ pub struct Specification {
     /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
     /// list acknowledges none.
     pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
+    /// Each test point: a pad on a declared net (`AET-WO-1312`). Absent or
+    /// empty declares none, as the work order states, and an empty list is
+    /// not written back. Private as `connectors` is (`RUL-16`): read through
+    /// [`Specification::declared_test_points`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    test_points: Vec<bench::TestPoint>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -271,6 +289,10 @@ pub struct Mcu {
     /// Required as a key; `null` when a regulator's output is the supply.
     #[serde(deserialize_with = "Option::deserialize")]
     pub supply_source: Option<SupplySource>,
+    /// A push-button from `NRST` to `GND` (`AET-WO-1312`). Absent is `false`,
+    /// as the work order states, and `false` is not written back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub reset_switch: bool,
 }
 
 /// A connector pin the supply enters by.
@@ -337,6 +359,10 @@ pub struct I2cDevice {
     pub supply: String,
     pub bus: String,
     pub address: u8,
+    /// Its pins' capacitance as the specification declares it, or `null`.
+    /// Required as a key (`INV-06`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,6 +373,32 @@ pub struct SpiDevice {
     pub supply: String,
     pub bus: String,
     pub cs: Signal,
+    /// As [`I2cDevice::pin_capacitance`].
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
+}
+
+/// A device's pin capacitance as the specification declares it (`AET-WO-4220b`;
+/// the `AET-WO-4220` D10 ruling, comment 6890080737): for a part whose
+/// datasheet prints a typical only, or nothing. `extract` counts it on every
+/// bounded line the part's pins sit on, under its condition, named as
+/// declared and never as a maximum (`RUL-19`). A part whose parts-table row
+/// cites a maximum is counted at that maximum (`AET-WO-4300c` D3), and a
+/// declaration for it is refused (`PinCapacitanceAlreadyCited`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct PinCapacitance {
+    pub declared: DeclaredPinCapacitance,
+}
+
+/// The value counted for each of the device's pins on a bounded line, the
+/// condition under which the bound then holds, and where the value comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct DeclaredPinCapacitance {
+    pub femtofarads: u64,
+    pub condition: String,
+    pub source: String,
 }
 
 /// The electrical bounds one net must stay within.
@@ -771,6 +823,8 @@ object_only!(
     SpiBus,
     I2cDevice,
     SpiDevice,
+    PinCapacitance,
+    DeclaredPinCapacitance,
     NetConstraint,
     PinAssignment,
     AnalogLine,
@@ -1517,6 +1571,20 @@ pub enum IrValidationError {
         net: String,
     },
     #[error(
+        "test point `{id}` names net `{net}`, which is no declared signal, voltage domain, `GND` or debug net: a test point cannot invent a net (`AET-WO-1312`)"
+    )]
+    TestPointNetUnknown { id: String, net: String },
+    #[error("test point `{id}` takes a reference that {other} already holds (`AET-WO-1312`)")]
+    TestPointReferenceTaken { id: String, other: String },
+    #[error(
+        "net `{id}` carries two test points, `{first}` and `{second}`; one is enough (`AET-WO-1312`)"
+    )]
+    TestPointNetRepeated {
+        id: String,
+        first: String,
+        second: String,
+    },
+    #[error(
         "no declared connector carries `SWDIO`, `SWCLK`, `GND` and the MCU's supply `{supply}` together, so nothing can program the part: declare one, a DS-009 debug port or an explicit pin map (`AET-WO-4300g`)"
     )]
     NoProgrammingPath { supply: String },
@@ -1662,6 +1730,52 @@ pub enum IrValidationError {
         part: String,
         modes: Vec<u8>,
         driven: u8,
+        citation: String,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance outside the
+    /// parts table's own range ([`parts::MAX_PIN_FEMTOFARADS`]): zero would
+    /// drop the device's pins from every bound they sit on, and above it is
+    /// no signal pin.
+    #[error("device `{id}` declares a pin capacitance of {femtofarads} fF, not 1 to {maximum} fF")]
+    PinCapacitanceOutOfRange {
+        id: String,
+        femtofarads: u64,
+        maximum: u64,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2, adversarial A1): a declared pin
+    /// capacitance on an I2C device below UM10204's `Ci`, which every
+    /// undeclared I2C pin is counted at: a declaration may name a condition
+    /// or raise a pin's term, never lower it below the standard's maximum.
+    #[error(
+        "I2C device `{id}` declares a pin capacitance of {femtofarads} fF, below UM10204's Ci of {ci} fF (rev. 7.0 Table 10, p. 43), which every undeclared I2C pin is counted at"
+    )]
+    PinCapacitanceBelowI2cCi {
+        id: String,
+        femtofarads: u64,
+        ci: u64,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance for a part
+    /// whose row cites a maximum, which a declaration never replaces
+    /// (`AET-WO-4300c` D3).
+    #[error(
+        "device `{id}` declares a pin capacitance, but its part `{part}` cites a maximum of {maximum_femtofarads} fF ({citation}), which a declaration never replaces"
+    )]
+    PinCapacitanceAlreadyCited {
+        id: String,
+        part: String,
+        maximum_femtofarads: u64,
+        citation: String,
+    },
+    /// Step 14 (`AET-WO-4220b` H2, ruled on #192 Q2): a declared pin
+    /// capacitance below the typical its part's row cites, on any bus.
+    #[error(
+        "device `{id}` declares a pin capacitance of {femtofarads} fF, below the typical of {typical_femtofarads} fF its part `{part}` cites ({citation})"
+    )]
+    PinCapacitanceBelowTypical {
+        id: String,
+        part: String,
+        femtofarads: u64,
+        typical_femtofarads: u64,
         citation: String,
     },
     /// Step 21 (`AET-WO-1208` §1.3, `1207` F1): the refusal `solve` made, by
@@ -1822,6 +1936,9 @@ impl IrValidationError {
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
             Self::ConnectorPinMissing { .. } => "ConnectorPinMissing",
             Self::ConnectorNetUnknown { .. } => "ConnectorNetUnknown",
+            Self::TestPointNetUnknown { .. } => "TestPointNetUnknown",
+            Self::TestPointReferenceTaken { .. } => "TestPointReferenceTaken",
+            Self::TestPointNetRepeated { .. } => "TestPointNetRepeated",
             Self::NoProgrammingPath { .. } => "NoProgrammingPath",
             Self::SupplyHasNoSource { .. } => "SupplyHasNoSource",
             Self::SupplyHasTwoSources { .. } => "SupplyHasTwoSources",
@@ -1846,6 +1963,10 @@ impl IrValidationError {
             Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
             Self::SpiModeNotDriven { .. } => "SpiModeNotDriven",
+            Self::PinCapacitanceOutOfRange { .. } => "PinCapacitanceOutOfRange",
+            Self::PinCapacitanceAlreadyCited { .. } => "PinCapacitanceAlreadyCited",
+            Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
+            Self::PinCapacitanceBelowTypical { .. } => "PinCapacitanceBelowTypical",
             Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
@@ -1997,6 +2118,9 @@ impl IrValidationError {
             | Self::ConnectorPinRepeated { id, .. }
             | Self::ConnectorPinMissing { id, .. }
             | Self::ConnectorNetUnknown { id, .. }
+            | Self::TestPointNetUnknown { id, .. }
+            | Self::TestPointReferenceTaken { id, .. }
+            | Self::TestPointNetRepeated { id, .. }
             | Self::ConnectorBudgetMissing { id, .. }
             | Self::ConnectorBudgetNotApplicable { id, .. }
             | Self::ConnectorReferenceReserved { id }
@@ -2014,7 +2138,11 @@ impl IrValidationError {
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::MissingSpiConstraint { bus, .. } => Some(bus),
-            Self::SpiModeNotDriven { id, .. } => Some(id),
+            Self::SpiModeNotDriven { id, .. }
+            | Self::PinCapacitanceOutOfRange { id, .. }
+            | Self::PinCapacitanceAlreadyCited { id, .. }
+            | Self::PinCapacitanceBelowI2cCi { id, .. }
+            | Self::PinCapacitanceBelowTypical { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
@@ -2299,6 +2427,22 @@ fn optional_identifier(
     value.as_deref().map_or(Ok(()), |v| plain(v, path))
 }
 
+/// Step 2 (`AET-WO-4220b`): a declared pin capacitance's condition and source
+/// are each a source text ([`board::source`]).
+fn declared_texts(c: &Option<PinCapacitance>, at: &str) -> Result<(), IrValidationError> {
+    if let Some(c) = c {
+        board::source(
+            &c.declared.condition,
+            &format!("{at}.pin_capacitance.declared.condition"),
+        )?;
+        board::source(
+            &c.declared.source,
+            &format!("{at}.pin_capacitance.declared.source"),
+        )?;
+    }
+    Ok(())
+}
+
 fn signal_identifiers(signal: &Signal, path: &str) -> Result<(), IrValidationError> {
     plain(&signal.net, || format!("{path}.net"))?;
     optional_identifier(&signal.pin, || format!("{path}.pin"))
@@ -2326,6 +2470,13 @@ impl Specification {
         &self.connectors
     }
 
+    /// The test points the specification declares, in document order; fenced
+    /// as [`Specification::declared_connectors`] is (`AET-WO-1312`): nothing
+    /// solves a test point, and no runner reads one.
+    pub fn declared_test_points(&self) -> &[bench::TestPoint] {
+        &self.test_points
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -2340,6 +2491,8 @@ impl Specification {
         self.validate_parts(table)?;
         // 15
         connectors::validate(self)?;
+        // 15a (`AET-WO-1312`)
+        bench::validate(self)?;
         // 16 (`AET-WO-4300d`)
         power::check(self)?;
         // 17, 18 (`AET-WO-4300g`)
@@ -2652,6 +2805,58 @@ impl Specification {
                     .find(|b| b.id == d.bus)
                     .map_or(0, |b| b.speed_hz);
                 check_spi_device(&d.reference, p, speed_hz)?;
+            }
+        }
+        // `AET-WO-4220b` §1.2: a declaration is within the table's own range,
+        // and never stands beside a cited maximum. I2C then SPI, in
+        // document order.
+        let declared = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part, &d.pin_capacitance, true))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (&d.reference, &d.part, &d.pin_capacitance, false)),
+            );
+        for (reference, part, pin_capacitance, i2c) in declared {
+            let Some(c) = pin_capacitance else { continue };
+            let femtofarads = c.declared.femtofarads;
+            if !(1..=parts::MAX_PIN_FEMTOFARADS).contains(&femtofarads) {
+                return Err(IrValidationError::PinCapacitanceOutOfRange {
+                    id: reference.clone(),
+                    femtofarads,
+                    maximum: parts::MAX_PIN_FEMTOFARADS,
+                });
+            }
+            if i2c && femtofarads < electrical::I2C_PIN_CI_FEMTOFARADS {
+                return Err(IrValidationError::PinCapacitanceBelowI2cCi {
+                    id: reference.clone(),
+                    femtofarads,
+                    ci: electrical::I2C_PIN_CI_FEMTOFARADS,
+                });
+            }
+            if let Some(p) = part_entry(table, reference, part)?
+                && let Some(maximum) = p.pin_capacitance_femtofarads
+            {
+                return Err(IrValidationError::PinCapacitanceAlreadyCited {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    maximum_femtofarads: maximum,
+                    citation: cite(&p.citations.pin_capacitance),
+                });
+            }
+            if let Some(p) = part_entry(table, reference, part)?
+                && let Some(typical) = p.pin_capacitance_typical_femtofarads
+                && femtofarads < typical
+            {
+                return Err(IrValidationError::PinCapacitanceBelowTypical {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    femtofarads,
+                    typical_femtofarads: typical,
+                    citation: cite(&p.citations.pin_capacitance),
+                });
             }
         }
         self.validate_lifecycle(table)
@@ -3116,6 +3321,7 @@ impl Specification {
             plain(&device.part, || format!("{at}.part"))?;
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, device) in self.spi_devices.iter().enumerate() {
             let at = format!("spi_devices[{i}]");
@@ -3126,6 +3332,7 @@ impl Specification {
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
             signal_identifiers(&device.cs, &format!("{at}.cs"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, net) in self.net_constraints.iter().enumerate() {
             plain(&net.net_name, || format!("net_constraints[{i}].net_name"))?;
@@ -3144,7 +3351,14 @@ impl Specification {
             signal_identifiers(&p.tx, &format!("{at}.tx"))?;
             signal_identifiers(&p.rx, &format!("{at}.rx"))?;
         }
-        connectors::identifiers(self)
+        connectors::identifiers(self)?;
+        for (i, t) in self.test_points.iter().enumerate() {
+            plain(&t.net, || format!("test_points[{i}].net"))?;
+            identifier(IdentifierKind::Reference, &t.reference, || {
+                format!("test_points[{i}].reference")
+            })?;
+        }
+        Ok(())
     }
 }
 

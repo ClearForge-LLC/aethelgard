@@ -1,5 +1,5 @@
 {
-  "schema_version": 12,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -74,14 +74,16 @@
       "part": "BME280",
       "supply": "VDD_1V8",
       "bus": "SENSORS",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "U6",
       "part": "ICP10111",
       "supply": "VDD_1V8",
       "bus": "SENSORS",
-      "address": 99
+      "address": 99,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [
@@ -93,7 +95,8 @@
       "cs": {
         "net": "IMU_CS",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U7",
@@ -103,7 +106,8 @@
       "cs": {
         "net": "IMU2_CS",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [
