@@ -1711,6 +1711,19 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             "a serial port's frame went in before the port before it, without it, or past the boot",
         );
     }
+    // The first port goes in one quantum after the boot word, which the
+    // boot writes after its start (`AET-WO-2302b` ADV-S4): earlier, the boot
+    // word's instant would precede the run, and `boot_word_instant` finds none.
+    if injected
+        .first()
+        .copied()
+        .flatten()
+        .is_some_and(|t| t < TWIN_QUANTUM_NS)
+    {
+        return Err(
+            "the first serial port's frame went in less than a quantum after the boot's start, before any boot word",
+        );
+    }
     Ok(())
 }
 
@@ -2499,26 +2512,17 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         && span_ns.is_some_and(|s| s < *grain_ns);
     let covers =
         last_ns.is_some_and(|l| l.saturating_add(*period_ns).saturating_add(*grain_ns) >= *end_ns);
-    // Checked: a forged count must not wrap onto the honest spacing, nor
-    // panic (third adversarial review, F2).
-    let spaced = first_ns
-        .zip(*last_ns)
-        .zip(*span_ns)
-        .is_some_and(|((f, l), s)| {
-            rises
-                .checked_sub(1)
-                .and_then(|n| n.checked_mul(*period_ns))
-                .is_some_and(|due| (l - f).abs_diff(due) <= s)
-        });
-    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
-    let passing = shaped && spaced && alternating && covers;
+    let continuous = witness_continuous(w);
+    let passing = shaped && continuous && covers;
     match status.as_str() {
         "witnessed" => passing && *off_grid > 0,
         "static_only" => passing && *off_grid == 0,
         "unwitnessed" => *rises < 2,
         "unreadable" => none,
         "batched" => *rises >= 2 && *batched > 0,
-        "stopped" => shaped && !covers,
+        // The judge's `witness_motor` gives `stopped` only to edges on the
+        // model's sequence, as a passing one (`AET-WO-2302b` ADV-M1).
+        "stopped" => shaped && continuous && !covers,
         "unanchored" => {
             anchor_ns.is_none()
                 && first_ns.is_none()
@@ -2530,6 +2534,39 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         "mismatch" => none || *rises >= 2,
         _ => false,
     }
+}
+
+/// Whether kind 26 `w`'s edges are continuous on the model's sequence, as
+/// the judge's `witness_motor` gives every status past `mismatch`: its last
+/// rise exactly `rises - 1` periods after its first, within its span (a
+/// rise every period between them), and its edges alternating (as many
+/// falls as rises, or one fewer). `false` for any other record.
+pub fn witness_continuous(w: &Record) -> bool {
+    let Record::MotorWitness {
+        period_ns,
+        rises,
+        falls,
+        first_ns,
+        last_ns,
+        span_ns,
+        ..
+    } = w
+    else {
+        return false;
+    };
+    // Checked: a forged count must not wrap onto the honest spacing, nor
+    // panic (third adversarial review, F2).
+    let spaced = first_ns
+        .zip(*last_ns)
+        .zip(*span_ns)
+        .is_some_and(|((f, l), s)| {
+            rises
+                .checked_sub(1)
+                .and_then(|n| n.checked_mul(*period_ns))
+                .is_some_and(|due| l.checked_sub(f).is_some_and(|d| d.abs_diff(due) <= s))
+        });
+    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
+    spaced && alternating
 }
 
 fn check_joins(records: &[Record]) -> Result<(), &'static str> {

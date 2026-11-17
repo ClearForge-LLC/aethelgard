@@ -1390,3 +1390,125 @@ fn s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant() {
         "{a:?}"
     );
 }
+
+// ---- AET-WO-2302b fix round: the adversarial pass's findings, held ----
+
+/// ADV-S4: replay refuses a first injection less than a quantum after the
+/// boot's start: the judge injects the first port one quantum after the
+/// boot word, which would then precede the run, and the wire time past the
+/// run (kind 29's instant, `serial_wire_past_run`) would be unbound. At
+/// exactly a quantum, the same run is accepted.
+#[test]
+fn adv_s4_replay_refuses_a_first_injection_under_a_quantum() {
+    let gps = Case {
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let at = |first: u64| {
+        injected(
+            run(&gps, &[(SERIAL_ECHO_FINDING, 1)]),
+            Some(first),
+            Some(2_000_000),
+        )
+    };
+    assert!(campaign::check_run(&at(100_000)).is_ok());
+    assert_eq!(
+        campaign::check_run(&at(99_999)).err(),
+        Some(
+            "the first serial port's frame went in less than a quantum after the boot's start, before any boot word"
+        )
+    );
+}
+
+/// The GPS port's RX pin (PA3) in input mode at its injection, off its AF7
+/// (kind 29's `rx_at_injection`).
+fn gps_rx_unrouted(mut r: Vec<Record>) -> Vec<Record> {
+    for x in r.iter_mut() {
+        if let Record::SerialWitness {
+            label,
+            rx_at_injection,
+            ..
+        } = x
+            && label == "GPS"
+        {
+            *rx_at_injection = Some((0b00, 0));
+        }
+    }
+    r
+}
+
+/// ADV-S1: a port in the wire time past the run whose echo is missing with
+/// its RX pin off its AF at the injection is the pin's, not the bound's:
+/// `H3` never takes it, and its own `I6` names the run, as the same
+/// records do with the wire inside the run; beside the console's failing
+/// writes (`S5`) too, never the harness set aside for software.
+#[test]
+fn adv_s1_h3_never_takes_an_echo_whose_rx_pin_was_unrouted_at_the_injection() {
+    for (case, more) in [
+        (
+            Case {
+                gps: Echo::Missing,
+                ..Case::default()
+            },
+            None,
+        ),
+        (
+            Case {
+                console_tags_hold: false,
+                gps: Echo::Missing,
+                ..Case::default()
+            },
+            Some((SERIAL_TAG_FINDING, 1)),
+        ),
+    ] {
+        let inside: Vec<(&str, u64)> = [(SERIAL_ECHO_FINDING, 1)].into_iter().chain(more).collect();
+        let past: Vec<(&str, u64)> = inside
+            .iter()
+            .copied()
+            .chain([(campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1)])
+            .collect();
+        let control = attributed(&gps_rx_unrouted(run(&case, &inside)));
+        assert_eq!(control.rule, Rule::I6, "{control:?}");
+        let r = gps_rx_unrouted(injected(
+            run(&case, &past),
+            Some(LATE_CONSOLE),
+            Some(LATE_CONSOLE + 900_000),
+        ));
+        let a = attributed(&r);
+        assert_eq!(
+            (a.domain, a.rule),
+            (Domain::Indeterminate, Rule::I6),
+            "{a:?}"
+        );
+        assert_eq!(named(&r, &a), ["kind 29 GPS"]);
+        // Routed at the injection, the same echo is the bound's.
+        let routed = injected(
+            run(&case, &past),
+            Some(LATE_CONSOLE),
+            Some(LATE_CONSOLE + 900_000),
+        );
+        let a = attributed(&routed);
+        let want = if more.is_some() { Rule::S5 } else { Rule::H3 };
+        assert_eq!(a.rule, want, "{a:?}");
+    }
+    // A port the run ended before injecting has no RX pin read at an
+    // injection: its missing echo stays the bound's.
+    let none = Case {
+        console: Echo::Missing,
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &none,
+            &[
+                (SERIAL_ECHO_FINDING, 2),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        Some(99_500_000),
+        None,
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::H3, "{a:?}");
+}

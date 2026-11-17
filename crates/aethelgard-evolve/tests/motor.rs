@@ -1446,3 +1446,295 @@ fn proposed(r: &[Record], a: &Attribution) -> Outcome {
     };
     propose::propose(&[&Rules], &input).outcome
 }
+
+// ---- AET-WO-2302b fix round: the adversarial pass's findings, held ----
+
+/// The refusal `check_run` gives a kind 26 whose status its counts do not
+/// allow.
+const WITNESS_REFUSED: &str =
+    "a motor witness's status is not what its counts and its output's timing give";
+
+/// ADV-M1: replay refuses a `stopped` witness that is not continuous, as
+/// the judge's `witness_motor` gives none: 10 rises over 0.93 ms at a 424 ns
+/// period (not spaced), or a rise every period with five falls missing (not
+/// alternating). Each beside the same witness unmodified, which replay
+/// accepts and `H1` takes, so the refusal is this guard's.
+#[test]
+fn adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous() {
+    let findings = [
+        (MOTOR_MISMATCH_FINDING, 1),
+        (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
+    ];
+    let control = dshot(&findings, &late(2187));
+    assert_eq!(attributed(&control).rule, Rule::H1);
+    let gapped = dshot(&findings, &|r| {
+        late(2187)(r);
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                off_grid,
+                ..
+            } = w
+            {
+                (*rises, *falls, *off_grid) = (10, 10, 19);
+            }
+        });
+    });
+    assert_eq!(campaign::check_run(&gapped).err(), Some(WITNESS_REFUSED));
+    let unpaired = dshot(&findings, &|r| {
+        late(2187)(r);
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                falls, off_grid, ..
+            } = w
+            {
+                (*falls, *off_grid) = (*falls - 5, *off_grid - 5);
+            }
+        });
+    });
+    assert_eq!(campaign::check_run(&unpaired).err(), Some(WITNESS_REFUSED));
+}
+
+/// ADV-M2: `I5` names both halves' evidence, so a software window rule
+/// citing the judge's stop (kind 30: `S11`'s read-back off its value, or
+/// `S10`'s stop that cleared `CEN`) beside the reference bus past its
+/// ceiling (`E1`) is `I5` citing kind 30, which `I5` allows: every evidence
+/// kind is one the named rule allows ([`attributed`] checks it).
+#[test]
+fn adv_m2_i5_cites_the_judge_s_stop_beside_an_electrical_fault() {
+    let s11 = |r: &mut Vec<Record>| set_stop(r, |g, _| g[9].observed = Some(41));
+    let s10 = |r: &mut Vec<Record>| {
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness { edges_after, .. } = w {
+                *edges_after = 5;
+            }
+        })
+    };
+    for (kind, edit) in [
+        (
+            campaign::JUDGE_STOP_MISMATCH_FINDING,
+            &s11 as &dyn Fn(&mut Vec<Record>),
+        ),
+        (campaign::MOTOR_EDGE_AFTER_FINDING, &s10),
+    ] {
+        let mut r = dshot(&[(campaign::PAST_CEILING_FINDING, 2), (kind, 1)], edit);
+        fault_sensors(&mut r);
+        let a = attributed(&r);
+        assert_eq!(
+            (a.domain, a.rule),
+            (Domain::Indeterminate, Rule::I5),
+            "{a:?}"
+        );
+        assert!(indices(&a.evidence).contains(&stop_at(&r)), "{a:?}");
+    }
+}
+
+/// `M2`'s timer started again after the judge's stop: `CEN` rose twice
+/// and `edges_after` edges after the window.
+fn restarted(edges_after: u64) -> impl Fn(&mut Vec<Record>) {
+    move |r: &mut Vec<Record>| {
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                cen_rises,
+                edges_after: e,
+                ..
+            } = w
+            {
+                (*cen_rises, *e) = (2, edges_after);
+            }
+        });
+    }
+}
+
+/// Kind 11's end read of `TIM2.CR1` observed as `observed` (expected
+/// `0x80`, the judge's cleared value).
+fn tim2_cr1_observed(r: &mut [Record], observed: u32) {
+    for x in r.iter_mut() {
+        if let Record::RegisterObserved { name, reading } = x
+            && name == "TIM2.CR1"
+        {
+            reading.observed = Some(observed);
+        }
+    }
+}
+
+/// What the records lack when `CEN` was set again after the judge's stop
+/// cleared it.
+const CEN_AGAIN: &str = "CEN set again after the judge's stop cleared it (kind 30) and read set at the end (kind 11's CR1): when each CEN rise fell is in no record, so a re-enable after the window (harmless on silicon, where CEN was still set) cannot be told from a restart";
+
+/// ADV-M3 (the PM's ruling): a firmware that sets `CEN` again after the
+/// judge's stop, harmless on silicon where `CEN` was set, shows a second
+/// `CEN` rise, edges after the window and `CR1` read at the end with `CEN`
+/// set against kind 11's expectation of the judge's cleared value. The
+/// records cannot tell that from a restart: `S7`, `S10` and the `CR1`
+/// mismatch (its `CEN`, the judge's own act, never `S4`'s) are each
+/// unexplained by name, never software.
+#[test]
+fn adv_m3_cen_set_again_after_the_judge_s_stop_is_unexplained_by_name() {
+    let r = dshot(
+        &[
+            ("register_mismatch", 1),
+            (campaign::MOTOR_ANCHOR_REPEATED_FINDING, 1),
+            (campaign::MOTOR_EDGE_AFTER_FINDING, 1),
+        ],
+        &|r| {
+            restarted(4000)(r);
+            tim2_cr1_observed(r, 0x81);
+        },
+    );
+    let a = attributed_any(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I1),
+        "{a:?}"
+    );
+    assert!(a.evidence.is_empty());
+    assert_eq!(
+        a.unexplained,
+        [
+            format!("motor_anchor_repeated: TIM2: {CEN_AGAIN}"),
+            format!("motor_edge_after_window: M2: {CEN_AGAIN}"),
+            format!("register_mismatch: TIM2.CR1: {CEN_AGAIN}"),
+        ]
+    );
+}
+
+/// The ruling's other side: with `CR1`'s end read showing `CEN` clear, the
+/// edges after the window are the firmware's (`S10`: it drove the pin, or
+/// restarted the timer and stopped it again), and two `CEN` rises are
+/// `S7`'s, which names the run.
+#[test]
+fn adv_m3_with_cen_clear_at_the_end_s10_and_s7_stand() {
+    let after = [(campaign::MOTOR_EDGE_AFTER_FINDING, 1)];
+    let r = dshot(&after, &|r| {
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness { edges_after, .. } = w {
+                *edges_after = 4000;
+            }
+        })
+    });
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S10), "{a:?}");
+    assert_eq!(indices(&a.evidence), [m2_witness(&r), stop_at(&r)]);
+    let r = dshot(
+        &[
+            (campaign::MOTOR_ANCHOR_REPEATED_FINDING, 1),
+            (campaign::MOTOR_EDGE_AFTER_FINDING, 1),
+        ],
+        &restarted(4000),
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S7), "{a:?}");
+    assert_eq!(indices(&a.evidence), [m2_witness(&r)]);
+}
+
+/// A field of a stopped timer's register other than the judge's `CEN` is
+/// still the firmware's (`S4`): `CR1`'s `ARPE` cleared, beside `CEN` set
+/// again or not, and `ARR` re-rated; and `CEN` itself once the stop left it
+/// set, which kind 11 then expects set.
+#[test]
+fn adv_m3_a_stopped_timer_s_other_field_is_still_s4() {
+    let mismatch = [("register_mismatch", 1)];
+    for observed in [0x00, 0x01] {
+        let r = dshot(&mismatch, &|r| tim2_cr1_observed(r, observed));
+        let a = attributed(&r);
+        assert_eq!(
+            (a.domain, a.rule),
+            (Domain::Software, Rule::S4),
+            "{observed:#x} {a:?}"
+        );
+        assert_eq!(named(&r, &a), ["TIM2.CR1"]);
+        // Its report cites `CR1` without `CEN`, the judge's own act.
+        let Outcome::GeneratorReport(report) = &proposed(&r, &a) else {
+            panic!("{:?}", proposed(&r, &a))
+        };
+        let what: Vec<(&str, u64, u64, Option<u64>)> = report
+            .expectations
+            .iter()
+            .map(|e| (e.what.as_str(), e.mask.unwrap(), e.solved, e.observed))
+            .collect();
+        assert_eq!(what, [("TIM2.CR1", 0xFE, 0x80, Some(0))], "{observed:#x}");
+    }
+    // A stop that left `CEN` set: kind 11 expects the solved `CEN`, so the
+    // firmware clearing it is its own, cited.
+    let r = dshot(
+        &[
+            (campaign::JUDGE_STOP_MISSING_FINDING, 1),
+            ("register_mismatch", 1),
+        ],
+        &|r| {
+            stop_left_set(r);
+            tim2_cr1_observed(r, 0x80);
+        },
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
+    let Outcome::GeneratorReport(report) = &proposed(&r, &a) else {
+        panic!("{:?}", proposed(&r, &a))
+    };
+    assert_eq!(report.expectations[0].mask, Some(0xFF));
+    let r = dshot(&mismatch, &|r| {
+        for x in r.iter_mut() {
+            if let Record::RegisterObserved { name, reading } = x
+                && name == "TIM2.ARR"
+            {
+                reading.observed = Some(107);
+            }
+        }
+    });
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
+    assert_eq!(named(&r, &a), ["TIM2.ARR"]);
+}
+
+/// ADV-M4 (the README's sentence): a harness rule's event joins another
+/// rule's evidence only where the record is that rule's own evidence: the
+/// DShot witness the run cut (`H1`'s) with edges before its anchor is
+/// `S9`'s by its `edges_before`, so `S9` cites it; `H1`'s output (kind 24)
+/// is never cited.
+#[test]
+fn adv_m4_a_cut_witness_joins_s9_s_evidence_only_as_s9_s_own() {
+    let r = dshot(
+        &[
+            (MOTOR_MISMATCH_FINDING, 1),
+            (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
+            (campaign::MOTOR_EDGE_BEFORE_FINDING, 1),
+        ],
+        &|r| {
+            late(2187)(r);
+            set_dshot_witness(r, |w| {
+                if let Record::MotorWitness { edges_before, .. } = w {
+                    *edges_before = 3;
+                }
+            });
+        },
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S9), "{a:?}");
+    assert_eq!(indices(&a.evidence), [m2_witness(&r)]);
+}
+
+/// `S9` never fires on an output whose edges are all inside its window
+/// (`edges_before` 0): beside `MOTOR1`'s edges before its anchor, `S9`
+/// cites `MOTOR1`'s witness alone, never `M2`'s.
+#[test]
+fn s9_never_fires_on_an_output_with_no_edge_before_its_anchor() {
+    let r = dshot(&[(campaign::MOTOR_EDGE_BEFORE_FINDING, 1)], &|r| {
+        for x in r.iter_mut() {
+            if let Record::MotorWitness {
+                label,
+                edges_before,
+                ..
+            } = x
+                && label == "MOTOR1"
+            {
+                *edges_before = 3;
+            }
+        }
+    });
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S9), "{a:?}");
+    assert_eq!(indices(&a.evidence), [motor1_witness(&r)]);
+    assert_eq!(indices(&a.symptoms), [motor1_witness(&r)]);
+}

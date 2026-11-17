@@ -85,7 +85,9 @@ pub enum Rule {
     /// topology (its pin's mode or alternate function, its port's or timer's
     /// clock gate, or one of its timer's registers). The twin models nothing
     /// electrical on a timer's pin, so no rule attributes a motor symptom to
-    /// the electrical half.
+    /// the electrical half. `CEN` of a timer's `CR1` once the judge's stop
+    /// cleared it (kind 30) is the judge's own act, never cited; a reading
+    /// wrong in it alone is unexplained by name (ADV-M3).
     S4,
     /// The symptom's serial port was the firmware's doing (`AET-WO-4300b`):
     /// a register field the port owns read back other than the solved
@@ -111,7 +113,12 @@ pub enum Rule {
     S6,
     /// `motor_anchor_repeated`: the timer's `CEN` rose more than once in the
     /// boot the judge reads (kind 26's `cen_rises`, its first output's
-    /// standing for the timer): the firmware started it again.
+    /// standing for the timer): the firmware started it again. Not when
+    /// `CEN` was set again after the judge's stop cleared it (kind 30, and
+    /// kind 11's end read of `CR1` with `CEN` set): no record says when each
+    /// rise fell, so a re-enable after the window, harmless on silicon where
+    /// `CEN` was still set, cannot be told from a restart, and the kind is
+    /// unexplained by name (ADV-M3).
     S7,
     /// `motor_anchor_out_of_order`, in a boot whose boot word is set (kind
     /// 10): the timer's anchor (kind 26's `anchor_ns`) is after the boot
@@ -128,8 +135,9 @@ pub enum Rule {
     /// anchor ran and left `CEN` cleared (kind 30's `cr1_after`): edges
     /// after it (kind 26's `edges_after`) are the firmware's, which restarted
     /// the timer or drove the pin after the window. Without such a stop the
-    /// edges may be the timer still running, and the kind is unexplained by
-    /// name.
+    /// edges may be the timer still running, and with `CEN` set again at the
+    /// end (kind 11's `CR1`) a re-enable harmless on silicon (as for `S7`):
+    /// either way the kind is unexplained by name.
     S10,
     /// `judge_stop_mismatch`: the judge's stop (kind 30), which left `CEN`
     /// cleared, read a solved register of the timer back off its solved
@@ -173,7 +181,8 @@ pub enum Rule {
     /// `serial_wire_past_run`, the twin's bound: from the boot word's
     /// instant (kind 29's first injection), the ports' frames and echoes
     /// (kind 27's framings) end past `MAX_VIRTUAL_NS`. A port in that sum
-    /// past the run whose echo alone is missing is the same bound's.
+    /// past the run whose echo alone is missing is the same bound's, unless
+    /// its RX pin was off its AF at the injection: that is the pin's.
     H3,
     /// `serial_injection_out_of_order`, the judge's own act: its injection
     /// chain, one port after another (`AET-WO-2302` D4), put a port's frame
@@ -303,7 +312,7 @@ impl Rule {
             Self::I2 => &[15],
             Self::I3 => &[7, 8, 9],
             Self::I4 => &[7, 25, 26],
-            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29],
+            Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29, 30],
             Self::I6 => &[28, 29],
             Self::H1 => &[24, 26],
             Self::H2 => &[24, 26, 30],
@@ -1212,7 +1221,52 @@ impl<'a> Run<'a> {
             .iter()
             .flat_map(|j| &j.owned)
             .any(|o| wrong(o, name, reading))
-            || mismatch(reading) & timer_bits(motor, name, reading) != 0
+            // belt-and-suspenders: `!self.judge_bits(name)` - a reading
+            // wrong in the judge's bits alone is unexplained by name
+            // (`judge_only`) before any rule reads it, and its kind,
+            // `register_mismatch`, is one finding per event, so the run is
+            // `I1` whatever a rule would cite.
+            || mismatch(reading) & timer_bits(motor, name, reading) & !self.judge_bits(name) != 0
+    }
+
+    /// The bits of kind 11 `name` whose expected value is the judge's own
+    /// act, never the firmware's (ADV-M3): `CEN` of a timer's `CR1` once
+    /// its stop (kind 30) cleared it, which kind 11 then expects cleared.
+    /// 0 for any other register.
+    fn judge_bits(&self, name: &str) -> u32 {
+        let stopped = name.strip_suffix(".CR1").is_some_and(|timer| {
+            (0..self.records.len()).any(|s| {
+                matches!(&self.records[s], Record::JudgeStop { timer: t, .. } if t == timer)
+                    && self.cleared(s)
+            })
+        });
+        u32::from(stopped)
+    }
+
+    /// Whether `timer`'s `CEN` was set again after the judge's stop cleared
+    /// it (kind 30): kind 11's end read of its `CR1` has `CEN` set (ADV-M3).
+    /// No record says when that `CEN` rise fell, so a re-enable after the
+    /// window, harmless on silicon where `CEN` was still set, cannot be told
+    /// from a restart.
+    fn cen_set_again(&self, timer: &str) -> bool {
+        let cr1 = format!("{timer}.CR1");
+        self.judge_bits(&cr1) != 0
+            && self.records.iter().any(|r| {
+                matches!(r, Record::RegisterObserved { name, reading }
+                    if *name == cr1 && reading.observed.is_some_and(|o| o & 1 != 0))
+            })
+    }
+
+    /// Kind 11 `i` wrong in the judge's own bits alone (`CR1`'s `CEN` set
+    /// again after the stop): what the records lack, named; `None` for any
+    /// other event.
+    fn judge_only(&self, i: usize) -> Option<String> {
+        let Record::RegisterObserved { name, reading } = &self.records[i] else {
+            return None;
+        };
+        let wrong = mismatch(reading);
+        (wrong != 0 && wrong & !self.judge_bits(name) == 0)
+            .then(|| format!("register_mismatch: {name}: {CEN_AGAIN}"))
     }
 
     /// Software evidence for motor output `m`: each register it owns that is
@@ -1309,9 +1363,10 @@ impl<'a> Run<'a> {
 
     /// `H1`'s evidence for output `m`'s failing witness, when the run's end
     /// cut it (`AET-WO-2302b`): its DShot timer's window, from its anchor,
-    /// passes `MAX_VIRTUAL_NS`, and its witness is `stopped` with its last
-    /// rise within a period and a grain of the run's end, where a rise was
-    /// due every period until it. The output ran until the run ended: the
+    /// passes `MAX_VIRTUAL_NS`, and its witness is `stopped`, continuous (a
+    /// rise every period from its first to its last), with its last rise
+    /// within a period and a grain of the run's end, where a rise was due
+    /// every period until it. The output ran until the run ended: the
     /// twin's bound, not the firmware's. `None` otherwise.
     fn cut_by_run(&self, m: usize) -> Option<Vec<usize>> {
         let motor = &self.motors[m];
@@ -1331,8 +1386,12 @@ impl<'a> Run<'a> {
         // belt-and-suspenders: `motor.dshot` (mutant M14 survives) - a PWM
         // window ends at the run's end, so its `stopped` witness's last rise
         // is more than a period before it and the last condition fails.
+        // belt-and-suspenders: `witness_continuous` - replay refuses a
+        // `stopped` witness that is not continuous (`check_run`'s
+        // `witness_consistent`, ADV-M1) before `attribute` reads it.
         (motor.dshot
             && status == "stopped"
+            && campaign::witness_continuous(&self.records[w])
             && a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS) > max
             && last.saturating_add(*period_ns).saturating_add(*grain_ns) >= max)
             .then(|| vec![motor.at, w])
@@ -1343,7 +1402,8 @@ impl<'a> Run<'a> {
     /// wire time that passes `MAX_VIRTUAL_NS` from the boot word's instant
     /// (`campaign::wire_past_run_ports`), its framing check holds with its
     /// writes read and held, and its witness shows its echo missing or cut
-    /// short (never `not_counted`) and nothing else. The evidence is the
+    /// short (never `not_counted`) and nothing else, its RX pin on its AF at
+    /// the injection when one was read (kind 29's `rx_at_injection`). The evidence is the
     /// first injection (the instant), the port's witness, and the summed
     /// ports' framings. `None` otherwise.
     fn wire_cut(&self, s: usize) -> Option<Vec<usize>> {
@@ -1355,12 +1415,19 @@ impl<'a> Run<'a> {
             matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
                 if l == label && t.holds())
         })?;
-        // The echo `missing` or `partial`: one `not_counted` came back with
-        // the RX pin off its AF at the injection, the pin's, not the bound's.
+        // The echo `missing` or `partial`, with the RX pin on its AF at the
+        // injection when one was read: one `not_counted` came back with the
+        // RX pin off its AF there, and with it off, no echo is the pin's,
+        // not the bound's, whatever came back (ADV-S1).
+        let rx_af = match self.serial_port(label)? {
+            Record::SerialPortSolved { rx_af, .. } => *rx_af,
+            _ => return None,
+        };
         let witness = self.records.iter().position(|r| {
-            matches!(r, Record::SerialWitness { label: l, echo, .. }
+            matches!(r, Record::SerialWitness { label: l, echo, rx_at_injection, .. }
                 if l == label
                     && matches!(echo.as_str(), "missing" | "partial")
+                    && (rx_at_injection.is_none() || campaign::routed(*rx_at_injection, rx_af))
                     && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
         })?;
         let mut evidence = vec![self.first_injection()?, witness];
@@ -1386,6 +1453,12 @@ impl<'a> Run<'a> {
             w.decided.push((rule, evidence));
             w.shown += 1;
         };
+        // One symptom the records cannot decide, named with what they lack.
+        let unexplained = |w: &mut Windowed, symptom: usize, missing: String| {
+            w.symptoms.push(symptom);
+            w.missing.push(missing);
+            w.shown += 1;
+        };
         match kind {
             campaign::MOTOR_ANCHOR_UNOBSERVED_FINDING => {
                 for i in witnesses(
@@ -1395,9 +1468,15 @@ impl<'a> Run<'a> {
                 }
             }
             campaign::MOTOR_ANCHOR_REPEATED_FINDING => {
-                for (_, i) in self.timers(false) {
-                    if matches!(self.records[i], Record::MotorWitness { cen_rises, .. } if cen_rises > 1)
+                for (m, i) in self.timers(false) {
+                    if !matches!(self.records[i], Record::MotorWitness { cen_rises, .. } if cen_rises > 1)
                     {
+                        continue;
+                    }
+                    let timer = self.motors[m].timer.0;
+                    if self.cen_set_again(timer) {
+                        unexplained(&mut w, i, format!("{kind}: {timer}: {CEN_AGAIN}"));
+                    } else {
                         each(&mut w, Rule::S7, i, vec![i]);
                     }
                 }
@@ -1472,14 +1551,17 @@ impl<'a> Run<'a> {
                         .and_then(|(t, a)| self.stop(t, a))
                         .filter(|&s| self.cleared(s));
                     match stop {
-                        Some(s) => each(&mut w, Rule::S10, i, vec![i, s]),
-                        None => {
-                            w.symptoms.push(i);
-                            w.shown += 1;
-                            w.missing.push(format!(
-                                "{kind}: {label}: no judge's stop of its timer at its anchor left CEN cleared (kind 30), so its edges after the window may be the timer still running"
-                            ));
+                        Some(_) if timer.is_some_and(|t| self.cen_set_again(t)) => {
+                            unexplained(&mut w, i, format!("{kind}: {label}: {CEN_AGAIN}"));
                         }
+                        Some(s) => each(&mut w, Rule::S10, i, vec![i, s]),
+                        None => unexplained(
+                            &mut w,
+                            i,
+                            format!(
+                                "{kind}: {label}: no judge's stop of its timer at its anchor left CEN cleared (kind 30), so its edges after the window may be the timer still running"
+                            ),
+                        ),
                     }
                 }
             }
@@ -1897,6 +1979,10 @@ struct Windowed {
     shown: u64,
 }
 
+/// What the records lack when a timer's `CEN` was set again after the
+/// judge's stop cleared it (ADV-M3, [`Run::cen_set_again`]).
+const CEN_AGAIN: &str = "CEN set again after the judge's stop cleared it (kind 30) and read set at the end (kind 11's CR1): when each CEN rise fell is in no record, so a re-enable after the window (harmless on silicon, where CEN was still set) cannot be told from a restart";
+
 /// The witness statuses that pass (`AET-WO-4300a` D4).
 const PASSING_WITNESS: [&str; 2] = ["witnessed", "static_only"];
 
@@ -2181,8 +2267,9 @@ impl RunView<'_> {
                     seen.push(f.clone());
                     new
                 });
-                // The motor outputs' fields of a timer register, as one.
-                let timer = run.timer_owned(name, reading);
+                // The motor outputs' fields of a timer register, as one,
+                // without the judge's own bits (ADV-M3).
+                let timer = run.timer_owned(name, reading) & !run.judge_bits(name);
                 if mismatch(reading) & timer != 0 {
                     fields.push(Field {
                         register: name.clone(),
@@ -2380,6 +2467,10 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     symptoms.extend(scoped.iter().copied());
 
     for &i in &scoped {
+        if let Some(missing) = state.judge_only(i) {
+            unexplained.insert(missing);
+            continue;
+        }
         match state.scope(i) {
             Some(scope) => decided.push(state.decide(scope)),
             // belt-and-suspenders: R2 joins every bus and device, so `check_run`
@@ -2412,7 +2503,8 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
             .expect("a failing run has a failing finding")
     };
     // The evidence is the named rule's: I5 names both halves', I1 none, and
-    // no rule a harness one's.
+    // no rule a harness one's (a record that is also the named rule's own
+    // evidence stays: a cut witness's `edges_before`, S9's).
     let mut evidence = BTreeSet::new();
     let mut masked = BTreeSet::new();
     for (r, e, m) in &decided {

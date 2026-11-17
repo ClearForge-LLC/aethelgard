@@ -622,7 +622,7 @@ For a symptom on a motor output (`AET-WO-4300a`: `motor_output_unwitnessed`, `mo
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
-| `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half | 11, 26 |
+| `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half. `CEN` of a timer's `CR1` once the judge's stop cleared it (kind 30) is the judge's own act, never cited; a reading wrong in it alone is unexplained by name (`register_mismatch: TIMn.CR1: …`, ADV-M3) | 11, 26 |
 | `I4` | indeterminate | no owned register is wrong (an output with no edges and every register right, or a static mismatch, which is the topology's) | 25, 26 |
 
 For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `serial_echo_missing`, `serial_capture_forged`, `serial_tag_mismatch` and `serial_framing_static_mismatch`, from kinds 29 and 28), and for a kind 11 wrong only in fields serial ports own (a port's TX and RX pins' `MODER` and `AFR` fields, their ports' and its USART's clock gates, and any register of its USART's block; the first port stands for a register several ports' fields share, and another port's fields are never this port's evidence):
@@ -640,17 +640,17 @@ For the twin's window findings (above), six software rules attribute the firmwar
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
 | `S6` | software | the output's witness logged edges with no `CEN` rise by any CPU store of its timer's `CR1` in the boot the judge reads: the firmware drove the pin, or started the timer, by a GPIO or DMA write | 26 |
-| `S7` | software | the timer's `CEN` rose more than once in that boot: the firmware started it again | 26 |
+| `S7` | software | the timer's `CEN` rose more than once in that boot: the firmware started it again. Not when `CEN` was set again after the judge's stop cleared it (kind 30) and kind 11's end read of its `CR1` has it set: no record says when each rise fell, so a re-enable after the window, harmless on silicon where `CEN` was still set, cannot be told from a restart, and the kind is unexplained by name (ADV-M3) | 26 |
 | `S8` | software | the boot word is set (kind 10) and the timer's anchor (kind 26) is after the boot word's instant, which kind 29's first injection places: the bring-up writes the boot word last | 10, 26, 29 |
 | `S9` | software | the witness shows edges before its timer's anchor: the pin driven before the timer started | 26 |
-| `S10` | software | the witness shows edges after the window the judge's stop closed, `CEN` cleared (kind 30): the timer restarted or the pin driven after it | 26, 30 |
+| `S10` | software | the witness shows edges after the window the judge's stop closed, `CEN` cleared (kind 30): the timer restarted or the pin driven after it. Not when kind 11's end read of the timer's `CR1` has `CEN` set again: unexplained by name, as for `S7` | 26, 30 |
 | `S11` | software | the judge's stop, which left `CEN` cleared, read a solved register of the timer off its solved value: the firmware wrote the timer inside its window | 30 |
 | `H1` | indeterminate | the DShot window's end, its anchor plus `DSHOT_WINDOW_NS`, passes the run's `MAX_VIRTUAL_NS`; the output's `stopped` witness whose last rise reaches the run's end (a `motor_timing_mismatch`, with no register of the output's wrong) is the same bound's | 24, 26 |
 | `H2` | indeterminate | the judge's stop at the anchor plus `DSHOT_WINDOW_NS` did not run, or left `CEN` set (kind 30, cited when present) | 24, 26, 30 |
-| `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing or cut short (never `not_counted`), its framing and writes holding and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
+| `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing or cut short (never `not_counted`), its framing and writes holding, its RX pin on its AF at the injection when one was read, and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
 | `H4` | indeterminate | the judge's sequential injection put a port's frame in out of order | 29 |
 
-A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms` but never in another rule's `evidence`, and `I5` never counts it. Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
+A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms`, and `I5` never counts it. Its evidence joins another rule's `evidence` only where the record is that rule's own evidence too (a DShot witness cut by the run, `H1`'s, whose `edges_before` are `S9`'s), never because of the harness (ADV-M4). Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
 
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
