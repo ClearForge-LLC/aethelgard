@@ -335,3 +335,41 @@ fn without_its_declaration_the_bmp581_is_an_i2c_pin_at_um10204_s_ci() {
     );
     fs::remove_file(spec).unwrap();
 }
+
+/// `AET-WO-4220b` H2, the architect's floor (Q2 on #192): the adversary's
+/// `ext_flip` reproduction. With the IMU lines' budgets at 20 pF, the same
+/// board fails `extract` when U5 declares 10 pF; declared at 1 fF it passed
+/// on `70d1621`. A declaration below the part's cited typical (DS-000347
+/// Table 4, C_I "< 10" pF TYP) is now refused by `validate`, before any bound.
+#[test]
+fn a_declaration_below_the_parts_cited_typical_is_refused() {
+    let flip = |ff: u64| {
+        spec_with(&format!("flip{ff}"), move |v| {
+            for c in v["net_constraints"].as_array_mut().unwrap() {
+                if c["net_name"] == "IMU_SCK" || c["net_name"] == "IMU_MOSI" {
+                    c["max_capacitance_femtofarads"] = 20_000.into();
+                }
+            }
+            for d in v["spi_devices"].as_array_mut().unwrap() {
+                if d["part"] == "ICM42688P" {
+                    d["pin_capacitance"]["declared"]["femtofarads"] = ff.into();
+                }
+            }
+        })
+    };
+    let at_typical = flip(10_000);
+    let (code, v) = extract(at_typical.to_str().unwrap());
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(line(&v, "IMU_SCK")["verdict"], "fail", "{v}");
+    let below = flip(1);
+    let (code, v) = extract(below.to_str().unwrap());
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(v["error"]["kind"], "PinCapacitanceBelowTypical", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("U5") && message.contains("DS-000347") && message.contains("10000 fF"),
+        "{v}"
+    );
+    fs::remove_file(at_typical).unwrap();
+    fs::remove_file(below).unwrap();
+}
