@@ -6,9 +6,10 @@
 mod common;
 
 use aethelgard_chaos::campaign::{
-    ARTIFACTS, SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING, SERIAL_PATTERN_FINDING,
-    SERIAL_STATIC_FINDING, SERIAL_TAG_FINDING, check_archived, check_run, check_serial_frames,
-    released, run_id, serial_witness_findings,
+    ARTIFACTS, MOTOR_ANCHOR_ORDER_FINDING, SERIAL_ECHO_FINDING, SERIAL_FORGED_FINDING,
+    SERIAL_PATTERN_FINDING, SERIAL_STATIC_FINDING, SERIAL_TAG_FINDING,
+    SERIAL_WIRE_PAST_RUN_FINDING, check_archived, check_run, check_serial_frames, released, run_id,
+    serial_witness_findings,
 };
 use aethelgard_chaos::record::{
     MAX_SERIAL_UNEXPECTED, MAX_SERIAL_UNEXPECTED_BYTES, Reading, Record, SerialCapture,
@@ -1431,4 +1432,229 @@ fn adversarial_4_a_pin_unrouted_once_solved_is_never_witnessed() {
         check_run(&judged(forged, &[(SERIAL_ECHO_FINDING, 1)])).map(|s| s.matched),
         Err("a serial witness's echo is not what its capture and its RX pin give")
     );
+}
+
+/// Sets both ports' injection instants in a [`run`].
+fn injected(r: &mut [Record], console: Option<u64>, sbus: Option<u64>) {
+    for (at, t) in [(WITNESS_CONSOLE, console), (WITNESS_SBUS, sbus)] {
+        if let Record::SerialWitness { injected_ns, .. } = &mut r[at] {
+            *injected_ns = t;
+        }
+    }
+}
+
+/// The replay error a verdict gets for either finding the boot word's
+/// instant decides (A2-5).
+const INSTANT_REFUSED: &str = "the verdict's serial_wire_past_run or motor_anchor_out_of_order does not match the boot word's instant";
+
+/// Adversarial pass 2, A2-5 (`AET-WO-2302`): `serial_wire_past_run` is
+/// bound by replay where the records decide it. The first port the chain
+/// injects goes in one quantum after the boot word, so its kind 29
+/// `injected_ns` places the boot word; from there the ports' frames and
+/// echoes (kind 27's framings, each its 8 paced bytes and one echoed
+/// character: the console's 8 x 100 000 + 86 876 = 886 876 ns at 115 200
+/// 8N1, SBUS's 8 x 200 000 + 120 000 = 1 720 000 ns at 100 000 8E2,
+/// 2 606 876 ns in all) must end inside the boot or the verdict names it
+/// once. Without the first port's injection the instant is not in the
+/// records, and the verdict names it at most once; before the boot word,
+/// never.
+#[test]
+fn a2_5_replay_binds_serial_wire_past_run_from_the_records() {
+    // The honest run: the boot word at 30 750 ns, the frames well inside.
+    assert!(ok(&run()));
+    let named = |r: Vec<Record>| judged(r, &[(SERIAL_WIRE_PAST_RUN_FINDING, 1)]);
+    assert_eq!(check_run(&named(run())).unwrap_err(), INSTANT_REFUSED);
+    // The console injected at 97 393 124 ns: the frames end at exactly
+    // 100 000 000 ns, inside; one ns later they pass it, and the verdict
+    // must name it, once.
+    let fits = edit(|r| injected(r, Some(97_393_124), Some(99_000_000)));
+    assert!(ok(&fits));
+    assert_eq!(check_run(&named(fits)).unwrap_err(), INSTANT_REFUSED);
+    let past = edit(|r| injected(r, Some(97_393_125), Some(99_000_000)));
+    assert_eq!(check_run(&past).unwrap_err(), INSTANT_REFUSED);
+    assert!(ok(&named(past.clone())));
+    assert_eq!(
+        check_run(&judged(past, &[(SERIAL_WIRE_PAST_RUN_FINDING, 2)])).unwrap_err(),
+        INSTANT_REFUSED
+    );
+    // SBUS held open: its frame never goes in, and adds nothing; the console
+    // alone ends at 98 280 001 ns.
+    let mut open = edit(|r| {
+        injected(r, Some(97_393_125), None);
+        set_witness(r, WITNESS_SBUS, |c, e, rx, _| {
+            *c = Some(SerialCapture {
+                patterns: 1,
+                cut: 0,
+                echoed: 0,
+                stray: false,
+                len: 9,
+            });
+            *e = "missing".into();
+            *rx = None;
+        });
+    });
+    let mut open_named = judged(
+        open.clone(),
+        &[(SERIAL_ECHO_FINDING, 1), (SERIAL_WIRE_PAST_RUN_FINDING, 1)],
+    );
+    open = judged(open, &[(SERIAL_ECHO_FINDING, 1)]);
+    for r in [&mut open, &mut open_named] {
+        if let Record::Scenario { overrides, .. } = &mut r[0] {
+            overrides.push(aethelgard_chaos::record::Override::SerialRxOpen {
+                port: "SBUS".into(),
+            });
+        }
+    }
+    assert!(ok(&open));
+    assert_eq!(check_run(&open_named).unwrap_err(), INSTANT_REFUSED);
+    // No frame went in (the boot ended first): the instant is not in the
+    // records, so the verdict may name it once, never twice.
+    let none = edit(|r| {
+        for (at, len) in [(WITNESS_CONSOLE, 12), (WITNESS_SBUS, 9)] {
+            set_witness(r, at, |c, e, rx, _| {
+                *c = Some(SerialCapture {
+                    patterns: 1,
+                    cut: 0,
+                    echoed: 0,
+                    stray: false,
+                    len,
+                });
+                *e = "missing".into();
+                *rx = None;
+            });
+        }
+    });
+    for n in [0, 1] {
+        let mut f = vec![(SERIAL_ECHO_FINDING, 2)];
+        if n > 0 {
+            f.push((SERIAL_WIRE_PAST_RUN_FINDING, n));
+        }
+        assert!(ok(&judged(none.clone(), &f)), "{n}");
+    }
+    assert_eq!(
+        check_run(&judged(
+            none,
+            &[(SERIAL_ECHO_FINDING, 2), (SERIAL_WIRE_PAST_RUN_FINDING, 2)]
+        ))
+        .unwrap_err(),
+        INSTANT_REFUSED
+    );
+}
+
+/// A PWM output on TIM1 (PA8, AF1) beside [`run`]'s ports: its solved
+/// output and static check (kinds 24 and 25, which hold) and its witness
+/// (kind 26, `witnessed` on the model's sequence) anchored at `anchor`.
+fn with_motor(anchor: u64) -> Vec<Record> {
+    let solved = Record::MotorOutputSolved {
+        label: "M1".into(),
+        timer: "TIM1".into(),
+        channel: 1,
+        pin: "PA8".into(),
+        alternate_function: 1,
+        protocol: "pwm".into(),
+        psc: 63,
+        arr: 2499,
+        ccr: 1000,
+        pwm: Some((400, 1000, 2000)),
+    };
+    let check = Record::MotorTimingCheck {
+        label: "M1".into(),
+        kernel_hz: 64_000_000,
+        period_ps: 2_500_000_000,
+        high_ps: 1_000_000_000,
+        nominal_period_ps: 2_500_000_000,
+        nominal_high_ps: 1_000_000_000,
+        holds: true,
+    };
+    let witness = Record::MotorWitness {
+        label: "M1".into(),
+        observer: "gpioPortA.pa8obs".into(),
+        period_ns: 639_744,
+        high_ns: 256_000,
+        grain_ns: 10,
+        quantum_ns: 100_000,
+        status: "witnessed".into(),
+        rises: 156,
+        falls: 155,
+        first_ns: Some(639_750),
+        last_ns: Some(99_800_070),
+        end_ns: 100_000_000,
+        span_ns: Some(8),
+        off_grid: 311,
+        batched: 0,
+        anchor_ns: Some(anchor),
+        edges_before: 0,
+        edges_after: 0,
+        cen_rises: 1,
+    };
+    let mut r = run();
+    r.insert(CHECK_CONSOLE, witness);
+    r.insert(BOOT, check);
+    r.insert(BOOT, solved);
+    r
+}
+
+/// Adversarial pass 2, A2-5: `motor_anchor_out_of_order`'s case of an
+/// anchor after the boot word is bound by replay where the records place
+/// the boot word (the first injected port's `injected_ns` less a quantum,
+/// 30 750 ns here): a timer anchored after it must be named, at least once;
+/// and no verdict names it more than once per anchored timer, nor before
+/// the boot word. Its other cases (before the last device step's witness,
+/// no boot word seen by its hook) are the boot's line order and stay
+/// unbound: an anchor before the boot word may be named once.
+#[test]
+fn a2_5_replay_binds_an_anchor_after_the_boot_word() {
+    let order = |n| vec![(MOTOR_ANCHOR_ORDER_FINDING, n)];
+    let before = with_motor(6);
+    assert!(ok(&before));
+    assert!(ok(&judged(before.clone(), &order(1))));
+    assert_eq!(
+        check_run(&judged(before, &order(2))).unwrap_err(),
+        INSTANT_REFUSED
+    );
+    let after = with_motor(40_000);
+    assert_eq!(check_run(&after).unwrap_err(), INSTANT_REFUSED);
+    assert!(ok(&judged(after.clone(), &order(1))));
+    // One ns after the boot word is after it; at it, not.
+    assert_eq!(check_run(&with_motor(30_751)).unwrap_err(), INSTANT_REFUSED);
+    assert!(ok(&with_motor(30_750)));
+    // No frame went in: the instant is unknown, and the anchor unbound
+    // from below.
+    let mut unknown = after;
+    for at in [WITNESS_CONSOLE + 3, WITNESS_SBUS + 3] {
+        set_witness(&mut unknown, at, |c, e, rx, _| {
+            let len = c.map_or(0, |c| c.len - 8);
+            *c = Some(SerialCapture {
+                patterns: 1,
+                cut: 0,
+                echoed: 0,
+                stray: false,
+                len,
+            });
+            *e = "missing".into();
+            *rx = None;
+        });
+    }
+    assert!(ok(&judged(unknown, &[(SERIAL_ECHO_FINDING, 2)])));
+    // Before the boot word, never.
+    let mut unbooted = with_motor(40_000);
+    unbooted[BOOT + 2] = boot(false);
+    let n = unbooted.len() - 1;
+    unbooted.truncate(n);
+    unbooted.retain(|x| {
+        !matches!(
+            x,
+            Record::SerialWitness { .. } | Record::MotorWitness { .. }
+        )
+    });
+    unbooted.push(verdict(&[]));
+    let unbooted = judged(unbooted, &[("boot_word_missing", 1)]);
+    assert!(ok(&unbooted), "{:?}", check_run(&unbooted));
+    let mut named = unbooted;
+    let n = named.len() - 1;
+    named[n] = verdict(&[("boot_word_missing", 1), (MOTOR_ANCHOR_ORDER_FINDING, 1)]);
+    assert_eq!(check_run(&named).unwrap_err(), INSTANT_REFUSED);
+    let mut wire = named;
+    wire[n] = verdict(&[("boot_word_missing", 1), (SERIAL_WIRE_PAST_RUN_FINDING, 1)]);
+    assert_eq!(check_run(&wire).unwrap_err(), INSTANT_REFUSED);
 }

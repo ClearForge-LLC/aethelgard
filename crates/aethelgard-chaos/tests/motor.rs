@@ -845,9 +845,11 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
 /// `motor_edge_before_anchor`, `motor_edge_after_window` (once per output)
 /// and `motor_anchor_repeated` (once per timer). A verdict that adds or
 /// drops any of them beside its records is refused. What no record
-/// carries stays unbound, documented: `motor_anchor_out_of_order` (the
-/// boot's line order), `serial_wire_past_run` (the boot word's instant),
-/// `serial_injection_out_of_order` (the logged `TDR` bytes).
+/// carries stays unbound, documented: `motor_anchor_out_of_order`'s cases
+/// other than an anchor after the boot word (the boot's line order; at
+/// most once per anchored timer), `serial_injection_out_of_order` (the
+/// logged `TDR` bytes). With no serial port, `serial_wire_past_run` is
+/// never named (adversarial pass 2, A2-5).
 #[test]
 fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     let a = 30_670;
@@ -869,13 +871,14 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
         assert!(run(&none, vec![(kind, 1)]).is_err(), "{kind}");
     }
     // The unbound ones are neither required nor refused.
-    for kind in [
-        MOTOR_ANCHOR_ORDER_FINDING,
-        SERIAL_WIRE_PAST_RUN_FINDING,
-        SERIAL_INJECTION_ORDER_FINDING,
-    ] {
+    for kind in [MOTOR_ANCHOR_ORDER_FINDING, SERIAL_INJECTION_ORDER_FINDING] {
         assert_eq!(run(&none, vec![(kind, 1)]), Ok(true), "{kind}");
     }
+    // Two timers anchored (TIM1's PWM, TIM2's DShot): out of order at most
+    // twice. No port: no wire time past the run.
+    assert_eq!(run(&none, vec![(MOTOR_ANCHOR_ORDER_FINDING, 2)]), Ok(true));
+    assert!(run(&none, vec![(MOTOR_ANCHOR_ORDER_FINDING, 3)]).is_err());
+    assert!(run(&none, vec![(SERIAL_WIRE_PAST_RUN_FINDING, 1)]).is_err());
     // R1: the read-back off its solved value: named once, or refused.
     let off = |r: &mut Vec<Record>| {
         if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {

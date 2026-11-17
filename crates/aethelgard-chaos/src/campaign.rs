@@ -20,7 +20,7 @@ use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
     self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
-    split_pin, step_index,
+    SerialFraming, split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -1134,6 +1134,29 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     {
         return Err("a serial finding has the wrong severity");
     }
+    // What the boot word's instant decides (`AET-WO-2302` adversarial pass
+    // 2, A2-5), once the boot word is set; before it, neither is named.
+    let wire = if booted {
+        wire_past_run_count(records).map_or((0, 1), |n| (n, n))
+    } else {
+        (0, 0)
+    };
+    let order = if booted {
+        anchor_order_bounds(records)
+    } else {
+        (0, 0)
+    };
+    for (kind, (least, most)) in [
+        (SERIAL_WIRE_PAST_RUN_FINDING, wire),
+        (MOTOR_ANCHOR_ORDER_FINDING, order),
+    ] {
+        let n = any_severity(kind);
+        if n < least || n > most || count(kind) != n {
+            return Err(
+                "the verdict's serial_wire_past_run or motor_anchor_out_of_order does not match the boot word's instant",
+            );
+        }
+    }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
         if any_severity(kind) != want {
@@ -1693,16 +1716,7 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
     }
     // A port the scenario holds open (`AET-WO-2302` D5) is a solved port,
     // and nothing went into it; the chain skips it.
-    let open: BTreeSet<&str> = match records.first() {
-        Some(Record::Scenario { overrides, .. }) => overrides
-            .iter()
-            .filter_map(|o| match o {
-                Override::SerialRxOpen { port } => Some(port.as_str()),
-                _ => None,
-            })
-            .collect(),
-        _ => BTreeSet::new(),
-    };
+    let open = open_ports(records);
     if open.iter().any(|p| !labels.contains(p)) {
         return Err("an open serial RX line names no solved serial port");
     }
@@ -1733,6 +1747,129 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
         );
     }
     Ok(())
+}
+
+/// The labels of the ports whose RX line the scenario (kind 5) holds open
+/// (`AET-WO-2302` D5).
+fn open_ports(records: &[Record]) -> BTreeSet<&str> {
+    match records.first() {
+        Some(Record::Scenario { overrides, .. }) => overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::SerialRxOpen { port } => Some(port.as_str()),
+                _ => None,
+            })
+            .collect(),
+        _ => BTreeSet::new(),
+    }
+}
+
+/// The boot word's instant as the records give it (`AET-WO-2302`
+/// adversarial pass 2, A2-5): the first port the chain injects, the first
+/// not held open, takes its frame one quantum after the boot word, so its
+/// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
+/// frame, or there is none.
+fn boot_word_instant(records: &[Record]) -> Option<u64> {
+    let open = open_ports(records);
+    records
+        .iter()
+        .find_map(|r| match r {
+            Record::SerialWitness {
+                label, injected_ns, ..
+            } if !open.contains(label.as_str()) => Some(*injected_ns),
+            _ => None,
+        })
+        .flatten()
+        .and_then(|t| t.checked_sub(TWIN_QUANTUM_NS))
+}
+
+/// One character's time on the wire in ns, rounded up, at a solved actual
+/// baud in thousandths, and a port's wire time after the boot word: its
+/// frame, `SERIAL_FRAME_LEN` bytes each a character rounded up to a whole
+/// quantum apart, and one echoed character (A2-3). `None` for a baud of 0
+/// or an overflow.
+// belt-and-suspenders: `aethelgard_twin::serial::{char_ns, spacing_ns}` and
+// `aethelgard-cli`'s `frame_echo_ns` state these; replay checks an archive
+// without the twin or the CLI, so it states them again.
+fn frame_echo_ns(framing: &SerialFraming, actual_millibaud: u64) -> Option<u64> {
+    let bits = 1 + u64::from(framing.word_bits()) + u64::from(framing.stop_bits);
+    let char_ns = (actual_millibaud > 0)
+        .then(|| bits.checked_mul(1_000_000_000_000))
+        .flatten()?
+        .div_ceil(actual_millibaud);
+    char_ns
+        .div_ceil(TWIN_QUANTUM_NS)
+        .checked_mul(TWIN_QUANTUM_NS)?
+        .checked_mul(SERIAL_FRAME_LEN as u64)?
+        .checked_add(char_ns)
+}
+
+/// How many times the judge names `serial_wire_past_run` of a booted run,
+/// where the records decide it (A2-5): none with no port the chain injects;
+/// once the first such port took its frame, one quantum after the boot
+/// word, whether the ports' frames and echoes (kind 27's framings, summed in
+/// the specification's order over the ports not held open) end past the
+/// boot from that instant: 1 or 0. `None` when that port took no frame, so
+/// the instant is not in the records.
+fn wire_past_run_count(records: &[Record]) -> Option<u64> {
+    let open = open_ports(records);
+    let ports: Vec<(&SerialFraming, u64)> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::SerialPortSolved {
+                label,
+                framing,
+                actual_millibaud,
+                ..
+            } if !open.contains(label.as_str()) => Some((framing, *actual_millibaud)),
+            _ => None,
+        })
+        .collect();
+    if ports.is_empty() {
+        return Some(0);
+    }
+    let injected = boot_word_instant(records)?.checked_add(TWIN_QUANTUM_NS)?;
+    let mut end = Some(injected);
+    let past = ports.iter().any(|&(f, baud)| {
+        end = end
+            .zip(frame_echo_ns(f, baud))
+            .and_then(|(e, w)| e.checked_add(w));
+        !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
+    });
+    Some(u64::from(past))
+}
+
+/// The bounds on `motor_anchor_out_of_order` in a booted run the records
+/// give (A2-5): at most once per timer with an anchor (kind 26, joined to
+/// kind 24's timer); and, where the boot word's instant is in the records
+/// ([`boot_word_instant`]), at least once per timer whose anchor is after
+/// it, since the bring-up writes the boot word last. Its other cases, an
+/// anchor before the last device step's witness or no boot word seen by its
+/// hook, are the order of the boot's log lines, which no record carries.
+fn anchor_order_bounds(records: &[Record]) -> (u64, u64) {
+    let mut anchors: BTreeMap<&str, u64> = BTreeMap::new();
+    for r in records {
+        let Record::MotorWitness {
+            label,
+            anchor_ns: Some(a),
+            ..
+        } = r
+        else {
+            continue;
+        };
+        let timer = records.iter().find_map(|m| match m {
+            Record::MotorOutputSolved {
+                label: l, timer, ..
+            } if l == label => Some(timer.as_str()),
+            _ => None,
+        });
+        if let Some(t) = timer {
+            anchors.insert(t, *a);
+        }
+    }
+    let after = boot_word_instant(records)
+        .map_or(0, |b| anchors.values().filter(|&&a| a > b).count() as u64);
+    (after, anchors.len() as u64)
 }
 
 /// Whether kind 29 `witness`'s TX pin at the end is the `MODER` and `AFSEL`
@@ -1930,10 +2067,10 @@ pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<()
     }
 }
 
-/// Every motor finding kind the records explain. `motor_anchor_out_of_order`
-/// stays unbound: it is the order of the boot's log lines (the anchor
-/// against the last device step's witness and the boot word), which no
-/// record carries.
+/// Every motor finding kind the records explain exactly.
+/// `motor_anchor_out_of_order` is bounded apart ([`anchor_order_bounds`]):
+/// its cases other than an anchor after the boot word are the order of the
+/// boot's log lines, which no record carries.
 const MOTOR_FINDINGS: [&str; 11] = [
     MOTOR_STATIC_FINDING,
     MOTOR_UNWITNESSED_FINDING,
