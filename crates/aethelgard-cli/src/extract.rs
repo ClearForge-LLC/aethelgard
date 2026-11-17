@@ -122,6 +122,18 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if aethelgard_eda::schematic::declares_offboard(&spec) {
         conditions.push(bound::OFFBOARD.to_owned());
     }
+    // A declared I2C pin is not UM10204's `Ci`, so the standing condition
+    // names the pins it covers (`AET-WO-4220b`).
+    if lines
+        .iter()
+        .any(|b| b.spi_signal.is_none() && !b.declared_pins.is_empty())
+    {
+        for c in &mut conditions {
+            if c == bound::I2C_PIN_CONDITION {
+                bound::I2C_PIN_CONDITION_BESIDE_DECLARED.clone_into(c);
+            }
+        }
+    }
     conditions.extend(bound::declared_conditions(&spec));
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,

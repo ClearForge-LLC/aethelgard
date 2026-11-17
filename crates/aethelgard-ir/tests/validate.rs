@@ -3348,11 +3348,11 @@ fn declared(femtofarads: u64) -> Option<aethelgard_ir::PinCapacitance> {
 }
 
 /// §1.2: a declaration within the parts table's own range (1 to 100 000 fF)
-/// is accepted on an I2C or an SPI device whose part cites no maximum;
-/// outside it, refused by name (step 14).
+/// is accepted on a device whose part cites no maximum (on I2C, from
+/// UM10204's `Ci` up); outside it, refused by name (step 14).
 #[test]
 fn a_declared_pin_capacitance_is_within_the_tables_range() {
-    for ff in [1, 10_000, 100_000] {
+    for ff in [10_000, 12_000, 100_000] {
         let mut spec = valid();
         devs(&mut spec).i2c[0].pin_capacitance = declared(ff);
         assert_eq!(spec.validate(), Ok(()), "{ff}");
@@ -3363,6 +3363,22 @@ fn a_declared_pin_capacitance_is_within_the_tables_range() {
         assert!(
             e.to_string()
                 .contains(&format!("{ff} fF, not 1 to 100000 fF")),
+            "{e}"
+        );
+    }
+}
+
+/// Adversarial A1: on an I2C device a declaration below UM10204's `Ci`
+/// would lower the line's bound under what every undeclared I2C pin is
+/// counted at, by assertion alone; it is refused.
+#[test]
+fn an_i2c_declaration_never_falls_below_um10204_s_ci() {
+    for ff in [1, 5_000, 9_999] {
+        let e = refusal(|s| devs(s).i2c[0].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceBelowI2cCi", Some("U2"));
+        assert!(
+            e.to_string()
+                .contains(&format!("{ff} fF, below UM10204's Ci of 10000 fF")),
             "{e}"
         );
     }

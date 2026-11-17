@@ -1708,6 +1708,18 @@ pub enum IrValidationError {
         femtofarads: u64,
         maximum: u64,
     },
+    /// Step 14 (`AET-WO-4220b` §1.2, adversarial A1): a declared pin
+    /// capacitance on an I2C device below UM10204's `Ci`, which every
+    /// undeclared I2C pin is counted at: a declaration may name a condition
+    /// or raise a pin's term, never lower it below the standard's maximum.
+    #[error(
+        "I2C device `{id}` declares a pin capacitance of {femtofarads} fF, below UM10204's Ci of {ci} fF (rev. 7.0 Table 10, p. 43), which every undeclared I2C pin is counted at"
+    )]
+    PinCapacitanceBelowI2cCi {
+        id: String,
+        femtofarads: u64,
+        ci: u64,
+    },
     /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance for a part
     /// whose row cites a maximum, which a declaration never replaces
     /// (`AET-WO-4300c` D3).
@@ -1904,6 +1916,7 @@ impl IrValidationError {
             Self::SpiModeNotDriven { .. } => "SpiModeNotDriven",
             Self::PinCapacitanceOutOfRange { .. } => "PinCapacitanceOutOfRange",
             Self::PinCapacitanceAlreadyCited { .. } => "PinCapacitanceAlreadyCited",
+            Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
             Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
@@ -2074,7 +2087,8 @@ impl IrValidationError {
             | Self::MissingSpiConstraint { bus, .. } => Some(bus),
             Self::SpiModeNotDriven { id, .. }
             | Self::PinCapacitanceOutOfRange { id, .. }
-            | Self::PinCapacitanceAlreadyCited { id, .. } => Some(id),
+            | Self::PinCapacitanceAlreadyCited { id, .. }
+            | Self::PinCapacitanceBelowI2cCi { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
@@ -2736,13 +2750,13 @@ impl Specification {
         let declared = self
             .i2c_devices
             .iter()
-            .map(|d| (&d.reference, &d.part, &d.pin_capacitance))
+            .map(|d| (&d.reference, &d.part, &d.pin_capacitance, true))
             .chain(
                 self.spi_devices
                     .iter()
-                    .map(|d| (&d.reference, &d.part, &d.pin_capacitance)),
+                    .map(|d| (&d.reference, &d.part, &d.pin_capacitance, false)),
             );
-        for (reference, part, pin_capacitance) in declared {
+        for (reference, part, pin_capacitance, i2c) in declared {
             let Some(c) = pin_capacitance else { continue };
             let femtofarads = c.declared.femtofarads;
             if !(1..=parts::MAX_PIN_FEMTOFARADS).contains(&femtofarads) {
@@ -2750,6 +2764,13 @@ impl Specification {
                     id: reference.clone(),
                     femtofarads,
                     maximum: parts::MAX_PIN_FEMTOFARADS,
+                });
+            }
+            if i2c && femtofarads < electrical::I2C_PIN_CI_FEMTOFARADS {
+                return Err(IrValidationError::PinCapacitanceBelowI2cCi {
+                    id: reference.clone(),
+                    femtofarads,
+                    ci: electrical::I2C_PIN_CI_FEMTOFARADS,
                 });
             }
             if let Some(p) = part_entry(table, reference, part)?

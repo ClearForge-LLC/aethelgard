@@ -183,12 +183,16 @@ const fn gcd(a: u128, b: u128) -> u128 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// UM10204 rev. 7.0 (1 October 2021), Table 10 "Characteristics of the SDA
-/// and SCL I/O stages", page 43: `Ci`, "capacitance for each I/O pin",
-/// maximum 10 pF in Standard-mode, Fast-mode and Fast-mode Plus. Its note
-/// [10]: "Special purpose devices such as multiplexers and switches may
-/// exceed this capacitance because they connect multiple paths together."
-pub const PIN_FF: u64 = 10_000;
+/// UM10204's `Ci` for each I2C pin, 10 pF
+/// ([`aethelgard_ir::electrical::I2C_PIN_CI_FEMTOFARADS`], cited there).
+pub const PIN_FF: u64 = aethelgard_ir::electrical::I2C_PIN_CI_FEMTOFARADS;
+
+/// The condition [`conditions`] states for every I2C pin, and the words that
+/// replace it when a line carries a pin counted at a declared value
+/// (`AET-WO-4220b`), which this one does not cover.
+pub const I2C_PIN_CONDITION: &str =
+    "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line";
+pub const I2C_PIN_CONDITION_BESIDE_DECLARED: &str = "every I2C pin not counted at a declared value at most UM10204's Ci of 10 pF; no multiplexer or switch on the line";
 
 /// `nm` in millimetres, at least one decimal: `2_000_000` is `2.0`.
 fn mm1(nm: i64) -> String {
@@ -248,7 +252,7 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
     out.extend(
         [
             "zone fill keeps the board's clearance (the DRC gate refills and judges it)",
-            "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line",
+            I2C_PIN_CONDITION,
             "neighbouring nets are static while the line rises",
         ]
         .map(str::to_owned),

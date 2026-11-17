@@ -240,6 +240,13 @@ fn extract_counts_each_declared_pin_as_declared_never_as_a_maximum() {
             [format!("U4.{}", if net == "SPI_SCK" { 6 } else { 5 })]
         );
     }
+    // The standing I2C condition no longer covers U7's pins (adversarial A2).
+    let conditions = strings(&v["conditions"]);
+    assert!(
+        conditions.contains(&aethelgard_eda::extract::I2C_PIN_CONDITION_BESIDE_DECLARED)
+            && !conditions.contains(&aethelgard_eda::extract::I2C_PIN_CONDITION),
+        "{v}"
+    );
     let declared: Vec<&str> = strings(&v["conditions"])
         .into_iter()
         .filter(|c| c.contains("a value the specification declares"))
@@ -315,10 +322,10 @@ fn without_its_declaration_the_bmp581_is_an_i2c_pin_at_um10204_s_ci() {
             line(&with, net)["c_bound_femtofarads"]
         );
     }
+    let conditions = strings(&v["conditions"]);
+    assert!(conditions.iter().all(|c| !c.starts_with("U7 ")), "{v}");
     assert!(
-        strings(&v["conditions"])
-            .iter()
-            .all(|c| !c.starts_with("U7 ")),
+        conditions.contains(&aethelgard_eda::extract::I2C_PIN_CONDITION),
         "{v}"
     );
     fs::remove_file(spec).unwrap();
