@@ -366,8 +366,14 @@ mod tests {
 
     #[test]
     fn unknown_or_wrong_levels_are_refused() {
-        assert!(schedule(3, &[c("VBOR2_falling", 2_310_000, 1, true)]).is_err());
-        assert!(schedule(3, &[c("VBOR3_falling", 2_600_000, 1, true)]).is_err());
+        assert_eq!(
+            schedule(3, &[c("VBOR2_falling", 2_310_000, 1, true)]).unwrap_err(),
+            "a crossing names a level no active threshold has"
+        );
+        assert_eq!(
+            schedule(3, &[c("VBOR3_falling", 2_600_000, 1, true)]).unwrap_err(),
+            "a crossing's level is not the table's typical value"
+        );
     }
 
     #[test]

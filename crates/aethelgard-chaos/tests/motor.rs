@@ -26,6 +26,17 @@ const BOOT_WORD: u32 = 0x2100_B007;
 const CCR_HOLDS: u32 = 1000;
 const CCR_FAILS: u32 = 999;
 
+/// The refusals the tests below assert by name (`AET-WO-2302b`: a test
+/// that asserted only an error could pass on another guard's).
+const MOTOR_REFUSED: &str = "the verdict's motor findings do not match the motor records";
+const STATUS_REFUSED: &str =
+    "a motor witness's status is not what its counts and its output's timing give";
+const CHECK_REFUSED: &str = "a motor timing check is not what its solved output gives";
+const WINDOW_REFUSED: &str =
+    "a motor witness's window is not its anchor's, or its first rise is before it";
+const ANCHOR_FIELDS_REFUSED: &str = "a motor witness names an anchor without a CEN rise, a rise without an anchor, or edges outside a window it does not have";
+const INSTANT_REFUSED: &str = "the verdict's serial_wire_past_run or motor_anchor_out_of_order does not match the boot word's instant";
+
 fn solved(label: &str, pin: &str, channel: u8) -> Record {
     solved_ccr(label, pin, channel, CCR_HOLDS)
 }
@@ -219,8 +230,9 @@ fn a_witnessed_run_passes_and_each_status_needs_its_own_finding() {
             vec![(kind, "error", 2)],
             vec![(MOTOR_STATIC_FINDING, "error", 1)],
         ] {
-            assert!(
-                check_run(&run(status, true, true, wrong)).is_err(),
+            assert_eq!(
+                check_run(&run(status, true, true, wrong)).unwrap_err(),
+                MOTOR_REFUSED,
                 "{status}"
             );
         }
@@ -239,7 +251,10 @@ fn a_witnessed_run_passes_and_each_status_needs_its_own_finding() {
         true,
         vec![(MOTOR_STATIC_ONLY_FINDING, "error", 1)],
     );
-    assert!(check_run(&as_error).is_err());
+    assert_eq!(
+        check_run(&as_error).unwrap_err(),
+        "a motor finding has the wrong severity"
+    );
 }
 
 #[test]
@@ -262,7 +277,7 @@ fn a_witness_is_judged_only_once_the_boot_word_is_set() {
             (MOTOR_UNWITNESSED_FINDING, "error", 1),
         ],
     );
-    assert!(check_run(&named).is_err());
+    assert_eq!(check_run(&named).unwrap_err(), MOTOR_REFUSED);
 }
 
 #[test]
@@ -272,8 +287,15 @@ fn a_static_mismatch_is_named_once_per_failing_check_booted_or_not() {
         if !booted {
             findings.push(("boot_word_missing", "error", 1));
         }
-        assert!(check_run(&run("witnessed", false, booted, findings)).is_ok());
-        assert!(check_run(&run("witnessed", false, booted, vec![])).is_err());
+        assert!(check_run(&run("witnessed", false, booted, findings.clone())).is_ok());
+        // The static mismatch dropped, the boot word's finding kept: refused
+        // by the motor findings, never by the boot word's (`AET-WO-2302b`).
+        findings.retain(|f| f.0 != MOTOR_STATIC_FINDING);
+        assert_eq!(
+            check_run(&run("witnessed", false, booted, findings)).unwrap_err(),
+            MOTOR_REFUSED,
+            "booted {booted}"
+        );
     }
 }
 
@@ -287,81 +309,108 @@ fn a_motor_record_that_joins_no_solved_output_is_refused() {
     };
     assert_eq!(edit(&|_| {}), Ok(()));
     // A witness on another pin's observer.
-    assert!(edit(&|r| r[8] = witness("M2", "gpioPortA.pa8obs", "witnessed")).is_err());
+    assert_eq!(
+        edit(&|r| r[8] = witness("M2", "gpioPortA.pa8obs", "witnessed")),
+        Err("a motor witness is not its output's pin's observer, or is there twice")
+    );
     // A witness or a check of an output nothing solved.
-    assert!(edit(&|r| r[8] = witness("M9", "gpioPortA.pa9obs", "witnessed")).is_err());
-    assert!(edit(&|r| r[5] = check("M9", true)).is_err());
+    assert_eq!(
+        edit(&|r| r[8] = witness("M9", "gpioPortA.pa9obs", "witnessed")),
+        Err("a motor witness names no solved output")
+    );
+    assert_eq!(
+        edit(&|r| r[5] = check("M9", true)),
+        Err("a motor timing check names no solved output")
+    );
     // A solved output with no static check.
-    assert!(
+    assert_eq!(
         edit(&|r| {
             r.remove(5);
-        })
-        .is_err()
+        }),
+        Err("a solved motor output has no static timing check")
     );
     // Two witnesses of one output.
-    assert!(edit(&|r| r[8] = witness("M1", "gpioPortA.pa8obs", "witnessed")).is_err());
+    assert_eq!(
+        edit(&|r| r[8] = witness("M1", "gpioPortA.pa8obs", "witnessed")),
+        Err("a motor witness is not its output's pin's observer, or is there twice")
+    );
     // A witness out of its rank, after the verdict.
-    assert!(
+    assert_eq!(
         edit(&|r| {
             let w = r.remove(8);
             r.push(w);
-        })
-        .is_err()
+        }),
+        Err("the records are not in the campaign's order")
     );
 }
 
 #[test]
 fn the_field_rules_hold_on_write_and_read() {
     let bad = [
-        Record::MotorOutputSolved {
-            label: "M1".into(),
-            timer: "TIM1".into(),
-            channel: 5,
-            pin: "PA8".into(),
-            alternate_function: 1,
-            protocol: "pwm".into(),
-            psc: 63,
-            arr: 2499,
-            ccr: 1000,
-            pwm: Some((400, 1000, 2000)),
-        },
-        Record::MotorOutputSolved {
-            label: "M1".into(),
-            timer: "TIM1".into(),
-            channel: 1,
-            pin: "PA8".into(),
-            alternate_function: 1,
-            protocol: "dshot600".into(),
-            psc: 0,
-            arr: 106,
-            ccr: 40,
-            pwm: Some((400, 1000, 2000)),
-        },
-        Record::MotorOutputSolved {
-            label: "M1".into(),
-            timer: "TIM1".into(),
-            channel: 1,
-            pin: "PA8".into(),
-            alternate_function: 1,
-            protocol: "pwm".into(),
-            psc: 63,
-            arr: 2499,
-            ccr: 2499,
-            pwm: Some((400, 1000, 2000)),
-        },
-        Record::MotorTimingCheck {
-            label: "M1".into(),
-            kernel_hz: 0,
-            period_ps: 1,
-            high_ps: 1,
-            nominal_period_ps: 1,
-            nominal_high_ps: 1,
-            holds: true,
-        },
-        witness("M1", "gpioPortA.pa8obs", "fine"),
+        (
+            "a solved motor output's channel is not 1 to 4 or its AF above 15",
+            Record::MotorOutputSolved {
+                label: "M1".into(),
+                timer: "TIM1".into(),
+                channel: 5,
+                pin: "PA8".into(),
+                alternate_function: 1,
+                protocol: "pwm".into(),
+                psc: 63,
+                arr: 2499,
+                ccr: 1000,
+                pwm: Some((400, 1000, 2000)),
+            },
+        ),
+        (
+            "a solved motor output's protocol is unknown, or its PWM timing is not present exactly for PWM",
+            Record::MotorOutputSolved {
+                label: "M1".into(),
+                timer: "TIM1".into(),
+                channel: 1,
+                pin: "PA8".into(),
+                alternate_function: 1,
+                protocol: "dshot600".into(),
+                psc: 0,
+                arr: 106,
+                ccr: 40,
+                pwm: Some((400, 1000, 2000)),
+            },
+        ),
+        (
+            "a solved motor output's PSC, ARR or CCR is outside the timer (CCR from 1 to ARR - 1)",
+            Record::MotorOutputSolved {
+                label: "M1".into(),
+                timer: "TIM1".into(),
+                channel: 1,
+                pin: "PA8".into(),
+                alternate_function: 1,
+                protocol: "pwm".into(),
+                psc: 63,
+                arr: 2499,
+                ccr: 2499,
+                pwm: Some((400, 1000, 2000)),
+            },
+        ),
+        (
+            "a motor timing check's label is malformed or its timer clock 0",
+            Record::MotorTimingCheck {
+                label: "M1".into(),
+                kernel_hz: 0,
+                period_ps: 1,
+                high_ps: 1,
+                nominal_period_ps: 1,
+                nominal_high_ps: 1,
+                holds: true,
+            },
+        ),
+        (
+            "a motor witness's status is not one the judge gives",
+            witness("M1", "gpioPortA.pa8obs", "fine"),
+        ),
     ];
-    for r in bad {
-        assert!(r.check().is_err(), "{r:?}");
+    for (why, r) in bad {
+        assert_eq!(r.check(), Err(why), "{r:?}");
     }
     assert!(solved("M1", "PA8", 1).check().is_ok());
     assert!(witness("M1", "gpioPortA.pa8obs", "batched").check().is_ok());
@@ -383,15 +432,15 @@ fn replay_re_derives_the_static_check_and_the_witness_status() {
     if let Record::MotorTimingCheck { holds, .. } = &mut short[5] {
         *holds = true;
     }
-    assert!(check_run(&short).is_err());
+    assert_eq!(check_run(&short).unwrap_err(), CHECK_REFUSED);
     // A check whose figures are not its output's.
-    assert!(
+    assert_eq!(
         edit(
             &|r| if let Record::MotorTimingCheck { high_ps, .. } = &mut r[5] {
                 *high_ps += 1;
             }
-        )
-        .is_err()
+        ),
+        Err(CHECK_REFUSED)
     );
     let forge = |f: &dyn Fn(&mut Record)| edit(&|r| f(&mut r[8]));
     // A witnessed status over each departure the judge fails.
@@ -402,14 +451,14 @@ fn replay_re_derives_the_static_check_and_the_witness_status() {
         "batched",
         "stopped",
     ] {
-        assert!(
+        assert_eq!(
             forge(&|w| {
                 *w = witness("M2", "gpioPortA.pa9obs", status);
                 if let Record::MotorWitness { status, .. } = w {
                     *status = "witnessed".into();
                 }
-            })
-            .is_err(),
+            }),
+            Err(STATUS_REFUSED),
             "{status}"
         );
     }
@@ -441,7 +490,7 @@ fn replay_re_derives_the_static_check_and_the_witness_status() {
             }
         },
     ] {
-        assert!(forge(&f).is_err());
+        assert_eq!(forge(&f), Err(STATUS_REFUSED));
     }
 }
 
@@ -457,57 +506,69 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     };
     assert_eq!(forged(&|_| {}), Ok(()));
     let w = |f: fn(&mut Record)| move |r: &mut Vec<Record>| f(&mut r[8]);
-    for f in [
+    for (why, f) in [
         // Two rises spanning 155 periods (everything else consistent).
-        w(|x| {
-            if let Record::MotorWitness {
-                rises,
-                falls,
-                off_grid,
-                ..
-            } = x
-            {
-                (*rises, *falls, *off_grid) = (2, 2, 4);
-            }
-        }),
+        (
+            STATUS_REFUSED,
+            w(|x| {
+                if let Record::MotorWitness {
+                    rises,
+                    falls,
+                    off_grid,
+                    ..
+                } = x
+                {
+                    (*rises, *falls, *off_grid) = (2, 2, 4);
+                }
+            }),
+        ),
         // Rises on the model's spacing that run past the window's end.
-        w(|x| {
-            if let Record::MotorWitness {
-                rises,
-                falls,
-                last_ns,
-                ..
-            } = x
-            {
-                (*rises, *falls) = (160, 159);
-                *last_ns = Some(639_750 + 159 * 639_744);
-            }
-        }),
+        (
+            STATUS_REFUSED,
+            w(|x| {
+                if let Record::MotorWitness {
+                    rises,
+                    falls,
+                    last_ns,
+                    ..
+                } = x
+                {
+                    (*rises, *falls) = (160, 159);
+                    *last_ns = Some(639_750 + 159 * 639_744);
+                }
+            }),
+        ),
         // A window of its own: two rises ending a period apart, at 2 ms.
-        w(|x| {
-            if let Record::MotorWitness {
-                rises,
-                falls,
-                last_ns,
-                end_ns,
-                off_grid,
-                ..
-            } = x
-            {
-                (*rises, *falls, *off_grid) = (2, 2, 4);
-                *last_ns = Some(639_750 + 639_744);
-                // Within a period of the last rise: covered, but not the board's.
-                *end_ns = 1_900_000;
-            }
-        }),
+        (
+            WINDOW_REFUSED,
+            w(|x| {
+                if let Record::MotorWitness {
+                    rises,
+                    falls,
+                    last_ns,
+                    end_ns,
+                    off_grid,
+                    ..
+                } = x
+                {
+                    (*rises, *falls, *off_grid) = (2, 2, 4);
+                    *last_ns = Some(639_750 + 639_744);
+                    // Within a period of the last rise: covered, but not the board's.
+                    *end_ns = 1_900_000;
+                }
+            }),
+        ),
         // More edges off the grid than edges.
-        w(|x| {
-            if let Record::MotorWitness { off_grid, .. } = x {
-                *off_grid = 1_000_000;
-            }
-        }),
+        (
+            STATUS_REFUSED,
+            w(|x| {
+                if let Record::MotorWitness { off_grid, .. } = x {
+                    *off_grid = 1_000_000;
+                }
+            }),
+        ),
     ] {
-        assert!(forged(&f).is_err());
+        assert_eq!(forged(&f), Err(why));
     }
     // A boot that counts fewer instructions than the window, as a droop's
     // does from its last reset's release, is the run's own (third review,
@@ -542,7 +603,7 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
             }
         }),
     ] {
-        assert!(forged(&f).is_err());
+        assert_eq!(forged(&f), Err(STATUS_REFUSED));
     }
     // A kernel clock other than the reset clock's, every record consistent
     // with it: PSC 0 at a claimed 1 MHz is 400 Hz on paper and 25.6 kHz on
@@ -577,13 +638,13 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
         *last_ns = Some(10_000 + 10_003 * 9996);
         *span_ns = Some(8);
     }
-    assert!(check_run(&clock).is_err());
+    assert_eq!(check_run(&clock).unwrap_err(), CHECK_REFUSED);
     if let Record::MotorTimingCheck { kernel_hz, .. } = &mut clock[5] {
         *kernel_hz = 64_000_000;
     }
     // At the true clock the same figures do not hold, so it is refused too:
     // the forgery needs the false clock, and the pin refuses that.
-    assert!(check_run(&clock).is_err());
+    assert_eq!(check_run(&clock).unwrap_err(), CHECK_REFUSED);
 }
 
 /// The DShot timer's solved registers in `dshot_run`: name, address, mask,
@@ -752,46 +813,54 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         if let Record::MotorWitness { end_ns, .. } = &mut r[DSHOT_WITNESS] {
             *end_ns = wrong_end;
         }
-        assert!(check_run(&r).is_err(), "{wrong_end}");
+        assert_eq!(check_run(&r).unwrap_err(), WINDOW_REFUSED, "{wrong_end}");
     }
     // A first rise before the anchor is refused.
     let mut r = ok.clone();
     if let Record::MotorWitness { first_ns, .. } = &mut r[DSHOT_WITNESS] {
         *first_ns = Some(a - 1);
     }
-    assert!(check_run(&r).is_err());
+    assert_eq!(check_run(&r).unwrap_err(), WINDOW_REFUSED);
     // The stop anywhere but the window's end, of another anchor, of a PWM
     // timer, or twice, is refused.
-    for f in [
-        |s: &mut Record| {
-            if let Record::JudgeStop { at_ns, .. } = s {
-                *at_ns -= 10;
-            }
-        },
-        |s: &mut Record| {
+    let at = "a judge's stop is not at its timer's witnesses' anchor plus DSHOT_WINDOW_NS, inside the boot";
+    let timer = "a judge's stop names no DShot timer, or one twice";
+    for (why, f) in [
+        (
+            at,
+            (|s: &mut Record| {
+                if let Record::JudgeStop { at_ns, .. } = s {
+                    *at_ns -= 10;
+                }
+            }) as fn(&mut Record),
+        ),
+        (at, |s: &mut Record| {
             if let Record::JudgeStop {
                 anchor_ns, at_ns, ..
             } = s
             {
                 (*anchor_ns, *at_ns) = (*anchor_ns + 10, *at_ns + 10);
             }
-        },
-        |s: &mut Record| {
+        }),
+        (timer, |s: &mut Record| {
             if let Record::JudgeStop { timer, .. } = s {
                 *timer = "TIM1".into();
             }
-        },
+        }),
     ] {
         let mut r = ok.clone();
         f(&mut r[DSHOT_STOP]);
-        assert!(check_run(&r).is_err());
+        assert_eq!(check_run(&r).unwrap_err(), why);
     }
     let mut twice = ok.clone();
     twice.insert(DSHOT_STOP, ok[DSHOT_STOP].clone());
-    assert!(check_run(&twice).is_err());
+    assert_eq!(check_run(&twice).unwrap_err(), timer);
     // No stop, or one that left CEN set: `judge_stop_missing`, once.
     let missing = vec![(JUDGE_STOP_MISSING_FINDING, 1)];
-    assert!(check_run(&dshot_run(Some(a), None, vec![])).is_err());
+    assert_eq!(
+        check_run(&dshot_run(Some(a), None, vec![])).unwrap_err(),
+        MOTOR_REFUSED
+    );
     assert!(
         check_run(&dshot_run(Some(a), None, missing.clone()))
             .unwrap()
@@ -835,7 +904,10 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
     // the window the boot's end.
     let unanchored = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
     assert!(check_run(&unanchored).unwrap().matched);
-    assert!(check_run(&dshot_run(None, None, vec![])).is_err());
+    assert_eq!(
+        check_run(&dshot_run(None, None, vec![])).unwrap_err(),
+        MOTOR_REFUSED
+    );
 }
 
 /// Adversarial pass 1, L3 (R1, R2): replay binds what kinds 26 and 30 can
@@ -868,7 +940,7 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
         MOTOR_EDGE_BEFORE_FINDING,
         MOTOR_EDGE_AFTER_FINDING,
     ] {
-        assert!(run(&none, vec![(kind, 1)]).is_err(), "{kind}");
+        assert_eq!(run(&none, vec![(kind, 1)]), Err(MOTOR_REFUSED), "{kind}");
     }
     // The unbound ones are neither required nor refused.
     for kind in [MOTOR_ANCHOR_ORDER_FINDING, SERIAL_INJECTION_ORDER_FINDING] {
@@ -877,24 +949,33 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     // Two timers anchored (TIM1's PWM, TIM2's DShot): out of order at most
     // twice. No port: no wire time past the run.
     assert_eq!(run(&none, vec![(MOTOR_ANCHOR_ORDER_FINDING, 2)]), Ok(true));
-    assert!(run(&none, vec![(MOTOR_ANCHOR_ORDER_FINDING, 3)]).is_err());
-    assert!(run(&none, vec![(SERIAL_WIRE_PAST_RUN_FINDING, 1)]).is_err());
+    assert_eq!(
+        run(&none, vec![(MOTOR_ANCHOR_ORDER_FINDING, 3)]),
+        Err(INSTANT_REFUSED)
+    );
+    assert_eq!(
+        run(&none, vec![(SERIAL_WIRE_PAST_RUN_FINDING, 1)]),
+        Err(INSTANT_REFUSED)
+    );
     // R1: the read-back off its solved value: named once, or refused.
     let off = |r: &mut Vec<Record>| {
         if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
             read_back[0].observed = Some(0x00);
         }
     };
-    assert!(run(&off, vec![]).is_err());
+    assert_eq!(run(&off, vec![]), Err(MOTOR_REFUSED));
     assert_eq!(run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]), Ok(true));
-    assert!(run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 2)]).is_err());
+    assert_eq!(
+        run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 2)]),
+        Err(MOTOR_REFUSED)
+    );
     // A register the stop did not read back: once.
     let short = |r: &mut Vec<Record>| {
         if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
             read_back[0].observed = None;
         }
     };
-    assert!(run(&short, vec![]).is_err());
+    assert_eq!(run(&short, vec![]), Err(MOTOR_REFUSED));
     assert_eq!(
         run(&short, vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]),
         Ok(true)
@@ -936,7 +1017,7 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
         (witness(0, 5, 1), MOTOR_EDGE_AFTER_FINDING),
         (witness(0, 0, 2), MOTOR_ANCHOR_REPEATED_FINDING),
     ] {
-        assert!(run(&w, vec![]).is_err(), "{kind}");
+        assert_eq!(run(&w, vec![]), Err(MOTOR_REFUSED), "{kind}");
         assert_eq!(run(&w, vec![(kind, 1)]), Ok(true), "{kind}");
     }
     // Before the boot word, none is named.
@@ -957,14 +1038,15 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
     assert_eq!(r[DSHOT_WITNESS].check(), Ok(()));
     witness(0, 0, 0)(&mut r);
-    assert!(r[DSHOT_WITNESS].check().is_err());
+    assert_eq!(r[DSHOT_WITNESS].check(), Err(ANCHOR_FIELDS_REFUSED));
     let mut r = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
     assert!(check_run(&r).unwrap().matched);
     assert_eq!(r[DSHOT_WITNESS].check(), Ok(()));
     for (before, after, rises) in [(0, 0, 1), (1, 0, 0), (0, 1, 0)] {
         witness(before, after, rises)(&mut r);
-        assert!(
-            r[DSHOT_WITNESS].check().is_err(),
+        assert_eq!(
+            r[DSHOT_WITNESS].check(),
+            Err(ANCHOR_FIELDS_REFUSED),
             "{before} {after} {rises}"
         );
     }
