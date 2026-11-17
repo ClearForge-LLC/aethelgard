@@ -39,6 +39,9 @@ These were read, not run, before any prediction below was written. JLCPCB's page
 - **M5 · `extract` on the bench fixture** (`tests/fixtures/sentinel-01-bench.json`, emitted): four conditions, `TP1` on `I2C_SDA`, `TP2` on `I2C_SCL`, `TP3` on `SPI_SCK`, `TP4` on `SPI_MOSI`; none for `TP5`–`TP12`. Without `TP1` in the specification the board has no `TP1`, `I2C_SDA`'s `pad_count` drops from 5 to 4, and its condition goes. P7 held.
 - **M6 · The gates:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace` (Furnace, capped scope). Clippy's first run caught `RUL-16`'s compiled fence: the first build of §1.5 read `Specification::declared_test_points`, which `crates/aethelgard-cli/clippy.toml` disallows ("a test point is drawn on the board only; nothing solves it, and no runner reads it"). §1.5 now reads the test pads from the board it judges (D8).
 
+- **M7 · `doctor` inside the pinned tools image** (`container/IMAGE`, `aethelgard-tools@sha256:598501ab…`), run with `~/bin/capped-run --mem 8G -- --rm --network none`. The cap was read back in the scope: `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192`. The run used this branch's debug binary and a bridge built from the same bridge sources (digest `91e72fcc…`, from `~/.cache/aet-4300c`), both mounted read-only. Result: exit `0`, `missing` empty, `kicad-cli` `10.0.7`, `Renode v1.17.0`, the bridge `0.1.0` with `ngspice_loaded`, `cargo 1.99.1`, `Kani Rust Verifier 0.68.0 (cargo plugin)`, scratch `/var/lib/aethelgard`, Landlock ABI 8. `uid_boundary` is false with `user_namespace` on every probe: rootless podman's root is not the initial namespace's (`AET-WO-1601` R4). CI's runner is rootful, so the boundary is expected there. P4 held. Kept in `~/.cache/aet-1604/img/doctor-in-image.json`.
+- **M8 · The whole workspace** (`cargo test --workspace --no-fail-fast`, Furnace, capped scope): 2,076 passed, 0 failed. `mcp_tier1`'s README count (19 → 20 tools) and `strict_fence`'s module list (`doctor.rs`, role `Other`: it reads no KiCad file) moved with the new subcommand. No tier-2 test was added, so `TIER2_MIN` does not move.
+
 ## 3. Decisions taken
 
 - **D1 · The sandbox probe is this executable, asked `--version` through `run::Invocation`.** `run.rs` has no standalone probe (R1), and §7's second stop forbids writing one. The trampoline's own status line, from a real confinement, is the probe, so `doctor` reports exactly what the trampoline achieved and never calls `landlock` or `seccompiler` itself. It needs no external tool, so the sandbox is reported even when no tool is installed. §7 did not fire, because no new probe was needed.
@@ -95,3 +98,22 @@ These were read, not run, before any prediction below was written. JLCPCB's page
 - **Q1 · ngspice's version** (§1.1 lists it). It is reachable only from a measurement's answers, or from a version mode in the bridge (`bridge/` is outside this fence, and its sources are digest-pinned, `BRIDGE_SOURCE_SHA256`). `doctor` reports `ngspice_loaded` and no version (D4). A bridge `--version` that asks libngspice itself would close it in a later order.
 - **Q2 · §1.5 against §2.** `verify` copies `extract`'s conditions into `FAB-NOTES.md` (R7), so a package whose board has a test pad on a bounded line changes in `FAB-NOTES.md` and in `MANIFEST.json`'s hash of it, beyond §2's "only the two new files". No golden on `main` moves (the bench tier-2 test asserts exit code and verdict only). PR #190's committed `fab/sentinel-01-bench/package/` will move when it is regenerated after this merges. Is that within §1.5's "extract's new condition line", as read here?
 - **Q3 · `boot_tier1`'s "the reaper's own record where 2302 made that available":** `2302` made the peak available, not a time (R5). The test asserts the peak; the wall bound stays the test's own clock (D7).
+
+## 6. Adversarial pass (targeted, §5), for what is built
+
+Each new guard was mutated once against the suite it lives in (`~/.cache/aet-1604/mut/run.sh`, `summary.txt`). Every mutant was killed.
+
+| # | §5 case | mutant | killed by |
+|---|---|---|---|
+| M1 | a snapshot that passes after a required argument is added | a required `--rev` on `extract` (the real tree) | `the_served_tool_list_is_the_committed_snapshot`, naming `extract` and `/inputSchema/required/2` |
+| M2 | `doctor` reporting what it cannot know | an unsafe scratch blocks nothing | `an_unsafe_scratch_blocks_every_tool_subcommand_and_nothing_is_probed` |
+| M3 | `doctor` reporting a sandbox it cannot install | `SandboxUnavailable` blocks nothing | `a_sandbox_layer_that_cannot_be_installed_is_reported_never_assumed` |
+| M4 | the probe outside the sandbox it reports | the `kicad-cli` probe granted `/` to read | `the_probe_runs_confined` (the stub printed the file) |
+| M5 | a version off its pin passed | `kicad::pinned` skipped | `a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it` |
+| M6 | a bridge that is not the bridge | any exit accepted with no request | `a_bridge_that_runs_without_a_request_is_not_the_bridge` |
+| M7 | a test-pad line on a line with no pad | the net check dropped | `each_test_pad_on_a_bounded_line_is_named_and_no_other`, `a_line_whose_test_pad_is_removed_states_nothing_for_it` |
+| M8 | a part that is not a test pad named as one | the footprint check dropped | three `extract_tier1` tests |
+
+The §5 case "a fab-format column filled with a plausible guess" waits for the files, after the §1.3 ruling (§4, O1).
+
+**Status: STOPPED at §1.3** for the column map's ruling: U1, U2 and O1–O6 above, with Q1–Q3. §1.1, §1.2, §1.4 and §1.5 are built and pass the CLAUDE.md gates on Furnace. The reduction pass runs at the close, after the fab-format files are built.
