@@ -547,35 +547,7 @@ fn place(
     pairs: &[[String; 2]],
     bounded: bool,
 ) -> Result<(Vec<Placed>, Edges), EmitError> {
-    let mut order: Vec<usize> = (0..items.len())
-        .filter(|&i| !schematic::is_connector(items[i].part))
-        .collect();
-    // Under a declared bound (`AET-WO-1313` D1, (r)), an IC that owns
-    // anchored parts goes before the other ICs: its loop's reserve then never
-    // has to clear parts placed before it, which a renaming can otherwise put
-    // there (measured: FEEDBACK §2.4).
-    let owns_anchored = |i: usize| {
-        let r = items[i].part.reference.as_str();
-        items.iter().any(|x| {
-            x.part
-                .owner
-                .as_ref()
-                .is_some_and(|o| o.anchor.is_some() && o.ic == r)
-        })
-    };
-    order.sort_by(|&a, &b| {
-        let key = |i: usize| {
-            let p = items[i].part;
-            (
-                !p.lib_id.starts_with("MCU_"),
-                !is_ic(p),
-                is_bench(p),
-                bounded && is_ic(p) && !owns_anchored(i),
-                p.reference.clone(),
-            )
-        };
-        key(a).cmp(&key(b))
-    });
+    let order = placing_order(items, bounded);
     // An anchored part goes straight after its IC, in drawing order, before
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
     // design with no anchor keeps the order above.
@@ -883,6 +855,14 @@ struct Edges {
     right: Option<i64>,
 }
 
+/// A bound's width and height in nanometres.
+fn bound_nm(b: OutlineBound) -> (i64, i64) {
+    (
+        i64::from(b.width) * 1_000_000,
+        i64::from(b.height) * 1_000_000,
+    )
+}
+
 /// `AET-WO-1313` §2.1: whether `bound` can hold `parts` at all, before any
 /// placement. Inside the bound less [`MARGIN_NM`] on each side, every
 /// keep-out box must fit at one of its right angles, and their areas must
@@ -890,10 +870,8 @@ struct Edges {
 /// that is [`EmitError::OutlineUnreachable`].
 pub(crate) fn bound_holds(parts: &[Part], bound: OutlineBound) -> Result<(), EmitError> {
     let items = items(parts)?;
-    let inner = (
-        i64::from(bound.width) * 1_000_000 - 2 * MARGIN_NM,
-        i64::from(bound.height) * 1_000_000 - 2 * MARGIN_NM,
-    );
+    let (bw, bh) = bound_nm(bound);
+    let inner = (bw - 2 * MARGIN_NM, bh - 2 * MARGIN_NM);
     let refuse = |reference: Option<String>, why: String| EmitError::OutlineTooSmall {
         width_mm: bound.width,
         height_mm: bound.height,
@@ -934,6 +912,42 @@ pub(crate) fn bound_holds(parts: &[Part], bound: OutlineBound) -> Result<(), Emi
         ));
     }
     Ok(())
+}
+
+/// The order [`place`] takes every part but the connectors in, before an
+/// anchored part is moved to follow its IC: the MCU, the other ICs, the
+/// passives, the bench parts, each in reference order. Under a declared
+/// bound (`AET-WO-1313` D1, (r)), an IC that owns anchored parts goes before
+/// the other ICs: its loop's reserve then never has to clear parts placed
+/// before it, which a renaming can otherwise put there (measured: FEEDBACK
+/// §2.4).
+fn placing_order(items: &[Item<'_>], bounded: bool) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..items.len())
+        .filter(|&i| !schematic::is_connector(items[i].part))
+        .collect();
+    let owns_anchored = |i: usize| {
+        let r = items[i].part.reference.as_str();
+        items.iter().any(|x| {
+            x.part
+                .owner
+                .as_ref()
+                .is_some_and(|o| o.anchor.is_some() && o.ic == r)
+        })
+    };
+    order.sort_by(|&a, &b| {
+        let key = |i: usize| {
+            let p = items[i].part;
+            (
+                !p.lib_id.starts_with("MCU_"),
+                !is_ic(p),
+                is_bench(p),
+                bounded && is_ic(p) && !owns_anchored(i),
+                p.reference.clone(),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
+    order
 }
 
 /// How far past the MCU's courtyard a pair's approach is kept clear, and how
@@ -1552,14 +1566,15 @@ fn layout_of(
         outline.x1 = e;
     }
     if let Some(b) = bound {
+        // belt-and-suspenders: under either edge plan every keep-out box is
+        // inside the outline by construction (the core within its margin, each
+        // connector row inside its own edge), so no board trips this and its
+        // mutant survives (FEEDBACK §5.7, M5); a later plan might not.
         if let Some(p) = placed.iter().find(|p| !outline.contains(p.keep)) {
             return Err(internal(&p.reference, "a keep-out box outside the outline"));
         }
         let (w, h) = (outline.x1 - outline.x0, outline.y1 - outline.y0);
-        let (bw, bh) = (
-            i64::from(b.width) * 1_000_000,
-            i64::from(b.height) * 1_000_000,
-        );
+        let (bw, bh) = bound_nm(b);
         if w > bw || h > bh {
             return Err(EmitError::OutlineUnreachable {
                 width_mm: b.width,
@@ -2323,6 +2338,77 @@ mod tests {
                 assert!(over_um_w > 0);
             }
             other => panic!("{:?}", other.map(|l| l.outline)),
+        }
+    }
+
+    fn bme(r: &str) -> Part {
+        part(
+            "Sensor:BME280",
+            "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+            r,
+            &[
+                ("1", Conn::Rail("GND".into())),
+                ("2", Conn::Rail("VDD".into())),
+                ("3", net("SDA")),
+                ("4", net("SCL")),
+            ],
+        )
+    }
+
+    /// (r): under a bound, an IC that owns an anchored part is placed before
+    /// the other ICs, whatever its reference; with no bound, today's
+    /// reference order.
+    #[test]
+    fn under_a_bound_an_ic_owning_anchored_parts_is_placed_first() {
+        let mut owned = part("Device:R", R0402, "R1", &[("1", net("SDA"))]);
+        owned.owner = Some(schematic::Owner {
+            ic: "U9".into(),
+            anchor: Some(schematic::Anchor {
+                pads: vec![("1".into(), "3".into())],
+                loop_rule: None,
+            }),
+            decouples: false,
+        });
+        let parts = vec![mcu(&[("34", net("SDA"))]), bme("U2"), bme("U9"), owned];
+        let items = items(&parts).unwrap();
+        let names = |order: Vec<usize>| -> Vec<&str> {
+            order
+                .into_iter()
+                .map(|i| items[i].part.reference.as_str())
+                .collect()
+        };
+        assert_eq!(
+            names(placing_order(&items, false)),
+            ["U1", "U2", "U9", "R1"]
+        );
+        assert_eq!(names(placing_order(&items, true)), ["U1", "U9", "U2", "R1"]);
+    }
+
+    /// (a) keeps the placer's gaps: after compaction every IC is at least
+    /// [`IC_GAP_NM`] from the MCU and from every other IC (the MCU's 1 mm,
+    /// ruled D1), and no two keep-out boxes are nearer than [`GAP_NM`].
+    #[test]
+    fn compaction_keeps_every_ic_gap_including_the_mcus() {
+        let parts = vec![
+            mcu(&[("34", net("SDA")), ("35", net("SCL"))]),
+            bme("U2"),
+            bme("U3"),
+            bme("U4"),
+        ];
+        let items = items(&parts).unwrap();
+        let l = layout_of(&items, &[], &[], Some(bound(100, 100))).unwrap();
+        for (i, a) in l.placed.iter().enumerate() {
+            for b in &l.placed[i + 1..] {
+                let both_ic = is_ic(&parts[i])
+                    && parts.iter().any(|p| p.reference == b.reference && is_ic(p));
+                let gap = if both_ic { IC_GAP_NM } else { GAP_NM };
+                assert!(
+                    !a.keep.grow(gap).overlaps(b.keep),
+                    "{} is within {gap} nm of {}",
+                    a.reference,
+                    b.reference
+                );
+            }
         }
     }
 
