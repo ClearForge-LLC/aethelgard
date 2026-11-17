@@ -391,3 +391,64 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
         }
     }
 }
+
+/// `AET-WO-1313c` with `AET-WO-4400d`: under the bound, the IMU turned each
+/// of its four ways (its declared orientation, the board's forward edge at
+/// the top) is placed at that rotation and compacted whole with its group:
+/// every placer gap and loop rule kept, and each keep-out zone it carries
+/// inside the outline (the zones are drawn from the part's origin and
+/// rotation, so a group moved whole carries them).
+#[test]
+fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
+    for (x, rotation) in [
+        ("right", "0"),
+        ("forward", "90"),
+        ("left", "180"),
+        ("aft", "270"),
+    ] {
+        let mut v = fixture();
+        v["board"]["forward"] = json!("top");
+        for key in ["spi_devices", "i2c_devices"] {
+            for d in v[key].as_array_mut().unwrap() {
+                if d["reference"] == "U5" {
+                    d["orientation"] = json!({"x": x, "z": "up"});
+                }
+            }
+        }
+        let (spec, solved, table) = solved(&v);
+        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        let tree = sexpr::parse(&e.board).unwrap();
+        let u5 = tree
+            .children("footprint")
+            .find(|f| f.property("Reference") == Some("U5"))
+            .unwrap();
+        assert_eq!(
+            u5.child("at").unwrap().arg(3).unwrap_or("0"),
+            rotation,
+            "{x}"
+        );
+        let o = outline_nm(&e.board);
+        assert!(
+            o.x1 - o.x0 <= 100_000_000 && o.y1 - o.y0 <= 100_000_000,
+            "{x}: {o:?}"
+        );
+        let mut points = 0;
+        for zone in u5.children("zone") {
+            let pts = zone.child("polygon").unwrap().child("pts").unwrap();
+            for xy in pts.children("xy") {
+                let p = (
+                    sexpr::nm(xy.arg(1).unwrap()).unwrap(),
+                    sexpr::nm(xy.arg(2).unwrap()).unwrap(),
+                );
+                assert!(
+                    o.x0 <= p.0 && p.0 <= o.x1 && o.y0 <= p.1 && p.1 <= o.y1,
+                    "{x}: U5's keep-out point {p:?} is outside {o:?}"
+                );
+                points += 1;
+            }
+        }
+        assert!(points > 0, "{x}: U5 carries no keep-out zone");
+        assert_gaps(&e);
+        assert_loops(&spec, &solved, &table, &e.board);
+    }
+}
