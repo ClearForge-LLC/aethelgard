@@ -200,3 +200,84 @@ The §2 specification is built (§10). It validated before this section was writ
   - The test pads have no maker part: a bare pad, `TestPoint_Pad_D1.0mm`.
   - The switch has its library footprint, and its maker part is the one 1312 cited.
   - The BOOT0 pull-down is a 10 kΩ 0402.
+
+## 10. §2: bench access, measured
+
+**`main` merged** (`c3a3d711`, from `9a37ae6`). It brings:
+- 0.2.0 (#188);
+- 4220b and its floor (#192, #193): specification 13, `pin_capacitance`, parts schema 7;
+- 1312 (#191): specification 14 with `test_points`, BOOT0 on a connector and `mcu.reset_switch`.
+
+There were two conflicts:
+- **`ci.yml`'s `TIER2_MIN`:** main's 162 (4220b and 1312) plus this PR's one, so **163**, with its comment line.
+- **`board_tier2.rs`:** both sides appended whole tests. Main's file is taken, and this PR's test is re-appended unchanged.
+
+**The specification (`examples/sentinel-01.json`, version 14):**
+- `pin_capacitance: null` on U2–U4, as the reference has;
+- `mcu.reset_switch: true`;
+- BOOT0 on J2 pin 2 (NRST stays on pin 3);
+- **14 test points:** every declared net §2.1 lists (both buses' SDA/SCL, SPI SCK/MOSI/MISO, FLASH_CS, CONSOLE TX/RX, VDD_3V3, NRST, BOOT0), plus one GND.
+
+**One gap: a second GND test point cannot be declared.**
+- `validate` refuses it: `TestPointNetRepeated` ("net `GND` carries two test points … one is enough") [measured].
+- The other ground points are J1–J4's GND pins. `BENCH.md` says so.
+
+**The gates, at two layers [measured; the merged release CLI; KiCad in the pinned image]:**
+- All eight commands exit 0, with no finding in ERC, DRC, parity or support.
+- `extract`: I2C_SDA 58.6, I2C_SCL 53.4, EXT_SDA 48.6, EXT_SCL 47.5 pF (declared 100); SPI_SCK 18.6, SPI_MOSI 24.6 pF (declared 30).
+- Outline **46.35 × 54.85 mm**: 25.4 cm², +14.6 % over §1's 22.2 cm².
+
+**Finding F1: `extract`'s margin depends on the test points' document order.**
+- **The first order** (the list in §2.1's order, TP1 = I2C_SDA … TP14 = GND) failed `extract`: SPI_MOSI was bounded at **30.74 pF against 30**. It had 20.6 mm of track and 8 vias, and every other gate passed.
+- Re-ordering only the list moved the bounds [measured, emit and extract on the host]:
+
+  | Order | SPI_SCK | SPI_MOSI | Worst I2C |
+  |---|---|---|---|
+  | as listed | 18.9 | **30.7 (fail)** | 56.3 |
+  | MOSI first | 26.5 | 20.8 | 56.7 |
+  | SPI group first | 19.5 | 28.2 | 50.4 |
+  | **reversed (adopted)** | **18.6** | **24.6** | 58.6 |
+
+- **The adopted order clears every line with at least 5.4 pF of margin.**
+- Document order is a free choice, so adopting it relaxes nothing. No bound was raised, and no listed test point was dropped.
+- Two other ways to pass were measured and **not** taken:
+  1. SPI's declared 30 pF raised to 35 (passes, but it moves a V0 field that also chooses the pin speed);
+  2. no test point on SPI_MOSI (passes, with MOSI at 16.9 pF).
+- **For the architect (Q4):** the placer's dependence on `test_points`' order is a robustness gap of the same family as 1307's name-dependence. A board that passes by one ordering and fails by another is decided by an input nobody chose for electrical reasons. The renaming check (1307) does not cover document order.
+
+**Predictions scored (§9):**
+- S1 held, once the order was chosen; as first written, `extract` failed.
+- **S2 wrong:** the outline grew 14.6 %, not under 10 %.
+- **S3 wrong as to SPI:** MOSI failed in the first order.
+- S4 and S5: §11.
+
+**`spike/3400/` deleted** (ruled on #192 Q4 and #191 Q3): 527 files, the merged 3400 record. Nothing outside `docs/` named it, and the dated prices `ORDER.md` uses are cited there to `AET-WO-3400.FEEDBACK.md`, which stays.
+
+**`ORDER.md` and `BENCH.md`** are in `fab/sentinel-01-bench/`, beside `package/`, never inside it, because `--against-fab` refuses extra files.
+- Each carries the ruling's sentence on EXT verbatim.
+- **BENCH:**
+  - every rise-time row adds the probe's `C_p` to `extract`'s bound (#191 Q2);
+  - the BOOT0 row drives J2 pin 2 through R8, the judged 10 kΩ, with DS12117 Table 49's VIH min of 1.161 V and a margin of 2.14 V at 3.3 V (1.74 V at VDD − 0.4 V);
+  - the BOR row's pass lines are Table 115's VBOR3, falling 2.54–2.68 V and rising 2.63–2.78 V (rev V, p. 212; rev Y's Table 16 prints the same; both read at source);
+  - the threshold row times SCLH against `TIMINGR` `0x50D32A40` at the solved 64 MHz kernel clock (4.031 µs);
+  - USART boot's protocol line is labelled a gap, because AN2606 is unread.
+- **ORDER:**
+  - one row per BOM line, maker parts checked against the emitted footprints;
+  - the generic 0402 passives flagged ⚑, with priced examples;
+  - OSH Park at US$19.71 per 3 [computed from the read rate];
+  - SGD 54.64? for 33 of 39 rows;
+  - the open quotes.
+- **Finding F2:** the package's BOM and placement files are KiCad's and the emitter's formats, not a fabricator's upload format (JLCPCB's columns differ, and its rotation offsets are its own). That is engine work if wanted.
+
+**Finding F3: `FAB-NOTES.md` does not list the acknowledged ledger rows** that §2.2 names.
+- The generated notes carry the stackup, the holes, the rule minima, the MCU support network, the lifecycle banner, the files, the licence and the brown-out procedure (`BOR_LEV` by read-modify-write of `OPTSR`).
+- They do not carry the `acknowledge_unwitnessed` rows: none of "ledger", "witness" or a class name appears in it [measured, on the final package].
+- The rows live in the specification (each with its reason) and in `verify`'s ledger; `BENCH.md` B2 reads them from there.
+- Writing them into `FAB-NOTES.md` is `aethelgard-eda`'s `fab.rs`, outside this fence, so it is not done here (Q5).
+
+**The final package on Furnace [measured]:** `verify --fab-out` on the final specification passes every gate:
+- 8 Kani harnesses, build, simulate, attribute and the campaign;
+- coverage met by exemption for EXT (no device) and CONSOLE (no serial fault kind);
+- 935 s wall time; engine 0.2.0; 15 files.
+
+The placement file lists SW1 and no test pad, which is right: a bare pad places no part. The committed package is CI's (§8's rule), not this one.

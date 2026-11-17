@@ -765,59 +765,59 @@
   ],
   "test_points": [
     {
-      "net": "I2C_SDA",
+      "net": "GND",
       "reference": "TP1"
     },
     {
-      "net": "I2C_SCL",
+      "net": "BOOT0",
       "reference": "TP2"
     },
     {
-      "net": "EXT_SDA",
+      "net": "NRST",
       "reference": "TP3"
     },
     {
-      "net": "EXT_SCL",
+      "net": "VDD_3V3",
       "reference": "TP4"
     },
     {
-      "net": "SPI_SCK",
+      "net": "CONSOLE_RX",
       "reference": "TP5"
     },
     {
-      "net": "SPI_MOSI",
+      "net": "CONSOLE_TX",
       "reference": "TP6"
     },
     {
-      "net": "SPI_MISO",
+      "net": "FLASH_CS",
       "reference": "TP7"
     },
     {
-      "net": "FLASH_CS",
+      "net": "SPI_MISO",
       "reference": "TP8"
     },
     {
-      "net": "CONSOLE_TX",
+      "net": "SPI_MOSI",
       "reference": "TP9"
     },
     {
-      "net": "CONSOLE_RX",
+      "net": "SPI_SCK",
       "reference": "TP10"
     },
     {
-      "net": "VDD_3V3",
+      "net": "EXT_SCL",
       "reference": "TP11"
     },
     {
-      "net": "NRST",
+      "net": "EXT_SDA",
       "reference": "TP12"
     },
     {
-      "net": "BOOT0",
+      "net": "I2C_SCL",
       "reference": "TP13"
     },
     {
-      "net": "GND",
+      "net": "I2C_SDA",
       "reference": "TP14"
     }
   ]
