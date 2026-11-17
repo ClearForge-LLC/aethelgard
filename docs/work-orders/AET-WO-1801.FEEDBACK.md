@@ -133,3 +133,13 @@ All [measured].
   - **Your call:** whether the bump commit may carry it, or you land it first.
 - **Q2, `crates/aethelgard-cli/README.md`.** Its example outputs show `"aethelgard":"0.1.0"` and `"engine_version":"0.1.0"` (lines 462, 656, 720). They are examples, not goldens, and outside the fence. Update them at the bump, or leave them?
 - **Q3, the bridge.** `bridge/Cargo.toml` stays 0.1.0: it is never published, has its own version, and its version appears in the bridge's own output (`analog.rs`, tests). Confirm it does not follow the workspace.
+
+## 6. Gates
+
+- **Local [measured]**, on this branch (no Rust changed), Furnace, capped scope:
+  - `cargo fmt --all -- --check` clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  - `cargo test --workspace` exit 0, no failure.
+- **On the local trial bump:** tier 1 passes once `validate_cli.rs:222` moves.
+- **TIER2_MIN** is untouched.
+- **Reduction pass (diff): nothing to remove.** The diff is two documents and this FEEDBACK. `docs/releasing.md` gained sections and lost none, and `RELEASE-0.2.0.md` states the order once, as a table that cites `docs/releasing.md` rather than repeating its reasons.
