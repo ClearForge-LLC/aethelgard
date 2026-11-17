@@ -1428,7 +1428,11 @@ fn ready(
 /// window, `MAX_VIRTUAL_NS`, named by `window`. The frames'
 /// later bytes, paced a character apart (adversarial pass 4, ADV4-2), are
 /// the wire budget's ([`serial_wire_fits`]), which holds them all.
-fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), run::Stop> {
+fn serial_fits(injection_ns: u64) -> Result<(), run::Stop> {
+    let (window, window_ns) = (
+        aethelgard_twin::boot::WINDOW,
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+    );
     if aethelgard_twin::serial::fits(injection_ns, window_ns) {
         return Ok(());
     }
@@ -1448,12 +1452,11 @@ fn serial_fits(injection_ns: u64, window_ns: u64, window: &str) -> Result<(), ru
 /// them one after another), from the injection at `injection_ns`, inside the
 /// board's window. The twin renders no pattern's wire time, so this is
 /// judged before the boot.
-fn serial_wire_fits(
-    serial: &[renode::Serial],
-    injection_ns: u64,
-    window_ns: u64,
-    window: &str,
-) -> Result<(), run::Stop> {
+fn serial_wire_fits(serial: &[renode::Serial], injection_ns: u64) -> Result<(), run::Stop> {
+    let (window, window_ns) = (
+        aethelgard_twin::boot::WINDOW,
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+    );
     let Some((s, times, end)) = renode::wire_past_window(serial, injection_ns, window_ns) else {
         return Ok(());
     };
@@ -1693,9 +1696,8 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         plan.as_ref().and_then(renode::BootPlan::injection_ns),
         &ready,
     ) {
-        let max = aethelgard_twin::boot::MAX_VIRTUAL_NS;
-        serial_fits(i, max, aethelgard_twin::boot::WINDOW)?;
-        serial_wire_fits(&r.serial, i, max, aethelgard_twin::boot::WINDOW)?;
+        serial_fits(i)?;
+        serial_wire_fits(&r.serial, i)?;
     }
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
