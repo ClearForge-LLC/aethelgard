@@ -165,7 +165,7 @@ extern "C" fn main() -> ! {
     let pb11 = gpiob.pb11.into_i2c2_sda(&mut r);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut r);
-    let mut i2c1 = i2c1.init::<i2c1_speed::Standard100k, _>(&mut r, &clock, pb6, pb7);
+    let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, &clock, pb6, pb7);
     let _i2c2 = i2c2.init::<i2c2_speed::Standard100k, _>(&mut r, &clock, pb10, pb11);
     let mut spi1 = spi1.init(&mut r, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let mut usart1 = usart1.configure(&mut r, &clock, pa9, pa10);

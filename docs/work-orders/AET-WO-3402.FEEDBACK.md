@@ -157,3 +157,61 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
   - an I2C peripheral with no analog line → `I2cBusUnresolved`, or `InvalidTopology` from `validate` first, whichever comes first;
   - no admitted mode is ever faster than its own bus's declared speed, checked over every fixture by `silicon_words.rs`'s judge.
 - **R5. `TIER2_MIN` stays 177:** no tier-2 test is added.
+
+## 9. The ruled build [measured]
+
+**Built:**
+- **§1.3:** the prototype as measured (`svd-hal/src/board.rs`: `bus_speed`, `BoardError::I2cBusUnresolved`; the lowest-speed fallback removed).
+- **The unit test is restated** as `ceilings_must_number_the_i2c_peripherals_and_each_takes_its_own_bus`: a 1 MHz bus A on I2C1 admits all three modes and boots `FastPlus1M`; a 100 kHz bus B on I2C2 admits `Standard100k` only.
+- **The judge** (`tests/silicon_words.rs`) gets its own `own_bus_speed`, a join from `analog_lines` and `assignments` written in the test. It never calls `bus_speed` (`RUL-20`).
+- **`boards/sentinel-01-bench` is re-blessed.** Exactly the three files of §4 move, with the `TIMINGR` of §4.
+- **Docs:**
+  - the svd-hal README's I2C paragraph states the new rule and lists `I2cBusUnresolved`;
+  - `BENCH.md` B2 states each peripheral's word, and B6 grounds at TP1 and J4 pin 4 with the measured distances, a lead and the [inferred] edge-rate line;
+  - the "one GND pad" note and the open-items row explain why there is one.
+- **`ORDER.md` is unchanged:** 14 test points, as ruled (one GND pad).
+
+**Predictions scored:**
+- **R1 held:** the merge of `26e4c62` had no conflict, and the patch applied cleanly.
+- **R2 held:** exactly the three bench-board files moved; the reference board and the ui goldens did not.
+- **R3 missed once.** The judge's first run failed on `sentinel-01.json I2C2 Fast400k`.
+  - The cause was the judge, not the generator. It searched the whole board file for each mode's `const TIMINGR` line, and I2C1 now admits `Fast400k` with the same word as I2C2's, so the search found I2C2's "admitted" mode in I2C1's module.
+  - The judge now reads each peripheral's own `{m}_speed` module, and checks that each mode is admitted with its solved word, or not admitted at all.
+  - The restated unit test and `bench_board_tier1` passed as predicted (the package binding test, 2 of 2: nothing it binds moved).
+- **R4:**
+  - A topology whose peripherals each carry one line of each bus is refused by `SolvedTopology::validate` first (`InvalidTopology`, "does not share one bus"), so `bus_speed` is a second line behind it. The test asserts both: `generate`'s refusal, then `bus_speed`'s own.
+  - Covered by name (`I2cBusUnresolved`): two buses on one peripheral, a bus with a line on another peripheral, a peripheral with no I2C line, and a bus with no declared speed.
+  - The judge checks "no admitted mode above its own bus's declared speed" on every fixture.
+- **R5 held:** `TIER2_MIN` stays 177.
+
+**§5 adversarial, as the work order lists it:**
+- A second test point on a non-GND net is still refused: `the_same_net_twice_is_refused_by_name`.
+- Two buses sharing a peripheral, or no derivable peripheral: refused by name, as in R4.
+- No `TIMINGR` runs a bus faster than its declared speed: `silicon_words.rs` on every fixture, per peripheral.
+- A FAB-NOTES row differing from the specification's entry: `verify_2k2_tier2` (§3).
+
+**Mutation** (one mutant per guard this WO adds, against its own suite; all killed):
+
+| Mutant | Killed by |
+|---|---|
+| M1: the GND exemption removed | `ir/tests/bench.rs` |
+| M2: no line → 100 kHz | `an_i2c_peripheral_with_no_one_bus_is_refused_by_name` |
+| M3: two buses → the first | the same |
+| M4: a foreign line ignored | the same |
+| M5: no declared speed → 1 MHz | the same |
+| M6: the generator back on the lowest speed | `silicon_words.rs` (the independent judge) |
+| M7: the ledger row's reason dropped | `eda` `fab::` tests |
+
+**Gates:**
+- after merging `26e4c62`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 2073 passed, 0 failed.
+- The package is written by CI (below).
+
+**Reduction pass** (diff-sized): nothing removed. Each addition is a guard with a killed mutant, its test, or the prose that states it. The prototype's lowest-speed doc lines and the README's old rule were replaced, not kept beside the new ones.
+
+**Next, as ruled:**
+1. This push is `AWAITING-PACKAGE`.
+2. The architect dispatches `bench-package` in write mode on this branch.
+3. I commit its artifact unchanged under `fab/sentinel-01-bench/package/` and re-check the binding.
+4. READY.
+
+**Backlog** (the architect's): placer rule (a), putting a GND test pad beside a named test point → 1313b.

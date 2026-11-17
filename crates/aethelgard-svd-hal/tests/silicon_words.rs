@@ -49,6 +49,35 @@ fn solved() -> Vec<(String, SolvedTopology)> {
 }
 
 /// `Spi1`, `I2c1`.
+/// The declared speed of the bus `peripheral` serves, joined here from the
+/// topology alone and never through the generator (`AET-WO-3402` §1.3, ruled
+/// on PR #203: `RUL-20`, the judge shares no code with what it judges): each
+/// I2C line's bus is its `analog_lines` entry, and its peripheral the
+/// assignment of its net. Exactly one bus, with every line on `peripheral`.
+fn own_bus_speed(t: &SolvedTopology, peripheral: &str) -> u32 {
+    let on = |net: &str| t.assignments.get(net).map(|a| a.peripheral.clone());
+    let mut buses: Vec<&str> = t
+        .analog_lines
+        .iter()
+        .filter(|(net, _)| on(net).as_deref() == Some(peripheral))
+        .map(|(_, line)| line.bus.as_str())
+        .collect();
+    buses.sort_unstable();
+    buses.dedup();
+    assert_eq!(buses.len(), 1, "{peripheral} serves buses {buses:?}");
+    for (net, line) in &t.analog_lines {
+        if line.bus == buses[0] {
+            assert_eq!(
+                on(net).as_deref(),
+                Some(peripheral),
+                "{net} of {}",
+                buses[0]
+            );
+        }
+    }
+    t.i2c_speeds[buses[0]]
+}
+
 fn block(peripheral: &str) -> String {
     let (head, n) = peripheral.split_at(peripheral.len() - 1);
     format!("{}{}{n}", &head[..1], head[1..].to_ascii_lowercase())
@@ -116,16 +145,33 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
                 assert!(board.contains(&line), "{name} {p}: `{line}`");
             }
             // Each admitted mode's `TIMINGR` is the solved word, which the
-            // rule holds.
-            let speed = t.i2c_speeds.values().min().copied().unwrap_or(0);
+            // rule holds. Each peripheral at its own bus's declared speed
+            // (`AET-WO-3402` §1.3), with no admitted mode above it, read in
+            // that peripheral's own `{m}_speed` module: two peripherals share
+            // a mode's word, so a search of the whole file cannot tell them
+            // apart.
+            let speed = own_bus_speed(t, p);
+            let m = p.to_ascii_lowercase();
+            let module = board
+                .split(&format!("pub mod {m}_speed {{"))
+                .nth(1)
+                .and_then(|rest| rest.split("\n}\n").next())
+                .unwrap_or_else(|| panic!("{name} {p}: no {m}_speed module"));
             for (mode, hz) in [
                 ("Standard100k", 100_000),
                 ("Fast400k", 400_000),
                 ("FastPlus1M", 1_000_000),
             ] {
                 let word = timing.timingr[mode];
-                let line = format!("const TIMINGR: u32 = {word:#010x};");
-                assert_eq!(board.contains(&line), hz <= speed, "{name} {p} {mode}");
+                let admitted = format!(
+                    "impl AtMostCeiling for {mode} {{\n        const TIMINGR: u32 = {word:#010x};"
+                );
+                assert_eq!(module.contains(&admitted), hz <= speed, "{name} {p} {mode}");
+                assert_eq!(
+                    module.contains(&format!("impl AtMostCeiling for {mode} ")),
+                    hz <= speed,
+                    "{name} {p} {mode}: admitted with another word"
+                );
                 assert!(
                     silicon::check_timingr(timing.kernel_hz, mode, word)
                         .unwrap()
@@ -171,14 +217,16 @@ fn every_fixture_s_schedule_starts_each_i2c_bus_at_the_rule_s_mode() {
     let table = pin_table("STM32H753ZITx").unwrap();
     let mut checked = 0;
     for (name, t) in &solved() {
-        let Some(&hz) = t.i2c_speeds.values().min() else {
+        if t.i2c_timings.is_empty() {
             continue;
-        };
-        let rule = silicon::i2c_start_mode(u64::from(hz)).unwrap();
+        }
         let files = generate("b", t, &table).unwrap_or_else(|e| panic!("{name}: {e}"));
         let lines: Vec<&str> = files["src/proofs.rs"].lines().map(str::trim).collect();
         let main = &files["firmware/src/main.rs"];
         for (p, timing) in &t.i2c_timings {
+            // The rule's start mode for this peripheral's own bus
+            // (`AET-WO-3402` §1.3), not the lowest bus's.
+            let rule = silicon::i2c_start_mode(u64::from(own_bus_speed(t, p))).unwrap();
             let m = p.to_ascii_lowercase();
             let set = format!("{m}_timingr = 0x");
             let speed = format!("{m}_speed::");
