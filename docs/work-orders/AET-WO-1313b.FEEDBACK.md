@@ -10,12 +10,16 @@ Labels: **[measured]** by a run recorded in `spike/1313b/`; **[read at source]**
   - anchored parts in the emitter's draw sequence;
   - then compaction toward the MCU with a sidestep.
 - **On the fixture at four layers [measured]:** **85.25 × 80.95 mm**, every gate passing, `extract`'s least slack 9.2 pF, `emit` 3.1 s.
-  - Over 20 order-only renamings: 20/20 fit, 20/20 every gate, 20/20 the identical placement.
-  - Over 20 of 1307's prefix renamings (parts 31 % larger): 20/20 fit (93.70 × 87.95), 20/20 every gate.
-  - Shuffling the parts list (10 seeds) and reversing the last tie-break both give the identical placement.
+  - **Order independence:** 20 order-only renamings, 10 parts shuffles and the reversed tie-break all give the one identical placement.
+  - **Robustness to size is weaker.** Each set of 20 renamings is one placement: order-only renamings change nothing by construction, and 1307's prefix is the same six characters every time.
+    - At that prefix (parts +31 %) it fits (93.70 × 87.95) with every gate.
+    - At a 2-character prefix it fits (89.20 × 84.95) but `extract` fails by 5.1 pF.
+    - At 8 and 12 characters it overflows the width (101.90, 115.05), as `main` overflows in both axes.
+    - **The `extract` margin moves with geometry; it is not guaranteed by the method** (§2.2).
+  - **The placer's own gaps hold after compaction** (`gaps.py`): ICs at least 1 mm apart, other parts 0.5 mm, nothing outside the outline. Checked on the fixture, the prefixed placement and the headroom run.
   - With no bound declared, all 24 corpus specifications are byte-identical to `main`.
 - **Headroom:** with the witness port, USB FS and E0 as blocks (495 mm² of keep-out), the board is **89.20 × 86.25 mm** and still fits [measured, outline only].
-- **The test-pad rule is not recommended now (§2.4).** It helps Sentinel-01 a little, breaks the fit on Sentinel-03 under (s), and moves Sentinel-01's bytes.
+- **The test-pad rule is not recommended now (§2.4).** It helps Sentinel-01 a little, overflows Sentinel-03's bound, and moves Sentinel-01's bytes.
 - **Two findings about `main` (§2.6)**, one with a byte-neutral fix.
 
 ## 1. Predictions (committed before any run)
@@ -117,11 +121,28 @@ Files: `results-independence.txt`, `results-perm.txt`, `results-prefix.txt`, `re
 | (k)+(p) | 93.95 × 87.20 | yes | 20 / **0** | 20 / 20 | −8.0 pF | 1.8 s |
 | (k)+(m)+(p) | 88.85 × 83.90 | yes | 20 / **0** | 20 / 0 | −19.6 pF | 2.9 s |
 
-- **Every failure in the table is `extract`,** on the I2C and SPI lines; or `OutlineUnreachable` (refused by name, nothing written).
-- **(p)'s outcome swings with details.** Centring its strip on the MCU's courtyard rather than its group's box moved (k)+(m)+(p) from 98.60 × 77.95 with every gate passing to 88.85 × 83.90 failing `extract` by 19.6 pF.
-  - Its width search (`w`) reached 77.05 × 89.20 and failed by 24.6 pF.
-  - Repacking groups by their boxes pulls them off the MCU pins they serve: the I2C lines run 136–175 mm with up to 21 vias. That is 1313's (b) again: the tightest packer fails `extract` most.
-  - I report (p) at its spread and do not pick the draw that passed.
+- **Each set of 20 renamings is one placement for every canonical method** (one distinct `sig.py` value per set; `main` gives 20). So the "of 20" columns are one sample each, and a run of three prefix lengths stands in for size variation:
+
+  | Reference prefix (`rename_len.py`) | `main` | (k)+(m)+(s) |
+  |---|---|---|
+  | 2 characters | 83.75 × 99.55, every gate | 89.20 × 84.95, `extract` −5.1 pF |
+  | 6 (1307's) | 1/20 fit | 93.70 × 87.95, every gate |
+  | 8 characters | 105.40 × 105.30, `OutlineUnreachable` | 101.90 × 88.20, `OutlineUnreachable` |
+  | 12 characters | 117.90 × 111.30, `OutlineUnreachable` | 115.05 × 97.20, `OutlineUnreachable` |
+
+  [measured: `results-prefix-lengths.txt`]
+- **The failing lines, read from the sweep's own `extract` output** (seed 0; `results-extract-lines.txt`):
+  - (k) and (k)+(s): IMU_SCK alone, −3.9 and −2.6 pF, 42 mm with 6 vias;
+  - (k)+(p): I2C_SDA and I2C_SCL −5.2 and −8.0 pF at 155–160 mm with 10 vias, and the SPI and IMU lines;
+  - (k)+(m)+(p): I2C_SDA −19.6 pF at 154 mm with 19 vias, and SPI_SCK and SPI_MOSI.
+  - The other failures in the table are `OutlineUnreachable`: refused by name, with nothing written.
+- **(p)'s outcome swings with details** [measured on earlier revisions of the prototype, not reproducible from the committed `placer.patch`]:
+  - With the strip centred on the MCU's courtyard and the leftmost column rule, (k)+(m)+(p) gave 98.60 × 77.95 with every gate passing.
+  - Centred on the MCU group's box: 88.40 × 83.90, failing `extract`.
+  - The width search (`w`): 77.05 × 89.20, failing by 24.6 pF.
+  - The committed version (courtyard-centred, nearest-pad column) gives 88.85 × 83.90, failing by 19.6 pF.
+  - Repacking groups by their boxes pulls them off the MCU pins they serve. That is 1313's (b) again: the tightest packer fails `extract` most.
+  - I report (p) at its spread, not the draw that passed.
 - **(s) needed (m).** With the lowest-pad target, the compacted board fails `extract` by 2.6 pF on every renaming.
 
 ### 2.3 Headroom (§1.5) [measured, outline only: blocks are placed, never drawn or routed]
@@ -154,11 +175,12 @@ The blocks:
 | Sentinel-01, `t` | **5.0 / 8.8 mm** | TP1 3.8 mm from TP13; 20.5–33.3 mm from the others |
 | Sentinel-01, `t`, a second `GND` pad (TP15) | 5.0 / 8.8 mm | TP15 3.8 mm from a signal pad, but 21.9–45.2 mm from TP11–TP14 |
 | Sentinel-03, (k)+(m)+(s) | 10.1 / 16.3 mm | TP29 6.3 mm from TP13 |
-| Sentinel-03, (k)+(m)+(s) with `t` | 8.5 / 24.8 mm | **the outline goes to 85.25 × 104.70: `OutlineUnreachable`** |
+| Sentinel-03, (k)+(m) with `t` | 8.3 / 17.3 mm | **85.25 × 104.70: `OutlineUnreachable`** |
+| Sentinel-03, (k)+(m)+(s) with `t` | 8.5 / 24.8 mm | 85.25 × 104.70: `OutlineUnreachable` |
 
 - **Sentinel-01 passes every gate at two layers with the rule,** with one `GND` pad or two (`extract`'s least slack 6.7 and 6.8 pF).
 - **The coverage rule does not put the second pad beside TP11–TP14:** it serves the signal pad farthest from TP1. I did not tune it to that board.
-- **Under (s) the rule breaks the fit.** Pads seated by their nets sit inside other groups' paths, and compaction then stalls.
+- **On Sentinel-03 the rule overflows the bound before any compaction.** (k)+(m) with `t` is already 85.25 × 104.70, against 85.25 × 99.45 without it; (s) then moves its 74 steps and cannot recover. The pads placed by their nets lengthen the core [measured: `kmt` and `kmst` in `results-testpads.txt`].
 - **Its cost:** with the methods unset, `t` moves Sentinel-01 and its bench fixture (2 of 24 corpus specifications move; `results-nobound.txt`). So it would need a re-dispatch of 3401's package, or gating behind a bound.
 
 ### 2.5 No-bound bytes and the parts-order test [measured]
@@ -186,7 +208,7 @@ The blocks:
 | P2 | (s): 84–88 × 78–88 | (k)+(m)+(s) 85.25 × 80.95; (s) on (k) alone fails `extract` | right with (m) |
 | P3 | (p): 84–90 × 72–85, longer routes | 88.85–93.95 × 83.90–87.20; `extract` fails by 8–20 pF | routes right; outline worse |
 | P4 | renamings: identical, 20/20 | 20/20 for every method; ownership and `seq` had to enter the key | right, after two fixes |
-| P5 | prefix: (s), (p) ≥ 15/20; (k) 5–12 | (k)+(m)+(s) 20/20; (k)+(p) 20/20; (k) 20/20; (k)+(m) 0/20 | right for (s) and (p); (k) better |
+| P5 | prefix: (s), (p) ≥ 15/20; (k) 5–12 | each set is one placement: (k)+(m)+(s), (k)+(p) and (k) fit; (k)+(m) does not. Over three prefix lengths (k)+(m)+(s) fits once with every gate failing by 5.1 pF, and overflows twice | the question was ill-posed for order-independent methods; size is the real variable |
 | P6 | (k), (s) pass every gate; (p) maybe not `extract` | (k)+(m)+(s) passes; (k) and (k)+(s) fail `extract`; (p) fails | half right |
 | P7 | the parts-order test passes | passes; shuffles 10/10 for every method | right |
 | P8 | `emit` under 5 s | 1.8–3.4 s | right |
@@ -197,7 +219,10 @@ The blocks:
 
 ## 3. Recommendation for the build
 
-1. **Build (k)+(m)+(s) under a declared bound** as `board.max_outline_um`'s placement. It replaces (r)'s owners-first rule, which the canonical rank includes. With no bound declared, today's placer stays, and every byte with it.
+1. **Build (k)+(m)+(s) under a declared bound** as `board.max_outline_um`'s placement. It is the only method measured that is order-independent, passes every gate on the fixture, and leaves room for the parts still to come.
+   - **Its `extract` margin is geometry's, not the method's:** a 2-character reference prefix fails by 5.1 pF.
+   - So the build's acceptance should include more than one size sample, for example `rename_len.py` at two or three lengths.
+   - A capacitance-aware step (Q3 of `1313`, router-side) would be what makes the margin hold. It replaces (r)'s owners-first rule, which the canonical rank includes. With no bound declared, today's placer stays, and every byte with it.
    - **Cost in code [inferred from the prototype's line counts]:** about 350 lines in `pcb.rs`:
      - the canonical rank, about 135;
      - the centroid target, about 25;
@@ -212,9 +237,15 @@ The blocks:
 2. **Fix F1 in the same work order or before it:** the anchored parts' order by `seq` on the unbounded path. It is byte-neutral on the whole corpus [measured]. Extend `the_board_does_not_depend_on_the_parts_order` to a design with anchored parts, so the test means what it says.
 3. **Do not build the test-pad rule now.**
    - It moves Sentinel-01's bytes for 1.4 mm of median.
-   - It breaks the fit under (s).
+   - It overflows Sentinel-03's bound even before compaction.
    - Its `GND` coverage does not give 3402's pairing.
    - A pad rule that cooperates with compaction (placing pads after compaction, by their nets) is a next spike if the bench needs it.
 4. **For Scotty's quote:**
    - **Size:** ask for 100 × 100 mm, four layers, top-side assembly.
    - **Expected outline** under the recommendation: about **86 × 81 mm** now (85.25 × 80.95). With the witness port, USB FS and E0 placed by the same method, about **90 × 87 mm** (89.20 × 86.25).
+
+## 4. Record
+
+- **Measured on `f845b6f`.** `main` `2642ece` (1604, #199) was merged with a merge commit before the stop. It changes none of `pcb.rs`, the schematic, the router, `extract.rs` or the IR sources, so every figure above stands. `placer.patch` applies to the merged tree (`git apply --check`).
+- **This branch changes no crate:** `git diff` against the merge base, over `crates/`, is empty. The CLAUDE.md gates on it pass: fmt, clippy (`-D warnings`), and `cargo test --workspace` 2135 passed, 0 failed, run in place.
+- **The scratch trees** (the patched tree and `main`'s build) and their run directories were removed at the stop. `results-*.txt` holds every figure; a rerun applies `placer.patch` at `f845b6f` and uses the runners as their headers say.

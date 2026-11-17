@@ -1,21 +1,148 @@
+# AET-WO-1313b §1.4: each test pad's distance to its net's nearest other pad (tp_dist.py), and the gate runs below
 == S01 method=- "ok":true outline 46.35 x 54.85
 signal test pads: 13, median 6.4 mm, max 13.3 mm to their net's nearest other pad
   TP1 GND nearest-signal-TP 8.7 TP11=30.4 TP12=31.0 TP13=20.5 TP14=21.2
+  TP10 /SPI_SCK 6.3
+  TP11 /EXT_SCL 5.5
+  TP12 /EXT_SDA 3.1
+  TP13 /I2C_SCL 6.0
+  TP14 /I2C_SDA 7.0
+  TP2 /BOOT0 9.7
+  TP3 /NRST 4.0
+  TP4 VDD_3V3 3.9
+  TP5 /CONSOLE_RX 6.4
+  TP6 /CONSOLE_TX 7.3
+  TP7 /FLASH_CS 13.3
+  TP8 /SPI_MISO 10.5
+  TP9 /SPI_MOSI 9.3
 == S01 method=t "ok":true outline 50.25 x 54.25
 signal test pads: 13, median 5.0 mm, max 8.8 mm to their net's nearest other pad
   TP1 GND nearest-signal-TP 3.8 TP11=33.3 TP12=31.6 TP13=3.8 TP14=20.5
+  TP10 /SPI_SCK 5.0
+  TP11 /EXT_SCL 3.3
+  TP12 /EXT_SDA 3.9
+  TP13 /I2C_SCL 5.1
+  TP14 /I2C_SDA 5.0
+  TP2 /BOOT0 8.8
+  TP3 /NRST 3.9
+  TP4 VDD_3V3 2.7
+  TP5 /CONSOLE_RX 7.7
+  TP6 /CONSOLE_TX 6.5
+  TP7 /FLASH_CS 3.8
+  TP8 /SPI_MISO 4.1
+  TP9 /SPI_MOSI 5.8
 == S01-2GND method=t "ok":true outline 50.25 x 57.75
 signal test pads: 13, median 5.0 mm, max 8.8 mm to their net's nearest other pad
   TP1 GND nearest-signal-TP 3.8 TP11=33.3 TP12=31.6 TP13=3.8 TP14=20.5
+  TP10 /SPI_SCK 5.0
+  TP11 /EXT_SCL 3.3
+  TP12 /EXT_SDA 3.9
+  TP13 /I2C_SCL 5.1
+  TP14 /I2C_SDA 5.0
   TP15 GND nearest-signal-TP 3.8 TP11=21.9 TP12=28.6 TP13=45.2 TP14=42.3
+  TP2 /BOOT0 8.8
+  TP3 /NRST 3.9
+  TP4 VDD_3V3 2.7
+  TP5 /CONSOLE_RX 7.7
+  TP6 /CONSOLE_TX 6.5
+  TP7 /FLASH_CS 3.8
+  TP8 /SPI_MISO 4.1
+  TP9 /SPI_MOSI 5.8
 == S03 method=- "ok":true outline 85.25 x 99.05
 signal test pads: 21, median 10.3 mm, max 31.8 mm to their net's nearest other pad
+  TP1 /I2C_SDA 3.5
+  TP11 /FLASH_CS 11.3
+  TP13 /CONSOLE_TX 7.7
+  TP14 /CONSOLE_RX 8.3
+  TP15 /CRSF_TX 13.8
+  TP16 /CRSF_RX 10.0
+  TP17 /MAVLINK_TX 10.3
+  TP18 /MAVLINK_RX 10.8
+  TP19 /MOTOR1 6.3
+  TP2 /I2C_SCL 9.1
+  TP20 /MOTOR2 11.5
+  TP21 /MOTOR3 10.0
+  TP22 /MOTOR4 12.1
+  TP23 VDD_3V3 6.2
+  TP24 /BOOT0 15.0
+  TP25 /NRST 16.3
+  TP26 /SWDIO 7.0
+  TP27 /SWCLK 11.9
+  TP28 VDD_5V 31.8
   TP29 GND nearest-signal-TP 3.8 TP11=23.0 TP13=19.8 TP14=31.5
+  TP3 /EXT_SDA 6.9
+  TP4 /EXT_SCL 11.2
 == S03 method=kms "ok":true outline 85.25 x 80.95
 signal test pads: 21, median 10.1 mm, max 16.3 mm to their net's nearest other pad
+  TP1 /I2C_SDA 8.0
+  TP11 /FLASH_CS 6.7
+  TP13 /CONSOLE_TX 7.7
+  TP14 /CONSOLE_RX 8.3
+  TP15 /CRSF_TX 12.3
+  TP16 /CRSF_RX 16.3
+  TP17 /MAVLINK_TX 10.6
+  TP18 /MAVLINK_RX 10.8
+  TP19 /MOTOR1 14.8
+  TP2 /I2C_SCL 8.5
+  TP20 /MOTOR2 10.6
+  TP21 /MOTOR3 13.3
+  TP22 /MOTOR4 9.6
+  TP23 VDD_3V3 3.7
+  TP24 /BOOT0 6.0
+  TP25 /NRST 10.1
+  TP26 /SWDIO 7.0
+  TP27 /SWCLK 7.7
+  TP28 VDD_5V 11.2
   TP29 GND nearest-signal-TP 6.3 TP11=44.5 TP13=6.3 TP14=16.1
+  TP3 /EXT_SDA 11.8
+  TP4 /EXT_SCL 13.3
+== S03 method=kmt "ok":false outline 85.25 x 104.70
+signal test pads: 21, median 8.3 mm, max 17.3 mm to their net's nearest other pad
+  TP1 /I2C_SDA 3.5
+  TP11 /FLASH_CS 6.7
+  TP13 /CONSOLE_TX 7.7
+  TP14 /CONSOLE_RX 8.3
+  TP15 /CRSF_TX 12.4
+  TP16 /CRSF_RX 16.3
+  TP17 /MAVLINK_TX 10.6
+  TP18 /MAVLINK_RX 10.8
+  TP19 /MOTOR1 17.3
+  TP2 /I2C_SCL 7.3
+  TP20 /MOTOR2 10.6
+  TP21 /MOTOR3 13.3
+  TP22 /MOTOR4 9.6
+  TP23 VDD_3V3 3.3
+  TP24 /BOOT0 8.5
+  TP25 /NRST 5.0
+  TP26 /SWDIO 7.0
+  TP27 /SWCLK 7.7
+  TP28 VDD_5V 3.5
+  TP29 GND nearest-signal-TP 3.8 TP11=50.4 TP13=32.0 TP14=24.3
+  TP3 /EXT_SDA 10.5
+  TP4 /EXT_SCL 7.8
 == S03 method=kmst "ok":false outline 85.25 x 104.70
 signal test pads: 21, median 8.5 mm, max 24.8 mm to their net's nearest other pad
+  TP1 /I2C_SDA 3.5
+  TP11 /FLASH_CS 6.7
+  TP13 /CONSOLE_TX 7.7
+  TP14 /CONSOLE_RX 8.3
+  TP15 /CRSF_TX 12.4
+  TP16 /CRSF_RX 16.3
+  TP17 /MAVLINK_TX 10.6
+  TP18 /MAVLINK_RX 10.8
+  TP19 /MOTOR1 17.3
+  TP2 /I2C_SCL 7.3
+  TP20 /MOTOR2 10.6
+  TP21 /MOTOR3 13.3
+  TP22 /MOTOR4 9.6
+  TP23 VDD_3V3 3.3
+  TP24 /BOOT0 8.5
+  TP25 /NRST 5.0
+  TP26 /SWDIO 7.0
+  TP27 /SWCLK 7.7
+  TP28 VDD_5V 24.8
   TP29 GND nearest-signal-TP 3.8 TP11=50.4 TP13=32.0 TP14=24.3
+  TP3 /EXT_SDA 10.5
+  TP4 /EXT_SCL 7.8
 s01-two-gnd-t | 1-validate=0 2-generate=0 3-emit=0 4-erc=0 5-drc=0 6-drc-parity=0 7-support=0 8-extract=0 emit=1.6s  | least slack 6.8 pF
 s01-t | 1-validate=0 2-generate=0 3-emit=0 4-erc=0 5-drc=0 6-drc-parity=0 7-support=0 8-extract=0 emit=1.8s  | least slack 6.7 pF

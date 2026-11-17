@@ -11,5 +11,7 @@ The evidence for `docs/work-orders/AET-WO-1313b.FEEDBACK.md`. No crate changes o
 | `independence.sh`, `sig.py` | shuffle, reversed tie and order-only renaming against the name-free placement signature |
 | `corpus.sh` | no-bound bytes: `main`'s binary against the prototype over the corpus |
 | `tp_dist.py`, `probe-s01-two-gnd.json` | test-pad distances; Sentinel-01 with a second `GND` pad |
+| `rename_len.py` | a size sample: references prefixed by a chosen number of characters |
+| `gaps.py` | the placer's own gaps (0.5 mm, 1 mm between ICs) and containment, from a dump |
 | `area.py`, `geom_check.py` | `1313`'s, kept for reuse |
 | `results-*.txt` | every figure in FEEDBACK §2 |

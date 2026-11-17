@@ -1,0 +1,9 @@
+"ok":true
+prefix 2 chars, method -: 83.75 x 99.55 | fails:  | least slack 8.8 pF
+prefix 2 chars, method kms: 89.20 x 84.95 | fails: 8-extract=1  | least slack -5.1 pF
+"ok":true
+prefix 8 chars, method -: 105.40 x 105.30 | fails: 2-generate=2 3-emit=2  | least slack n/a pF
+prefix 8 chars, method kms: 101.90 x 88.20 | fails: 2-generate=2 3-emit=2  | least slack n/a pF
+"ok":true
+prefix 12 chars, method -: 117.90 x 111.30 | fails: 2-generate=2 3-emit=2  | least slack n/a pF
+prefix 12 chars, method kms: 115.05 x 97.20 | fails: 2-generate=2 3-emit=2  | least slack n/a pF
