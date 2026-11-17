@@ -757,7 +757,7 @@ fn set_stop(r: &mut [Record], f: impl Fn(&mut Vec<Reading>, &mut Option<u32>)) {
 
 /// The stop ran but left `CEN` set: kind 11's `CR1` then expects the solved
 /// value, as the judge does.
-fn stop_left_set(r: &mut Vec<Record>) {
+fn stop_left_set(r: &mut [Record]) {
     set_stop(r, |_, cr1| *cr1 = Some(0x81));
     tim2_cr1_expected(r, 0x81);
 }
@@ -1106,7 +1106,7 @@ fn h2_a_missing_stop_is_the_harness_s() {
         "{a:?}"
     );
     assert_eq!(indices(&a.evidence), [m2_solved(&r), m2_witness(&r)]);
-    let r = dshot(&missing, &stop_left_set);
+    let r = dshot(&missing, &|r| stop_left_set(r));
     let a = attributed(&r);
     assert_eq!(a.rule, Rule::H2, "{a:?}");
     assert_eq!(
