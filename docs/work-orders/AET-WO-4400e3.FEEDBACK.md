@@ -136,3 +136,12 @@ My `4400e2` inbox note to `4220c` said ArduPilot's `INTF_CONFIG0 ← 0xC0` asks 
   - `verdicts/` (both sides' outputs and archives), `mutants.txt`;
   - the captured argv `s02own/renode-argv.txt`.
 - The ARM PDF: `~/.cache/aet-ds/arm-ddi0403/` (sha256 in `~/.cache/aet-ds/SHA256SUMS`).
+
+### CI and READY
+
+- **CI on `2a2c09b2`** (`main` `ff17dcf9` merged, `spike/4400e2/` deleted): all green.
+  - `ci` run 44192149990: `gates`, `shards`, all 8 `tools-shard`s and `tools`. **`tier2_tests_passed=183 floor=183`**, so `TIER2_MIN` is exact.
+  - `engine-image` 44192150712 and `ardupilot-image` 44192150110.
+- **The overlap with `4220c` (#214):** both PRs move `TIER2_MIN`. Whichever merges second sums them (`main`'s 180, plus 3 from this PR, plus 4220c's), as the architect's note of 22:55 says. This PR does not touch `ci/test-weights.tsv`.
+
+**READY**, 2026-11-17: built to the ruling on #215, to its acceptance. This is the last push unless the architect asks for another. Title and body: `~/.cache/aet-4400e3/pr-title-body.md`.
