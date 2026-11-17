@@ -419,10 +419,13 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
   - (3) The DShot window's end is computed in three places in `renode.rs`.
   - (4) `E3` has guards no test can tell from their absence (below).
   - (5) Some older chaos tests used `.is_err()` where several guards refuse.
-- **Mutation sweep (one mutant per guard this work order added, its own suites, all tier 1):** 66 mutants.
-  - **Killed:** 55 on the first run; 13 more after four killing tests were added (e3f77a3d, a236fc2d, 684b0020, and 606c1244, which pins E03/E04's observable behaviour).
-  - **Survived:** `E3`'s `booted`, `holds`, `t.holds()`, tags `Some`, and the two injection-`None` guards (E02–E07). They are equivalent, because other rules or replay decide those cases first. They are documented in the rule, not removed: unlabelled redundancy is reported, never cut, so the architect may keep or drop them.
-  - The fix rounds mutated their own guards (fix: H1 to L3; fix2: 3 + 2 + 6), all killed.
+- **Mutation sweep (one mutant per guard this work order added, its own suites, all tier 1):** 88 mutants, counted from the worker's tables. The harness and logs are in `~/.cache/aet-2302/red-mut/`.
+  - **Killed:** 70 on the first run. 12 more (R08, R17, R20, R22; C02, C03, C05, C06, C08, C10, C21, C33) were killed after three tests were added: e3f77a3d, a236fc2d and 684b0020.
+  - **Survived:** 6, `E3`'s E02–E07 (`booted`, `holds`, `t.holds()`, tags `Some`, and the two injection-`None` guards). They are equivalent, because other rules or replay decide those cases first.
+    - 606c1244 pins the observable behaviour (I6 and S5) but does not kill them.
+    - They are reported, not removed: unlabelled redundancy is never cut, so the architect may keep or drop them.
+  - **Fix round 2's own mutants**, all killed, are separate from these 88: A2-1 3, A2-3 2, A2-5 7.
+  - Fix round 1 recorded no mutation run of its own; its guards are among the 88.
 - **Open questions for the architect:**
   - **Q1:** a core that sleeps and then writes its boot word still exits 5, by `2100`'s ruled A10 ("boot word set but the core executed fewer"), so a firmware can abort a campaign that way. Unchanged by this work order; pinned by `m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement`.
   - **Q2:** `I7` and `short_window`: remove, or keep for a future short window? (§15)
