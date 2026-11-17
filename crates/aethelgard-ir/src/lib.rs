@@ -1430,6 +1430,18 @@ pub enum IrValidationError {
         "`pin_speeds` and the solved pins disagree at `{id}`: every net of `assignments` and `gpio` has exactly one speed, `0` or `1` (`10` and `11` are never selected)"
     )]
     PinSpeedMismatch { id: String },
+    /// `AET-WO-4400b2` F4: a stored speed `solve`'s rule would not give.
+    #[error(
+        "`pin_speeds.{id}` is `{stored}`, but `solve` gives `{solved}` for that line (`speeds::OutputSpeeds::choose` on its `spi_lines` entry; every other pin `0`)"
+    )]
+    PinSpeedNotSolved { id: String, stored: u8, solved: u8 },
+    /// `AET-WO-4400b2` F4: a solved SPI line no selectable speed serves.
+    #[error("net `{id}` on `{pin}` has no output speed: {refusal}")]
+    PinSpeedUnserved {
+        id: String,
+        pin: String,
+        refusal: speeds::Refusal,
+    },
     #[error(
         "I2C bus `{bus}` has ceiling {ceiling_hz} Hz, but its analog lines derive {}",
         derived_hz.map_or_else(|| "no mode (rise time slower than every mode, or no lines)".to_owned(), |hz| format!("{hz} Hz"))
@@ -1944,6 +1956,13 @@ impl IrValidationError {
             Self::SpiClockAbovePart { .. } => "SpiClockAbovePart",
             Self::SpiLineMismatch { .. } => "SpiLineMismatch",
             Self::PinSpeedMismatch { .. } => "PinSpeedMismatch",
+            Self::PinSpeedNotSolved { .. } => "PinSpeedNotSolved",
+            Self::PinSpeedUnserved { refusal, .. } => match refusal {
+                speeds::Refusal::SupplyOutsideTable { .. } => "SupplyOutsideSpeedTable",
+                speeds::Refusal::LoadAboveTable { .. } => "LoadAboveSpeedTable",
+                speeds::Refusal::TooFastForPin { .. } => "RateAbovePinSpeed",
+                speeds::Refusal::RiseFasterThanPin { .. } => "RiseTimeBelowPinSpeed",
+            },
             Self::CeilingNotDerived { .. } => "CeilingNotDerived",
             Self::SpeedBusMismatch { .. } => "SpeedBusMismatch",
             Self::BusTooFast { .. } => "BusTooFast",
@@ -2126,6 +2145,8 @@ impl IrValidationError {
             | Self::SpiClockAbovePart { id, .. }
             | Self::SpiLineMismatch { id }
             | Self::PinSpeedMismatch { id }
+            | Self::PinSpeedNotSolved { id, .. }
+            | Self::PinSpeedUnserved { id, .. }
             | Self::SpeedBusMismatch { id }
             | Self::MotorTimingShape { id }
             | Self::ZeroMotorRate { id }
@@ -3715,7 +3736,6 @@ impl SolvedTopology {
         self.validate_motor_outputs()?;
         serial::validate_solved(self)?;
         self.validate_controllers()?;
-        self.validate_pin_speeds()?;
         // The part limits again, from what the topology carries, so a bus
         // sped up or a device moved after `validate` is refused here too
         // (`AET-WO-4300c` §4.2, `RUL-16`).
@@ -3736,7 +3756,9 @@ impl SolvedTopology {
                 check_spi_device(reference, p, rate_hz)?;
             }
         }
-        Ok(())
+        // Last (`AET-WO-4400b2` F4): each stored speed re-derived, after the
+        // part limits, so a bus past its part is named by the part first.
+        self.validate_pin_speeds()
     }
 
     /// Sets `spi_controllers` and `i2c_timings` to what `solve` derives for
@@ -3807,6 +3829,30 @@ impl SolvedTopology {
         }
         if let Some((net, _)) = self.pin_speeds.iter().find(|(_, v)| **v > 1) {
             return Err(IrValidationError::PinSpeedMismatch { id: net.clone() });
+        }
+        // F4 (`AET-WO-4400b2`): each stored speed is `solve`'s, re-derived as
+        // ceilings and controllers are, so no reader takes a hand-edited one.
+        for (net, pin) in solve::solved_pins(self) {
+            let solved = match solve::pin_speed(self, net, pin) {
+                Ok(v) => v,
+                Err(solve::SolveError::PinSpeed { refusal, .. }) => {
+                    return Err(IrValidationError::PinSpeedUnserved {
+                        id: net.clone(),
+                        pin: pin.clone(),
+                        refusal,
+                    });
+                }
+                Err(solve::SolveError::InvalidSpecification(e)) => return Err(e),
+                Err(other) => unreachable!("pin_speed refuses only by speed or table: {other}"),
+            };
+            let stored = self.pin_speeds[net];
+            if stored != solved {
+                return Err(IrValidationError::PinSpeedNotSolved {
+                    id: net.clone(),
+                    stored,
+                    solved,
+                });
+            }
         }
         Ok(())
     }

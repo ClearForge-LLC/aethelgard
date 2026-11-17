@@ -13,7 +13,15 @@ pub const ADDR: u32 = 0x0800_1000;
 pub const EHDR: usize = 52;
 pub const PHDR: usize = 32;
 pub const DATA_OFF: usize = EHDR + PHDR;
-const STRTAB: &[u8] = b"\0gpio_default_config\0other\0";
+const STRTAB: &[u8] = b"\0gpio_default_config\0other\0_ZN7ChibiOS10UARTDriver11_serial_tabE\0SD1\0";
+
+/// `_serial_tab`'s name's offset in [`STRTAB`] (`AET-WO-4400b2`).
+const SERIAL_NAME: u32 = 27;
+
+/// `SD1`'s name's offset in [`STRTAB`], and where the synthetic ELF puts it:
+/// the driver a serial entry for USART1 points at.
+const SD1_NAME: u32 = 65;
+pub const SD1: u32 = 0x3000_1000;
 
 /// The knobs.
 #[derive(Clone)]
@@ -44,6 +52,9 @@ pub struct Elf {
     pub crowd: Option<(u32, u32)>,
     /// The string table's last NUL left off.
     pub unterminated: bool,
+    /// ArduPilot's serial table, 44 bytes per SERIALn (`AET-WO-4400b2`),
+    /// after `gpio_default_config` in the same section; `None` leaves it out.
+    pub serial: Option<Vec<[u8; 44]>>,
 }
 
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
@@ -98,6 +109,7 @@ impl Default for Elf {
             writable: false,
             crowd: None,
             unterminated: false,
+            serial: None,
         }
     }
 }
@@ -134,8 +146,25 @@ impl Elf {
                 put32(&mut data, w);
             }
         }
+        let serial_at = ADDR + data.len() as u32;
+        if let Some(entries) = &self.serial {
+            for e in entries {
+                data.extend_from_slice(e);
+            }
+        }
         let mut syms = Vec::new();
         symbol(&mut syms, 0, 0, 0, 0, 0);
+        if let Some(entries) = &self.serial {
+            symbol(
+                &mut syms,
+                SERIAL_NAME,
+                serial_at,
+                44 * entries.len() as u32,
+                1,
+                1,
+            );
+            symbol(&mut syms, SD1_NAME, SD1, 100, 1, 1);
+        }
         let info = if self.function { 2 } else { 1 };
         symbol(
             &mut syms,
@@ -277,8 +306,32 @@ pub fn header(words: &[[u32; 7]; 11]) -> String {
             );
         }
     }
-    s
+    s + IDENTITY
 }
+
+/// The reference board's device tables as ArduPilot writes them into
+/// `hwdef.h` (`AET-WO-4400b2`): the flash on SPI1 with its CS on PA0 at the
+/// achieved 16 MHz in mode 0, I2C1 with the BME280 probed as BMP280 at 0x76,
+/// and the I2C clock at its declared 400 kHz.
+pub const IDENTITY: &str = "\
+#define MHZ (1000U*1000U)
+#define KHZ (1000U)
+#define HAL_I2C_MAX_CLOCK 400000
+#define HAL_SPI1_CONFIG { &SPID1, 1, STM32_SPI_SPI1_DMA_STREAMS, PAL_LINE(GPIOA,5U) }
+#define HAL_SPI_BUS_LIST HAL_SPI1_CONFIG
+#define HAL_SPI_DEVICE0  SPIDesc(\"dataflash\"      ,  0,  1, PAL_LINE(GPIOA,0U) , SPIDEV_MODE0,  16*MHZ,  16*MHZ)
+#define HAL_SPI_DEVICE_LIST \\
+   HAL_SPI_DEVICE0
+#define HAL_BARO_PROBE1 probe_i2c_dev(AP_Baro_BMP280::probe, 0, 118); RETURN_IF_NO_SPACE;
+#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1
+#if defined(STM32_I2C_I2C1_RX_DMA_STREAM) && defined(STM32_I2C_I2C1_TX_DMA_STREAM)
+#define HAL_I2C1_CONFIG { &I2CD1, 1, STM32_I2C_I2C1_RX_DMA_STREAM, STM32_I2C_I2C1_TX_DMA_STREAM, PAL_LINE(GPIOB,6U), PAL_LINE(GPIOB,7U) }
+#else
+#define HAL_I2C1_CONFIG { &I2CD1, 1, SHARED_DMA_NONE, SHARED_DMA_NONE, PAL_LINE(GPIOB,6U), PAL_LINE(GPIOB,7U) }
+#endif
+#define HAL_I2C_DEVICE_LIST \\
+   HAL_I2C1_CONFIG
+";
 
 pub fn allow() -> aethelgard_pincheck::AllowList {
     aethelgard_pincheck::AllowList::parse(include_bytes!("../../fixtures/step-g.allow.json"))
