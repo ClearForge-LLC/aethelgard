@@ -240,11 +240,15 @@ fn extract_counts_each_declared_pin_as_declared_never_as_a_maximum() {
             [format!("U4.{}", if net == "SPI_SCK" { 6 } else { 5 })]
         );
     }
-    // The standing I2C condition no longer covers U7's pins (adversarial A2).
+    // The standing I2C and SPI conditions no longer cover U7's and U5's
+    // pins (adversarial A2, H1).
     let conditions = strings(&v["conditions"]);
+    use aethelgard_eda::extract as x;
     assert!(
-        conditions.contains(&aethelgard_eda::extract::I2C_PIN_CONDITION_BESIDE_DECLARED)
-            && !conditions.contains(&aethelgard_eda::extract::I2C_PIN_CONDITION),
+        conditions.contains(&x::I2C_PIN_CONDITION_BESIDE_DECLARED)
+            && !conditions.contains(&x::I2C_PIN_CONDITION)
+            && conditions.contains(&x::SPI_CONDITION_BESIDE_DECLARED)
+            && !conditions.contains(&x::SPI_CONDITION),
         "{v}"
     );
     let declared: Vec<&str> = strings(&v["conditions"])

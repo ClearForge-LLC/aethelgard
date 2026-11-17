@@ -265,6 +265,11 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
 /// [`conditions`] itself is unchanged, so the fabrication notes are too.
 pub const SPI_CONDITION: &str = "on SCK and MOSI, each device pin at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
 
+/// [`SPI_CONDITION`]'s words when an SPI line carries a pin counted at a
+/// declared value (`AET-WO-4220b`, adversarial H1), which no cited maximum
+/// covers.
+pub const SPI_CONDITION_BESIDE_DECLARED: &str = "on SCK and MOSI, each device pin not counted at a declared value at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
+
 /// What the bound assumes of each pin counted at a declared value
 /// (`AET-WO-4220b`, the `AET-WO-4220` D10 ruling), stated once per declaring
 /// device beside [`conditions`], as [`OFFBOARD`] is, so a board with no

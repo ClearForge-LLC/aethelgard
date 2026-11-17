@@ -5,11 +5,17 @@
 //! pin or a missing keepout fails here (§5.1).
 //!
 //! Coordinates are KiCad's: the top view, x to the right, y down, in nm.
-//! The makers draw the BMP581's pads and the ICM's lands in a bottom view;
-//! each is mirrored here as `AET-WO-4220b.FEEDBACK.md` R6 and R7 read it.
+//! Bosch draws the BMP581's pads in a bottom view (Fig. 30), mirrored here
+//! (`AET-WO-4220b.FEEDBACK.md` R7); the ICM's are read from DS-000347's top
+//! view (p. 54, R6), as drawn.
 
 use aethelgard_eda::library;
 use aethelgard_eda::sexpr::{self, Sx};
+
+/// What a file holds, read for comparison: a land, a keepout, a pin.
+type ReadLand = (String, (i64, i64), (i64, i64));
+type ReadKeep = (String, (i64, i64, i64, i64), [bool; 3]);
+type ReadPin = (String, String, String);
 
 /// One land: its number, centre and size, nm.
 type Land = (&'static str, (i64, i64), (i64, i64));
@@ -56,9 +62,11 @@ const BMP_LANDS: [Land; 10] = [
 type Keep = (&'static str, (i64, i64, i64, i64), [bool; 3]);
 
 /// AN-000393 §2.1: "Avoiding vias, traces, and copper pour under IMU
-/// device". `F.Cu`: inside the ring of lands, bounded by their inner edges
-/// (1.1625 − 0.2375 and 0.9125 − 0.2375). `B.Cu`: the body (3.0 by 2.5,
-/// with `aaa` 0.1 of profile tolerance) at its maximum.
+/// device". `F.Cu`: no track, via or pour inside the ring of lands, bounded
+/// by their inner edges (1.1625 − 0.2375 and 0.9125 − 0.2375). `B.Cu`: no
+/// track or via under the body (3.0 by 2.5, with `aaa` 0.1 of profile
+/// tolerance) at its maximum; pour is allowed there, so a two-layer board
+/// keeps its ground plane whole (a reading, `AET-WO-4220b` FEEDBACK D3).
 const ICM_KEEPOUTS: [Keep; 2] = [
     (
         "F.Cu",
@@ -135,7 +143,7 @@ fn nm(item: &Sx, i: usize) -> i64 {
 }
 
 /// Each pad of `fp`: number, centre, size (nm), shape, angle and layers.
-fn lands(fp: &Sx) -> Vec<(String, (i64, i64), (i64, i64))> {
+fn lands(fp: &Sx) -> Vec<ReadLand> {
     fp.children("pad")
         .map(|p| {
             assert_eq!(p.arg(2), Some("smd"), "{p:?}");
@@ -161,7 +169,7 @@ fn lands(fp: &Sx) -> Vec<(String, (i64, i64), (i64, i64))> {
         .collect()
 }
 
-fn keepouts(fp: &Sx) -> Vec<(String, (i64, i64, i64, i64), [bool; 3])> {
+fn keepouts(fp: &Sx) -> Vec<ReadKeep> {
     fp.children("zone")
         .map(|z| {
             let k = z.child("keepout").unwrap();
@@ -202,14 +210,14 @@ fn keepouts(fp: &Sx) -> Vec<(String, (i64, i64, i64, i64), [bool; 3])> {
         .collect()
 }
 
-fn want_lands(table: &[Land]) -> Vec<(String, (i64, i64), (i64, i64))> {
+fn want_lands(table: &[Land]) -> Vec<ReadLand> {
     table
         .iter()
         .map(|&(n, at, size)| (n.to_owned(), at, size))
         .collect()
 }
 
-fn want_keepouts(table: &[Keep]) -> Vec<(String, (i64, i64, i64, i64), [bool; 3])> {
+fn want_keepouts(table: &[Keep]) -> Vec<ReadKeep> {
     table
         .iter()
         .map(|&(l, r, f)| (l.to_owned(), r, f))
@@ -265,9 +273,9 @@ fn each_front_keepout_is_inside_its_ring_of_lands() {
     }
 }
 
-fn pins(lib_id: &str) -> Vec<(String, String, String)> {
+fn pins(lib_id: &str) -> Vec<ReadPin> {
     let sym = library::symbol(lib_id).unwrap();
-    let mut out: Vec<(String, String, String)> = sym
+    let mut out: Vec<ReadPin> = sym
         .children("symbol")
         .flat_map(|u| u.children("pin"))
         .map(|p| {
@@ -282,7 +290,7 @@ fn pins(lib_id: &str) -> Vec<(String, String, String)> {
     out
 }
 
-fn want_pins(table: &[Pin]) -> Vec<(String, String, String)> {
+fn want_pins(table: &[Pin]) -> Vec<ReadPin> {
     table
         .iter()
         .map(|&(n, name, kind)| (n.to_owned(), name.to_owned(), kind.to_owned()))

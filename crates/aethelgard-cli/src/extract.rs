@@ -117,13 +117,21 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     let mut out = Vec::new();
     let mut conditions = bound::conditions(&stack);
     if lines.iter().any(|b| b.spi_signal.is_some()) {
-        conditions.push(bound::SPI_CONDITION.to_owned());
+        // A declared SPI pin is not a cited maximum (`AET-WO-4220b`, H1).
+        let declared = lines
+            .iter()
+            .any(|b| b.spi_signal.is_some() && !b.declared_pins.is_empty());
+        conditions.push(if declared {
+            bound::SPI_CONDITION_BESIDE_DECLARED.to_owned()
+        } else {
+            bound::SPI_CONDITION.to_owned()
+        });
     }
     if aethelgard_eda::schematic::declares_offboard(&spec) {
         conditions.push(bound::OFFBOARD.to_owned());
     }
     // A declared I2C pin is not UM10204's `Ci`, so the standing condition
-    // names the pins it covers (`AET-WO-4220b`).
+    // names the pins it covers (`AET-WO-4220b`, adversarial A2).
     if lines
         .iter()
         .any(|b| b.spi_signal.is_none() && !b.declared_pins.is_empty())

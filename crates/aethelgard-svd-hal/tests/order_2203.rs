@@ -150,18 +150,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `LIFECYCLE NRND` line removed and the old specification's sha256 put back,
 /// the three are `c5003f4f…620b`, `875c5440…fbe8` and `63b028f0…bbf8` exactly;
 /// the boot image did not move.
+/// Moved once more by `AET-WO-4220b` (specification version 13, each device's
+/// `pin_capacitance`), which changes no generator of these: with the old
+/// specification's sha256 (`281a522a…`) put back for the new (`12ea89f8…`),
+/// the three texts are `main`'s byte for byte (`b738cc97…912f`,
+/// `b27e162f…31cd`, `8e390d00…c21e` before); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "b738cc97f1c9a28961ed60fe1443ca82a1f863c47403b2ca045e60ebdab2912f",
+        "b4c0b9a0754d5ef9b27a078cb6368f2ba787aac8328e87b56a429eb5e9168ec2",
     ),
     (
         "platform",
-        "b27e162f812f4fb8d1a0fa36f7da50da748fafd863b9df4fe39d92126b7f31cd",
+        "f0b5a67097acc06125c3e0e49702ab19526b371ad6e6e54d09acc944e445d67f",
     ),
     (
         "platform faulted",
-        "8e390d008501678845571685a10ff815f86ffb1e55002bf19a417e8ba17ec21e",
+        "ba58ff9efad15a6528783235978a4084efa34955ba32629166436e157e8ccdad",
     ),
     (
         "boot image",
