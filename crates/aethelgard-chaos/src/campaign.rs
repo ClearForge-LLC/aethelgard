@@ -1839,6 +1839,16 @@ fn wire_past_run_count(records: &[Record]) -> Option<u64> {
     Some(u64::from(past))
 }
 
+/// The timer of the motor output `label`, joined from kind 24.
+fn timer_of<'a>(records: &'a [Record], label: &str) -> Option<&'a str> {
+    records.iter().find_map(|m| match m {
+        Record::MotorOutputSolved {
+            label: l, timer, ..
+        } if l == label => Some(timer.as_str()),
+        _ => None,
+    })
+}
+
 /// The bounds on `motor_anchor_out_of_order` in a booted run the records
 /// give (A2-5): at most once per timer with an anchor (kind 26, joined to
 /// kind 24's timer); and, where the boot word's instant is in the records
@@ -1857,13 +1867,7 @@ fn anchor_order_bounds(records: &[Record]) -> (u64, u64) {
         else {
             continue;
         };
-        let timer = records.iter().find_map(|m| match m {
-            Record::MotorOutputSolved {
-                label: l, timer, ..
-            } if l == label => Some(timer.as_str()),
-            _ => None,
-        });
-        if let Some(t) = timer {
+        if let Some(t) = timer_of(records, label) {
             anchors.insert(t, *a);
         }
     }
@@ -2119,13 +2123,7 @@ fn anchor_record_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
             } => {
                 before += u64::from(*edges_before > 0);
                 after += u64::from(*edges_after > 0);
-                let timer = records.iter().find_map(|m| match m {
-                    Record::MotorOutputSolved {
-                        label: l, timer, ..
-                    } if l == label => Some(timer.as_str()),
-                    _ => None,
-                });
-                if let Some(t) = timer {
+                if let Some(t) = timer_of(records, label) {
                     rises.insert(t, *cen_rises);
                 }
             }
