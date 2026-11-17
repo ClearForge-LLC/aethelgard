@@ -886,8 +886,11 @@ fn fnv(mut h: u64, bytes: &[u8]) -> u64 {
 }
 
 /// How many rounds of colour refinement the canonical rank takes: each
-/// round sees one net further. Three was the prototype's, and measured
-/// (`AET-WO-1313b` §2.1): no tie on Sentinel-03 that a fourth would break.
+/// round sees one net further. Three is the prototype's, which `AET-WO-1313b`
+/// measured (§2.2). The colours' values order parts, not only tell them
+/// apart, so another count places differently: at four, the Sentinel-03
+/// fixture and every size sample move (measured, `AET-WO-1313c` FEEDBACK
+/// §3).
 const COLOUR_ROUNDS: usize = 3;
 
 /// `AET-WO-1313c`, (k): each item's canonical rank, a total order computed

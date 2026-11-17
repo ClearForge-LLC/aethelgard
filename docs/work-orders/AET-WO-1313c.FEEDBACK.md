@@ -23,7 +23,7 @@ Labels: **[measured]** by a run named beside it; **[read at source]** from a fil
 ### 1.2 (k)+(m)+(s), under a declared bound only (`pcb.rs`)
 
 - **(k) `canonical_rank`.** Colour refinement (three rounds) over symbol and footprint, pad numbers, nets as multisets, ownership (owner's colour, `decouples`, `seq`, the anchor's pad pairs). The rank: MCU, ICs, passives, bench parts (a `GND` test point last); IC owners first ((r)); larger courtyard; nearer the MCU over label nets; colour; **the colours of the parts it owns** (§3, A1, new in the build); reference last.
-  - It decides the placing order, the anchor tie-break, an IC's anchored parts after `seq`, the bench parts, the connectors' edges, and the compaction order.
+  - It decides the placing order, the anchor tie-break, the bench parts, the connectors' edges, and the compaction order. An IC's anchored parts go by `seq`, as F1 has them.
   - It replaces (r)'s `bounded` key in `placing_order`, which the rank includes.
   - A net's kind (label net, rail, ground, unconnected) is read from the form of its name, never its text.
 - **(m) `centroid_target`:** the centroid of the anchor's pads on every shared net.
@@ -51,7 +51,7 @@ Labels: **[measured]** by a run named beside it; **[read at source]** from a fil
 
 ### 2.2 Order independence, as tests
 
-- **Parts shuffles:** `under_a_bound_the_board_does_not_depend_on_the_parts_order` (every rotation of a 17-part design's list, and each reversed, write the same bytes). The design has two owner ICs with anchored parts, one with a loop rule, draw sequences against reference order, an IC that owns none, two passives that tie but for their value, a signal and a `GND` test point, and two side connectors.
+- **Parts shuffles:** `under_a_bound_the_board_does_not_depend_on_the_parts_order`: every rotation of a 16-part design's list, and each reversed, places every part the same, and the reversed list writes the same bytes (compared once, §5). The design has two owner ICs with anchored parts, one with a loop rule, draw sequences against reference order, an IC that owns none, two passives that tie but for their value, a signal and a `GND` test point, and two side connectors.
 - **On the real fixture [measured, not a test]:** 10 shuffles of the parts list (an uncommitted xorshift hack in `write_moved`, seeds 1-10) gave byte-identical boards, 10/10, and 10/10 on the 2- and 6-character samples too. A real design's parts list cannot be reached from a test without a seam, and a seam would be a switch (`INV-06`).
 - **The reversed tie-break:** `under_a_bound_no_reference_decides_a_placement` renames every reference class in reverse (so the last tie-break, and every order references could set, runs backwards) and finds the same name-free placement. With no bound it finds a different one, so the check is not empty.
 - **Order-only renamings, an identity test:** `order_only_renamings_place_the_fixture_the_same_way`, 20 seeded renamings of the fixture (`rename_perm.py`'s, in `tests/common/rename.rs`), each emitted, each the same name-free placement.
@@ -80,7 +80,7 @@ References prefixed by `len` characters (`rename_len.py`'s, ported). The tier-1 
   - **Fix:** a key after the colour, the multiset of colours of the parts an item owns. It splits only ties the colour leaves, so it moves no byte of the fixture or any size sample (re-checked against the oracle).
   - The fixture never showed it: its ICs differ in their nets. The mutant that drops the key fails that test.
 - **No name or list position decides a placement under a bound, in what is tested:**
-  - parts order: every rotation and reverse of the 17-part design, byte for byte; 10 shuffles of the real fixture [measured];
+  - parts order: every rotation and reverse of the 16-part design, the same placement (and the same bytes, reversed); 10 shuffles of the real fixture [measured]; the mutant that breaks the rank's last tie by list position fails it;
   - every reference class reversed: the same name-free placement;
   - 20 order-only renamings of the fixture, whose bus-net prefixes also reorder the nets' names: the same name-free placement.
   - The anchor tie-break, the connectors' edges, the anchored parts' order and the target each have a mutant that puts a name back, and a test fails for each.
@@ -91,7 +91,9 @@ References prefixed by `len` characters (`rename_len.py`'s, ported). The tier-1 
   - Mutants that drop the approach check, zero the gap, drop the x-range limit, or make the IC gap 0.5 mm each fail a test.
 - **Loop rules after compaction:** every rule (both bucks' input capacitors, CBOOT, inductor, VCC, feedback; the MCU's reservoir) passes on the fixture and on each sample that places, judged by `loops::judge` at tier 1 and by `check drc --spec` in the image. Compaction moves each group whole, so an anchored part keeps its place by its pins.
 - **No bound, moved bytes:** the corpus, 24/24 byte-identical against `main`; the workspace's goldens unchanged (`cargo test --workspace`).
-- **Mutation (diff-sized), 13 mutants on the build and F1's two, all killed:** approach check, compaction gap, x-range, owned-parts key, centroid target, anchor tie, connectors' order, compaction off, sidestep off, ownership in the colour, the distance key, `seq` ignored, `Rule::gap`'s IC gap, and F1's two (list order, reference order). The distance key first survived: it moves bytes but not the outline, so the placement digest pin was added. A fourteenth, the anchored parts' tie by rank or by reference, survived because `seq` never ties in the emitter; that branch was removed (§4).
+- **Mutation (diff-sized), 13 mutants on the build and F1's two, all killed:** approach check, compaction gap, x-range, owned-parts key, centroid target, anchor tie, connectors' order, compaction off, sidestep off, ownership in the colour, the distance key, `Rule::gap`'s IC gap, the rank's last tie by list position; and F1's two (anchored parts in list order; in reference order, re-run after the reduction). The distance key first survived: it moves bytes but not the outline, so the placement digest pin was added. A fourteenth, the anchored parts' tie by rank or by reference, survived because `seq` never ties in the emitter; that branch was removed (§4).
+
+- **`COLOUR_ROUNDS` is not free [measured]:** at 4 rounds instead of 3, the fixture and every size sample move, because the colours' values order parts, not only tell them apart. Three is kept, as measured in `1313b`; the comment says so.
 
 ## 4. Reduction pass
 
@@ -116,5 +118,10 @@ Run by a fresh subagent over the diff, read-only; each proposal applied was chec
 - **Base:** `457d644` (`main` after `1313b`). Commits: F1 `dc6f2994`; the build; this FEEDBACK with `spike/1313b/` deleted.
 - **`spike/1313b/` is deleted** (WO §1.4). Its figures are in `AET-WO-1313b.FEEDBACK.md`, and its files stay in history at `457d644`. `rename_perm.py` and `rename_len.py` live on as test code, `crates/aethelgard-cli/tests/common/rename.rs`. The headroom figure (89.20 × 86.25 mm with the witness port, USB FS and E0 as blocks) is `1313b`'s, outline only (ruling R5): the blocks were a prototype switch and are not rebuilt.
 - **Gates on the branch:** fmt; clippy `-D warnings` with `with-tools`; `cargo test --workspace` 2145 passed, 0 failed; the two Sentinel-03 tier-2 tests in the pinned image (`the_sentinel_03_fixture_passes_every_gate_inside_its_bound`, `each_size_sample_passes_every_gate_or_is_refused_by_name`), 2 passed, 28.5 s.
+- **Outside the WO's literal fence, and why:**
+  - the CLI's tests (`outline_tier1.rs`, `board_tier2.rs`, `tests/common/rename.rs`), which hold the acceptance's tier-1 and tier-2 tests;
+  - `.github/workflows/ci.yml` (`TIER2_MIN` 179) and `ci/test-weights.tsv` (six estimated rows), as every new tier-2 test needs;
+  - the eda README's placer section;
+  - `Rect::grow`, made `pub` for the tier-1 gap check (reduction, §4).
 - **Not built (WO "is NOT"):** the test-pad rule; a capacitance-aware step (backlog R4: the 2-character sample is its first case); router changes; bottom-side parts.
 - **`emit` under a bound takes about twice as long** (1.4 → 2.9 s release on the fixture). Writing a bounded board in a test build is slower still on a large outline: `under_a_bound_the_board_does_not_depend_on_the_parts_order` compares layouts for every order and bytes once, because each write of its 100 mm-wide board takes about 1.6 s in a test build (the writer's cost, not compaction's: compaction takes 1.5 ms on the fixture).
