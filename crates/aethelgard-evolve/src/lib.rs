@@ -2503,7 +2503,8 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
             .expect("a failing run has a failing finding")
     };
     // The evidence is the named rule's: I5 names both halves', I1 none, and
-    // no rule a harness one's.
+    // no rule a harness one's (a record that is also the named rule's own
+    // evidence stays: a cut witness's `edges_before`, S9's).
     let mut evidence = BTreeSet::new();
     let mut masked = BTreeSet::new();
     for (r, e, m) in &decided {

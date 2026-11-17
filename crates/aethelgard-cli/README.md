@@ -650,7 +650,7 @@ For the twin's window findings (above), six software rules attribute the firmwar
 | `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing or cut short (never `not_counted`), its framing and writes holding, its RX pin on its AF at the injection when one was read, and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
 | `H4` | indeterminate | the judge's sequential injection put a port's frame in out of order | 29 |
 
-A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms` but never in another rule's `evidence`, and `I5` never counts it. Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
+A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms`, and `I5` never counts it. Its evidence joins another rule's `evidence` only where the record is that rule's own evidence too (a DShot witness cut by the run, `H1`'s, whose `edges_before` are `S9`'s), never because of the harness (ADV-M4). Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
 
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 

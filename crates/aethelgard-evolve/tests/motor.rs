@@ -1687,3 +1687,30 @@ fn adv_m3_a_stopped_timer_s_other_field_is_still_s4() {
     assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S4), "{a:?}");
     assert_eq!(named(&r, &a), ["TIM2.ARR"]);
 }
+
+/// ADV-M4 (the README's sentence): a harness rule's event joins another
+/// rule's evidence only where the record is that rule's own evidence: the
+/// DShot witness the run cut (`H1`'s) with edges before its anchor is
+/// `S9`'s by its `edges_before`, so `S9` cites it; `H1`'s output (kind 24)
+/// is never cited.
+#[test]
+fn adv_m4_a_cut_witness_joins_s9_s_evidence_only_as_s9_s_own() {
+    let r = dshot(
+        &[
+            (MOTOR_MISMATCH_FINDING, 1),
+            (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
+            (campaign::MOTOR_EDGE_BEFORE_FINDING, 1),
+        ],
+        &|r| {
+            late(2187)(r);
+            set_dshot_witness(r, |w| {
+                if let Record::MotorWitness { edges_before, .. } = w {
+                    *edges_before = 3;
+                }
+            });
+        },
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S9), "{a:?}");
+    assert_eq!(indices(&a.evidence), [m2_witness(&r)]);
+}
