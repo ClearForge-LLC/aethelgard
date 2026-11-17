@@ -383,7 +383,10 @@ fn the_probe_runs_confined() {
     let (code, v) = doctor(&cli, &tb, &tmp.0);
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(tool(&v, "kicad-cli")["version"], "10.0.7", "{v}");
-    assert_sandbox(&tool(&v, "kicad-cli")["sandbox"], &[tb.dir.0.clone()]);
+    assert_sandbox(
+        &tool(&v, "kicad-cli")["sandbox"],
+        std::slice::from_ref(&tb.dir.0),
+    );
 }
 
 #[test]
