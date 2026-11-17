@@ -75,6 +75,12 @@ header carries no plating comment.
 - Via: 0.6 mm pad, 0.3 mm drill.
 - Net class `power` (VDD_3V3, GND): track width 0.25 mm, via 0.7 mm pad, 0.3 mm drill.
 
+## Acknowledged ledger rows
+
+The witness ledger classes these register fields as judged by no independent rule, model or bench reading. The specification acknowledges each by name, with its reason, and the bench reads them (`RUL-20`):
+
+- None: the specification acknowledges no unwitnessed ledger row.
+
 ## Files
 
 - `p-B_Cu.gbl`: Gerber, bottom copper

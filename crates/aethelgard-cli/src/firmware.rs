@@ -601,6 +601,36 @@ fn unwritable(out: &Path, why: &str) -> Stop {
     )
 }
 
+/// The cargo `build` runs, with the variables and read grants it runs under:
+/// one definition, which `doctor`'s version probe shares (`AET-WO-1604` §1.1).
+pub struct Toolchain {
+    pub cargo: run::Tool,
+    pub env: Vec<(&'static str, OsString)>,
+    pub read_only: Vec<PathBuf>,
+}
+
+/// Finds cargo and the variables `build` needs, `target` its target directory.
+pub fn toolchain(target: &Path) -> Result<Toolchain, Stop> {
+    let cargo = run::Tool::find("cargo")?;
+    let rustup_home = run::required_var("RUSTUP_HOME", true)?;
+    let path_var = run::required_var("PATH", false)?;
+    let mut env = vec![
+        ("RUSTUP_HOME", rustup_home.clone()),
+        ("PATH", path_var),
+        ("CARGO_TARGET_DIR", target.to_path_buf().into_os_string()),
+    ];
+    if let Some(toolchain) = std::env::var_os("RUSTUP_TOOLCHAIN").filter(|v| !v.is_empty()) {
+        env.push(("RUSTUP_TOOLCHAIN", toolchain));
+    }
+    let mut read_only = cargo.dirs();
+    read_only.push(PathBuf::from(&rustup_home));
+    Ok(Toolchain {
+        cargo,
+        env,
+        read_only,
+    })
+}
+
 /// `aethelgard build --crate <dir> --out <file>`.
 pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     input::dir_check(crate_dir)?;
@@ -614,20 +644,12 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
     dependency_free(&input.copy)?;
     let firmware = input.copy.join("firmware");
     preflight(&input.copy, &firmware)?;
-    let cargo = run::Tool::find("cargo")?;
-    let rustup_home = run::required_var("RUSTUP_HOME", true)?;
-    let path_var = run::required_var("PATH", false)?;
     let target = scratch.tool.join("target");
-    let mut env = vec![
-        ("RUSTUP_HOME", rustup_home.clone()),
-        ("PATH", path_var),
-        ("CARGO_TARGET_DIR", target.clone().into_os_string()),
-    ];
-    if let Some(toolchain) = std::env::var_os("RUSTUP_TOOLCHAIN").filter(|v| !v.is_empty()) {
-        env.push(("RUSTUP_TOOLCHAIN", toolchain));
-    }
-    let mut read_only = cargo.dirs();
-    read_only.push(PathBuf::from(&rustup_home));
+    let Toolchain {
+        cargo,
+        env,
+        read_only,
+    } = toolchain(&target)?;
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &cargo,
         args,

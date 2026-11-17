@@ -145,7 +145,8 @@ fn emitter_prefix(key: &str) -> bool {
 /// Step 15a: each test point by document order. Its net must be one a
 /// connector pin may name ([`crate::connectors::nameable`]); its reference
 /// distinct, under KiCad's key, from every other reference the specification
-/// declares and outside the emitter's numbering; and no net carries two.
+/// declares and outside the emitter's numbering; and no net but `GND`
+/// carries two (`AET-WO-3402` §1.1).
 pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
     let nameable = crate::connectors::nameable(spec);
     // Every other reference: `names::references` lists the test points last.
@@ -173,6 +174,11 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
                 id: t.reference.clone(),
                 other: format!("`{other}`"),
             });
+        }
+        // `GND` may carry any number (`AET-WO-3402` §1.1): ground is the net
+        // where several probe points are the norm. Every other net carries one.
+        if t.net == crate::GND {
+            continue;
         }
         if let Some(first) = nets.insert(t.net.as_str(), t.reference.as_str()) {
             return Err(E::TestPointNetRepeated {

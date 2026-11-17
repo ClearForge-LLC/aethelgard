@@ -1628,7 +1628,7 @@ pub enum IrValidationError {
     #[error("test point `{id}` takes a reference that {other} already holds (`AET-WO-1312`)")]
     TestPointReferenceTaken { id: String, other: String },
     #[error(
-        "net `{id}` carries two test points, `{first}` and `{second}`; one is enough (`AET-WO-1312`)"
+        "net `{id}` carries two test points, `{first}` and `{second}`; one is enough on any net but GND (`AET-WO-1312`, `AET-WO-3402`)"
     )]
     TestPointNetRepeated {
         id: String,

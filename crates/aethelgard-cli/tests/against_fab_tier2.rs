@@ -146,7 +146,7 @@ fn verify_against_fab_names_every_changed_and_extra_file() {
     );
     assert_eq!(
         found.len(),
-        16,
-        "fifteen changed files and one extra are sixteen differences"
+        18,
+        "seventeen changed files and one extra are eighteen differences"
     );
 }

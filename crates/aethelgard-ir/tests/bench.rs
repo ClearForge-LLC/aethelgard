@@ -150,13 +150,28 @@ fn a_reference_the_emitter_numbers_is_refused_by_name() {
     }
 }
 
+/// `AET-WO-3402` §1.1: any net but `GND` carries one test point.
 #[test]
 fn the_same_net_twice_is_refused_by_name() {
     let mut v = bench_json();
-    set(&mut v, 11, "GND", "TP12");
+    set(&mut v, 11, "I2C_SDA", "TP12");
     let err = refusal(&v);
-    assert_refusal(&err, "TestPointNetRepeated", "GND");
-    assert!(err.to_string().contains("`TP10` and `TP12`"), "{err}");
+    assert_refusal(&err, "TestPointNetRepeated", "I2C_SDA");
+    assert!(err.to_string().contains("`TP1` and `TP12`"), "{err}");
+}
+
+/// `AET-WO-3402` §1.1: `GND` may carry several test points, each its own
+/// reference; a reference repeated on `GND` is still refused.
+#[test]
+fn gnd_carries_any_number_of_test_points() {
+    let mut v = bench_json();
+    set(&mut v, 11, "GND", "TP12");
+    spec_of(&v)
+        .validate()
+        .expect("a second test point on GND is accepted");
+    set(&mut v, 11, "GND", "TP10");
+    let err = refusal(&v);
+    assert_refusal(&err, "TestPointReferenceTaken", "TP10");
 }
 
 #[test]

@@ -27,7 +27,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
   | TP6 | CONSOLE_TX | TP13 | I2C_SCL |
   | TP7 | FLASH_CS | TP14 | I2C_SDA |
 
-  **Only one GND pad.** The specification refuses a second test point on one net (`TestPointNetRepeated`). The other ground points are the GND pins of J1–J4 (pin 4 of J1, J3 and J4; pin 6 of J2).
+  **One GND pad, TP1, as ruled** (`AET-WO-3402` Q2 (c), PR #203). The specification now admits several GND test points (`AET-WO-3402` §1.1), but the placer puts a second one where the specification cannot steer it, 25.8–31.5 mm from the I2C pads [measured]. So the other ground points are the GND pins of J1–J4 (pin 4 of J1, J3 and J4; pin 6 of J2), and B6 names the nearest.
 
 ## B1. Programming by SWD, with connect-under-reset
 
@@ -45,7 +45,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 - **Instrument:** the SWD probe, reading after boot.
 - **Pass:** each register the twin's run of this ELF records (the boot record of `verify`'s `simulate`, regenerated from this package) reads back with the same word. That includes:
   - GPIOA/GPIOB `MODER`, `AFRL`/`AFRH`, `OTYPER` and `PUPDR`;
-  - `I2C1.CR1`/`TIMINGR` and `I2C2.CR1`/`TIMINGR`: **both `0x50D32A40`, `Standard100k`**, at the solved 64 MHz kernel clock. The firmware initialises each I2C peripheral at the lowest declared speed of any bus (`aethelgard-svd-hal/src/board.rs` L313–318: the topology does not say which peripheral serves which bus). So SENSORS (I2C1), declared at 400 kHz, runs at 100 kHz on this board, beside EXT's 100 kHz. The solved `i2c_timings` hold I2C1's `Fast400k` word, `0x10C7123C`, but the boot does not write it (`AET-WO-3401` FEEDBACK F4);
+  - `I2C1.CR1`/`TIMINGR` and `I2C2.CR1`/`TIMINGR`, each at its own bus's declared speed (`AET-WO-3402` §1.3), at the solved 64 MHz kernel clock: **I2C1 (SENSORS, 400 kHz) `0x10C7123C`, `Fast400k`; I2C2 (EXT, 100 kHz) `0x50D32A40`, `Standard100k`** (the solved `i2c_timings`; the firmware's `init` modes, `firmware/src/main.rs`);
   - `SPI1.CFG1`/`CFG2`.
 
   The rows the specification acknowledges as unwitnessed (`acknowledge_unwitnessed`) are read here, each against the reason its entry gives.
@@ -88,7 +88,12 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
   - `RUL-19` (1): the campaign's rise time is computed from declared values, and `extract` bounds the routed copper;
   - roadmap §3: Sentinel-01 is ordered to falsify the extractor;
   - the probe is added as an off-board load (ruled on #191, Q2).
-- **Instrument:** a scope with the probe of known `C_p` on each pad, ground spring to TP1. Method as `3302` B3–B5: the debugger holds the line low through `GPIOx_BSRR`, then releases it, so each edge is the pull-up's RC with no firmware.
+- **Instrument:** a scope with the probe of known `C_p` on each pad. Its ground goes to the nearest ground point (ruled on PR #203, Q2 (c)), distances measured pad centre to pad centre on the board's emitted layout:
+  - **SENSORS** (TP13 I2C_SCL, TP14 I2C_SDA): **TP1**, at 20.5 mm and 21.2 mm.
+  - **EXT** (TP11 EXT_SCL, TP12 EXT_SDA): **J4 pin 4**, the EXT port's own GND, at 14.0 mm and 8.5 mm. J3 pin 4 is nearer EXT_SCL, at 8.7 mm.
+  - So the probe's ground is a **lead of at least that length**, typically the probe's 5–15 cm ground clip, not a spring. Record its length beside `C_p`.
+  - **Why a few centimetres of lead is enough here** [inferred]: the lead's inductance is about 1 nH/mm, so 50–150 nH, which with `C_p` of about 10 pF rings at roughly 130–230 MHz. The rises B6 times last 100 ns to 1 µs (table below), so their spectrum lies far below that resonance. The ring rides on the fast falling edge (`3302` B3 saw a 40–50 ns ring on it), not on the 30–70 % rise this row reads.
+- **Method:** as `3302` B3–B5: the debugger holds the line low through `GPIOx_BSRR`, then releases it, so each edge is the pull-up's RC with no firmware.
 - **Prediction:** `t(30–70 %) = 0.8473 · R · C`.
   - R is the fitted pull-up at its +1 % limit, if the 1 % part in `ORDER.md` is fitted; use the fitted part's own tolerance otherwise.
   - C is `extract`'s bound for the line plus `C_p`.
@@ -111,7 +116,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 - **Instrument:** the scope on TP11 (EXT_SCL, 10 kΩ), J4 empty.
 - **Method:**
   1. Over SWD, start an address phase on I2C2 (`CR2`: a 7-bit address with no device, `START`). The H7 clocks nine SCL pulses and gets a NACK.
-  2. `TIMINGR` is `0x50D32A40` at a 64 MHz HSI kernel clock (the solved topology): PRESC 5 (93.75 ns), so SCLH is 43 × 93.75 ns = **4.031 µs**.
+  2. I2C2's `TIMINGR` is `0x50D32A40` (EXT, 100 kHz, `Standard100k`; unchanged by `AET-WO-3402` §1.3, which moves only I2C1) at a 64 MHz HSI kernel clock (the solved topology): PRESC 5 (93.75 ns), so SCLH is 43 × 93.75 ns = **4.031 µs**.
   3. Find the voltage `V_th` on SCL's rising edge from which the high phase lasts 4.031 µs, with HSI's stated −2.6 %/+1.5 % taken into account.
 - **Pass:** `V_th` is within **1.7 ± 0.2 V**, and SCL's slow edge (about 0.5 µs at 10 kΩ) makes the high phase measurably shorter than 4.031 µs when timed from 0.7·VDD.
 - **On a disagreement:** the northstar §2 row is revised with our copper's figure, and the twin's controller-timing note (roadmap §7.1) with it.
@@ -135,6 +140,6 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 
 ## What this plan cannot measure
 
-- **A second GND test point** (`TestPointNetRepeated`; J1–J4's GND pins stand in).
+- **A GND pad beside the I2C pads.** The placer cannot be steered to put one there (`AET-WO-3402` F1); a placer rule is on the architect's backlog (1313b). The probe grounds by lead (B6).
 - **The buck, the flight sensors and the witness:** they are Sentinel-03's (ruled on PR #184).
 - **SPI rise times** against `extract` are not a row: SPI's declared bound (30 pF) chooses the pin speed and is judged by `check speeds`. The SPI pads (TP8–TP10) are for logic timing.

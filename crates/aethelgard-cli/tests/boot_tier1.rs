@@ -851,7 +851,19 @@ fn a_boot_past_the_memory_cap_fails_and_names_it() {
     assert_eq!(kinds(&v), ["memory_cap_exceeded"]);
     assert_eq!(v["tool"]["exit_code"], -1);
     assert!(v["boot"]["boot_word"]["observed"].is_null(), "{v}");
-    assert!(took.as_secs() < 30, "{took:?}");
+    // The reaper's own record (`AET-WO-2302` D6) shows the cap was passed:
+    // it records the peak it killed at, never a time.
+    let memory = &v["memory"];
+    assert!(
+        memory["peak_rss_kib"].as_u64().unwrap() > memory["bound_kib"].as_u64().unwrap(),
+        "{v}"
+    );
+    // The kind already proves the reaper fired. The wall time need only show
+    // the kill came before the stub's own 60 s sleep could end, so it is
+    // bounded at 50 s: 10 s of margin, as for the wall bound below, for a
+    // loaded runner's start-up and teardown (31.8 s was measured on CI, PR
+    // #185, run 43970150780, against the former 30 s bound).
+    assert!(took.as_secs() < 50, "{took:?}");
 }
 
 #[test]
