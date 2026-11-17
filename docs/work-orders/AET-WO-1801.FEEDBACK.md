@@ -134,6 +134,11 @@ All [measured].
 - **Q2, `crates/aethelgard-cli/README.md`.** Its example outputs show `"aethelgard":"0.1.0"` and `"engine_version":"0.1.0"` (lines 462, 656, 720). They are examples, not goldens, and outside the fence. Update them at the bump, or leave them?
 - **Q3, the bridge.** `bridge/Cargo.toml` stays 0.1.0: it is never published, has its own version, and its version appears in the bridge's own output (`analog.rs`, tests). Confirm it does not follow the workspace.
 
+- **Q4, a peer note (4220b, 03:30 UTC).** 4220b will change `aethelgard-kicad-lib`'s `license` to `CC-BY-SA-4.0 AND (MIT OR Apache-2.0)`, because the crate gains the project's own symbols and footprints.
+  - CI's packaging step currently requires KiCad's `LICENSE.md` in that crate and forbids `LICENSE-MIT` and `LICENSE-APACHE`; the crate would then need both licences' texts.
+  - If 4220b merges before the bump, that step and the packaged file list change with it. I measured the crate as it is on `36e428b`.
+  - Nothing in this PR depends on it, but the release should go out with whichever licence is on `main`.
+
 ## 6. Gates
 
 - **Local [measured]**, on this branch (no Rust changed), Furnace, capped scope:
