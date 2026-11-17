@@ -96,6 +96,13 @@ fn judge(spec: &Specification, pads: &Pads, board: &str) -> support::Record {
     support::judge(spec, &netlist, &b).unwrap()
 }
 
+fn judge_text(spec: &Specification, text: &str, board: &str) -> support::Record {
+    let n = support::netlist(&strict::netlist(text).unwrap()).unwrap();
+    let tree = strict::board(board).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    support::judge(spec, &n, &b).unwrap()
+}
+
 fn kinds(r: &support::Record) -> Vec<&'static str> {
     r.findings.iter().map(|f| f.kind).collect()
 }
@@ -171,6 +178,11 @@ fn boot0_wired_or_floating_or_pulled_the_wrong_way_fails() {
             "no_programming_path",
             "test_point_off_net"
         ],
+        "{}",
+        messages(&r)
+    );
+    assert!(
+        messages(&r).contains("wired to `GND`, so nothing can drive it high"),
         "{}",
         messages(&r)
     );
@@ -361,4 +373,102 @@ fn the_cli_refuses_a_version_12_file_by_its_version() {
     assert_eq!(out.status.code(), Some(2), "{r}");
     assert_eq!(r["error"]["kind"], "UnsupportedSchemaVersion", "{r}");
     assert_eq!(r["error"]["message"], "schema_version is 12, not 13", "{r}");
+}
+
+/// Adversarial F1: BOOT0's net holds the boot pin, its one pull-down and the
+/// declared connector pin and test point, nothing else: a pull-up beside the
+/// pull-down, or a device's pin moved onto it, fails by name.
+#[test]
+fn anything_else_on_boot0_s_net_fails() {
+    let (spec, pads, board) = bench();
+    for (r, pin, value) in [
+        ("R99", "1", "1k"),
+        ("R99", "1", "0"),
+        ("JP1", "1", "Jumper"),
+    ] {
+        let mut p = pads.clone();
+        p.0.insert(r.into(), value.into());
+        p.1.insert((r.into(), pin.into()), "/BOOT0".into());
+        p.1.insert((r.into(), "2".into()), "VDD_3V3".into());
+        let out = judge(&spec, &p, &board);
+        assert_eq!(
+            kinds(&out),
+            ["strap_wrong"],
+            "{r} {value}: {}",
+            messages(&out)
+        );
+        assert!(
+            messages(&out).contains(&format!("also holds {r} pin 1")),
+            "{}",
+            messages(&out)
+        );
+    }
+    // U4's WP strap pin moved onto BOOT0.
+    let mut p = pads.clone();
+    p.1.insert(("U4".into(), "3".into()), "/BOOT0".into());
+    let out = judge(&spec, &p, &board);
+    assert!(
+        messages(&out).contains("also holds U4 pin 3"),
+        "{}",
+        messages(&out)
+    );
+}
+
+/// Mutation 11 and adversarial F3: an unpopulated pull-down, and one whose
+/// value overflows the leakage product, fail.
+#[test]
+fn an_unpopulated_or_overflowing_pull_down_fails() {
+    let (spec, pads, board) = bench();
+    let pd = pull_down(&pads);
+    let text = netlist_text(&pads);
+    let comp = format!("(comp (ref \"{pd}\") (value \"10k\")");
+    assert!(text.contains(&comp));
+    let out = judge_text(
+        &spec,
+        &text.replace(&comp, &format!("{comp} (property (name \"dnp\"))")),
+        &board,
+    );
+    assert_eq!(kinds(&out), ["strap_wrong"], "{}", messages(&out));
+    assert!(messages(&out).contains("unpopulated"), "{}", messages(&out));
+    for value in ["1229782938247303442", "1229782938248M"] {
+        let mut p = pads.clone();
+        p.0.insert(pd.clone(), value.into());
+        let out = judge(&spec, &p, &board);
+        assert_eq!(kinds(&out), ["strap_wrong"], "{value}: {}", messages(&out));
+    }
+}
+
+/// Adversarial F4: a declared test point that is not KiCad's one-pin test
+/// point, an undeclared one, and a switch with a third pin on a net fail.
+#[test]
+fn a_test_point_or_switch_of_another_shape_fails() {
+    let (spec, pads, board) = bench();
+    // TP9 (VDD_3V3) exported as a 0 ohm resistor to GND: a short.
+    let mut p = pads.clone();
+    p.1.insert(("TP9".into(), "2".into()), "GND".into());
+    let text = {
+        let with_pin = netlist_text(&p);
+        with_pin.replace(
+            "(comp (ref \"TP9\") (value \"TestPoint\") (libsource (lib \"Connector\") (part \"TestPoint\")))",
+            "(comp (ref \"TP9\") (value \"0\") (libsource (lib \"Device\") (part \"R\")))",
+        )
+    };
+    assert!(text.contains("(ref \"TP9\") (value \"0\")"));
+    let out = judge_text(&spec, &text, &board);
+    assert_eq!(kinds(&out), ["test_point_off_net"], "{}", messages(&out));
+    // A second pin alone.
+    let mut p = pads.clone();
+    p.1.insert(("TP1".into(), "2".into()), "GND".into());
+    assert_eq!(kinds(&judge(&spec, &p, &board)), ["test_point_off_net"]);
+    // An undeclared test point.
+    let mut p = pads.clone();
+    p.0.insert("TP13".into(), "TestPoint".into());
+    p.1.insert(("TP13".into(), "1".into()), "/I2C_SDA".into());
+    let out = judge(&spec, &p, &board);
+    assert_eq!(kinds(&out), ["test_point_off_net"], "{}", messages(&out));
+    assert!(messages(&out).contains("TP13 is a test point the specification does not declare"));
+    // The switch with a third pin on the supply.
+    let mut p = pads.clone();
+    p.1.insert(("SW1".into(), "3".into()), "VDD_3V3".into());
+    assert_eq!(kinds(&judge(&spec, &p, &board)), ["reset_switch_wrong"]);
 }

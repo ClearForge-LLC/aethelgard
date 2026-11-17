@@ -96,3 +96,56 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 **Not changed, and why.**
 - `spike/3400/**` stays at version 12. It is the 3400 spike's record, nothing builds or tests it, and builds delete `spike/` (roadmap). The bump makes its specifications refused by version.
 - `aethelgard-cli`'s `extract` conditions are not changed (the CLI is `2302`'s). See Q2.
+
+## 4. Adversarial pass (§5), by a fresh agent at 5dc49df; each finding re-measured here before it was fixed
+
+**No escape was reachable from a specification.** Every finding needed a hand-edited netlist, schematic value or board. Each was fixed with a tier-1 test that fails before the fix, and with a mutant of the fix that the test kills.
+
+- **F1, medium, new.** The BOOT0 strap check never looked at anything else on BOOT0's net. All of these passed the support gate with no finding:
+  - a 1 kΩ, 100 Ω or 0 Ω resistor from `/BOOT0` to the supply beside the 10 k pull-down;
+  - a jumper on BOOT0;
+  - a device pin (U4's WP) moved onto BOOT0.
+
+  Unplugged, such a board boots from system memory. **Fixed:** BOOT0's net may hold only the boot pin, its one pull-down, and the connector pins and test points the specification puts on BOOT0. Anything else is `strap_wrong`, naming the part and pin. Test: `anything_else_on_boot0_s_net_fails`.
+- **F3, medium, new.** `judge_boot0_pull_down` multiplied leakage by resistance unchecked.
+  - In a release build the product wrapped: a pull-down valued `1229782938247303442` (about 1.2 EΩ, an open) passed.
+  - In a debug build it panicked, a gate panicking instead of refusing.
+
+  **Fixed:** checked multiply, and a product past `u64` is refused on VIL. Tests: `bench.rs` unit and `an_unpopulated_or_overflowing_pull_down_fails`.
+- **F4, low.** A test point was judged by pin 1's net alone. All of these passed:
+  - declared TP9 exported as a 0 Ω `Device:R` with pin 2 on GND (a supply short);
+  - an undeclared test point;
+  - a switch with a third pin on a net.
+
+  **Fixed:** a declared test point must be a one-pin `Connector:TestPoint`, every `Connector:TestPoint` in the netlist must be declared, and the switch may have nets on pins 1 and 2 only. Test: `a_test_point_or_switch_of_another_shape_fails`.
+- **F5, low, robustness.** `route::read` subtracted circle coordinates in `i64`, so a hand-edited courtyard circle with far coordinates panicked in debug. **Fixed:** a circle beyond a metre is refused before any arithmetic, and the subtraction is widened in the placer too.
+- **Information, acted on.** Test point references were checked as `Plain` identifiers, a connector's as `Reference`. `TP?`, `~` and `TP-1` reached the emitted files. They are now `Reference` identifiers, and those are refused (test).
+- **Information, recorded.**
+  - A board that carries BOOT0 places differently: the anchored pull-down moved 7 parts on `four-layer-power` and 10 on `two-bme`. Test points alone and the switch alone moved none.
+  - Library paths that skip `validate` (`extract::lines`, `anchored`) accept a test point on an emitter net. `emit` refuses it (`TestPointNetUnknown`), and connectors behave the same way, so nothing is emitted.
+- **What held, as the agent measured it.**
+  - Every spelling of a reserved or emitter net is refused by `validate` and by `emit`.
+  - Reference folding (`tp12`, `j02`, `SW01`) and the switch numbering hold.
+  - `[]` and `false` emit the same bytes as absent, schematic, board and BOM.
+  - No `pintype` and no `board_only` on the test pad.
+  - An `fp_circle` on copper is refused.
+  - The `ohms` parser holds.
+- Reproducers: `~/.cache/aet-1312/adv-scratch/adv_1312.rs` (9 tests).
+
+## 5. Reduction pass, mutation, gates
+
+- **Reduction pass (diff): +7 net (measured: the shared helper and its doc outweigh the copies removed) · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 1 finding below.**
+  - The declared-net-to-connection rule written twice in `schematic.rs` is one `Builder::declared`, used by connectors and test points.
+  - The debug-net map written twice in `support.rs` is one: test points use step 5's `expected`.
+  - **Finding:** `pcb::graphic_box`'s refusal arm is now unreachable, because `geometry` passes it only the five shapes it measures. I kept it as a refusal rather than an `unreachable!`, and it is not labelled `belt-and-suspenders`. The owner decides.
+- **Mutation (diff-sized), 26 mutants, one per guard this work order adds, run against `ir` `bench` and lib, `cli` `bench_tier1` and `eda` lib: 26 killed** (`~/.cache/aet-1312/mut/summary.txt`).
+  - The first run left two survivors. One was the BOOT0 wired-to-GND check, which the shared-pin check subsumes by kind; the test now asserts its message. The other was the unpopulated pull-down, which had no test.
+- **Gates:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with `--features with-tools` too) and `cargo test --workspace` pass. The tier-2 bench test passes in the pinned image (8.5 s on Furnace). `TIER2_MIN` is 161, counted in the image with `shard.sh parse`. The new test's weight is a Furnace estimate (× 2.8, `AET-WO-1310`'s factor) until a refit.
+
+## 6. Questions for the architect
+
+- **Q1.** `test_points` and `mcu.reset_switch` are optional, as the work order words them. Every earlier bump made its keys required (`INV-06`). Keep them optional, or make them required? Required would add two keys to every specification in the corpus.
+- **Q2.** `extract`'s verdict states its conditions. A probe clipped to a test pad is outside the bound, like any off-board load. A condition line saying so when a line carries a test pad belongs in `aethelgard-cli/src/extract.rs`, which is `2302`'s fence, so I did not add it. Who adds it?
+- **Q3.** `spike/3400/**` stays at version 12. Its specifications are now refused by version. Delete it here, leave it for `3401`, or bump it?
+- **Q4 (P1).** The strap stays a wire on boards that do not carry BOOT0. Should every board get the judged pull-down instead, so BOOT0 is one design everywhere? That would move every existing board's bytes, which the work order's §1.1 forbids here.
+- **Order with `4220b`.** It also takes specification 13. Whichever merges second renumbers to 14, and redoes the hash-only moves of §2 step 2. The list is in this work order's commit 5dc49df.

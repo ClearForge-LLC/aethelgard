@@ -3186,7 +3186,9 @@ impl Specification {
         connectors::identifiers(self)?;
         for (i, t) in self.test_points.iter().enumerate() {
             plain(&t.net, || format!("test_points[{i}].net"))?;
-            plain(&t.reference, || format!("test_points[{i}].reference"))?;
+            identifier(IdentifierKind::Reference, &t.reference, || {
+                format!("test_points[{i}].reference")
+            })?;
         }
         Ok(())
     }

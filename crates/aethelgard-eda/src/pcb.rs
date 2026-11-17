@@ -195,7 +195,10 @@ fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError
                 )
             };
             let (c, e) = (at("center")?, at("end")?);
-            let (dx, dy) = (i128::from(e.0 - c.0), i128::from(e.1 - c.1));
+            let (dx, dy) = (
+                i128::from(e.0) - i128::from(c.0),
+                i128::from(e.1) - i128::from(c.1),
+            );
             let r = i64::try_from(isqrt_up(dx * dx + dy * dy))
                 .map_err(|_| internal(reference, "a circle too large to place"))?;
             points.push((c.0 - r, c.1 - r));

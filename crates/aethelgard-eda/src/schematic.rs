@@ -522,6 +522,18 @@ impl Builder<'_> {
         Conn::Rail(GND.to_owned())
     }
 
+    /// A net the specification declares, as a connector pin or test point
+    /// names it: `GND` or a domain as its rail, any other as a label.
+    fn declared(&mut self, net: &str) -> Conn {
+        if net == GND {
+            self.ground()
+        } else if self.spec.voltage_domains.iter().any(|d| d.id == net) {
+            self.rail(net)
+        } else {
+            Conn::Net(net.to_owned())
+        }
+    }
+
     /// A bidirectional pin strapped to a rail, through a resistor.
     fn strap(&mut self, reference: &str, pin: &str, rail: Conn) -> Result<Conn, EmitError> {
         let net = self.own_net(format!("{reference}_{pin}"))?;
@@ -989,11 +1001,7 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
         });
     }
     for t in &spec.test_points {
-        let conn = match t.net.as_str() {
-            GND => b.ground(),
-            n if spec.voltage_domains.iter().any(|d| d.id == n) => b.rail(n),
-            n => Conn::Net(n.to_owned()),
-        };
+        let conn = b.declared(&t.net);
         b.parts.push(Part {
             lib_id: TEST_POINT,
             reference: t.reference.clone(),
@@ -1024,9 +1032,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
         for p in &c.pins {
             let conn = match p.net.as_deref() {
                 None => Conn::NoConnect,
-                Some(GND) => b.ground(),
-                Some(n) if spec.voltage_domains.iter().any(|d| d.id == n) => b.rail(n),
-                Some(n) => Conn::Net(n.to_owned()),
+                Some(n) => b.declared(n),
             };
             conns.insert(p.pin.clone(), conn);
             if let Some(o) = &p.offboard {

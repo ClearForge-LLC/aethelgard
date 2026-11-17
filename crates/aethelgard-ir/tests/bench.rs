@@ -88,10 +88,14 @@ fn a_test_point_names_its_net_and_reference_as_identifiers() {
     let err = refusal(&v);
     assert_eq!(err.kind(), "InvalidIdentifier", "{err}");
     assert_eq!(err.path(), Some("test_points[0].net"), "{err}");
-    let mut v = bench_json();
-    set(&mut v, 3, "SPI_MOSI", "TP/4");
-    let err = refusal(&v);
-    assert_eq!(err.path(), Some("test_points[3].reference"), "{err}");
+    // A reference is held as a connector's is (`Reference`), so KiCad's
+    // unannotated `TP?` and the like are refused (adversarial info item).
+    for bad in ["TP/4", "TP?", "~", "TP.1", "TP-1", "1"] {
+        let mut v = bench_json();
+        set(&mut v, 3, "SPI_MOSI", bad);
+        let err = refusal(&v);
+        assert_eq!(err.path(), Some("test_points[3].reference"), "{bad}: {err}");
+    }
 }
 
 #[test]

@@ -485,7 +485,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     for strap in &s.straps {
         let pin = &s.group(&strap.pin)[0];
         if boot0_carried && strap.pin == aethelgard_ir::BOOT0 {
-            match boot0_pull_down(netlist, mcu, pin, group_net(&strap.to), vdd) {
+            match boot0_pull_down(spec, netlist, mcu, pin, group_net(&strap.to), vdd) {
                 Ok(how) => straps.push(how),
                 Err(why) => fail("strap_wrong", format!("{mcu} BOOT0 (pin {pin}): {why}")),
             }
@@ -651,16 +651,37 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     // declares, the boot and debug nets at the MCU's pin, and the reset switch
     // between the MCU's NRST and `GND` when it is declared, and only then.
     for t in &spec.test_points {
-        let want = match t.net.as_str() {
-            aethelgard_ir::SWDIO => debug("SWDIO"),
-            aethelgard_ir::SWCLK => debug("SWCLK"),
-            aethelgard_ir::NRST => debug("NRST"),
-            aethelgard_ir::BOOT0 => debug("BOOT0"),
-            d if d == gnd || spec.voltage_domains.iter().any(|v| v.id == d) => Some(d.to_owned()),
-            n => Some(crate::extract::board_net(n)),
-        };
+        // As a connector pin's (step 5); any other domain bare, a signal as
+        // its label.
+        let want = expected(&t.net).unwrap_or_else(|| {
+            Some(if spec.voltage_domains.iter().any(|v| v.id == t.net) {
+                t.net.clone()
+            } else {
+                crate::extract::board_net(&t.net)
+            })
+        });
         let have = netlist.net(&t.reference, "1");
-        if want.is_none() || have != want.as_deref() {
+        // A test point is KiCad's one-pin test point and nothing else
+        // (adversarial F4: a 0 ohm resistor declared as one shorted the
+        // supply to GND and passed).
+        let shape = netlist
+            .components
+            .get(&t.reference)
+            .is_some_and(|c| c.symbol.as_deref() == Some(crate::schematic::TEST_POINT))
+            && !netlist
+                .nets
+                .keys()
+                .any(|(r, p)| *r == t.reference && p != "1");
+        if !shape {
+            fail(
+                "test_point_off_net",
+                format!(
+                    "test point {} is not a one-pin `{}` in the netlist",
+                    t.reference,
+                    crate::schematic::TEST_POINT
+                ),
+            );
+        } else if want.is_none() || have != want.as_deref() {
             fail(
                 "test_point_off_net",
                 format!(
@@ -670,6 +691,16 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                     quoted(have),
                     quoted(want.as_deref())
                 ),
+            );
+        }
+    }
+    for (r, c) in &netlist.components {
+        if c.symbol.as_deref() == Some(crate::schematic::TEST_POINT)
+            && !spec.test_points.iter().any(|t| t.reference == *r)
+        {
+            fail(
+                "test_point_off_net",
+                format!("{r} is a test point the specification does not declare"),
             );
         }
     }
@@ -687,7 +718,11 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             pins.sort_unstable();
             let mut want = [nrst.as_deref(), Some(gnd)];
             want.sort_unstable();
-            if nrst.is_none() || pins != want || netlist.components[*sw].unpopulated {
+            let other = netlist
+                .nets
+                .keys()
+                .any(|(r, p)| r == *sw && p != "1" && p != "2");
+            if nrst.is_none() || pins != want || other || netlist.components[*sw].unpopulated {
                 fail(
                     "reset_switch_wrong",
                     format!(
@@ -786,6 +821,7 @@ fn ohms(value: &str) -> Option<u64> {
 /// strap's group's net), of a value [`aethelgard_ir::bench::judge_boot0_pull_down`]
 /// passes over the MCU's supply range (`AET-WO-1312`); the record's line, or why not.
 fn boot0_pull_down(
+    spec: &Specification,
     netlist: &Netlist,
     mcu: &str,
     pin: &str,
@@ -832,6 +868,27 @@ fn boot0_pull_down(
     if part.unpopulated {
         return Err(format!(
             "its pull-down {reference} is unpopulated, so it floats"
+        ));
+    }
+    // Nothing else on the net but what the specification puts there: a
+    // connector pin or test point that names BOOT0 (adversarial F1: a
+    // pull-up beside the pull-down, or a device pin, passed).
+    let declared = |r: &str, p: &str| {
+        spec.declared_connectors().iter().any(|c| {
+            c.reference == r
+                && c.pins
+                    .iter()
+                    .any(|q| q.pin == p && q.net.as_deref() == Some(aethelgard_ir::BOOT0))
+        }) || spec
+            .test_points
+            .iter()
+            .any(|t| t.reference == r && p == "1" && t.net == aethelgard_ir::BOOT0)
+    };
+    if let Some((r, p)) = netlist.nets.iter().find_map(|((r, p), n)| {
+        (n == boot0 && r != mcu && r != *reference && !declared(r, p)).then_some((r, p))
+    }) {
+        return Err(format!(
+            "`{boot0}` also holds {r} pin {p}, which the specification does not put on BOOT0"
         ));
     }
     let value = ohms(&part.value).ok_or_else(|| {

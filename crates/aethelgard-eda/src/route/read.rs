@@ -209,7 +209,15 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             "fp_circle" => {
                 let c = xy_of(one(&g, "center")?, &what)?;
                 let e = xy_of(one(&g, "end")?, &what)?;
-                let (dx, dy) = (i128::from(e.0 - c.0), i128::from(e.1 - c.1));
+                // A circle beyond a metre is refused before any arithmetic, so
+                // nothing below can overflow (adversarial F5: it panicked).
+                if [c.0, c.1, e.0, e.1].iter().any(|v| v.abs() > 1_000_000_000) {
+                    return Err(format!("{what} is too large"));
+                }
+                let (dx, dy) = (
+                    i128::from(e.0) - i128::from(c.0),
+                    i128::from(e.1) - i128::from(c.1),
+                );
                 let r = i64::try_from(crate::pcb::isqrt_up(dx * dx + dy * dy))
                     .map_err(|_| format!("{what} is too large"))?;
                 if r == 0 {

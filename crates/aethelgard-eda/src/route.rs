@@ -5107,6 +5107,11 @@ mod tests {
                 "(fp_circle (center 0 0) (end 0 0) (layer \"F.CrtYd\"))".into(),
                 "no radius",
             ),
+            // Adversarial F5: far coordinates are refused, never overflowed.
+            (
+                "(fp_circle (center -9000000 0) (end 9000000 0) (layer \"F.CrtYd\"))".into(),
+                "too large",
+            ),
         ] {
             let e = part_of(&with(&yard)).unwrap_err();
             assert!(e.contains(want), "{yard}: {e}");

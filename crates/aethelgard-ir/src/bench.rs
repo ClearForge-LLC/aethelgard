@@ -74,8 +74,11 @@ pub fn boot0_vih_min_millivolts(vdd: u64) -> u64 {
 ///
 /// A wire (`ohms == 0`) fails 2: no driver holds it high.
 pub fn judge_boot0_pull_down(ohms: u64, vdd_min: u64, vdd_max: u64) -> Result<(), String> {
-    // 1: nA × Ω = nV; rounded up to millivolts.
-    let floating = (BOOT0_LEAKAGE_NANOAMPS * ohms).div_ceil(1_000_000);
+    // 1: nA × Ω = nV; rounded up to millivolts. A product past `u64` is past
+    // any VIL (adversarial F3: it wrapped, and a 1.2 EΩ value passed).
+    let floating = BOOT0_LEAKAGE_NANOAMPS
+        .checked_mul(ohms)
+        .map_or(u64::MAX, |nv| nv.div_ceil(1_000_000));
     let vil = boot0_vil_max_millivolts(vdd_min);
     if floating > vil {
         return Err(format!(
@@ -90,7 +93,10 @@ pub fn judge_boot0_pull_down(ohms: u64, vdd_min: u64, vdd_max: u64) -> Result<()
             "a driver at {high} mV is below BOOT0's VIH minimum of {vih} mV at {vdd_min} mV (DS12117 Tables 49 and 50)"
         ));
     }
-    let microamps = (vdd_max * 1_000).checked_div(ohms).unwrap_or(u64::MAX);
+    let microamps = vdd_max
+        .saturating_mul(1_000)
+        .checked_div(ohms)
+        .unwrap_or(u64::MAX);
     if microamps > DRIVER_MICROAMPS {
         return Err(format!(
             "driving BOOT0 high at {vdd_max} mV sources {} uA into {ohms} ohms, above the {DRIVER_MICROAMPS} uA a driver holds VOH at (DS12117 Table 50)",
@@ -207,6 +213,13 @@ mod tests {
         );
         // VIL max at 1.62 V is 407 mV; 15 nA reaches it at 27.1 Mohm.
         assert_eq!(boot0_vil_max_millivolts(1_620), 407);
+        // Past u64, refused, never wrapped (adversarial F3).
+        assert!(
+            judge_boot0_pull_down(1_229_782_938_247_303_442, VDD.0, VDD.1)
+                .unwrap_err()
+                .contains("VIL")
+        );
+        assert!(judge_boot0_pull_down(u64::MAX, VDD.0, VDD.1).is_err());
         assert!(judge_boot0_pull_down(27_000_000, VDD.0, VDD.1).is_ok());
         assert!(
             judge_boot0_pull_down(27_200_000, VDD.0, VDD.1)
