@@ -362,7 +362,21 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - The board's job is the witness board. It is an all-purpose instrumented board with its own logic analyzer, bus sniffer and stimulus, built to cut future bench time.
   - The spike also measures four layers.
   - It prices three paths: the lean two-layer probe now with the loaded board later as Sentinel-03; the loaded board at two layers; or the loaded board at four layers.
-- **Held until the first scar is ratified (Scotty, 2026-11-16, the Grok review's decision 3):** `4400b` (its GCC mirror carved out as `4403`), `4400c`, `4500`, and `4220b`, whose only consumer is Sentinel-02. None is running. **The condition was met on 2026-11-16 (#180). The architect keeps all four held until `AET-WO-3400` is ruled,** because the Sentinel-01 plan now sets their order: `4220b` may gain Sentinel-01 as a consumer, and `4500` should wait for our own copper's bench results.
+
+  **Ruled 2026-11-17 (Scotty, on PR #184's record):**
+  - **Path (a), then (c).** Sentinel-01 is the lean two-layer probe, plus the cheap bench access that helps Sentinel-02 ("V0+": test points, NRST and BOOT0 on connectors, a reset switch, a second I2C bus at 10 kΩ and 100 kHz). The power tree, the flight sensors and the witness board go to **Sentinel-03, at four layers**.
+  - **Probe header** (delegated to the architect): 2 × 12 with a ground per pair, on port G.
+  - **Assembly:** some boards fab-assembled as the control, the rest built by Scotty.
+  - The architect ruled `3400` Q1–Q5 and Q8 (comment 6932857426).
+  - **Follow-on work orders:**
+    - `AET-WO-1312`: bench access in the specification, specification 13;
+    - `AET-WO-3401`: Sentinel-01 as ordered, with `ORDER.md` and `BENCH.md`;
+    - for Sentinel-03, E0 (the hot-plug draw) and `4220b`.
+- **Held until the first scar is ratified (Scotty, 2026-11-16, the Grok review's decision 3):** `4400b` (its GCC mirror carved out as `4403`), `4400c`, `4500`, and `4220b`, whose only consumer is Sentinel-02. None is running. **The condition was met on 2026-11-16 (#180). The architect kept all four held until `AET-WO-3400` was ruled (2026-11-17).** Now:
+  - **`4220b` is released:** Sentinel-03 is its consumer before Sentinel-02.
+  - **`4400b` is released and written** (2026-11-17, `AET-WO-4400b`). The generator emits `hwdef.dat` from the topology alone; unmodified ArduPilot builds it for Sentinel-01 and the Sentinel-02-shaped fixture; `check pinout` grows to speeds, `OTYPER` and `PUPDR` (P4 exit clause 3).
+  - **`4400c` follows `4400b`.** Then comes a flight-loop work order (physics in virtual time, closing motors to sensors), so that unmodified ArduPilot flies a simulated Sentinel-02.
+  - **`4500` waits for Sentinel-01's bench results.**
 - `AET-WO-4500` — **Sentinel-02:** the specification, every gate, a fault campaign that includes an SPI fault, and the fabrication package. Then fabrication (human-track: Scotty's purchase), then bring-up on the bench, then flight in this order: props off, tethered, free. Disagreements between simulation and the board go into `northstar.md` §2 as scars. **Ruled 2026-11-15:** four copper layers (Scotty, `4300d2` D4); no 1.8 V domain, because every chosen sensor takes 3.3 V I/O (review B5; `4220` P2.1, F14), while the power fixture keeps its LDO and translator as test coverage; every precondition of `AET-WO-3303` and `4230` holds before anything is ordered. **Ruled by Scotty 2026-11-15: Sentinel-02 is an indoor drone for now.**
   - Position from optical flow with a downward rangefinder, so it needs no GPS.
   - Altitude from the rangefinder, because a barometer is unreliable indoors.
@@ -655,7 +669,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | A keepout anywhere on the board, not only at the edge | `1310` A7 | the next router work order |
 | `PadEscapeExhausted`'s JSON shape has no test | `1310` | the next router work order |
 | Split the long `verify` tier-2 tests, which hold the slowest shards | `4300b` (c), `4230` §12 | the next work order that touches `ci/` |
-| The 0.2.0 release: three crates never published (`aethelgard-evolve`, `aethelgard-pincheck`, `aethelgard-renode-models`); the engine version is written into every emitted board, so the bump moves golden bytes; `docs/releasing.md`'s order lacked `pincheck` (fixed here) | crates.io, checked 2026-11-16 | a release work order, in a quiet window between merges |
+| The 0.2.0 release: three crates never published (`aethelgard-evolve`, `aethelgard-pincheck`, `aethelgard-renode-models`); the engine version is written into every emitted board, so the bump moves golden bytes; `docs/releasing.md`'s order lacked `pincheck` (fixed here) | crates.io, checked 2026-11-16 | **`AET-WO-1801`** (written 2026-11-17): prepare now, and bump in a quiet window after `2302` |
+| `tools-image.yml`'s `publish` sets no `org.opencontainers.image.revision` label (ArduPilot's does), so the tools pin is tied to its commit only by its documentation label and its tag. One line in `publish`'s `labels:` | `4403` Q3 (#186) | the next container work order |
 | Placement orders by reference (`pcb::place`), so renaming specification references still fails some boards: reference 16/20, D1 18/20, D3 15/20 renamings route | `1307` K3, I1 (promised to the backlog, never added; found 2026-11-16) | the next placement work order, after `4300g` |
 | Tier-1 tests that take `build`/`prove` past the pre-flight fail on a machine with `~/.cargo/config.toml`, because the default scratch sits under `$HOME`; give them a scratch directory outside the home | `1603` F2 | the next CLI work order |
 | The emitter's own name check (`spelled`) omits serial and motor nets; `validate` covers the CLI, but a library caller of `schematic::emit` can still short `U1_VCAP1` | `1206` F1 | **done, `AET-WO-1207` (PR #178)**; the spelled names against each other: `AET-WO-1208` |
@@ -785,6 +800,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-15 | §5, §6, §7.1 | `AET-WO-4220` build merged (#151) and its board path split to `AET-WO-4220b`; `4230` amended (the waits' static check, ledger rows); §6 gains the independent review at every phase gate from P4 on (Scotty); backlog rows for the DShot window against the sensor waits and for `SPI_MAX_FRAMES` | comment 6898233775; Scotty, 2026-11-15 |
 | 2026-11-15 | §5, §7.1 | `AET-WO-1310` written (router escape for sub-grid pads, before `4220b`); `4300d2`'s close ruled; `3303` D1 ruled (detected faults cover, `3301` §3.2 reversed); 3303's backlog rows | comments 6899426595, 6899438039 |
 | 2026-11-16 | §5, §7.1 | `AET-WO-1207` merged (#178); its rows closed; `AET-WO-1208` written from its F1–F3 | PR #178 |
+| 2026-11-17 | §3, §5, §7.1 | Sentinel-01 ruled: path (a) as "V0+", then (c) as Sentinel-03 at four layers. `AET-WO-1312`, `3401`, `1801` and `4400b` written. `4220b` and `4400b` released from the hold; `4500` waits for the bench. Rows for the tools image's revision label | Scotty, 2026-11-17; PR #184 comment 6932857426 |
 | 2026-11-16 | §5 | `AET-WO-3400` amended (§0): the witness board is the job; four layers are measured; a cost spike prices the lean probe, the loaded board at two layers and the loaded board at four. `RUL-21` (images) ruled. `AET-WO-1208` merged (#182, `ecc8d01`) | Scotty, 2026-11-16 22:30 UTC |
 | 2026-11-16 | §3, §5 | Sentinel-01 scoped: a full instrumented test board, carrying the flight controller's subsystems, on two layers, with a job after bring-up. `AET-WO-3400` written. `4403` merged (#176, `938b7f4`); its anonymous fetch is proven on `main`'s publish (run 43944349355). Docs #180 merged (`3dcd242`) | Scotty, 2026-11-16 |
 | 2026-11-16 | §6 | The specification freeze lifted: the first scar is ratified into northstar §2 | Scotty, 2026-11-16 |
