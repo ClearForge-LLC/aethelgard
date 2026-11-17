@@ -326,3 +326,87 @@ Today's other boots, for scale (three runs each):
 - **Gates on `6c7c9c3`:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace` all pass (1 934 passed, 0 failed), on the host under a capped user scope.
 - **The spike fixture** `spike/2302/fixtures/sentinel-02-shaped.json` places the W25Q64JV and carries no `accept_lifecycle` entry. Once `4211` merges (the row becomes `nrnd`), it needs one before it can move under `crates/`.
 - **Re-signalled.** After the first STOPPED push (`7eff16f`), every candidate's `OQ-03` trace bytes and wall time were measured as campaign archives, three runs each (§4; `spike/2302/sh/camp2.sh`), in place of the inferred figures: (a) 6 386 B, (a) silenced 6 408 B, (a-i) 6 434 B, (b) 6 408 B, (c) 6 360 + 6 386 = 12 746 B. (c)'s inferred 8.1 KB was wrong, because each boot writes a whole archive. The recommendation is unchanged.
+
+# The build (ruled on PR #175, comment 6923968111)
+
+## §14 What the ruling asked, and where it is built
+
+| Ruling | Built | Where |
+|---|---|---|
+| D1 (a-i): every board boots 100 ms; per-witness windows anchored where their evidence starts | `boot::window()` removed; `DSHOT_WINDOW_NS` is DShot's evidence window from its anchor; `BootPastWindow` gone; `--for` up to 100 ms on every board; campaign and verify boot 100 ms | `twin/src/boot.rs`, `cli/src/{main,renode,campaign,verify}.rs` |
+| D2: the judge clears `CEN` at anchor + `DSHOT_WINDOW_NS`; the residual named | the stop reads the timer's solved registers back, then clears `CEN` (it never silences the observers: adversarial H1); `boot.residuals` names the residual on every board with a DShot output | `cli/src/anchor.rs`, `renode.rs` |
+| D3: composed monitor Python; an edge with no observed anchor fails by name; every action per boot, stale does nothing | `anchor.rs` composes the hooks (CR1 at DoubleWord, Word and Byte width; the boot word; each port's `TDR`) and the scheduled actions; one strict line parser; every action checks the instruction count it was due at and logs `STALE` otherwise | `cli/src/anchor.rs` |
+| D4: sequential serial injection; the summed wire budget from the boot word past 100 ms refused by name | port 0 one quantum after the boot word; port *k* after port *k*−1's last echoed frame byte (counted only when it is the frame's next byte); `serial_wire_past_run`, `serial_injection_out_of_order` | `anchor.rs`, `renode.rs` |
+| D5: `serial_rx_open { port }` with `E3`; scenario schema 3 | `Override::SerialRxOpen` `[5, port]`, schema 3 only; rendered by injecting nothing into that port (the chain skips it); `stress()`/`classify()`/`coverage()` map it to `Target::Serial` with mechanism `serial_echo_missing`, rule `E3`, subject that port; serial ports leave `no_fault_kind`; evolve rule `E3`; the reference's seeded set gains `serial-rx-open-console` | `chaos/src/{record,campaign}.rs`, `cli/src/verify.rs`, `evolve/src/lib.rs`, `scenarios/` |
+| D6: each board's peak memory share in the verdict | the reaper reports the tree's peak RSS; the verdict's `memory` carries `peak_rss_kib`, `bound_kib`, `share_permille` (outside the archive: it varies run to run) | `cli/src/run.rs`, `verdict.rs` |
+| D7: fences | as ruled; outside them only evolve's test fixtures (record fields) and `twin/src/serial.rs` (one dead function) | |
+| D8: trace 13 | kind 26 gains `anchor_ns`, `edges_before`, `edges_after`, `cen_rises`; kind 29 gains `injected_ns`; new kind 30 (the judge's stop); replay derives each window from the records; version-12 archives refused by name | `chaos/src/{record,event,campaign}.rs` |
+| spike deleted | `spike/2302` deleted | |
+
+**How it was built.** I ran it as project manager, delegating to workers one at a time in their own worktrees, since the judge is gate logic and two agents must never edit one file:
+- S1, the core (Opus);
+- S2, Q8 (Opus);
+- two fix rounds (Opus);
+- two fresh adversarial passes (Opus), each given the code, never my conclusions;
+- a fresh reduction and mutation pass.
+
+I spot-checked every worker's claims at source before merging. `main` was merged three times with merge commits: docs #174; then 4211, 1207, 4403 and the 4230 refit; then 4220b, specification 13. On the third merge the Sentinel-02-shaped fixture moved to specification 13, carrying `sentinel-02-own`'s declared pin capacitances.
+
+## §15 Decisions I took inside the ruling (for the architect to confirm)
+
+- **The seeded case `identity-late-dshot` is retired**, with its mutant.
+  - Its premise, a device window shorter than the start-up, is what this work order removes. Under 100 ms boots its firmware passes (attribute `N1`).
+  - The alternative, C1, was built and measured, then reverted. It names `identity_read_outside_window` on every board for a read still unset at the boot's end, and lengthens the mutant past 100 ms.
+  - That kept `I7`, but it changed two reference tests' exact findings: the unbooted fill record, and a 1 µs `--for`. It also needed an evolve change outside `E3`.
+  - **Left unreachable, outside the fence:** evolve's `I7`, chaos's `short_window` and `OUTSIDE_WINDOW_FINDING`. Remove them, or keep them for a future short window?
+- **Replay keeps no tie between kind 10 and the 100 ms instructions.** A droop's boot counts from its last release (existing rule).
+- **A scheduled action's line must be stamped exactly at its instant** (measured exact in every probe). A hook's line keeps a one-quantum tolerance; hook lines were measured up to 60 ns early.
+- **The open-port chain.** A port held open (`serial_rx_open`) gets no frame and no `TDR` hook. The next port goes in after the last earlier port that is not open. Residual: that next port's frame then waits in Renode's queue while the firmware polls the open port, so it is not pacing-tested in such a run (F1's lost test); its echo is still judged.
+- **`E3` yields to software.** A port that is held open and also has a software cause attributes `S5`, with nothing masked. That is the inverse of `E1`/`E2`, where the electrical half wins and software is masked. It cannot cause false coverage, because `detection()` then fails.
+- **The stop never silences** (adversarial H1, below), and every `CEN` rise schedules its own stop. A restart after the window is a second act on the machine, and it is already named (`motor_anchor_repeated`, `motor_edge_after_window`).
+
+## §16 The adversarial passes
+
+**Pass 1** (fresh Opus, on `fbb4e88`). WO §5's four attacks, F2 and F5 were measured, and every reproduction was kept. Three false passes, all fixed:
+
+| id | sev | the attack, measured | disposition |
+|---|---|---|---|
+| H1a/b/c | high | After the window: the motor pins bit-banged through GPIO; `CEN` restarted by a 16-bit store with bad `CCR`s; `CEN` restarted by DMA, then each restored. **All passed**, because the stop silenced the observers and `motor_edge_after_window` was unreachable: truncation, which the work order forbids. | **Fixed:** the stop never silences, and every edge after a window is named `motor_edge_after_window` (three tier-2 tests). |
+| M1 | med | A core that sleeps (WFI) before `start_outputs`: the hook's count-against-stamp check was a ToolError, so a firmware could abort a campaign. Without a boot word, the pre-2302 `cpu_halted` + `boot_word_missing` was lost. | **Fixed:** a lagging count is `cpu_halted`, its line falls back to its stamp, and an action due while the core lags goes stale and fails by name. Still exit 5 when the boot word is written: that is `2100`'s ruled A10 path, not new (§18 Q1). |
+| M2 | med | `CEN` set by a 16-bit or byte store, or by DMA: no anchor, no stop; it failed closed only under the flood's names, at 930–991 ‰ of the memory bound. | **Fixed for the CPU:** `CR1` hooks at Word and Byte width too, measured to fire once per store. A DMA start stays fail-closed (`renode_log_flood` + `motor_output_unwitnessed`) at 98.6 % of the bound, named as a residual in the README. |
+| L1/L2 | low | The `TDR` hook counted any write after the boot word, so pattern or junk bytes triggered the next port early, and the order was not judged. | **Fixed:** only the frame's next byte counts, and `serial_injection_out_of_order` is named. |
+| L3 | low | Replay accepted archives that added or dropped six judge findings. | **Fixed:** kind 26 carries `edges_before`, `edges_after` and `cen_rises`. Replay binds `judge_stop_mismatch`, `motor_anchor_repeated` and both `motor_edge_*`; what stays unbound is listed in the README. |
+
+**Measured regression on pass 1's tree:**
+- **§5.1, a delayed `start_outputs`:** the window follows the anchor; F2 below.
+- **§5.2, emitting before the anchor:** GPIO toggles give `motor_edge_before_anchor`, and a boot word before the anchor gives `motor_anchor_out_of_order`.
+- **§5.3, an echo straddling the run's end:** `serial_wire_past_run` + `serial_echo_missing`.
+- **§5.4, a device read at the window's edge:** before the anchor it is `motor_anchor_out_of_order`; pushed to the end it is `boot_word_missing`.
+- **F2:** an anchor at exactly 98 000 000 ns passes, with the stop at 100 ms; 98 000 030 ns gives `motor_window_past_run`.
+- **F5:** the droop's first-boot stop goes stale and does nothing. `CEN` set, cleared and set again, or set again after the stop, gives `motor_anchor_repeated`.
+
+**Pass 2** (a second fresh Opus, on `75e2207`): **no false pass, and no firmware-chosen window.** Four findings, all fixed except as noted:
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| A2-1 | low | Kind 30's read-back carried its own expected value, mask and address, bound to nothing. | **Fixed:** bound to kind 11, register by register, covering exactly the timer's solved set. |
+| A2-3 | low | A twin false-fail. `serial_wire_past_run` counted each port's pattern after the boot word, though the firmware sends it before. Band: a boot word at about 77.6–90 ms on a 9600 console. | **Fixed:** from the boot word only frames and echoes count. Tier 2: boot words at 79.53 and 87.03 ms pass; at 94.53 ms it is still named. |
+| A2-4 | low | `TIM1.BDTR.MOE` toggled after the window moves no observer: a Renode tag, already in `unobservable`. CCMR forced modes are caught. | README, beside the post-window text. |
+| A2-5 | low | `serial_wire_past_run` and an anchor after the boot word are decidable from the records. | **Fixed:** bound in replay. |
+| A2-2 | low, older than 2302 | A booted run may drop a kind 26 with its finding: `check_motor_joins` asks for "at most one". | Backlog (§18). |
+| A2-6 | info | `strd`/`stm` anchor; a 64-bit `vstr` is dropped by Renode (`register_mismatch` + unwitnessed); unaligned stores are `cpu_aborted`. | Nothing sets `CEN` unseen. |
+
+Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every case fails by name or passes legitimately.
+
+## §17 Measured at the end
+
+- **The Sentinel-02-shaped board under (a-i)**, witnessed whole:
+  - peak 704 096 KiB, 67.1 % of the 1 GiB bound;
+  - 2.85 MB of log, nothing dropped;
+  - `CEN` at 39 072 330 ns, the boot word 80 ns later;
+  - MAVLINK injected at 39 172 410 ns, CRSF after MAVLINK's echo.
+- **Each verdict now carries `memory.share_permille`** (D6): `motors-dshot600` 406 ‰, `serial-dshot-9600` 413 ‰, the DMA-start mutant 986 ‰.
+- **Tier 2: 160 on `1178ca8`; `TIER2_MIN` is 175 after merging `main`** (161 with 4220b).
+  - Added: 15 in `twin_tier2`: the 100 ms windows, H1a/b/c, M1 ×2, M2 ×2, L1 ×2, A2-3, the open RX line, the Sentinel-02-shaped board, `serial-dshot-9600` and F2.
+  - Removed: 1, the 2 ms DShot boot.
+  - Interim weights for the new tests are in `ci/test-weights.tsv`, for refit from CI.
