@@ -384,7 +384,10 @@ refuses:
 - a motor witness `stopped` whose edges are not continuous on the model's
   sequence (`campaign::witness_continuous`: its last rise `rises - 1`
   periods after its first within its span, its falls as many as its rises
-  or one fewer), which the judge never gives (`AET-WO-2302b`, ADV-M1).
+  or one fewer), which the judge never gives (`AET-WO-2302b`, ADV-M1);
+- a first injected port (kind 29's `injected_ns`, the first port not held
+  open) less than one quantum after the boot's start: the judge injects it
+  one quantum after the boot word, which would then precede the run (ADV-S4).
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

@@ -1711,6 +1711,19 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             "a serial port's frame went in before the port before it, without it, or past the boot",
         );
     }
+    // The first port goes in one quantum after the boot word, which the
+    // boot writes after its start (`AET-WO-2302b` ADV-S4): earlier, the boot
+    // word's instant would precede the run, and `boot_word_instant` finds none.
+    if injected
+        .first()
+        .copied()
+        .flatten()
+        .is_some_and(|t| t < TWIN_QUANTUM_NS)
+    {
+        return Err(
+            "the first serial port's frame went in less than a quantum after the boot's start, before any boot word",
+        );
+    }
     Ok(())
 }
 

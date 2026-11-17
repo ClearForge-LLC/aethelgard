@@ -1390,3 +1390,32 @@ fn s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant() {
         "{a:?}"
     );
 }
+
+// ---- AET-WO-2302b fix round: the adversarial pass's findings, held ----
+
+/// ADV-S4: replay refuses a first injection less than a quantum after the
+/// boot's start: the judge injects the first port one quantum after the
+/// boot word, which would then precede the run, and the wire time past the
+/// run (kind 29's instant, `serial_wire_past_run`) would be unbound. At
+/// exactly a quantum, the same run is accepted.
+#[test]
+fn adv_s4_replay_refuses_a_first_injection_under_a_quantum() {
+    let gps = Case {
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let at = |first: u64| {
+        injected(
+            run(&gps, &[(SERIAL_ECHO_FINDING, 1)]),
+            Some(first),
+            Some(2_000_000),
+        )
+    };
+    assert!(campaign::check_run(&at(100_000)).is_ok());
+    assert_eq!(
+        campaign::check_run(&at(99_999)).err(),
+        Some(
+            "the first serial port's frame went in less than a quantum after the boot's start, before any boot word"
+        )
+    );
+}
