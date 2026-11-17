@@ -93,3 +93,39 @@ Read at source for every row: `cli/src/renode.rs` (where the judge emits each ki
 No CLI source file changed.
 
 **Setup note:** the old `~/aethelgard-2302` worktree (clean, level with `origin/wo/aet-2302-windows` at `4b9cfe31`) was to be torn down at the start. The auto-mode classifier denied the delete, so it is left for the operator: `podman unshare rm -rf ~/aethelgard-2302 && git -C ~/aethelgard-2302b worktree prune`.
+
+## §3 The adversarial pass (targeted, WO §5; a fresh Opus on `a589cd0d`)
+
+Every attack was built from records that replay (`check_run`) accepts, written and read back through the archive. The reproductions are copies of evolve's `motor.rs` and `serial.rs` with the attacks appended, kept in `~/.cache/aet-2302b/adv_{motor,serial}.rs`.
+
+**WO §5's targets:**
+1. **A harness kind attributed to the board or the firmware.**
+   - **Direct: none.** Keeping the `H` rules apart puts no `H` rule in the `E` or `S` domain (measured).
+   - **By masking:** two forged-record cases, ADV-S1 and ADV-M1, where `H3` or `H1` absorbed a symptom the cut did not cause. That let a software rule elsewhere name the run instead of `I6` or `I4`. Fixed (§4).
+   - **One real-run candidate:** ADV-M3, ruled below.
+2. **A rule firing on absent evidence.**
+   - Every `S6`–`S11` cites its own kind 26 or 30 record.
+   - `S8` on a rewritten verdict alone is `I1` by name.
+   - `H1`/`H3` on symptoms the cut did not cause: ADV-M1 and ADV-S1, fixed.
+   - `I5`'s evidence-kind contract was broken by kind 30: ADV-M2, fixed.
+3. **A removed constant still named.** Clean in code, the CLI source, verdicts, the `propose` table and the rule list: `Rule::from_id("I7")` is `None`, with 25 rules.
+   - Text mentions remain only in the CLI README L346 (historical) and `docs/roadmap.md` L626 (protected, for the architect).
+   - A stale CI weight row for a test `2302` removed is deleted here.
+
+| id | sev | finding | disposition |
+|---|---|---|---|
+| ADV-M3 | med-high, **a ruling I took, for the architect** | A firmware that sets `CEN` again after the judge's stop is harmless on silicon, where `CEN` was still set. In the twin the judge's clear makes it a second rise, edges after the window, and an end read of `CR1` with `CEN` set against kind 11's expectation of the judge's own cleared value. Attribute said `S4` (on `CR1`) or `S7`: software, for an artifact the judge's stop created. | **The records cannot tell a harmless re-enable from a harmful restart once the judge has cleared `CEN` and `CR1` reads `CEN` set at the end.** `S7` and `S10` then report the kind unexplained by name, the missing evidence being when each rise fell. `S4` never cites the `CEN` bit of a timer the judge stopped. With `CEN` clear at the end and edges after the window, the firmware drove the pin itself, and `S10` stands. This follows the D2 residual (`AET-WO-2302`) and `INV-06`. |
+| ADV-S1 | med (forged records) | `H3` took a port whose RX pin was unrouted at the injection: its echo was missing because of the pin, not the bound. | **Fixed:** `H3`'s cut excludes a port whose `rx_at_injection` is off its alternate function. |
+| ADV-M1 | med-low (replay accepts; the judge cannot emit it) | Replay accepted a `stopped` witness that was not evenly spaced (10 rises where about 2 187 were due). `H1`'s cut read only the last rise. | **Fixed:** replay requires a `stopped` witness to be spaced and alternating as the judge's `witness_motor` does, and `H1` requires a continuous witness. |
+| ADV-M2 | low-med | `I5` cited kind 30, which `Rule::I5.evidence_kinds()` did not allow. | **Fixed:** kind 30 added. |
+| ADV-M4 | low (README) | "A harness rule's events never join another rule's evidence" was literally false: `S9` cites the same kind 26 that `H1` does. | **Fixed:** they join only when the record is that rule's own evidence, never because of the harness. |
+| ADV-S4 | low (forged) | A first injection less than a quantum after 0 made the boot word's instant unknown, so the run's `I1` text ("the first port took no frame") was false. | **Fixed:** replay refuses it. |
+| INFO-1 | info | `ci/test-weights.tsv` still weighed `renode::tests::a_read_left_unset_by_a_short_window_is_named`, removed by `2302`. | Row deleted (the only `ci/` change). |
+
+**Closed, measured:**
+- `serial_injection_out_of_order` with count 0 is refused by the archive.
+- A rewritten `H4` only moves `N1` to indeterminate, never to a domain.
+- `propose` on `H1`/`H3`/`H4` gives nothing, naming the bound.
+- A mixed PWM-and-DShot timer is refused upstream by the IR (`TimerShared`).
+- Every windowed rule's count equals replay's counter for every run replay accepts, so no plain `I1` exists for the ten kinds.
+- Precedence for existing runs is unchanged, with one intended exception: a DShot `stopped` witness cut at the run's end was `I4` and is now `H1`.
