@@ -566,3 +566,4 @@ tests/twin_tier2.rs	m2_a_dma_start_of_cen_fails_closed_by_name	22.000
 tests/twin_tier2.rs	l1_bytes_written_before_the_frame_never_count_as_its_echo	14.000
 tests/twin_tier2.rs	l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo	14.000
 tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	20.000
+tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	24.000
