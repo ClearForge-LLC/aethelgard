@@ -485,3 +485,9 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
   - A6's own call: 16.97 s.
   - 87 `simulate` calls: median 4.49 s, longest 16.97 s (A6).
 - **No bound raised, no re-run.** The host gates pass: `fmt`, `clippy -D warnings` with and without `with-tools`, and 1 995 tier-1 tests.
+- **`main` merged again before this READY** (`f57d9b62`: 1312, specification 14).
+  - The Sentinel-02-shaped fixture moved to specification 14, a version bump only, as `sentinel-02-own`'s did. `TIER2_MIN` is 176: 162 on `main` plus this work order's 14.
+  - Re-gated on the merge:
+    - host: `fmt`, `clippy -D warnings` (with `with-tools`), 2 028 tier-1 tests passed, 0 failed;
+    - the fixture validates;
+    - in the pinned image, `twin_tier2` 82/82 pinned to 4 CPUs (A6's own call 16.36 s; 87 `simulate` calls, median 4.37 s) and `campaign_tier2` 9/9.
