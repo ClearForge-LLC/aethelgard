@@ -42,6 +42,10 @@ pub const MAX_PERMITTIVITY_PERMILLE: u32 = 100_000;
 /// space included, with no space at either end.
 pub const MAX_SOURCE: usize = 200;
 
+/// The largest outline bound accepted, in millimetres: the placer searches
+/// at most a metre around a part (`pcb.rs`'s `RINGS`).
+pub const MAX_OUTLINE_MM: u32 = 1000;
+
 /// The copper layer counts this engine builds.
 pub const LAYER_COUNTS: [u8; 2] = [2, 4];
 
@@ -62,6 +66,20 @@ pub struct Board {
     pub layers: Vec<CopperLayer>,
     pub stackup: Stackup,
     pub rules: DesignRules,
+    /// The largest outline the placer may reach (`AET-WO-1313`), in whole
+    /// millimetres. Optional under the precedent ruled on PR #191 (Q1): its
+    /// absence is today's placer, judged as such, and is not written back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_outline_mm: Option<OutlineBound>,
+}
+
+/// A declared outline bound: the board's width and height at most, in whole
+/// millimetres, each from 1 to [`MAX_OUTLINE_MM`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct OutlineBound {
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,8 +161,9 @@ impl Board {
     /// Step 13 of `Specification::validate`, in this order: the layer count,
     /// the layer table, each layer's role, the plane nets and their layout,
     /// the dielectrics, the finished thickness, the copper and permittivity
-    /// bounds, every source, then the rules. `domains` are the declared
-    /// voltage domain ids.
+    /// bounds, every source, the rules, then the outline bound. `domains` are
+    /// the declared voltage domain ids. Whether the bound can hold the parts
+    /// is the emitter's to judge (`aethelgard-eda`'s `pcb::bound_holds`).
     pub fn validate(&self, domains: &BTreeSet<&str>) -> Result<(), IrValidationError> {
         use IrValidationError as E;
         let n = self.copper_layers;
@@ -316,6 +335,20 @@ impl Board {
                 });
             }
         }
+        if let Some(b) = &self.max_outline_mm {
+            for (value, path) in [
+                (b.width, "board.max_outline_mm.width"),
+                (b.height, "board.max_outline_mm.height"),
+            ] {
+                if value == 0 || value > MAX_OUTLINE_MM {
+                    return Err(E::OutlineBound {
+                        path: path.into(),
+                        value,
+                        max: MAX_OUTLINE_MM,
+                    });
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -350,5 +383,6 @@ crate::object_only!(
     FinishedThickness,
     Dielectric,
     Sourced,
-    DesignRules
+    DesignRules,
+    OutlineBound
 );

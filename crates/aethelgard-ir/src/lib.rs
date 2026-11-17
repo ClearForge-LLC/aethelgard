@@ -1114,6 +1114,8 @@ pub enum IrValidationError {
         value: u32,
         floor: u32,
     },
+    #[error("`{path}` is {value} mm; an outline bound is from 1 to {max} mm (`AET-WO-1313`)")]
+    OutlineBound { path: String, value: u32, max: u32 },
     #[error("`{path}` is {value} um; this engine builds only {required} um vias")]
     UnsupportedViaRule {
         path: String,
@@ -1861,6 +1863,7 @@ impl IrValidationError {
             Self::InvalidSource { .. } => "InvalidSource",
             Self::RuleBelowFloor { .. } => "RuleBelowFloor",
             Self::UnsupportedViaRule { .. } => "UnsupportedViaRule",
+            Self::OutlineBound { .. } => "OutlineBound",
             Self::ClassBelowMinimum { .. } => "ClassBelowMinimum",
             Self::ClassAboveMaximum { .. } => "ClassAboveMaximum",
             Self::ViaRingUnderRules { .. } => "ViaRingUnderRules",
@@ -2045,6 +2048,7 @@ impl IrValidationError {
             | Self::InvalidSource { .. }
             | Self::RuleBelowFloor { .. }
             | Self::UnsupportedViaRule { .. }
+            | Self::OutlineBound { .. }
             | Self::ClassBelowMinimum { .. }
             | Self::ClassAboveMaximum { .. }
             | Self::InvalidIdentifier { .. }
@@ -2200,6 +2204,7 @@ impl IrValidationError {
             | Self::InvalidSource { path }
             | Self::RuleBelowFloor { path, .. }
             | Self::UnsupportedViaRule { path, .. }
+            | Self::OutlineBound { path, .. }
             | Self::ClassBelowMinimum { path, .. }
             | Self::ClassAboveMaximum { path, .. } => Some(path),
             _ => None,

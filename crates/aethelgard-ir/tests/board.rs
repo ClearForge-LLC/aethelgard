@@ -246,3 +246,64 @@ fn rules_under_the_floor_or_other_vias_are_refused_by_name() {
     v["board"]["rules"]["clearance_um"] = json!(250);
     verdict(&v).unwrap();
 }
+
+/// `AET-WO-1313` §2.1: `board.max_outline_mm` is optional (PR #191 Q1): its
+/// absence is today's placer and is not written back; a bound of 1 to 1000
+/// whole millimetres a side is valid; anything else is refused by name.
+#[test]
+fn an_outline_bound_is_optional_and_refused_by_name_out_of_range() {
+    let spec: Specification = serde_json::from_value(reference()).unwrap();
+    assert_eq!(spec.board.max_outline_mm, None);
+    assert!(
+        serde_json::to_value(&spec).unwrap()["board"]
+            .get("max_outline_mm")
+            .is_none()
+    );
+    let mut v = reference();
+    v["board"]["max_outline_mm"] = json!({"width": 100, "height": 1000});
+    verdict(&v).unwrap();
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    assert_eq!(
+        serde_json::to_value(&spec).unwrap()["board"]["max_outline_mm"],
+        json!({"width": 100, "height": 1000})
+    );
+    for (field, value) in [
+        ("width", 0),
+        ("height", 0),
+        ("width", 1001),
+        ("height", 4096),
+    ] {
+        let e = refused(reference(), |v| {
+            v["board"]["max_outline_mm"] = json!({"width": 100, "height": 100});
+            v["board"]["max_outline_mm"][field] = json!(value);
+        });
+        assert_eq!(e.kind(), "OutlineBound", "{field} {value}");
+        assert_eq!(
+            e.path(),
+            Some(format!("board.max_outline_mm.{field}").as_str())
+        );
+    }
+}
+
+#[test]
+fn a_malformed_outline_bound_is_a_shape_error() {
+    for bad in [
+        json!({"width": 100}),
+        json!({"width": 100, "height": 100, "depth": 1}),
+        json!({"width": 99.5, "height": 100}),
+        json!({"width": -1, "height": 100}),
+        json!([100, 100]),
+    ] {
+        let mut v = reference();
+        v["board"]["max_outline_mm"] = bad.clone();
+        assert!(
+            serde_json::from_value::<Specification>(v).is_err(),
+            "{bad} parsed"
+        );
+    }
+    // `null` is the absent bound: today's placer, as an absent key is.
+    let mut v = reference();
+    v["board"]["max_outline_mm"] = json!(null);
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    assert_eq!(spec.board.max_outline_mm, None);
+}

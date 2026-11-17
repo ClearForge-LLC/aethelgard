@@ -99,8 +99,36 @@ pub enum EmitError {
         reference: String,
         pads: Vec<String>,
     },
+    /// `AET-WO-1313`: the declared outline bound cannot hold the parts at
+    /// all, judged before any placement: one part's keep-out box, or the sum
+    /// of every keep-out box, against the bound less its margins.
+    #[error("board.max_outline_mm is {width_mm} x {height_mm} mm; {why}")]
+    OutlineTooSmall {
+        width_mm: u32,
+        height_mm: u32,
+        /// The part that does not fit, or `None` when the sum does not.
+        reference: Option<String>,
+        why: String,
+    },
+    /// `AET-WO-1313`: the placer packed the parts but its outline exceeds
+    /// the declared bound; nothing is written. The outline reached and the
+    /// shortfall are in micrometres.
+    #[error("board.max_outline_mm is {width_mm} x {height_mm} mm; the placer's best outline is {} x {} mm, over by {} x {} mm", um(*reached_um_w), um(*reached_um_h), um(*over_um_w), um(*over_um_h))]
+    OutlineUnreachable {
+        width_mm: u32,
+        height_mm: u32,
+        reached_um_w: i64,
+        reached_um_h: i64,
+        over_um_w: i64,
+        over_um_h: i64,
+    },
     #[error("{0}")]
     Internal(String),
+}
+
+/// Micrometres as millimetres with three decimals, for a message.
+fn um(v: i64) -> String {
+    format!("{}.{:03}", v.div_euclid(1000), v.rem_euclid(1000))
 }
 
 impl EmitError {
@@ -117,6 +145,8 @@ impl EmitError {
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
             Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
+            Self::OutlineTooSmall { .. } => "OutlineTooSmall",
+            Self::OutlineUnreachable { .. } => "OutlineUnreachable",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -132,7 +162,11 @@ impl EmitError {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
-            Self::Library(_) | Self::BoardUnroutable(_) | Self::Internal(_) => None,
+            Self::OutlineTooSmall { reference, .. } => reference.as_deref(),
+            Self::Library(_)
+            | Self::BoardUnroutable(_)
+            | Self::OutlineUnreachable { .. }
+            | Self::Internal(_) => None,
         }
     }
 }
@@ -602,6 +636,10 @@ pub fn emit_moved(
     spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
     let stack = crate::stack::Stack::of(spec);
+    let bound = spec.board.max_outline_mm;
+    if let Some(b) = bound {
+        crate::pcb::bound_holds(&parts, b)?;
+    }
     Ok(Emission {
         schematic: write_sheet(&spec.project_name, &parts, &rails)?,
         // A test point is a bare pad: its symbol is out of the BOM, as its
@@ -613,8 +651,23 @@ pub fn emit_moved(
                 .map(BomRow::from)
                 .collect::<Vec<_>>(),
         ),
-        board: crate::pcb::write_moved(&spec.project_name, &parts, &stack, moves)?,
+        board: crate::pcb::write_moved(&spec.project_name, &parts, &stack, moves, bound)?,
     })
+}
+
+/// `AET-WO-1313`: whether a declared outline bound can hold the parts the
+/// emitter would draw at all, before any placement ([`crate::pcb::bound_holds`]).
+/// A specification that declares no bound passes.
+pub fn bound_holds(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<(), EmitError> {
+    let Some(b) = spec.board.max_outline_mm else {
+        return Ok(());
+    };
+    let (parts, _) = design(spec, solved, table)?;
+    crate::pcb::bound_holds(&parts, b)
 }
 
 /// The decoupling capacitance the emitter places on each rail, in pF, keyed

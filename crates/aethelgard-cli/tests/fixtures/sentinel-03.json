@@ -871,6 +871,10 @@
       "track_width_um": 200,
       "via_drill_um": 300,
       "via_diameter_um": 600
+    },
+    "max_outline_mm": {
+      "width": 100,
+      "height": 100
     }
   },
   "net_classes": [
@@ -1262,36 +1266,8 @@
       "reference": "TP4"
     },
     {
-      "net": "SPI_SCK",
-      "reference": "TP5"
-    },
-    {
-      "net": "SPI_MOSI",
-      "reference": "TP6"
-    },
-    {
-      "net": "SPI_MISO",
-      "reference": "TP7"
-    },
-    {
-      "net": "IMU_SCK",
-      "reference": "TP8"
-    },
-    {
-      "net": "IMU_MOSI",
-      "reference": "TP9"
-    },
-    {
-      "net": "IMU_MISO",
-      "reference": "TP10"
-    },
-    {
       "net": "FLASH_CS",
       "reference": "TP11"
-    },
-    {
-      "net": "IMU_CS",
-      "reference": "TP12"
     },
     {
       "net": "CONSOLE_TX",

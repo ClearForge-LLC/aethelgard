@@ -30,6 +30,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use aethelgard_ir::board::OutlineBound;
+
 use crate::library;
 use crate::parity;
 use crate::route;
@@ -543,10 +545,24 @@ fn is_bench(part: &Part) -> bool {
 fn place(
     items: &[Item<'_>],
     pairs: &[[String; 2]],
-) -> Result<(Vec<Placed>, Option<i64>), EmitError> {
+    bounded: bool,
+) -> Result<(Vec<Placed>, Edges), EmitError> {
     let mut order: Vec<usize> = (0..items.len())
         .filter(|&i| !schematic::is_connector(items[i].part))
         .collect();
+    // Under a declared bound (`AET-WO-1313` D1, (r)), an IC that owns
+    // anchored parts goes before the other ICs: its loop's reserve then never
+    // has to clear parts placed before it, which a renaming can otherwise put
+    // there (measured: FEEDBACK §2.4).
+    let owns_anchored = |i: usize| {
+        let r = items[i].part.reference.as_str();
+        items.iter().any(|x| {
+            x.part
+                .owner
+                .as_ref()
+                .is_some_and(|o| o.anchor.is_some() && o.ic == r)
+        })
+    };
     order.sort_by(|&a, &b| {
         let key = |i: usize| {
             let p = items[i].part;
@@ -554,6 +570,7 @@ fn place(
                 !p.lib_id.starts_with("MCU_"),
                 !is_ic(p),
                 is_bench(p),
+                bounded && is_ic(p) && !owns_anchored(i),
                 p.reference.clone(),
             )
         };
@@ -579,6 +596,10 @@ fn place(
     }
     let order = grouped;
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
+    // For [`compact`]: each part's anchor, and the gap the placer gave it
+    // (its reserve, whether it is an IC, its place in the order).
+    let mut anchor_of: Vec<Option<usize>> = vec![None; items.len()];
+    let mut rule: Vec<Rule> = vec![Rule::default(); items.len()];
     // The approach to each declared pair's MCU pins, kept clear of every
     // part placed after the MCU (`AET-WO-4300g` D5, lever 2; `AET-WO-1310`).
     let mut approach: Vec<Rect> = Vec::new();
@@ -597,6 +618,12 @@ fn place(
                 keep: g.keep.shift(ORIGIN),
             });
             approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
+            // The MCU is an IC: every IC keeps `IC_GAP_NM` from it.
+            rule[i] = Rule {
+                reserve: None,
+                ic: true,
+                step,
+            };
             continue;
         }
         // The anchor: an IC already placed.
@@ -640,6 +667,12 @@ fn place(
                 (k.x1 - k.x0).max(k.y1 - k.y0) + IC_GAP_NM
             })
             .max();
+        anchor_of[i] = Some(anchor);
+        rule[i] = Rule {
+            reserve,
+            ic: is_ic(item.part),
+            step,
+        };
         let taken: Vec<(Rect, i64)> = (0..items.len())
             .filter_map(|j| {
                 let both = is_ic(items[j].part) && is_ic(item.part);
@@ -677,12 +710,230 @@ fn place(
             keep: g.keep.shift(origin),
         });
     }
-    let edge = place_connectors(items, &mut placed)?;
+    let plan = if bounded {
+        compact(items, &mut placed, &anchor_of, &rule, &approach);
+        BOUNDED_PLAN
+    } else {
+        EdgePlan::Bottom { gap: IC_GAP_NM }
+    };
+    let edges = place_connectors(items, &mut placed, plan)?;
     let placed = placed
         .into_iter()
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| EmitError::Internal("a part was not placed".into()))?;
-    Ok((placed, edge))
+    Ok((placed, edges))
+}
+
+/// The gap the placer gave a part: an IC owning anchored parts keeps its
+/// reserve from every part placed before it, an IC [`IC_GAP_NM`] from every
+/// IC, any other part [`GAP_NM`]; the later of two parts' rule decides.
+#[derive(Clone, Copy, Default)]
+struct Rule {
+    reserve: Option<i64>,
+    ic: bool,
+    step: usize,
+}
+
+impl Rule {
+    fn gap(a: Rule, b: Rule) -> i64 {
+        let later = if a.step >= b.step { a } else { b };
+        match (later.reserve, a.ic && b.ic) {
+            (Some(r), _) => r,
+            (None, true) => IC_GAP_NM,
+            (None, false) => GAP_NM,
+        }
+    }
+}
+
+/// `AET-WO-1313` D1, (a): after the placer, each IC but the MCU, with every
+/// part placed beside it, moves as one rigid group, a [`STEP`] at a time
+/// toward the MCU's courtyard centre (x, then y), while every member keeps
+/// its [`Rule`] gap from every other part and stays out of the approach
+/// strips. Groups go in reference order, round after round, until none
+/// moves. A decoupling capacitor moves with its IC, so it stays by its pin.
+fn compact(
+    items: &[Item<'_>],
+    placed: &mut [Option<Placed>],
+    anchor_of: &[Option<usize>],
+    rule: &[Rule],
+    approach: &[Rect],
+) {
+    let Some(mcu) = (0..items.len())
+        .find(|&i| items[i].part.lib_id.starts_with("MCU_"))
+        .and_then(|i| placed[i].as_ref())
+        .map(|p| p.courtyard.centre())
+    else {
+        return;
+    };
+    let mut groups: Vec<(&str, Vec<usize>)> = (0..items.len())
+        .filter(|&i| {
+            is_ic(items[i].part) && !items[i].part.lib_id.starts_with("MCU_") && placed[i].is_some()
+        })
+        .map(|i| {
+            let mut members = vec![i];
+            members.extend((0..items.len()).filter(|&j| anchor_of[j] == Some(i)));
+            (items[i].part.reference.as_str(), members)
+        })
+        .collect();
+    groups.sort();
+    // Each move brings a group a STEP nearer the MCU on one axis, so the
+    // rounds end; the bound is the board's reach, 2 * RINGS steps.
+    for _ in 0..2 * RINGS {
+        let mut moved = false;
+        for (_, members) in &groups {
+            let Some(c) = members
+                .iter()
+                .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
+                .reduce(Rect::union)
+                .map(Rect::centre)
+            else {
+                continue;
+            };
+            for d in [
+                ((mcu.0 - c.0).signum() * STEP, 0),
+                (0, (mcu.1 - c.1).signum() * STEP),
+            ] {
+                if d == (0, 0) {
+                    continue;
+                }
+                let clear = members.iter().all(|&m| {
+                    let Some(p) = placed[m].as_ref() else {
+                        return true;
+                    };
+                    let k = p.keep.shift(d);
+                    approach.iter().all(|a| !a.overlaps(k))
+                        && (0..items.len()).all(|o| {
+                            members.contains(&o)
+                                || placed[o].as_ref().is_none_or(|q| {
+                                    !q.keep.overlaps(k.grow(Rule::gap(rule[m], rule[o])))
+                                })
+                        })
+                });
+                if clear {
+                    for &m in members {
+                        if let Some(p) = placed[m].as_mut() {
+                            p.origin = (p.origin.0 + d.0, p.origin.1 + d.1);
+                            p.keep = p.keep.shift(d);
+                            p.courtyard = p.courtyard.shift(d);
+                        }
+                    }
+                    moved = true;
+                }
+            }
+        }
+        if !moved {
+            break;
+        }
+    }
+}
+
+/// Where the connectors go (`AET-WO-1313` D1). With no bound declared, the
+/// one row along the bottom edge, [`IC_GAP_NM`] apart (`AET-WO-4300f`).
+/// Under a bound, [`BOUNDED_PLAN`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EdgePlan {
+    /// Every connector on the bottom edge, cable down, `gap` apart.
+    Bottom { gap: i64 },
+    /// The left and right edges, cable out: each connector, in reference
+    /// order, to the side with less length so far (ties left).
+    Sides,
+}
+
+/// The plan under a declared bound: (c), ruled. Every cable on the bottom
+/// edge instead, if Scotty rules it (Q1), is (d): `EdgePlan::Bottom { gap:
+/// GAP_NM }`.
+const BOUNDED_PLAN: EdgePlan = EdgePlan::Sides;
+
+/// Each connector's rotation under `plan`, cable side out: 0 on the bottom
+/// edge (the cable toward +y), 90 on the right, 270 on the left
+/// ([`route::rotate`]); and the gap between neighbours on one edge.
+fn connector_edges(items: &[Item<'_>], plan: EdgePlan) -> (Vec<(usize, u16)>, i64) {
+    let mut row: Vec<usize> = (0..items.len())
+        .filter(|&i| schematic::is_connector(items[i].part))
+        .collect();
+    row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    match plan {
+        EdgePlan::Bottom { gap } => (row.into_iter().map(|i| (i, 0)).collect(), gap),
+        EdgePlan::Sides => {
+            let (mut left, mut right) = (0i64, 0i64);
+            let sides = row
+                .into_iter()
+                .map(|i| {
+                    let k = items[i].geometry.keep;
+                    let length = k.x1 - k.x0 + IC_GAP_NM;
+                    if left <= right {
+                        left += length;
+                        (i, 270)
+                    } else {
+                        right += length;
+                        (i, 90)
+                    }
+                })
+                .collect();
+            (sides, IC_GAP_NM)
+        }
+    }
+}
+
+/// The edges the connectors set, each where its row's cable side is.
+#[derive(Clone, Copy, Debug, Default)]
+struct Edges {
+    bottom: Option<i64>,
+    left: Option<i64>,
+    right: Option<i64>,
+}
+
+/// `AET-WO-1313` §2.1: whether `bound` can hold `parts` at all, before any
+/// placement. Inside the bound less [`MARGIN_NM`] on each side, every
+/// keep-out box must fit at one of its right angles, and their areas must
+/// fit together. Passing says nothing of whether the placer reaches it:
+/// that is [`EmitError::OutlineUnreachable`].
+pub(crate) fn bound_holds(parts: &[Part], bound: OutlineBound) -> Result<(), EmitError> {
+    let items = items(parts)?;
+    let inner = (
+        i64::from(bound.width) * 1_000_000 - 2 * MARGIN_NM,
+        i64::from(bound.height) * 1_000_000 - 2 * MARGIN_NM,
+    );
+    let refuse = |reference: Option<String>, why: String| EmitError::OutlineTooSmall {
+        width_mm: bound.width,
+        height_mm: bound.height,
+        reference,
+        why,
+    };
+    let (short, long) = (inner.0.min(inner.1), inner.0.max(inner.1));
+    if short <= 0 {
+        return Err(refuse(
+            None,
+            format!("less its {MARGIN_NM} nm margin on each side, nothing fits"),
+        ));
+    }
+    let mut sum: i128 = 0;
+    for it in &items {
+        let k = it.geometry.keep;
+        let (w, h) = (k.x1 - k.x0, k.y1 - k.y0);
+        if w.min(h) > short || w.max(h) > long {
+            return Err(refuse(
+                Some(it.part.reference.clone()),
+                format!(
+                    "`{}`'s keep-out box, {} x {} nm, does not fit inside {} x {} nm (the bound less its margins) at any right angle",
+                    it.part.reference, w, h, inner.0, inner.1
+                ),
+            ));
+        }
+        sum += i128::from(w) * i128::from(h);
+    }
+    let room = i128::from(inner.0) * i128::from(inner.1);
+    if sum > room {
+        return Err(refuse(
+            None,
+            format!(
+                "the parts' keep-out boxes take {} mm2 together, more than the {} mm2 inside the bound less its margins",
+                sum / 1_000_000_000_000,
+                room / 1_000_000_000_000
+            ),
+        ));
+    }
+    Ok(())
 }
 
 /// How far past the MCU's courtyard a pair's approach is kept clear, and how
@@ -823,28 +1074,28 @@ fn place_anchored(
         .ok_or_else(|| internal(reference, "no free spot within a metre"))
 }
 
-/// The connectors, at the bottom edge (`AET-WO-4300f`, ruled D7: a side-entry
-/// header at rotation 0 takes its cable toward +y, and the router refuses a
-/// rotated part). In reference order, left to right, in one row centred under
-/// every part already placed, each keep-out box [`IC_GAP_NM`] from the next
-/// and from every box above. The edge is the first [`SNAP`] line that leaves
-/// [`MARGIN_NM`] below the other parts and lets every connector sit there:
-/// each courtyard's bottom (the cable side) is within one [`SNAP`] of the
-/// edge and inside it, and every pad keeps [`route::EDGE_NM`] from it. The
-/// housing body (`F.Fab`) sits about 0.8 mm inside, by the courtyard's own
-/// clearance.
-/// Returns that edge, or `None` with no connector.
+/// The connectors, on the edges `plan` names (`AET-WO-4300f`, ruled D7: a
+/// side-entry header at rotation 0 takes its cable toward +y; `AET-WO-1313`:
+/// the left and right edges at 270 and 90, cable out). Each edge's row is
+/// laid out in that edge's own frame, the board turned so the edge is the
+/// bottom: in reference order, in one row centred on every part already
+/// placed, each keep-out box `gap` from the next and [`IC_GAP_NM`] from
+/// every box inside. The edge is the first [`SNAP`] line that leaves
+/// [`MARGIN_NM`] past the other parts and lets every connector sit there:
+/// each courtyard's cable side is within one [`SNAP`] of the edge and inside
+/// it, and every pad keeps [`route::EDGE_NM`] from it. The housing body
+/// (`F.Fab`) sits about 0.8 mm inside, by the courtyard's own clearance.
+/// Returns the edges set; none with no connector.
 fn place_connectors(
     items: &[Item<'_>],
     placed: &mut [Option<Placed>],
-) -> Result<Option<i64>, EmitError> {
-    let mut row: Vec<usize> = (0..items.len())
-        .filter(|&i| schematic::is_connector(items[i].part))
-        .collect();
-    if row.is_empty() {
-        return Ok(None);
+    plan: EdgePlan,
+) -> Result<Edges, EmitError> {
+    let (sides, gap) = connector_edges(items, plan);
+    let mut edges = Edges::default();
+    if sides.is_empty() {
+        return Ok(edges);
     }
-    row.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
     let core = placed
         .iter()
         .flatten()
@@ -853,52 +1104,83 @@ fn place_connectors(
         .ok_or_else(|| EmitError::Internal("connectors with no other part".into()))?;
     let down = |v: i64| v.div_euclid(SNAP) * SNAP;
     let up = |v: i64| -((-v).div_euclid(SNAP) * SNAP);
-    let mut edge = up(core.y1 + MARGIN_NM);
-    for &i in &row {
-        let g = items[i].geometry;
-        if g.keep.y1 > g.courtyard.y1 {
-            return Err(internal(
-                &items[i].part.reference,
-                "silkscreen below the courtyard would cross the board edge",
-            ));
+    for rot in [0u16, 90, 270] {
+        let row: Vec<usize> = sides
+            .iter()
+            .filter(|&&(_, r)| r == rot)
+            .map(|&(i, _)| i)
+            .collect();
+        if row.is_empty() {
+            continue;
         }
-        edge = edge.max(up(up(core.y1 + IC_GAP_NM - g.keep.y0) + g.courtyard.y1));
-    }
-    let width = row
-        .iter()
-        .map(|&i| items[i].geometry.keep.x1 - items[i].geometry.keep.x0 + IC_GAP_NM)
-        .sum::<i64>()
-        - IC_GAP_NM;
-    let mut x = core.centre().0 - width / 2;
-    for &i in &row {
-        let (item, g) = (&items[i], items[i].geometry);
-        let origin = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
-        // belt-and-suspenders: every vendored connector's pads sit inside its
-        // courtyard by more than EDGE_NM, so no shipped part trips this (a
-        // mutation that loosens it survives); a footprint added later might.
-        for pad in item.fp.children("pad") {
-            let r = pad_box(pad, &item.part.reference)?;
-            if origin.1 + r.y1 + route::EDGE_NM > edge {
+        // The frame: a board point p is rotate(360 - rot, p) in it, and a
+        // frame point q is rotate(rot, q) on the board.
+        let back = (360 - rot) % 360;
+        let fcore = {
+            let a = route::rotate(back, (core.x0, core.y0));
+            let b = route::rotate(back, (core.x1, core.y1));
+            Rect {
+                x0: a.0.min(b.0),
+                y0: a.1.min(b.1),
+                x1: a.0.max(b.0),
+                y1: a.1.max(b.1),
+            }
+        };
+        let mut edge = up(fcore.y1 + MARGIN_NM);
+        for &i in &row {
+            let g = items[i].geometry;
+            if g.keep.y1 > g.courtyard.y1 {
                 return Err(internal(
-                    &item.part.reference,
-                    format!(
-                        "pad {} would be nearer the edge than {} nm",
-                        pad.arg(1).unwrap_or(""),
-                        route::EDGE_NM
-                    ),
+                    &items[i].part.reference,
+                    "silkscreen below the courtyard would cross the board edge",
                 ));
             }
+            edge = edge.max(up(up(fcore.y1 + IC_GAP_NM - g.keep.y0) + g.courtyard.y1));
         }
-        placed[i] = Some(Placed {
-            reference: item.part.reference.clone(),
-            origin,
-            rotation: 0,
-            courtyard: g.courtyard.shift(origin),
-            keep: g.keep.shift(origin),
-        });
-        x = origin.0 + g.keep.x1 + IC_GAP_NM;
+        let width = row
+            .iter()
+            .map(|&i| items[i].geometry.keep.x1 - items[i].geometry.keep.x0 + gap)
+            .sum::<i64>()
+            - gap;
+        let mut x = fcore.centre().0 - width / 2;
+        for &i in &row {
+            let (item, g) = (&items[i], items[i].geometry);
+            let at = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
+            // belt-and-suspenders: every vendored connector's pads sit inside its
+            // courtyard by more than EDGE_NM, so no shipped part trips this (a
+            // mutation that loosens it survives); a footprint added later might.
+            for pad in item.fp.children("pad") {
+                let r = pad_box(pad, &item.part.reference)?;
+                if at.1 + r.y1 + route::EDGE_NM > edge {
+                    return Err(internal(
+                        &item.part.reference,
+                        format!(
+                            "pad {} would be nearer the edge than {} nm",
+                            pad.arg(1).unwrap_or(""),
+                            route::EDGE_NM
+                        ),
+                    ));
+                }
+            }
+            let origin = route::rotate(rot, at);
+            let turned = geometry_at(&item.fp, &item.part.reference, rot)?;
+            placed[i] = Some(Placed {
+                reference: item.part.reference.clone(),
+                origin,
+                rotation: rot,
+                courtyard: turned.courtyard.shift(origin),
+                keep: turned.keep.shift(origin),
+            });
+            x = at.0 + g.keep.x1 + gap;
+        }
+        let e = route::rotate(rot, (0, edge));
+        match rot {
+            0 => edges.bottom = Some(e.1),
+            90 => edges.right = Some(e.0),
+            _ => edges.left = Some(e.0),
+        }
     }
-    Ok(Some(edge))
+    Ok(edges)
 }
 
 /// A pad's box relative to its footprint's origin, from its `at` and `size`.
@@ -1212,8 +1494,10 @@ fn layout_of(
     items: &[Item<'_>],
     moves: &[Move],
     pairs: &[[String; 2]],
+    bound: Option<OutlineBound>,
 ) -> Result<Layout, EmitError> {
-    let (mut placed, edge) = place(items, pairs)?;
+    let (mut placed, edges) = place(items, pairs, bound.is_some())?;
+    let edge = edges.bottom;
     for (reference, origin, rotation) in moves {
         if !matches!(rotation, 0 | 90 | 180 | 270) {
             return Err(internal(reference, format!("a rotation of {rotation}")));
@@ -1239,7 +1523,7 @@ fn layout_of(
         .iter()
         .fold(first, |r, p| r.union(p.keep))
         .grow(MARGIN_NM);
-    let outline = Rect {
+    let mut outline = Rect {
         x0: all.x0.div_euclid(SNAP) * SNAP,
         y0: all.y0.div_euclid(SNAP) * SNAP,
         x1: -((-all.x1).div_euclid(SNAP) * SNAP),
@@ -1260,6 +1544,33 @@ fn layout_of(
             None => -((-all.y1).div_euclid(SNAP) * SNAP),
         },
     };
+    // Connectors on a side edge set that edge (`AET-WO-1313`).
+    if let Some(e) = edges.left {
+        outline.x0 = e;
+    }
+    if let Some(e) = edges.right {
+        outline.x1 = e;
+    }
+    if let Some(b) = bound {
+        if let Some(p) = placed.iter().find(|p| !outline.contains(p.keep)) {
+            return Err(internal(&p.reference, "a keep-out box outside the outline"));
+        }
+        let (w, h) = (outline.x1 - outline.x0, outline.y1 - outline.y0);
+        let (bw, bh) = (
+            i64::from(b.width) * 1_000_000,
+            i64::from(b.height) * 1_000_000,
+        );
+        if w > bw || h > bh {
+            return Err(EmitError::OutlineUnreachable {
+                width_mm: b.width,
+                height_mm: b.height,
+                reached_um_w: w / 1000,
+                reached_um_h: h / 1000,
+                over_um_w: (w - bw).max(0) / 1000,
+                over_um_h: (h - bh).max(0) / 1000,
+            });
+        }
+    }
     let pad_nets = items
         .iter()
         .flat_map(|i| {
@@ -1278,7 +1589,7 @@ fn layout_of(
 /// The placement and pad nets `write` uses.
 #[cfg(test)]
 fn layout(parts: &[Part]) -> Result<Layout, EmitError> {
-    layout_of(&items(parts)?, &[], &[])
+    layout_of(&items(parts)?, &[], &[], None)
 }
 
 /// A pad's or a text's `(at x y [a])` with the footprint's rotation added to
@@ -1312,19 +1623,21 @@ pub(crate) fn write(
     parts: &[Part],
     stack: &crate::stack::Stack,
 ) -> Result<String, EmitError> {
-    write_moved(project, parts, stack, &[])
+    write_moved(project, parts, stack, &[], None)
 }
 
-/// [`write`], with each of `moves` placed where it says instead.
+/// [`write`], with each of `moves` placed where it says instead, inside
+/// `bound` when one is declared (`AET-WO-1313`).
 pub(crate) fn write_moved(
     project: &str,
     parts: &[Part],
     stack: &crate::stack::Stack,
     moves: &[Move],
+    bound: Option<OutlineBound>,
 ) -> Result<String, EmitError> {
     let items = items(parts)?;
     let pairs: Vec<[String; 2]> = stack.pairs.iter().map(|p| p.nets.clone()).collect();
-    let layout = layout_of(&items, moves, &pairs)?;
+    let layout = layout_of(&items, moves, &pairs, bound)?;
     let mut order: Vec<usize> = (0..items.len()).collect();
     order.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
     // `place` returns each item's placement at the item's index.
@@ -1913,6 +2226,104 @@ mod tests {
                 &[("1", net("B")), ("2", Conn::Rail("GND".into()))],
             ),
         ]
+    }
+
+    fn bound(width: u32, height: u32) -> OutlineBound {
+        OutlineBound { width, height }
+    }
+
+    /// `AET-WO-1313` §2.1: a bound that cannot hold one part, or the parts'
+    /// keep-out boxes together, is refused by name before any placement.
+    #[test]
+    fn a_bound_that_cannot_hold_the_parts_is_refused_before_placement() {
+        let parts = passives();
+        bound_holds(&parts, bound(100, 100)).unwrap();
+        // The MCU's keep-out box is about 23.3 mm a side: 25 mm less two
+        // 2 mm margins is 21 mm.
+        match bound_holds(&parts, bound(25, 100)) {
+            Err(EmitError::OutlineTooSmall {
+                reference: Some(r), ..
+            }) => assert_eq!(r, "U1"),
+            other => panic!("{other:?}"),
+        }
+        // Every part fits alone at 30 x 30 mm, but not with the others.
+        let mut many = passives();
+        for i in 0..40 {
+            many.push(connector("SM04B-GHS-TB", &format!("J{i}"), None));
+        }
+        let e = bound_holds(&many, bound(30, 30)).unwrap_err();
+        assert_eq!(e.kind(), "OutlineTooSmall");
+        assert_eq!(e.id(), None, "{e}");
+        // Margins alone: nothing fits inside a 4 x 4 mm bound.
+        assert_eq!(
+            bound_holds(&parts, bound(4, 4)).unwrap_err().kind(),
+            "OutlineTooSmall"
+        );
+    }
+
+    /// Under a bound the connectors go on the left and right edges, cable
+    /// side out (`BOUNDED_PLAN`); a bound the placer cannot reach is
+    /// refused with the outline it reached, never a partial board.
+    #[test]
+    fn under_a_bound_connectors_go_on_the_side_edges_or_the_bound_is_refused() {
+        let mut parts = passives();
+        for (name, r) in [
+            ("SM06B-GHS-TB", "J3"),
+            ("SM04B-GHS-TB", "J1"),
+            ("SM10B-GHS-TB", "J10"),
+        ] {
+            parts.push(connector(name, r, None));
+        }
+        let items = items(&parts).unwrap();
+        let l = layout_of(&items, &[], &[], Some(bound(100, 100))).unwrap();
+        let o = l.outline;
+        let at = |r: &str| l.placed.iter().find(|p| p.reference == r).unwrap();
+        // Reference order J1, J10, J3: left, right, left.
+        for (r, rotation) in [("J1", 270), ("J10", 90), ("J3", 270)] {
+            let c = at(r);
+            assert_eq!(c.rotation, rotation, "{r}");
+            let gap = if rotation == 270 {
+                c.courtyard.x0 - o.x0
+            } else {
+                o.x1 - c.courtyard.x1
+            };
+            assert!(
+                (0..SNAP).contains(&gap),
+                "{r}'s cable side is {gap} nm from its edge"
+            );
+        }
+        for (i, a) in l.placed.iter().enumerate() {
+            assert!(o.contains(a.keep), "{} leaves the board", a.reference);
+            for b in &l.placed[i + 1..] {
+                assert!(
+                    !a.keep.overlaps(b.keep),
+                    "{} overlaps {}",
+                    a.reference,
+                    b.reference
+                );
+            }
+        }
+        // The same parts with no bound: today's bottom row.
+        let today = layout(&parts).unwrap();
+        assert!(today.placed.iter().all(|p| p.rotation == 0));
+        // A bound the keep-out sum allows but the placer cannot reach.
+        let (w, h) = (o.x1 - o.x0, o.y1 - o.y0);
+        let tight = bound(
+            u32::try_from((w - 1) / 1_000_000).unwrap(),
+            u32::try_from(h / 1_000_000 + 1).unwrap(),
+        );
+        bound_holds(&parts, tight).unwrap();
+        match layout_of(&items, &[], &[], Some(tight)) {
+            Err(EmitError::OutlineUnreachable {
+                reached_um_w,
+                over_um_w,
+                ..
+            }) => {
+                assert_eq!(reached_um_w, w / 1000);
+                assert!(over_um_w > 0);
+            }
+            other => panic!("{:?}", other.map(|l| l.outline)),
+        }
     }
 
     /// Connectors go at the bottom edge, in reference order.
