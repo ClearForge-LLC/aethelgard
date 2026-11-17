@@ -692,7 +692,7 @@ pub(crate) fn design(
         .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
-        .chain(spec.test_points.iter().map(|t| &t.reference))
+        .chain(spec.declared_test_points().iter().map(|t| &t.reference))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -1000,7 +1000,7 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             offboard: BTreeMap::new(),
         });
     }
-    for t in &spec.test_points {
+    for t in spec.declared_test_points() {
         let conn = b.declared(&t.net);
         b.parts.push(Part {
             lib_id: TEST_POINT,

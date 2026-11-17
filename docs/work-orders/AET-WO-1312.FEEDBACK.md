@@ -26,7 +26,8 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 - **38 of 39 are byte-identical**: every exit code, every stdout line, every emitted file.
 - The 39th is the intended change: `spike/3400/probes/t8-boot0-on-swd.json` (BOOT0 on J2 pin 2) was refused `ConnectorNetUnknown` and now passes `validate`, `solve` and `generate`.
 - Prediction 1 held. Prediction 3 held: no corpus file spells a net or domain `BOOT0` (only that probe names it, as a connector pin).
-- The whole workspace's tests, the golden board's byte-for-byte test included, are in §4.
+- The whole workspace's tests, the golden board's byte-for-byte test included, are in §5.
+- **Specifications held inside tests:** the differential covers spec files only. Specifications written inline in Rust tests, and the scenarios (which name their base specification), are covered by the workspace suite (tier 1, green at every commit) and by CI's tier 2, not by the differential.
 
 **Step 2, the bump to 13 alone [measured]** (its own commit). The 22 specification files of `examples/` and `crates/*/tests/**` were moved from `"schema_version": 12` to `13`; nothing else in them changed.
 - `main`'s binary ran on `main`'s (version-12) files and this branch's binary on the version-13 files: `validate`, `solve` and `generate` on all 21 corpus files outside `spike/`.
@@ -94,13 +95,24 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   - A connector pin on `BOOT0` is judged against the boot pin's net, as NRST is.
   - New findings: `test_point_off_net` (each test point's pad on its declared net) and `reset_switch_wrong` (a switch from the MCU's NRST to `GND` exactly when declared).
 
+**`RUL-16`.** `test_points` is private, read through `Specification::declared_test_points()`, as `connectors` is. The three runners' `clippy.toml` disallow it, and `rul16_fence.rs` pins the four accessors. Nothing solves a test point, and no runner reads one.
+
+**Files outside §3's fence, and why.**
+- `eda/src/support.rs`: the support gate must judge BOOT0's new strap and the switch, or the bench board fails `check support`.
+- `.github/workflows/ci.yml` and `ci/test-weights.tsv`: `TIER2_MIN` is exact and the new tier-2 test needs a weight.
+- `crates/aethelgard-cli/README.md` and the CLI's `clippy.toml`: the README's example hash moved with the bump, and the `clippy.toml` carries the `RUL-16` fence.
+- `crates/aethelgard-svd-hal/` and `crates/aethelgard-twin/` (`clippy.toml`, goldens, the `order_2203` digests): the bump's hash-only moves, and the fence.
+- `boards/sentinel-01/**`: the bump's provenance lines.
+
+**Not measured.** `verify` and `verify --fab-out` were not run on the bench board, so its fabrication package is untested. `3401`'s ordered board will take that path first.
+
 **Not changed, and why.**
 - `spike/3400/**` stays at version 12. It is the 3400 spike's record, nothing builds or tests it, and builds delete `spike/` (roadmap). The bump makes its specifications refused by version.
 - `aethelgard-cli`'s `extract` conditions are not changed (the CLI is `2302`'s). See Q2.
 
-## 4. Adversarial pass (§5), by a fresh agent at 5dc49df; each finding re-measured here before it was fixed
+## 4. Adversarial pass (§5), by a fresh agent at 5dc49df
 
-**No escape was reachable from a specification.** Every finding needed a hand-edited netlist, schematic value or board. Each was fixed with a tier-1 test that fails before the fix, and with a mutant of the fix that the test kills.
+**No escape was reachable from a specification [agent, measured by it].** Every finding needed a hand-edited netlist, schematic value or board. I fixed each one first and then wrote its tier-1 test. I did not re-run the agent's reproducers against the unfixed code. The proof that each test bites is the mutant of each fix (mutants 20–25 in §5), which every one of them kills.
 
 - **F1, medium, new.** The BOOT0 strap check never looked at anything else on BOOT0's net. All of these passed the support gate with no finding:
   - a 1 kΩ, 100 Ω or 0 Ω resistor from `/BOOT0` to the supply beside the 10 k pull-down;
@@ -121,10 +133,10 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   **Fixed:** a declared test point must be a one-pin `Connector:TestPoint`, every `Connector:TestPoint` in the netlist must be declared, and the switch may have nets on pins 1 and 2 only. Test: `a_test_point_or_switch_of_another_shape_fails`.
 - **F5, low, robustness.** `route::read` subtracted circle coordinates in `i64`, so a hand-edited courtyard circle with far coordinates panicked in debug. **Fixed:** a circle beyond a metre is refused before any arithmetic, and the subtraction is widened in the placer too.
 - **Information, acted on.** Test point references were checked as `Plain` identifiers, a connector's as `Reference`. `TP?`, `~` and `TP-1` reached the emitted files. They are now `Reference` identifiers, and those are refused (test).
-- **Information, recorded.**
+- **Information, recorded (agent's measurements, not re-run here).**
   - A board that carries BOOT0 places differently: the anchored pull-down moved 7 parts on `four-layer-power` and 10 on `two-bme`. Test points alone and the switch alone moved none.
   - Library paths that skip `validate` (`extract::lines`, `anchored`) accept a test point on an emitter net. `emit` refuses it (`TestPointNetUnknown`), and connectors behave the same way, so nothing is emitted.
-- **What held, as the agent measured it.**
+- **What held, as the agent measured it (not re-run here).**
   - Every spelling of a reserved or emitter net is refused by `validate` and by `emit`.
   - Reference folding (`tp12`, `j02`, `SW01`) and the switch numbering hold.
   - `[]` and `false` emit the same bytes as absent, schematic, board and BOM.
@@ -139,7 +151,7 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   - The declared-net-to-connection rule written twice in `schematic.rs` is one `Builder::declared`, used by connectors and test points.
   - The debug-net map written twice in `support.rs` is one: test points use step 5's `expected`.
   - **Finding:** `pcb::graphic_box`'s refusal arm is now unreachable, because `geometry` passes it only the five shapes it measures. I kept it as a refusal rather than an `unreachable!`, and it is not labelled `belt-and-suspenders`. The owner decides.
-- **Mutation (diff-sized), 26 mutants, one per guard this work order adds, run against `ir` `bench` and lib, `cli` `bench_tier1` and `eda` lib: 26 killed** (`~/.cache/aet-1312/mut/summary.txt`).
+- **Mutation (diff-sized), 26 mutants, one per guard this work order adds, run against `ir` `bench` and lib, `cli` `bench_tier1` and `eda` lib: 26 killed.** All 26 were re-run on the final code, after the adversarial fixes and the `RUL-16` change. Two patterns were updated to the rewritten checks, mutants 13 and 14 (`~/.cache/aet-1312/mut/summary.txt`, `mutants.py`).
   - The first run left two survivors. One was the BOOT0 wired-to-GND check, which the shared-pin check subsumes by kind; the test now asserts its message. The other was the unpopulated pull-down, which had no test.
 - **Gates:** `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (with `--features with-tools` too) and `cargo test --workspace` pass. The tier-2 bench test passes in the pinned image (8.5 s on Furnace). `TIER2_MIN` is 161, counted in the image with `shard.sh parse`. The new test's weight is a Furnace estimate (× 2.8, `AET-WO-1310`'s factor) until a refit.
 
@@ -149,4 +161,9 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 - **Q2.** `extract`'s verdict states its conditions. A probe clipped to a test pad is outside the bound, like any off-board load. A condition line saying so when a line carries a test pad belongs in `aethelgard-cli/src/extract.rs`, which is `2302`'s fence, so I did not add it. Who adds it?
 - **Q3.** `spike/3400/**` stays at version 12. Its specifications are now refused by version. Delete it here, leave it for `3401`, or bump it?
 - **Q4 (P1).** The strap stays a wire on boards that do not carry BOOT0. Should every board get the judged pull-down instead, so BOOT0 is one design everywhere? That would move every existing board's bytes, which the work order's §1.1 forbids here.
+- **Q5 (`RUL-03`).** Two readers now accept a circle:
+  - `route::read` used to refuse a circular courtyard; it now takes the circle as the square that holds it, a via keep-out kept wider and never weaker;
+  - `extract`'s footprint reader admits `fp_circle` off copper, as `4300d2` admitted `fp_arc`.
+
+  Neither is in `RUL-03`'s text, which rules the strict reader's refusals in general. Is the square acceptable, or should the test pad's courtyard be refused and a pad with a rectangular courtyard chosen instead?
 - **Order with `4220b`.** It also takes specification 13. Whichever merges second renumbers to 14, and redoes the hash-only moves of §2 step 2. The list is in this work order's commit 5dc49df.

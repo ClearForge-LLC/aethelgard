@@ -117,7 +117,7 @@ pub fn carries_boot0(spec: &Specification) -> bool {
         .iter()
         .flat_map(|c| &c.pins)
         .any(|p| p.net.as_deref() == Some(BOOT0))
-        || spec.test_points.iter().any(|t| t.net == BOOT0)
+        || spec.declared_test_points().iter().any(|t| t.net == BOOT0)
 }
 
 /// The reset switch's reference when `mcu.reset_switch` is set: `SW<n>`, the
@@ -150,11 +150,11 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
     let nameable = crate::connectors::nameable(spec);
     // Every other reference: `names::references` lists the test points last.
     let all = crate::names::references(spec);
-    let others = &all[..all.len() - spec.test_points.len()];
+    let others = &all[..all.len() - spec.declared_test_points().len()];
     let mut by_key: BTreeMap<String, &str> =
         others.iter().map(|r| (reference_key(r), *r)).collect();
     let mut nets: BTreeMap<&str, &str> = BTreeMap::new();
-    for t in &spec.test_points {
+    for t in spec.declared_test_points() {
         if !nameable.contains(t.net.as_str()) {
             return Err(E::TestPointNetUnknown {
                 id: t.reference.clone(),

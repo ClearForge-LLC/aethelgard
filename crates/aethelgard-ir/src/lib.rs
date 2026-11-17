@@ -134,9 +134,10 @@ pub struct Specification {
     pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
     /// Each test point: a pad on a declared net (`AET-WO-1312`). Absent or
     /// empty declares none, as the work order states, and an empty list is
-    /// not written back.
+    /// not written back. Private as `connectors` is (`RUL-16`): read through
+    /// [`Specification::declared_test_points`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub test_points: Vec<bench::TestPoint>,
+    test_points: Vec<bench::TestPoint>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -2361,6 +2362,13 @@ impl Specification {
     /// solves a connector, so the `SolvedTopology` never carries one.
     pub fn declared_connectors(&self) -> &[connectors::Connector] {
         &self.connectors
+    }
+
+    /// The test points the specification declares, in document order; fenced
+    /// as [`Specification::declared_connectors`] is (`AET-WO-1312`): nothing
+    /// solves a test point, and no runner reads one.
+    pub fn declared_test_points(&self) -> &[bench::TestPoint] {
+        &self.test_points
     }
 
     /// Refuses the first malformed value found, in the order of

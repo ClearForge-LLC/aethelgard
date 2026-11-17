@@ -36,7 +36,7 @@ fn set(v: &mut Value, i: usize, net: &str, reference: &str) {
 fn the_bench_fixture_validates() {
     let spec = spec_of(&bench_json());
     assert_eq!(spec.validate(), Ok(()));
-    assert_eq!(spec.test_points.len(), 12);
+    assert_eq!(spec.declared_test_points().len(), 12);
     assert!(spec.mcu.reset_switch);
     assert!(bench::carries_boot0(&spec));
     assert_eq!(bench::switch_reference(&spec).as_deref(), Some("SW1"));
@@ -50,7 +50,7 @@ fn absent_fields_are_todays_board_and_are_not_written_back() {
     assert!(v0.get("test_points").is_none());
     assert!(v0["mcu"].get("reset_switch").is_none());
     let spec = spec_of(&v0);
-    assert!(spec.test_points.is_empty());
+    assert!(spec.declared_test_points().is_empty());
     assert!(!spec.mcu.reset_switch);
     assert!(!bench::carries_boot0(&spec));
     assert_eq!(bench::switch_reference(&spec), None);

@@ -650,7 +650,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     // 5a. Bench access (`AET-WO-1312`): each test point's pad on the net it
     // declares, the boot and debug nets at the MCU's pin, and the reset switch
     // between the MCU's NRST and `GND` when it is declared, and only then.
-    for t in &spec.test_points {
+    for t in spec.declared_test_points() {
         // As a connector pin's (step 5); any other domain bare, a signal as
         // its label.
         let want = expected(&t.net).unwrap_or_else(|| {
@@ -696,7 +696,10 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     }
     for (r, c) in &netlist.components {
         if c.symbol.as_deref() == Some(crate::schematic::TEST_POINT)
-            && !spec.test_points.iter().any(|t| t.reference == *r)
+            && !spec
+                .declared_test_points()
+                .iter()
+                .any(|t| t.reference == *r)
         {
             fail(
                 "test_point_off_net",
@@ -880,7 +883,7 @@ fn boot0_pull_down(
                     .iter()
                     .any(|q| q.pin == p && q.net.as_deref() == Some(aethelgard_ir::BOOT0))
         }) || spec
-            .test_points
+            .declared_test_points()
             .iter()
             .any(|t| t.reference == r && p == "1" && t.net == aethelgard_ir::BOOT0)
     };

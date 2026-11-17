@@ -123,7 +123,11 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
                 .flat_map(power::references)
                 .map(String::as_str),
         )
-        .chain(spec.test_points.iter().map(|t| t.reference.as_str()))
+        .chain(
+            spec.declared_test_points()
+                .iter()
+                .map(|t| t.reference.as_str()),
+        )
         .collect()
 }
 
