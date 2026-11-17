@@ -44,10 +44,11 @@ Labels: **[measured]**, **[read at source]**, **[inferred]**.
   - I2C2's CR1/CR2/ICR;
   - `RCC.APB1LENR.I2C2EN`;
   - GPIOB's MODER/OSPEEDR/AFRH for PB10/PB11.
-- Each is acknowledged by mirroring V0's I2C1 entry for the same register and class, with reasons naming the EXT bus.
+- Each is acknowledged in the entry for its register and class: V0's own GPIOB entries are extended, and I2C2's mirror V0's I2C1 entries.
+- **Every touched reason was then rewritten to be true of both buses** (after review): PB10/PB11 at 100 kHz and 10 kΩ, and I2C2 initialised but never used for a transfer (`let _i2c2` in the generated firmware). So CR2 stays 0 and ICR is written by no transfer. No gate reads a reason, but `FAB-NOTES.md` prints them. The board directory was re-blessed, because every generated file carries the specification's hash.
 - `RCC.APB1LENR.I2C2EN`'s class is `same-source`. `validate` refused `ignored-by-model` and `silicon-only` as stale, so the ledger fixed it [measured].
 
-**The gates [measured; host release CLI from `36e428b`; KiCad steps in the pinned image `598501ab` under `~/bin/capped-run`, swap 0 read back]:**
+**The gates, rerun on the committed file after the reasons were rewritten** [measured; identical results to the scratch candidate's run; host release CLI from `36e428b`; KiCad steps in the pinned image `598501ab` under `~/bin/capped-run`, swap 0 read back]:**
 
 | Command | Exit | Findings |
 |---|---|---|
@@ -78,8 +79,17 @@ Labels: **[measured]**, **[read at source]**, **[inferred]**.
 - `aethelgard-svd-hal/tests/board.rs::the_committed_bench_board_crate_is_exactly_the_generated_one`, the same comparison the reference's board gets;
 - `workspace_shape.rs`'s board list, now both boards (the test names `board.rs` as the list's owner);
 - `bench_board_tier1.rs`, `validate` on the example. `generate` does not check acknowledgements; `validate` and `verify` do.
+- **`board_tier2.rs::the_ordered_board_passes_every_board_gate_with_no_finding`** (added after review):
+  - `emit`, ERC, DRC by the specification's rules with parity, `check support` and `extract`, with no finding, on `examples/sentinel-01.json`;
+  - so CI judges the ordered board per pull request, not only Furnace;
+  - **2.71 s** in the pinned image [measured; libtest's `finished in`, debug, offline].
+  - It raises the tier-2 count by one, so **`TIER2_MIN` in `ci.yml` moves 160 → 161**, with its comment line. That is one line outside the stated fence, needed to keep it exact (§3 Acceptance).
 
-**Measured CI cost of the board directory: seconds.** The two tests take 1.5–2.1 s and 0.3–0.5 s on Furnace [measured]. P1 held.
+**Measured CI cost of the board directory and its gates: seconds.**
+- The tier-1 tests take 1.5–2.1 s and 0.3–0.5 s on Furnace.
+- The tier-2 test takes 2.71 s in the image.
+
+P1 held.
 
 **Measured cost of a byte-for-byte package check: one full `verify`.** `verify --fab-out` is the only path to the package (CLI README).
 - **On Furnace:** **1013 s** wall time in the pinned image (debug build, as CI's tier-2 runs it) [measured].
@@ -92,7 +102,7 @@ Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
 | | What CI checks per PR | Cost per PR | What is given up |
 |---|---|---|---|
-| **(i) the package's inputs per PR; the package itself on `main` (recommended)** | Tier 1: the board crate (as now), and `emit`'s three files against the committed package's `.bom.csv` and against the hashes in its `MANIFEST.json`. The full `verify --against-fab` runs on `main`'s push, or nightly | seconds | A Gerber regression from a KiCad or exporter change would show on `main`, not on the PR. The exporter is pinned (KiCad 10.0.7, the clock-line rule), so such a change is an image or exporter PR, which runs the reference's own `--fab-out` tests. **It needs a workflow change, outside this fence** |
+| **(i) the package's inputs per PR; the package itself on `main` (recommended)** | Tier 1: the board crate (as now), and `emit`'s three files against the committed package's `.bom.csv` and against the hashes in its `MANIFEST.json`. The full `verify --against-fab` runs on `main`'s push, or nightly | seconds | **Per PR, this board's `prove`, `build`, `simulate` and campaign do not run, and neither does its package export.** The reference's own verifies still exercise those code paths on every PR, and the board gates (ERC, DRC with parity, support, extract) run on this board per PR (the tier-2 test above). A Gerber regression from a KiCad or exporter change would show on `main`, not on the PR. The exporter is pinned (KiCad 10.0.7, the clock-line rule), so such a change is an image or exporter PR, which runs the reference's own `--fab-out` tests. **It needs a workflow change, outside this fence** |
 | (ii) `verify --against-fab` on every PR | the package, byte for byte | +510–579 s on one shard, about +6 % of CI machine time (8 shards near their 20-minute target, so about 160 machine-minutes; [inferred]); the plan must rebalance | Nothing: it is the WO's literal acceptance. It fails §7's 3-minute line |
 | (iii) the bench board replaces the reference in an existing package test (`against_fab_tier2`) | the bench package, not the reference's | ±0 | Moves P1's byte-for-byte fixture off `sentinel-01-minimal.json`, which the WO forbids without the architect's agreement |
 
@@ -112,6 +122,14 @@ Labels: **[measured]**, **[read at source]**, **[inferred]**.
 - The second run overlapped the workspace gates on Furnace, so its wall time is not a cost measurement.
 
 ## 4.1 Gates [measured]
+
+**Workflows this PR triggers:**
+- `ci.yml`;
+- `engine-image.yml` (`crates/**`);
+- `ardupilot-image.yml` (`crates/**`, `examples/**`).
+
+The two image workflows read only named example files (`sentinel-01-minimal.json`, `invalid-zero-domain.json`), so the new example enters neither [read at source].
+
 
 - On the tree of this PR (base `36e428b`): `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 0, with 1949 passed and 0 failed. That is `main`'s 1947 plus this PR's two tier-1 tests.
 - **`TIER2_MIN` is unchanged:** no tier-2 test is added.

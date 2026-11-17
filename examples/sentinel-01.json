@@ -127,7 +127,7 @@
         "MODER10",
         "MODER11"
       ],
-      "reason": "PB6/PB7 alternate for I2C1: the model routes a pin by MODER only for a timer channel (4300 FEEDBACK section 0). The bench row reads MODER back, as 3302 B2 did."
+      "reason": "PB6/PB7 (I2C1) and PB10/PB11 (I2C2, EXT) alternate: the model routes a pin by MODER only for a timer channel (4300 FEEDBACK section 0). The bench row reads MODER back."
     },
     {
       "register": "GPIOB.OSPEEDR",
@@ -138,7 +138,7 @@
         "OSPEED10",
         "OSPEED11"
       ],
-      "reason": "PB6/PB7 for I2C1 at 400 kHz: no edge rate is modelled; check speeds judges the chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+      "reason": "PB6/PB7 (I2C1, 400 kHz) and PB10/PB11 (I2C2, 100 kHz): no edge rate is modelled; check speeds judges fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
     },
     {
       "register": "GPIOB.OTYPER",
@@ -161,7 +161,7 @@
         "OT14",
         "OT15"
       ],
-      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 open-drain for I2C1, the rest push-pull. 3302 B2 reads it on silicon; the bench row compares it."
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 (I2C1) and PB10/PB11 (I2C2) open-drain, the rest push-pull. The bench row reads it back on silicon."
     },
     {
       "register": "GPIOB.PUPDR",
@@ -184,7 +184,7 @@
         "PUPD14",
         "PUPD15"
       ],
-      "reason": "No pull is modelled. Written whole by split: no internal pull on PB6/PB7 (the bus has 2.2 kOhm), PB4's reset pull-up kept. The bench row reads PUPDR back."
+      "reason": "No pull is modelled. Written whole by split: no internal pull on PB6/PB7 (2.2 kOhm) or PB10/PB11 (10 kOhm), PB4's reset pull-up kept. The bench row reads PUPDR back."
     },
     {
       "register": "I2C1.CR1",
@@ -230,7 +230,7 @@
       "fields": [
         "PE"
       ],
-      "reason": "PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, with no reaction claimed. The bench row reads PE as 1; the EXT bus on the bench needs it."
+      "reason": "PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, with no reaction claimed. The bench row reads PE as 1 on the EXT bus."
     },
     {
       "register": "I2C2.CR2",
@@ -244,7 +244,7 @@
         "AUTOEND",
         "PECBYTE"
       ],
-      "reason": "7-bit addressing, no reload, no PEC, written 0 (AUTOEND set at run time): STM32F7_I2C.cs is not held, no reaction claimed. The bench row reads CR2 back, all but AUTOEND."
+      "reason": "7-bit addressing, no reload, no PEC, written 0: the firmware starts no transfer on EXT (no device), so AUTOEND stays 0; no reaction claimed. The bench row reads CR2 back as 0."
     },
     {
       "register": "I2C2.ICR",
@@ -260,7 +260,7 @@
         "TIMOUTCF",
         "ALERTCF"
       ],
-      "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), so no bench row: STOPCF and NACKCF after each transfer. The next record's OK status on the bench (3302 B3) shows the clear took."
+      "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), written only by a transfer, and the firmware makes none on EXT (no device). No bench row: write-only."
     },
     {
       "register": "RCC.APB1LENR",
