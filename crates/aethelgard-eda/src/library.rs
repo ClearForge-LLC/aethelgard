@@ -16,7 +16,7 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 46] = [
+const PINS: [(&str, &str); 50] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -197,6 +197,22 @@ const PINS: [(&str, &str); 46] = [
     (
         "aethelgard/README.md",
         "306da7fa0dfdedc3f53d4df12b6e5d7e6b3593df6d94fd765750220b8b3f9527",
+    ),
+    (
+        "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
+        "0c23d0140164aadb05dfa4a8e393e4311a75aa7c543552af4d0959f114bb6ed6",
+    ),
+    (
+        "footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod",
+        "6d602c576b4ab0de29fa4cc096f419a62e828ba45ceee30c1263d86b420b2b12",
+    ),
+    (
+        "symbols/Connector.kicad_symdir/TestPoint.kicad_sym",
+        "e983b0d2c450bc8c517b5bd83873bbe060f9e11e71dbb07951765a1b54f39a8e",
+    ),
+    (
+        "symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
+        "650beb4ee58eda52928926b1eb0ad8b11dedaacc9ad1334bb4d3a920c38c9814",
     ),
     (
         "LICENSE.md",
@@ -568,8 +584,8 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 13);
-        assert_eq!(fp.matches("(lib ").count(), 12);
+        assert_eq!(sym.matches("(lib ").count(), 15);
+        assert_eq!(fp.matches("(lib ").count(), 14);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

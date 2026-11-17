@@ -333,7 +333,10 @@ jobs:
       # fixture, its ICM-42688-P and BMP581 from our own library, passes ERC,
       # DRC with parity and extract; a track across the BMP581's keepout fails
       # DRC on either layer).
-      TIER2_MIN: "161"
+      # 162: plus 1 from AET-WO-1312 in board_tier2.rs (the bench board, with
+      # a test point on every net, BOOT0 and NRST on J2 and a reset switch,
+      # passes every gate at two and four layers), merged after 161.
+      TIER2_MIN: "162"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

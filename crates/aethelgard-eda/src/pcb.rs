@@ -164,7 +164,7 @@ fn layer(item: &Sx) -> Option<&str> {
 }
 
 /// The box around a graphic's points: `fp_line`, `fp_rect` or `fp_poly`,
-/// and half its stroke on every side; for an `fp_arc`, the box of its whole
+/// and half its stroke on every side; for an `fp_circle` or an `fp_arc`, the box of its whole
 /// circle, which holds the arc whatever its sweep (`AET-WO-4300d2`: the
 /// XT30PW-M's silkscreen rings its pegs with arcs). Anything else is refused.
 fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError> {
@@ -180,6 +180,27 @@ fn graphic_box(item: &Sx, reference: &str, theta: u16) -> Result<Rect, EmitError
             }
             let (c, r) = circle(at)
                 .ok_or_else(|| internal(reference, "an arc whose three points are in line"))?;
+            points.push((c.0 - r, c.1 - r));
+            points.push((c.0 + r, c.1 + r));
+        }
+        // A circle's box, from its centre and a point on it (`AET-WO-1312`: the
+        // test pad's courtyard and silkscreen are circles).
+        Some("fp_circle") => {
+            let at = |end: &str| -> Result<(i64, i64), EmitError> {
+                xy(
+                    item.child(end).ok_or_else(|| {
+                        internal(reference, "a circle without its centre and end")
+                    })?,
+                    reference,
+                )
+            };
+            let (c, e) = (at("center")?, at("end")?);
+            let (dx, dy) = (
+                i128::from(e.0) - i128::from(c.0),
+                i128::from(e.1) - i128::from(c.1),
+            );
+            let r = i64::try_from(isqrt_up(dx * dx + dy * dy))
+                .map_err(|_| internal(reference, "a circle too large to place"))?;
             points.push((c.0 - r, c.1 - r));
             points.push((c.0 + r, c.1 + r));
         }
@@ -490,7 +511,14 @@ impl Item<'_> {
 }
 
 fn is_ic(part: &Part) -> bool {
-    !part.lib_id.starts_with("Device:")
+    !part.lib_id.starts_with("Device:") && !is_bench(part)
+}
+
+/// A test point or the reset switch (`AET-WO-1312`): never an anchor, and
+/// placed after every other part but the connectors, so that declaring one
+/// moves no other part.
+fn is_bench(part: &Part) -> bool {
+    part.lib_id == schematic::TEST_POINT || part.lib_id == schematic::SWITCH
 }
 
 /// The integer placer (`AET-WO-1301` §1.2), a function of the parts alone:
@@ -498,7 +526,9 @@ fn is_ic(part: &Part) -> bool {
 /// 2. every other IC, in reference order, goes beside the placed IC it
 ///    shares most nets with;
 /// 3. every passive, in reference order, goes beside the IC it shares most
-///    nets with, or a decoupling capacitor beside the IC it decouples.
+///    nets with, or a decoupling capacitor beside the IC it decouples;
+/// 4. the reset switch and every test point, in reference order, the same
+///    way (`AET-WO-1312`).
 ///
 /// Ground and unconnected nets are not counted, and ties go to the lower
 /// reference. "Beside" means: the first free spot, in rings of [`STEP`] out
@@ -523,6 +553,7 @@ fn place(
             (
                 !p.lib_id.starts_with("MCU_"),
                 !is_ic(p),
+                is_bench(p),
                 p.reference.clone(),
             )
         };
@@ -1743,10 +1774,6 @@ mod tests {
         for (body, want) in [
             ("", "no courtyard"),
             (
-                "(fp_circle (center 0 0) (end 1 0) (layer \"F.CrtYd\"))",
-                "does not measure",
-            ),
-            (
                 "(fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")) (property \"Reference\" \"R\" (at 0 0 45) (layer \"F.SilkS\") (effects (font (size 1 1))))",
                 "at angle 45",
             ),
@@ -1756,6 +1783,17 @@ mod tests {
                 other => panic!("{body}: {other:?}"),
             }
         }
+        // A circle is measured as its box (`AET-WO-1312`, the test pad).
+        let g = geometry(
+            &fp("(fp_circle (center 0 0) (end 0.6 0.8) (layer \"F.CrtYd\"))"),
+            "R1",
+        )
+        .unwrap();
+        assert_eq!(
+            (g.courtyard.x0, g.courtyard.y1),
+            (-1_000_000, 1_000_000),
+            "{g:?}"
+        );
         // A text turned 90 degrees is measured turned.
         let g = geometry(
             &fp("(fp_rect (start 0 0) (end 0.1 0.1) (layer \"F.CrtYd\")) (property \"Reference\" \"R\" (at 5 5 90) (layer \"F.SilkS\") (effects (font (size 1 1) (thickness 0.1))))"),

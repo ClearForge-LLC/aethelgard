@@ -449,7 +449,7 @@ The agent worked read-only against this worktree, with a pinned copy of the CLI 
 ## 13. Gates and CI
 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`: all pass on Furnace (123 test binaries) at the commit before the signal.
-- `main` (`7452bf4`, 1801's 0.2.0) is merged in: the crate is 0.2.0 in `workspace.dependencies` and step 10 of `docs/releasing.md`'s order, as ruled. `TIER2_MIN` stays 161: no tier-2 test was added.
+- `main` (`7452bf4`, 1801's 0.2.0) is merged in: the crate is 0.2.0 in `workspace.dependencies` and step 10 of `docs/releasing.md`'s order, as ruled. `TIER2_MIN` follows main (161, then 162 with 1312): this work order adds no tier-2 test.
 - **CI on `e26d7a47` is green in all four workflows:**
   - `ci`: `gates`, `shards` and all eight `tools-shard`s. Tier 2 includes the Sentinel-02 board with the console on J2, and the aggregate holds `TIER2_MIN` 161.
   - `ardupilot-image`: step G and the seeds; `generated (sentinel-01)`, `(sentinel-02)` and `(serial-dshot-9600)`, each built under its own name; `pinout`; `source`; `source-rehearsal`.

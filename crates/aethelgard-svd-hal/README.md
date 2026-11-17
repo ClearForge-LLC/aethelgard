@@ -8,6 +8,8 @@ Vendor data for the STM32H753ZI (LQFP144), and the board-crate generator.
 
 It knows one part.
 
+**`unsafe` in a generated board crate.** A board crate is outside the workspace, so the workspace's `forbid(unsafe_code)` does not reach it (`RUL-04`). Its `unsafe` is confined to `src/board.rs`'s `mmio` module: the volatile register reads and writes and `unsafe fn new`. The rest of `board.rs` and `proofs.rs` carry none, and the test `the_generated_text_carries_no_unsafe_outside_mmio` holds that on every generation. A crate that vendors a generated board inherits that contract, not the `forbid`.
+
 ## Source and licence
 
 Two of ST's XML files from [`STM32_open_pin_data`](https://github.com/STMicroelectronics/STM32_open_pin_data), commit `7d1f1514ed5583ec5007ad91236b4e1d377295b1`, are vendored byte for byte under `data/st-open-pin-data/`, with ST's `LICENSE` (BSD-3-Clause, © STMicroelectronics) and a `SOURCE.md` giving each file's original path and sha256. ST's notice travels with the data (`RUL-11`); the engine's own licence is unchanged. They are embedded with `include_bytes!`; nothing is fetched at build or test time.

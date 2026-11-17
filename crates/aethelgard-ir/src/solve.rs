@@ -2238,6 +2238,7 @@ mod differential {
                     connector: "J2".into(),
                     pin: "1".into(),
                 }),
+                reset_switch: false,
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),
@@ -2259,6 +2260,7 @@ mod differential {
             net_constraints,
             motor_outputs: vec![],
             serial_ports: vec![],
+            test_points: vec![],
         }
     }
 

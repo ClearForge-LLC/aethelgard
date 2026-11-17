@@ -81,12 +81,17 @@ use sha2::{Digest, Sha256};
 /// with `3f89077c…aee4` put back, the reference's output hashes to
 /// `d751e1f4…0dcf`, and with `7f8f17ed…baf9` put back, the stress fixture's
 /// to `00be83e1…eef6`, the old digests, exactly.
+/// Moved once more by `AET-WO-1312` (specification version 14), which moved
+/// only the specification's sha256: with `87967ab4…a794` put back, the
+/// reference's output hashes to `2e19ebee…31d3`, and with `8e9f9215…39cc`
+/// put back, the stress fixture's to `a59e85d7…7af7`, the old digests,
+/// exactly.
 /// Moved by `AET-WO-4400b` (solved schema 9): with `"schema_version":8` put
 /// back and the trailing `mcu` and `pin_speeds` keys removed, the
-/// reference's output hashes to `2e19ebee…31d3` and the stress fixture's to
-/// `a59e85d7…7af7`, the old digests, exactly.
-const REFERENCE_DIGEST: &str = "7fbe81a71caa47b1f5b293eb1dc3e6ec63bf28de8cbab3f4611a7fbd614b3708";
-const STRESS_DIGEST: &str = "dfb56f79b5c63a654b55a4e49dc0c24e7937859d37ea3dfe16acb0b25d4235a6";
+/// reference's output hashes to `9cfa82d3…2ed9` and the stress fixture's to
+/// `81831b32…1121`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "929dabce670b26090dd0194f977a1680db790c00ad7b28604e1923f231a2c8d1";
+const STRESS_DIGEST: &str = "3ec179d2f42f5dd90f7205aa547d9eecbe28521d443e3546892ebc59d71f1b1f";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
