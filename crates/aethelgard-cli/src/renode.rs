@@ -1290,11 +1290,44 @@ pub fn wire_past_window(
     injection_ns: u64,
     window_ns: u64,
 ) -> Option<WirePast<'_>> {
+    past_window(serial.iter(), injection_ns, window_ns, |s| {
+        aethelgard_twin::serial::wire_ns(&s.port.label, &s.port.framing, s.silicon.actual_millibaud)
+    })
+}
+
+/// A port's wire time from the boot word (`AET-WO-2302` adversarial pass 2,
+/// A2-3): its frame as the composition injects it, [`FRAME_LEN`] bytes each
+/// [`aethelgard_twin::serial::spacing_ns`] apart, and one echoed
+/// character. Not its pattern: the generated bring-up sends every port's
+/// pattern before it writes the boot word, so after the boot word only the
+/// frames and their echoes are on the wire. `None` where the baud gives no
+/// time.
+///
+/// [`FRAME_LEN`]: aethelgard_twin::serial::FRAME_LEN
+pub fn frame_echo_ns(s: &Serial) -> Option<u64> {
+    let millibaud = s.silicon.actual_millibaud;
+    let frame = u64::try_from(aethelgard_twin::serial::FRAME_LEN).ok()?;
+    aethelgard_twin::serial::spacing_ns(&s.port.framing, millibaud)?
+        .checked_mul(frame)?
+        .checked_add(aethelgard_twin::serial::char_ns(
+            &s.port.framing,
+            millibaud,
+        )?)
+}
+
+/// The first of `ports`, in order, at which the sum of each one's
+/// `budget` from `injection_ns` passes `window_ns` (or whose budget its baud
+/// cannot give), as [`wire_past_window`] names it.
+fn past_window<'a>(
+    ports: impl Iterator<Item = &'a Serial>,
+    injection_ns: u64,
+    window_ns: u64,
+    budget: impl Fn(&Serial) -> Option<u64>,
+) -> Option<WirePast<'a>> {
     let mut sum = Some(0u64);
-    serial.iter().find_map(|s| {
-        let millibaud = s.silicon.actual_millibaud;
-        let char_ns = aethelgard_twin::serial::char_ns(&s.port.framing, millibaud);
-        let wire = aethelgard_twin::serial::wire_ns(&s.port.label, &s.port.framing, millibaud);
+    ports.into_iter().find_map(|s| {
+        let char_ns = aethelgard_twin::serial::char_ns(&s.port.framing, s.silicon.actual_millibaud);
+        let wire = budget(s);
         sum = sum.zip(wire).and_then(|(a, w)| a.checked_add(w));
         let end = sum.and_then(|t| injection_ns.checked_add(t));
         let times = char_ns.zip(wire).zip(sum).map(|((c, w), t)| (c, w, t));
@@ -2846,20 +2879,24 @@ fn anchor_findings(
     out
 }
 
-/// `serial_wire_past_run` (`AET-WO-2302` D4): the ports' wire time, summed
-/// in the specification's order ([`wire_past_window`]), from one quantum
-/// after the boot word at `boot_word_ns`, past the boot's end; known only
-/// after the run. The first port at which it passes is named.
+/// `serial_wire_past_run` (`AET-WO-2302` D4): the ports' wire time after
+/// the boot word, summed in the specification's order over the ports the
+/// chain injects (not those the scenario holds open), each its frame as
+/// injected and one echoed character ([`frame_echo_ns`]; its pattern went
+/// before the boot word, adversarial pass 2, A2-3), from one quantum after
+/// the boot word at `boot_word_ns`, past the boot's end; known only after
+/// the run. The first port at which it passes is named.
 fn wire_past_run(plan: &BootPlan<'_>, boot_word_ns: u64) -> Option<Finding> {
-    let (s, times, end) = wire_past_window(
-        plan.serial,
+    let (s, times, end) = past_window(
+        plan.serial.iter().filter(|s| !s.open),
         boot_word_ns + aethelgard_twin::boot::QUANTUM_NS,
         plan.virtual_ns,
+        frame_echo_ns,
     )?;
     Some(Finding::plain(
         aethelgard_chaos::campaign::SERIAL_WIRE_PAST_RUN_FINDING,
         format!(
-            "{}: the ports' wire time through it, {}, from one quantum after the boot word at {boot_word_ns} ns, passes the boot's end at {} ns",
+            "{}: the ports' frames and one echoed character each through it, {}, from one quantum after the boot word at {boot_word_ns} ns, passes the boot's end at {} ns (the patterns go before the boot word)",
             serial_who(s),
             match (times, end) {
                 (Some((char_ns, wire, sum)), Some(end)) => format!(
@@ -5359,6 +5396,40 @@ mod tests {
             (Some((1_041_719, 22_342_347, 22_342_347)), Some(22_442_347))
         );
         assert!(wire_past_window(&slow, 100_000, full).is_none());
+        // After the run (adversarial pass 2, A2-3): from the boot word only
+        // the frame as injected and one echoed character, 8 x 1 100 000 +
+        // 1 041 719 = 9 841 719 ns, since the bring-up sends its pattern
+        // before the boot word. A boot word at 87 030 760 ns (the
+        // adversary's 9600 board, its echo witnessed) is inside the run;
+        // the last that fits is 100 000 000 - 100 000 - 9 841 719 =
+        // 90 058 281 ns.
+        assert_eq!(frame_echo_ns(&slow[0]), Some(9_841_719));
+        let image = aethelgard_twin::boot::expected(&slow_topology).unwrap();
+        let p = serial_plan(&image, &[], &slow);
+        assert_eq!(p.virtual_ns, full);
+        for bw in [79_530_760, 87_030_760, 90_058_281] {
+            assert!(wire_past_run(&p, bw).is_none(), "{bw}");
+        }
+        let named = wire_past_run(&p, 90_058_282).unwrap();
+        assert!(
+            named.message.contains(
+                "its own 9841719 ns (1041719 ns a character) of 9841719 ns in all, ending at 100000001 ns"
+            ),
+            "{}",
+            named.message
+        );
+        assert!(wire_past_run(&p, 94_530_760).is_some());
+        // Two ports in the chain sum; a port held open gets no frame and
+        // adds nothing (`AET-WO-2302` D5).
+        let mut two = vec![slow[0].clone(), slow[0].clone()];
+        two[1].port.label = "GPS".to_owned();
+        let p = serial_plan(&image, &[], &two);
+        let named = wire_past_run(&p, 80_216_563).unwrap();
+        assert!(named.message.starts_with("GPS"), "{}", named.message);
+        assert!(wire_past_run(&p, 80_216_562).is_none());
+        two[0].open = true;
+        let p = serial_plan(&image, &[], &two);
+        assert!(wire_past_run(&p, 90_058_281).is_none());
     }
 
     fn bor3() -> Vec<power::Reset> {

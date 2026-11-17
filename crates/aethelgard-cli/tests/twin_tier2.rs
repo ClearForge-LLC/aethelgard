@@ -1872,6 +1872,65 @@ fn the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot() {
     assert_eq!(t["injected_bytes"], 8);
 }
 
+/// Adversarial pass 2, A2-3 (`AET-WO-2302`): `serial_wire_past_run` is
+/// judged from the boot word, so it sums the console's paced frame
+/// (8 x 1 100 000 ns at 9600 8N1) and its one echoed character
+/// (1 041 719 ns), 9 841 719 ns, not its pattern, which the generated
+/// firmware sends before the boot word. The serial-dshot-9600 firmware with
+/// a spin of `RAW_ADV`'s three-instruction loop before its boot word puts
+/// the boot word at about 79.5 ms and 87 ms: each echo is witnessed whole
+/// inside the run and the board passes (the pattern-counting sum named
+/// both); at about 94.5 ms the frame cannot fit, named, and the echo is cut
+/// short, named (the adversary's 2.65M, 2.9M and 3.15M spins, measured).
+#[test]
+fn a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word() {
+    let late = |label: &str, spins: u32| {
+        let (platform, spec, elf) = motor_board(
+            "serial-dshot-9600",
+            label,
+            |_| {},
+            |d| {
+                edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+                edit(
+                    d,
+                    "src/main.rs",
+                    BOOT_WORD,
+                    &format!("    spin({spins});\n{BOOT_WORD}"),
+                );
+            },
+        );
+        let (code, v) = boot_on(label, &platform, &spec, &elf, "100ms");
+        let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
+        (code, v, bw)
+    };
+    for (label, spins, from_ms) in [("a2-3-79ms", 2_650_000, 79), ("a2-3-87ms", 2_900_000, 87)] {
+        let (code, v, bw) = late(label, spins);
+        assert_eq!(bw / 1_000_000, from_ms, "{label}: the boot word at {bw} ns");
+        assert_eq!(code, Some(0), "{label}: {v}");
+        assert!(kinds(&v).is_empty(), "{label}: {v}");
+        let t = &serial(&v)[0]["twin"];
+        assert_eq!(t["echo"], "witnessed", "{label}: {t}");
+        assert_eq!(t["injected_ns"].as_u64(), Some(bw + 100_000), "{label}");
+        assert_eq!(t["injected_bytes"], 8, "{label}: {t}");
+        windowed_dshot(&v, 1000);
+    }
+    let (code, v, bw) = late("a2-3-94ms", 3_150_000);
+    assert_eq!(bw / 1_000_000, 94, "the boot word at {bw} ns");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"serial_wire_past_run") && k.contains(&"serial_echo_missing"),
+        "{v}"
+    );
+    let end = bw + 100_000 + 9_841_719;
+    assert!(
+        message(&v, "serial_wire_past_run").contains(&format!(
+            "its own 9841719 ns (1041719 ns a character) of 9841719 ns in all, ending at {end} ns"
+        )),
+        "{v}"
+    );
+}
+
 /// `AET-WO-2302` §1: the Sentinel-02-shaped fixture (`sentinel-02-own`'s
 /// BME280, TMP117 and BMP581 on I2C, W25Q64JV and ICM-42688-P on SPI,
 /// `motors-dshot600`'s four outputs, MAVLINK 57600 and CRSF 420000), which
