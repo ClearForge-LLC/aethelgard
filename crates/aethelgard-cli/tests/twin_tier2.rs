@@ -59,7 +59,22 @@ fn answer(line: &str) {
         .unwrap();
 }
 
+/// One Renode at a time in this binary (AET-WO-2302, CI run 44012579895, job
+/// 133802886211): libtest runs a binary's tests on every CPU, and four boots
+/// sharing GitHub's 4-vCPU runner each took 18-24 s of a 30 s reaper bound
+/// (`BOOT_BOUNDS`) where alone they take about 5 s; the Sentinel-02-shaped
+/// late-anchor boot reached 40.7 s and was killed (`wall_bound_exceeded`).
+/// Every call that runs Renode takes this turn, so each boot meets the bound
+/// under the condition it was measured for: one boot at a time.
+static RENODE_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn renode_turn() -> std::sync::MutexGuard<'static, ()> {
+    RENODE_TURN.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
+    let _turn = renode_turn();
+    let held = Instant::now();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(args)
         .stdin(Stdio::null())
@@ -68,6 +83,11 @@ fn aethelgard(args: &[&str]) -> (Option<i32>, Value) {
     let stdout = String::from_utf8(out.stdout).unwrap();
     let value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("{e}: {stdout} / {}", String::from_utf8_lossy(&out.stderr)));
+    answer(&format!(
+        "turn: {} held it {:.2} s",
+        args.first().copied().unwrap_or_default(),
+        held.elapsed().as_secs_f64()
+    ));
     (out.status.code(), value)
 }
 
@@ -78,6 +98,7 @@ fn run_campaign(tag: &str, scenarios: &[&str], elf: &Path) -> (PathBuf, Option<i
     let archive = std::env::temp_dir().join(format!("aet-t2-{}-{tag}-archive", std::process::id()));
     let _ = fs::remove_dir_all(&archive);
     let start = Instant::now();
+    let _turn = renode_turn();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .current_dir(root())
         .arg("campaign")
@@ -822,6 +843,7 @@ fn record_on(platform: &Path, elf: &Path) -> (String, String) {
         "quit".to_owned(),
     ]
     .join("; ");
+    let _turn = renode_turn();
     let out = Command::new("renode")
         .args(["--disable-gui", "--console", "--plain", "-e", &commands])
         .env("DOTNET_EnableDiagnostics", "0")
@@ -1393,6 +1415,7 @@ fn renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_vi
     let _ = fs::remove_dir_all(&dir);
     let renode = |home: &Path, config: Option<&Path>, commands: &str| {
         fs::create_dir_all(home).unwrap();
+        let _turn = renode_turn();
         let mut c = Command::new("renode");
         if let Some(path) = config {
             c.arg("--config").arg(path);
@@ -3762,6 +3785,7 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
     let (dir, _, _) = own_board("campaign");
     let elf = mutant_of(&dir, "own-campaign", |_| {});
     let archive = dir.join("archive");
+    let _turn = renode_turn();
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args([
             "campaign",
@@ -3778,6 +3802,8 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
         .stdin(Stdio::null())
         .output()
         .unwrap();
+    // The turn ends with Renode: `replay` below takes no turn of its own here.
+    drop(_turn);
     let stdout = String::from_utf8(out.stdout).unwrap();
     answer(&format!(
         "own campaign: exit={:?} {stdout}",
@@ -3903,6 +3929,7 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         "emulation RunFor \"0.100000000\"".to_owned(),
         "quit".to_owned(),
     ]);
+    let _turn = renode_turn();
     let out = Command::new("renode")
         .args([
             "--disable-gui",

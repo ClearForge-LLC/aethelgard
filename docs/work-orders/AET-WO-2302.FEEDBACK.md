@@ -437,5 +437,17 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
     - **Fixed** by forcing the outcome: the DMA start now waits 3 230 000 spins (about 96.9 ms, inferred from the spin cost), so about 3 ms of unanchored edges stay inside the log budget, and every output is `motor_anchor_unobserved`. Measured 3 of 3 in the pinned image: 6.6–8.3 s, 41–43 % of the bound.
     - The early start stays a named residual in the README. It fails closed only by a bound, and which bound depends on the machine: the flood's names on Furnace, `wall_bound_exceeded` on CI.
     - No bound is raised and no re-run was asked for.
+  - **Q4b (closed by measurement, after the second CI run): what kills Renode at about 40 s.** On run 44012579895 (job 133802886211), shard 0 failed `f2_a_late_dshot_anchor_fails_by_name` with the same symptom: Renode exit -1, every observed field null, 40.68 s of call wall, peak memory at 602 ‰.
+    - **The signal is the CLI's own reaper.** The verdict's only finding is `wall_bound_exceeded`, which only the reaper names when a boot's tool passes `BOOT_BOUNDS`' 30 s wall (read at source, `run.rs` and `renode.rs`). Nothing else is involved: no runner limit, no sandbox and no watchdog.
+    - **Why the boot is slow: test concurrency, measured.**
+      - libtest runs a binary's tests on every CPU of GitHub's 4-vCPU runner. In that job's `twin_tier2` section, ten tests ran four at a time.
+      - Single boots that take about 4.4–6 s alone on Furnace took 18.6–24.1 s each on CI.
+      - The late-anchor boot is heavier in itself: the Sentinel-02-shaped board has our own C# models, two serial ports with access logs, and DShot. Its boot word at 99 ms means the frames never go in, so the firmware polls each USART's `ISR` `ECHO_POLLS` times under access logging.
+      - It takes 7.9–8.3 s alone on Furnace. Reproduced with the same ten tests pinned to 4 CPUs (`taskset -c 0-3`) in the pinned image: siblings 5.9–8.3 s, late anchor 14.7 s, the same 1.8–2.5× ratio as CI. Furnace's faster cores keep it under the bound; CI's did not.
+    - **What 6fde5a62 fixed was the same cause, by another driver.** m2's early DMA start made its own boot long (about 98 ms of flooding DShot: 16.8 s alone on Furnace), and moving the start late removed that. Under contention m2 still took 24.1 s of the 30 s on CI. This work order's heavier boots exposed contention that was already near the line: before 2302, a DShot board booted 2 ms.
+    - **Fixed without raising a bound:** `twin_tier2` runs one Renode at a time (`RENODE_TURN`), every call that runs Renode taking the turn. That is the condition the bound was measured for, and roadmap §6 asks a test to force the condition it asserts.
+      - Measured with the lock, same pinned reproduction: every `simulate` held the turn 4.2–7.8 s (the late anchor 7.79 s, its alone time). The ten tests' binary wall went from 24 to 53 s; the shard plan already weighs these tests at their alone times.
+      - Each call's time holding the turn is printed (`ANSWER 2100: turn: …`), so a CI log shows the margin.
+      - Residual: other tier-2 binaries (`campaign_tier2`, `with_tools`) still boot in parallel. They are green on both CI runs and their boots are reference-sized; no lock was added there without a failure.
   - **Q5 (backlog, older than 2302, A2-2):** replay should require exactly one kind 26 per kind 24 in a booted run.
   - **Q6:** `E3` yields to `S5`, with nothing masked (§15): confirm.
