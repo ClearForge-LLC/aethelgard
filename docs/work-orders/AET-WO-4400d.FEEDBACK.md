@@ -287,7 +287,7 @@ Built in the pinned ArduPilot image (`Copter-4.7.2`, `fb773567`) by `container/a
 
 ## 6. Mutations: one per new guard
 
-A fresh agent ran 34 mutants, one at a time, against the guards' own suites, on b82accc5 in a separate worktree and target. The list is in `~/.cache/aet-4400d/mut/results.txt` until the signal.
+A fresh agent ran 34 mutants, one at a time, against the guards' own suites, on b82accc5 in a separate worktree and target. Each mutant and the test that kills it is in its row below; the run's own log was scratch, removed at the signal.
 - **29 killed by a test, and M25 by the compiler only.** M25 was then rerun cleanly (the arm emptied), and `the_imu_probe_is_judged_against_the_declared_orientation` kills it.
 - **Five survived, each now dealt with:**
   - **M16**, hwdef's `ImuFrameNotCited`: the embedded table cites the frame for its one IMU, and `validate` refuses an uncited one (`ImuAxesNotCited`). Only a hand-written topology reaches the check, so it is now labelled `belt-and-suspenders:` and kept. The judge's matching filter carries the same label.
@@ -295,6 +295,8 @@ A fresh agent ran 34 mutants, one at a time, against the guards' own suites, on 
   - **M29 and M31**, a seated part's pads and geometry carried at its turn: `a_seated_part_carries_its_pads_and_geometry_at_its_turn` added (pad 8 at (0.75, −1.1625) mm at 90°, and the turned courtyard and keep box). Re-run: both killed.
   - **M34**, the gate's "Z must point up" check: equivalent. Z down or X vertical already draws a Y or an X no F.Cu footprint has, so the comparison refuses it. The check is removed (§7), and a gate case for Z down and X up is added.
 - The D2 mutant (zones not turned) was run in the tools image: killed by KiCad (§5).
+- **After the adversarial pass (§8),** one mutant per new guard, each killed: `%:` not read as `#`; the `#undef`/`#pragma` refusal removed; the `HAL_SITL_INVENSENSEV3` check removed; `SolvedTopology`'s non-IMU refusal removed.
+- **In all: 39 mutants. 37 are killed by a test; M16 is labelled and kept; M34's check was removed as redundant.**
 
 ## 7. Reduction pass (diff)
 
@@ -307,4 +309,57 @@ A fresh agent ran 34 mutants, one at a time, against the guards' own suites, on 
   - **The board frame worked four times:** hwdef's `unit`, the judge's `expected_matrix`, the placer's `seat_rotation` and the gate's `imu_agrees`. The generator and the judge must share no code (`RUL-20`, D4). The placer and the gate must not either, because the gate judges the placer (`INV-07`).
   - **The two rotation tables** (hwdef 24 rows, judge 26), for the same reason, both measured against ArduPilot's compiled code (§5).
   - **Two `belt-and-suspenders:` frame checks** (M16 and the judge's filter).
-- **`Reduction pass (diff)`:** 3 removals (the guard, replaced by a test as ruled; the Z check; two derives) · 1 duplicate merged (the seat reading) · 0 dead paths left · 6 protected kept · 1 finding below (§9 F3).
+- **`Reduction pass (diff)`:** 3 removals (the guard, replaced by a test as ruled; the Z check; two derives) · 1 duplicate merged (the seat reading) · 0 dead paths left · 6 protected kept · 0 findings outside the diff.
+
+## 8. Adversarial pass (full)
+
+A fresh agent (Opus, chosen for judgement) reviewed `af8f155a..HEAD` with no stake in it, probing the built CLI from its own scratch, removed at the signal. A1's attack is the two lines quoted in its row. Each result was reproduced here before being acted on.
+
+| # | Finding | Class | Outcome |
+|---|---|---|---|
+| A1 | **A `hwdef.h` edit the judge did not see.** `#undef HAL_INS_PROBE1` then `%:define HAL_INS_PROBE1 …ROTATION_ROLL_180)` is compiled by GCC as `ROLL_180` (`g++ -E`). With the ELF built with `ROLL_180` (`mut-rot`), `check pinout` said `ok`, no finding. Cause: the reader (`header.rs`, 4400b2's, untouched by this diff) placed `%:` lines as directives but read `#define` only with `#`, and `value()` ignored `#undef`. The SPI, PWM and baro lists had the same hole | BROKEN (inherited) | **Fixed:** one `directive()` reads `#` or `%:` with GCC's blanks, for placing lines and for `#define` alike. A name the judge reads that a compiled `#undef` or `#pragma` (`push_macro`/`pop_macro`) names is refused (`MalformedHeader`). The attack is refused; the genuine header still passes (its five `#undef`s name nothing the judge reads, measured). Test `a_digraph_undef_or_pragma_cannot_hide_a_definition`; the mutant of each guard is killed |
+| A2 | `#undef HAL_INS_PROBE_LIST` alone was caught only by the ELF backstop, as `ImuDriverNotLinked` | WEAK | Refused by A1's rule, by name |
+| A3 | `#define HAL_SITL_INVENSENSEV3` compiles one more probe (I2C bus 1, address 1, `ROTATION_NONE`; `AP_InertialSensor.cpp` L1223–1225) that the judge did not see | HOLE (minor) | **Named:** `UnexpectedImuProbe HAL_SITL_INVENSENSEV3`. Test `the_sitl_probe_define_is_named`; mutant killed |
+| A4 | An orientation on a non-IMU in a hand-written topology was ignored: hwdef bytes identical | HOLE (minor) | **Refused:** `SolvedTopology::validate` gives `OrientationOnNonImu`. Test in `orientation_tier1`; mutant killed |
+| A5 | Nothing binds the `hwdef.h` handed to the judge to the ELF's rotation (the genuine header with the `mut-rot` ELF passes) | INFORMATION | 4400b2's ruled D1, already in the CLI README: CI pairs both files from one build. The rotation is an argument in compiled code, not a table the reader can find in the ELF |
+| A6 | The driver-frame checks are unreachable with the embedded table | WEAK | Labelled `belt-and-suspenders:` (§6, M16) |
+| A7 | `validate` and `generate hwdef` accept Z down and X up (`YAW_90`, `ROLL_270_PITCH_90`); only the full `generate` refuses (`ImuRotationUnplaceable`) | INFORMATION | As ruled: `validate` refuses only what ArduPilot cannot express, and the placer refuses what F.Cu cannot hold. A board for such a declaration is never emitted |
+| A8 | A `Move` (test-only API) overrides the IMU's turn | INFORMATION | `check drc --spec` refuses the result (`ImuOrientationDisagrees`) |
+| A9 | The placer's pad centre (a map by pad number, every pad) and the gate's (every copper pad) could differ for a footprint with a split or unnumbered pad | INFORMATION | They agree for the one IMU footprint. A future IMU footprint with an exposed pad should be re-checked; noted for that part's work order |
+
+**Held under independent checks:**
+- Both rotation tables against a separate Python evaluation of `vector3.cpp`, and here against ArduPilot's compiled code (§5).
+- All 24 orientations through `generate hwdef`, against an oracle built from the ArduPilot matrices.
+- All 16 forward edges × top-side X, emitted, read back with the agent's own S-expression reader and KiCad's turn formula, and passed by `check drc --spec` up to `ToolMissing`. A cross-paired board is refused.
+- Every specification parsing refusal: duplicate keys, `null`, unknown keys, case, an orientation on an I2C device, version 15.
+
+**§5's three cases:**
+1. **Board and firmware disagree.** A hand-turned footprint is refused by `check drc --spec` (`ImuOrientationDisagrees`). An edited `hwdef.h` is refused by the judge (`WrongImuRotation`, `WrongImuProbe`, `MissingImuProbe`; A1 closed).
+2. **A rotation ArduPilot cannot express** cannot be written in the axis form: a word or angle outside the set is refused at parse, and parallel axes are refused at `validate`.
+3. **An IMU without cited axes** is refused (`ImuAxesNotCited`).
+
+## 9. Outside the fence (named, as 4400b2's were)
+
+The fence is ir, eda, hwdef, pincheck, fixtures and goldens, and `ardupilot-image.yml` (unchanged: its `pinout` step already judges each generated board with `hwdef.h` and expects no finding, so the `IMU` line and the driver's probe are judged there).
+
+Changes outside it, each a mechanical consequence of the ruled versions or of the judge's new input:
+- **`crates/aethelgard-cli/src/pinout.rs`:** one call; `identity::judge` takes the ELF's bytes.
+- **`crates/aethelgard-cli/src/{analog,renode}.rs`, `crates/aethelgard-cli/README.md`, `crates/aethelgard-twin/src/tests.rs`, `crates/aethelgard-twin/tests/spi_platform.rs`:** inline solved topologies at schema 10.
+- **`crates/aethelgard-cli/tests/*`:** version messages, the solve digests (each moved only by the specification's hash and `schema_version`, measured by putting the old values back: `solve_cli.rs`), the new `orientation_tier1.rs`, and `with_tools.rs`' tier-2 test.
+- **`crates/aethelgard-svd-hal`:** test literals; `order_2203.rs`' three pins (moved only by the specification's hash, measured the same way); the blessed `tests/ui/*` goldens.
+- **`boards/sentinel-01/*`, `boards/sentinel-01-bench/*`:** header hash lines only (blessed). §2.4 named only the bench board; `boards/sentinel-01` moves the same way.
+- **`.github/workflows/ci.yml`** `TIER2_MIN` 179, and **`ci/test-weights.tsv`**: one row, a stated Furnace estimate, as 1313's was.
+
+**For the architect:**
+- **F1.** `docs/architecture.md`'s `RUL-03` lists the declared-board refusals. `ImuOrientationDisagrees` joins them. The text is the architect's to amend.
+- **F2.** `board.forward` with no oriented device is accepted and unread. It is a fact about the board, as `max_outline_um` is without a part near its bound, but by `validate_parts`' F-a rule (a declaration nothing judges is refused) it could be refused. I left it accepted.
+
+## 10. Gates (on 388b140b; main f845b6f merged)
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --workspace --all-targets -- -D warnings`: pass on the host, and in the tools image with `--features aethelgard-cli/with-tools`, as CI runs it.
+- `cargo test --workspace`: 130 binaries, 2,131 passed. One failed, as expected: `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit` ("the package was made from another specification: run verify --fab-out again"). Specification 16 moves `examples/sentinel-01.json`'s hash, so the package must be rewritten by CI's `bench-package`. That is the AWAITING-PACKAGE step.
+- **Tier 2:** `a_turned_keepout_is_where_kicad_draws_it` and its control `a_part_on_each_edge_passes_erc_and_drc` pass in the tools image. `TIER2_MIN` is 178 + 1 = **179**, exact.
+- **Moved bytes against §2.4's prediction:**
+  - Every set predicted moved, and nothing else, but `boards/sentinel-01/*` (§9).
+  - The solved digests and `order_2203`'s pins each moved only by the specification's hash and version, measured by putting the old values back.
