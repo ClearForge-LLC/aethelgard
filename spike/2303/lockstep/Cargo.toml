@@ -1,0 +1,19 @@
+[package]
+name = "aet2303-lockstep"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# AET-WO-2303 spike probe, outside the root workspace. No `unsafe` here: the
+# FFI is ng-probe's (AET-WO-2301's spike copy), and the archive is the real
+# `aethelgard-chaos` writer and reader.
+[workspace]
+
+[[bin]]
+name = "lockstep"
+path = "src/main.rs"
+
+[dependencies]
+ng-probe = { path = "../ngspice" }
+aethelgard-chaos = { path = "../../../crates/aethelgard-chaos" }
+sha2 = "0.11"

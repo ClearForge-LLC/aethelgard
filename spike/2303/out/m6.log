@@ -1,0 +1,5 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p566129-i164151825.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+    Finished `release` profile [optimized] target(s) in 1.00s
+== full setup (observers silenced), healthy 100 ms
+lockstep exit=0
+replay exit=0

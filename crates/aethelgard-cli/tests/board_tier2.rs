@@ -1617,6 +1617,79 @@ fn the_own_parts_fixture_passes_erc_drc_with_parity_and_extract() {
     fs::remove_dir_all(&base).unwrap();
 }
 
+/// `AET-WO-3401` §1: Sentinel-01 as ordered (`examples/sentinel-01.json`,
+/// V0 plus NRST on J2 and the EXT bus) passes every board gate at two
+/// layers, with no finding of any kind: ERC; DRC by the specification's
+/// rules with schematic parity; the support gate; `extract` on every line.
+/// CI runs it per pull request, so the board that is ordered is judged by
+/// tier 2, not only on Furnace. Its full `verify --fab-out` (prove, build,
+/// simulate, the campaign) is not here: it costs one verify (FEEDBACK §3).
+#[test]
+fn the_ordered_board_passes_every_board_gate_with_no_finding() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-3401-ordered-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec = root().join("examples/sentinel-01.json");
+    let spec_arg = spec.to_str().unwrap();
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+
+    let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+    let erc = one(&text);
+    assert_eq!(code, Some(0), "erc: {erc}");
+    assert_eq!(erc["findings"], Value::Array(vec![]), "erc: {erc}");
+
+    let (code, text) = aethelgard(&[
+        "check",
+        "drc",
+        "--board",
+        &board,
+        "--spec",
+        spec_arg,
+        "--schematic",
+        &sch,
+    ]);
+    let drc = one(&text);
+    assert_eq!(code, Some(0), "drc: {drc}");
+    assert_eq!(drc["rules"], "specification", "drc: {drc}");
+    assert_eq!(drc["findings"], Value::Array(vec![]), "drc: {drc}");
+
+    let (code, text) = aethelgard(&[
+        "check",
+        "support",
+        "--schematic",
+        &sch,
+        "--board",
+        &board,
+        "--spec",
+        spec_arg,
+    ]);
+    let support = one(&text);
+    assert_eq!(code, Some(0), "support: {support}");
+    assert_eq!(support["verdict"], "pass", "support: {support}");
+
+    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    let x = one(&text);
+    assert_eq!(code, Some(0), "extract: {x}");
+    let lines: Vec<&str> = x["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["net"].as_str().unwrap())
+        .collect();
+    for net in [
+        "I2C_SDA", "I2C_SCL", "EXT_SDA", "EXT_SCL", "SPI_SCK", "SPI_MOSI",
+    ] {
+        assert!(lines.contains(&net), "extract does not bound {net}: {x}");
+    }
+    fs::remove_dir_all(&base).unwrap();
+}
+
 /// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
 /// `board.max_outline_mm` (100 x 100 mm) at four layers, with its connectors
 /// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
