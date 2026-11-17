@@ -93,8 +93,7 @@ pub const UNREAD_FINDINGS: [&str; 5] = [
 ];
 /// The identity reads' findings the judge makes only once the boot word is
 /// set (`renode::judge_boot`): a record is judged at the fixed point, and
-/// before it only a timeout or a read outside the window is named
-/// (`AET-WO-3201`; adversarial pass, F2).
+/// before it only a timeout is named (`AET-WO-3201`; adversarial pass, F2).
 pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "i2c_configure_mismatch",
     "i2c_data_mismatch",
@@ -107,19 +106,6 @@ pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "spi_record_invalid",
     "spi_transaction_unwitnessed",
 ];
-/// The boot judge's finding for an identity read whose record is still
-/// unset when a short window ends, made only when the boot word is not set
-/// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule).
-pub const OUTSIDE_WINDOW_FINDING: &str = "identity_read_outside_window";
-
-/// Whether the board's boots run the short window: a board with a DShot
-/// output (`AET-WO-4300a` D1).
-pub fn short_window(records: &[Record]) -> bool {
-    records.iter().any(
-        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
-    )
-}
-
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioError {
@@ -1033,30 +1019,6 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if !booted && BOOTED_READ_FINDINGS.iter().any(|k| any_severity(k) > 0) {
         return Err("the verdict judges an identity read's record of a boot without its boot word");
     }
-    // An identity read outside the window (`AET-WO-4300a` D1) is named only
-    // of a boot that was read without its boot word on a short window, at
-    // most once per record archived as `invalid`: the judge names a record
-    // whose status word is still its fill, which the archive keeps only as
-    // `invalid`.
-    let unset = records
-        .iter()
-        .filter(|r| {
-            matches!(r, Record::I2cCheck { status: Some(s), .. } | Record::SpiCheck { status: Some(s), .. }
-                if s == "invalid")
-        })
-        .count() as u64;
-    let outside = if read && !booted && short_window(records) {
-        unset
-    } else {
-        0
-    };
-    if any_severity(OUTSIDE_WINDOW_FINDING) > outside
-        || count(OUTSIDE_WINDOW_FINDING) != any_severity(OUTSIDE_WINDOW_FINDING)
-    {
-        return Err(
-            "the verdict names identity_read_outside_window for no invalid record of an unbooted short window",
-        );
-    }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,
     // each witness's finding by its status, exactly; before it, none.
@@ -1137,7 +1099,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     // What the boot word's instant decides (`AET-WO-2302` adversarial pass
     // 2, A2-5), once the boot word is set; before it, neither is named.
     let wire = if booted {
-        wire_past_run_count(records).map_or((0, 1), |n| (n, n))
+        wire_past_run_ports(records).map_or((0, 1), |p| {
+            let n = u64::from(!p.is_empty());
+            (n, n)
+        })
     } else {
         (0, 0)
     };
@@ -1751,7 +1716,7 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
 
 /// The labels of the ports whose RX line the scenario (kind 5) holds open
 /// (`AET-WO-2302` D5).
-fn open_ports(records: &[Record]) -> BTreeSet<&str> {
+pub fn open_ports(records: &[Record]) -> BTreeSet<&str> {
     match records.first() {
         Some(Record::Scenario { overrides, .. }) => overrides
             .iter()
@@ -1769,7 +1734,7 @@ fn open_ports(records: &[Record]) -> BTreeSet<&str> {
 /// not held open, takes its frame one quantum after the boot word, so its
 /// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
 /// frame, or there is none.
-fn boot_word_instant(records: &[Record]) -> Option<u64> {
+pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
     let open = open_ports(records);
     records
         .iter()
@@ -1804,16 +1769,17 @@ fn frame_echo_ns(framing: &SerialFraming, actual_millibaud: u64) -> Option<u64> 
         .checked_add(char_ns)
 }
 
-/// How many times the judge names `serial_wire_past_run` of a booted run,
-/// where the records decide it (A2-5): none with no port the chain injects;
-/// once the first such port took its frame, one quantum after the boot
-/// word, whether the ports' frames and echoes (kind 27's framings, summed in
-/// the specification's order over the ports not held open) end past the
-/// boot from that instant: 1 or 0. `None` when that port took no frame, so
-/// the instant is not in the records.
-fn wire_past_run_count(records: &[Record]) -> Option<u64> {
+/// The ports, by label, whose frames and echoes end past the boot, as the
+/// judge sums them for `serial_wire_past_run` of a booted run (A2-5): from
+/// the first port the chain injects, one quantum after the boot word, the
+/// ports' frames and echoes (kind 27's framings, summed in the
+/// specification's order over the ports not held open), from the first
+/// whose sum ends past the boot to the last. Empty with no port the chain
+/// injects, or when every frame and echo ends inside the boot; `None` when
+/// the first port took no frame, so the instant is not in the records.
+pub fn wire_past_run_ports(records: &[Record]) -> Option<Vec<&str>> {
     let open = open_ports(records);
-    let ports: Vec<(&SerialFraming, u64)> = records
+    let ports: Vec<(&str, &SerialFraming, u64)> = records
         .iter()
         .filter_map(|r| match r {
             Record::SerialPortSolved {
@@ -1821,22 +1787,29 @@ fn wire_past_run_count(records: &[Record]) -> Option<u64> {
                 framing,
                 actual_millibaud,
                 ..
-            } if !open.contains(label.as_str()) => Some((framing, *actual_millibaud)),
+            } if !open.contains(label.as_str()) => {
+                Some((label.as_str(), framing, *actual_millibaud))
+            }
             _ => None,
         })
         .collect();
     if ports.is_empty() {
-        return Some(0);
+        return Some(Vec::new());
     }
     let injected = boot_word_instant(records)?.checked_add(TWIN_QUANTUM_NS)?;
     let mut end = Some(injected);
-    let past = ports.iter().any(|&(f, baud)| {
-        end = end
-            .zip(frame_echo_ns(f, baud))
-            .and_then(|(e, w)| e.checked_add(w));
-        !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
-    });
-    Some(u64::from(past))
+    Some(
+        ports
+            .into_iter()
+            .filter(|&(_, f, baud)| {
+                end = end
+                    .zip(frame_echo_ns(f, baud))
+                    .and_then(|(e, w)| e.checked_add(w));
+                !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
+            })
+            .map(|(label, ..)| label)
+            .collect(),
+    )
 }
 
 /// The timer of the motor output `label`, joined from kind 24.
@@ -2393,8 +2366,10 @@ const TWIN_QUANTUM_NS: u64 = 100_000;
 // DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
 // these; replay checks an archive without the twin or `aethelgard-ir`
 // (RUL-16), so it states them again.
-const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
-const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+pub const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
+/// A DShot output's window from its anchor, 2 ms (`AET-WO-2302`), as
+/// [`TWIN_MAX_VIRTUAL_NS`] states it.
+pub const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
 const RESET_KERNEL_HZ: u64 = 64_000_000;
 
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its

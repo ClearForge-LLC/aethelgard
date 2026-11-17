@@ -1040,3 +1040,306 @@ fn an_open_rx_line_beside_a_failing_framing_check_or_wrong_writes_is_not_e3() {
         (Domain::Software, Rule::S5)
     );
 }
+
+// ---- AET-WO-2302b: the twin's serial window findings, refused as the
+// harness's; and `motor_anchor_out_of_order` placed by the boot word ----
+
+/// Sets each port's first frame byte's instant (kind 29's `injected_ns`).
+fn injected(mut r: Vec<Record>, console: Option<u64>, gps: Option<u64>) -> Vec<Record> {
+    for x in r.iter_mut() {
+        if let Record::SerialWitness {
+            label,
+            injected_ns,
+            rx_at_injection,
+            ..
+        } = x
+        {
+            let at = if label == "CONSOLE" { console } else { gps };
+            *injected_ns = at;
+            if at.is_none() {
+                *rx_at_injection = None;
+            }
+        }
+    }
+    r
+}
+
+/// The attribution of a run `check_run` accepts, whatever it leaves
+/// unexplained, with every evidence kind one its rule allows.
+fn attributed_any(records: &[Record]) -> Attribution {
+    campaign::check_run(records).expect("the run is one check_run accepts");
+    let a = attribute(&archived(records)).unwrap();
+    for e in &a.evidence {
+        assert!(a.rule.evidence_kinds().contains(&e.kind), "{a:?}");
+    }
+    a
+}
+
+/// The console goes in at 98.3 ms: its frame and echo (886 876 ns at
+/// 115 200 8N1) end inside the run, the GPS port's after it do not.
+const LATE_CONSOLE: u64 = 98_300_000;
+
+/// `H3`: the ports' wire time past the run is the twin's bound, and the
+/// GPS port in it whose echo alone is missing is the same bound's: the run
+/// is refused as the harness's, by the first injection (the boot word's
+/// instant), the GPS port's witness and both ports' framings.
+#[test]
+fn h3_the_wire_time_past_the_run_is_the_harness_s_with_its_cut_echo() {
+    let gps = Case {
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let findings = [
+        (SERIAL_ECHO_FINDING, 1),
+        (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+    ];
+    let r = injected(
+        run(&gps, &findings),
+        Some(LATE_CONSOLE),
+        Some(LATE_CONSOLE + 900_000),
+    );
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::H3),
+        "{a:?}"
+    );
+    assert_eq!(
+        named(&r, &a),
+        ["kind 27", "kind 27", "kind 29 CONSOLE", "kind 29 GPS"]
+    );
+    assert_eq!(
+        Rule::H3.bound(),
+        Some("the run's MAX_VIRTUAL_NS against the ports' wire time from the boot word")
+    );
+    // The console's own echo missing, its frame and echo inside the run: not
+    // the bound's, so the port's (`I6`) names the run.
+    let both = Case {
+        console: Echo::Missing,
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &both,
+            &[
+                (SERIAL_ECHO_FINDING, 2),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        Some(LATE_CONSOLE),
+        Some(LATE_CONSOLE + 900_000),
+    );
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I6),
+        "{a:?}"
+    );
+    assert_eq!(named(&r, &a), ["kind 29 CONSOLE"]);
+}
+
+/// `H3` never fires when the first port took no frame: the boot word's
+/// instant the wire time runs from is then in no record, so the kind is
+/// unexplained by name.
+#[test]
+fn h3_never_fires_without_the_boot_word_s_instant() {
+    let none = Case {
+        console: Echo::Missing,
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &none,
+            &[
+                (SERIAL_ECHO_FINDING, 2),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        None,
+        None,
+    );
+    let a = attributed_any(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I1));
+    assert_eq!(
+        a.unexplained,
+        [
+            "serial_wire_past_run: the first port took no frame, so the boot word's instant the wire time runs from is in no record (kind 29's injected_ns)"
+        ]
+    );
+}
+
+/// A harness finding beside a fault of the device's never masks it: the
+/// console's failing writes (`S5`), or the GPS port's RX line declared open
+/// (`E3`), name the run, with their own evidence alone.
+#[test]
+fn h3_never_masks_a_serial_fault() {
+    let c = Case {
+        console_tags_hold: false,
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &c,
+            &[
+                (SERIAL_ECHO_FINDING, 1),
+                (SERIAL_TAG_FINDING, 1),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        Some(LATE_CONSOLE),
+        Some(LATE_CONSOLE + 900_000),
+    );
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 28 CONSOLE"]);
+    // The GPS port open, the console going in past the run's end less its
+    // own wire time: its cut echo is the bound's, the open line electrical.
+    let c = Case {
+        console: Echo::Missing,
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = open(
+        run(
+            &c,
+            &[
+                (SERIAL_ECHO_FINDING, 2),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        "GPS",
+        true,
+    );
+    let r = injected(r, Some(99_200_000), None);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E3), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 28 GPS", "kind 29 GPS"]);
+}
+
+/// `H4`: the judge's injection chain out of order is its own act, by the
+/// ports it injected; with no port after the chain's first injected, no
+/// record shows the chain, and the kind is unexplained by name. Beside the
+/// console's failing writes, `S5` names the run.
+#[test]
+fn h4_an_injection_out_of_order_is_the_harness_s_by_the_chain() {
+    let order = (campaign::SERIAL_INJECTION_ORDER_FINDING, 1);
+    let r = run(&Case::default(), &[order]);
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::H4),
+        "{a:?}"
+    );
+    assert_eq!(named(&r, &a), ["kind 29 CONSOLE", "kind 29 GPS"]);
+    let gps = Case {
+        gps: Echo::Missing,
+        ..Case::default()
+    };
+    let r = injected(
+        run(&gps, &[(SERIAL_ECHO_FINDING, 1), order]),
+        Some(130_750),
+        None,
+    );
+    let a = attributed_any(&r);
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert_eq!(
+        a.unexplained,
+        [
+            "serial_injection_out_of_order: named 1 time(s), but 0 port(s) after the chain's first took a frame (kind 29's injected_ns)"
+        ]
+    );
+    let tags = Case {
+        console_tags_hold: false,
+        ..Case::default()
+    };
+    let r = run(&tags, &[(SERIAL_TAG_FINDING, 1), order]);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S5), "{a:?}");
+}
+
+/// [`run`] with a PWM output, `MOTOR1` (TIM1_CH1 on PA8 at AF1), witnessed
+/// and anchored at `anchor`.
+fn with_motor(c: &Case, anchor: u64, findings: &[(&str, u64)]) -> Vec<Record> {
+    let mut r = run(c, findings);
+    // Beside the solved ports, before the computed rises.
+    let boot = r
+        .iter()
+        .position(|x| matches!(x, Record::RiseComputed { .. }))
+        .unwrap();
+    r.insert(
+        boot,
+        Record::MotorTimingCheck {
+            label: "MOTOR1".into(),
+            kernel_hz: 64_000_000,
+            period_ps: 2_500_000_000,
+            high_ps: 1_000_000_000,
+            nominal_period_ps: 2_500_000_000,
+            nominal_high_ps: 1_000_000_000,
+            holds: true,
+        },
+    );
+    r.insert(
+        boot,
+        Record::MotorOutputSolved {
+            label: "MOTOR1".into(),
+            timer: "TIM1".into(),
+            channel: 1,
+            pin: "PA8".into(),
+            alternate_function: 1,
+            protocol: "pwm".into(),
+            psc: 63,
+            arr: 2499,
+            ccr: 1000,
+            pwm: Some((400, 1000, 2000)),
+        },
+    );
+    let check = r
+        .iter()
+        .position(|x| matches!(x, Record::SerialFramingCheck { .. }))
+        .unwrap();
+    r.insert(
+        check,
+        Record::MotorWitness {
+            label: "MOTOR1".into(),
+            observer: "gpioPortA.pa8obs".into(),
+            period_ns: 639_744,
+            high_ns: 256_000,
+            grain_ns: 10,
+            quantum_ns: 100_000,
+            status: "witnessed".into(),
+            rises: 156,
+            falls: 155,
+            first_ns: Some(639_750),
+            last_ns: Some(99_800_070),
+            end_ns: 100_000_000,
+            span_ns: Some(8),
+            off_grid: 311,
+            batched: 0,
+            anchor_ns: Some(anchor),
+            edges_before: 0,
+            edges_after: 0,
+            cen_rises: 1,
+        },
+    );
+    r
+}
+
+/// `S8` where the records place the boot word (the console's injection
+/// less a quantum, 30 750 ns): a timer anchored after it is out of order by
+/// that instant too, so the console's witness is cited beside the boot and
+/// the output's witness; one anchored before it is cited without it.
+#[test]
+fn s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant() {
+    let order = [(campaign::MOTOR_ANCHOR_ORDER_FINDING, 1)];
+    let r = with_motor(&Case::default(), 40_000, &order);
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S8), "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 10", "kind 26", "kind 29 CONSOLE"]);
+    let r = with_motor(&Case::default(), 6, &order);
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::S8, "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 10", "kind 26"]);
+}

@@ -9,7 +9,9 @@
 //! file, no process. The rules are closed and ordered, each needs positive
 //! evidence, and neither half is ever concluded by eliminating the other.
 //! The verdict's finding kinds choose which events need explaining; they are
-//! never evidence. The rule table is `README.md`'s.
+//! never evidence. A finding that is the twin's own bound, never the device's
+//! (`AET-WO-2302b`: rules `H1` to `H4`), is refused by name and attributed to
+//! neither half. The rule table is `README.md`'s.
 
 #![forbid(unsafe_code)]
 
@@ -100,6 +102,41 @@ pub enum Rule {
     /// electrical on a USART's pins: only a declared open RX line (`E3`)
     /// attributes a serial symptom to the electrical half.
     S5,
+    /// `motor_anchor_unobserved` (`AET-WO-2302b`): the output's witness
+    /// (kind 26, status `unanchored`) logged edges with no `CEN` rise in the
+    /// boot the judge reads (`cen_rises` 0, no `anchor_ns`): the firmware
+    /// drove the pin, or started its timer, by a write no CPU store of `CR1`
+    /// shows (a GPIO toggle, a DMA write). Every store width is hooked, and
+    /// the twin drives no motor pin from the board.
+    S6,
+    /// `motor_anchor_repeated`: the timer's `CEN` rose more than once in the
+    /// boot the judge reads (kind 26's `cen_rises`, its first output's
+    /// standing for the timer): the firmware started it again.
+    S7,
+    /// `motor_anchor_out_of_order`, in a boot whose boot word is set (kind
+    /// 10): the timer's anchor (kind 26's `anchor_ns`) is after the boot word
+    /// (placed by kind 29's first injection) or before the last device
+    /// step's witness: the firmware's own code order. Decided only where the
+    /// records say which timers the verdict names: every anchored timer, or
+    /// exactly those anchored after the boot word's instant.
+    S8,
+    /// `motor_edge_before_anchor`: the output's witness (kind 26) shows
+    /// edges before its timer's anchor in the same boot (`edges_before`):
+    /// the firmware drove the pin before it started the timer.
+    S9,
+    /// `motor_edge_after_window`, once the judge's stop for the output's
+    /// anchor ran and left `CEN` cleared (kind 30's `cr1_after`): edges
+    /// after it (kind 26's `edges_after`) are the firmware's, which restarted
+    /// the timer or drove the pin after the window. Without such a stop the
+    /// edges may be the timer still running, and the kind is unexplained by
+    /// name.
+    S10,
+    /// `judge_stop_mismatch`: the judge's stop (kind 30), which left `CEN`
+    /// cleared, read a solved register of the timer back off its solved
+    /// value under its mask: the firmware wrote the timer inside its window
+    /// (`register_mismatch`'s evidence at the window's end). A register the
+    /// stop did not read back shows nothing, and is unexplained by name.
+    S11,
     /// The run passed.
     N1,
     /// A failing finding has no archived event that shows it, or an event
@@ -121,17 +158,32 @@ pub enum Rule {
     /// framing check failed, which is the topology's (`AET-WO-4300b`): never
     /// software by elimination.
     I6,
-    /// The symptom is a read whose record is still as the judge filled it
-    /// when a short window ended, in a boot without its boot word
-    /// (`identity_read_outside_window`, `AET-WO-4300a` D1 and Q7): the read
-    /// did not complete inside the window, and the unset record cannot say
-    /// whether the bus or the firmware was too slow. The record decides it.
-    I7,
+    /// `motor_window_past_run` (`AET-WO-2302b`), the twin's bound: a DShot
+    /// timer's anchor (kind 26, its output's protocol kind 24's) plus
+    /// `DSHOT_WINDOW_NS` passes the run's end, `MAX_VIRTUAL_NS`. The run is
+    /// too short to witness the window; on silicon nothing is wrong. Its
+    /// output's `stopped` witness, whose last rise reaches the run's end, is
+    /// the same bound's.
+    H1,
+    /// `judge_stop_missing`, the judge's own act: its stop, due at the DShot
+    /// timer's anchor (kind 26) plus `DSHOT_WINDOW_NS` inside the run, did
+    /// not run in the boot it reads, or left `CEN` set (kind 30, when
+    /// present).
+    H2,
+    /// `serial_wire_past_run`, the twin's bound: from the boot word's
+    /// instant (kind 29's first injection), the ports' frames and echoes
+    /// (kind 27's framings) end past `MAX_VIRTUAL_NS`. A port in that sum
+    /// past the run whose echo alone is missing is the same bound's.
+    H3,
+    /// `serial_injection_out_of_order`, the judge's own act: its injection
+    /// chain, one port after another (`AET-WO-2302` D4), put a port's frame
+    /// in before the port before it had echoed (kind 29's `injected_ns`).
+    H4,
 }
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 16] = [
+    pub const ALL: [Rule; 25] = [
         Self::E1,
         Self::E2,
         Self::E3,
@@ -140,6 +192,12 @@ impl Rule {
         Self::S3,
         Self::S4,
         Self::S5,
+        Self::S6,
+        Self::S7,
+        Self::S8,
+        Self::S9,
+        Self::S10,
+        Self::S11,
         Self::N1,
         Self::I1,
         Self::I2,
@@ -147,7 +205,10 @@ impl Rule {
         Self::I4,
         Self::I5,
         Self::I6,
-        Self::I7,
+        Self::H1,
+        Self::H2,
+        Self::H3,
+        Self::H4,
     ];
 
     /// The rule whose [`id`](Self::id) is `id`, so a reader of an attribution
@@ -166,6 +227,12 @@ impl Rule {
             Self::S3 => "S3",
             Self::S4 => "S4",
             Self::S5 => "S5",
+            Self::S6 => "S6",
+            Self::S7 => "S7",
+            Self::S8 => "S8",
+            Self::S9 => "S9",
+            Self::S10 => "S10",
+            Self::S11 => "S11",
             Self::N1 => "N1",
             Self::I1 => "I1",
             Self::I2 => "I2",
@@ -173,16 +240,47 @@ impl Rule {
             Self::I4 => "I4",
             Self::I5 => "I5",
             Self::I6 => "I6",
-            Self::I7 => "I7",
+            Self::H1 => "H1",
+            Self::H2 => "H2",
+            Self::H3 => "H3",
+            Self::H4 => "H4",
         }
     }
 
+    /// A harness rule (`H1` to `H4`) is `indeterminate`: it attributes its
+    /// finding to neither half.
     pub fn domain(self) -> Domain {
         match self {
             Self::E1 | Self::E2 | Self::E3 => Domain::Electrical,
-            Self::S1 | Self::S2 | Self::S3 | Self::S4 | Self::S5 => Domain::Software,
+            Self::S1
+            | Self::S2
+            | Self::S3
+            | Self::S4
+            | Self::S5
+            | Self::S6
+            | Self::S7
+            | Self::S8
+            | Self::S9
+            | Self::S10
+            | Self::S11 => Domain::Software,
             Self::N1 => Domain::None,
             _ => Domain::Indeterminate,
+        }
+    }
+
+    /// The twin's or the judge's own bound a harness rule refuses its
+    /// finding by (`AET-WO-2302b`); `None` for every other rule.
+    pub fn bound(self) -> Option<&'static str> {
+        match self {
+            Self::H1 => Some(
+                "the DShot window's end, its anchor plus DSHOT_WINDOW_NS, past the run's MAX_VIRTUAL_NS",
+            ),
+            Self::H2 => Some("the judge's stop at its anchor plus DSHOT_WINDOW_NS"),
+            Self::H3 => {
+                Some("the run's MAX_VIRTUAL_NS against the ports' wire time from the boot word")
+            }
+            Self::H4 => Some("the judge's sequential injection, one port after another's echo"),
+            _ => None,
         }
     }
 
@@ -197,13 +295,20 @@ impl Rule {
             Self::S3 => &[21, 22],
             Self::S4 => &[11, 26],
             Self::S5 => &[11, 28, 29],
+            Self::S6 | Self::S7 | Self::S9 => &[26],
+            Self::S8 => &[10, 26, 29],
+            Self::S10 => &[26, 30],
+            Self::S11 => &[30],
             Self::N1 | Self::I1 => &[],
             Self::I2 => &[15],
             Self::I3 => &[7, 8, 9],
             Self::I4 => &[7, 25, 26],
             Self::I5 => &[7, 8, 9, 10, 11, 13, 21, 22, 26, 28, 29],
             Self::I6 => &[28, 29],
-            Self::I7 => &[12, 21],
+            Self::H1 => &[24, 26],
+            Self::H2 => &[24, 26, 30],
+            Self::H3 => &[27, 29],
+            Self::H4 => &[29],
         }
     }
 }
@@ -229,7 +334,10 @@ pub struct Attribution {
     pub symptoms: Vec<EventRef>,
     /// Software evidence on an electrically faulted bus: listed, never used.
     pub masked: Vec<EventRef>,
-    /// Failing finding kinds no archived event shows (rule `I1`), sorted.
+    /// Failing finding kinds no archived event shows (rule `I1`), sorted;
+    /// and one of the twin's window findings whose records cannot decide it
+    /// (`AET-WO-2302b`), as `{kind}: {what the records lack}`, never a guess
+    /// (`INV-06`).
     pub unexplained: Vec<String>,
 }
 
@@ -460,7 +568,12 @@ struct Bus<'a> {
 /// its channel's fields of its timer's block (`timer`, `[start, end)`; see
 /// [`timer_bits`]).
 struct Motor<'a> {
+    /// The kind 24's event index.
+    at: usize,
     label: &'a str,
+    /// Its protocol is DShot: its window ends `DSHOT_WINDOW_NS` after its
+    /// anchor, where the judge's stop (kind 30) runs (`AET-WO-2302`).
+    dshot: bool,
     /// `None` when the header lacks a fact the output names: it then owns
     /// nothing, as a bus that cannot join does.
     joined: Option<Joined>,
@@ -508,9 +621,6 @@ enum Scope<'a> {
     /// A serial port's failing static framing check (kind 28): the
     /// topology's, never the firmware's.
     SerialStatic(usize),
-    /// A read's record left unset when a short window ended, by its index
-    /// (`AET-WO-4300a` Q7): neither the bus's nor the firmware's.
-    Window(usize),
     Board,
 }
 
@@ -522,9 +632,6 @@ struct Run<'a> {
     rcc: (u32, u32),
     /// The boot word is set: the judge read the serial witnesses and tags.
     booted: bool,
-    /// The boot was read without its boot word on a short window: the
-    /// judge named each record still unset (`AET-WO-4300a` D1).
-    late: bool,
     /// The resets the run rendered and released.
     releases: u64,
 }
@@ -569,7 +676,7 @@ fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> b
 }
 
 /// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 30] = [
+const PER_EVENT: [&str; 29] = [
     campaign::PAST_CEILING_FINDING,
     campaign::STUCK_HIGH_FINDING,
     campaign::HELD_LOW_FINDING,
@@ -585,7 +692,6 @@ const PER_EVENT: [&str; 30] = [
     "spi_configure_mismatch",
     "spi_data_mismatch",
     "spi_transaction_unwitnessed",
-    campaign::OUTSIDE_WINDOW_FINDING,
     "register_mismatch",
     campaign::BOOT_WORD_FINDING,
     "cpu_halted",
@@ -800,28 +906,6 @@ impl<'a> Run<'a> {
         (0..self.records.len())
             .filter(|&i| pred(&self.records[i]))
             .collect()
-    }
-
-    /// A read (kind 12 or 21) whose record is still unset at the end of a
-    /// boot read without its boot word on a short window: what the judge
-    /// names `identity_read_outside_window`.
-    fn outside_window(&self, r: &Record) -> bool {
-        self.late
-            && match r {
-                Record::I2cCheck {
-                    width,
-                    status,
-                    observed,
-                    ..
-                }
-                | Record::SpiCheck {
-                    width,
-                    status,
-                    observed,
-                    ..
-                } => unset_record(*width, status.as_deref(), *observed),
-                _ => false,
-            }
     }
 
     /// A device's witness on bus `b` disagrees with its solved read
@@ -1161,6 +1245,335 @@ impl<'a> Run<'a> {
         self.motors.iter().position(|m| m.label == label)
     }
 
+    /// Output `m`'s witness (kind 26): at most one, by the run rules.
+    fn motor_witness(&self, m: usize) -> Option<usize> {
+        let label = self.motors[m].label;
+        self.records
+            .iter()
+            .position(|r| matches!(r, Record::MotorWitness { label: l, .. } if l == label))
+    }
+
+    /// Kind 26 `w`'s anchor, its timer's first `CEN` rise.
+    fn anchor(&self, w: usize) -> Option<u64> {
+        match &self.records[w] {
+            Record::MotorWitness { anchor_ns, .. } => *anchor_ns,
+            _ => None,
+        }
+    }
+
+    /// One output, and its witness, for each timer: the first in kind 24's
+    /// order with a witness, and with `dshot`, the first DShot one whose
+    /// witness has an anchor, as replay takes a DShot timer's. One timer's
+    /// outputs carry one anchor and one count of `CEN` rises (replay's
+    /// `check_motor_joins`), so that witness stands for the timer.
+    fn timers(&self, dshot: bool) -> Vec<(usize, usize)> {
+        let mut seen = BTreeSet::new();
+        (0..self.motors.len())
+            .filter(|&m| !dshot || self.motors[m].dshot)
+            .filter_map(|m| Some((m, self.motor_witness(m)?)))
+            .filter(|&(_, w)| !dshot || self.anchor(w).is_some())
+            .filter(|&(m, _)| seen.insert(self.motors[m].timer.0))
+            .collect()
+    }
+
+    /// The judge's stop (kind 30) of `timer` for its window from `anchor`:
+    /// at most one, by the run rules.
+    fn stop(&self, timer: &str, anchor: u64) -> Option<usize> {
+        self.records.iter().position(|r| {
+            matches!(r, Record::JudgeStop { timer: t, anchor_ns, .. } if t == timer && *anchor_ns == anchor)
+        })
+    }
+
+    /// Whether kind 30 `stop` left its timer's `CEN` cleared: the stop ran.
+    fn cleared(&self, stop: usize) -> bool {
+        matches!(&self.records[stop], Record::JudgeStop { cr1_after: Some(c), .. } if c & 1 == 0)
+    }
+
+    /// The first port the judge's chain injects (kind 29, the first not held
+    /// open), when its frame went in: its `injected_ns` places the boot
+    /// word, one quantum before it (`campaign::boot_word_instant`).
+    fn first_injection(&self) -> Option<usize> {
+        let open = campaign::open_ports(self.records);
+        self.records
+            .iter()
+            .position(|r| matches!(r, Record::SerialWitness { label, .. } if !open.contains(label.as_str())))
+            .filter(|&w| matches!(self.records[w], Record::SerialWitness { injected_ns: Some(_), .. }))
+    }
+
+    /// The ports' solved records (kind 27) the judge sums the wire time
+    /// over: every port not held open.
+    fn wire_ports(&self) -> Vec<usize> {
+        let open = campaign::open_ports(self.records);
+        self.indices(|r| matches!(r, Record::SerialPortSolved { label, .. } if !open.contains(label.as_str())))
+    }
+
+    /// `H1`'s evidence for output `m`'s failing witness, when the run's end
+    /// cut it (`AET-WO-2302b`): its DShot timer's window, from its anchor,
+    /// passes `MAX_VIRTUAL_NS`, and its witness is `stopped` with its last
+    /// rise within a period and a grain of the run's end, where a rise was
+    /// due every period until it. The output ran until the run ended: the
+    /// twin's bound, not the firmware's. `None` otherwise.
+    fn cut_by_run(&self, m: usize) -> Option<Vec<usize>> {
+        let motor = &self.motors[m];
+        let w = self.motor_witness(m)?;
+        let Record::MotorWitness {
+            status,
+            anchor_ns: Some(a),
+            last_ns: Some(last),
+            period_ns,
+            grain_ns,
+            ..
+        } = &self.records[w]
+        else {
+            return None;
+        };
+        let max = campaign::TWIN_MAX_VIRTUAL_NS;
+        (motor.dshot
+            && status == "stopped"
+            && a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS) > max
+            && last.saturating_add(*period_ns).saturating_add(*grain_ns) >= max)
+            .then(|| vec![motor.at, w])
+    }
+
+    /// `H3`'s evidence for serial port `s`, when the run's end cut its echo
+    /// (`AET-WO-2302b`): the boot word is set, its frame and echo are in the
+    /// wire time that passes `MAX_VIRTUAL_NS` from the boot word's instant
+    /// (`campaign::wire_past_run_ports`), its framing check holds with its
+    /// writes read and held, and its witness shows its echo missing and
+    /// nothing else. The evidence is the first injection (the instant), the
+    /// port's witness, and the summed ports' framings. `None` otherwise.
+    fn wire_cut(&self, s: usize) -> Option<Vec<usize>> {
+        let label = self.serial[s].label;
+        if !(self.booted && campaign::wire_past_run_ports(self.records)?.contains(&label)) {
+            return None;
+        }
+        self.records.iter().position(|r| {
+            matches!(r, Record::SerialFramingCheck { label: l, holds: true, tags: Some(t), .. }
+                if l == label && t.holds())
+        })?;
+        let witness = self.records.iter().position(|r| {
+            matches!(r, Record::SerialWitness { label: l, .. }
+                if l == label && self.serial_witness_findings(r) == [campaign::SERIAL_ECHO_FINDING])
+        })?;
+        let mut evidence = vec![self.first_injection()?, witness];
+        evidence.extend(self.wire_ports());
+        Some(evidence)
+    }
+
+    /// What one of the twin's window findings comes to (`AET-WO-2302b`):
+    /// the events that show it, each decided by its own rule, the six
+    /// software ones (`S6` to `S11`) by the firmware's evidence and the
+    /// four harness ones (`H1` to `H4`) refused by name, with how many
+    /// findings the records show; and each case the records cannot decide,
+    /// named with what they lack (`INV-06`). `None` for any other kind.
+    /// Replay binds every count but `motor_anchor_out_of_order`'s (a range)
+    /// and `serial_injection_out_of_order`'s (none), whose arms decide it.
+    fn windowed(&self, kind: &str, count: u64) -> Option<Windowed> {
+        let mut w = Windowed::default();
+        let witnesses = |pred: &dyn Fn(&Record) -> bool| {
+            self.indices(|r| matches!(r, Record::MotorWitness { .. }) && pred(r))
+        };
+        let each = |w: &mut Windowed, rule: Rule, symptom: usize, evidence: Vec<usize>| {
+            w.symptoms.push(symptom);
+            w.decided.push((rule, evidence));
+            w.shown += 1;
+        };
+        match kind {
+            campaign::MOTOR_ANCHOR_UNOBSERVED_FINDING => {
+                for i in witnesses(
+                    &|r| matches!(r, Record::MotorWitness { status, .. } if status == "unanchored"),
+                ) {
+                    each(&mut w, Rule::S6, i, vec![i]);
+                }
+            }
+            campaign::MOTOR_ANCHOR_REPEATED_FINDING => {
+                for (_, i) in self.timers(false) {
+                    if matches!(self.records[i], Record::MotorWitness { cen_rises, .. } if cen_rises > 1)
+                    {
+                        each(&mut w, Rule::S7, i, vec![i]);
+                    }
+                }
+            }
+            campaign::MOTOR_ANCHOR_ORDER_FINDING => {
+                // belt-and-suspenders: kind 10's boot word set - replay
+                // refuses the kind in a boot without it, so a boot that
+                // lost its word (a droop's reset among its causes) never
+                // reaches here.
+                let boot = self.indices(|r| {
+                    matches!(r, Record::BootObserved { boot_word, .. }
+                        if boot_word.observed == Some(boot_word.expected))
+                });
+                let anchored: Vec<(usize, u64)> = self
+                    .timers(false)
+                    .into_iter()
+                    .filter_map(|(_, i)| Some((i, self.anchor(i)?)))
+                    .collect();
+                let instant = campaign::boot_word_instant(self.records);
+                let after: Vec<usize> = anchored
+                    .iter()
+                    .filter(|&&(_, a)| instant.is_some_and(|b| a > b))
+                    .map(|&(i, _)| i)
+                    .collect();
+                let cite = |i: usize| -> Vec<usize> {
+                    let mut e = [boot.clone(), vec![i]].concat();
+                    if after.contains(&i) {
+                        e.extend(self.first_injection());
+                    }
+                    e
+                };
+                // The records say which timers the verdict names only when
+                // it names those anchored after the boot word's instant, or
+                // every anchored timer.
+                let named: Vec<usize> = if !after.is_empty() && after.len() as u64 == count {
+                    after.clone()
+                } else if anchored.len() as u64 == count {
+                    anchored.iter().map(|&(i, _)| i).collect()
+                } else {
+                    w.missing.push(format!(
+                        "{kind}: named {count} time(s) of {} anchored timer(s), {} anchored after the boot word's instant (kind 29's first injection): which timers the boot's order put out of order (before the last device step's witness, or with no boot word seen by its hook) is in no record",
+                        anchored.len(),
+                        after.len()
+                    ));
+                    w.shown = count;
+                    Vec::new()
+                };
+                for i in named {
+                    each(&mut w, Rule::S8, i, cite(i));
+                }
+            }
+            campaign::MOTOR_WINDOW_PAST_RUN_FINDING => {
+                for (m, i) in self.timers(true) {
+                    if self.anchor(i).is_some_and(|a| {
+                        a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS)
+                            > campaign::TWIN_MAX_VIRTUAL_NS
+                    }) {
+                        each(&mut w, Rule::H1, i, vec![self.motors[m].at, i]);
+                    }
+                }
+            }
+            campaign::MOTOR_EDGE_BEFORE_FINDING => {
+                for i in witnesses(
+                    &|r| matches!(r, Record::MotorWitness { edges_before, .. } if *edges_before > 0),
+                ) {
+                    each(&mut w, Rule::S9, i, vec![i]);
+                }
+            }
+            campaign::MOTOR_EDGE_AFTER_FINDING => {
+                for i in witnesses(
+                    &|r| matches!(r, Record::MotorWitness { edges_after, .. } if *edges_after > 0),
+                ) {
+                    let Record::MotorWitness { label, .. } = &self.records[i] else {
+                        continue;
+                    };
+                    let timer = self.motor_named(label).map(|m| self.motors[m].timer.0);
+                    let stop = timer
+                        .zip(self.anchor(i))
+                        .and_then(|(t, a)| self.stop(t, a))
+                        .filter(|&s| self.cleared(s));
+                    match stop {
+                        Some(s) => each(&mut w, Rule::S10, i, vec![i, s]),
+                        None => {
+                            w.symptoms.push(i);
+                            w.shown += 1;
+                            w.missing.push(format!(
+                                "{kind}: {label}: no judge's stop of its timer at its anchor left CEN cleared (kind 30), so its edges after the window may be the timer still running"
+                            ));
+                        }
+                    }
+                }
+            }
+            campaign::JUDGE_STOP_MISSING_FINDING => {
+                for (m, i) in self.timers(true) {
+                    let timer = self.motors[m].timer.0;
+                    let Some(a) = self.anchor(i).filter(|a| {
+                        a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS)
+                            <= campaign::TWIN_MAX_VIRTUAL_NS
+                    }) else {
+                        continue;
+                    };
+                    let stop = self.stop(timer, a);
+                    if !stop.is_some_and(|s| self.cleared(s)) {
+                        let evidence = [vec![self.motors[m].at, i], stop.into_iter().collect()];
+                        each(&mut w, Rule::H2, i, evidence.concat());
+                    }
+                }
+            }
+            campaign::JUDGE_STOP_MISMATCH_FINDING => {
+                for s in self.indices(|r| matches!(r, Record::JudgeStop { .. })) {
+                    let Record::JudgeStop {
+                        timer, read_back, ..
+                    } = &self.records[s]
+                    else {
+                        continue;
+                    };
+                    if !self.cleared(s) {
+                        continue;
+                    }
+                    let off = read_back
+                        .iter()
+                        .filter(|g| g.observed.is_some_and(|o| o & g.mask != g.expected))
+                        .count() as u64;
+                    let short = read_back.iter().any(|g| g.observed.is_none());
+                    if off > 0 {
+                        w.decided.push((Rule::S11, vec![s]));
+                    }
+                    if short {
+                        w.missing.push(format!(
+                            "{kind}: {timer}: its stop read back fewer registers than the timer's (kind 30's read_back), and an unread register shows no write of the firmware's"
+                        ));
+                    }
+                    if off > 0 || short {
+                        w.symptoms.push(s);
+                        w.shown += off + u64::from(short);
+                    }
+                }
+            }
+            campaign::SERIAL_WIRE_PAST_RUN_FINDING => {
+                match campaign::wire_past_run_ports(self.records) {
+                    None => {
+                        w.missing.push(format!(
+                            "{kind}: the first port took no frame, so the boot word's instant the wire time runs from is in no record (kind 29's injected_ns)"
+                        ));
+                        w.shown = count;
+                    }
+                    Some(past) if !past.is_empty() => {
+                        if let Some(i) = self.first_injection() {
+                            each(&mut w, Rule::H3, i, [vec![i], self.wire_ports()].concat());
+                        }
+                    }
+                    Some(_) => {}
+                }
+            }
+            campaign::SERIAL_INJECTION_ORDER_FINDING => {
+                // Each port after the chain's first that took a frame: the
+                // logged `TDR` bytes that say which went in early are in no
+                // record, and either way the act is the judge's.
+                let injected = self.indices(|r| {
+                    matches!(
+                        r,
+                        Record::SerialWitness {
+                            injected_ns: Some(_),
+                            ..
+                        }
+                    )
+                });
+                let later = injected.get(1..).unwrap_or_default();
+                if count <= later.len() as u64 {
+                    w.symptoms.extend(later);
+                    w.decided.push((Rule::H4, injected.clone()));
+                } else {
+                    w.missing.push(format!(
+                        "{kind}: named {count} time(s), but {} port(s) after the chain's first took a frame (kind 29's injected_ns)",
+                        later.len()
+                    ));
+                }
+                w.shown = count;
+            }
+            _ => return None,
+        }
+        Some(w)
+    }
+
     /// Software evidence on no bus: the boot, and registers wrong outside
     /// every bus's fields.
     fn board_software(&self) -> Vec<usize> {
@@ -1184,7 +1597,6 @@ impl<'a> Run<'a> {
 
     fn scope(&self, i: usize) -> Option<Scope<'a>> {
         Some(match &self.records[i] {
-            r if self.outside_window(r) => Scope::Window(i),
             Record::RiseComputed { bus, .. }
             | Record::LineStuckHigh { bus, .. }
             | Record::BusFault { bus, .. } => Scope::Bus(self.bus_named(bus)?, None),
@@ -1289,7 +1701,6 @@ impl<'a> Run<'a> {
             "spi_record_invalid" => self.indices(
                 |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s == "invalid"),
             ),
-            campaign::OUTSIDE_WINDOW_FINDING => self.indices(|r| self.outside_window(r)),
             "spi_transaction_unwitnessed" => self.indices(|r| match r {
                 Record::SpiWitness {
                     reference,
@@ -1415,7 +1826,9 @@ impl<'a> Run<'a> {
             Scope::MotorStatic(m) => (Rule::I4, self.motor_failing(m), vec![]),
             Scope::Motor(m) => {
                 let software = self.motor_software(m);
-                if software.is_empty() {
+                if let Some(evidence) = self.cut_by_run(m).filter(|_| software.is_empty()) {
+                    (Rule::H1, evidence, vec![])
+                } else if software.is_empty() {
                     (Rule::I4, self.motor_failing(m), vec![])
                 } else {
                     let witness = self
@@ -1435,6 +1848,8 @@ impl<'a> Run<'a> {
                 let software = self.serial_software(s);
                 if let Some(evidence) = self.serial_open(s).filter(|_| software.is_empty()) {
                     (Rule::E3, evidence, vec![])
+                } else if let Some(evidence) = self.wire_cut(s).filter(|_| software.is_empty()) {
+                    (Rule::H3, evidence, vec![])
                 } else if software.is_empty() {
                     (Rule::I6, self.serial_failing(s), vec![])
                 } else {
@@ -1449,7 +1864,6 @@ impl<'a> Run<'a> {
                     (Rule::S5, [software, witness].concat(), vec![])
                 }
             }
-            Scope::Window(i) => (Rule::I7, vec![i], vec![]),
             Scope::Board if !faulted.is_empty() => (Rule::I3, faults_of(&faulted), vec![]),
             Scope::Board => {
                 let unmeasured: Vec<usize> = all.clone().filter(|&b| !self.healthy(b)).collect();
@@ -1467,6 +1881,19 @@ impl<'a> Run<'a> {
             }
         }
     }
+}
+
+/// What one of the twin's window findings comes to ([`Run::windowed`]).
+#[derive(Default)]
+struct Windowed {
+    /// The events that show it.
+    symptoms: Vec<usize>,
+    /// Each decision, by its rule, with its evidence.
+    decided: Vec<(Rule, Vec<usize>)>,
+    /// Each case the records cannot decide, as `{kind}: {what they lack}`.
+    missing: Vec<String>,
+    /// How many of the kind's findings the records account for.
+    shown: u64,
 }
 
 /// The witness statuses that pass (`AET-WO-4300a` D4).
@@ -1535,15 +1962,6 @@ fn mismatch_kind(bus: &str, step: &str) -> Option<String> {
     Some(format!("{bus}_{step}_mismatch"))
 }
 
-/// Whether a read's record is as the judge filled it before the core ran:
-/// status `invalid` and every value word the fill.
-// belt-and-suspenders: `aethelgard_twin::boot::{RECORD_UNSET, value_words}`
-// state the fill and the word count; evolve reads an archive without the
-// twin, so it states them again.
-fn unset_record(width: u8, status: Option<&str>, observed: Option<u64>) -> bool {
-    status == Some("invalid") && observed == Some(record_words(width))
-}
-
 /// Every bit of a read record's value words: one word for a read of up to
 /// 4 bytes, two for 5 to 8.
 fn record_words(width: u8) -> u64 {
@@ -1583,13 +2001,14 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
     }
     let tim_size = f.layout("TIM")?.size;
     let mut motors = Vec::new();
-    for r in records {
+    for (at, r) in records.iter().enumerate() {
         if let Record::MotorOutputSolved {
             label,
             timer,
             channel,
             pin,
             alternate_function,
+            protocol,
             ..
         } = r
         {
@@ -1602,8 +2021,10 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             };
             let base = f.base(timer).ok();
             motors.push(Motor {
+                at,
                 channel: *channel,
                 label,
+                dshot: protocol.starts_with("dshot"),
                 joined: join(&f, timer, std::slice::from_ref(&line)).ok(),
                 timer: (
                     timer.as_str(),
@@ -1656,13 +2077,6 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         serial,
         rcc: (rcc, rcc + f.layout("RCC")?.size),
         booted,
-        // belt-and-suspenders: `check_run` already refuses the finding off
-        // a short window; this states the judge's rule where it is used.
-        late: !booted
-            && campaign::short_window(records)
-            && records.iter().any(|r| {
-                matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some())
-            }),
         releases: campaign::released(records),
     };
     Ok((state, summary.pass))
@@ -1832,6 +2246,35 @@ impl RunView<'_> {
                 label: label.clone(),
                 echo: echo.clone(),
             },
+            // The judge's stop (`AET-WO-2302b`): each register it read back,
+            // named as kind 11 names it at its address (replay binds the
+            // two), against its solved value under its mask, as `S11`'s
+            // evidence judges it.
+            Record::JudgeStop { read_back, .. } => View::Fields {
+                device: None,
+                fields: read_back
+                    .iter()
+                    .map(|g| Field {
+                        register: run
+                            .records
+                            .iter()
+                            .find_map(|r| match r {
+                                Record::RegisterObserved { name, reading }
+                                    if reading.address == g.address =>
+                                {
+                                    Some(name.clone())
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or_else(|| format!("{:#010x}", g.address)),
+                        address: g.address,
+                        mask: g.mask.into(),
+                        solved: g.expected.into(),
+                        observed: g.observed.map(|o| u64::from(o & g.mask)),
+                        wrong: g.observed.is_some_and(|o| o & g.mask != g.expected),
+                    })
+                    .collect(),
+            },
             _ => View::Other,
         };
         Some(Evidence {
@@ -1896,13 +2339,27 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     }
 
     let mut symptoms = BTreeSet::new();
+    // The symptoms decided where they are ([`Run::scope`]); the twin's
+    // window findings are decided by kind ([`Run::windowed`]).
+    let mut scoped = BTreeSet::new();
+    let mut decided = Vec::new();
     let mut unexplained = BTreeSet::new();
     for (&kind, &count) in &failing {
+        if let Some(w) = state.windowed(kind, count) {
+            if w.shown != count || (w.symptoms.is_empty() && w.missing.is_empty()) {
+                unexplained.insert(kind.to_owned());
+                continue;
+            }
+            symptoms.extend(w.symptoms);
+            decided.extend(w.decided.into_iter().map(|(r, e)| (r, e, Vec::new())));
+            unexplained.extend(w.missing);
+            continue;
+        }
         match state.select(kind) {
             Some((events, exact))
                 if !events.is_empty() && (!exact || events.len() as u64 == count) =>
             {
-                symptoms.extend(events);
+                scoped.extend(events);
             }
             _ => {
                 unexplained.insert(kind.to_owned());
@@ -1914,14 +2371,14 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     // domain (`AET-WO-3100` adversarial A1).
     for kind in PER_EVENT {
         for i in state.select(kind).map(|s| s.0).unwrap_or_default() {
-            if !symptoms.contains(&i) {
+            if !scoped.contains(&i) {
                 unexplained.insert(format!("event {i}"));
             }
         }
     }
+    symptoms.extend(scoped.iter().copied());
 
-    let mut decided = Vec::new();
-    for &i in &symptoms {
+    for &i in &scoped {
         match state.scope(i) {
             Some(scope) => decided.push(state.decide(scope)),
             // belt-and-suspenders: R2 joins every bus and device, so `check_run`
@@ -1931,7 +2388,13 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
             }
         }
     }
-    let rules: BTreeSet<Rule> = decided.iter().map(|d| d.0).collect();
+    // A harness rule's finding is the twin's own bound (`AET-WO-2302b`):
+    // the run takes it only when nothing else decided a symptom, so it never
+    // masks a fault of the device's, nor is it ever attributed to one.
+    let (harness, rules): (BTreeSet<Rule>, BTreeSet<Rule>) = decided
+        .iter()
+        .map(|d| d.0)
+        .partition(|r| r.bound().is_some());
     let domains: BTreeSet<Domain> = rules.iter().map(|r| r.domain()).collect();
     let rule = if pass && unexplained.is_empty() {
         Rule::N1
@@ -1942,13 +2405,17 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     } else if domains.len() > 1 {
         Rule::I5
     } else {
-        *rules.first().expect("a failing run has a failing finding")
+        *rules
+            .first()
+            .or(harness.first())
+            .expect("a failing run has a failing finding")
     };
-    // The evidence is the named rule's: I5 names both halves', I1 none.
+    // The evidence is the named rule's: I5 names both halves', I1 none, and
+    // no rule a harness one's.
     let mut evidence = BTreeSet::new();
     let mut masked = BTreeSet::new();
     for (r, e, m) in &decided {
-        if rule == Rule::I5 || *r == rule {
+        if (rule == Rule::I5 && r.bound().is_none()) || *r == rule {
             evidence.extend(e.iter().copied());
         }
         masked.extend(m.iter().copied());
