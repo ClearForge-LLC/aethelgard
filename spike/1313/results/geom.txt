@@ -533,3 +533,124 @@ scratch:final/perm-nospitp-obc/l-7.json: OK; right J4 J2 J6 J8, left J1 J5 J7 J3
 scratch:final/perm-nospitp-obc/l-8.json: OK; right J4 J2 J7 J6, left J1 J8 J5 J3
 scratch:final/perm-nospitp-obc/l-9.json: OK; right J5 J7 J2 J3, left J4 J1 J6 J8
 geom exit 0 (perm layouts)
+scratch:final/perm-fixture-ac/l-0.json: OK; right J4 J2 J6 J8, left J1 J3 J7 J5
+scratch:final/perm-fixture-ac/l-10.json: OK; right J4 J6 J2 J8, left J7 J5 J3 J1
+scratch:final/perm-fixture-ac/l-11.json: OK; right J4 J6 J8 J2, left J1 J5 J3 J7
+scratch:final/perm-fixture-ac/l-12.json: OK; right J2 J3 J7 J5, left J4 J8 J6 J1
+scratch:final/perm-fixture-ac/l-13.json: OK; right J5 J2 J7 J3, left J4 J1 J6 J8
+scratch:final/perm-fixture-ac/l-14.json: OK; right J4 J8 J2 J6, left J3 J5 J1 J7
+scratch:final/perm-fixture-ac/l-15.json: OK; right J4 J8 J6 J2, left J7 J3 J1 J5
+scratch:final/perm-fixture-ac/l-16.json: OK; right J4 J2 J6 J8, left J5 J7 J1 J3
+scratch:final/perm-fixture-ac/l-17.json: OK; right J4 J8 J6 J2, left J5 J7 J1 J3
+scratch:final/perm-fixture-ac/l-18.json: OK; right J2 J3 J7 J5, left J4 J6 J1 J8
+scratch:final/perm-fixture-ac/l-19.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-fixture-ac/l-1.json: OK; right J7 J3 J5 J2, left J4 J6 J8 J1
+scratch:final/perm-fixture-ac/l-2.json: OK; right J3 J2 J7 J5, left J4 J8 J1 J6
+scratch:final/perm-fixture-ac/l-3.json: OK; right J4 J6 J2 J7, left J8 J3 J5 J1
+scratch:final/perm-fixture-ac/l-4.json: OK; right J4 J2 J8 J6, left J1 J5 J7 J3
+scratch:final/perm-fixture-ac/l-5.json: OK; right J4 J2 J6 J8, left J5 J3 J7 J1
+scratch:final/perm-fixture-ac/l-6.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-fixture-ac/l-7.json: OK; right J4 J2 J6 J8, left J1 J5 J7 J3
+scratch:final/perm-fixture-ac/l-8.json: OK; right J4 J2 J7 J6, left J1 J8 J5 J3
+scratch:final/perm-fixture-ac/l-9.json: OK; right J5 J7 J2 J3, left J4 J1 J6 J8
+scratch:final/perm-fixture-rac/l-0.json: OK; right J4 J2 J6 J8, left J1 J3 J7 J5
+scratch:final/perm-fixture-rac/l-10.json: OK; right J4 J6 J2 J8, left J7 J5 J3 J1
+scratch:final/perm-fixture-rac/l-11.json: OK; right J4 J6 J8 J2, left J1 J5 J3 J7
+scratch:final/perm-fixture-rac/l-12.json: OK; right J2 J3 J7 J5, left J4 J8 J6 J1
+scratch:final/perm-fixture-rac/l-13.json: OK; right J5 J2 J7 J3, left J4 J1 J6 J8
+scratch:final/perm-fixture-rac/l-14.json: OK; right J4 J8 J2 J6, left J3 J5 J1 J7
+scratch:final/perm-fixture-rac/l-15.json: OK; right J4 J8 J6 J2, left J7 J3 J1 J5
+scratch:final/perm-fixture-rac/l-16.json: OK; right J4 J2 J6 J8, left J5 J7 J1 J3
+scratch:final/perm-fixture-rac/l-17.json: OK; right J4 J8 J6 J2, left J5 J7 J1 J3
+scratch:final/perm-fixture-rac/l-18.json: OK; right J2 J3 J7 J5, left J4 J6 J1 J8
+scratch:final/perm-fixture-rac/l-19.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-fixture-rac/l-1.json: OK; right J7 J3 J5 J2, left J4 J6 J8 J1
+scratch:final/perm-fixture-rac/l-2.json: OK; right J3 J2 J7 J5, left J4 J8 J1 J6
+scratch:final/perm-fixture-rac/l-3.json: OK; right J4 J6 J2 J7, left J8 J3 J5 J1
+scratch:final/perm-fixture-rac/l-4.json: OK; right J4 J2 J8 J6, left J1 J5 J7 J3
+scratch:final/perm-fixture-rac/l-5.json: OK; right J4 J2 J6 J8, left J5 J3 J7 J1
+scratch:final/perm-fixture-rac/l-6.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-fixture-rac/l-7.json: OK; right J4 J2 J6 J8, left J1 J5 J7 J3
+scratch:final/perm-fixture-rac/l-8.json: OK; right J4 J2 J7 J6, left J1 J8 J5 J3
+scratch:final/perm-fixture-rac/l-9.json: OK; right J5 J7 J2 J3, left J4 J1 J6 J8
+scratch:final/perm-fixture-ad/l-0.json: OK; bottom J4 J1 J3 J2 J6 J7 J5 J8
+scratch:final/perm-fixture-ad/l-10.json: OK; bottom J4 J7 J5 J3 J6 J2 J8 J1
+scratch:final/perm-fixture-ad/l-11.json: OK; bottom J4 J1 J5 J6 J8 J2 J3 J7
+scratch:final/perm-fixture-ad/l-12.json: OK; bottom J4 J2 J8 J3 J7 J6 J1 J5
+scratch:final/perm-fixture-ad/l-13.json: OK; bottom J4 J5 J2 J7 J1 J6 J3 J8
+scratch:final/perm-fixture-ad/l-14.json: OK; bottom J4 J3 J5 J8 J2 J1 J7 J6
+scratch:final/perm-fixture-ad/l-15.json: OK; bottom J4 J8 J7 J6 J2 J3 J1 J5
+scratch:final/perm-fixture-ad/l-16.json: OK; bottom J4 J5 J7 J1 J3 J2 J6 J8
+scratch:final/perm-fixture-ad/l-17.json: OK; bottom J4 J8 J5 J7 J1 J6 J2 J3
+scratch:final/perm-fixture-ad/l-18.json: OK; bottom J4 J6 J2 J3 J7 J1 J8 J5
+scratch:final/perm-fixture-ad/l-19.json: OK; bottom J4 J2 J7 J3 J5 J1 J6 J8
+scratch:final/perm-fixture-ad/l-1.json: OK; bottom J4 J6 J8 J7 J3 J1 J5 J2
+scratch:final/perm-fixture-ad/l-2.json: OK; bottom J4 J3 J2 J8 J1 J7 J6 J5
+scratch:final/perm-fixture-ad/l-3.json: OK; bottom J4 J6 J8 J2 J3 J5 J7 J1
+scratch:final/perm-fixture-ad/l-4.json: OK; bottom J4 J1 J2 J5 J7 J8 J6 J3
+scratch:final/perm-fixture-ad/l-5.json: OK; bottom J4 J2 J5 J3 J6 J8 J7 J1
+scratch:final/perm-fixture-ad/l-6.json: OK; bottom J4 J2 J1 J6 J8 J7 J3 J5
+scratch:final/perm-fixture-ad/l-7.json: OK; bottom J4 J1 J2 J6 J8 J5 J7 J3
+scratch:final/perm-fixture-ad/l-8.json: OK; bottom J4 J2 J7 J1 J8 J5 J3 J6
+scratch:final/perm-fixture-ad/l-9.json: OK; bottom J4 J5 J7 J2 J1 J6 J8 J3
+scratch:final/ren-fixture-ac/l-0.json: OK; right Q3887_J3 Q5605_J5 Q8dcc_J6 Q248e_J8, left J4 Q64ad_J1 Qe7e4_J2 Q39dd_J7
+scratch:final/ren-fixture-ac/l-10.json: OK; right Q498f_J2 Q9388_J3 Qbb86_J5 Qe8f2_J8, left J4 Qafe4_J1 Qf8fd_J6 Qe4cb_J7
+scratch:final/ren-fixture-ac/l-11.json: OK; right Q7ca7_J2 Qa0a4_J3 Q1c86_J6 Q30bf_J7, left J4 Q46ef_J1 Q885c_J5 Qe0be_J8
+scratch:final/ren-fixture-ac/l-12.json: OK; right Q420c_J2 Q0a1f_J5 Q2c10_J6 Qca05_J8, left J4 Q309a_J1 Qe8f0_J3 Q6aa9_J7
+scratch:final/ren-fixture-ac/l-13.json: OK; right Qbd2d_J1 Q6bde_J2 Q33d6_J6 Q4845_J7, left J4 Qed6f_J3 Qaa19_J5 Q5e02_J8
+scratch:final/ren-fixture-ac/l-14.json: OK; right Q185d_J1 Q4d86_J3 Q9788_J6 Q07a1_J8, left J4 Q1a67_J2 Qa5eb_J5 Q6b07_J7
+scratch:final/ren-fixture-ac/l-15.json: OK; right Q35b5_J2 Qc024_J6 Qd775_J7 Q3d43_J8, left J4 Q5ea4_J1 Qf408_J3 Qd3a9_J5
+scratch:final/ren-fixture-ac/l-16.json: OK; right Qbea3_J1 Q609f_J2 Q94d1_J3 Qc117_J7, left J4 Qd57f_J5 Qbf3f_J6 Qa237_J8
+scratch:final/ren-fixture-ac/l-17.json: OK; right Q4a7d_J1 Qbf38_J2 Q375e_J5 Q5af8_J6, left J4 Qd2fe_J3 Q4f52_J7 Qb5af_J8
+scratch:final/ren-fixture-ac/l-18.json: OK; right Qa308_J1 Q1be8_J2 Q3844_J3 Q0d75_J8, left J4 Q2f33_J5 Q9708_J6 Qd647_J7
+scratch:final/ren-fixture-ac/l-19.json: OK; right Q31d9_J1 Q8596_J3 Q643b_J6 Q1ca3_J7, left J4 Qf2b5_J2 Q7849_J5 Q3d74_J8
+scratch:final/ren-fixture-ac/l-1.json: OK; right Q1c49_J2 Q8dcb_J3 Q3dba_J6 Q9908_J8, left J4 Qd866_J1 Q7c32_J5 Q93be_J7
+scratch:final/ren-fixture-ac/l-2.json: OK; right Qb2f8_J1 Q4644_J5 Q929a_J6 Q007e_J7, left J4 Qfcaa_J2 Q6733_J3 Q93c2_J8
+scratch:final/ren-fixture-ac/l-3.json: OK; right Q6fa7_J1 Qa941_J6 Q2f32_J7 Q86a1_J8, left J4 Qf38c_J2 Q8232_J3 Q9eea_J5
+scratch:final/ren-fixture-ac/l-4.json: OK; right Q0de5_J1 Q4206_J5 Q9dc3_J7 Qc7ea_J8, left J4 Qf13e_J2 Qc047_J3 Q83a2_J6
+scratch:final/ren-fixture-ac/l-5.json: OK; right Q1cf4_J1 Q1680_J3 Qeb39_J7 Q5c86_J8, left J4 Q3149_J2 Q9dda_J5 Qf54f_J6
+scratch:final/ren-fixture-ac/l-6.json: OK; right Q7e4b_J5 Q6e6b_J6 Qb700_J7 Q4883_J8, left J4 Q769c_J1 Qc375_J2 Qafe2_J3
+scratch:final/ren-fixture-ac/l-7.json: OK; right Q4e14_J1 Q8b0d_J2 Q2744_J3 Qc08a_J5, left J4 Qa05b_J6 Qe73f_J7 Q5c70_J8
+scratch:final/ren-fixture-ac/l-8.json: OK; right Q88bf_J1 Q1ff9_J6 Q0f72_J7 Qd72f_J8, left J4 Q8943_J2 Q4796_J3 Qda9d_J5
+scratch:final/ren-fixture-ac/l-9.json: OK; right Q8bb9_J1 Qa72f_J3 Q8a09_J6 Qbdcb_J8, left J4 Qf68d_J2 Q9c38_J5 Qafcd_J7
+scratch:final/perm-nospitp-rac/l-0.json: OK; right J4 J2 J6 J8, left J1 J3 J7 J5
+scratch:final/perm-nospitp-rac/l-10.json: OK; right J4 J6 J2 J8, left J7 J5 J3 J1
+scratch:final/perm-nospitp-rac/l-11.json: OK; right J4 J6 J8 J2, left J1 J5 J3 J7
+scratch:final/perm-nospitp-rac/l-12.json: OK; right J2 J3 J7 J5, left J4 J8 J6 J1
+scratch:final/perm-nospitp-rac/l-13.json: OK; right J5 J2 J7 J3, left J4 J1 J6 J8
+scratch:final/perm-nospitp-rac/l-14.json: OK; right J4 J8 J2 J6, left J3 J5 J1 J7
+scratch:final/perm-nospitp-rac/l-15.json: OK; right J4 J8 J6 J2, left J7 J3 J1 J5
+scratch:final/perm-nospitp-rac/l-16.json: OK; right J4 J2 J6 J8, left J5 J7 J1 J3
+scratch:final/perm-nospitp-rac/l-17.json: OK; right J4 J8 J6 J2, left J5 J7 J1 J3
+scratch:final/perm-nospitp-rac/l-18.json: OK; right J2 J3 J7 J5, left J4 J6 J1 J8
+scratch:final/perm-nospitp-rac/l-19.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-nospitp-rac/l-1.json: OK; right J7 J3 J5 J2, left J4 J6 J8 J1
+scratch:final/perm-nospitp-rac/l-2.json: OK; right J3 J2 J7 J5, left J4 J8 J1 J6
+scratch:final/perm-nospitp-rac/l-3.json: OK; right J4 J6 J2 J7, left J8 J3 J5 J1
+scratch:final/perm-nospitp-rac/l-4.json: OK; right J4 J2 J8 J6, left J1 J5 J7 J3
+scratch:final/perm-nospitp-rac/l-5.json: OK; right J4 J2 J6 J8, left J5 J3 J7 J1
+scratch:final/perm-nospitp-rac/l-6.json: OK; right J2 J7 J3 J5, left J4 J1 J6 J8
+scratch:final/perm-nospitp-rac/l-7.json: OK; right J4 J2 J6 J8, left J1 J5 J7 J3
+scratch:final/perm-nospitp-rac/l-8.json: OK; right J4 J2 J7 J6, left J1 J8 J5 J3
+scratch:final/perm-nospitp-rac/l-9.json: OK; right J5 J7 J2 J3, left J4 J1 J6 J8
+scratch:final/ren-nospitp-rac/l-0.json: OK; right Q3887_J3 Q5605_J5 Q8dcc_J6 Q248e_J8, left J4 Q64ad_J1 Qe7e4_J2 Q39dd_J7
+scratch:final/ren-nospitp-rac/l-10.json: OK; right Q498f_J2 Q9388_J3 Qbb86_J5 Qe8f2_J8, left J4 Qafe4_J1 Qf8fd_J6 Qe4cb_J7
+scratch:final/ren-nospitp-rac/l-11.json: OK; right Q7ca7_J2 Qa0a4_J3 Q1c86_J6 Q30bf_J7, left J4 Q46ef_J1 Q885c_J5 Qe0be_J8
+scratch:final/ren-nospitp-rac/l-12.json: OK; right Q420c_J2 Q0a1f_J5 Q2c10_J6 Qca05_J8, left J4 Q309a_J1 Qe8f0_J3 Q6aa9_J7
+scratch:final/ren-nospitp-rac/l-13.json: OK; right Qbd2d_J1 Q6bde_J2 Q33d6_J6 Q4845_J7, left J4 Qed6f_J3 Qaa19_J5 Q5e02_J8
+scratch:final/ren-nospitp-rac/l-14.json: OK; right Q185d_J1 Q4d86_J3 Q9788_J6 Q07a1_J8, left J4 Q1a67_J2 Qa5eb_J5 Q6b07_J7
+scratch:final/ren-nospitp-rac/l-15.json: OK; right Q35b5_J2 Qc024_J6 Qd775_J7 Q3d43_J8, left J4 Q5ea4_J1 Qf408_J3 Qd3a9_J5
+scratch:final/ren-nospitp-rac/l-16.json: OK; right Qbea3_J1 Q609f_J2 Q94d1_J3 Qc117_J7, left J4 Qd57f_J5 Qbf3f_J6 Qa237_J8
+scratch:final/ren-nospitp-rac/l-17.json: OK; right Q4a7d_J1 Qbf38_J2 Q375e_J5 Q5af8_J6, left J4 Qd2fe_J3 Q4f52_J7 Qb5af_J8
+scratch:final/ren-nospitp-rac/l-18.json: OK; right Qa308_J1 Q1be8_J2 Q3844_J3 Q0d75_J8, left J4 Q2f33_J5 Q9708_J6 Qd647_J7
+scratch:final/ren-nospitp-rac/l-19.json: OK; right Q31d9_J1 Q8596_J3 Q643b_J6 Q1ca3_J7, left J4 Qf2b5_J2 Q7849_J5 Q3d74_J8
+scratch:final/ren-nospitp-rac/l-1.json: OK; right Q1c49_J2 Q8dcb_J3 Q3dba_J6 Q9908_J8, left J4 Qd866_J1 Q7c32_J5 Q93be_J7
+scratch:final/ren-nospitp-rac/l-2.json: OK; right Qb2f8_J1 Q4644_J5 Q929a_J6 Q007e_J7, left J4 Qfcaa_J2 Q6733_J3 Q93c2_J8
+scratch:final/ren-nospitp-rac/l-3.json: OK; right Q6fa7_J1 Qa941_J6 Q2f32_J7 Q86a1_J8, left J4 Qf38c_J2 Q8232_J3 Q9eea_J5
+scratch:final/ren-nospitp-rac/l-4.json: OK; right Q0de5_J1 Q4206_J5 Q9dc3_J7 Qc7ea_J8, left J4 Qf13e_J2 Qc047_J3 Q83a2_J6
+scratch:final/ren-nospitp-rac/l-5.json: OK; right Q1cf4_J1 Q1680_J3 Qeb39_J7 Q5c86_J8, left J4 Q3149_J2 Q9dda_J5 Qf54f_J6
+scratch:final/ren-nospitp-rac/l-6.json: OK; right Q7e4b_J5 Q6e6b_J6 Qb700_J7 Q4883_J8, left J4 Q769c_J1 Qc375_J2 Qafe2_J3
+scratch:final/ren-nospitp-rac/l-7.json: OK; right Q4e14_J1 Q8b0d_J2 Q2744_J3 Qc08a_J5, left J4 Qa05b_J6 Qe73f_J7 Q5c70_J8
+scratch:final/ren-nospitp-rac/l-8.json: OK; right Q88bf_J1 Q1ff9_J6 Q0f72_J7 Qd72f_J8, left J4 Q8943_J2 Q4796_J3 Qda9d_J5
+scratch:final/ren-nospitp-rac/l-9.json: OK; right Q8bb9_J1 Qa72f_J3 Q8a09_J6 Qbdcb_J8, left J4 Qf68d_J2 Q9c38_J5 Qafcd_J7
+geom exit 0 (isolation and probe layouts)
