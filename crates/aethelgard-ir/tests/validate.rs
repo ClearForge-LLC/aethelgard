@@ -168,7 +168,25 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15, u32::MAX] {
+    for version in [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        16,
+        u32::MAX,
+    ] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3552,7 +3570,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 14
+                expected: 15
             }
         ),
         "{e}"

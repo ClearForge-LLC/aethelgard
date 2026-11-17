@@ -159,18 +159,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// changes no generator of these: with the old specification's sha256
 /// (`12ea89f8…9a2e`) put back in each text, the three are `b4c0b9a0…8ec2`,
 /// `f0b5a670…d67f` and `ba58ff9e…cdad` exactly; the boot image did not move.
+/// Moved once more by `AET-WO-1313` (specification version 15), which
+/// changes no generator of these: with the old specification's sha256
+/// (`d38a84b3…`) put back for the new (`68466678…`) in each text, the three
+/// are `a60bdcac…a048`, `a81a65b3…5fdc` and `292791aa…d388` exactly; the
+/// boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "a60bdcac104779b778baa96f61effc87ae5e7dd09083763707904136b228a048",
+        "d7b690009f8dccdf34bd0911d2183219c077db3df9ed2a9a359ea9b46bbfe51b",
     ),
     (
         "platform",
-        "a81a65b312fc0957c3f0eee45c415074a97e0cfffab2ff1b83b12f4f94a55fdc",
+        "244791ab9bbc614601a5bdb04a7bd6ac6de50bd8046a38d8bf0ed5c57ade6b45",
     ),
     (
         "platform faulted",
-        "292791aa1391c6eb8004dd58de32ae2681a4fa2e14d5b2cf21c5faf420b5d388",
+        "6cad35bcd3355f21c6f707534b044208f4d0d1bddce468ff614fdc59fb0be52a",
     ),
     (
         "boot image",

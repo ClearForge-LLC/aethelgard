@@ -57,7 +57,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":9,"specification_sha256":"1963b05d…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":9,"specification_sha256":"b9e95cdc…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -542,9 +542,9 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 - `symptoms`, the failing events;
 - `evidence`, the events that prove the cause;
 - `masked`, software evidence on an electrically faulted bus, listed and never used;
-- `unexplained`, failing finding kinds that no archived event shows.
+- `unexplained`, failing finding kinds that no archived event shows; and, as `{kind}: {what the records lack}`, a window finding whose records cannot decide it (below).
 
-**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`.
+**Symptoms.** The verdict's finding kinds above `info` choose which events need explaining. They are never evidence. Each kind selects its events, and the count must equal the finding's, summed over every severity above `info`, or the kind is unexplained. The converse holds too: an event that some kind below would select, but that no finding names, is unexplained as `event <index>`. So rewriting the verdict alone never moves a run's domain; at most it makes the run `I1`, or `H4` by naming `serial_injection_out_of_order` (which replay cannot bind) in a run nothing else decides: indeterminate either way.
 
 | finding | its events |
 |---|---|
@@ -553,7 +553,6 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `i2c_line_held_low` | kind 9 caused by `scenario.line_held_low` |
 | `i2c_timeout`, `i2c_record_invalid` | kind 12 whose status is a `timeout_…`, or `invalid` |
 | `i2c_identity_mismatch`, `i2c_configure_mismatch`, `i2c_data_mismatch` | kind 12 of that step whose status is `ok` and whose value is not the part table's (SPI's likewise, kind 21) |
-| `identity_read_outside_window` | kind 12 or 21 still at the judge's fill (status `invalid`, every value word `0xFFFFFFFF`), in a boot read without its boot word on a short window (a DShot output's) |
 | `i2c_transaction_unwitnessed` | kind 13 whose read's status is `ok` and whose observed lines are not exactly its expected ones |
 | `register_mismatch` | kind 11 that differs from its expectation under its mask |
 | `boot_word_missing`, `cpu_halted` | kind 10 without the boot word, or with fewer instructions than expected |
@@ -561,7 +560,31 @@ It first applies exactly `replay`'s checks, in `replay`'s order, and refuses wha
 | `motor_output_unwitnessed` | each kind 26 whose status is `unwitnessed` or `unreadable` (`AET-WO-4300a`), once the boot word is set, as the judge names it |
 | `motor_timing_mismatch` | each kind 26 whose status is `mismatch` or `batched`, once the boot word is set |
 | `motor_timing_static_mismatch` | each kind 25 whose check does not hold |
-| anything else (`renode_error_log` and the `i2c_step_error`/`spi_step_error` beside it, a reaper bound, `pc_outside_firmware`: executable segments are not archived; the anchors' and the judge's stop's findings, `motor_anchor_unobserved`, `motor_anchor_repeated`, `motor_anchor_out_of_order`, `motor_window_past_run`, `motor_edge_before_anchor`, `motor_edge_after_window`, `judge_stop_missing`, `judge_stop_mismatch`, and `serial_wire_past_run`, `serial_injection_out_of_order` (a port injected before its predecessor's last echoed frame byte, adversarial pass 1, L2), `AET-WO-2302`: replay binds `motor_anchor_unobserved`, `motor_window_past_run` and `judge_stop_missing` to kinds 24, 26 and 30, and since adversarial pass 1 (L3) `judge_stop_mismatch` to kind 30's read-back (once per register a stop that cleared `CEN` read off its solved value, once more for registers it did not read; since adversarial pass 2 (A2-1) the read-back itself is bound to the run: exactly the timer's registers kind 11 lists, in its order, each at kind 11's address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's, after the stop, has it cleared; anything else refuses the archive), and `motor_edge_before_anchor`, `motor_edge_after_window` (once per output) and `motor_anchor_repeated` (once per timer) to kind 26's `edges_before`, `edges_after` and `cen_rises`. Since adversarial pass 2 (A2-5) replay places the boot word where the records do, one quantum before the first injected port's `injected_ns` (kind 29; the first port not held open goes in one quantum after the boot word), and binds from it: `serial_wire_past_run` exactly (once when the ports' frames and echoes, from kind 27's framings over the ports not held open, end past the boot from there, else never), and `motor_anchor_out_of_order` at least once per timer whose kind 26 anchor is after it. Every run bounds both: neither before the boot word, `serial_wire_past_run` never with no injected port and at most once, `motor_anchor_out_of_order` at most once per anchored timer. Unbound, since no record carries what decides them: `motor_anchor_out_of_order`'s other cases (the order of the boot's log lines: the anchor against the last device step's witness, or no boot word seen by its hook), `serial_wire_past_run` when the first port took no frame (the boot word's instant is then in no record), `serial_injection_out_of_order` (the logged `TDR` bytes), `cpu_halted`'s lagging hook line (the hook lines). `attribute` has no rule for any of them yet) | none: unexplained |
+| anything else (`renode_error_log` and the `i2c_step_error`/`spi_step_error` beside it, a reaper bound, `pc_outside_firmware`: executable segments are not archived; `cpu_halted`'s lagging hook line, which no record carries) | none: unexplained |
+
+**The twin's window findings** (`AET-WO-2302b`). The anchors', the judge's stop's and the injection chain's findings (`AET-WO-2302`) are decided by kind, each by the rule below, never by where their events are. Replay binds each count to the records (`motor_anchor_out_of_order` to a range, `serial_injection_out_of_order` to none), so each selects the events that show it:
+
+| finding | its events | rule |
+|---|---|---|
+| `motor_anchor_unobserved` | each kind 26 `unanchored` (edges, no `CEN` rise) | `S6` |
+| `motor_anchor_repeated` | each timer's first kind 26 whose `cen_rises` is above 1 | `S7` |
+| `motor_anchor_out_of_order` | each timer's first kind 26 anchored after the boot word's instant (one quantum before kind 29's first injection), when the verdict names exactly those | `S8` |
+| `motor_window_past_run` | each DShot timer's first anchored kind 26 whose anchor plus `DSHOT_WINDOW_NS` passes `MAX_VIRTUAL_NS` | `H1` |
+| `motor_edge_before_anchor` | each kind 26 with `edges_before` | `S9` |
+| `motor_edge_after_window` | each kind 26 with `edges_after`, with its timer's kind 30 at its anchor that left `CEN` cleared | `S10` |
+| `judge_stop_missing` | each DShot timer's first anchored kind 26 whose window ends inside the run, with no kind 30 at its anchor that left `CEN` cleared | `H2` |
+| `judge_stop_mismatch` | each kind 30 that left `CEN` cleared and read a register back off its solved value under its mask | `S11` |
+| `serial_wire_past_run` | kind 29 of the first port the chain injects, when its frame went in and the ports' frames and echoes from there end past the run (`campaign::wire_past_run_ports`) | `H3` |
+| `serial_injection_out_of_order` | each kind 29 injected after the chain's first | `H4` |
+
+Where the records cannot decide, the kind is unexplained by name with what they lack, never a guess (`INV-06`):
+- `motor_anchor_out_of_order` named other than exactly the timers anchored after the boot word's instant: its other cases (an anchor before the last device step's witness, or no boot word seen by its hook) are the boot's log lines, which no record carries, so only the verdict would say them;
+- `motor_edge_after_window` with no stop at the output's anchor that left `CEN` cleared (a PWM output's window, or a stop that did not run): the edges may be the timer still running;
+- `judge_stop_mismatch` of a register the stop did not read back: an unread register shows no write;
+- `serial_wire_past_run` when the first port took no frame: the boot word's instant is in no record;
+- `serial_injection_out_of_order` beyond the ports injected after the chain's first.
+
+Every one of them is named only once the boot word is set (replay refuses it before), so a boot without its word never reaches these rules.
 
 **Where a symptom is.**
 - Kinds 7, 8 and 9 are on their bus.
@@ -601,7 +624,7 @@ For a symptom on a motor output (`AET-WO-4300a`: `motor_output_unwitnessed`, `mo
 
 | rule | domain | holds when | evidence kinds |
 |---|---|---|---|
-| `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half | 11, 26 |
+| `S4` | software | a register field the output owns is wrong (kind 11): the firmware's own configuration of the pin or the timer differs from the solved topology. The twin models nothing electrical on a timer's pin, so no rule attributes a motor symptom to the electrical half. `CEN` of a timer's `CR1` once the judge's stop cleared it (kind 30) is the judge's own act, never cited; a reading wrong in it alone is unexplained by name (`register_mismatch: TIMn.CR1: …`, ADV-M3) | 11, 26 |
 | `I4` | indeterminate | no owned register is wrong (an output with no edges and every register right, or a static mismatch, which is the topology's) | 25, 26 |
 
 For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `serial_echo_missing`, `serial_capture_forged`, `serial_tag_mismatch` and `serial_framing_static_mismatch`, from kinds 29 and 28), and for a kind 11 wrong only in fields serial ports own (a port's TX and RX pins' `MODER` and `AFR` fields, their ports' and its USART's clock gates, and any register of its USART's block; the first port stands for a register several ports' fields share, and another port's fields are never this port's evidence):
@@ -614,7 +637,22 @@ For a symptom on a serial port (`AET-WO-4300b`: `serial_pattern_missing`, `seria
 
 For `S5` and `I6`, a witness or framing check is evidence only when it failed; `E3` cites the open port's holding framing check as the positive evidence that its framing and writes hold. `serial_capture_forged` may count more than the witnesses show: a foreign file in the capture directory names no port.
 
-A read still at the judge's fill when a short window ended (`identity_read_outside_window`, `AET-WO-4300a` D1 and Q7) is decided by that record, rule `I7` (indeterminate; evidence kinds 12, 21): the read did not complete inside the window, and the record cannot say whether the bus or the firmware was too slow. Since `AET-WO-2302` no boot has a short window and the judge never names the kind, so the rule is unreachable; it stays, as does replay's bound on the kind.
+For the twin's window findings (above), six software rules attribute the firmware's own timing, and four harness rules refuse what is the twin's or the judge's own bound, never the device's: they attribute to neither half (`indeterminate`). No window finding is electrical: in the twin nothing a board declares produces one.
+
+| rule | domain | holds when | evidence kinds |
+|---|---|---|---|
+| `S6` | software | the output's witness logged edges with no `CEN` rise by any CPU store of its timer's `CR1` in the boot the judge reads: the firmware drove the pin, or started the timer, by a GPIO or DMA write | 26 |
+| `S7` | software | the timer's `CEN` rose more than once in that boot: the firmware started it again. Not when `CEN` was set again after the judge's stop cleared it (kind 30) and kind 11's end read of its `CR1` has it set: no record says when each rise fell, so a re-enable after the window, harmless on silicon where `CEN` was still set, cannot be told from a restart, and the kind is unexplained by name (ADV-M3) | 26 |
+| `S8` | software | the boot word is set (kind 10) and the timer's anchor (kind 26) is after the boot word's instant, which kind 29's first injection places: the bring-up writes the boot word last | 10, 26, 29 |
+| `S9` | software | the witness shows edges before its timer's anchor: the pin driven before the timer started | 26 |
+| `S10` | software | the witness shows edges after the window the judge's stop closed, `CEN` cleared (kind 30): the timer restarted or the pin driven after it. Not when kind 11's end read of the timer's `CR1` has `CEN` set again: unexplained by name, as for `S7` | 26, 30 |
+| `S11` | software | the judge's stop, which left `CEN` cleared, read a solved register of the timer off its solved value: the firmware wrote the timer inside its window | 30 |
+| `H1` | indeterminate | the DShot window's end, its anchor plus `DSHOT_WINDOW_NS`, passes the run's `MAX_VIRTUAL_NS`; the output's `stopped` witness whose last rise reaches the run's end (a `motor_timing_mismatch`, with no register of the output's wrong) is the same bound's | 24, 26 |
+| `H2` | indeterminate | the judge's stop at the anchor plus `DSHOT_WINDOW_NS` did not run, or left `CEN` set (kind 30, cited when present) | 24, 26, 30 |
+| `H3` | indeterminate | the ports' wire time from the boot word passes `MAX_VIRTUAL_NS`; a port in that sum past the run whose echo alone is missing or cut short (never `not_counted`), its framing and writes holding, its RX pin on its AF at the injection when one was read, and no software evidence on it, is the same bound's (its `serial_echo_missing`) | 27, 29 |
+| `H4` | indeterminate | the judge's sequential injection put a port's frame in out of order | 29 |
+
+A harness rule never masks a fault of the device's and is never attributed to one: it names the run only when no other rule decided a symptom, its events stay in `symptoms`, and `I5` never counts it. Its evidence joins another rule's `evidence` only where the record is that rule's own evidence too (a DShot witness cut by the run, `H1`'s, whose `edges_before` are `S9`'s), never because of the harness (ADV-M4). Beside an indeterminate symptom of the device's (a dead output with every register right, `I4`), that rule names the run.
 
 For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bus not computed healthy, gives `I2`. Then board software evidence gives `S2` (software; evidence kinds 7, 10, 11), and none gives `I4`.
 
@@ -624,6 +662,7 @@ For a symptom on the board, any faulted bus gives `I3`. No bus at all, or any bu
 - Otherwise, if any symptom is indeterminate, the run is indeterminate by the lowest such rule, with that rule's evidence.
 - If symptoms are split between electrical and software, it is `I5`, with both halves' evidence: never averaged.
 - Otherwise the run takes the one domain and the lowest rule that decided any symptom. Its evidence is that rule's alone, so every evidence kind is one the named rule allows. With `S1` and `S2` both deciding, the run is `S1`, and its `symptoms` still list the board's.
+- A harness rule (`H1` to `H4`) is set aside in each step above: only when it alone decided the run's symptoms does the run take the lowest of them, with that rule's evidence.
 
 Software is never concluded by eliminating electrical, nor electrical by eliminating software.
 
@@ -632,7 +671,7 @@ Software is never concluded by eliminating electrical, nor electrical by elimina
 - The software cases are named exact-once patches of `boards/sentinel-01`, built from a scratch copy by `tests/attribute_seeded.rs`. A patch that matches zero or two times fails that test, and so does a generator change.
 - The trap: a wrong device address fails with `i2c_timeout` at TXIS, as a 47 kΩ pull-up does. It is `software` with 3.3 kΩ (computed inside the ceiling), and `electrical` with 47 kΩ, with the witness in `masked`.
 - The indeterminate trap, `trap-indeterminate-leave-47k`: a core that leaves the firmware after its boot word (`leave-firmware`, `software S2` at 2.2 kΩ), on the 47 kΩ bus fault (`electrical E1` alone). Two real causes: it is `I3`, evidence exactly the bus fault's, and `propose` refuses to mutate (`INV-05`). The same mutant on `cap-390p-sda-2k2` (one line faulted, one healthy) is the second shape, `trap-indeterminate-leave-390p`: `I3`'s evidence is the faulted line's rise and the fault, never the healthy line's rise (`AET-WO-3201`, `2205` pass 2 M1).
-- The window case `identity-late-dshot` (`AET-WO-3201`, rule `I7`) is retired (`AET-WO-2302`): its premise, a DShot board's 2 ms boot shorter than its start-up, no longer exists, since every board boots 100 ms.
+- The window case `identity-late-dshot` (`AET-WO-3201`) is retired (`AET-WO-2302`), and its rule with it (`AET-WO-2302b`): its premise, a DShot board's 2 ms boot shorter than its start-up, no longer exists, since every board boots 100 ms.
 
 ## `propose`
 
@@ -657,8 +696,9 @@ Then it attributes the run (`attribute`), reads each evidence event through `aet
 | `E1`, every piece of evidence a complete rise past its ceiling (kind 7) or a bus fault caused only by one (kind 9) | a proposal per faulted bus, sized below |
 | `E1` with a line held low, a line stuck high, an incomplete rise, a bus fault of any other cause, or a line of the bus without exactly one complete rise | no rule: `no rule; RUL-18 model proposer slot`. A held line is a board fault no value change fixes |
 | `E2`, `E3` | no rule: a device absent behind its chip select, or an open RX line, is a board fault no value change fixes |
-| `S1`, `S2`, `S3`, `S4`, `S5` | a generator report, with no specification change |
-| `N1`, `I1` to `I7` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
+| `S1` to `S11` | a generator report, with no specification change. `S11` names the timer register its stop read back (kind 30, by kind 11's name); `S6` to `S10`'s evidence (kinds 26 and 29, kind 10 with its boot word set, and `S10`'s kind 30 with nothing read back off its value) shows no unmet solved expectation, so nothing is reported, saying so |
+| `H1` to `H4` | nothing is proposed, naming the bound: the twin's own, never the device's (`INV-05`) |
+| `N1`, `I1` to `I6` | nothing is proposed, naming the rule: attribution precedes mutation (`INV-05`) |
 
 **Sizing a pull-up.** The binding line is the one with the least `ceiling / rise`, which is the slowest line when the ceilings are equal. `R_target = R_now × ceiling × 0.8 / rise`, rounded down; the 0.8 is headroom for a ±5 % resistor tolerance and a capacitance spread the run did not measure. The value is the largest E12 value at or below `R_target`. If it is below `Rp_min`, the floor, nothing is proposed, never a value below it. The predicted rise is the binding line's rise scaled by the new value over the old, rounded up (the rise is linear in R × C, `docs/architecture.md` §2.18). Every rise is computed from declared values (`RUL-19`).
 

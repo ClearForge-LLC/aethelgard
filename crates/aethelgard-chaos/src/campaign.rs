@@ -93,8 +93,7 @@ pub const UNREAD_FINDINGS: [&str; 5] = [
 ];
 /// The identity reads' findings the judge makes only once the boot word is
 /// set (`renode::judge_boot`): a record is judged at the fixed point, and
-/// before it only a timeout or a read outside the window is named
-/// (`AET-WO-3201`; adversarial pass, F2).
+/// before it only a timeout is named (`AET-WO-3201`; adversarial pass, F2).
 pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "i2c_configure_mismatch",
     "i2c_data_mismatch",
@@ -107,19 +106,6 @@ pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "spi_record_invalid",
     "spi_transaction_unwitnessed",
 ];
-/// The boot judge's finding for an identity read whose record is still
-/// unset when a short window ends, made only when the boot word is not set
-/// (`AET-WO-4300a` D1; `AET-WO-3201`, its rule).
-pub const OUTSIDE_WINDOW_FINDING: &str = "identity_read_outside_window";
-
-/// Whether the board's boots run the short window: a board with a DShot
-/// output (`AET-WO-4300a` D1).
-pub fn short_window(records: &[Record]) -> bool {
-    records.iter().any(
-        |m| matches!(m, Record::MotorOutputSolved { protocol, .. } if protocol.starts_with("dshot")),
-    )
-}
-
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioError {
@@ -1033,30 +1019,6 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if !booted && BOOTED_READ_FINDINGS.iter().any(|k| any_severity(k) > 0) {
         return Err("the verdict judges an identity read's record of a boot without its boot word");
     }
-    // An identity read outside the window (`AET-WO-4300a` D1) is named only
-    // of a boot that was read without its boot word on a short window, at
-    // most once per record archived as `invalid`: the judge names a record
-    // whose status word is still its fill, which the archive keeps only as
-    // `invalid`.
-    let unset = records
-        .iter()
-        .filter(|r| {
-            matches!(r, Record::I2cCheck { status: Some(s), .. } | Record::SpiCheck { status: Some(s), .. }
-                if s == "invalid")
-        })
-        .count() as u64;
-    let outside = if read && !booted && short_window(records) {
-        unset
-    } else {
-        0
-    };
-    if any_severity(OUTSIDE_WINDOW_FINDING) > outside
-        || count(OUTSIDE_WINDOW_FINDING) != any_severity(OUTSIDE_WINDOW_FINDING)
-    {
-        return Err(
-            "the verdict names identity_read_outside_window for no invalid record of an unbooted short window",
-        );
-    }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,
     // each witness's finding by its status, exactly; before it, none.
@@ -1137,7 +1099,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     // What the boot word's instant decides (`AET-WO-2302` adversarial pass
     // 2, A2-5), once the boot word is set; before it, neither is named.
     let wire = if booted {
-        wire_past_run_count(records).map_or((0, 1), |n| (n, n))
+        wire_past_run_ports(records).map_or((0, 1), |p| {
+            let n = u64::from(!p.is_empty());
+            (n, n)
+        })
     } else {
         (0, 0)
     };
@@ -1746,12 +1711,25 @@ fn check_serial_joins(records: &[Record], booted: bool) -> Result<(), &'static s
             "a serial port's frame went in before the port before it, without it, or past the boot",
         );
     }
+    // The first port goes in one quantum after the boot word, which the
+    // boot writes after its start (`AET-WO-2302b` ADV-S4): earlier, the boot
+    // word's instant would precede the run, and `boot_word_instant` finds none.
+    if injected
+        .first()
+        .copied()
+        .flatten()
+        .is_some_and(|t| t < TWIN_QUANTUM_NS)
+    {
+        return Err(
+            "the first serial port's frame went in less than a quantum after the boot's start, before any boot word",
+        );
+    }
     Ok(())
 }
 
 /// The labels of the ports whose RX line the scenario (kind 5) holds open
 /// (`AET-WO-2302` D5).
-fn open_ports(records: &[Record]) -> BTreeSet<&str> {
+pub fn open_ports(records: &[Record]) -> BTreeSet<&str> {
     match records.first() {
         Some(Record::Scenario { overrides, .. }) => overrides
             .iter()
@@ -1764,23 +1742,29 @@ fn open_ports(records: &[Record]) -> BTreeSet<&str> {
     }
 }
 
-/// The boot word's instant as the records give it (`AET-WO-2302`
-/// adversarial pass 2, A2-5): the first port the chain injects, the first
-/// not held open, takes its frame one quantum after the boot word, so its
-/// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
+/// The first port the judge's chain injects, the first not held open, as
+/// its kind 29's index and `injected_ns`. `None` when that port took no
 /// frame, or there is none.
-fn boot_word_instant(records: &[Record]) -> Option<u64> {
+pub fn first_injection(records: &[Record]) -> Option<(usize, u64)> {
     let open = open_ports(records);
     records
         .iter()
-        .find_map(|r| match r {
+        .enumerate()
+        .find_map(|(i, r)| match r {
             Record::SerialWitness {
                 label, injected_ns, ..
-            } if !open.contains(label.as_str()) => Some(*injected_ns),
+            } if !open.contains(label.as_str()) => Some(injected_ns.map(|t| (i, t))),
             _ => None,
         })
         .flatten()
-        .and_then(|t| t.checked_sub(TWIN_QUANTUM_NS))
+}
+
+/// The boot word's instant as the records give it (`AET-WO-2302`
+/// adversarial pass 2, A2-5): the first port the chain injects takes its
+/// frame one quantum after the boot word, so its kind 29 `injected_ns`
+/// less `QUANTUM_NS`. `None` when that port took no frame, or there is none.
+pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
+    first_injection(records)?.1.checked_sub(TWIN_QUANTUM_NS)
 }
 
 /// One character's time on the wire in ns, rounded up, at a solved actual
@@ -1804,16 +1788,17 @@ fn frame_echo_ns(framing: &SerialFraming, actual_millibaud: u64) -> Option<u64> 
         .checked_add(char_ns)
 }
 
-/// How many times the judge names `serial_wire_past_run` of a booted run,
-/// where the records decide it (A2-5): none with no port the chain injects;
-/// once the first such port took its frame, one quantum after the boot
-/// word, whether the ports' frames and echoes (kind 27's framings, summed in
-/// the specification's order over the ports not held open) end past the
-/// boot from that instant: 1 or 0. `None` when that port took no frame, so
-/// the instant is not in the records.
-fn wire_past_run_count(records: &[Record]) -> Option<u64> {
+/// The ports, by label, whose frames and echoes end past the boot, as the
+/// judge sums them for `serial_wire_past_run` of a booted run (A2-5): from
+/// the first port the chain injects, one quantum after the boot word, the
+/// ports' frames and echoes (kind 27's framings, summed in the
+/// specification's order over the ports not held open), from the first
+/// whose sum ends past the boot to the last. Empty with no port the chain
+/// injects, or when every frame and echo ends inside the boot; `None` when
+/// the first port took no frame, so the instant is not in the records.
+pub fn wire_past_run_ports(records: &[Record]) -> Option<Vec<&str>> {
     let open = open_ports(records);
-    let ports: Vec<(&SerialFraming, u64)> = records
+    let ports: Vec<(&str, &SerialFraming, u64)> = records
         .iter()
         .filter_map(|r| match r {
             Record::SerialPortSolved {
@@ -1821,22 +1806,29 @@ fn wire_past_run_count(records: &[Record]) -> Option<u64> {
                 framing,
                 actual_millibaud,
                 ..
-            } if !open.contains(label.as_str()) => Some((framing, *actual_millibaud)),
+            } if !open.contains(label.as_str()) => {
+                Some((label.as_str(), framing, *actual_millibaud))
+            }
             _ => None,
         })
         .collect();
     if ports.is_empty() {
-        return Some(0);
+        return Some(Vec::new());
     }
     let injected = boot_word_instant(records)?.checked_add(TWIN_QUANTUM_NS)?;
     let mut end = Some(injected);
-    let past = ports.iter().any(|&(f, baud)| {
-        end = end
-            .zip(frame_echo_ns(f, baud))
-            .and_then(|(e, w)| e.checked_add(w));
-        !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
-    });
-    Some(u64::from(past))
+    Some(
+        ports
+            .into_iter()
+            .filter(|&(_, f, baud)| {
+                end = end
+                    .zip(frame_echo_ns(f, baud))
+                    .and_then(|(e, w)| e.checked_add(w));
+                !end.is_some_and(|e| e <= TWIN_MAX_VIRTUAL_NS)
+            })
+            .map(|(label, ..)| label)
+            .collect(),
+    )
 }
 
 /// The timer of the motor output `label`, joined from kind 24.
@@ -2173,7 +2165,7 @@ fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
     let (mut past, mut missing) = (0, 0);
     for (timer, anchor) in anchors {
         let Some(at) = anchor else { continue };
-        if at.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS {
+        if dshot_window_past_run(at) {
             past += 1;
         } else if !records.iter().any(|r| {
             matches!(r, Record::JudgeStop { timer: t, anchor_ns, cr1_after: Some(c), .. }
@@ -2393,8 +2385,15 @@ const TWIN_QUANTUM_NS: u64 = 100_000;
 // DSHOT_WINDOW_NS}` and `aethelgard_ir::SolvedClock::reset` state
 // these; replay checks an archive without the twin or `aethelgard-ir`
 // (RUL-16), so it states them again.
-const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
-const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+pub const TWIN_MAX_VIRTUAL_NS: u64 = 100_000_000;
+/// A DShot output's window from its anchor, 2 ms (`AET-WO-2302`), as
+/// [`TWIN_MAX_VIRTUAL_NS`] states it.
+pub const TWIN_DSHOT_WINDOW_NS: u64 = 2_000_000;
+
+/// Whether a DShot window from `anchor` ends past the run's end.
+pub fn dshot_window_past_run(anchor: u64) -> bool {
+    anchor.saturating_add(TWIN_DSHOT_WINDOW_NS) > TWIN_MAX_VIRTUAL_NS
+}
 const RESET_KERNEL_HZ: u64 = 64_000_000;
 
 /// Whether kind 25 `check` is exactly the static check of kind 24 `m` on its
@@ -2524,26 +2523,17 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         && span_ns.is_some_and(|s| s < *grain_ns);
     let covers =
         last_ns.is_some_and(|l| l.saturating_add(*period_ns).saturating_add(*grain_ns) >= *end_ns);
-    // Checked: a forged count must not wrap onto the honest spacing, nor
-    // panic (third adversarial review, F2).
-    let spaced = first_ns
-        .zip(*last_ns)
-        .zip(*span_ns)
-        .is_some_and(|((f, l), s)| {
-            rises
-                .checked_sub(1)
-                .and_then(|n| n.checked_mul(*period_ns))
-                .is_some_and(|due| (l - f).abs_diff(due) <= s)
-        });
-    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
-    let passing = shaped && spaced && alternating && covers;
+    let continuous = witness_continuous(w);
+    let passing = shaped && continuous && covers;
     match status.as_str() {
         "witnessed" => passing && *off_grid > 0,
         "static_only" => passing && *off_grid == 0,
         "unwitnessed" => *rises < 2,
         "unreadable" => none,
         "batched" => *rises >= 2 && *batched > 0,
-        "stopped" => shaped && !covers,
+        // The judge's `witness_motor` gives `stopped` only to edges on the
+        // model's sequence, as a passing one (`AET-WO-2302b` ADV-M1).
+        "stopped" => shaped && continuous && !covers,
         "unanchored" => {
             anchor_ns.is_none()
                 && first_ns.is_none()
@@ -2555,6 +2545,39 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
         "mismatch" => none || *rises >= 2,
         _ => false,
     }
+}
+
+/// Whether kind 26 `w`'s edges are continuous on the model's sequence, as
+/// the judge's `witness_motor` gives every status past `mismatch`: its last
+/// rise exactly `rises - 1` periods after its first, within its span (a
+/// rise every period between them), and its edges alternating (as many
+/// falls as rises, or one fewer). `false` for any other record.
+pub fn witness_continuous(w: &Record) -> bool {
+    let Record::MotorWitness {
+        period_ns,
+        rises,
+        falls,
+        first_ns,
+        last_ns,
+        span_ns,
+        ..
+    } = w
+    else {
+        return false;
+    };
+    // Checked: a forged count must not wrap onto the honest spacing, nor
+    // panic (third adversarial review, F2).
+    let spaced = first_ns
+        .zip(*last_ns)
+        .zip(*span_ns)
+        .is_some_and(|((f, l), s)| {
+            rises
+                .checked_sub(1)
+                .and_then(|n| n.checked_mul(*period_ns))
+                .is_some_and(|due| l.checked_sub(f).is_some_and(|d| d.abs_diff(due) <= s))
+        });
+    let alternating = *falls == *rises || rises.checked_sub(1) == Some(*falls);
+    spaced && alternating
 }
 
 fn check_joins(records: &[Record]) -> Result<(), &'static str> {
