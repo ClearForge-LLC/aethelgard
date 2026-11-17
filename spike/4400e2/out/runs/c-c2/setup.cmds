@@ -1,0 +1,71 @@
+emulation SetSeed 2100
+emulation SetGlobalQuantum "0.000100000"
+include @/repo/models/renode/BMP581.cs
+include @/repo/models/renode/ICM42688P.cs
+mach create
+machine LoadPlatformDescription @/cache/c2/p2-spi-usart.repl
+sysbus LoadELF @/cache/c2/arducopter.elf
+sysbus LogPeripheralAccess sysbus.flashController true
+sysbus WriteDoubleWord 0x580244d4 0x0
+sysbus WriteDoubleWord 0x580244d8 0x0
+sysbus WriteDoubleWord 0x580244dc 0x0
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e4 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244ec 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+sysbus WriteDoubleWord 0x580244f4 0x10000
+sysbus WriteDoubleWord 0x20000000 0x0
+sysbus WriteDoubleWord 0x20000004 0xffffffff
+sysbus WriteDoubleWord 0x20000008 0xffffffff
+sysbus WriteDoubleWord 0x2000000c 0xffffffff
+sysbus WriteDoubleWord 0x20000010 0xffffffff
+sysbus WriteDoubleWord 0x20000014 0xffffffff
+sysbus WriteDoubleWord 0x20000018 0xffffffff
+sysbus WriteDoubleWord 0x2000001c 0xffffffff
+sysbus WriteDoubleWord 0x20000020 0xffffffff
+sysbus WriteDoubleWord 0x20000024 0xffffffff
+sysbus WriteDoubleWord 0x20000028 0xffffffff
+sysbus WriteDoubleWord 0x2000002c 0xffffffff
+sysbus WriteDoubleWord 0x20000030 0xffffffff
+sysbus WriteDoubleWord 0x20000034 0xffffffff
+sysbus WriteDoubleWord 0x20000038 0xffffffff
+sysbus WriteDoubleWord 0x2000003c 0xffffffff
+sysbus WriteDoubleWord 0x20000040 0xffffffff
+sysbus WriteDoubleWord 0x20000044 0xffffffff
+sysbus WriteDoubleWord 0x20000048 0xffffffff
+sysbus WriteDoubleWord 0x2000004c 0xffffffff
+sysbus WriteDoubleWord 0x20000050 0xffffffff
+sysbus WriteDoubleWord 0x20000054 0xffffffff
+sysbus WriteDoubleWord 0x20000058 0xffffffff
+sysbus WriteDoubleWord 0x2000005c 0xffffffff
+cpu VectorTableOffset 0x08000000
+logLevel -1 sysbus.i2c1.u2
+logLevel -1 sysbus.i2c1.u7
+logLevel -1 sysbus.spi1.spi1mux.u4
+logLevel -1 sysbus.spi1.spi1mux
+logLevel -1 sysbus.spi2.spi2mux.u5
+logLevel -1 sysbus.spi2.spi2mux
+sysbus LogPeripheralAccess sysbus.usart1 true
+sysbus LogPeripheralAccess sysbus.gpioPortA true
+sysbus LogPeripheralAccess sysbus.rcc true
+sysbus.usart2 CreateFileBackend @/cache/runs/c-c2/tool/capture/usart2.bin true
+sysbus.usart3 CreateFileBackend @/cache/runs/c-c2/tool/capture/usart3.bin true
+sysbus.uart4 CreateFileBackend @/cache/runs/c-c2/tool/capture/uart4.bin true
+sysbus.uart5 CreateFileBackend @/cache/runs/c-c2/tool/capture/uart5.bin true
+sysbus.usart6 CreateFileBackend @/cache/runs/c-c2/tool/capture/usart6.bin true
+sysbus.uart7 CreateFileBackend @/cache/runs/c-c2/tool/capture/uart7.bin true
+sysbus.uart8 CreateFileBackend @/cache/runs/c-c2/tool/capture/uart8.bin true
+sysbus.lpuart1 CreateFileBackend @/cache/runs/c-c2/tool/capture/lpuart1.bin true
+sysbus.usart1 CreateFileBackend @/cache/runs/c-c2/tool/capture/usart1.bin true
+sysbus.i2c1.u7 Temperature 25
+sysbus.i2c1.u7 Pressure 101325
+sysbus.spi2.spi2mux.u5 Temperature 29
+sysbus.spi2.spi2mux.u5 AccelerationX 0
+sysbus.spi2.spi2mux.u5 AccelerationY 1
+# stubs
+sysbus LogPeripheralAccess sysbus.usart1 false
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x FPCCR=0x%x FPCAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38, 0xE000EF34, 0xE000EF38)))"
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-PSPFRAME psp=0x%x %s' % (int(self.OtherSP.RawValue), ' '.join('%x' % machine.SystemBus.ReadDoubleWord(int(self.OtherSP.RawValue) + 4 * i) for i in range(8))))"
+cpu AddHook 0x081000F8 "ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); (n>=2) and self.Log(LogLevel.Warning, 'AET4400E2-RTB loaded=%d n=%d VECT=%d IABR=%s SHCSR=0x%x FPCCR=0x%x' % ((self.GetRegister(3).RawValue>>11)&1, n, machine.SystemBus.ReadDoubleWord(0xE000ED04)&0x1ff, ','.join('%x'%x for x in ia), sh, machine.SystemBus.ReadDoubleWord(0xE000EF34)))"
+cpu AddHook 0x081000FE "ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); (n>=2) and self.Log(LogLevel.Warning, 'AET4400E2-FAKEFRAME n=%d (a thread frame built with two or more exceptions active)' % n)"

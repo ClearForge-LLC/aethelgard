@@ -1,0 +1,4 @@
+# AET-WO-4400e2 D4: SPI1's register accesses logged (Renode's access log; observation only), to name the write
+# before each "[ERROR] spi1: Attempted to set peripheral into SPI slave mode". USART1's access logging off.
+sysbus LogPeripheralAccess sysbus.usart1 false
+sysbus LogPeripheralAccess sysbus.spi1 true

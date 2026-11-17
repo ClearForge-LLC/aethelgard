@@ -1,0 +1,13 @@
+# AET-WO-4400e2 stubs-e-fixA.txt. Addresses from the ELF's symbols and disassembly (Thumb bit cleared).
+# The first attempt (runs a-c2, a-e) never rewrote r3: 'RegisterValue' was not imported (a Python error on every hook); fixed here.
+# DIAGNOSTIC DEVIATION A: after the measurement hook, a second hook gives r3's bit 11 (RETTOBASE) its Armv7-M value,
+# 1 only when at most one exception is active (IABR0-4 and SHCSR's active bits), as Renode's e7a8584c computes it.
+# Observation hooks change no state. USART1's access logging off (CrashCatcher's console polling).
+sysbus LogPeripheralAccess sysbus.usart1 false
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x FPCCR=0x%x FPCAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38, 0xE000EF34, 0xE000EF38)))"
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-PSPFRAME psp=0x%x %s' % (int(self.OtherSP.RawValue), ' '.join('%x' % machine.SystemBus.ReadDoubleWord(int(self.OtherSP.RawValue) + 4 * i) for i in range(8))))"
+cpu AddHook 0x081034DC "ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); (n>=2) and self.Log(LogLevel.Warning, 'AET4400E2-RTB loaded=%d n=%d VECT=%d IABR=%s SHCSR=0x%x FPCCR=0x%x' % ((self.GetRegister(3).RawValue>>11)&1, n, machine.SystemBus.ReadDoubleWord(0xE000ED04)&0x1ff, ','.join('%x'%x for x in ia), sh, machine.SystemBus.ReadDoubleWord(0xE000EF34)))"
+cpu AddHook 0x081034DC "from Antmicro.Renode.Peripherals.CPU import RegisterValue; ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); v=self.GetRegister(3).RawValue; w=(v & ~0x800) | (0x800 if n<=1 else 0); (w!=v) and self.Log(LogLevel.Warning, 'AET4400E2-FIXA r3 0x%x -> 0x%x n=%d' % (v, w, n)); (w!=v) and self.SetRegister(3, RegisterValue.Create(w, 32))"
+cpu AddHook 0x081034E2 "ia=[machine.SystemBus.ReadDoubleWord(0xE000E300+4*i) for i in range(5)]; sh=machine.SystemBus.ReadDoubleWord(0xE000ED24); n=sum(bin(x).count('1') for x in ia)+bin(sh & 0xD8B).count('1'); (n>=2) and self.Log(LogLevel.Warning, 'AET4400E2-FAKEFRAME n=%d (a thread frame built with two or more exceptions active)' % n)"
+cpu AddHook 0x08034C10 "self.Log(LogLevel.Warning, 'AET4400E2-HOOK AP_InertialSensor::_init_gyro')"
+cpu AddHook 0x08036048 "self.Log(LogLevel.Warning, 'AET4400E2-HOOK Invensensev3::read_fifo')"
