@@ -343,46 +343,19 @@ fn an_access_the_datasheets_forbid_warns() {
 }
 
 /// ArduPilot's probe and `start()` for the ICM-42688-P (`Invensensev3`,
-/// `s2-ardupilot.md` 1.2-1.3) and its probe and init for the BMP581
-/// (`AP_Baro_BMP581` L81-133, 6.1), replayed: every read it gates on
-/// answers what it needs, every checked register reads back, and no
-/// register it touches is unmodelled.
+/// `s2-ardupilot.md` 1.2-1.3, at the H7 default of 2 kHz that `4400e`
+/// measured: `0x4F` and `0x50` <- `0x05`, `IV3` L779-788, L844-901) and its
+/// probe and init for the BMP581 (`AP_Baro_BMP581` L81-133, 6.1), replayed:
+/// every read it gates on answers what it needs, every checked register
+/// reads back, and no register it touches is unmodelled. Then its FIFO poll
+/// (`IV3` L583-611, `AET-WO-4220c`): the count, and one packet.
 #[test]
 fn ardupilot_s_probe_and_init_pass_against_our_models() {
     let b = bench("ardupilot");
     let mut c = Vec::new();
-    // ICM-42688-P: probe (IV3:1005), then start() (IV3:247-902).
+    // ICM-42688-P: probe (IV3:1005), then start() (IV3:247-901).
     c.extend(spi(&b, &[0xF5], 1));
-    for (r, v) in [
-        (0x16, 0x80),
-        (0x5F, 0x07),
-        (0x4C, 0xC0),
-        (0x4B, 0x02),
-        (0x4E, 0x00),
-        (0x4F, 0x06),
-        (0x50, 0x06),
-        (0x76, 0x01),
-    ] {
-        c.extend(spi(&b, &[r, v], 0));
-    }
-    c.extend(spi(&b, &[0x0B | 0x80], 1));
-    c.extend(spi(&b, &[0x76, 0x00], 0));
-    for (bank, r, v) in [
-        (1, 0x0B, 0xA0),
-        (1, 0x0C, 0x06),
-        (1, 0x0D, 0x24),
-        (1, 0x0E, 0xA0),
-        (2, 0x03, 0x0A),
-        (2, 0x04, 0x19),
-        (2, 0x05, 0xA0),
-    ] {
-        c.extend(spi(&b, &[0x76, bank], 0));
-        c.extend(spi(&b, &[r, v], 0));
-        c.extend(spi(&b, &[0x76, 0x00], 0));
-    }
-    c.extend(spi(&b, &[0x4D | 0x80], 1));
-    c.extend(spi(&b, &[0x4D, 0x51], 0));
-    c.extend(spi(&b, &[0x4E, 0x0F], 0));
+    c.extend(ardupilot_imu_start(&b, 0x05));
     // The checked register, read back (DEV:112-154).
     c.extend(spi(&b, &[0x4D | 0x80], 1));
     // BMP581 on I2C: probe gates, then the checked writes, read back.
@@ -394,16 +367,24 @@ fn ardupilot_s_probe_and_init_pass_against_our_models() {
     c.extend(i2c(&b, &[0x37, 0x3D], 0));
     c.extend(i2c(&b, &[0x36], 1));
     c.extend(i2c(&b, &[0x37], 1));
+    // The FIFO poll, 0.25 ms after the accelerometer's first sample at 10 ms.
+    c.push("emulation RunFor \"0.010250000\"".to_owned());
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x30 | 0x80], 16));
     let (text, lines) = run(&b, &b.models, &c);
     assert!(
         lines.iter().all(|l| l.starts_with("[NOISY]")),
         "no warning from either model: {text}"
     );
+    let packets = reads(&lines, &b.imu, 0x30);
+    assert_eq!(packets.len(), 1, "{text}");
+    assert_eq!(packets[0][0], 0x68, "packet 3's header, IV3 L458: {text}");
     let imu = |l: &str| format!("[NOISY] {}: {l}", b.imu);
     let baro = |l: &str| format!("[NOISY] {}: {l}", b.baro);
     for want in [
         imu("bank 0 read 0x75 -> 0x47"),
-        imu("bank 1 write 0x0E <- 0xA0"),
+        imu("bank 1 write 0x0E <- 0x80"),
+        imu("bank 0 read 0x2E -> 0x01 0x00"),
         imu("bank 2 write 0x05 <- 0xA0"),
         imu("bank 0 read 0x4D -> 0x91"),
         imu("bank 0 read 0x4D -> 0x51"),
@@ -512,4 +493,315 @@ fn a_model_that_does_not_compile_prints_the_load_error_and_exits_0() {
     );
     assert!(text.contains("error CS"), "{text}");
     assert!(!text.lines().any(|l| l.trim() == "AFTER"), "{text}");
+}
+
+/// ArduPilot's `fifo_reset()` and `set_filter_and_scaling()` for the
+/// ICM-42688-P at ODR code `odr` (`IV3` L247-252, L844-901; the bank values
+/// for 2 kHz, `IV3` L813-818, or 1 kHz, L752-759), as `4400e` measured them
+/// at 2 kHz (its FEEDBACK L154): the FIFO in STOP-on-FULL with accel, gyro
+/// and temperature, the count in records and everything little-endian.
+fn ardupilot_imu_start(b: &Bench, odr: u8) -> Vec<String> {
+    let (delt, deltsqr, shift) = if odr == 0x05 {
+        (12u8, 144u16, 8u8)
+    } else {
+        (6, 36, 10)
+    };
+    let mut c = Vec::new();
+    for (r, v) in [
+        (0x16, 0x80),
+        (0x5F, 0x07),
+        (0x4C, 0xC0),
+        (0x4B, 0x02),
+        (0x4E, 0x00),
+        (0x4F, odr),
+        (0x50, odr),
+        (0x76, 0x01),
+    ] {
+        c.extend(spi(b, &[r, v], 0));
+    }
+    c.extend(spi(b, &[0x0B | 0x80], 1));
+    c.extend(spi(b, &[0x76, 0x00], 0));
+    let [lo, hi] = deltsqr.to_le_bytes();
+    for (bank, r, v) in [
+        (1, 0x0B, 0xA0),
+        (1, 0x0C, delt),
+        (1, 0x0D, lo),
+        (1, 0x0E, (shift << 4) | (hi & 0x0F)),
+        (2, 0x03, 5 << 1),
+        (2, 0x04, 25),
+        (2, 0x05, 10 << 4),
+    ] {
+        c.extend(spi(b, &[0x76, bank], 0));
+        c.extend(spi(b, &[r, v], 0));
+        c.extend(spi(b, &[0x76, 0x00], 0));
+    }
+    c.extend(spi(b, &[0x4D | 0x80], 1));
+    c.extend(spi(b, &[0x4D, 0x51], 0));
+    c.extend(spi(b, &[0x4E, 0x0F], 0));
+    c
+}
+
+/// The bytes of every read of `reg` (bank 0) the IMU logged, in order.
+fn reads(lines: &[String], imu: &str, reg: u8) -> Vec<Vec<u8>> {
+    let head = format!("[NOISY] {imu}: bank 0 read 0x{reg:02X} -> ");
+    lines
+        .iter()
+        .filter_map(|l| l.strip_prefix(&head))
+        .map(|bytes| {
+            bytes
+                .split(' ')
+                .map(|x| u8::from_str_radix(x.trim_start_matches("0x"), 16).unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+/// The twin's stimulus for the IMU, as the part table's data step and
+/// `4400e`'s run set it: 29 degrees C and 1 g on Y.
+fn stimulus(b: &Bench) -> Vec<String> {
+    vec![
+        format!("sysbus.{} Temperature 29", b.imu),
+        format!("sysbus.{} AccelerationX 0", b.imu),
+        format!("sysbus.{} AccelerationY 1", b.imu),
+    ]
+}
+
+/// `AET-WO-4220c` §2: with ArduPilot's configuration at 2 kHz and the twin's
+/// stimulus, the FIFO count grows at the ODR in virtual time from the
+/// accelerometer's start-up (10 ms, Table 2 p.12), and each packet is the
+/// datasheet's packet 3 byte for byte (FEEDBACK §5): header `0x68`; accel
+/// (0, 2048, 0) and gyro (0, 0, 0), little-endian (B1); temperature
+/// round(4 x 2.07) = 8 (p.25); the ODR timestamp, microseconds x 30/32 from
+/// the model's reset (p.58, B6). Before the gyro's start-up (30 ms, Table 1
+/// p.11) its slots hold 0 with FIFO_HOLD_LAST_DATA_EN set (B5). A read past
+/// the count returns `0xFF` (B8), and a flush empties the FIFO (p.73).
+#[test]
+fn the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet() {
+    let b = bench("fifo-2k");
+    let mut c = stimulus(&b);
+    c.extend(ardupilot_imu_start(&b, 0x05));
+    for ms in ["0.009000000", "0.001250000", "0.030000000"] {
+        c.push(format!("emulation RunFor \"{ms}\""));
+        c.extend(spi(&b, &[0x2E | 0x80], 2));
+    }
+    // Two packets in one burst from FIFO_DATA, then the count again.
+    c.extend(spi(&b, &[0x30 | 0x80], 32));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    // The data registers, as the generated firmware reads them.
+    c.extend(spi(&b, &[0x1D | 0x80], 6));
+    c.extend(spi(&b, &[0x4B, 0x02], 0));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x30 | 0x80], 3));
+    let (text, lines) = run(&b, &b.models, &c);
+    assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
+    let counts: Vec<u16> = reads(&lines, &b.imu, 0x2E)
+        .iter()
+        .map(|v| u16::from_le_bytes([v[0], v[1]]))
+        .collect();
+    // 9 ms: none; 10.25 ms: the 10.0 ms packet; 40.25 ms: 10.0 to 40.0 ms,
+    // one each 0.5 ms (61); two read (59); flushed (0).
+    assert_eq!(counts, [0, 1, 61, 59, 0], "{text}");
+    let data = reads(&lines, &b.imu, 0x30);
+    #[rustfmt::skip]
+    let want: [u8; 32] = [
+        0x68, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x9F, 0x24,
+        0x68, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x08, 0x73, 0x26,
+    ];
+    assert_eq!(
+        data[0], want,
+        "10.0 ms: 9375 = 0x249F; 10.5 ms: 9843 = 0x2673: {text}"
+    );
+    assert_eq!(data[1], [0xFF, 0xFF, 0xFF], "{text}");
+    // The data registers as before the FIFO (4220): 530 = 0x0212, 0, 2048.
+    assert!(
+        lines.contains(&format!(
+            "[NOISY] {}: bank 0 read 0x1D -> 0x12 0x02 0x00 0x00 0x00 0x08",
+            b.imu
+        )),
+        "{text}"
+    );
+}
+
+/// p.58's own oracle at 1 kHz: with no RTC and `TMST_RES` 0 the timestamp in
+/// the FIFO steps by 937 and 938; the gyro's slots carry its samples from its
+/// start-up at 30 ms; and the temperature byte is p.25's 2.07 per degree.
+#[test]
+fn the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz() {
+    let b = bench("fifo-1k");
+    let mut c = stimulus(&b);
+    c.push(format!("sysbus.{} AngularRateZ 100", b.imu));
+    c.push(format!("sysbus.{} Temperature 40", b.imu));
+    c.extend(ardupilot_imu_start(&b, 0x06));
+    c.push("emulation RunFor \"0.040500000\"".to_owned());
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x30 | 0x80], 31 * 16));
+    let (text, lines) = run(&b, &b.models, &c);
+    assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
+    let count = reads(&lines, &b.imu, 0x2E)[0].clone();
+    assert_eq!(count, [31, 0], "10 to 40 ms at 1 kHz: {text}");
+    let data = &reads(&lines, &b.imu, 0x30)[0];
+    let packets: Vec<&[u8]> = data.chunks(16).collect();
+    let stamps: Vec<u16> = packets
+        .iter()
+        .map(|p| u16::from_le_bytes([p[14], p[15]]))
+        .collect();
+    let steps: Vec<u16> = stamps.windows(2).map(|w| w[1].wrapping_sub(w[0])).collect();
+    assert!(steps.iter().all(|s| *s == 937 || *s == 938), "{steps:?}");
+    assert!(steps.contains(&937) && steps.contains(&938), "{steps:?}");
+    // Gyro Z: 0 before 30 ms (B5), then 100 dps x 16.4 = 1640 = 0x0668.
+    let gz = |p: &[u8]| i16::from_le_bytes([p[11], p[12]]);
+    assert_eq!(gz(packets[19]), 0, "29 ms");
+    assert_eq!(gz(packets[20]), 1640, "30 ms");
+    // 40 degrees C: round(15 x 2.07) = round(31.05) = 31 (p.25).
+    assert!(packets.iter().all(|p| p[13] == 31), "temperature: {text}");
+}
+
+/// STOP-on-FULL at 2048 bytes less one packet (p.40, B9): 127 packets of 16
+/// bytes, then nothing, and `FIFO_FULL_INT` (p.69); Bypass empties it. The count's byte order
+/// follows `FIFO_COUNT_ENDIAN` (p.75; B2), and a read of `0x2E` latches both
+/// bytes, so a later read of `0x2F` alone returns the latched value (p.69-70).
+#[test]
+fn the_fifo_stops_when_full_and_latches_its_count_in_either_order() {
+    let b = bench("fifo-full");
+    let mut c = stimulus(&b);
+    c.extend(ardupilot_imu_start(&b, 0x05));
+    c.extend(spi(&b, &[0x2D | 0x80], 1));
+    c.push("emulation RunFor \"0.020250000\"".to_owned());
+    // Big-endian count: 21 packets, 10.0 to 20.0 ms.
+    c.extend(spi(&b, &[0x4C, 0xE0], 0));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x2E | 0x80], 1));
+    c.push("emulation RunFor \"0.005000000\"".to_owned());
+    c.extend(spi(&b, &[0x2F | 0x80], 1));
+    c.push("emulation RunFor \"0.100000000\"".to_owned());
+    c.extend(spi(&b, &[0x4C, 0xC0], 0));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x2D | 0x80], 1));
+    // Bypass: no FIFO writes, so the count reads 0 (p.65).
+    c.extend(spi(&b, &[0x16, 0x00], 0));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    let (text, lines) = run(&b, &b.models, &c);
+    assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
+    let imu = |l: &str| format!("[NOISY] {}: {l}", b.imu);
+    for want in [
+        "bank 0 read 0x2E -> 0x00 0x15",
+        "bank 0 read 0x2E -> 0x00",
+        "bank 0 read 0x2F -> 0x15",
+        "bank 0 read 0x2E -> 0x7F 0x00",
+        "bank 0 read 0x2D -> 0x0A",
+        "bank 0 read 0x2E -> 0x00 0x00",
+    ] {
+        assert!(lines.contains(&imu(want)), "`{want}`: {text}");
+    }
+}
+
+/// Packets 1 and 2 (8 bytes, p.38, p.41), and every selection outside the
+/// modelled set named by a warning (`AET-WO-4220c` §4.2), as is a read that
+/// ends inside a packet with `FIFO_RESUME_PARTIAL_RD` 0 (B4).
+#[test]
+fn packets_1_and_2_and_each_selection_left_out_says_so() {
+    let b = bench("fifo-sets");
+    let mut c = stimulus(&b);
+    c.extend(ardupilot_imu_start(&b, 0x05));
+    c.extend(spi(&b, &[0x5F, 0x05], 0));
+    c.push("emulation RunFor \"0.010250000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 8));
+    c.extend(spi(&b, &[0x5F, 0x06], 0));
+    c.push("emulation RunFor \"0.020000000\"".to_owned());
+    c.extend(spi(&b, &[0x4B, 0x02], 0));
+    c.push("emulation RunFor \"0.000500000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 3));
+    for (r, v) in [
+        (0x5F, 0x17),
+        (0x5F, 0x0F),
+        (0x5F, 0x03),
+        (0x5F, 0x27),
+        (0x54, 0x2B),
+        (0x4E, 0x2F),
+        (0x16, 0x40),
+        (0x60, 0x01),
+        (0x65, 0x04),
+        (0x63, 0x0A),
+    ] {
+        c.extend(spi(&b, &[r, v], 0));
+    }
+    let (text, lines) = run(&b, &b.models, &c);
+    let data = reads(&lines, &b.imu, 0x30);
+    assert_eq!(
+        data[0],
+        [0x40, 0x00, 0x00, 0x00, 0x08, 0x00, 0x00, 0x08],
+        "packet 1: {text}"
+    );
+    assert_eq!(
+        data[1],
+        [0x20, 0x00, 0x00],
+        "packet 2's first bytes: {text}"
+    );
+    let warn = |l: &str| format!("[WARNING] {}: {l}", b.imu);
+    for want in [
+        "a partial FIFO packet read with FIFO_RESUME_PARTIAL_RD = 0 is not modelled; the next read resumes at the next byte",
+        "FIFO: FIFO_HIRES_EN (the 20-bit packet) is not modelled; no packets are written",
+        "FIFO: FIFO_TMST_FSYNC_EN (FSYNC in the FIFO) is not modelled; no packets are written",
+        "FIFO: FIFO_TEMP_EN = 0 with a sensor in the FIFO is not modelled; no packets are written",
+        "FIFO: the watermark (FIFO_WM, FIFO_WM_GT_TH, FIFO_THS_INT) is not modelled",
+        "FIFO: TMST_CONFIG other than TMST_EN 1, TMST_DELTA_EN 0, TMST_RES 0 (packet 3's timestamp) is not modelled; no packets are written",
+        "FIFO: PWR_MGMT0.TEMP_DIS with the FIFO's temperature byte is not modelled; no packets are written",
+        "FIFO: FIFO_MODE Stream-to-FIFO is not modelled; no packets are written",
+        "FIFO: FIFO interrupts on a pin (INT_SOURCE 0x65 bits 2:1) are not modelled",
+        "FIFO: INT_CONFIG0 FIFO interrupt clear on a FIFO data read is not modelled",
+    ] {
+        assert!(lines.contains(&warn(want)), "`{want}`: {text}");
+    }
+}
+
+/// The adversarial pass (`AET-WO-4220c` §5): a packet in the datasheet's own
+/// byte order, high byte first (`SENSOR_DATA_ENDIAN` 1, p.38), with the gyro
+/// at 1 kHz under an accelerometer at 2 kHz. A packet with no new gyro sample
+/// carries -32768 in its gyro slots with `FIFO_HOLD_LAST_DATA_EN` 0 (p.58,
+/// p.75 (c)). The count in bytes (`FIFO_COUNT_REC` 0, p.75), and
+/// `HEADER_ODR_ACCEL` on the first packet after the accelerometer's ODR
+/// changes (p.39, B7).
+#[test]
+fn a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet() {
+    let b = bench("fifo-be");
+    let mut c = stimulus(&b);
+    c.push(format!("sysbus.{} AngularRateZ 100", b.imu));
+    c.extend(ardupilot_imu_start(&b, 0x05));
+    // No write within 200 us of a sensor leaving OFF (DS p.76).
+    c.push("emulation RunFor \"0.000300000\"".to_owned());
+    c.extend(spi(&b, &[0x4C, 0x50], 0));
+    c.extend(spi(&b, &[0x4F, 0x06], 0));
+    c.push("emulation RunFor \"0.030450000\"".to_owned());
+    c.extend(spi(&b, &[0x4C, 0x10], 0));
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x30 | 0x80], 42 * 16));
+    // An ODR write re-phases both sensors to now + their period (the model's
+    // OnOutputDataRate): both sample next at 31.75 ms.
+    c.extend(spi(&b, &[0x50, 0x06], 0));
+    c.push("emulation RunFor \"0.001000000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 16));
+    let (text, lines) = run(&b, &b.models, &c);
+    assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
+    // 10.0 to 30.5 ms at 2 kHz: 42 packets of 16 bytes, 672 = 0x02A0.
+    assert_eq!(reads(&lines, &b.imu, 0x2E)[0], [0xA0, 0x02], "{text}");
+    let data = reads(&lines, &b.imu, 0x30);
+    let packets: Vec<&[u8]> = data[0].chunks(16).collect();
+    #[rustfmt::skip]
+    let at_30_0: [u8; 16] = [
+        0x68, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x06, 0x68, 0x08, 0x6D, 0xDD,
+    ];
+    #[rustfmt::skip]
+    let at_30_5: [u8; 16] = [
+        0x68, 0x00, 0x00, 0x08, 0x00, 0x00, 0x00,
+        0x80, 0x00, 0x80, 0x00, 0x80, 0x00, 0x08, 0x6F, 0xB1,
+    ];
+    assert_eq!(packets[40], at_30_0, "30.0 ms, 28125 = 0x6DDD: {text}");
+    assert_eq!(packets[41], at_30_5, "30.5 ms, no gyro sample: {text}");
+    // Before the gyro's start-up its slots are invalid too, with the bit 0.
+    assert_eq!(&packets[0][7..13], [0x80, 0x00, 0x80, 0x00, 0x80, 0x00]);
+    // 31.75 ms: the first packet since the accelerometer's ODR became 1 kHz.
+    assert_eq!(data[1][0], 0x6A, "HEADER_ODR_ACCEL: {text}");
 }

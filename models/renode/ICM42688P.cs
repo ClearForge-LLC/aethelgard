@@ -4,10 +4,16 @@
 //
 // Facts come from the hand-read datasheet DS-000347 Rev 1.9 (page numbers beside each reset value).
 // Modelled: the register banks 0, 1 and 2 as far as the datasheet read gives a reset; accel and gyro
-// sampling in virtual time; the data-ready flag; the INT1 pin. Not modelled: the FIFO (FIFO_COUNT
-// reads 0, FIFO_DATA reads its reset 0xFF), I2C/I3C, the DMP and APEX, FSYNC and the timestamps,
-// the low-pass filters (data is the unfiltered stimulus), drive circuit of INT1, and the INT1
-// de-assertion gap. Registers without a datasheet fact read 0x00, ignore writes and log a warning.
+// sampling in virtual time; the data-ready flag; the INT1 pin; the FIFO's 16-bit packets 1-3 in
+// STOP-on-FULL mode (AET-WO-4220c, "FIFO" below). Not modelled: the 20-bit packet, Stream-to-FIFO,
+// the FIFO watermark and FIFO interrupts on a pin, FIFO_LOST_PKT, I2C/I3C, the DMP and APEX, FSYNC
+// and the timestamp registers, the low-pass filters (data is the unfiltered stimulus), drive circuit
+// of INT1, and the INT1 de-assertion gap. Registers without a datasheet fact read 0x00, ignore writes
+// and log a warning; a FIFO configuration outside the modelled set logs a warning naming it.
+//
+// Labels on the FIFO's rules: [DS p.N] the datasheet; [TDK L] TDK InvenSense's own ICM-426xx driver,
+// eMD 2.0.9, Icm426xxDriver_HL.c (or Icm426xxDefs.h, Icm426xxTransport.c, as named); [inferred] not
+// stated by either: ArduPilot's Invensensev3 driver (Copter-4.7.2) works on silicon only if it holds.
 //
 // Log contract: one Noisy line per SPI transaction, written when it ends (FinishTransmission); a
 // transaction that moved no byte logs nothing. The stimulus is a public double property each.
@@ -101,7 +107,12 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 WriteRegister(txBank, txReg, data);
                 txBytes.Add(data);
             }
-            txReg = (byte)((txReg + 1) & 0x7F);
+            // B3 [TDK L1045, Icm426xxTransport.c L83-85]: one burst of packet_size * count bytes from
+            // FIFO_DATA, so a burst that reaches the port stays on it (DS p.52 states only "Burst Reads").
+            if(!txReadFifo)
+            {
+                txReg = (byte)((txReg + 1) & 0x7F);
+            }
             return reply;
         }
 
@@ -124,12 +135,20 @@ namespace Antmicro.Renode.Peripherals.Sensors
             if(txRead)
             {
                 this.Log(LogLevel.Noisy, "bank {0} read 0x{1:X2} -> {2}", txBank, txStartReg, bytes);
+                // B4: a packet read in full is consumed whatever FIFO_RESUME_PARTIAL_RD says [TDK
+                // L1027-1040: on I3C, one transaction per packet with the bit left 0]. A read that ends
+                // inside a packet with the bit 0 is not stated (DS p.83): warn, then resume [inferred].
+                if(txReadFifo && headOffset != 0 && (regs[0][0x5F] & 0x40) == 0)
+                {
+                    this.Log(LogLevel.Warning, "a partial FIFO packet read with FIFO_RESUME_PARTIAL_RD = 0 is not modelled; the next read resumes at the next byte");
+                }
             }
             else
             {
                 this.Log(LogLevel.Noisy, "bank {0} write 0x{1:X2} <- {2}", txBank, txStartReg, bytes);
             }
             txStarted = false;
+            txReadFifo = false;
             txBytes.Clear();
         }
 
@@ -160,6 +179,13 @@ namespace Antmicro.Renode.Peripherals.Sensors
             intAsserted = false;
             timer.Enabled = false;
             UpdatePin(false);
+            // FIFO: emptied by any reset; the timestamp counts from here (B6 [inferred]: DS p.58 gives
+            // its step, not its zero, and ArduPilot never reads the field, IV3 L150-159).
+            ClearFifo();
+            countLatch = 0;
+            fifoTemp = 0;
+            pendingAt = Never;
+            stampEpoch = machine.LocalTimeSource.ElapsedVirtualTime.Ticks;
         }
 
         private byte ReadRegister(int bank, byte reg)
@@ -207,6 +233,25 @@ namespace Antmicro.Renode.Peripherals.Sensors
                         }
                     }
                     return status;
+                }
+                if(reg == 0x2E || reg == 0x2F)
+                {
+                    // FIFO_COUNT: reading 0x2E latches both bytes; 0x2F reads the latch [DS p.69-70].
+                    // Records (packets with an unread byte) or unread bytes, per FIFO_COUNT_REC [DS p.75]. FIFO_COUNT_ENDIAN 0 puts the low
+                    // byte at 0x2E (B2 [TDK L1013-1015, L1611-1615]: little-endian count, read from
+                    // FIFO_COUNTH as low byte first).
+                    if(reg == 0x2E)
+                    {
+                        countLatch = (ushort)((regs[0][0x4C] & 0x40) != 0 ? fifo.Count : fifoBytes);
+                    }
+                    var bigEndian = (regs[0][0x4C] & 0x20) != 0;
+                    var high = (reg == 0x2E) == bigEndian;
+                    return high ? (byte)(countLatch >> 8) : (byte)(countLatch & 0xFF);
+                }
+                if(reg == FifoData)
+                {
+                    txReadFifo = true;
+                    return PopFifo();
                 }
             }
             return regs[bank][reg];
@@ -264,7 +309,22 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 }
                 regs[0][reg] = value;
                 break;
-            case 0x4B: // SIGNAL_PATH_RESET is write-to-clear; the FIFO is not modelled, nothing to flush
+            case 0x4B: // SIGNAL_PATH_RESET, write-to-clear [DS p.73]: bit 1 FIFO_FLUSH; the others ignored
+                if((value & 0x02) != 0)
+                {
+                    ClearFifo();
+                }
+                break;
+            case 0x16: // FIFO_CONFIG.FIFO_MODE [DS p.65]
+            case 0x5F: // FIFO_CONFIG1 [DS p.83]
+            case 0x54: // TMST_CONFIG [DS p.81]
+            case 0x60: // FIFO_CONFIG2, FIFO_WM[7:0] [DS p.83]
+            case 0x61: // FIFO_CONFIG3, FIFO_WM[11:8] [DS p.83]
+            case 0x63: // INT_CONFIG0 [DS p.84]
+            case 0x65: // INT_SOURCE0 [DS p.85]
+            case 0x68: // INT_SOURCE3 [DS p.86]
+                regs[0][reg] = value;
+                OnFifoConfig(reg);
                 break;
             case 0x14:
                 regs[0][reg] = value;
@@ -273,6 +333,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
             case 0x4E:
                 regs[0][reg] = value;
                 OnPowerManagement();
+                OnFifoConfig(reg);
                 break;
             case 0x4F:
             case 0x50:
@@ -418,15 +479,24 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 }
                 if(which < 0)
                 {
+                    WritePacket();
                     return;
+                }
+                if(pendingAt != Never && when != pendingAt)
+                {
+                    WritePacket();
                 }
                 if(which == 0)
                 {
                     SampleAccel(when);
+                    pendingAt = when;
+                    pendingAccel = true;
                 }
                 else if(which == 1)
                 {
                     SampleGyro(when);
+                    pendingAt = when;
+                    pendingGyro = true;
                 }
                 else
                 {
@@ -483,6 +553,10 @@ namespace Antmicro.Renode.Peripherals.Sensors
             {
                 words[0] = unchecked((ushort)Raw16((Temperature - 25.0) * 132.48));
                 sampled[0] = true;
+                // FIFO_TEMP_DATA, 8 bits: degC = value / 2.07 + 25 [DS p.25], rounded as the model
+                // rounds (4210 D-A8); saturating (B10).
+                var t = Math.Round((Temperature - 25.0) * 2.07, MidpointRounding.AwayFromZero);
+                fifoTemp = double.IsNaN(t) ? (sbyte)0 : (sbyte)Math.Max(FifoTempMin, Math.Min(127.0, t));
             }
         }
 
@@ -555,6 +629,197 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private double GyroSensitivity()
         {
             return GyroSensitivities[(regs[0][0x4F] >> 5) & 0x07];
+        }
+
+        // ---- FIFO (AET-WO-4220c) -------------------------------------------------------------
+        //
+        // Packets 1-3 [DS p.37-41]: header, then accel and/or gyro (6 bytes each), temperature (1),
+        // and in packet 3 a 2-byte ODR timestamp. A packet is written at each instant a FIFO-enabled
+        // sensor samples; accel and gyro sampled at the same instant share one packet. The sensor with
+        // no new sample at that instant gives an invalid slot [DS p.75 (c)]: with FIFO_HOLD_LAST_DATA_EN
+        // 1 the last valid sample, else -32768 [DS p.58]; before its first sample with the bit 1, 0
+        // (B5 [inferred], as DS p.59 gives the sense registers then).
+
+        private void ClearFifo()
+        {
+            fifo.Clear();
+            fifoBytes = 0;
+            headOffset = 0;
+            lastAccelOdr = -1;
+            lastGyroOdr = -1;
+        }
+
+        // An empty FIFO reads 0xFF: its header's HEADER_MSG is 1, "FIFO is empty" [DS p.39], and
+        // FIFO_DATA resets to 0xFF [DS p.70]; that every byte is 0xFF is B8 [inferred].
+        private byte PopFifo()
+        {
+            if(fifo.Count == 0)
+            {
+                return 0xFF;
+            }
+            var head = fifo.Peek();
+            var b = head[headOffset++];
+            fifoBytes--;
+            if(headOffset == head.Length)
+            {
+                fifo.Dequeue();
+                headOffset = 0;
+            }
+            return b;
+        }
+
+        // The first selection outside the modelled set that stops packets, or null.
+        private string FifoProblem()
+        {
+            var c1 = regs[0][0x5F];
+            var accel = (c1 & 0x01) != 0;
+            var gyro = (c1 & 0x02) != 0;
+            if(!accel && !gyro)
+            {
+                return null; // "No FIFO writes" [DS p.41]
+            }
+            if((regs[0][0x16] >> 6) == 1)
+            {
+                return "FIFO_MODE Stream-to-FIFO";
+            }
+            if((c1 & 0x10) != 0)
+            {
+                return "FIFO_HIRES_EN (the 20-bit packet)";
+            }
+            if((c1 & 0x08) != 0)
+            {
+                return "FIFO_TMST_FSYNC_EN (FSYNC in the FIFO)";
+            }
+            if((c1 & 0x04) == 0)
+            {
+                return "FIFO_TEMP_EN = 0 with a sensor in the FIFO";
+            }
+            if((regs[0][0x4E] & 0x20) != 0)
+            {
+                return "PWR_MGMT0.TEMP_DIS with the FIFO's temperature byte";
+            }
+            if(accel && gyro && (regs[0][0x54] & 0x0D) != 0x01)
+            {
+                return "TMST_CONFIG other than TMST_EN 1, TMST_DELTA_EN 0, TMST_RES 0 (packet 3's timestamp)";
+            }
+            return null;
+        }
+
+        // A write that selects something outside the modelled set says so by name.
+        private void OnFifoConfig(byte reg)
+        {
+            if(reg == 0x16 && (regs[0][0x16] >> 6) == 0)
+            {
+                ClearFifo(); // Bypass: no FIFO writes, count 0 [DS p.65, inferred from "Bypass"]
+            }
+            if(reg == 0x16 || reg == 0x5F || reg == 0x54 || reg == 0x4E)
+            {
+                var problem = FifoProblem();
+                if(problem != null)
+                {
+                    this.Log(LogLevel.Warning, "FIFO: {0} is not modelled; no packets are written", problem);
+                }
+            }
+            if((reg == 0x5F && (regs[0][0x5F] & 0x20) != 0) || ((reg == 0x60 || reg == 0x61) && (regs[0][0x60] != 0 || (regs[0][0x61] & 0x0F) != 0)))
+            {
+                this.Log(LogLevel.Warning, "FIFO: the watermark (FIFO_WM, FIFO_WM_GT_TH, FIFO_THS_INT) is not modelled");
+            }
+            if((reg == 0x65 || reg == 0x68) && (regs[0][reg] & 0x06) != 0)
+            {
+                this.Log(LogLevel.Warning, "FIFO: FIFO interrupts on a pin (INT_SOURCE 0x{0:X2} bits 2:1) are not modelled", reg);
+            }
+            if(reg == 0x63 && (regs[0][0x63] & 0x0A) != 0)
+            {
+                this.Log(LogLevel.Warning, "FIFO: INT_CONFIG0 FIFO interrupt clear on a FIFO data read is not modelled");
+            }
+        }
+
+        private void WritePacket()
+        {
+            var t = pendingAt;
+            var newAccel = pendingAccel;
+            var newGyro = pendingGyro;
+            pendingAt = Never;
+            pendingAccel = false;
+            pendingGyro = false;
+            var c1 = regs[0][0x5F];
+            var accel = (c1 & 0x01) != 0;
+            var gyro = (c1 & 0x02) != 0;
+            if(t == Never || (regs[0][0x16] >> 6) < 2 || !((accel && newAccel) || (gyro && newGyro)) || FifoProblem() != null)
+            {
+                return; // only STOP-on-FULL writes [DS p.65], and only for a FIFO-enabled sensor's sample
+            }
+            var size = (accel && gyro) ? 16 : 8; // [DS p.41]
+            if(fifoBytes + size > FifoBytes - size)
+            {
+                return; // full: STOP-on-FULL drops the packet
+            }
+            var p = new byte[size];
+            var header = 0x00;
+            var i = 1;
+            var bigEndian = (regs[0][0x4C] & 0x10) != 0;
+            var hold = (regs[0][0x4C] & 0x80) != 0;
+            if(accel)
+            {
+                header |= 0x40;
+                var odr = regs[0][0x50] & 0x0F;
+                header |= (lastAccelOdr >= 0 && lastAccelOdr != odr) ? 0x02 : 0x00; // B7 [inferred]
+                lastAccelOdr = odr;
+                for(var w = 1; w <= 3; w++)
+                {
+                    i = Put16(p, i, Slot(w, newAccel, hold), bigEndian);
+                }
+            }
+            if(gyro)
+            {
+                header |= 0x20;
+                var odr = regs[0][0x4F] & 0x0F;
+                header |= (lastGyroOdr >= 0 && lastGyroOdr != odr) ? 0x01 : 0x00;
+                lastGyroOdr = odr;
+                for(var w = 4; w <= 6; w++)
+                {
+                    i = Put16(p, i, Slot(w, newGyro, hold), bigEndian);
+                }
+            }
+            p[i++] = unchecked((byte)fifoTemp);
+            if(accel && gyro)
+            {
+                // Packet 3's ODR timestamp, header bits 3:2 = 10 [DS p.39]: 1 us at TMST_RES 0, reported
+                // scaled by 30/32 with no RTC [DS p.58: 937 and 938 at 1 kHz].
+                header |= 0x08;
+                var us = (t - stampEpoch) / 1000UL;
+                i = Put16(p, i, (ushort)((us * 30UL / 32UL) & 0xFFFF), bigEndian);
+            }
+            p[0] = (byte)header;
+            fifo.Enqueue(p);
+            fifoBytes += size;
+            if(fifoBytes + size > FifoBytes - size)
+            {
+                regs[0][0x2D] |= 0x02; // FIFO_FULL_INT when the FIFO becomes full [DS p.69]
+            }
+        }
+
+        // The word a packet carries for data word w: the new sample, or the invalid value.
+        private ushort Slot(int w, bool fresh, bool hold)
+        {
+            if(fresh)
+            {
+                return words[w];
+            }
+            if(hold)
+            {
+                return sampled[w] ? words[w] : (ushort)0;
+            }
+            return 0x8000;
+        }
+
+        // B1 [TDK L1079-1121, L2134-2140]: SENSOR_DATA_ENDIAN orders every 16-bit FIFO field; the
+        // datasheet's tables [DS p.38] show its default, big-endian.
+        private static int Put16(byte[] p, int i, ushort v, bool bigEndian)
+        {
+            p[i] = bigEndian ? (byte)(v >> 8) : (byte)(v & 0xFF);
+            p[i + 1] = bigEndian ? (byte)(v & 0xFF) : (byte)(v >> 8);
+            return i + 2;
         }
 
         // ---- state -----------------------------------------------------------------------------
@@ -658,5 +923,25 @@ namespace Antmicro.Renode.Peripherals.Sensors
         private bool pulseActive;
         private ulong pulseEnd;
         private ulong timerTarget;
+
+        private const byte FifoData = 0x30;  // FIFO_DATA [DS p.70]
+        // Capacity: 2048 bytes less one packet reserved against reading a packet being written, the
+        // bound with no serial traffic [DS p.40, Figure 11]; the datasheet calls it non-deterministic,
+        // and a twin must not be (B9 [inferred]).
+        private const int FifoBytes = 2048;
+        // B10: a temperature past the 8-bit range saturates [inferred; DS p.25 states 8 bits only].
+        private const double FifoTempMin = -128.0;
+        private readonly Queue<byte[]> fifo = new Queue<byte[]>();
+        private int fifoBytes;               // unread bytes
+        private int headOffset;              // bytes of the head packet already read
+        private int lastAccelOdr;
+        private int lastGyroOdr;
+        private ushort countLatch;
+        private sbyte fifoTemp;
+        private ulong pendingAt = Never;     // the instant whose samples the next packet holds
+        private bool pendingAccel;
+        private bool pendingGyro;
+        private ulong stampEpoch;
+        private bool txReadFifo;
     }
 }

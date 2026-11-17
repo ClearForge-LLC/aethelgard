@@ -360,7 +360,12 @@ jobs:
       # 180: plus 1 from AET-WO-1313c in board_tier2.rs (each Sentinel-03
       # size sample passes every gate or is refused by name), merged after
       # 4400d's 179.
-      TIER2_MIN: "180"
+      # 185: plus 5 from AET-WO-4220c in models_tier2.rs (the ICM-42688-P
+      # model's FIFO: fill rate in virtual time and packet bytes, the 1 kHz
+      # timestamp step, STOP-on-FULL and the count's latch and order, packets
+      # 1 and 2 and each selection left out, a big-endian packet with an
+      # invalid slot), merged after 180.
+      TIER2_MIN: "185"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
