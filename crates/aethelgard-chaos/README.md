@@ -353,10 +353,41 @@ refuses:
 - a verdict that judges an identity read's record (a mismatch of any step,
   `*_record_invalid`, `*_transaction_unwitnessed`) of a boot without its boot
   word: the judge names a record before the fixed point only by its timeout
-  or outside the window (`AET-WO-3201`, adversarial F2);
-- `identity_read_outside_window` named other than of a boot read without its
-  boot word on a short (DShot) window, or more times than the reads archived
-  `invalid`.
+  (`AET-WO-3201`, adversarial F2);
+- a verdict whose anchors' or judge's stop's findings (`AET-WO-2302`) the
+  records do not give, once the boot word is set, and any before it:
+  `motor_anchor_unobserved` once per kind 26 `unanchored`;
+  `motor_window_past_run` once per DShot timer (kind 24) whose kind 26 anchor
+  plus `DSHOT_WINDOW_NS` passes the boot, and `judge_stop_missing` once per
+  one inside it with no kind 30 at that anchor that left `CEN` cleared;
+  `judge_stop_mismatch` once per register such a stop read back off its
+  solved value, and once more for registers it did not read (adversarial
+  pass 1, L3), the read-back itself exactly the timer's registers kind 11
+  lists, in its order, each at kind 11's address, under its mask, against its
+  expected value, `CR1`'s with `CEN` set where kind 11's, after the stop, has
+  it cleared (pass 2, A2-1); `motor_edge_before_anchor` and
+  `motor_edge_after_window` once per output, and `motor_anchor_repeated` once
+  per timer, from kind 26's `edges_before`, `edges_after` and `cen_rises`;
+- a verdict whose `serial_wire_past_run` or `motor_anchor_out_of_order` the
+  boot word's instant, as the records place it (one quantum before the first
+  port the chain injects, kind 29's `injected_ns`), does not give (pass 2,
+  A2-5): `serial_wire_past_run` exactly, once when the ports' frames and
+  echoes (kind 27's framings, over the ports not held open) end past the boot
+  from there, else never; `motor_anchor_out_of_order` at least once per timer
+  anchored after it. Neither before the boot word; `serial_wire_past_run`
+  never with no injected port and at most once, `motor_anchor_out_of_order`
+  at most once per anchored timer. Unbound, since no record carries what
+  decides them: `motor_anchor_out_of_order`'s other cases (the anchor against
+  the last device step's witness, or no boot word seen by its hook),
+  `serial_wire_past_run` when the first port took no frame, and
+  `serial_injection_out_of_order` (the logged `TDR` bytes);
+- a motor witness `stopped` whose edges are not continuous on the model's
+  sequence (`campaign::witness_continuous`: its last rise `rises - 1`
+  periods after its first within its span, its falls as many as its rises
+  or one fewer), which the judge never gives (`AET-WO-2302b`, ADV-M1);
+- a first injected port (kind 29's `injected_ns`, the first port not held
+  open) less than one quantum after the boot's start: the judge injects it
+  one quantum after the boot word, which would then precede the run (ADV-S4).
 
 So a run cannot replay as passing, or without its analog evidence, unless its
 manifest is re-sealed and its records rewritten consistently: which is the

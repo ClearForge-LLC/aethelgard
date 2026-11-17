@@ -1847,7 +1847,12 @@ mod archived {
         }
         let mut h = header();
         h.tools = vec![("aethelgard".into(), "v".repeat(257))];
-        assert!(TraceWriter::create(&scratch("ca-tools-long").join("run"), &h).is_err());
+        assert!(matches!(
+            TraceWriter::create(&scratch("ca-tools-long").join("run"), &h),
+            Err(E::InvalidHeader(
+                "a tool is not a name and 1 to 256 printable ASCII bytes of version"
+            ))
+        ));
     }
 
     #[test]
@@ -2703,11 +2708,30 @@ fn several_configurations_each_by_its_own_name_replay_in_order() {
         check_run(&r).unwrap_err(),
         "a device's steps are not in the order identity, configure, data"
     );
-    // A name that is no step.
-    for bad in ["configure 5", "configure 0", "configure", "configure  1"] {
+    // A name that is no step. A bare `configure` is a step, a single
+    // configuration's (index 1), so among numbered ones it is refused by
+    // its order instead (`AET-WO-2302b`: asserted by name).
+    for (bad, why) in [
+        (
+            "configure 5",
+            "a step is not identity, a configuration or data",
+        ),
+        (
+            "configure 0",
+            "a step is not identity, a configuration or data",
+        ),
+        (
+            "configure",
+            "a device's steps are not in the order identity, configure, data",
+        ),
+        (
+            "configure  1",
+            "a step is not identity, a configuration or data",
+        ),
+    ] {
         let mut r = several();
         rename(&mut r, "configure 3", bad);
-        assert!(check_run(&r).is_err(), "{bad}");
+        assert_eq!(check_run(&r).unwrap_err(), why, "{bad}");
     }
 }
 
@@ -2950,7 +2974,6 @@ const UNBOUND: &str =
 const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
 const BOUND: &str =
     "a boot that read nothing does not name once why (a bound or a load error), or a read one does";
-const OUTSIDE: &str = "the verdict names identity_read_outside_window for no invalid record of an unbooted short window";
 
 /// `records` with its verdict's findings replaced, `pass` as they say.
 fn with_findings(mut records: Vec<Record>, findings: &[(&str, &str, u64)]) -> Vec<Record> {
@@ -2991,14 +3014,21 @@ fn a_run_with_its_rises_dropped_is_refused() {
         ],
     );
     assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
-    // One line's rise dropped, the other kept: refused too.
+    // One line's rise dropped, the other kept: refused too. The bus fault
+    // then names only the kept line, or it is refused first for naming a
+    // line with no measurement (`AET-WO-2302b`).
     let mut r = good();
     let i = position(
         &r,
         |x| matches!(x, Record::RiseComputed { net, .. } if net == "I2C_SDA"),
     );
     r.remove(i);
-    assert!(check_run(&r).is_err());
+    for x in r.iter_mut() {
+        if let Record::BusFault { nets, .. } = x {
+            nets.retain(|n| n == "I2C_SCL");
+        }
+    }
+    assert_eq!(check_run(&r).unwrap_err(), UNBOUND);
 }
 
 /// B1: a line of one bus is not bound by a rise of another bus's line,
@@ -3058,10 +3088,16 @@ fn a_boot_that_read_nothing_names_its_bound() {
         check_run(&with_findings(unread(), &others)).unwrap_err(),
         BOUND
     );
-    // Even its pass (the forgery `AET-WO-2205` B2 found) is refused.
+    // Its analog findings alone, no bound named: refused by name.
+    assert_eq!(
+        check_run(&with_findings(unread(), &[(PAST, "error", 2)])).unwrap_err(),
+        BOUND
+    );
+    // Even its pass with its rises dropped (the forgery `AET-WO-2205` B2
+    // found) is refused: since B1, first because each line needs its record.
     let mut r = unread();
     r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
-    assert!(check_run(&with_findings(r, &[])).is_err());
+    assert_eq!(check_run(&with_findings(r, &[])).unwrap_err(), UNBOUND);
     for bound in [
         "cpu_aborted",
         "firmware_load_error",
@@ -3145,49 +3181,8 @@ fn boot_word_missing_is_named_exactly_when_the_word_is_wrong() {
     }
 }
 
-/// `AET-WO-4300a` D1's finding, as replay can bind it: only of a boot read
-/// without its boot word, on a short window, at most once per record
-/// archived as `invalid`. A boot word written after the window is no
-/// longer missing, and the finding beside it is refused.
-#[test]
-fn identity_read_outside_window_is_bound_to_an_unbooted_short_window() {
-    let invalid = |r: &mut Vec<Record>| {
-        for x in r.iter_mut() {
-            if let Record::I2cCheck {
-                status, observed, ..
-            } = x
-            {
-                *status = Some("invalid".into());
-                *observed = Some(0xFFFF_FFFF);
-            }
-        }
-    };
-    let findings = [
-        (PAST, "error", 2),
-        ("boot_word_missing", "error", 1),
-        ("device_unmodelled", "info", 1),
-        ("identity_read_outside_window", "error", 1),
-    ];
-    // Unbooted, but the board's window is the long one: refused.
-    let mut r = good_with_boot(|w, _, _| w.observed = Some(0));
-    invalid(&mut r);
-    assert_eq!(
-        check_run(&with_findings(r, &findings)).unwrap_err(),
-        OUTSIDE
-    );
-    // Booted (the word written in the end), on any window: refused.
-    let mut r = good();
-    invalid(&mut r);
-    let booted: Vec<_> = findings
-        .iter()
-        .copied()
-        .filter(|f| f.0 != "boot_word_missing")
-        .collect();
-    assert_eq!(check_run(&with_findings(r, &booted)).unwrap_err(), OUTSIDE);
-}
-
 /// Adversarial F2: without the boot word the judge names a record only by
-/// its timeout (or outside the window); a verdict that judges its value,
+/// its timeout; a verdict that judges its value,
 /// validity or witness is a rewrite, refused, so it can never move the run
 /// from `I1` to a confident rule.
 #[test]

@@ -436,6 +436,22 @@ Pin speeds (PR #129, ruled in comment 6887905174):
 - **Capacitance is declared and confirmed:** each SCK and MOSI declares its C. `extract` bounds it on every drawn board, counting device pins at their cited maximum and leaving out the driving MCU pin. A part with no cited maximum makes extraction refuse the line.
 - **The reference:** SCK and MOSI moved from `10` to `01`, and MISO from `10` to `00`. Every verdict is unchanged against `main`'s binaries.
 
+### 2.26 Measurements from AET-WO-2302 and the AET-WO-2303 spike (2026-11-17, Furnace and GitHub Actions)
+
+The records are `docs/work-orders/AET-WO-2302.FEEDBACK.md` (§§2, 9, 12) and `docs/work-orders/AET-WO-2303.FEEDBACK.md`.
+- **Static trace bytes since `2302`.** A static scenario's archive is about 3.4 KB on the reference, up from §2.17's 1 KB, and it still does not grow with virtual time.
+- **Two model divergences, named.**
+  - *Clock synchronisation* (§2.1, from first silicon): Renode does not model it. The campaign's rise verdict uses the peer's thresholds, so it is unaffected (`2302` §9).
+  - *Bus time:* a twin I2C or SPI transfer takes a few µs of CPU and no bus time. On silicon a 400 kHz byte takes about 22 µs. Every window has milliseconds of slack, so no verdict depends on this today.
+- **A firmware-dependent load, under per-quantum lock-step at 10 µs** (`2303`). The load is the battery under the motors, with a spike-declared 10 A while TIM1's `CEN` is set and a 1 Ω pack. Measured:
+  - a reboot loop with a 40.80 ms period, byte-identical across runs;
+  - per-quantum samples at 5.0 MB per simulated second, rising to 6.2 MB/s past 4.29 s, when CBOR timestamps widen;
+  - per-quantum records at 9.9 MB/s, which reach `MAX_RECORDS` at 0.2185 s;
+  - samples cross 256 MiB at 44.1 s;
+  - 87–235 s of wall time per simulated second.
+
+  **Today's campaign reader refuses per-quantum data at any length.** At 100 µs quanta, the reset comes at most 76 µs later and 98 mV deeper than at 1 µs, with the same reset count.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -630,7 +646,7 @@ Each names a decider and what it blocks. None is a placeholder.
 
     Whichever is chosen, the trace records the bridge's measured rise time as the evidence, and the effect the firmware saw as a separate event. Neither is ever disguised as the other.
   - **The bridge's channel must pass the descriptor check.** The sandbox refuses a call that would hand a tool an inherited descriptor above 2 (§6). So a pre-opened pipe or `socketpair` to Renode is refused by design, and Renode's stdout is the capture its verdict is judged from. A named FIFO created in the run's temporary directory needs neither a socket nor an inherited descriptor, and Landlock already allows that directory. The alternative is a ruling that admits one declared descriptor.
-- **`OQ-03` What is the trace volume of one fault campaign, and does full-fidelity recording survive it?** Decider: measured by `AET-WO-0400`, ratified by Scotty if sampling is ever proposed (which touches `INV-04`). **Answered for static campaigns, 2026-11-09 (§2.17):** about 1 KB per scenario, independent of virtual time, so full fidelity survives with room to spare. **Answered for declared droops, 2026-11-13 (`AET-WO-2301`); Scotty confirmed 2026-11-14 (D8) that this is not sampling:** a droop adds its declared rail, its crossings, its resets and one observation per release, 140 B to 686 B per run whatever the virtual time; nothing per quantum exists, so nothing is sampled, and `MAX_RECORDS` stays 65,536. Per-quantum lock-step, when a firmware-dependent load needs it, reopens this. Previously: still open for dynamic campaigns, whose per-quantum records are estimated at 3 to 6 MB per simulated second; `AET-WO-2301` measures them and either answers this or brings a sampling proposal to Scotty. No longer blocks P2; blocks `AET-WO-2301`'s acceptance.
+- **`OQ-03` What is the trace volume of one fault campaign, and does full-fidelity recording survive it?** Decider: measured by `AET-WO-0400`, ratified by Scotty if sampling is ever proposed (which touches `INV-04`). **Answered for static campaigns, 2026-11-09 (§2.17):** about 1 KB per scenario, independent of virtual time, so full fidelity survives with room to spare. **Answered for declared droops, 2026-11-13 (`AET-WO-2301`); Scotty confirmed 2026-11-14 (D8) that this is not sampling:** a droop adds its declared rail, its crossings, its resets and one observation per release, 140 B to 686 B per run whatever the virtual time; nothing per quantum exists, so nothing is sampled, and `MAX_RECORDS` stays 65,536. Per-quantum lock-step, when a firmware-dependent load needs it, reopens this. **Reopened and measured, 2026-11-17 (`AET-WO-2303`, PR #200, §2.26):** one fault in Sentinel-02's campaign is firmware-dependent: the battery sagging under the motors' current. Today's archive holds none of it. **Ruled (PR #200, comment 6943762720):** `4500` stays within its static gate and covers the battery with a declared current profile, which cannot show a reboot loop. Scotty confirms this when `4500` is written. Lock-step belongs to the battery-sag work order, which re-measures with a sourced ESC current. The architect leans to a 100 µs quantum with its error stated, plus per-quantum samples under a trace version bump, which is not sampling. Recording only around events would be sampling, and that decision is Scotty's. Previously: still open for dynamic campaigns, whose per-quantum records are estimated at 3 to 6 MB per simulated second; `AET-WO-2301` measures them and either answers this or brings a sampling proposal to Scotty. No longer blocks P2; blocks `AET-WO-2301`'s acceptance.
 - **`OQ-04` Can Kani prove anything useful about volatile register access, or only about stubs?** **Narrowed 2026-10-19** (§2.2): only over a harness-owned register image, never over the real base address. **Answered yes, 2026-11-08** (§2.11, the `AET-WO-1400` spike).
   - A proof over a harness-owned, fully nondeterministic image, run through `aethelgard prove`, refutes a wrong AF number, a missing clock enable and a write past the block. Each refutation names the specification rule broken, and the corrected crate proves.
   - It proves the typestate API's register effects, not the silicon.
@@ -690,6 +706,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-16 | §6 | The sandbox's step 4: `/dev/null` for every tool, and the pre-flight before tools (`AET-WO-1603`, ruled on PR #165, comment 6915000480) | PR #165 |
 | 2026-11-16 | §4 | `RUL-21`: published images are pinned snapshots with no update promise; an image only when CI needs one; the library grows through emitters, not images | Scotty, 2026-11-16 |
 | 2026-11-16 | §2.1 | Two rows from first silicon: SPI1's `MODF`, and the H7's I2C clock-synchronisation threshold | northstar §2's first scar, ratified by Scotty |
+| 2026-11-17 | §2.26, §8 | Added §2.26: `2302`'s static trace bytes and its bus-time divergence, and the `2303` lock-step measurements. `OQ-03` reopened for firmware-dependent loads and ruled: `4500` stays static, and lock-step goes to the battery-sag work order | PR #175; PR #200, comment 6943762720 |
 
 New sections continue the sequence and never reuse a number.
 
