@@ -254,10 +254,13 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         .map_err(|m| Stop::tool_error(TOOL, format!("the drill file: {m}")))?;
     files.insert(format!("{}.drl", b.project), drill);
     let placement = read_output(TOOL, &pos)?;
-    placement_rows(&placement)
-        .map_err(|m| Stop::tool_error(TOOL, format!("the placement file: {m}")))?;
+    // Reads the placement file row by row (`aethelgard_eda::fab::placement`),
+    // refusing one KiCad's unescaped quotes would shift.
+    let (jlcpcb_bom, jlcpcb_cpl) = jlcpcb(b.bom, &placement)?;
     files.insert(format!("{}-pos.csv", b.project), placement);
     files.insert(format!("{}.bom.csv", b.project), b.bom.to_vec());
+    files.insert(format!("{}-jlcpcb-bom.csv", b.project), jlcpcb_bom);
+    files.insert(format!("{}-jlcpcb-cpl.csv", b.project), jlcpcb_cpl);
     files.insert(format!("{}.elf", b.project), elf);
 
     let notes = notes(
@@ -347,6 +350,7 @@ fn notes(
         support: stated.support,
     });
     text.push_str(&brown_out_step(spec.mcu.bor_level));
+    text.push_str(&aethelgard_eda::fab::jlcpcb_notes(project));
     text
 }
 
@@ -438,6 +442,14 @@ fn describe<'a>(
         (
             format!("{project}.bom.csv"),
             "bill of materials, as `aethelgard emit` writes it",
+        ),
+        (
+            format!("{project}-jlcpcb-bom.csv"),
+            "bill of materials in JLCPCB's upload format, its part number empty (below)",
+        ),
+        (
+            format!("{project}-jlcpcb-cpl.csv"),
+            "placement in JLCPCB's upload format, rotation in KiCad's frame (below)",
         ),
         (
             format!("{project}.elf"),
@@ -585,35 +597,27 @@ pub fn pours(gerber: &[u8], net: &str) -> bool {
         .any(|(i, w)| w[0] == attribute && w[1] == "G36*" && lines[i + 2..].contains(&"G37*"))
 }
 
-/// KiCad writes each placement row's reference, value and package in quotes
-/// without escaping a quote inside them, so a name holding `"` shifts every
-/// later column (adversarial). Every row must be three quoted fields with no
-/// quote inside, then four unquoted ones; commas inside quotes are CSV's own.
-pub fn placement_rows(csv: &[u8]) -> Result<(), String> {
-    let text = std::str::from_utf8(csv).map_err(|_| "it is not UTF-8".to_owned())?;
-    let mut lines = text.lines();
-    if lines.next() != Some("Ref,Val,Package,PosX,PosY,Rot,Side") {
-        return Err("its header is not KiCad's CSV header".to_owned());
-    }
-    for (n, row) in lines.enumerate() {
-        let bad = || {
-            format!(
-                "row {} is not three quoted fields and four plain ones",
-                n + 1
-            )
-        };
-        let mut rest = row;
-        for _ in 0..3 {
-            let inner = rest.strip_prefix('"').ok_or_else(bad)?;
-            let end = inner.find('"').ok_or_else(bad)?;
-            rest = inner[end + 1..].strip_prefix(',').ok_or_else(bad)?;
-        }
-        let plain: Vec<&str> = rest.split(',').collect();
-        if plain.len() != 4 || plain.iter().any(|f| f.is_empty() || f.contains('"')) {
-            return Err(bad());
+/// JLCPCB's BOM and placement file (`AET-WO-1604` §1.3, ruled on PR #199).
+/// A part on the bottom side refuses the package by its reference, exit 3,
+/// `BottomSidePart`: JLCPCB states no bottom-side convention, and no row is
+/// written that cannot be filled (`INV-06`). Inputs that are not what KiCad
+/// and the emitter write are `ToolError`.
+fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(Vec<u8>, Vec<u8>), Stop> {
+    use aethelgard_eda::fab::JlcpcbRefusal;
+    match aethelgard_eda::fab::jlcpcb(bom, pos) {
+        Ok((b, c)) => Ok((b.into_bytes(), c.into_bytes())),
+        Err(JlcpcbRefusal::BottomSide(reference)) => Err(Stop {
+            code: crate::EXIT_UNREADABLE,
+            kind: "BottomSidePart",
+            message: format!(
+                "`{reference}` is placed on the bottom side, and JLCPCB's assembly pages state no bottom-side convention (mirrored X, rotation seen from below): no placement row is written that cannot be filled, so no package is written"
+            ),
+            id: Some(reference),
+        }),
+        Err(JlcpcbRefusal::Malformed(m)) => {
+            Err(Stop::tool_error(TOOL, format!("the JLCPCB files: {m}")))
         }
     }
-    Ok(())
 }
 
 /// `MANIFEST.json`: every other file's sha256, the specification's and the
@@ -832,24 +836,6 @@ mod tests {
     }
 
     #[test]
-    fn a_placement_row_with_a_quote_inside_a_field_is_refused() {
-        let ok = "Ref,Val,Package,PosX,PosY,Rot,Side\n\"U4\",\"W25Q64JVSS\",\"SOIC-8\",82.55,-108.4,0.0,top\n";
-        assert_eq!(placement_rows(ok.as_bytes()), Ok(()));
-        let comma = ok.replace("W25Q64JVSS", "A,B");
-        assert_eq!(placement_rows(comma.as_bytes()), Ok(()));
-        for bad in [
-            ok.replace("\"U4\"", "\"U\"4,X\""),
-            ok.replace("\"U4\"", "U4"),
-            ok.replace(",top", ",top,x"),
-            ok.replace(",top", ""),
-            ok.replace(",0.0,", ",\"0\","),
-            ok.replace("Ref,", "Reference,"),
-        ] {
-            assert!(placement_rows(bad.as_bytes()).is_err(), "{bad}");
-        }
-    }
-
-    #[test]
     fn the_manifest_is_byte_stable_and_names_every_file() {
         let files = BTreeMap::from([
             ("b".to_owned(), b"2".to_vec()),
@@ -891,13 +877,78 @@ mod tests {
         assert!(m.ends_with(b"}\n"));
     }
 
+    /// `AET-WO-1604` §1.3, on KiCad 10.0.7's placement file and the
+    /// emitter's BOM for Sentinel-01 as ordered (the committed package at
+    /// `ac5f8c8`): the JLCPCB files carry exactly what those two say, with
+    /// the part number empty for every kind of part and KiCad's rotation
+    /// normalised, never offset (adversarial: no column holds a guess).
+    #[test]
+    fn the_jlcpcb_files_from_real_kicad_output_carry_nothing_invented() {
+        let pos = include_bytes!("../tests/fixtures/fab/kicad-10.0.7-sentinel-01-bench-pos.csv");
+        let bom = include_bytes!("../tests/fixtures/fab/emit-sentinel-01-bench.bom.csv");
+        let (b, c) = jlcpcb(bom, pos).unwrap();
+        let (b, c) = (String::from_utf8(b).unwrap(), String::from_utf8(c).unwrap());
+        let b: Vec<&str> = b.strip_suffix("\r\n").unwrap().split("\r\n").collect();
+        let c: Vec<&str> = c.strip_suffix("\r\n").unwrap().split("\r\n").collect();
+        assert_eq!(
+            b[0],
+            "Comment,Designator,Footprint,JLCPCB Part #（optional）"
+        );
+        assert_eq!(c[0], "Designator,Mid X,Mid Y,Layer,Rotation");
+        // 13 kinds of part over 39 references (FEEDBACK §4, measured).
+        assert_eq!(b.len(), 1 + 13);
+        assert_eq!(
+            b[1],
+            "100n,\"C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C13,C15,C19,C20,C21,C22\",C_0402_1005Metric,"
+        );
+        for row in &b[1..] {
+            assert!(row.ends_with(','), "a part number was written: {row}");
+        }
+        assert!(b.contains(&"TMP117xxDRV,\"U3\",WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,"));
+        // Every placement row, one for one, in KiCad's order.
+        let kicad = aethelgard_eda::fab::placement(pos).unwrap();
+        assert_eq!(c.len(), 1 + kicad.len());
+        assert_eq!(kicad.len(), 39);
+        for (row, k) in c[1..].iter().zip(&kicad) {
+            let r = match k.rotation {
+                "-90.000000" => "270",
+                "0.000000" => "0",
+                "90.000000" => "90",
+                "180.000000" => "180",
+                other => panic!("a rotation this fixture does not hold: {other}"),
+            };
+            assert_eq!(
+                *row,
+                format!("\"{}\",{}mm,{}mm,T,{r}", k.reference, k.x, k.y),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_bottom_side_part_refuses_the_package_by_name() {
+        let pos = b"Ref,Val,Package,PosX,PosY,Rot,Side\n\"R1\",\"1k\",\"R_0402_1005Metric\",1.000000,-2.000000,0.000000,bottom\n";
+        let bom = b"Reference,Value,Footprint,Symbol,Note\r\nR1,1k,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n";
+        let stop = jlcpcb(bom, pos).unwrap_err();
+        assert_eq!(
+            (stop.code, stop.kind),
+            (crate::EXIT_UNREADABLE, "BottomSidePart")
+        );
+        assert_eq!(stop.id.as_deref(), Some("R1"));
+        assert!(
+            stop.message.contains("bottom-side convention"),
+            "{}",
+            stop.message
+        );
+    }
+
     #[test]
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
             serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
         let layers = gerbers(&aethelgard_eda::stack::Stack::of(&spec));
         let d = describe("p", &layers);
-        assert_eq!(d.len(), LAYERS.len() + 4);
+        assert_eq!(d.len(), LAYERS.len() + 6);
         assert!(
             d.iter()
                 .all(|(n, _)| n.starts_with("p-") || n.starts_with("p."))
@@ -981,7 +1032,21 @@ mod tests {
                 aethelgard_eda::extract::conditions(&aethelgard_eda::stack::Stack::of(&spec));
             // `AET-WO-4230` §1.6: a board declaring a brown-out level adds
             // its factory step after the files, and nothing else moves.
-            let golden = format!("{golden}{}", brown_out_step(spec.mcu.bor_level));
+            // `AET-WO-1604` §1.3: the two JLCPCB files join the file list,
+            // which is sorted by name, and their section ends the notes.
+            let pos = format!("- `{project}-pos.csv`:");
+            let golden = golden.replace(
+                &pos,
+                &format!(
+                    "- `{project}-jlcpcb-bom.csv`: bill of materials in JLCPCB's upload format, its part number empty (below)\n\
+                     - `{project}-jlcpcb-cpl.csv`: placement in JLCPCB's upload format, rotation in KiCad's frame (below)\n{pos}"
+                ),
+            );
+            let golden = format!(
+                "{golden}{}{}",
+                brown_out_step(spec.mcu.bor_level),
+                aethelgard_eda::fab::jlcpcb_notes(project)
+            );
             for n in [1, 64] {
                 assert_eq!(
                     notes(

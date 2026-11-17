@@ -338,12 +338,14 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             "sentinel-01-F_Mask.gts",
             "sentinel-01-F_Paste.gtp",
             "sentinel-01-F_Silkscreen.gto",
+            "sentinel-01-jlcpcb-bom.csv",
+            "sentinel-01-jlcpcb-cpl.csv",
             "sentinel-01-pos.csv",
             "sentinel-01.bom.csv",
             "sentinel-01.drl",
             "sentinel-01.elf",
         ],
-        "the package is exactly these fifteen files"
+        "the package is exactly these seventeen files"
     );
     // The firmware is the ELF `build` gave, `simulate` booted and the
     // campaign's run was named by (verify binds the run id to it).
@@ -364,6 +366,21 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         package["sentinel-01.bom.csv"],
         fs::read(emitted.join("sentinel-01.bom.csv")).unwrap(),
         "the packaged BOM is emit's, byte for byte"
+    );
+    // `AET-WO-1604` §1.3: the JLCPCB files are the package's own BOM and
+    // placement file in JLCPCB's format, nothing else.
+    let (jlcpcb_bom, jlcpcb_cpl) = aethelgard_eda::fab::jlcpcb(
+        &package["sentinel-01.bom.csv"],
+        &package["sentinel-01-pos.csv"],
+    )
+    .unwrap();
+    assert_eq!(
+        package["sentinel-01-jlcpcb-bom.csv"],
+        jlcpcb_bom.into_bytes()
+    );
+    assert_eq!(
+        package["sentinel-01-jlcpcb-cpl.csv"],
+        jlcpcb_cpl.into_bytes()
     );
     // The manifest: every other file, and the verdict without its `fab` key,
     // which is the line the same call prints without `--fab-out`.
@@ -478,8 +495,16 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             .starts_with("- LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs"),
         "{lifecycle}"
     );
-    // The notes describe every other file, and only those.
-    let described: Vec<&str> = notes
+    // The notes' file list describes every other file, and only those. It is
+    // read from its own section: `AET-WO-1604` §1.3's JLCPCB section has
+    // bullets that start with a backtick too (the same reading `AET-WO-3402`
+    // gives it for its acknowledged rows).
+    let files = notes
+        .split_once("## Files\n")
+        .and_then(|(_, rest)| rest.split_once("\n## "))
+        .map(|(section, _)| section)
+        .expect("FAB-NOTES.md has a file list");
+    let described: Vec<&str> = files
         .lines()
         .filter_map(|l| l.strip_prefix("- `")?.split('`').next())
         .collect();
