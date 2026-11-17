@@ -410,3 +410,23 @@ Pass 2 re-ran §5, F2 (98 000 000 / 98 000 020 ns) and F5 on its tree: every cas
   - Added: 15 in `twin_tier2`: the 100 ms windows, H1a/b/c, M1 ×2, M2 ×2, L1 ×2, A2-3, the open RX line, the Sentinel-02-shaped board, `serial-dshot-9600` and F2.
   - Removed: 1, the 2 ms DShot boot.
   - Interim weights for the new tests are in `ci/test-weights.tsv`, for refit from CI.
+
+## §18 Gates, reduction and open questions
+
+- **Reduction pass (diff): −84 net · 8 duplicates removed · 2 dead paths removed · 6 protected kept · 5 findings.** A fresh worker ran it on `969dd168`, five commits. The findings:
+  - (1) chaos's `short_window`/`OUTSIDE_WINDOW_FINDING` and evolve's `I7` are unreachable, and outside the fence (§15).
+  - (2) The verdict's and campaign lines' `window` field now always says `MAX_VIRTUAL_NS`. Removing it is a schema change, which needs a ruling.
+  - (3) The DShot window's end is computed in three places in `renode.rs`.
+  - (4) `E3` has guards no test can tell from their absence (below).
+  - (5) Some older chaos tests used `.is_err()` where several guards refuse.
+- **Mutation sweep (one mutant per guard this work order added, its own suites, all tier 1):** 66 mutants.
+  - **Killed:** 55 on the first run; 13 more after four killing tests were added (e3f77a3d, a236fc2d, 684b0020, and 606c1244, which pins E03/E04's observable behaviour).
+  - **Survived:** `E3`'s `booted`, `holds`, `t.holds()`, tags `Some`, and the two injection-`None` guards (E02–E07). They are equivalent, because other rules or replay decide those cases first. They are documented in the rule, not removed: unlabelled redundancy is reported, never cut, so the architect may keep or drop them.
+  - The fix rounds mutated their own guards (fix: H1 to L3; fix2: 3 + 2 + 6), all killed.
+- **Open questions for the architect:**
+  - **Q1:** a core that sleeps and then writes its boot word still exits 5, by `2100`'s ruled A10 ("boot word set but the core executed fewer"), so a firmware can abort a campaign that way. Unchanged by this work order; pinned by `m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement`.
+  - **Q2:** `I7` and `short_window`: remove, or keep for a future short window? (§15)
+  - **Q3:** the new motor and serial finding kinds have no `attribute` rule, so `attribute` reports them unexplained (`I1`). Add rules in evolve, outside this fence?
+  - **Q4:** the DMA-start test runs at 98.6 % of the memory bound. It accepts `memory_cap_exceeded` as well as the flood's names, but a wall-bound kill under CI load would fail it: a flake candidate.
+  - **Q5 (backlog, older than 2302, A2-2):** replay should require exactly one kind 26 per kind 24 in a booted run.
+  - **Q6:** `E3` yields to `S5`, with nothing masked (§15): confirm.
