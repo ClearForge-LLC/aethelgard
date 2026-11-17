@@ -101,6 +101,15 @@
       "reason": "No pull is modelled. Written whole by split: no pull on the solved pins, the debug pins' reset pulls (PA13 up, PA14 down, PA15 up) kept. The bench row reads PUPDR back."
     },
     {
+      "register": "GPIOB.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL10",
+        "AFSEL11"
+      ],
+      "reason": "PB10/PB11 at AF4 for I2C2 (EXT): the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRH back."
+    },
+    {
       "register": "GPIOB.AFRL",
       "class": "same-source",
       "fields": [
@@ -114,7 +123,9 @@
       "class": "same-source",
       "fields": [
         "MODER6",
-        "MODER7"
+        "MODER7",
+        "MODER10",
+        "MODER11"
       ],
       "reason": "PB6/PB7 alternate for I2C1: the model routes a pin by MODER only for a timer channel (4300 FEEDBACK section 0). The bench row reads MODER back, as 3302 B2 did."
     },
@@ -123,7 +134,9 @@
       "class": "same-source",
       "fields": [
         "OSPEED6",
-        "OSPEED7"
+        "OSPEED7",
+        "OSPEED10",
+        "OSPEED11"
       ],
       "reason": "PB6/PB7 for I2C1 at 400 kHz: no edge rate is modelled; check speeds judges the chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
     },
@@ -210,6 +223,52 @@
         "ALERTCF"
       ],
       "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), so no bench row: STOPCF and NACKCF after each transfer. The next record's OK status on the bench (3302 B3) shows the clear took."
+    },
+    {
+      "register": "I2C2.CR1",
+      "class": "same-source",
+      "fields": [
+        "PE"
+      ],
+      "reason": "PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, with no reaction claimed. The bench row reads PE as 1; the EXT bus on the bench needs it."
+    },
+    {
+      "register": "I2C2.CR2",
+      "class": "same-source",
+      "fields": [
+        "ADD10",
+        "HEAD10R",
+        "STOP",
+        "NACK",
+        "RELOAD",
+        "AUTOEND",
+        "PECBYTE"
+      ],
+      "reason": "7-bit addressing, no reload, no PEC, written 0 (AUTOEND set at run time): STM32F7_I2C.cs is not held, no reaction claimed. The bench row reads CR2 back, all but AUTOEND."
+    },
+    {
+      "register": "I2C2.ICR",
+      "class": "same-source",
+      "fields": [
+        "ADDRCF",
+        "NACKCF",
+        "STOPCF",
+        "BERRCF",
+        "ARLOCF",
+        "OVRCF",
+        "PECCF",
+        "TIMOUTCF",
+        "ALERTCF"
+      ],
+      "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), so no bench row: STOPCF and NACKCF after each transfer. The next record's OK status on the bench (3302 B3) shows the clear took."
+    },
+    {
+      "register": "RCC.APB1LENR",
+      "class": "same-source",
+      "fields": [
+        "I2C2EN"
+      ],
+      "reason": "I2C2's clock enable for the EXT bus (no device on it): stored, with no reaction claimed and no I2C2 device modelled. The bench row reads APB1LENR back."
     },
     {
       "register": "RCC.CR",
@@ -378,11 +437,6 @@
       "id": "VDD_3V3",
       "nominal_millivolts": 3300,
       "tolerance_permille": 50
-    },
-    {
-      "id": "VDD_5V",
-      "nominal_millivolts": 5000,
-      "tolerance_permille": 50
     }
   ],
   "i2c_buses": [
@@ -542,7 +596,7 @@
         },
         {
           "pin": "2",
-          "net": "VDD_5V",
+          "net": null,
           "offboard": null
         },
         {
@@ -560,11 +614,11 @@
     {
       "reference": "J4",
       "part": "SM04B-GHS-TB",
-      "standard": "DS-009 I2C",
+      "standard": null,
       "pins": [
         {
           "pin": "1",
-          "net": "VDD_5V",
+          "net": "VDD_3V3",
           "offboard": null
         },
         {
