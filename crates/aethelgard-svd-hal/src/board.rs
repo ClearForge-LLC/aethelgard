@@ -96,6 +96,8 @@ pub enum BoardError {
     },
     #[error("a ceiling of {hz} Hz is below every I2C mode")]
     CeilingTooLow { hz: u32 },
+    #[error("I2C peripheral `{peripheral}` serves no one bus: {why}")]
+    I2cBusUnresolved { peripheral: String, why: String },
     #[error("net `{net}` on `{pin}` has no output speed: {refusal}")]
     PinSpeed {
         net: String,
@@ -149,6 +151,7 @@ impl BoardError {
             Self::SpeedTableMismatch { .. } => "SpeedTableMismatch",
             Self::CeilingMismatch { .. } => "CeilingMismatch",
             Self::CeilingTooLow { .. } => "CeilingTooLow",
+            Self::I2cBusUnresolved { .. } => "I2cBusUnresolved",
             Self::FootprintOverlap { .. } => "FootprintOverlap",
             Self::UnscheduledAction { .. } => "UnscheduledAction",
             Self::SiliconRuleFails { .. } => "SiliconRuleFails",
@@ -308,14 +311,54 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
     Ok(())
 }
 
+/// The declared speed of the one bus `peripheral` serves (`AET-WO-3402`
+/// §1.3), from the solved topology alone (`RUL-16`): each I2C line names its
+/// bus (`analog_lines`), and the assignment of the line's net names its
+/// peripheral. No bus, two buses, or a bus with a line on another peripheral
+/// is refused by name (`INV-06`); nothing falls back to another bus's speed.
+fn bus_speed(solved: &SolvedTopology, peripheral: &str) -> Result<u32, BoardError> {
+    let unresolved = |why: String| BoardError::I2cBusUnresolved {
+        peripheral: peripheral.to_owned(),
+        why,
+    };
+    let on = |net: &str| solved.assignments.get(net).map(|a| a.peripheral.as_str());
+    let buses: std::collections::BTreeSet<&str> = solved
+        .analog_lines
+        .iter()
+        .filter(|(net, _)| on(net) == Some(peripheral))
+        .map(|(_, line)| line.bus.as_str())
+        .collect();
+    let bus = match buses.iter().collect::<Vec<_>>().as_slice() {
+        [] => return Err(unresolved("no I2C line of the topology is on it".into())),
+        [bus] => **bus,
+        _ => {
+            return Err(unresolved(format!(
+                "it carries the lines of buses {buses:?}"
+            )));
+        }
+    };
+    for (net, _) in solved.analog_lines.iter().filter(|(_, l)| l.bus == bus) {
+        if on(net) != Some(peripheral) {
+            return Err(unresolved(format!(
+                "bus `{bus}`'s line `{net}` is on {}",
+                on(net).map_or("no peripheral".to_owned(), |p| format!("`{p}`"))
+            )));
+        }
+    }
+    solved
+        .i2c_speeds
+        .get(bus)
+        .copied()
+        .ok_or_else(|| unresolved(format!("bus `{bus}` declares no speed")))
+}
+
 /// The board crate for `crate_name`, from `solved`.
 ///
 /// The I2C speeds each peripheral admits come from `solved.i2c_speeds`, the
 /// speed each bus's specification declared (`AET-WO-1205`), keyed by bus id;
-/// `i2c_ceilings` (`AET-WO-1202`) is only counted against the peripherals. The
-/// topology does not say which peripheral serves which bus, so the generator
-/// gives every I2C peripheral the lowest declared speed: exact for one bus, and
-/// never above any bus's declared speed for more.
+/// `i2c_ceilings` (`AET-WO-1202`) is only counted against the peripherals.
+/// Each I2C peripheral takes its own bus's declared speed, joined through the
+/// solved topology ([`bus_speed`], `AET-WO-3402` §1.3).
 pub fn generate(
     crate_name: &str,
     solved: &SolvedTopology,
@@ -352,7 +395,8 @@ pub fn generate_with(
         });
     }
     let mut speeds = BTreeMap::new();
-    if let Some(&hz) = solved.i2c_speeds.values().min() {
+    for name in i2c {
+        let hz = bus_speed(solved, &name)?;
         let admitted: Vec<usize> = (0..I2C_MODES.len())
             .filter(|&i| I2C_MODES[i].1 <= hz)
             .collect();
@@ -361,9 +405,7 @@ pub fn generate_with(
         if admitted.is_empty() {
             return Err(BoardError::CeilingTooLow { hz });
         }
-        for name in i2c {
-            speeds.insert(name, (hz, admitted.clone()));
-        }
+        speeds.insert(name, (hz, admitted));
     }
     let register_facts = cmsis::register_facts()?;
     let facts = Facts::new(&plan, &register_facts)?;
@@ -6438,7 +6480,7 @@ mod tests {
     }
 
     #[test]
-    fn ceilings_must_number_the_i2c_peripherals_and_the_lowest_applies() {
+    fn ceilings_must_number_the_i2c_peripherals_and_each_takes_its_own_bus() {
         let mut s = solved();
         s.i2c_ceilings.clear();
         // Since AET-WO-2200 an I2C line with no bus ceiling is refused by
@@ -6450,7 +6492,8 @@ mod tests {
         // A ceiling for a bus with no analog line is refused by `validate`
         // since `AET-WO-1204`, before the generator counts them.
         assert_eq!(kind(generate("b", &s, &table())), "InvalidTopology");
-        // Two buses: each peripheral gets the lower ceiling.
+        // Two buses (`AET-WO-3402` §1.3, ruled on PR #203): each peripheral
+        // takes its own bus's declared speed, never the lower one.
         let mut s = solved();
         s.assignments
             .insert("SCL2".into(), assign("PB10", "I2C2", "I2C2_SCL", 4));
@@ -6464,12 +6507,70 @@ mod tests {
         s.derive_controllers();
         let files = generate("b", &s, &table()).unwrap();
         let board = &files["src/board.rs"];
-        for m in ["i2c1_speed", "i2c2_speed"] {
+        let module = |m: &str| {
             let module = board.split(&format!("pub mod {m} {{")).nth(1).unwrap();
-            let module = module.split("\n}\n").next().unwrap();
-            assert!(module.contains("impl AtMostCeiling for Standard100k "));
-            assert!(!module.contains("impl AtMostCeiling for Fast400k "));
+            module.split("\n}\n").next().unwrap().to_owned()
+        };
+        // I2C1 serves bus A at 1 MHz: every mode; I2C2 serves B at 100 kHz.
+        let (one, two) = (module("i2c1_speed"), module("i2c2_speed"));
+        for mode in ["Standard100k", "Fast400k", "FastPlus1M"] {
+            assert!(
+                one.contains(&format!("impl AtMostCeiling for {mode} ")),
+                "{mode}"
+            );
         }
+        assert!(two.contains("impl AtMostCeiling for Standard100k "));
+        assert!(!two.contains("impl AtMostCeiling for Fast400k "));
+        assert!(files["firmware/src/main.rs"].contains("init::<i2c1_speed::FastPlus1M, _>"));
+        assert!(files["firmware/src/main.rs"].contains("init::<i2c2_speed::Standard100k, _>"));
+    }
+
+    /// `AET-WO-3402` §5: a peripheral carrying two buses' lines, and a bus
+    /// whose lines sit on two peripherals, are refused by name; nothing falls
+    /// back to the lowest speed (`INV-06`).
+    #[test]
+    fn an_i2c_peripheral_with_no_one_bus_is_refused_by_name() {
+        let two_buses = || {
+            let mut s = solved();
+            s.assignments
+                .insert("SCL2".into(), assign("PB10", "I2C2", "I2C2_SCL", 4));
+            s.assignments
+                .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
+            s.i2c_ceilings = BTreeMap::new();
+            s.i2c_speeds = BTreeMap::new();
+            s
+        };
+        // Each peripheral carries one line of each bus.
+        let mut s = two_buses();
+        s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "B"), ("SCL2", "B"), ("SDA2", "A")]);
+        set_ceiling(&mut s, "A", 400_000);
+        set_ceiling(&mut s, "B", 100_000);
+        s.derive_controllers();
+        // `SolvedTopology::validate` refuses it first (measured): every
+        // analog line shares one bus with exactly its own peripheral's lines.
+        let err = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(err.kind(), "InvalidTopology", "{err}");
+        assert!(err.to_string().contains("does not share one bus"), "{err}");
+        // `bus_speed` refuses it on its own, by name, as the generator's
+        // second line: two buses on I2C1, and a bus with a line elsewhere.
+        let e = bus_speed(&s, "I2C1").unwrap_err();
+        assert_eq!(e.kind(), "I2cBusUnresolved", "{e}");
+        assert!(e.to_string().contains("carries the lines of buses"), "{e}");
+        let mut s = two_buses();
+        s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "A"), ("SDA2", "B")]);
+        let e = bus_speed(&s, "I2C1").unwrap_err();
+        assert!(
+            e.to_string().contains("bus `A`'s line `SCL2` is on `I2C2`"),
+            "{e}"
+        );
+        // No line on a peripheral: refused, never the lowest speed.
+        let e = bus_speed(&s, "I2C3").unwrap_err();
+        assert!(e.to_string().contains("no I2C line"), "{e}");
+        // A bus with no declared speed.
+        let mut s = two_buses();
+        s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
+        let e = bus_speed(&s, "I2C1").unwrap_err();
+        assert!(e.to_string().contains("bus `A` declares no speed"), "{e}");
     }
 
     #[test]
