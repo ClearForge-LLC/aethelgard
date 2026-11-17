@@ -149,3 +149,23 @@ fn validate_refuses_a_bound_that_cannot_hold_the_parts() {
     assert_eq!(code, Some(0), "{verdict}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
+    let dir = scratch("v14");
+    let mut v = fixture();
+    v["schema_version"] = json!(14);
+    let path = dir.join("v14.json");
+    std::fs::write(&path, serde_json::to_string(&v).unwrap()).unwrap();
+    let (code, verdict) = run(&["validate", "--file", path.to_str().unwrap()]);
+    assert_eq!(code, Some(2), "{verdict}");
+    assert_eq!(
+        verdict["error"]["kind"], "UnsupportedSchemaVersion",
+        "{verdict}"
+    );
+    assert_eq!(
+        verdict["error"]["message"], "schema_version is 14, not 15",
+        "{verdict}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}

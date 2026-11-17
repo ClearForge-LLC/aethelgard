@@ -71,7 +71,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// optional as that work order states (absent is no test point and no
 /// switch), so that a reader of version 13 refuses a file that may carry
 /// them by its version, never by an unknown key.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 14;
+/// Version 15 adds `board.max_outline_mm` (`AET-WO-1313`), optional by the
+/// precedent ruled on PR #191 (Q1): absent is today's placer, judged as
+/// such, so that a reader of version 14 refuses a file that may carry it by
+/// its version, never by an unknown key.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 15;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -88,7 +92,7 @@ pub const NRST: &str = "NRST";
 pub const BOOT0: &str = "BOOT0";
 pub const DEBUG_NETS: [&str; 4] = [SWDIO, SWCLK, NRST, BOOT0];
 
-/// The top-level specification, version 14 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 15 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]

@@ -307,3 +307,29 @@ fn a_malformed_outline_bound_is_a_shape_error() {
     let spec: Specification = serde_json::from_value(v).unwrap();
     assert_eq!(spec.board.max_outline_mm, None);
 }
+
+/// Specification 15 (`AET-WO-1313`): a version-14 file is refused by its
+/// version, with or without `board.max_outline_mm`, never read as today's
+/// board.
+#[test]
+fn a_version_14_file_is_refused_by_its_version() {
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 15);
+    for bound in [None, Some(json!({"width": 100, "height": 100}))] {
+        let e = refused(reference(), |v| {
+            v["schema_version"] = json!(14);
+            if let Some(b) = bound {
+                v["board"]["max_outline_mm"] = b;
+            }
+        });
+        assert!(
+            matches!(
+                e,
+                IrValidationError::UnsupportedSchemaVersion {
+                    version: 14,
+                    expected: 15
+                }
+            ),
+            "{e}"
+        );
+    }
+}
