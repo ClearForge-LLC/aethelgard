@@ -193,3 +193,9 @@ The §5 case "a fab-format column filled with a plausible guess" is in §7's tab
 - **M11 · In the pinned image** (`~/.cache/aet-1604/img.sh`, `capped-run`: `memory.max=8589934592`, `memory.swap.max=0`, `pids.max=8192`, read back), on `966534e`, with the CLI and the bridge built there:
   - `verify_2k2_tier2`, 2 passed in 1,213 s;
   - `against_fab_tier2`, 2 passed in 976 s (`~/.cache/aet-1604/img-tier2.log`).
+- **`main` `f845b6f` (#197, `AET-WO-1313`, specification 15, `TIER2_MIN` 178) merged**, pushed as AWAITING-PACKAGE `8f0acce`. On Furnace, on that tree: fmt, clippy with `with-tools` (0), the tier-2 targets compiled, and 2,135 passed with 0 failed.
+- **M12 · The package, written by CI.** The architect dispatched `bench-package` with `write` on `8f0acce`: run 44079386736, job 134025693646 (success), artifact `bench-package` id 14328416628 (digest `sha256:a00b2436…`).
+  - It was downloaded with the read-only token into `~/.cache/aet-1604/bench-package-44079386736/` and committed unchanged into `fab/sentinel-01-bench/package/`.
+  - Against the package 1313 committed, it adds the two JLCPCB files and changes only `FAB-NOTES.md` (the file list, the JLCPCB section, and `TP9`–`TP14`'s conditions, exactly M10's six) and `MANIFEST.json`. Every Gerber, the drill file, the placement file, the BOM and the ELF are byte-identical.
+  - The BOM is 13 kinds of part over 39 references, with the part number empty in every row; the CPL is 39 rows, `T`, rotations 0, 90, 180, 270. Lines end CRLF.
+  - `bench_board_tier1` passes on it on Furnace.
