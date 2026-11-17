@@ -1347,11 +1347,7 @@ impl<'a> Run<'a> {
     /// open), when its frame went in: its `injected_ns` places the boot
     /// word, one quantum before it (`campaign::boot_word_instant`).
     fn first_injection(&self) -> Option<usize> {
-        let open = campaign::open_ports(self.records);
-        self.records
-            .iter()
-            .position(|r| matches!(r, Record::SerialWitness { label, .. } if !open.contains(label.as_str())))
-            .filter(|&w| matches!(self.records[w], Record::SerialWitness { injected_ns: Some(_), .. }))
+        campaign::first_injection(self.records).map(|(i, _)| i)
     }
 
     /// The ports' solved records (kind 27) the judge sums the wire time

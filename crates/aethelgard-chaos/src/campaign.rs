@@ -1742,23 +1742,29 @@ pub fn open_ports(records: &[Record]) -> BTreeSet<&str> {
     }
 }
 
-/// The boot word's instant as the records give it (`AET-WO-2302`
-/// adversarial pass 2, A2-5): the first port the chain injects, the first
-/// not held open, takes its frame one quantum after the boot word, so its
-/// kind 29 `injected_ns` less `QUANTUM_NS`. `None` when that port took no
+/// The first port the judge's chain injects, the first not held open, as
+/// its kind 29's index and `injected_ns`. `None` when that port took no
 /// frame, or there is none.
-pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
+pub fn first_injection(records: &[Record]) -> Option<(usize, u64)> {
     let open = open_ports(records);
     records
         .iter()
-        .find_map(|r| match r {
+        .enumerate()
+        .find_map(|(i, r)| match r {
             Record::SerialWitness {
                 label, injected_ns, ..
-            } if !open.contains(label.as_str()) => Some(*injected_ns),
+            } if !open.contains(label.as_str()) => Some(injected_ns.map(|t| (i, t))),
             _ => None,
         })
         .flatten()
-        .and_then(|t| t.checked_sub(TWIN_QUANTUM_NS))
+}
+
+/// The boot word's instant as the records give it (`AET-WO-2302`
+/// adversarial pass 2, A2-5): the first port the chain injects takes its
+/// frame one quantum after the boot word, so its kind 29 `injected_ns`
+/// less `QUANTUM_NS`. `None` when that port took no frame, or there is none.
+pub fn boot_word_instant(records: &[Record]) -> Option<u64> {
+    first_injection(records)?.1.checked_sub(TWIN_QUANTUM_NS)
 }
 
 /// One character's time on the wire in ns, rounded up, at a solved actual
