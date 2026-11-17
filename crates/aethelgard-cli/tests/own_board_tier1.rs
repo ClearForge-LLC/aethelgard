@@ -78,14 +78,20 @@ fn extract(spec: &str) -> (i32, Value) {
     ])
 }
 
-/// Each pad of `reference` on the board, by number, with its net.
-fn pads(reference: &str) -> BTreeMap<String, String> {
+/// The emitted board as the router reads it.
+fn read() -> aethelgard_eda::route::Board {
     let text = fs::read_to_string(board()).unwrap();
     let tree = aethelgard_eda::strict::board(&text).unwrap();
     let spec: aethelgard_ir::Specification = serde_json::from_value(spec()).unwrap();
     let (b, _) =
         aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
-    b.parts
+    b
+}
+
+/// Each pad of `reference` on the board, by number, with its net.
+fn pads(reference: &str) -> BTreeMap<String, String> {
+    read()
+        .parts
         .iter()
         .find(|p| p.reference == reference)
         .unwrap()
@@ -164,12 +170,7 @@ fn the_bmp581_is_wired_as_its_datasheet_says() {
             ("10", "VDD_3V3"),
         ])
     );
-    let text = fs::read_to_string(board()).unwrap();
-    let tree = aethelgard_eda::strict::board(&text).unwrap();
-    let spec: aethelgard_ir::Specification = serde_json::from_value(spec()).unwrap();
-    let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
-    let strap: Vec<_> = b
+    let strap: Vec<_> = read()
         .parts
         .iter()
         .filter(|p| p.pads.iter().any(|q| q.net.as_deref() == Some("/U7_SDO")))
