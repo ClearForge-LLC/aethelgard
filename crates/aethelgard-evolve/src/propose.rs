@@ -237,7 +237,24 @@ impl Proposer for Rules {
             // a board fault no value change fixes: no rule, as for a held
             // line (`AET-WO-4200`, `AET-WO-2302` D5).
             Rule::E2 | Rule::E3 => None,
-            Rule::S1 | Rule::S2 | Rule::S3 | Rule::S4 | Rule::S5 => Some(report(input)),
+            Rule::S1
+            | Rule::S2
+            | Rule::S3
+            | Rule::S4
+            | Rule::S5
+            | Rule::S6
+            | Rule::S7
+            | Rule::S8
+            | Rule::S9
+            | Rule::S10
+            | Rule::S11 => Some(report(input)),
+            // The twin's or the judge's own bound is no fault of the
+            // device's, so nothing changes it (`AET-WO-2302b`).
+            rule if let Some(bound) = rule.bound() => Some(no(format!(
+                "attribution rule {} (`{}`): {bound} is the twin's own bound, never the device's, so nothing is proposed (INV-05)",
+                rule.id(),
+                rule.domain().name()
+            ))),
             rule => Some(no(format!(
                 "attribution rule {} (`{}`): attribution precedes mutation, so nothing is proposed (INV-05)",
                 rule.id(),
