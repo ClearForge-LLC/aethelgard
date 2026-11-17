@@ -1137,6 +1137,27 @@ fn h3_the_wire_time_past_the_run_is_the_harness_s_with_its_cut_echo() {
         "{a:?}"
     );
     assert_eq!(named(&r, &a), ["kind 29 CONSOLE"]);
+    // The GPS port in the sum, but silent: its pattern never went out, which
+    // the bound does not explain, so its own `I6` names the run.
+    let silent = Case {
+        gps: Echo::Silent,
+        ..Case::default()
+    };
+    let r = injected(
+        run(
+            &silent,
+            &[
+                (SERIAL_ECHO_FINDING, 1),
+                (SERIAL_PATTERN_FINDING, 1),
+                (campaign::SERIAL_WIRE_PAST_RUN_FINDING, 1),
+            ],
+        ),
+        Some(LATE_CONSOLE),
+        Some(LATE_CONSOLE + 900_000),
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I6, "{a:?}");
+    assert_eq!(named(&r, &a), ["kind 29 GPS"]);
 }
 
 /// `H3` never fires when the first port took no frame: the boot word's

@@ -1328,6 +1328,9 @@ impl<'a> Run<'a> {
             return None;
         };
         let max = campaign::TWIN_MAX_VIRTUAL_NS;
+        // belt-and-suspenders: `motor.dshot` (mutant M14 survives) - a PWM
+        // window ends at the run's end, so its `stopped` witness's last rise
+        // is more than a period before it and the last condition fails.
         (motor.dshot
             && status == "stopped"
             && a.saturating_add(campaign::TWIN_DSHOT_WINDOW_NS) > max
@@ -2346,7 +2349,7 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     let mut unexplained = BTreeSet::new();
     for (&kind, &count) in &failing {
         if let Some(w) = state.windowed(kind, count) {
-            if w.shown != count || (w.symptoms.is_empty() && w.missing.is_empty()) {
+            if w.shown != count {
                 unexplained.insert(kind.to_owned());
                 continue;
             }

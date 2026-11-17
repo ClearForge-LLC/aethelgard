@@ -762,9 +762,9 @@ fn stop_left_set(r: &mut [Record]) {
     tim2_cr1_expected(r, 0x81);
 }
 
-/// No stop at all (`judge_stop_missing`).
+/// No stop of TIM2's at all (`judge_stop_missing`).
 fn no_stop(r: &mut Vec<Record>) {
-    r.retain(|x| !matches!(x, Record::JudgeStop { .. }));
+    r.retain(|x| !matches!(x, Record::JudgeStop { timer, .. } if timer == "TIM2"));
     tim2_cr1_expected(r, 0x81);
 }
 
@@ -1081,6 +1081,21 @@ fn h1_a_window_past_the_run_is_the_harness_s_with_its_cut_witness() {
             "the DShot window's end, its anchor plus DSHOT_WINDOW_NS, past the run's MAX_VIRTUAL_NS"
         )
     );
+    // Off the model's sequence to the run's end (`mismatch`): its edges are
+    // the output's own, not cut by the bound.
+    let r = dshot(&findings, &|r| {
+        late(2187)(r);
+        set_dshot_witness(r, |w| {
+            if let Record::MotorWitness {
+                status, span_ns, ..
+            } = w
+            {
+                (*status, *span_ns) = ("mismatch".into(), Some(400));
+            }
+        });
+    });
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I4, "{a:?}");
     // Stopped 0.9 ms before the run's end: not the bound's.
     let r = dshot(&findings, &late(100));
     let a = attributed(&r);
@@ -1195,6 +1210,26 @@ fn a_window_software_rule_keeps_the_existing_precedence() {
     );
     assert!(indices(&a.evidence).contains(&m2_witness(&r)), "{a:?}");
     assert!(a.evidence.iter().any(|e| e.kind == 9), "{a:?}");
+    // With the stop left set beside them (`H2`), `I5` still names both
+    // halves' evidence alone, never the harness's (kind 24, kind 30).
+    let mut r = dshot(
+        &[
+            (campaign::PAST_CEILING_FINDING, 2),
+            (campaign::JUDGE_STOP_MISSING_FINDING, 1),
+            (campaign::MOTOR_EDGE_BEFORE_FINDING, 1),
+        ],
+        &|r| {
+            edges(r);
+            stop_left_set(r);
+        },
+    );
+    fault_sensors(&mut r);
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I5, "{a:?}");
+    assert!(
+        a.evidence.iter().all(|e| [7, 9, 26].contains(&e.kind)),
+        "{a:?}"
+    );
     let r = dshot_with(
         &Wrong {
             afrh: Some(0x2),
@@ -1242,6 +1277,131 @@ fn propose_answers_a_harness_rule_with_its_bound_and_nothing_else() {
         reason,
         "no evidence event shows an unmet solved expectation, so no generator report is made"
     );
+}
+
+/// A second DShot output beside [`dshot`]'s, `M3` (TIM3_CH1 on PA6 at AF2),
+/// as `M2` is: anchored at [`ANCHOR`] plus 10 µs, with the judge's stop that
+/// cleared `CEN` when `stopped`, and none otherwise.
+fn with_tim3(r: &mut Vec<Record>, stopped: bool) {
+    let anchor = ANCHOR + 10_000;
+    let at = |r: &[Record], f: &dyn Fn(&Record) -> bool| r.iter().position(f).unwrap() + 1;
+    let i = at(
+        r,
+        &|x| matches!(x, Record::MotorOutputSolved { label, .. } if label == "M2"),
+    );
+    let mut m3 = r[i - 1].clone();
+    if let Record::MotorOutputSolved {
+        label,
+        timer,
+        pin,
+        alternate_function,
+        ..
+    } = &mut m3
+    {
+        (*label, *timer, *pin, *alternate_function) = ("M3".into(), "TIM3".into(), "PA6".into(), 2);
+    }
+    r.insert(i, m3);
+    let i = at(
+        r,
+        &|x| matches!(x, Record::MotorTimingCheck { label, .. } if label == "M2"),
+    );
+    let mut check = r[i - 1].clone();
+    if let Record::MotorTimingCheck { label, .. } = &mut check {
+        *label = "M3".into();
+    }
+    r.insert(i, check);
+    let tim3: Vec<(String, u32, u32, u32)> = TIM2_SOLVED
+        .iter()
+        .map(|&(name, address, mask, value)| {
+            (name.replace("TIM2", "TIM3"), address + 0x400, mask, value)
+        })
+        .collect();
+    let i = r
+        .iter()
+        .rposition(|x| matches!(x, Record::RegisterObserved { .. }))
+        .unwrap()
+        + 1;
+    for (n, (name, address, mask, value)) in tim3.iter().enumerate() {
+        let value = if name == "TIM3.CR1" && stopped {
+            value & !1
+        } else {
+            *value
+        };
+        r.insert(i + n, register(name, *address, *mask, value, value));
+    }
+    let i = at(
+        r,
+        &|x| matches!(x, Record::MotorWitness { label, .. } if label == "M2"),
+    );
+    let mut w = dshot_witness(Some(anchor));
+    if let Record::MotorWitness {
+        label, observer, ..
+    } = &mut w
+    {
+        (*label, *observer) = ("M3".into(), "gpioPortA.pa6obs".into());
+    }
+    r.insert(i, w);
+    if stopped {
+        let i = r
+            .iter()
+            .rposition(|x| matches!(x, Record::MotorWitness { .. } | Record::JudgeStop { .. }))
+            .unwrap()
+            + 1;
+        r.insert(
+            i,
+            Record::JudgeStop {
+                timer: "TIM3".into(),
+                anchor_ns: anchor,
+                at_ns: anchor + 2_000_000,
+                read_back: tim3
+                    .iter()
+                    .map(|&(_, address, mask, value)| Reading {
+                        address,
+                        mask,
+                        expected: value,
+                        observed: Some(value),
+                    })
+                    .collect(),
+                cr1_after: Some(0x80),
+            },
+        );
+    }
+}
+
+/// `H1` and `H2` each select a DShot timer by its own window and stop:
+/// beside a second timer whose window is inside the run and stopped, only
+/// the timer past the run is `H1`'s; beside one stopped, only the timer
+/// whose stop is missing is `H2`'s.
+#[test]
+fn h1_h2_select_each_dshot_timer_by_its_own_window_and_stop() {
+    let r = dshot(&[(campaign::JUDGE_STOP_MISSING_FINDING, 1)], &|r| {
+        with_tim3(r, false);
+    });
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::H2, "{a:?}");
+    let m3 = |r: &[Record], kind: u64| {
+        r.iter()
+            .position(|x| {
+                x.kind() == kind
+                    && matches!(x, Record::MotorOutputSolved { label, .. }
+                        | Record::MotorWitness { label, .. } if label == "M3")
+            })
+            .unwrap() as u64
+    };
+    assert_eq!(indices(&a.evidence), [m3(&r, 24), m3(&r, 26)]);
+    let r = dshot(
+        &[
+            (MOTOR_MISMATCH_FINDING, 1),
+            (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
+        ],
+        &|r| {
+            late(2187)(r);
+            with_tim3(r, true);
+        },
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::H1, "{a:?}");
+    assert_eq!(indices(&a.evidence), [m2_solved(&r), m2_witness(&r)]);
 }
 
 /// The past-ceiling fault of the reference bus: both lines' rises past
