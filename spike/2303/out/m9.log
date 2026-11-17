@@ -1,0 +1,55 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p618952-i164134853.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+== flip
+{"flipped_event":15000,"of":30000,"byte":250229,"event":"AnalogSample { timestamp: 50010000, net: \"VBAT\", microvolts: 11099199 }"}
+{"sealed":"no","ok":false,"error":"HashMismatch","message":"trace sha256 does not match the manifest"}
+{"sealed":"yes","ok":false,"error":"ReplayDiverged","message":"replayed state hash does not match the manifest"}
+== synth 60 s
+{"seconds":60,"events":18000000,"trace_bytes":367046494,"counted":367046494,"crossed_256mib_at_ns":44103560000,"write_s":2.549}
+{"replay":"refused","error":"TraceTooLarge","message":"the manifest declares a trace of 367046494 bytes, over the 268435456-byte bound","replay_s":0.000,"hwm_kib":14520}
+== synth 44 s
+{"seconds":44,"events":13200000,"trace_bytes":267793054,"counted":267793054,"crossed_256mib_at_ns":null,"write_s":1.870}
+{"replay":"ok","events":13200000,"replay_s":2.146,"hwm_kib":275712}
+== campaign s02-baseline
+campaign exit=0
+{"ok":true,"check":"replay","run_id":"7c6549bc3f053878b9be63bdd7202ee9","scenario":"s02-baseline","verdict":"pass","expect":"pass","matched":true,"findings":[],"expect_findings":[],"artifacts":{"base":"b34c329dc7c5d9f142a9c4a62d81ba0f0ad4f265c894ca6737ed8df7c4a32fed","firmware":"c7ca3d8ea091c0252777314dea536063c22c335df3645369448c6626aa3df760","scenario":"4b9d2dda6b9d1964fba66d2e7b3fa2ae2a30593bfc337f32c5f3e5eb414f6cf7","specification":"cc4d3664f923f9aa2556219d81bf42dc6184587d9939cf4bb67ba4c480eeda42","topology":"2c1ec30e7b5e3c7668dc13d6c733090adf7e381d407110ff13633556ea037f3e"},"tools":{"aethelgard":"0.2.0","aethelgard-bridge":"91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af"},"event_count":91,"trace_bytes":6662,"state_sequence_hash":"3e49363f54298735534f46a0e0b3a8db54ae7c613d03e3bab6cc63db2075d64c"}
+ replay exit=0
+{"inserted_at_event":1,"of":91}
+{"variant":"a","dir":"/cache/c9/s02-baseline/splice/a/7c6549bc3f053878b9be63bdd7202ee9","events":92,"inserted":1}
+{"variant":"b","dir":"/cache/c9/s02-baseline/splice/b/7c6549bc3f053878b9be63bdd7202ee9","events":1091,"inserted":1000}
+{"ok":false,"error":{"kind":"NotACampaignRun","id":null,"message":"/cache/c9/s02-baseline/splice/a/7c6549bc3f053878b9be63bdd7202ee9/: a campaign run holds an event that is not a campaign record"}}
+ replay(a) exit=3
+{"ok":false,"error":{"kind":"NotACampaignRun","id":null,"message":"/cache/c9/s02-baseline/splice/b/7c6549bc3f053878b9be63bdd7202ee9/: the records are not in the campaign's order"}}
+ replay(b) exit=3
+== campaign s02-droop
+campaign exit=1
+{"ok":true,"check":"replay","run_id":"85f2de8f108947451a880516813ebd82","scenario":"s02-droop","verdict":"fail","expect":"pass","matched":false,"findings":["brownout_unrecovered"],"expect_findings":[],"artifacts":{"base":"b34c329dc7c5d9f142a9c4a62d81ba0f0ad4f265c894ca6737ed8df7c4a32fed","firmware":"c7ca3d8ea091c0252777314dea536063c22c335df3645369448c6626aa3df760","scenario":"39914c01ed50572b1999126e1f77653a4b50182e8fafdb8d5e3c28f8a2d108c7","specification":"cc4d3664f923f9aa2556219d81bf42dc6184587d9939cf4bb67ba4c480eeda42","topology":"2c1ec30e7b5e3c7668dc13d6c733090adf7e381d407110ff13633556ea037f3e"},"tools":{"aethelgard":"0.2.0","aethelgard-bridge":"91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af"},"event_count":100,"trace_bytes":7405,"state_sequence_hash":"78a445ef68fd8087ee50e235afaa7fc1e0c33347881800ed8d30d43d5d51b5a6"}
+ replay exit=0
+{"inserted_at_event":26,"of":100}
+{"variant":"a","dir":"/cache/c9/s02-droop/splice/a/85f2de8f108947451a880516813ebd82","events":101,"inserted":1}
+{"variant":"b","dir":"/cache/c9/s02-droop/splice/b/85f2de8f108947451a880516813ebd82","events":1100,"inserted":1000}
+{"ok":false,"error":{"kind":"NotACampaignRun","id":null,"message":"/cache/c9/s02-droop/splice/a/85f2de8f108947451a880516813ebd82/: a campaign run holds an event that is not a campaign record"}}
+ replay(a) exit=3
+{"ok":false,"error":{"kind":"NotACampaignRun","id":null,"message":"/cache/c9/s02-droop/splice/b/85f2de8f108947451a880516813ebd82/: a crossing names a level no active threshold has"}}
+ replay(b) exit=3
+== rejudge /cache/runs/healthy-100ms-1/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}
+== rejudge /cache/runs/healthy-100ms-2/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}
+== rejudge /cache/runs/healthy-100ms-full/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}
+== rejudge /cache/runs/healthy-1s/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}
+== rejudge /cache/runs/smoke-healthy-50ms/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}
+== rejudge /cache/runs/weak-100ms-1/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":4,"recorded":4,"equal":true}
+== rejudge /cache/runs/weak-100ms-2/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":4,"recorded":4,"equal":true}
+== rejudge /cache/runs/weak-100ms-q100us/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":4,"recorded":4,"equal":true}
+== rejudge /cache/runs/weak-100ms-q1us/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":4,"recorded":4,"equal":true}
+== rejudge /cache/runs/weak-1s-q100us/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":48,"recorded":48,"equal":true}
+== rejudge /cache/runs/weak-1s/
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":48,"recorded":48,"equal":true}

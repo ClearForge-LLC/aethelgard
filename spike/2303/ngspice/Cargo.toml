@@ -1,0 +1,13 @@
+[package]
+name = "ng-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# Outside the root workspace on purpose (RUL-12: no unsafe in any workspace crate). Copied unchanged from AET-WO-2301's spike at a451cd15.
+[workspace]
+
+[dependencies]
+
+[lib]
+path = "src/lib.rs"
