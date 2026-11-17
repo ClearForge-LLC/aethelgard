@@ -473,3 +473,6 @@ Reduction pass (diff): âˆ’1 copy (one `bound_nm` for two mm-to-nm conversions) Â
 - **The tier-2 test** passes in the pinned image on the final placement (7.63 s; caps read back, swap 0).
 - **`TIER2_MIN` 178,** counted in the image.
 
+- **`main` `7b1ce09` merged** (4400b2 #196, the 4400c record #202), with a merge commit, clean.
+  - 4400b2 changed only a test module in `svd-hal/src/board.rs`, and nothing under `boards/` or `fab/`, so Sentinel-01's package stands.
+  - On the merge: fmt and both clippy runs are clean; `cargo test --workspace` gives **2080 passed, 0 failed**; `TIER2_MIN` 178, exact, counted in the image.
