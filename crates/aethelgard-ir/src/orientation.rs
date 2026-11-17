@@ -91,13 +91,30 @@ mod tests {
     /// `ImuAxesNotCited`: a declared orientation on an IMU whose row cites no
     /// `axes`, or no `ardupilot.frame`, is refused by name, never assumed
     /// (the work order's §5). The embedded table cites both, so each is
-    /// removed from a copy.
+    /// removed from a copy. The specification is the crate's own power-board
+    /// fixture with U5 made the ICM-42688-P as ruled (D5), inside the package:
+    /// CI's package gate refuses an `include_str!` reaching outside the crate.
     #[test]
     fn an_imu_without_cited_axes_or_frame_is_refused_by_name() {
-        let spec: Specification = serde_json::from_str(include_str!(
-            "../../aethelgard-cli/tests/fixtures/sentinel-02-own.json"
-        ))
-        .unwrap();
+        let mut doc: serde_json::Value =
+            serde_json::from_str(include_str!("../tests/fixtures/sentinel-02-power.json")).unwrap();
+        doc["board"]["forward"] = serde_json::json!("top");
+        let u5 = doc["spi_devices"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|d| d["reference"] == "U5")
+            .unwrap();
+        u5["part"] = serde_json::json!("ICM42688P");
+        u5["supply"] = serde_json::json!("VDD_3V3");
+        u5["orientation"] = serde_json::json!({"x": "right", "z": "up"});
+        // The ICM20948's end-of-life acceptance would now name no device.
+        doc["accept_lifecycle"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|a| a["part"] != "ICM20948");
+        let spec: Specification = serde_json::from_value(doc).unwrap();
+        assert_eq!(spec.validate_parts(crate::parts::table().unwrap()), Ok(()));
         for (missing, pointer) in [("axes", "/axes"), ("ardupilot.frame", "/ardupilot/frame")] {
             let mut doc: serde_json::Value = serde_json::from_str(PARTS_JSON).unwrap();
             let row = doc["parts"]
