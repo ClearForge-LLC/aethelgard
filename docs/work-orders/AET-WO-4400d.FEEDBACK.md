@@ -375,3 +375,8 @@ Two reds on 8c48ba6d.
   - **Swept:** every specification at version 16 was hashed at its version-15 bytes (25 files). Each hash's 8-character prefix was searched across the tree. The only hits are comments that record the old values on purpose (`solve_cli.rs` and this test), plus the bench package, which waits on CI. No quoted hex of 8 or more digits remains in any tier-2 test.
   - **Run in the tools image before READY:** the whole `verify_2k2_tier2` binary (result below).
   - **Result:** in the pinned tools image, with the bridge built beside the CLI as CI's step builds it, both tests pass (1174 s): `verify_binds_the_reference_and_two_runs_print_the_same_bytes` and `verify_fab_out_writes_the_package_its_verdict_names_at_any_path`. A first run without the bridge stopped at `BridgeUnavailable`, which was this runner's setup, not the code.
+
+**Main 2642ece (1604) merged:** clean, no conflict; my computed hash sits beside 1604's `## Files` reading in `verify_2k2_tier2`. Gates on the merge:
+- fmt and host clippy pass.
+- `cargo test --workspace`: 131 binaries and 2,160 tests pass. The one failure is `bench_board_tier1`'s package binding, still the AWAITING-PACKAGE step.
+- In the tools image: clippy with tier 2 passes; `verify_2k2_tier2` passes 2/2 (1114 s); `with_tools` passes 32/32.
