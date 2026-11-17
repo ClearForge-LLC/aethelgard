@@ -1,28 +1,19 @@
 # AET-WO-1313 — FEEDBACK
 
-## 0. Status: STOPPED, built in full as ruled, waiting on one CI dispatch (§5.8) and one finding (§5.3)
+## 0. Status: READY, as ruled on the second stop (PR #197, comment 6944446645; §6)
 
-- **The stop (§5.8).** 3401 merged while this was building. Specification 15 moves the hash of its `examples/sentinel-01.json`, and the committed `fab/sentinel-01-bench/package` is bound to that hash. By the ruling on #190 that package is only ever the one CI's `bench-package` job writes (`workflow_dispatch`, `write`), and this session cannot dispatch it.
-  - Until it is re-written on this branch, `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit` fails. It is the one failing test of 2069.
-  - **Asked:** dispatch `ci.yml` with `write` on `wo/aet-1313-outline`, and commit the artifact into `fab/sentinel-01-bench/package/`. Or rule another way.
-
-- **Built as ruled (PR #197, comment 6942817989):**
-  - `board.max_outline_mm`, specification 15;
-  - the placer under a bound: (r) owners first, (a) compaction with the MCU's 1 mm gap, (c) connectors on the side edges through one edge-plan function;
-  - `OutlineTooSmall` before placement, `OutlineUnreachable` after it;
-  - the fixture without `SPI_*`/`IMU_*` test pads, IMU_CS on PB12, bound 100 × 100.
-- **Acceptance, every item measured (§5.5):**
-  - the fixture passes every gate at four layers inside its bound, in tier 1 and in the tier-2 test in the image;
-  - every existing emitted file is byte-identical with no bound declared;
-  - the bump moves only specification hashes;
-  - every new refusal has a tier-1 test;
-  - fmt, clippy and the workspace suite pass;
-  - `TIER2_MIN` 178, counted in the image (176 + 3401's 1 + this work order's 1).
-- **The finding (§5.3) [measured].** The spike's compaction (a) moved groups toward the first placed part in the emitter's item order (C1 on the fixture), not the MCU's centre as §2.3 says.
-  - Built as ruled (toward the MCU), (a) moves nothing on the fixture, which emits at **85.25 × 99.05 mm**: inside 100 × 100, every gate passing, but with 0.95 mm of height to spare.
-  - The spike's 80 mm heights, its robustness under 1307's prefix renamer, and §3.5's 86 × 81 with spare room are the C1 target's.
-  - **Fork:** (i) drop (a), one commit that only removes code, recommended; or keep it as built. (ii) The spike's target is not buildable: it depends on part order. (iii) A new compaction is a new spike.
-  - The quote still asks for 100 × 100; expect about 85 × 99.
+- **The method is (r)+(c).** Under a declared `board.max_outline_um`, ICs owning anchored parts are placed first, and the connectors go on the left and right edges, cable side out, through one edge-plan function. (d), every cable on the bottom edge, is one line away.
+  - (a), compaction, was dropped in a removal-only commit (ruled (i)).
+  - A bound that cannot hold the parts is `OutlineTooSmall`, before placement. One the placer does not reach is `OutlineUnreachable`, and nothing is written.
+  - With no bound declared, every existing board is byte for byte today's.
+- **The fixture** (`sentinel-03.json`: no `SPI_*`/`IMU_*` test pads, IMU_CS on PB12, bound 100 000 × 100 000 µm):
+  - **85.25 × 99.05 mm**;
+  - every gate passes at four layers, in tier 1 and in the tier-2 test in the image;
+  - `extract` passes with room: the SPI lines at 12.3–16.5 pF of 30.
+- **Specification 15; `TIER2_MIN` 178,** counted in the image.
+- **3401's fabrication package** is the artifact of the dispatched run 44058299670 (on `556b303`), committed unchanged. Nothing after `556b303` moves Sentinel-01's bytes (measured, §6).
+- **For the quote:** ask for 100 × 100 mm, four layers, top-side assembly. Expect about 85 × 99 mm. The spike's 86 × 81 was the C1 target's (§5.3). In height there is no spare room for the witness port, USB FS and E0 [inferred].
+- **(iii)**, a compaction that recovers the 80 mm heights, is `AET-WO-1313b`, the architect's spike.
 
 ### The §1.5 status, as written at `ede77a8`
 
@@ -369,7 +360,7 @@ Why:
 **Why the spike's target cannot be built as it ran.** It is whichever part comes first in the emitter's list. So the board would depend on the order of the parts, which `pcb.rs`'s `the_board_does_not_depend_on_the_parts_order` holds it never does today [inferred from the property; not run with the C1 target].
 
 **The fork, for the architect:**
-- **(i) As described.** On this fixture compaction moves nothing. If ruled, I recommend dropping (a), leaving (r)+(c), rather than shipping code that does nothing here.
+- **(i) As described.** On this fixture compaction changes no outline. **Corrected in §6:** it did move one group (U5, the ICM-42688-P, with its capacitors C41–C43) by 2.25 mm inside the outline, so the board's bytes moved when (a) was removed. If ruled, I recommend dropping (a), leaving (r)+(c), rather than shipping code that does nothing here.
   - It fits the fixture at 85.25 × 99.05: 14.75 mm of width margin, 0.95 mm of height.
   - It fits every order-only renaming.
   - A grown board is refused by name, never written.
@@ -436,7 +427,7 @@ Why:
 
 ### 5.7 Reduction pass
 
-Reduction pass (diff): −1 copy (one `bound_nm` for two mm-to-nm conversions) · `spike/1313/` deleted (the spike's record stays at `ede77a8`; builds delete `spike/`) · 1 protected kept (M5's labelled guard) · 1 finding: (a) itself, which moves nothing on the fixture as ruled (§5.3, fork (i)).
+Reduction pass (diff): −1 copy (one `bound_nm` for two mm-to-nm conversions) · `spike/1313/` deleted (the spike's record stays at `ede77a8`; builds delete `spike/`) · 1 protected kept (M5's labelled guard) · 1 finding: (a) itself, which changes no outline on the fixture as ruled (§5.3, fork (i); dropped by ruling, §6).
 
 ### 5.8 The stop: 3401's CI-written fabrication package [measured]
 
@@ -449,4 +440,36 @@ Reduction pass (diff): −1 copy (one `bound_nm` for two mm-to-nm conversions) �
 - **The package.** `fab/sentinel-01-bench/package/` carries the old hash in `MANIFEST.json` (`specification_sha256`, and `topology_sha256` through the solve) and in `FAB-NOTES.md`. It also binds `verdict_sha256`, the digest of `verify`'s whole verdict, sandbox included, which no substitution can reproduce.
   - The ruling on #190: "the committed package is the one this job writes (dispatch with `write`, then commit the artifact's files), never one written on another machine".
   - So I left it untouched. It is the one red test, until the dispatch or a ruling.
+
+## 6. After the ruling on the second stop (PR #197, comment 6944446645)
+
+### 6.1 What each ruling became
+
+- **§5.8, the package.**
+  - The architect dispatched `ci.yml` with `write` on `wo/aet-1313-outline`: run **44058299670**, on `556b303`.
+  - Its `bench-package` artifact (id **14318433213**; zip sha256 `a5558a81…`, 51 427 bytes, as the architect gave them) was downloaded with the read-only token and committed unchanged into `fab/sentinel-01-bench/package/`.
+  - The artifact holds the same 15 files. Only `FAB-NOTES.md` and `MANIFEST.json` moved (the specification's sha256, now `411cef0c…`); the Gerbers, drill, positions, BOM and ELF are byte-identical.
+  - The run's red jobs were the stale binding test alone (`gates`, `tools-shard (3)`, and `tools` aggregating it), as the architect said; I read their logs. With the package committed, `bench_board_tier1` passes.
+  - Nothing committed after `556b303` moves Sentinel-01's bytes. Measured: `emit` and `generate` of `examples/sentinel-01.json` and `examples/sentinel-01-minimal.json` are byte-identical between `556b303`'s binary and this branch's, after both changes below. So no re-dispatch is needed.
+- **§5.3 → (i): (a) dropped,** removal only: 0 lines added, 148 deleted from `pcb.rs` (the compaction, its gap bookkeeping, and its test). (r)+(c) remain.
+  - **A correction to §5.3** [measured]. The fixture's outline did not change (85.25 × 99.05). But its board did: compaction had moved one group, U5 (the ICM-42688-P) with its capacitors C41–C43, by 2.25 mm in y inside the outline, and removing it moved them back. Those 4 of the 100 footprints were the only ones that moved. So "(a) moves nothing" in §5.3 was true of the outline, not of the bytes.
+  - The new placement passes every gate: tier 1, and the tier-2 test in the image (7.63 s). `extract` passes, the SPI lines at 12.3–16.5 pF of 30.
+- **F2 → `board.max_outline_um`**, in micrometres, 1 to 1 000 000 a side (`MAX_OUTLINE_UM`).
+  - The refusals name the bound and the outline in millimetres for reading (`OutlineTooSmall`, `OutlineUnreachable`: `width_um`, `height_um`).
+  - The fixture declares 100 000 × 100 000.
+- **F3, accepted.** The IR README now says it beside the key: `validate` judges the bound only when the specification solves; `emit` always judges it before placement.
+- **F4: an explicit `null` is refused.**
+  - That is what the existing optional keys do. `test_points` (a list) and `mcu.reset_switch` (a bool) both refuse `null` as the wrong type: tested, in `a_malformed_outline_bound_is_a_shape_error`.
+  - So the bound takes `default` with a `present` deserializer. Absent is no bound; `null` is a shape error (`SchemaViolation`).
+- **M5, the reduction and `TIER2_MIN` 178:** accepted, unchanged.
+
+### 6.2 Gates on the final head
+
+- **Mutants for the guards this round touched,** re-run as a set of 12: 11 killed.
+  - M1 the bound check, M2 the area sum, M3 the per-part fit, M4 the micrometre range, M7 (r), M8 the side balance, M9 `validate`'s call, M10 the left edge, M11 placement ignoring the bound, M13 `null` read as absent, M14 micrometres read as millimetres: all killed.
+  - M5, the labelled guard, survives.
+  - M6 and M12 went with (a).
+- **fmt; clippy, plain and with `aethelgard-cli/with-tools`; `cargo test --workspace`:** fmt and both clippy runs are clean; **2068 passed, 0 failed**, run in place on the final code. (One test fewer than before: the compaction test went with (a).)
+- **The tier-2 test** passes in the pinned image on the final placement (7.63 s; caps read back, swap 0).
+- **`TIER2_MIN` 178,** counted in the image.
 
