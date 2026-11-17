@@ -238,7 +238,7 @@ namespace Antmicro.Renode.Peripherals.Sensors
                 {
                     // FIFO_COUNT: reading 0x2E latches both bytes; 0x2F reads the latch [DS p.69-70].
                     // Records (packets with an unread byte) or unread bytes, per FIFO_COUNT_REC [DS p.75]. FIFO_COUNT_ENDIAN 0 puts the low
-                    // byte at 0x2E (B2 [TDK L1013-1015, L1611-1615]: little-endian count, read from
+                    // byte at 0x2E (B2 [TDK L1013, L1016, L1611-1615]: little-endian count, read from
                     // FIFO_COUNTH as low byte first).
                     if(reg == 0x2E)
                     {

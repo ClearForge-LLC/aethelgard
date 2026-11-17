@@ -8,10 +8,19 @@ Labels: **[read at source]** from a file and line named beside it; **[rendered]*
   - `IV3` = `libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp`;
   - `INS` = `libraries/AP_InertialSensor/AP_InertialSensor.cpp`.
 - **The model:** `models/renode/ICM42688P.cs` at `main` `7d52d29`.
+- **TDK InvenSense's own ICM-426xx driver (after the ruling, §8):** eMD 2.0.9 (`Icm426xxVersion.h`: "2.0.9"), from the mirror `geosmall/DK-42688-P_SmartMotion_eMD_2.0.9` at `14c056e8`, `example-raw-data-registers/src/Invn/Drivers/Icm426xx/`. It is cross-checked against the 2.0.3 copy Microchip vendors in `MicrochipTech/ml-samd21-iot-imu-data-logger` at `9fac763a`. `TDK` below = `Icm426xxDriver_HL.c` of 2.0.9. The licence is InvenSense's proprietary one, so the code is cited and never copied.
 
-## 0. Status: STOPPED at §1.1, as the work order requires
+## 0. Status: BUILT as ruled on #214; READY waits on one narrow question (B10, §8)
 
-- **Measured and read; nothing built.** No line of the model or of any test is changed on this branch.
+- **The FIFO is built to the ruled set (§9).** Every acceptance item of WO §2 is met and measured (§10).
+- **B1–B4 are [read at source] in TDK's driver,** which confirms each recommended reading. B5–B9 are labelled [inferred] beside each rule in the model source (§8).
+- **B10 contradicts TDK's driver.** TDK treats the FIFO temperature `0x80` (−128) as "no new temperature", while the ruled B10 saturates at −128. That is the ruling's "contradiction: stop", scoped to that one constant. The question was asked on the bus with both sources cited. The model carries the ruled −128 until the answer arrives.
+- **The generated firmware's verdicts do not move [measured]:** `twin_tier2` 82/82 and `campaign_tier2` 9/9 in the pinned image on the new model.
+- **ArduPilot's `read_fifo` under the hook is not recorded:** `4400e3` has not merged. Main holds only its work order (#216).
+
+## 0a. The §1.1 stop (as ruled on #214, comment 6961946623)
+
+- **Measured and read; nothing built at the stop.**
 - **The proposal (§4):** packets 1–3 (16-bit), `STOP-on-FULL`, the count in records or bytes in either byte order, `FIFO_FLUSH`, the ODR timestamp at 1 µs resolution, and `FIFO_FULL_INT` as a status bit. The 20-bit packet, `Stream-to-FIFO`, FSYNC, the watermark, the FIFO interrupts on a pin and `FIFO_LOST_PKT` are left out. A firmware that selects one of them gets a warning from the model, never a guessed value.
 - **ArduPilot needs four behaviours the datasheet does not state (§3).** That is §7's second condition, so each is cited for the ruling with a recommended reading:
   - **B1:** whether `SENSOR_DATA_ENDIAN` applies to FIFO packets;
@@ -219,3 +228,135 @@ Each is outside the ruled set. A write that selects it logs a `Warning` naming i
 - **How the datasheet was read:** text by `pymupdf`. Every table this proposal rests on was confirmed on the rendered page: pp.38, 39, 41, 58, 61, 75 and 87.
 - **A label to correct, outside this fence:** `4400e` FEEDBACK L154 calls `0x50` ← `0x05` "±16 g, 8 kHz". Code `0101` is 2 kHz (p.78), which matches ArduPilot's 2 kHz path (`IV3` L787–788).
 - **Running beside this:** `4400e2`. Nothing here touches its files.
+
+## 8. The ruling applied: TDK's driver first
+
+The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver where it speaks; otherwise label the reading [inferred], beside each rule in the model source; a contradiction stops. Both copies agree on every line below (2.0.9 and 2.0.3).
+
+| Reading | TDK's driver | Label |
+|---|---|---|
+| **B1** `SENSOR_DATA_ENDIAN` orders every 16-bit FIFO field | the packet decode passes accel, gyro and the timestamp through `inv_icm426xx_format_data(s->endianess_data, …)` (`TDK` L1079–1121), which reads big-endian as `in[0] << 8 \| in[1]` and little-endian as `in[1] << 8 \| in[0]` (L2134–2140) | [read at source] |
+| **B2** with `FIFO_COUNT_ENDIAN` 0, `0x2E` holds the low byte | the FIFO set-up clears `FIFO_COUNT_ENDIAN` ("little endian", L1611–1615), then reads `MPUREG_FIFO_COUNTH` for 2 bytes and decodes them as little-endian (L1013, L1016) | [read at source] |
+| **B3** a burst at `FIFO_DATA` holds its address | one `inv_icm426xx_read_reg(s, MPUREG_FIFO_DATA, packet_size * packet_count, …)` (L1045), which the transport passes as one read of that length (`Icm426xxTransport.c` L83–85) | [read at source] |
+| **B4** a packet read in full is consumed, with `FIFO_RESUME_PARTIAL_RD` 0 | on I3C the driver reads "packet by packet", one transaction per packet (L1027–1040), and never sets the bit (it is only defined, `Icm426xxDefs.h` L1061–1062) | [read at source] for whole packets; a read ending inside a packet stays [inferred], warned |
+| **B5** a slot before its sensor's first sample, hold-last on: 0 | silent (the driver leaves hold-last at reset and checks `INVALID_VALUE_FIFO` −32768, `Icm426xxDefs.h` L283; L1141–1174) | [inferred] |
+| **B6** the timestamp's zero is the model's reset | silent | [inferred] |
+| **B7** `HEADER_ODR_*` 0 on the first packet after a flush | silent | [inferred] |
+| **B8** an empty FIFO reads `0xFF` | a header with `msg_bit` set makes the driver reset the FIFO (L1072–1076), consistent with p.39's "FIFO is empty"; nothing on the other bytes | [inferred] |
+| **B9** capacity 2048 bytes less one packet | silent | [inferred] |
+| **B10** a FIFO temperature saturates at −128 and +127 | **contradicts:** `INVALID_VALUE_FIFO_1B` is `(int8_t)0x80` (`Icm426xxDefs.h` L284), and a byte equal to it is "no new temperature" (L1115) | **stopped, narrowly:** asked on the bus, proposing −127 … +127 |
+
+**B10 in practice:** only a temperature below 25 − 127.5/2.07 ≈ −36.6 °C reaches the bound. Neither ArduPilot's path nor any stimulus in the repository does. The constant is `FifoTempMin` (`ICM42688P.cs`), one line.
+
+## 9. What is built
+
+**`models/renode/ICM42688P.cs`** (fence). Each rule carries its label in the source, `[DS p.N]`, `[TDK L…]` or `[inferred]`; the header defines them.
+- **Packets 1–3** (`WritePacket`, `Slot`, `Put16`): header by p.41; values from the data registers' own words; temperature by p.25; packet 3's timestamp by p.58.
+- **The packet clock:** `RunEventsUpTo` writes one packet per sampling instant, after every sample at that instant. Accel and gyro at the same instant share a packet. A sensor with no new sample gives its invalid slot (p.58, p.75 (c); B5).
+- **STOP-on-FULL** at 2048 bytes less one packet (B9). `FIFO_FULL_INT` is set when the FIFO becomes full (p.69). Bypass empties the FIFO.
+- **The count** (`0x2E`/`0x2F`): latched on `0x2E`, in records or bytes, in either byte order (B2).
+- **`FIFO_DATA`:** pops a byte; a burst holds at `0x30` (B3); empty reads `0xFF` (B8); a read ending inside a packet warns with `FIFO_RESUME_PARTIAL_RD` 0 (B4).
+- **`FIFO_FLUSH`, soft reset and `Reset()`** empty the FIFO.
+- **Left out, each named by a warning on the write that selects it:**
+  - **No packets while selected:** the 20-bit packet; FSYNC in the FIFO; `FIFO_TEMP_EN` 0; `TEMP_DIS`; Stream-to-FIFO; a `TMST_CONFIG` other than its reset's timestamp.
+  - **Warned, the FIFO itself unchanged:** the watermark; FIFO interrupts on a pin; FIFO interrupt clear on a data read.
+  - `FIFO_LOST_PKT` stays an unmodelled register.
+- **Unchanged:** the data registers, `INT1`, the access rules, every reset value and the log contract (one `Noisy` line per transaction).
+
+**Tests, `crates/aethelgard-cli/tests/models_tier2.rs`** (fence; monitor-driven, tier 2):
+1. `the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet`:
+   - ArduPilot's configuration at 2 kHz and the twin's stimulus;
+   - the count at 9, 10.25 and 40.25 ms of virtual time is 0, 1 and 61;
+   - two packets byte for byte (§5's, at the start-up's 10.0 and 10.5 ms);
+   - after a flush, the count is 0 and the data reads `0xFF`;
+   - the data registers read as before the FIFO.
+2. `the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz`: p.58's own oracle (steps of 937 and 938); the gyro slot 0 before 30 ms and 1640 from 30 ms; the temperature byte 31 at 40 °C.
+3. `the_fifo_stops_when_full_and_latches_its_count_in_either_order`: 127 packets, then `FIFO_FULL_INT`; the big-endian count and its latch; Bypass empties the FIFO.
+4. `packets_1_and_2_and_each_selection_left_out_says_so`: 8-byte packets and every warning.
+5. `a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet` (the adversarial pass, §11).
+- **The replay** `ardupilot_s_probe_and_init_pass_against_our_models` now uses the measured 2 kHz writes, through a shared `ardupilot_imu_start`. It then polls the FIFO as `read_fifo` does: the count `0x01 0x00`, and one packet with header `0x68`.
+
+**`models/renode/README.md`** (fence): the FIFO's modelled and left-out sets.
+
+**Outside the fence, approved on #214 (comment 6961946623):**
+- `crates/aethelgard-twin/src/model.rs` L71: the model's sha256 pin moves to the new file's hash.
+- `crates/aethelgard-cli/src/ledger.rs` L1337, L1342 and L1347: the citations `ICM42688P.cs L174, L242` and `L172–175` now read `L200, L287` and `L198–201`, the same two warnings at their new lines.
+
+**Also outside the fence, as every new tier-2 test needs:**
+- `.github/workflows/ci.yml`: `TIER2_MIN` 185 (180 plus these five), with a comment line;
+- `ci/test-weights.tsv`: five rows, Furnace estimates.
+
+## 10. Acceptance (WO §2) [measured]
+
+- **The count grows at the configured ODR in virtual time,** and each packet matches the datasheet's format byte for byte: tests 1–3 and 5, at 2 kHz and 1 kHz, in both byte orders.
+- **A read past the count returns `0xFF`** (test 1, B8).
+- **The generated Rust firmware's verdicts do not move.** In the pinned image, on the new model:
+  - `twin_tier2` 82 passed, 0 failed (693.5 s): the reference, the own board and the seeded faults;
+  - `campaign_tier2` 9 passed, 0 failed: every scenario;
+  - `models_tier2` 12 passed, 0 failed.
+  - The firmware never enables the FIFO, and its only read stops at `0x22`.
+  - The bench board carries no ICM-42688-P.
+- **ArduPilot's `read_fifo` under the hook: not recorded.** The ruling asks for it only if `4400e3` merges first. Main holds only `4400e3`'s work order (#216, docs), and `4400e2`'s record (#215) is a spike. What this build shows of that path is the replay: the count and one 16-byte packet, as `read_fifo` reads them.
+- **The CLAUDE.md gates:**
+  - fmt; clippy `-D warnings` with `with-tools`;
+  - `cargo test --workspace` 2176 passed, 0 failed;
+  - `ci/shard.sh plan` in the image: guard ok, 2377 tests, 185 tier 2;
+  - `TIER2_MIN` 185.
+
+## 11. Adversarial pass (WO §5), targeted
+
+- **A packet that passes the test but not the datasheet.** The ArduPilot-shaped tests check only the little-endian layout, so test 5 checks the datasheet's own table order, high byte first (p.38). With the gyro at 1 kHz under a 2 kHz accelerometer and hold-last off, it also checks:
+  - −32768 in a slot with no new sample (p.58, p.75 (c));
+  - the count in bytes;
+  - `HEADER_ODR_ACCEL` after an ODR change.
+  Header bits are checked in every packet test, and the timestamp against p.58's own step.
+- **A count that grows with wall time:** every count is asserted at exact virtual instants (`RunFor`), and the packets' timestamps are virtual nanoseconds × 30/32. A wall-clock count would not reproduce 0, 1, 61 at 9, 10.25 and 40.25 ms. The sampling timer is the one `4220` PB2 measured as firing exactly at the scheduled nanosecond.
+- **A data register whose behaviour changed:** test 1 reads `0x1D` with the FIFO on and gets 4220's values. `twin_tier2` and `campaign_tier2` pass unchanged.
+- **What the pass found (in the tests, not the model):**
+  - test 5's first draft wrote `INTF_CONFIG0` and `GYRO_CONFIG0` within 200 µs of the sensors leaving OFF, and the model's existing p.76 rule warned;
+  - any ODR write re-phases both sensors to now + their period (the model's `OnOutputDataRate`, since 4220), so a gyro sample the draft expected at 31.0 ms came at 31.75 ms.
+  Both tests were corrected; the model was right both times.
+
+## 12. Mutation (diff-sized)
+
+- **25 mutants, one per guard this order adds, run against `models_tier2` in the image: all killed** (`~/.cache/aet-4220c/mut`). They cover:
+  - the burst hold;
+  - the count's byte order, latch and unit;
+  - empty reads;
+  - flush and Bypass;
+  - capacity and `FIFO_FULL_INT`;
+  - the packet clock;
+  - invalid and pre-sample slots;
+  - byte order;
+  - the timestamp scale and its header bits;
+  - the ODR bit;
+  - the temperature coefficient;
+  - the partial-read warning;
+  - each left-out selection and each warning.
+- **Two survived the first run, and both were fixed:**
+  - `FIFO_FULL_INT` was set twice, on becoming full and on each dropped packet, and no test could tell them apart. The drop-time set is removed (§13);
+  - the temperature coefficient 2.0 for 2.07 survived because 4 × 2.07 = 8.28 and 4 × 2.0 both round to 8. Test 2 now runs at 40 °C (31.05 → 31, where 2.0 gives 30).
+
+## 13. Reduction pass
+
+Reduction pass (diff): −9 net · 2 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.
+
+It was run by a fresh read-only subagent over the diff. Each change applied was re-run against `models_tier2` (12/12) and its guards' mutants (6/6 killed).
+- **Duplicates removed:**
+  - the burst-hold rule, written in `Transmit` and again where `ReadRegister` sets `txReadFifo`, now reads the flag;
+  - `FIFO_FULL_INT`'s second set (§12).
+- **Dead path removed:** the one-caller wrapper `FifoCount()`, inlined. Also merged: a two-clause mask (`& 0x0A`) and a one-use local.
+- **Findings, not changed:**
+  - `WritePacket` and `FifoProblem` each decode `FIFO_CONFIG1`'s enables; sharing them needs a helper, so they are kept;
+  - `FifoTempMin` stays a named constant until B10 is ruled.
+
+## 14. Record
+
+- **Base:** `main` `7d52d29`.
+- **Commits:**
+  - the stop: `6dfb052c`;
+  - the build: `3b494fbf`;
+  - `main` `ff17dcf9` (4400e2's record and docs, no file of this order) merged: `af772c80`;
+  - this FEEDBACK.
+- **Evidence:** `~/.cache/aet-4220c/` (the TDK copies under `tdk/` with `SOURCE.txt`, the mutant harness under `mut/`, the image runs).
+- **Not built (WO "is NOT"):** no change to the data registers' behaviour; no interrupts or INT pins for the FIFO; no APEX.

@@ -68,7 +68,7 @@ pub const OWN: [(Model, &str, &str); 2] = [
     (
         Model::Icm42688p,
         "ICM42688P.cs",
-        "2a503548831c67a1a76b8e4aff0396dbde8abac8e3b1d2839e440ee2f3295620",
+        "7679fb5dc62974ad2288d4f161c5db3c640a2dc2df7c567856be2b4592d269dd",
     ),
 ];
 
