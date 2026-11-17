@@ -1,2 +1,0 @@
-{"ok":false,"error":{"kind":"ConnectorNetUnknown","id":"J2","message":"connector `J2` pin `2` names net `BOOT0`, which is no declared signal, voltage domain or `GND`: a connector cannot invent a net"}}
-exit 2

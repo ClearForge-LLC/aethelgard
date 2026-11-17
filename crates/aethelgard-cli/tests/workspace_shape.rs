@@ -698,8 +698,10 @@ fn boards_are_excluded_and_dependency_free() {
         assert_eq!(deps[&board]["path"].as_str(), Some(".."));
         boards.push(dir.file_name().unwrap().to_str().unwrap().to_owned());
     }
-    // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates.
-    assert_eq!(boards, ["sentinel-01"]);
+    // Exactly the boards `aethelgard-svd-hal/tests/board.rs` regenerates:
+    // the reference and Sentinel-01 as ordered (`AET-WO-3401` §1.3).
+    boards.sort();
+    assert_eq!(boards, ["sentinel-01", "sentinel-01-bench"]);
 }
 
 /// The analog bridge (`AET-WO-2200`, `RUL-17`) is excluded with the boards, so
