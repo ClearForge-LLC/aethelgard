@@ -1,0 +1,26 @@
+[00:00:00.163538800] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:00.163538800] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:00.163538800] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.163538800] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.179610600] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x10
+[00:00:01.973600630] [NOISY] i2c1.u2: Write D0
+[00:00:01.973601530] [NOISY] i2c1.u2: Read 60
+[00:00:01.973618440] [NOISY] i2c1.u2: Write 88
+[00:00:01.973619340] [NOISY] i2c1.u2: Read 0 80 0 80 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 40 0 0
+[00:00:01.973663360] [NOISY] i2c1.u2: Write F4 57
+[00:00:01.973674670] [NOISY] i2c1.u2: Write F5 8
+[00:00:01.973786350] [NOISY] i2c1.u7: read 0x01 -> 0x50
+[00:00:01.973799450] [NOISY] i2c1.u7: read 0x28 -> 0x02
+[00:00:01.973812520] [NOISY] i2c1.u7: read 0x27 -> 0x10
+[00:00:01.973826540] [NOISY] i2c1.u7: write 0x37 <- 0x00
+[00:00:01.973837850] [NOISY] i2c1.u7: write 0x36 <- 0x72
+[00:00:01.973848970] [NOISY] i2c1.u7: write 0x37 <- 0x3D
