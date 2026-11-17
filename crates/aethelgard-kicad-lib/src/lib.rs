@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 46] = [
+pub const FILES: [(&str, &[u8]); 50] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
@@ -238,6 +238,26 @@ pub const FILES: [(&str, &[u8]); 46] = [
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Sensor_Temperature.kicad_symdir/TMP117xxDRV.kicad_sym"
         ),
+    ),
+    (
+        "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Connector.kicad_symdir/TestPoint.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Connector.kicad_symdir/TestPoint.kicad_sym"),
+    ),
+    (
+        "symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym"),
     ),
     (
         "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
