@@ -24,6 +24,15 @@ A pin is **configured** when it is output or alternate and not at its reset stat
 
 The exception is a `DEFAULTGPIO` line before the `MCU` line, which sets every pin of ports A–K. With `OUTPUT`, the package check then names every pin the LQFP144 does not bond out, and no allow-list can clear them (`AET-WO-4400a` FEEDBACK, decision for `4400b`).
 
+**The identity judge** (`AET-WO-4400b2`, `src/identity.rs`). When `hwdef.h` is given, it also judges the facts ArduPilot keeps in its device tables rather than in `gpio_default_config`. Each is read from ArduPilot's own computation and held against the topology; the generated `hwdef.dat` is never read. Its findings are `check: "identity"`:
+- **Each SPI device the parts table names for ArduPilot,** from `HAL_SPI_DEVICEn` and `HAL_SPI_BUS_LIST` in `hwdef.h`. The table is built by a constructor at start-up, so the ELF holds no bytes of it. The judge holds one `SPIDesc` of the part's `spidev` name on its solved controller, its chip select on its solved pin, the driven mode, and speeds within the kHz at or below the controller's `achieved_hz`. Findings: `MissingSpiDevice`, `SpiDeviceTwice`, `UnknownSpiDevice`, `WrongSpiBus`, `WrongChipSelect`, `WrongSpiMode`, `WrongSpiSpeed`.
+- **Each motor output,** from `HAL_PWM_GROUPn`'s channel map and `&PWMDt`, also constructor-built. The motor's `PWM(n)` index must sit on its solved timer channel, and every other channel must be disabled. Findings: `WrongMotorChannel`, `MissingPwmGroup`, `UnexpectedPwmOutput`.
+- **The I2C clock,** `HAL_I2C_MAX_CLOCK`, or ArduPilot's 100 kHz default. It must not be above the slowest declared bus (`I2cClockAboveDeclared`). `hwdef.h` holds the generated `define` verbatim, so the expected value is the topology's, never the file's.
+- **The serial order and pins,** from the ELF's `_serial_tab`: `const` bytes in flash, 44-byte `SerialDef`s. SERIAL0 must be the console, then the specification's order, each on its solved U(S)ART and pins, and every later entry empty. Each non-RC port's baud comes from `DEFAULT_SERIALn_BAUD`, mapped as ArduPilot maps it, with ArduPilot's 115200 for SERIAL0 when absent. Findings: `MissingSerialPort`, `WrongSerialPort`, `UnexpectedSerialPort`, `WrongSerialBaud`.
+- **The barometer probes,** from `HAL_BARO_PROBEn` in order. Each must be the part's ArduPilot driver, on its solved controller (through `HAL_I2C_DEVICE_LIST`), at its address. Findings: `WrongBaroProbe`, `MissingBaroProbe`, `UnexpectedBaroProbe`.
+
+A table in a form the reader does not know is refused by macro name (`MalformedHeader`), never read loosely. `HAL_I2Cn_CONFIG`'s two DMA branches must agree on the bus number, which is all the judge reads of them. With no `hwdef.h`, the verdict's `identity` says it was not judged.
+
 **What it cannot see:**
 - a symbol table that lies: a `st_value` pointing at a decoy copy of good bytes passes on the ELF alone. Only the `hwdef.h` cross-check catches it, and CI always passes `hwdef.h`;
 - which MCU the firmware was built for: an H743 or H757 image decodes like an H753;

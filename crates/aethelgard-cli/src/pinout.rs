@@ -123,9 +123,25 @@ pub fn check(
         id: None,
         message: format!("the pin table is unusable: {err}"),
     })?;
-    let judgement =
+    let mut judgement =
         aethelgard_pincheck::judge(&topology, &table, &config, header.as_ref(), &allow_list)
             .map_err(refused)?;
+    // AET-WO-4400b2: ArduPilot's device tables, from hwdef.h and the ELF's
+    // serial table, against the topology.
+    if let Some(bytes) = &header_bytes {
+        let text = std::str::from_utf8(bytes).expect("checked above");
+        let parts = aethelgard_ir::parts::table().map_err(|err| Stop {
+            code: EXIT_INTERNAL,
+            kind: err.kind(),
+            id: None,
+            message: format!("the parts table is unusable: {err}"),
+        })?;
+        let pre = aethelgard_pincheck::header::preprocess(text).map_err(refused)?;
+        let serial = aethelgard_pincheck::elf::serial_table(&elf_bytes).map_err(refused)?;
+        let findings = aethelgard_pincheck::identity::judge(&topology, parts, &pre, &serial)
+            .map_err(refused)?;
+        judgement = judgement.with_identity(findings);
+    }
     Ok(Verdict {
         check: "pinout",
         topology_sha256: sha256(&topology_bytes),

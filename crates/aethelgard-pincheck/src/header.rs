@@ -409,3 +409,78 @@ pub fn read(text: &str) -> Result<[HeaderPort; PORTS.len()], Refusal> {
     }
     Ok(out)
 }
+
+/// `hwdef.h` as the preprocessor sees it, for the identity judge
+/// (`AET-WO-4400b2`): the same strict reading as the cross-check's.
+pub struct Preprocessed(Vec<(usize, State, String)>);
+
+/// Reads `text` as [`read`] does: continuations spliced, comments removed,
+/// `#if 0` and `#if 1` evaluated, any other conditional kept as unknown.
+pub fn preprocess(text: &str) -> Result<Preprocessed, Refusal> {
+    Ok(Preprocessed(logical(text)?))
+}
+
+impl Preprocessed {
+    /// The value of `#define <name>`, or `None` when no compiled line defines
+    /// it. Refused when it is defined twice, or named inside a conditional
+    /// the reader does not evaluate.
+    pub fn value(&self, name: &str) -> Result<Option<String>, Refusal> {
+        let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let mentions = |text: &str| {
+            text.match_indices(name).any(|(at, _)| {
+                !text[..at].chars().next_back().is_some_and(word)
+                    && !text[at + name.len()..].chars().next().is_some_and(word)
+            })
+        };
+        if let Some((n, _, _)) = self
+            .0
+            .iter()
+            .find(|(_, s, l)| *s == State::Unknown && mentions(l))
+        {
+            return Err(Refusal::Conditional {
+                name: name.to_owned(),
+                line: *n,
+            });
+        }
+        let defines: Vec<&str> = self
+            .0
+            .iter()
+            .filter(|(_, s, _)| *s == State::Live)
+            .filter_map(|(_, _, l)| l.strip_prefix("#define ")?.strip_prefix(name))
+            .filter(|rest| rest.starts_with([' ', '\t']))
+            .collect();
+        match defines.as_slice() {
+            [] => Ok(None),
+            [one] => Ok(Some(one.trim().to_owned())),
+            many => refuse(name, format!("defined {} times", many.len())),
+        }
+    }
+
+    /// Every definition of `name` the preprocessor may compile: in a live
+    /// line, or in a branch whose condition the reader does not evaluate
+    /// (ArduPilot's `HAL_I2Cn_CONFIG` has one per DMA branch). A caller reads
+    /// only what every one of them agrees on.
+    pub fn candidates(&self, name: &str) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, s, _)| *s != State::Dead)
+            .filter_map(|(_, _, l)| l.strip_prefix("#define ")?.strip_prefix(name))
+            .filter(|rest| rest.starts_with([' ', '\t']))
+            .map(|rest| rest.trim().to_owned())
+            .collect()
+    }
+
+    /// The names of the compiled `#define`s that are `prefix` then digits,
+    /// in file order.
+    pub fn numbered(&self, prefix: &str) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, s, _)| *s == State::Live)
+            .filter_map(|(_, _, l)| {
+                let name = l.strip_prefix("#define ")?.split([' ', '\t', '(']).next()?;
+                let n = name.strip_prefix(prefix)?;
+                (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| name.to_owned())
+            })
+            .collect()
+    }
+}
