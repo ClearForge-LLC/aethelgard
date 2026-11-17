@@ -30,3 +30,66 @@ Read at source for every row: `cli/src/renode.rs` (where the judge emits each ki
 - Where the records cannot decide, the kind is reported unexplained by name, with its missing evidence (`INV-06`), never plain `I1`.
 - No kind is electrical. In the twin, nothing a board declares produces any of the ten. A board fault reaches them only through a lost boot word, which the rules above refuse to read as either half.
 - **§7's stop does not fire.** Each kind's evidence is in the trace or the verdict.
+
+## §2 The build (`a589cd0d`; one worker, merged after a spot-check at source)
+
+**The software rules** (`aethelgard-evolve`; each has a firing and a non-firing test, measured passing):
+
+| Rule | Kind | Evidence kinds | Subjects | Fires | Must not fire |
+|---|---|---|---|---|---|
+| `S6` | `motor_anchor_unobserved` | 26 | the output | `s6_edges_with_no_anchor_are_software_by_the_witness` | `s6_never_fires_on_an_output_with_no_edges` (that run is `I4`) |
+| `S7` | `motor_anchor_repeated` (per timer, `cen_rises` > 1) | 26 | the output | `s7_a_timer_started_twice_is_software_by_its_own_witness_alone` | the same test: the other timer is never cited |
+| `S8` | `motor_anchor_out_of_order` | 10, 26, 29 | the output, the boot, the port | `s8_an_anchor_after_the_boot_word_s_instant_cites_that_instant` | `s8_never_fires_on_a_rewritten_verdict_alone` |
+| `S9` | `motor_edge_before_anchor` | 26 | the output | `s9_edges_before_the_anchor_are_software_by_the_witness` | inside the S6/S10 non-firing runs (no edge before) |
+| `S10` | `motor_edge_after_window` (kind 30 at the anchor has cleared `CEN`) | 26, 30 | the output, the timer | `s10_edges_after_the_window_are_software_only_once_the_stop_cleared_cen` | that test's stop-left-set half, and `s10_never_fires_with_no_stop_to_cite` |
+| `S11` | `judge_stop_mismatch` (a read-back off its solved value) | 30 | the timer | `s11_a_register_read_back_off_its_value_is_software_by_the_stop` | its unread-register half (unexplained by name) |
+
+**The harness refusal:** four rules, one per harness kind, each in domain `indeterminate`. Each names its bound through `Rule::bound()`. A harness rule names the run only when no other rule decided a symptom. Its events never join another rule's evidence, and `I5` never counts them.
+
+| Rule | Kind | The bound it names | Evidence kinds |
+|---|---|---|---|
+| `H1` | `motor_window_past_run` | `DSHOT_WINDOW_NS` past `MAX_VIRTUAL_NS` | 24, 26 |
+| `H2` | `judge_stop_missing` | the judge's stop at anchor + `DSHOT_WINDOW_NS` | 24, 26, and 30 when present |
+| `H3` | `serial_wire_past_run` | `MAX_VIRTUAL_NS` against the wire time | 27, 29 |
+| `H4` | `serial_injection_out_of_order` | the judge's sequential injection | 29 |
+
+- `propose` answers an `H` rule with nothing proposed and its bound named. The tests: `h1_*`, `h2_*`, `h1_h2_select_each_dshot_timer_by_its_own_window_and_stop`, `h3_*` (including `h3_never_masks_a_serial_fault`, beside `S5` and `E3`), `h4_*`, `a_harness_finding_never_masks_a_fault_nor_joins_its_evidence` (beside `S4`, `E1`, `I4`), and `propose_answers_a_harness_rule_with_its_bound_and_nothing_else`.
+- **Precedence is unchanged** (`a_window_software_rule_keeps_the_existing_precedence`): `S4` beats the new `S` rules, a new `S` beside `E1` is `I5`, and any indeterminate rule wins.
+
+**Where the build departs from §1's table (each accepted by me; §1 is left as written):**
+1. **`S8` is narrower than "software when booted."** Built as first written, it fired on the verdict alone: the records were those of a passing run, so rewriting the verdict moved a run to software. That is the README's rule ("rewriting the verdict never moves a domain") and WO §5's target.
+   - It now decides only when kind 29 places the anchor after the boot word's instant (the first port's injection, less a quantum), for exactly the timers the verdict names.
+   - An anchor before the last device step's witness is the boot's log-line order, which no record carries. It is **unexplained by name**, with that missing evidence.
+   - The unbooted branch is unreachable: replay refuses every window kind before the boot word. It carries a `belt-and-suspenders:` comment rather than a branch.
+2. **Two existing kinds now go to a harness rule when, and only when, the bound cut them.**
+   - `motor_timing_mismatch` (`I4` before) goes to `H1` when the DShot witness is `stopped`, its window passes the run, its last rise reaches the run's end, and no register is wrong.
+   - `serial_echo_missing` (`I6` before) goes to `H3` for a port in the past-run wire sum. The echo must be `missing` or `partial`, never `not_counted`, which the worker's own mutation run caught as a firmware fault refused as harness. Framing and tags must hold, with no `S5` or `E3` evidence.
+   - Without this, `H1` and `H3` could never name a real run: their findings always arrive with these companion symptoms.
+3. **`motor_edge_after_window` with no stop that cleared `CEN` is unexplained by name, not harness.** The edges may be the timer still running or the firmware, and no record tells which.
+   - So `judge_stop_missing` with edges after the window is `I1` by name, never `H2`.
+   - §1's table said "the harness's". The narrower reading is the honest one (`INV-06`).
+- **The "unexplained by name" shape is rule `I1`** with an `unexplained` entry written `"{kind}: {what the records lack}"`. Like any `I1`, it outranks a real fault beside it. It is never a plain `I1`.
+- **`H4` caveat:** replay binds no count for `serial_injection_out_of_order`, so a verdict naming it in a run nothing else decides makes the run `H4` (indeterminate), never a domain. The README says so.
+- **`judge_stop_mismatch` on a register the stop did not read back** is unexplained by name.
+
+**The removals:**
+- **evolve:** `Rule::I7`, `Scope::Window`, `Run.late`, `outside_window`, `unset_record`, and the `I7` entries in the selection and `PER_EVENT`. Rules now run `I1`–`I6`, 25 in all, and the count test asserts that "I7" names no rule.
+- **evolve tests removed:** `late_dshot`, `a_read_still_unset_when_the_short_window_ends_is_i7_by_its_record` and `a_late_read_is_only_the_unset_record_of_an_unbooted_short_window`.
+  - `an_unset_record_on_the_long_window_is_never_i7` tests another replay refusal, so it is kept, renamed `an_unset_record_claimed_invalid_before_the_boot_word_is_refused`.
+- **chaos:** `short_window`, `OUTSIDE_WINDOW_FINDING`, `check_run`'s bound on the kind, and the test `identity_read_outside_window_is_bound_to_an_unbooted_short_window`. A verdict naming `identity_read_outside_window` is now unbound in replay and gives a plain `I1`: no boot produces it.
+- **Still naming it, outside my allowed edits:** `crates/aethelgard-cli/README.md` L346, a historical "no longer given" note, and the protected `docs/roadmap.md` L626, which is the architect's.
+
+**The `.is_err()` tightening:** 87 occurrences now assert the refusal's message or variant (motor 34, serial 35, droop 11, campaign 4, archive 1, `power.rs` 2; two were helper or macro bodies covering 22 call sites). **Four passed on another guard's refusal**, and are fixed:
+- `a_static_mismatch_is_named_once_per_failing_check_booted_or_not` was refused by the boot word;
+- `a_run_with_its_rises_dropped_is_refused` was refused by the bus fault;
+- `a_boot_that_read_nothing_names_its_bound`: the pass forgery is now caught first by B1;
+- archive.rs's "u64::MAX timestamp" case was a payload-length refusal, not a codec one.
+
+**Outside the strict fence:**
+- the CLI README's attribute section and `propose` table only (1604 and 4400b2 were told by inbox);
+- the chaos README's replay list;
+- chaos's `open_ports`, `boot_word_instant`, `wire_past_run_ports`, `TWIN_MAX_VIRTUAL_NS` and `TWIN_DSHOT_WINDOW_NS` made public for evolve.
+
+No CLI source file changed.
+
+**Setup note:** the old `~/aethelgard-2302` worktree (clean, level with `origin/wo/aet-2302-windows` at `4b9cfe31`) was to be torn down at the start. The auto-mode classifier denied the delete, so it is left for the operator: `podman unshare rm -rf ~/aethelgard-2302 && git -C ~/aethelgard-2302b worktree prune`.
