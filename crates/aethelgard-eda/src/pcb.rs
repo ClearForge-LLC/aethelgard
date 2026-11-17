@@ -1832,6 +1832,59 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
 
 #[cfg(test)]
 mod tests {
+    /// `AET-WO-4400d`: the seat's turn on the ICM-42688-P's own footprint
+    /// for each forward edge and top-side X, and each refusal a footprint
+    /// can trip that the embedded parts table cannot: pin groups that are
+    /// mirrored (left-handed with +Z out of the top), an axis that is not
+    /// along a footprint axis or has no length, a pin with no pad.
+    #[test]
+    fn a_seat_turns_by_its_cited_pins_or_is_refused_by_name() {
+        use aethelgard_ir::orientation::{Edge, Orientation, Toward};
+        let fp = crate::library::footprint("Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm").unwrap();
+        let pins = |v: &[&str]| v.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+        let seat = |forward, x, xp: &[&str], yp: &[&str]| crate::schematic::Seat {
+            forward,
+            orientation: Orientation { x, z: Toward::Up },
+            x_toward_pins: pins(xp),
+            y_toward_pins: pins(yp),
+        };
+        let (xp, yp) = (["8", "9", "10", "11"], ["12", "13", "14"]);
+        for (forward, x, want) in [
+            (Edge::Top, Toward::Right, 0),
+            (Edge::Top, Toward::Forward, 90),
+            (Edge::Top, Toward::Left, 180),
+            (Edge::Top, Toward::Aft, 270),
+            (Edge::Right, Toward::Forward, 0),
+            (Edge::Bottom, Toward::Right, 180),
+            (Edge::Left, Toward::Forward, 180),
+        ] {
+            assert_eq!(
+                super::seat_rotation(&fp, &seat(forward, x, &xp, &yp), "U5").unwrap(),
+                want,
+                "{forward:?} {x:?}"
+            );
+        }
+        for (xp, yp, why) in [
+            (
+                &["12", "13", "14"][..],
+                &["8", "9", "10", "11"][..],
+                "right-handed",
+            ),
+            (&["1", "8"][..], &yp[..], "along one footprint axis"),
+            (&["8", "12"][..], &yp[..], "along one footprint axis"),
+            (&["8", "99"][..], &yp[..], "no pad for"),
+        ] {
+            let e = super::seat_rotation(&fp, &seat(Edge::Top, Toward::Right, xp, yp), "U5")
+                .unwrap_err();
+            assert_eq!(
+                (e.kind(), e.id()),
+                ("ImuRotationUnplaceable", Some("U5")),
+                "{e}"
+            );
+            assert!(e.to_string().contains(why), "{why}: {e}");
+        }
+    }
+
     #[test]
     fn an_arcs_circle_holds_its_three_points() {
         // A quarter of the unit circle, in nanometres, and the XT30PW-M's
