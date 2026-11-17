@@ -51,6 +51,12 @@ states them:
 - neighbouring nets are static while the line rises
 - on SCK and MOSI, each device pin at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)
 - beyond the board, each connector pin on a line adds the capacitance its specification declares for the mated contact, the cable and the remote pins, as declared with its source (the line's `offboard`); nothing here measures it
+- `TP14` is a test pad on `I2C_SDA`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
+- `TP13` is a test pad on `I2C_SCL`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
+- `TP12` is a test pad on `EXT_SDA`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
+- `TP11` is a test pad on `EXT_SCL`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
+- `TP10` is a test pad on `SPI_SCK`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
+- `TP9` is a test pad on `SPI_MOSI`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance
 
 
 ## Holes
@@ -114,6 +120,8 @@ The verdict that names this package states, for the board's parts:
 - `sentinel-01-bench-F_Mask.gts`: Gerber, top solder mask
 - `sentinel-01-bench-F_Paste.gtp`: Gerber, top solder paste
 - `sentinel-01-bench-F_Silkscreen.gto`: Gerber, top silkscreen
+- `sentinel-01-bench-jlcpcb-bom.csv`: bill of materials in JLCPCB's upload format, its part number empty (below)
+- `sentinel-01-bench-jlcpcb-cpl.csv`: placement in JLCPCB's upload format, rotation in KiCad's frame (below)
 - `sentinel-01-bench-pos.csv`: placement: reference, value, package, X and Y in mm, rotation, side
 - `sentinel-01-bench.bom.csv`: bill of materials, as `aethelgard emit` writes it
 - `sentinel-01-bench.drl`: Excellon drill file
@@ -157,3 +165,35 @@ programmed once, before the board is used, and read back:
 No programmer's command is given: ST's STM32CubeProgrammer user manual
 (UM2237), which would state its option-byte syntax, is not held, and none
 is cited here.
+
+## JLCPCB assembly files
+
+`sentinel-01-bench-jlcpcb-bom.csv` and `sentinel-01-bench-jlcpcb-cpl.csv` are the BOM and the
+placement file in JLCPCB's assembly upload formats, laid out as JLCPCB's
+sample files `Sample-BOM_JLCSMT.xlsx` and `Sample-CPL_JLCSMT.xlsx` lay them
+out, as read on 2026-11-17 from:
+
+- https://jlcpcb.com/help/article/bill-of-materials-for-pcb-assembly (last updated 2026-09-09);
+- https://jlcpcb.com/help/article/pick-place-file-for-pcb-assembly (last updated 2026-09-09);
+- https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad (last updated 2026-11-10).
+
+They are made from `sentinel-01-bench.bom.csv` and `sentinel-01-bench-pos.csv` and add nothing
+to them:
+
+- The BOM has one row per kind of part, grouped by value and footprint.
+  `Comment` is the value, `Designator` every reference of the kind, and
+  `Footprint` the KiCad footprint's name without its library.
+- **`JLCPCB Part #（optional）` is empty for every part.** No input of this
+  engine names a fabricator's part number, so none is written. Choose each
+  part in JLCPCB's library before ordering. A passive's value alone (`100n`)
+  does not choose a part: its voltage rating, dielectric and tolerance are
+  in no input.
+- `Mid X` and `Mid Y` are KiCad's placement coordinates, in mm: each
+  footprint's anchor, in the Gerbers' own frame. `Layer` is `T`.
+- **`Rotation` is KiCad's, normalised to 0 to 359 degrees, counter-clockwise,
+  in KiCad's frame.** No per-footprint offset into JLCPCB's library
+  orientation is applied, because none is known. Check every part's
+  orientation in JLCPCB's placement preview, by eye, before ordering.
+- Test pads are in neither file: nothing is placed on them.
+- A part on the bottom side is never written: JLCPCB's pages state no
+  bottom-side convention, so `verify --fab-out` refuses such a board by name.
