@@ -1,0 +1,11 @@
+10000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+39080000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+40740000 bridge reset_asserted vdd=2.5902 vbat=3.0952
+40750000 renode boot=0x0 cr1=0x0 ccr1=0x0
+40800000 bridge reset_released vdd=2.7294 vbat=3.2345
+40810000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+79880000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+81540000 bridge reset_asserted vdd=2.5902 vbat=3.0952
+81550000 renode boot=0x0 cr1=0x0 ccr1=0x0
+81600000 bridge reset_released vdd=2.7294 vbat=3.2345
+81610000 renode boot=0x0 cr1=0x0 ccr1=0xffff

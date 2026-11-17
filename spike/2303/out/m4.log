@@ -1,0 +1,11 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p4164546-i163458405.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+== synth 44 s
+{"seconds":44,"events":13200000,"trace_bytes":267793054,"counted":267793054,"crossed_256mib_at_ns":null,"write_s":1.918,"bytes_at_each_second":[[1000000000,5003386],[2000000000,10006726],[3000000000,1
+{"replay":"ok","events":13200000,"replay_s":2.132,"hwm_kib":275800}
+{"replay":"ok","events":13200000,"replay_s":2.162,"hwm_kib":275748}
+== weak 1 s
+lockstep exit=0
+replay exit=0
+== healthy 1 s
+lockstep exit=0
+replay exit=0
