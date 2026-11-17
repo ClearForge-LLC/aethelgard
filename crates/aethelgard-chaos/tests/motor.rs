@@ -586,6 +586,28 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     assert!(check_run(&clock).is_err());
 }
 
+/// The DShot timer's solved registers in `dshot_run`: name, address, mask,
+/// value (`CR1` with `CEN` set), as kind 11 lists them and kind 30 reads them
+/// back.
+const TIM2_SOLVED: [(&str, u32, u32, u32); 10] = [
+    ("TIM2.CR1", 0x4000_0000, 0xFF, 0x81),
+    ("TIM2.CR2", 0x4000_0004, 0x80, 0),
+    ("TIM2.SMCR", 0x4000_0008, 0x77, 0),
+    ("TIM2.DIER", 0x4000_000C, 0x5F, 0),
+    ("TIM2.CCMR1", 0x4000_0018, 0x7373, 0x60),
+    ("TIM2.CCMR2", 0x4000_001C, 0x7373, 0),
+    ("TIM2.CCER", 0x4000_0020, 0xBBBB, 0x1),
+    ("TIM2.PSC", 0x4000_0028, u32::MAX, 0),
+    ("TIM2.ARR", 0x4000_002C, u32::MAX, 106),
+    ("TIM2.CCR1", 0x4000_0034, u32::MAX, 40),
+];
+
+/// Where `dshot_run` puts its DShot output's witness (kind 26) and its
+/// judge's stop (kind 30): after the boot (kind 10), the timer's ten kind 11s
+/// and `M1`'s witness.
+const DSHOT_WITNESS: usize = 8 + TIM2_SOLVED.len();
+const DSHOT_STOP: usize = DSHOT_WITNESS + 1;
+
 /// `AET-WO-2302`: a DShot output's window is its anchor plus
 /// `DSHOT_WINDOW_NS`, derived by replay from the records, never the board's
 /// whole boot; the judge's stop (kind 30) sits at its end; and a window past
@@ -647,22 +669,50 @@ fn dshot_run(
         edges_after: 0,
         cen_rises: u64::from(anchor.is_some()),
     };
-    let mut at_end = r.split_off(9);
+    // Kind 11, the timer's solved registers after the boot: `CR1` expects
+    // `CEN` cleared after a stop that cleared it, the judge's own act.
+    let stopped = stop.is_some_and(|(_, cr1)| cr1 & 1 == 0);
+    let registers: Vec<Record> = TIM2_SOLVED
+        .iter()
+        .map(|&(name, address, mask, value)| {
+            let expected = if name == "TIM2.CR1" && stopped {
+                value & !1
+            } else {
+                value
+            };
+            Record::RegisterObserved {
+                name: name.into(),
+                reading: Reading {
+                    address,
+                    mask,
+                    expected,
+                    observed: Some(expected),
+                },
+            }
+        })
+        .collect();
+    let mut at_end = r.split_off(7);
+    r.extend(registers);
+    let mut tail = at_end.split_off(2);
+    r.append(&mut at_end);
     if let Some((stop_at, cr1)) = stop {
         r.push(Record::JudgeStop {
             timer: "TIM2".into(),
             anchor_ns: at,
             at_ns: stop_at,
-            read_back: vec![Reading {
-                address: 0x4000_0000,
-                mask: 0xFF,
-                expected: 0x81,
-                observed: Some(0x81),
-            }],
+            read_back: TIM2_SOLVED
+                .iter()
+                .map(|&(_, address, mask, value)| Reading {
+                    address,
+                    mask,
+                    expected: value,
+                    observed: Some(value),
+                })
+                .collect(),
             cr1_after: Some(cr1),
         });
     }
-    r.append(&mut at_end);
+    r.append(&mut tail);
     let failing: Vec<&str> = findings.iter().map(|f| f.0).collect();
     r[0] = scenario(findings.is_empty(), &failing);
     let last = r.len() - 1;
@@ -694,19 +744,19 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         .collect();
     let (dir, _) = write_run("stop-roundtrip", 7, &events);
     assert_eq!(replay_dir(&dir).unwrap().state.records, ok);
-    assert_eq!(ok[9].kind(), 30);
+    assert_eq!(ok[DSHOT_STOP].kind(), 30);
     // The witness ending anywhere but its anchor plus 2 ms is refused: the
     // board's boot (100 ms, the old 2 ms) is no DShot window.
     for wrong_end in [100_000_000, 2_000_000, end - 10] {
         let mut r = ok.clone();
-        if let Record::MotorWitness { end_ns, .. } = &mut r[8] {
+        if let Record::MotorWitness { end_ns, .. } = &mut r[DSHOT_WITNESS] {
             *end_ns = wrong_end;
         }
         assert!(check_run(&r).is_err(), "{wrong_end}");
     }
     // A first rise before the anchor is refused.
     let mut r = ok.clone();
-    if let Record::MotorWitness { first_ns, .. } = &mut r[8] {
+    if let Record::MotorWitness { first_ns, .. } = &mut r[DSHOT_WITNESS] {
         *first_ns = Some(a - 1);
     }
     assert!(check_run(&r).is_err());
@@ -733,11 +783,11 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         },
     ] {
         let mut r = ok.clone();
-        f(&mut r[9]);
+        f(&mut r[DSHOT_STOP]);
         assert!(check_run(&r).is_err());
     }
     let mut twice = ok.clone();
-    twice.insert(9, ok[9].clone());
+    twice.insert(DSHOT_STOP, ok[DSHOT_STOP].clone());
     assert!(check_run(&twice).is_err());
     // No stop, or one that left CEN set: `judge_stop_missing`, once.
     let missing = vec![(JUDGE_STOP_MISSING_FINDING, 1)];
@@ -762,7 +812,7 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         last_ns,
         off_grid,
         ..
-    } = &mut r[8]
+    } = &mut r[DSHOT_WITNESS]
     {
         // Its edges to the boot's end: 2187 rises, short of its window.
         (*status, *rises, *falls, *off_grid) = ("stopped".into(), 2187, 2187, 4373);
@@ -828,7 +878,7 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     }
     // R1: the read-back off its solved value: named once, or refused.
     let off = |r: &mut Vec<Record>| {
-        if let Record::JudgeStop { read_back, .. } = &mut r[9] {
+        if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
             read_back[0].observed = Some(0x00);
         }
     };
@@ -837,7 +887,7 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     assert!(run(&off, vec![(JUDGE_STOP_MISMATCH_FINDING, 2)]).is_err());
     // A register the stop did not read back: once.
     let short = |r: &mut Vec<Record>| {
-        if let Record::JudgeStop { read_back, .. } = &mut r[9] {
+        if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
             read_back[0].observed = None;
         }
     };
@@ -846,14 +896,24 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
         run(&short, vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]),
         Ok(true)
     );
-    // A stop that left CEN set is `judge_stop_missing`, never a mismatch.
-    let left = |r: &mut Vec<Record>| {
+    // A stop that left CEN set is `judge_stop_missing`, never a mismatch;
+    // kind 11's `CR1` then expects the solved value, CEN set, as the judge
+    // does (A2-1: kind 11 still expecting it cleared is refused).
+    let left_only = |r: &mut Vec<Record>| {
         off(r);
-        if let Record::JudgeStop { cr1_after, .. } = &mut r[9] {
+        if let Record::JudgeStop { cr1_after, .. } = &mut r[DSHOT_STOP] {
             *cr1_after = Some(0x81);
         }
     };
+    let left = |r: &mut Vec<Record>| {
+        left_only(r);
+        cr1_expected(r, 0x81);
+    };
     assert_eq!(run(&left, vec![(JUDGE_STOP_MISSING_FINDING, 1)]), Ok(true));
+    assert_eq!(
+        run(&left_only, vec![(JUDGE_STOP_MISSING_FINDING, 1)]),
+        Err(STOP_VALUE_REFUSED)
+    );
     // Kind 26's counts.
     let witness = |before: u64, after: u64, rises: u64| {
         move |r: &mut Vec<Record>| {
@@ -862,7 +922,7 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
                 edges_after,
                 cen_rises,
                 ..
-            } = &mut r[8]
+            } = &mut r[DSHOT_WITNESS]
             {
                 (*edges_before, *edges_after, *cen_rises) = (before, after, rises);
             }
@@ -892,14 +952,105 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     // a rise, a rise without one, or edges outside a window it does not
     // have, are refused.
     let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
-    assert_eq!(r[8].check(), Ok(()));
+    assert_eq!(r[DSHOT_WITNESS].check(), Ok(()));
     witness(0, 0, 0)(&mut r);
-    assert!(r[8].check().is_err());
+    assert!(r[DSHOT_WITNESS].check().is_err());
     let mut r = dshot_run(None, None, vec![(MOTOR_ANCHOR_UNOBSERVED_FINDING, 1)]);
     assert!(check_run(&r).unwrap().matched);
-    assert_eq!(r[8].check(), Ok(()));
+    assert_eq!(r[DSHOT_WITNESS].check(), Ok(()));
     for (before, after, rises) in [(0, 0, 1), (1, 0, 0), (0, 1, 0)] {
         witness(before, after, rises)(&mut r);
-        assert!(r[8].check().is_err(), "{before} {after} {rises}");
+        assert!(
+            r[DSHOT_WITNESS].check().is_err(),
+            "{before} {after} {rises}"
+        );
     }
+}
+
+/// Replay's refusals of a judge's stop's read-back that is not the run's
+/// own (adversarial pass 2, A2-1).
+const STOP_COUNT_REFUSED: &str =
+    "a judge's stop does not read back exactly its timer's solved registers that kind 11 lists";
+const STOP_PLACE_REFUSED: &str = "a judge's stop reads a register back at an address or under a mask that is not kind 11's for it";
+const STOP_VALUE_REFUSED: &str =
+    "a judge's stop reads a register back against a value that is not kind 11's for it";
+
+/// Sets kind 11's `TIM2.CR1` expected value in a `dshot_run`.
+fn cr1_expected(r: &mut [Record], value: u32) {
+    for x in r.iter_mut() {
+        if let Record::RegisterObserved { name, reading } = x
+            && name == "TIM2.CR1"
+        {
+            reading.expected = value;
+        }
+    }
+}
+
+/// Adversarial pass 2, A2-1: kind 30's read-back carried its own address,
+/// mask and expected value, so a run could forge a stop's `CR1` read back
+/// as 0 against an expected 0, under a mask of 0, or at another address,
+/// and name no `judge_stop_mismatch`; or read back one register of the
+/// timer's ten. Replay now binds each entry to kind 11's for the same
+/// register (its `CR1` with `CEN` cleared, the judge's own act) and the
+/// read-back to exactly the timer's registers kind 11 lists, and refuses
+/// anything else by name, whatever the verdict says.
+#[test]
+fn replay_binds_a_stop_s_read_back_to_kind_11() {
+    let a = 30_670;
+    let end = a + 2_000_000;
+    let run = |f: &dyn Fn(&mut Reading), findings: Vec<(&str, u64)>| {
+        let mut r = dshot_run(Some(a), Some((end, 0x80)), findings);
+        if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
+            f(&mut read_back[0]);
+        }
+        check_run(&r).map(|s| s.matched)
+    };
+    assert_eq!(run(&|_| {}, vec![]), Ok(true));
+    // The judge's own act: kind 11's `CR1` expects CEN cleared, the stop's
+    // read-back the solved value, CEN set.
+    let k11 = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    assert!(
+        k11.iter()
+            .any(|x| matches!(x, Record::RegisterObserved { name, reading }
+        if name == "TIM2.CR1" && reading.expected == 0x80))
+    );
+    // CR1 observed 0 against an expected forged to 0: no mismatch by its
+    // own fields, refused by kind 11's.
+    let zero = |g: &mut Reading| (g.expected, g.observed) = (0, Some(0));
+    for findings in [vec![], vec![(JUDGE_STOP_MISMATCH_FINDING, 1)]] {
+        assert_eq!(run(&zero, findings), Err(STOP_VALUE_REFUSED));
+    }
+    // Under a mask of 0, every value matches: refused.
+    let unmasked = |g: &mut Reading| (g.mask, g.expected, g.observed) = (0, 0, Some(0));
+    assert_eq!(run(&unmasked, vec![]), Err(STOP_PLACE_REFUSED));
+    // At another address (another timer's `CR1`): refused.
+    let moved = |g: &mut Reading| g.address = 0x4000_0400;
+    assert_eq!(run(&moved, vec![]), Err(STOP_PLACE_REFUSED));
+    // One register of the timer's ten, or one more than kind 11 lists: refused.
+    for keep in [1, TIM2_SOLVED.len() - 1] {
+        let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+        if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
+            read_back.truncate(keep);
+        }
+        assert_eq!(check_run(&r).map(|s| s.matched), Err(STOP_COUNT_REFUSED));
+    }
+    let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    if let Record::JudgeStop { read_back, .. } = &mut r[DSHOT_STOP] {
+        read_back.push(read_back[1].clone());
+    }
+    assert_eq!(check_run(&r).map(|s| s.matched), Err(STOP_COUNT_REFUSED));
+    // Kind 11 in another order than the read-back's: refused.
+    let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    r.swap(7, 8);
+    assert_eq!(check_run(&r).map(|s| s.matched), Err(STOP_PLACE_REFUSED));
+    // Kind 11 forged instead, to expect CEN set after the stop cleared it,
+    // or both forged to CEN set: refused.
+    let mut r = dshot_run(Some(a), Some((end, 0x80)), vec![]);
+    cr1_expected(&mut r, 0x81);
+    assert_eq!(check_run(&r).map(|s| s.matched), Err(STOP_VALUE_REFUSED));
+    // The read-back's CR1 expected forged to CEN clear beside a timer read
+    // back stopped (kind 11's own value): refused, since the stop reads the
+    // solved CR1, CEN set.
+    let cleared = |g: &mut Reading| (g.expected, g.observed) = (0x80, Some(0x80));
+    assert_eq!(run(&cleared, vec![]), Err(STOP_VALUE_REFUSED));
 }

@@ -2180,6 +2180,63 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                 "a judge's stop is not at its timer's witnesses' anchor plus DSHOT_WINDOW_NS, inside the boot",
             );
         }
+        check_stop_read_back(records, r)?;
+    }
+    Ok(())
+}
+
+/// Kind 30 `stop`'s read-back is the run's own (`AET-WO-2302` adversarial
+/// pass 2, A2-1): exactly the timer's solved registers kind 11 lists (each
+/// named `TIMn.` and the register), in kind 11's order, each with kind 11's
+/// address, mask and expected value. The one difference is the judge's own
+/// act: a stop that left `CEN` cleared makes kind 11's `CR1` expect `CEN`
+/// clear after the boot, while the stop read `CR1` back against the solved
+/// value, `CEN` set, before it cleared `CEN`.
+fn check_stop_read_back(records: &[Record], stop: &Record) -> Result<(), &'static str> {
+    let Record::JudgeStop {
+        timer,
+        read_back,
+        cr1_after,
+        ..
+    } = stop
+    else {
+        return Ok(());
+    };
+    let prefix = format!("{timer}.");
+    let cr1 = format!("{timer}.CR1");
+    let solved: Vec<(&str, &Reading)> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::RegisterObserved { name, reading } if name.starts_with(&prefix) => {
+                Some((name.as_str(), reading))
+            }
+            _ => None,
+        })
+        .collect();
+    if solved.len() != read_back.len() {
+        return Err(
+            "a judge's stop does not read back exactly its timer's solved registers that kind 11 lists",
+        );
+    }
+    let stopped = cr1_after.is_some_and(|c| c & 1 == 0);
+    for ((name, k11), got) in solved.iter().zip(read_back) {
+        if got.address != k11.address || got.mask != k11.mask {
+            return Err(
+                "a judge's stop reads a register back at an address or under a mask that is not kind 11's for it",
+            );
+        }
+        // A stop follows its timer's anchor, a `CEN` rise to the solved
+        // `CR1`, which sets `CEN`: the stop expects it set, kind 11 cleared.
+        let same = if *name == cr1 && stopped {
+            got.expected & 1 == 1 && got.expected & !1 == k11.expected
+        } else {
+            got.expected == k11.expected
+        };
+        if !same {
+            return Err(
+                "a judge's stop reads a register back against a value that is not kind 11's for it",
+            );
+        }
     }
     Ok(())
 }

@@ -216,7 +216,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 27 | a solved serial port (`AET-WO-4300b`) | `label`, `index`, `peripheral`, `tx`, `tx_af`, `rx`, `rx_af`, `role`, `framing` `[baud, data_bits, parity, stop_bits, inverted]`, `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm` |
 | 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
 | 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
-| 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32), `cr1_after?` |
+| 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32: exactly kind 11's registers of the timer, in its order, each at its address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's is cleared by the stop), `cr1_after?` |
 
 Kinds 5 to 9, 15, 16, 20, 23, 24, 25 and 27 are at virtual time 0, decided
 before the boot (`Record::before_boot`); 17 to 19 at their own time
