@@ -446,3 +446,19 @@ The record is `~/.cache/aet-4403/post-merge-d5.md`.
 **Finding (cosmetic):** `debian-src.py`'s lines are buffered when piped, so they can appear out of order between its children's. `flush=True` is the fix, for the next container work order.
 
 **Local gates [measured]:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` are clean; `cargo test --workspace` exits 0 with no failure. No crate changed.
+
+**CI on `6d998fe` (PR #186), all green [measured]:**
+- **`ci` run 43981016797:** tier 2 ran in the new tools image `598501ab…`: `ANSWER tier2_tests_passed=160 floor=160` and `ANSWER tools_total_passed=2129 names=2123`. Shard times (main's plan):
+  - shard 0: 22:47
+  - shard 1: 26:02
+  - shard 2: 25:26
+  - shard 3: 29:48
+  - shard 4: 25:49
+  - shard 5: 24:51
+  - shard 6: 28:31
+  - shard 7: 25:05
+- **`ardupilot-image` run 43981016870:** `pinned` pulled and smoked the new ArduPilot pin: `ANSWER pinned revision=b29bdec8eca616b71753a033003b8271293e49fb`, `ANSWER smoke board=MatekH743 … flash_bytes=1550452`.
+- **`tools-image` run 43981016690:** green.
+- **`engine-image`:** green, building on the new tools pin.
+- **`main` `7aaf431` (docs #185) is merged in;** docs only.
+- **Signal:** READY.
