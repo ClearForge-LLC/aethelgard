@@ -244,3 +244,14 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
 - Gates: fmt 0, clippy 0, workspace **2138 passed, 0 failed**. `TIER2_MIN` is main's 178; 3402 adds no tier-2 test.
 
 **The package on the branch is now main's,** CI's write for 1604 (run 44079386736). It lacks 3402's ELF and FAB-NOTES rows, so `bench-package --against-fab` differs until the architect's dispatch writes it again.
+
+## 11. The package, as CI wrote it [measured]
+
+- **Source:** the architect dispatched `bench-package` in write mode on `9b2a4c27`, **run 44091740015** (concluded success). Its **artifact 14335020719** ("bench-package", 17 files) was downloaded with the read-only token and copied into `fab/sentinel-01-bench/package/` **unchanged**: `cmp` holds for every file.
+- **What moved against main's package** (1604's write, run 44079386736): exactly three files, as predicted in §4 and measured locally in §9:
+  - `sentinel-01-bench.elf`, I2C1 boots `Fast400k`;
+  - `FAB-NOTES.md`, which gains `## Acknowledged ledger rows`;
+  - `MANIFEST.json`.
+  The file set is the same 17, and the Gerbers, drill, placement, BOMs and JLCPCB files are byte-identical.
+- **Binding:** `bench_board_tier1` passes, 2 of 2, on the committed package. No document quotes the old package hashes.
+- **Known follow-up, for whichever merges second:** 4400c2 (#204, the bench `.repl`) and 4400d (specification 16) each move this package again.
