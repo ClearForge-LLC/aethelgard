@@ -2,14 +2,15 @@
 
 Labels: **[measured]** by a run named beside it; **[read at source]** from a file named beside it; **[inferred]** from arithmetic or reasoning.
 
-## 0. Status: BUILT on `457d644`; `main` to be merged after `4400d` lands, then re-gated, then READY
+## 0. Status: READY on `main` `0829fe8` (`4400d` merged in, §6)
 
 - **F1, its own commit, byte-neutral:** anchored parts by the emitter's draw sequence (`Anchor::seq`); the corpus 24/24 byte-identical against `main`.
 - **(k)+(m)+(s), under a declared bound only:** Sentinel-03 at four layers places at **85.25 × 80.95 mm**, the spike's outline and its every position, and passes every gate, `extract`'s least slack 9.2 pF [measured].
 - **Order independence, as tests:** parts order (unit), every reference class reversed (unit), 20 order-only renamings of the fixture (tier 1); 10 shuffles of the real fixture [measured].
 - **Size samples, no margin claimed:** at 2 characters `extract` refuses the board by name (−5.1 pF); at 6 every gate passes (5.4 pF); at 8 `emit` refuses it (`OutlineUnreachable`).
-- **Adversarial:** one name dependence found and fixed (A1, §3); compaction keeps the gaps, the approach strips, the outline and every loop rule; 15 mutants, all killed.
+- **Adversarial:** one name dependence found and fixed (A1, §3); compaction keeps the gaps, the approach strips, the outline and every loop rule; 15 mutants, all killed, and on the merge two more on `shift`: one killed, the other keeps compaction from terminating (no assertion fails; CI's 45-minute shard timeout is what would stop it).
 - **No bound declared:** every byte unchanged; only the fixture's board moves.
+- **After the merge with `4400d` (§6):** the fixture's placement and outline are unchanged under specification 16 (it declares no orientation), so nothing is re-pinned. A turned IMU is compacted whole, its keep-outs inside the outline, at each of its four turns, and every gate passes at each [measured].
 
 ## 1. What is built
 
@@ -33,7 +34,7 @@ Labels: **[measured]** by a run named beside it; **[read at source]** from a fil
 
 ### 1.3 Ported from the prototype, byte for byte [measured]
 
-`spike/1313b/placer.patch` applied at `457d644` and run with `AET_1313B=kms` is the oracle. The build's `emit` is byte-identical to it on the fixture, and on the 2-, 6-, 8- and 12-character size samples (8 and 12 refused by both with the same `OutlineUnreachable` message). The one addition, the owned-parts key (§3, A1), moves no byte of any of these.
+`spike/1313b/placer.patch` applied at `457d644` and run with `AET_1313B=kms` is the oracle. It is pre-`4400d` and reads specification 15 only, so the byte comparison holds for the build at `457d644`; after the merge, §6 says what still bridges to it. The build's `emit` is byte-identical to it on the fixture, and on the 2-, 6-, 8- and 12-character size samples (8 and 12 refused by both with the same `OutlineUnreachable` message). The one addition, the owned-parts key (§3, A1), moves no byte of any of these.
 
 ## 2. Acceptance (§2), measured
 
@@ -93,6 +94,8 @@ References prefixed by `len` characters (`rename_len.py`'s, ported). The tier-1 
 - **No bound, moved bytes:** the corpus, 24/24 byte-identical against `main`; the workspace's goldens unchanged (`cargo test --workspace`).
 - **Mutation (diff-sized), 13 mutants on the build and F1's two, all killed:** approach check, compaction gap, x-range, owned-parts key, centroid target, anchor tie, connectors' order, compaction off, sidestep off, ownership in the colour, the distance key, `Rule::gap`'s IC gap, the rank's last tie by list position; and F1's two (anchored parts in list order; in reference order, re-run after the reduction). The distance key first survived: it moves bytes but not the outline, so the placement digest pin was added. A fourteenth, the anchored parts' tie by rank or by reference, survived because `seq` never ties in the emitter; that branch was removed (§4).
 
+- **After the merge, on the guard the turned IMU depends on (`shift`) [measured]:** the mutant that leaves a group's origin behind fails five tier-1 tests, the turned-IMU test among them; the one that leaves its keep-out box behind keeps compaction from terminating: no assertion fails, the harness's eda and tier-1 runs each hit its 900 s timeout, and a re-run of the eda unit tests ran past 120 s against about 1 s. In CI only the `tools-shard` job's 45-minute timeout (`ci.yml`, a hang guard) would stop it. The likely cause is that compaction's potential reads the box, which then never moves [inferred]. The centroid-target and compaction-off mutants, re-run on the merge, are still killed.
+
 - **`COLOUR_ROUNDS` is not free [measured]:** at 4 rounds instead of 3, the fixture and every size sample move, because the colours' values order parts, not only tell them apart. Three is kept, as measured in `1313b`; the comment says so.
 
 ## 4. Reduction pass
@@ -108,6 +111,7 @@ Run by a fresh subagent over the diff, read-only; each proposal applied was chec
 - **Dead paths removed:**
   - compaction's connector filter (connectors are not placed when it runs);
   - the anchored parts' tie by rank (`seq` never ties; the reference only keeps a hand-built design deterministic, as F1 had it).
+- **The merge's addition** (the turned-IMU test and its weight row): nothing to remove; the test reuses the file's fixture, outline, gap and loop helpers, and reads U5's node once for its rotation and zones.
 - **Findings, not changed:**
   - `tests/common/rename.rs`'s FNV and reference-class key repeat `pcb.rs`'s, across the crate boundary; joining them needs public API.
   - `outline_tier1`'s `ic` closure restates `is_ic` over library names.
@@ -115,13 +119,40 @@ Run by a fresh subagent over the diff, read-only; each proposal applied was chec
 
 ## 5. Record
 
-- **Base:** `457d644` (`main` after `1313b`). Commits: F1 `dc6f2994`; the build; this FEEDBACK with `spike/1313b/` deleted.
+- **Base:** `457d644` (`main` after `1313b`). Commits: F1 `dc6f2994`; the build `58ee9fa0`; this FEEDBACK with `spike/1313b/` deleted; `main` `0829fe8` merged by `f6333d00`; the turned-IMU test `90a54c0b`.
 - **`spike/1313b/` is deleted** (WO §1.4). Its figures are in `AET-WO-1313b.FEEDBACK.md`, and its files stay in history at `457d644`. `rename_perm.py` and `rename_len.py` live on as test code, `crates/aethelgard-cli/tests/common/rename.rs`. The headroom figure (89.20 × 86.25 mm with the witness port, USB FS and E0 as blocks) is `1313b`'s, outline only (ruling R5): the blocks were a prototype switch and are not rebuilt.
-- **Gates on the branch:** fmt; clippy `-D warnings` with `with-tools`; `cargo test --workspace` 2145 passed, 0 failed; the two Sentinel-03 tier-2 tests in the pinned image (`the_sentinel_03_fixture_passes_every_gate_inside_its_bound`, `each_size_sample_passes_every_gate_or_is_refused_by_name`), 2 passed, 28.5 s.
+- **Gates on the branch after the merge:** fmt; clippy `-D warnings` with `with-tools`; `cargo test --workspace` 2176 passed, 0 failed; in the pinned image, the two Sentinel-03 tier-2 tests (2 passed, 28.2 s) and `4400d`'s `a_turned_keepout_is_where_kicad_draws_it` (passed); `ci/shard.sh plan` in the image: guard ok, 2372 tests over 8 shards, 180 of them tier 2; CI's package step run locally: every crate packages and the CLI builds from the packages. CI on `90a54c0b` (the merge and the turned-IMU test) green: run 44158034450, `ANSWER tier2_tests_passed=180 floor=180`. Before the merge: 2145 passed, 0 failed.
 - **Outside the WO's literal fence, and why:**
   - the CLI's tests (`outline_tier1.rs`, `board_tier2.rs`, `tests/common/rename.rs`), which hold the acceptance's tier-1 and tier-2 tests;
-  - `.github/workflows/ci.yml` (`TIER2_MIN` 179) and `ci/test-weights.tsv` (six estimated rows), as every new tier-2 test needs;
+  - `.github/workflows/ci.yml` (`TIER2_MIN` 180 after the merge: 178, plus `4400d`'s one, plus this WO's one, a comment line naming each) and `ci/test-weights.tsv` (seven estimated rows, `4400d`'s row kept beside them), as every new test needs;
   - the eda README's placer section;
   - `Rect::grow`, made `pub` for the tier-1 gap check (reduction, §4).
 - **Not built (WO "is NOT"):** the test-pad rule; a capacitance-aware step (backlog R4: the 2-character sample is its first case); router changes; bottom-side parts.
 - **`emit` under a bound takes about twice as long** (1.4 → 2.9 s release on the fixture). Writing a bounded board in a test build is slower still on a large outline: `under_a_bound_the_board_does_not_depend_on_the_parts_order` compares layouts for every order and bytes once, because each write of its 100 mm-wide board takes about 1.6 s in a test build (the writer's cost, not compaction's: compaction takes 1.5 ms on the fixture).
+
+## 6. The merge with `4400d` (`main` `0829fe8`, the architect's 17:04Z items)
+
+`main` merged by a merge commit (`f6333d00`). The only conflicts were `ci.yml` and `ci/test-weights.tsv`, resolved as ruled (item 1). `pcb.rs` merged without conflict. Before `4400d` landed, a trial merge with its branch head (`51357430`) was measured; `main` since then differs from it in no placer file and no file of this WO (an `aethelgard-ir` test, docs and the bench package), and every figure below was re-run on the merged branch itself.
+
+**Item 2: a turned IMU moves whole, with its zones [read at source; measured].**
+- `4400d` gives `Item` a `rotation` from the IMU's seat and stores its pads and its geometry at that turn (`items`). `Placed` gained no positional field: its `rotation` was already there, and a translation leaves it unchanged. `shift` moves all three positional fields (origin, keep-out box, courtyard).
+- A footprint's zones are not stored with the placement. They are drawn when the board is written, from the placed origin and rotation (`footprint`, `Some("zone") => to_board(&mut c, origin, rotation, …)`), so a group moved whole carries them.
+- `centroid_target` reads the anchor's pads, which are now at the turn, so an IMU's capacitors target its turned pins.
+- **Test:** `a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound` (tier 1). The fixture with `board.forward` at the top and U5 turned each of its four ways: U5 at its declared rotation, the outline inside the bound, every point of each keep-out zone inside the outline, every placer gap and loop rule held. Its weight row is an estimate (10.90 s on the host, times 2.8).
+- Every gate in the pinned image, on the merged binary [measured]:
+
+| U5's X | Turn | Outline (mm) | Every gate | Least `extract` slack |
+|---|---|---|---|---|
+| right | 0 | 85.25 × 80.95 | yes | 9.2 pF (`IMU_MOSI`) |
+| forward | 90 | 85.25 × 81.45 | yes | 4.2 pF (`IMU_MOSI`) |
+| left | 180 | 85.25 × 80.95 | yes | 6.0 pF (`IMU_SCK`) |
+| aft | 270 | 85.25 × 80.20 | yes | 0.8 pF (`IMU_SCK`) |
+
+No margin is claimed: at 270° the slack is 0.8 pF, so a turn can bring a board near `extract`'s bound, as the size samples do (backlog R4).
+
+**Item 3: the fixture under specification 16 [measured]: nothing re-pinned.** The fixture declares no `board.forward` and no IMU orientation, so U5 stays at 0. The outline is 85.25 × 80.95 mm and the name-free placement digest is unchanged (the tier-1 pin passes as it stood). Every gate passes in the image (tier-2 test, least slack 9.2 pF). The size samples are unchanged too: 2 refused by `extract` (−5.1 pF, 89.20 × 84.95), 6 passing (5.4 pF, 96.90 × 87.95), 8 refused by `emit` (`OutlineUnreachable`).
+
+**Item 4: the oracle is pre-`4400d`.** The prototype oracle (`457d644` with `placer.patch`) reads specification 15 only, so its byte comparison (§1.3) no longer applies to the merged branch. What still bridges to it:
+- the placement digest pinned at tier 1 was computed from the oracle's board, and is unchanged on the merge;
+- the size samples' outlines and slacks are unchanged;
+- with no bound, the corpus (24 specifications, all at version 16) is byte-identical against `main` `0829fe8`'s own binary, built apart: 24/24, 371 files. The fixture is still the only specification that declares a bound.
