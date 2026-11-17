@@ -159,7 +159,7 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
   - Its `verdict_sha256` is the sha256 of `verify`'s verdict line (`fab.rs` L689), which lists every generated file's sha256 by path (`verify.rs` L70), the board's `.repl` included. **So `verdict_sha256` moves when the package is next written.**
   - This PR does not rewrite the package. `bench_board_tier1.rs` does not bind `verdict_sha256`, so per-PR CI stays green.
   - Main's `bench-package` job (`--against-fab`) would see the difference until the package is rewritten. 3402 re-blesses that package; whoever merges second regenerates (§3; 3402's inbox was told).
-  - **After this PR merges:** `1313` regenerated the package on `main` (run 44058299670) without this line, so `bench-package` needs a `write` dispatch, and its files committed, for `main` to stay green. That is the architect's dispatch; this PR does not touch `fab/`.
+  - **This PR merges second** (3402 merged first, #203, `7d0763eb`), so it carries the regenerated package. The architect dispatches `bench-package` (`write`) on this branch after the AWAITING-PACKAGE push, and the artifact is committed unchanged (below).
 
 ## Outside the work order's stated fence, and why
 
@@ -252,3 +252,12 @@ Kept under `~/.cache/aet-4400c2/evidence/` on Furnace:
 - The read-only token cannot re-run a job. This READY commit's own push starts a fresh `ardupilot-image` run.
 
 **READY**, 2026-11-17: built to the ruling, with no line held back unruled. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.
+
+# After 3402 merged: AWAITING-PACKAGE
+
+The architect's note (14:34 UTC, `~/.cache/aet-bus/4400c2.md`): 3402 merged (#203, `main` `7d0763eb`); merge it, re-gate, push AWAITING-PACKAGE, and commit the dispatched package unchanged before READY.
+
+- **Merged** `main` `7d0763eb` as a merge commit, with no conflicts. 3402 moved the bench board's Rust and its package, not its `.repl`, and the board goldens bind unchanged after the merge (`board` test, no re-bless).
+- **Gates** (tools image, target inside the repository): `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace --no-fail-fast`: 130 suites, 2,141 passed, 0 failed.
+- **The package:** `fab/sentinel-01-bench/package/` is still `main`'s (3402's run 44091740015). With this branch's `.repl` its `verdict_sha256` differs, so it waits on the `bench-package` `write` dispatch on this branch. The READY commit carries that artifact unchanged.
+
