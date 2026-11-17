@@ -376,8 +376,7 @@ jobs:
   # committed package is the one this job writes (dispatch with `write`, then
   # commit the artifact's files), never one written on another machine.
   bench-package:
-    # TEMPORARY (AET-WO-3401, one push): write the package on this pull request; reverted by the next commit.
-    if: always()
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -400,15 +399,15 @@ jobs:
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
 
       - name: verify --against-fab, the committed package derived again
-        if: ${{ !inputs.write && github.event_name != 'pull_request' }}
+        if: ${{ !inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --against-fab fab/sentinel-01-bench/package
 
       - name: verify --fab-out, the package written for committing
-        if: ${{ inputs.write || github.event_name == 'pull_request' }}
+        if: ${{ inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package
 
       - name: keep the written package
-        if: ${{ inputs.write || github.event_name == 'pull_request' }}
+        if: ${{ inputs.write }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: bench-package
