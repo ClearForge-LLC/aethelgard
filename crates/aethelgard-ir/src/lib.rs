@@ -1732,6 +1732,18 @@ pub enum IrValidationError {
         maximum_femtofarads: u64,
         citation: String,
     },
+    /// Step 14 (`AET-WO-4220b` H2, ruled on #192 Q2): a declared pin
+    /// capacitance below the typical its part's row cites, on any bus.
+    #[error(
+        "device `{id}` declares a pin capacitance of {femtofarads} fF, below the typical of {typical_femtofarads} fF its part `{part}` cites ({citation})"
+    )]
+    PinCapacitanceBelowTypical {
+        id: String,
+        part: String,
+        femtofarads: u64,
+        typical_femtofarads: u64,
+        citation: String,
+    },
     /// Step 21 (`AET-WO-1208` §1.3, `1207` F1): the refusal `solve` made, by
     /// its name, message and claimant. Every timer's kernel clock is one
     /// frequency on the reset clock, so the timing is the specification's.
@@ -1917,6 +1929,7 @@ impl IrValidationError {
             Self::PinCapacitanceOutOfRange { .. } => "PinCapacitanceOutOfRange",
             Self::PinCapacitanceAlreadyCited { .. } => "PinCapacitanceAlreadyCited",
             Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
+            Self::PinCapacitanceBelowTypical { .. } => "PinCapacitanceBelowTypical",
             Self::MotorTiming { .. } => "MotorTiming",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
@@ -2088,7 +2101,8 @@ impl IrValidationError {
             Self::SpiModeNotDriven { id, .. }
             | Self::PinCapacitanceOutOfRange { id, .. }
             | Self::PinCapacitanceAlreadyCited { id, .. }
-            | Self::PinCapacitanceBelowI2cCi { id, .. } => Some(id),
+            | Self::PinCapacitanceBelowI2cCi { id, .. }
+            | Self::PinCapacitanceBelowTypical { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
@@ -2780,6 +2794,18 @@ impl Specification {
                     id: reference.clone(),
                     part: p.part.clone(),
                     maximum_femtofarads: maximum,
+                    citation: cite(&p.citations.pin_capacitance),
+                });
+            }
+            if let Some(p) = part_entry(table, reference, part)?
+                && let Some(typical) = p.pin_capacitance_typical_femtofarads
+                && femtofarads < typical
+            {
+                return Err(IrValidationError::PinCapacitanceBelowTypical {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    femtofarads,
+                    typical_femtofarads: typical,
                     citation: cite(&p.citations.pin_capacitance),
                 });
             }
