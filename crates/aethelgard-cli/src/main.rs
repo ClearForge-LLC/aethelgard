@@ -7,6 +7,7 @@
 mod analog;
 mod anchor;
 mod campaign;
+mod doctor;
 mod elf;
 mod extract;
 mod fab;
@@ -215,6 +216,8 @@ enum Command {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Report whether this host can run every subcommand: the binary's version, the sandbox the tools would run in, the scratch directory, and each external tool's version, naming each missing piece and the subcommands it blocks.
+    Doctor,
     /// Serve every other subcommand as an MCP tool on stdin and stdout.
     Mcp,
 }
@@ -523,6 +526,7 @@ fn main() -> ExitCode {
             scenario,
             out,
         } => return propose::propose(&archive, &scenario, &out),
+        Command::Doctor => return doctor::doctor(),
         Command::Mcp => return mcp::serve(),
     };
     match judged {
@@ -1223,6 +1227,40 @@ fn provenance(
     })
 }
 
+/// What `prove` runs Kani with: cargo, `cargo-kani`, the variables they read
+/// and the directories they may read, `target` their target directory. One
+/// definition, which `doctor`'s version probe shares (`AET-WO-1604` §1.1).
+struct KaniToolchain {
+    cargo: run::Tool,
+    cargo_kani: run::Tool,
+    env: Vec<(&'static str, OsString)>,
+    read_only: Vec<PathBuf>,
+}
+
+fn kani_toolchain(target: &Path) -> Result<KaniToolchain, run::Stop> {
+    let cargo = run::Tool::find("cargo")?;
+    let cargo_kani = run::Tool::find("cargo-kani")?;
+    let kani_home = run::required_var("KANI_HOME", true)?;
+    let rustup_home = run::required_var("RUSTUP_HOME", true)?;
+    let path_var = run::required_var("PATH", false)?;
+    let mut read_only = cargo.dirs();
+    read_only.extend(cargo_kani.dirs());
+    read_only.push(PathBuf::from(&kani_home));
+    read_only.push(PathBuf::from(&rustup_home));
+    let env = vec![
+        ("KANI_HOME", kani_home),
+        ("RUSTUP_HOME", rustup_home),
+        ("PATH", path_var),
+        ("CARGO_TARGET_DIR", target.to_path_buf().into_os_string()),
+    ];
+    Ok(KaniToolchain {
+        cargo,
+        cargo_kani,
+        env,
+        read_only,
+    })
+}
+
 fn prove(
     crate_dir: &Path,
     harness: &str,
@@ -1235,11 +1273,12 @@ fn prove(
     let scratch = Scratch::new()?;
     let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
     firmware::preflight(&input.copy, &input.copy)?;
-    let cargo = run::Tool::find("cargo")?;
-    let cargo_kani = run::Tool::find("cargo-kani")?;
-    let kani_home = run::required_var("KANI_HOME", true)?;
-    let rustup_home = run::required_var("RUSTUP_HOME", true)?;
-    let path_var = run::required_var("PATH", false)?;
+    let KaniToolchain {
+        cargo,
+        cargo_kani,
+        env,
+        read_only,
+    } = kani_toolchain(&scratch.tool.join("target"))?;
     // The copy, as copied and before Kani touches it, against the generated
     // crate: every file, none missing and none extra (`AET-WO-3301` §1.4).
     let provenance = provenance(&input.copy, generated.as_ref())?;
@@ -1251,19 +1290,6 @@ fn prove(
             run::Stop::sandbox("uid", format!("cannot open the crate to its lockfile: {e}"))
         })?;
     }
-    let mut read_only = cargo.dirs();
-    read_only.extend(cargo_kani.dirs());
-    read_only.push(PathBuf::from(&kani_home));
-    read_only.push(PathBuf::from(&rustup_home));
-    let env = vec![
-        ("KANI_HOME", kani_home.clone()),
-        ("RUSTUP_HOME", rustup_home.clone()),
-        ("PATH", path_var.clone()),
-        (
-            "CARGO_TARGET_DIR",
-            scratch.tool.join("target").into_os_string(),
-        ),
-    ];
     let invocation = |args: Vec<OsString>, cwd: &Path, status: &str| run::Invocation {
         tool: &cargo,
         args,
@@ -1586,6 +1612,76 @@ fn read_capture(dir: &Path) -> renode::Captured {
     c
 }
 
+/// Renode as `simulate` runs it, found on `PATH`: its installation's root,
+/// and what it may read. One definition, which `doctor`'s version probe
+/// shares (`AET-WO-1604` §1.1).
+struct Renode {
+    tool: run::Tool,
+    root: PathBuf,
+    read_only: Vec<PathBuf>,
+}
+
+fn renode_tool() -> Result<Renode, run::Stop> {
+    let tool = run::Tool::find("renode")?;
+    let root = fs::canonicalize(&tool.path)
+        .ok()
+        .and_then(|p| p.parent().map(Path::to_path_buf))
+        .ok_or_else(|| {
+            run::Stop::unusable("renode", "cannot resolve renode's installation".to_owned())
+        })?;
+    let mut read_only = tool.dirs();
+    read_only.extend([
+        root.clone(),
+        PathBuf::from("/proc"),
+        PathBuf::from("/dev/urandom"),
+    ]);
+    Ok(Renode {
+        tool,
+        root,
+        read_only,
+    })
+}
+
+/// The variables every Renode run gets.
+fn renode_env() -> Vec<(&'static str, OsString)> {
+    // .NET would otherwise try to open its diagnostic IPC socket, which the
+    // seccomp filter refuses; this removes even the attempt (PR #15, S2-F).
+    // W^X's double mapping truncates a memfd to 2 TiB, which RLIMIT_FSIZE
+    // refuses with SIGXFSZ; without it Renode starts under the cap
+    // (AET-WO-1601 §1.6, measured; FEEDBACK).
+    vec![
+        ("DOTNET_EnableDiagnostics", "0".into()),
+        ("DOTNET_EnableWriteXorExecute", "0".into()),
+    ]
+}
+
+/// The Renode a boot needs. The stock table and the boot's measured facts
+/// are Renode 1.17.0's; another Renode is a fact the twin does not have
+/// (`INV-06`).
+fn renode_pinned(version: &str) -> Result<(), run::Stop> {
+    let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
+    if version != pinned {
+        return Err(run::Stop::unusable(
+            "renode",
+            format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
+        ));
+    }
+    Ok(())
+}
+
+/// Writes the configuration every Renode run reads into `dir`, the tool's
+/// scratch, and returns its path.
+fn renode_config(dir: &Path) -> Result<PathBuf, run::Stop> {
+    let config = dir.join(renode::CONFIG_FILE);
+    fs::write(&config, renode::config(dir)).map_err(|e| {
+        run::Stop::unusable(
+            "renode",
+            format!("cannot write Renode's configuration: {e}"),
+        )
+    })?;
+    Ok(config)
+}
+
 fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run::Stop> {
     let scratch = Scratch::new()?;
     let ready = match boot {
@@ -1603,13 +1699,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         Some((_, r)) => Some(analog_pass(r, &scratch)?),
         None => None,
     };
-    let tool = run::Tool::find("renode")?;
-    let root = fs::canonicalize(&tool.path)
-        .ok()
-        .and_then(|p| p.parent().map(Path::to_path_buf))
-        .ok_or_else(|| {
-            run::Stop::unusable("renode", "cannot resolve renode's installation".to_owned())
-        })?;
+    let Renode {
+        tool,
+        root,
+        read_only,
+    } = renode_tool()?;
     let (input, ready) = match ready {
         Some((input, ready)) => (input, Some(ready)),
         None => (
@@ -1617,24 +1711,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             None,
         ),
     };
-    let mut read_only = tool.dirs();
-    read_only.extend([
-        root.clone(),
-        PathBuf::from("/proc"),
-        PathBuf::from("/dev/urandom"),
-    ]);
     let invocation = |args: Vec<OsString>, status: &str| run::Invocation {
         tool: &tool,
         args,
-        // .NET would otherwise try to open its diagnostic IPC socket, which the
-        // seccomp filter refuses; this removes even the attempt (PR #15, S2-F).
-        // W^X's double mapping truncates a memfd to 2 TiB, which RLIMIT_FSIZE
-        // refuses with SIGXFSZ; without it Renode starts under the cap
-        // (AET-WO-1601 §1.6, measured; FEEDBACK).
-        env: vec![
-            ("DOTNET_EnableDiagnostics", "0".into()),
-            ("DOTNET_EnableWriteXorExecute", "0".into()),
-        ],
+        env: renode_env(),
         workdir: &scratch.tool,
         cwd: scratch.tool.clone(),
         status: scratch.root.join(status),
@@ -1651,13 +1731,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     let models = own_models(loaded, &scratch.tool)?;
     // Every Renode this call starts reads one configuration, the droop's
     // through the bridge included (`AET-WO-2204` D4, F6).
-    let config = scratch.tool.join(renode::CONFIG_FILE);
-    fs::write(&config, renode::config(&scratch.tool)).map_err(|e| {
-        run::Stop::unusable(
-            "renode",
-            format!("cannot write Renode's configuration: {e}"),
-        )
-    })?;
+    let config = renode_config(&scratch.tool)?;
     let with_config = |rest: &[&str]| {
         let mut a = run::args(["--config".as_ref(), config.as_os_str()]);
         a.extend(run::args(rest));
@@ -1665,14 +1739,8 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     };
     let reported = invocation(with_config(&["--version"]), "status-version").run()?;
     let version = version_of("renode", &reported)?;
-    // The stock table and the boot's measured facts are Renode 1.17.0's;
-    // another Renode is a fact the twin does not have (`INV-06`).
-    let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
-    if ready.is_some() && version != pinned {
-        return Err(run::Stop::unusable(
-            "renode",
-            format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
-        ));
+    if ready.is_some() {
+        renode_pinned(&version)?;
     }
     // A boot's archive names the build Renode reported (`AET-WO-2205` §1.1).
     let build = match &ready {

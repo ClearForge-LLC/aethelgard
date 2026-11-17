@@ -57,7 +57,8 @@ fn lists_the_five_tools_and_completes_two_calls() {
             "campaign",
             "replay",
             "attribute",
-            "propose"
+            "propose",
+            "doctor"
         ]
     );
     println!("{}", serde_json::to_string_pretty(&list["result"]).unwrap());
