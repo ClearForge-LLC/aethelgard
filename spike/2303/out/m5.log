@@ -1,0 +1,20 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p207426-i163785822.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+    Finished `release` profile [optimized] target(s) in 0.79s
+== full setup, healthy 100 ms
+lockstep exit=134
+/repo/spike/2303/sh/run.sh: line 6:    63 Aborted                 (core dumped) TOOL=/cache/s02/tool $L lockstep $1 $2 /cache/s02/renode-argv.txt $O > $O/run.json 2> $O/run.err
+  29:     0x7d9369427ca8 - <unknown>
+  30:     0x7d9369427d65 - __libc_start_main
+  31:     0x5a509cc158b1 - _start
+  32:                0x0 - <unknown>
+thread caused non-unwinding panic. aborting.
+replay exit=101
+== weak 100 ms at 100 us
+lockstep exit=0
+replay exit=0
+== weak 1 s at 100 us
+lockstep exit=0
+replay exit=0
+== weak 100 ms at 1 us
+lockstep exit=0
+replay exit=0

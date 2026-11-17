@@ -1,0 +1,4 @@
+{"trace":"trace-samples","ok":true,"events":3000,"trace_bytes":50118,"records_folded":0,"state_hash":"8eba1b332611fad4ae381ef77de4fd07d654d4f19f69989b0d71e45927308034","replay_s":0.001,"hwm_kib_so_far":5764}
+{"trace":"trace-records","ok":true,"events":3000,"trace_bytes":98782,"records_folded":3000,"state_hash":"178440ade7e53360bb7bd272075e33384bbaa1d9e98f16ea32ef34af4b617eea","replay_s":0.002,"hwm_kib_so_far":7500}
+{"trace":"trace-events","ok":true,"events":11,"trace_bytes":508,"records_folded":11,"state_hash":"ab642406e1285d89796525af1c9aa3a118225c95391a2a998d8a62e353a4f578","replay_s":0.000,"hwm_kib_so_far":7500}
+{"rejudge":"bridge actions from the VDD_3V3 samples alone","derived":4,"recorded":4,"equal":true}
