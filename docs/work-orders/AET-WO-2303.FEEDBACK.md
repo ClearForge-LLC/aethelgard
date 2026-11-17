@@ -329,4 +329,4 @@ So a firmware-dependent fault cannot be archived by today's campaign at any leng
 - **The probe** builds in the pinned image with no warnings (`cargo build --release --manifest-path spike/2303/lockstep/Cargo.toml`). `spike/2303/lockstep` is `cargo fmt`-clean. `spike/2303/ngspice` is `2301`'s FFI copied unchanged from `a451cd15` and is not `fmt`-clean, as it was not there.
 - **Evidence:** in `spike/2303/out/`; the scripts that made it are in `spike/2303/sh/`.
 
-**STOPPED at §2** for the architect's ruling on D1–D5.
+**STOPPED at §2**, 2026-11-17, for the architect's ruling on D1–D5. The PR is a record only, not to be merged as code. Its title and body are in `~/.cache/aet-2303/pr-title-body.md` on Furnace. Scratch trees are removed, and the evidence is in `spike/2303/out/`.
