@@ -8,7 +8,7 @@ mod common;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_pincheck::elf::SerialEntry;
 use aethelgard_pincheck::{Refusal, header, identity};
-use common::{IDENTITY, topology};
+use common::{Elf, IDENTITY, SD1, topology};
 use serde_json::{Value, json};
 
 const EMPTY: SerialEntry = SerialEntry {
@@ -17,6 +17,7 @@ const EMPTY: SerialEntry = SerialEntry {
     tx_line: 0,
     rx_line: 0,
     empty: true,
+    driver_is_instance: false,
 };
 
 /// The findings as `kind at [expected | decoded]`, or the refusal's kind.
@@ -58,6 +59,13 @@ fn each_spi_fact_is_judged() {
             vec!["WrongSpiSpeed"],
         ),
         ("16*MHZ,  16*MHZ", "16000*KHZ,  16*MHZ", vec![]),
+        // The window's edges: 1 kHz below is out, 999 Hz below is in.
+        (
+            "16*MHZ,  16*MHZ",
+            "15999*KHZ,  16*MHZ",
+            vec!["WrongSpiSpeed"],
+        ),
+        ("16*MHZ,  16*MHZ", "15999001,  16*MHZ", vec![]),
         (
             "\"dataflash\"",
             "\"flash\"",
@@ -95,7 +103,8 @@ fn swapped_selects_with_wrong_modes_are_each_named() {
         .replace(
             "#define HAL_SPI_DEVICE_LIST",
             "#define HAL_SPI_DEVICE1  SPIDesc(\"icm42688\", 0, 2, PAL_LINE(GPIOA,0U) , SPIDEV_MODE1, 16*MHZ, 16*MHZ)\n#define HAL_SPI_DEVICE_LIST",
-        );
+        )
+        .replace("   HAL_SPI_DEVICE0", "   HAL_SPI_DEVICE0,HAL_SPI_DEVICE1");
     let found = judge(&t, &text, &[EMPTY]).unwrap();
     assert_eq!(
         kinds(&found),
@@ -178,7 +187,7 @@ fn each_barometer_probe_is_judged() {
         ("0, 118)", "0, 119)", "WrongBaroProbe"),
         ("AP_Baro_BMP280", "AP_Baro_DPS280", "WrongBaroProbe"),
         (
-            "#define HAL_BARO_PROBE1 probe_i2c_dev(AP_Baro_BMP280::probe, 0, 118); RETURN_IF_NO_SPACE;\n",
+            "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1\n",
             "",
             "MissingBaroProbe",
         ),
@@ -187,13 +196,32 @@ fn each_barometer_probe_is_judged() {
         assert_ne!(text, IDENTITY);
         assert_eq!(kinds(&judge(&t, &text, &[EMPTY]).unwrap()), [want], "{to}");
     }
-    let text = IDENTITY.replace(
+    // Only what the list names is compiled (`AP_Baro.cpp:666`, adversarial
+    // A4): a probe it does not name is not judged, one it names is.
+    let unlisted = IDENTITY.replace(
         "#define HAL_BARO_PROBE_LIST",
         "#define HAL_BARO_PROBE2 probe_i2c_dev(AP_Baro_BMP581::probe, 0, 70); RETURN_IF_NO_SPACE;\n#define HAL_BARO_PROBE_LIST",
     );
     assert_eq!(
-        kinds(&judge(&t, &text, &[EMPTY]).unwrap()),
+        judge(&t, &unlisted, &[EMPTY]).unwrap(),
+        Vec::<String>::new()
+    );
+    let listed = unlisted.replace(
+        "HAL_BARO_PROBE_LIST HAL_BARO_PROBE1",
+        "HAL_BARO_PROBE_LIST HAL_BARO_PROBE1;HAL_BARO_PROBE2",
+    );
+    assert_eq!(
+        kinds(&judge(&t, &listed, &[EMPTY]).unwrap()),
         ["UnexpectedBaroProbe"]
+    );
+    // A list written straight out, with no numbered macro, is read too.
+    let inline = IDENTITY.replace(
+        "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1",
+        "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1; probe_i2c_dev(AP_Baro_BMP280::probe, 0, 119); RETURN_IF_NO_SPACE",
+    );
+    assert_eq!(
+        judge(&t, &inline, &[EMPTY]).unwrap(),
+        ["UnexpectedBaroProbe HAL_BARO_PROBE_LIST [none | BMP280 on I2C1 at 0x77]"]
     );
 }
 
@@ -230,6 +258,7 @@ fn the_serial_order_and_bauds_are_judged() {
         tx_line: 0x5802_0009,
         rx_line: 0x5802_000a,
         empty: false,
+        driver_is_instance: true,
     };
     assert_eq!(
         judge(&t, IDENTITY, &[usart1, EMPTY]).unwrap(),
@@ -265,7 +294,86 @@ fn the_serial_order_and_bauds_are_judged() {
     let text = format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD 921600\n");
     assert_eq!(
         judge(&t, &text, &[usart1]).unwrap(),
-        ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud]"]
+        ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud, then 921600 baud]"]
+    );
+    // SERIAL0 opens at its define, then the GCS reopens it at the define /
+    // 1000 mapped (adversarial A7): 14400 runs at 14000 after start-up.
+    let mut v: Value = serde_json::to_value(&t).unwrap();
+    v["serial_ports"]["CONSOLE"]["framing"]["baud"] = json!(14400);
+    let slow: SolvedTopology = serde_json::from_value(v).unwrap();
+    let text = format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD 14400\n");
+    assert_eq!(
+        judge(&slow, &text, &[usart1]).unwrap(),
+        ["WrongSerialBaud SERIAL0 [14400 baud | 14400 baud, then 14000 baud]"]
+    );
+    // The entry's driver pointer is not `SD1` (adversarial A11).
+    let other_driver = SerialEntry {
+        driver_is_instance: false,
+        ..usart1
+    };
+    assert_eq!(
+        kinds(&judge(&t, IDENTITY, &[other_driver]).unwrap()),
+        ["WrongSerialPort"]
+    );
+}
+
+/// The adversarial pass's forms (FEEDBACK §4): each read as GCC reads it.
+#[test]
+fn each_fact_is_read_as_the_compiler_reads_it() {
+    let t = topology();
+    let one = |from: &str, to: &str| {
+        let text = IDENTITY.replacen(from, to, 1);
+        assert_ne!(text, IDENTITY, "{from}");
+        judge(&t, &text, &[EMPTY])
+    };
+    // A1: any blanks GCC allows around `#` and `define`.
+    for spaced in [
+        "#define  HAL_I2C_MAX_CLOCK 1000000",
+        "#define\tHAL_I2C_MAX_CLOCK 1000000",
+        "  #  define HAL_I2C_MAX_CLOCK 1000000",
+    ] {
+        let found = one("#define HAL_I2C_MAX_CLOCK 400000", spaced).unwrap();
+        assert_eq!(kinds(&found), ["I2cClockAboveDeclared"], "{spaced}");
+    }
+    // A3: a leading zero is octal; 020000*KHZ is 8.192 MHz.
+    let found = one("16*MHZ,  16*MHZ", "16*MHZ,  020000*KHZ").unwrap();
+    assert_eq!(
+        found,
+        [
+            "WrongSpiSpeed SPIDEV dataflash high [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 8192000 Hz]"
+        ]
+    );
+    // A5: ArduPilot's I2C timings overridden.
+    let found = one(
+        "#define HAL_I2C_MAX_CLOCK 400000",
+        "#define HAL_I2C_MAX_CLOCK 400000\n#define HAL_I2C_H7_400_TIMINGR 0x00707CBB",
+    )
+    .unwrap();
+    assert_eq!(kinds(&found), ["I2cTimingOverridden"]);
+    // A9: a speed past u64 is refused by name, one at its edge is a finding.
+    assert!(matches!(
+        one("16*MHZ,  16*MHZ", "16*MHZ,  18446744073709552*KHZ"),
+        Err(Refusal::Header { name, .. }) if name == "HAL_SPI_DEVICE0"
+    ));
+    let found = one("16*MHZ,  16*MHZ", "16*MHZ,  18446744073709551615").unwrap();
+    assert_eq!(kinds(&found), ["WrongSpiSpeed"]);
+    // A10: a listed entry defined only in a conditional the reader does not
+    // evaluate is refused, never skipped.
+    let err = one(
+        "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1",
+        "#ifdef X\n#define HAL_BARO_PROBE2 probe_i2c_dev(AP_Baro_BMP280::probe, 0, 119); RETURN_IF_NO_SPACE;\n#endif\n#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1;HAL_BARO_PROBE2",
+    )
+    .unwrap_err();
+    assert!(matches!(err, Refusal::Conditional { .. }), "{err:?}");
+    // A list naming a macro that is not defined is refused by name.
+    let err = one(
+        "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1",
+        "#define HAL_BARO_PROBE_LIST HAL_BARO_PROBE1;HAL_BARO_PROBE9",
+    )
+    .unwrap_err();
+    assert!(
+        matches!(&err, Refusal::Header { name, .. } if name == "HAL_BARO_PROBE_LIST"),
+        "{err:?}"
     );
 }
 
@@ -309,5 +417,37 @@ fn an_unknown_table_form_is_refused_by_name() {
             ("MalformedHeader", Some(name)),
             "{to}: {err}"
         );
+    }
+}
+
+/// The ELF's serial table: each entry's driver pointer is held to the
+/// `SD<instance>` symbol, and bytes in its padding are refused (adversarial
+/// A11).
+#[test]
+fn the_serial_table_is_read_with_its_driver_and_padding() {
+    let mut entry = [0u8; 44];
+    entry[..4].copy_from_slice(&SD1.to_le_bytes());
+    entry[4] = 1;
+    entry[20..24].copy_from_slice(&0x5802_0009u32.to_le_bytes());
+    entry[24..28].copy_from_slice(&0x5802_000au32.to_le_bytes());
+    let read = |entries: Vec<[u8; 44]>| {
+        let elf = Elf {
+            serial: Some(entries),
+            ..Elf::default()
+        };
+        aethelgard_pincheck::elf::serial_table(&elf.bytes())
+    };
+    let got = read(vec![entry, [0; 44]]).unwrap();
+    assert!(got[0].driver_is_instance && !got[0].empty);
+    assert_eq!((got[0].instance, got[0].tx_line), (1, 0x5802_0009));
+    assert!(got[1].empty && !got[1].driver_is_instance);
+    let mut other = entry;
+    other[..4].copy_from_slice(&(SD1 + 0x64).to_le_bytes());
+    assert!(!read(vec![other]).unwrap()[0].driver_is_instance);
+    for at in [14, 15, 42, 43] {
+        let mut padded = entry;
+        padded[at] = 0xAA;
+        let err = read(vec![padded]).unwrap_err();
+        assert_eq!(err.kind(), "MalformedElf", "byte {at}: {err:?}");
     }
 }

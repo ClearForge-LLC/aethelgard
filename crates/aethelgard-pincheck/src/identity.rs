@@ -1,16 +1,18 @@
 //! The identity judge (`AET-WO-4400b2`): the facts ArduPilot keeps in its
 //! device tables rather than in `gpio_default_config`, each read from
 //! ArduPilot's own computation and held against the solved topology:
-//! - each SPI device's chip select, bus, mode and speeds (`HAL_SPI_DEVICEn`);
-//! - each motor's timer channel and `PWM(n)` index (`HAL_PWM_GROUPn`);
-//! - the I2C clock (`HAL_I2C_MAX_CLOCK`);
+//! - each SPI device's chip select, bus, mode and speeds (`HAL_SPI_DEVICE_LIST`);
+//! - each motor's timer channel and `PWM(n)` index (`HAL_PWM_GROUPS`);
+//! - the I2C clock (`HAL_I2C_MAX_CLOCK`, on ArduPilot's own timings);
 //! - the serial order and pins (the ELF's `_serial_tab`) and each port's baud;
-//! - the barometer probes (`HAL_BARO_PROBEn`).
+//! - the barometer probes (`HAL_BARO_PROBE_LIST`).
 //!
-//! The expected values come from the topology and `aethelgard-ir` alone;
-//! nothing here reads the generated `hwdef.dat`, and the crate shares no code
-//! with its generator (`INV-07`, `RUL-20`). `README.md` gives each input and
-//! why (FEEDBACK §0).
+//! Each table is read through the list macro the compiler expands
+//! (`SPIDevice.cpp:75`, `RCOutput.cpp:75`, `AP_Baro.cpp:666`), never through
+//! numbered macros the list may not name (adversarial A4). The expected values
+//! come from the topology and `aethelgard-ir` alone; nothing here reads the
+//! generated `hwdef.dat`, and the crate shares no code with its generator
+//! (`INV-07`, `RUL-20`). FEEDBACK §0 gives each input and why.
 
 use std::collections::BTreeMap;
 
@@ -30,10 +32,18 @@ const PORTS: &str = "ABCDEFGHIJK";
 
 /// SERIAL0's baud when `DEFAULT_SERIAL0_BAUD` is not defined:
 /// `AP_SERIALMANAGER_CONSOLE_BAUD`, 115200 (`AP_SerialManager_config.h:78-81`).
-const SERIAL0_DEFAULT_BAUD: u32 = 115_200;
+const SERIAL0_DEFAULT_BAUD: u64 = 115_200;
 
 /// The I2C clock when `HAL_I2C_MAX_CLOCK` is not defined (`I2CDevice.cpp:53-54`).
-const I2C_DEFAULT_CLOCK: u32 = 100_000;
+const I2C_DEFAULT_CLOCK: u64 = 100_000;
+
+/// The H7 timings `I2CDevice.cpp:65-69` defines unless `hwdef.h` does. A
+/// definition changes the clock a bus runs at whatever `HAL_I2C_MAX_CLOCK`
+/// says (adversarial A5), so any is a finding.
+const I2C_TIMINGS: [&str; 2] = ["HAL_I2C_H7_100_TIMINGR", "HAL_I2C_H7_400_TIMINGR"];
+
+/// How deep a list may name a macro that names a macro.
+const LIST_DEPTH: u8 = 4;
 
 fn malformed<T>(name: &str, message: impl Into<String>) -> Result<T, Refusal> {
     Err(Refusal::Header {
@@ -42,28 +52,33 @@ fn malformed<T>(name: &str, message: impl Into<String>) -> Result<T, Refusal> {
     })
 }
 
-/// The top-level comma-separated arguments of `s`, nesting in `()` and `{}`
-/// and quotes respected, each trimmed.
-fn args(s: &str) -> Vec<String> {
+/// The pieces of `s` split at `sep` outside `()`, `{}` and quotes, each
+/// trimmed; empty pieces are dropped.
+fn split(s: &str, sep: char) -> Vec<String> {
     let (mut out, mut cur, mut depth, mut quoted) = (Vec::new(), String::new(), 0i32, false);
     for c in s.chars() {
         match c {
             '"' => quoted = !quoted,
             '(' | '{' if !quoted => depth += 1,
             ')' | '}' if !quoted => depth -= 1,
-            ',' if !quoted && depth == 0 => {
-                out.push(cur.trim().to_owned());
-                cur.clear();
+            c if c == sep && !quoted && depth == 0 => {
+                out.push(std::mem::take(&mut cur));
                 continue;
             }
             _ => {}
         }
         cur.push(c);
     }
-    if !cur.trim().is_empty() {
-        out.push(cur.trim().to_owned());
-    }
-    out
+    out.push(cur);
+    out.into_iter()
+        .map(|p| p.trim().to_owned())
+        .filter(|p| !p.is_empty())
+        .collect()
+}
+
+/// The top-level comma-separated arguments of `s`.
+fn args(s: &str) -> Vec<String> {
+    split(s, ',')
 }
 
 /// The inside of `open … close` wrapping all of `s`, or `None`.
@@ -71,9 +86,57 @@ fn inside<'a>(s: &'a str, open: &str, close: &str) -> Option<&'a str> {
     s.trim().strip_prefix(open)?.strip_suffix(close)
 }
 
-/// `nU` or `n` as a number.
+/// A C integer constant as GCC reads it (adversarial A3): `0x` hex, a
+/// leading `0` octal, else decimal, with `U` and `L` suffixes. `None` for
+/// anything else, or a value past `u64`.
 fn number(s: &str) -> Option<u64> {
-    s.trim().trim_end_matches('U').parse().ok()
+    let s = s.trim().trim_end_matches(['U', 'u', 'L', 'l']);
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else if let Some(octal) = s.strip_prefix('0').filter(|o| !o.is_empty()) {
+        u64::from_str_radix(octal, 8).ok()
+    } else {
+        s.parse().ok()
+    }
+}
+
+fn is_name(s: &str) -> bool {
+    s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+        && s.bytes().next().is_some_and(|b| !b.is_ascii_digit())
+}
+
+/// The elements the compiler expands `list` to: its value split at `sep`,
+/// each element that names a defined macro replaced by that macro's own
+/// elements, as the preprocessor would. Each comes with the macro whose value
+/// held it. An undefined list is empty; an undefined name is an element
+/// (`RETURN_IF_NO_SPACE`), which a caller's form check refuses unless it is
+/// one it knows.
+fn expand(h: &Preprocessed, list: &str, sep: char) -> Result<Vec<(String, String)>, Refusal> {
+    fn walk(
+        h: &Preprocessed,
+        name: &str,
+        value: &str,
+        sep: char,
+        depth: u8,
+        out: &mut Vec<(String, String)>,
+    ) -> Result<(), Refusal> {
+        for e in split(value, sep) {
+            match (is_name(&e) && depth < LIST_DEPTH)
+                .then(|| h.value(&e))
+                .transpose()?
+                .flatten()
+            {
+                Some(inner) => walk(h, &e, &inner, sep, depth + 1, out)?,
+                None => out.push((name.to_owned(), e)),
+            }
+        }
+        Ok(())
+    }
+    let mut out = Vec::new();
+    if let Some(value) = h.value(list)? {
+        walk(h, list, &value, sep, 0, &mut out)?;
+    }
+    Ok(out)
 }
 
 /// `PAL_LINE(GPIOx,nU)` as `Pxn`.
@@ -106,7 +169,10 @@ fn unit(peripheral: &str) -> Option<u8> {
 
 /// `AP_SerialManager::map_baudrate` (`AP_SerialManager.cpp:737-770`): a
 /// SERIALn parameter's value as the baud ArduPilot opens the port at.
-fn map_baudrate(rate: u32) -> u32 {
+// belt-and-suspenders: `aethelgard-hwdef` holds its own copy to choose a
+// define; this one judges it, and the judge shares no code with the
+// generator (`RUL-20`), so the two copies are deliberate.
+fn map_baudrate(rate: u64) -> u64 {
     match if rate == 0 { 57 } else { rate } {
         1 => 1200,
         2 => 2400,
@@ -126,7 +192,7 @@ fn map_baudrate(rate: u32) -> u32 {
         1500 => 1_500_000,
         2000 => 2_000_000,
         r if r > 2000 => r,
-        r => r.saturating_mul(1000),
+        r => r * 1000,
     }
 }
 
@@ -150,6 +216,18 @@ impl Out {
             expected,
             decoded,
         });
+    }
+}
+
+/// A numeric define, or `None` when it is not defined; refused when it is
+/// not a C integer constant.
+fn defined_number(h: &Preprocessed, name: &str) -> Result<Option<u64>, Refusal> {
+    match h.value(name)? {
+        None => Ok(None),
+        Some(v) => match number(&v) {
+            Some(n) => Ok(Some(n)),
+            None => malformed(name, format!("is not a C integer constant: `{v}`")),
+        },
     }
 }
 
@@ -211,7 +289,7 @@ type SpiDesc = (String, String, String, u8, u64, u64);
 
 /// Each SPI device the parts table names for ArduPilot: one `SPIDesc` of
 /// that name, on its solved controller, its chip select on its solved pin,
-/// in the driven mode, at speeds within the kHz below the controller's
+/// in the driven mode, at speeds within the kHz at or below the controller's
 /// achieved rate (never above it: the pin's speed was judged at that rate).
 fn spi(
     t: &SolvedTopology,
@@ -222,20 +300,19 @@ fn spi(
     let mhz = h.value("MHZ")?;
     let khz = h.value("KHZ")?;
     let buses = bus_list(h, "HAL_SPI_BUS_LIST", "SPID")?;
+    let speed = |s: &str| -> Option<u64> {
+        let (n, unit) = s.split_once('*').unwrap_or((s, ""));
+        let n = number(n)?;
+        match unit.trim() {
+            "" => Some(n),
+            "MHZ" if mhz.as_deref() == Some("(1000U*1000U)") => n.checked_mul(1_000_000),
+            "KHZ" if khz.as_deref() == Some("(1000U)") => n.checked_mul(1000),
+            _ => None,
+        }
+    };
     let mut table: BTreeMap<String, Vec<SpiDesc>> = BTreeMap::new();
-    for name in h.numbered("HAL_SPI_DEVICE") {
-        let v = h.value(&name)?.unwrap_or_default();
+    for (name, v) in expand(h, "HAL_SPI_DEVICE_LIST", ',')? {
         let a = args(inside(&v, "SPIDesc(", ")").unwrap_or(""));
-        let speed = |s: &str| -> Option<u64> {
-            let (n, unit) = s.split_once('*').map_or((s, ""), |(n, u)| (n, u));
-            let n = number(n)?;
-            match unit.trim() {
-                "" => Some(n),
-                "MHZ" if mhz.as_deref() == Some("(1000U*1000U)") => Some(n * 1_000_000),
-                "KHZ" if khz.as_deref() == Some("(1000U)") => Some(n * 1000),
-                _ => None,
-            }
-        };
         let parsed = (|| {
             let [dev, bus, _devid, cs, mode, low, high] = a.as_slice() else {
                 return None;
@@ -261,7 +338,7 @@ fn spi(
             );
         };
         table
-            .entry(dev.clone())
+            .entry(dev)
             .or_default()
             .push((name, bus, cs, mode, low, high));
     }
@@ -327,7 +404,7 @@ fn spi(
         if let Some(c) = t.spi_controllers.get(&d.peripheral) {
             let top = c.achieved_hz;
             for (which, hz) in [("low", low), ("high", high)] {
-                if *hz > top || *hz + 1000 <= top {
+                if *hz > top || top - *hz >= 1000 {
                     out.push(
                         "WrongSpiSpeed",
                         &format!("{at} {which}"),
@@ -362,8 +439,7 @@ fn spi(
 /// disabled (255).
 fn motors(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Refusal> {
     let mut groups: BTreeMap<u8, (String, [u8; 4])> = BTreeMap::new();
-    for name in h.numbered("HAL_PWM_GROUP") {
-        let v = h.value(&name)?.unwrap_or_default();
+    for (name, v) in expand(h, "HAL_PWM_GROUPS", ',')? {
         let parsed = (|| {
             let a = args(inside(&v, "{", "}")?);
             let chan = args(inside(a.get(1)?, "{", "}")?);
@@ -451,19 +527,14 @@ fn motors(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Ref
     Ok(())
 }
 
-/// ArduPilot's one I2C clock, never above the slowest declared bus.
+/// ArduPilot's one I2C clock, never above the slowest declared bus, and on
+/// ArduPilot's own H7 timings.
 fn i2c_clock(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Refusal> {
     let Some(slowest) = t.i2c_speeds.values().min() else {
         return Ok(());
     };
-    let clock = match h.value("HAL_I2C_MAX_CLOCK")? {
-        None => I2C_DEFAULT_CLOCK,
-        Some(v) => match number(&v).and_then(|n| u32::try_from(n).ok()) {
-            Some(n) => n,
-            None => return malformed("HAL_I2C_MAX_CLOCK", format!("is not a number: `{v}`")),
-        },
-    };
-    if clock > *slowest {
+    let clock = defined_number(h, "HAL_I2C_MAX_CLOCK")?.unwrap_or(I2C_DEFAULT_CLOCK);
+    if clock > u64::from(*slowest) {
         out.push(
             "I2cClockAboveDeclared",
             "HAL_I2C_MAX_CLOCK",
@@ -472,13 +543,24 @@ fn i2c_clock(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), 
             format!("{clock} Hz"),
         );
     }
+    for name in I2C_TIMINGS {
+        if let Some(v) = h.value(name)? {
+            out.push(
+                "I2cTimingOverridden",
+                name,
+                None,
+                "ArduPilot's own (I2CDevice.cpp:65-69)".into(),
+                v,
+            );
+        }
+    }
     Ok(())
 }
 
 /// The serial order, from the ELF: SERIAL0 the console, then the other ports
-/// in the specification's order, each on its solved peripheral and pins,
-/// every later entry empty; and each port's baud, except RC input's, which
-/// ArduPilot sets itself (`AET-WO-4400b` F3).
+/// in the specification's order, each on its solved peripheral (its driver
+/// `SDn` and its number) and pins, every later entry empty; and each port's
+/// baud, except RC input's, which ArduPilot sets itself (`AET-WO-4400b` F3).
 fn serial_ports(
     t: &SolvedTopology,
     h: &Preprocessed,
@@ -502,11 +584,16 @@ fn serial_ports(
             || "none".to_owned(),
             |e| {
                 format!(
-                    "{}{} TX {} RX {}",
+                    "{}{} TX {} RX {}{}",
                     if e.is_usb { "USB " } else { "U(S)ART" },
                     e.instance,
                     line_pin(e.tx_line).unwrap_or_else(|| format!("{:#010x}", e.tx_line)),
-                    line_pin(e.rx_line).unwrap_or_else(|| format!("{:#010x}", e.rx_line))
+                    line_pin(e.rx_line).unwrap_or_else(|| format!("{:#010x}", e.rx_line)),
+                    if e.driver_is_instance {
+                        ""
+                    } else {
+                        ", driver not SD<instance>"
+                    }
                 )
             },
         );
@@ -526,6 +613,7 @@ fn serial_ports(
             None => out.push("MissingSerialPort", &at, Some(label), want, got_text),
             Some(e) => {
                 let ok = !e.is_usb
+                    && e.driver_is_instance
                     && Some(e.instance) == unit(&p.peripheral)
                     && line_pin(e.tx_line).as_deref() == Some(tx.pin.as_str())
                     && line_pin(e.rx_line).as_deref() == Some(rx.pin.as_str());
@@ -537,24 +625,27 @@ fn serial_ports(
         if matches!(p.role, SerialRole::RcCrsf | SerialRole::RcSbus) {
             continue;
         }
-        let name = format!("DEFAULT_SERIAL{n}_BAUD");
-        let declared = p.framing.baud;
-        let runs = match (h.value(&name)?, n) {
-            (None, 0) => Some(SERIAL0_DEFAULT_BAUD),
-            (None, _) => None,
-            (Some(v), _) => match number(&v).and_then(|v| u32::try_from(v).ok()) {
-                // SERIAL0 opens at the define itself (`AP_SerialManager.cpp:419`);
-                // SERIALn at its parameter's mapped value (lines 199-395).
-                Some(v) if n == 0 => Some(v),
-                Some(v) => Some(map_baudrate(v)),
-                None => return malformed(&name, format!("is not a number: `{v}`")),
-            },
+        let declared = u64::from(p.framing.baud);
+        let runs: Vec<u64> = match (defined_number(h, &format!("DEFAULT_SERIAL{n}_BAUD"))?, n) {
+            (None, 0) => vec![SERIAL0_DEFAULT_BAUD],
+            (None, _) => Vec::new(),
+            // SERIAL0 opens at the define (`AP_SerialManager.cpp:419`), then
+            // the GCS reopens it at its parameter, `define / 1000`
+            // (`AP_SerialManager.cpp:172`), mapped (`GCS_Common.cpp:221`,
+            // `AP_SerialManager.h:151-153`): both run (adversarial A7).
+            (Some(v), 0) => vec![v, map_baudrate(v / 1000)],
+            // SERIALn at its parameter's mapped value.
+            (Some(v), _) => vec![map_baudrate(v)],
         };
-        if runs != Some(declared) {
-            let got = runs.map_or_else(
-                || "not stated (ArduPilot's per-port default)".to_owned(),
-                |b| format!("{b} baud"),
-            );
+        if runs.is_empty() || runs.iter().any(|b| *b != declared) {
+            let got = if runs.is_empty() {
+                "not stated (ArduPilot's per-port default)".to_owned()
+            } else {
+                runs.iter()
+                    .map(|b| format!("{b} baud"))
+                    .collect::<Vec<_>>()
+                    .join(", then ")
+            };
             out.push(
                 "WrongSerialBaud",
                 &at,
@@ -567,9 +658,10 @@ fn serial_ports(
     Ok(())
 }
 
-/// The barometer probes, in order, against the topology's barometers (the
-/// I2C devices whose part's ArduPilot row is a barometer), in index order:
-/// each the row's driver, on its solved controller, at its address.
+/// The barometer probes the list compiles, in order, against the topology's
+/// barometers (the I2C devices whose part's ArduPilot row is a barometer), in
+/// index order: each the row's driver, on its solved controller, at its
+/// address.
 fn baros(
     t: &SolvedTopology,
     parts: &PartsTable,
@@ -578,14 +670,12 @@ fn baros(
 ) -> Result<(), Refusal> {
     let buses = bus_list(h, "HAL_I2C_DEVICE_LIST", "I2CD")?;
     let mut probes = Vec::new();
-    for name in h.numbered("HAL_BARO_PROBE") {
-        let v = h.value(&name)?.unwrap_or_default();
+    for (name, stmt) in expand(h, "HAL_BARO_PROBE_LIST", ';')? {
+        if stmt == "RETURN_IF_NO_SPACE" {
+            continue;
+        }
         let parsed = (|| {
-            let call = v
-                .strip_suffix("RETURN_IF_NO_SPACE;")?
-                .trim()
-                .strip_suffix(';')?;
-            let a = args(inside(call, "probe_i2c_dev(", ")")?);
+            let a = args(inside(&stmt, "probe_i2c_dev(", ")")?);
             let [driver, bus, addr] = a.as_slice() else {
                 return None;
             };
@@ -601,18 +691,18 @@ fn baros(
             ))
         })();
         match parsed {
-            Some(p) => probes.push(p),
+            Some(p) => probes.push((name, p)),
             None => {
                 return malformed(
                     &name,
                     format!(
-                        "is not probe_i2c_dev(AP_Baro_<driver>::probe, bus, address) on a listed bus: `{v}`"
+                        "is not probe_i2c_dev(AP_Baro_<driver>::probe, bus, address) on a listed bus: `{stmt}`"
                     ),
                 );
             }
         }
     }
-    let want: Vec<(&str, String, String, u8)> = t
+    let want: Vec<(&str, (String, String, u8))> = t
         .i2c_devices_in_order()
         .into_iter()
         .filter_map(|(r, d)| {
@@ -620,32 +710,31 @@ fn baros(
             (a.kind == ArduPilotKind::Baro).then(|| {
                 (
                     r,
-                    a.driver.clone().unwrap_or_default(),
-                    d.peripheral.clone(),
-                    d.address,
+                    (
+                        a.driver.clone().unwrap_or_default(),
+                        d.peripheral.clone(),
+                        d.address,
+                    ),
                 )
             })
         })
         .collect();
     let show = |(d, b, a): &(String, String, u8)| format!("{d} on {b} at {a:#04x}");
     for i in 0..want.len().max(probes.len()) {
-        let at = format!("HAL_BARO_PROBE{}", i + 1);
+        let at = probes
+            .get(i)
+            .map_or_else(|| "HAL_BARO_PROBE_LIST".to_owned(), |(n, _)| n.clone());
         match (want.get(i), probes.get(i)) {
-            (Some((r, d, b, a)), Some(p)) => {
-                let w = (d.clone(), b.clone(), *a);
-                if w != *p {
-                    out.push("WrongBaroProbe", &at, Some(r), show(&w), show(p));
-                }
+            (Some((r, w)), Some((_, p))) if w != p => {
+                out.push("WrongBaroProbe", &at, Some(r), show(w), show(p));
             }
-            (Some((r, d, b, a)), None) => out.push(
-                "MissingBaroProbe",
-                &at,
-                Some(r),
-                show(&(d.clone(), b.clone(), *a)),
-                "none".into(),
-            ),
-            (None, Some(p)) => out.push("UnexpectedBaroProbe", &at, None, "none".into(), show(p)),
-            (None, None) => {}
+            (Some(_), Some(_)) | (None, None) => {}
+            (Some((r, w)), None) => {
+                out.push("MissingBaroProbe", &at, Some(r), show(w), "none".into());
+            }
+            (None, Some((_, p))) => {
+                out.push("UnexpectedBaroProbe", &at, None, "none".into(), show(p));
+            }
         }
     }
     Ok(())
@@ -656,7 +745,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lines_and_arguments_read_as_ardupilot_writes_them() {
+    fn lines_numbers_and_arguments_read_as_c_and_ardupilot_write_them() {
         assert_eq!(line_pin(0x5802_040e).as_deref(), Some("PB14"));
         assert_eq!(line_pin(0x5802_000f).as_deref(), Some("PA15"));
         assert_eq!(line_pin(0x5802_0010), None);
@@ -675,7 +764,15 @@ mod tests {
                 "16*MHZ"
             ]
         );
+        // C integer constants as GCC reads them (adversarial A3).
+        assert_eq!(number("0115200"), Some(39_552));
+        assert_eq!(number("0x61A80U"), Some(400_000));
+        assert_eq!(number("400000UL"), Some(400_000));
+        assert_eq!(number("0"), Some(0));
+        assert_eq!(number("09"), None);
+        assert_eq!(number("18446744073709551616"), None);
         assert_eq!(map_baudrate(57), 57_600);
+        assert_eq!(map_baudrate(14), 14_000);
         assert_eq!(map_baudrate(420_000), 420_000);
     }
 }

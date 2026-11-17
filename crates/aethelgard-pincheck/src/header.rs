@@ -257,6 +257,24 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
     Ok(out)
 }
 
+/// The text after `name` when `line` is `#define <name>` followed by a blank
+/// or the end, with any blanks GCC allows around `#` and `define`
+/// (`AET-WO-4400b2` adversarial A1: ArduPilot writes a `define` line's own
+/// spacing through).
+fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    let blank = [' ', '\t'];
+    let rest = line
+        .trim_start_matches(blank)
+        .strip_prefix('#')?
+        .trim_start_matches(blank)
+        .strip_prefix("define")?;
+    if !rest.starts_with(blank) {
+        return None;
+    }
+    let after = rest.trim_start_matches(blank).strip_prefix(name)?;
+    (after.is_empty() || after.starts_with(blank)).then_some(after)
+}
+
 /// The value text of `#define <name> <value>`, as the preprocessor sees it
 /// (`lines`, from [`logical`]): defined exactly once in a live line, named in
 /// no other line it compiles, and named in no line it may or may not
@@ -289,8 +307,8 @@ fn definition(lines: &[(usize, State, String)], name: &str) -> Result<String, Re
     let named: usize = live.iter().map(|l| mentions(l)).sum();
     let defines: Vec<&str> = live
         .iter()
-        .filter_map(|l| l.strip_prefix("#define ")?.strip_prefix(name))
-        .filter(|rest| rest.starts_with([' ', '\t']))
+        .filter_map(|l| defines(l, name))
+        .filter(|rest| !rest.is_empty())
         .collect();
     match defines.as_slice() {
         [one] if named == 1 => Ok((*one).to_owned()),
@@ -446,8 +464,7 @@ impl Preprocessed {
             .0
             .iter()
             .filter(|(_, s, _)| *s == State::Live)
-            .filter_map(|(_, _, l)| l.strip_prefix("#define ")?.strip_prefix(name))
-            .filter(|rest| rest.starts_with([' ', '\t']))
+            .filter_map(|(_, _, l)| defines(l, name))
             .collect();
         match defines.as_slice() {
             [] => Ok(None),
@@ -464,23 +481,8 @@ impl Preprocessed {
         self.0
             .iter()
             .filter(|(_, s, _)| *s != State::Dead)
-            .filter_map(|(_, _, l)| l.strip_prefix("#define ")?.strip_prefix(name))
-            .filter(|rest| rest.starts_with([' ', '\t']))
+            .filter_map(|(_, _, l)| defines(l, name))
             .map(|rest| rest.trim().to_owned())
-            .collect()
-    }
-
-    /// The names of the compiled `#define`s that are `prefix` then digits,
-    /// in file order.
-    pub fn numbered(&self, prefix: &str) -> Vec<String> {
-        self.0
-            .iter()
-            .filter(|(_, s, _)| *s == State::Live)
-            .filter_map(|(_, _, l)| {
-                let name = l.strip_prefix("#define ")?.split([' ', '\t', '(']).next()?;
-                let n = name.strip_prefix(prefix)?;
-                (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then(|| name.to_owned())
-            })
             .collect()
     }
 }

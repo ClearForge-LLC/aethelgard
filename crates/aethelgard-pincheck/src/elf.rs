@@ -434,6 +434,10 @@ pub struct SerialEntry {
     pub rx_line: u32,
     /// Every byte zero.
     pub empty: bool,
+    /// The driver pointer (offset 0) is the address of `SD<instance>`, the
+    /// serial driver the port runs on (`UARTDriver.cpp:474`): `instance`
+    /// alone names only its thread (adversarial A11).
+    pub driver_is_instance: bool,
 }
 
 /// The serial table, SERIAL0 first: a whole number of `SerialDef`s, at most
@@ -444,16 +448,40 @@ pub fn serial_table(bytes: &[u8]) -> Result<Vec<SerialEntry>, Refusal> {
             format!("{size} bytes, not 1 to 10 whole {SERIAL_DEF_LEN}-byte SerialDef entries")
         })
     })?;
-    Ok(data
+    let sections = sections(bytes)?;
+    let mut out = Vec::new();
+    for (i, e) in data
         .as_chunks::<{ SERIAL_DEF_LEN as usize }>()
         .0
         .iter()
-        .map(|e| SerialEntry {
+        .enumerate()
+    {
+        // The layout's two padding gaps (after `dma_tx_stream_id`, and at the
+        // end) are zero in every entry ArduPilot writes.
+        if e[14..16] != [0, 0] || e[42..44] != [0, 0] {
+            return refuse(
+                "MalformedElf",
+                format!(
+                    "SerialDef entry {i} has bytes in its padding: not the layout this reader knows"
+                ),
+            );
+        }
+        let empty = e.iter().all(|b| *b == 0);
+        let driver_is_instance = !empty && {
+            let name = format!("SD{}", e[4]);
+            match symbols_named(bytes, &sections, name.as_bytes())?.as_slice() {
+                [(value, ..)] => *value == u32_at(e, 0),
+                _ => false,
+            }
+        };
+        out.push(SerialEntry {
             instance: e[4],
             is_usb: e[5] != 0,
             tx_line: u32_at(e, 20),
             rx_line: u32_at(e, 24),
-            empty: e.iter().all(|b| *b == 0),
-        })
-        .collect())
+            empty,
+            driver_is_instance,
+        });
+    }
+    Ok(out)
 }

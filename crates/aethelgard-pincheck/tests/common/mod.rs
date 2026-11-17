@@ -13,10 +13,15 @@ pub const ADDR: u32 = 0x0800_1000;
 pub const EHDR: usize = 52;
 pub const PHDR: usize = 32;
 pub const DATA_OFF: usize = EHDR + PHDR;
-const STRTAB: &[u8] = b"\0gpio_default_config\0other\0_ZN7ChibiOS10UARTDriver11_serial_tabE\0";
+const STRTAB: &[u8] = b"\0gpio_default_config\0other\0_ZN7ChibiOS10UARTDriver11_serial_tabE\0SD1\0";
 
 /// `_serial_tab`'s name's offset in [`STRTAB`] (`AET-WO-4400b2`).
 const SERIAL_NAME: u32 = 27;
+
+/// `SD1`'s name's offset in [`STRTAB`], and where the synthetic ELF puts it:
+/// the driver a serial entry for USART1 points at.
+const SD1_NAME: u32 = 65;
+pub const SD1: u32 = 0x3000_1000;
 
 /// The knobs.
 #[derive(Clone)]
@@ -158,6 +163,7 @@ impl Elf {
                 1,
                 1,
             );
+            symbol(&mut syms, SD1_NAME, SD1, 100, 1, 1);
         }
         let info = if self.function { 2 } else { 1 };
         symbol(
