@@ -6880,43 +6880,10 @@ mod tests {
         );
     }
 
-    /// §1.4: a line whose rate needs `10` or `11`, or whose load is above the
-    /// table, is refused by name; nothing is sped up.
-    #[test]
-    fn a_line_no_selectable_speed_serves_is_refused() {
-        let mut s = with_spi(&[("U4", "CS", "PA0")]);
-        for line in s.spi_lines.values_mut() {
-            line.rate_hz = 80_000_001;
-        }
-        s.derive_controllers();
-        // `derive_controllers` leaves out a speed no row serves; the stored
-        // value is not this test's point, the board generator's refusal is
-        // (`AET-WO-4400b` D2).
-        for net in ["SCK", "MOSI"] {
-            s.pin_speeds.insert(net.into(), 0);
-        }
-        let err = generate("b", &s, &table()).unwrap_err();
-        assert_eq!(err.kind(), "RateAbovePinSpeed", "{err}");
-        assert!(err.to_string().contains("`MOSI` on `PA7`"), "{err}");
-        let mut s = with_spi(&[("U4", "CS", "PA0")]);
-        s.spi_lines.get_mut("MOSI").unwrap().capacitance_femtofarads = 50_001;
-        let err = generate("b", &s, &table()).unwrap_err();
-        assert_eq!(err.kind(), "LoadAboveSpeedTable", "{err}");
-        let mut s = with_spi(&[("U4", "CS", "PA0")]);
-        s.spi_lines.get_mut("MOSI").unwrap().rise_time_ns = 4;
-        assert_eq!(
-            generate("b", &s, &table()).unwrap_err().kind(),
-            "RiseTimeBelowPinSpeed"
-        );
-        for line in s.spi_lines.values_mut() {
-            line.rise_time_ns = 20;
-            line.vdd_min_millivolts = 1600;
-        }
-        assert_eq!(
-            generate("b", &s, &table()).unwrap_err().kind(),
-            "SupplyOutsideSpeedTable"
-        );
-    }
+    // `a_line_no_selectable_speed_serves_is_refused` moved to `aethelgard-ir`
+    // (`tests/validate.rs`, `AET-WO-4400b2` F4): `validate` re-derives each
+    // stored speed, so such a line is refused by the topology before any
+    // generator reads it.
 
     /// [`solved`], with SPI1 on PA5, PA6 and PA7 and the devices `devices`
     /// (reference, chip-select net, pin) on it.

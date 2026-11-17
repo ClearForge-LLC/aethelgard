@@ -257,6 +257,24 @@ fn logical(text: &str) -> Result<Vec<(usize, State, String)>, Refusal> {
     Ok(out)
 }
 
+/// The text after `name` when `line` is `#define <name>` followed by a blank
+/// or the end, with any blanks GCC allows around `#` and `define`
+/// (`AET-WO-4400b2` adversarial A1: ArduPilot writes a `define` line's own
+/// spacing through).
+fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    let blank = [' ', '\t'];
+    let rest = line
+        .trim_start_matches(blank)
+        .strip_prefix('#')?
+        .trim_start_matches(blank)
+        .strip_prefix("define")?;
+    if !rest.starts_with(blank) {
+        return None;
+    }
+    let after = rest.trim_start_matches(blank).strip_prefix(name)?;
+    (after.is_empty() || after.starts_with(blank)).then_some(after)
+}
+
 /// The value text of `#define <name> <value>`, as the preprocessor sees it
 /// (`lines`, from [`logical`]): defined exactly once in a live line, named in
 /// no other line it compiles, and named in no line it may or may not
@@ -289,8 +307,8 @@ fn definition(lines: &[(usize, State, String)], name: &str) -> Result<String, Re
     let named: usize = live.iter().map(|l| mentions(l)).sum();
     let defines: Vec<&str> = live
         .iter()
-        .filter_map(|l| l.strip_prefix("#define ")?.strip_prefix(name))
-        .filter(|rest| rest.starts_with([' ', '\t']))
+        .filter_map(|l| defines(l, name))
+        .filter(|rest| !rest.is_empty())
         .collect();
     match defines.as_slice() {
         [one] if named == 1 => Ok((*one).to_owned()),
@@ -408,4 +426,63 @@ pub fn read(text: &str) -> Result<[HeaderPort; PORTS.len()], Refusal> {
         };
     }
     Ok(out)
+}
+
+/// `hwdef.h` as the preprocessor sees it, for the identity judge
+/// (`AET-WO-4400b2`): the same strict reading as the cross-check's.
+pub struct Preprocessed(Vec<(usize, State, String)>);
+
+/// Reads `text` as [`read`] does: continuations spliced, comments removed,
+/// `#if 0` and `#if 1` evaluated, any other conditional kept as unknown.
+pub fn preprocess(text: &str) -> Result<Preprocessed, Refusal> {
+    Ok(Preprocessed(logical(text)?))
+}
+
+impl Preprocessed {
+    /// The value of `#define <name>`, or `None` when no compiled line defines
+    /// it. Refused when it is defined twice, or named inside a conditional
+    /// the reader does not evaluate.
+    pub fn value(&self, name: &str) -> Result<Option<String>, Refusal> {
+        let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        let mentions = |text: &str| {
+            text.match_indices(name).any(|(at, _)| {
+                !text[..at].chars().next_back().is_some_and(word)
+                    && !text[at + name.len()..].chars().next().is_some_and(word)
+            })
+        };
+        if let Some((n, _, _)) = self
+            .0
+            .iter()
+            .find(|(_, s, l)| *s == State::Unknown && mentions(l))
+        {
+            return Err(Refusal::Conditional {
+                name: name.to_owned(),
+                line: *n,
+            });
+        }
+        let defines: Vec<&str> = self
+            .0
+            .iter()
+            .filter(|(_, s, _)| *s == State::Live)
+            .filter_map(|(_, _, l)| defines(l, name))
+            .collect();
+        match defines.as_slice() {
+            [] => Ok(None),
+            [one] => Ok(Some(one.trim().to_owned())),
+            many => refuse(name, format!("defined {} times", many.len())),
+        }
+    }
+
+    /// Every definition of `name` the preprocessor may compile: in a live
+    /// line, or in a branch whose condition the reader does not evaluate
+    /// (ArduPilot's `HAL_I2Cn_CONFIG` has one per DMA branch). A caller reads
+    /// only what every one of them agrees on.
+    pub fn candidates(&self, name: &str) -> Vec<String> {
+        self.0
+            .iter()
+            .filter(|(_, s, _)| *s != State::Dead)
+            .filter_map(|(_, _, l)| defines(l, name))
+            .map(|rest| rest.trim().to_owned())
+            .collect()
+    }
 }

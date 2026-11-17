@@ -198,18 +198,18 @@ fn a_topology_ardupilot_cannot_run_a_console_on_is_refused() {
     assert_eq!(err.id(), Some("CONSOLE"));
 }
 
-/// D2: the speed token is the stored speed, never a choice of the generator.
+/// D2: the speed token is the stored speed, never a choice of the
+/// generator. Since `AET-WO-4400b2` F4 a stored speed `solve` would not give
+/// is refused by the topology before the generator reads it.
 #[test]
 fn each_pin_takes_the_stored_speed() {
     let mut v = sentinel_01();
     let text = generate(&topology(&v.to_string())).unwrap().text;
     assert!(text.contains("PA5 SPI1_SCK SPI1 SPEED_LOW PUSHPULL FLOATING"));
     v["pin_speeds"]["SPI_SCK"] = 0.into();
-    let text = generate(&topology(&v.to_string())).unwrap().text;
-    assert!(
-        text.contains("PA5 SPI1_SCK SPI1 SPEED_VERYLOW PUSHPULL FLOATING"),
-        "{text}"
-    );
+    let err = generate(&topology(&v.to_string())).unwrap_err();
+    assert_eq!(err.kind(), "InvalidTopology", "{err}");
+    assert!(err.to_string().contains("pin_speeds.SPI_SCK"), "{err}");
 }
 
 /// D6: the SPIDEV speed is the controller's achieved rate (16 MHz on
