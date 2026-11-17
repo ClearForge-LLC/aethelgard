@@ -2198,6 +2198,7 @@ mod differential {
                     supply: "D".into(),
                     bus,
                     cs: signal(rng, format!("U{i}_cs"), pool),
+                    pin_capacitance: None,
                 });
             }
         }
