@@ -255,4 +255,4 @@ From the unmodified CLI (P1), and otherwise from `r4`: the judge's own register 
 - **The ELF is not in git.** It is named by its sha256 above, with the command and the CI run that build it.
 - **Evidence:** `spike/4400c/out/`. Each run's step reads, setup, model lines and USART1 capture are there. For `r2`, `r3` and `r5`, so are the timestamped `usart1:` lines, from which every console time here is read, and the hook lines. Also there: the captured CLI argv, both `simulate` outputs and `caps.log`. The scripts are `spike/4400c/drive.py` and `spike/4400c/sh/`.
 
-**STOPPED at §2**, 2026-11-17, for the architect's ruling on D1–D5. The PR is a record only. Its title and body are in `~/.cache/aet-4400c/pr-title-body.md`.
+**STOPPED at §2**, 2026-11-17, for the architect's ruling on D1–D5. `main` at `a323aeaa` (#200) is merged in, and the scratch trees are removed. The PR is a record only. Its title and body are in `~/.cache/aet-4400c/pr-title-body.md`.
