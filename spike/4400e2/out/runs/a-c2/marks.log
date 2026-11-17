@@ -1,8 +1,0 @@
-[00:00:01.601291870] [WARNING] cpu: AET4400E2-RTB loaded=1 n=2 VECT=66 IABR=0,2040000,0,0,0 SHCSR=0x0 FPCCR=0xc0000011
-[00:00:01.601291870] [WARNING] cpu: AET4400E2-FIXA r3 0x842 -> 0x42 n=2
-[00:00:01.601556130] [WARNING] cpu: AET4400E2-FAULT CFSR=0x20000 HFSR=0x40000000 MMFAR=0x0 BFAR=0x0 FPCCR=0xc0000011 FPCAR=0x30016508
-[00:00:01.601556130] [WARNING] cpu: AET4400E2-PSPFRAME psp=0x300164e8 30016510 30016780 30016590 ffffffff 500000 8000edf 8000ec6 81000000
-[00:00:00.004110770] [ERROR] cpu: Python runtime error: name 'RegisterValue' is not defined
-[00:00:00.004194760] [ERROR] cpu: Python runtime error: name 'RegisterValue' is not defined
-[00:00:00.004237950] [ERROR] cpu: Python runtime error: name 'RegisterValue' is not defined
-# AET-WO-4400e2: 18976 lines of "Python runtime error: name 'RegisterValue' is not defined" in all; the first 3 kept above (the invalid first attempt of deviation A)

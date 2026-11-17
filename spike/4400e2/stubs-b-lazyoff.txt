@@ -1,5 +1,0 @@
-# AET-WO-4400e2 DIAGNOSTIC DEVIATION B (a substitute for an ArduPilot rebuild with lazy stacking off): sent at 1.0 s, after
-# ChibiOS's port_init has set FPCCR to ASPEN|LSPEN; FPCCR <- ASPEN only (LSPEN 0, lazy stacking off). A build would instead
-# write FPU->FPCCR = FPU_FPCCR_ASPEN_Msk in ChibiOS's port_init.
-sysbus WriteDoubleWord 0xE000EF34 0x80000000
-sysbus ReadDoubleWord 0xE000EF34

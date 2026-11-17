@@ -1,6 +1,0 @@
-# AET-WO-4400e2 deviation C, long run: the fault hooks and the INS entry hooks only (no per-epilogue hook, which cost 1,956 s of wall for 4 s). Observation only.
-sysbus LogPeripheralAccess sysbus.usart1 false
-cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x FPCCR=0x%x FPCAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38, 0xE000EF34, 0xE000EF38)))"
-cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E2-PSPFRAME psp=0x%x %s' % (int(self.OtherSP.RawValue), ' '.join('%x' % machine.SystemBus.ReadDoubleWord(int(self.OtherSP.RawValue) + 4 * i) for i in range(8))))"
-cpu AddHook 0x08035B14 "self.Log(LogLevel.Warning, 'AET4400E2-HOOK AP_InertialSensor::init')"
-cpu AddHook 0x08034C10 "self.Log(LogLevel.Warning, 'AET4400E2-HOOK AP_InertialSensor::_init_gyro')"

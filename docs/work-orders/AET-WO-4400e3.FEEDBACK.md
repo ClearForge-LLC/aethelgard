@@ -123,7 +123,7 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
 - `tests/boot_tier1.rs` and `tests/campaign_tier1.rs`: their stub patterns must name the hook, or every boot test fails (M4).
 - `.github/workflows/ci.yml`: `TIER2_MIN` 183, required by the gates.
 - `crates/aethelgard-cli/README.md`.
-- `spike/4400e2/` is not on `main` (PR #215 is still open), so there is nothing to delete on this branch. It is cited here and in the code by its work order. If #215 merges before this one, the merge of `main` here deletes it.
+- `spike/4400e2/`: **deleted** after merging `main` `ff17dcf9` (#215 merged as the record, `672882d`). It is cited here and in the code by its work order, and its scripts and evidence stay in `main`'s history at `672882d`. `stubs-mon-fix.txt` was the spike's form of this hook, IABR plus SHCSR; the built hook reads the model's stack instead (Sources).
 
 ### Erratum, another order's note
 

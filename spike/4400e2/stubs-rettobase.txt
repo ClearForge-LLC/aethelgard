@@ -1,9 +1,0 @@
-# AET-WO-4400e diagnostic r7: at the entry of DMA1 stream 2's ISR (SPI2's DMA), its EXC_RETURN (LR), ICSR
-# (0xE000ED04: RETTOBASE bit 11, VECTACTIVE 8:0) and SHCSR (0xE000ED24: SVCALLACT bit 7); and at SVC entry.
-# ChibiOS's __port_irq_epilogue builds a thread-mode frame only when ICSR.RETTOBASE is 1 (chcore.c L315).
-# Observation only.
-sysbus LogPeripheralAccess sysbus.usart1 false
-cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38)))"
-cpu AddHook 0x0810032C "self.Log(LogLevel.Warning, 'AET4400E-DMA1S2 LR=0x%x ICSR=0x%x SHCSR=0x%x' % (self.GetRegisterUnsafe(14).RawValue, machine.SystemBus.ReadDoubleWord(0xE000ED04), machine.SystemBus.ReadDoubleWord(0xE000ED24)))"
-cpu AddHook 0x08102070 "self.Log(LogLevel.Warning, 'AET4400E-HOOK chSchDoPreemption')"
-cpu AddHook 0x08103460 "self.Log(LogLevel.Warning, 'AET4400E-SVC LR=0x%x ICSR=0x%x SHCSR=0x%x' % (self.GetRegisterUnsafe(14).RawValue, machine.SystemBus.ReadDoubleWord(0xE000ED04), machine.SystemBus.ReadDoubleWord(0xE000ED24)))"
