@@ -777,3 +777,122 @@ fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() 
         assert!(best.0 >= FLOOR_NM as f64, "{net}: {best:?}");
     }
 }
+
+// ---- A test pad on a bounded line (`AET-WO-1604` §1.5, `1312` Q2) ---------
+
+const BENCH: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json";
+
+/// `extract` on the board `emit` writes for `spec` (a path from the root).
+fn extract_emitted(label: &str, spec: &Path) -> (i32, Value) {
+    let dir = scratch(label);
+    let spec = spec.to_str().unwrap();
+    let (code, v) = run(&["emit", "--file", spec, "--out", dir.to_str().unwrap()]);
+    assert_eq!(code, 0, "{v}");
+    let board = fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| p.extension().is_some_and(|x| x == "kicad_pcb"))
+        .unwrap();
+    let out = run(&[
+        "extract",
+        "--board",
+        board.to_str().unwrap(),
+        "--spec",
+        spec,
+    ]);
+    fs::remove_dir_all(&dir).unwrap();
+    out
+}
+
+fn probe_conditions(v: &Value) -> Vec<&str> {
+    v["conditions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| c.as_str().unwrap())
+        .filter(|c| c.contains("test pad"))
+        .collect()
+}
+
+fn probe(reference: &str, net: &str) -> String {
+    format!(
+        "`{reference}` is a test pad on `{net}`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance"
+    )
+}
+
+fn bench_with(label: &str, edit: impl Fn(&mut Value)) -> PathBuf {
+    let mut v: Value =
+        serde_json::from_str(&fs::read_to_string(root().join(BENCH)).unwrap()).unwrap();
+    edit(&mut v);
+    let path =
+        std::env::temp_dir().join(format!("aet-1604-spec-{label}-{}.json", std::process::id()));
+    fs::write(&path, serde_json::to_string_pretty(&v).unwrap()).unwrap();
+    path
+}
+
+#[test]
+fn each_test_pad_on_a_bounded_line_is_named_and_no_other() {
+    let (code, v) = extract_emitted("bench", &root().join(BENCH));
+    assert_eq!(code, 0, "{v}");
+    let nets: Vec<&str> = v["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| l["net"].as_str().unwrap())
+        .collect();
+    assert_eq!(nets, ["I2C_SDA", "I2C_SCL", "SPI_SCK", "SPI_MOSI"], "{v}");
+    // TP5 to TP12 sit on nets no line bounds (MISO, CS, the console, the
+    // rails, NRST, BOOT0): nothing is stated for them.
+    assert_eq!(
+        probe_conditions(&v),
+        [
+            probe("TP1", "I2C_SDA"),
+            probe("TP2", "I2C_SCL"),
+            probe("TP3", "SPI_SCK"),
+            probe("TP4", "SPI_MOSI"),
+        ],
+        "{v}"
+    );
+}
+
+#[test]
+fn a_line_whose_test_pad_is_removed_states_nothing_for_it() {
+    let spec = bench_with("no-tp1", |v| {
+        v["test_points"].as_array_mut().unwrap().remove(0);
+    });
+    let (code, v) = extract_emitted("bench-no-tp1", &spec);
+    fs::remove_file(&spec).unwrap();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(
+        probe_conditions(&v),
+        [
+            probe("TP2", "I2C_SCL"),
+            probe("TP3", "SPI_SCK"),
+            probe("TP4", "SPI_MOSI"),
+        ],
+        "{v}"
+    );
+    let sda = v["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["net"] == "I2C_SDA")
+        .unwrap();
+    // The pad is gone from the copper too: the MCU, two devices, the pull-up.
+    assert_eq!(sda["pad_count"], 4, "{v}");
+}
+
+#[test]
+fn a_board_without_test_points_states_no_probe() {
+    let spec = bench_with("no-tps", |v| v["test_points"] = Value::Array(Vec::new()));
+    let (code, v) = extract_emitted("bench-no-tps", &spec);
+    fs::remove_file(&spec).unwrap();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(probe_conditions(&v), Vec::<&str>::new(), "{v}");
+    let (_, reference) = extract("probe-ref", reference(), SPEC);
+    assert_eq!(
+        probe_conditions(&reference),
+        Vec::<&str>::new(),
+        "{reference}"
+    );
+}
