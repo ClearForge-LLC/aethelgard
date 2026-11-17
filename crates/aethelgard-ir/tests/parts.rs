@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "0145c6d2534d251692a60b9090492e58199ca163f71db54d5407143aff8249f6";
+const PARTS_SHA256: &str = "5bcfe2a8b7ff71297d56ab18736c4c03e91570c8337e226cbd90a3cd6213df20";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -215,8 +215,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_to_6_and_8() {
-    for version in [2, 3, 4, 5, 6, 8] {
+fn refuses_schema_version_2_to_7_and_9() {
+    for version in [2, 3, 4, 5, 6, 7, 9] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -503,7 +503,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 7, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 8, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -1136,11 +1136,46 @@ fn every_shipped_script_row_cites_its_start_up_and_its_wait_covers_it() {
     );
 }
 
-// ---- schema 7 (`AET-WO-4400b` D4) ---------------------------------------------
+/// `AET-WO-4220b` (ruled on #192, Q2): `pin_capacitance.typical_femtofarads`
+/// is required, `null` or 1 fF to the ceiling and never above the row's
+/// maximum. The table holds the typicals the rows' citations read: the
+/// ICM-42688-P's and ICM-20948's C_I "< 10" pF TYP, the TMP117's 4 pF; the
+/// BMP581, BME280 and ICP10111 print none.
+#[test]
+fn a_cited_typical_pin_capacitance_is_held_and_bounded() {
+    let t = table().unwrap();
+    let typical = |part: &str| t.get(part).unwrap().pin_capacitance_typical_femtofarads;
+    assert_eq!(typical("ICM42688P"), Some(10_000));
+    assert_eq!(typical("ICM20948"), Some(10_000));
+    assert_eq!(typical("TMP117"), Some(4_000));
+    for part in ["BMP581", "BME280", "ICP10111", "W25Q64JVxIQ"] {
+        assert_eq!(typical(part), None, "{part}");
+    }
+    let err = refused_entry("TMP117", |p| {
+        p["pin_capacitance"]
+            .as_object_mut()
+            .unwrap()
+            .remove("typical_femtofarads");
+    });
+    assert_refused(&err, Some("TMP117"), "typical_femtofarads");
+    for bad in [json!(0), json!(MAX_PIN_FEMTOFARADS + 1)] {
+        let err = refused_entry("TMP117", |p| {
+            p["pin_capacitance"]["typical_femtofarads"] = bad.clone()
+        });
+        assert_refused(&err, Some("TMP117"), "typical_femtofarads");
+    }
+    let err = refused_entry("W25Q64JVxIQ", |p| {
+        p["pin_capacitance"]["typical_femtofarads"] = 8_001.into();
+    });
+    assert_refused(&err, Some("W25Q64JVxIQ"), "typical_femtofarads");
+}
 
-/// The `ardupilot` column: the chip ID ArduPilot's driver accepts must be the
-/// part's own identity value, so a driver that would refuse the chip is
-/// refused at load (the `4400` spike's TMP117 case, by data).
+// ---- schema 8 (`AET-WO-4400b` D4) ---------------------------------------------
+
+/// The `ardupilot` column: the chip ID it cites must be the part's own
+/// identity value, so a row that writes down the driver's true ID (TMP119's
+/// 0x2117 for a TMP117) is refused at load. That the cited driver accepts it
+/// rests on the citation (adversarial A8).
 #[test]
 fn an_ardupilot_id_other_than_the_identity_is_refused() {
     // The BMP280's own ID, which the same driver also accepts, is still not

@@ -292,14 +292,19 @@ jobs:
 
       # Unmodified ArduPilot: the board is an untracked directory, and the
       # build refuses any change to a tracked file (ardupilot-build.sh).
+      # The output directory and its two host files are made by the runner's
+      # user before the container (root) writes the ELF and hwdef.h into it;
+      # a directory the container made is root's, and the runner cannot then
+      # write into it (run 133801515696).
       - name: build ${{ matrix.board }} with --network none, GITHUB_ACTIONS unset
         run: |
-          mkdir -p "$RUNNER_TEMP/boards"
+          out="$RUNNER_TEMP/boards/${{ matrix.board }}"
+          mkdir -p "$out"
+          cp "$RUNNER_TEMP/gen/${{ matrix.board }}.topology.json" "$out/topology.json"
+          cp "$RUNNER_TEMP/gen/${{ matrix.board }}.hwdef.dat" "$out/hwdef.dat"
           docker run --rm --network none -v "$PWD/container:/container:ro" \
             -v "$RUNNER_TEMP/gen:/boards:ro" -v "$RUNNER_TEMP/boards:/out" \
             "$IMAGE" bash /container/ardupilot-build.sh boards "${{ matrix.board }}"
-          cp "$RUNNER_TEMP/gen/${{ matrix.board }}.topology.json" "$RUNNER_TEMP/boards/${{ matrix.board }}/topology.json"
-          cp "$RUNNER_TEMP/gen/${{ matrix.board }}.hwdef.dat" "$RUNNER_TEMP/boards/${{ matrix.board }}/hwdef.dat"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

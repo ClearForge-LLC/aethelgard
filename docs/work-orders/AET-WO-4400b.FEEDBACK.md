@@ -349,7 +349,7 @@ Our solver reaches 250 kHz on HSI (64 MHz / 256), so a bus declared between 253.
 | D1(a) | `sentinel-02-own.json` declares the console. **Built on J2's spare pins 2 and 3, not on a new J3:** after `main`'s 4220b merge (#192), a new J3 moved the placed board so that `IMU_MOSI`'s extract bound became 31,846 fF, over its declared 30,000 fF (`own_board_tier1`, measured). On J2 every test passes. The solver puts the console on USART1 PA9/PA10 either way | the fixture |
 | D2(a) | solved schema 9: `mcu`, and `pin_speeds` keyed by net, `0` or `1`, chosen in `solve` (`solve::pin_speed`, the same `choose` call svd-hal makes). `validate` refuses a stray or missing net, or a value above 1 (`PinSpeedMismatch`). `check speeds` judges the stored value. `derive_controllers()` also re-derives `pin_speeds` for hand-built topologies, leaving out a pin no speed serves. The equality test is `hwdef_tier1.rs::the_board_crate_s_speeds_equal_the_stored_ones`, over every committed specification that solves (at least 12) | `ir` lib.rs, solve.rs; CLI speeds.rs |
 | D3(a) | `ir::silicon::implied_pupd` (the motor pull-down, else none) and `implied_open_drain` (the keys of `analog_lines`). The check calls them; the generator emits `FLOATING`/`PULLDOWN` and `OPENDRAIN` by its own rule from the signal name. A source test holds that the generator names neither function, nor `motor_output_pupd`, `speeds::` or `.choose(` | `ir` silicon.rs; hwdef tests |
-| D4 | `parts.json` 7: a required-but-nullable `ardupilot` column (`kind` baro, imu or dataflash; `driver`; `spidev`; `id`; cited by the ArduPilot source file's sha256). A row whose `id` is not the part's `identity.value` is refused ("ArduPilot's driver would refuse the chip"). `power-parts.json` 4: the MCU row's `flash_kilobytes` and `ardupilot` (series, mcu, oscillator_hz, spi_kernel_hz, each cited) | `ir` data, parts.rs, power_parts.rs |
+| D4 | `parts.json` 8 (7 when written; renumbered behind #193): a required-but-nullable `ardupilot` column (`kind` baro, imu or dataflash; `driver`; `spidev`; `id`; cited by the ArduPilot source file's sha256). A row whose `id` is not the part's `identity.value` is refused ("ArduPilot's driver would refuse the chip"). `power-parts.json` 4: the MCU row's `flash_kilobytes` and `ardupilot` (series, mcu, oscillator_hz, spi_kernel_hz, each cited) | `ir` data, parts.rs, power_parts.rs |
 | D5 | `STORAGE_FLASH_PAGE` = flash / 128 − 2 = 14 | generator |
 | D6 | SPIDEV low = high = `achieved_hz` rounded down to a whole kHz; refused below the cited kernel / 256 | generator |
 | D7 | `serial-dshot-9600` is the third CI board; `power.sense` is refused (`SenseNotEmitted`); `BIDIR` is never emitted | generator; CI |
@@ -451,6 +451,17 @@ The agent worked read-only against this worktree, with a pinned copy of the CLI 
 - `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`: all pass on Furnace (123 test binaries) at the commit before the signal.
 - `main` (`7452bf4`, 1801's 0.2.0) is merged in: the crate is 0.2.0 in `workspace.dependencies` and step 10 of `docs/releasing.md`'s order, as ruled. `TIER2_MIN` stays 161: no tier-2 test was added.
 - CI on this head is in the PR's checks. Tier 2 has not run on Furnace against the J2 console: it runs in CI (`tools-shard`), and the `generated` jobs build the three boards from the committed goldens.
+
+### 13.1 CI on `54bb000d`, and two fixes
+
+The architect read runs 133801515696 (`generated (sentinel-02)`) and 133801515678 (`generated (sentinel-01)`).
+- **Each failed after ArduPilot built** (1,288,364 B and 1,287,908 B), on `cp: cannot create regular file …/boards/<board>/topology.json: Permission denied`. The container, running as root, had made the output directory. **Fixed:** the step makes the directory and copies the topology and the file as the runner's user before the container writes the ELF and `hwdef.h` into it. No chmod.
+- **Both boards built in `build/Sentinel01`.** The name came from neither `project_name` nor the generator: `container/ardupilot-build.sh` (from `4400a`) installed every board as the fixed untracked board `Sentinel01`. Builds in one image ran one after another, each from a clean build directory, so none overwrote another's output, but they shared one name. **Fixed:** `boards NAME` installs and builds each board as `NAME` (letters, digits, `-` and `_`, checked). Only the D4 control keeps `Sentinel01`, for step G.
+- **Measured on Furnace:** `sentinel-01`, `sentinel-02` and `step-g` built in one container (`Setting board to : sentinel-02`; 28, 21 and 21 s). Both generated boards pass `check pinout`.
+
+### 13.2 `main` again: 4220b's floor (#193)
+
+#193 took `parts.json` schema 7 (`pin_capacitance.typical_femtofarads`). My column is renumbered to **8**; every row carries 4220b's field, and the table's sha256 pin is recomputed. The full suite passes (123 binaries).
 
 ## 14. STOPPED: §2's third bullet fails for swaps of one kind, and closing it is outside §1.3
 

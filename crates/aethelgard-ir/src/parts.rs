@@ -55,10 +55,15 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// every script a structured `configure.start_up` (a cited maximum and/or
 /// typical start-up time with the condition it is the start-up of, and its
 /// `citations.start_up`), against which `settle_us` is checked at load
-/// (`AET-WO-4230` §1.9, `SettleBelowStartUp`). Version 7 added `ardupilot`,
-/// what ArduPilot `Copter-4.7.2` calls the part, with the chip ID its driver
-/// accepts, which must be the part's own identity (`AET-WO-4400b` D4).
-pub const PARTS_SCHEMA_VERSION: u32 = 7;
+/// (`AET-WO-4230` §1.9, `SettleBelowStartUp`). Version 7 gave
+/// `pin_capacitance` a required `typical_femtofarads`: the typical the
+/// datasheet prints, under the row's `citations.pin_capacitance`, or `null`
+/// (`AET-WO-4220b`, the architect's ruling on Q2, #192). It floors a
+/// specification's declaration; it is never a maximum.
+/// Version 8 added `ardupilot`, what ArduPilot `Copter-4.7.2` calls the
+/// part, with the chip ID its driver accepts, which must be the part's own
+/// identity (`AET-WO-4400b` D4; renumbered from 7 behind `4220b`'s floor).
+pub const PARTS_SCHEMA_VERSION: u32 = 8;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -455,6 +460,10 @@ pub struct Part {
     /// part's signal pins, in femtofarads, or `None` when it prints none: a
     /// typical value is never promoted to a maximum (`AET-WO-4300c` D3).
     pub pin_capacitance_femtofarads: Option<u64>,
+    /// The typical pin capacitance the datasheet prints, in femtofarads, or
+    /// `None`: a floor for a specification's declaration (`AET-WO-4220b`),
+    /// never a bound. A "< 10" pF in the TYP column is held as 10 pF.
+    pub pin_capacitance_typical_femtofarads: Option<u64>,
     /// An SPI part's output valid time after the clock edge, at most, in
     /// nanoseconds, or `None`: the datasheet states none, or the table holds
     /// none (`AET-WO-4300d2` K6). Only an SPI part may carry one.
@@ -739,6 +748,8 @@ struct RawSupply {
 struct RawPinCapacitance {
     #[serde(deserialize_with = "Option::deserialize")]
     max_femtofarads: Option<u64>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    typical_femtofarads: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -1159,6 +1170,14 @@ fn part(raw: RawPart) -> Result<Part, String> {
             "`pin_capacitance.max_femtofarads` is {pin_capacitance:?}, not null or 1 to {MAX_PIN_FEMTOFARADS}"
         ));
     }
+    let typical = raw.pin_capacitance.typical_femtofarads;
+    if typical.is_some_and(|c| {
+        !(1..=MAX_PIN_FEMTOFARADS).contains(&c) || pin_capacitance.is_some_and(|m| c > m)
+    }) {
+        return Err(format!(
+            "`pin_capacitance.typical_femtofarads` is {typical:?}, not null or 1 to {MAX_PIN_FEMTOFARADS}, nor above the maximum"
+        ));
+    }
     if let Some(ns) = raw.spi_output_delay_max_ns {
         if bus.kind() != BusKind::Spi {
             return Err(
@@ -1233,6 +1252,7 @@ fn part(raw: RawPart) -> Result<Part, String> {
         supply_millivolts: (min, max),
         io_millivolts: io,
         pin_capacitance_femtofarads: pin_capacitance,
+        pin_capacitance_typical_femtofarads: typical,
         spi_output_delay_max_ns: raw.spi_output_delay_max_ns,
         renode: raw.renode,
         script,
