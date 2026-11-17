@@ -86,6 +86,7 @@ fn valid() -> Specification {
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
             pin_capacitance: None,
+            orientation: None,
         }],
         "connectors": [
             {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
@@ -184,7 +185,8 @@ fn refuses_unsupported_schema_version() {
         12,
         13,
         14,
-        16,
+        15,
+        17,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -1199,6 +1201,7 @@ fn spi_device(index: u32) -> SolvedSpiDevice {
         bus: "FLASH".into(),
         peripheral: "SPI1".into(),
         cs: "FLASH_CS".into(),
+        orientation: None,
     }
 }
 
@@ -1242,9 +1245,10 @@ fn solved_refuses_version_and_hash() {
     // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 6 the
     // file before `serial_ports` (`AET-WO-4300b`), 7 the file before
     // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 8 the
-    // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 10 one this build
-    // does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10] {
+    // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 9 the file before
+    // an SPI device's `orientation` (`AET-WO-4400d`), 11 one this build does
+    // not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3570,7 +3574,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 15
+                expected: 16
             }
         ),
         "{e}"

@@ -165,7 +165,7 @@ fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
         "{verdict}"
     );
     assert_eq!(
-        verdict["error"]["message"], "schema_version is 14, not 15",
+        verdict["error"]["message"], "schema_version is 14, not 16",
         "{verdict}"
     );
     let _ = std::fs::remove_dir_all(&dir);

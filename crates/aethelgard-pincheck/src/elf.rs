@@ -440,6 +440,21 @@ pub struct SerialEntry {
     pub driver_is_instance: bool,
 }
 
+/// `STT_FUNC` (ELF32 `st_info` low nibble).
+const STT_FUNC: u8 = 2;
+
+/// Whether the ELF defines a function named `symbol` (`AET-WO-4400d`: an
+/// IMU line's driver is linked in, as its probe, under its mangled name).
+pub fn defines_function(bytes: &[u8], symbol: &str) -> Result<bool, Refusal> {
+    // The header and section table are held first as [`serial_table`]
+    // holds them, so a short or foreign file is refused, never indexed.
+    object(bytes, SERIAL_SYMBOL, |_| None)?;
+    let sections = sections(bytes)?;
+    Ok(symbols_named(bytes, &sections, symbol.as_bytes())?
+        .iter()
+        .any(|(_, _, kind, shndx)| *kind == STT_FUNC && *shndx != 0 && *shndx < SHN_LORESERVE))
+}
+
 /// The serial table, SERIAL0 first: a whole number of `SerialDef`s, at most
 /// ten (SERIAL0 to SERIAL9), each refused unless its padding is zero.
 pub fn serial_table(bytes: &[u8]) -> Result<Vec<SerialEntry>, Refusal> {

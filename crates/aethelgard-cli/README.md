@@ -57,7 +57,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":9,"specification_sha256":"b9e95cdc…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":10,"specification_sha256":"21e1b9d5…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:
@@ -442,7 +442,7 @@ The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a lin
 
 Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `identity` (`judged`, or `not judged: no hwdef.h`; `AET-WO-4400b2`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `WrongOutputType`, `WrongSpeed`, `WrongPull`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`; and, with `hwdef.h`, the identity judge's kinds under `check` `identity`, listed in `aethelgard-pincheck`'s README, `AET-WO-4400b2`), `pin`, `net` (or null), `expected` and `decoded`.
 
-The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer probes and bauds) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
+The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes, and bauds) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
 
 | Exit | When |
 |---|---|

@@ -1591,3 +1591,55 @@ fn a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it() {
         );
     }
 }
+
+// ---- AET-WO-4400d: a turned IMU and its keep-out, tier 2 ----
+
+/// `AET-WO-4400d` D2 (ruled on PR #207): a footprint's keep-out zones turn
+/// with it by the same `route::rotate` its pads do. This test holds what the
+/// refusal it replaced guarded: `sentinel-02-own` with U5, the ICM-42688-P
+/// and its two keep-outs, declared so that the placer turns it 90, 180 and
+/// 270 degrees, routes, and its board passes `check drc --spec --schematic`
+/// with no finding of any kind: KiCad holds each footprint to its library
+/// (`lib_footprint_mismatch`, which caught an unshifted keep-out in
+/// `AET-WO-1310` D4), each keep-out's rules to the copper, and the board to
+/// its schematic.
+#[test]
+fn a_turned_keepout_is_where_kicad_draws_it() {
+    let fixture: serde_json::Value = serde_json::from_slice(
+        &fs::read(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sentinel-02-own.json"),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    for (x, theta) in [("forward", "90"), ("left", "180"), ("aft", "270")] {
+        let t = Temp::new(&format!("4400d-turned-{theta}"));
+        let mut v = fixture.clone();
+        assert_eq!(v["board"]["forward"], "top");
+        for d in v["spi_devices"].as_array_mut().unwrap() {
+            if d["reference"] == "U5" {
+                d["orientation"] = serde_json::json!({"x": x, "z": "up"});
+            }
+        }
+        let spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let emitted = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap();
+        let u5 = emitted
+            .board
+            .split("\n\t(footprint")
+            .find(|f| f.contains("(property \"Reference\" \"U5\""))
+            .unwrap();
+        assert!(u5.contains(&format!(" {theta})")), "U5 not at {theta}");
+        assert_eq!(u5.matches("(zone").count(), 2, "U5's two keep-outs");
+        let spec_path = t.0.join("spec.json");
+        fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
+        let board = t.0.join(format!("{}.kicad_pcb", spec.project_name));
+        let sch = t.0.join(format!("{}.kicad_sch", spec.project_name));
+        fs::write(&board, &emitted.board).unwrap();
+        fs::write(&sch, &emitted.schematic).unwrap();
+        let drc = drc_parity(&board, &sch, &spec_path);
+        assert_eq!(drc["verdict"], "pass", "{theta}: {drc}");
+        assert_eq!(kinds(&drc), Vec::<&str>::new(), "{theta}: {drc}");
+    }
+}

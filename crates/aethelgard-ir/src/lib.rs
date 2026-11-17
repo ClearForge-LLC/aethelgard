@@ -18,6 +18,7 @@ pub mod ds009;
 pub mod electrical;
 pub mod motor;
 pub mod names;
+pub mod orientation;
 pub mod parts;
 pub mod power;
 pub mod power_parts;
@@ -75,7 +76,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// precedent ruled on PR #191 (Q1): absent is today's placer, judged as
 /// such, so that a reader of version 14 refuses a file that may carry it by
 /// its version, never by an unknown key.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 15;
+/// Version 16 adds `board.forward` and an SPI device's `orientation`
+/// (`AET-WO-4400d`, ruled on PR #207), each optional by the same precedent.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 16;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -380,6 +383,16 @@ pub struct SpiDevice {
     /// As [`I2cDevice::pin_capacitance`].
     #[serde(deserialize_with = "Option::deserialize")]
     pub pin_capacitance: Option<PinCapacitance>,
+    /// An IMU's orientation in the board frame (`AET-WO-4400d`,
+    /// [`orientation`]). Optional: an undeclared IMU is placed as before and
+    /// refused by `generate hwdef` (`INV-06`). An explicit `null` is refused,
+    /// as `board.max_outline_um` refuses it.
+    #[serde(
+        default,
+        deserialize_with = "board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub orientation: Option<orientation::Orientation>,
 }
 
 /// A device's pin capacitance as the specification declares it (`AET-WO-4220b`;
@@ -428,9 +441,10 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// (`AET-WO-4300a`), version 6 `power` (`AET-WO-4300d`), version 7
 /// `serial_ports` (`AET-WO-4300b`), version 8 `spi_controllers`,
 /// `i2c_timings` and `bor_level` (`AET-WO-4230`), version 9 `mcu` and
-/// `pin_speeds` (`AET-WO-4400b` D2); an older file is refused, never
+/// `pin_speeds` (`AET-WO-4400b` D2), version 10 an SPI device's
+/// `orientation` (`AET-WO-4400d`); an older file is refused, never
 /// defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 9;
+pub const SOLVED_SCHEMA_VERSION: u32 = 10;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -736,6 +750,14 @@ pub struct SolvedSpiDevice {
     pub peripheral: String,
     /// The net of the device's chip select.
     pub cs: String,
+    /// The IMU's declared orientation, copied by `solve` (`AET-WO-4400d`,
+    /// solved schema 10); absent when the specification declares none.
+    #[serde(
+        default,
+        deserialize_with = "board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub orientation: Option<orientation::Orientation>,
 }
 
 /// One I2C line as the analog model needs it, copied by `solve` from the
@@ -1750,6 +1772,34 @@ pub enum IrValidationError {
         names::VENDORED_PARTS
     )]
     PartWithoutRow { reference: String, part: String },
+    /// `AET-WO-4400d`: an orientation is in the board frame, whose x points
+    /// to the declared forward edge.
+    #[error(
+        "`{reference}` declares an orientation, but `board.forward` is not declared: the board frame's x points to that edge"
+    )]
+    ForwardUndeclared { reference: String },
+    /// `AET-WO-4400d`: the declared X and Z are the same line, so no rotation
+    /// is named; nothing is rounded.
+    #[error(
+        "`{reference}`'s orientation puts X toward `{x}` and Z toward `{z}`, which are not at right angles"
+    )]
+    ImuAxesNotPerpendicular {
+        reference: String,
+        x: String,
+        z: String,
+    },
+    /// `AET-WO-4400d`: only a part whose `ardupilot.kind` is `imu` takes an
+    /// orientation.
+    #[error("`{reference}` is a `{part}`, which is not an IMU, and declares an orientation")]
+    OrientationOnNonImu { reference: String, part: String },
+    /// `AET-WO-4400d`: the part's axes and its driver's frame are cited
+    /// facts; an absent one is refused, never assumed.
+    #[error("`{reference}` declares an orientation, but the `{part}` row cites no `{missing}`")]
+    ImuAxesNotCited {
+        reference: String,
+        part: String,
+        missing: &'static str,
+    },
     /// Step 21 (`AET-WO-1207` §1.2, `1206` F3): the refusal `solve` made, by
     /// its name, message and claimant.
     #[error(
@@ -2019,6 +2069,10 @@ impl IrValidationError {
             Self::ReservedName(_) => "ReservedName",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
             Self::PartWithoutRow { .. } => "UnknownPart",
+            Self::ForwardUndeclared { .. } => "ForwardUndeclared",
+            Self::ImuAxesNotPerpendicular { .. } => "ImuAxesNotPerpendicular",
+            Self::OrientationOnNonImu { .. } => "OrientationOnNonImu",
+            Self::ImuAxesNotCited { .. } => "ImuAxesNotCited",
             Self::RiseTimeTooSlow { .. } => "RiseTimeTooSlow",
             Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
@@ -2213,7 +2267,11 @@ impl IrValidationError {
             }
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
-            Self::PartWithoutRow { reference, .. } => Some(reference),
+            Self::PartWithoutRow { reference, .. }
+            | Self::ForwardUndeclared { reference }
+            | Self::ImuAxesNotPerpendicular { reference, .. }
+            | Self::OrientationOnNonImu { reference, .. }
+            | Self::ImuAxesNotCited { reference, .. } => Some(reference),
         }
     }
 
@@ -2762,6 +2820,32 @@ impl Specification {
                 });
             }
         }
+        // `AET-WO-4400d`: an orientation only on an IMU, whose axes and
+        // driver's frame are cited.
+        for d in self.spi_devices.iter().filter(|d| d.orientation.is_some()) {
+            let row = part_entry(table, &d.reference, &d.part)?;
+            let ap = row.and_then(|r| r.ardupilot.as_ref());
+            if !ap.is_some_and(|a| a.kind == parts::ArduPilotKind::Imu) {
+                return Err(IrValidationError::OrientationOnNonImu {
+                    reference: d.reference.clone(),
+                    part: d.part.clone(),
+                });
+            }
+            let missing = if row.is_some_and(|r| r.axes.is_none()) {
+                Some("axes")
+            } else if ap.is_some_and(|a| a.frame.is_none()) {
+                Some("ardupilot.frame")
+            } else {
+                None
+            };
+            if let Some(missing) = missing {
+                return Err(IrValidationError::ImuAxesNotCited {
+                    reference: d.reference.clone(),
+                    part: d.part.clone(),
+                    missing,
+                });
+            }
+        }
         // Each device's supply within its part's range (adversarial 2):
         // step 5 checked every supply names a domain.
         let devices = self
@@ -3265,6 +3349,23 @@ impl Specification {
         }
         // 13
         self.board.validate(&domains)?;
+        // 13, `AET-WO-4400d`: an orientation's axes are at right angles,
+        // and its frame's forward edge is declared.
+        for d in &self.spi_devices {
+            let Some(o) = &d.orientation else { continue };
+            if !o.perpendicular() {
+                return Err(E::ImuAxesNotPerpendicular {
+                    reference: d.reference.clone(),
+                    x: o.x.name().to_owned(),
+                    z: o.z.name().to_owned(),
+                });
+            }
+            if self.board.forward.is_none() {
+                return Err(E::ForwardUndeclared {
+                    reference: d.reference.clone(),
+                });
+            }
+        }
         // 13a. A power tree adds its battery rail, which a class may name
         // (`AET-WO-4300d2` K10).
         let mut rails = domains.clone();
@@ -4073,6 +4174,15 @@ impl SolvedTopology {
             if !in_range || !seen.insert(d.index) {
                 return Err(E::SpiDeviceIndex {
                     id: reference.clone(),
+                });
+            }
+            // `AET-WO-4400d`: a copied orientation holds as the
+            // specification's does.
+            if let Some(o) = d.orientation.filter(|o| !o.perpendicular()) {
+                return Err(E::ImuAxesNotPerpendicular {
+                    reference: reference.clone(),
+                    x: o.x.name().to_owned(),
+                    z: o.z.name().to_owned(),
                 });
             }
         }

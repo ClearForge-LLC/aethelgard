@@ -122,6 +122,15 @@ pub enum EmitError {
         over_um_w: i64,
         over_um_h: i64,
     },
+    /// `AET-WO-4400d`: no right-angle turn of the footprint on F.Cu puts the
+    /// part's cited axes where the specification declares them.
+    #[error("`{reference}` declares X toward {x} and Z toward {z}; {why}")]
+    ImuRotationUnplaceable {
+        reference: String,
+        x: &'static str,
+        z: &'static str,
+        why: String,
+    },
     #[error("{0}")]
     Internal(String),
 }
@@ -147,6 +156,7 @@ impl EmitError {
             Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
             Self::OutlineTooSmall { .. } => "OutlineTooSmall",
             Self::OutlineUnreachable { .. } => "OutlineUnreachable",
+            Self::ImuRotationUnplaceable { .. } => "ImuRotationUnplaceable",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -157,7 +167,8 @@ impl EmitError {
             Self::UnknownPart { reference, .. }
             | Self::UnsupportedAddress { reference, .. }
             | Self::PowerNotDrawable { reference, .. }
-            | Self::PadEscapeExhausted { reference, .. } => Some(reference),
+            | Self::PadEscapeExhausted { reference, .. }
+            | Self::ImuRotationUnplaceable { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
@@ -301,6 +312,20 @@ pub(crate) struct Part {
     /// A connector's declared off-board capacitance by pin number, with its
     /// source: what extraction adds to a line it carries (`AET-WO-4300f` D8).
     pub(crate) offboard: BTreeMap<String, (u64, String)>,
+    /// An IMU's declared orientation with its part's cited axes
+    /// (`AET-WO-4400d`): the placer turns its footprint so the two agree.
+    pub(crate) seat: Option<Seat>,
+}
+
+/// What the placer turns an IMU's footprint by: the board's forward edge,
+/// the declared orientation, and the part's axes by its pins (`parts.json`
+/// `axes`, cited).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Seat {
+    pub(crate) forward: aethelgard_ir::orientation::Edge,
+    pub(crate) orientation: aethelgard_ir::orientation::Orientation,
+    pub(crate) x_toward_pins: Vec<String>,
+    pub(crate) y_toward_pins: Vec<String>,
 }
 
 /// The IC a part belongs to (`AET-WO-4300d2` reduction finding 9: one
@@ -563,6 +588,7 @@ impl Builder<'_> {
             note: None,
             owner: None,
             offboard: BTreeMap::new(),
+            seat: None,
         });
         Ok(())
     }
@@ -858,6 +884,7 @@ pub(crate) fn design(
         note: None,
         owner: None,
         offboard: BTreeMap::new(),
+        seat: None,
     });
 
     // The I2C buses' pull-ups, then their devices.
@@ -1063,6 +1090,33 @@ pub(crate) fn design(
                 });
             }
         }
+        // `AET-WO-4400d`: an IMU's declared orientation and its part's cited
+        // axes, which `validate` (above) holds present.
+        if let Some(orientation) = d.orientation {
+            let missing = |what: &str| {
+                EmitError::Internal(format!("{}: {what}, which validate requires", d.reference))
+            };
+            let forward = spec
+                .board
+                .forward
+                .ok_or_else(|| missing("no board.forward"))?;
+            let table = aethelgard_ir::parts::table().map_err(EmitError::InvalidSpecification)?;
+            let axes = table
+                .get(&d.part)
+                .and_then(|p| p.axes.as_ref())
+                .ok_or_else(|| missing("no cited axes"))?;
+            let part = b
+                .parts
+                .iter_mut()
+                .find(|p| p.reference == d.reference)
+                .ok_or_else(|| missing("no part drawn"))?;
+            part.seat = Some(Seat {
+                forward,
+                orientation,
+                x_toward_pins: axes.x_toward_pins.clone(),
+                y_toward_pins: axes.y_toward_pins.clone(),
+            });
+        }
     }
     if let Some(p) = &spec.power {
         power::draw(
@@ -1127,6 +1181,7 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             note: None,
             owner: None,
             offboard: BTreeMap::new(),
+            seat: None,
         });
     }
     for t in spec.declared_test_points() {
@@ -1140,6 +1195,7 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             note: None,
             owner: None,
             offboard: BTreeMap::new(),
+            seat: None,
         });
     }
     Ok(())
@@ -1177,6 +1233,7 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             note: None,
             owner: None,
             offboard,
+            seat: None,
         });
     }
     Ok(())
@@ -1212,6 +1269,7 @@ fn device(
         note,
         owner: None,
         offboard: BTreeMap::new(),
+        seat: None,
     });
     Ok(())
 }
@@ -1872,6 +1930,7 @@ mod tests {
                     note: None,
                     owner: None,
                     offboard: Default::default(),
+                    seat: None,
                 }),
                 "{}: its symbol is not recognised as a connector",
                 row.name
