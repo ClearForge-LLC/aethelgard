@@ -29,15 +29,15 @@ pub const UNCONNECTED: &str = "unconnected-";
 /// `UnknownPart` refusal lists them. Each has a row in the parts table
 /// (`parts.json`), so `validate`'s refusal of a part with no row (step 14,
 /// `AET-WO-1206` §1.8) prints the emitter's message truthfully.
-pub const VENDORED_PARTS: &str = "BME280, TMP117, W25Q64JVxIQ, ICM20948";
+pub const VENDORED_PARTS: &str = "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P";
 
 /// The nets the emitter names `<reference>_<suffix>` for a device of each
-/// part: a strap or a filter pin it draws a passive on (`BME280`'s `SDO`
-/// strap, the flash's `WP` and `HOLD` straps, the ICM-20948's `REGOUT`
-/// capacitor). A part not listed has none.
+/// part: a strap or a filter pin it draws a passive on (`BME280`'s and
+/// `BMP581`'s `SDO` strap, the flash's `WP` and `HOLD` straps, the
+/// ICM-20948's `REGOUT` capacitor). A part not listed has none.
 pub fn device_nets(part: &str) -> &'static [&'static str] {
     match part {
-        "BME280" => &["SDO"],
+        "BME280" | "BMP581" => &["SDO"],
         "W25Q64JVxIQ" => &["WP", "HOLD"],
         "ICM20948" => &["REGOUT"],
         _ => &[],

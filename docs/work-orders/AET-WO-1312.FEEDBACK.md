@@ -29,7 +29,7 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 - The whole workspace's tests, the golden board's byte-for-byte test included, are in §5.
 - **Specifications held inside tests:** the differential covers spec files only. Specifications written inline in Rust tests, and the scenarios (which name their base specification), are covered by the workspace suite (tier 1, green at every commit) and by CI's tier 2, not by the differential.
 
-**Step 2, the bump to 13 alone [measured]** (its own commit). The 22 specification files of `examples/` and `crates/*/tests/**` were moved from `"schema_version": 12` to `13`; nothing else in them changed.
+**Step 2, the bump alone [measured]** (its own commit, 5dc49df, then to 14 at the merge below). The 22 specification files of `examples/` and `crates/*/tests/**` were moved from `"schema_version": 12` to `13`; nothing else in them changed.
 - `main`'s binary ran on `main`'s (version-12) files and this branch's binary on the version-13 files: `validate`, `solve` and `generate` on all 21 corpus files outside `spike/`.
 - With each file's old sha256 replaced by its new one, **all 210 generated files and every stdout line are equal; 0 moved** (`~/.cache/aet-1312/tools/step2.sh`). Prediction 2 held.
 - **The committed goldens moved by the hash alone [measured]:**
@@ -42,6 +42,13 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   - `crates/aethelgard-cli/README.md`'s example hash prefix moved too.
   - `verify_2k2_tier2.rs` pins the reference's hash prefix in `FAB-NOTES.md` (`3f89077c` to `eebb4b90`). It runs only in the image, so my local suite missed it and CI's first run on this branch (shard 1) caught it [measured].
 - Version tests: `UnsupportedSchemaVersion` now expects 13, a version-12 file is refused by its version (library and CLI, with and without the new fields), and 12 joined the refused list.
+- **Renumbered to 14 [measured].** `4220b` merged first (#192, 70d1621) and took specification 13 (`pin_capacitance` on every device). The architect ruled the renumber (inbox, 02:17 UTC). Main was merged with a merge commit, and the version moved to 14 (the 22 files, `"schema_version": 13` to `14`).
+  - The bench fixture was rebuilt from the merged example, so it carries `pin_capacitance`.
+  - Measured again against main's binary on main's version-13 files, all 21 corpus files outside `spike/`: **224 generated files and every stdout line equal with the hash substituted; 0 moved.**
+  - Golden board: 8 provenance lines again. The `svd-hal` UI goldens: the hash line, and the topology equal with the hash substituted.
+  - Pinned digests re-taken, with main's put back reproducing main's exactly: `solve_cli` (`2e19ebee…31d3`, `a59e85d7…7af7`) and `order_2203` (`b4c0b9a0…8ec2`, `f0b5a670…d67f`, `ba58ff9e…cdad`).
+  - Hash prefixes moved in the CLI README and `verify_2k2_tier2`. A version-13 file is now refused by its version.
+  - Tier-2 count 162 in the image, so `TIER2_MIN` is 162 (4220b's test, then this one). The workspace suite is green.
 - `spike/3400/**` was not bumped (§3).
 
 **The router on Sentinel-01 with a test point on every net §1.1 lists [measured]** (fixture `crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json`: V0 plus 12 test points, BOOT0 on J2 pin 2, NRST on J2 pin 3, the reset switch). "The four SPI lines" are read as SCK, MOSI, MISO and the flash's CS, so the list is 12 distinct nets, not the 13 prediction 4 counted. Figures are read from the emitted board by a scratch reader (`~/.cache/aet-1312/stats`), which also re-routes the read board and gets the same copper; V0 was emitted by `main`'s binary.
@@ -166,4 +173,4 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
   - `extract`'s footprint reader admits `fp_circle` off copper, as `4300d2` admitted `fp_arc`.
 
   Neither is in `RUL-03`'s text, which rules the strict reader's refusals in general. Is the square acceptable, or should the test pad's courtyard be refused and a pad with a rectangular courtyard chosen instead?
-- **Order with `4220b`.** It also takes specification 13. Whichever merges second renumbers to 14, and redoes the hash-only moves of §2 step 2. The list is in this work order's commit 5dc49df.
+- **Order with `4220b`:** done. It merged first, and this work order is specification 14 (§2).

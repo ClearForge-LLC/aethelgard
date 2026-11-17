@@ -329,6 +329,27 @@ pub fn declares_offboard(spec: &Specification) -> bool {
         .any(|c| c.pins.iter().any(|p| p.offboard.is_some()))
 }
 
+/// Each device's declared pin capacitance (`AET-WO-4220b`, the `AET-WO-4220`
+/// D10 ruling), by reference: I2C devices, then SPI devices, as the
+/// specification declares them. Here for the reason [`declares_offboard`] is.
+pub fn declared_pin_capacitance(
+    spec: &Specification,
+) -> Vec<(String, (String, aethelgard_ir::DeclaredPinCapacitance))> {
+    spec.declared_i2c_devices()
+        .iter()
+        .map(|d| (&d.reference, &d.part, &d.pin_capacitance))
+        .chain(
+            spec.declared_spi_devices()
+                .iter()
+                .map(|d| (&d.reference, &d.part, &d.pin_capacitance)),
+        )
+        .filter_map(|(reference, part, c)| {
+            c.as_ref()
+                .map(|c| (reference.clone(), (part.clone(), c.declared.clone())))
+        })
+        .collect()
+}
+
 /// Whether `part` is an off-board connector: placed last, at the board edge,
 /// and on a line counted as copper plus its declared budget, never at `Ci`.
 pub(crate) fn is_connector(part: &Part) -> bool {
@@ -828,6 +849,33 @@ pub(crate) fn design(
                     .to_vec(),
                 )
             }
+            // BST-BMP581-DS004-13 Table 28 and Fig. 26 (I2C), pp. 46 and 48:
+            // VDDIO and VDD on the supply, each bypassed by 100 nF; the three
+            // VSS to GND; SCK is SCL and SDI is SDA; SDO selects the address
+            // LSB (low, then high: the parts table's order); CSB to VDDIO ("In I2C mode, the CSB
+            // pin must be connected to VDDIO"); INT to GND, allowed "as long
+            // as the IRQ pin is not activated" (Table 28 (a)), and the
+            // bring-up leaves INT_CONFIG at its reset, `int_en` 0 (p. 52).
+            "BMP581" => {
+                let target = strapped(d, &[gnd.clone(), rail.clone()])?;
+                let sdo = b.strap(&d.reference, "SDO", target)?;
+                (
+                    "Aethelgard_Sensor:BMP581",
+                    [
+                        ("1", rail.clone()),
+                        ("10", rail.clone()),
+                        ("3", gnd.clone()),
+                        ("8", gnd.clone()),
+                        ("9", gnd.clone()),
+                        ("2", scl),
+                        ("4", sda),
+                        ("5", sdo),
+                        ("6", rail.clone()),
+                        ("7", gnd.clone()),
+                    ]
+                    .to_vec(),
+                )
+            }
             "TMP117" => {
                 // ADD0 to GND, V+, SDA, then SCL (TMP117 datasheet Table 7-2).
                 let add0 = strapped(d, &[gnd.clone(), rail.clone(), sda.clone(), scl.clone()])?;
@@ -853,6 +901,10 @@ pub(crate) fn design(
         };
         device(&mut b, &d.reference, lib_id, conns)?;
         b.decouple(&d.reference, &d.supply, "100n")?;
+        if d.part == "BMP581" {
+            // Its second 100 nF: one on VDD and one on VDDIO (Fig. 26).
+            b.decouple(&d.reference, &d.supply, "100n")?;
+        }
     }
     // Each crossing's device is drawn on the translator's B side.
     let behind = match &spec.power {
@@ -925,6 +977,30 @@ pub(crate) fn design(
                 b.passive('C', "100n".into(), Conn::Net(regout), gnd)?;
                 b.decouple(&d.reference, &d.supply, "100n")?;
                 b.decouple(&d.reference, &d.supply, "100n")?;
+            }
+            // DS-000347 Table 10 p. 20 and Fig. 7 p. 21 (4-wire SPI): VDD
+            // bypassed by 0.1 uF and 2.2 uF, VDDIO by 10 nF; GND and RESV pin
+            // 7 to GND; INT2/FSYNC to GND, "Connect to GND if FSYNC not
+            // used"; RESV pins 2, 3, 10 and 11 and INT1 left open ("No
+            // Connect or Connect to GND"; no interrupt is armed). AP_CS,
+            // AP_SCLK, AP_SDI and AP_SDO are CS, SCK, MOSI and MISO.
+            "ICM42688P" => {
+                let conns = [
+                    ("5", rail.clone()),
+                    ("8", rail),
+                    ("6", gnd.clone()),
+                    ("7", gnd.clone()),
+                    ("9", gnd),
+                    ("12", net(power::Line::Cs, &d.cs.net)),
+                    ("13", net(power::Line::Sck, &bus.sck.net)),
+                    ("14", net(power::Line::Mosi, &bus.mosi.net)),
+                    ("1", net(power::Line::Miso, &bus.miso.net)),
+                ]
+                .to_vec();
+                device(&mut b, &d.reference, "Aethelgard_Sensor:ICM-42688-P", conns)?;
+                b.decouple(&d.reference, &d.supply, "100n")?;
+                b.decouple(&d.reference, &d.supply, "2u2")?;
+                b.decouple(&d.reference, &d.supply, "10n")?;
             }
             _ => {
                 return Err(EmitError::UnknownPart {
@@ -1519,6 +1595,7 @@ mod tests {
             supply: "VDD_3V3".into(),
             bus: "B".into(),
             address,
+            pin_capacitance: None,
         };
         let to = |n: &str| Conn::Net(n.into());
         let bme = [to("GND"), to("VDDIO")];

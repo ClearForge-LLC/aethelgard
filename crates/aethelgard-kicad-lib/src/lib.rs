@@ -1,4 +1,9 @@
-//! KiCad 10.0.7's vendored symbols, footprints and licence text, as bytes.
+//! KiCad 10.0.7's vendored symbols, footprints and licence text, and our own
+//! symbols and footprints for parts KiCad lacks, as bytes.
+//!
+//! The vendored files sit under `data/kicad-10.0.7/` (CC-BY-SA 4.0); our own
+//! under `data/aethelgard/` (MIT OR Apache-2.0, `AET-WO-4220b`), each listed
+//! by its path inside a library directory, as KiCad's are.
 //!
 //! Data only: no hashes, no parsing. `aethelgard-eda` pins each file's sha256
 //! and refuses a file that is missing, unpinned or altered (AET-WO-1304).
@@ -6,8 +11,8 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
-/// Every vendored file: its path under `data/kicad-10.0.7/` and its bytes.
-pub const FILES: [(&str, &[u8]); 45] = [
+/// Every file: its path in the gate's library directory and its bytes.
+pub const FILES: [(&str, &[u8]); 50] = [
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
@@ -253,6 +258,34 @@ pub const FILES: [(&str, &[u8]); 45] = [
     (
         "symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
         include_bytes!("../data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym"),
+    ),
+    (
+        "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
+        include_bytes!(
+            "../data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
+        include_bytes!(
+            "../data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym"
+        ),
+    ),
+    (
+        "aethelgard/README.md",
+        include_bytes!("../data/aethelgard/README.md"),
     ),
     (
         "LICENSE.md",

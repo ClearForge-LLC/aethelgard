@@ -1,5 +1,5 @@
 {
-  "schema_version": 13,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -79,7 +79,7 @@
       "domain": "VDD_3V3",
       "sck": {
         "net": "IMU_SCK",
-        "pin": null
+        "pin": "PB13"
       },
       "mosi": {
         "net": "IMU_MOSI",
@@ -97,21 +97,30 @@
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "U3",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "U7",
       "part": "BMP581",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 70
+      "address": 70,
+      "pin_capacitance": {
+        "declared": {
+          "femtofarads": 10000,
+          "condition": "each of U7's pins on SDA and SCL at most UM10204's Ci of 10 pF, the I2C specification its interface follows; Bosch prints no pin capacitance, so the bound holds only if the part meets that limit",
+          "source": "Bosch BST-BMP581-DS004-13 v1.13: no pin capacitance in Tables 4, 5, 6, 17 (pp. 10-13, 31), I2C per NXP UM10204 (p. 33); UM10204 rev. 7.0 Table 10, p. 43: Ci 10 pF maximum"
+        }
+      }
     }
   ],
   "spi_devices": [
@@ -123,7 +132,8 @@
       "cs": {
         "net": "FLASH_CS",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "U5",
@@ -133,6 +143,13 @@
       "cs": {
         "net": "IMU_CS",
         "pin": null
+      },
+      "pin_capacitance": {
+        "declared": {
+          "femtofarads": 10000,
+          "condition": "each of U5's pins on SCK and MOSI at most TDK's typical C_I of < 10 pF; the datasheet prints no maximum, so the bound holds only if the part's pins do not exceed that typical",
+          "source": "TDK InvenSense DS-000347 v1.9, 3.3.2 Table 4, p. 14: C_I < 10 pF for FSYNC, SCLK, SDI and CS in the TYP column, MIN and MAX empty (AET-WO-4220 D10)"
+        }
       }
     }
   ],

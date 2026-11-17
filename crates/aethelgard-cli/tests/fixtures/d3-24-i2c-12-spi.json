@@ -1,5 +1,5 @@
 {
-  "schema_version": 13,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -168,168 +168,192 @@
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "S1",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 119
+      "address": 119,
+      "pin_capacitance": null
     },
     {
       "reference": "S2",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "S3",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 73
+      "address": 73,
+      "pin_capacitance": null
     },
     {
       "reference": "S4",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 74
+      "address": 74,
+      "pin_capacitance": null
     },
     {
       "reference": "S5",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B0",
-      "address": 75
+      "address": 75,
+      "pin_capacitance": null
     },
     {
       "reference": "S6",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "S7",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 119
+      "address": 119,
+      "pin_capacitance": null
     },
     {
       "reference": "S8",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "S9",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 73
+      "address": 73,
+      "pin_capacitance": null
     },
     {
       "reference": "S10",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 74
+      "address": 74,
+      "pin_capacitance": null
     },
     {
       "reference": "S11",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B1",
-      "address": 75
+      "address": 75,
+      "pin_capacitance": null
     },
     {
       "reference": "S12",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "S13",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 119
+      "address": 119,
+      "pin_capacitance": null
     },
     {
       "reference": "S14",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "S15",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 73
+      "address": 73,
+      "pin_capacitance": null
     },
     {
       "reference": "S16",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 74
+      "address": 74,
+      "pin_capacitance": null
     },
     {
       "reference": "S17",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B2",
-      "address": 75
+      "address": 75,
+      "pin_capacitance": null
     },
     {
       "reference": "S18",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 118
+      "address": 118,
+      "pin_capacitance": null
     },
     {
       "reference": "S19",
       "part": "BME280",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 119
+      "address": 119,
+      "pin_capacitance": null
     },
     {
       "reference": "S20",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     },
     {
       "reference": "S21",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 73
+      "address": 73,
+      "pin_capacitance": null
     },
     {
       "reference": "S22",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 74
+      "address": 74,
+      "pin_capacitance": null
     },
     {
       "reference": "S23",
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "B3",
-      "address": 75
+      "address": 75,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [
@@ -341,7 +365,8 @@
       "cs": {
         "net": "CS0_0",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1001",
@@ -351,7 +376,8 @@
       "cs": {
         "net": "CS0_1",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1002",
@@ -361,7 +387,8 @@
       "cs": {
         "net": "CS0_2",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1003",
@@ -371,7 +398,8 @@
       "cs": {
         "net": "CS1_0",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1004",
@@ -381,7 +409,8 @@
       "cs": {
         "net": "CS1_1",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1005",
@@ -391,7 +420,8 @@
       "cs": {
         "net": "CS1_2",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1006",
@@ -401,7 +431,8 @@
       "cs": {
         "net": "CS2_0",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1007",
@@ -411,7 +442,8 @@
       "cs": {
         "net": "CS2_1",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1008",
@@ -421,7 +453,8 @@
       "cs": {
         "net": "CS2_2",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1009",
@@ -431,7 +464,8 @@
       "cs": {
         "net": "CS3_0",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1010",
@@ -441,7 +475,8 @@
       "cs": {
         "net": "CS3_1",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     },
     {
       "reference": "S1011",
@@ -451,7 +486,8 @@
       "cs": {
         "net": "CS3_2",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [

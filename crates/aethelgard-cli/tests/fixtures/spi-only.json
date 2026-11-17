@@ -1,5 +1,5 @@
 {
-  "schema_version": 13,
+  "schema_version": 14,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -69,7 +69,8 @@
       "part": "TMP117",
       "supply": "VDD_3V3",
       "bus": "SENSORS",
-      "address": 72
+      "address": 72,
+      "pin_capacitance": null
     }
   ],
   "spi_devices": [
@@ -81,7 +82,8 @@
       "cs": {
         "net": "FLASH_CS",
         "pin": null
-      }
+      },
+      "pin_capacitance": null
     }
   ],
   "connectors": [

@@ -103,6 +103,15 @@ pub fn i2c_pull_up_floor_ohms(speed_hz: u32, domain_millivolts: u32) -> u32 {
     u32::try_from(num.div_ceil(den)).expect("a u32 rail over at least 2 mA fits a u32")
 }
 
+/// UM10204 rev. 7.0 (1 October 2021), Table 10 "Characteristics of the SDA
+/// and SCL I/O stages", page 43: `Ci`, "capacitance for each I/O pin",
+/// maximum 10 pF in Standard-mode, Fast-mode and Fast-mode Plus. Its note
+/// [10]: "Special purpose devices such as multiplexers and switches may
+/// exceed this capacitance because they connect multiple paths together."
+/// `extract` counts every undeclared I2C pin at it, and `validate` refuses a
+/// declaration below it on an I2C device (`AET-WO-4220b`).
+pub const I2C_PIN_CI_FEMTOFARADS: u64 = 10_000;
+
 /// The bus capacitance limit, in femtofarads (UM10204 table 11: Cb 400 pF
 /// for Standard-mode and Fast-mode, 550 pF for Fast-mode Plus).
 pub fn i2c_bus_capacitance_limit_femtofarads(speed_hz: u32) -> u64 {

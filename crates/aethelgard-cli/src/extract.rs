@@ -65,6 +65,12 @@ fn line(b: LineBound, declared: u64) -> Value {
         v["terms"]["offboard"] = t.offboard.into();
         v["offboard"] = b.offboard.into();
     }
+    // A pin counted at a declared value (`AET-WO-4220b`) is listed apart from
+    // `pins`, which are maxima; a line with none is unchanged.
+    if !b.declared_pins.is_empty() {
+        v["terms"]["declared_pins"] = t.declared_pins.into();
+        v["declared_pins"] = b.declared_pins.into();
+    }
     v
 }
 
@@ -111,11 +117,32 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     let mut out = Vec::new();
     let mut conditions = bound::conditions(&stack);
     if lines.iter().any(|b| b.spi_signal.is_some()) {
-        conditions.push(bound::SPI_CONDITION.to_owned());
+        // A declared SPI pin is not a cited maximum (`AET-WO-4220b`, H1).
+        let declared = lines
+            .iter()
+            .any(|b| b.spi_signal.is_some() && !b.declared_pins.is_empty());
+        conditions.push(if declared {
+            bound::SPI_CONDITION_BESIDE_DECLARED.to_owned()
+        } else {
+            bound::SPI_CONDITION.to_owned()
+        });
     }
     if aethelgard_eda::schematic::declares_offboard(&spec) {
         conditions.push(bound::OFFBOARD.to_owned());
     }
+    // A declared I2C pin is not UM10204's `Ci`, so the standing condition
+    // names the pins it covers (`AET-WO-4220b`, adversarial A2).
+    if lines
+        .iter()
+        .any(|b| b.spi_signal.is_none() && !b.declared_pins.is_empty())
+    {
+        for c in &mut conditions {
+            if c == bound::I2C_PIN_CONDITION {
+                bound::I2C_PIN_CONDITION_BESIDE_DECLARED.clone_into(c);
+            }
+        }
+    }
+    conditions.extend(bound::declared_conditions(&spec));
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
@@ -145,7 +172,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             kind: "capacitance_over_declared_bound",
             severity: "error",
             message: format!(
-                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}) exceeds the declared {} fF",
+                "`{}`: bound {} fF (trace {}, vias {}, pads {}, pins {}{}{}) exceeds the declared {} fF",
                 l["net"].as_str().unwrap_or_default(),
                 l["c_bound_femtofarads"],
                 l["terms"]["trace"],
@@ -155,6 +182,9 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                 l["terms"]
                     .get("offboard")
                     .map_or_else(String::new, |o| format!(", offboard {o}")),
+                l["terms"]
+                    .get("declared_pins")
+                    .map_or_else(String::new, |d| format!(", declared pins {d}")),
                 l["declared_femtofarads"]
             ),
         })

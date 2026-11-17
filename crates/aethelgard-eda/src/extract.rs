@@ -183,12 +183,16 @@ const fn gcd(a: u128, b: u128) -> u128 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-/// UM10204 rev. 7.0 (1 October 2021), Table 10 "Characteristics of the SDA
-/// and SCL I/O stages", page 43: `Ci`, "capacitance for each I/O pin",
-/// maximum 10 pF in Standard-mode, Fast-mode and Fast-mode Plus. Its note
-/// [10]: "Special purpose devices such as multiplexers and switches may
-/// exceed this capacitance because they connect multiple paths together."
-pub const PIN_FF: u64 = 10_000;
+/// UM10204's `Ci` for each I2C pin, 10 pF
+/// ([`aethelgard_ir::electrical::I2C_PIN_CI_FEMTOFARADS`], cited there).
+pub const PIN_FF: u64 = aethelgard_ir::electrical::I2C_PIN_CI_FEMTOFARADS;
+
+/// The condition [`conditions`] states for every I2C pin, and the words that
+/// replace it when a line carries a pin counted at a declared value
+/// (`AET-WO-4220b`), which this one does not cover.
+pub const I2C_PIN_CONDITION: &str =
+    "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line";
+pub const I2C_PIN_CONDITION_BESIDE_DECLARED: &str = "every I2C pin not counted at a declared value at most UM10204's Ci of 10 pF; no multiplexer or switch on the line";
 
 /// `nm` in millimetres, at least one decimal: `2_000_000` is `2.0`.
 fn mm1(nm: i64) -> String {
@@ -248,7 +252,7 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
     out.extend(
         [
             "zone fill keeps the board's clearance (the DRC gate refills and judges it)",
-            "every I2C pin at most UM10204's Ci of 10 pF; no multiplexer or switch on the line",
+            I2C_PIN_CONDITION,
             "neighbouring nets are static while the line rises",
         ]
         .map(str::to_owned),
@@ -260,6 +264,28 @@ pub fn conditions(stack: &Stack) -> Vec<String> {
 /// [`conditions`] when the specification has SPI lines (`AET-WO-4300c` D3).
 /// [`conditions`] itself is unchanged, so the fabrication notes are too.
 pub const SPI_CONDITION: &str = "on SCK and MOSI, each device pin at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
+
+/// [`SPI_CONDITION`]'s words when an SPI line carries a pin counted at a
+/// declared value (`AET-WO-4220b`, adversarial H1), which no cited maximum
+/// covers.
+pub const SPI_CONDITION_BESIDE_DECLARED: &str = "on SCK and MOSI, each device pin not counted at a declared value at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
+
+/// What the bound assumes of each pin counted at a declared value
+/// (`AET-WO-4220b`, the `AET-WO-4220` D10 ruling), stated once per declaring
+/// device beside [`conditions`], as [`OFFBOARD`] is, so a board with no
+/// declaration is unchanged. The value is the specification's, under the
+/// condition it names: never a maximum the datasheet prints (`RUL-19`).
+pub fn declared_conditions(spec: &Specification) -> Vec<String> {
+    crate::schematic::declared_pin_capacitance(spec)
+        .into_iter()
+        .map(|(reference, (part, d))| {
+            format!(
+                "{reference} ({part}): each of its pins on a bounded line counted at {} fF, a value the specification declares, not a maximum the datasheet prints; the bound holds only under its condition: {} (source: {})",
+                d.femtofarads, d.condition, d.source
+            )
+        })
+        .collect()
+}
 
 // A via's barrel lies inside its checked disk.
 const _: () = assert!(DRILL_NM <= VIA_NM);
@@ -561,6 +587,9 @@ pub struct Terms {
     pub pins: u64,
     /// The off-board capacitance its connectors declare (`AET-WO-4300f` D8).
     pub offboard: u64,
+    /// The pins counted at a value the specification declares
+    /// (`AET-WO-4220b`), never in `pins`.
+    pub declared_pins: u64,
 }
 
 /// One line's bound and what it was computed from.
@@ -579,8 +608,12 @@ pub struct LineBound {
     pub via_count: u64,
     /// Every copper pad on the line, pins included.
     pub pad_count: u64,
-    /// Pads counted as a pin, as `<reference>.<pad>`.
+    /// Pads counted as a pin at a cited or standard maximum, as
+    /// `<reference>.<pad>`.
     pub pins: Vec<String>,
+    /// Pads counted at a declared value, as `<reference>.<pad>`: each one's
+    /// condition is in [`declared_conditions`] (`AET-WO-4220b`).
+    pub declared_pins: Vec<String>,
     /// `SCK` or `MOSI` for an SPI line; `None` for I2C.
     pub spi_signal: Option<&'static str>,
     /// The driver's pads, whose copper is counted and whose pin is not: the
@@ -971,8 +1004,12 @@ struct Role {
 /// How a part's pads load a line, beyond their copper.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Load {
-    /// A pin, counted at this many femtofarads per pad.
+    /// A pin, counted at this many femtofarads per pad: a maximum, cited or
+    /// UM10204's.
     Pin(u64),
+    /// A pin counted at the value its specification declares, under the
+    /// condition it states (`AET-WO-4220b`): never a maximum.
+    Declared(u64),
     /// The bus's pull-up: copper only.
     PullUp,
     /// The driver of an SPI line, the MCU: copper only.
@@ -1012,19 +1049,24 @@ fn offboard_of(
         .collect()
 }
 
-/// A device's pin on an SPI line the MCU drives: its part's cited maximum,
-/// or a refusal by name when the table cites none (`AET-WO-4300c` D3). No
-/// drawable part lacks one today (the ICM-20948 has no vendored symbol), so
-/// only its unit test reaches the refusal.
+/// A device's pin on an SPI line the MCU drives: its part's cited maximum
+/// (`AET-WO-4300c` D3); else the value its specification declares
+/// (`AET-WO-4220b`; `validate` refuses a declaration beside a cited maximum);
+/// else a refusal by name: no typical value stands in for either.
 fn device_pin(
     table: &aethelgard_ir::parts::PartsTable,
     reference: &str,
     part: &str,
     net: &str,
+    declared: Option<u64>,
 ) -> Result<Load, Refused> {
-    match table.get(part).and_then(|p| p.pin_capacitance_femtofarads) {
-        Some(ff) => Ok(Load::Pin(ff)),
-        None => Err(refused(
+    match (
+        table.get(part).and_then(|p| p.pin_capacitance_femtofarads),
+        declared,
+    ) {
+        (Some(ff), _) => Ok(Load::Pin(ff)),
+        (None, Some(ff)) => Ok(Load::Declared(ff)),
+        (None, None) => Err(refused(
             "UnboundedPinCapacitance",
             format!(
                 "the design puts {reference} ({part}) on `{net}`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance"
@@ -1074,6 +1116,10 @@ pub fn lines(
     table: &PinTable,
 ) -> Result<Vec<Line>, Refused> {
     let (parts, _) = crate::schematic::design(spec, solved, table).map_err(|e| invalid(&e))?;
+    let declared: BTreeMap<String, u64> = crate::schematic::declared_pin_capacitance(spec)
+        .into_iter()
+        .map(|(reference, (_, d))| (reference, d.femtofarads))
+        .collect();
     let mut out = Vec::new();
     for bus in &spec.i2c_buses {
         for net in [&bus.sda.net, &bus.scl.net] {
@@ -1093,6 +1139,10 @@ pub fn lines(
                     Load::TestPad
                 } else if passive {
                     Load::PullUp
+                } else if let Some(&ff) = declared.get(&part.reference) {
+                    // A declared device's pins, in place of UM10204's `Ci`
+                    // (`AET-WO-4220b`).
+                    Load::Declared(ff)
                 } else {
                     Load::Pin(PIN_FF)
                 };
@@ -1179,7 +1229,13 @@ pub fn lines(
                         ),
                     ));
                 } else if let Some(d) = device {
-                    device_pin(table, &part.reference, &d.part, net)?
+                    device_pin(
+                        table,
+                        &part.reference,
+                        &d.part,
+                        net,
+                        declared.get(&part.reference).copied(),
+                    )?
                 } else if crate::schematic::is_connector(part) {
                     Load::Connector
                 } else {
@@ -1285,6 +1341,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
     }
     let mut terms = Terms::default();
     let (mut pins, mut pull_ups, mut pad_count) = (Vec::new(), Vec::new(), 0u64);
+    let mut declared_pins = Vec::new();
     let (mut drivers, mut offboard) = (Vec::new(), Vec::new());
     for (reference, pads) in &on_board {
         let Some(role) = want.parts.get(*reference) else {
@@ -1327,6 +1384,13 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                 Load::Pin(ff) => {
                     pins.push(format!("{reference}.{}", pad.number));
                     terms.pins = terms.pins.checked_add(ff).ok_or_else(|| overflow(net))?;
+                }
+                Load::Declared(ff) => {
+                    declared_pins.push(format!("{reference}.{}", pad.number));
+                    terms.declared_pins = terms
+                        .declared_pins
+                        .checked_add(ff)
+                        .ok_or_else(|| overflow(net))?;
                 }
                 Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
                 Load::PullUp | Load::Connector | Load::TestPad => {}
@@ -1381,6 +1445,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         terms.pads,
         terms.pins,
         terms.offboard,
+        terms.declared_pins,
     ]
     .into_iter()
     .try_fold(0u64, u64::checked_add)
@@ -1396,6 +1461,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
         via_count,
         pad_count,
         pins,
+        declared_pins,
         spi_signal: want.spi_signal,
         drivers,
         pull_ups,
@@ -1784,15 +1850,21 @@ mod tests {
 
     /// `AET-WO-4300c` D3: a device pin on SCK or MOSI counts at its part's
     /// cited maximum; a part with only a typical value (the ICM-20948's
-    /// "< 10" pF) is refused by name, never given that value.
+    /// "< 10" pF) is refused by name, never given that value, unless the
+    /// specification declares one (`AET-WO-4220b`), which is then counted as
+    /// declared; a cited maximum wins over a declaration.
     #[test]
-    fn a_device_pin_is_its_cited_maximum_or_refused() {
+    fn a_device_pin_is_its_cited_maximum_its_declaration_or_refused() {
         let table = aethelgard_ir::parts::table().unwrap();
         assert_eq!(
-            device_pin(table, "U4", "W25Q64JVxIQ", "SPI_SCK"),
+            device_pin(table, "U4", "W25Q64JVxIQ", "SPI_SCK", None),
             Ok(Load::Pin(8_000))
         );
-        let err = device_pin(table, "U5", "ICM20948", "SPI_SCK").unwrap_err();
+        assert_eq!(
+            device_pin(table, "U4", "W25Q64JVxIQ", "SPI_SCK", Some(1_000)),
+            Ok(Load::Pin(8_000))
+        );
+        let err = device_pin(table, "U5", "ICM20948", "SPI_SCK", None).unwrap_err();
         assert_eq!(err.kind, "UnboundedPinCapacitance");
         assert!(
             err.message.contains("U5 (ICM20948) on `SPI_SCK`"),
@@ -1800,7 +1872,11 @@ mod tests {
             err.message
         );
         assert_eq!(
-            device_pin(table, "U9", "UNLISTED", "SPI_SCK")
+            device_pin(table, "U5", "ICM42688P", "SPI_SCK", Some(10_000)),
+            Ok(Load::Declared(10_000))
+        );
+        assert_eq!(
+            device_pin(table, "U9", "UNLISTED", "SPI_SCK", None)
                 .unwrap_err()
                 .kind,
             "UnboundedPinCapacitance"

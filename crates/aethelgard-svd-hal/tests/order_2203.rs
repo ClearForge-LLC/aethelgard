@@ -24,7 +24,7 @@ fn digests() -> Vec<(&'static str, String)> {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let mut doc: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a});
+    let dev = |r: &str, p: &str, a: u8| serde_json::json!({"reference": r, "part": p, "supply": "VDD_3V3", "bus": "SENSORS", "address": a, "pin_capacitance": null});
     doc["i2c_devices"] = serde_json::json!([
         dev("U10", "BME280", 0x76),
         dev("U3", "TMP117", 0x48),
@@ -149,23 +149,28 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and acknowledged), which changes no generator: with each text's
 /// `LIFECYCLE NRND` line removed and the old specification's sha256 put back,
 /// the three are `c5003f4f…620b`, `875c5440…fbe8` and `63b028f0…bbf8` exactly;
-/// the boot image did not move. Moved once more by `AET-WO-1312`
-/// (specification version 13), which changes no generator of these: with
-/// the old specification's sha256 (`281a522a…5287`) put back in each text,
-/// the three are `b738cc97…912f`, `b27e162f…1cd` and `8e390d00…c21e`
-/// exactly; the boot image did not move.
+/// the boot image did not move.
+/// Moved once more by `AET-WO-4220b` (specification version 13, each device's
+/// `pin_capacitance`), which changes no generator of these: with the old
+/// specification's sha256 (`281a522a…`) put back for the new (`12ea89f8…`),
+/// the three texts are `main`'s byte for byte (`b738cc97…912f`,
+/// `b27e162f…31cd`, `8e390d00…c21e` before); the boot image did not move.
+/// Moved once more by `AET-WO-1312` (specification version 14), which
+/// changes no generator of these: with the old specification's sha256
+/// (`12ea89f8…9a2e`) put back in each text, the three are `b4c0b9a0…8ec2`,
+/// `f0b5a670…d67f` and `ba58ff9e…cdad` exactly; the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "3a372e79f96ae418e7f5ee81202abbff2f494128915cf9fa450ae78f7de42ca8",
+        "a60bdcac104779b778baa96f61effc87ae5e7dd09083763707904136b228a048",
     ),
     (
         "platform",
-        "b9609996be271f01280cb2203785d6e08c559e17825e8aa7b1dc1674e84d379f",
+        "a81a65b312fc0957c3f0eee45c415074a97e0cfffab2ff1b83b12f4f94a55fdc",
     ),
     (
         "platform faulted",
-        "ac5426a56c8ca801cfbc0adf53ddfbd76c19ecb69dfa8cc91f4c36b3c128fdc1",
+        "292791aa1391c6eb8004dd58de32ae2681a4fa2e14d5b2cf21c5faf420b5d388",
     ),
     (
         "boot image",
