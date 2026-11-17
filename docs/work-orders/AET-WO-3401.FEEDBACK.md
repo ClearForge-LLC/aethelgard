@@ -4,7 +4,7 @@ Builder: Claude (strong tier, the `3400` builder), worktree `~/aethelgard-3400`,
 
 Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
-**Status (2026-11-17 ~07:40 UTC): READY for review, re-signalled after 4400b (§14–§15).**
+**Status (2026-11-17 ~09:00 UTC): READY for review, re-signalled after 2302 (§16).**
 - **§1** is done and ruled (PR #190: Q1 (i), Q2, Q3).
 - **§2** is built (§10–§11):
   - test points on every declared net (one GND: Q7), BOOT0 on J2 and the reset switch;
@@ -380,3 +380,28 @@ The temporary commit's run (44025019904) was red only on the package-binding tes
 - `cargo clippy --workspace --all-targets -- -D warnings` 0;
 - `cargo test --workspace` 0, with 2029 passed and 0 failed;
 - in the pinned image: clippy with `with-tools` 0, and the tier-2 ordered-board test passes (3.32 s).
+
+## 16. The re-signal after 2302 [measured]
+
+**`main` merged** (`6a9b03b8`, from `ecc6be9`: 2302, the twin's windows, trace 13, `serial_rx_open`).
+- **`ci.yml` conflicted on `TIER2_MIN`:** main's 176 plus this PR's one makes **177**.
+- **Recounted in the pinned image, per binary:** `twin_tier2` 82 (68 + 2302's 14); the others as in §15; **177 in all**.
+
+**The bench set gains a fifth scenario.**
+- 2302 made a serial port covered only by its own detected open RX line, and added `scenarios/sentinel-01/seeded/serial-rx-open-console.json` to the reference's seeded set (`common/verify.rs` `SEEDED`, now 5).
+- `scenarios/sentinel-01-bench/serial-rx-open-console.json` is its copy, **differing only in `base`** (`diff` shows the one line), under Q2's ruling.
+- `bench_board_tier1.rs`'s `SCENARIOS` and the `bench-package` job's command name all five, in the order `MANIFEST.json` records.
+- The four earlier copies still differ from their sources only in `base`; 2302 did not change them.
+
+**The package, written again by CI** (run **44041825319** on `9bb5bb72`, the fourth temporary commit, reverted next):
+- **only `MANIFEST.json` moved:** its scenarios (five), its preconditions and its verdict hash;
+- **CONSOLE is now covered.** The precondition lists only "I2C bus `EXT` (no device: nothing to fault)" as exempt; `serial port CONSOLE (no fault kind yet)` is gone;
+- the other 14 files are byte-identical.
+
+**Gates, on the tree of this READY commit:**
+- `cargo fmt --all -- --check` 0;
+- `cargo clippy --workspace --all-targets -- -D warnings` 0;
+- `cargo test --workspace` 0, with 2058 passed and 0 failed;
+- in the pinned image: clippy with `with-tools` 0, and the tier-2 ordered-board test passes (3.46 s).
+
+**Known ahead (peer note in the inbox, not acted on):** when 1604 lands, `verify` copies `extract`'s conditions into `FAB-NOTES.md`, so this package is rewritten once more through `bench-package` (dispatch with `write`, or the temporary-commit round trip).
