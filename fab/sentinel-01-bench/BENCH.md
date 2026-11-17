@@ -45,7 +45,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 - **Instrument:** the SWD probe, reading after boot.
 - **Pass:** each register the twin's run of this ELF records (the boot record of `verify`'s `simulate`, regenerated from this package) reads back with the same word. That includes:
   - GPIOA/GPIOB `MODER`, `AFRL`/`AFRH`, `OTYPER` and `PUPDR`;
-  - `I2C1.CR1`/`TIMINGR` and `I2C2.CR1`/`TIMINGR` (`0x50D32A40` for both at 100 kHz; I2C1 runs at 400 kHz);
+  - `I2C1.CR1`/`TIMINGR` and `I2C2.CR1`/`TIMINGR`: **both `0x50D32A40`, `Standard100k`**, at the solved 64 MHz kernel clock. The firmware initialises each I2C peripheral at the lowest declared speed of any bus (`aethelgard-svd-hal/src/board.rs` L313–318: the topology does not say which peripheral serves which bus). So SENSORS (I2C1), declared at 400 kHz, runs at 100 kHz on this board, beside EXT's 100 kHz. The solved `i2c_timings` hold I2C1's `Fast400k` word, `0x10C7123C`, but the boot does not write it (`AET-WO-3401` FEEDBACK F4);
   - `SPI1.CFG1`/`CFG2`.
 
   The rows the specification acknowledges as unwitnessed (`acknowledge_unwitnessed`) are read here, each against the reason its entry gives.

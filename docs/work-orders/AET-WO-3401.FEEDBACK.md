@@ -4,7 +4,7 @@ Builder: Claude (strong tier, the `3400` builder), worktree `~/aethelgard-3400`,
 
 Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
-**Status (2026-11-17 ~06:20 UTC): READY for review.**
+**Status (2026-11-17 ~07:40 UTC): READY for review, re-signalled after 4400b (§14–§15).**
 - **§1** is done and ruled (PR #190: Q1 (i), Q2, Q3).
 - **§2** is built (§10–§11):
   - test points on every declared net (one GND: Q7), BOOT0 on J2 and the reset switch;
@@ -335,3 +335,48 @@ On the tree of this READY commit (main `f57d9b6` merged):
 - `TIER2_MIN` is 163: main's 162 plus this PR's one.
 
 The temporary commit's run (44025019904) was red only on the package-binding test, the expected stale package (the architect's inbox note, 05:38 UTC). CI on this head follows the push.
+
+## 14. After READY 938900b: main moved (4400b), and the architect's review
+
+**`main` merged** (`9d533de6`, from `56318a5`: 4400b, `aethelgard-hwdef`, solved schema 9, `parts.json` 8, `power-parts.json` 4).
+- `ci.yml` and `workspace_shape.rs` merged cleanly, keeping both sides.
+- After the merge [measured]:
+  - `workspace_shape` passes 21 of 21;
+  - the bench board crate is unchanged (`board.rs` 7/7);
+  - `emit`'s BOM is byte-identical to the package's;
+  - **the package binding fails on the topology hash** (`bench_board_tier1.rs:93`: the package's `5f818dbf…` against the solve's `d0468869…`), because solved schema 9 changes `solve`'s line.
+- So the package is regenerated through `bench-package` once more (§15).
+
+**The architect's review of 938900b** (PR #190 and inbox, 06:50 UTC):
+- **R1 (fixed here):** `BENCH.md` B2 said `TIMINGR` `0x50D32A40` was "for both at 100 kHz; I2C1 runs at 400 kHz", which is contradictory. Checking it found F4.
+- R2–R4 (the GND test point exemption, fab-format BOM and CPL, AN2606) go to the architect's backlog. No change here.
+
+**Finding F4: the ordered board's firmware drives SENSORS at 100 kHz, not its declared 400 kHz.**
+- The generated firmware initialises both I2C peripherals at `Standard100k` (`boards/sentinel-01-bench/firmware/src/main.rs` L168–169). The reference board, with one bus, initialises I2C1 at `Fast400k`.
+- The generator does this by design: "the topology does not say which peripheral serves which bus, so the generator gives every I2C peripheral the lowest declared speed: exact for one bus, and never above any bus's declared speed for more" (`aethelgard-svd-hal/src/board.rs` L313–318). The bench crate's own comment reads "`I2C1`'s declared speed of 100000 Hz".
+- The solved topology does now say which peripheral serves which bus: `assignments` puts I2C_SCL/I2C_SDA on `I2C1_SCL`/`I2C1_SDA` (PB6/PB7), and `analog_lines` names their bus as SENSORS. So the limitation could be lifted.
+- **What it costs:** nothing on the copper or the order. A firmware generated later is just as valid on the same board, by `INV-01`. **But no gate noticed it:** ERC, DRC, support, `extract`, the proofs, the twin and the campaign all passed a firmware below its declared bus speed. That is consistent with the generator's documented rule, so it is not a defect of a gate.
+- `BENCH.md` B2 now states the words the boot writes: both `0x50D32A40`. The solved `0x10C7123C` for I2C1's `Fast400k` is named as not written.
+- **Q8 (new):** an `aethelgard-svd-hal` work order to give each I2C peripheral its own bus's declared speed, now that the topology joins them? It is the architect's call. It does not block ordering this board.
+
+## 15. The re-signal [measured]
+
+**The package, written again by CI** (run **44033102031** on `4a5ad3c1`, the third temporary commit, reverted next):
+- **only `MANIFEST.json` moved**, in two keys: `topology_sha256` (solved schema 9) and `verdict_sha256`;
+- all 14 other files, the Gerbers and the ELF among them, are byte-identical to the package of 938900b;
+- the binding test passes against it.
+
+**`TIER2_MIN` recounted in the pinned image:** 163, listed per binary with `--list` (`with_tools` 31, `twin_tier2` 68, `board_tier2` 23, `verify_2k2_tier2` 2, `against_fab_tier2` 2, `verify_47k_tier2` 2, `campaign_tier2` 9, `models_tier2` 7, `attribute_seeded` 11, `adversarial_1301_tools` 6, `adversarial_1302_tools` 2). Main's 162 plus this PR's one; 4400b added no tier-2 test to these binaries.
+
+**R1, resolved by stating what the boot writes:**
+- The review offered two fixes: state each peripheral's `TIMINGR` from `i2c_timings`, with I2C1 at 400 kHz, or drop the parenthetical.
+- Checking the first found F4: the firmware writes `0x50D32A40` (`Standard100k`) to both I2C1 and I2C2. So "I2C1 at 400 kHz" would be the wrong pass line at the bench.
+- B2 now states both words as `0x50D32A40`, cites `board.rs` L313–318 for why, and names the solved `0x10C7123C` (I2C1's `Fast400k`) as not written.
+
+**Main merged twice more:** `56318a5` (4400b, §14) and `d3a0aa3` (docs only, #195).
+
+**Gates, on the tree of this READY commit:**
+- `cargo fmt --all -- --check` 0;
+- `cargo clippy --workspace --all-targets -- -D warnings` 0;
+- `cargo test --workspace` 0, with 2029 passed and 0 failed;
+- in the pinned image: clippy with `with-tools` 0, and the tier-2 ordered-board test passes (3.32 s).
