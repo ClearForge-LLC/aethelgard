@@ -311,6 +311,43 @@ const LOCKED: [&str; 2] = [
     "Tried to read a locked peripheral",
 ];
 
+/// The correction of the pinned Renode's `ICSR.RETTOBASE` (build
+/// `1.17.0+20260907gitf1dd1b4af`, `renode-infrastructure` `cd4b002a`), one
+/// monitor command emitted right after the platform loads in every boot
+/// (`AET-WO-4400e3`, ruled on PR #215, fix (1); measured in `AET-WO-4400e2`).
+///
+/// The Armv7-M Architecture Reference Manual (ARM DDI 0403E.b, §B3.2.4, p.
+/// B3-657) defines `RETTOBASE`, bit 11, in Handler mode as 0 when "there is an
+/// active exception other than the exception shown by IPSR" and 1 when there
+/// is none; in Thread mode it is UNKNOWN. ChibiOS's interrupt epilogue
+/// (`chcore.c` L315) builds a thread-mode return frame exactly when it reads
+/// 1, so with Renode's answer a TIM5 interrupt nested over a DMA stream's
+/// pushes a stray frame that later switches to the ready list's header: the
+/// `INVSTATE` fault unmodified ArduPilot meets (`AET-WO-4400e2`).
+///
+/// The hook rewrites bit 11 of every read at `ICSR`'s offset (`0xD04`) to
+/// "at most one exception active", from the NVIC model's own stack of active
+/// exceptions, system and external: upstream's `activeIRQs.Count() <= 1`
+/// (`renode-infrastructure` `e7a8584c`, 2026-10-07, in no release yet). Every
+/// other bit, `VECTACTIVE` included, and every other register pass through
+/// unchanged.
+///
+/// It is tied to the pin both ways (the tests below `RETTOBASE_BUGGY_BUILD`):
+/// a unit test fails when `container/Dockerfile` pins another Renode, a
+/// tier-2 test when the image's `renode --version` names another build, and
+/// two tier-2 tests run `tests/fixtures/rettobase` (two nested external
+/// interrupts): without the hook the pinned Renode must still read
+/// `RETTOBASE` 1 in the nested handler, so the hook cannot outlive the bug,
+/// and with it 0. On a Renode carrying upstream's fix the hook computes the
+/// model's own answer, so it is idempotent there; it is removed once a pin
+/// carries `e7a8584c` and the fixture measures it fixed.
+///
+/// The command is `data/rettobase-hook.monitor`, one line with no newline, so
+/// the stubs of `tests/boot_tier1.rs` and `tests/campaign_tier1.rs` require
+/// exactly it in every boot's command line, and `tests/rettobase_tier2.rs`
+/// runs exactly it in the pinned Renode.
+pub const RETTOBASE_HOOK: &str = include_str!("../data/rettobase-hook.monitor");
+
 /// One boot: the copies Renode reads, how long it runs, and what the judge
 /// computed from the topology (`INV-07`).
 pub struct BootPlan<'a> {
@@ -344,6 +381,10 @@ pub struct BootPlan<'a> {
     /// The boot's fresh capture directory, which the CLI made and Renode may
     /// add to: one file backend per port. `None` without a serial port.
     pub capture: Option<&'a std::path::Path>,
+    /// Whether [`RETTOBASE_HOOK`] goes in right after the platform loads:
+    /// every boot the CLI starts, while the pinned Renode is the one with the
+    /// bug (tested both ways: the tests' `RETTOBASE_BUGGY_BUILD`).
+    pub rettobase: bool,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -754,8 +795,9 @@ impl BootPlan<'_> {
         c
     }
 
-    /// The monitor commands: a fixed seed, the platform, the firmware, the
-    /// cold RCC, each modelled device's log level, each motor timer's hook
+    /// The monitor commands: a fixed seed, the platform, the correction of the
+    /// pinned Renode's `ICSR.RETTOBASE` when [`BootPlan::rettobase`] says so
+    /// ([`RETTOBASE_HOOK`]), the firmware, the cold RCC, each modelled device's log level, each motor timer's hook
     /// (`AET-WO-2302`), a fixed virtual time, then the reads between
     /// sentinels, then the listing. Both paths are this CLI's own copies.
     /// Without a droop, the boot word's and the ports' hooks go in before
@@ -775,6 +817,13 @@ impl BootPlan<'_> {
                 "machine LoadPlatformDescription @{}",
                 self.platform.display()
             ),
+        ]);
+        // The NVIC exists once the platform is loaded; the hook is on its
+        // peripheral, so it survives every `machine Reset` a droop renders.
+        if self.rettobase {
+            c.push(RETTOBASE_HOOK.to_owned());
+        }
+        c.extend([
             format!("sysbus LoadELF @{}", self.firmware.display()),
             FLASH_LOG.to_owned(),
         ]);
@@ -3604,6 +3653,74 @@ pub fn status_name(c: &aethelgard_twin::boot::StepCheck, status: u32) -> &'stati
 mod tests {
     use super::*;
 
+    /// The Renode build whose NVIC answers `ICSR.RETTOBASE` against the
+    /// architecture (`AET-WO-4400e3`): the `build:` line of the pinned image's
+    /// `renode --version` (measured, `AET-WO-2205`), from `renode-infrastructure`
+    /// `cd4b002a`. Its `NVIC.cs` L1079 sets bit 11 when at most one **system**
+    /// exception is active (`activeIRQs.Intersect(SystemException).Count() <= 1`),
+    /// so a handler nested over an external interrupt's reads 1.
+    const RETTOBASE_BUGGY_BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
+
+    /// The release asset that build comes from: `container/Dockerfile` installs
+    /// `renode-1.17.0.linux-portable.tar.gz` checked against this sha256.
+    const RETTOBASE_RENODE_TARBALL_SHA256: &str =
+        "4ba7c68b59e2447f188ef4b4b112fcccd2802582c460beedceb63b84e5605a5f";
+
+    /// `AET-WO-4400e3` §1.1: the correction goes in once, after the platform
+    /// loads (the NVIC exists then) and before the firmware does; a plan that
+    /// does not ask for it carries none. The hook is one monitor line that
+    /// touches `ICSR`'s offset and bit 11 only.
+    #[test]
+    fn the_rettobase_correction_follows_the_platform_and_precedes_the_firmware() {
+        let image = image();
+        let mut p = plan(&image, &[]);
+        assert!(!p.commands().contains("SetHookAfterPeripheralRead"));
+        p.rettobase = true;
+        let c = p.commands();
+        assert_eq!(c.matches(RETTOBASE_HOOK).count(), 1, "{c}");
+        let at = |what: &str| c.find(what).unwrap_or_else(|| panic!("{what} not in {c}"));
+        assert!(at("machine LoadPlatformDescription") < at(RETTOBASE_HOOK));
+        assert!(at(RETTOBASE_HOOK) < at("sysbus LoadELF"));
+        assert!(!RETTOBASE_HOOK.contains(['\n', ';']), "one monitor command");
+        assert!(RETTOBASE_HOOK.starts_with("sysbus SetHookAfterPeripheralRead sysbus.nvic \""));
+        assert!(RETTOBASE_HOOK.ends_with(" if offset == 0xD04 else value\""));
+        assert!(RETTOBASE_HOOK.contains("(int(value) & ~0x800) | (0x800 if "));
+        assert!(RETTOBASE_HOOK.contains("GetField('activeIRQs', "));
+        assert!(RETTOBASE_HOOK.contains(".GetValue(self).Count <= 1 else 0)"));
+    }
+
+    /// `AET-WO-4400e3` §1.2: the correction is tied to the Renode the pinned
+    /// image installs. When `container/Dockerfile` pins another Renode, this
+    /// fails until the new build is measured with `tests/fixtures/rettobase`
+    /// (`twin_tier2.rs`): keep the correction and move the pin here if the
+    /// nested handler still reads `RETTOBASE` 1 without it, or drop it.
+    #[test]
+    fn the_rettobase_correction_is_tied_to_the_dockerfile_s_renode() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dockerfile = std::fs::read_to_string(root.join("container/Dockerfile")).unwrap();
+        let v = aethelgard_twin::platform::RENODE_VERSION;
+        let asset = format!(
+            "https://github.com/renode/renode/releases/download/v{v}/renode-{v}.linux-portable.tar.gz"
+        );
+        assert_eq!(dockerfile.matches("renode/releases/download/").count(), 1);
+        assert!(dockerfile.contains(&asset), "the pinned asset: {asset}");
+        assert!(
+            dockerfile.contains(&format!(
+                "\"{RETTOBASE_RENODE_TARBALL_SHA256}  /tmp/renode.tar.gz\""
+            )),
+            "the Dockerfile pins the Renode asset the correction was measured on"
+        );
+        assert!(RETTOBASE_BUGGY_BUILD.starts_with(&format!("{v}+")));
+        let tier2 = std::fs::read_to_string(root.join("crates/aethelgard-cli/tests/twin_tier2.rs"))
+            .unwrap();
+        assert!(
+            tier2.contains(&format!(
+                "const RETTOBASE_BUILD: &str = \"{RETTOBASE_BUGGY_BUILD}\";"
+            )),
+            "the tier-2 test checks the image's build against this one"
+        );
+    }
+
     /// `AET-WO-4200` D2: of a device's own lines, exactly those its model
     /// lists as not a transfer are skipped; every other line of the device is
     /// kept, so it can fail the witness; a line of another device is not this
@@ -3715,6 +3832,7 @@ mod tests {
             resets,
             serial: &[],
             capture: None,
+            rettobase: false,
         }
     }
 

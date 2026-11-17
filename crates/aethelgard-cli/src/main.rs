@@ -1786,6 +1786,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
             serial: &r.serial,
             capture: r.capture.as_deref(),
+            // The pinned Renode's `ICSR.RETTOBASE` is corrected in every boot
+            // (`AET-WO-4400e3`; the pin is tested both ways).
+            rettobase: true,
         });
     // A rendered release moves the injection (`AET-WO-4300b`): when even
     // its earliest instant, one quantum after the last boot's start, and the

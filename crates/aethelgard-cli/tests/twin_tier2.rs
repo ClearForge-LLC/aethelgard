@@ -4113,3 +4113,165 @@ fn a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge() 
         "no channel carried the firmware's text to the judge: {v}"
     );
 }
+
+/// The build the pinned image's `renode --version` names, the one whose
+/// `ICSR.RETTOBASE` the CLI corrects (`AET-WO-4400e3`;
+/// `src/renode.rs` `RETTOBASE_BUGGY_BUILD`, held equal to this by a unit test).
+const RETTOBASE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
+
+/// What `tests/fixtures/rettobase` recorded, in one run: `ICSR` in Thread
+/// mode, in IRQ 57's handler (the only active exception) and in IRQ 50's,
+/// nested over it (`AET-WO-4400e3`).
+struct Nested {
+    thread: u32,
+    outer: u32,
+    inner: u32,
+}
+
+/// One boot of the RETTOBASE fixture on Renode's own `stm32h753.repl`, with
+/// the CLI's correction (`data/rettobase-hook.monitor`) or without it: 10 ms,
+/// then the record's four words. The fixture is built once, offline, as the
+/// forge-log fixture is.
+fn nested(corrected: bool) -> Nested {
+    static ELF: OnceLock<PathBuf> = OnceLock::new();
+    let elf = ELF.get_or_init(|| {
+        let dir = root().join("crates/aethelgard-cli/tests/fixtures/rettobase");
+        let out = Command::new(env!("CARGO"))
+            .args(["build", "--release", "--offline", "--locked"])
+            .current_dir(&dir)
+            .env_remove("CARGO_TARGET_DIR")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "the RETTOBASE fixture builds offline: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        root().join(
+            "target/aet-rettobase-fixture/thumbv7em-none-eabihf/release/aet-rettobase-fixture",
+        )
+    });
+    let hook = fs::read_to_string(root().join("crates/aethelgard-cli/data/rettobase-hook.monitor"))
+        .unwrap();
+    let home = std::env::temp_dir().join(format!(
+        "aet-4400e3-rettobase-{}-{corrected}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(&home).unwrap();
+    let mut c = vec![
+        "mach create".to_owned(),
+        "machine LoadPlatformDescription @platforms/cpus/stm32h753.repl".to_owned(),
+    ];
+    if corrected {
+        c.push(hook);
+    }
+    c.extend([
+        format!("sysbus LoadELF @{}", elf.display()),
+        "cpu VectorTableOffset 0x08000000".to_owned(),
+        "emulation RunFor \"0.010000000\"".to_owned(),
+        "echo \"AET-4400E3-BEGIN\"".to_owned(),
+    ]);
+    c.extend((0..4).map(|w| format!("sysbus ReadDoubleWord {:#x}", 0x2000_0000 + 4 * w)));
+    c.extend(["echo \"AET-4400E3-END\"".to_owned(), "quit".to_owned()]);
+    let out = Command::new("renode")
+        .args(["--disable-gui", "--console", "--plain", "-e", &c.join("; ")])
+        .env("DOTNET_EnableDiagnostics", "0")
+        .env("HOME", &home)
+        .current_dir(&home)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let _ = fs::remove_dir_all(&home);
+    let text = String::from_utf8_lossy(&out.stdout).replace('\r', "");
+    assert!(
+        !text.contains("Python runtime error") && !text.contains("There was an error"),
+        "the run raised no error:\n{text}"
+    );
+    let words: Vec<u32> = text
+        .lines()
+        .map(str::trim)
+        .skip_while(|l| *l != "AET-4400E3-BEGIN")
+        .take_while(|l| *l != "AET-4400E3-END")
+        .filter_map(|l| u32::from_str_radix(l.strip_prefix("0x")?, 16).ok())
+        .collect();
+    assert_eq!(words.len(), 4, "the record's four words:\n{text}");
+    answer(&format!(
+        "4400e3 rettobase fixture corrected={corrected}: done={:#x} thread={:#x} outer={:#x} inner={:#x}",
+        words[0], words[1], words[2], words[3]
+    ));
+    assert_eq!(words[0], 0x4400_E3D0, "the fixture finished:\n{text}");
+    Nested {
+        thread: words[1],
+        outer: words[2],
+        inner: words[3],
+    }
+}
+
+/// `VECTACTIVE`, `ICSR` bits 8:0: the exception number the read was made in.
+fn vectactive(icsr: u32) -> u32 {
+    icsr & 0x1FF
+}
+
+/// `RETTOBASE`, `ICSR` bit 11.
+fn rettobase(icsr: u32) -> u32 {
+    (icsr >> 11) & 1
+}
+
+/// AET-WO-4400e3 §1.2: the image the tier-2 tests run in carries the Renode
+/// build the CLI's correction is for. A new pin fails here until it is
+/// measured with the fixture below.
+#[test]
+fn the_pinned_image_s_renode_is_the_build_whose_rettobase_the_cli_corrects() {
+    let out = Command::new("renode")
+        .arg("--version")
+        .env("DOTNET_EnableDiagnostics", "0")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    let builds: Vec<&str> = text
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("build:"))
+        .map(str::trim)
+        .collect();
+    assert_eq!(builds, [RETTOBASE_BUILD], "{text}");
+}
+
+/// AET-WO-4400e3 §1.3, the bug named: Renode 1.17.0's NVIC (`NVIC.cs` L1079
+/// at `renode-infrastructure` `cd4b002a`) counts only system exceptions, so
+/// in TIM5's handler, nested over DMA2 stream 1's, it answers `RETTOBASE` 1,
+/// where the Armv7-M ARM (DDI 0403E.b §B3.2.4, p. B3-657) says 0. When this
+/// fails, the pinned Renode no longer has the bug: drop the correction.
+#[test]
+fn renode_1_17_0_reads_rettobase_1_in_a_handler_nested_over_an_external_interrupt() {
+    let n = nested(false);
+    assert_eq!(
+        vectactive(n.inner),
+        16 + 50,
+        "TIM5's handler: {:#x}",
+        n.inner
+    );
+    assert_eq!(
+        vectactive(n.outer),
+        16 + 57,
+        "DMA2 stream 1's: {:#x}",
+        n.outer
+    );
+    assert_eq!(rettobase(n.inner), 1, "the bug: {:#x}", n.inner);
+}
+
+/// AET-WO-4400e3 §1.3 and §5: with the CLI's correction the nested handler
+/// reads `RETTOBASE` 0, the handler with nothing beneath it still reads 1,
+/// and no other bit of any read moves (`VECTACTIVE` included).
+#[test]
+fn the_cli_s_correction_reads_rettobase_0_nested_1_alone_and_moves_no_other_bit() {
+    let bare = nested(false);
+    let fixed = nested(true);
+    assert_eq!(rettobase(fixed.inner), 0, "nested: {:#x}", fixed.inner);
+    assert_eq!(rettobase(fixed.outer), 1, "alone: {:#x}", fixed.outer);
+    assert_eq!(fixed.inner ^ bare.inner, 0x800, "only bit 11, nested");
+    assert_eq!(fixed.outer, bare.outer, "nothing, alone");
+    assert_eq!(fixed.thread, bare.thread, "nothing, in Thread mode");
+}
