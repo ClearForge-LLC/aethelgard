@@ -63,8 +63,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `acknowledge_unwitnessed` (an empty list acknowledges none), taken by
 /// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
 /// after `4300d3` and then `4300g`). Nothing supplies any of them for an
-/// older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
+/// older file. Version 13 adds `test_points` and `mcu.reset_switch`
+/// (`AET-WO-1312`), each optional as that work order states (absent is no
+/// test point and no switch), so that a reader of version 12 refuses a file
+/// that may carry them by its version, never by an unknown key.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 13;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -81,7 +84,7 @@ pub const NRST: &str = "NRST";
 pub const BOOT0: &str = "BOOT0";
 pub const DEBUG_NETS: [&str; 4] = [SWDIO, SWCLK, NRST, BOOT0];
 
-/// The top-level specification, version 12 (`RUL-14`). Arrays keep the order a
+/// The top-level specification, version 13 (`RUL-14`). Arrays keep the order a
 /// person wrote them in, and nothing is sorted.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]

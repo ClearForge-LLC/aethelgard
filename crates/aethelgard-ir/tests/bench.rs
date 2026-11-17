@@ -200,3 +200,21 @@ fn the_switch_skips_a_spelled_sw1_and_refuses_another_spelling_of_it() {
     assert_eq!(err.kind(), "DuplicateReference", "{err}");
     assert!(err.to_string().contains("SW1 and sw1"), "{err}");
 }
+
+/// Specification 13 (`AET-WO-1312` §1.4): a version-12 file is refused by its
+/// version, with or without the new fields, never read as today's board.
+#[test]
+fn a_version_12_file_is_refused_by_its_version() {
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 13);
+    for base in [bench_json(), serde_json::from_str(V0).unwrap()] {
+        let mut v = base;
+        v["schema_version"] = json!(12);
+        assert_eq!(
+            refusal(&v),
+            E::UnsupportedSchemaVersion {
+                version: 12,
+                expected: 13
+            }
+        );
+    }
+}

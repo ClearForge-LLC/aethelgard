@@ -28,6 +28,20 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 - Prediction 1 held. Prediction 3 held: no corpus file spells a net or domain `BOOT0` (only that probe names it, as a connector pin).
 - The whole workspace's tests, the golden board's byte-for-byte test included, are in §4.
 
+**Step 2, the bump to 13 alone [measured]** (its own commit). The 22 specification files of `examples/` and `crates/*/tests/**` were moved from `"schema_version": 12` to `13`; nothing else in them changed.
+- `main`'s binary ran on `main`'s (version-12) files and this branch's binary on the version-13 files: `validate`, `solve` and `generate` on all 21 corpus files outside `spike/`.
+- With each file's old sha256 replaced by its new one, **all 210 generated files and every stdout line are equal; 0 moved** (`~/.cache/aet-1312/tools/step2.sh`). Prediction 2 held.
+- **The committed goldens moved by the hash alone [measured]:**
+  - `boards/sentinel-01/**`: 8 lines in 8 files, each the provenance line `Solved topology of specification sha256`, `3f89077c…aee4` to `eebb4b90…a638`;
+  - `crates/aethelgard-svd-hal/tests/ui/serial-four/board.rs` and `ui/motors-pwm/{board.rs,topology.json}`: the same line, and the topology's `specification_sha256`. Re-blessed with `AETHELGARD_BLESS=1`; the topology is equal with the hash substituted.
+- **Pinned digests moved, with the old hash put back reproducing the old digests exactly:**
+  - `solve_cli`'s two (the reference `d751e1f4…0dcf`, the stress fixture `00be83e1…eef6`);
+  - `order_2203`'s three (`b738cc97…912f`, `b27e162f…31cd`, `8e390d00…c21e`); the boot image did not move.
+  - Each is recorded beside its constant, as earlier bumps did.
+  - `crates/aethelgard-cli/README.md`'s example hash prefix moved too.
+- Version tests: `UnsupportedSchemaVersion` now expects 13, a version-12 file is refused by its version (library and CLI, with and without the new fields), and 12 joined the refused list.
+- `spike/3400/**` was not bumped (§3).
+
 **The router on Sentinel-01 with a test point on every net §1.1 lists [measured]** (fixture `crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json`: V0 plus 12 test points, BOOT0 on J2 pin 2, NRST on J2 pin 3, the reset switch). "The four SPI lines" are read as SCK, MOSI, MISO and the flash's CS, so the list is 12 distinct nets, not the 13 prediction 4 counted. Figures are read from the emitted board by a scratch reader (`~/.cache/aet-1312/stats`), which also re-routes the read board and gets the same copper; V0 was emitted by `main`'s binary.
 
 | Board | Outline (mm) | Area (mm²) | Parts | Track (mm) | Segments | Vias | Rip-ups |

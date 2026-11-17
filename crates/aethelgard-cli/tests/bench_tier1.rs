@@ -341,3 +341,24 @@ fn a_test_point_on_an_emitter_net_is_refused_on_every_path() {
         );
     }
 }
+
+/// The CLI refuses a version-12 file by its version before it reads a key
+/// (`AET-WO-1312` §1.4), as it did each older version.
+#[test]
+fn the_cli_refuses_a_version_12_file_by_its_version() {
+    let mut v = json_of(BENCH);
+    v["schema_version"] = json!(12);
+    let dir = std::env::temp_dir().join(format!("aet-1312-v12-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("v12.json");
+    std::fs::write(&path, serde_json::to_vec(&v).unwrap()).unwrap();
+    let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["validate", "--file", path.to_str().unwrap()])
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+    let r: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(out.status.code(), Some(2), "{r}");
+    assert_eq!(r["error"]["kind"], "UnsupportedSchemaVersion", "{r}");
+    assert_eq!(r["error"]["message"], "schema_version is 12, not 13", "{r}");
+}
