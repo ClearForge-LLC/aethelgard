@@ -1689,3 +1689,90 @@ fn the_ordered_board_passes_every_board_gate_with_no_finding() {
     }
     fs::remove_dir_all(&base).unwrap();
 }
+
+/// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
+/// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
+/// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
+/// DRC by the specification's rules with and without schematic parity,
+/// `check support` and `extract`, each with no finding.
+#[test]
+fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+    let spec_arg = spec_path.to_str().unwrap();
+    let (code, text) = aethelgard(&["validate", "--file", spec_arg]);
+    assert_eq!(code, Some(0), "validate: {text}");
+    let generated = base.join("gen");
+    let (code, text) = aethelgard(&[
+        "generate",
+        "--spec",
+        spec_arg,
+        "--out",
+        generated.to_str().unwrap(),
+    ]);
+    assert_eq!(code, Some(0), "generate: {text}");
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+    let board_text = fs::read_to_string(&board).unwrap();
+    assert_eq!(board_text.matches(" signal)").count(), 4);
+    // The outline, from the board's one Edge.Cuts rectangle.
+    let rect = &board_text[board_text.find("(gr_rect").unwrap()..];
+    let num = |key: &str| -> (f64, f64) {
+        let s = &rect[rect.find(key).unwrap() + key.len()..];
+        let mut it = s.split([' ', ')']).filter(|t| !t.is_empty());
+        (
+            it.next().unwrap().parse().unwrap(),
+            it.next().unwrap().parse().unwrap(),
+        )
+    };
+    let ((x0, y0), (x1, y1)) = (num("(start "), num("(end "));
+    assert!(
+        x1 - x0 <= 100.0 && y1 - y0 <= 100.0,
+        "{} x {}",
+        x1 - x0,
+        y1 - y0
+    );
+
+    let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+    let erc = one(&text);
+    assert_eq!(code, Some(0), "erc: {erc}");
+    assert_eq!(erc["findings"], Value::Array(vec![]), "erc: {erc}");
+    for parity in [false, true] {
+        let mut args = vec!["check", "drc", "--board", &board, "--spec", spec_arg];
+        if parity {
+            args.extend(["--schematic", &sch]);
+        }
+        let (code, text) = aethelgard(&args);
+        let drc = one(&text);
+        assert_eq!(code, Some(0), "parity={parity}: drc: {drc}");
+        assert_eq!(drc["verdict"], "pass", "drc: {drc}");
+        assert_eq!(drc["rules"], "specification", "drc: {drc}");
+        assert_eq!(drc["findings"], Value::Array(vec![]), "drc: {drc}");
+    }
+    let (code, text) = aethelgard(&[
+        "check",
+        "support",
+        "--schematic",
+        &sch,
+        "--board",
+        &board,
+        "--spec",
+        spec_arg,
+    ]);
+    let v = one(&text);
+    assert_eq!(code, Some(0), "support: {v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "support: {v}");
+    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    let x = one(&text);
+    assert_eq!(code, Some(0), "extract: {x}");
+    assert_eq!(x["verdict"], "pass", "extract: {x}");
+    assert_eq!(x["findings"], Value::Array(vec![]), "extract: {x}");
+    fs::remove_dir_all(&base).unwrap();
+}
