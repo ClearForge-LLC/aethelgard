@@ -1,0 +1,27 @@
+board: outline 113.10 x 107.60 mm, 69 parts, 355 pads; emitted copper: 1144 segments, 1961.6 mm of track, 237 vias, 1 zones; classes 2, pairs 0, joins 1, thermal 2
+unrenamed reroute: 1144 segments, 237 vias, 44 rip-ups, same copper as emitted: true
+seed  0: routes, 40 rip-ups, own copper: false
+  only in renamed: (452, 111, ["Segment { net: \"/CONSOLE_RX\", layer: F, start: (52875000, 97875000), end: (52875000, 129875000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (52875000, 97875000), end: (83875000, 97875000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (90625000, 97875000), end: (91625000, 97875000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (91625000, 94375000), end: (91625000, 97875000) }", "Via { net: \"/CONSOLE_RX\", at: (83875000, 97875000) }", "Via { net: \"/CONSOLE_RX\", at: (90625000, 97875000) }", "Via { net: \"/CONSOLE_RX\", at: (105375000, 94375000) }", "Via { net: \"/CONSOLE_TX\", at: (83875000, 96250000) }"])
+  only in emitted: (471, 114, ["Segment { net: \"/CONSOLE_RX\", layer: F, start: (52875000, 122375000), end: (52875000, 129875000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (52875000, 122375000), end: (63625000, 122375000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (66375000, 122375000), end: (89875000, 122375000) }", "Segment { net: \"/CONSOLE_RX\", layer: F, start: (89875000, 117875000), end: (89875000, 122375000) }", "Via { net: \"/CONSOLE_RX\", at: (63625000, 122375000) }", "Via { net: \"/CONSOLE_RX\", at: (66375000, 122375000) }", "Via { net: \"/CONSOLE_RX\", at: (89875000, 117875000) }", "Via { net: \"/CONSOLE_RX\", at: (91125000, 117875000) }"])
+  zones renamed [("GND", "B.Cu")] emitted [("GND", "B.Cu")]
+seed  1: routes, 40 rip-ups, own copper: false
+seed  2: routes, 40 rip-ups, own copper: false
+seed  3: routes, 40 rip-ups, own copper: false
+seed  4: routes, 40 rip-ups, own copper: false
+seed  5: routes, 40 rip-ups, own copper: false
+seed  6: routes, 40 rip-ups, own copper: false
+seed  7: routes, 40 rip-ups, own copper: false
+seed  8: routes, 40 rip-ups, own copper: false
+seed  9: routes, 40 rip-ups, own copper: false
+seed 10: routes, 40 rip-ups, own copper: false
+seed 11: routes, 40 rip-ups, own copper: false
+seed 12: routes, 40 rip-ups, own copper: false
+seed 13: routes, 40 rip-ups, own copper: false
+seed 14: routes, 40 rip-ups, own copper: false
+seed 15: routes, 40 rip-ups, own copper: false
+seed 16: routes, 40 rip-ups, own copper: false
+seed 17: routes, 40 rip-ups, own copper: false
+seed 18: routes, 40 rip-ups, own copper: false
+seed 19: routes, 40 rip-ups, own copper: false
+renamings routed to their own copper: 0/20
+exit 0

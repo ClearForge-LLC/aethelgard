@@ -63,7 +63,9 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `AET-WO-4230` (renumbered from 10, then from 11, by the same rule, merging
 /// after `4300d3` and then `4300g`). Nothing supplies any of them for an
 /// older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 12;
+/// Version 13 requires `pin_capacitance` on every I2C and SPI device, `null`
+/// or a declaration (`AET-WO-4220b`).
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 13;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -337,6 +339,10 @@ pub struct I2cDevice {
     pub supply: String,
     pub bus: String,
     pub address: u8,
+    /// Its pins' capacitance as the specification declares it, or `null`.
+    /// Required as a key (`INV-06`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -347,6 +353,32 @@ pub struct SpiDevice {
     pub supply: String,
     pub bus: String,
     pub cs: Signal,
+    /// As [`I2cDevice::pin_capacitance`].
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub pin_capacitance: Option<PinCapacitance>,
+}
+
+/// A device's pin capacitance as the specification declares it (`AET-WO-4220b`;
+/// the `AET-WO-4220` D10 ruling, comment 6890080737): for a part whose
+/// datasheet prints a typical only, or nothing. `extract` counts it on every
+/// bounded line the part's pins sit on, under its condition, named as
+/// declared and never as a maximum (`RUL-19`). A part whose parts-table row
+/// cites a maximum is counted at that maximum (`AET-WO-4300c` D3), and a
+/// declaration for it is refused (`PinCapacitanceAlreadyCited`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct PinCapacitance {
+    pub declared: DeclaredPinCapacitance,
+}
+
+/// The value counted for each of the device's pins on a bounded line, the
+/// condition under which the bound then holds, and where the value comes from.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct DeclaredPinCapacitance {
+    pub femtofarads: u64,
+    pub condition: String,
+    pub source: String,
 }
 
 /// The electrical bounds one net must stay within.
@@ -771,6 +803,8 @@ object_only!(
     SpiBus,
     I2cDevice,
     SpiDevice,
+    PinCapacitance,
+    DeclaredPinCapacitance,
     NetConstraint,
     PinAssignment,
     AnalogLine,
@@ -1664,6 +1698,72 @@ pub enum IrValidationError {
         driven: u8,
         citation: String,
     },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance outside the
+    /// parts table's own range ([`parts::MAX_PIN_FEMTOFARADS`]): zero would
+    /// drop the device's pins from every bound they sit on, and above it is
+    /// no signal pin.
+    #[error("device `{id}` declares a pin capacitance of {femtofarads} fF, not 1 to {maximum} fF")]
+    PinCapacitanceOutOfRange {
+        id: String,
+        femtofarads: u64,
+        maximum: u64,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2, adversarial A1): a declared pin
+    /// capacitance on an I2C device below UM10204's `Ci`, which every
+    /// undeclared I2C pin is counted at: a declaration may name a condition
+    /// or raise a pin's term, never lower it below the standard's maximum.
+    #[error(
+        "I2C device `{id}` declares a pin capacitance of {femtofarads} fF, below UM10204's Ci of {ci} fF (rev. 7.0 Table 10, p. 43), which every undeclared I2C pin is counted at"
+    )]
+    PinCapacitanceBelowI2cCi {
+        id: String,
+        femtofarads: u64,
+        ci: u64,
+    },
+    /// Step 14 (`AET-WO-4220b` §1.2): a declared pin capacitance for a part
+    /// whose row cites a maximum, which a declaration never replaces
+    /// (`AET-WO-4300c` D3).
+    #[error(
+        "device `{id}` declares a pin capacitance, but its part `{part}` cites a maximum of {maximum_femtofarads} fF ({citation}), which a declaration never replaces"
+    )]
+    PinCapacitanceAlreadyCited {
+        id: String,
+        part: String,
+        maximum_femtofarads: u64,
+        citation: String,
+    },
+    /// Step 21 (`AET-WO-1208` §1.3, `1207` F1): the refusal `solve` made, by
+    /// its name, message and claimant. Every timer's kernel clock is one
+    /// frequency on the reset clock, so the timing is the specification's.
+    #[error("motor output `{output}`: {reason}")]
+    MotorTiming {
+        output: String,
+        reason: &'static str,
+    },
+    /// Step 21: as [`IrValidationError::MotorTiming`]. Every USART and UART
+    /// has one kernel clock on the reset clock.
+    #[error(
+        "serial port `{port}`: {baud} baud needs a BRR outside 16 to 0xFFFF on a {kernel_hz} Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"
+    )]
+    SerialBaudOutOfRange {
+        port: String,
+        baud: u32,
+        kernel_hz: u64,
+    },
+    /// Step 21: as [`IrValidationError::SerialBaudOutOfRange`].
+    #[error(
+        "serial port `{port}`: the worst-case baud error, {worst_case_ppm} ppm (the receiver's {receiver_ppm}: quantization {quantization_ppm} with HSI at {hsi_ppm}; plus the peer's declared {peer_deviation_ppm}), is not below the receiver's tolerance of {tolerance_ppm} ppm ({row})"
+    )]
+    SerialBaudTolerance {
+        port: String,
+        row: String,
+        quantization_ppm: u64,
+        hsi_ppm: u32,
+        receiver_ppm: u64,
+        peer_deviation_ppm: u32,
+        worst_case_ppm: u64,
+        tolerance_ppm: u32,
+    },
 }
 
 impl IrValidationError {
@@ -1814,13 +1914,20 @@ impl IrValidationError {
             Self::SupplyOutsideSpeedTable { .. } => "SupplyOutsideSpeedTable",
             Self::MissingSpiConstraint { .. } => "MissingSpiConstraint",
             Self::SpiModeNotDriven { .. } => "SpiModeNotDriven",
+            Self::PinCapacitanceOutOfRange { .. } => "PinCapacitanceOutOfRange",
+            Self::PinCapacitanceAlreadyCited { .. } => "PinCapacitanceAlreadyCited",
+            Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
+            Self::MotorTiming { .. } => "MotorTiming",
+            Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
+            Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
         }
     }
 
     /// Who is in conflict, as `solve`'s refusal names them: the bus of the
     /// seven bus refusals `solve` made (`AET-WO-1206` §1.5, `AET-WO-1207`
-    /// §1.2), the line of `BusCapacitanceOverLimit`, and nothing for every
-    /// other refusal.
+    /// §1.2), the line of `BusCapacitanceOverLimit`, the output or port of
+    /// the motor and serial refusals (`AET-WO-1208` §1.3), and nothing for
+    /// every other refusal.
     pub fn claimants(&self) -> Vec<String> {
         match self {
             Self::MissingBusConstraint { bus, .. }
@@ -1830,6 +1937,10 @@ impl IrValidationError {
             | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::MissingSpiConstraint { bus, .. } => vec![bus.clone()],
             Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
+            Self::MotorTiming { output, .. } => vec![output.clone()],
+            Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
+                vec![port.clone()]
+            }
             _ => Vec::new(),
         }
     }
@@ -1974,7 +2085,14 @@ impl IrValidationError {
             | Self::RiseTimeTooSlow { bus, .. }
             | Self::SupplyOutsideSpeedTable { bus, .. }
             | Self::MissingSpiConstraint { bus, .. } => Some(bus),
-            Self::SpiModeNotDriven { id, .. } => Some(id),
+            Self::SpiModeNotDriven { id, .. }
+            | Self::PinCapacitanceOutOfRange { id, .. }
+            | Self::PinCapacitanceAlreadyCited { id, .. }
+            | Self::PinCapacitanceBelowI2cCi { id, .. } => Some(id),
+            Self::MotorTiming { output, .. } => Some(output),
+            Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
+                Some(port)
+            }
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
             Self::PartWithoutRow { reference, .. } => Some(reference),
@@ -2255,6 +2373,22 @@ fn optional_identifier(
     value.as_deref().map_or(Ok(()), |v| plain(v, path))
 }
 
+/// Step 2 (`AET-WO-4220b`): a declared pin capacitance's condition and source
+/// are each a source text ([`board::source`]).
+fn declared_texts(c: &Option<PinCapacitance>, at: &str) -> Result<(), IrValidationError> {
+    if let Some(c) = c {
+        board::source(
+            &c.declared.condition,
+            &format!("{at}.pin_capacitance.declared.condition"),
+        )?;
+        board::source(
+            &c.declared.source,
+            &format!("{at}.pin_capacitance.declared.source"),
+        )?;
+    }
+    Ok(())
+}
+
 fn signal_identifiers(signal: &Signal, path: &str) -> Result<(), IrValidationError> {
     plain(&signal.net, || format!("{path}.net"))?;
     optional_identifier(&signal.pin, || format!("{path}.pin"))
@@ -2305,19 +2439,34 @@ impl Specification {
         self.bus_constraints()?;
         // 20 (`AET-WO-1206` §1.3)
         names::check(self)?;
-        // 21 (`AET-WO-1207` §1.2)
-        self.speed_inputs()
+        // 21 (`AET-WO-1207` §1.2, `AET-WO-1208` §1.3)
+        self.solve_static()?;
+        // 22 (`AET-WO-1208` §1.2, F1/F5 as ruled on PR #182)
+        power::mcu_without_tree(self)
     }
 
-    /// Step 21: what `solve` refused from the specification alone before
-    /// `AET-WO-1207` (`1206` F3), in `solve`'s order. Each I2C bus's worse
-    /// line has a rise time some I2C mode allows (step 19 checked both lines
-    /// carry a constraint); then each SPI bus has its MCU supply inside
-    /// DS12117 Table 149's bands (every SPI bus is on the MCU's supply, step
-    /// 5a; the bands bound the whole supply, not only its minimum) and its
-    /// SCK and MOSI carry a net constraint, whose load the output speed is
-    /// chosen for (`AET-WO-4300c` D2). Nothing is defaulted (`INV-06`).
-    fn speed_inputs(&self) -> Result<(), IrValidationError> {
+    /// Step 21: what `solve` refused from the specification and the reset
+    /// clock alone before `AET-WO-1207` and `AET-WO-1208`, in the order
+    /// `solve` judged it, by `solve`'s kind, `id`, claimant and message
+    /// (`1206` F3, `1207` F1). Nothing is defaulted (`INV-06`):
+    /// 1. each I2C bus's worse line (step 19 checked both lines carry a
+    ///    constraint) has a rise time some I2C mode allows, and its speed is
+    ///    at most that mode's (`RiseTimeTooSlow`, `BusTooFast`);
+    /// 2. each I2C bus's pull-up is at least the sink-current floor at its
+    ///    domain's maximum rail (`AET-WO-4230` §1.5, review A8), and each
+    ///    line's capacitance at most its bus's limit, SDA then SCL;
+    /// 3. each SPI bus has its MCU supply inside DS12117 Table 149's bands
+    ///    (every SPI bus is on the MCU's supply, step 5a; the bands bound the
+    ///    whole supply, not only its minimum) and its SCK and MOSI carry a
+    ///    net constraint, whose load the output speed is chosen for
+    ///    (`AET-WO-4300c` D2);
+    /// 4. each motor output's timing fits a timer on the reset clock, which
+    ///    gives every timer one kernel clock (RM0433 Rev 9 Table 57);
+    /// 5. each serial port's `BRR` and worst-case baud error, on the reset
+    ///    clock's one USART/UART kernel clock;
+    /// 6. each I2C bus's pull-up again, at its domain's nominal rail, as
+    ///    `solve`'s topology judged it last.
+    fn solve_static(&self) -> Result<(), IrValidationError> {
         for bus in &self.i2c_buses {
             let rise_time_ns = [&bus.sda.net, &bus.scl.net]
                 .into_iter()
@@ -2325,11 +2474,44 @@ impl Specification {
                 .map(|c| c.max_rise_time_nanoseconds)
                 .max()
                 .unwrap_or(0);
-            if electrical::ceiling_hz(rise_time_ns).is_none() {
+            let Some(ceiling_hz) = electrical::ceiling_hz(rise_time_ns) else {
                 return Err(IrValidationError::RiseTimeTooSlow {
                     bus: bus.id.clone(),
                     rise_time_ns,
                 });
+            };
+            if bus.speed_hz > ceiling_hz {
+                return Err(IrValidationError::BusTooFast {
+                    bus: bus.id.clone(),
+                    speed_hz: bus.speed_hz,
+                    ceiling_hz,
+                });
+            }
+        }
+        for bus in &self.i2c_buses {
+            // Step 5 checked every bus's domain.
+            if let Some(domain) = self.voltage_domains.iter().find(|d| d.id == bus.domain) {
+                let floor_ohms =
+                    electrical::i2c_pull_up_floor_ohms(bus.speed_hz, maximum_millivolts(domain));
+                if bus.pull_up_ohms < floor_ohms {
+                    return Err(IrValidationError::PullUpBelowSinkFloor {
+                        bus: bus.id.clone(),
+                        pull_up_ohms: bus.pull_up_ohms,
+                        floor_ohms,
+                    });
+                }
+            }
+            let limit_femtofarads = electrical::i2c_bus_capacitance_limit_femtofarads(bus.speed_hz);
+            for net in [&bus.sda.net, &bus.scl.net] {
+                if let Some(c) = self.net_constraints.iter().find(|c| &c.net_name == net)
+                    && c.max_capacitance_femtofarads > limit_femtofarads
+                {
+                    return Err(IrValidationError::BusCapacitanceOverLimit {
+                        net: net.clone(),
+                        capacitance_femtofarads: c.max_capacitance_femtofarads,
+                        limit_femtofarads,
+                    });
+                }
             }
         }
         let (bottom, top) = (speeds::BANDS_MILLIVOLTS[0].0, speeds::BANDS_MILLIVOLTS[1].1);
@@ -2353,6 +2535,32 @@ impl Specification {
                     return Err(IrValidationError::MissingSpiConstraint {
                         bus: bus.id.clone(),
                         net: net.clone(),
+                    });
+                }
+            }
+        }
+        let clock = SolvedClock::reset();
+        solve::motor_timing(self, &clock)?;
+        for (index, port) in self.serial_ports.iter().enumerate() {
+            solve::serial_timing(&port.label, index, &clock, port)?;
+        }
+        // 6. Each I2C bus's pull-up at its domain's nominal rail, as `solve`'s
+        // own topology judges it last (`SolvedTopology::validate`, the
+        // `analog_lines` carry the nominal), buses in id order as the
+        // topology keys them. The floor jumps at 2.0 V and 2.7 V, so a pull-up
+        // can pass at the maximum (2 above) and fail here (adversarial pass,
+        // `AET-WO-1208` FEEDBACK F4).
+        let mut buses: Vec<&I2cBus> = self.i2c_buses.iter().collect();
+        buses.sort_by(|a, b| a.id.cmp(&b.id));
+        for bus in buses {
+            if let Some(domain) = self.voltage_domains.iter().find(|d| d.id == bus.domain) {
+                let floor_ohms =
+                    electrical::i2c_pull_up_floor_ohms(bus.speed_hz, domain.nominal_millivolts);
+                if bus.pull_up_ohms < floor_ohms {
+                    return Err(IrValidationError::PullUpBelowSinkFloor {
+                        bus: bus.id.clone(),
+                        pull_up_ohms: bus.pull_up_ohms,
+                        floor_ohms,
                     });
                 }
             }
@@ -2534,6 +2742,46 @@ impl Specification {
                     .find(|b| b.id == d.bus)
                     .map_or(0, |b| b.speed_hz);
                 check_spi_device(&d.reference, p, speed_hz)?;
+            }
+        }
+        // `AET-WO-4220b` §1.2: a declaration is within the table's own range,
+        // and never stands beside a cited maximum. I2C then SPI, in
+        // document order.
+        let declared = self
+            .i2c_devices
+            .iter()
+            .map(|d| (&d.reference, &d.part, &d.pin_capacitance, true))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .map(|d| (&d.reference, &d.part, &d.pin_capacitance, false)),
+            );
+        for (reference, part, pin_capacitance, i2c) in declared {
+            let Some(c) = pin_capacitance else { continue };
+            let femtofarads = c.declared.femtofarads;
+            if !(1..=parts::MAX_PIN_FEMTOFARADS).contains(&femtofarads) {
+                return Err(IrValidationError::PinCapacitanceOutOfRange {
+                    id: reference.clone(),
+                    femtofarads,
+                    maximum: parts::MAX_PIN_FEMTOFARADS,
+                });
+            }
+            if i2c && femtofarads < electrical::I2C_PIN_CI_FEMTOFARADS {
+                return Err(IrValidationError::PinCapacitanceBelowI2cCi {
+                    id: reference.clone(),
+                    femtofarads,
+                    ci: electrical::I2C_PIN_CI_FEMTOFARADS,
+                });
+            }
+            if let Some(p) = part_entry(table, reference, part)?
+                && let Some(maximum) = p.pin_capacitance_femtofarads
+            {
+                return Err(IrValidationError::PinCapacitanceAlreadyCited {
+                    id: reference.clone(),
+                    part: p.part.clone(),
+                    maximum_femtofarads: maximum,
+                    citation: cite(&p.citations.pin_capacitance),
+                });
             }
         }
         self.validate_lifecycle(table)
@@ -2998,6 +3246,7 @@ impl Specification {
             plain(&device.part, || format!("{at}.part"))?;
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, device) in self.spi_devices.iter().enumerate() {
             let at = format!("spi_devices[{i}]");
@@ -3008,6 +3257,7 @@ impl Specification {
             plain(&device.supply, || format!("{at}.supply"))?;
             plain(&device.bus, || format!("{at}.bus"))?;
             signal_identifiers(&device.cs, &format!("{at}.cs"))?;
+            declared_texts(&device.pin_capacitance, &at)?;
         }
         for (i, net) in self.net_constraints.iter().enumerate() {
             plain(&net.net_name, || format!("net_constraints[{i}].net_name"))?;

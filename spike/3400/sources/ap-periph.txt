@@ -1,0 +1,19 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p14570-i159388274.scope memory.max=2147483648 memory.swap.max=0 pids.max=8192
+H=/opt/ardupilot/libraries/AP_HAL_ChibiOS/hwdef
+APMrover2-stable
+## CubeOrange-periph
+1:include ../CubeOrange/hwdef.dat
+14:env AP_PERIPH 1
+19:define AP_PERIPH_BATTERY_ENABLED 1
+20:define AP_PERIPH_GPS_ENABLED 1
+## MatekH743-periph
+1:include ../MatekH743/hwdef.dat
+15:env AP_PERIPH 1
+19:define AP_PERIPH_GPS_ENABLED 1
+20:define AP_PERIPH_MAG_ENABLED 1
+CubeOrange/hwdef.dat:4:MCU STM32H7xx STM32H743xx
+MatekH743/hwdef.dat:5:MCU STM32H7xx STM32H743xx
+CubeOrange-periph-heavy/hwdef.dat
+CubeOrange-periph/hwdef.dat
+MatekH743-periph/hwdef.dat
+kha_eth/hwdef.dat

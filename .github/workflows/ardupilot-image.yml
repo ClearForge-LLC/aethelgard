@@ -8,10 +8,11 @@
 #
 # The image carries GPL object code, so it carries its written source offer,
 # /SOURCES.md, read back from every build (AET-WO-4403). Arm's GCC source is
-# mirrored by sha256 next to the image (4400a D-2): `publish` pushes it before
-# the image when it is not there yet, and `source` then fetches it with no
-# credentials. Pull requests cannot push (RUL-15), so `source-rehearsal` runs
-# the same scripts against a registry on the runner instead.
+# mirrored by sha256 next to the image (4400a D-2), and so is every Debian
+# source package with GPL-2.0-only code (D5): `publish` pushes what is not
+# there yet before the image, and `source` fetches them with no credentials,
+# the GCC source on pull requests too. Pull requests cannot push (RUL-15), so
+# `source-rehearsal` runs the same scripts against a registry on the runner.
 #
 # The `ardupilot` jobs build step G and the three seeds in the image, one each,
 # and `pinout` judges them with `aethelgard check pinout` (ruling D7). The jobs live
@@ -40,6 +41,12 @@ on:
       - "container/test-check-gcc-source.sh"
       - "container/fixtures/gcc-source/**"
       - "container/check-sources.sh"
+      - "container/oci-mirror.sh"
+      - "container/debian-src.py"
+      - "container/debian-gpl2.py"
+      - "container/ARDUPILOT-DEBIAN-GPL2.tsv"
+      - "container/test-debian-src.sh"
+      - "container/fixtures/debian-src/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -66,6 +73,12 @@ on:
       - "container/test-check-gcc-source.sh"
       - "container/fixtures/gcc-source/**"
       - "container/check-sources.sh"
+      - "container/oci-mirror.sh"
+      - "container/debian-src.py"
+      - "container/debian-gpl2.py"
+      - "container/ARDUPILOT-DEBIAN-GPL2.tsv"
+      - "container/test-debian-src.sh"
+      - "container/fixtures/debian-src/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -105,6 +118,10 @@ jobs:
       - name: check-gcc-source against its fixtures
         run: bash container/test-check-gcc-source.sh
 
+      # D5: the GPL-2.0-only Debian source tables, each refusal by name.
+      - name: debian-src check against its fixtures
+        run: bash container/test-debian-src.sh
+
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: build
@@ -131,7 +148,7 @@ jobs:
         run: |
           bash container/check-sources.sh labels ardupilot "$IMAGE"
           docker run --rm --network none -v "$PWD/container:/container:ro" \
-            "$IMAGE" bash /container/check-sources.sh inside ardupilot
+            "$IMAGE" bash /container/check-sources.sh inside ardupilot --drift warn
 
       # D4 (PR #130): the runner sets GITHUB_ACTIONS=true, and ArduPilot then
       # refuses a numeric APJ_BOARD_ID. This control passes it into the
@@ -265,7 +282,7 @@ jobs:
     needs: [image, pinout]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     permissions:
       contents: read
       packages: write
@@ -320,6 +337,16 @@ jobs:
           ORAS=$ORAS bash container/gcc-source.sh publish ghcr.io/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/gcc-source"
           echo "Toolchain source at \`$(head -n 1 container/GCC-SOURCE)\`." >> "$GITHUB_STEP_SUMMARY"
 
+      # D5 (Scotty, #176): every GPL-2.0-only Debian source package the image
+      # holds, from snapshot.debian.org by sha1 and sha256, one artifact per
+      # package and version; only the ones not yet there are pushed.
+      - name: mirror the GPL-2.0-only Debian sources
+        run: |
+          ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras-d")
+          start=$(date +%s)
+          ORAS=$ORAS python3 -I container/debian-src.py publish ghcr.io/clearforge-llc/aethelgard-ardupilot container/ARDUPILOT-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
+          echo "ANSWER debian_mirror_s=$(( $(date +%s) - start ))"
+
       # container/ARDUPILOT-IMAGE is set by a pull request from this digest; CI
       # never writes to the repository.
       - name: push and record the digest
@@ -331,22 +358,32 @@ jobs:
 
   # 4403 acceptance: an anonymous client fetches the mirror by its pinned
   # digest. No login and no token: curl reads no netrc and no docker config.
+  #
+  # Since main published the mirror (run 43944349355), the GCC fetch runs on
+  # pull requests too, against the real pin (the D1 follow-up, ruled 20:20 UTC
+  # 2026-11-16). The Debian mirrors appear only when main publishes a table's
+  # rows (RUL-15), so that fetch runs on main, after `publish`.
   source:
     needs: publish
+    if: ${{ !cancelled() && (github.event_name == 'pull_request' || needs.publish.result == 'success') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: fetch the toolchain source anonymously by its pinned digest
         run: bash container/gcc-source.sh fetch "$(head -n 1 container/GCC-SOURCE)" "$RUNNER_TEMP/gcc-source"
+      - name: fetch every GPL-2.0-only Debian source anonymously by its pinned digest
+        if: github.event_name == 'push'
+        run: python3 -I container/debian-src.py fetch ghcr.io/clearforge-llc/aethelgard-ardupilot container/ARDUPILOT-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
 
-  # Pull requests cannot push to ghcr (RUL-15), and until main's first publish
-  # the pinned digest is not there. This job runs the publish and fetch scripts
-  # end to end against a registry on the runner, and checks the two halves of
-  # anonymity against ghcr itself: a public image's manifest and blob fetch with
-  # no credentials, and the private engine image is refused by name.
+  # Pull requests cannot push to ghcr (RUL-15). This job runs the publish and
+  # fetch scripts end to end against a registry on the runner, seeding the GCC
+  # tarball from the published mirror (Arm's host is not asked), and checks
+  # the two halves of anonymity against ghcr itself: a public image's manifest
+  # and blob fetch with no credentials, and the private engine image is refused
+  # by name.
   source-rehearsal:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -370,6 +407,19 @@ jobs:
           "$ORAS" pull --plain-http -o "$RUNNER_TEMP/c" "localhost:5000/clearforge-llc/aethelgard-ardupilot@${pin#*@}"
           (cd "$RUNNER_TEMP/c" && sha256sum gcc-arm-none-eabi-10-2020-q4-major-src.tar.bz2)
 
+      # D5: the same Debian publish and fetch, end to end, on two small real
+      # packages of the table, from snapshot.debian.org; timed, since the
+      # full table's publish on main is what the 40-minute budget is for.
+      - name: Debian sources, publish to the runner's registry, then fetch anonymously
+        run: |
+          ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras-d")
+          grep -P '^(base-passwd|hostname)\t' container/ARDUPILOT-DEBIAN-GPL2.tsv > "$RUNNER_TEMP/subset.tsv"
+          start=$(date +%s)
+          ORAS=$ORAS python3 -I container/debian-src.py publish localhost:5000/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/subset.tsv" "$RUNNER_TEMP/d1"
+          bytes=$(awk -F'\t' '{s+=$6} END{print s}' "$RUNNER_TEMP/subset.tsv")
+          echo "ANSWER debian_rehearsal bytes=$bytes s=$(( $(date +%s) - start ))"
+          python3 -I container/debian-src.py fetch localhost:5000/clearforge-llc/aethelgard-ardupilot "$RUNNER_TEMP/subset.tsv" "$RUNNER_TEMP/d2"
+
       - name: ghcr serves this package anonymously, and refuses a private one by name
         run: |
           bash container/gcc-source.sh fetch "$(head -n 1 container/ARDUPILOT-IMAGE)" "$RUNNER_TEMP/public" --any
@@ -378,4 +428,4 @@ jobs:
           rc=$?
           set -e
           cat "$RUNNER_TEMP/err"
-          [ "$rc" -eq 1 ] && grep -q '^gcc-source: anonymous pull refused: ' "$RUNNER_TEMP/err"
+          [ "$rc" -eq 1 ] && grep -q '^oci-mirror: anonymous pull refused: ' "$RUNNER_TEMP/err"

@@ -1394,3 +1394,121 @@ fn the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails() {
     );
     fs::remove_dir_all(&base).unwrap();
 }
+
+/// `AET-WO-4220b` §2: the Sentinel-02-shaped fixture, its ICM-42688-P and
+/// BMP581 drawn from our own library (`Aethelgard_Sensor`), passes ERC with
+/// no finding, DRC by the specification's rules with schematic parity and no
+/// finding of any kind (each footprint's keepouts judged, no
+/// `lib_footprint_mismatch`), and `extract`, each sensor's pins counted at
+/// its declared value and named as declared. A track drawn across the
+/// BMP581's keepout, on either layer, fails DRC (§5.3).
+#[test]
+fn the_own_parts_fixture_passes_erc_drc_with_parity_and_extract() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = std::env::temp_dir().join(format!("aet-4220b-gate-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    fs::create_dir_all(&base).unwrap();
+    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
+    let spec_arg = spec_path.to_str().unwrap();
+    let out = base.join("emitted");
+    let (code, text) = aethelgard(&["emit", "--file", spec_arg, "--out", out.to_str().unwrap()]);
+    let r = one(&text);
+    assert_eq!(code, Some(0), "emit: {r}");
+    let board = r["board"]["path"].as_str().unwrap().to_owned();
+    let sch = r["schematic"]["path"].as_str().unwrap().to_owned();
+    let pcb = fs::read_to_string(&board).unwrap();
+    for (reference, footprint) in [
+        ("U5", "Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm"),
+        ("U7", "Aethelgard_Sensor:Bosch_LGA-10_2x2mm_P0.5mm"),
+    ] {
+        let at = pcb
+            .find(&format!("(property \"Reference\" \"{reference}\""))
+            .unwrap();
+        let start = pcb[..at].rfind("(footprint ").unwrap();
+        assert!(
+            pcb[start..].starts_with(&format!("(footprint \"{footprint}\"")),
+            "{reference}"
+        );
+    }
+
+    let (code, text) = aethelgard(&["check", "erc", "--schematic", &sch]);
+    let erc = one(&text);
+    assert_eq!(code, Some(0), "erc: {erc}");
+    assert_eq!(erc["findings"], Value::Array(vec![]), "erc has findings");
+
+    let drc = |board: &str| {
+        let (code, text) = aethelgard(&[
+            "check",
+            "drc",
+            "--board",
+            board,
+            "--spec",
+            spec_arg,
+            "--schematic",
+            &sch,
+        ]);
+        (code, one(&text))
+    };
+    let (code, v) = drc(&board);
+    assert_eq!(code, Some(0), "drc: {v}");
+    assert_eq!(v["verdict"], "pass", "drc: {v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "drc has findings");
+
+    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    let x = one(&text);
+    assert_eq!(code, Some(0), "extract: {x}");
+    assert_eq!(x["verdict"], "pass", "extract: {x}");
+    let declared: Vec<&str> = x["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|l| l["declared_pins"].as_array().into_iter().flatten())
+        .map(|p| p.as_str().unwrap())
+        .collect();
+    assert_eq!(declared, ["U7.4", "U7.2", "U5.13", "U5.14"], "{x}");
+
+    // §5.3: a 0.2 mm track of U7's own SDA net straight across U7's centre,
+    // on F.Cu and then on B.Cu, is a track inside its keepout.
+    let (u7x, u7y) = {
+        let at = pcb.find("(property \"Reference\" \"U7\"").unwrap();
+        let start = pcb[..at].rfind("(footprint ").unwrap();
+        let at = &pcb[start..][pcb[start..].find("(at ").unwrap() + 4..];
+        let mut it = at[..at.find(')').unwrap()].split_whitespace();
+        let x: f64 = it.next().unwrap().parse().unwrap();
+        let y: f64 = it.next().unwrap().parse().unwrap();
+        (x, y)
+    };
+    for layer in ["F.Cu", "B.Cu"] {
+        let track = format!(
+            "\t(segment\n\t\t(start {:.4} {:.4})\n\t\t(end {:.4} {:.4})\n\t\t(width 0.2)\n\t\t(layer \"{layer}\")\n\t\t(net \"/I2C_SDA\")\n\t\t(uuid \"4220b000-0000-4000-8000-00000000000{}\")\n\t)\n",
+            u7x - 0.3,
+            u7y,
+            u7x + 0.3,
+            u7y,
+            if layer == "F.Cu" { 1 } else { 2 },
+        );
+        let end = pcb.rfind(')').unwrap();
+        let seeded = format!("{}{track}{}", &pcb[..end], &pcb[end..]);
+        let path = base.join(format!("under-{layer}.kicad_pcb"));
+        fs::write(&path, seeded).unwrap();
+        let (code, v) = drc(path.to_str().unwrap());
+        assert_eq!(code, Some(1), "a track under U7 on {layer}: {v}");
+        // KiCad names a track inside a keepout `items_not_allowed`; the
+        // seeded track's loose ends add `track_dangling` and
+        // `unconnected_items`, which are not the claim.
+        let uuid = format!(
+            "4220b000-0000-4000-8000-00000000000{}",
+            if layer == "F.Cu" { 1 } else { 2 }
+        );
+        let in_keepout = v["findings"].as_array().unwrap().iter().any(|f| {
+            f["kind"] == "items_not_allowed"
+                && f["where"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|w| w["uuid"] == uuid.as_str())
+        });
+        assert!(in_keepout, "{layer}: {v}");
+    }
+    fs::remove_dir_all(&base).unwrap();
+}

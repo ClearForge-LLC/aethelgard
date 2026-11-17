@@ -27,3 +27,7 @@ These files are tool-calibration inputs, not board artifacts. No specification p
 ## The GCC source pin's fixtures
 
 `gcc-source/` holds pairs of a `GCC-SOURCE` pin and a `manifest.json` that `container/check-gcc-source.sh` must refuse (`AET-WO-4403`). Four malformed pins prove that it delegates the pin's form to `check-ardupilot-pin.sh`. Two pins disagree with their manifest. The rest are manifests whose pin matches their bytes but whose shape is not the mirror's. `container/test-check-gcc-source.sh` names each fixture's one refusal and requires the committed pin and manifest to pass. The generator was a one-off; each fixture is plain JSON, and its pin is `sha256sum` of its manifest.
+
+## The GPL-2.0-only Debian source tables' fixtures
+
+`debian-src/` holds tables that `container/debian-src.py check` must refuse (`AET-WO-4403` D5), cut from two real packages of `ARDUPILOT-DEBIAN-GPL2.tsv` (`base-passwd`, `hostname`). `ok.tsv` must pass. The rest each break one rule: the form of a row or field, the order, exactly one `.dsc` per package, the derived tag, or the derived manifest digest. `container/test-debian-src.sh` names each fixture's one refusal and requires both committed tables to pass.

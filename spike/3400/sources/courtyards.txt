@@ -1,0 +1,18 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p4134296-i159280307.scope memory.max=2147483648 memory.swap.max=0 pids.max=8192
+TestPoint_Pad_D1.0mm courtyard 1.00 x 0.70 mm = 0.7 mm2
+TestPoint_Keystone_5000-5004_Miniature courtyard 1.65 x 0.00 mm = 0.0 mm2
+SolderJumper-2_P1.3mm_Open_RoundedPad1.0x1.5mm courtyard 3.30 x 2.50 mm = 8.2 mm2
+SolderJumper-3_P1.3mm_Open_RoundedPad1.0x1.5mm courtyard 4.60 x 2.75 mm = 12.6 mm2
+SW_SPST_PTS810 courtyard 5.70 x 3.70 mm = 21.1 mm2
+USB_C_Receptacle_GCT_USB4105-xx-A_16P_TopMnt_Horizontal courtyard 10.64 x 8.94 mm = 95.1 mm2
+SOT-23-6 courtyard 4.10 x 3.54 mm = 14.5 mm2
+SOT-23-8 courtyard 4.10 x 3.52 mm = 14.4 mm2
+Package_SO.pretty/VSSOP-10_3x3mm_P0.5mm MISSING
+PinHeader_1x02_P2.54mm_Vertical courtyard 3.54 x 6.09 mm = 21.6 mm2
+PinHeader_1x03_P2.54mm_Vertical courtyard 3.54 x 8.62 mm = 30.5 mm2
+Tag-Connect_TC2030-IDC-NL_2x03_P1.27mm_Vertical courtyard 7.00 x 4.00 mm = 28.0 mm2
+LGA-14_3x2.5mm_P0.5mm_LayoutBorder3x4y courtyard 3.60 x 3.19 mm = 11.5 mm2
+R_1206_3216Metric courtyard 4.56 x 2.26 mm = 10.3 mm2
+R_0603_1608Metric courtyard 2.96 x 1.46 mm = 4.3 mm2
+C_0603_1608Metric courtyard 2.96 x 1.46 mm = 4.3 mm2
+JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal courtyard 9.46 x 6.40 mm = 60.5 mm2

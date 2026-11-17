@@ -68,6 +68,7 @@ fn valid() -> Specification {
                 supply: "VDD_3V3".into(),
                 bus: "SENSORS".into(),
                 address: 118,
+                pin_capacitance: None,
             },
             I2cDevice {
                 reference: "U3".into(),
@@ -75,6 +76,7 @@ fn valid() -> Specification {
                 supply: "VDD_3V3".into(),
                 bus: "SENSORS".into(),
                 address: 72,
+                pin_capacitance: None,
             },
         ],
         "spi_devices": [SpiDevice {
@@ -83,6 +85,7 @@ fn valid() -> Specification {
             supply: "VDD_3V3".into(),
             bus: "FLASH".into(),
             cs: sig("FLASH_CS"),
+            pin_capacitance: None,
         }],
         "connectors": [
             {"reference": "J1", "part": "SM06B-SRSS-TB", "standard": null, "pins": [
@@ -165,7 +168,7 @@ fn empty_lists_other_than_domains_are_valid() {
 
 #[test]
 fn refuses_unsupported_schema_version() {
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, u32::MAX] {
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, u32::MAX] {
         let err = refusal(|s| s.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -485,8 +488,14 @@ fn refuses_tolerance_out_of_range() {
         // (`SupplyOutsideSpeedTable`, step 21, `AET-WO-1207`); only the
         // tolerance's own range is under test here, so the board has no
         // device (and no acknowledgement of one, `AET-WO-4211`) and no SPI
-        // bus.
-        assert_eq!(bare_rail(3300, value, false).validate(), Ok(()));
+        // bus. At 500 permille the MCU's own range refuses the rail
+        // (`DomainOutsideConsumer`, step 22, `AET-WO-1208` F1/F5), past the
+        // tolerance's own check.
+        let verdict = bare_rail(3300, value, false).validate();
+        match value {
+            1 => assert_eq!(verdict, Ok(())),
+            _ => assert_eq!(verdict.unwrap_err().kind(), "DomainOutsideConsumer"),
+        }
     }
 }
 
@@ -575,6 +584,9 @@ fn refuses_unsupported_i2c_speed_zero_pull_up_and_zero_spi_speed() {
     for value in [100_000, 1_000_000] {
         let mut spec = valid();
         spec.i2c_buses[0].speed_hz = value;
+        // 1 MHz needs lines Fast-mode Plus allows (120 ns), or step 21
+        // refuses it as `BusTooFast` (`AET-WO-1208` §1.3).
+        rise_times(&mut spec, 120, 120);
         assert_eq!(spec.validate(), Ok(()));
     }
     assert_refusal(
@@ -2302,7 +2314,7 @@ fn a_part_the_table_does_not_hold_is_refused() {
     assert_refusal(err.clone(), "UnknownPart", Some("U4"));
     assert_eq!(
         err.to_string(),
-        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, W25Q64JVxIQ, ICM20948"
+        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P"
     );
     devs(&mut spec).i2c[1].part = "LM75".into();
     assert_refusal(spec.validate().unwrap_err(), "UnknownPart", Some("U3"));
@@ -3228,9 +3240,12 @@ fn bare_rail(nominal: u32, tolerance: u16, spi: bool) -> Specification {
 fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
     // 1800 mV ± 10.0 % is 1620 to 1980; ± 10.1 % is 1618 to 1982.
     // 3000 mV ± 20.0 % is 2400 to 3600; ± 20.1 % is 2397 to 3603.
-    for (nominal, tolerance) in [(1800, 100), (3000, 200)] {
-        assert_eq!(bare_rail(nominal, tolerance, true).validate(), Ok(()));
-    }
+    assert_eq!(bare_rail(3000, 200, true).validate(), Ok(()));
+    // 1620 mV passes the speed table's edge (step 21), and the MCU's own
+    // floor refuses it: `bare_rail`'s `bor_level` 0 sets it at VBOR0's
+    // 1680 mV (step 22, `AET-WO-1208` F1/F5).
+    let err = bare_rail(1800, 100, true).validate().unwrap_err();
+    assert_refusal(err, "DomainOutsideConsumer", Some("VDD_3V3"));
     for (nominal, tolerance, min, max) in [(1800, 101, 1618, 1982), (3000, 201, 2397, 3603)] {
         let err = bare_rail(nominal, tolerance, true).validate().unwrap_err();
         assert_refusal(err.clone(), "SupplyOutsideSpeedTable", Some("FLASH"));
@@ -3241,7 +3256,10 @@ fn aet_1207_step_21_refuses_an_spi_bus_off_the_speed_table() {
                 "SPI bus `FLASH` is on a supply of {min} to {max} mV, outside DS12117 Table 149's 1620 to 3600 mV, so no output speed can be judged for it"
             )
         );
-        assert_eq!(bare_rail(nominal, tolerance, false).validate(), Ok(()));
+        // With no SPI bus, step 22 judges the same rail by the MCU's own
+        // consumer rule (`AET-WO-1208` F1/F5); before, it passed (`d539bb1`).
+        let err = bare_rail(nominal, tolerance, false).validate().unwrap_err();
+        assert_refusal(err, "DomainOutsideConsumer", Some("VDD_3V3"));
     }
 }
 
@@ -3271,5 +3289,194 @@ fn aet_1207_step_21_refuses_an_spi_line_with_no_constraint() {
     assert_eq!(
         spec.validate().unwrap_err().kind(),
         "SupplyOutsideSpeedTable"
+    );
+}
+
+/// `bare_rail`'s board (no device, no SPI bus) with the MCU at `bor_level`.
+fn bor_rail(nominal: u32, tolerance: u16, bor_level: u8) -> Specification {
+    let mut spec = bare_rail(nominal, tolerance, false);
+    spec.mcu.bor_level = bor_level;
+    spec
+}
+
+/// `AET-WO-1208` F1/F5 (the architect's ruling on PR #182): without a power
+/// tree, step 22 judges the MCU's rail by step 16's consumer rule, its
+/// minimum above floor = max(1620 mV, the `bor_level`'s VBOR falling
+/// maximum: VBOR3 2680 mV, VBOR0 1680 mV, DS12117 Table 115), its maximum at
+/// most 3600 mV, as `DomainOutsideConsumer`. The rule is strict ("its minimum
+/// above the floor"): a minimum exactly at the floor is refused. Before
+/// (`88ca5b0`), every one of these passed.
+#[test]
+fn aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor() {
+    // bor_level 3: minimums 2679 and 2680 refused, 2681 passes (2707, 2708,
+    // 2709 mV ± 1 %); bor_level 0: 1620 (1800 ± 10 %) and 1680 refused, 1681
+    // passes (1697, 1698 ± 1 %).
+    for (nominal, tolerance, level, min, floor) in [
+        (2707, 10, 3, 2679, 2680),
+        (2708, 10, 3, 2680, 2680),
+        (1800, 100, 0, 1620, 1680),
+        (1697, 10, 0, 1680, 1680),
+    ] {
+        let err = bor_rail(nominal, tolerance, level).validate().unwrap_err();
+        assert_refusal(err.clone(), "DomainOutsideConsumer", Some("VDD_3V3"));
+        let text = err.to_string();
+        assert!(text.contains(&format!("the domain's {min} to ")), "{text}");
+        assert!(
+            text.contains(&format!("the consumer's floor of {floor} mV")),
+            "{text}"
+        );
+        assert!(
+            text.contains("Table 111") && text.contains(&format!("VBOR{level}")),
+            "{text}"
+        );
+    }
+    for (nominal, level) in [(2709, 3), (1698, 0)] {
+        assert_eq!(bor_rail(nominal, 10, level).validate(), Ok(()), "{nominal}");
+    }
+}
+
+// ------------------------------------------------- AET-WO-4220b: declared pin capacitance
+
+fn declared(femtofarads: u64) -> Option<aethelgard_ir::PinCapacitance> {
+    Some(aethelgard_ir::PinCapacitance {
+        declared: aethelgard_ir::DeclaredPinCapacitance {
+            femtofarads,
+            condition: "each pin at most UM10204's Ci".into(),
+            source: "UM10204 rev. 7.0 Table 10, p. 43".into(),
+        },
+    })
+}
+
+/// §1.2: a declaration within the parts table's own range (1 to 100 000 fF)
+/// is accepted on a device whose part cites no maximum (on I2C, from
+/// UM10204's `Ci` up); outside it, refused by name (step 14).
+#[test]
+fn a_declared_pin_capacitance_is_within_the_tables_range() {
+    for ff in [10_000, 12_000, 100_000] {
+        let mut spec = valid();
+        devs(&mut spec).i2c[0].pin_capacitance = declared(ff);
+        assert_eq!(spec.validate(), Ok(()), "{ff}");
+    }
+    for ff in [0, 100_001, u64::MAX] {
+        let e = refusal(|s| devs(s).i2c[1].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceOutOfRange", Some("U3"));
+        assert!(
+            e.to_string()
+                .contains(&format!("{ff} fF, not 1 to 100000 fF")),
+            "{e}"
+        );
+    }
+}
+
+/// Adversarial A1: on an I2C device a declaration below UM10204's `Ci`
+/// would lower the line's bound under what every undeclared I2C pin is
+/// counted at, by assertion alone; it is refused.
+#[test]
+fn an_i2c_declaration_never_falls_below_um10204_s_ci() {
+    for ff in [1, 5_000, 9_999] {
+        let e = refusal(|s| devs(s).i2c[0].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceBelowI2cCi", Some("U2"));
+        assert!(
+            e.to_string()
+                .contains(&format!("{ff} fF, below UM10204's Ci of 10000 fF")),
+            "{e}"
+        );
+    }
+}
+
+/// §1.2 (`AET-WO-4300c` D3): a part whose row cites a maximum is counted at
+/// it, and a declaration beside it, smaller or larger, is refused.
+#[test]
+fn a_declaration_never_stands_beside_a_cited_maximum() {
+    for ff in [1_000, 8_000, 20_000] {
+        let e = refusal(|s| devs(s).spi[0].pin_capacitance = declared(ff));
+        assert_refusal(e.clone(), "PinCapacitanceAlreadyCited", Some("U4"));
+        assert!(e.to_string().contains("cites a maximum of 8000 fF"), "{e}");
+    }
+}
+
+/// Step 2: a declaration's condition and source are each held to the
+/// repository's rule for a source, by path.
+#[test]
+fn a_declarations_texts_are_sources_by_path() {
+    for bad in [
+        "",
+        " ",
+        " lead",
+        "trail ",
+        "tab\there",
+        "µF",
+        &"x".repeat(201),
+    ] {
+        for (field, path) in [
+            (
+                "condition",
+                "i2c_devices[0].pin_capacitance.declared.condition",
+            ),
+            ("source", "i2c_devices[0].pin_capacitance.declared.source"),
+        ] {
+            let e = refusal(|s| {
+                let mut c = declared(10_000);
+                let d = &mut c.as_mut().unwrap().declared;
+                if field == "condition" {
+                    d.condition = bad.to_owned();
+                } else {
+                    d.source = bad.to_owned();
+                }
+                devs(s).i2c[0].pin_capacitance = c;
+            });
+            assert_eq!(e.kind(), "InvalidSource", "{bad:?}: {e}");
+            assert_eq!(e.path(), Some(path), "{bad:?}");
+        }
+    }
+    let e = refusal(|s| {
+        let mut c = declared(10_000);
+        c.as_mut().unwrap().declared.source = String::new();
+        devs(s).spi[0].pin_capacitance = c;
+    });
+    assert_eq!(
+        e.path(),
+        Some("spi_devices[0].pin_capacitance.declared.source")
+    );
+}
+
+/// Version 13: every device carries the key, `null` or a declaration, and
+/// nothing supplies it; a version-12 file is refused by its version, with
+/// or without the key; a declaration holds exactly its three fields.
+#[test]
+fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
+    let json = serde_json::to_value(valid()).unwrap();
+    for (list, i) in [("i2c_devices", 0), ("spi_devices", 0)] {
+        let mut v = json.clone();
+        v[list][i]
+            .as_object_mut()
+            .unwrap()
+            .remove("pin_capacitance");
+        assert!(
+            serde_json::from_value::<Specification>(v).is_err(),
+            "{list}"
+        );
+    }
+    let mut v = json.clone();
+    v["i2c_devices"][0]["pin_capacitance"] = serde_json::json!({"declared": {"femtofarads": 1, "condition": "c", "source": "s", "maximum": 1}});
+    assert!(serde_json::from_value::<Specification>(v).is_err());
+    let mut v = json.clone();
+    v["i2c_devices"][0]["pin_capacitance"] = serde_json::json!({"maximum_femtofarads": 1});
+    assert!(serde_json::from_value::<Specification>(v).is_err());
+    let mut v = json;
+    v["schema_version"] = 12.into();
+    let e = serde_json::from_value::<Specification>(v)
+        .unwrap()
+        .validate()
+        .unwrap_err();
+    assert!(
+        matches!(
+            e,
+            E::UnsupportedSchemaVersion {
+                version: 12,
+                expected: 13
+            }
+        ),
+        "{e}"
     );
 }
