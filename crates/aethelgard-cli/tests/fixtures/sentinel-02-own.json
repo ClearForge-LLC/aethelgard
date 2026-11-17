@@ -203,12 +203,12 @@
         },
         {
           "pin": "2",
-          "net": null,
+          "net": "CONSOLE_TX",
           "offboard": null
         },
         {
           "pin": "3",
-          "net": null,
+          "net": "CONSOLE_RX",
           "offboard": null
         },
         {
@@ -308,5 +308,29 @@
   "diff_pairs": [],
   "motor_outputs": [],
   "power": null,
-  "serial_ports": []
+  "serial_ports": [
+    {
+      "label": "CONSOLE",
+      "peripheral": null,
+      "tx": {
+        "net": "CONSOLE_TX",
+        "pin": null
+      },
+      "rx": {
+        "net": "CONSOLE_RX",
+        "pin": null
+      },
+      "role": "console",
+      "framing": {
+        "baud": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "inverted": false
+      },
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
+    }
+  ]
 }

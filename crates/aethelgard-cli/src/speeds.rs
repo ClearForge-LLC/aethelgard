@@ -114,9 +114,13 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
     let lines = pins
         .into_iter()
         .map(|p| {
+            // `AET-WO-4400b` D2: the speed judged is the one `solve` stored,
+            // which every generator reads; the board generator's own choice
+            // is held equal to it by a test, not here.
+            let stored = topology.pin_speeds.get(&p.net).copied();
             let mut v = json!({
                 "pin": p.pin, "net": p.net, "signal": p.signal,
-                "ospeedr": ospeedr(p.ospeedr),
+                "ospeedr": stored.map(ospeedr),
             });
             match p.check {
                 SpeedCheck::Judged {
@@ -124,13 +128,33 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
                     capacitance_femtofarads,
                     rise_time_ns,
                     row,
-                    fmax_hz,
                     ..
                 } => {
+                    // The stored speed's row, at the band and load the line
+                    // selects, and note 2's limit on a VBAT pin.
+                    let stored_row = stored.and_then(|s| {
+                        speeds_table.row(
+                            s,
+                            (row.vdd_min_millivolts, row.vdd_max_millivolts),
+                            row.load_picofarads,
+                        )
+                    });
+                    let row = stored_row.unwrap_or(row);
+                    let vbat = speeds_table.vbat_pins.contains(&p.pin);
+                    let fmax_hz = if vbat {
+                        row.fmax_hz.min(speeds_table.vbat_fmax_hz)
+                    } else {
+                        row.fmax_hz
+                    };
+                    let row_ok = stored_row.is_some_and(|r| {
+                        !r.requires_compensation_cell
+                            && u64::from(rise_time_ns) * 1000 >= u64::from(r.rise_fall_picoseconds)
+                    });
                     // `SolvedTopology::validate` puts every solved SCK and
                     // MOSI on a solved controller; a line that is not fails.
                     let (holds, rates) = judge_line(&topology, &p.net, fmax_hz)
                         .unwrap_or_else(|| (false, json!({"verdict": "fail", "controller": null})));
+                    let holds = holds && row_ok;
                     ok &= holds;
                     v["judged"] = json!({
                         "vdd_min_millivolts": vdd_min_millivolts,
@@ -145,7 +169,15 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
                         j.extend(r);
                     }
                 }
-                SpeedCheck::OutOfScope { reason } => v["out_of_scope"] = reason.into(),
+                SpeedCheck::OutOfScope { reason } => {
+                    // Out of scope takes the slowest speed (`AET-WO-4300c`
+                    // D1); a faster stored one is not this check's to pass.
+                    if stored != Some(0) {
+                        ok = false;
+                        v["verdict"] = "fail".into();
+                    }
+                    v["out_of_scope"] = reason.into();
+                }
             }
             v
         })

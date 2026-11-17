@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PUBLISHED: [&str; 10] = [
+const PUBLISHED: [&str; 11] = [
     "crates/aethelgard-ir",
     // Our own symbols and footprints (`AET-WO-4220b`) are MIT OR Apache-2.0.
     "crates/aethelgard-kicad-lib",
@@ -15,6 +15,7 @@ const PUBLISHED: [&str; 10] = [
     "crates/aethelgard-chaos",
     "crates/aethelgard-evolve",
     "crates/aethelgard-pincheck",
+    "crates/aethelgard-hwdef",
     "crates/aethelgard-cli",
     "models/renode",
 ];

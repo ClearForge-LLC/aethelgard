@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "748aee013e7a9731382ac1997400f6cca5ab5180952a8bb2892f8b0f68fb0cd2";
+const PARTS_SHA256: &str = "5bcfe2a8b7ff71297d56ab18736c4c03e91570c8337e226cbd90a3cd6213df20";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -215,8 +215,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_to_6_and_8() {
-    for version in [2, 3, 4, 5, 6, 8] {
+fn refuses_schema_version_2_to_7_and_9() {
+    for version in [2, 3, 4, 5, 6, 7, 9] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -503,7 +503,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 7, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 8, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -554,7 +554,10 @@ fn refuses_a_malformed_flash_identity() {
     // The edges of the capacity codes are accepted.
     for value in ["0xEF4010", "0xEF4019"] {
         let mut doc = embedded();
-        doc.pointer_mut(&at("W25Q64JVxIQ")).unwrap()["identity"]["value"] = value.into();
+        let row = doc.pointer_mut(&at("W25Q64JVxIQ")).unwrap();
+        row["identity"]["value"] = value.into();
+        // The ArduPilot column's ID follows the identity (`AET-WO-4400b` D4).
+        row["ardupilot"]["id"] = value.into();
         assert!(parse_parts(&doc.to_string()).is_ok(), "{value}");
     }
 }
@@ -1165,4 +1168,122 @@ fn a_cited_typical_pin_capacitance_is_held_and_bounded() {
         p["pin_capacitance"]["typical_femtofarads"] = 8_001.into();
     });
     assert_refused(&err, Some("W25Q64JVxIQ"), "typical_femtofarads");
+}
+
+// ---- schema 8 (`AET-WO-4400b` D4) ---------------------------------------------
+
+/// The `ardupilot` column: the chip ID it cites must be the part's own
+/// identity value, so a row that writes down the driver's true ID (TMP119's
+/// 0x2117 for a TMP117) is refused at load. That the cited driver accepts it
+/// rests on the citation (adversarial A8).
+#[test]
+fn an_ardupilot_id_other_than_the_identity_is_refused() {
+    // The BMP280's own ID, which the same driver also accepts, is still not
+    // the BME280's.
+    let err = refused_entry("BME280", |p| p["ardupilot"]["id"] = "0x58".into());
+    assert_refused(
+        &err,
+        Some("BME280"),
+        "ArduPilot's driver would refuse the chip",
+    );
+    let err = refused_entry("ICM42688P", |p| p["ardupilot"]["id"] = "0xDB".into());
+    assert_refused(&err, Some("ICM42688P"), "ardupilot.id");
+    // TMP117 has no row: ArduPilot's TMP119 driver wants 0x2117, not 0x0117.
+    let err = refused_entry("TMP117", |p| {
+        p["ardupilot"] = json!({"kind": "baro", "driver": "TMP119", "spidev": null, "id": "0x2117",
+            "at": p["citations"]["identity"].clone()});
+    });
+    assert_refused(
+        &err,
+        Some("TMP117"),
+        "ArduPilot's driver would refuse the chip",
+    );
+}
+
+/// Each shape rule of the column is refused by name: an unknown kind, a
+/// driver on a dataflash or missing on a barometer, an SPI name on an I2C
+/// part or missing on an SPI part, an upper-case SPI name, an IMU on I2C, and
+/// a missing key (`null` is "no line").
+#[test]
+fn a_malformed_ardupilot_column_is_refused_by_name() {
+    type Case = (&'static str, fn(&mut Value), &'static str);
+    let cases: [Case; 8] = [
+        (
+            "BME280",
+            |p| p["ardupilot"]["kind"] = "compass".into(),
+            "ardupilot.kind",
+        ),
+        (
+            "W25Q64JVxIQ",
+            |p| p["ardupilot"]["driver"] = "JEDEC".into(),
+            "ardupilot.driver",
+        ),
+        (
+            "BMP581",
+            |p| p["ardupilot"]["driver"] = Value::Null,
+            "ardupilot.driver",
+        ),
+        (
+            "BME280",
+            |p| p["ardupilot"]["spidev"] = "baro".into(),
+            "ardupilot.spidev",
+        ),
+        (
+            "ICM42688P",
+            |p| p["ardupilot"]["spidev"] = Value::Null,
+            "ardupilot.spidev",
+        ),
+        (
+            "ICM42688P",
+            |p| p["ardupilot"]["spidev"] = "ICM42688".into(),
+            "not lower case",
+        ),
+        (
+            "BME280",
+            |p| p["ardupilot"]["kind"] = "imu".into(),
+            "I2C part",
+        ),
+        (
+            "BME280",
+            |p| {
+                p.as_object_mut().unwrap().remove("ardupilot");
+            },
+            "missing field `ardupilot`",
+        ),
+    ];
+    for (part, mutate, field) in cases {
+        let err = refused_entry(part, mutate);
+        assert_refused(&err, Some(part), field);
+    }
+}
+
+/// The rows the generated boards read, as cited at `Copter-4.7.2`.
+#[test]
+fn the_ardupilot_rows_are_the_cited_ones() {
+    use aethelgard_ir::parts::ArduPilotKind as K;
+    let t = table().unwrap();
+    let row = |p: &str| t.get(p).unwrap().ardupilot.clone();
+    let a = row("BME280").unwrap();
+    assert_eq!(
+        (a.kind, a.driver.as_deref(), a.spidev, a.id),
+        (K::Baro, Some("BMP280"), None, 0x60)
+    );
+    let a = row("BMP581").unwrap();
+    assert_eq!(
+        (a.kind, a.driver.as_deref(), a.id),
+        (K::Baro, Some("BMP581"), 0x50)
+    );
+    let a = row("ICM42688P").unwrap();
+    assert_eq!(
+        (a.kind, a.driver.as_deref(), a.spidev.as_deref(), a.id),
+        (K::Imu, Some("Invensensev3"), Some("icm42688"), 0x47)
+    );
+    let a = row("W25Q64JVxIQ").unwrap();
+    assert_eq!(
+        (a.kind, a.driver, a.spidev.as_deref(), a.id),
+        (K::Dataflash, None, Some("dataflash"), 0xEF_4017)
+    );
+    for p in ["TMP117", "ICM20948", "ICP10111"] {
+        assert_eq!(row(p), None, "{p}");
+    }
 }

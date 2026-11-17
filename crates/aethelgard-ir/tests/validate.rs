@@ -1152,6 +1152,14 @@ fn solved() -> SolvedTopology {
         )]
         .into(),
         bor_level: 0,
+        mcu: "STM32H753ZITx".into(),
+        pin_speeds: [
+            ("FLASH_CS".to_owned(), 0),
+            ("I2C_SCL".to_owned(), 0),
+            ("I2C_SDA".to_owned(), 0),
+            ("SPI_SCK".to_owned(), 0),
+        ]
+        .into(),
     }
 }
 
@@ -1215,9 +1223,10 @@ fn solved_refuses_version_and_hash() {
     // (`AET-WO-4300c`), 4 the file before `clock` and `motor_outputs`
     // (`AET-WO-4300a`), 5 the file before `power` (`AET-WO-4300d`), 6 the
     // file before `serial_ports` (`AET-WO-4300b`), 7 the file before
-    // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 9 one
-    // this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 9] {
+    // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 8 the
+    // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 10 one this build
+    // does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -2510,6 +2519,7 @@ fn a_peripheral_s_lines_share_one_label_and_one_rate() {
             },
         );
         t.spi_lines.insert("SPI_MOSI".to_owned(), spi_line("MOSI"));
+        t.pin_speeds.insert("SPI_MOSI".to_owned(), 0);
         assert_eq!(t.validate(), Ok(()));
         forge(&mut t);
         assert_eq!(t.validate().unwrap_err().kind(), "SpiLineMismatch");
@@ -3333,6 +3343,31 @@ fn aet_1208_without_a_tree_the_mcu_rail_is_held_above_its_bor_floor() {
     for (nominal, level) in [(2709, 3), (1698, 0)] {
         assert_eq!(bor_rail(nominal, 10, level).validate(), Ok(()), "{nominal}");
     }
+}
+
+/// `AET-WO-4400b` D2: `pin_speeds` holds exactly the nets of `assignments`
+/// and `gpio`, each `0` or `1`; a stray net, a missing one and a value of
+/// `2` or `3` are each refused by name.
+#[test]
+fn pin_speeds_hold_every_solved_pin_once_at_0_or_1() {
+    assert_eq!(solved().validate(), Ok(()));
+    let err = solved_refusal(|t| {
+        t.pin_speeds.remove("FLASH_CS");
+    });
+    assert_refusal(err, "PinSpeedMismatch", Some("FLASH_CS"));
+    let err = solved_refusal(|t| {
+        t.pin_speeds.insert("GHOST".to_owned(), 0);
+    });
+    assert_refusal(err, "PinSpeedMismatch", Some("GHOST"));
+    for v in [2, 3] {
+        let err = solved_refusal(|t| {
+            t.pin_speeds.insert("I2C_SCL".to_owned(), v);
+        });
+        assert_refusal(err, "PinSpeedMismatch", Some("I2C_SCL"));
+    }
+    let mut t = solved();
+    t.pin_speeds.insert("SPI_SCK".to_owned(), 1);
+    assert_eq!(t.validate(), Ok(()));
 }
 
 // ------------------------------------------------- AET-WO-4220b: declared pin capacitance

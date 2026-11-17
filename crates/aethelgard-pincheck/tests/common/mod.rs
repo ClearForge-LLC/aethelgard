@@ -49,14 +49,33 @@ pub struct Elf {
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
 /// GPIOA `MODER` `0x0000A801` (PA0 output, PA5–PA7 alternate) on AF5; PB6 and
 /// PB7 alternate on AF4; PD8 and PD9 alternate on AF7. Every other pin input.
+/// The drive is what the topology implies (`AET-WO-4400b` §1.3): PB6 and PB7
+/// open-drain (`OTYPER` B `0xC0`), PA5 and PA7 at the stored `01` (`OSPEEDR`
+/// A `0x4400`), every other field 0. [`step_g_defaults`] is the drive
+/// ArduPilot gives a hand-written step G instead.
 pub fn step_g_words() -> [[u32; 7]; 11] {
     let mut w = [[0u32; 7]; 11];
     w[0][0] = 0x0000_A801;
+    w[0][2] = 0x0000_4400;
     w[0][5] = 0x5550_0000;
     w[1][0] = 0x0000_A000;
+    w[1][1] = 0x0000_00C0;
     w[1][5] = 0x4400_0000;
     w[3][0] = 0x000A_0000;
     w[3][6] = 0x0000_0077;
+    w
+}
+
+/// Step G with ArduPilot's own defaults, as `4400a` §2.4 measured them on
+/// the CI ELF: every `OSPEEDR` `10` (`0xAAAAAAAA`), and pull-ups on PA0 (a CS)
+/// and on PD8 and PD9 (a USART).
+pub fn step_g_defaults() -> [[u32; 7]; 11] {
+    let mut w = step_g_words();
+    for port in &mut w {
+        port[2] = 0xAAAA_AAAA;
+    }
+    w[0][3] = 0x0000_0001;
+    w[3][3] = 0x0005_0000;
     w
 }
 

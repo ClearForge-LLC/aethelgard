@@ -6285,6 +6285,8 @@ mod tests {
                 },
             )]),
             bor_level: 0,
+            mcu: "STM32H753ZITx".into(),
+            pin_speeds: BTreeMap::from([("CS".into(), 0), ("SCL".into(), 0), ("SDA".into(), 0)]),
         }
     }
 
@@ -6494,6 +6496,7 @@ mod tests {
         let mut s = solved();
         s.assignments
             .insert("SMBA".into(), assign("PB5", "I2C1", "I2C1_SMBA", 4));
+        s.pin_speeds.insert("SMBA".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "UnsupportedSignal");
 
         let mut s = solved();
@@ -6515,6 +6518,7 @@ mod tests {
 
         let mut s = solved();
         s.gpio.insert("SWDIO".into(), "PA13".into());
+        s.pin_speeds.insert("SWDIO".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "ReservedPin");
 
         let mut s = solved();
@@ -6523,10 +6527,12 @@ mod tests {
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PB16".into());
+        s.pin_speeds.insert("CS2".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "InvalidPin");
 
         let mut s = solved();
         s.gpio.insert("CS2".into(), "PK15".into());
+        s.pin_speeds.insert("CS2".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "UnknownPin");
 
         for name in ["", "Board", "b_1", "-b", "b-", "b--c", "1b"] {
@@ -6883,6 +6889,12 @@ mod tests {
             line.rate_hz = 80_000_001;
         }
         s.derive_controllers();
+        // `derive_controllers` leaves out a speed no row serves; the stored
+        // value is not this test's point, the board generator's refusal is
+        // (`AET-WO-4400b` D2).
+        for net in ["SCK", "MOSI"] {
+            s.pin_speeds.insert(net.into(), 0);
+        }
         let err = generate("b", &s, &table()).unwrap_err();
         assert_eq!(err.kind(), "RateAbovePinSpeed", "{err}");
         assert!(err.to_string().contains("`MOSI` on `PA7`"), "{err}");
@@ -7025,6 +7037,7 @@ mod tests {
     fn a_bus_without_devices_keeps_its_init_and_has_no_transfer() {
         let mut s = with_spi(&[]);
         s.gpio.insert("CS".into(), "PA0".into());
+        s.pin_speeds.insert("CS".into(), 0);
         let files = generate("b", &s, &table()).unwrap();
         let lib = &files["src/board.rs"];
         let init = block(lib, "impl Spi1<Clocked> {");
@@ -7211,6 +7224,16 @@ mod tests {
                     error_ppm: serial::error_ppm(kernel, brr, framing.baud),
                 },
             );
+        }
+        // Every pin a stored speed (`AET-WO-4400b` D2): no line here is SPI.
+        let nets: Vec<String> = solved
+            .assignments
+            .keys()
+            .chain(solved.gpio.keys())
+            .cloned()
+            .collect();
+        for net in nets {
+            solved.pin_speeds.entry(net).or_insert(0);
         }
         solved
     }
