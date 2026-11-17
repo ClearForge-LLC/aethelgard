@@ -380,3 +380,13 @@ Two reds on 8c48ba6d.
 - fmt and host clippy pass.
 - `cargo test --workspace`: 131 binaries and 2,160 tests pass. The one failure is `bench_board_tier1`'s package binding, still the AWAITING-PACKAGE step.
 - In the tools image: clippy with tier 2 passes; `verify_2k2_tier2` passes 2/2 (1114 s); `with_tools` passes 32/32.
+
+**Main 35293c4 (3402, 4400c2) merged** (architect, 15:58 UTC: this order's package turn). There was one conflict, `svd-hal/tests/order_2203.rs`'s two platform pins, which both sides moved:
+- The pins are taken on the merge: `6f7b2db1…dd35` and `fc22c2c0…ccfa`.
+- Putting the version-15 specification's sha256 back for the new in each text gives 4400c2's `b2bc0dcf…d676` and `bfa37e13…ae21` exactly (measured). The two changes stack, and nothing else moved.
+- Swept again: main's version-15 hash prefixes appear only in comments that record them.
+
+Gates on the merge:
+- fmt and host clippy pass.
+- `cargo test --workspace`: 2,167 tests pass. The one failure is `bench_board_tier1`'s package binding, the AWAITING-PACKAGE step.
+- In the tools image: clippy with tier 2 passes; `verify_2k2_tier2` passes 2/2 (1168 s); `with_tools` passes 32/32.
