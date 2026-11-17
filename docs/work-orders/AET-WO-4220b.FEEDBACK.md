@@ -124,3 +124,25 @@ Done in two ways: by me, and by a fresh adversary (Opus) given the code and the 
 - Tier 2 in the image: `board_tier2`'s new test passes in 6.5 s (measured). It is weighed at 18.116 s in `ci/test-weights.tsv`, a Furnace estimate times 2.8 as `1310`'s was, until the refit rule measures it. `TIER2_MIN` is 161.
 - CI: see the PR.
 - Reduction pass (diff): −1 line net · 1 duplicate removed (`own_board_tier1`'s board read) · 0 dead paths removed · 1 protected kept (the citation tables in `own_parts.rs`, which restate the footprints by design: a test derived from the files would be consistency, not judgement, `RUL-20`) · 0 findings below.
+
+## 7. Follow-up: the H2 floor (ruled on #192, Q2; `wo/aet-4220b-floor` from `70d1621`)
+
+The architect's note: `~/.cache/aet-4220b-floor-from-architect.md`.
+
+- **Old behaviour first** [measured, `~/.cache/aet-4220b/floor-red.log`]. Two tests were committed red on `70d1621` (`49dcca9`):
+  - `own_board_tier1`'s `a_declaration_below_the_parts_cited_typical_is_refused`: the adversary's `ext_flip` case, the fixture with the IMU budgets at 20 pF. U5 declared at 1 fF passed `extract` with exit 0 on the same board where 10 pF fails.
+  - `validate`'s `a_declaration_never_falls_below_the_parts_cited_typical`: a 1 fF declaration validated.
+- **Built.**
+  - `parts.json` schema 7. Each row's `pin_capacitance` requires `typical_femtofarads`: the typical the datasheet prints, under the row's existing `citations.pin_capacitance`, or `null`. It is 1 fF to the ceiling and never above the row's maximum.
+  - `validate` step 14 refuses a declaration below it on any bus: `PinCapacitanceBelowTypical`, naming the device and citing the row.
+  - The typical floors a declaration; it is never a bound, and `extract` is unchanged.
+  - Both tests are now green, and so is the adversary's own `specs/flip1.json`: refused by `validate` and by `extract` (measured).
+  - One mutant (the comparison neutralised) is killed by the floor test.
+- **Typicals held, read from each row's own citation text**, which earlier work orders read at source:
+  - ICM-42688-P and ICM-20948: C_I "< 10" pF TYP, held as 10 000 fF (the printed figure; "<" makes it a ceiling on the typical, and the floor takes it as written);
+  - TMP117: 4 pF typical (6.5).
+- **One premise did not hold: the BMP581 prints no typical.** The note says "the BMP581's from its own table", but the held reading (R1, and the row's citation: "tables 4, 5, 6 and 17, pp. 10-13 and 31: no pin or input capacitance is printed") finds no pin capacitance at all. Its typical is `null`. Its declaration is still floored at UM10204's `Ci` by A1, because it is on I2C. The BME280, ICP10111 and W25Q64JV print none either.
+- **Coordination.** 4400b (#189) also takes parts schema 7, and the second to merge renumbers; its inbox has the note. The specification version is unchanged at 13.
+- **Gates.** fmt, clippy and `cargo test --workspace` pass (measured: 119 result lines, none failed). No tier-2 test changes, so `TIER2_MIN` stays 161.
+- **A note on #192's CI (measured), for the shard clause.** Every tools-shard job on #192's head ran 22 to 35 minutes start to end (test steps 19 to 31). `main`'s own last three runs (`bdf7ac0`, `36e428b`, `c7c5ab4`) ran 20 to 34, so the over-20 is `main`'s baseline. This branch adds no tier-2 test. The refit is `ci/shard.sh`'s rule and the architect's (its interim ruling: eight shards, judged by the measurement clause).
+- **READY** (2026-11-17). CI is green on `cdfe86b`, PR #193: every check, the eight tools shards and the tier-2 aggregate (`TIER2_MIN` 161) included. Scratch trees are removed, and the token is revoked after each use. The PR is left unmerged, and nothing more is pushed unless asked.

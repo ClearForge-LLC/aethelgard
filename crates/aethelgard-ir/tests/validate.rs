@@ -3480,3 +3480,32 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
         "{e}"
     );
 }
+
+/// `AET-WO-4220b` H2 (ruled on #192, Q2): on any bus, a declaration below
+/// the part's cited typical (`parts.json` `pin_capacitance.typical_femtofarads`)
+/// is refused by name, citing the row; at or above it, accepted.
+#[test]
+fn a_declaration_never_falls_below_the_parts_cited_typical() {
+    // The flash becomes an ICM-42688-P, so its `nrnd` acknowledgement goes.
+    let icm = |s: &mut Specification, ff: u64| {
+        s.accept_lifecycle.clear();
+        let mut d = devs(s);
+        d.spi[0].part = "ICM42688P".into();
+        d.spi[0].pin_capacitance = declared(ff);
+    };
+    for ff in [1, 9_999] {
+        let e = refusal(|s| icm(s, ff));
+        assert_refusal(e.clone(), "PinCapacitanceBelowTypical", Some("U4"));
+        assert!(
+            e.to_string().contains(&format!(
+                "{ff} fF, below the typical of 10000 fF its part `ICM42688P` cites"
+            )) && e.to_string().contains("DS-000347"),
+            "{e}"
+        );
+    }
+    for ff in [10_000, 20_000] {
+        let mut spec = valid();
+        icm(&mut spec, ff);
+        assert_eq!(spec.validate(), Ok(()), "{ff}");
+    }
+}
