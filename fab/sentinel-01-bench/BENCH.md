@@ -116,7 +116,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 - **Instrument:** the scope on TP11 (EXT_SCL, 10 kΩ), J4 empty.
 - **Method:**
   1. Over SWD, start an address phase on I2C2 (`CR2`: a 7-bit address with no device, `START`). The H7 clocks nine SCL pulses and gets a NACK.
-  2. `TIMINGR` is `0x50D32A40` at a 64 MHz HSI kernel clock (the solved topology): PRESC 5 (93.75 ns), so SCLH is 43 × 93.75 ns = **4.031 µs**.
+  2. I2C2's `TIMINGR` is `0x50D32A40` (EXT, 100 kHz, `Standard100k`; unchanged by `AET-WO-3402` §1.3, which moves only I2C1) at a 64 MHz HSI kernel clock (the solved topology): PRESC 5 (93.75 ns), so SCLH is 43 × 93.75 ns = **4.031 µs**.
   3. Find the voltage `V_th` on SCL's rising edge from which the high phase lasts 4.031 µs, with HSI's stated −2.6 %/+1.5 % taken into account.
 - **Pass:** `V_th` is within **1.7 ± 0.2 V**, and SCL's slow edge (about 0.5 µs at 10 kΩ) makes the high phase measurably shorter than 4.031 µs when timed from 0.7·VDD.
 - **On a disagreement:** the northstar §2 row is revised with our copper's figure, and the twin's controller-timing note (roadmap §7.1) with it.

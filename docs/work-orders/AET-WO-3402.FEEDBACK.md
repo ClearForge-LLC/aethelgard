@@ -6,6 +6,8 @@ Labels: **[measured]**, **[read at source]**, **[inferred]**.
 
 ## 0. Status: STOPPED at §1.3, as the work order's cadence asks
 
+**Superseded by the ruling (PR #203, comment 6944745635): the current state is §8–§9.** §1.3 is built as ruled, one GND pad, and the package is awaiting the architect's `bench-package` write. Sections 0–7 below are the STOP record as signalled.
+
 - **§1.1** (GND exempt from `TestPointNetRepeated`) and **§1.2** (the ledger rows in `FAB-NOTES.md`) are built and gated (§2, §3).
 - **§1.3** (each I2C peripheral at its own bus's speed) was prototyped, measured and **not committed**. The prototype is kept as a patch for after the ruling, at `~/.cache/aet-3402/s13-prototype.patch`.
 - **§4 holds the three answers the work order asks for:**
@@ -204,9 +206,22 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
 
 **Gates:**
 - after merging `26e4c62`: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` 2073 passed, 0 failed.
-- The package is written by CI (below).
+- **In the pinned image** (`capped-run`, the same commands as CI's `bench-package` job):
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` 0; the CLI and the bridge build.
+  - `verify --fab-out` on `examples/sentinel-01.json` with the job's five scenarios **passes** (`fab.status` written, every precondition met, the harnesses proved with the bench board's new `Fast400k` covers).
+  - `verify --against-fab fab/sentinel-01-bench/package` **fails, as it must until the artifact is committed.** Exactly three files differ: `sentinel-01-bench.elf` (I2C1 boots at 400 kHz), `FAB-NOTES.md` (§1.2) and `MANIFEST.json`. The Gerbers, drill, placement and BOM are byte-identical, since the copper does not move.
+- The package committed is CI's, written in write mode after the architect's dispatch, not this local one: the MANIFEST verdict includes the sandbox line.
 
 **Reduction pass** (diff-sized): nothing removed. Each addition is a guard with a killed mutant, its test, or the prose that states it. The prototype's lowest-speed doc lines and the README's old rule were replaced, not kept beside the new ones.
+
+**Distances.** The ruling quoted 8.8/15.2 mm for J4 pin 4, which came from the second-GND variant in §5. `BENCH.md` B6 states **8.5/14.0 mm**, measured on the board as committed (one GND pad, outline 46.35 × 54.85 mm). TP1's 20.5/21.2 mm is the same on both.
+
+**B7 is unchanged:** it measures I2C2 (EXT), whose word stays `0x50D32A40`. Its step 2 now says so.
+
+**Other readers of `i2c_speeds`** [read at source]:
+- `cli/src/analog.rs` and `propose.rs` already read each bus's own speed.
+- `hwdef`'s minimum is ArduPilot's one global clock (`I2CDevice.cpp`), a different rule, and correct as it is.
+- Nothing else picked a speed for a peripheral.
 
 **Next, as ruled:**
 1. This push is `AWAITING-PACKAGE`.
