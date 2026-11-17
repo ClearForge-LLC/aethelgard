@@ -175,3 +175,11 @@ Builder: Claude (Opus 5.5), worktree `~/aethelgard-1312`, branch `wo/aet-1312-be
 
   Neither is in `RUL-03`'s text, which rules the strict reader's refusals in general. Is the square acceptable, or should the test pad's courtyard be refused and a pad with a rectangular courtyard chosen instead?
 - **Order with `4220b`:** done. It merged first, and this work order is specification 14 (§2).
+
+## 7. Status
+
+**READY.** CI is green on e34f0f5, the head before this commit, which is main at 2b43672 merged in: 22 of 22 jobs pass, and `tier2_tests_passed=162 floor=162`.
+- This commit adds only this section. Nothing is pushed after it unless the architect asks.
+- The open items for the architect are §6: Q1 (optional or required fields), Q2 (the `extract` condition, in the CLI's fence), Q3 (`spike/3400` at version 12), Q4 (the BOOT0 pull-down on every board) and Q5 (`RUL-03` and the circular courtyard), plus P1's deviation.
+- The PR title and body are in `~/.cache/aet-1312/pr-title-body.md`.
+- Scratch trees are removed. Kept, being small and cited above: `~/.cache/aet-1312/{tools,mut,adv-scratch,stats,v-base,v-new}` and `~/.cache/aet-ds/aet-1312/`.
