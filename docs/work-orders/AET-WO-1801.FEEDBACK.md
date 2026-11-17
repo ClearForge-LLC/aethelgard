@@ -168,3 +168,30 @@ All [measured].
 - **`main` `bdf7ac0` (docs #187) is merged in;** docs only.
 - **3401's note.** 3401 adds a second committed board crate, `boards/sentinel-01-bench`. Generated board crates do not carry the engine's version: at the trial bump, `the_committed_board_crate_is_exactly_the_generated_one` still passed. So that crate does not move at the bump either [measured on `boards/sentinel-01`; inferred for the bench board].
 - **Signal: STOPPED, ready to bump; window closed.** The bump waits on two things: the window, which opens after `2302` merges, and Q1, the `ci.yml` literals.
+
+## 8. The bump (window opened by the architect, 2026-11-17 01:35 UTC; rulings on #188)
+
+**Rulings:**
+- **Q1 yes:** the fence extends to `ci.yml`, and the packaging step reads the version once.
+- **Q2 yes:** the CLI README's examples go to 0.2.0.
+- **Q3 agreed:** the bridge stays 0.1.0.
+- **F18 and F4** are accepted as recorded, and F4's backlog row stays.
+
+**The bump commit `d084fe2`,** on top of `main` `bdf7ac0`:
+- **Golden bytes moved,** the same as the trial's (`git diff` against `local/1801-bump-trial` is empty for these three files):
+  - `Cargo.toml`: 10 lines;
+  - `Cargo.lock`: 10 entries;
+  - `crates/aethelgard-cli/tests/validate_cli.rs:222`.
+- **`.github/workflows/ci.yml`.** The packaging step reads `v` once from `cargo metadata` and refuses a value that is not `N.N.N`. It prints `ANSWER package_version=$v` and uses `$c-$v` where the five `0.1.0` were. The `--no-verify` comment now says why the flag stays after a publish. No `0.1.0` is left in the file.
+- **`crates/aethelgard-cli/README.md`.** The three example outputs at lines 462, 656 and 720 say 0.2.0. The bridge's digest on line 462 is untouched.
+- **Nothing else.** The bridge (`bridge/Cargo.toml`, `bridge/Cargo.lock`) stays 0.1.0.
+
+**Measured on Furnace at `d084fe2`:**
+- **CI's packaging step, run verbatim** (extracted from `ci.yml`, `RUNNER_TEMP` set): exit 0.
+  - It printed `ANSWER package_version=0.2.0`.
+  - Every crate packaged: ir 325 967, kicad-lib 33 732, renode-models 16 047, svd-hal 437 701, eda 205 418, twin 103 566, chaos 142 175, evolve 72 211, pincheck 32 207 and cli 680 438 bytes.
+  - The CLI built offline from the packages validated Sentinel-01: `{"ok":true,…`.
+- **`cargo publish --workspace --dry-run --locked`:** exit 0, ten `Uploading … v0.2.0` lines and ten `warning: aborting upload due to dry run`. No token exists on Furnace, and every publish command ran with `--dry-run`.
+- **Gates:** `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` exit 0; `cargo test --workspace` exit 0, no failure.
+
+**CI is the proof of the packaging step and of tier 2 at 0.2.0 (ruled),** recorded in the signal below.
