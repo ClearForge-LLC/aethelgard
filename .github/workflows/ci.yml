@@ -326,7 +326,11 @@ jobs:
       # completeness: every bit the reference writes, rebuilt from Renode's
       # access log of every peripheral, is covered by a ledger row), merged
       # after 159.
-      TIER2_MIN: "160"
+      # 161: plus 1 from AET-WO-1312 in board_tier2.rs (the bench board, with
+      # a test point on every net, BOOT0 and NRST on J2 and a reset switch,
+      # passes every gate at two and four layers); counted in the image
+      # (shard.sh parse, 161).
+      TIER2_MIN: "161"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
