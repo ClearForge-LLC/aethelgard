@@ -402,6 +402,7 @@ jobs:
         target/debug/aethelgard verify --spec examples/sentinel-01.json
         --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
         scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
+        scenarios/sentinel-01-bench/serial-rx-open-console.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
