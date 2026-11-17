@@ -523,7 +523,8 @@ mod tests {
                 "campaign",
                 "replay",
                 "attribute",
-                "propose"
+                "propose",
+                "doctor"
             ]
         );
     }
@@ -566,7 +567,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 20);
+        assert_eq!(all.len(), 21);
     }
 
     #[test]

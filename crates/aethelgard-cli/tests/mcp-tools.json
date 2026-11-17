@@ -1,0 +1,452 @@
+[
+  {
+    "description": "Validate one JSON Specification read from stdin, or from --file",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "Read the specification from this file instead of stdin",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "validate"
+  },
+  {
+    "description": "Solve one Specification's pins and print the SolvedTopology",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "The specification file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
+    "name": "solve"
+  },
+  {
+    "description": "Validate and solve one Specification, then write its KiCad schematic, bill of materials and placed board into a directory",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "The specification file",
+          "type": "string"
+        },
+        "out": {
+          "description": "The directory to write <project_name>.kicad_sch, <project_name>.bom.csv and <project_name>.kicad_pcb into; created if absent",
+          "type": "string"
+        }
+      },
+      "required": [
+        "file",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "emit"
+  },
+  {
+    "description": "Validate and solve one Specification, then write everything it produces into an empty or absent directory: kicad/ (as emit writes it), and board/, the board crate with its firmware crate in board/firmware/ and the Renode platform board/<project_name>.repl. Starts no process. With a subcommand, generate one artifact instead (hwdef)",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "out": {
+          "description": "The directory to write into; it must be empty or absent",
+          "type": "string"
+        },
+        "spec": {
+          "description": "The specification file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "generate"
+  },
+  {
+    "description": "Write ArduPilot's hwdef.dat for a SolvedTopology, from the topology and the parts tables alone (AET-WO-4400b). Starts no process",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "out": {
+          "description": "Where to write hwdef.dat; it must not exist",
+          "type": "string"
+        },
+        "topology": {
+          "description": "The SolvedTopology JSON",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topology",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "generate_hwdef"
+  },
+  {
+    "description": "Build a board crate's firmware/ crate offline for the part, in the sandbox, and print the verdict with the ELF's sha256",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "crate": {
+          "description": "The board crate directory, holding firmware/. It is copied, minus a top-level target/, and the copy is built",
+          "type": "string"
+        },
+        "out": {
+          "description": "Where to write the ELF; it must not exist",
+          "type": "string"
+        }
+      },
+      "required": [
+        "crate",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "build"
+  },
+  {
+    "description": "Regenerate everything from one Specification into scratch, run every gate on exactly those bytes, and print one verdict naming every artifact's hash and every gate's result",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "against": {
+          "description": "First compare this directory with the generated tree, byte for byte; any difference fails and no gate runs",
+          "type": "string"
+        },
+        "against-fab": {
+          "description": "Requires --scenarios. Derive the fabrication package again and compare it with this directory, file by file; any file that differs, is missing or is extra fails",
+          "type": "string"
+        },
+        "fab-out": {
+          "description": "Requires --scenarios (INV-03 counts the fault campaign). Only if every gate passes, write the fabrication package (Gerbers, drill, placement, BOM, firmware ELF, FAB-NOTES.md, MANIFEST.json) into this directory, which must be empty or absent; the verdict names every file's sha256",
+          "type": "string"
+        },
+        "scenarios": {
+          "description": "Fault scenarios whose base is --spec, run as campaign runs them",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "spec": {
+          "description": "The specification file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "name": "verify"
+  },
+  {
+    "description": "Bound each I2C line's capacitance, and each SPI bus's SCK and MOSI, from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "board": {
+          "description": "The routed .kicad_pcb file",
+          "type": "string"
+        },
+        "spec": {
+          "description": "The specification whose lines are judged",
+          "type": "string"
+        }
+      },
+      "required": [
+        "board",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "name": "extract"
+  },
+  {
+    "description": "KiCad's design rule check on a board (kicad-cli pcb drc)",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "board": {
+          "description": "The .kicad_pcb file",
+          "type": "string"
+        },
+        "schematic": {
+          "description": "Also check the board against this .kicad_sch (KiCad's schematic parity). It is copied beside the board and judged with it",
+          "type": "string"
+        },
+        "spec": {
+          "description": "Judge by the rules this specification declares, and first refuse a board that is not its declared board (copper layers, planes, thickness, through vias); without it, by KiCad's defaults. Either way the gate writes every rule file itself",
+          "type": "string"
+        }
+      },
+      "required": [
+        "board"
+      ],
+      "type": "object"
+    },
+    "name": "check_drc"
+  },
+  {
+    "description": "KiCad's electrical rule check on a schematic (kicad-cli sch erc)",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "schematic": {
+          "description": "The .kicad_sch file",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schematic"
+      ],
+      "type": "object"
+    },
+    "name": "check_erc"
+  },
+  {
+    "description": "The MCU's support network (AET-WO-4300g): KiCad's netlist of the schematic (kicad-cli sch export netlist) judged against the MCU's row and the specification, each bounded capacitor measured on the board. Never reads the emitter's choices",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "board": {
+          "description": "The .kicad_pcb file: where each pad sits, for the bounded distances",
+          "type": "string"
+        },
+        "schematic": {
+          "description": "The .kicad_sch file, whose netlist KiCad exports",
+          "type": "string"
+        },
+        "spec": {
+          "description": "The specification: the MCU's part and supply, its domains and its connectors",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schematic",
+        "board",
+        "spec"
+      ],
+      "type": "object"
+    },
+    "name": "check_support"
+  },
+  {
+    "description": "Judge what a linked STM32H753 firmware writes to its GPIO registers at reset (gpio_default_config in the ELF) against a SolvedTopology: forward, reverse and package. Starts no process",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "allow": {
+          "description": "A declared allow-list: pins outside the topology the firmware may configure, each exactly as declared, and why",
+          "type": "string"
+        },
+        "elf": {
+          "description": "The linked firmware ELF (ELF32, little-endian, EM_ARM)",
+          "type": "string"
+        },
+        "hwdef-h": {
+          "description": "ArduPilot's generated hwdef.h: its VAL_GPIOx_MODER/AFRL/AFRH must equal the ELF's, or the check refuses",
+          "type": "string"
+        },
+        "topology": {
+          "description": "The SolvedTopology JSON the firmware was meant to realise",
+          "type": "string"
+        }
+      },
+      "required": [
+        "topology",
+        "elf"
+      ],
+      "type": "object"
+    },
+    "name": "check_pinout"
+  },
+  {
+    "description": "Each generated pin's output speed against DS12117 Table 149: SPI SCK and MOSI judged at their declared rate, supply and load; every other line named with why it is out of scope. No tool runs",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "spec": {
+          "description": "The specification",
+          "type": "string"
+        }
+      },
+      "required": [
+        "spec"
+      ],
+      "type": "object"
+    },
+    "name": "check_speeds"
+  },
+  {
+    "description": "Prove one Kani harness in a crate and print the verdict",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "crate": {
+          "description": "The crate directory. It is copied, minus a top-level target/, and the copy is judged",
+          "type": "string"
+        },
+        "harness": {
+          "description": "The harness to prove: its name, or its path such as proofs::add_in_range. It must name exactly one harness",
+          "type": "string"
+        },
+        "spec": {
+          "description": "The specification the crate is judged against: the verdict's harness_provenance is `generated` only when the crate is byte for byte the board crate `generate` writes for it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "crate",
+        "harness"
+      ],
+      "type": "object"
+    },
+    "name": "prove"
+  },
+  {
+    "description": "Load a platform in Renode, list the machine it built, and print the verdict",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "firmware": {
+          "description": "Boot this ELF on the platform and judge the boot by the specification. Needs --spec and --for",
+          "type": "string"
+        },
+        "for": {
+          "description": "The virtual time the boot runs: an integer with ns, us or ms, at most 100ms on every board, a whole number of 10 ns instructions. Needs --firmware",
+          "type": "string"
+        },
+        "platform": {
+          "description": "A .repl file, or @path inside Renode's own tree, such as @platforms/boards/nucleo_h753zi.repl. With --firmware, it must be exactly the platform emitted for --spec",
+          "type": "string"
+        },
+        "spec": {
+          "description": "The specification the boot is judged by. Needs --firmware",
+          "type": "string"
+        }
+      },
+      "required": [
+        "platform"
+      ],
+      "type": "object"
+    },
+    "name": "simulate"
+  },
+  {
+    "description": "Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "description": "The archive directory; each run is a new directory inside it, named by its run id",
+          "type": "string"
+        },
+        "firmware": {
+          "description": "The firmware ELF every scenario boots",
+          "type": "string"
+        },
+        "scenarios": {
+          "description": "The scenario files, run in the order given. Each names its base specification relative to its own directory, inside the current directory",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "scenarios",
+        "firmware",
+        "archive"
+      ],
+      "type": "object"
+    },
+    "name": "campaign"
+  },
+  {
+    "description": "Replay one archived campaign run from its trace alone, and print its state-sequence hash",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "description": "The run directory",
+          "type": "string"
+        }
+      },
+      "required": [
+        "archive"
+      ],
+      "type": "object"
+    },
+    "name": "replay"
+  },
+  {
+    "description": "Attribute one archived campaign run to the electrical or the software half, from its trace alone, naming the rule and the evidence events",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "description": "The run directory",
+          "type": "string"
+        }
+      },
+      "required": [
+        "archive"
+      ],
+      "type": "object"
+    },
+    "name": "attribute"
+  },
+  {
+    "description": "Propose a specification change for one archived campaign run, from its attribution, and write it (or a generator report, or why nothing is proposed) into an empty directory. Never applies a change or edits a gate",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "archive": {
+          "description": "The run directory",
+          "type": "string"
+        },
+        "out": {
+          "description": "The directory to write proposal.json, and proposed-spec.json or generator-report.json, into; it must be empty or absent",
+          "type": "string"
+        },
+        "scenario": {
+          "description": "The scenario file the run ran: the same bytes, with its base resolved as campaign resolves it",
+          "type": "string"
+        }
+      },
+      "required": [
+        "archive",
+        "scenario",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "propose"
+  },
+  {
+    "description": "Report whether this host can run every subcommand: the binary's version, the sandbox the tools would run in, the scratch directory, and each external tool's version, naming each missing piece and the subcommands it blocks",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {},
+      "type": "object"
+    },
+    "name": "doctor"
+  }
+]

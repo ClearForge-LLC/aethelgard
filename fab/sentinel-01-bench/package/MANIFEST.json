@@ -47,7 +47,7 @@
   ],
   "verdict_sha256": "d29e8c70331f7e6d8b0d7f9c419a228404348216da1b97a372cbe9460f850dab",
   "files": {
-    "FAB-NOTES.md": "d2dba4726222c580a1770e055cd7aa1002239e772c147f22e6434999d426fe25",
+    "FAB-NOTES.md": "f19856544133f79bff61c5f108a458ef8905c1565f34a94614d5efb40b38e7ed",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
     "sentinel-01-bench-B_Mask.gbs": "8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4",
     "sentinel-01-bench-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",
@@ -57,6 +57,8 @@
     "sentinel-01-bench-F_Mask.gts": "77096eda672cf3062eedb19df7e41154ee55211383553cef517fb39559d88dcb",
     "sentinel-01-bench-F_Paste.gtp": "0a362a26f4846201a969a73f20e643d0a6a4852f2c1194f2c81022898832ebfb",
     "sentinel-01-bench-F_Silkscreen.gto": "3e9ac114da35117797f46be5a096f025a4c1857e665bbc95967dd982e4619cc2",
+    "sentinel-01-bench-jlcpcb-bom.csv": "4eeb2003abc70a49306cf8527cacd35ed855ef10f916d1fa58595405163cc901",
+    "sentinel-01-bench-jlcpcb-cpl.csv": "79a15775abbb2969e86a43a38a56ca561a04278560991e4c8390bbc41e45b920",
     "sentinel-01-bench-pos.csv": "185a6db011b3757aa74897c1c618bc197273b4cf06a8cb4b87c06f2166414c19",
     "sentinel-01-bench.bom.csv": "a0ff99dd7d61429f63d2f199cf3444d70c6cbc1b3a09771f3fa07621bc11747f",
     "sentinel-01-bench.drl": "099e9665d894813e1308cf755ab1afffdcd7b257a3e1a66ce2f4775be87ce2c8",

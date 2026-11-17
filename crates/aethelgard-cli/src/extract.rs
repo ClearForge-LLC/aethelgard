@@ -74,6 +74,39 @@ fn line(b: LineBound, declared: u64) -> Value {
     v
 }
 
+/// The footprint `emit` draws a test point with (`AET-WO-1312`): a bare pad.
+const TEST_PAD: &str = "TestPoint:TestPoint_Pad_D1.0mm";
+
+/// One condition per test pad on a bounded line (`AET-WO-1604` §1.5, `1312`
+/// Q2), in the lines' order, each line's pads by reference. The pads are
+/// read from the board judged, never from the specification (`RUL-16`):
+/// every footprint drawn as a test pad with a pad on the line's net. Its
+/// copper is in the bound, as every pad's is; a probe clipped to it is not.
+/// A line with no test pad, and a test pad on a net no line bounds, state
+/// nothing.
+fn probe_conditions(read: &bound::ReadBoard, lines: &[LineBound]) -> Vec<String> {
+    let mut out = Vec::new();
+    for b in lines {
+        for part in &read.board.parts {
+            let test_pad = read
+                .footprints
+                .get(&part.reference)
+                .is_some_and(|(library_id, _)| library_id == TEST_PAD);
+            let on_line = part
+                .pads
+                .iter()
+                .any(|p| p.net.as_deref() == Some(b.board_net.as_str()));
+            if test_pad && on_line {
+                out.push(format!(
+                    "`{}` is a test pad on `{}`: a probe clipped to it is an off-board load outside this bound, so a measured edge is compared with the bound plus the probe's own capacitance",
+                    part.reference, b.net
+                ));
+            }
+        }
+    }
+    out
+}
+
 /// `aethelgard extract --board <pcb> --spec <spec>`.
 pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     let (spec, spec_sha256) = match crate::read_spec(Some(spec_path)) {
@@ -105,7 +138,9 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
     };
     let stack = aethelgard_eda::stack::Stack::of(&spec);
-    let lines = match bound::read(text, &stack).and_then(|read| bound::bound(&read, &wanted)) {
+    let bounded = bound::read(text, &stack)
+        .and_then(|read| bound::bound(&read, &wanted).map(|lines| (read, lines)));
+    let (read, lines) = match bounded {
         Ok(l) => l,
         Err(r) => {
             return crate::emit(
@@ -143,6 +178,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         }
     }
     conditions.extend(bound::declared_conditions(&spec));
+    conditions.extend(probe_conditions(&read, &lines));
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
