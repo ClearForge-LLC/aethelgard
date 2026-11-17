@@ -11,7 +11,12 @@ The pinout check (`AET-WO-4400a`, ruling D7 on PR #130). It judges what a linked
 - **The topology, the package and the allow-list.** These give the expected values. The package is the solver's pin table, passed in by the caller. The allow-list is a declared file of pins outside the topology, each with its mode, its AF and why. The check holds no list of its own and never reads a `hwdef.dat` (`INV-07`).
 
 **What it judges.**
-- **forward:** every assignment's pin is alternate at the solved AF, and every `gpio` pin is an output.
+- **forward:** every assignment's pin is alternate at the solved AF, and every `gpio` pin is an output. Since `AET-WO-4400b` (§1.3), every topology pin's drive is also judged from the same bytes:
+  - **`OSPEEDR`** against the speed `solve` stored in `pin_speeds` (`WrongSpeed`);
+  - **`OTYPER`** open-drain exactly on the I2C lines, `aethelgard_ir::silicon::implied_open_drain` (`WrongOutputType`);
+  - **`PUPDR`** against `aethelgard_ir::silicon::implied_pupd`: pull-down on a motor output, no internal pull elsewhere (`WrongPull`).
+
+  The check reads the stored speed and calls these two rules. The generator calls neither, and stores nothing (`RUL-20`); a test in `aethelgard-hwdef` holds that. A topology with no stored speed for a pin is refused (`NoPinSpeed`), never judged as `00`.
 - **reverse:** every *configured* pin is named by the topology or the allow-list. An allowed pin is exactly as declared, and the allow-list may not name a topology pin.
 - **package:** every configured pin exists in the package.
 
@@ -24,12 +29,13 @@ The exception is a `DEFAULTGPIO` line before the `MCU` line, which sets every pi
 - which MCU the firmware was built for: an H743 or H757 image decodes like an H753;
 - a pin reconfigured at run time, including ArduPilot's `ALT(n)` sets (`HAL_PIN_ALT_CONFIG`);
 - a declared allow-list pin carrying a second copy of a topology signal;
-- `OTYPER`, `OSPEEDR`, `PUPDR` and `ODR`, which `AET-WO-4400b` judges against `4300c`'s solved speeds;
-- a pull resistor on an input;
+- `ODR`, and a pin's drive outside the topology: an allow-listed pin is judged on mode and AF only;
+- whether `hwdef.h`'s `OTYPER`, `OSPEEDR` and `PUPDR` agree with the ELF: the cross-check covers `MODER`, `AFRL` and `AFRH`;
+- a pull resistor on an input the topology does not name;
 - whether a driver uses the bus its line names.
 
-**Separation (D7).** This crate depends on `aethelgard-ir` alone. `tests/separation.rs` reads Cargo's resolve and fails if the check reaches any other workspace crate, or if anything but the CLI links it.
+**Separation (D7, `4400b` D8).** This crate depends on `aethelgard-ir` alone. `tests/separation.rs` reads Cargo's resolve and fails if the check reaches any other workspace crate, if anything but the CLI links it, or if the `hwdef.dat` generator (`aethelgard-hwdef`) reaches anything but `aethelgard-ir`.
 
-**Fixtures.** `fixtures/` holds the four `hwdef.dat` files of the `AET-WO-4400` spike: step G and the seeds `seed-pin`, `seed-af` and `seed-pkg`. They are this project's own. `step-g.allow.json` declares the USART3 pins step G needs. CI builds the four in the ArduPilot image and judges them (`.github/workflows/ardupilot-image.yml`). No ArduPilot binary is committed.
+**Fixtures.** `fixtures/` holds the four `hwdef.dat` files of the `AET-WO-4400` spike: step G and the seeds `seed-pin`, `seed-af` and `seed-pkg`. They are this project's own. `step-g.allow.json` declares the USART3 pins step G needs. CI builds the four in the ArduPilot image and judges them (`.github/workflows/ardupilot-image.yml`). They carry no speed or pull tokens, so since `4400b` each fails on ArduPilot's default speeds (`10`) and pull-ups beside its seed's own findings. The boards that pass are the three `aethelgard-hwdef` generates. No ArduPilot binary is committed.
 
 Licensed `MIT OR Apache-2.0`.
