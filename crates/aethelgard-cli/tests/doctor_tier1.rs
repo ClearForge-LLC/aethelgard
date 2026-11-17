@@ -457,3 +457,26 @@ fn doctor_takes_no_argument() {
         .unwrap();
     assert_eq!(out.status.code(), Some(64));
 }
+
+/// Each probe runs in a scratch of its own, as each subcommand's tool does:
+/// nothing one tool leaves in its `HOME` reaches the next probe.
+#[test]
+fn each_probe_has_a_scratch_of_its_own() {
+    let cli = cli(Some(USAGE_BRIDGE), true);
+    let tb = toolbox(&[
+        (
+            "kicad-cli",
+            Some("#!/bin/sh\n: > \"$HOME/planted\"\necho 10.0.7\n"),
+        ),
+        (
+            "renode",
+            Some(
+                "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; fi\n",
+            ),
+        ),
+    ]);
+    let tmp = private_tmp("doctor-own-scratch");
+    let (code, v) = doctor(&cli, &tb, &tmp.0);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(tool(&v, "renode")["version"], "Renode v1.17.0", "{v}");
+}

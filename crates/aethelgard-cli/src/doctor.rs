@@ -132,21 +132,15 @@ const KANI: [&str; 2] = ["prove", "verify"];
 /// `aethelgard doctor`.
 pub fn doctor() -> ExitCode {
     let mut missing = Vec::new();
-    let base = crate::scratch_base();
-    let scratch = match base {
-        Ok(_) => Scratch::new(),
-        Err(stop) => Err(stop),
-    };
-    let scratch = match scratch {
-        Ok(s) => Some(s),
+    let (scratch, sandbox, tools) = match crate::scratch_base() {
+        Ok(base) => {
+            let (sandbox, tools) = probe(&mut missing);
+            (Some(base.display().to_string()), sandbox, tools)
+        }
         Err(stop) => {
             note(&mut missing, Missing::of(stop, &TOOL_SUBCOMMANDS));
-            None
+            (None, None, unprobed())
         }
-    };
-    let (sandbox, tools) = match &scratch {
-        Some(s) => probe(s, &mut missing),
-        None => (None, unprobed()),
     };
     let ok = missing.is_empty();
     let report = Report {
@@ -154,14 +148,11 @@ pub fn doctor() -> ExitCode {
         verdict: if ok { "pass" } else { "fail" },
         check: "doctor",
         engine_version: env!("CARGO_PKG_VERSION"),
-        scratch: scratch
-            .as_ref()
-            .and_then(|s| s.root.parent().map(|p| p.display().to_string())),
+        scratch,
         sandbox,
         tools,
         missing,
     };
-    drop(scratch);
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })
 }
 
@@ -184,9 +175,27 @@ fn unprobed() -> Vec<ToolLine> {
     ]
 }
 
-/// The sandbox, then each tool, every probe in `scratch`.
-fn probe(scratch: &Scratch, missing: &mut Vec<Missing>) -> (Option<SandboxReport>, Vec<ToolLine>) {
-    let sandbox = match own(scratch) {
+/// A fresh scratch for one probe, as each subcommand makes one for its tool:
+/// nothing one probe's tool leaves in its `HOME` reaches another's, and root
+/// writes a tool's files (Renode's configuration) before that tool's
+/// directory is handed over, never after another tool had it.
+fn fresh(missing: &mut Vec<Missing>) -> Option<Scratch> {
+    match Scratch::new() {
+        Ok(s) => Some(s),
+        Err(stop) => {
+            note(missing, Missing::of(stop, &TOOL_SUBCOMMANDS));
+            None
+        }
+    }
+}
+
+/// The sandbox, then each tool, each probe in a scratch of its own.
+fn probe(missing: &mut Vec<Missing>) -> (Option<SandboxReport>, Vec<ToolLine>) {
+    let own = match fresh(missing) {
+        Some(scratch) => own(&scratch),
+        None => return (None, unprobed()),
+    };
+    let sandbox = match own {
         Ok(p) => Some(p.sandbox),
         Err(stop) => {
             // A layer that cannot be installed refuses every tool call; any
@@ -202,11 +211,11 @@ fn probe(scratch: &Scratch, missing: &mut Vec<Missing>) -> (Option<SandboxReport
         }
     };
     let tools = vec![
-        kicad_cli(scratch, missing),
-        renode(scratch, missing),
-        bridge(scratch, missing),
-        cargo(scratch, missing),
-        kani(scratch, missing),
+        kicad_cli(missing),
+        renode(missing),
+        bridge(missing),
+        cargo(missing),
+        kani(missing),
     ];
     (sandbox, tools)
 }
@@ -306,7 +315,7 @@ fn finish(
 const KICAD_PINNED: [&str; 3] = ["check drc", "check erc", "verify"];
 
 /// `kicad-cli version`, as `check drc` and `check erc` ask and pin it.
-fn kicad_cli(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
+fn kicad_cli(missing: &mut Vec<Missing>) -> ToolLine {
     let tool = match run::Tool::find("kicad-cli") {
         Ok(t) => t,
         Err(stop) => {
@@ -314,6 +323,10 @@ fn kicad_cli(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
             return absent("kicad-cli", None);
         }
     };
+    let Some(scratch) = fresh(missing) else {
+        return absent("kicad-cli", Some(&tool));
+    };
+    let scratch = &scratch;
     let probed = ran(invocation(
         scratch,
         &tool,
@@ -335,7 +348,7 @@ fn kicad_cli(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
 
 /// `renode --config <file> --version`, as `simulate` asks it, with its
 /// variables and grants; pinned as a boot pins it.
-fn renode(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
+fn renode(missing: &mut Vec<Missing>) -> ToolLine {
     let r = match crate::renode_tool() {
         Ok(r) => r,
         Err(stop) => {
@@ -343,6 +356,10 @@ fn renode(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
             return absent("renode", run::Tool::find("renode").ok().as_ref());
         }
     };
+    let Some(scratch) = fresh(missing) else {
+        return absent("renode", Some(&r.tool));
+    };
+    let scratch = &scratch;
     let probed = crate::renode_config(&scratch.tool).and_then(|config| {
         let mut args = run::args(["--config".as_ref(), config.as_os_str()]);
         args.push("--version".into());
@@ -369,7 +386,7 @@ fn renode(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
 /// the one this CLI was built with (`analog::identified`), then its usage,
 /// exit `2`. It links `libngspice.so.0`, so a bridge that printed anything
 /// was loaded with it.
-fn bridge(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
+fn bridge(missing: &mut Vec<Missing>) -> ToolLine {
     let tool = match analog::bridge() {
         Ok(t) => t,
         Err(stop) => {
@@ -377,6 +394,10 @@ fn bridge(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
             return absent(analog::BRIDGE, None);
         }
     };
+    let Some(scratch) = fresh(missing) else {
+        return absent(analog::BRIDGE, Some(&tool));
+    };
+    let scratch = &scratch;
     let probed = invocation(
         scratch,
         &tool,
@@ -436,12 +457,17 @@ fn identity(out: &run::Output) -> Result<String, Stop> {
 }
 
 /// `cargo --version`, with `build`'s variables and grants.
-fn cargo(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
+fn cargo(missing: &mut Vec<Missing>) -> ToolLine {
+    let found = || run::Tool::find("cargo").ok();
+    let Some(scratch) = fresh(missing) else {
+        return absent("cargo", found().as_ref());
+    };
+    let scratch = &scratch;
     let t = match firmware::toolchain(&scratch.tool.join("target")) {
-        Ok(t) => t,
+        Ok(v) => v,
         Err(stop) => {
             note(missing, Missing::of(stop, &CARGO));
-            return absent("cargo", run::Tool::find("cargo").ok().as_ref());
+            return absent("cargo", found().as_ref());
         }
     };
     let probed = ran(invocation(
@@ -463,12 +489,17 @@ fn cargo(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
 }
 
 /// `cargo kani --version`, with `prove`'s variables and grants.
-fn kani(scratch: &Scratch, missing: &mut Vec<Missing>) -> ToolLine {
+fn kani(missing: &mut Vec<Missing>) -> ToolLine {
+    let found = || run::Tool::find("cargo-kani").ok();
+    let Some(scratch) = fresh(missing) else {
+        return absent("cargo-kani", found().as_ref());
+    };
+    let scratch = &scratch;
     let k = match crate::kani_toolchain(&scratch.tool.join("target")) {
-        Ok(k) => k,
+        Ok(v) => v,
         Err(stop) => {
             note(missing, Missing::of(stop, &KANI));
-            return absent("cargo-kani", run::Tool::find("cargo-kani").ok().as_ref());
+            return absent("cargo-kani", found().as_ref());
         }
     };
     let probed = ran(invocation(
