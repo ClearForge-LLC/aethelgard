@@ -360,12 +360,16 @@ jobs:
       # 180: plus 1 from AET-WO-1313c in board_tier2.rs (each Sentinel-03
       # size sample passes every gate or is refused by name), merged after
       # 4400d's 179.
-      # 185: plus 5 from AET-WO-4220c in models_tier2.rs (the ICM-42688-P
+      # 183: plus 3 from AET-WO-4400e3 in twin_tier2.rs (the image's Renode
+      # is the build the RETTOBASE correction is for; the fixture's nested
+      # handler reads RETTOBASE 1 without it, and 0 with it, no other bit
+      # moving), merged after 1313c's 180.
+      # 188: plus 5 from AET-WO-4220c in models_tier2.rs (the ICM-42688-P
       # model's FIFO: fill rate in virtual time and packet bytes, the 1 kHz
       # timestamp step, STOP-on-FULL and the count's latch and order, packets
       # 1 and 2 and each selection left out, a big-endian packet with an
-      # invalid slot), merged after 180.
-      TIER2_MIN: "185"
+      # invalid slot), merged after 4400e3's 183.
+      TIER2_MIN: "188"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

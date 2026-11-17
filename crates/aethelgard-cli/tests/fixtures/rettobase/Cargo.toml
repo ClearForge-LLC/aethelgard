@@ -1,0 +1,16 @@
+# A test fixture, not a workspace member and not shipped: a firmware that nests two external
+# interrupts and records ICSR in each, the regression witness of the twin's RETTOBASE correction
+# (AET-WO-4400e3). Its own `[workspace]` keeps the repository root from claiming it; no
+# dependencies and no build script.
+[package]
+name = "aet-rettobase-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT OR Apache-2.0"
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
