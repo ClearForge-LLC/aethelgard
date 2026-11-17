@@ -138,4 +138,4 @@ From ST's facts and the solved topology alone (`RUL-16`). Each number is quoted 
 - **The build deletes it** (roadmap §6: a spike's build deletes it); FEEDBACK keeps the figures.
 - **§2's acceptance run uses `4400c`'s driver unchanged** (as merged with #202), not this one, which adds `PLATFORM` and injection.
 
-**STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D3. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.
+**STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D3. `main` at `7b1ce095` (#202) is merged in, and the scratch trees (7.1 GB) are removed. Title and body: `~/.cache/aet-4400c2/pr-title-body.md`.
