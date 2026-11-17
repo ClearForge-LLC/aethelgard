@@ -136,3 +136,24 @@ No bus runs faster than its declared speed (§5 adversarial). `silicon::check_ti
 - **Q1 (§1.3).** Build the prototype as measured, with no solved-schema field and the judge in `silicon_words.rs` given its own join? Or add a solved field (schema 10) that both read?
 - **Q2 (§1.4, F1).** The second GND pad cannot be placed near TP11–TP14 from the specification. (a) a placer rule, (b) a specification field, or (c) one GND pad and J4 pin 4 for B6's ground?
 - **Q3.** `cli/src/fab.rs`'s one line (§3) is in 1604's fence. Accept it here, or should 1604 carry it?
+
+## 8. After the ruling (PR #203, comment 6944745635): predictions, committed before any run
+
+**The ruling:**
+- **Q1:** build §1.3 as prototyped, with no schema field; `silicon_words.rs` gets its own join (never `bus_speed`, `RUL-20`); restate the lowest-speed unit test; run §5's adversarial cases.
+- **Q2 → (c):** one GND pad. `BENCH.md` B6 grounds at J4 pin 4 (EXT) and TP1 (SENSORS), with distances, the lead and one [inferred] line on edge rates. The second pad is dropped from §1.4; §1.1's exemption stays. The placer rule goes to the backlog (1313b).
+- **Q3:** the `cli/src/fab.rs` line stays here.
+
+**Predictions:**
+- **R1. The merge of `26e4c62`** (4400b2) conflicts at most in `svd-hal/src/board.rs`'s tests, where one test moved to `ir`. My patch touches `generate_with`, the error enum and a new `bus_speed`, not that test (70 %, no conflict).
+- **R2. After §1.3 and the re-bless,** exactly three files of `boards/sentinel-01-bench/` move (`src/board.rs`, `src/proofs.rs`, `firmware/src/main.rs`), as §4 measured. Nothing else committed moves: the reference board and the `svd-hal` ui goldens are byte-identical.
+- **R3. The tests:**
+  - with the judge's own join, `silicon_words.rs`'s two tests pass on every fixture, Sentinel-01 as ordered included;
+  - the restated unit test passes, with I2C1 at `Fast400k`/`FastPlus1M` admitted for a 1 MHz bus and I2C2 at `Standard100k` only;
+  - every other workspace test passes, except the package binding test (`bench_board_tier1`). Its committed package's specification hash still matches, since the example is unchanged, so **it passes too** (60 %). The per-PR test binds specification, topology, scenarios, its own manifest and `emit`'s BOM, none of which §1.3 moves.
+- **R4. The adversarial cases** (§5), each a tier-1 unit test in `svd-hal`:
+  - a peripheral carrying two buses' lines → `I2cBusUnresolved`;
+  - a bus with one line on another peripheral → `I2cBusUnresolved`;
+  - an I2C peripheral with no analog line → `I2cBusUnresolved`, or `InvalidTopology` from `validate` first, whichever comes first;
+  - no admitted mode is ever faster than its own bus's declared speed, checked over every fixture by `silicon_words.rs`'s judge.
+- **R5. `TIER2_MIN` stays 177:** no tier-2 test is added.
