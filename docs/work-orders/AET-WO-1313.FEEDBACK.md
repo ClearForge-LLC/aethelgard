@@ -289,3 +289,15 @@ Why:
   - Run first with `CARGO_TARGET_DIR` outside the worktree, `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named` fails with `BaseOutsideRoot`: its scratch then lies outside the repository. Run in place, it passes. This is an environmental note, not a defect.
 - **After merging `main` `d3a0aa3`** (4400b: parts schema 8, solved schema 9; `pcb.rs`, the router and `extract` unchanged), the fixture still validates and emits on a fresh build. CI runs the suite on the head.
 - The branch adds no engine code, so it moves no emitted byte.
+
+## 5. The build (§2), as ruled (PR #197, comment 6942817989)
+
+### 5.1 Predictions, committed before any build run [inferred]
+
+| # | Claim | Predicted |
+|---|---|---|
+| B1 | Every existing emitted file with no bound declared, before the version bump | byte-identical (the bound's code paths do not run) |
+| B2 | The bump to 15 | moves only specification hashes, as 1312's did |
+| B3 | The fixture (no `SPI_*`/`IMU_*` test pads, IMU_CS on PB12, bound 100 × 100) | **85.25 × 80.55 mm**, every gate passing at four layers with no finding (the spike's `rac` row on the no-SPI-pad probe) |
+| B4 | `emit` on the fixture | under 5 s on Furnace; the tier-2 test under 60 s |
+| B5 | A bound just above the keep-out sum | `validate` accepts it; `emit` refuses it with `OutlineUnreachable`, naming the outline reached, and writes nothing |
