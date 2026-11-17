@@ -55,6 +55,11 @@ pub struct Elf {
     /// ArduPilot's serial table, 44 bytes per SERIALn (`AET-WO-4400b2`),
     /// after `gpio_default_config` in the same section; `None` leaves it out.
     pub serial: Option<Vec<[u8; 44]>>,
+    /// Functions defined in `.rodata`'s section by name (`AET-WO-4400d`: an
+    /// IMU driver's probe), each appended to the string table.
+    pub functions: Vec<String>,
+    /// More `STT_OBJECT`s by name and address (an `SD<n>` beyond `SD1`).
+    pub objects: Vec<(String, u32)>,
 }
 
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
@@ -110,6 +115,8 @@ impl Default for Elf {
             crowd: None,
             unterminated: false,
             serial: None,
+            functions: Vec::new(),
+            objects: Vec::new(),
         }
     }
 }
@@ -179,6 +186,16 @@ impl Elf {
             symbol(&mut syms, 1, ADDR, 308, 1, 1);
         }
         let mut strtab = STRTAB.to_vec();
+        for f in &self.functions {
+            symbol(&mut syms, strtab.len() as u32, ADDR, 4, 2, 1);
+            strtab.extend_from_slice(f.as_bytes());
+            strtab.push(0);
+        }
+        for (name, at) in &self.objects {
+            symbol(&mut syms, strtab.len() as u32, *at, 100, 1, 1);
+            strtab.extend_from_slice(name.as_bytes());
+            strtab.push(0);
+        }
         if let Some((n, len)) = self.crowd {
             for _ in 0..n {
                 symbol(&mut syms, STRTAB.len() as u32, ADDR, 4, 1, 1);
@@ -336,4 +353,35 @@ pub const IDENTITY: &str = "\
 pub fn allow() -> aethelgard_pincheck::AllowList {
     aethelgard_pincheck::AllowList::parse(include_bytes!("../../fixtures/step-g.allow.json"))
         .unwrap()
+}
+
+/// Invensensev3's probe as the CI-built ELF names it (`AET-WO-4400d`,
+/// measured with `nm` on the generated sentinel-02's `arducopter.elf`).
+pub const INVENSENSEV3_PROBE: &str = "_ZN30AP_InertialSensor_Invensensev35probeER17AP_InertialSensorN6AP_HAL6OwnPtrINS2_6DeviceEEE8Rotation";
+
+/// Where the synthetic ELF puts `SD<n>`: `SD1` at [`SD1`], each other `n`
+/// 0x100 further per instance.
+pub fn sd_address(instance: u8) -> u32 {
+    SD1 + 0x100 * (u32::from(instance).max(1) - 1)
+}
+
+/// A decoded serial entry back as its 44 bytes: the driver pointer
+/// `SD<instance>` exactly when it is the instance's own driver, else another
+/// address; the instance, USB flag and lines.
+pub fn serial_bytes(e: &aethelgard_pincheck::elf::SerialEntry) -> [u8; 44] {
+    let mut b = [0u8; 44];
+    if e.empty {
+        return b;
+    }
+    let driver = if e.driver_is_instance {
+        sd_address(e.instance)
+    } else {
+        sd_address(e.instance) + 0x64
+    };
+    b[..4].copy_from_slice(&driver.to_le_bytes());
+    b[4] = e.instance;
+    b[5] = u8::from(e.is_usb);
+    b[20..24].copy_from_slice(&e.tx_line.to_le_bytes());
+    b[24..28].copy_from_slice(&e.rx_line.to_le_bytes());
+    b
 }

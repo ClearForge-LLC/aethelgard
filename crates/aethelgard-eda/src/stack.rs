@@ -53,6 +53,9 @@ pub struct Stack {
     /// (`AET-WO-1309` §1.2). The engine emits it; the gate judges it from
     /// this, never from the board.
     pub thermal: Vec<ThermalPad>,
+    /// Each declared IMU's seat, by reference (`AET-WO-4400d`): the gate
+    /// holds the board's footprint to it ([`crate::route::declared`]).
+    pub imus: Vec<(String, crate::schematic::Seat)>,
 }
 
 /// How a through-hole pad meets a fill of its own net.
@@ -253,6 +256,10 @@ impl Stack {
                 .iter()
                 .map(|(reference, pad, rule)| ThermalPad::of(reference, pad, rule))
                 .collect(),
+            // `validate` holds each seat's forward edge declared and its
+            // part's axes cited, and the embedded parts table parsed.
+            imus: crate::schematic::seats(spec)
+                .expect("a validated specification's IMU seats are complete"),
         }
     }
 
@@ -385,5 +392,6 @@ pub(crate) fn reference() -> Stack {
         pairs: vec![],
         joins: vec![],
         thermal: vec![],
+        imus: vec![],
     }
 }

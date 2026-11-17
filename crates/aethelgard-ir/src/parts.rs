@@ -63,7 +63,11 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// Version 8 added `ardupilot`, what ArduPilot `Copter-4.7.2` calls the
 /// part, with the chip ID its driver accepts, which must be the part's own
 /// identity (`AET-WO-4400b` D4; renumbered from 7 behind `4220b`'s floor).
-pub const PARTS_SCHEMA_VERSION: u32 = 8;
+/// Version 9 added `axes`, an IMU's sensing axes by its pins, and
+/// `ardupilot.frame`, the frame an IMU driver passes its samples in
+/// (`AET-WO-4400d`, ruled on PR #207), each required as a key, `null` where
+/// it does not apply.
+pub const PARTS_SCHEMA_VERSION: u32 = 9;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -476,6 +480,10 @@ pub struct Part {
     /// What ArduPilot calls the part, or `None`: no `hwdef.dat` line names
     /// it (`AET-WO-4400b` D4).
     pub ardupilot: Option<ArduPilot>,
+    /// An IMU's cited axes, or `None`: not an IMU, or not cited
+    /// (`AET-WO-4400d`). Only a part whose `ardupilot.kind` is `imu` may
+    /// carry them.
+    pub axes: Option<Axes>,
 }
 
 /// The `hwdef.dat` line a part takes in ArduPilot `Copter-4.7.2`
@@ -504,6 +512,24 @@ pub struct ArduPilot {
     /// The `SPIDEV` name; `Some` exactly for an SPI part.
     pub spidev: Option<String>,
     pub id: u32,
+    pub citation: Citation,
+    /// An IMU driver's sample frame: `Some` when the row cites that the
+    /// driver passes the chip's own X, Y and Z unchanged, the one frame this
+    /// engine accepts (`AET-WO-4400d`); `None` when uncited, which
+    /// `validate` refuses for a device that declares an orientation
+    /// (`ImuAxesNotCited`).
+    pub frame: Option<Citation>,
+}
+
+/// An IMU's sensing axes, as the datasheet's orientation figure draws them
+/// against the package (`AET-WO-4400d`): +X points from the package's
+/// centre toward the pins of `x_toward_pins`, +Y toward `y_toward_pins`, and
+/// +Z out of the marked top face. Stated by pin numbers, so that it holds
+/// for any footprint of the part.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Axes {
+    pub x_toward_pins: Vec<String>,
+    pub y_toward_pins: Vec<String>,
     pub citation: Citation,
 }
 
@@ -639,6 +665,25 @@ struct RawPart {
     /// Required: `null` says no `hwdef.dat` line names the part.
     #[serde(deserialize_with = "Option::deserialize")]
     ardupilot: Option<RawArduPilot>,
+    /// Required: `null` says not an IMU, or its axes uncited.
+    #[serde(deserialize_with = "Option::deserialize")]
+    axes: Option<RawAxes>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAxes {
+    x_toward_pins: Vec<String>,
+    y_toward_pins: Vec<String>,
+    z: String,
+    at: RawCitation,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawFrame {
+    is: String,
+    at: RawCitation,
 }
 
 #[derive(Deserialize)]
@@ -651,6 +696,10 @@ struct RawArduPilot {
     spidev: Option<String>,
     id: String,
     at: RawCitation,
+    /// Required: `null` for a part that is not an IMU, or whose driver's
+    /// frame is uncited.
+    #[serde(deserialize_with = "Option::deserialize")]
+    frame: Option<RawFrame>,
 }
 
 #[derive(Deserialize)]
@@ -1237,6 +1286,18 @@ fn part(raw: RawPart) -> Result<Part, String> {
         None => None,
         Some(a) => Some(ardupilot(a, &bus, value)?),
     };
+    let imu = ardupilot
+        .as_ref()
+        .is_some_and(|a| a.kind == ArduPilotKind::Imu);
+    let axes = match raw.axes {
+        None => None,
+        Some(_) if !imu => {
+            return Err(
+                "`axes` is given only for a part whose `ardupilot.kind` is `imu`".to_owned(),
+            );
+        }
+        Some(a) => Some(axes(a)?),
+    };
     Ok(Part {
         part: raw.part,
         lifecycle,
@@ -1258,6 +1319,44 @@ fn part(raw: RawPart) -> Result<Part, String> {
         script,
         citations,
         ardupilot,
+        axes,
+    })
+}
+
+/// The `axes` column: two non-empty groups of pin numbers (1 to 8 of
+/// `[A-Za-z0-9]` each), no pin named twice, and +Z out of the `top`, the
+/// marked face: a part whose +Z points into the board would need a
+/// footprint on B.Cu, which this engine does not place.
+fn axes(raw: RawAxes) -> Result<Axes, String> {
+    let mut seen = std::collections::BTreeSet::new();
+    for (group, pins) in [
+        ("axes.x_toward_pins", &raw.x_toward_pins),
+        ("axes.y_toward_pins", &raw.y_toward_pins),
+    ] {
+        if pins.is_empty() {
+            return Err(format!("`{group}` is empty"));
+        }
+        for pin in pins {
+            let ok = (1..=8).contains(&pin.len()) && pin.bytes().all(|b| b.is_ascii_alphanumeric());
+            if !ok {
+                return Err(format!(
+                    "`{group}` holds `{pin}`, not 1 to 8 of [A-Za-z0-9]"
+                ));
+            }
+            if !seen.insert(pin.as_str()) {
+                return Err(format!(
+                    "`{group}` names pin `{pin}`, which `axes` names twice"
+                ));
+            }
+        }
+    }
+    if raw.z != "top" {
+        return Err(format!("`axes.z` is `{}`, not `top`", raw.z));
+    }
+    Ok(Axes {
+        x_toward_pins: raw.x_toward_pins,
+        y_toward_pins: raw.y_toward_pins,
+        citation: citation(raw.at, "axes")?,
     })
 }
 
@@ -1314,6 +1413,19 @@ fn ardupilot(raw: RawArduPilot, bus: &Bus, identity: u32) -> Result<ArduPilot, S
     if !spi && kind != ArduPilotKind::Baro {
         return Err("an I2C part's `ardupilot.kind` is `baro`".to_owned());
     }
+    let frame = match (raw.frame, kind) {
+        (None, _) => None,
+        (Some(f), ArduPilotKind::Imu) if f.is == "chip" => Some(citation(f.at, "ardupilot.frame")?),
+        (Some(f), ArduPilotKind::Imu) => {
+            return Err(format!(
+                "`ardupilot.frame.is` is `{}`, not `chip`, the one frame this engine accepts",
+                f.is
+            ));
+        }
+        (Some(_), _) => {
+            return Err("`ardupilot.frame` is given only for an `imu`".to_owned());
+        }
+    };
     let id = hex(&raw.id, "ardupilot.id", u32::MAX)?;
     if id != identity {
         return Err(format!(
@@ -1327,6 +1439,7 @@ fn ardupilot(raw: RawArduPilot, bus: &Bus, identity: u32) -> Result<ArduPilot, S
         spidev: raw.spidev,
         id,
         citation: citation(raw.at, "ardupilot")?,
+        frame,
     })
 }
 

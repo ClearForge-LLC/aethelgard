@@ -168,18 +168,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// PR #204): with its two edits undone (the `DMARecieve -> dmamux1@37` line
 /// and the comment's clause), both platform texts are `244791ab…6b45` and
 /// `6cad35bc…e52a` exactly (measured, after `1313` merged); `main.rs` and the boot image did not move.
+/// Moved again by `AET-WO-4400d` (specification 16), which changes no
+/// generator of these: with the version-15 specification's sha256 put back
+/// for the new in each text, `main.rs` is `d7b69000…e51b` and the two
+/// platforms are `4400c2`'s `b2bc0dcf…d676` and `bfa37e13…ae21` exactly
+/// (measured on the merge); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "d7b690009f8dccdf34bd0911d2183219c077db3df9ed2a9a359ea9b46bbfe51b",
+        "126afcb9f3d0f947b1a22e8bebaa88142a49090d12e29b70580fd8a9f20d8d60",
     ),
     (
         "platform",
-        "b2bc0dcf8e44243e6420a0787ac0dfed6625bff4160dd7be44028e3cd70dd676",
+        "6f7b2db16627ad594a99b5dbf45691521fa810dbe74a6e808396f79510e2dd35",
     ),
     (
         "platform faulted",
-        "bfa37e131162b147d167b61057e30cc539d6fecfdeb212287226a3d1c33cae21",
+        "fc22c2c0c9fa62fe102afe830080ff4a3fcceb58cfc8658669cda4ed49b3ccfa",
     ),
     (
         "boot image",

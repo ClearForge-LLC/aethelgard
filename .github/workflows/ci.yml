@@ -353,7 +353,11 @@ jobs:
       # 178: plus 1 from AET-WO-1313 in board_tier2.rs (the Sentinel-03
       # fixture inside its declared 100 x 100 mm bound passes every gate at
       # four layers), merged after 177.
-      TIER2_MIN: "178"
+      # 179: plus 1 from AET-WO-4400d in with_tools.rs (the IMU turned 90, 180
+      # and 270 degrees with its two keep-outs passes check drc --spec
+      # --schematic with no finding: KiCad holds each turned keep-out to the
+      # library footprint), merged after 178.
+      TIER2_MIN: "179"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

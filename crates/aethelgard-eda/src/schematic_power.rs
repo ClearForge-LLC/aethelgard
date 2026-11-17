@@ -159,6 +159,7 @@ fn two_pin(
         note: None,
         owner: None,
         offboard: BTreeMap::new(),
+        seat: None,
     });
     Ok(())
 }
@@ -202,6 +203,7 @@ fn ic(
         note: None,
         owner: None,
         offboard: BTreeMap::new(),
+        seat: None,
     });
     Ok(())
 }
@@ -339,6 +341,7 @@ pub(crate) fn draw(
         note: None,
         owner: None,
         offboard: BTreeMap::new(),
+        seat: None,
     });
     Ok(())
 }

@@ -21,7 +21,9 @@
 //!   ([`place`]).
 //!
 //! Every coordinate is nanometres, board Y down; every footprint sits on the
-//! front. The placer gives every footprint rotation 0; a placement may carry
+//! front. The placer gives every footprint rotation 0 but an anchored part,
+//! a connector on a side edge (`AET-WO-1313`) and an IMU turned to its
+//! declared orientation (`AET-WO-4400d`); a placement may carry
 //! 90, 180 or 270 (`AET-WO-1308` §1.5, [`write_moved`]), which rotates the
 //! footprint's pads, graphics and text positions about its origin
 //! ([`route::rotate`]) and adds the rotation to each pad's and property's own
@@ -474,8 +476,12 @@ pub struct Placed {
 struct Item<'a> {
     part: &'a Part,
     fp: Sx,
+    /// The footprint's turn: an IMU's from its seat (`AET-WO-4400d`), else 0.
+    rotation: u16,
+    /// At `rotation`.
     geometry: Geometry,
-    /// By pad number, the pads that carry a net: (position, net).
+    /// By pad number, the pads that carry a net: (position at `rotation`,
+    /// net).
     pads: BTreeMap<String, ((i64, i64), String)>,
 }
 
@@ -581,7 +587,7 @@ fn place(
             placed[i] = Some(Placed {
                 reference: item.part.reference.clone(),
                 origin: ORIGIN,
-                rotation: 0,
+                rotation: item.rotation,
                 courtyard: g.courtyard.shift(ORIGIN),
                 keep: g.keep.shift(ORIGIN),
             });
@@ -661,7 +667,7 @@ fn place(
         placed[i] = Some(Placed {
             reference: item.part.reference.clone(),
             origin,
-            rotation: 0,
+            rotation: item.rotation,
             courtyard: g.courtyard.shift(origin),
             keep: g.keep.shift(origin),
         });
@@ -1188,22 +1194,15 @@ fn footprint(
         let mut c = child.clone();
         match child.head() {
             Some("version" | "generator" | "generator_version" | "layer") => continue,
-            // belt-and-suspenders: a keepout's polygon is not turned here
-            // (`AET-WO-4300d2` D2), and today no footprint carrying one is
-            // turned (the placer turns only anchored parts and connectors);
-            // a later placer that turned one would draw the keepout askew.
-            Some("zone") if rotation != 0 => {
-                return Err(internal(
-                    &part.reference,
-                    "a footprint with a keepout zone is not turned",
-                ));
-            }
             // A footprint's zone stands in board coordinates in a board file,
             // where its library file has it about the footprint's origin
             // (measured, `AET-WO-1310` D4: written unshifted, KiCad read the
             // ICM-20948's keepout at the board's origin and reported
-            // `lib_footprint_mismatch`).
-            Some("zone") => to_board(&mut c, origin, &part.reference)?,
+            // `lib_footprint_mismatch`). It turns with the footprint by the
+            // same `route::rotate` its pads do (`AET-WO-4400d` D2, replacing
+            // the refusal of a turned zone; the tier-2
+            // `a_turned_keepout_is_where_kicad_draws_it` holds it).
+            Some("zone") => to_board(&mut c, origin, rotation, &part.reference)?,
             Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
                 if rotation != 0 {
@@ -1307,6 +1306,10 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
             reference_on_fab(&mut fp);
         }
         let nets = pin_nets(part)?;
+        let rotation = match &part.seat {
+            Some(seat) => seat_rotation(&fp, seat, &part.reference)?,
+            None => 0,
+        };
         let mut pads = BTreeMap::new();
         let mut numbers = BTreeSet::new();
         for pad in fp.children("pad") {
@@ -1316,7 +1319,8 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
                 let at = pad
                     .child("at")
                     .ok_or_else(|| internal(&part.reference, "a pad without `at`"))?;
-                pads.insert(number.to_owned(), (xy(at, &part.reference)?, net.clone()));
+                let at = route::rotate(rotation, xy(at, &part.reference)?);
+                pads.insert(number.to_owned(), (at, net.clone()));
             }
         }
         if let Some(missing) = nets.keys().find(|n| !numbers.contains(*n)) {
@@ -1326,7 +1330,8 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
             ));
         }
         out.push(Item {
-            geometry: geometry(&fp, &part.reference)?,
+            geometry: geometry_at(&fp, &part.reference, rotation)?,
+            rotation,
             part,
             fp,
             pads,
@@ -1335,16 +1340,109 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
     Ok(out)
 }
 
-/// Each `(xy x y)` under `sx`, moved by `origin`: a footprint zone's polygon
-/// from the library's coordinates to the board's.
-fn to_board(sx: &mut Sx, origin: (i64, i64), reference: &str) -> Result<(), EmitError> {
+/// The turn that puts an IMU's cited axes where its seat declares them
+/// (`AET-WO-4400d`), or `ImuRotationUnplaceable`. The part's +Z is out of
+/// its top and every footprint sits on F.Cu, so Z must point up. Each axis
+/// on the footprint runs from the package's centre (its pads' mean) to the
+/// mean of the pins the parts table names for it, and must lie along one
+/// footprint axis. In the board file seen from F.Cu (y down), forward is the
+/// declared edge, right is forward turned clockwise, and with Z up, Y = Z × X
+/// is X turned a quarter counter-clockwise, `route::rotate(90, X)`. The turn
+/// is the right angle that takes both footprint axes to those directions.
+fn seat_rotation(fp: &Sx, seat: &schematic::Seat, reference: &str) -> Result<u16, EmitError> {
+    use aethelgard_ir::orientation::{Edge, Toward};
+    let o = seat.orientation;
+    let unplaceable = |why: String| EmitError::ImuRotationUnplaceable {
+        reference: reference.to_owned(),
+        x: o.x.name(),
+        z: o.z.name(),
+        why,
+    };
+    if o.z != Toward::Up {
+        return Err(unplaceable(
+            "the part's +Z is out of its top and this engine places every footprint on F.Cu, so Z points up".into(),
+        ));
+    }
+    let mut centres = BTreeMap::new();
+    for pad in fp.children("pad") {
+        let at = pad
+            .child("at")
+            .ok_or_else(|| internal(reference, "a pad without `at`"))?;
+        centres.insert(pad.arg(1).unwrap_or("").to_owned(), xy(at, reference)?);
+    }
+    let mean = |pts: &[(i64, i64)]| {
+        let n = i64::try_from(pts.len().max(1)).unwrap_or(1);
+        let (x, y) = pts.iter().fold((0, 0), |s, p| (s.0 + p.0, s.1 + p.1));
+        (x / n, y / n)
+    };
+    let all: Vec<(i64, i64)> = centres.values().copied().collect();
+    let centre = mean(&all);
+    let along = |pins: &[String], axis: &str| -> Result<(i64, i64), EmitError> {
+        let mut pts = Vec::new();
+        for pin in pins {
+            pts.push(*centres.get(pin).ok_or_else(|| {
+                unplaceable(format!(
+                    "the part's {axis} axis names pin {pin}, which its footprint has no pad for"
+                ))
+            })?);
+        }
+        let (x, y) = mean(&pts);
+        match (x - centre.0, y - centre.1) {
+            (dx, 0) if dx != 0 => Ok((dx.signum(), 0)),
+            (0, dy) if dy != 0 => Ok((0, dy.signum())),
+            _ => Err(unplaceable(format!(
+                "the part's {axis} axis (pins {}) does not lie along one footprint axis",
+                pins.join(", ")
+            ))),
+        }
+    };
+    let fx = along(&seat.x_toward_pins, "X")?;
+    let fy = along(&seat.y_toward_pins, "Y")?;
+    let forward = match seat.forward {
+        Edge::Top => (0, -1),
+        Edge::Right => (1, 0),
+        Edge::Bottom => (0, 1),
+        Edge::Left => (-1, 0),
+    };
+    let right = (-forward.1, forward.0);
+    let want_x = match o.x {
+        Toward::Forward => forward,
+        Toward::Aft => (-forward.0, -forward.1),
+        Toward::Right => right,
+        Toward::Left => (-right.0, -right.1),
+        Toward::Up | Toward::Down => {
+            return Err(unplaceable(
+                "X up or down would stand the part on its edge, which this engine does not place"
+                    .into(),
+            ));
+        }
+    };
+    let want_y = route::rotate(90, want_x);
+    [0u16, 90, 180, 270]
+        .into_iter()
+        .find(|&t| route::rotate(t, fx) == want_x && route::rotate(t, fy) == want_y)
+        .ok_or_else(|| {
+            unplaceable(
+                "the part's cited axes are not right-handed with +Z out of its footprint's top, so no turn on F.Cu agrees".into(),
+            )
+        })
+}
+
+/// Each `(xy x y)` under `sx`, turned by `rotation` and moved by `origin`:
+/// a footprint zone's polygon from the library's coordinates to the board's.
+fn to_board(
+    sx: &mut Sx,
+    origin: (i64, i64),
+    rotation: u16,
+    reference: &str,
+) -> Result<(), EmitError> {
     if sx.head() == Some("xy") {
-        let (x, y) = xy(sx, reference)?;
+        let (x, y) = route::rotate(rotation, xy(sx, reference)?);
         *sx = at_sx("xy", (origin.0 + x, origin.1 + y));
         return Ok(());
     }
     for c in sx.items_mut().into_iter().flatten() {
-        to_board(c, origin, reference)?;
+        to_board(c, origin, rotation, reference)?;
     }
     Ok(())
 }
@@ -1734,6 +1832,59 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
 
 #[cfg(test)]
 mod tests {
+    /// `AET-WO-4400d`: the seat's turn on the ICM-42688-P's own footprint
+    /// for each forward edge and top-side X, and each refusal a footprint
+    /// can trip that the embedded parts table cannot: pin groups that are
+    /// mirrored (left-handed with +Z out of the top), an axis that is not
+    /// along a footprint axis or has no length, a pin with no pad.
+    #[test]
+    fn a_seat_turns_by_its_cited_pins_or_is_refused_by_name() {
+        use aethelgard_ir::orientation::{Edge, Orientation, Toward};
+        let fp = crate::library::footprint("Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm").unwrap();
+        let pins = |v: &[&str]| v.iter().map(|p| (*p).to_owned()).collect::<Vec<_>>();
+        let seat = |forward, x, xp: &[&str], yp: &[&str]| crate::schematic::Seat {
+            forward,
+            orientation: Orientation { x, z: Toward::Up },
+            x_toward_pins: pins(xp),
+            y_toward_pins: pins(yp),
+        };
+        let (xp, yp) = (["8", "9", "10", "11"], ["12", "13", "14"]);
+        for (forward, x, want) in [
+            (Edge::Top, Toward::Right, 0),
+            (Edge::Top, Toward::Forward, 90),
+            (Edge::Top, Toward::Left, 180),
+            (Edge::Top, Toward::Aft, 270),
+            (Edge::Right, Toward::Forward, 0),
+            (Edge::Bottom, Toward::Right, 180),
+            (Edge::Left, Toward::Forward, 180),
+        ] {
+            assert_eq!(
+                super::seat_rotation(&fp, &seat(forward, x, &xp, &yp), "U5").unwrap(),
+                want,
+                "{forward:?} {x:?}"
+            );
+        }
+        for (xp, yp, why) in [
+            (
+                &["12", "13", "14"][..],
+                &["8", "9", "10", "11"][..],
+                "right-handed",
+            ),
+            (&["1", "8"][..], &yp[..], "along one footprint axis"),
+            (&["8", "12"][..], &yp[..], "along one footprint axis"),
+            (&["8", "99"][..], &yp[..], "no pad for"),
+        ] {
+            let e = super::seat_rotation(&fp, &seat(Edge::Top, Toward::Right, xp, yp), "U5")
+                .unwrap_err();
+            assert_eq!(
+                (e.kind(), e.id()),
+                ("ImuRotationUnplaceable", Some("U5")),
+                "{e}"
+            );
+            assert!(e.to_string().contains(why), "{why}: {e}");
+        }
+    }
+
     #[test]
     fn an_arcs_circle_holds_its_three_points() {
         // A quarter of the unit circle, in nanometres, and the XT30PW-M's
@@ -1775,6 +1926,7 @@ mod tests {
             note: None,
             owner: None,
             offboard: BTreeMap::new(),
+            seat: None,
         }
     }
 
@@ -1784,6 +1936,44 @@ mod tests {
 
     fn net(n: &str) -> Conn {
         Conn::Net(n.to_owned())
+    }
+
+    /// `AET-WO-4400d`: a seated part's pads and geometry are carried at its
+    /// turn, so the parts placed by its pins (its capacitors) target the
+    /// turned pins, and its keep-out box is the turned one.
+    #[test]
+    fn a_seated_part_carries_its_pads_and_geometry_at_its_turn() {
+        use aethelgard_ir::orientation::{Edge, Orientation, Toward};
+        const FP: &str = "Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm";
+        let mut p = part(
+            "Aethelgard_Sensor:ICM-42688-P",
+            FP,
+            "U5",
+            &[("8", Conn::Rail("VDD_3V3".into())), ("12", net("IMU_CS"))],
+        );
+        let pins = |v: &[&str]| v.iter().map(|x| (*x).to_owned()).collect::<Vec<_>>();
+        p.seat = Some(crate::schematic::Seat {
+            forward: Edge::Top,
+            orientation: Orientation {
+                x: Toward::Forward,
+                z: Toward::Up,
+            },
+            x_toward_pins: pins(&["8", "9", "10", "11"]),
+            y_toward_pins: pins(&["12", "13", "14"]),
+        });
+        let parts = [p];
+        let items = items(&parts).unwrap();
+        let fp = crate::library::footprint(FP).unwrap();
+        assert_eq!(items[0].rotation, 90);
+        let turned = geometry_at(&fp, "U5", 90).unwrap();
+        assert_eq!(items[0].geometry.courtyard, turned.courtyard);
+        assert_eq!(items[0].geometry.keep, turned.keep);
+        assert_ne!(
+            items[0].geometry.courtyard,
+            geometry(&fp, "U5").unwrap().courtyard
+        );
+        // Pad 8, (1.1625, 0.75) mm in the library, turned a quarter.
+        assert_eq!(items[0].pads["8"].0, (750_000, -1_162_500));
     }
 
     /// The MCU with its supply pins wired as the schematic emitter wires

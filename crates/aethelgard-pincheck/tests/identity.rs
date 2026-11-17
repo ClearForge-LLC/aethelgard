@@ -8,8 +8,13 @@ mod common;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_pincheck::elf::SerialEntry;
 use aethelgard_pincheck::{Refusal, header, identity};
-use common::{Elf, IDENTITY, SD1, topology};
+use common::{Elf, IDENTITY, INVENSENSEV3_PROBE, SD1, sd_address, serial_bytes, topology};
 use serde_json::{Value, json};
+
+/// The IMU probe ArduPilot writes for `IMU Invensensev3 SPI:icm42688
+/// ROTATION_ROLL_180_YAW_90`, as the generated sentinel-02's `hwdef.h` holds
+/// it (measured, `hwdef.h` lines 140 and 144).
+const IMU_PROBE: &str = "#define HAL_INS_PROBE1  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device(\"icm42688\"),ROTATION_ROLL_180_YAW_90))\n#define HAL_INS_PROBE_LIST HAL_INS_PROBE1";
 
 const EMPTY: SerialEntry = SerialEntry {
     instance: 0,
@@ -20,11 +25,32 @@ const EMPTY: SerialEntry = SerialEntry {
     driver_is_instance: false,
 };
 
-/// The findings as `kind at [expected | decoded]`, or the refusal's kind.
+/// The findings as `kind at [expected | decoded]`, or the refusal's kind,
+/// the ELF holding `serial` and Invensensev3's probe.
 fn judge(t: &SolvedTopology, text: &str, serial: &[SerialEntry]) -> Result<Vec<String>, Refusal> {
+    judge_elf(t, text, serial, &[INVENSENSEV3_PROBE])
+}
+
+/// [`judge`], the ELF defining exactly `functions`.
+fn judge_elf(
+    t: &SolvedTopology,
+    text: &str,
+    serial: &[SerialEntry],
+    functions: &[&str],
+) -> Result<Vec<String>, Refusal> {
     let parts = aethelgard_ir::parts::table().unwrap();
     let pre = header::preprocess(text)?;
-    Ok(identity::judge(t, parts, &pre, serial)?
+    let elf = Elf {
+        serial: Some(serial.iter().map(serial_bytes).collect()),
+        objects: serial
+            .iter()
+            .filter(|e| e.driver_is_instance && e.instance != 1)
+            .map(|e| (format!("SD{}", e.instance), sd_address(e.instance)))
+            .collect(),
+        functions: functions.iter().map(|f| (*f).to_owned()).collect(),
+        ..Elf::default()
+    };
+    Ok(identity::judge(t, parts, &pre, &elf.bytes())?
         .iter()
         .map(|f| format!("{} {} [{} | {}]", f.kind, f.pin, f.expected, f.decoded))
         .collect())
@@ -96,9 +122,12 @@ fn swapped_selects_with_wrong_modes_are_each_named() {
     let mut v: Value = serde_json::to_value(topology()).unwrap();
     v["gpio"]["IMU_CS"] = "PA1".into();
     v["pin_speeds"]["IMU_CS"] = 0.into();
-    v["spi_devices"]["U5"] = json!({"index": 1, "part": "ICM42688P", "bus": "FLASH", "peripheral": "SPI1", "cs": "IMU_CS"});
+    v["spi_devices"]["U5"] = json!({"index": 1, "part": "ICM42688P", "bus": "FLASH", "peripheral": "SPI1", "cs": "IMU_CS",
+        "orientation": {"x": "right", "z": "up"}});
     let t: SolvedTopology = serde_json::from_value(v).unwrap();
-    let text = IDENTITY
+    // Its IMU line as ArduPilot writes it, right, so only the SPI facts move.
+    let text = format!("{IDENTITY}\n{IMU_PROBE}\n");
+    let text = text
         .replace("PAL_LINE(GPIOA,0U) , SPIDEV_MODE0", "PAL_LINE(GPIOA,1U) , SPIDEV_MODE3")
         .replace(
             "#define HAL_SPI_DEVICE_LIST",
@@ -450,4 +479,212 @@ fn the_serial_table_is_read_with_its_driver_and_padding() {
         let err = read(vec![padded]).unwrap_err();
         assert_eq!(err.kind(), "MalformedElf", "byte {at}: {err:?}");
     }
+}
+
+/// The reference topology with U5, an ICM-42688-P on SPI1 at `PA1`, declared
+/// X right and Z up (`sentinel-02-own`'s D5 declaration), and its header with
+/// U5's `SPIDesc` and IMU probe as ArduPilot writes them.
+fn with_imu(orientation: Option<Value>) -> (SolvedTopology, String) {
+    let mut v: Value = serde_json::to_value(topology()).unwrap();
+    v["gpio"]["IMU_CS"] = "PA1".into();
+    v["pin_speeds"]["IMU_CS"] = 0.into();
+    v["spi_devices"]["U5"] = json!({"index": 1, "part": "ICM42688P", "bus": "FLASH", "peripheral": "SPI1", "cs": "IMU_CS"});
+    if let Some(o) = orientation {
+        v["spi_devices"]["U5"]["orientation"] = o;
+    }
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    let text = IDENTITY
+        .replace(
+            "#define HAL_SPI_DEVICE_LIST",
+            "#define HAL_SPI_DEVICE1  SPIDesc(\"icm42688\", 0, 2, PAL_LINE(GPIOA,1U) , SPIDEV_MODE0, 16*MHZ, 16*MHZ)\n#define HAL_SPI_DEVICE_LIST",
+        )
+        .replace("   HAL_SPI_DEVICE0", "   HAL_SPI_DEVICE0,HAL_SPI_DEVICE1");
+    (t, format!("{text}\n{IMU_PROBE}\n"))
+}
+
+fn declared() -> (SolvedTopology, String) {
+    with_imu(Some(json!({"x": "right", "z": "up"})))
+}
+
+/// `AET-WO-4400d` §2: the declared IMU's line passes; each mutation is
+/// named: the line removed, the wrong rotation, the wrong SPI device, the
+/// wrong driver, and an IMU with no declared orientation.
+#[test]
+fn the_imu_probe_is_judged_against_the_declared_orientation() {
+    let (t, text) = declared();
+    assert_eq!(judge(&t, &text, &[EMPTY]).unwrap(), Vec::<String>::new());
+    let probe = "ROTATION_ROLL_180_YAW_90))";
+    let cases: [(&str, &str, Vec<&str>); 6] = [
+        // Removed: the list is empty.
+        (
+            "#define HAL_INS_PROBE_LIST HAL_INS_PROBE1",
+            "",
+            vec!["MissingImuProbe"],
+        ),
+        // ROTATION_ROLL_180 is forward = top with X forward: a quarter turn.
+        (probe, "ROTATION_ROLL_180))", vec!["WrongImuRotation"]),
+        (probe, "ROTATION_NONE))", vec!["WrongImuRotation"]),
+        // Ruled D4: the alias of 10 is the same rotation.
+        (probe, "ROTATION_PITCH_180_YAW_270))", vec![]),
+        (
+            "get_device(\"icm42688\")",
+            "get_device(\"dataflash\")",
+            vec!["WrongImuProbe"],
+        ),
+        (
+            "AP_InertialSensor_Invensensev3::probe",
+            "AP_InertialSensor_Invensense::probe",
+            vec!["WrongImuProbe", "ImuDriverNotLinked"],
+        ),
+    ];
+    for (from, to, want) in cases {
+        let changed = text.replacen(from, to, 1);
+        assert_ne!(changed, text, "{from}");
+        let found = judge(&t, &changed, &[EMPTY]).unwrap();
+        assert_eq!(kinds(&found), want, "{to}: {found:?}");
+    }
+    // Declared otherwise: X forward is ROTATION_ROLL_180, so the line's
+    // ROLL_180_YAW_90 is a quarter turn wrong.
+    let (t, text) = with_imu(Some(json!({"x": "forward", "z": "up"})));
+    let found = judge(&t, &text, &[EMPTY]).unwrap();
+    assert_eq!(kinds(&found), ["WrongImuRotation"], "{found:?}");
+    assert!(
+        found[0].contains("[ROTATION_ROLL_180 | ROTATION_ROLL_180_YAW_90]"),
+        "{found:?}"
+    );
+    // No declared orientation: no rotation is right (INV-06).
+    let (t, text) = with_imu(None);
+    let found = judge(&t, &text, &[EMPTY]).unwrap();
+    assert_eq!(kinds(&found), ["WrongImuRotation"], "{found:?}");
+    assert!(found[0].contains("an undeclared orientation"), "{found:?}");
+    // A probe the topology has no IMU for.
+    let text = format!("{IDENTITY}\n{IMU_PROBE}\n");
+    let found = judge(&topology(), &text, &[EMPTY]).unwrap();
+    assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{found:?}");
+}
+
+/// The ELF must define the driver's probe under its mangled name: a
+/// `hwdef.h` with an IMU line paired with an ELF built without it is named.
+#[test]
+fn the_imu_driver_must_be_linked_into_the_elf() {
+    let (t, text) = declared();
+    let found = judge_elf(&t, &text, &[EMPTY], &[]).unwrap();
+    assert_eq!(kinds(&found), ["ImuDriverNotLinked"], "{found:?}");
+    let other = INVENSENSEV3_PROBE.replace("8Rotation", "8Rotationx");
+    let found = judge_elf(&t, &text, &[EMPTY], &[&other]).unwrap();
+    assert_eq!(kinds(&found), ["ImuDriverNotLinked"], "{found:?}");
+}
+
+/// The list is read as the compiler expands it: a numbered probe the list
+/// does not name is not read, and one it names through another macro is
+/// (adversarial A4's class).
+#[test]
+fn the_imu_list_is_read_as_the_compiler_expands_it() {
+    let (t, text) = declared();
+    let stray = text.replace(
+        "#define HAL_INS_PROBE_LIST",
+        "#define HAL_INS_PROBE2  ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device(\"icm42688\"),ROTATION_NONE))\n#define HAL_INS_PROBE_LIST",
+    );
+    assert_eq!(judge(&t, &stray, &[EMPTY]).unwrap(), Vec::<String>::new());
+    let named = stray.replace(
+        "#define HAL_INS_PROBE_LIST HAL_INS_PROBE1",
+        "#define MY_PROBES HAL_INS_PROBE2\n#define HAL_INS_PROBE_LIST MY_PROBES",
+    );
+    let found = judge(&t, &named, &[EMPTY]).unwrap();
+    assert_eq!(kinds(&found), ["WrongImuRotation"], "{found:?}");
+    let twice = text.replace(
+        "#define HAL_INS_PROBE_LIST HAL_INS_PROBE1",
+        "#define HAL_INS_PROBE_LIST HAL_INS_PROBE1;HAL_INS_PROBE1",
+    );
+    let found = judge(&t, &twice, &[EMPTY]).unwrap();
+    assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{found:?}");
+}
+
+/// A probe in a form this reader does not know, a rotation that is not a
+/// right-angle enumerator, or a rotation redefined as a macro, is refused
+/// by name, never read as something else.
+#[test]
+fn an_unknown_probe_form_or_rotation_is_refused() {
+    let (t, text) = declared();
+    for (from, to) in [
+        ("ROTATION_ROLL_180_YAW_90", "ROTATION_YAW_45"),
+        ("ROTATION_ROLL_180_YAW_90", "ROTATION_CUSTOM_1"),
+        ("ROTATION_ROLL_180_YAW_90", "10"),
+        ("ROTATION_ROLL_180_YAW_90", "(Rotation)10"),
+        ("ADD_BACKEND(", "ADD_BACKEND_INSTANCE("),
+        (
+            "hal.spi->get_device(\"icm42688\")",
+            "GET_I2C_DEVICE(0,0x68)",
+        ),
+        ("*this,", "*that,"),
+    ] {
+        let changed = text.replacen(from, to, 1);
+        assert_ne!(changed, text, "{from}");
+        let err = judge(&t, &changed, &[EMPTY]).unwrap_err();
+        assert_eq!(err.kind(), "MalformedHeader", "{to}: {err:?}");
+    }
+    let redefined = format!("{text}#define ROTATION_ROLL_180_YAW_90 ROTATION_NONE\n");
+    let err = judge(&t, &redefined, &[EMPTY]).unwrap_err();
+    assert_eq!(err.kind(), "MalformedHeader", "{err:?}");
+}
+
+/// The probe must be a function the ELF defines: a data object of that name
+/// is not the driver (adversarial: a symbol of the right name, the wrong kind).
+#[test]
+fn an_object_named_like_the_probe_is_not_the_driver() {
+    let (t, text) = declared();
+    let parts = aethelgard_ir::parts::table().unwrap();
+    let pre = header::preprocess(&text).unwrap();
+    let elf = Elf {
+        serial: Some(vec![serial_bytes(&EMPTY)]),
+        objects: vec![(INVENSENSEV3_PROBE.to_owned(), 0x0800_2000)],
+        ..Elf::default()
+    };
+    let found = identity::judge(&t, parts, &pre, &elf.bytes()).unwrap();
+    let kinds: Vec<&str> = found.iter().map(|f| f.kind).collect();
+    assert_eq!(kinds, ["ImuDriverNotLinked"], "{found:?}");
+}
+
+/// The adversarial pass's break (`AET-WO-4400d`): a probe redefined with the
+/// digraph `%:` for `#`, after an `#undef`, compiled as `ROTATION_ROLL_180`
+/// while the reader saw the first definition. `%:define` is now read as
+/// `#define` (a second definition is refused), and any compiled `#undef` or
+/// `#pragma` naming a name the judge reads is refused: it could stand in
+/// another definition. A header written with `%:` alone reads as with `#`.
+#[test]
+fn a_digraph_undef_or_pragma_cannot_hide_a_definition() {
+    let (t, text) = declared();
+    let redefine = "%:define HAL_INS_PROBE1 ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this,hal.spi->get_device(\"icm42688\"),ROTATION_ROLL_180))";
+    for extra in [
+        format!("#undef HAL_INS_PROBE1\n{redefine}"),
+        redefine.to_owned(),
+        " %: undef HAL_INS_PROBE_LIST".to_owned(),
+        "#pragma push_macro(\"HAL_INS_PROBE1\")".to_owned(),
+        "#undef HAL_SPI_DEVICE_LIST".to_owned(),
+    ] {
+        let err = judge(&t, &format!("{text}{extra}\n"), &[EMPTY]).unwrap_err();
+        assert_eq!(err.kind(), "MalformedHeader", "{extra}: {err:?}");
+    }
+    let digraph = text.replace("#define HAL_INS_PROBE1 ", "%:  define HAL_INS_PROBE1 ");
+    assert_ne!(digraph, text);
+    assert_eq!(judge(&t, &digraph, &[EMPTY]).unwrap(), Vec::<String>::new());
+    let wrong = digraph.replace("ROTATION_ROLL_180_YAW_90", "ROTATION_ROLL_180");
+    assert_eq!(
+        kinds(&judge(&t, &wrong, &[EMPTY]).unwrap()),
+        ["WrongImuRotation"]
+    );
+}
+
+/// `HAL_SITL_INVENSENSEV3` compiles a probe the list does not name
+/// (`AP_InertialSensor.cpp` L1223-1225); it is named, not passed.
+#[test]
+fn the_sitl_probe_define_is_named() {
+    let (t, text) = declared();
+    let found = judge(
+        &t,
+        &format!("{text}#define HAL_SITL_INVENSENSEV3 1\n"),
+        &[EMPTY],
+    )
+    .unwrap();
+    assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{found:?}");
 }

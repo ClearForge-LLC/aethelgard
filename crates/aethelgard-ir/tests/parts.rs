@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "5bcfe2a8b7ff71297d56ab18736c4c03e91570c8337e226cbd90a3cd6213df20";
+const PARTS_SHA256: &str = "f12b7a948b1eeaeaa12879cebcb78cd19163470ac742f2d4abd383ebea368d52";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -215,8 +215,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_to_7_and_9() {
-    for version in [2, 3, 4, 5, 6, 7, 9] {
+fn refuses_schema_version_2_to_8_and_10() {
+    for version in [2, 3, 4, 5, 6, 7, 8, 10] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -503,7 +503,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 8, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 9, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -1190,7 +1190,7 @@ fn an_ardupilot_id_other_than_the_identity_is_refused() {
     assert_refused(&err, Some("ICM42688P"), "ardupilot.id");
     // TMP117 has no row: ArduPilot's TMP119 driver wants 0x2117, not 0x0117.
     let err = refused_entry("TMP117", |p| {
-        p["ardupilot"] = json!({"kind": "baro", "driver": "TMP119", "spidev": null, "id": "0x2117",
+        p["ardupilot"] = json!({"kind": "baro", "driver": "TMP119", "spidev": null, "id": "0x2117", "frame": null,
             "at": p["citations"]["identity"].clone()});
     });
     assert_refused(
@@ -1285,5 +1285,108 @@ fn the_ardupilot_rows_are_the_cited_ones() {
     );
     for p in ["TMP117", "ICM20948", "ICP10111"] {
         assert_eq!(row(p), None, "{p}");
+    }
+}
+
+/// `AET-WO-4400d` (parts schema 9): the ICM-42688-P cites its axes by pins
+/// and its driver's frame, each against its held document.
+#[test]
+fn the_imu_row_cites_its_axes_and_its_drivers_frame() {
+    let t = table().unwrap();
+    let icm = t.get("ICM42688P").unwrap();
+    let axes = icm.axes.as_ref().unwrap();
+    assert_eq!(axes.x_toward_pins, ["8", "9", "10", "11"]);
+    assert_eq!(axes.y_toward_pins, ["12", "13", "14"]);
+    assert!(axes.citation.section.contains("Figure 16"));
+    assert_eq!(axes.citation.held, icm.citations.identity.held);
+    let ap = icm.ardupilot.as_ref().unwrap();
+    let frame = ap.frame.as_ref().unwrap();
+    assert!(frame.section.contains("463"));
+    assert_eq!(frame.held, ap.citation.held);
+    for p in t.parts().iter().filter(|p| p.part != "ICM42688P") {
+        assert!(p.axes.is_none(), "{}", p.part);
+        assert!(
+            p.ardupilot.as_ref().is_none_or(|a| a.frame.is_none()),
+            "{}",
+            p.part
+        );
+    }
+}
+
+/// Each shape rule of `axes` and `ardupilot.frame` is refused by name.
+#[test]
+fn a_malformed_axes_or_frame_column_is_refused_by_name() {
+    type Case = (&'static str, fn(&mut Value), &'static str);
+    let cases: [Case; 10] = [
+        (
+            "ICM42688P",
+            |p| p["axes"]["x_toward_pins"] = json!([]),
+            "axes.x_toward_pins` is empty",
+        ),
+        (
+            "ICM42688P",
+            |p| p["axes"]["y_toward_pins"] = json!(["12", "8"]),
+            "names twice",
+        ),
+        (
+            "ICM42688P",
+            |p| p["axes"]["x_toward_pins"] = json!(["8", "8"]),
+            "names twice",
+        ),
+        (
+            "ICM42688P",
+            |p| p["axes"]["x_toward_pins"] = json!(["pin 8"]),
+            "not 1 to 8",
+        ),
+        (
+            "ICM42688P",
+            |p| p["axes"]["z"] = json!("bottom"),
+            "not `top`",
+        ),
+        (
+            "ICM42688P",
+            |p| p["ardupilot"]["frame"]["is"] = json!("board"),
+            "not `chip`",
+        ),
+        (
+            "ICM42688P",
+            |p| {
+                p.as_object_mut().unwrap().remove("axes");
+            },
+            "missing field `axes`",
+        ),
+        (
+            "ICM42688P",
+            |p| {
+                p["ardupilot"].as_object_mut().unwrap().remove("frame");
+            },
+            "missing field `frame`",
+        ),
+        (
+            "BMP581",
+            |p| {
+                let axes = embedded()
+                    .pointer(&format!("{}/axes", at("ICM42688P")))
+                    .unwrap()
+                    .clone();
+                p["axes"] = axes;
+            },
+            "only for a part whose `ardupilot.kind` is `imu`",
+        ),
+        (
+            "BMP581",
+            |p| {
+                let frame = embedded()
+                    .pointer(&format!("{}/ardupilot/frame", at("ICM42688P")))
+                    .unwrap()
+                    .clone();
+                p["ardupilot"]["frame"] = frame;
+            },
+            "only for an `imu`",
+        ),
+    ];
+    for (part, mutate, field) in cases {
+        let err = refused_entry(part, mutate);
+        assert_refused(&err, Some(part), field);
     }
 }

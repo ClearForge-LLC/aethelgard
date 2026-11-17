@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "parts": [
     {
       "part": "BME280",
@@ -90,8 +90,10 @@
           "section": "lines 39 and 76: BME280_ID 0x60, which AP_Baro_BMP280's probe accepts beside the BMP280's 0x58",
           "sha256": "d7a95a7ea929cf46aa2e467279b7f4478a6f425b8c503e8426c144dcef9f8ed3",
           "pending": null
-        }
-      }
+        },
+        "frame": null
+      },
+      "axes": null
     },
     {
       "part": "BMP581",
@@ -246,8 +248,10 @@
           "section": "lines 23 and 99: BMP581_ID 0x50, the chip ID AP_Baro_BMP581's init accepts",
           "sha256": "17607f994ff84782f482f0846d29245d9ff5c88f19b688166d2463fc90736bef",
           "pending": null
-        }
-      }
+        },
+        "frame": null
+      },
+      "axes": null
     },
     {
       "part": "ICM20948",
@@ -409,7 +413,8 @@
           "sha256": "0588625f4f1d6d27382a4322f48073dc0ce569e537c63786b13aab3eeb76b718"
         }
       },
-      "ardupilot": null
+      "ardupilot": null,
+      "axes": null
     },
     {
       "part": "ICM42688P",
@@ -585,6 +590,37 @@
           "section": "lines 139 and 1011: INV3_ID_ICM42688_P 0x47, a WHOAMI AP_InertialSensor_Invensensev3 accepts as an ICM42688",
           "sha256": "cdfbb0a199f7c1ba4ee60c539c26d721037a05e32c5b3e23c65de61046fc0199",
           "pending": null
+        },
+        "frame": {
+          "is": "chip",
+          "at": {
+            "document": "ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp",
+            "revision": "commit fb773567896014da007bca58358704d4a0d8516f",
+            "section": "lines 463-464 and 522-527: each FIFO sample is Vector3f{x, y, z} from the chip's registers in order, no swap and no sign, before _rotate_and_correct_accel applies the IMU line's rotation",
+            "sha256": "cdfbb0a199f7c1ba4ee60c539c26d721037a05e32c5b3e23c65de61046fc0199",
+            "pending": null
+          }
+        }
+      },
+      "axes": {
+        "x_toward_pins": [
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        "y_toward_pins": [
+          "12",
+          "13",
+          "14"
+        ],
+        "z": "top",
+        "at": {
+          "document": "TDK InvenSense DS-000347 ICM-42688-P",
+          "revision": "1.9 (2024-11-12)",
+          "section": "10.1 Figure 16 (orientation of axes, pin 1 identifier), p. 53; 10.2 package top view (A1 corner top left; pins 1-4 left, 5-7 bottom, 8-11 right, 12-14 top), p. 54",
+          "sha256": "9c6b57b0a2e45cf0251dd2423878573bd4da46e0cc2faa93dc558c28af51300a",
+          "pending": null
         }
       }
     },
@@ -709,7 +745,8 @@
           "sha256": "249f1431a27dc70d39be1dfd39ff36429d1f66bdea115178ed05e3e3275a2d58"
         }
       },
-      "ardupilot": null
+      "ardupilot": null,
+      "axes": null
     },
     {
       "part": "TMP117",
@@ -783,7 +820,8 @@
         "start_up": null,
         "data": null
       },
-      "ardupilot": null
+      "ardupilot": null,
+      "axes": null
     },
     {
       "part": "W25Q64JVxIQ",
@@ -867,8 +905,10 @@
           "section": "lines 54, 65 and 140: JEDEC_ID_WINBOND_W25Q64 0xEF4017, on the SPI device the logger opens by the name `dataflash`",
           "sha256": "0cbc8c946a2d186f1f8f618c5900c929b09b0e01ec2b57442206b32d1291bf2b",
           "pending": null
-        }
-      }
+        },
+        "frame": null
+      },
+      "axes": null
     }
   ]
 }

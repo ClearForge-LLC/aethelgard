@@ -6908,6 +6908,7 @@ mod tests {
             bus: format!("{peripheral}_BUS"),
             peripheral: peripheral.into(),
             cs: cs.into(),
+            orientation: None,
         }
     }
 

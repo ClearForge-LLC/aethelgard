@@ -5245,6 +5245,7 @@ mod tests {
             pairs: vec![],
             joins: vec![],
             thermal: vec![],
+            imus: vec![],
         }
     }
 

@@ -416,6 +416,7 @@ tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	6.017
 tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	5.572
 tests/with_tools.rs	a_thermal_via_other_than_its_rule_fails_drc_by_the_gates_rule	2.307
 tests/with_tools.rs	a_track_that_is_not_its_class_width_fails_drc_by_the_gates_rule	3.208
+tests/with_tools.rs	a_turned_keepout_is_where_kicad_draws_it	21.680
 tests/with_tools.rs	d3_and_d1_pass_erc_and_drc_with_parity_at_four_layers	22.827
 tests/with_tools.rs	drc_violation_board_fails_with_exactly_one_clearance_finding	0.669
 tests/with_tools.rs	each_tool_removed_from_path_is_named	0.035
@@ -570,3 +571,4 @@ tests/twin_tier2.rs	l1_bytes_written_before_the_frame_never_count_as_its_echo	14
 tests/twin_tier2.rs	l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo	14.000
 tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	20.000
 tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	24.000
+# AET-WO-4400d: with_tools' a_turned_keepout_is_where_kicad_draws_it is a Furnace estimate, not a run: 10.84 s alone in the pinned image on Furnace, times 2.0 (a_part_on_each_edge_passes_erc_and_drc's 6.017 s on CI over its 3.00 s measured beside it), 21.680; replace it at the next refit.
