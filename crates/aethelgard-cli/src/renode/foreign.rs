@@ -20,18 +20,18 @@ use crate::verdict::{Finding, FirmwareReport, Machine};
 pub const JUDGE: &str = "foreign";
 
 /// The longest boot `--foreign` admits, in virtual nanoseconds, and its name
-/// in the verdict. **Provisional** (`AET-WO-4400e` D7, deferred until B1 and
-/// B2 resolve): 4 s holds the ICM-42688-P's start (3.57 s) under the CLI's
-/// own script at about 10 s of wall and 500 MiB on Furnace (`AET-WO-4400e3`
-/// acceptance), inside the 30 s and 1 GiB bounds. D7 measures it with the
-/// IMU's reads and sets it.
+/// in the verdict (`AET-WO-4400e` D7, measured with the ICM-42688-P's FIFO
+/// live): unmodified ArduPilot's last witness, the ICM's first FIFO read, is
+/// at 3.6105 s, so 4 s leaves 0.39 s; the boot takes 10.6-12.0 s of wall and
+/// 775-821 MiB peak on Furnace, inside the 30 s and 1 GiB bounds, and its log
+/// keeps 1.21 MB of the 8 MiB budget.
 pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 4_000_000_000;
 pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 
 /// The rule table, in the order of the verdict: each of today's rules, what
 /// a foreign boot does with it, and what that judges or weakens (`INV-07`).
-/// Every row is ruled (PR #212, comments 6958822008 and 6965511448); only
-/// the bound waits on D7's measurement.
+/// Every row is ruled (PR #212, comments 6958822008, 6965511448 and
+/// 6966155027); the bound is D7's measurement.
 pub const RULES: &[(&str, &str, &str)] = &[
     (
         "firmware memory",
@@ -101,7 +101,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "--for at most 100 ms",
         "replaced",
-        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS (provisional until D7)",
+        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 4 s as D7 measured it (the last witness of unmodified ArduPilot at 3.61 s)",
     ),
     (
         "device identity",

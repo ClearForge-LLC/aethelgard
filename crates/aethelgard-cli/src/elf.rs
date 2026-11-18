@@ -330,8 +330,8 @@ pub fn flash_loads(
 /// `PT_LOAD` with a size lies, at its physical and its virtual address,
 /// inside one region of [`foreign_memory`]; no two segments' **file bytes**
 /// overlap (a zero-filled segment may share its physical address with another,
-/// as ArduPilot's `.crash_log`, `.bss` and `.heap` do: provisional, named to
-/// the architect); an executable segment runs where it is loaded. There is no
+/// as ArduPilot's `.crash_log`, `.bss` and `.heap` do: accepted on PR #212,
+/// comment 6965511448); an executable segment runs where it is loaded. There is no
 /// boot word to keep clear and no self-loop to find: a foreign firmware is not
 /// held to the generated runtime's contract.
 pub fn check_foreign(

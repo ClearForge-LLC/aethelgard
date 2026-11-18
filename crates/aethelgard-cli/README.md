@@ -379,7 +379,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
 **It is declared, never inferred** (`INV-06`):
 - `simulate --firmware F --spec S --foreign TIME` chooses it. `TIME` is the virtual time the boot runs, as `--for`'s, at most `FOREIGN_MAX_VIRTUAL_NS`.
-- That bound is 4 s, **provisional** until the window is measured with the IMU's reads (D7).
+- That bound is 4 s, as D7 measured it with the ICM's FIFO live: unmodified ArduPilot's last witness, the ICM's first FIFO read, is at 3.61 s; the boot takes 10.6–12.0 s of wall and at most 821 MiB, and its log keeps 1.2 MB of the 8 MiB budget.
 - `--for` and `--foreign` together are refused (exit 64). `--for` keeps its 100 ms bound.
 - The verdict's `boot` says `"judge": "foreign"`. A generated boot's verdict names no judge and is byte for byte what it was.
 
@@ -405,11 +405,17 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
   The console banner is refused. With no identity witnessed, the verdict names `foreign_not_booted`.
 - **Each modelled device** (D6 (i)):
   - its identity transaction;
-  - then one of its data reads after it: the script's data step, or a read its part lists in `parts.json` `reads` (the BME280's burst from `0xF7`);
+  - then one of its data reads after it: the script's data step, or a read its part lists in `parts.json` `reads` (the BME280's burst from `0xF7`; the ICM-42688-P's FIFO burst at `0xB0`, at least one 16-byte packet);
   - each with the virtual time of its first line in `boot.devices`;
   - a missing one is `{bus}_transaction_unwitnessed`.
 
   The configure step is not judged. The bytes of a listed read are not judged either: the stock models answer from the configuration the firmware wrote.
+
+**In CI** (`ardupilot-image.yml`, job `foreign`; `ci/foreign-judge.sh`): unmodified ArduPilot built for the generated `sentinel-02-own` board passes under `--foreign 4000ms`, every witness with its virtual time. Each mutation is refused by name:
+- the window short of U5's identity, or of its first FIFO read: `spi_transaction_unwitnessed`;
+- ArduPilot without `--foreign`: `FirmwareOutsideMemory`;
+- SPI2's receive DMA line dropped, or U5's model removed, from the platform: `PlatformNotEmitted`;
+- ArduPilot rebuilt from the same hwdef without its `IMU` line: `spi_transaction_unwitnessed` (U5's identity).
 - **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0, while the controller's last `CR1` write left `SPE` 0. That is ChibiOS's `spi_lld_stop`, legal on silicon (RM0433 §50.11.4).
   - The judge reads it from a hook on each SPI controller's writes, which logs only a `CFG2` write, with the value and `CR1` as it stands (D7 (b)); the SPI access log stays off.
   - Every exemption is counted in `boot.spi_errors_exempted`.

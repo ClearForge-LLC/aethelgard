@@ -19,7 +19,11 @@
 # generate its hwdef.dat with `aethelgard generate hwdef`, hold it to the
 # committed file, and build it with unmodified ArduPilot. `pinout` judges all of
 # them with `aethelgard check pinout` (ruling D7): the GPIO image, and since
-# AET-WO-4400b2 ArduPilot's device tables, the identity judge. The jobs live here, not in
+# AET-WO-4400b2 ArduPilot's device tables, the identity judge. `foreign`
+# (AET-WO-4400e) boots the generated sentinel-02 ELF on its emitted platform in
+# the tools image under `simulate --foreign` and refuses §2's mutations by name;
+# its one mutant firmware, the same hwdef without the IMU line, is a `generated`
+# entry uploaded as `mutant-*`, out of `pinout`'s reach. The jobs live here, not in
 # ci.yml, because they need this image, which only this workflow builds. They
 # run whenever the image, the check, the generator or anything the topology
 # comes from changes.
@@ -56,6 +60,7 @@ on:
       - "examples/**"
       - "Cargo.*"
       - "rust-toolchain.toml"
+      - "ci/foreign-judge.sh"
       - ".github/workflows/ardupilot-image.yml"
   push:
     branches: [main]
@@ -88,6 +93,7 @@ on:
       - "examples/**"
       - "Cargo.*"
       - "rust-toolchain.toml"
+      - "ci/foreign-judge.sh"
       - ".github/workflows/ardupilot-image.yml"
 
 permissions:
@@ -255,6 +261,12 @@ jobs:
             spec: crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
           - board: serial-dshot-9600
             spec: crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json
+          # AET-WO-4400e §2: sentinel-02's committed hwdef without its IMU
+          # line, for `foreign` only.
+          - board: sentinel-02-noimu
+            spec: crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
+            fixture: sentinel-02
+            drop: IMU
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -275,7 +287,14 @@ jobs:
           mkdir -p "$gen"
           "$bin" solve --file "${{ matrix.spec }}" > "$gen/${{ matrix.board }}.topology.json"
           "$bin" generate hwdef --topology "$gen/${{ matrix.board }}.topology.json" --out "$gen/${{ matrix.board }}.hwdef.dat"
-          cmp "$gen/${{ matrix.board }}.hwdef.dat" "crates/aethelgard-hwdef/tests/fixtures/${{ matrix.board }}.hwdef.dat"
+          cmp "$gen/${{ matrix.board }}.hwdef.dat" "crates/aethelgard-hwdef/tests/fixtures/${{ matrix.fixture || matrix.board }}.hwdef.dat"
+          # A mutant drops exactly one line, which must be there.
+          if [ -n "${{ matrix.drop }}" ]; then
+            f="$gen/${{ matrix.board }}.hwdef.dat"
+            test "$(grep -c '^${{ matrix.drop }} ' "$f")" = 1
+            sed -i '/^${{ matrix.drop }} /d' "$f"
+            test "$(grep -c '^${{ matrix.drop }} ' "$f")" = 0
+          fi
 
       - name: refuse an unpinned base, download, package, clone or pip file
         run: bash container/check-pins.sh container/ardupilot.Dockerfile
@@ -309,10 +328,40 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: generated-${{ matrix.board }}
+          name: ${{ matrix.drop && 'mutant' || 'generated' }}-${{ matrix.board }}
           path: ${{ runner.temp }}/boards
           if-no-files-found: error
           retention-days: 7
+
+  # AET-WO-4400e: the foreign judge on unmodified ArduPilot, in the pinned
+  # tools image (container/IMAGE): crates fetched and built with the network,
+  # every boot under --network none.
+  foreign:
+    needs: generated
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RUN: >-
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
+        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: generated-sentinel-02
+          path: boards
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: mutant-sentinel-02-noimu
+          path: boards
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+      - name: build the CLI and the analog bridge, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --locked --manifest-path bridge/Cargo.toml"
+      - name: the foreign judge passes ArduPilot and refuses each mutation by name
+        run: $RUN --network none "$(cat container/IMAGE)" bash ci/foreign-judge.sh boards
 
   cli:
     runs-on: ubuntu-latest
