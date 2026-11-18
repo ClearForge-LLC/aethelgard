@@ -23,14 +23,15 @@
 //! - a barrel cell ([`Element::Tall`], [`barrel`]) is the same field on the
 //!   via's plating unrolled, its height known only within a range;
 //! - a joint carrying `κ·F²` for the flux `F` of one edge: a grid face of a
-//!   via's junction square into its barrel column ([`junction`], whose
+//!   via's junction square into its barrel column ([`junction_core`], whose
 //!   three regions' fields are written out there and whose energy is
 //!   evaluated in closed form).
 //!
 //! A terminal (a pad taken as an equipotential) is a node with no element.
 //! [`Network::check`] refuses, before any flux, a network whose elements do
-//! not price every edge exactly once per end, or that joins two terminals
-//! directly.
+//! not price every edge exactly once per end, that joins two terminals
+//! directly, or that has a node with edges and neither an element nor a
+//! terminal's role.
 //!
 //! **Exactness.** A potential solve proposes the face fluxes (two-point
 //! conductances, conjugate gradients preconditioned by aggregation
@@ -42,7 +43,7 @@
 //! exactly its target in integers ([`Network::bound`] re-checks it in
 //! `i128`). Each element's field is then exactly divergence-free in the
 //! reals (a cell with a junction's injection has the uniform divergence
-//! that the plating's radial field cancels, [`junction`]), whatever the
+//! that the plating's radial field cancels, [`junction_core`]), whatever the
 //! solve's error: a poor solve gives a loose bound, never a wrong one.
 //!
 //! **Rounding.** The energy of that exact field is evaluated in interval
@@ -51,7 +52,7 @@
 //! flux in quanta over `2⁴⁰` is exact in binary. Inputs that are not exact
 //! in binary (ρ, a drill's radius, thicknesses) enter as intervals that hold
 //! them; `ln` and `atan` are series with their remainders added as
-//! intervals ([`Iv::ln`], [`Iv::atan`]); [`junction`]'s integrals are
+//! intervals ([`Iv::ln`], [`Iv::atan`]); [`junction_core`]'s integrals are
 //! enclosed panel by panel. A range (a barrel row's height) is taken at its
 //! worse end. The bound is the upper end of the total's interval: **nothing
 //! is rounded down**.
@@ -171,22 +172,6 @@ impl Iv {
         Iv {
             lo: self.lo.sqrt().next_down().max(0.0),
             hi: self.hi.sqrt().next_up(),
-        }
-    }
-
-    /// The smallest interval holding both.
-    pub fn hull(self, o: Iv) -> Iv {
-        Iv {
-            lo: self.lo.min(o.lo),
-            hi: self.hi.max(o.hi),
-        }
-    }
-
-    /// `max(lo_bound, min(hi_bound, x))` for every `x` in the interval.
-    pub fn clamp(self, lo: f64, hi: f64) -> Iv {
-        Iv {
-            lo: self.lo.clamp(lo, hi),
-            hi: self.hi.clamp(lo, hi),
         }
     }
 
@@ -322,7 +307,7 @@ pub enum Element {
     /// four bounds it at every width and height between. Only the upper end
     /// of its interval is certified. Its node may also take
     /// [`Element::Joint`] edges that are not faces: the plating's radial
-    /// injection ([`junction`]), whose divergence the cell's uniform
+    /// injection ([`junction_core`]), whose divergence the cell's uniform
     /// divergence meets.
     Tall {
         node: usize,
@@ -377,9 +362,6 @@ pub struct Bound {
     /// The energy's parts: sheet cells, junction joints, barrel cells
     /// ([`Network::energy_by_kind`]); `energy` is their sum.
     pub kinds: [Iv; 3],
-    /// Conjugate-gradient iterations used, and the final relative residual.
-    pub iterations: usize,
-    pub residual: f64,
     /// The certified flow itself: each edge's flux, in quanta.
     pub flux: Vec<i64>,
 }
@@ -420,7 +402,7 @@ impl Network {
         tol: f64,
     ) -> Result<Bound, FlowError> {
         self.check(source, sink)?;
-        let (u, iterations, residual) = self
+        let u = self
             .solve(source, sink, max_iter, tol)
             .ok_or(FlowError::Disconnected)?;
         let mut flux: Vec<f64> = self
@@ -457,8 +439,6 @@ impl Network {
             energy: kinds[0].add(kinds[1]).add(kinds[2]),
             kinds,
             flux: q,
-            iterations,
-            residual,
         })
     }
 
@@ -604,17 +584,11 @@ impl Network {
         Ok(())
     }
 
-    /// The potentials with the source at 1 and the sink at 0, by
-    /// Jacobi-preconditioned conjugate gradients on the graph Laplacian.
+    /// The potentials with the source at 1 and the sink at 0, by conjugate
+    /// gradients on the graph Laplacian, preconditioned by [`Amg`].
     /// Nodes not connected to either terminal keep potential 0 and carry no
     /// flux.
-    fn solve(
-        &self,
-        source: usize,
-        sink: usize,
-        max_iter: usize,
-        tol: f64,
-    ) -> Option<(Vec<f64>, usize, f64)> {
+    fn solve(&self, source: usize, sink: usize, max_iter: usize, tol: f64) -> Option<Vec<f64>> {
         let n = self.nodes;
         let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
         for &(a, b, g) in &self.edges {
@@ -713,7 +687,7 @@ impl Network {
         for (k, &i) in free.iter().enumerate() {
             u[i] = x[k];
         }
-        Some((u, it, res))
+        Some(u)
     }
 
     /// Integer fluxes, exactly conserving: every node's net outflow is 0,
@@ -1102,8 +1076,8 @@ impl Amg {
 
 /// The coefficient of one face of a via's junction region: the energy
 /// `(ρ/t)·k·F²` of carrying that face's flux `F` into its own barrel column
-/// is at most `k` times `(ρ/t)·F²` (`AET-WO-1303b`). [`junction`] returns
-/// `(ρ/t)·k` for a hole at one position; [`face_bound`] bounds `k` over every
+/// is at most `k` times `(ρ/t)·F²` (`AET-WO-1303b`). [`junction_core`] returns
+/// `k` for a hole at one position; [`junction_table`] bounds it over every
 /// position the fabricator's tolerance allows.
 ///
 /// **Geometry, in the face's frame.** The hole's centre `c` is the origin;
@@ -1241,24 +1215,6 @@ pub fn junction_core(
     let area = d2.sub(i2).scale(0.5);
     let plating = i_p.div(area.sqr()).mul(g2);
     Ok((ray.add(band).add(plating), dth))
-}
-
-/// [`junction_core`] for a hole concentric with a face at distance `a`
-/// over `[u, v]`, times `rho_over_t`: `(ρ/t)·k`.
-#[allow(clippy::too_many_arguments)]
-pub fn junction(
-    a: f64,
-    u: f64,
-    v: f64,
-    r_d: Iv,
-    beta: Iv,
-    rho_over_t: Iv,
-    t_p: Iv,
-    panels: usize,
-) -> Iv {
-    let (k, _) = junction_core(Iv::exact(a), Iv::exact(u), v - u, r_d, beta, t_p, panels)
-        .expect("the band reaches the face");
-    rho_over_t.mul(k)
 }
 
 /// Why a via's junction cannot be priced.
@@ -1425,7 +1381,7 @@ pub fn junction_table(
 /// its rows top to bottom heights in `rows[i]` (the declared range). `top`
 /// and `bottom`, when given, are terminal nodes joined to the first and
 /// last rows through their outer faces. Returns each cell's node,
-/// `[row][column]`. A layer joins a row through [`junction`] edges into its
+/// `[row][column]`. A layer joins a row through [`junction_core`] edges into its
 /// cells, whose divergence they carry.
 pub fn barrel(
     net: &mut Network,
@@ -1538,7 +1494,7 @@ pub type Cell = (i64, i64);
 /// One layer's copper as square cells of one size, indexed by their lower
 /// left corner in cells: copper cells, terminal cells (each holding a
 /// terminal node: equipotential, no resistance) and ports (a cell's face
-/// joined to another element, a via junction's [`junction`]). Built in two
+/// joined to another element, a via junction's [`junction_core`]). Built in two
 /// steps, [`Sheet::new`] then any [`Sheet::port`]s, then [`Sheet::finish`],
 /// which writes each copper cell's [`Element::Cell`].
 pub struct Sheet {
@@ -1637,7 +1593,7 @@ impl Sheet {
     }
 }
 
-/// A via's hole: drill radius `r_d`, band width `beta` ([`junction`]),
+/// A via's hole: drill radius `r_d`, band width `beta` ([`junction_core`]),
 /// the minimum plating `t_p`, and the copper's resistivity bound `rho`.
 #[derive(Clone, Copy, Debug)]
 pub struct Hole {
@@ -1656,7 +1612,7 @@ impl Hole {
 
 /// A layer a via joins: its sheet, the barrel row that is its copper (the
 /// row's height range must be the layer's thickness range) and its minimum
-/// thickness, at which [`junction`]'s coefficients are taken.
+/// thickness, at which [`junction_core`]'s coefficients are taken.
 pub struct Join<'a> {
     pub sheet: &'a mut Sheet,
     pub row: usize,
@@ -1768,7 +1724,10 @@ impl Region {
         let (tx, ty) = (-ny, nx);
         let p = |s: i64| ((f.d0 * nx + s * tx) * h, (f.d0 * ny + s * ty) * h);
         let pts = [p(f.u0), p(f.u0 + 1), (-e, -e), (e, -e), (e, e), (-e, e)];
-        let hull = convex_hull(&pts);
+        let hull: Vec<(i128, i128)> = convex_hull(&pts)
+            .iter()
+            .map(|&(x, y)| (i128::from(x), i128::from(y)))
+            .collect();
         let (x0, x1) = (
             pts.iter().map(|q| q.0).min().unwrap(),
             pts.iter().map(|q| q.0).max().unwrap(),
@@ -1779,7 +1738,8 @@ impl Region {
         );
         for i in x0.div_euclid(h) - 1..=x1.div_euclid(h) + 1 {
             for j in y0.div_euclid(h) - 1..=y1.div_euclid(h) + 1 {
-                if !inside((i, j)) && overlaps(&hull, (i * h, j * h, (i + 1) * h, (j + 1) * h)) {
+                let b = |k: i64| i128::from(k * h);
+                if !inside((i, j)) && overlaps(&hull, (b(i), b(j), b(i + 1), b(j + 1))) {
                     return false;
                 }
             }
@@ -1820,19 +1780,16 @@ pub fn convex_hull(pts: &[(i64, i64)]) -> Vec<(i64, i64)> {
 /// A convex polygon (counter-clockwise) and the open box `(x0, y0, x1, y1)`
 /// share an interior point: no separating axis among the box's two and
 /// the polygon's edge normals (touching is not overlapping). Exact.
-pub fn overlaps(poly: &[(i64, i64)], (x0, y0, x1, y1): (i64, i64, i64, i64)) -> bool {
+pub fn overlaps(poly: &[(i128, i128)], (x0, y0, x1, y1): (i128, i128, i128, i128)) -> bool {
     let bx = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-    let span = |pts: &[(i64, i64)], ax: (i128, i128)| {
-        let v: Vec<i128> = pts
-            .iter()
-            .map(|q| ax.0 * i128::from(q.0) + ax.1 * i128::from(q.1))
-            .collect();
+    let span = |pts: &[(i128, i128)], ax: (i128, i128)| {
+        let v: Vec<i128> = pts.iter().map(|q| ax.0 * q.0 + ax.1 * q.1).collect();
         (*v.iter().min().unwrap(), *v.iter().max().unwrap())
     };
     let mut axes: Vec<(i128, i128)> = vec![(1, 0), (0, 1)];
     for k in 0..poly.len() {
         let (a, b) = (poly[k], poly[(k + 1) % poly.len()]);
-        axes.push((i128::from(b.1 - a.1), -i128::from(b.0 - a.0)));
+        axes.push((b.1 - a.1, -(b.0 - a.0)));
     }
     axes.iter().all(|&ax| {
         let (p0, p1) = span(poly, ax);
@@ -2601,7 +2558,7 @@ mod tests {
         assert!(!r.rays_inside(62_500, 300_000));
     }
 
-    /// [`junction`]'s coefficient holds its own field's energy, computed
+    /// [`junction_core`]'s coefficient holds its own field's energy, computed
     /// here directly by midpoint quadrature over the field as defined (in
     /// polar coordinates), and is within 0.1 % of it: the enclosure's own
     /// width. A term dropped or mis-signed moves it outside.
@@ -2645,16 +2602,18 @@ mod tests {
             let (ray, band) = (rho / t * ray, rho / t * band);
             let direct = ray + band + plat;
             let rho_over_t = Iv::exact(rho).div(Iv::exact(t));
-            let k = junction(
-                a,
-                u,
-                v,
+            // a hole concentric with the face: (ρ/t)·k
+            let (k, _) = junction_core(
+                Iv::exact(a),
+                Iv::exact(u),
+                v - u,
                 Iv::exact(r_d),
                 Iv::exact(beta),
-                rho_over_t,
                 Iv::exact(t_p),
                 256,
-            );
+            )
+            .unwrap();
+            let k = rho_over_t.mul(k);
             eprintln!(
                 "junction [{u}, {v}]: κ {:.5} direct {direct:.5} (rays {ray:.5}, band {band:.5}, plating {plat:.5})",
                 k.hi

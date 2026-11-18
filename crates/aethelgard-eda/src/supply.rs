@@ -11,25 +11,26 @@
 //!   through-hole pads. Coordinates are integers throughout, so the test is
 //!   exact;
 //! - on an inner plane of the net, a cell counts when it lies inside the
-//!   board's outline less `edge_nm`, and clear of every knockout: each other
-//!   net's via and every drilled pad, at [`Model::knockout`]'s radius. A
-//!   through-hole pad of the net itself is knocked out too: its join to the
-//!   plane is not priced;
-//! - plane copper outside [`Model::crop_nm`] of the terminals is left out;
-//! - every via of the net on the router's grid, its thermal arrays'
-//!   included where they are on it, is [`flow::via_ports`]: a junction
-//!   square on each layer whose copper holds it wholly, and a barrel through
-//!   the stack. A layer that does not hold the square does not join that
-//!   via, and a via off the grid is left out with its hole kept clear (left
-//!   out, as above).
+//!   board's outline less [`Model::edge_nm`] and clear of every knockout
+//!   (each other net's via and every drilled pad, at
+//!   [`Model::knockout_raw`]'s radius) widened by the fill's min-thickness
+//!   opening; a cell inside that opening ring counts only where a witness
+//!   disc admits it (`witnessed`). A through-hole pad of the net that is
+//!   relieved joins no plane: its spokes are not priced (a note);
+//! - plane copper outside [`Model::crop_nm`] of the terminals' box is left
+//!   out, and so is every plane island no via port reaches, as KiCad drops
+//!   islands;
+//! - every via of the net on the router's grid, and each through-hole pad
+//!   of the net on it (priced as a via with the pad's drill), is
+//!   [`flow::via`]: a junction region on each layer whose copper holds it,
+//!   priced at the worst hole position within [`Model::hole_offset_nm`] per
+//!   axis ([`flow::junction_table`]), and a barrel through the stack. An
+//!   outer layer joins only through a port whose rays to the hole lie in
+//!   copper and clear of every hole. A via whose pad cannot hold the band
+//!   at every hole position, or off the grid, is left out with its hole
+//!   kept clear (a note).
 //!
-//! **Stated conditions** (each named in the measurement's output):
-//! - every hole concentric with its pad (ruled for the measured stop only);
-//! - each terminal pad an equipotential (the current enters and leaves
-//!   through the whole pad);
-//! - copper no thinner than [`Model`]'s minima, no thicker than the stack's
-//!   maximum, at no more than [`Model::rho`];
-//! - the plane's fill no smaller than the inset outline less the knockouts.
+//! **Stated conditions:** the verdict carries them, from `conditions`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,7 +42,7 @@ use crate::route::{Board, Layer, Pad, Routed};
 /// The physical model's inputs. Lengths in nm unless named otherwise.
 #[derive(Clone, Debug)]
 pub struct Model {
-    /// The cell side: 31 250 or 62 500 nm (exact binary in mm).
+    /// The cell side, nm ([`PITCH_NM`] in the gate).
     pub h_nm: i64,
     /// Copper's resistivity bound, Ω·mm.
     pub rho: Iv,
@@ -50,7 +51,7 @@ pub struct Model {
     pub plane_nm: (i64, i64),
     /// The hole plating's minimum, nm.
     pub plating_nm: i64,
-    /// [`flow::junction`]'s band, nm.
+    /// [`flow::junction_core`]'s band, nm.
     pub beta_nm: i64,
     /// The fabricator's hole position tolerance, per axis, nm: every hole
     /// is priced at every position within it.
@@ -60,18 +61,12 @@ pub struct Model {
     /// Plane copper further than this from the terminals' box is left out.
     pub crop_nm: i64,
     /// The fill's measured clearance to foreign copper, nm, and the
-    /// min-thickness opening added to it ([`Model::knockout`]).
+    /// min-thickness opening added to it ([`Model::knockout_raw`]).
     pub fill_clearance_nm: i64,
     pub opening_nm: i64,
 }
 
 impl Model {
-    /// A plane's knockout radius around copper `d` nm across: `d/2` plus
-    /// the fill clearance, rounded up to 10 µm, plus the opening.
-    pub fn knockout(&self, d: i64) -> i64 {
-        self.knockout_raw(d) + self.opening_nm
-    }
-
     /// The fill's own knockout around copper `d` nm across, before the
     /// min-thickness opening: `d/2` plus the fill clearance, rounded up to
     /// 10 µm, plus [`ARC_NM`].
@@ -348,10 +343,6 @@ pub enum Refusal {
     Flow(FlowError),
 }
 
-fn named(kind: &'static str, m: String) -> Refusal {
-    Refusal::Named(kind, m)
-}
-
 /// The pad `reference`.`number`, on the net.
 pub fn pad<'a>(
     board: &'a Board,
@@ -366,7 +357,7 @@ pub fn pad<'a>(
         .flat_map(|p| p.pads.iter())
         .find(|p| p.number == number && p.net.as_deref() == Some(net))
         .ok_or_else(|| {
-            named(
+            Refusal::Named(
                 "TerminalMissing",
                 format!("{reference}.{number} is not a pad of `{net}`"),
             )
@@ -409,7 +400,7 @@ fn hull_in_copper(hull: &[(i64, i64)], shapes: &[Shape], depth: u32) -> bool {
         side: i128,
         depth: u32,
     ) -> bool {
-        if !overlaps128(hq, (x0, y0, x0 + side, y0 + side)) {
+        if !flow::overlaps(hq, (x0, y0, x0 + side, y0 + side)) {
             return true;
         }
         if shapes
@@ -461,25 +452,6 @@ fn hull_clear_of_holes(hull: &[(i64, i64)], holes: &[((i64, i64), i64)]) -> bool
             }
         }
         !inside
-    })
-}
-
-/// [`flow::overlaps`] in `i128` coordinates.
-fn overlaps128(poly: &[(i128, i128)], (x0, y0, x1, y1): (i128, i128, i128, i128)) -> bool {
-    let bx = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
-    let span = |pts: &[(i128, i128)], ax: (i128, i128)| {
-        let v: Vec<i128> = pts.iter().map(|q| ax.0 * q.0 + ax.1 * q.1).collect();
-        (*v.iter().min().unwrap(), *v.iter().max().unwrap())
-    };
-    let mut axes: Vec<(i128, i128)> = vec![(1, 0), (0, 1)];
-    for k in 0..poly.len() {
-        let (a, b) = (poly[k], poly[(k + 1) % poly.len()]);
-        axes.push((b.1 - a.1, -(b.0 - a.0)));
-    }
-    axes.iter().all(|&ax| {
-        let (p0, p1) = span(poly, ax);
-        let (q0, q1) = span(&bx, ax);
-        p1 > q0 && q1 > p0
     })
 }
 
@@ -663,7 +635,7 @@ pub fn copper(
         let jn = &junctions[by_geometry[&(v.via_nm, v.drill_nm)].unwrap_or(0)];
         for &(i, j) in &jn.region.cells {
             if !in_region.insert((c.0 + i, c.1 + j)) {
-                return Err(named(
+                return Err(Refusal::Named(
                     "ViaRegionsOverlap",
                     format!("the via at {:?}'s junction region meets another's", v.at),
                 ));
@@ -1096,7 +1068,7 @@ pub fn bound(
 ) -> Result<PinBound, Refusal> {
     for p in [source, sink] {
         if p.drill_nm.is_some() {
-            return Err(named(
+            return Err(Refusal::Named(
                 "TerminalDrilled",
                 format!(
                     "pad {} is through-hole: its terminal is not modelled",
@@ -1209,7 +1181,7 @@ pub const PITCH_NM: i64 = 62_500;
 /// Plane copper further than this from the terminals' box is left out
 /// (ruling S4): less copper only raises the bound.
 pub const CROP_NM: i64 = 5_000_000;
-/// [`flow::junction`]'s band, nm: thin bands cost little (measured: 30 µm to
+/// [`flow::junction_core`]'s band, nm: thin bands cost little (measured: 30 µm to
 /// 1 µm raises a coefficient by 1–2 %), and 10 µm lets the worst-case hole's
 /// band fit a 0.6 mm via pad.
 pub const BETA_NM: i64 = 10_000;
