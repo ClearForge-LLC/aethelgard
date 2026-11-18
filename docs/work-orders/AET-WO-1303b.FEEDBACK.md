@@ -1,8 +1,272 @@
 # AET-WO-1303b — FEEDBACK
 
-Labels: **[measured]** by a run named beside it, its output under `spike/1303b/`; **[read at source]** from a file and line named beside it; **[inferred]** from reasoning, neither read nor run.
+Labels:
+- **[measured]**: by a run named beside it.
+- **[read at source]**: from a file and line named beside it.
+- **[inferred]**: from reasoning, neither read nor run.
 
-## 0. Status: STOPPED at the ruled measured stop (D5 (b))
+Part B (the measured stop) and Part A (the §1.1 stop) are kept below as ruled records. Section numbers inside each part refer to that part. Their evidence under `spike/1303b/` was deleted with this build, as ruled in S5, and stays in this branch's history at `81a8e619`.
+
+## 0. Status: READY
+
+Built to every ruling on #222:
+
+| Comment | Ruling |
+|---|---|
+| 6968894352 | the §1.1 stop (Part A) |
+| 6969258830 | Q1 and Q2 |
+| 6971664955 | the measured stop (Part B) |
+| 6973083189 | the load |
+| 6974760231 | the fabrication tolerances |
+| 6976355662 | the fixture conflict, (A) |
+
+**The gate.** For each domain the specification gives a drop limit (`power.drop_limits`), `extract` judges:
+- every MCU supply and return pin's certified resistance (D5 (b)), with every fabrication tolerance the specification declares priced;
+- the path from the regulator's current-entry pad (a buck's inductor pad on the rail; an LDO's OUT) to its own ground pin (`PGND` by the power-parts pin map; U11.1 on the fixtures, SNVSAN3F Table 6-1, S2);
+- the drop: (worst supply pin + worst return pin) × the domain's load. The load is `loads()`' total: the MCU's 658 mA, child regulators' inputs, and every declared `power.loads` entry.
+
+With no limit, no verdict key moves (§2.3).
+
+**Coverage, every tolerance priced [measured, §2.1]:**
+
+| Board | VDD_3V3 | GND | Drop at the load | Against 165 mV |
+|---|---|---|---|---|
+| s024l (4 layers, GND 0.7 mm vias) | 16/16, 33.2–58.5 mΩ | 11/11, 39.0–45.9 mΩ | 74.8 mV at 716 mA | pass, 2.2× |
+| Sentinel-03 as drawn (GND 0.6 mm vias) | 16/16, 33.0–56.6 mΩ | 10/10 refused, `SupplyViaPadTooSmall`, "via pad >= 0.7 mm" | none | refused by name |
+| Sentinel-03 with GND on 0.7 mm vias (not committed, ruled (A)) | 16/16, 33.6–68.1 mΩ | 10/10, 37.5–41.9 mΩ | 82.3 mV at 748 mA | 2.0×, but `IMU_SCK` fails 31.27 > 30 pF |
+| The power fixture (2 layers, GND 0.7 mm vias) | 16/16, 581–1547 mΩ | 11/11 refused, `GroundReturnUnread` (ruled (iii)) | none | refused by name |
+
+No 4-layer margin falls under 1.5×, so no pitch note fires.
+
+**Acceptance (WO §2):**
+- Each bound has an exact-case test and a mutant a test kills (§4.2).
+- The power fixture gets bounds per supply pin, and its return is refused per pin by name.
+- Sentinel-01's bytes are unchanged, and so is every board without a regulator, except the pair stand-in's `pairs` key (D2, §2.3).
+- A missing minimum or tolerance is refused by name, never defaulted.
+- CI is green and `TIER2_MIN` is exact (§5).
+
+**Correction, as the architect asked.** At the measured stop I gave the junction as 1.4–3.6 % of each bound; that was the concentric hole. With S1's worst-case junction, the hole-size and etch tolerances and the 62.5 µm pitch together, the worst 4-layer VDD + VSS rises:
+- s024l: from 62.3 mΩ to 104.4 mΩ (+68 %);
+- Sentinel-03 (GND on 0.7 mm vias): from 65.0 mΩ to 110.0 mΩ.
+
+I did not measure each lever's share separately; an earlier "25–35 %" for S1 alone was not measured on this head and is withdrawn.
+
+## 1. What is built
+
+### 1.1 `crates/aethelgard-eda/src/flow.rs`
+
+The certified discrete Thomson flow is described in Part B §1. This build adds the worst case over the hole.
+
+- **Position.** `junction_table` partitions the ±`hole_position_um` offset into 16 × 16 boxes. Over each box it bounds each face's `κ`, and records each box's own barrel widths.
+- **Size.** The shell radius runs from the smallest finished hole to the largest, each plus the plating minimum. It is cut into 4 slices (`HOLE_SIZE_SLICES`). Each slice's table becomes further boxes (`JunctionTable::merge`), so `Element::Group` prices a via's joints and barrel cells together at the worst (size, position) box.
+- **Junction coefficients as series.** The band coefficients and the plating term were differences of terms of order `r_d/β`, with values of order `β/r_d`. Over an interval of radii those differences lost everything to dependency; Sentinel-03 hit "division by an interval holding 0". They are now the exact series in `x = β/r_d` and `u = 1 − (1 − t_p/r_d)²`, derived beside the code:
+  - `c_ff = Σ(−1)^{k+1} x^k/(k+2)`
+  - `c_fg = Σ(−1)^{k+1} 2x^k/((k+1)(k+2))`
+  - `c_gg = Σ(−1)^{k+1} 2x^k/(k(k+1)(k+2))`
+  - `I/A² = Σ u^{m−2}/(m(m−1)(m−2))`
+
+  Each tail is bounded. `r_d` enters once, so an interval stays tight. Tests:
+  - the quadrature match within 0.05 % at a point is unchanged;
+  - over a quarter of the size range, the interval encloses 17 sampled sizes and its upper end is within 2 % of their largest.
+- **`Network::check`** refuses a node with edges but neither an element nor a terminal's role (the adversarial pass, L3).
+
+### 1.2 `crates/aethelgard-eda/src/supply.rs`
+
+**Engine constants**, documented beside the flow (S4): `PITCH_NM` 62.5 µm, `CROP_NM` 5 mm, `BETA_NM` 10 µm, `FILL_CLEARANCE_NM`, `OPENING_NM`, `EDGE_NM`, `ARC_NM`, `HOLE_SIZE_SLICES`. The hole position tolerance moved out of the engine, into the specification, as ruled.
+
+**Hole size (ruling (1), option (a)):**
+- The barrel is priced at the smallest shell (`barrel_hole`). Its coefficient `ρr/A(r)` falls as `r` grows, by `−t/(2r − t)²`.
+- The junction's fit is checked at the largest shell plus the position's reach.
+- Holes kept clear of the net's copper use the largest finished size (`hole_clear`).
+- **No plating maximum is needed.** At least the minimum plating lines the finished wall, and the layer's copper meets it, so a shell at the finished radius plus the minimum is copper at every size. My bus note that VDD failed at 19 µm was wrong.
+
+**A via that cannot fit** is left out. A pin it leaves unreachable is refused, `SupplyViaPadTooSmall`, and the message names the pad that would fit (`pad_needed`, rounded up to 10 µm). The message states that the gate left those vias out. It does not claim that they alone cut the path.
+
+**Etch (ruling (2)).** Tracks are priced at `(1000 − track_width_permille)/1000` of their drawn width, rounded down. Pads and via pads at drawn size are a named condition.
+
+**Plane ports, face by face.** On a plane a face is a port when every cell its column's hull meets is plane copper (`Region::hull_inside`). Before, a via joined a plane only if its whole junction region was plane copper.
+- **Why it changed:** pricing the largest hole grew the regions, and Sentinel-03 lost 10 of 16 VDD pins and 4 of 10 GND pins: 33 VDD vias without a plane join, against 19 before [measured, a temporary probe].
+- **Why it is sound:** each face's rays, its band sector and its plating column lie in the triangle from the hole's centre to the face. That triangle lies inside the hull of the face and the centre square, so a column whose hull is copper is copper wherever it carries current. The outer layers already used this test.
+- **Test:** a foreign knockout reaching into one side of a region costs only that side's faces.
+
+**The adversarial pass's guards (§4.1):**
+- `SupplyTerminalMissing`;
+- witness disc clearance;
+- port hulls clear of holes;
+- notes in the verdict;
+- a non-finite bound refused;
+- a hole that may finish at or below zero left out;
+- the declared dielectric maximum bounding a barrel's row.
+
+### 1.3 `crates/aethelgard-cli/src/extract.rs`
+
+- **`supplies`** sits beside `lines`, with: verdict, resistance, source, return, load, limit and its source, the drop, each pin and return, the conditions, the pitch note, and the copper model's notes. It is absent without a limit.
+- **`pairs` (D2).**
+- **Findings:** `supply_pin_unbounded` and `supply_drop_over_limit`. `supply_drop_unbounded` is belt-and-suspenders and labelled so.
+
+### 1.4 Specification fields
+
+All optional, with no schema bump (ruled):
+
+| Field | Validation |
+|---|---|
+| `board.stackup.outer_copper_min_um`, `plane_copper_min_um` | at most `copper_max_um` |
+| `plating_min_um`, `copper_temperature_max_c` | |
+| `Dielectric.max_thickness_um` | |
+| `board.stackup.fab_tolerances`: `hole_position_um`, `hole_size_plus_um`, `hole_size_minus_um` | 0–1000 µm |
+| `fab_tolerances.track_width_permille` | 0–999 |
+| `power.drop_limits` | |
+| `power.loads[].reference` | |
+
+Each entry is `{value, source}`, and is refused by name when the gate reads it absent.
+
+**Deviation, for the record.** The ruling named `track_width_fraction`. The IR holds integers only (`Sourced.value: u32`, `Eq`) and writes fractions per mille (`relative_permittivity_max_permille`), so the field is `track_width_permille`: 200 means ±20 %.
+
+### 1.5 Fixtures (bytes that move)
+
+**Both power fixtures' VDD_3V3 load entries** name every other sink, each cited, derived or declared (6973083189). Sentinel-03 has 90 mA and the power fixture 37 mA. Two hand-computed input-current goldens moved by exactly +37 mA.
+
+**Both declare JLCPCB's tolerances** (6974760231). The sources cite jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Hole Position Tolerance "+/-0.075 mm"; Hole size Tolerance "Through-holes: +0.13 / -0.08 mm"; Track width tolerance "+/-20%". A source must be printable ASCII, so "±" is written "+/-".
+
+**GND's via class:**
+- **The power fixture puts GND in `SUPPLY_MCU`** (0.7/0.3 mm vias, 0.2 mm tracks, as the default), as the `-gnd` variant was measured. Its board's GND vias move. Its `extract` still passes, every line under its bound [measured]. `power_board_tier1`'s class list gains `GND`.
+- **Sentinel-03 keeps GND on 0.6/0.3** (ruled (A)). No byte of its board moves.
+
+**Sentinel-01 is untouched.**
+
+## 2. Measured at the gate
+
+### 2.1 Coverage [measured, `~/.cache/aet-1303b/cov/run.py`]
+
+The run used HEAD's release binary at a 165 mV limit, on the power fixture as the CLI tests take it (`tests/common/power.rs`) and on s024l (the same at Sentinel-03's four layers and stackup, as tier 1 builds it). The table is in §0. Each board takes 3–4 min in release (9 min 19 s for three). The supply tier-1 file takes 4 min 54 s on this host.
+
+**The pitch and the etch [measured, unit probe].** At 62.5 µm, a 45° 0.2 mm track etched to 0.16 mm no longer holds a face-connected chain of cells into a 0.7 mm via, and the path disconnects. A face-adjacent pair needs a strip about 0.133 mm wide, and alignment does the rest. No corpus pin is lost to it today: Sentinel-03's coverage is the same with the etch at 0. It is the S4 finer-pitch lever, in the §7.1 row.
+
+### 2.2 The solver (S4's timing, kept here as ruled)
+
+The potential solve is preconditioned by aggregation multigrid. A 1.76M-cell sheet solves in 7 s, against 400 s with Jacobi [measured, the removed timing test]. Nothing it computes enters the bound except as a proposal.
+
+### 2.3 Byte-identity [measured, `~/.cache/aet-1303b/cmp/run.py`, main's binary against HEAD's on every committed specification]
+
+25 committed specifications. Of the 23 without a regulator, 18 emit, and 17 of them have **board and `extract` verdict byte-identical** to main's, Sentinel-01 included (`examples/sentinel-01.json`, `examples/sentinel-01-minimal.json`, `sentinel-01-bench.json`). The exceptions:
+- `pair-standin.json`: its board is identical, and its verdict gains `pairs` (key added, nothing else changed), D2 as ruled.
+- 5 refuse at `emit` on both binaries alike: three solver fixtures meant to, `imu-baro-1v8.json` and `invalid-zero-domain.json`.
+
+The two specifications with a regulator gain fields main's binary refuses as unknown, so each was emitted from its own branch's file:
+- **Sentinel-03:** board **identical** (sha256 `7f259f04a192…` both).
+- **The power fixture:** board differs (GND on 0.7 mm vias, ruled); its `extract` passes.
+
+## 3. Rulings applied after the measured stop
+
+- **The load (6973083189):** option 1, as §1.5 describes.
+- **The tolerances (6974760231):** (1) (a) and (2) as recommended, §1.2. (b) and (c) were refused.
+- **The fixture conflict (6976355662):** (A), §1.5.
+  - With GND on 0.7 mm vias, Sentinel-03's routing moves and `IMU_SCK` measures 31.27 pF against its declared 30 pF (main: 20.43 pF; its vias 8.57 pF).
+  - Sentinel-03 keeps 0.6, and its refusal is asserted through `extract` in tier 1. Its own specification declares no drop limit, so `verify` does not fail on it.
+  - The priced 4-layer drop is gated on s024l in tier 1.
+- **The pair stand-in.** It is the only committed specification with `diff_pairs`, and it has no regulator. Its `extract` verdict gains `pairs`, which is D2's delivery, as ruled at §1.1.
+
+## 4. Adversarial pass, mutation, reduction
+
+### 4.1 Adversarial pass (full, WO §5)
+
+A fresh subagent ran it; I checked each finding.
+
+**Fixed:**
+- **H1.** A limit on a domain the load has no pin on judged nothing and passed. It is now refused, `SupplyTerminalMissing` (test). A `None` drop with no refused pin is a finding (belt-and-suspenders).
+- **L1.** The witness disc's clearance part used the cover radius. It now uses the opening plus the arc error.
+- **L2.** A port's ray hull is checked against holes (belt-and-suspenders: DRC spacing already keeps holes out of pad copper).
+- **L3.** `check` refuses a node with edges and no element.
+- **L4.** The copper model's notes are in the verdict.
+- **L5.** A non-finite bound refuses its pin. µΩ is rounded up past the product's rounding.
+- **L6.** The declared dielectric maximum is plumbed into the barrel's rows. The atan documentation is corrected.
+- **M1 (hole size) and M2 (etch):** raised, ruled (6974760231) and built.
+- **M3 (`pairs` on `diff_pairs`):** §3.
+
+**The WO's four classes:**
+- **A constant from the wrong side.** `rho_max` takes IPC-MF-150F's foil maximum at the declared temperature. Hole size, position and etch are each priced at their worst.
+- **A nominal used as a minimum.** The tests and coverage declare `plating_min_um` 18 µm, JLCPCB's stated average. A specification declares its own minimum with its source, and the gate is honest to it. The test figures rest on an average and are labelled so here.
+- **A pad assumed and not priced.** Terminals are equipotential pads, a stated condition. A relieved pad joins no plane (left out, which only raises R). Pads at drawn size are a named condition.
+- **A gate passing with a field absent.** Each of the eight inputs is refused by name, with a test each, and so is the sink list.
+- **Copper the reader cannot bound.** It is refused per pin (`SupplyPinUnbounded`, `SupplyViaPadTooSmall`, `GroundReturnUnread`), each with a finding.
+- **Sentinel-01's bytes:** §2.3.
+
+### 4.2 Mutation [measured, `~/.cache/aet-1303b/mut/run.py`, one mutant per guard, run against its tests]
+
+44 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **43 killed.** The survivor is the port hull's hole test (L2), labelled belt-and-suspenders at its site: DRC spacing already keeps a hole out of pad copper.
+
+Guards that first survived, each given a test that now kills it:
+- the network's foreign-face check;
+- a barrel's worst-corner pricing;
+- the outer port's copper hull;
+- a part named twice as a load;
+- the plating, dielectric-maximum and finite-bound guards;
+- the hole-size guard (a tolerance larger than the hole);
+- the barrel at the smallest shell (`barrel_hole`, whose effect is about 2 % of a path and invisible to path tests);
+- `β ≥ r_d`.
+
+Not mutated: the two series' tail terms. They are about 1e-40 here, below any f64 a test can see; they are kept for rigour.
+
+### 4.3 Reduction pass (diff)
+
+A fresh subagent ran it; I checked each claim by grep before acting.
+
+Reduction pass (diff): −227 net lines in the reduction commit (+64 −291) · 1 duplicate removed (`overlaps128` into `flow::overlaps`) · 7 dead items removed (the example driver, S5; `Iv::hull`, `Iv::clamp`, the concentric `junction` wrapper, `Bound::iterations`/`residual`, `Model::knockout`, the `named` helper) · 3 protected kept (`supply_drop_unbounded`, the port hull's hole test, `PinBound::via_transfer` which a test reads) · 2 findings below.
+
+After the tolerance ruling, one fact written twice (the cleared hole's radius, at two sites) became one function, `hole_clear`.
+
+**Findings:**
+- The `conditions()` strings quote `rho_max`'s constants: one is prose for the verdict, the other arithmetic.
+- `dielectric_max_nm` is a vector parallel to `dielectrics`. Folding it into the tuple touches `fab.rs`, outside the fence.
+
+## 5. Gates
+
+Local, on this head [measured]:
+- `cargo fmt --check`, `cargo clippy --workspace --all-targets -D warnings`: clean. `cargo doc` raises no warning in `flow.rs` or `supply.rs`; `extract.rs`'s two `CONDITIONS` links predate this branch.
+- `cargo test --workspace`: green (exit 0).
+- CI's package step: every publishable crate packages (201 files, 3.1 MiB).
+
+CI on the PR: green, recorded in the PR's READY commit.
+
+`TIER2_MIN` stays 191: this order adds no tier-2 test. Tier 2 asserts nothing on `extract` for the changed fixtures (checked: `with_tools.rs` reads the pair stand-in's DRC only).
+
+## 6. §7.1 rows (for the architect to apply)
+
+| Item | From | Owner |
+|---|---|---|
+| A through-hole barrel priced as a via's; a relieved pad refused until its spokes are priced | 1309 D2 | **done, `1303b`:** an on-grid through-hole pad is a via at its drill. A relieved pad joins no plane and is left out with a note. Leaving it out only raises R, so no refusal is needed |
+| A cited current-to-width source for power classes | 4300d2 K11, A7 | **re-owned:** the drop gate bounds resistance, not heating. An IPC-2152 heating gate is its own quantity. Trigger: Sentinel-02 (`4500`) |
+| A stackup bound below the fabricator's minimum copper | review 2, fuzz | **partly done, `1303b`:** each declared minimum is at least 1 µm and at most `copper_max_um`. A floor for `copper_max_um` itself waits on a cited minimum: the IPC-6012 row (1303 D6) |
+| Every pin a flat 10 pF in extraction | Grok review 2026-11-16 | **re-owned:** outside `1303b`'s list. `4300e1` (USB's static checks read the pair C) |
+| The certified discrete Thomson flow (1303 D5 (b)) | 1308 B4 | **done, `1303b`** |
+| A 2-layer board needing the supply gate must widen its supply tracks or carry a plane; measured at `1303b` S3 | 1303b S3 | trigger: a 2-layer board needs the gate |
+| A finer pitch with one factorisation per net, or a larger via pad: the levers when a bound nears its limit. At 62.5 µm a 45° 0.2 mm track etched 20 % disconnects (§2.1) | 1303b S4 | trigger: a board within 1.5× of its limit, or a pin lost to an etched diagonal |
+| A 2-layer ground return read from the filled zone (option (i)) instead of refused | 1303b ruling (iii) | trigger: a 2-layer board needs the gate |
+| Other domains' return currents in the ground copper | 1303b conditions | trigger: a board with a second regulated domain under a drop limit |
+| The default 0.6/0.3 mm via cannot keep its band at JLCPCB's worst hole size and position (needs 0.7 mm; a 0.554/0.254 mm thermal via needs 0.66 mm): a manufacturability finding for every board | 1303b, ruling 6974760231 | the next router work order |
+| A cited pad etch tolerance (pads and via pads are taken at drawn size, a named condition) | 1303b, ruling 6974760231 | trigger: a fabricator states one |
+| Sentinel-03's supply gate needs a ground via pad of at least 0.7 mm. At 0.7 its routing moves and `IMU_SCK`'s bound exceeds 30 pF (31.27 pF, measured at `1303b`): vias are not costed on capacitance-bounded nets (`1313` Q3) | 1303b, ruling 6976355662 | the next router work order, beside the default-via-pad row |
+
+## 7. Record
+
+- **Branch** `wo/aet-1303b-extraction-build`, PR #222, main `c4a6cc6f` merged in.
+- **Evidence (Furnace):**
+  - `~/.cache/aet-1303b/cov/` (coverage: `run.py`, `out3/`, `run3.log`);
+  - `~/.cache/aet-1303b/s03drawn/` (Sentinel-03 as drawn, gated);
+  - `~/.cache/aet-1303b/s03new/` (the GND 0.7 and tolerance-split diagnostics);
+  - `~/.cache/aet-1303b/cmp/` (byte identity, `result.txt`);
+  - `~/.cache/aet-1303b/mut/` (`run.py`, `final.log`).
+- **The measured stop's evidence** (`spike/1303b/`) is deleted with this build; it is at `81a8e619`.
+
+### Lessons
+
+- **A closed form that is exact at a point can be useless over an interval.** The junction's band terms were differences of order-`p` terms; rewriting them as their series cost nothing at a point and made an interval of hole sizes tight.
+- **An all-or-nothing admission rule can hide behind a tolerance.** The plane rule held while the regions were small, and failed the moment pricing the largest hole grew them. A probe counting refused joins found it in one run.
+- **Measure a ruled fixture change before building on it.** GND on 0.7 mm vias moved Sentinel-03's routing and failed a gate the ruling did not mention.
+
+# Part B: the measured stop after D5 (b) (record, ruled in comment 6971664955)
+
+## B0. Status: STOPPED at the ruled measured stop (D5 (b))
 
 The §1.1 stop was ruled on #222 (comment 6968894352, Part A below), and Q1 and Q2 were answered in comment 6969258830. The ruling asked for one measured stop "before any gate or field": coverage and the per-pin bound on sentinel-02-power, s024l and sentinel-03, with the VDD + VSS drop at the load. This is that stop.
 
@@ -34,7 +298,7 @@ The §1.1 stop was ruled on #222 (comment 6968894352, Part A below), and Q1 and 
 - **Not built, as ruled:** no gate, no field, no CLI subcommand. The measurement is an example binary (`crates/aethelgard-cli/examples/supply_stop.rs`).
 - **For the ruling (§3):** S1 the Q1 choice; S2 the ground terminal's reading; S3 the 2-layer VDD; S4 the gate's parameters (pitch, crop, time); S5 the fence.
 
-## 1. What is built
+## B1. What is built
 
 **`flow.rs`: the certified flow.** Its module documentation states the guarantee and how it is kept.
 - **Elements:**
@@ -91,9 +355,9 @@ The §1.1 stop was ruled on #222 (comment 6968894352, Part A below), and Q1 and 
 
 **What it does not have yet:** unit tests of its own. Its geometry is checked externally (§2.5), not by tests in the crate (S5).
 
-## 2. The measured stop [measured]
+## B2. The measured stop [measured]
 
-### 2.1 Runs
+### B2.1 Runs
 
 - **Boards:** Part A's (`emit` of `main` `002dae07`; s024l built by `spike/1303b/build-fixtures.py`).
 - **Driver:** `crates/aethelgard-cli/examples/supply_stop.rs`, run by `spike/1303b/b/run.sh` at 62.5 and 31.25 µm with a 5 mm crop. The 2-layer board was also run at 15.625 µm.
@@ -110,7 +374,7 @@ The §1.1 stop was ruled on #222 (comment 6968894352, Part A below), and Q1 and 
 
 The datasheet does not say the pad connects to PGND inside; it names it a different node. The terminal is therefore U11.1 alone, and U11.9 is resistive copper (S2).
 
-### 2.2 Per pin (`b/summary.out`, from `b/*.out`)
+### B2.2 Per pin (`b/summary.out`, from `b/*.out`)
 
 | Board, net | pins | 62.5 µm | 31.25 µm | 15.625 µm |
 |---|---|---|---|---|
@@ -132,7 +396,7 @@ The datasheet does not say the pad connects to PGND inside; it names it a differ
 
   - The VDD barrels run F.Cu to In2 through rows each priced at its own maximum: 2.30 mm summed, against the 1.851 mm finished maximum. The optional `dielectrics[].max_thickness_um` (ruling 4) would tighten that.
 
-### 2.3 The drop
+### B2.3 The drop
 
 The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VSS inside, so the worst pair bounds it [inferred, as ruled]. The load here is the MCU's 658 mA (DS12117 Table 120) alone; the fixtures' `power.loads` VDD_3V3 entry will sum every sink (ruling 5).
 
@@ -142,7 +406,7 @@ The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VS
 | sentinel-03 | 34.2 + 30.8 = 65.0 mΩ | 42.8 mV | 2.54 A |
 | sentinel-02-power | VDD alone 334–882 mΩ; GND refused by name | 220–580 mV | — |
 
-### 2.4 The reference (UNCERTIFIED, labelled so everywhere)
+### B2.4 The reference (UNCERTIFIED, labelled so everywhere)
 
 - **At 4 layers.** The 62.5 → 31.25 µm step cannot be extrapolated: a 0.2 mm track centred on the grid keeps 0.125 mm of whole cells at 62.5 µm but 0.1875 mm at 31.25 µm, a step and not a first-order trend.
   - Instead, each board's worst VDD and worst GND pin was run alone at 31.25 and 15.625 µm (`b/ref.sh`), where the kept width is the same. The bounds move −1.5 % to −3.1 %.
@@ -153,7 +417,7 @@ The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VS
   - A straight run is bounded at 0.2/0.1875 = 1.067× its sheet resistance. The reference, bound × 0.9375 [inferred: track runs only], is 313–827 mΩ: 206–544 mV at 658 mA.
 - **Why the 2-layer number is high.** At 30 µm and 125 °C a 0.2 mm track is 4.8 mΩ/mm, and the routes from L2 to U1 run tens of millimetres. The copper, under the stated conditions, gives most of the 2-layer number; the bound adds the 6.7 % above. An upper bound cannot prove a failure: this is a reference, not a lower bound.
 
-### 2.5 The copper is copper
+### B2.5 The copper is copper
 
 - **Planes, against KiCad's own refill.**
   - Both 4-layer boards were prepared as the DRC gate prepares them (`1303` P4.7's `prep`, now `spike/1303b/fill/prep`).
@@ -168,7 +432,7 @@ The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VS
   - The polygons flag 6 outer cells. Each has a corner exactly on a pad's arc: TP23's 1 mm circle, J1's mounting pad, U3.4's rounded corners. The exact integer pass in the same script puts all 6 inside.
   - **Result: 0 outer cells and 0 junction squares outside copper, on all three boards, at every pitch measured.**
 
-### 2.6 Q1: the hole at ±0.075 mm
+### B2.6 Q1: the hole at ±0.075 mm
 
 - **Which bounds rest on a junction:** all of them. Every 4-layer pin uses two vias and every 2-layer pin 4–16. The junctions' share is 0.43–0.73 mΩ per 4-layer pin (§2.2).
 - **The pad at which a junction square fits outside the worst-case hole edge.** The square's half-side `a` (a multiple of 31.25 µm) must exceed `r_d + 0.075 + β`, and its corner must lie inside the via pad, so pad ≥ 2√2·a:
@@ -182,7 +446,7 @@ The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VS
 - **The square fits; the junction does not follow.** The coefficient `κ` is derived for a hole concentric with its square. An offset hole needs either its own derivation (rays to the hole's centre, a band of varying width) or a square re-centred off the grid.
 - **What a smaller β costs** in κ is not measured.
 
-## 3. For the ruling
+## B3. For the ruling
 
 - **S1, Q1's choice.** Either:
   - a router via-pad change to 0.8 mm (or 0.71 mm with β 0.01 mm), which moves bytes on boards that declare the class (`1308`'s option); or
@@ -204,7 +468,7 @@ The drop is (worst VDD pin + worst GND pin) × load. The MCU ties its VDD and VS
 
 **After the ruling (as already ruled):** the optional fields refused by name when absent; the `power.loads` VDD_3V3 entries summed from cited maxima; the gate and the verdict's `supplies` and `pairs`; the USB pair on `pair-standin.json`; `GroundReturnUnread`; the §7.1 rows, with the new ones (a 2-layer read fill; a multi-source ground). Then the adversarial pass and the reduction pass, `spike/1303b/` deleted, CI green with TIER2_MIN exact, and READY last.
 
-## 4. Record
+## B4. Record
 
 - **Base and branch:** `main` `002dae07`, branch `wo/aet-1303b-extraction-build`.
 - **This stop adds:**
