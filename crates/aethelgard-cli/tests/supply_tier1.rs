@@ -2,7 +2,9 @@
 //! specification gives a drop limit is judged from the routed board: each
 //! MCU supply and return pin's resistance bounded from the regulator, the
 //! drop against the limit, every input it reads refused by name when absent,
-//! and nothing about a specification without a limit moving.
+//! and nothing about a specification without a limit moving, but a declared
+//! coupled pair's `pairs` key (D2), which every specification with
+//! `diff_pairs` gains.
 
 #![allow(clippy::unwrap_used)]
 

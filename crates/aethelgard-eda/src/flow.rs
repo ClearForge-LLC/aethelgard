@@ -206,9 +206,11 @@ impl Iv {
     }
 
     /// `atan x`, without the platform's `atan`: two halvings
-    /// `atan x = 2 atan(x / (1 + √(1 + x²)))` bring `|x|` under 0.2, then the
-    /// alternating series to 40 terms, whose remainder is at most the next
-    /// term, added as an interval. Increasing, so the ends are enough.
+    /// `atan x = 2 atan(x / (1 + √(1 + x²)))` bring `|x|` to at most
+    /// tan(π/8) ≈ 0.414 (and under 0.2 for |x| ≤ 1), then the alternating
+    /// series to 40 terms, whose remainder is at most the next term, added
+    /// as an interval (at 0.414 the 41st term is below 1e-31). Increasing,
+    /// so the ends are enough.
     pub fn atan(self) -> Iv {
         Iv {
             lo: atan_point(self.lo).lo,
@@ -2495,6 +2497,36 @@ mod tests {
         );
     }
 
+    /// A via's barrel cells in a group are priced at each box's worst width:
+    /// two columns between terminals, each 0.1 to 0.3 wide in the one box,
+    /// cost at least what they cost at their narrowest.
+    #[test]
+    fn a_groups_barrel_cells_take_their_narrowest_width() {
+        let rho_over_t = Iv::exact(1.0);
+        let mut net = Network::default();
+        let (top, bottom) = (net.node(), net.node());
+        let widths = [(Iv::exact(0.1), Iv::exact(0.3)); 2];
+        let rows = [(Iv::exact(1.0), Iv::exact(1.0))];
+        let (_, talls) = barrel_cells(
+            &mut net,
+            &widths,
+            &rows,
+            rho_over_t,
+            Some(top),
+            Some(bottom),
+        );
+        net.elements.push(Element::Group {
+            edges: vec![],
+            kappa: vec![vec![]],
+            talls,
+            widths: vec![widths.to_vec()],
+        });
+        let b = net.bound(top, bottom, 100, 1e-12).unwrap();
+        // each column carries half the current over height 1 at width 0.1:
+        // (b/a) F² = 10 · 0.25 each, 5 for both
+        assert!(b.energy.hi >= 5.0, "{:?}", b.energy);
+    }
+
     /// The branch and bound's result is never below the true maximum and
     /// close above it, on a function with a known maximum off the centre.
     #[test]
@@ -2652,6 +2684,22 @@ mod tests {
         short.edge(s, t, 1.0);
         assert!(matches!(
             short.bound(s, t, 100, 1e-12),
+            Err(FlowError::Malformed(_))
+        ));
+        // a cell listing, in a face it has no edge for, another cell's edge:
+        // every edge is still priced, but the field it prices is not its own
+        let mut foreign = net.clone();
+        let far = foreign
+            .edges
+            .iter()
+            .position(|&(a, b, _)| a != 2 && b != 2)
+            .unwrap();
+        if let Element::Cell { n, .. } = &mut foreign.elements[0] {
+            assert!(n.is_none());
+            *n = Some(far);
+        }
+        assert!(matches!(
+            foreign.bound(s, t, 100, 1e-12),
             Err(FlowError::Malformed(_))
         ));
         // a node with edges and no element between the terminals

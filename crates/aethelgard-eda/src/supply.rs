@@ -940,6 +940,9 @@ pub fn copper(
                         (v.at.0 - e, v.at.1 + e),
                     ];
                     let hull = flow::convex_hull(&pts);
+                    // belt-and-suspenders: a hole inside a via's own pad copper
+                    // would already break DRC spacing; the hole test keeps the
+                    // port's rays off it without relying on that
                     if !hull_in_copper(&hull, &outer_shapes[li], 8)
                         || !hull_clear_of_holes(&hull, &holes)
                     {
@@ -2139,6 +2142,58 @@ mod tests {
         );
         // and the plane around the VDD via is there
         assert!(plane.cells.len() > 1000);
+    }
+
+    /// A port whose rays would leave copper is no port: a pad of the net
+    /// starting 12.5 µm beyond the via's 0.6 mm pad borders the junction
+    /// region, but every ray from its cells to the hole crosses the gap.
+    #[test]
+    fn a_port_whose_rays_leave_copper_is_not_joined() {
+        let v = (6_000_000, 3_000_000);
+        let b = board(vec![part(
+            "J1",
+            vec![pad(
+                "1",
+                "VDD",
+                v.0 + 312_500,
+                v.1 - 500_000,
+                v.0 + 1_312_500,
+                v.1 + 500_000,
+            )],
+        )]);
+        let routed = Routed {
+            vias: vec![Via {
+                net: "VDD".into(),
+                at: v,
+            }],
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let nc = copper(&b, &routed, "VDD", &[src], &model()).unwrap();
+        let u = &nc.vias[0];
+        let jn = &nc.junctions[u.junction];
+        let f_cu = nc.layers.iter().position(|l| l.name == "F.Cu").unwrap();
+        let cells: BTreeSet<Cell> = nc.layers[f_cu].cells.iter().copied().collect();
+        let centre = (
+            (v.0 - nc.origin.0) / PITCH_NM,
+            (v.1 - nc.origin.1) / PITCH_NM,
+        );
+        let candidates = jn
+            .region
+            .faces
+            .iter()
+            .filter(|f| cells.contains(&(centre.0 + f.outside.0, centre.1 + f.outside.1)))
+            .count();
+        let ports = u
+            .joins
+            .iter()
+            .find(|(l, _)| *l == f_cu)
+            .map_or(0, |(_, p)| p.len());
+        assert!(candidates > 0);
+        assert_eq!(
+            ports, 0,
+            "{ports} of {candidates} faces beside copper joined"
+        );
     }
 
     /// The drop is the worst supply pin plus the worst return pin, times the

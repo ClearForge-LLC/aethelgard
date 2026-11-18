@@ -827,6 +827,20 @@ fn every_remaining_guard_refuses_by_name() {
             },
         ),
         (
+            "a part named twice as a load",
+            Refusal::PowerValueInvalid,
+            "VDD_3V3",
+            |v| {
+                let loads = v["power"]["loads"].as_array_mut().unwrap();
+                loads.push(
+                    json!({"domain": "VDD_3V3", "milliamps": 1, "source": "s", "reference": "U2"}),
+                );
+                loads.push(
+                    json!({"domain": "VDD_3V3", "milliamps": 2, "source": "s", "reference": "U2"}),
+                );
+            },
+        ),
+        (
             "a drop limit named twice",
             Refusal::PowerValueInvalid,
             "VDD_3V3",
