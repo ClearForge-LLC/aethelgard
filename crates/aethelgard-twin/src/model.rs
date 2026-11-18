@@ -467,6 +467,82 @@ impl Model {
     }
 }
 
+/// One line of a listed data read's witness (`AET-WO-4400e`, D6 (i)): the
+/// whole line after the host timestamp, or a prefix then at least `at_least`
+/// bytes, each written as Renode's model writes a byte (upper-case
+/// hexadecimal, unpadded or `0x`-prefixed, as the model's own format).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WitnessLine {
+    Exact(String),
+    Bytes { prefix: String, at_least: usize },
+}
+
+impl WitnessLine {
+    /// True when `line`, after the host timestamp, is this line.
+    pub fn matches(&self, line: &str) -> bool {
+        match self {
+            WitnessLine::Exact(text) => line == text,
+            WitnessLine::Bytes { prefix, at_least } => {
+                let Some(rest) = line.strip_prefix(prefix.as_str()) else {
+                    return false;
+                };
+                let bytes: Vec<&str> = rest.split(' ').collect();
+                bytes.len() >= *at_least
+                    && bytes.iter().all(|b| {
+                        let hex = b.strip_prefix("0x").unwrap_or(b);
+                        (1..=2).contains(&hex.len())
+                            && hex
+                                .bytes()
+                                .all(|c| c.is_ascii_digit() || (b'A'..=b'F').contains(&c))
+                    })
+            }
+        }
+    }
+}
+
+impl Model {
+    /// The lines `device` writes when a firmware makes `read`, a data read
+    /// the part's table lists (`AET-WO-4400e`, D6 (i)); `None` when the twin
+    /// knows no format for it, a named failure, never a skip. The bytes'
+    /// values are not part of it: the stock models answer from the
+    /// configuration the firmware wrote, which the foreign judge does not
+    /// judge.
+    pub fn read_witness(self, device: &str, read: &parts::DataRead) -> Option<Vec<WitnessLine>> {
+        match self {
+            // `BME280.cs` L38 and L75 (as [`Model::witness`]): `Write {reg:X}`
+            // for the register written, then `Read {bytes}` for the burst.
+            Model::Bme280 => {
+                let [register] = read.write.as_slice() else {
+                    return None;
+                };
+                Some(vec![
+                    WitnessLine::Exact(format!("[NOISY] {device}: Write {register:X}")),
+                    WitnessLine::Bytes {
+                        prefix: format!("[NOISY] {device}: Read "),
+                        at_least: usize::from(read.read),
+                    },
+                ])
+            }
+            // `ICM42688P.cs` (as [`Model::witness`]): one line per
+            // transaction, `bank 0 read 0x{reg:X2} -> {bytes}`, each byte
+            // `0x{:X2}`. Only a read (the SPI read bit set) is a data read.
+            Model::Icm42688p => {
+                let [first] = read.write.as_slice() else {
+                    return None;
+                };
+                if first & 0x80 == 0 {
+                    return None;
+                }
+                Some(vec![WitnessLine::Bytes {
+                    prefix: format!("[NOISY] {device}: bank 0 read 0x{:02X} -> ", first & 0x7F),
+                    at_least: usize::from(read.read),
+                }])
+            }
+            Model::GenericSpiFlash | Model::Icm20948 | Model::Icp101xx | Model::Bmp581 => None,
+        }
+    }
+}
+
 /// The model for `part`, or `None` when the twin cannot model it.
 pub fn kind(part: &str) -> Result<Option<Model>, TwinError> {
     let table = parts::table().map_err(TwinError::InvalidTopology)?;
@@ -489,6 +565,66 @@ pub fn model(part: &str) -> Result<Option<&'static str>, TwinError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-4400e`: the BME280's listed burst from `0xF7` is witnessed by
+    /// its `Write F7`, then a `Read` of at least 6 of the model's bytes, as
+    /// ArduPilot's driver measured on the twin (`Read 0 0 90 80 0 D0`).
+    #[test]
+    fn the_bme280_s_listed_read_is_its_write_then_at_least_its_bytes() {
+        let read = parts::DataRead {
+            write: vec![0xF7],
+            read: 6,
+        };
+        let w = Model::Bme280.read_witness("i2c1.u2", &read).unwrap();
+        assert!(w[0].matches("[NOISY] i2c1.u2: Write F7"));
+        assert!(!w[0].matches("[NOISY] i2c1.u2: Write F8"));
+        assert!(w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"));
+        assert!(w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0 80 0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 d0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0 "));
+        assert!(!w[1].matches("[NOISY] i2c1.u3: Read 0 0 90 80 0 D0"));
+        for m in [Model::GenericSpiFlash, Model::Icm20948, Model::Bmp581] {
+            assert!(m.read_witness("x", &read).is_none());
+        }
+    }
+
+    /// The ICM-42688-P's listed read (`AET-WO-4400e`, the FIFO burst at
+    /// `0xB0`) is one line of its own model's, `bank 0 read 0x30 -> ` and at
+    /// least 16 bytes; a write is no data read.
+    #[test]
+    fn the_icm_42688_p_s_listed_read_is_one_fifo_line_of_at_least_a_packet() {
+        let read = parts::DataRead {
+            write: vec![0xB0],
+            read: 16,
+        };
+        let lines = Model::Icm42688p
+            .read_witness("spi2.spi2mux.u5", &read)
+            .unwrap();
+        let [line] = lines.as_slice() else {
+            panic!("{}", lines.len())
+        };
+        let packet: Vec<String> = (0..16).map(|b| format!("0x{:02X}", 0x60 + b)).collect();
+        let body = format!(
+            "[NOISY] spi2.spi2mux.u5: bank 0 read 0x30 -> {}",
+            packet.join(" ")
+        );
+        assert!(line.matches(&body), "{body}");
+        assert!(!line.matches(&body.replace(" 0x6F", "")), "15 bytes");
+        assert!(
+            !line.matches(&body.replace("0x30", "0x2E")),
+            "another register"
+        );
+        let write = parts::DataRead {
+            write: vec![0x30],
+            read: 16,
+        };
+        assert!(
+            Model::Icm42688p
+                .read_witness("spi2.spi2mux.u5", &write)
+                .is_none()
+        );
+    }
 
     /// Each line the judge skips, beside the Renode source it is written by,
     /// as read at `renode-infrastructure` `066a7f13` (`AET-WO-4200` D2).
@@ -865,6 +1001,29 @@ mod tests {
                 "{m:?} {prop}"
             );
         }
+    }
+
+    /// A data step's witness needs every channel's stimulus
+    /// (`crate::boot`), so a modelled part whose data channel its model
+    /// cannot be set to would have a data step no judge can witness; the
+    /// foreign judge relies on there being none (`AET-WO-4400e` adversarial
+    /// pass, F3). Each such part is named.
+    #[test]
+    fn every_modelled_part_s_data_channels_can_be_stimulated() {
+        let table = parts::table().unwrap();
+        let mut unstimulable = Vec::new();
+        for p in table.parts() {
+            let (Some(name), Some(script)) = (p.renode.as_deref(), &p.script) else {
+                continue;
+            };
+            let model = Model::from_renode(name).unwrap();
+            for c in &script.channels {
+                if model.stimulus(c.quantity).is_none() {
+                    unstimulable.push(format!("{} {:?}", p.part, c.quantity));
+                }
+            }
+        }
+        assert!(unstimulable.is_empty(), "{unstimulable:?}");
     }
 
     #[test]

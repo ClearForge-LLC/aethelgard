@@ -1,0 +1,495 @@
+{
+ "lines": 38205,
+ "devices": {
+  "u4": {
+   "path": "spi1.spi1mux.u4",
+   "lines": 1102,
+   "first": [
+    161918280,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation"
+   ],
+   "first_20": [
+    [
+     161918280,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation"
+    ],
+    [
+     161918280,
+     "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False"
+    ],
+    [
+     161918280,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     161918280,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     161938610,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x10"
+    ],
+    [
+     165043780,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation"
+    ],
+    [
+     165043780,
+     "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False"
+    ],
+    [
+     165043780,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand"
+    ],
+    [
+     165043780,
+     "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0"
+    ],
+    [
+     165058040,
+     "[NOISY] spi1.spi1mux.u4: Transmitting data 0x3, current state: RecognizeOperation"
+    ],
+    [
+     165058040,
+     "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Read, address length: 3, write enabled False"
+    ]
+   ],
+   "by_text": {
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand": 518,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF": 256,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0": 252,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation": 7,
+    "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False": 5,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0": 5,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateCommandAddressBytes": 4,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x6, current state: RecognizeOperation": 4,
+    "[NOISY] spi1.spi1mux.u4: Setting write enable latch": 4,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateNoDataCommandAddressBytes": 4,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x7F, current state: AccumulateCommandAddressBytes": 2,
+    "[NOISY] spi1.spi1mux.u4: Address accumulated: 0x7F0000": 2,
+    "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled True": 2,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x2": 2,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation": 1,
+    "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False": 1,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF": 1,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40": 1,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17": 1,
+    "[NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x10": 1,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x3, current state: RecognizeOperation": 1,
+    "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Read, address length: 3, write enabled False": 1,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0xFF, current state: HandleCommand": 1,
+    "[NOISY] spi1.spi1mux.u4: Transmitting data 0x20, current state: RecognizeOperation": 1,
+    "[NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Erase, erase size: Subsector4K, address length: 3, write enabled True": 1
+   }
+  },
+  "u5": {
+   "path": "spi2.spi2mux.u5",
+   "lines": 19,
+   "first": [
+    3570134680,
+    "[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47"
+   ],
+   "first_20": [
+    [
+     3570134680,
+     "[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47"
+    ],
+    [
+     3570156140,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x16 <- 0x80"
+    ],
+    [
+     3570174140,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x5F <- 0x07"
+    ],
+    [
+     3570192140,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4C <- 0xC0"
+    ],
+    [
+     3570210160,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4B <- 0x02"
+    ],
+    [
+     3570229500,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4E <- 0x00"
+    ],
+    [
+     3570247500,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4F <- 0x05"
+    ],
+    [
+     3570265500,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x50 <- 0x05"
+    ],
+    [
+     3570283590,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01"
+    ],
+    [
+     3570302400,
+     "[NOISY] spi2.spi2mux.u5: bank 1 read 0x0B -> 0xA0"
+    ],
+    [
+     3570321130,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00"
+    ],
+    [
+     3570339260,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01"
+    ],
+    [
+     3570357260,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0B <- 0xA0"
+    ],
+    [
+     3570375270,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00"
+    ],
+    [
+     3570393380,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01"
+    ],
+    [
+     3570411380,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0C <- 0x0C"
+    ],
+    [
+     3570429390,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00"
+    ],
+    [
+     3570462130,
+     "[NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01"
+    ],
+    [
+     3570493380,
+     "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0D <- 0x90"
+    ]
+   ],
+   "by_text": {
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01": 4,
+    "[NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00": 3,
+    "[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> \u2026": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x16 <- 0x80": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x5F <- 0x07": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4C <- 0xC0": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4B <- 0x02": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4E <- 0x00": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x4F <- 0x05": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 0 write 0x50 <- 0x05": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 1 read 0x0B -> \u2026": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0B <- 0xA0": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0C <- 0x0C": 1,
+    "[NOISY] spi2.spi2mux.u5: bank 1 write 0x0D <- 0x90": 1
+   }
+  },
+  "u2": {
+   "path": "i2c1.u2",
+   "lines": 426,
+   "first": [
+    342585230,
+    "[NOISY] i2c1.u2: Write D0"
+   ],
+   "first_20": [
+    [
+     342585230,
+     "[NOISY] i2c1.u2: Write D0"
+    ],
+    [
+     342586130,
+     "[NOISY] i2c1.u2: Read 60"
+    ],
+    [
+     342603040,
+     "[NOISY] i2c1.u2: Write 88"
+    ],
+    [
+     342603940,
+     "[NOISY] i2c1.u2: Read 0 80 0 80 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 40 0 0"
+    ],
+    [
+     342641400,
+     "[NOISY] i2c1.u2: Write F4 57"
+    ],
+    [
+     342652710,
+     "[NOISY] i2c1.u2: Write F5 8"
+    ],
+    [
+     382787270,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     382788170,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     390752430,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     390753330,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     406751020,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     406751920,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     422752370,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     422753270,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     438750950,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     438751850,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     454751130,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     454752030,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ],
+    [
+     470752490,
+     "[NOISY] i2c1.u2: Write F7"
+    ],
+    [
+     470753390,
+     "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"
+    ]
+   ],
+   "by_text": {
+    "[NOISY] i2c1.u2: Write F7": 200,
+    "[NOISY] i2c1.u2: Read 0 0 90 80 0 D0": 200,
+    "[NOISY] i2c1.u2: Write F4": 5,
+    "[NOISY] i2c1.u2: Read 57": 5,
+    "[NOISY] i2c1.u2: Write F5": 5,
+    "[NOISY] i2c1.u2: Read 8": 5,
+    "[NOISY] i2c1.u2: Write D0": 1,
+    "[NOISY] i2c1.u2: Read 60": 1,
+    "[NOISY] i2c1.u2: Write 88": 1,
+    "[NOISY] i2c1.u2: Read 0 80 0 80 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 40 0 0": 1,
+    "[NOISY] i2c1.u2: Write F4 57": 1,
+    "[NOISY] i2c1.u2: Write F5 8": 1
+   }
+  },
+  "u7": {
+   "path": "i2c1.u7",
+   "lines": 426,
+   "first": [
+    342780210,
+    "[NOISY] i2c1.u7: read 0x01 -> 0x50"
+   ],
+   "first_20": [
+    [
+     342780210,
+     "[NOISY] i2c1.u7: read 0x01 -> 0x50"
+    ],
+    [
+     342793310,
+     "[NOISY] i2c1.u7: read 0x28 -> 0x02"
+    ],
+    [
+     342806380,
+     "[NOISY] i2c1.u7: read 0x27 -> 0x10"
+    ],
+    [
+     342820400,
+     "[NOISY] i2c1.u7: write 0x37 <- 0x00"
+    ],
+    [
+     342831710,
+     "[NOISY] i2c1.u7: write 0x36 <- 0x72"
+    ],
+    [
+     342842830,
+     "[NOISY] i2c1.u7: write 0x37 <- 0x3D"
+    ],
+    [
+     382745850,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     382763570,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     390868050,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     390888470,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     406866650,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     406884370,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     422867200,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     422884860,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     438866580,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     438884240,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     454866760,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     454884420,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     470867320,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ],
+    [
+     470884980,
+     "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+    ]
+   ],
+   "by_text": {
+    "[NOISY] i2c1.u7: read 0x1D -> \u2026": 400,
+    "[NOISY] i2c1.u7: read 0x37 -> \u2026": 10,
+    "[NOISY] i2c1.u7: read 0x36 -> \u2026": 10,
+    "[NOISY] i2c1.u7: read 0x01 -> \u2026": 1,
+    "[NOISY] i2c1.u7: read 0x28 -> \u2026": 1,
+    "[NOISY] i2c1.u7: read 0x27 -> \u2026": 1,
+    "[NOISY] i2c1.u7: write 0x37 <- 0x00": 1,
+    "[NOISY] i2c1.u7: write 0x36 <- 0x72": 1,
+    "[NOISY] i2c1.u7: write 0x37 <- 0x3D": 1
+   }
+  }
+ },
+ "errors": {
+  "[ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported": {
+   "count": 16,
+   "first": 161938610
+  },
+  "[ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported": {
+   "count": 18,
+   "first": 3570134680
+  }
+ },
+ "warnings_by_device": {
+  "u4": [
+   "[WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation"
+  ],
+  "u5": [],
+  "u2": [],
+  "u7": []
+ },
+ "collapse_markers": 0,
+ "first_model_line": [
+  161918280,
+  "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation"
+ ],
+ "witness": {
+  "u4 identity (JEDEC 0x9F)": [
+   161938610,
+   "[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation"
+  ],
+  "u2 identity": [
+   342585230,
+   "[NOISY] i2c1.u2: Write D0"
+  ],
+  "u7 identity": [
+   342780210,
+   "[NOISY] i2c1.u7: read 0x01 -> 0x50"
+  ],
+  "u7 first data (0x1D, 6 B)": [
+   382745850,
+   "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"
+  ],
+  "u2 first data (0xF7)": [
+   382787270,
+   "[NOISY] i2c1.u2: Write F7"
+  ],
+  "u5 identity (0x75 -> 0x47)": [
+   3570134680,
+   "[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47"
+  ],
+  "u5 first data (0x1D)": null,
+  "u5 FIFO count (0x2E)": null,
+  "u5 FIFO data (0x30)": null
+ },
+ "console_text": [
+  "Storage: Using flash pages 14 and 15",
+  "Initialised Storage type=2",
+  "Init ArduCopter V4.7.2 (fb773567)",
+  "Free RAM: 978880",
+  "Firmware change: erasing EEPROM...",
+  "done.",
+  "0 0 0 SPI Flash 0x00EF4017 found pages=32768 erase=64k",
+  "AP_Logger_Block: buffer size=65536",
+  "Chip erase started",
+  "Dataflash: erase started",
+  "Dataflash: erase done (1795 ms)",
+  "No Compass backends available"
+ ]
+}

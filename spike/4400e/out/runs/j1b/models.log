@@ -1,0 +1,2130 @@
+(machine-0) logLevel -1 sysbus.i2c1.u2
+(machine-0) logLevel -1 sysbus.i2c1.u7
+(machine-0) logLevel -1 sysbus.spi1.spi1mux.u4
+(machine-0) logLevel -1 sysbus.spi1.spi1mux
+(machine-0) logLevel -1 sysbus.spi2.spi2mux.u5
+(machine-0) logLevel -1 sysbus.spi2.spi2mux
+(machine-0) sysbus.i2c1.u7 Temperature 25
+(machine-0) sysbus.i2c1.u7 Pressure 101325
+(machine-0) sysbus.spi2.spi2mux.u5 Temperature 29
+(machine-0) sysbus.spi2.spi2mux.u5 AccelerationX 0
+(machine-0) sysbus.spi2.spi2mux.u5 AccelerationY 1
+[00:00:00.000000000] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.000000000] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.000000000] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation
+[00:00:00.000000000] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:00.000000000] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:00.161918280] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.161918280] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:00.161918280] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:00.161918280] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.161918280] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:00.161938610] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.161938610] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.161938610] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.161938610] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.161938610] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x10
+[00:00:00.161957730] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.161957730] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165043780] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165043780] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165043780] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:00.165043780] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:00.165043780] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165043780] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:00.165058040] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165058040] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165058040] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165058040] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Transmitting data 0x3, current state: RecognizeOperation
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Read, address length: 3, write enabled False
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Transmitting data 0x7F, current state: AccumulateCommandAddressBytes
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateCommandAddressBytes
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateCommandAddressBytes
+[00:00:00.165058040] [NOISY] spi1.spi1mux.u4: Address accumulated: 0x7F0000
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0xFF, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165076700] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Read, address length: 3, returning 0xFF
+[00:00:00.165100000] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165100000] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165171490] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165171490] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165171490] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:00.165171490] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:00.165171490] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165171490] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:00.165185750] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165185750] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165185750] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165200000] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165200000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x6, current state: RecognizeOperation
+[00:00:00.165200000] [NOISY] spi1.spi1mux.u4: Setting write enable latch
+[00:00:00.165203810] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165203810] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165216340] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165216340] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Transmitting data 0x20, current state: RecognizeOperation
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Erase, erase size: Subsector4K, address length: 3, write enabled True
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Transmitting data 0x7E, current state: AccumulateNoDataCommandAddressBytes
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Transmitting data 0xF0, current state: AccumulateNoDataCommandAddressBytes
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateNoDataCommandAddressBytes
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Address accumulated: 0x7EF000
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Full segment to erase: <0x007EF000, 0x007EFFFF>
+[00:00:00.165216340] [NOISY] spi1.spi1mux.u4: Erasing subrange <0x007EF000, 0x007EFFFF>
+[00:00:00.165228310] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165228310] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165232930] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165232930] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165232930] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:00.165232930] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:00.165232930] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.165232930] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:00.165247190] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165247190] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165247190] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165247190] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165247190] [NOISY] spi1.spi1mux.u4: Transmitting data 0x6, current state: RecognizeOperation
+[00:00:00.165247190] [NOISY] spi1.spi1mux.u4: Setting write enable latch
+[00:00:00.165265250] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165265250] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.165265250] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:00.165265250] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.165265250] [NOISY] spi1.spi1mux.u4: Transmitting data 0xC7, current state: RecognizeOperation
+[00:00:00.165265250] [NOISY] spi1.spi1mux.u4: Performing bulk/chip erase
+[00:00:00.165265250] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: None, write enabled True
+[00:00:00.165282560] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.165282560] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.342585230] [NOISY] i2c1.u2: Write D0
+[00:00:00.342586130] [NOISY] i2c1.u2: Read 60
+[00:00:00.342603040] [NOISY] i2c1.u2: Write 88
+[00:00:00.342603940] [NOISY] i2c1.u2: Read 0 80 0 80 0 0 1 0 1 0 0 0 0 0 0 0 0 0 0 0 0 40 0 0
+[00:00:00.342641400] [NOISY] i2c1.u2: Write F4 57
+[00:00:00.342652710] [NOISY] i2c1.u2: Write F5 8
+[00:00:00.342780210] [NOISY] i2c1.u7: read 0x01 -> 0x50
+[00:00:00.342793310] [NOISY] i2c1.u7: read 0x28 -> 0x02
+[00:00:00.342806380] [NOISY] i2c1.u7: read 0x27 -> 0x10
+[00:00:00.342820400] [NOISY] i2c1.u7: write 0x37 <- 0x00
+[00:00:00.342831710] [NOISY] i2c1.u7: write 0x36 <- 0x72
+[00:00:00.342842830] [NOISY] i2c1.u7: write 0x37 <- 0x3D
+[00:00:00.382745850] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.382763570] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.382787270] [NOISY] i2c1.u2: Write F7
+[00:00:00.382788170] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.390752430] [NOISY] i2c1.u2: Write F7
+[00:00:00.390753330] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.390868050] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.390888470] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.406751020] [NOISY] i2c1.u2: Write F7
+[00:00:00.406751920] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.406866650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.406884370] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.422752370] [NOISY] i2c1.u2: Write F7
+[00:00:00.422753270] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.422867200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.422884860] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.438750950] [NOISY] i2c1.u2: Write F7
+[00:00:00.438751850] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.438866580] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.438884240] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.454751130] [NOISY] i2c1.u2: Write F7
+[00:00:00.454752030] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.454866760] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.454884420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.470752490] [NOISY] i2c1.u2: Write F7
+[00:00:00.470753390] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.470867320] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.470884980] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.486751460] [NOISY] i2c1.u2: Write F7
+[00:00:00.486752370] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.486873450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.486891110] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.502751490] [NOISY] i2c1.u2: Write F7
+[00:00:00.502752390] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.502874560] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.502894330] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.518751610] [NOISY] i2c1.u2: Write F7
+[00:00:00.518752510] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.518866440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.518884100] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.518898930] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:00.534751790] [NOISY] i2c1.u2: Write F7
+[00:00:00.534752690] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.534866620] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.534884280] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.550752150] [NOISY] i2c1.u2: Write F7
+[00:00:00.550753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.550875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.550893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.566752150] [NOISY] i2c1.u2: Write F7
+[00:00:00.566753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.566875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.566893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.582752150] [NOISY] i2c1.u2: Write F7
+[00:00:00.582753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.582875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.582893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.598754190] [NOISY] i2c1.u2: Write F7
+[00:00:00.598755090] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.598870820] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.598888760] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.614751840] [NOISY] i2c1.u2: Write F7
+[00:00:00.614752740] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.614872670] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.614892630] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.630751290] [NOISY] i2c1.u2: Write F7
+[00:00:00.630752190] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.630877800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.630895740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.646751620] [NOISY] i2c1.u2: Write F7
+[00:00:00.646752520] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.646874670] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.646894080] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.662751660] [NOISY] i2c1.u2: Write F7
+[00:00:00.662752560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.662874710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.662892650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.678751330] [NOISY] i2c1.u2: Write F7
+[00:00:00.678752230] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.678774450] [NOISY] i2c1.u2: Write F4
+[00:00:00.678775350] [NOISY] i2c1.u2: Read 57
+[00:00:00.678879760] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.678897700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.678912810] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:00.694751910] [NOISY] i2c1.u2: Write F7
+[00:00:00.694752810] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.694866740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.694884680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.710759370] [NOISY] i2c1.u2: Write F7
+[00:00:00.710760270] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.710884220] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.710902160] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.726751730] [NOISY] i2c1.u2: Write F7
+[00:00:00.726752630] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.726876520] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.726896480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.742752450] [NOISY] i2c1.u2: Write F7
+[00:00:00.742753350] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.742869080] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.742887020] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.758751650] [NOISY] i2c1.u2: Write F7
+[00:00:00.758752550] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.758874700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.758894110] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.774751220] [NOISY] i2c1.u2: Write F7
+[00:00:00.774752120] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.774866850] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.774884790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.790751960] [NOISY] i2c1.u2: Write F7
+[00:00:00.790752860] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.790866790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.790884730] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.806752010] [NOISY] i2c1.u2: Write F7
+[00:00:00.806752910] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.806866840] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.806884780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.822753030] [NOISY] i2c1.u2: Write F7
+[00:00:00.822753930] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.822872120] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.822891530] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.838752590] [NOISY] i2c1.u2: Write F7
+[00:00:00.838753490] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.838874110] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.838893470] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.838909980] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:00.854751820] [NOISY] i2c1.u2: Write F7
+[00:00:00.854752720] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.854866650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.854884590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.870751600] [NOISY] i2c1.u2: Write F7
+[00:00:00.870752500] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.870874650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.870892590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.886751600] [NOISY] i2c1.u2: Write F7
+[00:00:00.886752500] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.886874650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.886892590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.902751600] [NOISY] i2c1.u2: Write F7
+[00:00:00.902752500] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.902874650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.902892590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.918751600] [NOISY] i2c1.u2: Write F7
+[00:00:00.918752500] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.918874650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.918892590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.934756120] [NOISY] i2c1.u2: Write F7
+[00:00:00.934757020] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.934873380] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.934891320] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.950751660] [NOISY] i2c1.u2: Write F7
+[00:00:00.950752560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.950875540] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.950894900] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.966751610] [NOISY] i2c1.u2: Write F7
+[00:00:00.966752510] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.966874660] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.966892600] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.982751610] [NOISY] i2c1.u2: Write F7
+[00:00:00.982752510] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.982874660] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.982892600] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.998751610] [NOISY] i2c1.u2: Write F7
+[00:00:00.998752510] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.998774730] [NOISY] i2c1.u2: Write F5
+[00:00:00.998775630] [NOISY] i2c1.u2: Read 8
+[00:00:00.998888260] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.998906200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:00.998921310] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:01.014752100] [NOISY] i2c1.u2: Write F7
+[00:00:01.014753000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.014875150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.014893090] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.030752100] [NOISY] i2c1.u2: Write F7
+[00:00:01.030753000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.030875150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.030893090] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.046757420] [NOISY] i2c1.u2: Write F7
+[00:00:01.046758320] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.046877200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.046895140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.062751950] [NOISY] i2c1.u2: Write F7
+[00:00:01.062752850] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.062874350] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.062893770] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.078751400] [NOISY] i2c1.u2: Write F7
+[00:00:01.078752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.078874450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.078892390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.094751400] [NOISY] i2c1.u2: Write F7
+[00:00:01.094752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.094874450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.094892390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.110751400] [NOISY] i2c1.u2: Write F7
+[00:00:01.110752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.110874450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.110892390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.126751400] [NOISY] i2c1.u2: Write F7
+[00:00:01.126752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.126874450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.126892390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.142751400] [NOISY] i2c1.u2: Write F7
+[00:00:01.142752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.142874450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.142892390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.158758320] [NOISY] i2c1.u2: Write F7
+[00:00:01.158759220] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.158876420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.158894360] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.158909470] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:01.174751320] [NOISY] i2c1.u2: Write F7
+[00:00:01.174752220] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.174876120] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.174895540] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.190752150] [NOISY] i2c1.u2: Write F7
+[00:00:01.190753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.190875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.190893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.206752150] [NOISY] i2c1.u2: Write F7
+[00:00:01.206753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.206875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.206893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.222752150] [NOISY] i2c1.u2: Write F7
+[00:00:01.222753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.222875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.222893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.238752150] [NOISY] i2c1.u2: Write F7
+[00:00:01.238753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.238875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.238893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.254752150] [NOISY] i2c1.u2: Write F7
+[00:00:01.254753050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.254875200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.254893140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.270756530] [NOISY] i2c1.u2: Write F7
+[00:00:01.270757430] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.270874590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.270892530] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.286751980] [NOISY] i2c1.u2: Write F7
+[00:00:01.286752880] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.286876780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.286896200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.302751240] [NOISY] i2c1.u2: Write F7
+[00:00:01.302752140] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.302866870] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.302884810] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.318751900] [NOISY] i2c1.u2: Write F7
+[00:00:01.318752800] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.318775020] [NOISY] i2c1.u2: Write F4
+[00:00:01.318775920] [NOISY] i2c1.u2: Read 57
+[00:00:01.318880330] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.318898270] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.318913380] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:01.334752030] [NOISY] i2c1.u2: Write F7
+[00:00:01.334752930] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.334866860] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.334884800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.350751810] [NOISY] i2c1.u2: Write F7
+[00:00:01.350752710] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.350866640] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.350884580] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.366757200] [NOISY] i2c1.u2: Write F7
+[00:00:01.366758100] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.366873860] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.366891800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.382758590] [NOISY] i2c1.u2: Write F7
+[00:00:01.382759490] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.382876660] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.382896070] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.398751910] [NOISY] i2c1.u2: Write F7
+[00:00:01.398752810] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.398877550] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.398897520] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.414751340] [NOISY] i2c1.u2: Write F7
+[00:00:01.414752240] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.414875190] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.414893130] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.430752610] [NOISY] i2c1.u2: Write F7
+[00:00:01.430753510] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.430867440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.430885380] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.446751940] [NOISY] i2c1.u2: Write F7
+[00:00:01.446752840] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.446866770] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.446884710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.462751990] [NOISY] i2c1.u2: Write F7
+[00:00:01.462752890] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.462866820] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.462884760] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.478751800] [NOISY] i2c1.u2: Write F7
+[00:00:01.478752700] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.478874850] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.478892790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.478907900] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:01.494760300] [NOISY] i2c1.u2: Write F7
+[00:00:01.494761200] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.494880220] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.494898160] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.510751300] [NOISY] i2c1.u2: Write F7
+[00:00:01.510752200] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.510883300] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.510903270] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.526751430] [NOISY] i2c1.u2: Write F7
+[00:00:01.526752330] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.526874480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.526892420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.542751430] [NOISY] i2c1.u2: Write F7
+[00:00:01.542752330] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.542874480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.542892420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.558751300] [NOISY] i2c1.u2: Write F7
+[00:00:01.558752200] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.558875150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.558893090] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.574752100] [NOISY] i2c1.u2: Write F7
+[00:00:01.574753000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.574875150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.574893090] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.590752100] [NOISY] i2c1.u2: Write F7
+[00:00:01.590753000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.590875150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.590893090] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.601147790] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601150340] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601150340] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:01.601150340] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled True
+[00:00:01.601150340] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601150340] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x2
+[00:00:01.601159740] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601159740] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601277010] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601277010] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601277010] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:01.601277010] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled True
+[00:00:01.601277010] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601277010] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x2
+[00:00:01.601291130] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601291130] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601300000] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601300000] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601300000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x6, current state: RecognizeOperation
+[00:00:01.601300000] [NOISY] spi1.spi1mux.u4: Setting write enable latch
+[00:00:01.601308980] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601308980] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601308980] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601308980] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Transmitting data 0x2, current state: RecognizeOperation
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Program, address length: 3, write enabled True
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Transmitting data 0x7F, current state: AccumulateCommandAddressBytes
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateCommandAddressBytes
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateCommandAddressBytes
+[00:00:01.601308980] [NOISY] spi1.spi1mux.u4: Address accumulated: 0x7F0000
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x1B, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x1B
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x20, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x20
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x1, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x1
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x19, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x19
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601326690] [NOISY] spi1.spi1mux.u4: Handled command: Operation: Program, address length: 3, returning 0x0
+[00:00:01.601358660] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601358660] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601363730] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601363730] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601363730] [NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: RecognizeOperation
+[00:00:01.601363730] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadRegister, register: 1, write enabled False
+[00:00:01.601363730] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:01.601363730] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadRegister, register: 1, returning 0x0
+[00:00:01.601377850] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601377850] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601377850] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601377850] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601377850] [NOISY] spi1.spi1mux.u4: Transmitting data 0x6, current state: RecognizeOperation
+[00:00:01.601377850] [NOISY] spi1.spi1mux.u4: Setting write enable latch
+[00:00:01.601395700] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601395700] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.601400000] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:01.601400000] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Transmitting data 0xD8, current state: RecognizeOperation
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: Erase, erase size: Sector, address length: 3, write enabled True
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateNoDataCommandAddressBytes
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateNoDataCommandAddressBytes
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: AccumulateNoDataCommandAddressBytes
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Address accumulated: 0x0
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Full segment to erase: <0x00000000, 0x0000FFFF>
+[00:00:01.601400000] [NOISY] spi1.spi1mux.u4: Erasing subrange <0x00000000, 0x0000FFFF>
+[00:00:01.601413120] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:01.601413120] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:01.606761360] [NOISY] i2c1.u2: Write F7
+[00:00:01.606762260] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.606880300] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.606898240] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.622751390] [NOISY] i2c1.u2: Write F7
+[00:00:01.622752290] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.622882590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.622902010] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.638752450] [NOISY] i2c1.u2: Write F7
+[00:00:01.638753350] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.638777040] [NOISY] i2c1.u2: Write F5
+[00:00:01.638777940] [NOISY] i2c1.u2: Read 8
+[00:00:01.638882710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.638900650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.638915760] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:01.654752480] [NOISY] i2c1.u2: Write F7
+[00:00:01.654753380] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.654868100] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.654886040] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.670751630] [NOISY] i2c1.u2: Write F7
+[00:00:01.670752530] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.670874680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.670892620] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.686751630] [NOISY] i2c1.u2: Write F7
+[00:00:01.686752530] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.686874680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.686892620] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.702751670] [NOISY] i2c1.u2: Write F7
+[00:00:01.702752570] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.702874720] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.702892660] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.718763310] [NOISY] i2c1.u2: Write F7
+[00:00:01.718764210] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.718890470] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.718908410] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.734751370] [NOISY] i2c1.u2: Write F7
+[00:00:01.734752270] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.734869050] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.734896660] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.750751690] [NOISY] i2c1.u2: Write F7
+[00:00:01.750752590] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.750874740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.750892680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.766751820] [NOISY] i2c1.u2: Write F7
+[00:00:01.766752720] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.766867430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.766885370] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.782751640] [NOISY] i2c1.u2: Write F7
+[00:00:01.782752540] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.782874690] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.782892630] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.798751850] [NOISY] i2c1.u2: Write F7
+[00:00:01.798752750] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.798866680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.798884620] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.798900000] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:01.814752700] [NOISY] i2c1.u2: Write F7
+[00:00:01.814753600] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.814867530] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.814885470] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.830763800] [NOISY] i2c1.u2: Write F7
+[00:00:01.830764700] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.830882790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.830900730] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.846751310] [NOISY] i2c1.u2: Write F7
+[00:00:01.846752210] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.846881720] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.846901130] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.862752110] [NOISY] i2c1.u2: Write F7
+[00:00:01.862753010] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.862875160] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.862893100] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.878751750] [NOISY] i2c1.u2: Write F7
+[00:00:01.878752650] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.878868380] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.878886320] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.894751750] [NOISY] i2c1.u2: Write F7
+[00:00:01.894752650] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.894874800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.894894210] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.910751760] [NOISY] i2c1.u2: Write F7
+[00:00:01.910752660] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.910874810] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.910892750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.926751490] [NOISY] i2c1.u2: Write F7
+[00:00:01.926752390] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.926874540] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.926892480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.942764740] [NOISY] i2c1.u2: Write F7
+[00:00:01.942765640] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.942883710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.942901650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.958751700] [NOISY] i2c1.u2: Write F7
+[00:00:01.958752600] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.958774820] [NOISY] i2c1.u2: Write F4
+[00:00:01.958775720] [NOISY] i2c1.u2: Read 57
+[00:00:01.958888550] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.958908510] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.958925650] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:01.974751640] [NOISY] i2c1.u2: Write F7
+[00:00:01.974752540] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.974874690] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.974892630] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.990758050] [NOISY] i2c1.u2: Write F7
+[00:00:01.990758950] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:01.990874710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:01.990892650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.006751680] [NOISY] i2c1.u2: Write F7
+[00:00:02.006752580] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.006874500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.006892440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.022751980] [NOISY] i2c1.u2: Write F7
+[00:00:02.022752880] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.022866810] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.022884750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.038751760] [NOISY] i2c1.u2: Write F7
+[00:00:02.038752660] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.038874810] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.038892750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.054751830] [NOISY] i2c1.u2: Write F7
+[00:00:02.054752730] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.054884950] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.054902890] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.070751230] [NOISY] i2c1.u2: Write F7
+[00:00:02.070752130] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.070870490] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.070888430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.086752730] [NOISY] i2c1.u2: Write F7
+[00:00:02.086753630] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.086867560] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.086885500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.102754160] [NOISY] i2c1.u2: Write F7
+[00:00:02.102755060] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.102877210] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.102895150] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.118751780] [NOISY] i2c1.u2: Write F7
+[00:00:02.118752680] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.118867390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.118885330] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.118900440] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:02.134752660] [NOISY] i2c1.u2: Write F7
+[00:00:02.134753560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.134867490] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.134885430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.150751390] [NOISY] i2c1.u2: Write F7
+[00:00:02.150752290] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.150868310] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.150885970] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.166752380] [NOISY] i2c1.u2: Write F7
+[00:00:02.166753280] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.166867980] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.166887750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.182751500] [NOISY] i2c1.u2: Write F7
+[00:00:02.182752400] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.182874550] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.182892210] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.198752700] [NOISY] i2c1.u2: Write F7
+[00:00:02.198753600] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.198867530] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.198885190] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.214752490] [NOISY] i2c1.u2: Write F7
+[00:00:02.214753390] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.214872800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.214890460] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.230750970] [NOISY] i2c1.u2: Write F7
+[00:00:02.230751870] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.230871270] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.230888930] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.246751150] [NOISY] i2c1.u2: Write F7
+[00:00:02.246752050] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.246866770] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.246884430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.262751070] [NOISY] i2c1.u2: Write F7
+[00:00:02.262751970] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.262866700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.262884360] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.278752780] [NOISY] i2c1.u2: Write F7
+[00:00:02.278753680] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.278775900] [NOISY] i2c1.u2: Write F5
+[00:00:02.278776800] [NOISY] i2c1.u2: Read 8
+[00:00:02.278890250] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.278908190] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.278923300] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:02.294751290] [NOISY] i2c1.u2: Write F7
+[00:00:02.294752190] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.294875140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.294893080] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.310751430] [NOISY] i2c1.u2: Write F7
+[00:00:02.310752330] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.310874480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.310892420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.326751430] [NOISY] i2c1.u2: Write F7
+[00:00:02.326752330] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.326874480] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.326892420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.342751410] [NOISY] i2c1.u2: Write F7
+[00:00:02.342752310] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.342874460] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.342892400] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.358751410] [NOISY] i2c1.u2: Write F7
+[00:00:02.358752310] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.358874460] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.358892400] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.374751620] [NOISY] i2c1.u2: Write F7
+[00:00:02.374752520] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.374867220] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.374885160] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.390751460] [NOISY] i2c1.u2: Write F7
+[00:00:02.390752360] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.390867030] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.390884970] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.406752040] [NOISY] i2c1.u2: Write F7
+[00:00:02.406752940] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.406866870] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.406884810] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.422751220] [NOISY] i2c1.u2: Write F7
+[00:00:02.422752120] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.422866850] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.422884790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.438751630] [NOISY] i2c1.u2: Write F7
+[00:00:02.438752530] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.438874680] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.438892620] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.438907730] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:02.454752450] [NOISY] i2c1.u2: Write F7
+[00:00:02.454753350] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.454868060] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.454886000] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.470751440] [NOISY] i2c1.u2: Write F7
+[00:00:02.470752340] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.470874490] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.470892430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.486751250] [NOISY] i2c1.u2: Write F7
+[00:00:02.486752150] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.486866880] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.486884820] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.502751900] [NOISY] i2c1.u2: Write F7
+[00:00:02.502752800] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.502867240] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.502884960] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.518751680] [NOISY] i2c1.u2: Write F7
+[00:00:02.518752580] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.518874730] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.518892670] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.534751680] [NOISY] i2c1.u2: Write F7
+[00:00:02.534752580] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.534874730] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.534892670] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.550751380] [NOISY] i2c1.u2: Write F7
+[00:00:02.550752280] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.550874430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.550892370] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.566751400] [NOISY] i2c1.u2: Write F7
+[00:00:02.566752300] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.566876890] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.566894830] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.582751460] [NOISY] i2c1.u2: Write F7
+[00:00:02.582752360] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.582874510] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.582893920] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.598752790] [NOISY] i2c1.u2: Write F7
+[00:00:02.598753690] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.598775910] [NOISY] i2c1.u2: Write F4
+[00:00:02.598776810] [NOISY] i2c1.u2: Read 57
+[00:00:02.598881220] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.598899160] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.598914270] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:02.614751840] [NOISY] i2c1.u2: Write F7
+[00:00:02.614752740] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.614869000] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.614886940] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.630751790] [NOISY] i2c1.u2: Write F7
+[00:00:02.630752690] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.630874840] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.630892780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.646751790] [NOISY] i2c1.u2: Write F7
+[00:00:02.646752690] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.646874840] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.646892780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.662751970] [NOISY] i2c1.u2: Write F7
+[00:00:02.662752870] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.662866800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.662884740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.678751770] [NOISY] i2c1.u2: Write F7
+[00:00:02.678752670] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.678869040] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.678886980] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.694751660] [NOISY] i2c1.u2: Write F7
+[00:00:02.694752560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.694874710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.694894120] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.710751370] [NOISY] i2c1.u2: Write F7
+[00:00:02.710752270] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.710874420] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.710892360] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.726751440] [NOISY] i2c1.u2: Write F7
+[00:00:02.726752340] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.726872600] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.726890540] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.742751260] [NOISY] i2c1.u2: Write F7
+[00:00:02.742752160] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.742875110] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.742893050] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.758752060] [NOISY] i2c1.u2: Write F7
+[00:00:02.758752960] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.758875110] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.758893050] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.758908160] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:02.774751290] [NOISY] i2c1.u2: Write F7
+[00:00:02.774752190] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.774875140] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.774893080] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.790752670] [NOISY] i2c1.u2: Write F7
+[00:00:02.790753570] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.790868440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.790886380] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.806751740] [NOISY] i2c1.u2: Write F7
+[00:00:02.806752640] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.806874980] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.806894200] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.822752920] [NOISY] i2c1.u2: Write F7
+[00:00:02.822753820] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.822875970] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.822893910] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.838752090] [NOISY] i2c1.u2: Write F7
+[00:00:02.838752990] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.838874850] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.838892790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.854751870] [NOISY] i2c1.u2: Write F7
+[00:00:02.854752770] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.854866700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.854884640] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.870751470] [NOISY] i2c1.u2: Write F7
+[00:00:02.870752370] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.870874520] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.870892460] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.886751470] [NOISY] i2c1.u2: Write F7
+[00:00:02.886752370] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.886874520] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.886892460] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.902751910] [NOISY] i2c1.u2: Write F7
+[00:00:02.902752810] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.902866880] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.902884820] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.918751850] [NOISY] i2c1.u2: Write F7
+[00:00:02.918752750] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.918774970] [NOISY] i2c1.u2: Write F5
+[00:00:02.918775870] [NOISY] i2c1.u2: Read 8
+[00:00:02.918880280] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.918900000] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.918916220] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:02.934756000] [NOISY] i2c1.u2: Write F7
+[00:00:02.934756900] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.934870830] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.934888770] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.950751850] [NOISY] i2c1.u2: Write F7
+[00:00:02.950752750] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.950871880] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.950889600] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.966751450] [NOISY] i2c1.u2: Write F7
+[00:00:02.966752350] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.966874500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.966892440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.982751700] [NOISY] i2c1.u2: Write F7
+[00:00:02.982752600] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.982874750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.982892690] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.998751280] [NOISY] i2c1.u2: Write F7
+[00:00:02.998752180] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:02.998875130] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:02.998893070] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.014752100] [NOISY] i2c1.u2: Write F7
+[00:00:03.014753000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.014869550] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.014887490] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.030752130] [NOISY] i2c1.u2: Write F7
+[00:00:03.030753030] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.030875180] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.030894590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.046752130] [NOISY] i2c1.u2: Write F7
+[00:00:03.046753030] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.046875330] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.046893270] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.062751550] [NOISY] i2c1.u2: Write F7
+[00:00:03.062752450] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.062874780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.062892500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.078751950] [NOISY] i2c1.u2: Write F7
+[00:00:03.078752850] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.078866780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.078884720] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.078900000] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:03.094751730] [NOISY] i2c1.u2: Write F7
+[00:00:03.094752630] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.094874780] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.094892720] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.110751340] [NOISY] i2c1.u2: Write F7
+[00:00:03.110752240] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.110875190] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.110893130] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.126752160] [NOISY] i2c1.u2: Write F7
+[00:00:03.126753060] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.126869430] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.126887370] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.142751560] [NOISY] i2c1.u2: Write F7
+[00:00:03.142752460] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.142874610] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.142894020] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.158755660] [NOISY] i2c1.u2: Write F7
+[00:00:03.158756560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.158870640] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.158888580] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.174751910] [NOISY] i2c1.u2: Write F7
+[00:00:03.174752810] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.174870350] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.174889710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.190751510] [NOISY] i2c1.u2: Write F7
+[00:00:03.190752410] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.190874560] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.190892500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.206751840] [NOISY] i2c1.u2: Write F7
+[00:00:03.206752740] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.206867450] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.206885390] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.222751530] [NOISY] i2c1.u2: Write F7
+[00:00:03.222752430] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.222874580] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.222892520] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.238751340] [NOISY] i2c1.u2: Write F7
+[00:00:03.238752240] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.238774460] [NOISY] i2c1.u2: Write F4
+[00:00:03.238775360] [NOISY] i2c1.u2: Read 57
+[00:00:03.238879770] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.238897710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.238912820] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:03.254751920] [NOISY] i2c1.u2: Write F7
+[00:00:03.254752820] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.254866750] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.254884690] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.270759370] [NOISY] i2c1.u2: Write F7
+[00:00:03.270760270] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.270882570] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.270900510] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.286751740] [NOISY] i2c1.u2: Write F7
+[00:00:03.286752640] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.286873380] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.286892740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.302751340] [NOISY] i2c1.u2: Write F7
+[00:00:03.302752240] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.302875190] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.302893130] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.318752580] [NOISY] i2c1.u2: Write F7
+[00:00:03.318753480] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.318868350] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.318886290] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.334751840] [NOISY] i2c1.u2: Write F7
+[00:00:03.334752740] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.334866670] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.334884610] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.350751960] [NOISY] i2c1.u2: Write F7
+[00:00:03.350752860] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.350866790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.350884730] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.366751820] [NOISY] i2c1.u2: Write F7
+[00:00:03.366752720] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.366866650] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.366884590] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.382752840] [NOISY] i2c1.u2: Write F7
+[00:00:03.382753740] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.382877690] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.382895630] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.398751820] [NOISY] i2c1.u2: Write F7
+[00:00:03.398752720] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.398867840] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.398887790] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.398902560] [NOISY] i2c1.u7: read 0x37 -> 0x3D
+[00:00:03.414751870] [NOISY] i2c1.u2: Write F7
+[00:00:03.414752770] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.414866700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.414884640] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.430753260] [NOISY] i2c1.u2: Write F7
+[00:00:03.430754160] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.430869920] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.430887860] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.446751690] [NOISY] i2c1.u2: Write F7
+[00:00:03.446752590] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.446869710] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.446889120] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.462752450] [NOISY] i2c1.u2: Write F7
+[00:00:03.462753350] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.462875500] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.462893440] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.478751650] [NOISY] i2c1.u2: Write F7
+[00:00:03.478752550] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.478874700] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.478892640] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.494756410] [NOISY] i2c1.u2: Write F7
+[00:00:03.494757310] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.494873040] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.494890980] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.510751660] [NOISY] i2c1.u2: Write F7
+[00:00:03.510752560] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.510870920] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.510890870] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.526751750] [NOISY] i2c1.u2: Write F7
+[00:00:03.526752650] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.526874800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.526892740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.542751750] [NOISY] i2c1.u2: Write F7
+[00:00:03.542752650] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.542874800] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.542892740] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.558751770] [NOISY] i2c1.u2: Write F7
+[00:00:03.558752670] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:03.558774670] [NOISY] i2c1.u2: Write F5
+[00:00:03.558775570] [NOISY] i2c1.u2: Read 8
+[00:00:03.558879400] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.558897120] [NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[00:00:03.558912010] [NOISY] i2c1.u7: read 0x36 -> 0x72
+[00:00:03.570100000] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570134680] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570134680] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570134680] [NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47
+[00:00:03.570134680] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570134680] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570156140] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570156140] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570156140] [NOISY] spi2.spi2mux.u5: bank 0 write 0x16 <- 0x80
+[00:00:03.570156140] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570156140] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570174140] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570174140] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570174140] [NOISY] spi2.spi2mux.u5: bank 0 write 0x5F <- 0x07
+[00:00:03.570174140] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570174140] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570192140] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570192140] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570192140] [NOISY] spi2.spi2mux.u5: bank 0 write 0x4C <- 0xC0
+[00:00:03.570200000] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570200000] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570210160] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570210160] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570210160] [NOISY] spi2.spi2mux.u5: bank 0 write 0x4B <- 0x02
+[00:00:03.570210160] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570210160] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570229500] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570229500] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570229500] [NOISY] spi2.spi2mux.u5: bank 0 write 0x4E <- 0x00
+[00:00:03.570229500] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570229500] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570247500] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570247500] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570247500] [NOISY] spi2.spi2mux.u5: bank 0 write 0x4F <- 0x05
+[00:00:03.570247500] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570247500] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570265500] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570265500] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570265500] [NOISY] spi2.spi2mux.u5: bank 0 write 0x50 <- 0x05
+[00:00:03.570265500] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570265500] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570283590] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570283590] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570283590] [NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01
+[00:00:03.570283590] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570283590] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570302400] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570302400] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570302400] [NOISY] spi2.spi2mux.u5: bank 1 read 0x0B -> 0xA0
+[00:00:03.570302400] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570302400] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570321130] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570321130] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570321130] [NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00
+[00:00:03.570321130] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570321130] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570339260] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570339260] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570339260] [NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01
+[00:00:03.570339260] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570339260] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570357260] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570357260] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570357260] [NOISY] spi2.spi2mux.u5: bank 1 write 0x0B <- 0xA0
+[00:00:03.570357260] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570357260] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570375270] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570375270] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570375270] [NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00
+[00:00:03.570375270] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570375270] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570393380] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570393380] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570393380] [NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01
+[00:00:03.570400000] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570400000] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570411380] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570411380] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570411380] [NOISY] spi2.spi2mux.u5: bank 1 write 0x0C <- 0x0C
+[00:00:03.570411380] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570411380] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570429390] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570429390] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570429390] [NOISY] spi2.spi2mux.u5: bank 1 write 0x76 <- 0x00
+[00:00:03.570429390] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570429390] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570462130] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570462130] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570462130] [NOISY] spi2.spi2mux.u5: bank 0 write 0x76 <- 0x01
+[00:00:03.570469730] [ERROR] spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+[00:00:03.570488590] [NOISY] spi2.spi2mux: GPIO #0 set to False
+[00:00:03.570493380] [NOISY] spi2.spi2mux: GPIO #0 set to True
+[00:00:03.570493380] [NOISY] spi2.spi2mux: Finisihing transmission on device 0x0
+[00:00:03.570493380] [NOISY] spi2.spi2mux.u5: bank 1 write 0x0D <- 0x90

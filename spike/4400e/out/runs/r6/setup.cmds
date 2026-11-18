@@ -1,0 +1,106 @@
+emulation SetSeed 2100
+emulation SetGlobalQuantum "0.000100000"
+include @/repo/models/renode/BMP581.cs
+include @/repo/models/renode/ICM42688P.cs
+mach create
+machine LoadPlatformDescription @/cache/s02own/gen/board/sentinel-02-own.repl
+sysbus LoadELF @/cache/ci-elf/sentinel-02/arducopter.elf
+sysbus LogPeripheralAccess sysbus.flashController true
+sysbus WriteDoubleWord 0x580244d4 0x0
+sysbus WriteDoubleWord 0x580244d8 0x0
+sysbus WriteDoubleWord 0x580244dc 0x0
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e4 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244ec 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+sysbus WriteDoubleWord 0x580244f4 0x10000
+sysbus WriteDoubleWord 0x20000000 0x0
+sysbus WriteDoubleWord 0x20000004 0xffffffff
+sysbus WriteDoubleWord 0x20000008 0xffffffff
+sysbus WriteDoubleWord 0x2000000c 0xffffffff
+sysbus WriteDoubleWord 0x20000010 0xffffffff
+sysbus WriteDoubleWord 0x20000014 0xffffffff
+sysbus WriteDoubleWord 0x20000018 0xffffffff
+sysbus WriteDoubleWord 0x2000001c 0xffffffff
+sysbus WriteDoubleWord 0x20000020 0xffffffff
+sysbus WriteDoubleWord 0x20000024 0xffffffff
+sysbus WriteDoubleWord 0x20000028 0xffffffff
+sysbus WriteDoubleWord 0x2000002c 0xffffffff
+sysbus WriteDoubleWord 0x20000030 0xffffffff
+sysbus WriteDoubleWord 0x20000034 0xffffffff
+sysbus WriteDoubleWord 0x20000038 0xffffffff
+sysbus WriteDoubleWord 0x2000003c 0xffffffff
+sysbus WriteDoubleWord 0x20000040 0xffffffff
+sysbus WriteDoubleWord 0x20000044 0xffffffff
+sysbus WriteDoubleWord 0x20000048 0xffffffff
+sysbus WriteDoubleWord 0x2000004c 0xffffffff
+sysbus WriteDoubleWord 0x20000050 0xffffffff
+sysbus WriteDoubleWord 0x20000054 0xffffffff
+sysbus WriteDoubleWord 0x20000058 0xffffffff
+sysbus WriteDoubleWord 0x2000005c 0xffffffff
+cpu VectorTableOffset 0x08000000
+logLevel -1 sysbus.i2c1.u2
+logLevel -1 sysbus.i2c1.u7
+logLevel -1 sysbus.spi1.spi1mux.u4
+logLevel -1 sysbus.spi1.spi1mux
+logLevel -1 sysbus.spi2.spi2mux.u5
+logLevel -1 sysbus.spi2.spi2mux
+sysbus LogPeripheralAccess sysbus.usart1 true
+sysbus LogPeripheralAccess sysbus.gpioPortA true
+sysbus LogPeripheralAccess sysbus.rcc true
+sysbus.usart2 CreateFileBackend @/cache/runs/r6/tool/capture/usart2.bin true
+sysbus.usart3 CreateFileBackend @/cache/runs/r6/tool/capture/usart3.bin true
+sysbus.uart4 CreateFileBackend @/cache/runs/r6/tool/capture/uart4.bin true
+sysbus.uart5 CreateFileBackend @/cache/runs/r6/tool/capture/uart5.bin true
+sysbus.usart6 CreateFileBackend @/cache/runs/r6/tool/capture/usart6.bin true
+sysbus.uart7 CreateFileBackend @/cache/runs/r6/tool/capture/uart7.bin true
+sysbus.uart8 CreateFileBackend @/cache/runs/r6/tool/capture/uart8.bin true
+sysbus.lpuart1 CreateFileBackend @/cache/runs/r6/tool/capture/lpuart1.bin true
+sysbus.usart1 CreateFileBackend @/cache/runs/r6/tool/capture/usart1.bin true
+sysbus.i2c1.u7 Temperature 25
+sysbus.i2c1.u7 Pressure 101325
+sysbus.spi2.spi2mux.u5 Temperature 29
+sysbus.spi2.spi2mux.u5 AccelerationX 0
+sysbus.spi2.spi2mux.u5 AccelerationY 1
+# stubs
+sysbus LogPeripheralAccess sysbus.usart1 false
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E-FAULT CFSR=0x%x HFSR=0x%x MMFAR=0x%x BFAR=0x%x' % tuple(machine.SystemBus.ReadDoubleWord(a) for a in (0xE000ED28, 0xE000ED2C, 0xE000ED34, 0xE000ED38)))"
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E-PSPFRAME %s' % ' '.join('%x' % machine.SystemBus.ReadDoubleWord(int(self.OtherSP.RawValue) + 4 * i) for i in range(8)))"
+cpu AddHook 0x08000340 "self.Log(LogLevel.Warning, 'AET4400E-EXC 3')"
+cpu AddHook 0x08000D8E "self.Log(LogLevel.Warning, 'AET4400E-EXC 7..(129 vectors)')"
+cpu AddHook 0x080C02D0 "self.Log(LogLevel.Warning, 'AET4400E-EXC 5')"
+cpu AddHook 0x080C02D4 "self.Log(LogLevel.Warning, 'AET4400E-EXC 6')"
+cpu AddHook 0x080C02D8 "self.Log(LogLevel.Warning, 'AET4400E-EXC 4')"
+cpu AddHook 0x080C0350 "self.Log(LogLevel.Warning, 'AET4400E-EXC 2')"
+cpu AddHook 0x081002D8 "self.Log(LogLevel.Warning, 'AET4400E-EXC 27')"
+cpu AddHook 0x08100300 "self.Log(LogLevel.Warning, 'AET4400E-EXC 28')"
+cpu AddHook 0x0810032C "self.Log(LogLevel.Warning, 'AET4400E-EXC 29')"
+cpu AddHook 0x08100358 "self.Log(LogLevel.Warning, 'AET4400E-EXC 30')"
+cpu AddHook 0x08100384 "self.Log(LogLevel.Warning, 'AET4400E-EXC 31')"
+cpu AddHook 0x081003AC "self.Log(LogLevel.Warning, 'AET4400E-EXC 32')"
+cpu AddHook 0x081003D8 "self.Log(LogLevel.Warning, 'AET4400E-EXC 33')"
+cpu AddHook 0x08100404 "self.Log(LogLevel.Warning, 'AET4400E-EXC 63')"
+cpu AddHook 0x08100430 "self.Log(LogLevel.Warning, 'AET4400E-EXC 72')"
+cpu AddHook 0x08100458 "self.Log(LogLevel.Warning, 'AET4400E-EXC 73')"
+cpu AddHook 0x08100484 "self.Log(LogLevel.Warning, 'AET4400E-EXC 74')"
+cpu AddHook 0x081004B0 "self.Log(LogLevel.Warning, 'AET4400E-EXC 75')"
+cpu AddHook 0x081004DC "self.Log(LogLevel.Warning, 'AET4400E-EXC 76')"
+cpu AddHook 0x08100504 "self.Log(LogLevel.Warning, 'AET4400E-EXC 84')"
+cpu AddHook 0x08100530 "self.Log(LogLevel.Warning, 'AET4400E-EXC 85')"
+cpu AddHook 0x0810055C "self.Log(LogLevel.Warning, 'AET4400E-EXC 86')"
+cpu AddHook 0x081008F4 "self.Log(LogLevel.Warning, 'AET4400E-EXC 47')"
+cpu AddHook 0x08100A1C "self.Log(LogLevel.Warning, 'AET4400E-EXC 48')"
+cpu AddHook 0x08100D38 "self.Log(LogLevel.Warning, 'AET4400E-EXC 51')"
+cpu AddHook 0x08100D4C "self.Log(LogLevel.Warning, 'AET4400E-EXC 52')"
+cpu AddHook 0x08103460 "self.Log(LogLevel.Warning, 'AET4400E-EXC 11')"
+cpu AddHook 0x0810395C "self.Log(LogLevel.Warning, 'AET4400E-EXC 22')"
+cpu AddHook 0x08103988 "self.Log(LogLevel.Warning, 'AET4400E-EXC 23')"
+cpu AddHook 0x081039B4 "self.Log(LogLevel.Warning, 'AET4400E-EXC 24')"
+cpu AddHook 0x081039E0 "self.Log(LogLevel.Warning, 'AET4400E-EXC 25')"
+cpu AddHook 0x08103A0C "self.Log(LogLevel.Warning, 'AET4400E-EXC 26')"
+cpu AddHook 0x08103A38 "self.Log(LogLevel.Warning, 'AET4400E-EXC 39')"
+cpu AddHook 0x08103A9C "self.Log(LogLevel.Warning, 'AET4400E-EXC 56')"
+cpu AddHook 0x08103B10 "self.Log(LogLevel.Warning, 'AET4400E-EXC 53')"
+cpu AddHook 0x08103B24 "self.Log(LogLevel.Warning, 'AET4400E-EXC 66')"
+cpu AddHook 0x08102070 "self.Log(LogLevel.Warning, 'AET4400E-HOOK chSchDoPreemption')"

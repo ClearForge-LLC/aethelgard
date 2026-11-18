@@ -4294,3 +4294,144 @@ fn the_cli_s_correction_reads_rettobase_0_nested_1_alone_and_moves_no_other_bit(
     assert_eq!(fixed.outer, bare.outer, "nothing, alone");
     assert_eq!(fixed.thread, bare.thread, "nothing, in Thread mode");
 }
+
+/// A Cortex-M ELF of `segments` (physical = virtual address, file bytes,
+/// `p_flags`), entered at `0x08000009` (`AET-WO-4400e` R1 controls).
+fn foreign_elf(segments: &[(u32, Vec<u8>, u32)]) -> Vec<u8> {
+    let n = segments.len() as u16;
+    let mut b = vec![0u8; 52];
+    b[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
+    b[16..18].copy_from_slice(&2u16.to_le_bytes());
+    b[18..20].copy_from_slice(&40u16.to_le_bytes());
+    b[20..24].copy_from_slice(&1u32.to_le_bytes());
+    b[24..28].copy_from_slice(&0x0800_0009u32.to_le_bytes());
+    b[28..32].copy_from_slice(&52u32.to_le_bytes());
+    b[36..40].copy_from_slice(&0x0500_0200u32.to_le_bytes());
+    b[40..42].copy_from_slice(&52u16.to_le_bytes());
+    b[42..44].copy_from_slice(&32u16.to_le_bytes());
+    b[44..46].copy_from_slice(&n.to_le_bytes());
+    let mut offset = 52 + 32 * u32::from(n);
+    for (paddr, bytes, flags) in segments {
+        let len = bytes.len() as u32;
+        for v in [1u32, offset, *paddr, *paddr, len, len, *flags, 4] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        offset += len;
+    }
+    for (_, bytes, _) in segments {
+        b.extend_from_slice(bytes);
+    }
+    b
+}
+
+/// 512 bytes of flash at `0x08000000`: a vector table, then Thumb code that
+/// loads `base`, writes `first` and `second` to `[base + 4]` and `third` to
+/// `[base + 12]`, and spins. With the flash controller's base, its unlock
+/// keys and a control word, that is an erase (RM0433 Rev 9 §4.3.10); with
+/// `base` an address in the image, three stores into it.
+fn foreign_code(base: u32, first: u32, second: u32, third: u32) -> Vec<u8> {
+    let mut c = vec![0u8; 0x200];
+    c[..8].copy_from_slice(&[0x00, 0x10, 0x00, 0x20, 0x09, 0x00, 0x00, 0x08]);
+    // ldr r0,[pc,#16]; ldr r1,[pc,#20]; str r1,[r0,#4]; ldr r1,[pc,#20];
+    // str r1,[r0,#4]; ldr r1,[pc,#20]; str r1,[r0,#12]; b .
+    for (i, h) in [
+        0x4804u16, 0x4905, 0x6041, 0x4905, 0x6041, 0x4905, 0x60C1, 0xE7FE,
+    ]
+    .iter()
+    .enumerate()
+    {
+        c[8 + 2 * i..10 + 2 * i].copy_from_slice(&h.to_le_bytes());
+    }
+    for (i, w) in [base, first, second, third].iter().enumerate() {
+        c[0x1C + 4 * i..0x20 + 4 * i].copy_from_slice(&w.to_le_bytes());
+    }
+    c
+}
+
+/// `FLASH_R_BASE`, `FLASH_KEY1` and `FLASH_KEY2` (`stm32h753xx.h`), and a
+/// `FLASH_CR` word that sets `SER`, `SNB` = `sector` and `START`.
+const FLASH_R_BASE: u32 = 0x5200_2000;
+const KEYS: (u32, u32) = (0x4567_0123, 0xCDEF_89AB);
+fn sector_erase(sector: u32) -> u32 {
+    0x84 | sector << 8
+}
+
+/// One foreign boot of `segments` on the reference platform, 10 ms.
+fn foreign_boot(label: &str, segments: &[(u32, Vec<u8>, u32)]) -> (Option<i32>, Value) {
+    let dir = std::env::temp_dir().join(format!("aet-t2-{}-{label}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let elf = dir.join(format!("{label}.elf"));
+    fs::write(&elf, foreign_elf(segments)).unwrap();
+    let (code, v) = aethelgard(&[
+        "simulate",
+        "--platform",
+        platform().to_str().unwrap(),
+        "--firmware",
+        elf.to_str().unwrap(),
+        "--spec",
+        spec().to_str().unwrap(),
+        "--foreign",
+        "10ms",
+    ]);
+    answer(&format!("{label}: exit={code:?} verdict={v}"));
+    fs::remove_dir_all(&dir).unwrap();
+    // R1 condition 1: the expected hash is the ELF's, computed here too.
+    for (i, (paddr, bytes, _)) in segments.iter().enumerate() {
+        let f = &v["boot"]["flash"][i];
+        assert_eq!(f["address"], format!("{paddr:#010x}"), "{v}");
+        assert_eq!(
+            f["expected_sha256"],
+            Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>(),
+            "{v}"
+        );
+    }
+    (code, v)
+}
+
+/// `AET-WO-4400e` R1 (ruled on PR #212, comment 6966155027), control 1: a
+/// foreign firmware that stores into its own loaded flash fails
+/// `flash_overwritten` by the hash Renode reads after the run.
+#[test]
+fn a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten() {
+    let code = foreign_code(0x0800_0100, 0x1234_5678, 0x1234_5678, 0x9ABC_DEF0);
+    let (status, v) = foreign_boot("r1-store", &[(0x0800_0000, code, 5)]);
+    assert_eq!(status, Some(1), "{v}");
+    assert!(kinds(&v).contains(&"flash_overwritten"), "{v}");
+    let f = &v["boot"]["flash"][0];
+    assert_ne!(f["expected_sha256"], f["observed_sha256"], "{v}");
+    assert_eq!(v["boot"]["erases"], serde_json::json!([]), "{v}");
+}
+
+/// R1 control 2: an erase of a sector holding its own segment fails
+/// `flash_overwritten` by the erase witness, though the segment is all
+/// `0xFF` and so hashes unchanged.
+#[test]
+fn a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds() {
+    let code = foreign_code(FLASH_R_BASE, KEYS.0, KEYS.1, sector_erase(1));
+    let (status, v) = foreign_boot(
+        "r1-erase-own",
+        &[(0x0800_0000, code, 5), (0x0802_0000, vec![0xFF; 0x100], 4)],
+    );
+    assert_eq!(status, Some(1), "{v}");
+    assert!(kinds(&v).contains(&"flash_overwritten"), "{v}");
+    for f in v["boot"]["flash"].as_array().unwrap() {
+        assert_eq!(f["expected_sha256"], f["observed_sha256"], "{v}");
+    }
+    assert_eq!(v["boot"]["erases"][0]["start"], "0x08020000", "{v}");
+}
+
+/// R1 control 3: an erase outside every own segment (bank 2's sector 6,
+/// where ArduPilot keeps its parameters) is listed and is no finding.
+#[test]
+fn a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding() {
+    let code = foreign_code(FLASH_R_BASE + 0x100, KEYS.0, KEYS.1, sector_erase(6));
+    let (_, v) = foreign_boot("r1-erase-other", &[(0x0800_0000, code, 5)]);
+    assert!(!kinds(&v).contains(&"flash_overwritten"), "{v}");
+    assert_eq!(v["boot"]["erases"][0]["start"], "0x081c0000", "{v}");
+    assert_eq!(v["boot"]["erases"][0]["end"], "0x081e0000", "{v}");
+    let f = &v["boot"]["flash"][0];
+    assert_eq!(f["expected_sha256"], f["observed_sha256"], "{v}");
+}
