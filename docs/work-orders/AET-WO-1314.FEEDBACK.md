@@ -167,7 +167,24 @@ Local, on this head [measured]:
 - `cargo test --workspace` is green.
 - The byte comparison against main's binary over every committed specification (§2.3).
 
-CI on the PR, and Sentinel-03's tier-2 KiCad checks on its new board (`board_tier2`, ruling D5), are recorded in the READY commit.
+**CI on the PR [measured]:** run 44382374239 on `2a79bbe6` is green, with the engine and ArduPilot image runs.
+- **Tier 2:** `tier2_tests_passed=190 floor=190`, so `TIER2_MIN` 190 is exact (main's, after 1605).
+- **Sentinel-03's tier-2 KiCad checks on its new board pass (D5):** `the_sentinel_03_fixture_passes_every_gate_inside_its_bound` and `each_size_sample_passes_every_gate_or_is_refused_by_name`. So do the power fixture's `the_power_fixture_passes_erc_drc_its_loop_rules_and_extract` and `the_full_power_fixture_routes_and_passes_every_gate_it_reaches`.
+
+**The shard budget (ruling 6989277256), refit by REFIT RULE 5 from run 44372757248:**
+- **Why shard 1 overran on `a9b79f43`:** `supply_tier1` (1303b) and `via_ring_tier1` had no rows in `ci/test-weights.tsv`, so each test counted at `DEFAULT_WEIGHT`, 0.05 s, against about 1,500 s real. The planner stacked them onto one shard.
+- **What was reweighed:** only the tests whose cost this PR changed, 34 rows. These are `board_tier2`'s Sentinel-03 and power-fixture cases (behind its lock: `ok` less the previous holder's), every test of `outline_tier1`, `power_board_tier1`, `supply_tier1` and `via_ring_tier1`, and `solve_cli`'s power-tree emit (`ok` less the binary's `Running`, an upper bound).
+- `ci/SHARDS` stays 8.
+
+| | Plan, per shard | tools-shard 0–7, wall time (min) | Mean |
+|---|---|---|---|
+| main `16404fc7`, run 44356098669 | 1,699 s | 33.6, 32.9, 30.5, 31.9, 34.8, 32.2, 40.5, 33.0 | 33.7 |
+| this PR before the refit, `a9b79f43`, run 44372757248 | 1,700 s | 36.5, 45.3 (cancelled at the guard), 27.5, 43.3, 39.2, 27.7, 32.8, 33.2 | ≥ 35.7 |
+| this PR refit, `2a79bbe6`, run 44382374239 | 2,141 s (CI's own plan and `ci/shard.sh assign`, the same) | 32.5, 32.7, 30.9, 33.0, 36.0, 34.8, 28.0, 33.1 | 32.6 |
+
+- **Margin:** no shard is within 5 min of the 45 min guard; the slowest, shard 4, is at 36.0 min.
+- **Main's own shard 6 (40.5 min) was** within it, before this PR: the drift the architect takes as a CI work order.
+- **The `gates` job** (the unsharded workspace suite; no time guard) took 51.7 min, against main's 34.9 min. It is the ladder's cost per emit in tier 1, in the §7.1 row.
 
 ## 6. §7.1 rows (for the architect to apply)
 
