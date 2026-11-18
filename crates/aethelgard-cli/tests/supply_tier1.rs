@@ -94,6 +94,25 @@ fn s03() -> Value {
     serde_json::from_str(&fs::read_to_string(root().join(S03)).unwrap()).unwrap()
 }
 
+/// s024l: the power fixture (as the CLI tests take it) at Sentinel-03's
+/// four layers and stackup, JLCPCB's tolerances included, as the measured
+/// stop built it (`spike/1303b/build-fixtures.py`); ruling 6976355662 (A)
+/// gates the priced four-layer drop on it.
+fn s024l() -> Value {
+    let mut v = common::power::power_tree();
+    let s3 = s03();
+    for k in ["copper_layers", "layers", "stackup"] {
+        v["board"][k] = s3["board"][k].clone();
+    }
+    v
+}
+
+/// s024l's board, emitted once.
+fn s024l_board() -> &'static Path {
+    static BOARD: OnceLock<PathBuf> = OnceLock::new();
+    BOARD.get_or_init(|| emitted("s024l", &write("s024l-spec", &s024l())))
+}
+
 fn extract(board: &Path, spec: &Path) -> (i32, Value) {
     run(&[
         "extract",
@@ -188,21 +207,22 @@ fn a_limit_on_a_domain_the_load_does_not_use_is_refused() {
 }
 
 /// The four-layer board: every MCU supply and return pin bounded, from the
-/// buck's inductor pad and to its PGND pin, and the drop within 165 mV.
+/// buck's inductor pad and to its PGND pin, every tolerance priced, and the
+/// drop within 165 mV.
 #[test]
 fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
-    let (code, v) = extract(s03_board(), &write("s03-pass", &gated(s03(), 165)));
+    let (code, v) = extract(s024l_board(), &write("s024l-pass", &gated(s024l(), 165)));
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
     let s = &v["supplies"][0];
     assert_eq!(s["domain"], "VDD_3V3");
     assert_eq!(s["source"], json!({"reference": "L2", "pad": "2"}));
     assert_eq!(s["return"], json!({"reference": "U11", "pad": "1"}));
-    // the MCU's 658 mA from its part row and the fixture's 90 mA of other
-    // sinks, each cited, derived or declared
-    assert_eq!(s["load_milliamps"], 748);
+    // the MCU's 658 mA from its part row, the 1.8 V LDO's input and the
+    // fixture's other sinks, each cited, derived or declared
+    assert_eq!(s["load_milliamps"], 716);
     let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
-    assert_eq!((vdd.len(), vss.len()), (16, 10), "{s}");
+    assert_eq!((vdd.len(), vss.len()), (16, 11), "{s}");
     for p in vdd.iter().chain(&vss) {
         let r = p["r_bound_microohms"]
             .as_u64()
@@ -216,7 +236,7 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .unwrap()
     };
     let drop = s["drop_bound_microvolts"].as_u64().unwrap();
-    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 748).div_ceil(1000));
+    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 716).div_ceil(1000));
     assert!(drop <= 165_000, "{drop}");
     assert!(s.get("note").is_none(), "{s}");
     let conditions: Vec<&str> = s["conditions"]
@@ -225,10 +245,19 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
         .iter()
         .map(|c| c.as_str().unwrap())
         .collect();
-    assert!(
-        conditions.iter().any(|c| c.contains("+-0.075 mm per axis")),
-        "{conditions:?}"
-    );
+    // each fabricator's tolerance priced, from its declared source, and the
+    // pads' drawn size named
+    for named in [
+        "+-0.075 mm per axis of its pad (JLCPCB",
+        "from 0.08 mm under to 0.13 mm over its drawn size (JLCPCB",
+        "every track at 0.8 of its drawn width (JLCPCB",
+        "pads and via pads at their drawn size",
+    ] {
+        assert!(
+            conditions.iter().any(|c| c.contains(named)),
+            "{named}: {conditions:?}"
+        );
+    }
     assert!(
         conditions
             .iter()
@@ -237,21 +266,14 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     );
 }
 
-/// GND back on the default 0.6/0.3 mm vias: at JLCPCB's largest finished
-/// hole and worst position the band does not fit their pad, so every
-/// return is refused by name with the pad that would hold it, 0.7 mm
-/// (ruling 6974760231, (1)).
+/// Sentinel-03 as drawn, GND on the default 0.6/0.3 mm vias: at JLCPCB's
+/// largest finished hole and worst position the band does not fit their
+/// pad, so every return is refused by name with the pad that would hold
+/// it, 0.7 mm (rulings 6974760231 (1) and 6976355662 (A)). Its own
+/// specification declares no drop limit; this one adds it.
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
-    let mut v = gated(s03(), 165);
-    for c in v["net_classes"].as_array_mut().unwrap() {
-        if let Some(nets) = c["nets"].as_array_mut() {
-            nets.retain(|n| n != "GND");
-        }
-    }
-    let spec = write("s03-gnd06", &v);
-    let board = emitted("s03-gnd06", &spec);
-    let (code, r) = extract(&board, &spec);
+    let (code, r) = extract(s03_board(), &write("s03-gnd06", &gated(s03(), 165)));
     assert_eq!(code, 1, "{r}");
     let s = &r["supplies"][0];
     let vss = pins(s, "returns");
@@ -272,7 +294,7 @@ fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
 /// note that the pitch set the margin.
 #[test]
 fn a_drop_over_its_limit_fails_with_the_pitch_note() {
-    let (code, v) = extract(s03_board(), &write("s03-fail", &gated(s03(), 60)));
+    let (code, v) = extract(s024l_board(), &write("s024l-fail", &gated(s024l(), 60)));
     assert_eq!(code, 1, "{v}");
     assert_eq!(v["verdict"], "fail", "{v}");
     let s = &v["supplies"][0];

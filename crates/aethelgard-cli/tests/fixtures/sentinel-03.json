@@ -913,8 +913,7 @@
         "drill_um": 300
       },
       "nets": [
-        "VDD_3V3",
-        "GND"
+        "VDD_3V3"
       ]
     }
   ],
