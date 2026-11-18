@@ -38,7 +38,8 @@ boot = v.get("boot") or {}
 devices = boot.get("devices", [])
 witnessed = {(d["reference"], d["step"]): d["observed_ns"] for d in devices}
 print(f"ANSWER 4400e: {name} exit={status} verdict={v.get('verdict')} "
-      f"error={(v.get('error') or {}).get('kind')} kinds={kinds} witnessed={witnessed}")
+      f"error={(v.get('error') or {}).get('kind')} kinds={kinds} witnessed={witnessed} "
+      f"memory={v.get('memory')} log_kept={boot.get('log_kept_bytes')}")
 if status != want:
     sys.exit(f"{name}: exit {status}, not {want}")
 if not eval("(" + check + ")"):

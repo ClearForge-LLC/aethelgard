@@ -205,7 +205,7 @@ pub struct RegisterReport {
     pub rule: &'static str,
     pub mask: String,
     pub expected: String,
-    pub observed: Option<String>,
+    pub observed: String,
 }
 
 /// One device step the foreign judge looks for, and where it found it.
@@ -235,7 +235,7 @@ pub struct FlashReport {
     pub address: String,
     pub bytes: u64,
     pub expected_sha256: String,
-    pub observed_sha256: Option<String>,
+    pub observed_sha256: String,
 }
 
 /// A flash erase the firmware started: when, and the flash it erases.
@@ -353,8 +353,20 @@ const CFG2_MARK: &str = "AETHELGARD-CFG2 ";
 /// The hook on an SPI controller's writes that logs each `CFG2` write with
 /// `CR1` (D4's evidence, D7 (b)); every other write passes unlogged.
 fn cfg2_hook(controller: &str) -> String {
+    log_hook(
+        controller,
+        "offset == 0xC",
+        CFG2_MARK,
+        "value, self.ReadDoubleWord(0)",
+    )
+}
+
+/// A write hook on `peripheral` that, when `condition` holds, logs `mark`
+/// and two hexadecimal `values` as a `[WARNING]` of the peripheral's own;
+/// every write passes unchanged.
+fn log_hook(peripheral: &str, condition: &str, mark: &str, values: &str) -> String {
     format!(
-        "sysbus SetHookBeforePeripheralWrite sysbus.{controller} \"(offset == 0xC) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{CFG2_MARK}%x %x' % (value, self.ReadDoubleWord(0)))\""
+        "sysbus SetHookBeforePeripheralWrite sysbus.{peripheral} \"({condition}) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{mark}%x %x' % ({values}))\""
     )
 }
 
@@ -445,8 +457,8 @@ impl Erase {
     /// `FLASH_OPTCR` with `MER` or `OPTSTART` set; every other write passes
     /// unlogged and unchanged.
     pub fn hook(&self) -> String {
-        format!(
-            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in ({:#x}, {:#x})) and (value >> {}) & 1 or offset in ({:#x}, {:#x}) and ((value >> {}) & 1 or (value >> {}) & 1)) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
+        let condition = format!(
+            "(offset in ({:#x}, {:#x})) and (value >> {}) & 1 or offset in ({:#x}, {:#x}) and ((value >> {}) & 1 or (value >> {}) & 1)",
             self.banks[0].0,
             self.banks[1].0,
             self.start,
@@ -454,7 +466,8 @@ impl Erase {
             self.optcr[1],
             self.mer,
             self.optstart
-        )
+        );
+        log_hook("flashController", &condition, ERASE_MARK, "offset, value")
     }
 
     /// What a logged write starts. On a bank's control register: the bank
@@ -1057,7 +1070,7 @@ pub fn judge(
             address: format!("{:#010x}", f.address),
             bytes: f.len,
             expected_sha256: f.sha256.clone(),
-            observed_sha256: Some(observed),
+            observed_sha256: observed,
         });
     }
     let vectactive = icsr & 0x1FF;
@@ -1098,7 +1111,7 @@ pub fn judge(
             rule,
             mask: format!("{mask:#010x}"),
             expected: format!("{expected:#010x}"),
-            observed: Some(format!("{got:#010x}")),
+            observed: format!("{got:#010x}"),
         });
         if !ok {
             findings.push(Finding::plain(
@@ -1276,12 +1289,11 @@ pub fn judge(
             ));
         }
     }
-    match &booted {
-        Some(_) => {}
-        None => findings.push(Finding::plain(
+    if booted.is_none() {
+        findings.push(Finding::plain(
             "foreign_not_booted",
             "no declared device's model logged its identity transaction: nothing the firmware cannot write witnesses that it ran (D5; the console is refused)".to_owned(),
-        )),
+        ));
     }
     report.booted = booted;
     for d in &plan.image.identity.unmodelled {

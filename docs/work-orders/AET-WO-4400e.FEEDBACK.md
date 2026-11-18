@@ -487,3 +487,116 @@ CI's ArduPilot (a799dfb6) on the emitted `sentinel-02-own` platform, this CLI:
 - **M5, the `IMU` line removed** from the generated hwdef, ArduPilot rebuilt unmodified otherwise: ArduPilot never probes the ICM, so it fails `spi_transaction_unwitnessed` for U5 (identity). Every other witness holds.
 - **M6, an ELF declared foreign that loads outside its regions:** `FirmwareOutsideMemory` naming every region (tier 1, as built).
 - **M7, the generated firmware without a declaration:** today's judge, with no `judge` in its verdict (tier 1, as built).
+
+## The FIFO run and D7's window (main 65622f70 merged, 4220c's FIFO live): measured
+
+`TIER2_MIN` is 191: `main`'s 188 plus this order's 3.
+
+U5's data step is its listed FIFO read. `parts.json` `reads` gives `0xB0`, at least 16 bytes, cited to DS-000347 §14.24 (p. 70) and §6 (p. 37, Figure 10; p. 41). The witness is one line of our model's: `bank 0 read 0x30 -> …`. CI's ArduPilot (a799dfb6), `--foreign 4000ms`, on Furnace:
+
+| | measured |
+|---|---|
+| verdict | **pass**; only `info` findings: `locked_peripheral_access` (22) and `device_unmodelled` (U3, the TMP117) |
+| witnesses (ns) | U4 identity 161938610 (booted); U2 identity 342585230, data 382787270; U7 identity 342780210, data 382745850; U5 identity 3569253830, **data (FIFO) 3610548200**, the last |
+| window | 4 s leaves 0.39 s past the last witness. `FOREIGN_MAX_VIRTUAL_NS` stays 4 s, as measured, and is no longer provisional |
+| wall time | 10.6–12.0 s (bound: 30 s) |
+| peak RSS | 775–833 MiB (bound: 1 GiB; 76–81 %) |
+| log | 1,211,409 bytes kept of 8 MiB (14 %); 0 lines dropped; 68 warning kinds (58,405 lines) |
+| D4 | 1,798 exempt, every one, also under F1's tightened rule below |
+| flash | both segments unchanged; 4 bank-2 erases (sectors 6 and 7, storage); no option change |
+
+**CI** (`ardupilot-image.yml`, job `foreign`, run on 5d37f3b1): the same seven runs as below give the same witness times as Furnace, to the nanosecond. The step took 59 s.
+
+**Predictions against outcomes:**
+1. U5's data before 3.62 s: **held** (3.6105 s).
+2. Pass: **held**.
+3. Under 2 MB: **held** (1.21 MB).
+4. RSS at most 920 MiB: **held** (at most 833 MiB).
+5. Wall time under 20 s: **held** (at most 12.0 s).
+6. 1,073 exemptions: **missed**, 1,798. The live FIFO adds SPI stops, and every one is exempt.
+7. 4 s with at least 0.35 s of margin: **held** (0.39 s).
+
+**The window depends on a model divergence the roadmap names (§7.1, TIM5 at a fixed 250 MHz).**
+- ArduPilot's clock runs 1.25 × virtual time, so its own delays end early in virtual time.
+- With TIM5 corrected, its witnesses could arrive up to 1.25 × later. The last one would be about 4.5 s, past the 4 s bound. [inferred]
+- So when that row closes, D7 is measured again and the bound with it. The row is re-owned below.
+
+## §2 acceptance
+
+**Positive case:** pass, with every witness's virtual time in `boot.devices`:
+- booted;
+- the ICM-42688-P probed (3.5693 s) and read (3.6105 s);
+- the BME280 and the BMP581 each probed and read.
+
+**Mutations, each refused by name**, in CI (`ci/foreign-judge.sh`) or tier 1:
+
+| mutation | refused as | where |
+|---|---|---|
+| the `IMU` line removed (ArduPilot rebuilt from the committed hwdef without it; the `generated` job's `sentinel-02-noimu`) | `spi_transaction_unwitnessed` (U5 identity), plus `register_mismatch` (SPI2's clock never enabled) | CI |
+| SPI2's receive DMA line dropped from the platform | `PlatformNotEmitted` (exit 3): the platform must be the one `S` emits, so the judge never runs | CI |
+| U5's model removed from the platform | `PlatformNotEmitted` | CI |
+| the window too short: 3.5 s (before U5's identity); 3.59 s (between U5's identity and its first FIFO read) | `spi_transaction_unwitnessed` (U5 identity, plus `register_mismatch`); `spi_transaction_unwitnessed` (U5 data) | CI |
+| an ELF declared foreign that loads outside its regions | `FirmwareOutsideMemory`, naming every region | tier 1, and `elf` unit tests (both addresses) |
+| ArduPilot without the declaration | `FirmwareOutsideMemory` (exit 3) | CI |
+| the generated firmware without one | today's judge, with no `judge` in its verdict | tier 1 |
+
+**Predictions against outcomes:**
+- M1–M4: **held**.
+- M5: **held** for the witnesses. It also fails `register_mismatch`, which I did not predict.
+- M3/M4 note: the WO's "no data" and "a model removed" never reach the judge. The platform gate refuses them first. The judge-level case "identity witnessed, no data" is the 3.59 s window.
+
+**Generated verdicts, `main`'s CLI (65622f70) against this branch's:**
+- the 54 campaign archive files are byte-identical;
+- 32 of 34 verdict lines are identical;
+- the two `simulate` verdicts differ only in `input.path` (each tree's own) and the memory sample.
+
+## Diff-sized mutations (one mutant per guard this order adds, against its suites)
+
+**24 mutants, all killed after two fixes.**
+- 22 ran first, through a subagent on a copy of the tree. 20 were killed.
+- The two survivors were `check_foreign`'s virtual-address containment and its file-bytes overlap. No test reached either.
+- `elf` unit tests now kill both. The overlap test needed read-write segments, because an executable pair falls to the older executable-overlap rule first.
+- The adversarial fixes' guards were mutated too and each was killed: F1's restore, F2's alias and F5's cap.
+- R1's three tier-2 flash controls join the list.
+
+## Adversarial pass (§5), full: a fresh read-only reviewer, findings verified at source
+
+- **F1 (fail-open, fixed).** D4 exempted the slave-mode error after any `CFG2` write with `MASTER` 0 while `SPE` was 0. But software may write `CFG2` only while `SPE` is 0, so that condition filtered almost nothing. A firmware could leave the SPI a slave and keep using it, and Renode's model stays a master (`STM32H7_SPI.cs` L187–194), so it would pass where silicon never clocks.
+  - **Now:** exempt only when that controller's next `CFG2` write sets `MASTER` again before any of its devices logs a line, or nothing follows. That is ChibiOS's `spi_lld_stop`, then its next `spi_lld_start`.
+  - ArduPilot still has all 1,798 exempt.
+  - This tightens the ruled D4 (#215). It never loosens it, but it is stated here for the architect.
+- **F2 (fail-open against silicon, fixed).** RM0433 gives `FLASH_OPTCR` as "Address offset: 0x018 or 0x118" (§4.9.7, p. 211). The header's struct has only 0x18, and Renode's model decodes only 0x18, so a `MER` at 0x118 erased nothing in the twin and left no line.
+  - **Now:** the hook and the judge take both offsets. The alias is derived as `OPTCR` plus the header's `CR2 − CR1`, and checked against the RM.
+  - **Residual, named:** a byte-wide write to `CR2` reaches the hook before Renode widens it, so `SNB` reads 0. The judge then records bank 2's sector 0 while Renode erases the preset sector. That fails open only for an ELF with a segment in bank 2 but not in its sector 0, reprogrammed alike. On `CR1` it fails closed.
+- **F3 (latent, fixed).** A data step the twin cannot witness, with no listed read, was skipped silently. It is now `{bus}_witness_unavailable`, as today's judge names it. No current part reaches it.
+- **F4 (fixed).** `CR1.RE` is out of the frame mask. It is now named as a weakening (receive is held).
+- **F5 (fail-closed, fixed).** Summaries grew without bound and were found by linear search. They are now indexed and capped at 1,024 kinds; a further kind is an ordinary line, counted against the budget.
+- **Lens 1, a witness the firmware can forge:**
+  - Nothing beyond F1 and F2.
+  - Markers must each occur once as whole lines. Every firmware-caused line carries a timestamp.
+  - The flash hashes are read only after `END`, must match the host's count and are matched by address.
+  - No UART backend is attached on the foreign path.
+- **Lens 2, shared code:** nothing. `LOG_FILTER.summarise` is `summarise_none`, and the generated verdicts above are byte-identical.
+- **Lens 3, wall time and host speed:** no rule reads MIPS, instructions or wall time. The only risk is fail-closed (at most 12.0 s of 30 s, at most 833 MiB of 1 GiB). CI's ANSWER lines now print each run's memory sample, so a slower runner's margin shows.
+
+## Reduction pass (diff)
+
+Reduction pass (diff): +12 net (rustfmt) · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 1 finding below.
+- **Removed:**
+  - one copy of Renode's logging tail in the two write hooks (`log_hook`);
+  - two always-`Some` report options (`observed`, `observed_sha256`);
+  - a no-op `match`.
+- **Finding:** `boot.instructions` and `boot.mips` are reported but judged by no rule. They are kept as the reader's evidence that the core ran; dropping them would change the verdict's schema, so that is a ruling, not a reduction.
+
+## Roadmap §7.1 rows this order owns
+
+- **Model divergences** (TIM5 at a fixed 250 MHz; `usart1` at 200 MHz).
+  - The foreign judge reads no timer or baud rule: USART `BRR`/`CR3`, the serial witness and the motor outputs are dropped.
+  - But D7's window rests on TIM5's rate (above).
+  - **Re-owned:** the row stays open, and its closing re-measures `FOREIGN_MAX_VIRTUAL_NS`.
+- **The BMP581 configure row** (ArduPilot's three single-byte writes, not the `4210` script's).
+  - **Closed** by D6 as ruled: identity and data only. A foreign firmware's configure step is not judged, and the weakening is named.
+  - U7's data step (the script's) matches ArduPilot's read.
+- **`4400c2` D2/D3, the USART receive line.**
+  - **Closed for this order:** no foreign witness needs SERIAL0 receive (§1.1; the serial witness is dropped).
+  - The row stays held as it was.
