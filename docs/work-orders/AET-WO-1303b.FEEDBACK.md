@@ -193,12 +193,14 @@ A fresh subagent ran it; I checked each finding.
 
 ### 4.2 Mutation [measured, `~/.cache/aet-1303b/mut/run.py`, one mutant per guard, run against its tests]
 
-44 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **43 killed.** The survivor is the port hull's hole test (L2), labelled belt-and-suspenders at its site.
+44 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **44 killed** (the last after READY at `6d370e29`, below).
 
-**The survivor's label first gave the wrong reason** ("DRC spacing keeps a hole out of pad copper": false for a hole of the same net). The true reason, measured after READY at `6d370e29`:
+**The port hull's hole test (L2).** It survived at `6d370e29`, and its label then gave the wrong reason ("DRC spacing keeps a hole out of pad copper": false for a hole of the same net). It stays belt-and-suspenders, for the true reason:
 - a port's outside cell is already clear of every hole, so a hole crossing its hull would have to lie inside the junction region;
 - DRC's hole-to-hole spacing forbids that;
-- even a same-net pad hole 0.41 mm off, closer than DRC allows, is crossed by no port (test `a_port_whose_rays_cross_a_hole_of_the_net_is_not_joined`, a property test; the mutant still survives it).
+- even a same-net pad hole 0.41 mm off, closer than DRC allows, is crossed by no port (`a_port_whose_rays_cross_a_hole_of_the_net_is_not_joined`, a property test).
+
+A hole of the net under the junction itself (an off-grid via 0.21 mm away, which no board allows) reaches it: `a_hole_inside_every_ports_hull_joins_no_face` kills its mutant.
 
 Guards that first survived, each given a test that now kills it:
 - the network's foreign-face check;

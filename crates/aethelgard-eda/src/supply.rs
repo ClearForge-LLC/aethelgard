@@ -997,7 +997,8 @@ pub fn copper(
                     // spacing forbids (a same-net pad hole 0.41 mm off is
                     // still not crossed: `a_port_whose_rays_cross_a_hole_…`);
                     // the hole test keeps the rays off it without relying on
-                    // either
+                    // either, and `a_hole_inside_every_ports_hull_joins_no_face`
+                    // reaches it with a hole no board would allow
                     if !hull_in_copper(&hull, &outer_shapes[li], 8)
                         || !hull_clear_of_holes(&hull, &holes)
                     {
@@ -2468,6 +2469,43 @@ mod tests {
         assert!(ports.len() < beside, "{} of {beside}", ports.len());
         // no port faces the knockout
         assert!(ports.iter().all(|&k| jn.region.faces[k].normal != (0, 1)));
+    }
+
+    /// A hole of the net under a via's junction (an off-grid via of the
+    /// net 0.21 mm away, closer than any board allows) lies in every port's
+    /// hull: no outer face is joined, though the track's cells beyond it are
+    /// copper and clear of the hole.
+    #[test]
+    fn a_hole_inside_every_ports_hull_joins_no_face() {
+        let b = board(vec![part(
+            "J1",
+            vec![pad("1", "VDD", 1_000_000, 2_500_000, 2_000_000, 3_500_000)],
+        )]);
+        let v = (6_000_000, 3_000_000);
+        let routed = Routed {
+            segments: vec![seg(Layer::F, (1_500_000, 3_000_000), v)],
+            vias: vec![
+                Via {
+                    net: "VDD".into(),
+                    at: v,
+                },
+                Via {
+                    net: "VDD".into(),
+                    at: (v.0 + 210_000, v.1),
+                },
+            ],
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let nc = copper(&b, &routed, "VDD", &[src], &model()).unwrap();
+        let u = nc.vias.iter().find(|u| u.via.at == v).unwrap();
+        let f_cu = nc.layers.iter().position(|l| l.name == "F.Cu").unwrap();
+        let ports = &u.joins.iter().find(|(l, _)| *l == f_cu).unwrap().1;
+        assert!(
+            ports.is_empty(),
+            "{} faces joined across the hole",
+            ports.len()
+        );
     }
 
     /// No port's rays cross a hole of the net. Copper of one net may
