@@ -467,6 +467,19 @@ The records are the FEEDBACK files of `4400c`, `4400c2`, `4400e2`, `4400e3`, `42
   - *TIM5* runs at a fixed 250 MHz, so ArduPilot's clock runs 1.25 × virtual time. The foreign window's 4 s bound rests on it: when TIM5 is corrected, the last witness may move to about 4.5 s [inferred], and the bound is measured again.
   - *`usart1`* runs at a fixed 200 MHz, giving `BRR` `0x271`. The foreign judge drops `BRR`, so the divergence is a bench row.
 
+### 2.28 Measurements from AET-WO-1303b (2026-11-18, Furnace and GitHub Actions)
+
+The record is `docs/work-orders/AET-WO-1303b.FEEDBACK.md` (PR #222).
+- **The closed forms were too loose to gate.** `1303`'s closed-form pieces (D5 (a)) bounded at most 10 of 16 VDD pins and 10 of 11 GND pins. Each plane hop was 4.1–87× the exact two-hole sheet (median about 12). That is the trigger the `1303` ruling set, so the discrete flow (D5 (b)) was built.
+- **The discrete Thomson flow is certified.** The flux is lowest-order Raviart–Thomas faces on a square grid, made exactly divergence-free by integer flux quanta, with the energy summed in outward-rounded intervals.
+  - Only cells wholly inside readable copper carry flux.
+  - The closed forms stay as exact-case tests, and the flow is never below them.
+  - At the ruled 62.5 µm pitch, a 4-layer board bounds in minutes.
+- **The fabricator's tolerances move the bound.** Pricing JLCPCB's hole position (±0.075 mm), finished hole size (+0.13/−0.08 mm) and track etch (±20 %) raises a 4-layer bound by 25–35 % over concentric, drawn-size copper.
+  - A 0.6/0.3 mm via cannot keep its plated band at the worst case; 0.7 mm can.
+  - **The 4-layer power fixture drops 74.8 mV at 716 mA,** against 165 mV.
+- **Two layers do not carry the MCU's supply.** The 2-layer power fixture's 0.2 mm supply tracks alone give 206–544 mV at 658 mA. That is measured support for Sentinel-02 at four layers.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -723,6 +736,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-16 | §2.1 | Two rows from first silicon: SPI1's `MODF`, and the H7's I2C clock-synchronisation threshold | northstar §2's first scar, ratified by Scotty |
 | 2026-11-17 | §2.26, §8 | Added §2.26: `2302`'s static trace bytes and its bus-time divergence, and the `2303` lock-step measurements. `OQ-03` reopened for firmware-dependent loads and ruled: `4500` stays static, and lock-step goes to the battery-sag work order | PR #175; PR #200, comment 6943762720 |
 | 2026-11-18 | §2.27 | Added §2.27: the flight path's measurements. Unmodified ArduPilot passes the foreign judge; Renode 1.17.0's `RETTOBASE` fault and its correction; the ICM FIFO; the TIM5 and `usart1` divergences, named | PRs #212, #214, #215, #217 |
+| 2026-11-18 | §2.28 | Added §2.28: `1303b`'s measurements (the closed forms' looseness, the certified discrete flow, the fabricator's tolerances priced, the 2-layer supply finding) | PR #222 |
 
 New sections continue the sequence and never reuse a number.
 
