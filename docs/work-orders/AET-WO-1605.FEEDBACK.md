@@ -222,3 +222,97 @@ Images: `scratch-1605-control` and `scratch-1605-patched`. Each is today's pinne
   - `TOOLS-SOURCES.md`;
   - the §7.1 rows.
 - **The figures to re-pin:** none, on the measured evidence.
+
+## §1.2, built to the ruling (#223, comment 6973081453)
+
+### What was built
+
+- **R1 (ii), R2.** `container/Dockerfile` gains a builder stage, `renode-nvic`, FROM the .NET SDK 8.0.405 by digest.
+  - It fetches renode `f1dd1b4af` and the 14 trees it records as GitHub commit tarballs, each sha256-checked. These are `src/Infrastructure` `cd4b002a`, `lib/resources` `14b80cde`, the eleven `lib/` libraries, and InpliTftpServer `2a4877dc`.
+  - It applies the three upstream commits from `container/renode-nvic/`, in upstream's `format-patch` form: `e7a8584c`, then `c8b2075c`, then `7b687540`.
+  - It restores with `build.sh`'s publish properties, then refuses unless the set of restored `.nupkg` files equals `renode-nvic/nuget.sha256` (134 packages, compared in C-locale order) and each file matches its hash.
+  - It builds `Infrastructure.dll` with `SourceRevisionId=cd4b002a…` and publishes `Renode.dll` as `build.sh` does, with `CommitString=gitf1dd1b4af.aet1605`. Both outputs are checked against the measured sha256: `ddb19d7b…` and `5734eb0c…`.
+  - The final stage copies the two DLLs over the official asset: one `COPY --from` layer (the overlay R1 kept).
+- **Why `SourceRevisionId`:** the .NET SDK takes `InformationalVersion` (`1.0.0+<commit>`) from `.git`, and a tarball has none. Without it, `Infrastructure.dll` differs from the `d878080b` measured in §1.1 by 123 kB of IL and metadata. With it, the bytes equal what §1.1 measured, and `Infrastructure.dll` names the source revision Antmicro's asset names.
+- **smoke.sh** checks the full build line, `  build: 1.17.0+20260907gitf1dd1b4af.aet1605` (R2).
+- **R3, the offer.** The Renode row of `TOOLS-SOURCES.md` now cites renode `f1dd1b4af`, `src/Infrastructure` `cd4b002a` (tlib `167decf9`), InpliTftpServer `2a4877dc`, and the three patch files, each with its upstream commit. The tlib and Packet.Net rows name the same source. The row for the offer having been wrong is under **Findings for the record** below.
+- **The hook retires through its pin tests.**
+  - These go: `RETTOBASE_HOOK`, `data/rettobase-hook.monitor`, its emission in `renode.rs` and `renode/foreign.rs`, the two unit tests that tied it to the Dockerfile's Renode, and the stubs' `rettobase_in_stub` in `boot_tier1.rs` and `campaign_tier1.rs`.
+  - In `twin_tier2.rs`, the build pin moves to `PINNED_RENODE_BUILD = "1.17.0+20260907gitf1dd1b4af.aet1605"`. The witness becomes `the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt`: no hook, nested `RETTOBASE` 0, outer 1, `VECTACTIVE` 66 and 73, and both IABR bits.
+  - The test that pinned the bug and the hook's own test are retired with the hook: 3 tier-2 tests become 2.
+- **The `Unhandled write` summary** works unchanged on what remains: 63 kinds in ArduPilot's run, two of them NVIC (`0xF90`, `0xF94`, one line each).
+- **Debian drift:** the strict `check-sources inside tools`, which only main's publish job runs, refused the new image's offer. `linux-libc-dev` (an unpinned dependency of `libc6-dev`) now resolves to `6.12.117-1`, so the `linux` rows of `TOOLS-DEBIAN-GPL2.tsv` were regenerated with `debian-src.py table` (6 rows). `debian-src.py check`: ok, 84 packages, 274 files. That drift is main's, not this WO's. It would have failed main's next publish whatever changed.
+
+### Measured on the built image (scratch `localhost/aethelgard-tools:scratch-1605-full`, never published; this branch's CLI)
+
+| Check | Result | Run |
+|---|---|---|
+| Image build, twice (the second after `LC_ALL=C`, which re-ran the whole `dotnet` step) | both DLLs `OK` against the pinned sha256 both times | `full-build2.log`, `full-build3.log` |
+| `smoke.sh`, new image | pass, build line included | `smoke-new.log` |
+| `smoke.sh`, today's pinned image (`container/IMAGE`) | **fails** by name: `no line is exactly '  build: 1.17.0+20260907gitf1dd1b4af.aet1605'` | `smoke-old.log` |
+| `check-sources.sh inside tools` (strict, as the publish job runs it) | pass | `sources-new.log` |
+| Twin tier 2 + every suite, in-tree target as CI (`cargo test --workspace --all-targets --features aethelgard-cli/with-tools`) | 2,374 pass, 8 fail: all 8 are `sandbox_probe is missing` (examples are not linked by `--all-targets` here); stock/main fails the same 8, plus one `BaseOutsideRoot` from its out-of-tree target | `t2-new-branch.log` against `t2-stock-main.log` |
+| The witness, new image | `inner=0x42 outer=0x849 iabr1=0x2040000` → `RETTOBASE` 0 nested, 1 alone; both RETTOBASE tests pass | `t2-new-branch.log` |
+| The witness and the pin, **today's image**, this branch | **both fail**: nested `0x842` (left 1, right 0), and the build `1.17.0+20260907gitf1dd1b4af` is not the pinned build | twin_tier2 `rettobase` on `container/IMAGE` |
+| ArduPilot, `simulate --foreign 4000ms` | pass. Witness times identical to stock to the ns (last 3,610,548,200), instructions 81,608,436 both, warning kinds 68 → 63 (the five cache-maintenance kinds), `log_kept_bytes` 1,211,414 → 1,210,477, peak RSS 849,988 → 764,300 KiB, wall 11.77 → 10.43 s (one sample each) | `ap/new-branch.json` |
+| `ci/foreign-judge.sh` (CI's script) | exit 0, 47 s. All seven answers identical to stock/main's (verdicts, refusals, kinds, witness times) except `log_kept` (−927 to −932) and RSS | `fj-new-branch.log` against `fj-stock-main.log` |
+| Generated firmware (E3, the shared-firmware method of §1.1) | 0 verdict flips. 54 of 54 archive files differ, only in `trace_bytes` (32 fields, +8, e.g. 4,329 → 4,337), `state_sequence_hash` (27) and `run` (27): the header's `tools` entry names the new build (R4). The two `simulate` verdicts are identical outside `memory` | `gv/` |
+
+### The moved figures
+
+| Figure | Where it is pinned | Old | New | Cause | Run |
+|---|---|---|---|---|---|
+| The image's Renode build | `twin_tier2.rs` `PINNED_RENODE_BUILD`; `smoke.sh` | `1.17.0+20260907gitf1dd1b4af` (in `RETTOBASE_BUILD`) | `1.17.0+20260907gitf1dd1b4af.aet1605` | R1 (ii), R2 | `smoke-new.log`; tier 2 |
+| The nested handler's `RETTOBASE`, no hook | `twin_tier2.rs` witness | 1 (`0x842`, pinned as the bug) | 0 (`0x42`) | `e7a8584c` | tier 2, new image and old |
+| `TIER2_MIN` | `ci.yml` | 191 | 190 | the hook's tests retired: 3 RETTOBASE tier-2 tests become 2 | count from `t2-new-branch.log` |
+
+- **`TIER2_MIN` is lowered,** against `ci.yml`'s "never lower it to pass". It is lowered because a test was retired with the code it tested (the ruling's "the hook retires through its pin tests"), not to pass, and it stays exact. I flag it for the architect.
+- **Not pinned, and moved (R4, accepted):** every Renode-judged archive's `trace_bytes` (+8) and `state_sequence_hash`, as in the E3 row. No test or golden pins them.
+- **Pinned, and unmoved:** every virtual-time figure in tests and goldens. Tier 2 passes on the new image with no figure edited.
+
+### Mutations (the guards this WO adds; each against the image build, `--target renode-nvic`)
+
+| Mutant | Killed by |
+|---|---|
+| m1, `e7a8584c` not applied (2 and 3 still apply) | `/out/Infrastructure.dll: FAILED` |
+| m2, a line removed from `nuget.sha256` | `cmp`: `/tmp/restored /tmp/pinned differ: line 2` |
+| m3, one package hash altered | `cairosharp…nupkg: FAILED` |
+| m4, the stock `CommitString` | `/out/Renode.dll: FAILED` |
+| m0, unmutated | builds |
+| The image without the fix (today's `container/IMAGE`), against the tier-2 witness and pin | both fail (table above); `smoke.sh` fails |
+
+5 of 5 mutants killed, each by the guard written for it, and the control builds.
+
+### Adversarial pass (§5)
+
+- **A figure re-pinned without a cause:** the three moved figures are in the table, each with its cause and run. Nothing else was re-pinned; tier 2 passes unedited.
+- **The hook retired while the bug remains:** the witness asserts 0 without the hook. On today's image it fails (`0x842`), and so do the pin and the smoke test. A stock Renode in the image cannot pass CI.
+  - Outside the image, a stock Renode now boots with the bug and nothing refuses it. Nothing refused it before either: main emitted the hook for every build. See D1.
+- **A non-reproducible image:** every input is a digest, a commit tarball with its sha256, or a package in the hash manifest (m2 and m3), and both outputs are hash-checked (m1 and m4). Two independent local builds gave identical bytes. `check-pins.sh` passes.
+- The stage needs the network for `dotnet restore`, from nuget.org, like every other tool download in the file. The manifest pins what may arrive.
+
+### Findings for the record
+
+| # | Finding | Since | Fixed here |
+|---|---|---|---|
+| F1 | `TOOLS-SOURCES.md` cited Renode tag `ab721d88` with `renode-infrastructure` `066a7f13`. The asset was built from `f1dd1b4af` with `cd4b002a`. The written offer for the LGPL tlib named the right files: the tlib commit is identical at both. The MIT C# source was mis-cited. | `AET-WO-4403` (`938b7f45`, #176, 2026-11-16) | yes (R3) |
+| F2 | `linux-libc-dev` drifted to `6.12.117-1` under an unpinned dependency, so main's strict publish check would refuse the next tools image | main | yes, the table regenerated |
+| F3 | `AET-WO-4400e3` FEEDBACK says "any other build is refused by name before the boot". No such refusal was built: main emitted the hook for every build, and `campaign_tier1`'s `the_header_names_the_renode_build_…` (`2205`) accepts any build. | `4400e3` | no, see D1 |
+
+### For the architect
+
+- **D1:** should `simulate` refuse a Renode build other than the pinned one?
+  - This is the `INV-06` question F3 raises, and it conflicts with `2205`'s any-build test. Outside the image, a stock 1.17.0 now judges nested interrupts wrongly with no warning.
+  - Not built: it is outside this WO's fence.
+- **D2:** stale steering text, protected, for the architect to close:
+  - `docs/architecture.md` L464 ("its correction");
+  - `docs/roadmap.md` L395 and L402, and §7.1 L787 (the cache-maintenance row, closed by `7b687540` here). The WO's "§7.1 rows closed" is theirs.
+- **D3, AWAITING-IMAGE:** `tools-image.yml` publishes only on a push to main. Until `container/IMAGE` names an image built from this branch, CI's tier 2 runs on today's image, and the two RETTOBASE tests fail there, as measured above.
+
+### Gates
+
+- `cargo fmt --check` and `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -D warnings` are clean.
+- Every suite passes in the image, except the 8 harness failures that stock shares.
+- The CI package step (`pkgstep`) passes locally: 11 crates, and the CLI is built from the unpacked packages.
+- `check-pins.sh` ok.
+- Reduction pass (diff): −9 net · 1 duplicate removed (the Dockerfile header's commit list, which `TOOLS-SOURCES.md` holds) · 0 dead paths removed (a fresh-agent sweep found no remnant of the hook) · 2 protected kept (the build string in both `smoke.sh` and `twin_tier2.rs`; the pin test and the witness test separately) · 0 findings below. The tier-1 stubs keep main's build string: they accept any build, so the edit was churn.
