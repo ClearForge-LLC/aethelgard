@@ -241,7 +241,7 @@ Images: `scratch-1605-control` and `scratch-1605-patched`. Each is today's pinne
   - In `twin_tier2.rs`, the build pin moves to `PINNED_RENODE_BUILD = "1.17.0+20260907gitf1dd1b4af.aet1605"`. The witness becomes `the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt`: no hook, nested `RETTOBASE` 0, outer 1, `VECTACTIVE` 66 and 73, and both IABR bits.
   - The test that pinned the bug and the hook's own test are retired with the hook: 3 tier-2 tests become 2.
 - **The `Unhandled write` summary** works unchanged on what remains: 63 kinds in ArduPilot's run, two of them NVIC (`0xF90`, `0xF94`, one line each).
-- **Debian drift:** the strict `check-sources inside tools`, which only main's publish job runs, refused the new image's offer. `linux-libc-dev` (an unpinned dependency of `libc6-dev`) now resolves to `6.12.117-1`, so the `linux` rows of `TOOLS-DEBIAN-GPL2.tsv` were regenerated with `debian-src.py table` (6 rows). `debian-src.py check`: ok, 84 packages, 274 files. That drift is main's, not this WO's. It would have failed main's next publish whatever changed.
+- **Debian drift, which I read wrong (corrected in §1.3):** the strict `check-sources inside tools` refused my local scratch build's offer. That build had no cache, so apt resolved fresh and `linux-libc-dev`, an unpinned dependency of `libc6-dev`, came in at `6.12.117-1`. I regenerated the `linux` rows of `TOOLS-DEBIAN-GPL2.tsv` from it. CI's builds reuse the cached apt layer, which holds `6.12.115-2`. My regeneration therefore broke main's publish after #224 (§1.3), and 1605b (#225) reverted it.
 
 ### Measured on the built image (scratch `localhost/aethelgard-tools:scratch-1605-full`, never published; this branch's CLI)
 
@@ -298,7 +298,7 @@ Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and 
 | # | Finding | Since | Fixed here |
 |---|---|---|---|
 | F1 | `TOOLS-SOURCES.md` cited Renode tag `ab721d88` with `renode-infrastructure` `066a7f13`. The asset was built from `f1dd1b4af` with `cd4b002a`. The written offer for the LGPL tlib named the right files: the tlib commit is identical at both. The MIT C# source was mis-cited. | `AET-WO-4403` (`938b7f45`, #176, 2026-11-16) | yes (R3) |
-| F2 | `linux-libc-dev` drifted to `6.12.117-1` under an unpinned dependency, so main's strict publish check would refuse the next tools image | main | yes, the table regenerated |
+| F2 | The tools image's apt layer reproduces only through the gha cache. `linux-libc-dev` is an unpinned dependency of `libc6-dev`, and Debian's index now serves `6.12.117-1`. A build with no cache resolves it fresh and drifts from `TOOLS-DEBIAN-GPL2.tsv` (`6.12.115-2`), so main's publish would refuse loudly. I first misread this as drift on main and regenerated the table; that broke main's publish (§1.3). | `4403` (#181) | no: §7.1 row ruled (§1.3) |
 | F3 | `AET-WO-4400e3` FEEDBACK says "any other build is refused by name before the boot". No such refusal was built: main emitted the hook for every build, and `campaign_tier1`'s `the_header_names_the_renode_build_…` (`2205`) accepts any build. | `4400e3` | no, see D1 |
 
 ### For the architect
@@ -321,3 +321,31 @@ Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and 
 - The CI package step (`pkgstep`) passes locally: 11 crates, and the CLI is built from the unpacked packages.
 - `check-pins.sh` ok. `ci/test-weights.tsv` and `ci/colocate.tsv` name none of the retired tests.
 - Reduction pass (diff): −9 net · 1 duplicate removed (the Dockerfile header's commit list, which `TOOLS-SOURCES.md` holds) · 0 dead paths removed (a fresh-agent sweep found no remnant of the hook) · 2 protected kept (the build string in both `smoke.sh` and `twin_tier2.rs`; the pin test and the witness test separately) · 0 findings below. The tier-1 stubs keep main's build string: they accept any build, so the edit was churn.
+
+## §1.3, after #224: main's publish refused, and the fix (1605b, #225)
+
+- **What happened.** Main's publish of `efb880c2` (run 44299148057, job `publish`) refused at `check-sources inside tools`: "does not mirror … linux=6.12.115-2". Nothing was pushed.
+- **Cause, at source.** Every CI build of `efb880c2` held `linux-libc-dev` `6.12.115-2`: the #223 and #224 PR runs, main's image job and main's publish job. In each, the apt layer (`stage-1 2/10`) was `CACHED` from gha scope `tools-image`, because its RUN line has not changed since the published image.
+  - The PR runs and the image job run `--drift warn`. Each printed `ANSWER debian_drift kind=tools missing=1 packages=linux=6.12.115-2`, and I missed it on #223 and on #224.
+  - #224 carried my table regeneration from an uncached local build (§1.2, "Debian drift"). Debian's trixie-security index serves `6.12.117-1`; its pool still holds the `115-2` files.
+- **Fix, ruled (architect, 13:20).** 1605b, #225: the table's three `linux` rows go back to `6.12.115-2`, which makes the file byte-identical to `c4a6cc6f`. That version is already mirrored (#181). The published image's apt layer is the cached one, so the image moves from the previous pin only in Renode's two DLLs.
+- **For §7.1 (ruled; the row is the architect's to write; owner: the next tools-image WO).** Resolve the tools image's apt from a pinned `snapshot.debian.org` date, so a build with no cache reproduces the layer CI publishes, and so `TOOLS-DEBIAN-GPL2.tsv` can be regenerated from any build.
+- **Lesson.** I will regenerate a Debian table only from what CI's build holds, and read CI's `debian_drift` answer before READY.
+
+## §1.4, the re-pin (architect, 11:20 and 14:20)
+
+- **Published.** Main's tools-image run 44322816137 on `cf66dd35` (#225 merged), with jobs image, publish and source all green. The publish job pushed `aethelgard-tools:cf66dd35` as `sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58`. `container/IMAGE` now names it, and main (`cf66dd35`, with 1303b) is merged in.
+- **Measured on the published image** (pulled by digest; this branch's CLI; in-tree target as CI):
+
+| Check | Result | Run |
+|---|---|---|
+| The two DLLs | `ddb19d7b…` and `5734eb0c…`, the pinned sha256 | `sha256sum` in the image |
+| `renode --version` | `build: 1.17.0+20260907gitf1dd1b4af.aet1605` | same |
+| `linux-libc-dev` | `6.12.115-2`, the table's (§1.3) | `dpkg-query` |
+| `smoke.sh`, `--network none` | pass | same |
+| The witness (`twin_tier2` `rettobase`) | 2 passed: `inner=0x42 outer=0x849 iabr1=0x2040000` | `witness-published.log` |
+| ArduPilot, `simulate --foreign 4000ms` | pass. Every witness time and the instruction count (81,608,436) equal the scratch image's; last witness 3,610,548,200 ns. Only `log_kept_bytes` (+5) and the temp path differ | `ap/published.json` against `ap/new-branch.json` |
+| `ci/foreign-judge.sh` | exit 0. All seven answers equal the scratch run's up to `log_kept` | `fj-published.log` |
+| Gates in the image | `cargo fmt --check`, `clippy --all-targets --features aethelgard-cli/with-tools -D warnings` and `check-pins.sh` pass | |
+
+- D3 is closed by this route: CI's tier 2 and `ardupilot-image.yml`'s `foreign` job now run on an image carrying the fixes.
