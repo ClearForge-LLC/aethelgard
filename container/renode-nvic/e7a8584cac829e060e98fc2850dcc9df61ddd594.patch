@@ -1,0 +1,24 @@
+From e7a8584cac829e060e98fc2850dcc9df61ddd594 Mon Sep 17 00:00:00 2001
+From: PhysicistJohn <54456354+PhysicistJohn@users.noreply.github.com>
+Date: Sat, 11 Jul 2026 12:14:53 -0700
+Subject: [PATCH] [GH#941] NVIC: Make ICSR.RETTOBASE take external interrupts
+ into account
+
+Co-authored-by: Jan Wolski <jwolski@antmicro.com>
+---
+ src/Emulator/Cores/Arm-M/NVIC.cs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/Emulator/Cores/Arm-M/NVIC.cs b/src/Emulator/Cores/Arm-M/NVIC.cs
+index 1500bb296..3c51ff26c 100644
+--- a/src/Emulator/Cores/Arm-M/NVIC.cs
++++ b/src/Emulator/Cores/Arm-M/NVIC.cs
+@@ -1091,7 +1091,7 @@ private void DefineRegisters()
+             Registers.InterruptControlState.Define(RegisterCollection)
+                 .WithValueField(0, 9, FieldMode.Read, valueProviderCallback: _ => (uint)(activeIRQs.Count == 0 ? 0 : activeIRQs.Peek()), name: "VECTACTIVE")
+                 .WithReservedBits(9, 2)
+-                .WithFlag(11, FieldMode.Read, valueProviderCallback: _ => activeIRQs.Intersect(Enum.GetValues(typeof(SystemException)).Cast<int>()).Count() <= 1, name: "RETTOBASE")
++                .WithFlag(11, FieldMode.Read, valueProviderCallback: _ => activeIRQs.Count() <= 1, name: "RETTOBASE")
+                 .WithValueField(12, 9, FieldMode.Read, valueProviderCallback: _ => (ulong)(FindPendingInterrupt() ?? 0), name: "VECTPENDING")
+                 .WithReservedBits(21, 1)
+                 .WithTaggedFlag("ISRPENDING", 22)

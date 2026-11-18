@@ -1,0 +1,41 @@
+From 7b68754055b87ab3cc64c929eaac4be2b8060fef Mon Sep 17 00:00:00 2001
+From: Piotr Zierhoffer <pzierhoffer@antmicro.com>
+Date: Mon, 16 Nov 2026 01:39:04 +0000
+Subject: [PATCH] [#108250] NVIC: Ignore cache maintenance operations
+
+---
+ src/Emulator/Cores/Arm-M/NVIC.cs | 19 +++++++++++++------
+ 1 file changed, 13 insertions(+), 6 deletions(-)
+
+diff --git a/src/Emulator/Cores/Arm-M/NVIC.cs b/src/Emulator/Cores/Arm-M/NVIC.cs
+index 9ec9e4bf2..dc3ba03bb 100644
+--- a/src/Emulator/Cores/Arm-M/NVIC.cs
++++ b/src/Emulator/Cores/Arm-M/NVIC.cs
+@@ -1730,14 +1730,21 @@ private void DefineRegisters()
+ 
+             // Cache is not simulated so the following registers are unused,
+             // but registered due to performance reasons.
+-            Registers.DCacheCleanByMVAToPoCAddress.Define(RegisterCollection)
+-                .WithValueField(0, 32, FieldMode.Write, name: "DCCMVAC");
+-            Registers.DCacheInvalidateByMVAToPoCAddress.Define(RegisterCollection)
+-                .WithValueField(0, 32, FieldMode.Write, name: "DCIMVAC");
++            foreach(var register in new[]
++            {
++                Registers.ICacheInvalidateAllToPoUaIgnored, Registers.ICacheInvalidateByMVAToPoUaAddress,
++                Registers.DCacheInvalidateByMVAToPoCAddress, Registers.DCacheInvalidateBySetWay,
++                Registers.DCacheCleanByMVAToPoUAddress, Registers.DCacheCleanByMVAToPoCAddress, Registers.DCacheCleanBySetWay,
++                Registers.DCacheCleanAndInvalidateByMVAToPoCAddress, Registers.DCacheCleanAndInvalidateBySetWay,
++                Registers.BranchPredictorInvalidateAllIgnored,
++            })
++            {
++                register.Define(RegisterCollection).WithIgnoredBits(0, 32);
++            }
+ 
+             Registers.CacheSizeSelection.Define(RegisterCollection)
+-                .WithTaggedFlag("InD (Instruction or Data Selection)", 0)
+-                .WithTag("Level", 1, 3)
++                .WithTaggedFlag("InD (Instruction or Data Selection)", 0, silent: true)
++                .WithTag("Level", 1, 3, silent: true)
+                 .WithReservedBits(4, 28);
+ 
+             Registers.CacheSizeID.Define(RegisterCollection)

@@ -1,0 +1,6 @@
+<Project>
+  <PropertyGroup>
+    <TargetFrameworks>net8.0</TargetFrameworks>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+</Project>
