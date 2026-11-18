@@ -2349,8 +2349,17 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
 /// correction right after the platform, the ELF, SPI1's access log for D4,
 /// a `RunFor` of `time`, and none of the generated runtime's contract: no
 /// boot word written, no hook of ours, no capture), and prints `stdout`.
-fn toolbox_foreign(stdout: &str, time: &str) -> Dir {
+/// A stub Renode for a foreign boot. With `flash`, the run must hash
+/// [`elf`]'s one flash segment (64 bytes at `0x08000000`) after the reads and
+/// before the listing; without it, nothing is hashed.
+fn toolbox_foreign(stdout: &str, time: &str, flash: bool) -> Dir {
     let tb = Dir::new("tb");
+    let hash = match flash {
+        true => {
+            r#"case "$7" in *"echo \"AETHELGARD-BOOT-END\"; python \"print('AETHELGARD-FLASH 8000000 ' + "*"ReadBytes(0x8000000, 0x40)"*"; peripherals; quit") ;; *) exit 93;; esac"#
+        }
+        false => r#"case "$7" in *AETHELGARD-FLASH*) exit 93;; esac"#,
+    };
     let out = tb.write("renode.out", stdout.as_bytes());
     let rettobase = rettobase_in_stub();
     let body = format!(
@@ -2364,7 +2373,9 @@ esac
 case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac
 case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
+case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"(offset in (0xc, 0x10c)) and (value >> 7) & 1 and "*) ;; *) exit 92;; esac
 case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
+{hash}
 /bin/cat '{out}'
 "#,
         out = out.display()
@@ -2432,7 +2443,7 @@ fn foreign_with(path: &Path, firmware: &Path, time: &str) -> Output {
 }
 
 fn foreign(stdout: &str) -> (Option<i32>, Value) {
-    let tb = toolbox_foreign(stdout, "0.010000000");
+    let tb = toolbox_foreign(stdout, "0.010000000", true);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
     let out = foreign_with(&tb.0, &fw, "10ms");
@@ -2561,6 +2572,26 @@ fn a_foreign_boot_s_flash_locked_accesses_and_warnings_are_reported() {
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["flash_overwritten"], "{v}");
+    // An erase of its own sector fails even when its bytes hash unchanged.
+    let erase = "[00:00:00.020000000] [WARNING] flashController: AETHELGARD-ERASE c 84\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{erase}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["flash_overwritten"], "{v}");
+    assert_eq!(v["boot"]["erases"][0]["start"], "0x08000000", "{v}");
+    // Another sector's erase is reported and passes.
+    let (code, v) = foreign(&foreign_transcript(
+        &format!(
+            "{}{}",
+            good_foreign_log(),
+            erase.replace(" c 84", " 10c 784")
+        ),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["erases"][0]["start"], "0x081e0000", "{v}");
     let (_, v) = foreign(&foreign_transcript_flash(
         &good_foreign_log(),
         "0x00000800",
@@ -2650,9 +2681,11 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     let tf = toolbox_foreign(
         &foreign_transcript_flash(&good_foreign_log(), "0x00000800", ""),
         "0.010000000",
+        false,
     );
     let loaded = foreign_with(&tf.0, &d2, "10ms");
     assert_ne!(loaded.status.code(), Some(3), "{loaded:?}");
+    assert_eq!(report(&loaded)["boot"]["judge"], "foreign", "{loaded:?}");
     let outside = input.write("fmc.elf", &elf_at(0x6000_0000, &code(), 40));
     let refused = foreign_with(&tf.0, &outside, "10ms");
     assert_eq!(refused.status.code(), Some(3), "{refused:?}");

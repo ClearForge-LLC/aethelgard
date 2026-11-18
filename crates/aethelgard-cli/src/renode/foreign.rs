@@ -238,6 +238,14 @@ pub struct FlashReport {
     pub observed_sha256: Option<String>,
 }
 
+/// A flash erase the firmware started: when, and the flash it erases.
+#[derive(Serialize)]
+pub struct EraseReport {
+    pub at_ns: Option<u64>,
+    pub start: String,
+    pub end: String,
+}
+
 /// An access to a peripheral whose clock was off: its address, the first
 /// time and how often.
 #[derive(Serialize)]
@@ -280,6 +288,8 @@ pub struct ForeignBoot {
     pub warnings: Vec<WarningReport>,
     /// The firmware's loaded flash segments, read back after the run.
     pub flash: Vec<FlashReport>,
+    /// Each flash erase the firmware started, as the erase hook logs it.
+    pub erases: Vec<EraseReport>,
     /// Accesses to a peripheral whose clock was off (`info`).
     pub locked: Vec<LockedReport>,
     pub unobservable: Vec<String>,
@@ -350,6 +360,84 @@ fn flash_hash(f: &crate::elf::FlashLoad) -> String {
     )
 }
 
+/// The line the erase hook logs for a write to a flash bank's control
+/// register that sets `START`: the register's offset and the value written.
+const ERASE_MARK: &str = "AETHELGARD-ERASE ";
+
+/// The flash controller's erase facts, every one from ST's header
+/// (`RUL-16`): each bank's control register offset in `FLASH_TypeDef` with
+/// the bank's base, the bits `SER`, `BER` and `START`, the field `SNB`, and
+/// the sector size; a bank is `FLASH_SECTOR_TOTAL` sectors.
+pub struct Erase {
+    banks: [(u32, u64); 2],
+    ser: u32,
+    ber: u32,
+    start: u32,
+    snb: (u32, u32),
+    sector: u64,
+    bank: u64,
+}
+
+impl Erase {
+    pub fn facts() -> Result<Self, Stop> {
+        let hal = |e: aethelgard_svd_hal::cmsis::RegisterError| {
+            Stop::tool_error("aethelgard-svd-hal", e.to_string())
+        };
+        let f = aethelgard_svd_hal::cmsis::register_facts().map_err(hal)?;
+        let layout = f.layout("FLASH").map_err(hal)?;
+        let sector = u64::from(f.value("FLASH_SECTOR_SIZE").map_err(hal)?);
+        Ok(Self {
+            banks: [
+                (
+                    layout.offset("CR1", 0).map_err(hal)?,
+                    u64::from(f.value("FLASH_BANK1_BASE").map_err(hal)?),
+                ),
+                (
+                    layout.offset("CR2", 0).map_err(hal)?,
+                    u64::from(f.value("FLASH_BANK2_BASE").map_err(hal)?),
+                ),
+            ],
+            ser: f.position("FLASH_CR_SER_Pos").map_err(hal)?,
+            ber: f.position("FLASH_CR_BER_Pos").map_err(hal)?,
+            start: f.position("FLASH_CR_START_Pos").map_err(hal)?,
+            snb: f.field("FLASH_CR_SNB").map_err(hal)?,
+            sector,
+            bank: sector * u64::from(f.value("FLASH_SECTOR_TOTAL").map_err(hal)?),
+        })
+    }
+
+    /// The hook on the flash controller's writes that logs each write to a
+    /// bank's control register with `START` set; every other write passes
+    /// unlogged and unchanged.
+    pub fn hook(&self) -> String {
+        format!(
+            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"(offset in ({:#x}, {:#x})) and (value >> {}) & 1 and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
+            self.banks[0].0, self.banks[1].0, self.start
+        )
+    }
+
+    /// The flash a logged `START` write erases, `[start, end)`: the bank
+    /// with `BER`, else the sector `SNB` names with `SER`, else nothing.
+    fn range(&self, body: &str) -> Option<(u64, u64)> {
+        let text = body
+            .strip_prefix("[WARNING] flashController: ")?
+            .strip_prefix(ERASE_MARK)?;
+        let (offset, value) = text.split_once(' ')?;
+        let offset = u32::from_str_radix(offset, 16).ok()?;
+        let value = u32::from_str_radix(value.trim(), 16).ok()?;
+        let base = self.banks.iter().find(|(o, _)| *o == offset)?.1;
+        if value >> self.ber & 1 == 1 {
+            return Some((base, base + self.bank));
+        }
+        if value >> self.ser & 1 == 1 {
+            let (at, width) = self.snb;
+            let at = base + u64::from(value >> at & ((1 << width) - 1)) * self.sector;
+            return Some((at, at + self.sector));
+        }
+        None
+    }
+}
+
 /// Each SPI controller a modelled device is on, as Renode names it (`spi2`).
 fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -370,7 +458,7 @@ fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
 /// reads between the markers, each loaded flash segment's sha256, and the
 /// listing. No boot word, no record, no hook on the firmware's own code and
 /// no injection: none of the generated runtime's contract.
-pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> String {
+pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
         QUANTUM.to_owned(),
@@ -389,6 +477,7 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> String 
     c.push(plan.vtor());
     c.extend(plan.witness_levels());
     c.extend(spi_controllers(plan).iter().map(|s| cfg2_hook(s)));
+    c.push(Erase::facts()?.hook());
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
@@ -397,7 +486,7 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> String 
     c.extend(flash.iter().map(flash_hash));
     c.push("peripherals".to_owned());
     c.push("quit".to_owned());
-    c.join("; ")
+    Ok(c.join("; "))
 }
 
 /// What one read gives.
@@ -586,6 +675,7 @@ pub fn report(
         spi_errors_exempted: 0,
         warnings: Vec::new(),
         flash: Vec::new(),
+        erases: Vec::new(),
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
         rules: RULES
@@ -599,14 +689,13 @@ pub fn report(
     }
 }
 
-/// The foreign judge: the run's findings, the listing, and the report.
+/// The foreign judge: the run's findings, the listing, and `report` (as
+/// [`report`] starts it) filled in.
 pub fn judge(
     code: i32,
     out: &Output,
     plan: &BootPlan<'_>,
-    firmware: FirmwareReport,
-    specification_sha256: String,
-    regions: Vec<RegionReport>,
+    mut report: ForeignBoot,
     parts: &std::collections::BTreeMap<String, String>,
     flash: &[crate::elf::FlashLoad],
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
@@ -621,7 +710,6 @@ pub fn judge(
         return Err(untrusted(format!("renode exited {code}")));
     }
     let frame = frame_bits()?;
-    let mut report = report(plan, firmware, specification_sha256, regions);
     let lines = clean_lines(&text);
     if let Some(stop) = model_load_failed(&lines) {
         return Err(stop);
@@ -770,6 +858,7 @@ pub fn judge(
             .split(", value")
             .next()
             .unwrap_or(text)
+            .trim_end_matches('.')
             .to_owned();
         match report.locked.iter_mut().find(|r| r.access == access) {
             Some(r) => r.count += 1,
@@ -788,6 +877,32 @@ pub fn judge(
                 report.locked.len()
             ),
         ));
+    }
+    // No erase of the firmware's own loaded flash, as the erase hook logs it
+    // (a sector erased and reprogrammed alike leaves the hash unchanged).
+    let erase = Erase::facts()?;
+    for line in &run_log {
+        let Some((start, end)) = erase.range(log_text(line)) else {
+            continue;
+        };
+        let at_ns = log_stamped(line).map(|(ns, _)| ns);
+        if let Some(f) = flash
+            .iter()
+            .find(|f| f.address < end && start < f.address + f.len)
+        {
+            findings.push(Finding::plain(
+                "flash_overwritten",
+                format!(
+                    "the firmware started an erase of {start:#010x}..{end:#010x}, which holds its own loaded flash bytes at {:#010x}",
+                    f.address
+                ),
+            ));
+        }
+        report.erases.push(EraseReport {
+            at_ns,
+            start: format!("{start:#010x}"),
+            end: format!("{end:#010x}"),
+        });
     }
     // The firmware's own loaded flash bytes, unchanged after the run.
     for (f, line) in flash.iter().zip(&hashes) {
@@ -1078,6 +1193,34 @@ mod tests {
         assert_eq!(
             run(&[cfg2("0", "0"), err.clone(), other.clone()]),
             (Some(other), 1)
+        );
+    }
+
+    /// The erase hook's lines, read with the header's facts: a sector erase
+    /// names its 128 KiB sector in its bank, a bank erase the whole bank, and
+    /// a `START` write with neither `SER` nor `BER` erases nothing.
+    #[test]
+    fn an_erase_names_the_flash_it_erases_from_the_header_s_facts() {
+        let e = Erase::facts().unwrap();
+        let line = |offset: &str, value: &str| {
+            format!("[WARNING] flashController: {ERASE_MARK}{offset} {value}")
+        };
+        assert_eq!(e.range(&line("c", "184")), Some((0x0802_0000, 0x0804_0000)));
+        assert_eq!(
+            e.range(&line("10c", "784")),
+            Some((0x081E_0000, 0x0820_0000))
+        );
+        assert_eq!(
+            e.range(&line("10c", "88")),
+            Some((0x0810_0000, 0x0820_0000))
+        );
+        assert_eq!(e.range(&line("c", "80")), None);
+        assert_eq!(e.range(&line("14", "184")), None);
+        assert_eq!(e.range("[WARNING] spi1: AETHELGARD-ERASE c 184"), None);
+        let hook = e.hook();
+        assert!(
+            hook.contains("(offset in (0xc, 0x10c)) and (value >> 7) & 1"),
+            "{hook}"
         );
     }
 

@@ -618,7 +618,7 @@ impl Invocation<'_> {
 fn capture(
     mut pipe: impl Read + Send + 'static,
     filter: Option<LogFilter>,
-) -> thread::JoinHandle<Option<(Vec<u8>, u64, Vec<Summary>)>> {
+) -> thread::JoinHandle<Option<Captured>> {
     thread::spawn(move || {
         let mut kept = Filtered::new(filter);
         let mut chunk = [0u8; 64 * 1024];
@@ -632,6 +632,9 @@ fn capture(
         }
     })
 }
+
+/// A capture's kept bytes, the log lines it dropped, and its summaries.
+type Captured = (Vec<u8>, u64, Vec<Summary>);
 
 /// The bytes a capture keeps: all of them without a filter; with one, every
 /// whole line until the budget, then [`LogFilter`]'s rule line by line.
@@ -735,7 +738,7 @@ impl Filtered {
         self.dropped += 1;
     }
 
-    fn finish(mut self) -> Option<(Vec<u8>, u64, Vec<Summary>)> {
+    fn finish(mut self) -> Option<Captured> {
         // Only a filter fills `partial`.
         if let Some(filter) = self.filter.filter(|_| !self.partial.is_empty()) {
             self.line(filter);

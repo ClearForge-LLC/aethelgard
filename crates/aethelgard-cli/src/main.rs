@@ -1855,7 +1855,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     let foreign = ready.as_ref().and_then(|r| r.foreign.as_ref());
     let commands = match (&plan, foreign) {
         (Some(plan), Some(_)) => {
-            renode::foreign::commands(plan, &ready.as_ref().expect("foreign is ready's").flash)
+            renode::foreign::commands(plan, &ready.as_ref().expect("foreign is ready's").flash)?
         }
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -1919,9 +1919,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 code,
                 &out,
                 plan,
-                firmware,
-                spec,
-                regions,
+                renode::foreign::report(plan, firmware, spec, regions),
                 &parts,
                 &ready.as_ref().expect("foreign is ready's").flash,
             )?;
