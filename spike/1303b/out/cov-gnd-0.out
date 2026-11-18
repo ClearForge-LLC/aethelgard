@@ -1,0 +1,220 @@
+== sentinel-02-power VDD_3V3: source L2 pads ['2']; 16 MCU pins (0 not enterable); 37 vias 0.7/0.3 used of 37; planes False; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.   6: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  17: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  30: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  32: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  33: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  39: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  52: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  62: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 3, 'via entry': 1}
+  U1.  72: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  84: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1.  95: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 3, 'via entry': 1}
+  U1. 108: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 3, 'via entry': 1}
+  U1. 121: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 4, 'via entry': 1}
+  U1. 131: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1. 143: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  U1. 144: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1}
+  coverage 0 of 16 pins; refusals {('2', 'no path under the flow rules'): 16}
+== sentinel-02-power GND: source U11 pads ['1', '9']; 11 MCU pins (0 not enterable); 61 vias 0.7/0.3 used of 85; planes False; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.  16: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [21] with plane edges {21: 0}
+  U1.  31: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [24] with plane edges {24: 0}
+  U1.  38: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [20] with plane edges {20: 0}
+  U1.  51: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [34] with plane edges {34: 0}
+  U1.  61: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [39] with plane edges {39: 0}
+  U1.  83: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [48] with plane edges {48: 0}
+  U1.  94: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [47] with plane edges {47: 0}
+  U1. 107: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [46] with plane edges {46: 0}
+  U1. 120: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [38] with plane edges {38: 0}
+  U1. 130: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [32] with plane edges {32: 0}
+  U1. 138: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [29] with plane edges {29: 0}
+  coverage 0 of 11 pins; refusals {('1', 'no path under the flow rules'): 11, ('9', 'no path under the flow rules'): 11}
+== s024l VDD_3V3: source L2 pads ['2']; 16 MCU pins (0 not enterable); 39 vias 0.7/0.3 used of 39; planes True; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.   6:   399.9 mOhm from L2.2 (w 0.200) a     5.52 b   180.50 c 4.280e+00 fit 3e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 5}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.90 mm beta 12.0 deg: bound   32.8 mOhm, exact two-hole sheet  2.24 mOhm, ratio  14.6
+  U1.  17: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 4, 'via entry': 1}
+  U1.  30: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 5, 'via entry': 1}
+  U1.  32:   472.6 mOhm from L2.2 (w 0.104) a    48.38 b   188.11 c 5.779e+00 fit 2e-15 {'padend': 2, 'seg': 15, 'fan': 2, 'barrel-plane': 2, 'plane': 8}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.16 mm beta 60.0 deg: bound    8.8 mOhm, exact two-hole sheet  2.16 mOhm, ratio   4.1
+        hop D   8.13 mm beta 20.0 deg: bound   22.8 mOhm, exact two-hole sheet  2.44 mOhm, ratio   9.4
+        hop D   7.05 mm beta 30.0 deg: bound   15.7 mOhm, exact two-hole sheet  2.35 mOhm, ratio   6.7
+        hop D   2.34 mm beta 60.0 deg: bound    7.3 mOhm, exact two-hole sheet  1.67 mOhm, ratio   4.4
+  U1.  33:   477.2 mOhm from L2.2 (w 0.104) a    53.21 b   188.11 c 5.779e+00 fit 2e-15 {'padend': 2, 'seg': 16, 'fan': 2, 'barrel-plane': 2, 'plane': 8}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.16 mm beta 60.0 deg: bound    8.8 mOhm, exact two-hole sheet  2.16 mOhm, ratio   4.1
+        hop D   8.13 mm beta 20.0 deg: bound   22.8 mOhm, exact two-hole sheet  2.44 mOhm, ratio   9.4
+        hop D   7.05 mm beta 30.0 deg: bound   15.7 mOhm, exact two-hole sheet  2.35 mOhm, ratio   6.7
+        hop D   2.34 mm beta 60.0 deg: bound    7.3 mOhm, exact two-hole sheet  1.67 mOhm, ratio   4.4
+  U1.  39: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [19] with plane edges {19: 0}
+  U1.  52:   437.6 mOhm from L2.2 (w 0.200) a     5.52 b   192.86 c 5.517e+00 fit 3e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 7}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.90 mm beta 12.0 deg: bound   32.8 mOhm, exact two-hole sheet  2.24 mOhm, ratio  14.6
+        hop D  20.41 mm beta 30.0 deg: bound   19.5 mOhm, exact two-hole sheet  3.00 mOhm, ratio   6.5
+        hop D   5.00 mm beta 45.0 deg: bound   10.5 mOhm, exact two-hole sheet  2.14 mOhm, ratio   4.9
+  U1.  62:   423.9 mOhm from L2.2 (w 0.200) a     5.52 b   188.83 c 4.986e+00 fit 2e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 6}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.90 mm beta 12.0 deg: bound   32.8 mOhm, exact two-hole sheet  2.24 mOhm, ratio  14.6
+        hop D  20.41 mm beta 30.0 deg: bound   19.5 mOhm, exact two-hole sheet  3.00 mOhm, ratio   6.5
+  U1.  72:   437.6 mOhm from L2.2 (w 0.200) a     5.52 b   192.86 c 5.517e+00 fit 3e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 7}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.90 mm beta 12.0 deg: bound   32.8 mOhm, exact two-hole sheet  2.24 mOhm, ratio  14.6
+        hop D  20.41 mm beta 30.0 deg: bound   19.5 mOhm, exact two-hole sheet  3.00 mOhm, ratio   6.5
+        hop D   5.00 mm beta 45.0 deg: bound   10.5 mOhm, exact two-hole sheet  2.14 mOhm, ratio   4.9
+  U1.  84:   337.8 mOhm from L2.2 (w 0.200) a     5.52 b   159.98 c 2.276e+00 fit 5e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 2}
+        hop D  69.07 mm beta  2.0 deg: bound  307.6 mOhm, exact two-hole sheet  3.74 mOhm, ratio  82.2
+        hop D   5.50 mm beta 45.0 deg: bound   10.8 mOhm, exact two-hole sheet  2.20 mOhm, ratio   4.9
+  U1.  95:   321.2 mOhm from L2.2 (w 0.200) a     5.52 b   155.84 c 1.513e+00 fit 1e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 1}
+        hop D  69.07 mm beta  2.0 deg: bound  307.6 mOhm, exact two-hole sheet  3.74 mOhm, ratio  82.2
+  U1. 108:   315.1 mOhm from L2.2 (w 0.200) a     5.51 b   152.66 c 1.509e+00 fit 6e-15 {'padend': 2, 'seg': 3, 'fan': 2, 'barrel-plane': 2, 'plane': 1}
+        hop D  61.81 mm beta  2.0 deg: bound  301.5 mOhm, exact two-hole sheet  3.67 mOhm, ratio  82.1
+  U1. 121:   358.8 mOhm from L2.2 (w 0.200) a    21.29 b   161.11 c 2.603e+00 fit 3e-15 {'padend': 2, 'seg': 11, 'fan': 2, 'barrel-plane': 2, 'plane': 2}
+        hop D  51.59 mm beta  2.0 deg: bound  291.6 mOhm, exact two-hole sheet  3.56 mOhm, ratio  81.8
+        hop D   5.10 mm beta 12.0 deg: bound   31.5 mOhm, exact two-hole sheet  2.15 mOhm, ratio  14.6
+  U1. 131: REFUSED: no path under the flow rules; pieces refused on the way: {'pad pass': 4, 'via entry': 1}
+  U1. 143:   409.5 mOhm from L2.2 (w 0.200) a    15.67 b   180.44 c 4.280e+00 fit 3e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 5}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.83 mm beta 12.0 deg: bound   32.7 mOhm, exact two-hole sheet  2.23 mOhm, ratio  14.6
+  U1. 144:   407.1 mOhm from L2.2 (w 0.200) a    13.17 b   180.44 c 4.280e+00 fit 3e-15 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 5}
+        hop D  55.13 mm beta  2.0 deg: bound  295.3 mOhm, exact two-hole sheet  3.61 mOhm, ratio  81.9
+        hop D   5.76 mm beta 45.0 deg: bound   10.9 mOhm, exact two-hole sheet  2.23 mOhm, ratio   4.9
+        hop D   4.16 mm beta 60.0 deg: bound    8.4 mOhm, exact two-hole sheet  2.03 mOhm, ratio   4.1
+        hop D   7.55 mm beta 20.0 deg: bound   22.4 mOhm, exact two-hole sheet  2.39 mOhm, ratio   9.4
+        hop D   5.83 mm beta 12.0 deg: bound   32.7 mOhm, exact two-hole sheet  2.23 mOhm, ratio  14.6
+  coverage 12 of 16 pins; range 315.1..477.2 mOhm; refusals {('2', 'no path under the flow rules'): 4}
+== s024l GND: source U11 pads ['1', '9']; 11 MCU pins (0 not enterable); 62 vias 0.7/0.3 used of 86; planes True; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.  16: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 3, 'pad pass': 4, 'pad end': 1}
+  U1.  31: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 3, 'pad pass': 4, 'pad end': 1}
+  U1.  38: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1, 'pad pass': 4, 'pad end': 1}
+  U1.  51: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 3, 'pad pass': 4, 'pad end': 1}
+  U1.  61: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 2, 'pad pass': 4, 'pad end': 1}
+  U1.  83: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 3, 'pad pass': 4, 'pad end': 1}
+  U1.  94: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 4, 'pad pass': 4, 'pad end': 1}
+  U1. 107: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1, 'pad pass': 4, 'pad end': 1}
+  U1. 120: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1, 'pad pass': 4, 'pad end': 1}
+  U1. 130: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 1, 'pad pass': 4, 'pad end': 1}
+  U1. 138: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 3, 'pad pass': 4, 'pad end': 1}
+  coverage 0 of 11 pins; refusals {('1', 'pad end'): 11, ('9', 'no path under the flow rules'): 11}
+== sentinel-03 VDD_3V3: source L2 pads ['2']; 16 MCU pins (0 not enterable); 47 vias 0.7/0.3 used of 47; planes True; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.   6:   234.6 mOhm from L2.2 (w 0.200) a     5.52 b   100.46 c 3.236e+00 fit 4e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 3}
+        hop D  39.63 mm beta  4.0 deg: bound  141.7 mOhm, exact two-hole sheet  3.40 mOhm, ratio  41.6
+        hop D  13.81 mm beta 12.0 deg: bound   40.6 mOhm, exact two-hole sheet  2.76 mOhm, ratio  14.7
+        hop D  19.17 mm beta 20.0 deg: bound   27.5 mOhm, exact two-hole sheet  2.96 mOhm, ratio   9.3
+  U1.  17: REFUSED: no path under the flow rules; pieces refused on the way: {'via entry': 2, 'pad pass': 4}
+  U1.  30: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [13] with plane edges {13: 1}
+  U1.  32: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [13] with plane edges {13: 1}
+  U1.  33: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [13] with plane edges {13: 1}
+  U1.  39: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [23] with plane edges {23: 2}
+  U1.  52: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [32] with plane edges {32: 1}
+  U1.  62: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [35] with plane edges {35: 1}
+  U1.  72: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [38] with plane edges {38: 0}
+  U1.  84:   205.1 mOhm from L2.2 (w 0.200) a     5.52 b    89.88 c 2.427e+00 fit 3e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 2}
+        hop D  39.63 mm beta  4.0 deg: bound  141.7 mOhm, exact two-hole sheet  3.40 mOhm, ratio  41.6
+        hop D  18.93 mm beta 12.0 deg: bound   43.5 mOhm, exact two-hole sheet  2.95 mOhm, ratio  14.7
+  U1.  95:   202.3 mOhm from L2.2 (w 0.200) a     5.52 b    88.38 c 2.427e+00 fit 4e-15 {'padend': 2, 'seg': 2, 'fan': 2, 'barrel-plane': 2, 'plane': 2}
+        hop D  39.63 mm beta  4.0 deg: bound  141.7 mOhm, exact two-hole sheet  3.40 mOhm, ratio  41.6
+        hop D  13.81 mm beta 12.0 deg: bound   40.6 mOhm, exact two-hole sheet  2.76 mOhm, ratio  14.7
+  U1. 108: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [39] with plane edges {39: 0}
+  U1. 121:   171.7 mOhm from L2.2 (w 0.200) a    22.31 b    69.99 c 1.422e+00 fit 3e-15 {'padend': 2, 'seg': 9, 'fan': 2, 'barrel-plane': 2, 'plane': 1}
+        hop D  39.63 mm beta  4.0 deg: bound  141.7 mOhm, exact two-hole sheet  3.40 mOhm, ratio  41.6
+  U1. 131:   262.1 mOhm from L2.2 (w 0.200) a    13.79 b   109.89 c 3.366e+00 fit 4e-15 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 3}
+        hop D  39.63 mm beta  4.0 deg: bound  141.7 mOhm, exact two-hole sheet  3.40 mOhm, ratio  41.6
+        hop D  18.93 mm beta 12.0 deg: bound   43.5 mOhm, exact two-hole sheet  2.95 mOhm, ratio  14.7
+        hop D  19.38 mm beta 12.0 deg: bound   43.7 mOhm, exact two-hole sheet  2.97 mOhm, ratio  14.7
+  U1. 143: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [21] with plane edges {21: 0}
+  U1. 144: REFUSED: no path under the flow rules; pieces refused on the way: {}; its stub reaches vias [21] with plane edges {21: 0}
+  coverage 5 of 16 pins; range 171.7..262.1 mOhm; refusals {('2', 'no path under the flow rules'): 11}
+== sentinel-03 GND: source U11 pads ['1', '9']; 10 MCU pins (0 not enterable); 75 vias 0.7/0.3 used of 99; planes True; offset 0.0 mm; rho_max 2.8761e-05 ohm*mm
+  U1.  16:   289.6 mOhm from U11.1 (w 0.110) a    28.59 b    82.94 c 9.100e+00 fit 1e-15 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 4}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   6.60 mm beta 30.0 deg: bound   21.1 mOhm, exact two-hole sheet  2.31 mOhm, ratio   9.1
+        hop D  22.33 mm beta  4.0 deg: bound  141.3 mOhm, exact two-hole sheet  3.05 mOhm, ratio  46.3
+  U1.  31:   584.1 mOhm from U11.1 (w 0.110) a    29.22 b   193.01 c 1.641e+01 fit 2e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 6}
+        hop D  26.88 mm beta  7.0 deg: bound   89.8 mOhm, exact two-hole sheet  3.17 mOhm, ratio  28.4
+        hop D  36.06 mm beta 12.0 deg: bound   59.6 mOhm, exact two-hole sheet  3.35 mOhm, ratio  17.8
+        hop D  10.50 mm beta 45.0 deg: bound   16.0 mOhm, exact two-hole sheet  2.59 mOhm, ratio   6.2
+        hop D  22.53 mm beta 20.0 deg: bound   36.1 mOhm, exact two-hole sheet  3.06 mOhm, ratio  11.8
+        hop D  13.91 mm beta  2.0 deg: bound  238.1 mOhm, exact two-hole sheet  2.76 mOhm, ratio  86.1
+        hop D   5.22 mm beta 30.0 deg: bound   20.2 mOhm, exact two-hole sheet  2.17 mOhm, ratio   9.3
+  U1.  38:   554.1 mOhm from U11.1 (w 0.110) a    30.85 b   143.02 c 2.209e+01 fit 9e-16 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 9}
+        hop D  21.21 mm beta 20.0 deg: bound   35.8 mOhm, exact two-hole sheet  3.02 mOhm, ratio  11.8
+        hop D  13.88 mm beta 30.0 deg: bound   23.8 mOhm, exact two-hole sheet  2.76 mOhm, ratio   8.6
+        hop D   9.43 mm beta 20.0 deg: bound   31.3 mOhm, exact two-hole sheet  2.53 mOhm, ratio  12.4
+        hop D  17.05 mm beta 12.0 deg: bound   52.7 mOhm, exact two-hole sheet  2.89 mOhm, ratio  18.3
+        hop D  10.38 mm beta 20.0 deg: bound   31.9 mOhm, exact two-hole sheet  2.59 mOhm, ratio  12.3
+        hop D  36.42 mm beta  7.0 deg: bound   94.6 mOhm, exact two-hole sheet  3.35 mOhm, ratio  28.2
+        hop D   8.85 mm beta 20.0 deg: bound   31.0 mOhm, exact two-hole sheet  2.49 mOhm, ratio  12.5
+        hop D   4.25 mm beta 20.0 deg: bound   27.0 mOhm, exact two-hole sheet  2.04 mOhm, ratio  13.2
+        hop D   7.38 mm beta  7.0 deg: bound   69.5 mOhm, exact two-hole sheet  2.38 mOhm, ratio  29.3
+  U1.  51:   447.6 mOhm from U11.1 (w 0.110) a    30.85 b   111.39 c 1.804e+01 fit 1e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 8}
+        hop D  21.21 mm beta 20.0 deg: bound   35.8 mOhm, exact two-hole sheet  3.02 mOhm, ratio  11.8
+        hop D  13.88 mm beta 30.0 deg: bound   23.8 mOhm, exact two-hole sheet  2.76 mOhm, ratio   8.6
+        hop D   9.43 mm beta 20.0 deg: bound   31.3 mOhm, exact two-hole sheet  2.53 mOhm, ratio  12.4
+        hop D  17.05 mm beta 12.0 deg: bound   52.7 mOhm, exact two-hole sheet  2.89 mOhm, ratio  18.3
+        hop D  10.38 mm beta 20.0 deg: bound   31.9 mOhm, exact two-hole sheet  2.59 mOhm, ratio  12.3
+        hop D  36.42 mm beta  7.0 deg: bound   94.6 mOhm, exact two-hole sheet  3.35 mOhm, ratio  28.2
+        hop D   8.85 mm beta 20.0 deg: bound   31.0 mOhm, exact two-hole sheet  2.49 mOhm, ratio  12.5
+        hop D   1.88 mm beta 60.0 deg: bound    9.3 mOhm, exact two-hole sheet  1.54 mOhm, ratio   6.0
+  U1.  61:   483.8 mOhm from U11.1 (w 0.110) a    30.85 b   119.63 c 1.984e+01 fit 9e-16 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 9}
+        hop D  21.21 mm beta 20.0 deg: bound   35.8 mOhm, exact two-hole sheet  3.02 mOhm, ratio  11.8
+        hop D  13.88 mm beta 30.0 deg: bound   23.8 mOhm, exact two-hole sheet  2.76 mOhm, ratio   8.6
+        hop D   9.43 mm beta 20.0 deg: bound   31.3 mOhm, exact two-hole sheet  2.53 mOhm, ratio  12.4
+        hop D  17.05 mm beta 12.0 deg: bound   52.7 mOhm, exact two-hole sheet  2.89 mOhm, ratio  18.3
+        hop D  10.38 mm beta 20.0 deg: bound   31.9 mOhm, exact two-hole sheet  2.59 mOhm, ratio  12.3
+        hop D  36.42 mm beta  7.0 deg: bound   94.6 mOhm, exact two-hole sheet  3.35 mOhm, ratio  28.2
+        hop D   8.85 mm beta 20.0 deg: bound   31.0 mOhm, exact two-hole sheet  2.49 mOhm, ratio  12.5
+        hop D   1.88 mm beta 60.0 deg: bound    9.3 mOhm, exact two-hole sheet  1.54 mOhm, ratio   6.0
+        hop D   5.00 mm beta 20.0 deg: bound   27.8 mOhm, exact two-hole sheet  2.14 mOhm, ratio  13.0
+  U1.  83:   247.1 mOhm from U11.1 (w 0.110) a    30.85 b    50.96 c 1.057e+01 fit 2e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 6}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   6.60 mm beta 30.0 deg: bound   21.1 mOhm, exact two-hole sheet  2.31 mOhm, ratio   9.1
+        hop D   7.77 mm beta 30.0 deg: bound   21.7 mOhm, exact two-hole sheet  2.41 mOhm, ratio   9.0
+        hop D   5.00 mm beta 60.0 deg: bound   11.1 mOhm, exact two-hole sheet  2.14 mOhm, ratio   5.2
+        hop D  19.18 mm beta 12.0 deg: bound   53.8 mOhm, exact two-hole sheet  2.96 mOhm, ratio  18.2
+  U1.  94:   256.3 mOhm from U11.1 (w 0.110) a    30.85 b    57.76 c 1.023e+01 fit 1e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 5}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   6.60 mm beta 30.0 deg: bound   21.1 mOhm, exact two-hole sheet  2.31 mOhm, ratio   9.1
+        hop D   7.77 mm beta 30.0 deg: bound   21.7 mOhm, exact two-hole sheet  2.41 mOhm, ratio   9.0
+        hop D  11.77 mm beta  7.0 deg: bound   76.9 mOhm, exact two-hole sheet  2.66 mOhm, ratio  28.9
+  U1. 107:   266.8 mOhm from U11.1 (w 0.110) a    30.85 b    70.03 c 9.085e+00 fit 1e-15 {'padend': 2, 'seg': 7, 'fan': 2, 'barrel-plane': 2, 'plane': 4}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   6.60 mm beta 30.0 deg: bound   21.1 mOhm, exact two-hole sheet  2.31 mOhm, ratio   9.1
+        hop D   9.07 mm beta  4.0 deg: bound  116.5 mOhm, exact two-hole sheet  2.50 mOhm, ratio  46.5
+  U1. 120:   162.0 mOhm from U11.1 (w 0.110) a    28.59 b    31.75 c 6.502e+00 fit 2e-15 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 3}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   9.82 mm beta 12.0 deg: bound   47.7 mOhm, exact two-hole sheet  2.55 mOhm, ratio  18.7
+  U1. 130:   181.2 mOhm from U11.1 (w 0.110) a    28.59 b    31.01 c 8.325e+00 fit 2e-15 {'padend': 2, 'seg': 6, 'fan': 2, 'barrel-plane': 2, 'plane': 5}
+        hop D   3.97 mm beta 60.0 deg: bound   10.6 mOhm, exact two-hole sheet  2.00 mOhm, ratio   5.3
+        hop D  17.71 mm beta 20.0 deg: bound   34.8 mOhm, exact two-hole sheet  2.91 mOhm, ratio  11.9
+        hop D   6.60 mm beta 30.0 deg: bound   21.1 mOhm, exact two-hole sheet  2.31 mOhm, ratio   9.1
+        hop D   7.77 mm beta 30.0 deg: bound   21.7 mOhm, exact two-hole sheet  2.41 mOhm, ratio   9.0
+        hop D   5.00 mm beta 60.0 deg: bound   11.1 mOhm, exact two-hole sheet  2.14 mOhm, ratio   5.2
+  coverage 10 of 10 pins; range 162.0..584.1 mOhm; refusals {('9', 'no path under the flow rules'): 10}
+== plane hops used: 127; bound / exact two-hole sheet: min 4.1, median 11.8, max 86.1
