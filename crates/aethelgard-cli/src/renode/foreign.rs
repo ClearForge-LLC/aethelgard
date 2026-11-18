@@ -3,13 +3,13 @@
 //! firmware this project did not generate, chosen by `simulate --foreign`
 //! and never inferred from the ELF (`INV-06`).
 //!
-//! It boots the firmware on the same emitted platform, under the same bounds
-//! and the same `RETTOBASE` correction, but with none of the generated
-//! runtime's contract: no boot word, no records in RAM, no hooks of ours, no
-//! serial injection. What it says comes from witnesses the firmware cannot
-//! write (`INV-07`): the models' own transaction lines and the platform's
-//! own state. Every rule of today's judge is kept, replaced or dropped,
-//! [`RULES`], and the verdict names each, with what is weakened.
+//! It boots the firmware on the same emitted platform, under the same bounds,
+//! but with none of the generated runtime's contract: no boot word, no records
+//! in RAM, no hooks of ours, no serial injection. What it says comes from
+//! witnesses the firmware cannot write (`INV-07`): the models' own transaction
+//! lines and the platform's own state. Every rule of today's judge is kept,
+//! replaced or dropped, [`RULES`], and the verdict names each, with what is
+//! weakened.
 
 use serde::Serialize;
 
@@ -532,10 +532,9 @@ fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
     out
 }
 
-/// The foreign boot's monitor commands: the platform, the `RETTOBASE`
-/// correction, the firmware, the cold RCC, each modelled device's log level
-/// and stimulus, each SPI controller's `CFG2` hook (D4), the run, then the
-/// reads between the markers, each loaded flash segment's sha256, and the
+/// The foreign boot's monitor commands: the platform, the firmware, the cold
+/// RCC, each modelled device's log level and stimulus, each SPI controller's
+/// `CFG2` hook (D4), the run, then the reads between the markers, each loaded flash segment's sha256, and the
 /// listing. No boot word, no record, no hook on the firmware's own code and
 /// no injection: none of the generated runtime's contract.
 pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<String, Stop> {
@@ -550,7 +549,6 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<
             "machine LoadPlatformDescription @{}",
             plan.platform.display()
         ),
-        RETTOBASE_HOOK.to_owned(),
         format!("sysbus LoadELF @{}", plan.firmware.display()),
     ]);
     c.extend(plan.cold());

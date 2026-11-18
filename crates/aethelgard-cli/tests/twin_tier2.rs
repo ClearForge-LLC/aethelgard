@@ -4114,77 +4114,52 @@ fn a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge() 
     );
 }
 
-/// The build the pinned image's `renode --version` names, the one whose
-/// `ICSR.RETTOBASE` the CLI corrects (`AET-WO-4400e3`;
-/// `src/renode.rs` `RETTOBASE_BUGGY_BUILD`, held equal to this by a unit test).
-const RETTOBASE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
+/// The build the pinned image's `renode --version` names (`AET-WO-1605`,
+/// ruled on #223): Renode 1.17.0 with upstream's NVIC fixes, rebuilt by
+/// `container/Dockerfile`'s `renode-nvic` stage, the build the `RETTOBASE`
+/// witness below measured.
+const PINNED_RENODE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af.aet1605";
 
-/// What `tests/fixtures/rettobase` recorded, in one run: `ICSR` in Thread
-/// mode, in IRQ 57's handler (the only active exception) and in IRQ 50's,
-/// nested over it (`AET-WO-4400e3`).
+/// What `tests/fixtures/rettobase` recorded, in one run: `ICSR` in IRQ 57's
+/// handler (the only active exception) and in IRQ 50's, nested over it
+/// (`AET-WO-4400e3`).
 struct Nested {
-    thread: u32,
     outer: u32,
     inner: u32,
     /// `NVIC_IABR1` in the inner handler: bit 18 is IRQ 50, bit 25 IRQ 57.
     active: u32,
 }
 
-/// The fixture's record with the CLI's correction or without it, each run
-/// once per process: two tests read the uncorrected run, and libtest runs
-/// them in parallel.
-fn nested(corrected: bool) -> &'static Nested {
-    static BARE: OnceLock<Nested> = OnceLock::new();
-    static CORRECTED: OnceLock<Nested> = OnceLock::new();
-    let once = if corrected { &CORRECTED } else { &BARE };
-    once.get_or_init(|| boot_nested(corrected))
-}
-
 /// One boot of the RETTOBASE fixture on Renode's own `stm32h753.repl`, with
-/// the CLI's correction (`data/rettobase-hook.monitor`) or without it: 10 ms,
-/// then the record's five words. The fixture is built once, offline, as the
-/// forge-log fixture is.
-fn boot_nested(corrected: bool) -> Nested {
-    static ELF: OnceLock<PathBuf> = OnceLock::new();
-    let elf = ELF.get_or_init(|| {
-        let dir = root().join("crates/aethelgard-cli/tests/fixtures/rettobase");
-        let out = Command::new(env!("CARGO"))
-            .args(["build", "--release", "--offline", "--locked"])
-            .current_dir(&dir)
-            .env_remove("CARGO_TARGET_DIR")
-            .stdin(Stdio::null())
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "the RETTOBASE fixture builds offline: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        root().join(
-            "target/aet-rettobase-fixture/thumbv7em-none-eabihf/release/aet-rettobase-fixture",
-        )
-    });
-    let hook = fs::read_to_string(root().join("crates/aethelgard-cli/data/rettobase-hook.monitor"))
+/// nothing of ours: 10 ms, then the record's five words. The fixture is
+/// built offline, as the forge-log fixture is.
+fn boot_nested() -> Nested {
+    let dir = root().join("crates/aethelgard-cli/tests/fixtures/rettobase");
+    let out = Command::new(env!("CARGO"))
+        .args(["build", "--release", "--offline", "--locked"])
+        .current_dir(&dir)
+        .env_remove("CARGO_TARGET_DIR")
+        .stdin(Stdio::null())
+        .output()
         .unwrap();
-    let home = std::env::temp_dir().join(format!(
-        "aet-4400e3-rettobase-{}-{corrected}",
-        std::process::id()
-    ));
+    assert!(
+        out.status.success(),
+        "the RETTOBASE fixture builds offline: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let elf = root()
+        .join("target/aet-rettobase-fixture/thumbv7em-none-eabihf/release/aet-rettobase-fixture");
+    let home = std::env::temp_dir().join(format!("aet-1605-rettobase-{}", std::process::id()));
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(&home).unwrap();
     let mut c = vec![
         "mach create".to_owned(),
         "machine LoadPlatformDescription @platforms/cpus/stm32h753.repl".to_owned(),
-    ];
-    if corrected {
-        c.push(hook);
-    }
-    c.extend([
         format!("sysbus LoadELF @{}", elf.display()),
         "cpu VectorTableOffset 0x08000000".to_owned(),
         "emulation RunFor \"0.010000000\"".to_owned(),
         "echo \"AET-4400E3-BEGIN\"".to_owned(),
-    ]);
+    ];
     c.extend((0..5).map(|w| format!("sysbus ReadDoubleWord {:#x}", 0x2000_0000 + 4 * w)));
     c.extend(["echo \"AET-4400E3-END\"".to_owned(), "quit".to_owned()]);
     let out = Command::new("renode")
@@ -4210,12 +4185,11 @@ fn boot_nested(corrected: bool) -> Nested {
         .collect();
     assert_eq!(words.len(), 5, "the record's five words:\n{text}");
     answer(&format!(
-        "4400e3 rettobase fixture corrected={corrected}: done={:#x} thread={:#x} outer={:#x} inner={:#x} iabr1={:#x}",
+        "1605 rettobase fixture: done={:#x} thread={:#x} outer={:#x} inner={:#x} iabr1={:#x}",
         words[0], words[1], words[2], words[3], words[4]
     ));
     assert_eq!(words[0], 0x4400_E3D0, "the fixture finished:\n{text}");
     Nested {
-        thread: words[1],
         outer: words[2],
         inner: words[3],
         active: words[4],
@@ -4232,11 +4206,11 @@ fn rettobase(icsr: u32) -> u32 {
     (icsr >> 11) & 1
 }
 
-/// AET-WO-4400e3 §1.2: the image the tier-2 tests run in carries the Renode
-/// build the CLI's correction is for. A new pin fails here until it is
-/// measured with the fixture below.
+/// `AET-WO-1605` (`4400e3` §1.2's pin, moved): the image the tier-2 tests run
+/// in carries the Renode build the witness below measured. A new pin fails
+/// here until it is measured with the fixture.
 #[test]
-fn the_pinned_image_s_renode_is_the_build_whose_rettobase_the_cli_corrects() {
+fn the_pinned_image_s_renode_is_the_build_the_rettobase_witness_measured() {
     let out = Command::new("renode")
         .arg("--version")
         .env("DOTNET_EnableDiagnostics", "0")
@@ -4249,17 +4223,21 @@ fn the_pinned_image_s_renode_is_the_build_whose_rettobase_the_cli_corrects() {
         .filter_map(|l| l.trim().strip_prefix("build:"))
         .map(str::trim)
         .collect();
-    assert_eq!(builds, [RETTOBASE_BUILD], "{text}");
+    assert_eq!(builds, [PINNED_RENODE_BUILD], "{text}");
 }
 
-/// AET-WO-4400e3 §1.3, the bug named: Renode 1.17.0's NVIC (`NVIC.cs` L1079
-/// at `renode-infrastructure` `cd4b002a`) counts only system exceptions, so
-/// in TIM5's handler, nested over DMA2 stream 1's, it answers `RETTOBASE` 1,
-/// where the Armv7-M ARM (DDI 0403E.b §B3.2.4, p. B3-657) says 0. When this
-/// fails, the pinned Renode no longer has the bug: drop the correction.
+/// `AET-WO-1605` §1.2, the regression witness (`4400e3` §1.3): with nothing
+/// of ours, TIM5's handler, nested over DMA2 stream 1's, reads `RETTOBASE` 0
+/// and DMA2 stream 1's, with nothing beneath it, reads 1, as the Armv7-M ARM
+/// (DDI 0403E.b §B3.2.4, p. B3-657) defines it. Renode 1.17.0's own NVIC
+/// (`NVIC.cs` L1079 at `renode-infrastructure` `cd4b002a`) counted only
+/// system exceptions and answered 1 nested, which ChibiOS turns into a stray
+/// thread-mode frame (`AET-WO-4400e2`). Upstream `e7a8584c` fixes it, the
+/// pinned build carries it, and the CLI's correction is gone; when this
+/// fails, the pinned Renode has lost the fix.
 #[test]
-fn renode_1_17_0_reads_rettobase_1_in_a_handler_nested_over_an_external_interrupt() {
-    let n = nested(false);
+fn the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt() {
+    let n = boot_nested();
     assert_eq!(
         n.active & (1 << 18 | 1 << 25),
         1 << 18 | 1 << 25,
@@ -4278,21 +4256,8 @@ fn renode_1_17_0_reads_rettobase_1_in_a_handler_nested_over_an_external_interrup
         "DMA2 stream 1's: {:#x}",
         n.outer
     );
-    assert_eq!(rettobase(n.inner), 1, "the bug: {:#x}", n.inner);
-}
-
-/// AET-WO-4400e3 §1.3 and §5: with the CLI's correction the nested handler
-/// reads `RETTOBASE` 0, the handler with nothing beneath it still reads 1,
-/// and no other bit of any read moves (`VECTACTIVE` included).
-#[test]
-fn the_cli_s_correction_reads_rettobase_0_nested_1_alone_and_moves_no_other_bit() {
-    let bare = nested(false);
-    let fixed = nested(true);
-    assert_eq!(rettobase(fixed.inner), 0, "nested: {:#x}", fixed.inner);
-    assert_eq!(rettobase(fixed.outer), 1, "alone: {:#x}", fixed.outer);
-    assert_eq!(fixed.inner ^ bare.inner, 0x800, "only bit 11, nested");
-    assert_eq!(fixed.outer, bare.outer, "nothing, alone");
-    assert_eq!(fixed.thread, bare.thread, "nothing, in Thread mode");
+    assert_eq!(rettobase(n.inner), 0, "nested: {:#x}", n.inner);
+    assert_eq!(rettobase(n.outer), 1, "alone: {:#x}", n.outer);
 }
 
 /// A Cortex-M ELF of `segments` (physical = virtual address, file bytes,
