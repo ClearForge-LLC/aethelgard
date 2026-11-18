@@ -280,7 +280,7 @@ fn toolbox(stdout: &str) -> Dir {
 
 /// The build line the stubs' `--version` prints, as the pinned image's
 /// Renode prints its own (`AET-WO-2205` §1.1).
-const BUILD: &str = "1.17.0+20260907gitf1dd1b4af.aet1605";
+const BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
 
 /// As [`toolbox`], with Renode reporting `build` as its build.
 fn toolbox_built(stdout: &str, build: &str) -> Dir {

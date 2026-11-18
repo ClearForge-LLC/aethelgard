@@ -6,19 +6,10 @@
 #
 # Renode 1.17.0's NVIC fixes (AET-WO-1605, ruled on #223). No Renode release
 # carries them, so this stage rebuilds the two assemblies they touch from the
-# source Antmicro built the portable asset from: renode f1dd1b4af (two commits
-# before the v1.17.0 tag), whose src/Infrastructure is cd4b002a, every
-# submodule at the commit f1dd1b4af records, each a GitHub commit tarball
-# checked here. renode-nvic/ holds upstream's three renode-infrastructure
-# commits as patches: e7a8584c (ICSR.RETTOBASE counts external interrupts),
-# c8b2075c and 7b687540 (cache maintenance ignored, not logged). Every NuGet
-# package restored is checked against renode-nvic/nuget.sha256, and nothing
-# else may be restored. Infrastructure.dll is built as Antmicro built it, with
-# the source revision the asset's own carries; Renode.dll is published as
-# build.sh publishes it, with the build string 1.17.0+20260907gitf1dd1b4af.aet1605,
-# so `renode --version` and every archive header name this build. Unpatched,
-# each reproduces Antmicro's assembly but for the 72 bytes of deterministic
-# identity, and both outputs are checked against the sha256 measured (FEEDBACK).
+# source the official asset was built from, with upstream's three commits as
+# patches (renode-nvic/; sources and commits in TOOLS-SOURCES.md). Every input
+# is a checked tarball or a package in renode-nvic/nuget.sha256, and both
+# outputs are checked against the sha256 measured (AET-WO-1605 FEEDBACK).
 FROM mcr.microsoft.com/dotnet/sdk:8.0.405@sha256:da1f981a47b9017065a702f054f186316366af92dfaea76377fe4f2da2a042bc AS renode-nvic
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \

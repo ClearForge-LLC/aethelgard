@@ -318,7 +318,7 @@ fn toolbox_capture(stdout: &str, version: &str, then: &str, capture: &[u8]) -> D
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
 /bin/grep -qx 'log-timestamps-type = Virtual' "$2" || exit 97
-if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
+if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
@@ -1624,7 +1624,7 @@ fn two_devices_witness_their_own_reads_in_either_order() {
         let outf = tb.write("renode.out", text.as_bytes());
         let stub = tb.0.join("renode");
         common::stub::write_executable(&stub, format!(
-                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\\n'; exit 0; fi\n/bin/cat '{}'\n",
+                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af\\n'; exit 0; fi\n/bin/cat '{}'\n",
                 outf.display()
             )
             .as_bytes(),);
@@ -2070,7 +2070,7 @@ fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
     common::stub::write_executable(&stub, format!(
             r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
 case "$7" in *INJECT-BEGIN*) exit 98;; esac
 case "$7" in *"CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.000120000\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 99;; esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -2347,7 +2347,7 @@ fn toolbox_foreign(stdout: &str, time: &str, flash: bool) -> Dir {
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
 case "$7" in
   *"mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; "*) ;;
   *) exit 99;;
