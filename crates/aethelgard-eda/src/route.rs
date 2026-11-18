@@ -5235,6 +5235,7 @@ mod tests {
                 source: "t".into(),
             },
             dielectrics: vec![],
+            dielectric_max_nm: vec![],
             copper_max_nm: 0,
             copper_source: String::new(),
             permittivity_permille: 0,

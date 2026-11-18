@@ -82,6 +82,9 @@ fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
     if let Some(n) = &g.note {
         v["note"] = n.clone().into();
     }
+    if !g.notes.is_empty() {
+        v["notes"] = g.notes.clone().into();
+    }
     v
 }
 
@@ -327,6 +330,20 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                     });
                 }
             }
+        }
+        let refused = g
+            .pins
+            .iter()
+            .chain(&g.returns)
+            .any(|r| matches!(r, aethelgard_eda::supply::PinResult::Refused { .. }));
+        if g.drop_bound_microvolts.is_none() && !refused {
+            // belt-and-suspenders: today a drop is absent only beside a
+            // refused pin, which has its finding; any other absence fails too
+            findings.push(Finding {
+                kind: "supply_drop_unbounded",
+                severity: "error",
+                message: format!("`{}`: no drop bound", g.domain),
+            });
         }
         if let Some(d) = g.drop_bound_microvolts
             && d > u64::from(g.limit_millivolts) * 1000

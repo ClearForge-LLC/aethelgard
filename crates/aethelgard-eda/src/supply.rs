@@ -87,21 +87,25 @@ impl Model {
 /// `ARC_HIGH_DEF`, 0.005 mm; a condition the refill check measures).
 pub const ARC_NM: i64 = 5_000;
 
-/// A cell near a fill knockout is copper when one disc of radius `w` lies
-/// in the raw fill (clear of every knockout `(centre, raw radius)` in
-/// `near`, and inside `inner`, the raw outline shrunk by `w`) and covers
-/// the cell's four corners: KiCad's opening (deflate, then inflate, by the
-/// min-thickness half-width) keeps every point such a disc covers.
-/// Candidates: the cell's centre, pushed by up to `w` away from each
-/// knockout, away from all together, and along the eight compass
-/// directions. Exact in integers for the candidate tried; a sufficient
-/// test.
+/// A cell near a fill knockout is copper when it lies within `cover` of a
+/// witness point that is at least `clear` from every knockout
+/// `(centre, raw radius)` in `near` and inside `inner` (the raw outline
+/// shrunk by `clear`). KiCad's opening deflates the raw fill by the
+/// min-thickness half-width and inflates it back: a point `clear` (the
+/// half-width plus the arc error) inside the raw fill survives the
+/// deflate, and the inflate covers every point within `cover` (the
+/// half-width less the arc error) of it. Candidates: the cell's centre,
+/// pushed by up to `cover` away from each knockout, away from all
+/// together, and along the eight compass directions. Exact in integers for
+/// the candidate tried; a sufficient test.
 fn witnessed(
     cell: (i64, i64, i64),
     near: &[((i64, i64), i64)],
     inner: (i64, i64, i64, i64),
-    w: i64,
+    cover: i64,
+    clear: i64,
 ) -> bool {
+    let w = cover;
     let (x0, y0, h) = cell;
     let cc = (x0 as f64 + h as f64 / 2.0, y0 as f64 + h as f64 / 2.0);
     let mut dirs: Vec<(f64, f64)> = Vec::new();
@@ -140,7 +144,7 @@ fn witnessed(
                     .iter()
                     .all(|&(px, py)| sq(i128::from(px - c.0)) + sq(i128::from(py - c.1)) <= w2)
                 && near.iter().all(|&((kx, ky), r)| {
-                    let reach = i128::from(r) + i128::from(w);
+                    let reach = i128::from(r) + i128::from(clear);
                     sq(i128::from(c.0 - kx)) + sq(i128::from(c.1 - ky)) >= reach * reach
                 })
         })
@@ -425,6 +429,41 @@ fn hull_in_copper(hull: &[(i64, i64)], shapes: &[Shape], depth: u32) -> bool {
     go(&hq, shapes, x0, y0, side, depth)
 }
 
+/// The convex hull (counter-clockwise, nm) meets no open hole disc
+/// `(centre, radius)`: each centre lies outside the hull, at least its
+/// radius from every edge. Exact in integers.
+fn hull_clear_of_holes(hull: &[(i64, i64)], holes: &[((i64, i64), i64)]) -> bool {
+    holes.iter().all(|&(c, r)| {
+        let r2 = i128::from(r) * i128::from(r);
+        let n = hull.len();
+        let mut inside = n >= 3;
+        for k in 0..n {
+            let (a, b) = (hull[k], hull[(k + 1) % n]);
+            let (ex, ey) = (i128::from(b.0 - a.0), i128::from(b.1 - a.1));
+            let (px, py) = (i128::from(c.0 - a.0), i128::from(c.1 - a.1));
+            let cross = ex * py - ey * px;
+            if cross < 0 {
+                inside = false;
+            }
+            let dot = ex * px + ey * py;
+            let l2 = ex * ex + ey * ey;
+            let near = if dot <= 0 || l2 == 0 {
+                px * px + py * py < r2
+            } else if dot >= l2 {
+                let (qx, qy) = (i128::from(c.0 - b.0), i128::from(c.1 - b.1));
+                qx * qx + qy * qy < r2
+            } else {
+                // cross² < r² l2, in u128: |cross| < 2⁶³ here
+                cross.unsigned_abs().pow(2) < (r2 as u128) * (l2 as u128)
+            };
+            if near {
+                return false;
+            }
+        }
+        !inside
+    })
+}
+
 /// [`flow::overlaps`] in `i128` coordinates.
 fn overlaps128(poly: &[(i128, i128)], (x0, y0, x1, y1): (i128, i128, i128, i128)) -> bool {
     let bx = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
@@ -531,7 +570,9 @@ pub fn copper(
         let reach = (v.drill_nm / 2 + v.drill_nm % 2) + m.beta_nm + hole_radius(0, e) + 1;
         let region = Region::new(h, reach);
         let room = (v.via_nm as f64 / 2e6) - r0;
-        let fits = room > 0.0 && Iv::exact(room).sqr().lo >= Iv::exact(e_mm).sqr().scale(2.0).hi;
+        let fits = v.drill_nm > 2 * m.plating_nm
+            && room > 0.0
+            && Iv::exact(room).sqr().lo >= Iv::exact(e_mm).sqr().scale(2.0).hi;
         let priced = if fits && region.rays_inside(h, e) {
             let faces: Vec<(f64, (i64, i64), f64)> = region
                 .faces
@@ -759,7 +800,7 @@ pub fn copper(
             }
             // a cell meeting a raw knockout is out; one meeting only the
             // opening's ring is copper if witnessed ([`witnessed`])
-            let wit = m.opening_nm - ARC_NM;
+            let (cover, wit) = (m.opening_nm - ARC_NM, m.opening_nm + ARC_NM);
             let mut out: BTreeSet<(i64, i64)> = BTreeSet::new();
             let mut ring: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
             for (k, &(c, r, opens)) in knockouts.iter().enumerate() {
@@ -799,7 +840,7 @@ pub fn copper(
                     .map(|&(c, r, _)| (c, r))
                     .collect();
                 let hard = ring[&(i, j)].iter().any(|&k| !knockouts[k].2);
-                if hard || !witnessed((x0, y0, h), &near, inner, wit) {
+                if hard || !witnessed((x0, y0, h), &near, inner, cover, wit) {
                     out.insert((i, j));
                 } else {
                     admitted += 1;
@@ -898,7 +939,10 @@ pub fn copper(
                         (v.at.0 + e, v.at.1 + e),
                         (v.at.0 - e, v.at.1 + e),
                     ];
-                    if !hull_in_copper(&flow::convex_hull(&pts), &outer_shapes[li], 8) {
+                    let hull = flow::convex_hull(&pts);
+                    if !hull_in_copper(&hull, &outer_shapes[li], 8)
+                        || !hull_clear_of_holes(&hull, &holes)
+                    {
                         continue;
                     }
                 }
@@ -996,7 +1040,16 @@ pub fn copper(
                 .filter(|&(i, _)| i != k)
                 .map(|(_, v)| *v)
                 .sum();
-            let hi = stack.thickness.max_nm - copper_min - others;
+            // the declared maximum where there is one (and below the
+            // derived one), else the finished maximum less every other
+            // row's minimum
+            let derived = stack.thickness.max_nm - copper_min - others;
+            let i = stack
+                .dielectrics
+                .iter()
+                .position(|d| d.0 == *name && d.1 == stack.copper[k + 1]);
+            let declared = i.and_then(|i| stack.dielectric_max_nm.get(i).copied().flatten());
+            let hi = declared.map_or(derived, |d| d.min(derived));
             let lo = mins[k].max(0);
             if lo == 0 {
                 notes.push(format!(
@@ -1221,6 +1274,8 @@ pub struct Gate {
     /// margin (ruling S4).
     pub note: Option<String>,
     pub conditions: Vec<String>,
+    /// What the copper model left out or admitted, per net, for the record.
+    pub notes: Vec<String>,
 }
 
 fn refusal(kind: &'static str, message: String) -> crate::extract::Refused {
@@ -1303,6 +1358,21 @@ pub fn supplies(
     let mut out = Vec::new();
     for limit in limits {
         let d = &limit.domain;
+        // a limited domain the load has no pin on is refused by name: an
+        // empty side would leave no drop and no finding
+        for side in [d.as_str(), "GND"] {
+            if !pads_of(board, &mcu)
+                .iter()
+                .any(|p| p.net.as_deref() == Some(side))
+            {
+                return Err(refusal(
+                    "SupplyTerminalMissing",
+                    format!(
+                        "the load {mcu} has no pin on `{side}`, so the drop limit on `{d}` judges nothing"
+                    ),
+                ));
+            }
+        }
         // every part on the domain that can draw current is a declared
         // load naming it (the load ruling): cited, derived or declared,
         // never zeroed; the MCU and child regulators come from their rows,
@@ -1447,11 +1517,12 @@ pub fn supplies(
         let run = |net: &str,
                    from: &Pad,
                    sinks: &[&Pad]|
-         -> Result<Vec<PinResult>, crate::extract::Refused> {
+         -> Result<(Vec<PinResult>, Vec<String>), crate::extract::Refused> {
             let mut terminals = vec![from];
             terminals.extend(sinks.iter().copied());
             let nc = copper(board, &read.routed, net, &terminals, &model).map_err(to_refused)?;
-            Ok(sinks
+            let notes = nc.notes.iter().map(|n| format!("`{net}`: {n}")).collect();
+            let results = sinks
                 .iter()
                 .map(|p| match bound(&nc, &model, from, p, 400) {
                     Ok(b) => bounded_pin(p, &b),
@@ -1477,16 +1548,20 @@ pub fn supplies(
                         }
                     }
                 })
-                .collect())
+                .collect();
+            Ok((results, notes))
         };
         let vdd = mcu_pads(d);
         let vss = mcu_pads(gnd);
-        let pins = run(d, source_pad, &vdd)?;
+
+        let (pins, mut notes) = run(d, source_pad, &vdd)?;
         // the 2-layer return runs through a zone the emitted file leaves
         // unfilled: refused by name (ruling (iii))
         let gnd_plane = board.stack.planes.iter().any(|(_, n)| n == gnd);
         let returns = if gnd_plane {
-            run(gnd, ret_pad, &vss)?
+            let (r, n) = run(gnd, ret_pad, &vss)?;
+            notes.extend(n);
+            r
         } else {
             vss.iter()
                 .map(|p| PinResult::Refused {
@@ -1511,6 +1586,7 @@ pub fn supplies(
             drop_bound_microvolts: drop,
             note,
             conditions: conditions(),
+            notes,
         });
     }
     Ok(out)
@@ -1548,9 +1624,21 @@ pub fn pitch_note(drop_microvolts: Option<u64>, limit_millivolts: u32) -> Option
 }
 
 fn bounded_pin(p: &Pad, b: &PinBound) -> PinResult {
+    // µΩ, rounded up past the product's own rounding
+    let micro = (b.bound.energy.hi * 1e6).next_up().ceil();
+    if !(micro.is_finite() && (0.0..1e15).contains(&micro)) {
+        return PinResult::Refused {
+            pin: p.number.clone(),
+            kind: "SupplyPinUnbounded",
+            message: format!(
+                "the bound is not a finite resistance: {}",
+                b.bound.energy.hi
+            ),
+        };
+    }
     PinResult::Bounded {
         pin: p.number.clone(),
-        r_bound_microohms: (b.bound.energy.hi * 1e6).ceil() as u64,
+        r_bound_microohms: micro as u64,
     }
 }
 
@@ -1798,24 +1886,25 @@ mod tests {
     /// covers it. A cell at the raw edge is not; one well outside is.
     #[test]
     fn a_ring_cell_is_copper_only_when_a_witness_disc_covers_it() {
-        let w = OPENING_NM - ARC_NM;
+        let (w, clear) = (OPENING_NM - ARC_NM, OPENING_NM + ARC_NM);
         let k = ((0, 0), 500_000);
         let inner = (-10_000_000, -10_000_000, 10_000_000, 10_000_000);
         let h = PITCH_NM;
         // just outside the raw knockout: no disc of radius w both covers it
         // and clears the knockout
-        assert!(!witnessed((500_000, 0, h), &[k], inner, w));
+        assert!(!witnessed((500_000, 0, h), &[k], inner, w, clear));
         // farther out, within the conservative ring
-        assert!(witnessed((560_000, 0, h), &[k], inner, w));
+        assert!(witnessed((560_000, 0, h), &[k], inner, w, clear));
         // the same cell pinched between two knockouts is not
         let k2 = ((1_180_000, 31_250), 500_000);
-        assert!(!witnessed((560_000, 0, h), &[k, k2], inner, w));
+        assert!(!witnessed((560_000, 0, h), &[k, k2], inner, w, clear));
         // nor next to the board's raw edge
         assert!(!witnessed(
             (560_000, 0, h),
             &[k],
             (0, -10_000_000, 600_000, 10_000_000),
-            w
+            w,
+            clear
         ));
     }
 
@@ -1850,6 +1939,11 @@ mod tests {
             (-75_000, 75_000),
         ];
         assert!(!hull_in_copper(&flow::convex_hull(&outside), &shapes, 8));
+        // and clear of every hole: one inside it, or reaching an edge, fails
+        let hull = flow::convex_hull(&inside);
+        assert!(hull_clear_of_holes(&hull, &[((300_000, 300_000), 100_000)]));
+        assert!(!hull_clear_of_holes(&hull, &[((200_000, 0), 10_000)]));
+        assert!(!hull_clear_of_holes(&hull, &[((350_000, 100_000), 50_000)]));
     }
 
     /// A via whose pad cannot hold the band at every hole position is left
@@ -1917,6 +2011,7 @@ mod tests {
         ];
         b.stack.thickness.min_nm = 1_250_000;
         b.stack.thickness.max_nm = 1_851_000;
+        b.stack.dielectric_max_nm = vec![None; 3];
         b.stack.dielectrics = vec![
             ("F.Cu".into(), "In1.Cu".into(), 179_000, "s".into()),
             ("In1.Cu".into(), "In2.Cu".into(), 891_000, "s".into()),

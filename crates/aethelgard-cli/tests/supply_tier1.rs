@@ -151,6 +151,18 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
     );
 }
 
+/// A limit on a domain the MCU has no pin on judges nothing, so it is
+/// refused by name rather than passed.
+#[test]
+fn a_limit_on_a_domain_the_load_does_not_use_is_refused() {
+    let mut v = gated(s03(), 165);
+    v["power"]["drop_limits"] =
+        json!([{"domain": "VDD_5V", "max_millivolts": 250, "source": "test: the limit"}]);
+    let (code, r) = extract(s03_board(), &write("five", &v));
+    assert_eq!(code, 2, "{r}");
+    assert_eq!(r["error"]["kind"], "SupplyTerminalMissing", "{r}");
+}
+
 /// The four-layer board: every MCU supply and return pin bounded, from the
 /// buck's inductor pad and to its PGND pin, and the drop within 165 mV.
 #[test]

@@ -468,7 +468,8 @@ impl Network {
     ///   plating's injection);
     /// - every joint names an edge, at most one joint per edge;
     /// - every edge is a face of an element at one end at least, or a joint:
-    ///   an edge no element prices would carry flux for nothing.
+    ///   an edge no element prices would carry flux for nothing;
+    /// - every node with an edge is a terminal or has an element.
     ///
     /// The bound's validity rests on these: a flux no element prices, or a
     /// node whose divergence no field carries, would lower it unsoundly.
@@ -557,7 +558,14 @@ impl Network {
             at[b].push(e);
         }
         for (node, o) in owner.iter().enumerate() {
-            let Some((k, faces, tall)) = *o else { continue };
+            let Some((k, faces, tall)) = *o else {
+                // a node no element owns, not a terminal, joins its edges
+                // for nothing: an unpriced short
+                if node != source && node != sink && !at[node].is_empty() {
+                    return bad(format!("node {node} has edges and no element"));
+                }
+                continue;
+            };
             for &e in &at[node] {
                 if !faces.contains(&Some(e)) && !(tall && joint[e]) {
                     return bad(format!("edge {e} at node {node} is no face of element {k}"));
@@ -2644,6 +2652,22 @@ mod tests {
         short.edge(s, t, 1.0);
         assert!(matches!(
             short.bound(s, t, 100, 1e-12),
+            Err(FlowError::Malformed(_))
+        ));
+        // a node with edges and no element between the terminals
+        let mut bare = Network::default();
+        let (bs, bt) = (bare.node(), bare.node());
+        let mid = bare.node();
+        let e1 = bare.edge(bs, mid, 1.0);
+        let e2 = bare.edge(mid, bt, 1.0);
+        for e in [e1, e2] {
+            bare.elements.push(Element::Joint {
+                edge: e,
+                kappa: Iv::exact(1.0),
+            });
+        }
+        assert!(matches!(
+            bare.bound(bs, bt, 10, 1e-12),
             Err(FlowError::Malformed(_))
         ));
         // a cell's face swapped for an edge that is not its own
