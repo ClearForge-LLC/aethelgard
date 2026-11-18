@@ -325,7 +325,8 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
   - `cargo test --workspace` 2178 passed, 0 failed, after the merge;
   - `ci/shard.sh plan` in the image: guard ok, 2382 tests, 188 tier 2;
   - `TIER2_MIN` 188: `4400e3`'s 183 plus these five, a comment line naming each;
-  - CI green on `36fc6eba` before the merge (run 44193015808, `tier2_tests_passed=185 floor=185`).
+  - CI green on `36fc6eba` before the merge (run 44193015808, `tier2_tests_passed=185 floor=185`);
+  - CI green on `8e6420f0`, the last code commit, merge and B10 included (run 44210983331, `tier2_tests_passed=188 floor=188`).
 
 ## 11. Adversarial pass (WO §5), targeted
 
@@ -391,6 +392,7 @@ It was run by a fresh read-only subagent over the diff. Each change applied was 
   - FEEDBACK: `36fc6eba`;
   - `main` `d0381216` (`4400e3`) merged: `26466f3c`, with `TIER2_MIN` 188;
   - the close-out review's assertions: `9f93c4d4`;
-  - B10 as ruled, then the READY commit.
+  - B10 as ruled: `8e6420f0`;
+  - the READY commit (this record only).
 - **Evidence:** `~/.cache/aet-4220c/` (the TDK copies under `tdk/` with `SOURCE.txt`, the mutant harness under `mut/`, the image runs).
 - **Not built (WO "is NOT"):** no change to the data registers' behaviour; no interrupts or INT pins for the FIFO; no APEX.
