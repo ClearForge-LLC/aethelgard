@@ -28,6 +28,9 @@ pub fn kicad_id(name: &str) -> Option<&'static str> {
 /// source for the via ring rule and the supply gate's holes.
 pub fn diagonal_nm(e_nm: i64) -> i64 {
     let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
+    // belt-and-suspenders: the float's ceiling is exact for every e up to
+    // 3 mm (measured; the IR caps a tolerance at 1 mm), so this never
+    // raises it; it keeps the exactness from resting on that
     while 2 * i128::from(e_nm).pow(2) > i128::from(d).pow(2) {
         d += 1;
     }
@@ -126,12 +129,12 @@ pub struct Stack {
     /// tolerances (`AET-WO-1314`).
     pub via_nm: i64,
     pub drill_nm: i64,
-    /// The nets (by the board's name) `extract` bounds and the
-    /// specification gives a capacitance bound: each I2C bus's SDA and SCL,
-    /// each SPI bus's SCK and MOSI (`extract::lines`), where declared in
-    /// `net_constraints`. The capacitance ladder prices their vias
-    /// (`AET-WO-1314`); a constrained net `extract` does not bound is not
-    /// among them.
+    /// The nets (by the board's name) `extract` bounds: each I2C bus's SDA
+    /// and SCL, each SPI bus's SCK and MOSI (`extract::lines`), each of
+    /// which `validate` requires a capacitance bound for
+    /// (`MissingBusConstraint`, `MissingSpiConstraint`). The capacitance
+    /// ladder prices their vias (`AET-WO-1314`); a constrained net
+    /// `extract` does not bound is not among them.
     pub bounded: Vec<String>,
     /// What the ring rule changed that the specification did not declare:
     /// each thermal array's via raised to it, for the verdict.
@@ -283,7 +286,6 @@ impl Stack {
                         .iter()
                         .flat_map(|b| [&b.sck.net, &b.mosi.net]),
                 )
-                .filter(|n| spec.net_constraints.iter().any(|c| &c.net_name == *n))
                 .map(|n| board_net(spec, n))
                 .collect(),
             copper: b.layers.iter().map(|l| l.name.clone()).collect(),
