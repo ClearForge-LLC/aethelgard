@@ -600,3 +600,14 @@ Reduction pass (diff): +12 net (rustfmt) · 1 duplicate removed · 0 dead paths 
 - **`4400c2` D2/D3, the USART receive line.**
   - **Closed for this order:** no foreign witness needs SERIAL0 receive (§1.1; the serial witness is dropped).
   - The row stays held as it was.
+
+## Gates at READY (this commit's tree)
+
+- **Gates:** fmt and bridge fmt clean; clippy clean (workspace, and with `with-tools`); 132 suites, 2,196 passed, 0 failed.
+- **CI's package step, run on the host:** every crate packages, and the CLI builds from the packages and validates. The tools image has no `jq`.
+- **`ci/foreign-judge.sh` in the tools image:** all seven runs as expected.
+- **Generated verdicts, `main` (65622f70) against this tree:**
+  - 54 of 54 archive files are byte-identical;
+  - 32 of 34 verdict lines are identical;
+  - the two `simulate` verdicts differ only in `input.path` and the memory sample.
+- **Scratch removed:** the renode-infrastructure clone, the mutation tree and the runner temp. The evidence stays in `~/.cache/aet-4400e`: `thin*`, `selfwrite/`, `m5/` and `verdicts/`.
