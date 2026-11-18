@@ -2373,7 +2373,7 @@ esac
 case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac
 case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
-case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"(offset in (0xc, 0x10c)) and (value >> 7) & 1 and "*) ;; *) exit 92;; esac
+case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset == 0x18 and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
 case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 {hash}
 /bin/cat '{out}'
@@ -2592,6 +2592,28 @@ fn a_foreign_boot_s_flash_locked_accesses_and_warnings_are_reported() {
     ));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["boot"]["erases"][0]["start"], "0x081e0000", "{v}");
+    // A mass erase (MER) erases its own flash; an option-byte change
+    // (OPTSTART) is info, with its time.
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{}", good_foreign_log(), erase.replace(" c 84", " 18 10")),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["flash_overwritten"], "{v}");
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{}", good_foreign_log(), erase.replace(" c 84", " 18 2")),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["option_changes"][0], 20_000_000u64, "{v}");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "flash_option_change" && f["severity"] == "info"),
+        "{v}"
+    );
     let (_, v) = foreign(&foreign_transcript_flash(
         &good_foreign_log(),
         "0x00000800",

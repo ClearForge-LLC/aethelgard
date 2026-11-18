@@ -437,3 +437,28 @@ Written before the run. CI's ArduPilot ELF (a799dfb6), this CLI, `--foreign 4000
   - the 54 campaign archive files are byte-identical;
   - 32 of the 34 verdict lines are identical;
   - the two `simulate` verdicts differ only in `input.path` (each tree's own) and the memory sample, as in the last comparison.
+
+## R1 ruled (PR #212, comment 6966155027): the four conditions, built
+
+1. **The oracle is the ELF, on the host.**
+   - It already was: `elf::flash_loads` hashes each loaded flash segment's file bytes before the run, and the judge compares Renode's post-run read with that.
+   - No pre-run read happens in the twin.
+   - The tier-2 controls also hash each segment in the test itself and assert that it equals the verdict's `expected_sha256`.
+2. **The weakening is named in the rule table:**
+   - A store that changes a word of an own segment, and a later store that restores it with no erase between, passes.
+   - Silicon cannot do that. Programming only clears bits, and "these operations do not support the return of a bit to its virgin state. In this case an erase operation of the entire sector is required" (RM0433 Rev 9 §4.3.9 "FLASH program operations", p. 161; the same page advises against overwriting a non-virgin flash word).
+   - So any change and restore needs an erase, which the `START` hook fails.
+3. **Every erase the header defines:**
+   - sector (`SER` + `SNB`) and bank (`BER`) on `FLASH_CR1`/`CR2` with `START`;
+   - mass erase, `MER` on `FLASH_OPTCR`. It sets `BER1`, `BER2`, `START1` and `START2`, per RM0433's `FLASH_OPTCR` description, so it is judged as both banks.
+   - Offsets come from `FLASH_TypeDef`, bits from `FLASH_CR_*_Pos` and `FLASH_OPTCR_*_Pos`, and sizes from `FLASH_SECTOR_SIZE` × `FLASH_SECTOR_TOTAL`.
+   - `OPTSTART` is the `info` finding `flash_option_change`, with each time in `boot.option_changes`.
+   - Not shown to change an own segment's protection: ArduPilot's 4 s run writes no `FLASH_OPTCR` (its summarised warnings list no offset 0x18). So no stop.
+4. **The controls are tier-2 tests** in `twin_tier2.rs`, each refused by name, on the reference platform under `--foreign 10ms`:
+   - `a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten`;
+   - `a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds`;
+   - `a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding` (bank 2 sector 6, ArduPilot's real case).
+   - All three passed in the tools image (3 passed, 11.6 s).
+   - TIER2_MIN 183 → 186.
+   - They join §2's mutation list: the hash compare, the hash-count check, the erase overlap, the `MER` bit, and `OPTSTART` as info.
+   - Tier 1 adds the `MER` fail and the `OPTSTART` info, and requires the erase hook's exact argv.

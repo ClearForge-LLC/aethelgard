@@ -364,7 +364,7 @@ jobs:
       # is the build the RETTOBASE correction is for; the fixture's nested
       # handler reads RETTOBASE 1 without it, and 0 with it, no other bit
       # moving), merged after 1313c's 180.
-      TIER2_MIN: "183"
+      TIER2_MIN: "186"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

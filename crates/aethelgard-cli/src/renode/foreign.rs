@@ -156,7 +156,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "flash controller access",
         "replaced",
-        "the firmware's own loaded flash bytes are unchanged after the run: the judge hashes each loaded flash segment in Renode and compares it with the ELF's (ruled on PR #212, comment 6965511448). Weakens: writes elsewhere in flash are not judged",
+        "no write inside its own loaded flash (ruled on PR #212, comments 6965511448 and 6966155027): each loaded flash segment's sha256, from the ELF's file bytes on the host, equals Renode's read of it after the run; and no erase it starts (SER with SNB, BER, or MER, each from ST's header) overlaps one; an option-byte change (OPTSTART) is info. Weakens: writes elsewhere in flash are not judged; a store that changes a word of an own segment and a later store that restores it, with no erase between, passes, which silicon cannot do: programming only clears bits, and a bit returns to 1 only by erasing its whole sector (RM0433 Rev 9 §4.3.9, p. 161), an erase the hook fails",
     ),
     (
         "motor outputs",
@@ -290,6 +290,8 @@ pub struct ForeignBoot {
     pub flash: Vec<FlashReport>,
     /// Each flash erase the firmware started, as the erase hook logs it.
     pub erases: Vec<EraseReport>,
+    /// The virtual time of each option-byte change it started (`info`).
+    pub option_changes: Vec<Option<u64>>,
     /// Accesses to a peripheral whose clock was off (`info`).
     pub locked: Vec<LockedReport>,
     pub unobservable: Vec<String>,
@@ -366,16 +368,29 @@ const ERASE_MARK: &str = "AETHELGARD-ERASE ";
 
 /// The flash controller's erase facts, every one from ST's header
 /// (`RUL-16`): each bank's control register offset in `FLASH_TypeDef` with
-/// the bank's base, the bits `SER`, `BER` and `START`, the field `SNB`, and
-/// the sector size; a bank is `FLASH_SECTOR_TOTAL` sectors.
+/// the bank's base; `FLASH_OPTCR`'s offset; the bits `SER`, `BER`, `START`,
+/// `MER` and `OPTSTART`, the field `SNB`, and the sector size; a bank is
+/// `FLASH_SECTOR_TOTAL` sectors.
 pub struct Erase {
     banks: [(u32, u64); 2],
+    optcr: u32,
     ser: u32,
     ber: u32,
     start: u32,
+    mer: u32,
+    optstart: u32,
     snb: (u32, u32),
     sector: u64,
     bank: u64,
+}
+
+/// What a logged flash-controller write starts.
+#[derive(Debug, PartialEq, Eq)]
+enum Started {
+    /// An erase of `[start, end)`.
+    Erase(u64, u64),
+    /// An option-byte change (`OPTSTART`).
+    Options,
 }
 
 impl Erase {
@@ -397,9 +412,12 @@ impl Erase {
                     u64::from(f.value("FLASH_BANK2_BASE").map_err(hal)?),
                 ),
             ],
+            optcr: layout.offset("OPTCR", 0).map_err(hal)?,
             ser: f.position("FLASH_CR_SER_Pos").map_err(hal)?,
             ber: f.position("FLASH_CR_BER_Pos").map_err(hal)?,
             start: f.position("FLASH_CR_START_Pos").map_err(hal)?,
+            mer: f.position("FLASH_OPTCR_MER_Pos").map_err(hal)?,
+            optstart: f.position("FLASH_OPTCR_OPTSTART_Pos").map_err(hal)?,
             snb: f.field("FLASH_CR_SNB").map_err(hal)?,
             sector,
             bank: sector * u64::from(f.value("FLASH_SECTOR_TOTAL").map_err(hal)?),
@@ -407,34 +425,61 @@ impl Erase {
     }
 
     /// The hook on the flash controller's writes that logs each write to a
-    /// bank's control register with `START` set; every other write passes
+    /// bank's control register with `START` set, and each write to
+    /// `FLASH_OPTCR` with `MER` or `OPTSTART` set; every other write passes
     /// unlogged and unchanged.
     pub fn hook(&self) -> String {
         format!(
-            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"(offset in ({:#x}, {:#x})) and (value >> {}) & 1 and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
-            self.banks[0].0, self.banks[1].0, self.start
+            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in ({:#x}, {:#x})) and (value >> {}) & 1 or offset == {:#x} and ((value >> {}) & 1 or (value >> {}) & 1)) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
+            self.banks[0].0, self.banks[1].0, self.start, self.optcr, self.mer, self.optstart
         )
     }
 
-    /// The flash a logged `START` write erases, `[start, end)`: the bank
-    /// with `BER`, else the sector `SNB` names with `SER`, else nothing.
-    fn range(&self, body: &str) -> Option<(u64, u64)> {
-        let text = body
-            .strip_prefix("[WARNING] flashController: ")?
-            .strip_prefix(ERASE_MARK)?;
-        let (offset, value) = text.split_once(' ')?;
-        let offset = u32::from_str_radix(offset, 16).ok()?;
-        let value = u32::from_str_radix(value.trim(), 16).ok()?;
-        let base = self.banks.iter().find(|(o, _)| *o == offset)?.1;
-        if value >> self.ber & 1 == 1 {
-            return Some((base, base + self.bank));
+    /// What a logged write starts. On a bank's control register: the bank
+    /// with `BER`, else the sector `SNB` names with `SER`, else nothing. On
+    /// `FLASH_OPTCR`: both banks with `MER` (which sets `BER1`, `BER2`,
+    /// `START1` and `START2`, RM0433 Rev 9 `FLASH_OPTCR`), and an option-byte
+    /// change with `OPTSTART`.
+    fn started(&self, body: &str) -> Vec<Started> {
+        let Some(text) = body
+            .strip_prefix("[WARNING] flashController: ")
+            .and_then(|t| t.strip_prefix(ERASE_MARK))
+        else {
+            return Vec::new();
+        };
+        let Some((offset, value)) = text.split_once(' ').and_then(|(o, v)| {
+            Some((
+                u32::from_str_radix(o, 16).ok()?,
+                u32::from_str_radix(v.trim(), 16).ok()?,
+            ))
+        }) else {
+            return Vec::new();
+        };
+        let bit = |at: u32| value >> at & 1 == 1;
+        let mut out = Vec::new();
+        if offset == self.optcr {
+            if bit(self.mer) {
+                out.push(Started::Erase(self.banks[0].1, self.banks[1].1 + self.bank));
+            }
+            if bit(self.optstart) {
+                out.push(Started::Options);
+            }
+            return out;
         }
-        if value >> self.ser & 1 == 1 {
+        let Some(&(_, base)) = self.banks.iter().find(|(o, _)| *o == offset) else {
+            return out;
+        };
+        if !bit(self.start) {
+            return out;
+        }
+        if bit(self.ber) {
+            out.push(Started::Erase(base, base + self.bank));
+        } else if bit(self.ser) {
             let (at, width) = self.snb;
             let at = base + u64::from(value >> at & ((1 << width) - 1)) * self.sector;
-            return Some((at, at + self.sector));
+            out.push(Started::Erase(at, at + self.sector));
         }
-        None
+        out
     }
 }
 
@@ -676,6 +721,7 @@ pub fn report(
         warnings: Vec::new(),
         flash: Vec::new(),
         erases: Vec::new(),
+        option_changes: Vec::new(),
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
         rules: RULES
@@ -882,27 +928,42 @@ pub fn judge(
     // (a sector erased and reprogrammed alike leaves the hash unchanged).
     let erase = Erase::facts()?;
     for line in &run_log {
-        let Some((start, end)) = erase.range(log_text(line)) else {
-            continue;
-        };
         let at_ns = log_stamped(line).map(|(ns, _)| ns);
-        if let Some(f) = flash
-            .iter()
-            .find(|f| f.address < end && start < f.address + f.len)
-        {
-            findings.push(Finding::plain(
-                "flash_overwritten",
-                format!(
-                    "the firmware started an erase of {start:#010x}..{end:#010x}, which holds its own loaded flash bytes at {:#010x}",
-                    f.address
-                ),
-            ));
+        for started in erase.started(log_text(line)) {
+            let (start, end) = match started {
+                Started::Erase(start, end) => (start, end),
+                Started::Options => {
+                    report.option_changes.push(at_ns);
+                    continue;
+                }
+            };
+            if let Some(f) = flash
+                .iter()
+                .find(|f| f.address < end && start < f.address + f.len)
+            {
+                findings.push(Finding::plain(
+                    "flash_overwritten",
+                    format!(
+                        "the firmware started an erase of {start:#010x}..{end:#010x}, which holds its own loaded flash bytes at {:#010x}",
+                        f.address
+                    ),
+                ));
+            }
+            report.erases.push(EraseReport {
+                at_ns,
+                start: format!("{start:#010x}"),
+                end: format!("{end:#010x}"),
+            });
         }
-        report.erases.push(EraseReport {
-            at_ns,
-            start: format!("{start:#010x}"),
-            end: format!("{end:#010x}"),
-        });
+    }
+    if !report.option_changes.is_empty() {
+        findings.push(Finding::info(
+            "flash_option_change",
+            format!(
+                "the firmware started {} option-byte changes (OPTSTART), each time in boot.option_changes; their effect on its own segments' protection is not judged",
+                report.option_changes.len()
+            ),
+        ));
     }
     // The firmware's own loaded flash bytes, unchanged after the run.
     for (f, line) in flash.iter().zip(&hashes) {
@@ -1205,21 +1266,40 @@ mod tests {
         let line = |offset: &str, value: &str| {
             format!("[WARNING] flashController: {ERASE_MARK}{offset} {value}")
         };
-        assert_eq!(e.range(&line("c", "184")), Some((0x0802_0000, 0x0804_0000)));
+        let erase = |a, b| vec![Started::Erase(a, b)];
         assert_eq!(
-            e.range(&line("10c", "784")),
-            Some((0x081E_0000, 0x0820_0000))
+            e.started(&line("c", "184")),
+            erase(0x0802_0000, 0x0804_0000)
         );
         assert_eq!(
-            e.range(&line("10c", "88")),
-            Some((0x0810_0000, 0x0820_0000))
+            e.started(&line("10c", "784")),
+            erase(0x081E_0000, 0x0820_0000)
         );
-        assert_eq!(e.range(&line("c", "80")), None);
-        assert_eq!(e.range(&line("14", "184")), None);
-        assert_eq!(e.range("[WARNING] spi1: AETHELGARD-ERASE c 184"), None);
+        assert_eq!(
+            e.started(&line("10c", "88")),
+            erase(0x0810_0000, 0x0820_0000)
+        );
+        // MER erases both banks; OPTSTART is an option-byte change.
+        assert_eq!(
+            e.started(&line("18", "10")),
+            erase(0x0800_0000, 0x0820_0000)
+        );
+        assert_eq!(e.started(&line("18", "2")), [Started::Options]);
+        assert_eq!(
+            e.started(&line("18", "12")),
+            [Started::Erase(0x0800_0000, 0x0820_0000), Started::Options]
+        );
+        // START without SER or BER, SER without START, another register: nothing.
+        assert!(e.started(&line("c", "80")).is_empty());
+        assert!(e.started(&line("c", "104")).is_empty());
+        assert!(e.started(&line("14", "184")).is_empty());
+        assert!(
+            e.started("[WARNING] spi1: AETHELGARD-ERASE c 184")
+                .is_empty()
+        );
         let hook = e.hook();
         assert!(
-            hook.contains("(offset in (0xc, 0x10c)) and (value >> 7) & 1"),
+            hook.contains("((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset == 0x18 and ((value >> 4) & 1 or (value >> 1) & 1))"),
             "{hook}"
         );
     }

@@ -415,10 +415,12 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
   - Every exemption is counted in `boot.spi_errors_exempted`.
   - Any other `[ERROR]` is `renode_error_log`.
 
-**The flash** (ruled: never a write inside its own loaded ranges):
-- after the run, Renode hashes each loaded flash segment; a change from the ELF's bytes is `flash_overwritten`;
-- a hook logs each write to a bank's `FLASH_CR` that sets `START`; a sector or bank erase overlapping a loaded flash segment is `flash_overwritten`, even when reprogrammed alike. Every offset, bit and size is ST's header's. `boot.flash` and `boot.erases` list both.
-- Writes elsewhere in flash, such as a parameter store, are not judged.
+**The flash** (ruled on PR #212, comments 6965511448 and 6966155027: never a write inside its own loaded ranges):
+- the CLI hashes each loaded flash segment's file bytes from the ELF, on the host, before the run; Renode reads the same range after it. A difference is `flash_overwritten`. The twin never witnesses itself (`INV-07`).
+- a hook logs each flash-controller write that starts an erase or an option change: `START` with `SER` (and `SNB`) or `BER` on a bank's `FLASH_CR`, or `MER` on `FLASH_OPTCR`. An erase overlapping a loaded flash segment is `flash_overwritten`, even when reprogrammed alike. Every offset, bit and size is ST's header's.
+- `OPTSTART` (an option-byte change) is the `info` finding `flash_option_change`. Its effect on protection is not judged.
+- `boot.flash`, `boot.erases` and `boot.option_changes` list all three.
+- Weakens: writes elsewhere in flash (a parameter store, say) are not judged. A store that changes a word of an own segment and a later store that restores it, with no erase between, passes. Silicon cannot do that: programming only clears bits, and a bit returns to 1 only by erasing its sector (RM0433 Rev 9 §4.3.9, p. 161), which the hook fails.
 
 **The log** (D7): the 8 MiB budget stands. Renode's own `Unhandled write` warnings are kept once per kind (the line with its written value elided); `boot.warnings` lists each kind with its count and first and last virtual time. A generated boot's filter is unchanged.
 
