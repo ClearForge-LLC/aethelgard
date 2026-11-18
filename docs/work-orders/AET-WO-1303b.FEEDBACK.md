@@ -226,7 +226,7 @@ Local, on this head [measured]:
 - `cargo test --workspace`: green (exit 0).
 - CI's package step: every publishable crate packages (201 files, 3.1 MiB).
 
-CI on the PR: green, recorded in the PR's READY commit.
+CI on the PR, head `bf6f6ae6`: run 44298800920 green (gates and every tools shard). The tier-2 canary aggregated `tier2_tests_passed=191 floor=191`. The engine and ArduPilot image runs (44298800883, 44298800885) are green too [measured].
 
 `TIER2_MIN` stays 191: this order adds no tier-2 test. Tier 2 asserts nothing on `extract` for the changed fixtures (checked: `with_tools.rs` reads the pair stand-in's DRC only).
 
