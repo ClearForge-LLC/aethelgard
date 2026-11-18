@@ -1,0 +1,22 @@
+From b14469bba68dfa40218050eb1cbeae156b1495c8 Mon Sep 17 00:00:00 2001
+From: Dominik Malkowiak <dmalkowiak@internships.antmicro.com>
+Date: Wed, 21 Oct 2026 16:17:54 +0200
+Subject: [PATCH] [#106524]: STM32H7_RCC: Propagate clock during peripheral
+ registration
+
+---
+ .../Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs         | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs b/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
+index c965bc692..17737681f 100644
+--- a/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
+@@ -54,6 +54,7 @@ public void Register(IPeripheral peripheral, EnumRegistrationPoint<RegistrationP
+             }
+ 
+             RegisteredPeripherals.Add(registrationPoint.Name, peripheral);
++            PropagateClock();
+         }
+ 
+         public void Unregister(IPeripheral peripheral)

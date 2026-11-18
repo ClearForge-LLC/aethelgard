@@ -1,0 +1,37 @@
+--- a/src/Emulator/Peripherals/Peripherals/Timers/STM32_Timer.cs	2026-11-18 17:04:35.067829658 +0000
++++ b/src/Emulator/Peripherals/Peripherals/Timers/STM32_Timer.cs	2026-11-18 17:04:35.075608093 +0000
+@@ -21,7 +21,7 @@
+ {
+     // This class does not implement advanced-control timers interrupts
+     [AllowedTranslations(AllowedTranslation.ByteToDoubleWord | AllowedTranslation.WordToDoubleWord)]
+-    public class STM32_Timer : LimitTimer, IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IRegisterablePeripheral<IGPIOReceiver, NumberRegistrationPoint<int>>, IRegisterablePeripheral<IGPIOReceiver, NullRegistrationPoint>, IGPIOReceiver
++    public class STM32_Timer : LimitTimer, IDoubleWordPeripheral, IKnownSize, INumberedGPIOOutput, IRegisterablePeripheral<IGPIOReceiver, NumberRegistrationPoint<int>>, IRegisterablePeripheral<IGPIOReceiver, NullRegistrationPoint>, IGPIOReceiver, IHasFrequency
+     {
+         public STM32_Timer(IMachine machine, ulong frequency, uint initialLimit) : base(machine.ClockSource, frequency, limit: initialLimit, direction: Direction.Ascending, enabled: false, eventEnabled: true, autoUpdate: false)
+         {
+@@ -797,6 +797,25 @@
+         private readonly IMachine machine;
+         private readonly IBusController sysbus;
+         private readonly Dictionary<int, IGPIO> connections;
++        // The RCC sets the kernel clock through IHasFrequency (STM32H7_RCC.UpdatePeripheralsFrequency).
++        // The counter is the base LimitTimer; each capture/compare channel is its own LimitTimer,
++        // built with the constructor frequency, so it is retuned with the counter here.
++        public new ulong Frequency
++        {
++            get => base.Frequency;
++            set
++            {
++                base.Frequency = value;
++                foreach(var channel in channels)
++                {
++                    if(channel != null && channel.Timer != null)
++                    {
++                        channel.Timer.Frequency = value;
++                    }
++                }
++            }
++        }
++
+         private const int NumberOfCCChannels = 4;
+ 
+         // Does not resemble an actual pin, just serves the purpose

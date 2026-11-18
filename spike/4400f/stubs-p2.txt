@@ -1,0 +1,2 @@
+# P2: the RCC at Debug, so its propagation and peripheral resets are logged with virtual timestamps
+logLevel 0 rcc

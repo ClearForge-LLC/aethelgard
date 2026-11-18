@@ -79,3 +79,170 @@
 | P13 | **"Static" is not static here.** Under (a) and (c) the stock RCC still pushes on `CR`, `CFGR`, `D1CFGR` and `D2CFGR` writes. On ArduPilot a timer that is not reset afterwards runs at the RCC's figure, 200 MHz, the same as declared. So for ArduPilot it is invisible, and it is read back for every timer ArduPilot uses. The generated firmware writes none of the four, so the declared value holds. |
 | P14 | **`machine Reset`** (droop runs reset the machine): the RCC's `Reset()` propagates the HSI clock, and each timer's `Reset()` restores its constructor value, so the result depends on the order. Predicted: the timers read their constructor value after a reset (250 MHz on the baseline). Measured. |
 | P15 | **The 4 s cap.** `--foreign` above 4000 ms is refused (`time_up_to`, `FOREIGN_MAX_VIRTUAL_NS`), so measuring the window under (b)/(c) needs that bound raised in the scratch tree: a labelled deviation. The `3500ms`/`3590ms` cases of `ci/foreign-judge.sh` move with it. |
+
+## §2 Measured (2026-11-18, Furnace, the pinned tools image `e5fc7ddb`, build `.aet1605`)
+
+**How it was measured.** Everything here is under `spike/4400f/`; runs and logs are in `~/.cache/aet-4400f/runs`.
+- **The candidates are one CLI patch** (`patches/cli-candidates.patch`), applied to a scratch copy of this branch and never to it. Each knob is a labelled deviation, read from the environment:
+  - `AET4400F_CLOCK=solved` (a): update entries from `SolvedClock`.
+  - `AET4400F_CLOCK=declared:…` (c): the declared values.
+  - `AET4400F_FOLLOW=b|bp` (b, b′): a monitor hook (`py/clock.py`) that does what upstream `b14469bba` and `f2ac99657` do. It propagates the RCC's clock after the load and at each timer's next `CR1` write after a reset. `bp` also retunes the timer's capture/compare channels.
+  - `AET4400F_TIMER_HZ` sets the judge's frequency; `AET4400F_CEIL` see below; `AET4400F_FOREIGN_MAX_NS` raises the 4 s cap (P15).
+- **The patched CLI with no knob** reproduces main byte for byte (control `ctl`; only `memory` and the input path differ).
+- **Each generated firmware ELF was built once by main's CLI and reused** for every candidate.
+- **Noise floor:** two baseline runs of each verdict differ only in `memory`.
+- **Host load:** the `1314` builder ran beside this, at a load average of 4–26 on 20 cores, so wall times are ±30 %. One baseline `--foreign` run was killed at the RSS cap (finding F1).
+- **The driver** (`drive.py`, from 4400e's) boots ArduPilot from the CLI's own captured monitor script (`sh/capture.sh`), and reads each timer's `Frequency`, the SysTick's, `usart1 BaudRate` and the RCC's registers every step.
+
+### The mechanism (P2, P11–P14)
+
+- **ArduPilot's TIM5 is pushed to 200 MHz, then reset to 250 MHz** (RCC log at Debug, `runs/p2/console.log`):
+  - at 3.77 µs it is pushed to 32 MHz;
+  - at 3.98 µs it is pushed to 200 MHz, and SysTick to 400 MHz;
+  - at 0.900 ms ChibiOS resets every timer (`Resetting TIM2` … `TIM17`);
+  - from 2 ms on, `timer5 Frequency` reads 250,000,000.
+- **An update entry reaches the constructor:** `timer5: frequency: 200000000` reads 200 MHz at load, and so does its channel 1's compare timer. `usart1: frequency: 72000000` gives `BaudRate` 72 MHz ÷ `BRR`.
+- **SysTick loads at 64 MHz, not 480 MHz.** The RCC's constructor `Reset()` pushes HSI into the `systick` it is handed, after `stm32h743.repl` sets 480 MHz. ArduPilot's writes move it to 400 MHz. DWT stays at 250 MHz.
+- **`machine Reset`:** each timer reads its constructor value afterwards (250 MHz on the stock emission, the declared value under an update entry); SysTick reads 64 MHz.
+- **A propagated timer's channels stay at 250 MHz** (`propagate()` then `chan_freq`: `timer2` at 64 MHz, its channel 1 at 250 MHz). `retune()` fixes them.
+- **Renode realizes a timer's period in whole nanoseconds, rounded up:**
+  - Virtual time's resolution is 1 ns (`TimeInterval.cs` L291, `TicksPerNanosecond = 1`).
+  - At the limit the residue is dropped and the time to the next limit is rounded up (`BaseClockSource.cs` L315–L325).
+  - At 250 and 200 MHz a tick is a whole number of ns, so this is exact. At 64 MHz a DShot600 period of 106 ticks (1,656.25 ns) runs as 1,657 ns. The measured mean over 1,205 periods is 1,657.004 ns.
+- **Renode drops the kernel-clock selections.** ArduPilot writes `RCC_D2CCIP2R` `0xE01009` (`USART16SEL` and `USART234578SEL` = `PLL2_Q`, `I2C123SEL` = `PLL3_R`). Renode's RCC holds those fields as tags, logs "Unhandled write to offset 0x54", and reads the register back as 0.
+  - The registers that set the timers' clock are modelled and read back: `PLLCKSELR` `0x408040`, `PLL1DIVR` `0x01090231`, `D1CFGR` `0x48`, `D2CFGR` `0x440`, `CFGR` `0x801B`. They decode to 400 MHz `sys_ck` and 200 MHz timers.
+
+### ArduPilot (`simulate --foreign`; `sentinel-02-own`; CI's ELF `a799dfb6`)
+
+| Candidate | ArduPilot µs / virtual µs | `usart1 BaudRate` | U4 identity | Barometers (U2) | U5 identity | U5 FIFO read (last) | 4000 ms | 5000 ms | Peak RSS (‰ of 1 GiB) | Wall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Baseline (main) | 1.25000 | 320,000 | 161,938,610 | 342,585,230 | 3,569,253,830 | 3,610,548,200 | pass | (refused) | 780–783 at 4 s | 11.3–13.7 s |
+| (a) solved, 64 MHz | 0.32000 | 102,400 | 167,137,100 | 858,765,570 | not by 4 s | not by 4 s | fail | – | 704 at 4 s; **killed at the cap at 16 s** | 9.6 s |
+| (b) RCC-following, channels at 250 MHz | 1.00000 | 320,000 | 162,829,790 | 387,288,980 | not by 4 s | – | fail | **killed at the cap** (twice, 5 s and 6 s) | 943 at 4 s | 13.5–15.2 s |
+| (b′) (b) + channels retuned | 1.00000 | 320,000 | 161,141,150 | 385,637,340 | 4,342,643,780 | 4,393,959,380 | fail | pass | 912 at 5 s, 946 at 6 s | 12.9 s at 5 s |
+| (c) declared: timers 200 MHz, `usart1` 72 MHz | 1.00000 | 115,200 | 161,141,150 | 385,637,340 | 4,342,643,780 | 4,393,959,380 | fail | pass ×2 | 771–811 at 5 s, 881 at 6 s | 12.0–12.1 s at 5 s |
+
+- **(c) and (b′) give identical witness times to the ns.** The last witness moves from 3.611 s to 4.394 s, which is 1.217×: not the full 1.25×, because the code between delays takes the same virtual time either way.
+- **(c) at 5 s keeps 1.56 MB of log** (the budget is 8 MiB); at 6 s it keeps 3.73 MB.
+- **CI's other foreign cases move with the bound.** `window-before-u5` (3500 ms today) holds at 4300 ms: U5 is unwitnessed. `window-before-u5-data` (3590 ms) holds at 4370 ms: the identity is witnessed, the data read is not. `ci/foreign-judge.sh` as written fails its positive case under (c).
+- **(b) alone executes 29–34 % more instructions per 100 ms than (b′):** 734–761 k against 569 k (driver, `clk-b`). TIM5's counter counts at 200 MHz while its compare channel counts at 250 MHz, so ChibiOS's tickless alarm fires early and is re-armed. Every (b) run of 5 s or more was killed at the RSS cap.
+
+### The generated firmware (`simulate --firmware … --for 100ms`; ELFs built once by main's CLI)
+
+| Candidate | sentinel-02-own | serial-dshot-9600 (4 × DShot600) | motors-dshot600 |
+|---|---|---|---|
+| Baseline | pass | pass: 4,716 rises in the 2 ms window, period 424 ns, high 160 ns, span 8 ns | pass, as serial-dshot-9600 |
+| Stock 1.17.0 build (pre-1605 image) | byte-identical | byte-identical | byte-identical |
+| (a) solved 64 MHz, judge at 250 MHz (main's) | pass; only `input.sha256` moves (the platform's bytes) | **fail**, `motor_timing_mismatch` ×4: span 1,486,230 ns | **fail**, the same |
+| (b) / (b′), judge at 64 MHz, floor ns | pass | **fail**: (b) span 1,675 ns; (b′) span 1,211 ns | **fail**, the same |
+| (b) / (b′), judge at 64 MHz, exact (ps) | pass (b′: byte-identical) | **fail**: (b) span 1,373 ns (high time at 250 MHz); (b′) span 910 ns (Renode's whole-ns rounding) | **fail**, the same |
+
+(a) and (b′) produce the same edges: the same `rises`, `first_ns` and `last_ns` on every output. So (a) under the floor and exact judges is (b′)'s row; it was run under the 250 MHz and the rounding judges only.
+| (a) and (b′), judge at 64 MHz with Renode's rounding (`AET4400F_CEIL`) | pass; (a) moves `input.sha256` only | **pass**: 1,206 rises, period 1,656 ns (judged as 1,657), high 625 ns, span 9 ns | **pass**, the same |
+
+- **What moves under (a), byte for byte** (`py/diffv.py` against the baseline): in each motor record `twin.rises`/`falls` (4,716 → 1,206), `period_ns` (424 → 1,656), `high_ns` (160 → 625), `first_ns`, `last_ns`, `off_grid` (9,431 → 2,411) and `span_ns` (8 → 9), plus `input.sha256`. Nothing else moves: the serial port's echo, the I2C/SPI devices and every finding are unchanged.
+- **The silicon block** (`kernel_hz` 64,000,000, `period_ps` 1,671,875) is already the silicon's and does not move.
+
+### The pinned build (`1605` D1)
+
+- **What `simulate` records today:** the verdict's `tool` is `{"name": "renode", "version": "Renode v1.17.0", "exit_code": 0}`. No build. Only a campaign archive's header names the build (`2205`).
+- **Main's unmodified CLI on the image before 1605** (`598501ab`, `build: 1.17.0+20260907gitf1dd1b4af`, stock):
+  - sentinel-02-own, serial-dshot-9600 and motors-dshot600 are byte-identical to the pinned build's (only `memory` and the path differ);
+  - ArduPilot `--foreign 4000ms` **fails**: `core_in_exception` ("the run ended in exception 3 (ICSR 0x00000803)", a HardFault, the RETTOBASE fault) and `spi_transaction_unwitnessed`.
+  - The verdict's `tool` is identical on both builds, so nothing in either verdict says which build judged it.
+- **Proposal: record and refuse.**
+  - Add `tool.build` to every verdict.
+  - Refuse, by name, a `build:` other than the pinned one for every boot, as `renode_pinned` already refuses a version other than `Renode v1.17.0` (`main.rs` L1710). The refusal would be named like `RenodeBuildNotPinned`.
+  - Keep the pinned build as one constant beside `RENODE_VERSION` (`aethelgard-twin` `platform.rs`). `twin_tier2`'s `PINNED_RENODE_BUILD` becomes a use of it, and `smoke.sh`'s literal stays tied to it by a test.
+  - **What it moves:** the tier-1 stubs report main's stock build string: `boot_tier1.rs` L321, L1627, L2073 and L2350, and `campaign_tier1.rs` L283 `BUILD`. They move to the pinned string. `2205`'s any-build test keeps checking that the header names the build Renode reported, now the pinned one, and one tier-1 test refuses a stub that reports the stock build.
+  - **Why not warn:** measured, a stock build changes no generated verdict but flips the foreign one to a hard-fault failure that no field explains. A warning would sit beside a `fail` that reads like the firmware's.
+  - **Why not record only:** it leaves the stock build judging, and a reviewer would have to know to look.
+
+### Predictions, scored
+
+| # | Outcome | Score |
+|---|---|---|
+| P1 | 1.25000×; last witness 3,610,548,200; generated bytes equal (control and noise floor). One of two baseline `--foreign` runs was killed at the RSS cap under host load (F1) | held |
+| P2 | 200 MHz pushed at 3.98 µs, ChibiOS's reset at 0.900 ms, 250 MHz again from 2 ms | held |
+| P3 | 1.00000× and the bound must move (last witness 4.394 s, inside 4.2–4.5). **(b) alone does not pass:** its compare channel at 250 MHz costs 29–34 % more instructions, and every run of 5 s or more was killed at the RSS cap | partly; missed (b)'s failure |
+| P4 | (b) fails the motor judge on the generated firmware (span 1,373–1,675 ns); Sentinel-02 passes | held |
+| P5 | **Missed.** (b′) does not pass with the judge at 64 MHz: Renode realizes each period in whole ns rounded up (1,657 ns, not 1,656.25), so the judge must model that rounding. With it, (b′) passes | missed |
+| P6 | Generated: passes with the judge at 64 MHz **plus the rounding**; ns ×3.906 (424 → 1,656); Sentinel-02 moves only the platform's sha256. ArduPilot: 0.32000×, the barometers 2.5× later, no U5 by 4 s; the run to 16 s was killed at the RSS cap, so "past 10 s" is unmeasured | held, but for the rounding |
+| P7 | 1.00000×, witnesses identical to (b′), `BaudRate` 115,200, no hook | held |
+| P8 | (c) at 5 s: 12.0–12.1 s against 11.3 s at 4 s (+7 %, below the predicted +10–25 %, with host-load noise ±30 %). (a) on the generated firmware: within noise. The hook costs no measurable wall time, but costs RSS: (b′) 912‰ against (c)'s 771–811‰ at 5 s | partly |
+| P9 | No build in the verdict; a stock build runs; ArduPilot hard-faults; the generated verdicts are unchanged | held |
+| P10 | (a) + (c), as measured | held (§3) |
+| P11 | Update entries reach the constructor and the channels | held |
+| P12 | **Wrong.** SysTick loads at 64 MHz, not 480 MHz: the RCC's constructor pushes HSI into it after `stm32h743.repl`'s value. ArduPilot moves it to 400 MHz. DWT 250 MHz | wrong |
+| P13 | ArduPilot under (c): every timer reads 200 MHz at the end, the declared value and the RCC's both, so it is invisible as predicted | held |
+| P14 | Constructor values after `machine Reset` | held |
+| P15 | The cap needed raising. CI's 3500 ms and 3590 ms cases move to 4300 ms and 4370 ms | held |
+
+## §3 For the ruling
+
+### Recommended: (a) for the generated firmware, (c) for a foreign one: one mechanism, a `frequency` set at construction
+
+- **The mechanism.** The emitter writes an update entry, `timerN: frequency: F` and `usartN: frequency: F`, as `stm32h743.repl` already does for `nvic`.
+  - For the generated firmware, F is the solved clock's kernel frequency (`SolvedClock::timer_kernel_hz`, `serial::kernel_hz`): 64 MHz on today's reset clock, the frequency silicon runs.
+  - For `--foreign`, F comes from a clock declared beside `--foreign`. Whether it is a flag or a specification field is the architect's call (Q1). For ArduPilot: timers 200 MHz, `usart1` 72 MHz.
+- **No Renode change is needed** for either, and no hook: the counter and its channels are built at F.
+- **Measured:**
+  - ArduPilot runs 1.00000× virtual time with `BaudRate` exactly 115,200.
+  - The generated firmware passes the motor judge at its silicon clock.
+  - A Sentinel-02 without motors moves only its platform's bytes.
+- **(b) is not recommended.**
+  - It needs two upstream commits no release carries (`b14469bba`, `f2ac99657`), plus a channel fix nobody has written (§3.3).
+  - It still cannot follow a USART: `STM32F7_USART` is not `IHasFrequency`, and the kernel-clock mux is tags.
+  - Its partial form (the upstream commits alone) is worse than today: early compares, +29–34 % instructions, killed at the RSS cap.
+  - It goes to backlog, upstream: §3.3 holds the patches.
+
+### What the recommendation moves
+
+- **`TIMER_HZ` stops being a constant.**
+  - Each observer's frequency is its board's kernel clock: 64 MHz for every generated board today.
+  - The judge predicts each edge at ⌈ticks × 10⁹ / F⌉ ns, the period Renode realizes (`BaseClockSource.cs` L315–L325). At 64 MHz a tick is 15.625 ns, so `CYCLE_NS` cannot stay an integer.
+  - `TIMER_HZ`'s users (§1.1) all move: `timer.rs` `period_ns`/`high_ns` and their unit asserts, `renode.rs` L1739's text, `campaign.rs`'s labelled `TWIN_CYCLE_NS` copy, `timer_routes.rs` L81, `motor_platform.rs` L67, and `aethelgard-evolve`'s and `aethelgard-chaos`'s motor fixtures.
+- **Every generated motor record:** `rises`/`falls` (4,716 → 1,206 in the 2 ms DShot window), `period_ns` 424 → 1,656 (judged as 1,657), `high_ns` 160 → 625, `first_ns`, `last_ns`, `off_grid`, `span_ns` 8 → 9.
+  - At 64 MHz the 2 ms window holds 1,206 DShot600 periods, enough for the judge (≥ 2 rises).
+  - A PWM output at a 1 µs tick (`PSC` 63) has a period 3.906× longer in virtual time than today: a 400 Hz PWM is 2.5 ms, longer than the 2 ms DShot window. The PWM windows (`4300a`) need measuring again, with `motors-pwm` (not run here).
+- **Every emitted platform's bytes** (the update entries), and so every pinned platform hash or golden that embeds them: the suite list below.
+- **The foreign window:** `FOREIGN_MAX_VIRTUAL_NS` from 4 s to 5 s, on the measured last witness of 4.394 s.
+  - At 5 s: RSS 771–811‰ of the 1 GiB bound (78 % today at 4 s), 1.56 MB of the 8 MiB log, wall 12.0 s.
+  - 6 s would cost 881‰ and 3.73 MB.
+  - `ci/foreign-judge.sh`: 4000 ms → 5000 ms, 3500 ms → 4300 ms, 3590 ms → 4370 ms.
+  - The witness times move: U4 0.1619 → 0.1611 s, the barometers 0.343/0.383 → 0.386/0.436 s, the ICM 3.569/3.611 → 4.343/4.394 s. So do architecture §2.27's figures.
+- **`usart1`'s `BaudRate`** (not judged today: the foreign judge drops `BRR`) becomes exact: 115,200 for ArduPilot, `64 MHz / BRR` for the generated firmware.
+
+### `INV-07`: where each candidate can still run a clock silicon would not
+
+| Candidate | Remaining divergence |
+|---|---|
+| (a) | (1) Renode's whole-ns rounding: +0.75 ns per DShot600 period at 64 MHz (0.045 %). The judge must model it, so it is a model convention like `ARR` against `ARR + 1`, and the silicon block judges the real period. (2) The RCC still pushes a clock on `CR`/`CFGR`/`D1CFGR`/`D2CFGR` writes. A generated firmware that programmed its clock would get counters at the RCC's figure and channels at F: the (b) failure. Today `validate` refuses any clock but the reset one, so this is latent; a clock-programming engine must handle it. (3) DWT counts at 250 MHz (silicon 64). (4) `usart` frequency drives only `BaudRate` and the receiver timeout in this build. Upstream `88afd12bb` paces received characters at `BaudRate`, so a wrong F would start to matter at the next Renode. (5) (a) is wrong for a foreign firmware (ArduPilot 0.32×), so it must never apply to `--foreign`. |
+| (b) | (1) USARTs cannot follow. (2) The RCC model's limits: HSE is a constructor default of 8 MHz unless the platform declares it; there is no fractional PLL; PLL2 and PLL3 are not computed; the kernel-clock muxes are tags. (3) Without the channel fix, compares run at the stale frequency (measured). (4) A clock is pushed only through the four registers it watches. |
+| (c) | (1) **The declaration is the user's.** A wrong one runs the twin at a clock silicon would not, which is exactly `INV-07`. Proposed cross-check, measured feasible: at the run's end, decode the timers' kernel clock from the registers Renode models and reads back (`PLLCKSELR` `0x408040`, `PLL1DIVR` `0x01090231`, `D1CFGR` `0x48`, `D2CFGR` `0x440`, `CFGR` `0x801B` → 400 MHz `sys_ck`, 200 MHz timers), and refuse a mismatch by name. A USART's kernel clock cannot be read back (`D2CCIP2R` reads 0); only the RCC's "Unhandled write to offset 0x54 … 0xE01009" log line carries it, so it is either judged from that line or declared unchecked (Q2). (2) A timer not reset after an RCC push runs at the RCC's figure while its channels stay at F; the cross-check covers it. For ArduPilot both are 200 MHz. (3) At 200 MHz a tick is 5 ns, so there is no rounding. |
+
+### §3.3 The Renode change (b) would need (the WO's §7 stop condition, for (b) only)
+
+All three files are under `spike/4400f/patches/`.
+- **`b14469bba…patch` and `f2ac99657…patch`** (upstream, 2026-11-05: propagate at registration and after a peripheral reset). Both apply to `cd4b002a` with `patch --dry-run`, offset −6 lines, despite `3423667aa` in between.
+- **`stm32-timer-channels-follow-frequency.patch`** (ours; no upstream commit). `STM32_Timer` re-implements `IHasFrequency` with a `new Frequency` that sets the counter and each capture/compare channel's `LimitTimer`.
+  - It applies to `cd4b002a` (dry run). It has **not been compiled**.
+  - Its behaviour is what the `bp` hook does by reflection, which is measured above.
+- **Not covered by any patch:** USART kernel clocks (`STM32F7_USART` keeps a `readonly` frequency), the kernel-clock muxes (tags), fractional PLLs, and PLL2/PLL3.
+
+### Findings
+
+| # | Finding | Since | For |
+|---|---|---|---|
+| F1 | The foreign judge's 1 GiB RSS cap killed one of two baseline `--foreign 4000ms` runs, and `ci/foreign-judge.sh`'s positive case in the same container. Host load was 26 on 20 cores, wall 29.7 s against 13.7 s; the run that passed peaked at 780‰. RSS grows with wall time under load, so the cap's margin is thinner than 4400e's 833 MiB suggests. | `4400e` | backlog: measure RSS against wall time, or bound it differently |
+| F2 | Renode's RCC drops the D2 kernel-clock selections: `D2CCIP2R` reads 0 after ArduPilot writes `0xE01009`. A judge that reads the RCC sees the reset muxes, not the firmware's. | Renode 1.17.0 | upstream; (c)'s cross-check (Q2) |
+| F3 | Renode realizes each `LimitTimer` period in whole ns, rounded up, so a timer whose tick is not a whole number of ns runs slow. Today's 250 MHz (4 ns) hid it. | Renode 1.17.0 | the judge (§3) |
+| F4 | SysTick runs at 64 MHz from load, not `stm32h743.repl`'s 480 MHz: the RCC's constructor pushes HSI. It matches silicon's reset clock; nothing in the repository says so. | Renode 1.17.0 | the record |
+| F5 | A timer's capture/compare channels never follow a frequency change (`STM32_Timer.cs` L104, unchanged on master). | Renode 1.17.0 | upstream (§3.3) |
+
+### Questions for the architect
+
+- **Q1:** where a foreign firmware's clock is declared: a flag beside `--foreign`, or a field of the specification (the board's `mcu`, beside `hse_hz`)?
+- **Q2:** (c)'s cross-check. Refuse a declaration that the RCC registers contradict (timers, decodable today), and either judge the USART kernel clock from the RCC's unhandled-write log line or leave it declared unchecked?
+- **Q3:** the window: 5 s (measured margin: RSS 771–811‰, 1.56 MB log), and should F1 be measured first?
+- **Q4:** the pinned build: record and refuse (proposed), which moves five stub build strings and adds one refusal test.

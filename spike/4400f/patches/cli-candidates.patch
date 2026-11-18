@@ -1,0 +1,200 @@
+diff --git a/crates/aethelgard-cli/src/main.rs b/crates/aethelgard-cli/src/main.rs
+index 1d503a5..f00f0bb 100644
+--- a/crates/aethelgard-cli/src/main.rs
++++ b/crates/aethelgard-cli/src/main.rs
+@@ -567,7 +567,8 @@ fn virtual_time(s: &str) -> Result<u64, String> {
+ /// `--foreign`: as `--for`, up to the foreign window
+ /// ([`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`], `AET-WO-4400e`).
+ fn foreign_time(s: &str) -> Result<u64, String> {
+-    time_up_to(s, renode::foreign::FOREIGN_MAX_VIRTUAL_NS)
++    // SPIKE AET-WO-4400f: AET4400F_FOREIGN_MAX_NS raises the cap.
++    time_up_to(s, std::env::var("AET4400F_FOREIGN_MAX_NS").map_or(renode::foreign::FOREIGN_MAX_VIRTUAL_NS, |v| v.parse().expect("ns")))
+ }
+ 
+ fn time_up_to(s: &str, max: u64) -> Result<u64, String> {
+diff --git a/crates/aethelgard-cli/src/renode.rs b/crates/aethelgard-cli/src/renode.rs
+index a90e17e..0ddfb7d 100644
+--- a/crates/aethelgard-cli/src/renode.rs
++++ b/crates/aethelgard-cli/src/renode.rs
+@@ -70,6 +70,23 @@ pub const CONFIG_FILE: &str = "renode.config";
+ /// missing back into the file, and the file is the CLI's, sealed read-only
+ /// for the tool uid (`AET-WO-1601`): given a file without them, Renode
+ /// aborted in the sandbox. Stating them all, it only reads it.
++
++/// SPIKE AET-WO-4400f (labelled deviation): with `AET4400F_FOLLOW=b` the RCC's
++/// clock is propagated after the load and on each timer's next `CR1` write
++/// after a reset (what upstream `b14469bba` and `f2ac99657` add); with `bp`
++/// each timer's capture/compare channels are retuned to it as well.
++pub fn spike_4400f_follow(platform: &std::path::Path) -> Vec<String> {
++    let Ok(mode) = std::env::var("AET4400F_FOLLOW") else { return Vec::new() };
++    assert!(mode == "b" || mode == "bp", "AET4400F_FOLLOW: {mode}");
++    let py = platform.parent().unwrap().join("clock4400f.py");
++    std::fs::write(&py, format!("{}\nSystem.AppDomain.CurrentDomain.SetData('aet4400f', follow if '{mode}' == 'bp' else propagate)\n", include_str!("../../../spike/4400f/py/clock.py"))).unwrap();
++    let mut c = vec![format!("include @{}", py.display()), "python \"System.AppDomain.CurrentDomain.GetData('aet4400f')()\"".to_owned()];
++    for n in [1, 2, 3, 4, 5, 8, 12, 13, 14, 15, 16, 17] {
++        c.push(format!("sysbus SetHookBeforePeripheralWrite sysbus.timer{n} \"__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None\""));
++    }
++    c
++}
++
+ pub fn config(home: &std::path::Path) -> String {
+     format!(
+         "[general]\n\
+@@ -784,6 +801,7 @@ impl BootPlan<'_> {
+             format!("sysbus LoadELF @{}", self.firmware.display()),
+             FLASH_LOG.to_owned(),
+         ]);
++        c.extend(spike_4400f_follow(self.platform));
+         c.extend(self.cold());
+         c.extend(self.rearm());
+         c.push(self.vtor());
+@@ -1654,9 +1672,10 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
+         w.status = "unwitnessed";
+         return w;
+     }
++    // SPIKE AET-WO-4400f: predicted in ps (exact at 64 MHz), deviations back in ns.
+     let (period, high) = (
+-        i128::from(m.observer.period_ns),
+-        i128::from(m.observer.high_ns),
++        i128::from(m.observer.period_ps),
++        i128::from(m.observer.high_ps),
+     );
+     let first = edges[0].0;
+     w.first_ns = Some(first);
+@@ -1665,8 +1684,8 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
+     for (i, &(ns, rising)) in edges.iter().enumerate() {
+         alternating &= rising == (i % 2 == 0);
+         let k = (i / 2) as i128;
+-        let predicted = i128::from(first) + k * period + if rising { 0 } else { high };
+-        let d = i128::from(ns) - predicted;
++        let predicted = i128::from(first) * 1000 + k * period + if rising { 0 } else { high };
++        let d = (i128::from(ns) * 1000 - predicted).div_euclid(1000);
+         lo = lo.min(d);
+         hi = hi.max(d);
+     }
+@@ -3807,6 +3826,8 @@ mod tests {
+                 source: "gpioPortA.pa8obs".into(),
+                 period_ns: 639_744,
+                 high_ns: 256_000,
++                period_ps: 0,
++                high_ps: 0,
+             },
+             psc: 63,
+             arr: 2499,
+diff --git a/crates/aethelgard-cli/src/renode/foreign.rs b/crates/aethelgard-cli/src/renode/foreign.rs
+index 469e4b2..53d4d8e 100644
+--- a/crates/aethelgard-cli/src/renode/foreign.rs
++++ b/crates/aethelgard-cli/src/renode/foreign.rs
+@@ -551,6 +551,7 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<
+         ),
+         format!("sysbus LoadELF @{}", plan.firmware.display()),
+     ]);
++    c.extend(super::spike_4400f_follow(plan.platform));
+     c.extend(plan.cold());
+     c.push(plan.vtor());
+     c.extend(plan.witness_levels());
+diff --git a/crates/aethelgard-twin/src/platform.rs b/crates/aethelgard-twin/src/platform.rs
+index 60a7f3c..4789112 100644
+--- a/crates/aethelgard-twin/src/platform.rs
++++ b/crates/aethelgard-twin/src/platform.rs
+@@ -805,9 +805,49 @@ pub fn emit_faulted(
+     emit_spi(&mut out, &spi)?;
+     emit_observers(&mut out, topology)?;
+     out.push_str(&crate::boot::brown_out(topology)?.presentation());
++    spike_4400f_clock(&mut out, topology);
+     Ok(out)
+ }
+ 
++/// SPIKE AET-WO-4400f (labelled deviation, never on the branch): with
++/// `AET4400F_CLOCK=solved`, each timer and USART instance gets an update entry
++/// with the solved clock's kernel frequency (candidate (a)); with
++/// `AET4400F_CLOCK=declared:timers=HZ,usart1=HZ` the declared values (candidate (c)).
++fn spike_4400f_clock(out: &mut String, topology: &SolvedTopology) {
++    let Ok(mode) = std::env::var("AET4400F_CLOCK") else { return };
++    let mut entries: Vec<(String, u64)> = Vec::new();
++    if mode == "solved" {
++        let c = &topology.clock;
++        for n in TIMERS {
++            entries.push((format!("timer{n}"), c.timer_kernel_hz(aethelgard_ir::motor::apb(n))));
++        }
++        for (inst, p) in [("usart1", "USART1"), ("usart2", "USART2"), ("usart3", "USART3"), ("uart4", "UART4"),
++                          ("uart5", "UART5"), ("usart6", "USART6"), ("uart7", "UART7"), ("uart8", "UART8")] {
++            if let Some(hz) = aethelgard_ir::serial::kernel_hz(c, p) {
++                entries.push((inst.to_owned(), hz));
++            }
++        }
++    } else if let Some(d) = mode.strip_prefix("declared:") {
++        for kv in d.split(',') {
++            let (k, v) = kv.split_once('=').expect("key=hz");
++            let hz: u64 = v.parse().expect("hz");
++            if k == "timers" {
++                for n in TIMERS {
++                    entries.push((format!("timer{n}"), hz));
++                }
++            } else {
++                entries.push((k.to_owned(), hz));
++            }
++        }
++    } else {
++        panic!("AET4400F_CLOCK: {mode}");
++    }
++    out.push_str("\n// SPIKE AET-WO-4400f: the clock as update entries.\n");
++    for (inst, hz) in entries {
++        let _ = writeln!(out, "{inst}:\n    frequency: {hz}\n");
++    }
++}
++
+ /// Each motor output's observer (`AET-WO-4300a` §1.4): a
+ /// `Miscellaneous.LED` on its pin, the cheapest pin observer the `4300`
+ /// spike named, logging each change at `Noisy`. The pin's stock input route
+diff --git a/crates/aethelgard-twin/src/timer.rs b/crates/aethelgard-twin/src/timer.rs
+index cfd818b..5edc2f2 100644
+--- a/crates/aethelgard-twin/src/timer.rs
++++ b/crates/aethelgard-twin/src/timer.rs
+@@ -33,6 +33,20 @@ pub const TIMER_HZ: u64 = 250_000_000;
+ /// One timer tick of the model at [`TIMER_HZ`] with `PSC + 1` = 1, in ns.
+ pub const CYCLE_NS: u64 = 1_000_000_000 / TIMER_HZ;
+ 
++/// SPIKE AET-WO-4400f: the judge's timer frequency, `AET4400F_TIMER_HZ` or [`TIMER_HZ`].
++pub fn spike_timer_hz() -> u64 {
++    std::env::var("AET4400F_TIMER_HZ").map_or(TIMER_HZ, |v| v.parse().expect("AET4400F_TIMER_HZ"))
++}
++
++fn spike_ps(ticks: u64) -> u64 {
++    let hz = spike_timer_hz();
++    if std::env::var("AET4400F_CEIL").is_ok() {
++        (ticks * 1_000_000_000).div_ceil(hz) * 1000
++    } else {
++        ticks * 1_000_000_000_000 / hz
++    }
++}
++
+ /// The name of a solved output's observer, `pa8obs`; it logs under
+ /// `gpioPortA.pa8obs`. `aethelgard_ir::is_observer_name` refuses it as a
+ /// device reference, since the description is one namespace.
+@@ -63,6 +77,9 @@ pub struct Observer {
+     pub period_ns: u64,
+     /// The model's high time, `CCR · (PSC + 1)` cycles, in ns.
+     pub high_ns: u64,
++    /// SPIKE AET-WO-4400f: the same two in ps, exact at 64 MHz (15 625 ps a tick).
++    pub period_ps: u64,
++    pub high_ps: u64,
+ }
+ 
+ /// The observer of every motor output of `topology`, in the specification's
+@@ -108,8 +125,13 @@ pub fn observers(topology: &SolvedTopology) -> Result<Vec<Observer>, TwinError>
+             alternate_function: af,
+             source: format!("gpioPort{port}.{name}"),
+             name,
+-            period_ns: u64::from(m.arr) * cycles * CYCLE_NS,
+-            high_ns: u64::from(m.ccr) * cycles * CYCLE_NS,
++            // SPIKE AET-WO-4400f: AET4400F_TIMER_HZ, multiply then divide (floor).
++            period_ns: u64::from(m.arr) * cycles * 1_000_000_000 / spike_timer_hz(),
++            high_ns: u64::from(m.ccr) * cycles * 1_000_000_000 / spike_timer_hz(),
++            // AET4400F_CEIL=1: each limit as Renode realizes it, whole ns rounded up
++            // (BaseClockSource.cs L315-L325, TimeInterval.cs L291).
++            period_ps: spike_ps(u64::from(m.arr) * cycles),
++            high_ps: spike_ps(u64::from(m.ccr) * cycles),
+         });
+     }
+     Ok(out)

@@ -1,0 +1,16 @@
+[16:48:31.9959] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) i @/cache/plat/t1.resc
+[16:48:32.0863] [INFO] Including script(s): /cache/plat/t1.resc
+[16:48:33.3427] [INFO] System bus created.
+[16:48:33.7925] [WARNING] Tried to finish transmission to device 0x0, but it's not connected
+[16:48:33.7925] [WARNING] Tried to finish transmission to device 0x0, but it's not connected
+[16:48:33.9703] [INFO] Pseudorandom Number Generator was created with seed: 1316141948
+0xbebc200
+0xee6b280
+0x0000000003D09000
+0xee6b280
+0x3d09000
+Renode is quitting
+[16:48:34.1267] [INFO] machine-0: Disposed.

@@ -1,0 +1,47 @@
+emulation SetSeed 2100
+emulation SetGlobalQuantum "0.000100000"
+include @/cache/cap/foreign/models/BMP581.cs
+include @/cache/cap/foreign/models/ICM42688P.cs
+mach create
+machine LoadPlatformDescription @/cache/fw-base/sentinel-02-own/gen/board/sentinel-02-own.repl
+sysbus LoadELF @/cache/boards/sentinel-02/arducopter.elf
+sysbus WriteDoubleWord 0x580244d4 0x0
+sysbus WriteDoubleWord 0x580244d8 0x0
+sysbus WriteDoubleWord 0x580244dc 0x0
+sysbus WriteDoubleWord 0x580244e0 0x0
+sysbus WriteDoubleWord 0x580244e4 0x0
+sysbus WriteDoubleWord 0x580244e8 0x0
+sysbus WriteDoubleWord 0x580244ec 0x0
+sysbus WriteDoubleWord 0x580244f0 0x0
+sysbus WriteDoubleWord 0x580244f4 0x10000
+cpu VectorTableOffset 0x08000000
+logLevel -1 sysbus.i2c1.u2
+logLevel -1 sysbus.i2c1.u7
+logLevel -1 sysbus.spi1.spi1mux.u4
+logLevel -1 sysbus.spi1.spi1mux
+logLevel -1 sysbus.spi2.spi2mux.u5
+logLevel -1 sysbus.spi2.spi2mux
+sysbus SetHookBeforePeripheralWrite sysbus.spi1 "(offset == 0xC) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, 'AETHELGARD-CFG2 %x %x' % (value, self.ReadDoubleWord(0)))"
+sysbus SetHookBeforePeripheralWrite sysbus.spi2 "(offset == 0xC) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, 'AETHELGARD-CFG2 %x %x' % (value, self.ReadDoubleWord(0)))"
+sysbus SetHookBeforePeripheralWrite sysbus.flashController "((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1)) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, 'AETHELGARD-ERASE %x %x' % (offset, value))"
+sysbus.i2c1.u7 Temperature 25
+sysbus.i2c1.u7 Pressure 101325
+sysbus.spi2.spi2mux.u5 Temperature 29
+sysbus.spi2.spi2mux.u5 AccelerationX 0
+sysbus.spi2.spi2mux.u5 AccelerationY 1
+# stubs
+include @/repo/spike/4400f/py/clock.py
+python "System.AppDomain.CurrentDomain.SetData('aet4400f', propagate)"
+python "System.AppDomain.CurrentDomain.GetData('aet4400f')()"
+sysbus SetHookBeforePeripheralWrite sysbus.timer1 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer2 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer3 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer4 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer5 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer8 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer12 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer13 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer14 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer15 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer16 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer17 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"

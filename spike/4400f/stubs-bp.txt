@@ -1,0 +1,16 @@
+# (b) emulation as stubs, mode bp
+include @/repo/spike/4400f/py/clock.py
+python "System.AppDomain.CurrentDomain.SetData('aet4400f', follow)"
+python "System.AppDomain.CurrentDomain.GetData('aet4400f')()"
+sysbus SetHookBeforePeripheralWrite sysbus.timer1 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer2 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer3 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer4 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer5 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer8 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer12 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer13 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer14 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer15 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer16 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"
+sysbus SetHookBeforePeripheralWrite sysbus.timer17 "__import__('System').AppDomain.CurrentDomain.GetData('aet4400f')() if offset == 0 else None"

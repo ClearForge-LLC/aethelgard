@@ -1,0 +1,13 @@
+include @/cache/cap/foreign/models/BMP581.cs
+include @/cache/cap/foreign/models/ICM42688P.cs
+mach create
+machine LoadPlatformDescription @/cache/plat/upd.repl
+include @/repo/spike/4400f/py/clock.py
+python "chan_freq('timer5', 0)"
+python "chan_freq('timer2', 0)"
+python "propagate()"
+timer2 Frequency
+python "chan_freq('timer2', 0)"
+python "retune()"
+python "chan_freq('timer2', 0)"
+quit

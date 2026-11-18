@@ -1,0 +1,2 @@
+ANSWER 4400e: positive exit=1 verdict=fail error=None kinds=['core_in_exception', 'spi_transaction_unwitnessed'] witnessed={('U2', 'identity'): 342585230, ('U2', 'data (reads[0])'): 382787270, ('U7', 'identity'): 342780210, ('U7', 'data (script)'): 382745850, ('U4', 'identity'): 161938610, ('U5', 'identity'): 3570134680, ('U5', 'data (script)'): None, ('U5', 'data (reads[0])'): None} memory={'peak_rss_kib': 1003824, 'bound_kib': 1048576, 'share_permille': 957} log_kept=238388
+positive: exit 1, not 0
