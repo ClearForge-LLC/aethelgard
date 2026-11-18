@@ -2666,17 +2666,26 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             board,
             capacitance_ladder: emission.ladder.as_ref().map(|l| {
                 let rung = aethelgard_eda::route::RUNGS[l.rung];
-                serde_json::json!({
+                let mut v = serde_json::json!({
                     "rung": l.rung,
                     "bounded_via_cost": rung.bounded_via_cost,
                     "bounded_first": rung.bounded_first,
-                    "smallest_margin": {
-                        "net": l.net,
-                        "c_bound_femtofarads": l.c_femtofarads,
-                        "declared_femtofarads": l.max_femtofarads,
-                    },
                     "judged_by": "extract, run separately on the emitted board (RUL-20)",
-                })
+                });
+                if let Some((net, c, max)) = &l.smallest {
+                    v["smallest_margin"] = serde_json::json!({
+                        "net": net,
+                        "c_bound_femtofarads": c,
+                        "declared_femtofarads": max,
+                    });
+                }
+                if !l.unrouted.is_empty() {
+                    v["unrouted_rungs"] = serde_json::json!(l.unrouted);
+                }
+                if let Some((kind, message)) = &l.unjudged {
+                    v["unjudged"] = serde_json::json!({"kind": kind, "message": message});
+                }
+                v
             }),
             notes: emission.notes.clone(),
         },

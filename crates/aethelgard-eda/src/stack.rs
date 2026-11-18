@@ -118,7 +118,12 @@ pub struct Stack {
     /// tolerances (`AET-WO-1314`).
     pub via_nm: i64,
     pub drill_nm: i64,
-    /// The nets (by the board's name) with a declared capacitance bound.
+    /// The nets (by the board's name) `extract` bounds and the
+    /// specification gives a capacitance bound: each I2C bus's SDA and SCL,
+    /// each SPI bus's SCK and MOSI (`extract::lines`), where declared in
+    /// `net_constraints`. The capacitance ladder prices their vias
+    /// (`AET-WO-1314`); a constrained net `extract` does not bound is not
+    /// among them.
     pub bounded: Vec<String>,
     /// The ring rule, where the specification declares the fabricator's
     /// tolerances it needs ([`RingRule`]).
@@ -266,9 +271,16 @@ impl Stack {
             ring: None,
             notes: Vec::new(),
             bounded: spec
-                .net_constraints
+                .i2c_buses
                 .iter()
-                .map(|c| board_net(spec, &c.net_name))
+                .flat_map(|b| [&b.sda.net, &b.scl.net])
+                .chain(
+                    spec.spi_buses
+                        .iter()
+                        .flat_map(|b| [&b.sck.net, &b.mosi.net]),
+                )
+                .filter(|n| spec.net_constraints.iter().any(|c| &c.net_name == *n))
+                .map(|n| board_net(spec, n))
                 .collect(),
             copper: b.layers.iter().map(|l| l.name.clone()).collect(),
             planes: b

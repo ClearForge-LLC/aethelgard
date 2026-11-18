@@ -123,7 +123,13 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    assert!(ladder["rung"].as_u64().unwrap() < 8, "{ladder}");
+    // the fixture's golden (measured at `AET-WO-1314`): the last rung,
+    // bounded nets first at a via cost of 320, nearest at IMU_SCK
+    assert_eq!(ladder["rung"], 7, "{ladder}");
+    assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
+    assert_eq!(ladder["bounded_first"], true, "{ladder}");
+    assert_eq!(margin["net"], "IMU_SCK", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 24_945, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");
@@ -247,4 +253,34 @@ fn a_board_without_tolerances_is_routed_as_before() {
         sizes.contains_key(&("0.554".to_string(), "0.254".to_string())),
         "{sizes:?}"
     );
+}
+
+/// A board whose lines `extract` cannot judge (the committed power fixture:
+/// its translator's data pins state no maximum capacitance) is not refused
+/// at `emit`: it is routed as today, the ladder records why it did not
+/// choose, and `extract` refuses the board by that name on its own run.
+#[test]
+fn a_board_extract_cannot_judge_is_routed_as_today_and_named() {
+    let spec = "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json";
+    let (code, r, board) = emit("unjudged", &root().join(spec));
+    assert_eq!(code, 0, "{r}");
+    let ladder = &r["capacitance_ladder"];
+    assert_eq!(ladder["rung"], 0, "{r}");
+    assert_eq!(ladder["unjudged"]["kind"], "TranslatorPinUnbounded", "{r}");
+    assert!(ladder.get("smallest_margin").is_none(), "{r}");
+    // the vias are still the rule's
+    let sizes = vias(board.as_ref().unwrap());
+    assert!(
+        sizes.keys().all(|(pad, _)| pad == "0.75" || pad == "0.7"),
+        "{sizes:?}"
+    );
+    let (code, v) = run(&[
+        "extract",
+        "--board",
+        board.as_ref().unwrap().to_str().unwrap(),
+        "--spec",
+        spec,
+    ]);
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(v["error"]["kind"], "TranslatorPinUnbounded", "{v}");
 }

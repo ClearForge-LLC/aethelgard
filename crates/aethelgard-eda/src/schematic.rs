@@ -164,6 +164,11 @@ pub enum EmitError {
     /// the rung that came nearest, with its figure and bound in fF.
     #[error("no rung of the capacitance ladder routes every bounded net within its bound; nearest: {}", over.iter().map(|(n, c, m)| format!("`{n}` {c} fF over {m} fF")).collect::<Vec<_>>().join(", "))]
     CapacitanceOverBound { over: Vec<(String, u64, u64)> },
+    /// `AET-WO-1314`: `extract`'s own reader or bound, which the ladder
+    /// consults, refused the ladder's own board by name; its kind and path
+    /// are `extract`'s.
+    #[error("the capacitance ladder cannot judge the board: {}", .0.message)]
+    LadderRefused(crate::extract::Refused),
     #[error("{0}")]
     Internal(String),
 }
@@ -194,6 +199,7 @@ impl EmitError {
             Self::FabToleranceUndeclared(_) => "FabToleranceUndeclared",
             Self::ViaRingUnheld { .. } => "ViaRingUnheld",
             Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
+            Self::LadderRefused(r) => r.kind,
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -214,6 +220,7 @@ impl EmitError {
             Self::FabToleranceUndeclared(path) => Some(path),
             Self::ViaRingUnheld { class, .. } => Some(class),
             Self::CapacitanceOverBound { over } => over.first().map(|(n, _, _)| n.as_str()),
+            Self::LadderRefused(r) => r.id.as_deref(),
             Self::OutlineTooSmall { reference, .. } => reference.as_deref(),
             Self::Library(_)
             | Self::BoardUnroutable(_)
@@ -284,9 +291,17 @@ pub struct Emission {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ladder {
     pub rung: usize,
-    pub net: String,
-    pub c_femtofarads: u64,
-    pub max_femtofarads: u64,
+    /// The bounded net nearest its bound at that rung: (net, figure, bound),
+    /// fF; `None` on a board with no bounded line.
+    pub smallest: Option<(String, u64, u64)>,
+    /// The rungs that did not route, by index: named, not hidden behind
+    /// the one that did.
+    pub unrouted: Vec<usize>,
+    /// `extract`'s own refusal of the board's lines, by kind and message,
+    /// when it could not be judged: the board is then today's routing, and
+    /// `extract` refuses it by the same name (`RUL-20`: the judge names it,
+    /// the ladder only records why it did not choose).
+    pub unjudged: Option<(&'static str, String)>,
 }
 
 /// A symbol pin: library coordinates in nanometres, Y up.
@@ -859,26 +874,35 @@ fn laddered(
     moves: &[crate::pcb::Move],
     bound: Option<aethelgard_ir::board::OutlineBound>,
 ) -> Result<(String, Ladder), EmitError> {
-    let lines = crate::extract::lines(spec, solved, table)
-        .map_err(|r| EmitError::Internal(format!("the ladder's lines: {}", r.message)))?;
+    let lines = match crate::extract::lines(spec, solved, table) {
+        Ok(lines) => lines,
+        Err(r) => {
+            let board = crate::pcb::write_moved(
+                &spec.project_name,
+                parts,
+                stack,
+                moves,
+                bound,
+                crate::route::Rung::TODAY,
+            )?;
+            return Ok((
+                board,
+                Ladder {
+                    rung: 0,
+                    smallest: None,
+                    unrouted: Vec::new(),
+                    unjudged: Some((r.kind, r.message)),
+                },
+            ));
+        }
+    };
     let max_of = |net: &str| {
         spec.net_constraints
             .iter()
             .find(|c| c.net_name == net)
             .map(|c| c.max_capacitance_femtofarads)
     };
-    // (rung, text, figures as (net, c, max)), and the first refusal
-    let mut best: Option<(usize, String, Vec<(String, u64, u64)>)> = None;
-    let mut nearest: Option<Vec<(String, u64, u64)>> = None;
     let mut first_error = None;
-    // the smallest margin of a rung's figures, as a fraction to compare
-    // exactly: (max − c, max), the most negative first
-    let worst = |f: &[(String, u64, u64)]| {
-        f.iter()
-            .map(|(_, c, m)| (i128::from(*m) - i128::from(*c), i128::from(*m)))
-            .min_by(|a, b| (a.0 * b.1).cmp(&(b.0 * a.1)))
-    };
-    let better = |a: (i128, i128), b: (i128, i128)| a.0 * b.1 > b.0 * a.1;
     // placed once; each rung routed on its own thread, its result kept at
     // its index, so the choice is the rungs' order whatever the timing
     let (footprints, outline) = crate::pcb::placed(&spec.project_name, parts, stack, moves, bound)?;
@@ -906,65 +930,112 @@ fn laddered(
             })
             .collect()
     });
-    for (k, result) in routed.into_iter().enumerate() {
+    // each rung's text and figures, at its index; `None` where it did not route
+    let mut judged: Vec<Option<(String, Vec<Figure>)>> = Vec::new();
+    for result in routed {
         let text = match result {
             Ok(t) => t,
             Err(e) => {
                 first_error.get_or_insert(e);
+                judged.push(None);
                 continue;
             }
         };
-        let read = crate::extract::read(&text, stack)
-            .map_err(|r| EmitError::Internal(format!("the ladder's own board: {}", r.message)))?;
-        let figures: Vec<(String, u64, u64)> = crate::extract::bound(&read, &lines)
-            .map_err(|r| EmitError::Internal(format!("the ladder's bound: {}", r.message)))?
+        let read = crate::extract::read(&text, stack).map_err(EmitError::LadderRefused)?;
+        let figures: Vec<Figure> = crate::extract::bound(&read, &lines)
+            .map_err(EmitError::LadderRefused)?
             .into_iter()
             .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
             .collect();
-        let w = worst(&figures).unwrap_or((1, 1));
-        if w.0 >= 0 {
-            if best
-                .as_ref()
-                .is_none_or(|(_, _, f)| better(w, worst(f).unwrap_or((1, 1))))
-            {
-                best = Some((k, text, figures));
-            }
-        } else if nearest
-            .as_ref()
-            .is_none_or(|f| better(w, worst(f).unwrap_or((1, 1))))
-        {
-            nearest = Some(figures);
+        judged.push(Some((text, figures)));
+    }
+    let figures: Vec<Option<&[Figure]>> = judged
+        .iter()
+        .map(|j| j.as_ref().map(|(_, f)| f.as_slice()))
+        .collect();
+    let unrouted: Vec<usize> = (0..judged.len()).filter(|&k| judged[k].is_none()).collect();
+    match choose(&figures) {
+        Choice::Fits { rung, smallest } => {
+            let text = judged[rung].take().map(|(t, _)| t).unwrap_or_default();
+            Ok((
+                text,
+                Ladder {
+                    rung,
+                    smallest,
+                    unrouted,
+                    unjudged: None,
+                },
+            ))
         }
-    }
-    if let Some((rung, text, figures)) = best {
-        let (net, c, max) = figures
-            .iter()
-            .min_by(|a, b| {
-                let (x, y) = (
-                    (i128::from(a.2) - i128::from(a.1)) * i128::from(b.2),
-                    (i128::from(b.2) - i128::from(b.1)) * i128::from(a.2),
-                );
-                x.cmp(&y)
-            })
-            .cloned()
-            .unwrap_or_default();
-        return Ok((
-            text,
-            Ladder {
-                rung,
-                net,
-                c_femtofarads: c,
-                max_femtofarads: max,
-            },
-        ));
-    }
-    match nearest {
-        Some(f) => Err(EmitError::CapacitanceOverBound {
-            over: f.into_iter().filter(|(_, c, m)| c > m).collect(),
-        }),
-        None => {
+        Choice::Over(over) => Err(EmitError::CapacitanceOverBound { over }),
+        Choice::Unrouted => {
             Err(first_error.unwrap_or_else(|| EmitError::Internal("the ladder has no rung".into())))
         }
+    }
+}
+
+/// A bounded net's figure on one rung: (net, its bound by `extract`'s
+/// arithmetic, its declared bound), fF.
+type Figure = (String, u64, u64);
+
+/// What the ladder emits, from each rung's figures (`None` for a rung that
+/// did not route).
+#[derive(Debug, PartialEq, Eq)]
+enum Choice {
+    /// The rung whose smallest margin is largest among those holding every
+    /// bound, the earlier on a tie, and its net nearest its bound.
+    Fits {
+        rung: usize,
+        smallest: Option<Figure>,
+    },
+    /// No rung holds every bound: each net over its bound at the rung whose
+    /// smallest margin is largest (the nearest), the earlier on a tie.
+    Over(Vec<Figure>),
+    /// No rung routed.
+    Unrouted,
+}
+
+/// A figure's margin `(max − c)/max` as an exact fraction (numerator,
+/// denominator), compared by cross-multiplying.
+fn margin(f: &Figure) -> (i128, i128) {
+    (i128::from(f.2) - i128::from(f.1), i128::from(f.2))
+}
+
+fn less(a: (i128, i128), b: (i128, i128)) -> bool {
+    a.0 * b.1 < b.0 * a.1
+}
+
+/// The ladder's choice (`AET-WO-1314` D3): see [`Choice`]. A rung with no
+/// bounded net holds every bound with nothing nearest it.
+fn choose(rungs: &[Option<&[Figure]>]) -> Choice {
+    // each rung's figure nearest its bound
+    let nearest = |f: &[Figure]| -> Option<Figure> {
+        f.iter()
+            .fold(None::<&Figure>, |m, x| match m {
+                Some(y) if !less(margin(x), margin(y)) => Some(y),
+                _ => Some(x),
+            })
+            .cloned()
+    };
+    let mut fits: Option<(usize, Option<Figure>)> = None;
+    let mut over: Option<(Option<Figure>, &[Figure])> = None;
+    for (k, f) in rungs.iter().enumerate() {
+        let Some(f) = f else { continue };
+        let worst = nearest(f);
+        let w = worst.as_ref().map_or((1, 1), margin);
+        let beats = |other: &Option<Figure>| less(other.as_ref().map_or((1, 1), margin), w);
+        if w.0 >= 0 {
+            if fits.as_ref().is_none_or(|(_, o)| beats(o)) {
+                fits = Some((k, worst));
+            }
+        } else if over.as_ref().is_none_or(|(o, _)| beats(o)) {
+            over = Some((worst, f));
+        }
+    }
+    match (fits, over) {
+        (Some((rung, smallest)), _) => Choice::Fits { rung, smallest },
+        (None, Some((_, f))) => Choice::Over(f.iter().filter(|(_, c, m)| c > m).cloned().collect()),
+        (None, None) => Choice::Unrouted,
     }
 }
 
@@ -2205,5 +2276,74 @@ mod tests {
             connector_library("").is_none(),
             "the empty name has a mapping"
         );
+    }
+}
+
+#[cfg(test)]
+mod ladder_tests {
+    use super::*;
+
+    fn f(net: &str, c: u64, max: u64) -> Figure {
+        (net.into(), c, max)
+    }
+
+    /// The fitting rung whose smallest margin is largest is chosen, with
+    /// that margin's net; a tie goes to the earlier rung; a rung over any
+    /// bound is never chosen, however good its other nets; an unrouted rung
+    /// is skipped. Margins are fractions of each net's own bound.
+    #[test]
+    fn the_ladder_chooses_the_largest_smallest_margin_among_fitting_rungs() {
+        // rung 0: 10 % on A; rung 1: over on B; rung 2: unrouted;
+        // rung 3: 20 % on B (2 of 10), rung 4: 20 % on A (20 of 100), a tie
+        let r0 = [f("A", 90, 100), f("B", 5, 10)];
+        let r1 = [f("A", 10, 100), f("B", 11, 10)];
+        let r3 = [f("A", 50, 100), f("B", 8, 10)];
+        let r4 = [f("A", 80, 100), f("B", 1, 10)];
+        let rungs = [
+            Some(&r0[..]),
+            Some(&r1[..]),
+            None,
+            Some(&r3[..]),
+            Some(&r4[..]),
+        ];
+        assert_eq!(
+            choose(&rungs),
+            Choice::Fits {
+                rung: 3,
+                smallest: Some(f("B", 8, 10))
+            }
+        );
+        // exactly at the bound fits
+        let at = [f("A", 100, 100)];
+        assert_eq!(
+            choose(&[Some(&at[..])]),
+            Choice::Fits {
+                rung: 0,
+                smallest: Some(f("A", 100, 100))
+            }
+        );
+        // a rung with no bounded net fits, nothing nearest
+        let none: [Figure; 0] = [];
+        assert_eq!(
+            choose(&[Some(&r1[..]), Some(&none[..])]),
+            Choice::Fits {
+                rung: 1,
+                smallest: None
+            }
+        );
+    }
+
+    /// No rung fitting: every net over its bound at the rung that came
+    /// nearest (its worst net least over), and only those; none routed:
+    /// unrouted.
+    #[test]
+    fn the_ladder_refuses_with_the_nearest_rungs_overs() {
+        let far = [f("A", 300, 100), f("B", 11, 10)];
+        let near = [f("A", 120, 100), f("B", 11, 10), f("C", 1, 10)];
+        assert_eq!(
+            choose(&[Some(&far[..]), Some(&near[..])]),
+            Choice::Over(vec![f("A", 120, 100), f("B", 11, 10)])
+        );
+        assert_eq!(choose(&[None, None]), Choice::Unrouted);
     }
 }
