@@ -29,7 +29,8 @@
 //!                "reservoir": { "reference": "C30", "part": "..." } | null, "adc_resolution_bits": 12 } ],
 //!   "crossings": [ { "reference": "U13", "part": "TXU0304PW", "bus": "IMU", "a_domain": "VDD_3V3",
 //!                    "b_domain": "VDD_1V8", "cs_pull_up": { "reference": "R40", "part": "...", "ohms": 100000 },
-//!                    "external": [ ... ], "controls": [ ... ] } ]
+//!                    "external": [ ... ], "controls": [ ... ] } ],
+//!   "drop_limits": [ { "domain": "VDD_3V3", "max_millivolts": 165, "source": "..." } ]   (optional)
 //! }
 //! ```
 //!

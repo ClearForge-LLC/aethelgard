@@ -277,12 +277,17 @@ fn in_union(
     .all(|&(a, b, c, d)| in_union(shapes, cand, a, b, c, d, depth - 1))
 }
 
-/// A via of the net: its centre, pad and drill.
+/// A via of the net: its centre, pad and drill. A through-hole pad of the
+/// net is one too (the §7.1 row: its barrel takes the pad's drill), its pad
+/// the largest disc its copper holds.
 #[derive(Clone, Debug)]
 pub struct ViaAt {
     pub at: (i64, i64),
     pub via_nm: i64,
     pub drill_nm: i64,
+    /// A through-hole pad whose plane join is a thermal relief: its spokes
+    /// are not priced, so it joins no plane (`ReliefUnpriced`, noted).
+    pub relief: bool,
 }
 
 /// One layer's copper cells (junction regions left out), its minimum
@@ -460,6 +465,7 @@ pub fn copper(
             at: v.at,
             via_nm: rule.via_nm,
             drill_nm: rule.drill_nm,
+            relief: false,
         })
         .collect();
     for a in routed.arrays.iter().filter(|a| a.net == net) {
@@ -467,7 +473,21 @@ pub fn copper(
             at,
             via_nm: a.via_nm,
             drill_nm: a.drill_nm,
+            relief: false,
         }));
+    }
+    for p in board.parts.iter().flat_map(|p| p.pads.iter()) {
+        if let (Some(drill), Some(n)) = (p.drill_nm, p.net.as_deref())
+            && n == net
+        {
+            let r = &p.rect;
+            vias.push(ViaAt {
+                at: ((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2),
+                via_nm: (r.x1 - r.x0).min(r.y1 - r.y0),
+                drill_nm: drill,
+                relief: p.join == Some(crate::stack::Join::Relief),
+            });
+        }
     }
     // the grid's origin: the routed vias' corner (the router's grid); a
     // via off it (a thermal array's) is left out, its hole kept clear
@@ -714,6 +734,14 @@ pub fn copper(
                 .iter()
                 .flat_map(|p| p.pads.iter())
                 .filter(|p| p.drill_nm.is_some())
+                .filter(|p| {
+                    // a solidly joined pad of the net that is a priced via
+                    // is plane copper, not a knockout
+                    let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
+                    !(p.net.as_deref() == Some(net)
+                        && p.join != Some(crate::stack::Join::Relief)
+                        && vias.iter().any(|v| v.at == c))
+                })
             {
                 let (w, hh) = (
                     (p.rect.x1 - p.rect.x0) as f64,
@@ -796,11 +824,6 @@ pub fn copper(
                     }
                 }
             }
-            if !own_drilled.is_empty() {
-                notes.push(format!(
-                    "{name}: the net's through-hole pads are knocked out, their join not priced"
-                ));
-            }
             layers.push(LayerCopper {
                 name: name.clone(),
                 cells,
@@ -825,6 +848,7 @@ pub fn copper(
     // B.Cu, a port at each face whose outside cell is copper and whose rays,
     // for every hole position, run inside copper
     let mut uses = Vec::new();
+    let mut relieved = 0usize;
     for v in vias {
         let ji = by_geometry[&(v.via_nm, v.drill_nm)].unwrap_or(0);
         let jn = &junctions[ji];
@@ -834,6 +858,10 @@ pub fn copper(
         for (li, layer) in layers.iter().enumerate() {
             let have: BTreeSet<Cell> = layer.cells.iter().copied().collect();
             if layer.plane {
+                if v.relief {
+                    relieved += 1;
+                    continue;
+                }
                 if !jn
                     .region
                     .cells
@@ -880,6 +908,11 @@ pub fn copper(
             junction: ji,
             joins,
         });
+    }
+    if relieved > 0 {
+        notes.push(format!(
+            "ReliefUnpriced: {relieved} plane joins of thermally relieved pads are left out, their spokes not priced"
+        ));
     }
     // plane islands, as KiCad's fill drops them: a plane cell no port of a
     // via joined to that plane reaches is left out
@@ -1676,6 +1709,48 @@ mod tests {
         assert!(r >= floor, "{r} under the floor {floor}");
         assert!(r <= floor * 1.6, "{r} far over the floor {floor}");
         assert!(pb.via_transfer.iter().all(|(_, q)| *q == flow::QUANTA));
+    }
+
+    /// A through-hole pad of the net is a via (the §7.1 row): its barrel,
+    /// at the pad's drill, carries the current from F.Cu to B.Cu when no
+    /// via does.
+    #[test]
+    fn a_through_hole_pad_carries_the_current_as_a_barrel() {
+        let mut th = pad("1", "VDD", 5_500_000, 1_750_000, 7_000_000, 3_250_000);
+        th.drill_nm = Some(800_000);
+        th.corner_nm = 750_000;
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad(
+                    "1", "VDD", 15_000_000, 2_000_000, 16_000_000, 3_000_000,
+                )],
+            ),
+            part("J3", vec![th]),
+        ]);
+        let (c, v2) = ((6_250_000, 2_500_000), (11_000_000, 2_500_000));
+        let routed = Routed {
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), c),
+                seg(Layer::B, c, v2),
+                seg(Layer::F, v2, (15_500_000, 2_500_000)),
+            ],
+            vias: vec![Via {
+                net: "VDD".into(),
+                at: v2,
+            }],
+            ..Routed::default()
+        };
+        let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+        let m = model();
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &m).unwrap();
+        let pb = bound(&nc, &m, src, snk, 400).unwrap();
+        let through = pb.via_transfer.iter().find(|(at, _)| *at == c).unwrap();
+        assert_eq!(through.1, flow::QUANTA, "{:?}", pb.via_transfer);
     }
 
     /// The drop is the worst supply pin plus the worst return pin, times the
