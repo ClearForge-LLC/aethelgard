@@ -2574,6 +2574,14 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         schematic: Written,
         bill_of_materials: Written,
         board: Written,
+        /// The capacitance ladder's choice, on a board that declares the
+        /// fabricator's tolerances (`AET-WO-1314`).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        capacitance_ladder: Option<serde_json::Value>,
+        /// What the via ring rule changed that the specification did not
+        /// declare.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        notes: Vec<String>,
     }
 
     let (spec, topology, table) = match solved(file) {
@@ -2656,6 +2664,21 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             schematic,
             bill_of_materials,
             board,
+            capacitance_ladder: emission.ladder.as_ref().map(|l| {
+                let rung = aethelgard_eda::route::RUNGS[l.rung];
+                serde_json::json!({
+                    "rung": l.rung,
+                    "bounded_via_cost": rung.bounded_via_cost,
+                    "bounded_first": rung.bounded_first,
+                    "smallest_margin": {
+                        "net": l.net,
+                        "c_bound_femtofarads": l.c_femtofarads,
+                        "declared_femtofarads": l.max_femtofarads,
+                    },
+                    "judged_by": "extract, run separately on the emitted board (RUL-20)",
+                })
+            }),
+            notes: emission.notes.clone(),
         },
         0,
     )

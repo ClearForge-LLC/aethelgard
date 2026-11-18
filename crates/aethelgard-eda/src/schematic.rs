@@ -145,6 +145,25 @@ pub enum EmitError {
         z: &'static str,
         why: String,
     },
+    /// `AET-WO-1314`: the specification declares the fabricator's
+    /// tolerances, and lacks one the via ring rule needs (`RUL-14`).
+    #[error(
+        "`{0}` is undeclared, and the via ring rule needs it wherever `board.stackup.fab_tolerances` is declared; it is never defaulted"
+    )]
+    FabToleranceUndeclared(&'static str),
+    /// `AET-WO-1314` D2: a class declares a via smaller than the pad that
+    /// keeps the declared ring at the worst declared hole size and position.
+    #[error("class `{class}` declares a {} mm via pad; the declared ring needs {} mm at the worst declared hole size and position", crate::sexpr::mm(*via_nm), crate::sexpr::mm(*pad_nm))]
+    ViaRingUnheld {
+        class: String,
+        via_nm: i64,
+        pad_nm: i64,
+    },
+    /// `AET-WO-1314` D3: no rung of the ladder routes the board with every
+    /// capacitance-bounded net within its bound. Each net over its bound, at
+    /// the rung that came nearest, with its figure and bound in fF.
+    #[error("no rung of the capacitance ladder routes every bounded net within its bound; nearest: {}", over.iter().map(|(n, c, m)| format!("`{n}` {c} fF over {m} fF")).collect::<Vec<_>>().join(", "))]
+    CapacitanceOverBound { over: Vec<(String, u64, u64)> },
     #[error("{0}")]
     Internal(String),
 }
@@ -172,6 +191,9 @@ impl EmitError {
             Self::OutlineUnreachable { .. } => "OutlineUnreachable",
             Self::CompactionUnbounded { .. } => "CompactionUnbounded",
             Self::ImuRotationUnplaceable { .. } => "ImuRotationUnplaceable",
+            Self::FabToleranceUndeclared(_) => "FabToleranceUndeclared",
+            Self::ViaRingUnheld { .. } => "ViaRingUnheld",
+            Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -189,6 +211,9 @@ impl EmitError {
                 Some(id)
             }
             Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
+            Self::FabToleranceUndeclared(path) => Some(path),
+            Self::ViaRingUnheld { class, .. } => Some(class),
+            Self::CapacitanceOverBound { over } => over.first().map(|(n, _, _)| n.as_str()),
             Self::OutlineTooSmall { reference, .. } => reference.as_deref(),
             Self::Library(_)
             | Self::BoardUnroutable(_)
@@ -244,6 +269,24 @@ pub struct Emission {
     pub schematic: String,
     pub bom: String,
     pub board: String,
+    /// The capacitance ladder's choice, on a board that declares the
+    /// fabricator's tolerances (`AET-WO-1314`); `None` on any other.
+    pub ladder: Option<Ladder>,
+    /// What the via ring rule changed that the specification did not
+    /// declare (a thermal array's via raised).
+    pub notes: Vec<String>,
+}
+
+/// The rung the capacitance ladder emitted, by its index in
+/// [`crate::route::RUNGS`], and the bounded net nearest its bound there:
+/// its figure and its bound, fF. It chose; it does not judge: `verify` runs
+/// `extract` on the emitted board on its own (`RUL-20`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Ladder {
+    pub rung: usize,
+    pub net: String,
+    pub c_femtofarads: u64,
+    pub max_femtofarads: u64,
 }
 
 /// A symbol pin: library coordinates in nanometres, Y up.
@@ -747,10 +790,36 @@ pub fn emit_moved(
     spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
     let stack = crate::stack::Stack::of(spec);
+    // the via ring rule (`AET-WO-1314`): every input it needs declared, and
+    // no class declaring a via it cannot hold
+    let rule = crate::stack::RingRule::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
+    if let Some(rule) = rule
+        && let Some((class, via_nm, pad_nm)) = rule.unheld(&stack).into_iter().next()
+    {
+        return Err(EmitError::ViaRingUnheld {
+            class,
+            via_nm,
+            pad_nm,
+        });
+    }
     let bound = spec.board.max_outline_um;
     if let Some(b) = bound {
         crate::pcb::bound_holds(&parts, b)?;
     }
+    let (board, ladder) = if rule.is_some() {
+        let (board, ladder) = laddered(spec, solved, table, &parts, &stack, moves, bound)?;
+        (board, Some(ladder))
+    } else {
+        let board = crate::pcb::write_moved(
+            &spec.project_name,
+            &parts,
+            &stack,
+            moves,
+            bound,
+            crate::route::Rung::TODAY,
+        )?;
+        (board, None)
+    };
     Ok(Emission {
         schematic: write_sheet(&spec.project_name, &parts, &rails)?,
         // A test point is a bare pad: its symbol is out of the BOM, as its
@@ -762,8 +831,141 @@ pub fn emit_moved(
                 .map(BomRow::from)
                 .collect::<Vec<_>>(),
         ),
-        board: crate::pcb::write_moved(&spec.project_name, &parts, &stack, moves, bound)?,
+        board,
+        ladder,
+        notes: stack.notes.clone(),
     })
+}
+
+/// The capacitance ladder (`AET-WO-1314`, ruling 6982875594 D3): the board
+/// routed at each of [`crate::route::RUNGS`], each judged by `extract`'s
+/// own arithmetic on the emitted text ([`crate::extract::read`],
+/// [`crate::extract::lines`], [`crate::extract::bound`]): every
+/// capacitance-bounded net's figure against its declared bound. The rung
+/// with the largest smallest margin (`(max − c)/max`, the earlier on a tie)
+/// among those that hold every bound is emitted. None holding, the board is
+/// refused, naming each net over its bound at the rung that came nearest.
+///
+/// This chooses; it is not the witness. `verify` judges the emitted board
+/// by running `extract` on it separately, as for any other board
+/// (`RUL-20`): the router consults the judge's arithmetic, never its
+/// verdict.
+fn laddered(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+    parts: &[Part],
+    stack: &crate::stack::Stack,
+    moves: &[crate::pcb::Move],
+    bound: Option<aethelgard_ir::board::OutlineBound>,
+) -> Result<(String, Ladder), EmitError> {
+    let lines = crate::extract::lines(spec, solved, table)
+        .map_err(|r| EmitError::Internal(format!("the ladder's lines: {}", r.message)))?;
+    let max_of = |net: &str| {
+        spec.net_constraints
+            .iter()
+            .find(|c| c.net_name == net)
+            .map(|c| c.max_capacitance_femtofarads)
+    };
+    // (rung, text, figures as (net, c, max)), and the first refusal
+    let mut best: Option<(usize, String, Vec<(String, u64, u64)>)> = None;
+    let mut nearest: Option<Vec<(String, u64, u64)>> = None;
+    let mut first_error = None;
+    // the smallest margin of a rung's figures, as a fraction to compare
+    // exactly: (max − c, max), the most negative first
+    let worst = |f: &[(String, u64, u64)]| {
+        f.iter()
+            .map(|(_, c, m)| (i128::from(*m) - i128::from(*c), i128::from(*m)))
+            .min_by(|a, b| (a.0 * b.1).cmp(&(b.0 * a.1)))
+    };
+    let better = |a: (i128, i128), b: (i128, i128)| a.0 * b.1 > b.0 * a.1;
+    // placed once; each rung routed on its own thread, its result kept at
+    // its index, so the choice is the rungs' order whatever the timing
+    let (footprints, outline) = crate::pcb::placed(&spec.project_name, parts, stack, moves, bound)?;
+    let routed: Vec<Result<String, EmitError>> = std::thread::scope(|scope| {
+        let handles: Vec<_> = crate::route::RUNGS
+            .iter()
+            .map(|&rung| {
+                let footprints = footprints.clone();
+                scope.spawn(move || {
+                    crate::pcb::write_placed_at(
+                        &spec.project_name,
+                        footprints,
+                        outline,
+                        stack,
+                        rung,
+                    )
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err(EmitError::Internal("a ladder rung panicked".into())))
+            })
+            .collect()
+    });
+    for (k, result) in routed.into_iter().enumerate() {
+        let text = match result {
+            Ok(t) => t,
+            Err(e) => {
+                first_error.get_or_insert(e);
+                continue;
+            }
+        };
+        let read = crate::extract::read(&text, stack)
+            .map_err(|r| EmitError::Internal(format!("the ladder's own board: {}", r.message)))?;
+        let figures: Vec<(String, u64, u64)> = crate::extract::bound(&read, &lines)
+            .map_err(|r| EmitError::Internal(format!("the ladder's bound: {}", r.message)))?
+            .into_iter()
+            .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
+            .collect();
+        let w = worst(&figures).unwrap_or((1, 1));
+        if w.0 >= 0 {
+            if best
+                .as_ref()
+                .is_none_or(|(_, _, f)| better(w, worst(f).unwrap_or((1, 1))))
+            {
+                best = Some((k, text, figures));
+            }
+        } else if nearest
+            .as_ref()
+            .is_none_or(|f| better(w, worst(f).unwrap_or((1, 1))))
+        {
+            nearest = Some(figures);
+        }
+    }
+    if let Some((rung, text, figures)) = best {
+        let (net, c, max) = figures
+            .iter()
+            .min_by(|a, b| {
+                let (x, y) = (
+                    (i128::from(a.2) - i128::from(a.1)) * i128::from(b.2),
+                    (i128::from(b.2) - i128::from(b.1)) * i128::from(a.2),
+                );
+                x.cmp(&y)
+            })
+            .cloned()
+            .unwrap_or_default();
+        return Ok((
+            text,
+            Ladder {
+                rung,
+                net,
+                c_femtofarads: c,
+                max_femtofarads: max,
+            },
+        ));
+    }
+    match nearest {
+        Some(f) => Err(EmitError::CapacitanceOverBound {
+            over: f.into_iter().filter(|(_, c, m)| c > m).collect(),
+        }),
+        None => {
+            Err(first_error.unwrap_or_else(|| EmitError::Internal("the ladder has no rung".into())))
+        }
+    }
 }
 
 /// `AET-WO-1313`: whether a declared outline bound can hold the parts the

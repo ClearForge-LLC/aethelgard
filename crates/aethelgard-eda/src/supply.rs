@@ -1380,6 +1380,7 @@ pub fn supplies(
         hole_size_plus_um: None,
         hole_size_minus_um: None,
         track_width_permille: None,
+        via_ring_um: None,
     };
     let fab = st.fab_tolerances.as_ref().unwrap_or(&none);
     let position = need(&fab.hole_position_um, "fab_tolerances.hole_position_um")?;

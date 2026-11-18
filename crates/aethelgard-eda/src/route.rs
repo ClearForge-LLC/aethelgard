@@ -111,6 +111,48 @@ const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
 const BEND: u32 = 1;
 const VIA_COST: u32 = 24;
+
+/// One routing of a board, as the capacitance ladder tries it
+/// (`AET-WO-1314`, ruling 6982875594 D3): the price of a via on a net with a
+/// declared capacitance bound, and whether those nets are routed right
+/// after the stitched ones. [`Rung::TODAY`] is the router as it was; a board
+/// without `fab_tolerances` is only ever routed at it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rung {
+    pub bounded_via_cost: u32,
+    pub bounded_first: bool,
+}
+
+impl Rung {
+    pub const TODAY: Rung = Rung {
+        bounded_via_cost: VIA_COST,
+        bounded_first: false,
+    };
+}
+
+/// The ladder's rungs, in the order tried: today's routing, a bounded net's
+/// via at 48, 96 and 320 (2, 4 and 13 times [`VIA_COST`]), then each of
+/// those with the bounded nets routed first. Engine constants, like the
+/// step costs: measured at `AET-WO-1314`'s stop, where no single rung held
+/// Sentinel-03's bounds at every ring and some rung held them at each.
+pub const RUNGS: [Rung; 8] = {
+    const fn r(bounded_via_cost: u32, bounded_first: bool) -> Rung {
+        Rung {
+            bounded_via_cost,
+            bounded_first,
+        }
+    }
+    [
+        r(VIA_COST, false),
+        r(48, false),
+        r(96, false),
+        r(320, false),
+        r(VIA_COST, true),
+        r(48, true),
+        r(96, true),
+        r(320, true),
+    ]
+};
 /// How many via nodes one connection may ban before it gives up a window.
 const BANS: usize = 16;
 /// A soft search's price for crossing another net's copper.
@@ -1003,19 +1045,6 @@ impl<'a> Router<'a> {
                 pending_via[node] += cost;
             }
         }
-        let via_cost: Vec<u32> = {
-            // MEASURED STOP ONLY (`AET-WO-1314` §1.1): a bounded net's
-            // via at `AET_BOUNDED_VIA_COST`
-            let bounded = std::env::var("AET_BOUNDED_VIA_COST")
-                .ok()
-                .and_then(|v| v.parse::<u32>().ok());
-            nets.iter()
-                .map(|n| match bounded {
-                    Some(c) if board.stack.bounded.iter().any(|b| b == n) => c,
-                    _ => VIA_COST,
-                })
-                .collect()
-        };
         Router {
             board,
             grid,
@@ -1036,7 +1065,7 @@ impl<'a> Router<'a> {
             history: [vec![0; n], vec![0; n]],
             banned: BTreeSet::new(),
             no_vias: false,
-            via_cost,
+            via_cost: vec![VIA_COST; count],
             cuts,
             anchors,
             fixed: vec![false; count],
@@ -2099,6 +2128,11 @@ fn net_pads(board: &Board) -> BTreeMap<String, Vec<PadRef>> {
 
 /// Routes `board`: every net with two or more pads, `unconnected-…` aside.
 pub fn route(board: &Board) -> Result<Routed, Unroutable> {
+    route_with(board, Rung::TODAY)
+}
+
+/// [`route`] at one rung of the capacitance ladder.
+pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
     let fail = |net: &str, why: String| Unroutable {
         net: net.to_owned(),
         why,
@@ -2128,10 +2162,8 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
             .iter()
             .map(|&(p, i)| yx(&board.parts[p].pads[i]))
             .collect();
-        // MEASURED STOP ONLY (`AET-WO-1314` §1.1): bounded nets before
-        // the rest under `AET_BOUNDED_FIRST`
-        let first = std::env::var_os("AET_BOUNDED_FIRST").is_some()
-            && board.stack.bounded.iter().any(|b| b == name);
+        // the rung's: a bounded net right after the stitched ones
+        let first = rung.bounded_first && board.stack.bounded.iter().any(|b| b == name);
         (!is_stitched(name), !first, list.len(), at, name.clone())
     });
     let pads: Vec<Vec<PadRef>> = nets.iter().map(|n| pads[n].clone()).collect();
@@ -2144,6 +2176,11 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
     let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
     let arrays = arrays(board).map_err(|why| fail("", why))?;
     let mut r = Router::new(board, grid, nets.clone(), &arrays);
+    for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
+        if board.stack.bounded.iter().any(|b| b == net) {
+            *cost = rung.bounded_via_cost;
+        }
+    }
     if let Some((reference, pads)) = r.exhausted.clone() {
         return Err(Unroutable {
             net: String::new(),
@@ -5249,6 +5286,8 @@ mod tests {
             via_nm: crate::route::VIA_NM,
             drill_nm: crate::route::DRILL_NM,
             bounded: vec![],
+            ring: None,
+            notes: vec![],
             copper: vec!["F.Cu".into(), "B.Cu".into()],
             planes: vec![],
             thickness: crate::stack::Thickness {

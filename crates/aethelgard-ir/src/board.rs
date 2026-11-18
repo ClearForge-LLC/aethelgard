@@ -200,6 +200,14 @@ pub struct FabTolerances {
         skip_serializing_if = "Option::is_none"
     )]
     pub track_width_permille: Option<Sourced>,
+    /// The copper a via's pad keeps round its hole, at least, µm: held at
+    /// the largest finished hole and the worst position (`AET-WO-1314`).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub via_ring_um: Option<Sourced>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -466,6 +474,12 @@ impl Board {
                     "track_width_permille",
                     999,
                     "a fraction from 0 to 999 per mille",
+                ),
+                (
+                    &f.via_ring_um,
+                    "via_ring_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
                 ),
             ] {
                 if let Some(v) = v {
