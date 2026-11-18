@@ -461,7 +461,7 @@ The records are the FEEDBACK files of `4400c`, `4400c2`, `4400e2`, `4400e3`, `42
   - the ICM-42688-P probed at 3.569 s and read through its FIFO at 3.611 s.
 
   The run takes 10.6 to 12.0 s of wall time, at most 833 MiB, and keeps 1.21 MB of log.
-- **A twin fault, not a firmware one** (`4400e2`, PR #215). Renode 1.17.0's NVIC computes `ICSR.RETTOBASE` from system exceptions only (`NVIC.cs` L1079). When TIM5 nests over a DMA stream's interrupt, ChibiOS's epilogue builds a stray switch frame, and the result is an `INVSTATE` hard fault that silicon would not have. `4400e3` corrects the one bit with a cited monitor read hook, tied to the pin both ways, until the pinned Renode carries upstream `e7a8584c` (`AET-WO-1605`).
+- **A twin fault, not a firmware one** (`4400e2`, PR #215). Renode 1.17.0's NVIC computes `ICSR.RETTOBASE` from system exceptions only (`NVIC.cs` L1079). When TIM5 nests over a DMA stream's interrupt, ChibiOS's epilogue builds a stray switch frame, and the result is an `INVSTATE` hard fault that silicon would not have. `4400e3` corrected the one bit with a cited monitor read hook, tied to the pin both ways. **Since `AET-WO-1605` (#223, 2026-11-18)** the pinned Renode is 1.17.0 rebuilt with upstream `e7a8584c`, `c8b2075c` and `7b687540` (build `1.17.0+20260907gitf1dd1b4af.aet1605`), and the hook is retired: the witness reads `RETTOBASE` 0 nested with nothing of ours. No pinned figure moved, and ArduPilot's witness times are identical to the nanosecond.
 - **The ICM-42688-P model's FIFO** (`4220c`, PR #214), from DS-000347. Where the datasheet is silent (B1 to B4), it follows TDK's own driver. ArduPilot's `read_fifo` accepts all 1,240 packets in 4.2 s.
 - **Two model divergences, named** (`4400c`, measured again at `4400e`):
   - *TIM5* runs at a fixed 250 MHz, so ArduPilot's clock runs 1.25 × virtual time. The foreign window's 4 s bound rests on it: when TIM5 is corrected, the last witness may move to about 4.5 s [inferred], and the bound is measured again.
@@ -737,6 +737,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-17 | §2.26, §8 | Added §2.26: `2302`'s static trace bytes and its bus-time divergence, and the `2303` lock-step measurements. `OQ-03` reopened for firmware-dependent loads and ruled: `4500` stays static, and lock-step goes to the battery-sag work order | PR #175; PR #200, comment 6943762720 |
 | 2026-11-18 | §2.27 | Added §2.27: the flight path's measurements. Unmodified ArduPilot passes the foreign judge; Renode 1.17.0's `RETTOBASE` fault and its correction; the ICM FIFO; the TIM5 and `usart1` divergences, named | PRs #212, #214, #215, #217 |
 | 2026-11-18 | §2.28 | Added §2.28: `1303b`'s measurements (the closed forms' looseness, the certified discrete flow, the fabricator's tolerances priced, the 2-layer supply finding) | PR #222 |
+| 2026-11-18 | §2.27 | The `RETTOBASE` correction is retired: the pinned Renode carries upstream's NVIC fixes (`AET-WO-1605`) | PR #223 |
 
 New sections continue the sequence and never reuse a number.
 
