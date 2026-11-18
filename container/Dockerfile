@@ -113,7 +113,7 @@ RUN patch -d src/Infrastructure -p1 -i /ci/patches/1.patch \
  && patch -d src/Infrastructure -p1 -i /ci/patches/3.patch \
  && dotnet restore -r linux-x64 -p:Configuration=Release -p:GenerateFullPaths=true -p:Platform=AnyCPU -p:Architecture=x64 -p:PORTABLE=true -p:SatelliteResourceLanguages=en -p:RemoveWPF=true -p:BuildDate=20260907 -p:CommitString=gitf1dd1b4af.aet1605 src/Renode/Renode.csproj \
  && find .nuget -name '*.nupkg' -printf '%P\n' > /tmp/restored \
- && sort -o /tmp/restored /tmp/restored \
+ && LC_ALL=C sort -o /tmp/restored /tmp/restored \
  && cut -c67- /ci/nuget.sha256 > /tmp/pinned \
  && cmp /tmp/restored /tmp/pinned \
  && cd /ci/src/renode/.nuget \

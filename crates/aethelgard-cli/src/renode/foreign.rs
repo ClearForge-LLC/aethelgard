@@ -4,11 +4,12 @@
 //! and never inferred from the ELF (`INV-06`).
 //!
 //! It boots the firmware on the same emitted platform, under the same bounds,
-//! but with none of the generated runtime's contract: no boot word, no
-//! records in RAM, no hooks of ours, no serial injection. What it says comes from witnesses the firmware cannot
-//! write (`INV-07`): the models' own transaction lines and the platform's
-//! own state. Every rule of today's judge is kept, replaced or dropped,
-//! [`RULES`], and the verdict names each, with what is weakened.
+//! but with none of the generated runtime's contract: no boot word, no records
+//! in RAM, no hooks of ours, no serial injection. What it says comes from
+//! witnesses the firmware cannot write (`INV-07`): the models' own transaction
+//! lines and the platform's own state. Every rule of today's judge is kept,
+//! replaced or dropped, [`RULES`], and the verdict names each, with what is
+//! weakened.
 
 use serde::Serialize;
 

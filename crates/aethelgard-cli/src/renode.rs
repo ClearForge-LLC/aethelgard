@@ -3574,7 +3574,7 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
 }
 
 /// The build `renode --version` names on its `build:` line, as Renode prints
-/// it (`1.17.0+20260907gitf1dd1b4af` in the pinned image): `None` unless
+/// it (`1.17.0+20260907gitf1dd1b4af.aet1605` in the pinned image): `None` unless
 /// exactly one such line holds 1 to 256 printable ASCII bytes and no space.
 pub fn build(version_stdout: &[u8]) -> Option<String> {
     let text = String::from_utf8_lossy(version_stdout);
