@@ -452,6 +452,21 @@ The records are `docs/work-orders/AET-WO-2302.FEEDBACK.md` (§§2, 9, 12) and `d
 
   **Today's campaign reader refuses per-quantum data at any length.** At 100 µs quanta, the reset comes at most 76 µs later and 98 mV deeper than at 1 µs, with the same reset count.
 
+### 2.27 Measurements from the flight path, AET-WO-4400c through 4400e (2026-11-17 to 18, Furnace and GitHub Actions)
+
+The records are the FEEDBACK files of `4400c`, `4400c2`, `4400e2`, `4400e3`, `4220c` and `4400e`.
+- **Unmodified ArduPilot passes the foreign judge on the emitted Sentinel-02 platform** (`4400e`, PR #212). The command is `simulate --foreign 4000ms`. The witnesses come only from the models' own lines and the platform's state:
+  - booted: U4's identity at 0.162 s;
+  - both barometers probed at 0.343 s and read at 0.383 s;
+  - the ICM-42688-P probed at 3.569 s and read through its FIFO at 3.611 s.
+
+  The run takes 10.6 to 12.0 s of wall time, at most 833 MiB, and keeps 1.21 MB of log.
+- **A twin fault, not a firmware one** (`4400e2`, PR #215). Renode 1.17.0's NVIC computes `ICSR.RETTOBASE` from system exceptions only (`NVIC.cs` L1079). When TIM5 nests over a DMA stream's interrupt, ChibiOS's epilogue builds a stray switch frame, and the result is an `INVSTATE` hard fault that silicon would not have. `4400e3` corrects the one bit with a cited monitor read hook, tied to the pin both ways, until the pinned Renode carries upstream `e7a8584c` (`AET-WO-1605`).
+- **The ICM-42688-P model's FIFO** (`4220c`, PR #214), from DS-000347. Where the datasheet is silent (B1 to B4), it follows TDK's own driver. ArduPilot's `read_fifo` accepts all 1,240 packets in 4.2 s.
+- **Two model divergences, named** (`4400c`, measured again at `4400e`):
+  - *TIM5* runs at a fixed 250 MHz, so ArduPilot's clock runs 1.25 × virtual time. The foreign window's 4 s bound rests on it: when TIM5 is corrected, the last witness may move to about 4.5 s [inferred], and the bound is measured again.
+  - *`usart1`* runs at a fixed 200 MHz, giving `BRR` `0x271`. The foreign judge drops `BRR`, so the divergence is a bench row.
+
 ## 3. Shape — one representation, two projections, one loop
 
 ```
@@ -707,6 +722,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-16 | §4 | `RUL-21`: published images are pinned snapshots with no update promise; an image only when CI needs one; the library grows through emitters, not images | Scotty, 2026-11-16 |
 | 2026-11-16 | §2.1 | Two rows from first silicon: SPI1's `MODF`, and the H7's I2C clock-synchronisation threshold | northstar §2's first scar, ratified by Scotty |
 | 2026-11-17 | §2.26, §8 | Added §2.26: `2302`'s static trace bytes and its bus-time divergence, and the `2303` lock-step measurements. `OQ-03` reopened for firmware-dependent loads and ruled: `4500` stays static, and lock-step goes to the battery-sag work order | PR #175; PR #200, comment 6943762720 |
+| 2026-11-18 | §2.27 | Added §2.27: the flight path's measurements. Unmodified ArduPilot passes the foreign judge; Renode 1.17.0's `RETTOBASE` fault and its correction; the ICM FIFO; the TIM5 and `usart1` divergences, named | PRs #212, #214, #215, #217 |
 
 New sections continue the sequence and never reuse a number.
 
