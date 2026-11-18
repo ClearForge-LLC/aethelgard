@@ -1432,28 +1432,8 @@ pub fn supplies(
                 })
                 .collect()
         };
-        let worst = |v: &[PinResult]| -> Option<u64> {
-            v.iter()
-                .map(|r| match r {
-                    PinResult::Bounded {
-                        r_bound_microohms, ..
-                    } => Some(*r_bound_microohms),
-                    PinResult::Refused { .. } => None,
-                })
-                .collect::<Option<Vec<u64>>>()
-                .and_then(|v| v.into_iter().max())
-        };
-        // µΩ × mA = nV; rounded up to µV
-        let drop = match (worst(&pins), worst(&returns)) {
-            (Some(a), Some(b)) => {
-                Some(((u128::from(a) + u128::from(b)) * u128::from(load)).div_ceil(1000) as u64)
-            }
-            _ => None,
-        };
-        let limit_uv = u64::from(limit.max_millivolts) * 1000;
-        let note = drop.filter(|&v| v * 3 > limit_uv * 2).map(|_| {
-            format!("the bound is within 1.5x of the limit: the gate's {} um pitch sets part of this margin, and a finer pitch is the known remedy", PITCH_NM as f64 / 1000.0)
-        });
+        let drop = drop_bound(&pins, &returns, load);
+        let note = pitch_note(drop, limit.max_millivolts);
         out.push(Gate {
             domain: d.clone(),
             limit_millivolts: limit.max_millivolts,
@@ -1470,6 +1450,37 @@ pub fn supplies(
         });
     }
     Ok(out)
+}
+
+/// (the largest supply bound + the largest return bound) × the load, µV,
+/// rounded up (µΩ × mA = nV); `None` when any pin is refused or a side has
+/// no pin.
+pub fn drop_bound(pins: &[PinResult], returns: &[PinResult], load_milliamps: u64) -> Option<u64> {
+    let worst = |v: &[PinResult]| -> Option<u64> {
+        v.iter()
+            .map(|r| match r {
+                PinResult::Bounded {
+                    r_bound_microohms, ..
+                } => Some(*r_bound_microohms),
+                PinResult::Refused { .. } => None,
+            })
+            .collect::<Option<Vec<u64>>>()
+            .and_then(|v| v.into_iter().max())
+    };
+    let (a, b) = (worst(pins)?, worst(returns)?);
+    let nv = (u128::from(a) + u128::from(b)) * u128::from(load_milliamps);
+    u64::try_from(nv.div_ceil(1000)).ok()
+}
+
+/// The note a drop within 1.5× of its limit carries (ruling S4).
+pub fn pitch_note(drop_microvolts: Option<u64>, limit_millivolts: u32) -> Option<String> {
+    let limit_uv = u64::from(limit_millivolts) * 1000;
+    drop_microvolts.filter(|&v| u128::from(v) * 3 > u128::from(limit_uv) * 2).map(|_| {
+        format!(
+            "the bound is within 1.5x of the limit: the gate's {} um pitch sets part of this margin, and a finer pitch is the known remedy",
+            PITCH_NM as f64 / 1000.0
+        )
+    })
 }
 
 fn bounded_pin(p: &Pad, b: &PinBound) -> PinResult {
@@ -1506,4 +1517,189 @@ fn conditions() -> Vec<String> {
         "supply: copper resistivity IACS x (1 + 0.00393 x (T - 20)) x 1.181 (IPC-MF-150F 3.8.1.2's foil maximum, applied to plated copper as a stated condition), at the declared copper temperature maximum".into(),
         format!("supply: plane fill at least the outline less {} mm and each knockout's measured {} mm clearance and {} mm min-thickness opening (KiCad 10.0.7, measured)", EDGE_NM as f64 / 1e6, FILL_CLEARANCE_NM as f64 / 1e6, OPENING_NM as f64 / 1e6),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pcb::Rect;
+    use crate::route::{Part, Segment, Via};
+
+    fn pad(number: &str, net: &str, x0: i64, y0: i64, x1: i64, y1: i64) -> Pad {
+        Pad {
+            number: number.into(),
+            net: Some(net.into()),
+            rect: Rect { x0, y0, x1, y1 },
+            corner_nm: 0,
+            drill_nm: None,
+            join: None,
+        }
+    }
+
+    fn part(reference: &str, pads: Vec<Pad>) -> Part {
+        Part {
+            reference: reference.into(),
+            rotation: 0,
+            pads,
+            courtyard: vec![],
+            keepouts: vec![],
+        }
+    }
+
+    /// A 2-layer board 20 × 6 mm, 0.25 mm tracks.
+    fn board(parts: Vec<Part>) -> Board {
+        let mut stack = crate::stack::reference();
+        stack.width_nm = 250_000;
+        Board {
+            outline: Rect {
+                x0: 0,
+                y0: 0,
+                x1: 20_000_000,
+                y1: 6_000_000,
+            },
+            parts,
+            stack,
+        }
+    }
+
+    fn model() -> Model {
+        Model {
+            h_nm: PITCH_NM,
+            rho: rho_max(125),
+            outer_nm: (30_000, 70_000),
+            plane_nm: (15_000, 70_000),
+            plating_nm: 18_000,
+            beta_nm: BETA_NM,
+            hole_offset_nm: HOLE_OFFSET_NM,
+            edge_nm: EDGE_NM,
+            crop_nm: CROP_NM,
+            fill_clearance_nm: FILL_CLEARANCE_NM,
+            opening_nm: OPENING_NM,
+        }
+    }
+
+    fn seg(layer: Layer, a: (i64, i64), b: (i64, i64)) -> Segment {
+        Segment {
+            net: "VDD".into(),
+            layer,
+            start: a,
+            end: b,
+        }
+    }
+
+    /// A straight 0.25 mm track between two pads 10 mm apart: its cells
+    /// fill the track exactly, so the bound is the bar's exact
+    /// `ρL/(Wt)` at the minimum thickness and the resistivity bound.
+    #[test]
+    fn a_straight_track_is_bounded_at_its_exact_resistance() {
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad(
+                    "1", "VDD", 12_000_000, 2_000_000, 13_000_000, 3_000_000,
+                )],
+            ),
+        ]);
+        let routed = Routed {
+            segments: vec![seg(
+                Layer::F,
+                (1_500_000, 2_500_000),
+                (12_500_000, 2_500_000),
+            )],
+            ..Routed::default()
+        };
+        let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+        let m = model();
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &m).unwrap();
+        let r = bound(&nc, &m, src, snk, 400).unwrap().bound.energy.hi;
+        let exact = m.rho.hi * 10.0 / (0.25 * 0.03);
+        eprintln!("track: bound {r:.6} exact {exact:.6}");
+        assert!(r >= exact, "{r} under the exact {exact}");
+        assert!(r <= exact * (1.0 + 1e-6), "{r} over the exact {exact}");
+    }
+
+    /// Two vias carry the current down to B.Cu and back: the bound holds
+    /// above the tracks' bars and both barrels at their shortest, and not
+    /// far above.
+    #[test]
+    fn a_path_through_two_vias_is_bounded_above_its_floor() {
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad(
+                    "1", "VDD", 15_000_000, 2_000_000, 16_000_000, 3_000_000,
+                )],
+            ),
+        ]);
+        let (v1, v2) = ((6_000_000, 2_500_000), (11_000_000, 2_500_000));
+        let routed = Routed {
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), v1),
+                seg(Layer::B, v1, v2),
+                seg(Layer::F, v2, (15_500_000, 2_500_000)),
+            ],
+            vias: vec![
+                Via {
+                    net: "VDD".into(),
+                    at: v1,
+                },
+                Via {
+                    net: "VDD".into(),
+                    at: v2,
+                },
+            ],
+            ..Routed::default()
+        };
+        let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+        let m = model();
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &m).unwrap();
+        let pb = bound(&nc, &m, src, snk, 400).unwrap();
+        let r = pb.bound.energy.hi;
+        let rho = m.rho.hi;
+        // tracks between pad edges and via pads' edges (0.3 mm radius)
+        let bars = rho * ((6.0 - 0.3 - 2.0) + (11.0 - 0.3 - 6.3) + (15.0 - 11.3)) / (0.25 * 0.03);
+        // each barrel at its shortest: the dielectric's minimum, 0.2 mm
+        let barrel = rho * 0.2 / (std::f64::consts::PI * 0.018 * (0.3 - 0.018));
+        let floor = bars + 2.0 * barrel;
+        eprintln!(
+            "two vias: bound {r:.5} floor {floor:.5} (shares {:?})",
+            pb.shares
+        );
+        assert!(r >= floor, "{r} under the floor {floor}");
+        assert!(r <= floor * 1.6, "{r} far over the floor {floor}");
+        assert!(pb.via_transfer.iter().all(|(_, q)| *q == flow::QUANTA));
+    }
+
+    /// The drop is the worst supply pin plus the worst return pin, times the
+    /// load, rounded up; a refused pin leaves none.
+    #[test]
+    fn the_drop_is_the_worst_pair_times_the_load() {
+        let b = |pin: &str, r| PinResult::Bounded {
+            pin: pin.into(),
+            r_bound_microohms: r,
+        };
+        let pins = [b("1", 30_000), b("2", 52_055)];
+        let rets = [b("3", 47_181), b("4", 33_000)];
+        // (52 055 + 47 181) µΩ × 659 mA = 65 396 524 nV: 65 397 µV
+        assert_eq!(drop_bound(&pins, &rets, 659), Some(65_397));
+        let refused = [PinResult::Refused {
+            pin: "5".into(),
+            kind: "GroundReturnUnread",
+            message: String::new(),
+        }];
+        assert_eq!(drop_bound(&pins, &refused, 659), None);
+        assert_eq!(drop_bound(&pins, &[], 659), None);
+        // the note at more than two thirds of the limit, not at it
+        assert!(pitch_note(Some(110_001), 165).is_some());
+        assert!(pitch_note(Some(110_000), 165).is_none());
+        assert!(pitch_note(None, 165).is_none());
+    }
 }
