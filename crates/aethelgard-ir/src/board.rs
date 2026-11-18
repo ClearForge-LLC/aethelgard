@@ -155,6 +155,51 @@ pub struct Stackup {
         skip_serializing_if = "Option::is_none"
     )]
     pub copper_temperature_max_c: Option<Sourced>,
+    /// The fabricator's tolerances the supply gate prices
+    /// (`AET-WO-1303b`, ruling 6974760231): a fabricator's numbers, not the
+    /// engine's. Optional, and each entry optional: refused by name when
+    /// the gate reads one that is absent.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fab_tolerances: Option<FabTolerances>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct FabTolerances {
+    /// A hole's centre anywhere within this of its pad's, per axis, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_position_um: Option<Sourced>,
+    /// A finished hole up to this larger than drawn, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_size_plus_um: Option<Sourced>,
+    /// A finished hole up to this smaller than drawn, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_size_minus_um: Option<Sourced>,
+    /// A finished track up to this much narrower than drawn, in
+    /// thousandths of its width (the IR's integers, as
+    /// `relative_permittivity_max_permille`).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub track_width_permille: Option<Sourced>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -396,6 +441,45 @@ impl Board {
             }
             source(&v.source, "board.stackup.copper_temperature_max_c.source")?;
         }
+        if let Some(f) = &s.fab_tolerances {
+            for (v, path, max, rule) in [
+                (
+                    &f.hole_position_um,
+                    "hole_position_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.hole_size_plus_um,
+                    "hole_size_plus_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.hole_size_minus_um,
+                    "hole_size_minus_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.track_width_permille,
+                    "track_width_permille",
+                    999,
+                    "a fraction from 0 to 999 per mille",
+                ),
+            ] {
+                if let Some(v) = v {
+                    let path = format!("board.stackup.fab_tolerances.{path}");
+                    if v.value > max {
+                        return Err(E::StackupValue {
+                            path: format!("{path}.value"),
+                            rule,
+                        });
+                    }
+                    source(&v.source, &format!("{path}.source"))?;
+                }
+            }
+        }
         for (i, d) in s.dielectrics.iter().enumerate() {
             if let Some(m) = d.max_thickness_um {
                 let path = format!("board.stackup.dielectrics[{i}].max_thickness_um");
@@ -494,6 +578,7 @@ crate::object_only!(
     FinishedThickness,
     Dielectric,
     Sourced,
+    FabTolerances,
     DesignRules,
     OutlineBound
 );

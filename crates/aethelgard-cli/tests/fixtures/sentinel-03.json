@@ -864,6 +864,24 @@
       "relative_permittivity_max_permille": {
         "value": 5400,
         "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      },
+      "fab_tolerances": {
+        "hole_position_um": {
+          "value": 75,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole Position Tolerance, \"+/-0.075 mm\""
+        },
+        "hole_size_plus_um": {
+          "value": 130,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+        },
+        "hole_size_minus_um": {
+          "value": 80,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+        },
+        "track_width_permille": {
+          "value": 200,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Traces, Track width tolerance, \"+/-20%\""
+        }
       }
     },
     "rules": {
@@ -895,7 +913,8 @@
         "drill_um": 300
       },
       "nets": [
-        "VDD_3V3"
+        "VDD_3V3",
+        "GND"
       ]
     }
   ],

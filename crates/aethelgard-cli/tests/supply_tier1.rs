@@ -137,6 +137,28 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
             "{key}: {r}"
         );
     }
+    for key in [
+        "hole_position_um",
+        "hole_size_plus_um",
+        "hole_size_minus_um",
+        "track_width_permille",
+    ] {
+        let mut v = gated(s03(), 165);
+        v["board"]["stackup"]["fab_tolerances"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        let (code, r) = extract(s03_board(), &write(key, &v));
+        assert_eq!(code, 2, "{key}: {r}");
+        assert_eq!(r["error"]["kind"], "SupplyInputUndeclared", "{key}: {r}");
+        assert!(
+            r["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains(&format!("fab_tolerances.{key}")),
+            "{key}: {r}"
+        );
+    }
     // every part on the domain that draws current is named by a load
     // entry: the flash's removed, the gate names it
     let mut v = gated(s03(), 165);
@@ -213,6 +235,37 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .any(|c| c.contains("other domains' return currents")),
         "{conditions:?}"
     );
+}
+
+/// GND back on the default 0.6/0.3 mm vias: at JLCPCB's largest finished
+/// hole and worst position the band does not fit their pad, so every
+/// return is refused by name with the pad that would hold it, 0.7 mm
+/// (ruling 6974760231, (1)).
+#[test]
+fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
+    let mut v = gated(s03(), 165);
+    for c in v["net_classes"].as_array_mut().unwrap() {
+        if let Some(nets) = c["nets"].as_array_mut() {
+            nets.retain(|n| n != "GND");
+        }
+    }
+    let spec = write("s03-gnd06", &v);
+    let board = emitted("s03-gnd06", &spec);
+    let (code, r) = extract(&board, &spec);
+    assert_eq!(code, 1, "{r}");
+    let s = &r["supplies"][0];
+    let vss = pins(s, "returns");
+    assert!(!vss.is_empty());
+    for p in &vss {
+        assert_eq!(p["refused"]["kind"], "SupplyViaPadTooSmall", "{p}");
+        assert!(
+            p["refused"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("via pad >= 0.7 mm"),
+            "{p}"
+        );
+    }
 }
 
 /// The same board against a limit its bound exceeds: a finding, and the

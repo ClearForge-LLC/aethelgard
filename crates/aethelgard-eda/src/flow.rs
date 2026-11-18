@@ -1185,36 +1185,88 @@ pub fn junction_core(
     let f2 = i_f2.div(len2a);
     let g2 = Iv::exact(1.0).div(dth);
     // r J_r t = α + γ r, α = g(1 + p) − f p, γ = (f − g)/β, p = r_d/β:
-    // ∫(α + γr)²/r dr = α² L + 2αγβ + γ² D, L = ln(r0/r_d), D = (r0² − r_d²)/2
-    let one = Iv::exact(1.0);
-    let p = r_d.div(beta);
-    let l = r0.ln().sub(r_d.ln());
-    let d = r0.sqr().sub(r_d.sqr()).scale(0.5);
-    let db2 = d.div(beta.sqr());
-    let c_ff = p.sqr().mul(l).sub(p.scale(2.0)).add(db2);
-    let c_fg = p
-        .mul(one.add(p))
-        .mul(l)
-        .scale(-2.0)
-        .add(one.add(p.scale(2.0)).scale(2.0))
-        .sub(db2.scale(2.0));
-    let c_gg = one.add(p).sqr().mul(l).sub(one.add(p).scale(2.0)).add(db2);
+    // ∫(α + γr)²/r dr = α² L + 2αγβ + γ² D, L = ln(r0/r_d), D = (r0² − r_d²)/2.
+    // Written out, each coefficient is a difference of terms of order p
+    // whose value is of order 1/p; with x = β/r_d = 1/p and
+    // L/x² = ln(1 + x)/x² = Σ_{j≥−1} (−1)^{j+1} x^j/(j + 2), the terms in 1/x
+    // and 1 cancel exactly, leaving (`AET-WO-1303b`, ruling 6974760231)
+    //   c_ff = p²L − 2p + D/β²            = Σ_{k≥1} (−1)^{k+1} x^k/(k + 2)
+    //   c_fg = −2p(1+p)L + 2(1+2p) − 2D/β² = Σ_{k≥1} (−1)^{k+1} 2x^k/((k+1)(k+2))
+    //   c_gg = (1+p)²L − 2(1+p) + D/β²     = Σ_{k≥1} (−1)^{k+1} 2x^k/(k(k+1)(k+2))
+    // alternating, with terms falling for x < 1, so each remainder is at most
+    // the next term. `r_d` enters each once, so an interval of hole sizes
+    // stays tight; D/β² = 1/x + 1/2.
+    let x = beta.div(r_d);
+    if x.hi >= 1.0 {
+        return Err(JunctionError::Grazing);
+    }
+    let c_ff = alternating(x, |k| Iv::exact(1.0).div(Iv::exact(f64::from(k + 2))));
+    let c_fg = alternating(x, |k| {
+        Iv::exact(2.0).div(Iv::exact(f64::from((k + 1) * (k + 2))))
+    });
+    let c_gg = alternating(x, |k| {
+        Iv::exact(2.0).div(Iv::exact(f64::from(k * (k + 1) * (k + 2))))
+    });
+    let db2 = r_d.div(beta).add(Iv::exact(0.5));
     let band = c_ff
         .mul(f2)
         .add(c_fg.mul(g2))
         .add(c_gg.mul(g2))
         .add(db2.mul(i_c2));
     // the plating: I = ¼[(r_d⁴ − r_i⁴)/4 − r_i²(r_d² − r_i²) + r_i⁴ ln(r_d/r_i)]
-    let r_i = r_d.sub(t_p);
-    let (d2, i2) = (r_d.sqr(), r_i.sqr());
-    let quarter = d2.sqr().sub(i2.sqr()).scale(0.25);
-    let i_p = quarter
-        .sub(i2.mul(d2.sub(i2)))
-        .add(i2.sqr().mul(r_d.ln().sub(r_i.ln())))
-        .scale(0.25);
-    let area = d2.sub(i2).scale(0.5);
-    let plating = i_p.div(area.sqr()).mul(g2);
+    // over A² for A = (r_d² − r_i²)/2. With u = 1 − (r_i/r_d)² =
+    // 1 − (1 − t_p/r_d)², and ln(r_d/r_i) = −½ ln(1 − u) = ½ Σ u^j/j, the
+    // terms in u and u² cancel and I/A² = Σ_{m≥3} u^{m−2}/(m(m−1)(m−2)):
+    // positive terms, the remainder after the last at most its successor
+    // over (1 − u). `r_d` enters once.
+    let w = Iv::exact(1.0).sub(t_p.div(r_d));
+    if w.lo <= 0.0 {
+        return Err(JunctionError::Grazing);
+    }
+    let u = Iv::exact(1.0).sub(w.sqr());
+    let plating = positive(u).mul(g2);
     Ok((ray.add(band).add(plating), dth))
+}
+
+/// `Σ_{k=1}^{40} (−1)^{k+1} c(k) x^k`, with the 41st term's magnitude
+/// added both ways: for `0 ≤ x < 1` and `c` falling, the series alternates
+/// with falling terms, so the tail is at most the next term.
+fn alternating(x: Iv, c: impl Fn(u32) -> Iv) -> Iv {
+    let mut sum = Iv::exact(0.0);
+    let mut pow = Iv::exact(1.0);
+    for k in 1..=40u32 {
+        pow = pow.mul(x);
+        let term = c(k).mul(pow);
+        sum = if k % 2 == 1 {
+            sum.add(term)
+        } else {
+            sum.sub(term)
+        };
+    }
+    let tail = c(41).mul(pow.mul(x)).hi;
+    sum.add(Iv {
+        lo: -tail,
+        hi: tail,
+    })
+}
+
+/// `Σ_{m=3}^{42} u^{m−2}/(m(m−1)(m−2))` plus its tail, at most the next
+/// term over `1 − u` (each later coefficient is smaller), for `0 ≤ u < 1`.
+fn positive(u: Iv) -> Iv {
+    let mut sum = Iv::exact(0.0);
+    let mut pow = Iv::exact(1.0);
+    for m in 3..=42u32 {
+        pow = pow.mul(u);
+        sum = sum.add(pow.div(Iv::exact(f64::from(m * (m - 1) * (m - 2)))));
+    }
+    let next = pow
+        .mul(u)
+        .div(Iv::exact(f64::from(43 * 42 * 41)))
+        .div(Iv::exact(1.0).sub(u));
+    sum.add(Iv {
+        lo: 0.0,
+        hi: next.hi,
+    })
 }
 
 /// Why a via's junction cannot be priced.
@@ -1276,6 +1328,29 @@ pub struct JunctionTable {
     pub widths: Vec<(Iv, Iv)>,
     /// Face `f`'s column width over box `b`: `box_widths[b][f]`, its ends.
     pub box_widths: Vec<Vec<(Iv, Iv)>>,
+}
+
+impl JunctionTable {
+    /// One table from several over the same faces (each a slice of the
+    /// hole's sizes): every box of each, and each face's widths over all.
+    pub fn merge(tables: Vec<JunctionTable>) -> JunctionTable {
+        let mut out = JunctionTable {
+            k: Vec::new(),
+            widths: Vec::new(),
+            box_widths: Vec::new(),
+        };
+        for t in tables {
+            if out.widths.is_empty() {
+                out.widths = t.widths.clone();
+            }
+            for (w, n) in out.widths.iter_mut().zip(&t.widths) {
+                *w = (Iv::exact(w.0.lo.min(n.0.lo)), Iv::exact(w.1.hi.max(n.1.hi)));
+            }
+            out.k.extend(t.k);
+            out.box_widths.extend(t.box_widths);
+        }
+        out
+    }
 }
 
 /// [`JunctionTable`] for faces given by their line's distance `d0` from
@@ -2412,6 +2487,46 @@ mod tests {
             "{:?}",
             b.energy
         );
+    }
+
+    /// A hole no larger than the band, or no larger than its plating, has
+    /// no junction to price: refused, not summed into nonsense.
+    #[test]
+    fn a_hole_smaller_than_its_band_or_plating_is_refused() {
+        let (a, u, len) = (Iv::exact(0.375), Iv::exact(-0.03125), 0.0625);
+        let t_p = Iv::exact(0.018);
+        let thin = Iv::exact(0.001);
+        let small = junction_core(a, u, len, Iv::exact(0.009), Iv::exact(0.01), thin, 8);
+        assert!(matches!(small, Err(JunctionError::Grazing)));
+        let filled = junction_core(a, u, len, Iv::exact(0.018), Iv::exact(0.001), t_p, 8);
+        assert!(matches!(filled, Err(JunctionError::Grazing)));
+    }
+
+    /// Over an interval of hole sizes (`AET-WO-1303b`, ruling 6974760231),
+    /// the junction coefficient encloses its value at every size sampled,
+    /// and its upper end stays within 2 % of the largest: the series keep
+    /// the interval tight where the closed forms' differences did not.
+    #[test]
+    fn a_junction_over_hole_sizes_encloses_each_size_tightly() {
+        let (a, u, len) = (Iv::exact(0.375), Iv::exact(-0.03125), 0.0625);
+        let (beta, t_p) = (Iv::exact(0.01), Iv::exact(0.018));
+        let (lo, hi) = (0.128, 0.154_25);
+        let whole = junction_core(a, u, len, Iv { lo, hi }, beta, t_p, 32)
+            .unwrap()
+            .0;
+        let mut top = 0.0f64;
+        for i in 0..=16 {
+            let r = lo + (hi - lo) * f64::from(i) / 16.0;
+            let k = junction_core(a, u, len, Iv::exact(r), beta, t_p, 32)
+                .unwrap()
+                .0;
+            assert!(
+                k.hi <= whole.hi && k.lo >= whole.lo,
+                "{r}: {k:?} outside {whole:?}"
+            );
+            top = top.max(k.hi);
+        }
+        assert!(whole.hi <= top * 1.02, "{} against {top}", whole.hi);
     }
 
     /// A face nearer the hole's centre than the band's outer radius, at

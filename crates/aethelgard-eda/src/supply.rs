@@ -56,6 +56,13 @@ pub struct Model {
     /// The fabricator's hole position tolerance, per axis, nm: every hole
     /// is priced at every position within it.
     pub hole_offset_nm: i64,
+    /// The fabricator's finished-hole tolerance, larger and smaller than
+    /// drawn, nm: every hole is priced at every size within it.
+    pub hole_plus_nm: i64,
+    pub hole_minus_nm: i64,
+    /// The fabricator's track width tolerance, per mille: a track is priced
+    /// at `(1000 − this)/1000` of its drawn width.
+    pub track_etch_permille: i64,
     /// A plane's inset from the outline.
     pub edge_nm: i64,
     /// Plane copper further than this from the terminals' box is left out.
@@ -333,6 +340,9 @@ pub struct NetCopper {
     pub rows: Vec<(Iv, Iv)>,
     /// What was left out, for the record.
     pub notes: Vec<String>,
+    /// Each via geometry left out because its pad cannot hold the band
+    /// (pad, drill), with the pad that would, nm.
+    pub unfit: Vec<(i64, i64, i64)>,
 }
 
 /// Why no bound.
@@ -362,6 +372,61 @@ pub fn pad<'a>(
                 format!("{reference}.{number} is not a pad of `{net}`"),
             )
         })
+}
+
+/// The plating shell's outer radius, nm, at the smallest and the largest
+/// finished hole: the drawn hole less or plus the fabricator's tolerance,
+/// halved, plus the plating's minimum. Plating at least that thick lines
+/// the finished wall, and the layer's copper meets it, so the shell at
+/// either radius is copper; the actual radius is anywhere between.
+fn shell_radii(drill_nm: i64, m: &Model) -> (i64, i64) {
+    let lo = (drill_nm - m.hole_minus_nm) / 2 + m.plating_nm;
+    let hi = (drill_nm + m.hole_plus_nm + 1) / 2 + m.plating_nm;
+    (lo, hi)
+}
+
+/// The shell radii, mm, in [`HOLE_SIZE_SLICES`] closed intervals covering
+/// `[lo, hi]` nm: each a junction table's own, so the worst over the hole's
+/// size is a worst over boxes.
+fn shell_slices(lo: i64, hi: i64) -> Vec<Iv> {
+    let n = HOLE_SIZE_SLICES as i64;
+    (0..n)
+        .map(|k| {
+            let a = lo + (hi - lo) * k / n;
+            let b = lo + ((hi - lo) * (k + 1) + n - 1) / n;
+            Iv {
+                lo: Iv::ratio(a, 1_000_000).lo,
+                hi: Iv::ratio(b, 1_000_000).hi,
+            }
+        })
+        .collect()
+}
+
+/// The hole a via's barrel is priced at. The barrel's sheet coefficient
+/// `ρ·r/A(r)`, `A = t(2r − t)/2`, falls as `r` grows
+/// (`d/dr r/(2r − t) = −t/(2r − t)²`): its worst is at the smallest shell.
+/// The columns' widths come from the junction table, over every radius.
+fn barrel_hole(drill_nm: i64, m: &Model) -> Hole {
+    Hole {
+        r_d: Iv::ratio(shell_radii(drill_nm, m).0, 1_000_000),
+        beta: Iv::ratio(m.beta_nm, 1_000_000),
+        t_p: Iv::ratio(m.plating_nm, 1_000_000),
+        rho: m.rho,
+    }
+}
+
+/// A hole kept clear of the net's copper, nm: the largest finished hole at
+/// every position the tolerances allow.
+fn hole_clear(drill_nm: i64, m: &Model) -> i64 {
+    hole_radius(drill_nm + m.hole_plus_nm, m.hole_offset_nm)
+}
+
+/// The via pad, nm, that holds the band at the largest shell and every
+/// position: twice the largest shell radius, the band and the position's
+/// diagonal reach, rounded up to 10 µm.
+fn pad_needed(drill_nm: i64, m: &Model) -> i64 {
+    let r = shell_radii(drill_nm, m).1 + m.beta_nm + hole_radius(0, m.hole_offset_nm) + 1;
+    (2 * r + 9_999) / 10_000 * 10_000
 }
 
 /// A hole's clearance radius in nm: its drill's radius plus the largest
@@ -525,7 +590,7 @@ pub fn copper(
     // star-shaped from each, is left out like an off-grid via
     let mut junctions: Vec<Junction> = Vec::new();
     let mut by_geometry: BTreeMap<(i64, i64), Option<usize>> = BTreeMap::new();
-    let r_d = |drill: i64| Iv::ratio(drill, 2_000_000);
+    let mut unfit: Vec<(i64, i64, i64)> = Vec::new();
     let beta = Iv::ratio(m.beta_nm, 1_000_000);
     let t_p = Iv::ratio(m.plating_nm, 1_000_000);
     let e_mm = Iv::ratio(e, 1_000_000).hi;
@@ -535,14 +600,17 @@ pub fn copper(
         if by_geometry.contains_key(&key) {
             continue;
         }
-        // the band's outer circle about any centre the tolerance allows, r0
-        // + e√2: the region (cells meeting that disc) holds it, and the via
-        // pad must too, (R − r0)² ≥ 2e², R − r0 > 0
-        let r0 = r_d(v.drill_nm).add(beta).hi;
-        let reach = (v.drill_nm / 2 + v.drill_nm % 2) + m.beta_nm + hole_radius(0, e) + 1;
+        // the shell: the plating's minimum on the finished wall, whose
+        // radius is anywhere from the smallest to the largest finished hole
+        let (r_lo, r_hi) = shell_radii(v.drill_nm, m);
+        // the band's outer circle about any centre the tolerance allows, at
+        // the largest shell, r0 + e√2: the region (cells meeting that disc)
+        // holds it, and the via pad must too, (R − r0)² ≥ 2e², R − r0 > 0
+        let r0 = Iv::ratio(r_hi, 1_000_000).add(beta).hi;
+        let reach = r_hi + m.beta_nm + hole_radius(0, e) + 1;
         let region = Region::new(h, reach);
         let room = (v.via_nm as f64 / 2e6) - r0;
-        let fits = v.drill_nm > 2 * m.plating_nm
+        let fits = v.drill_nm > m.hole_minus_nm
             && room > 0.0
             && Iv::exact(room).sqr().lo >= Iv::exact(e_mm).sqr().scale(2.0).hi;
         let priced = if fits && region.rays_inside(h, e) {
@@ -551,7 +619,11 @@ pub fn copper(
                 .iter()
                 .map(|f| (f.d0 as f64 * h_mm, f.normal, f.u0 as f64 * h_mm))
                 .collect();
-            match flow::junction_table(&faces, h_mm, e_mm, OFFSET_BOXES, r_d(v.drill_nm), beta, t_p)
+            match shell_slices(r_lo, r_hi)
+                .into_iter()
+                .map(|r_d| flow::junction_table(&faces, h_mm, e_mm, OFFSET_BOXES, r_d, beta, t_p))
+                .collect::<Result<Vec<_>, _>>()
+                .map(flow::JunctionTable::merge)
             {
                 Ok(table) => {
                     junctions.push(Junction { region, table });
@@ -564,9 +636,12 @@ pub fn copper(
         };
         if priced.is_none() {
             notes.push(format!(
-                "a {}/{} nm via's junction cannot hold the band at every hole position the ±{e} nm tolerance allows: such vias are left out",
-                v.via_nm, v.drill_nm
+                "a {}/{} nm via's junction cannot hold the band at every hole size and position the fabricator's tolerances allow: such vias are left out; a via pad of at least {} mm holds it",
+                v.via_nm,
+                v.drill_nm,
+                pad_needed(v.drill_nm, m) as f64 / 1e6
             ));
+            unfit.push((v.via_nm, v.drill_nm, pad_needed(v.drill_nm, m)));
         }
         by_geometry.insert(key, priced);
     }
@@ -585,13 +660,13 @@ pub fn copper(
         .collect();
     let mut holes: Vec<((i64, i64), i64)> = off
         .iter()
-        .map(|v| (v.at, hole_radius(v.drill_nm, e)))
+        .map(|v| (v.at, hole_clear(v.drill_nm, m)))
         .collect();
     for p in &own_drilled {
         let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
         // a priced pad's hole is inside its own junction region
         if !vias.iter().any(|v| v.at == c) {
-            holes.push((c, hole_radius(p.drill_nm.unwrap_or(0), e)));
+            holes.push((c, hole_clear(p.drill_nm.unwrap_or(0), m)));
         }
     }
     // the crop: the terminals' box, grown
@@ -664,10 +739,11 @@ pub fn copper(
             {
                 let a = (S * i128::from(s.start.0), S * i128::from(s.start.1));
                 let b = (S * i128::from(s.end.0), S * i128::from(s.end.1));
+                // the narrowest the etch tolerance allows, rounded down
                 shapes.push(Shape::Stadium {
                     a,
                     b,
-                    hw: S * w / 2,
+                    hw: S * w * i128::from(1000 - m.track_etch_permille) / 2000,
                 });
             }
             for v in &vias {
@@ -878,20 +954,23 @@ pub fn copper(
                     relieved += 1;
                     continue;
                 }
-                if !jn
-                    .region
-                    .cells
-                    .iter()
-                    .all(|&q| eligible[li].contains(&abs(q)))
-                {
-                    continue;
-                }
             } else if layer.name != "F.Cu" && layer.name != "B.Cu" {
                 continue;
             }
             let mut ports = Vec::new();
             for (k, f) in jn.region.faces.iter().enumerate() {
                 if !have.contains(&abs(f.outside)) {
+                    continue;
+                }
+                // a face's column (its rays, and its sector of the band)
+                // lies in the hull of the face and the square of hole
+                // centres: on a plane the face is a port only when every
+                // cell that hull meets is plane copper
+                if layer.plane
+                    && !jn
+                        .region
+                        .hull_inside(f, h, e, &|q| eligible[li].contains(&abs(q)))
+                {
                     continue;
                 }
                 if !layer.plane {
@@ -1043,6 +1122,7 @@ pub fn copper(
         vias: uses,
         rows,
         notes,
+        unfit,
     })
 }
 
@@ -1117,12 +1197,7 @@ pub fn bound(
     for u in &nc.vias {
         let v = &u.via;
         let jn = &nc.junctions[u.junction];
-        let hole = Hole {
-            r_d: Iv::ratio(v.drill_nm, 2_000_000),
-            beta: Iv::ratio(m.beta_nm, 1_000_000),
-            t_p: Iv::ratio(m.plating_nm, 1_000_000),
-            rho: m.rho,
-        };
+        let hole = barrel_hole(v.drill_nm, m);
         let centre = ((v.at.0 - nc.origin.0) / h, (v.at.1 - nc.origin.1) / h);
         let mut joins = Vec::new();
         for (li, s) in sheets.iter_mut().enumerate() {
@@ -1185,11 +1260,11 @@ pub const CROP_NM: i64 = 5_000_000;
 /// 1 µm raises a coefficient by 1–2 %), and 10 µm lets the worst-case hole's
 /// band fit a 0.6 mm via pad.
 pub const BETA_NM: i64 = 10_000;
-/// The fabricator's hole position tolerance, per axis, nm: JLCPCB's
-/// capabilities page, "Hole Position Tolerance ±0.075 mm" (read, 1303 S4;
-/// conditions.json). Every hole is priced at every position within it
-/// (ruling S1).
-pub const HOLE_OFFSET_NM: i64 = 75_000;
+/// The shell radius's range, from the smallest finished hole to the
+/// largest, cut into this many slices: each slice's junction table prices
+/// every hole position over that slice's radii, so the via's worst box is a
+/// worst over size and position together (ruling 6974760231, (1)).
+pub const HOLE_SIZE_SLICES: usize = 4;
 /// The plane's fill clearance to foreign copper, measured on the
 /// gate-prepared board in KiCad 10.0.7: 0.2025 mm (`AET-WO-1303` P4.7).
 pub const FILL_CLEARANCE_NM: i64 = 202_500;
@@ -1280,18 +1355,36 @@ pub fn supplies(
         return Ok(Vec::new());
     }
     let st = &spec.board.stackup;
-    let need = |v: &Option<aethelgard_ir::board::Sourced>, path: &str| {
-        v.as_ref().map(|s| s.value).ok_or_else(|| {
+    fn need<'a>(
+        v: &'a Option<aethelgard_ir::board::Sourced>,
+        path: &str,
+    ) -> Result<&'a aethelgard_ir::board::Sourced, crate::extract::Refused> {
+        v.as_ref().ok_or_else(|| {
             refusal(
                 "SupplyInputUndeclared",
                 format!("the supply gate reads `board.stackup.{path}`, and the specification does not declare it: it is never defaulted (RUL-14)"),
             )
         })
+    }
+    let outer = need(&st.outer_copper_min_um, "outer_copper_min_um")?.value;
+    let plane = need(&st.plane_copper_min_um, "plane_copper_min_um")?.value;
+    let plating = need(&st.plating_min_um, "plating_min_um")?.value;
+    let t_c = need(&st.copper_temperature_max_c, "copper_temperature_max_c")?.value;
+    let none = aethelgard_ir::board::FabTolerances {
+        hole_position_um: None,
+        hole_size_plus_um: None,
+        hole_size_minus_um: None,
+        track_width_permille: None,
     };
-    let outer = need(&st.outer_copper_min_um, "outer_copper_min_um")?;
-    let plane = need(&st.plane_copper_min_um, "plane_copper_min_um")?;
-    let plating = need(&st.plating_min_um, "plating_min_um")?;
-    let t_c = need(&st.copper_temperature_max_c, "copper_temperature_max_c")?;
+    let fab = st.fab_tolerances.as_ref().unwrap_or(&none);
+    let position = need(&fab.hole_position_um, "fab_tolerances.hole_position_um")?;
+    let plus = need(&fab.hole_size_plus_um, "fab_tolerances.hole_size_plus_um")?;
+    let minus = need(&fab.hole_size_minus_um, "fab_tolerances.hole_size_minus_um")?;
+    let etch = need(
+        &fab.track_width_permille,
+        "fab_tolerances.track_width_permille",
+    )?;
+    let conditions = conditions(position, plus, minus, etch);
     let checked = aethelgard_ir::power::check(spec)
         .map_err(|e| refusal(e.kind(), e.to_string()))?
         .ok_or_else(|| {
@@ -1315,7 +1408,10 @@ pub fn supplies(
         plane_nm: (i64::from(plane) * 1000, board.stack.copper_max_nm),
         plating_nm: i64::from(plating) * 1000,
         beta_nm: BETA_NM,
-        hole_offset_nm: HOLE_OFFSET_NM,
+        hole_offset_nm: i64::from(position.value) * 1000,
+        hole_plus_nm: i64::from(plus.value) * 1000,
+        hole_minus_nm: i64::from(minus.value) * 1000,
+        track_etch_permille: i64::from(etch.value),
         edge_nm: EDGE_NM,
         crop_nm: CROP_NM,
         fill_clearance_nm: FILL_CLEARANCE_NM,
@@ -1504,6 +1600,26 @@ pub fn supplies(
                     Err(r) => {
                         let (kind, message) = match r {
                             Refusal::Named(k, m) => (k, m),
+                            Refusal::Flow(FlowError::Disconnected) if !nc.unfit.is_empty() => (
+                                "SupplyViaPadTooSmall",
+                                format!(
+                                    "no copper the gate reads joins {}.{} to {}.{}: {}",
+                                    mcu,
+                                    p.number,
+                                    from_ref(board, from),
+                                    from.number,
+                                    nc.unfit
+                                        .iter()
+                                        .map(|(pad, drill, need)| format!(
+                                            "the gate left out the net's {} / {} mm vias, whose pad cannot keep the band at the fabricator's worst hole: via pad >= {} mm",
+                                            *pad as f64 / 1e6,
+                                            *drill as f64 / 1e6,
+                                            *need as f64 / 1e6
+                                        ))
+                                        .collect::<Vec<_>>()
+                                        .join("; ")
+                                ),
+                            ),
                             Refusal::Flow(FlowError::Disconnected) => (
                                 "SupplyPinUnbounded",
                                 format!(
@@ -1560,7 +1676,7 @@ pub fn supplies(
             returns,
             drop_bound_microvolts: drop,
             note,
-            conditions: conditions(),
+            conditions: conditions.clone(),
             notes,
         });
     }
@@ -1633,10 +1749,18 @@ fn to_refused(r: Refusal) -> crate::extract::Refused {
 }
 
 /// The conditions every supply bound rests on, stated in the verdict.
-fn conditions() -> Vec<String> {
+fn conditions(
+    position: &aethelgard_ir::board::Sourced,
+    plus: &aethelgard_ir::board::Sourced,
+    minus: &aethelgard_ir::board::Sourced,
+    etch: &aethelgard_ir::board::Sourced,
+) -> Vec<String> {
     vec![
         "supply: R is a certified upper bound (Thomson's principle) on a subset of the net's copper: every flux-carrying cell lies wholly inside copper the gate reads; copper left out only raises it".into(),
-        format!("supply: every hole anywhere within +-{} mm per axis of its pad (JLCPCB Hole Position Tolerance)", HOLE_OFFSET_NM as f64 / 1e6),
+        format!("supply: every hole anywhere within +-{} mm per axis of its pad ({})", f64::from(position.value) / 1e3, position.source),
+        format!("supply: every finished hole from {} mm under to {} mm over its drawn size ({} / {}), lined by at least the declared plating minimum", f64::from(minus.value) / 1e3, f64::from(plus.value) / 1e3, minus.source, plus.source),
+        format!("supply: every track at {} of its drawn width ({})", f64::from(1000 - etch.value.min(1000)) / 1e3, etch.source),
+        "supply: pads and via pads at their drawn size: no pad etch tolerance is cited".into(),
         "supply: each terminal pad an equipotential: the current enters and leaves through the whole pad".into(),
         "supply: the source is where the regulator's current enters the domain (a buck's inductor pad); at DC it is the net's highest potential, so the bound covers the regulator's sense point too".into(),
         "supply: the return is the regulator's own ground pin; other domains' return currents in the ground copper are not bounded".into(),
@@ -1697,7 +1821,12 @@ mod tests {
             plane_nm: (15_000, 70_000),
             plating_nm: 18_000,
             beta_nm: BETA_NM,
-            hole_offset_nm: HOLE_OFFSET_NM,
+            // JLCPCB's position tolerance; hole size and etch at 0, so the
+            // exact cases stay exact (each has its own test)
+            hole_offset_nm: 75_000,
+            hole_plus_nm: 0,
+            hole_minus_nm: 0,
+            track_etch_permille: 0,
             edge_nm: EDGE_NM,
             crop_nm: CROP_NM,
             fill_clearance_nm: FILL_CLEARANCE_NM,
@@ -1747,6 +1876,16 @@ mod tests {
         eprintln!("track: bound {r:.6} exact {exact:.6}");
         assert!(r >= exact, "{r} under the exact {exact}");
         assert!(r <= exact * (1.0 + 1e-6), "{r} over the exact {exact}");
+        // the etch: at JLCPCB's 20 %, the track is priced no wider than
+        // 0.2 mm, so at least that width's exact resistance
+        let etched = Model {
+            track_etch_permille: 200,
+            ..model()
+        };
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &etched).unwrap();
+        let r = bound(&nc, &etched, src, snk, 400).unwrap().bound.energy.hi;
+        let narrow = exact * 0.25 / 0.2;
+        assert!(r >= narrow, "{r} under the etched track's exact {narrow}");
     }
 
     /// Two vias carry the current down to B.Cu and back: the bound holds
@@ -1793,8 +1932,11 @@ mod tests {
         let rho = m.rho.hi;
         // tracks between pad edges and via pads' edges (0.3 mm radius)
         let bars = rho * ((6.0 - 0.3 - 2.0) + (11.0 - 0.3 - 6.3) + (15.0 - 11.3)) / (0.25 * 0.03);
-        // each barrel at its shortest: the dielectric's minimum, 0.2 mm
-        let barrel = rho * 0.2 / (std::f64::consts::PI * 0.018 * (0.3 - 0.018));
+        // each barrel at its shortest, the dielectric's minimum 0.2 mm, its
+        // shell the plating's minimum on the finished wall: area
+        // π t (2 r + t) for a finished radius r
+        let shell = |r: f64| std::f64::consts::PI * 0.018 * (2.0 * r + 0.018);
+        let barrel = rho * 0.2 / shell(0.15);
         let floor = bars + 2.0 * barrel;
         eprintln!(
             "two vias: bound {r:.5} floor {floor:.5} (shares {:?})",
@@ -1803,6 +1945,27 @@ mod tests {
         assert!(r >= floor, "{r} under the floor {floor}");
         assert!(r <= floor * 1.6, "{r} far over the floor {floor}");
         assert!(pb.via_transfer.iter().all(|(_, q)| *q == flow::QUANTA));
+        // a hole that may finish 0.08 mm small: each barrel at least the
+        // smallest shell's
+        let small = Model {
+            hole_minus_nm: 80_000,
+            ..model()
+        };
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &small).unwrap();
+        let r_small = bound(&nc, &small, src, snk, 400).unwrap().bound.energy.hi;
+        let floor_small = bars + 2.0 * rho * 0.2 / shell(0.11);
+        assert!(r_small >= floor_small, "{r_small} under {floor_small}");
+        assert!(r_small > r, "{r_small} not above {r}");
+        // a hole that may finish 0.13 mm large: a 0.6 mm pad cannot keep the
+        // band at the largest shell and every position; the via is left out
+        // and the pad that would is named, 0.7 mm
+        let large = Model {
+            hole_plus_nm: 130_000,
+            ..model()
+        };
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &large).unwrap();
+        assert!(nc.vias.is_empty());
+        assert_eq!(nc.unfit, [(600_000, 300_000, 700_000)]);
     }
 
     /// A through-hole pad of the net is a via (the §7.1 row): its barrel,
@@ -1894,10 +2057,10 @@ mod tests {
         assert!(declared < open, "{declared} against {open}");
     }
 
-    /// Plating as thick as the drill's radius leaves no hole: the via is
-    /// left out by name, not priced.
+    /// A hole that may finish at no size at all has no shell to price: the
+    /// via is left out by name, not priced.
     #[test]
-    fn plating_filling_the_hole_leaves_the_via_out() {
+    fn a_hole_that_may_finish_closed_leaves_the_via_out() {
         let b = board(vec![
             part(
                 "J1",
@@ -1923,7 +2086,8 @@ mod tests {
         let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
         let mut m = model();
         let drill = b.stack.rule("VDD").drill_nm;
-        m.plating_nm = drill / 2;
+        // a tolerance larger than the hole itself
+        m.hole_minus_nm = drill + 100_000;
         let nc = copper(&b, &routed, "VDD", &[src, snk], &m).unwrap();
         assert!(nc.vias.is_empty());
         assert!(
@@ -1965,6 +2129,28 @@ mod tests {
         // 150 000 + ⌈75 000 √2⌉ = 150 000 + 106 067
         assert_eq!(hole_radius(300_000, 75_000), 256_067);
         assert_eq!(hole_radius(300_001, 0), 150_001);
+        // and at the largest finished size: 0.43 mm across
+        let m = Model {
+            hole_plus_nm: 130_000,
+            ..model()
+        };
+        assert_eq!(hole_clear(300_000, &m), 215_000 + 106_067);
+        // the shell between the smallest and the largest finished hole,
+        // lined by the plating's minimum, and the pad that holds its band
+        let m = Model {
+            hole_minus_nm: 80_000,
+            ..m
+        };
+        assert_eq!(
+            shell_radii(300_000, &m),
+            (110_000 + 18_000, 215_000 + 18_000)
+        );
+        assert_eq!(pad_needed(300_000, &m), 700_000);
+        // the barrel at the smallest shell, where its coefficient is worst
+        let hole = barrel_hole(300_000, &m);
+        assert_eq!(hole.r_d.hi, Iv::ratio(128_000, 1_000_000).hi);
+        let coefficient = |r: f64| r / (0.018 * (2.0 * r - 0.018));
+        assert!(coefficient(0.128) > coefficient(0.233));
     }
 
     /// The witness disc: a cell in a knockout's opening ring is copper only
@@ -2225,6 +2411,59 @@ mod tests {
         );
         // and the plane around the VDD via is there
         assert!(plane.cells.len() > 1000);
+    }
+
+    /// A foreign via's knockout reaching into one side of a via's junction
+    /// region costs the plane only that side's faces: each face is a port
+    /// when the hull of its column lies in plane copper, not only when the
+    /// whole region does.
+    #[test]
+    fn a_knockout_beside_a_via_costs_the_plane_only_its_own_side() {
+        let b = board4(vec![part(
+            "J1",
+            vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+        )]);
+        let v = (4_000_000, 3_000_000);
+        let routed = Routed {
+            vias: vec![
+                Via {
+                    net: "VDD".into(),
+                    at: v,
+                },
+                // its raw knockout, 0.515 mm, reaches to 0.185 mm of the VDD
+                // via: into the junction region's own cells
+                Via {
+                    net: "GND".into(),
+                    at: (v.0, v.1 + 700_000),
+                },
+            ],
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), (4_000_000, 2_500_000)),
+                seg(Layer::F, (4_000_000, 2_500_000), v),
+            ],
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let nc = copper(&b, &routed, "VDD", &[src], &model()).unwrap();
+        let plane = nc.layers.iter().position(|l| l.name == "In1.Cu").unwrap();
+        let u = nc.vias.iter().find(|u| u.via.at == v).unwrap();
+        let ports = &u.joins.iter().find(|(l, _)| *l == plane).unwrap().1;
+        let jn = &nc.junctions[u.junction];
+        let have: BTreeSet<Cell> = nc.layers[plane].cells.iter().copied().collect();
+        let centre = (
+            (v.0 - nc.origin.0) / PITCH_NM,
+            (v.1 - nc.origin.1) / PITCH_NM,
+        );
+        let beside = jn
+            .region
+            .faces
+            .iter()
+            .filter(|f| have.contains(&(centre.0 + f.outside.0, centre.1 + f.outside.1)))
+            .count();
+        assert!(!ports.is_empty(), "the plane joins the via");
+        assert!(ports.len() < beside, "{} of {beside}", ports.len());
+        // no port faces the knockout
+        assert!(ports.iter().all(|&k| jn.region.faces[k].normal != (0, 1)));
     }
 
     /// A port whose rays would leave copper is no port: a pad of the net

@@ -1003,9 +1003,34 @@ fn an_acknowledgement_s_keys_are_each_required() {
 /// Why a load's `reference` may be absent (`AET-WO-1303b`).
 const OPTIONAL_LOAD_REFERENCE: &str = "AET-WO-1303b: a load's part, optional; the supply gate needs it only on a domain with a drop limit";
 
+/// Why the fabricator's tolerances may be absent (`AET-WO-1303b`).
+const OPTIONAL_FAB_TOLERANCE: &str = "AET-WO-1303b: a fabricator's tolerance, optional; the supply gate refuses by name one it reads and the specification lacks";
+
 /// Each key of the full document that may be absent: the fixture's VDD_3V3
-/// loads (`power.loads[2..=12]`) carry the optional part `reference`.
+/// loads (`power.loads[2..=12]`) carry the optional part `reference`, and
+/// its stackup the fabricator's tolerances.
 const OPTIONAL_KEYS: &[(&str, &str, &str)] = &[
+    ("/board/stackup", "fab_tolerances", OPTIONAL_FAB_TOLERANCE),
+    (
+        "/board/stackup/fab_tolerances",
+        "hole_position_um",
+        OPTIONAL_FAB_TOLERANCE,
+    ),
+    (
+        "/board/stackup/fab_tolerances",
+        "hole_size_plus_um",
+        OPTIONAL_FAB_TOLERANCE,
+    ),
+    (
+        "/board/stackup/fab_tolerances",
+        "hole_size_minus_um",
+        OPTIONAL_FAB_TOLERANCE,
+    ),
+    (
+        "/board/stackup/fab_tolerances",
+        "track_width_permille",
+        OPTIONAL_FAB_TOLERANCE,
+    ),
     ("/power/loads/2", "reference", OPTIONAL_LOAD_REFERENCE),
     ("/power/loads/3", "reference", OPTIONAL_LOAD_REFERENCE),
     ("/power/loads/4", "reference", OPTIONAL_LOAD_REFERENCE),
