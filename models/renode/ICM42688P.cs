@@ -929,8 +929,8 @@ namespace Antmicro.Renode.Peripherals.Sensors
         // bound with no serial traffic [DS p.40, Figure 11]; the datasheet calls it non-deterministic,
         // and a twin must not be (B9 [inferred]).
         private const int FifoBytes = 2048;
-        // B10: a temperature past the 8-bit range saturates [inferred; DS p.25 states 8 bits only].
-        private const double FifoTempMin = -128.0;
+        // B10 (ruled on #214): saturate at -127..+127; -128 is the invalid code [TDK Defs L284, L1115].
+        private const double FifoTempMin = -127.0;
         private readonly Queue<byte[]> fifo = new Queue<byte[]>();
         private int fifoBytes;               // unread bytes
         private int headOffset;              // bytes of the head packet already read

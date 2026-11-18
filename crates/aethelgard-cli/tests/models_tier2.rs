@@ -653,7 +653,8 @@ fn the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz() {
     c.push("emulation RunFor \"0.040500000\"".to_owned());
     c.extend(spi(&b, &[0x2E | 0x80], 2));
     c.extend(spi(&b, &[0x30 | 0x80], 31 * 16));
-    // B10: -40 degrees C is -134.55 counts, saturated to -128 (0x80).
+    // B10 as ruled: -40 degrees C is -134.55 counts, saturated to -127
+    // (0x81); -128 is the invalid code (TDK Icm426xxDefs.h L284).
     c.push(format!("sysbus.{} Temperature -40", b.imu));
     c.push("emulation RunFor \"0.001000000\"".to_owned());
     c.extend(spi(&b, &[0x30 | 0x80], 16));
@@ -668,7 +669,7 @@ fn the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz() {
     let (text, lines) = run(&b, &b.models, &c);
     assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
     let more = reads(&lines, &b.imu, 0x30);
-    assert_eq!(more[1][13], 0x80, "-40 degrees C: {text}");
+    assert_eq!(more[1][13], 0x81, "-40 degrees C: {text}");
     assert_eq!(more[2][0], 0x6A, "42.0 ms header: {text}");
     assert_eq!(more[2][13], 0x7F, "+100 degrees C: {text}");
     assert_eq!(
