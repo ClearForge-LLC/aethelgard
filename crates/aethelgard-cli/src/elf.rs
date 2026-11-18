@@ -75,8 +75,9 @@ fn overlaps(a: u64, alen: u64, b: u64, blen: u64) -> bool {
     alen > 0 && blen > 0 && a < b + blen && b < a + alen
 }
 
-/// The checks, then the image.
-pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Stop> {
+/// The ELF header's checks, then its `PT_LOAD` segments: what both judges'
+/// checks start from.
+fn loads(bytes: &[u8]) -> Result<Vec<Load>, Stop> {
     if bytes.len() < EHDR_LEN || &bytes[..4] != b"\x7fELF" {
         return Err(malformed("not an ELF file".into()));
     }
@@ -128,6 +129,12 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
             flags: u32_at(bytes, at + 24),
         });
     }
+    Ok(loads)
+}
+
+/// The checks, then the image.
+pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Stop> {
+    let loads = loads(bytes)?;
     if !loads.iter().any(|l| l.filesz > 0) {
         return Err(malformed("no PT_LOAD segment carries file bytes".into()));
     }
@@ -241,6 +248,148 @@ pub fn check(bytes: &[u8], memory: &Memory, boot_word: u32) -> Result<Image, Sto
         sha256: hex(hasher.finalize()),
         executable,
         self_loops,
+    })
+}
+
+/// Where a foreign firmware may load (`AET-WO-4400e`, ruled on PR #212): the
+/// part's flash and every RAM region ST's header states, each from its own
+/// `#define` and the size its comment states ([`aethelgard_svd_hal::cmsis`]),
+/// never typed in (`RUL-16`). Renode 1.17.0's `stm32h7.repl` maps each at the
+/// same base with the same size (`AET-WO-4400e` §1.1, read at source).
+pub const FOREIGN_RAM: [&str; 6] = [
+    "D1_ITCMRAM_BASE",
+    "D1_DTCMRAM_BASE",
+    "D1_AXISRAM_BASE",
+    "D2_AHBSRAM_BASE",
+    "D3_SRAM_BASE",
+    "D3_BKPSRAM_BASE",
+];
+
+/// A foreign firmware's regions: flash first, then [`FOREIGN_RAM`], each
+/// `(name, region)`.
+pub fn foreign_memory() -> Result<Vec<(&'static str, aethelgard_twin::boot::Region)>, Stop> {
+    let facts = aethelgard_svd_hal::cmsis::register_facts()
+        .map_err(|e| Stop::tool_error("aethelgard-svd-hal", e.to_string()))?;
+    let fact = |r: Result<u32, aethelgard_svd_hal::cmsis::RegisterError>| {
+        r.map(u64::from)
+            .map_err(|e| Stop::tool_error("aethelgard-svd-hal", e.to_string()))
+    };
+    let mut regions = vec![(
+        "FLASH_BANK1_BASE",
+        aethelgard_twin::boot::Region {
+            start: fact(facts.value("FLASH_BANK1_BASE"))?,
+            end: fact(facts.value("FLASH_END"))? + 1,
+        },
+    )];
+    for name in FOREIGN_RAM {
+        let start = fact(facts.value(name))?;
+        let kib = fact(facts.region_size_kib(name))?;
+        regions.push((
+            name,
+            aethelgard_twin::boot::Region {
+                start,
+                end: start + kib * 1024,
+            },
+        ));
+    }
+    Ok(regions)
+}
+
+/// A foreign firmware's checks, then its image (`AET-WO-4400e`): every
+/// `PT_LOAD` with a size lies, at its physical and its virtual address,
+/// inside one region of [`foreign_memory`]; no two segments' **file bytes**
+/// overlap (a zero-filled segment may share its physical address with another,
+/// as ArduPilot's `.crash_log`, `.bss` and `.heap` do: provisional, named to
+/// the architect); an executable segment runs where it is loaded. There is no
+/// boot word to keep clear and no self-loop to find: a foreign firmware is not
+/// held to the generated runtime's contract.
+pub fn check_foreign(
+    bytes: &[u8],
+    regions: &[(&'static str, aethelgard_twin::boot::Region)],
+) -> Result<Image, Stop> {
+    let loads = loads(bytes)?;
+    if !loads.iter().any(|l| l.filesz > 0) {
+        return Err(malformed("no PT_LOAD segment carries file bytes".into()));
+    }
+    for l in &loads {
+        if l.offset + l.filesz > bytes.len() as u64 {
+            return Err(malformed(format!(
+                "a PT_LOAD's {} file bytes at offset {:#x} run past the file",
+                l.filesz, l.offset
+            )));
+        }
+        if l.filesz > l.memsz {
+            return Err(malformed(format!(
+                "a PT_LOAD at {:#010x} has more file bytes ({}) than memory ({})",
+                l.paddr, l.filesz, l.memsz
+            )));
+        }
+        for (what, address) in [("physical", l.paddr), ("virtual", l.vaddr)] {
+            if l.memsz > 0 && !regions.iter().any(|(_, r)| r.holds(address, l.memsz)) {
+                let named: Vec<String> = regions
+                    .iter()
+                    .map(|(n, r)| format!("{n} [{:#010x}, {:#010x})", r.start, r.end))
+                    .collect();
+                return Err(Stop::refused(
+                    "FirmwareOutsideMemory",
+                    format!(
+                        "a PT_LOAD of {} bytes at {what} address {address:#010x} is outside every \
+                         region a foreign firmware may load into: {}",
+                        l.memsz,
+                        named.join(", ")
+                    ),
+                ));
+            }
+        }
+    }
+    let mut filled: Vec<&Load> = loads.iter().filter(|l| l.filesz > 0).collect();
+    filled.sort_by_key(|l| l.paddr);
+    for pair in filled.windows(2) {
+        if overlaps(pair[0].paddr, pair[0].filesz, pair[1].paddr, pair[1].filesz) {
+            return Err(malformed(format!(
+                "PT_LOAD segments' file bytes at {:#010x} and {:#010x} overlap",
+                pair[0].paddr, pair[1].paddr
+            )));
+        }
+    }
+    let mut image: Vec<&Load> = loads.iter().filter(|l| l.memsz > 0).collect();
+    image.sort_by_key(|l| (l.paddr, l.vaddr, l.memsz));
+    let mut hasher = Sha256::new();
+    for l in &image {
+        for v in [l.paddr, l.filesz, l.memsz] {
+            hasher.update((v as u32).to_le_bytes());
+        }
+        hasher.update(&bytes[l.offset as usize..(l.offset + l.filesz) as usize]);
+    }
+    if let Some(l) = loads
+        .iter()
+        .find(|l| l.flags & PF_X != 0 && l.memsz > 0 && l.vaddr != l.paddr)
+    {
+        return Err(malformed(format!(
+            "an executable PT_LOAD's virtual address {:#010x} is not its physical one {:#010x}",
+            l.vaddr, l.paddr
+        )));
+    }
+    let mut executable: Vec<(u64, u64)> = loads
+        .iter()
+        .filter(|l| l.flags & PF_X != 0 && l.memsz > 0)
+        .map(|l| (l.paddr, l.paddr + l.memsz))
+        .collect();
+    executable.sort_unstable();
+    if executable.windows(2).any(|p| p[0].1 > p[1].0) {
+        return Err(malformed("executable PT_LOAD segments overlap in memory".into()));
+    }
+    if executable.len() > aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS {
+        return Err(malformed(format!(
+            "the firmware has {} executable segments, more than {}",
+            executable.len(),
+            aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS
+        )));
+    }
+    Ok(Image {
+        sha256: hex(hasher.finalize()),
+        executable,
+        self_loops: Vec::new(),
     })
 }
 

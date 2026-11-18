@@ -612,6 +612,56 @@ impl RegisterFacts {
             _ => malformed(format!("`{name}` is defined {} times", found.len())),
         }
     }
+
+    /// The size in KiB that the comment of `#define name` states, in any of
+    /// the three shapes ST's header writes it (`AET-WO-4400e`, the foreign
+    /// firmware's memory rule): `Base address of : <N>KB …` (as
+    /// [`Self::region_kib`]), `Base address of : (up to <N>KB) …` (AXI SRAM,
+    /// D2 SRAM) and `Base address of : <words>(<N> KB) …` (D3's SRAM and
+    /// backup SRAM). Only the foreign judge reads it, so the generator's
+    /// [`Self::region_kib`] is untouched.
+    pub fn region_size_kib(&self, name: &str) -> Result<u32, RegisterError> {
+        let mut found = Vec::new();
+        for line in self.text.lines() {
+            let Some(rest) = line.trim_start().strip_prefix("#define") else {
+                continue;
+            };
+            if rest.split_whitespace().next() != Some(name) {
+                continue;
+            }
+            let Some(comment) = rest.split_once("/*!<").map(|(_, c)| c.trim_start()) else {
+                return malformed(format!("`{name}` has no comment stating its size"));
+            };
+            let Some(size) = comment.strip_prefix("Base address of : ") else {
+                return malformed(format!(
+                    "`{name}`'s comment does not start `Base address of : `"
+                ));
+            };
+            let number = |text: &str, unit: &str| -> Option<u32> {
+                let digits: String = text.chars().take_while(char::is_ascii_digit).collect();
+                let n = digits.parse::<u32>().ok().filter(|&n| n > 0)?;
+                text[digits.len()..].starts_with(unit).then_some(n)
+            };
+            let kib = number(size, "KB ")
+                .or_else(|| number(size.strip_prefix("(up to ")?, "KB)"))
+                .or_else(|| {
+                    let (words, tail) = size.split_once('(')?;
+                    (!words.is_empty()
+                        && words.chars().all(|c| c.is_ascii_alphabetic() || c == ' '))
+                    .then_some(())?;
+                    number(tail, " KB)")
+                });
+            match kib {
+                Some(k) => found.push(k),
+                None => return malformed(format!("`{name}`'s comment states no size in KB")),
+            }
+        }
+        match found.as_slice() {
+            [k] => Ok(*k),
+            [] => Err(RegisterError::Undefined { name: name.into() }),
+            _ => malformed(format!("`{name}` is defined {} times", found.len())),
+        }
+    }
 }
 
 /// `[qualifier] uint32_t NAME;` or `[qualifier] uint32_t NAME[N];`.
@@ -947,5 +997,38 @@ mod tests {
             r("#define R_BASEX (0x1UL)").unwrap_err().kind(),
             "Undefined"
         );
+
+        // `AET-WO-4400e`: every RAM region ST's header states, in its three
+        // shapes, read from the pinned header itself.
+        let f = register_facts().unwrap();
+        for (name, kib) in [
+            ("D1_ITCMRAM_BASE", 64),
+            ("D1_DTCMRAM_BASE", 128),
+            ("D1_AXISRAM_BASE", 512),
+            ("D2_AHBSRAM_BASE", 288),
+            ("D3_SRAM_BASE", 64),
+            ("D3_BKPSRAM_BASE", 4),
+        ] {
+            assert_eq!(f.region_size_kib(name).unwrap(), kib, "{name}");
+        }
+        let z = |line: &str| synthetic(line).region_size_kib("R_BASE");
+        assert_eq!(
+            z("#define R_BASE (0x1UL) /*!< Base address of : (up to 9KB) x */").unwrap(),
+            9
+        );
+        assert_eq!(
+            z("#define R_BASE (0x1UL) /*!< Base address of : Backup SRAM(4 KB) x */").unwrap(),
+            4
+        );
+        for bad in [
+            "#define R_BASE (0x1UL)",
+            "#define R_BASE (0x1UL) /*!< Base address of : (up to 1 MB) flash */",
+            "#define R_BASE (0x1UL) /*!< Base address of : (up to 0KB) x */",
+            "#define R_BASE (0x1UL) /*!< Base address of : SRAM2(4 KB x */",
+            "#define R_BASE (0x1UL) /*!< Base address of : (4 KB) x */",
+            "#define R_BASE (0x1UL) /*!< Base of : 64KB x */",
+        ] {
+            assert_eq!(z(bad).unwrap_err().kind(), "MalformedSource", "{bad}");
+        }
     }
 }
