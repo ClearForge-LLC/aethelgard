@@ -1153,6 +1153,90 @@
         "domain": "VDD_5V",
         "milliamps": 2000,
         "source": "DS-009 port budget for Sentinel-02 (AET-WO-4300d spike checks.py, LOAD_5V)"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 2,
+        "source": "derived: 3.465 V (3.3 V + 5 %) / 2.2 kOhm = 1.575 mA, rounded up",
+        "reference": "R1"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 2,
+        "source": "derived: 3.465 V (3.3 V + 5 %) / 2.2 kOhm = 1.575 mA, rounded up",
+        "reference": "R2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up",
+        "reference": "R3"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up",
+        "reference": "R4"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
+        "reference": "R7"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
+        "reference": "R8"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / (105 kOhm + 46.4 kOhm) = 0.023 mA, rounded up",
+        "reference": "R20"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "Bosch BST-BME280-DS001-24 rev 1.24 Table 1 p. 8: IDDP current during pressure measurement 714 uA (Max value at -40 C); rounded up",
+        "reference": "U2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "TI SNOSD82D Table 6.5 p. 6: IQ_ACTIVE quiescent current during active conversion max 220 uA; rounded up",
+        "reference": "U3"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 25,
+        "source": "Winbond W25Q64JV rev J 9.4 p. 61: ICC4 to ICC7 write status, page program, sector and chip erase max 25 mA",
+        "reference": "U4"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 2,
+        "source": "declared: TDK DS-000347 rev 1.9 Table 3 p. 13 states no maximum (0.88 mA typ, 6-axis low-noise, 1.8 V, 25 C)",
+        "reference": "U5"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "Bosch BST-BMP581-DS004-13 rev 1.13 Table 4 p. 12: peak current ipeak, maximum DC current, max 260 uA; rounded up",
+        "reference": "U7"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "declared: the debug probe's target-voltage sense on the SWD header; no source",
+        "reference": "J2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 50,
+        "source": "declared: the EXT port's budget for off-board devices; no source",
+        "reference": "J3"
       }
     ],
     "sense": [

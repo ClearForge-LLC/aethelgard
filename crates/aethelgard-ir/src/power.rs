@@ -300,6 +300,16 @@ pub struct Load {
     pub domain: String,
     pub milliamps: u32,
     pub source: String,
+    /// The part this load is (`AET-WO-1303b`, the load ruling): optional; a
+    /// domain `extract`'s supply gate judges needs one entry naming each
+    /// part on it that can draw current, other than the MCU and the child
+    /// regulators, which their part rows count.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reference: Option<String>,
 }
 
 /// The battery's voltage sense: a divider from the battery to an ADC net,
@@ -807,9 +817,19 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             }
         }
     }
+    let mut named = BTreeSet::new();
     for (i, l) in power.loads.iter().enumerate() {
         known(&l.domain)?;
         crate::board::source(&l.source, &format!("power.loads[{i}].source"))?;
+        if let Some(r) = &l.reference {
+            id(r, format!("power.loads[{i}].reference"))?;
+            if !named.insert((l.domain.as_str(), r.as_str())) {
+                return Err(invalid(
+                    &l.domain,
+                    format!("power.loads[{i}] names {r} on its domain a second time"),
+                ));
+            }
+        }
         if l.milliamps == 0 {
             return Err(invalid(
                 &l.domain,

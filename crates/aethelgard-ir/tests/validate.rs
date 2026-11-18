@@ -1000,7 +1000,24 @@ fn an_acknowledgement_s_keys_are_each_required() {
 /// key, reason. None today: every key of every object is required, the
 /// nullable ones included (`INV-06`). A key that becomes optional is listed
 /// here with the reason, or the walk fails.
-const OPTIONAL_KEYS: &[(&str, &str, &str)] = &[];
+/// Why a load's `reference` may be absent (`AET-WO-1303b`).
+const OPTIONAL_LOAD_REFERENCE: &str = "AET-WO-1303b: a load's part, optional; the supply gate needs it only on a domain with a drop limit";
+
+/// Each key of the full document that may be absent: the fixture's VDD_3V3
+/// loads (`power.loads[2..=12]`) carry the optional part `reference`.
+const OPTIONAL_KEYS: &[(&str, &str, &str)] = &[
+    ("/power/loads/2", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/3", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/4", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/5", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/6", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/7", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/8", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/9", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/10", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/11", "reference", OPTIONAL_LOAD_REFERENCE),
+    ("/power/loads/12", "reference", OPTIONAL_LOAD_REFERENCE),
+];
 
 /// Every JSON object in `v`, as a pointer.
 fn object_pointers(v: &serde_json::Value, at: &str, out: &mut Vec<String>) {

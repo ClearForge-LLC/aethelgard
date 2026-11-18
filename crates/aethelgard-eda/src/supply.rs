@@ -576,7 +576,10 @@ pub fn copper(
         .collect();
     for p in &own_drilled {
         let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
-        holes.push((c, hole_radius(p.drill_nm.unwrap_or(0), e)));
+        // a priced pad's hole is inside its own junction region
+        if !vias.iter().any(|v| v.at == c) {
+            holes.push((c, hole_radius(p.drill_nm.unwrap_or(0), e)));
+        }
     }
     // the crop: the terminals' box, grown
     let mut bx = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
@@ -1300,13 +1303,41 @@ pub fn supplies(
     let mut out = Vec::new();
     for limit in limits {
         let d = &limit.domain;
-        if !power.loads.iter().any(|l| &l.domain == d) {
-            return Err(refusal(
-                "SupplyLoadUndeclared",
-                format!(
-                    "the supply gate reads `power.loads`' entry for `{d}`, and there is none: the load's other sinks are declared there, the MCU's maximum is counted from its part row"
-                ),
-            ));
+        // every part on the domain that can draw current is a declared
+        // load naming it (the load ruling): cited, derived or declared,
+        // never zeroed; the MCU and child regulators come from their rows,
+        // and capacitors, inductors and test pads draw none
+        let children: BTreeSet<&str> = power
+            .regulators
+            .iter()
+            .filter(|r| &r.input == d)
+            .map(|r| r.reference.as_str())
+            .collect();
+        let rail = crate::schematic::Conn::Rail(d.clone());
+        for p in &parts {
+            let draws = p.conns.values().any(|c| *c == rail)
+                && !p.lib_id.starts_with("MCU_")
+                && !p.lib_id.starts_with("Device:C")
+                && p.lib_id != "Device:L"
+                && p.lib_id != crate::schematic::TEST_POINT
+                && !power
+                    .regulators
+                    .iter()
+                    .any(|r| &r.output == d && r.reference == p.reference)
+                && !children.contains(p.reference.as_str());
+            let named = power
+                .loads
+                .iter()
+                .any(|l| &l.domain == d && l.reference.as_deref() == Some(p.reference.as_str()));
+            if draws && !named {
+                return Err(refusal(
+                    "SupplySinkUncounted",
+                    format!(
+                        "{} ({}) is on `{d}`, and no `power.loads` entry names it: its current is cited from its datasheet, derived, or declared, and never zeroed",
+                        p.reference, p.lib_id
+                    ),
+                ));
+            }
         }
         let load = checked
             .domains
@@ -1751,6 +1782,268 @@ mod tests {
         let pb = bound(&nc, &m, src, snk, 400).unwrap();
         let through = pb.via_transfer.iter().find(|(at, _)| *at == c).unwrap();
         assert_eq!(through.1, flow::QUANTA, "{:?}", pb.via_transfer);
+    }
+
+    /// A hole's clearance is its drill's radius plus the tolerance's
+    /// diagonal reach, rounded up.
+    #[test]
+    fn a_hole_is_cleared_at_every_position_its_tolerance_allows() {
+        // 150 000 + ⌈75 000 √2⌉ = 150 000 + 106 067
+        assert_eq!(hole_radius(300_000, 75_000), 256_067);
+        assert_eq!(hole_radius(300_001, 0), 150_001);
+    }
+
+    /// The witness disc: a cell in a knockout's opening ring is copper only
+    /// when one disc of the opening's radius, clear of every raw knockout,
+    /// covers it. A cell at the raw edge is not; one well outside is.
+    #[test]
+    fn a_ring_cell_is_copper_only_when_a_witness_disc_covers_it() {
+        let w = OPENING_NM - ARC_NM;
+        let k = ((0, 0), 500_000);
+        let inner = (-10_000_000, -10_000_000, 10_000_000, 10_000_000);
+        let h = PITCH_NM;
+        // just outside the raw knockout: no disc of radius w both covers it
+        // and clears the knockout
+        assert!(!witnessed((500_000, 0, h), &[k], inner, w));
+        // farther out, within the conservative ring
+        assert!(witnessed((560_000, 0, h), &[k], inner, w));
+        // the same cell pinched between two knockouts is not
+        let k2 = ((1_180_000, 31_250), 500_000);
+        assert!(!witnessed((560_000, 0, h), &[k, k2], inner, w));
+        // nor next to the board's raw edge
+        assert!(!witnessed(
+            (560_000, 0, h),
+            &[k],
+            (0, -10_000_000, 600_000, 10_000_000),
+            w
+        ));
+    }
+
+    /// The copper-hull test: a hull inside a disc and a track's stadium
+    /// passes; one reaching past both fails.
+    #[test]
+    fn a_ray_hull_must_lie_inside_copper() {
+        let shapes = [
+            Shape::Disc {
+                c: (0, 0),
+                r: S * 350_000,
+            },
+            Shape::Stadium {
+                a: (0, 0),
+                b: (S * 2_000_000, 0),
+                hw: S * 125_000,
+            },
+        ];
+        let inside = [
+            (300_000, -60_000),
+            (420_000, -60_000),
+            (420_000, 60_000),
+            (300_000, 60_000),
+            (-75_000, -75_000),
+            (-75_000, 75_000),
+        ];
+        assert!(hull_in_copper(&flow::convex_hull(&inside), &shapes, 8));
+        let outside = [
+            (300_000, -200_000),
+            (420_000, -200_000),
+            (420_000, 60_000),
+            (-75_000, 75_000),
+        ];
+        assert!(!hull_in_copper(&flow::convex_hull(&outside), &shapes, 8));
+    }
+
+    /// A via whose pad cannot hold the band at every hole position is left
+    /// out, named in the notes, its hole kept clear.
+    #[test]
+    fn a_via_too_small_for_the_worst_hole_is_left_out() {
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad(
+                    "1", "VDD", 12_000_000, 2_000_000, 13_000_000, 3_000_000,
+                )],
+            ),
+        ]);
+        let mut stack = b.stack.clone();
+        stack.classes.push(crate::stack::Class {
+            name: "SMALL".into(),
+            rule: crate::stack::Rule {
+                width_nm: 250_000,
+                via_nm: 450_000,
+                drill_nm: 300_000,
+            },
+            via_declared: true,
+            nets: vec!["VDD".into()],
+        });
+        let b = Board { stack, ..b };
+        let routed = Routed {
+            segments: vec![seg(
+                Layer::F,
+                (1_500_000, 2_500_000),
+                (12_500_000, 2_500_000),
+            )],
+            vias: vec![Via {
+                net: "VDD".into(),
+                at: (6_000_000, 2_500_000),
+            }],
+            ..Routed::default()
+        };
+        let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &model()).unwrap();
+        assert!(nc.vias.is_empty());
+        assert!(
+            nc.notes.iter().any(|n| n.contains("cannot hold the band")),
+            "{:?}",
+            nc.notes
+        );
+    }
+
+    /// A 4-layer board, VDD's plane on In1, 0.25 mm tracks.
+    fn board4(parts: Vec<Part>) -> Board {
+        let mut b = board(parts);
+        b.stack.copper = vec![
+            "F.Cu".into(),
+            "In1.Cu".into(),
+            "In2.Cu".into(),
+            "B.Cu".into(),
+        ];
+        b.stack.planes = vec![
+            ("In1.Cu".into(), "VDD".into()),
+            ("In2.Cu".into(), "GND".into()),
+        ];
+        b.stack.thickness.min_nm = 1_250_000;
+        b.stack.thickness.max_nm = 1_851_000;
+        b.stack.dielectrics = vec![
+            ("F.Cu".into(), "In1.Cu".into(), 179_000, "s".into()),
+            ("In1.Cu".into(), "In2.Cu".into(), 891_000, "s".into()),
+            ("In2.Cu".into(), "B.Cu".into(), 179_000, "s".into()),
+        ];
+        b
+    }
+
+    fn joins_of(nc: &NetCopper, at: (i64, i64)) -> Vec<String> {
+        nc.vias
+            .iter()
+            .find(|u| u.via.at == at)
+            .map(|u| {
+                u.joins
+                    .iter()
+                    .map(|(l, _)| nc.layers[*l].name.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// A through-hole pad whose plane join is a thermal relief joins no
+    /// plane (`ReliefUnpriced`): its spokes are not priced. Solidly joined,
+    /// it joins its plane.
+    #[test]
+    fn a_relieved_pad_joins_no_plane() {
+        for (join, plane) in [
+            (crate::stack::Join::Relief, false),
+            (crate::stack::Join::Solid, true),
+        ] {
+            let mut th = pad("1", "VDD", 5_500_000, 1_750_000, 7_000_000, 3_250_000);
+            th.drill_nm = Some(800_000);
+            th.corner_nm = 750_000;
+            th.join = Some(join);
+            let b = board4(vec![
+                part(
+                    "J1",
+                    vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+                ),
+                part("J3", vec![th]),
+            ]);
+            let routed = Routed {
+                segments: vec![seg(
+                    Layer::F,
+                    (1_500_000, 2_500_000),
+                    (6_250_000, 2_500_000),
+                )],
+                ..Routed::default()
+            };
+            let src = &b.parts[0].pads[0];
+            let nc = copper(&b, &routed, "VDD", &[src, &b.parts[1].pads[0]], &model()).unwrap();
+            let joins = joins_of(&nc, (6_250_000, 2_500_000));
+            assert_eq!(
+                joins.contains(&"In1.Cu".to_string()),
+                plane,
+                "{join:?}: {joins:?}"
+            );
+            assert_eq!(
+                nc.notes.iter().any(|n| n.starts_with("ReliefUnpriced")),
+                !plane,
+                "{:?}",
+                nc.notes
+            );
+        }
+    }
+
+    /// A pocket of plane between four foreign knockouts, which a witness
+    /// disc admits, is an island KiCad's fill drops: no via port reaches it,
+    /// so it is left out too.
+    #[test]
+    fn a_plane_island_is_left_out() {
+        let b = board4(vec![part(
+            "J1",
+            vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+        )]);
+        // four GND vias 1 mm apart about (6, 3) mm, inside the crop: their raw knockouts
+        // (0.515 mm) overlap and close a pocket a witness disc admits; and
+        // one VDD via
+        let c = (6_000_000, 3_000_000);
+        let routed = Routed {
+            vias: vec![
+                Via {
+                    net: "GND".into(),
+                    at: (c.0 - 500_000, c.1 - 500_000),
+                },
+                Via {
+                    net: "GND".into(),
+                    at: (c.0 + 500_000, c.1 - 500_000),
+                },
+                Via {
+                    net: "GND".into(),
+                    at: (c.0 - 500_000, c.1 + 500_000),
+                },
+                Via {
+                    net: "GND".into(),
+                    at: (c.0 + 500_000, c.1 + 500_000),
+                },
+                Via {
+                    net: "VDD".into(),
+                    at: (4_000_000, 3_000_000),
+                },
+            ],
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), (4_000_000, 2_500_000)),
+                seg(Layer::F, (4_000_000, 2_500_000), (4_000_000, 3_000_000)),
+            ],
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let nc = copper(&b, &routed, "VDD", &[src], &model()).unwrap();
+        let plane = nc.layers.iter().find(|l| l.name == "In1.Cu").unwrap();
+        let h = PITCH_NM;
+        let pocket = ((c.0 - nc.origin.0) / h, (c.1 - nc.origin.1) / h);
+        assert!(
+            !plane
+                .cells
+                .iter()
+                .any(|&q| (q.0 - pocket.0).abs() <= 1 && (q.1 - pocket.1).abs() <= 1),
+            "the pocket stayed"
+        );
+        assert!(
+            nc.notes.iter().any(|n| n.contains("islands")),
+            "{:?}",
+            nc.notes
+        );
+        // and the plane around the VDD via is there
+        assert!(plane.cells.len() > 1000);
     }
 
     /// The drop is the worst supply pin plus the worst return pin, times the

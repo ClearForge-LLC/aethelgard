@@ -306,11 +306,13 @@ fn the_tree_checks_to_its_hand_computed_bounds() {
             d("VDD_3V3").load_milliamps,
             d("VDD_1V8").load_milliamps
         ],
-        [2000, 679, 20]
+        // VDD_3V3: the MCU's 658 mA, U12's 20 mA and 1 mA (40 uA rounded
+        // up), and the fixture's 37 mA of other sinks (`AET-WO-1303b`)
+        [2000, 716, 20]
     );
     assert_eq!(
         (p.input_steady_milliamps, p.input_fault_milliamps),
-        (2679, 10_100)
+        (2716, 10_100)
     );
     let pad = |p: &(String, String)| (p.0.clone(), p.1.clone());
     assert_eq!(pad(&d("VDD_5V").source), ("R10".to_owned(), "1".to_owned()));

@@ -53,10 +53,6 @@ fn gated(mut v: Value, limit_mv: u32) -> Value {
         json!({"value": 18, "source": "test: the fabricator's average hole plating"});
     st["copper_temperature_max_c"] =
         json!({"value": 125, "source": "test: the load's junction maximum"});
-    v["power"]["loads"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({"domain": "VDD_3V3", "milliamps": 2, "source": "test: the other sinks"}));
     v["power"]["drop_limits"] =
         json!([{"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"}]);
     v
@@ -139,14 +135,20 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
             "{key}: {r}"
         );
     }
+    // every part on the domain that draws current is named by a load
+    // entry: the flash's removed, the gate names it
     let mut v = gated(s03(), 165);
     v["power"]["loads"]
         .as_array_mut()
         .unwrap()
-        .retain(|l| l["domain"] != "VDD_3V3");
+        .retain(|l| l["reference"] != "U4");
     let (code, r) = extract(s03_board(), &write("load", &v));
     assert_eq!(code, 2, "{r}");
-    assert_eq!(r["error"]["kind"], "SupplyLoadUndeclared", "{r}");
+    assert_eq!(r["error"]["kind"], "SupplySinkUncounted", "{r}");
+    assert!(
+        r["error"]["message"].as_str().unwrap().starts_with("U4 "),
+        "{r}"
+    );
 }
 
 /// The four-layer board: every MCU supply and return pin bounded, from the
@@ -160,8 +162,9 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     assert_eq!(s["domain"], "VDD_3V3");
     assert_eq!(s["source"], json!({"reference": "L2", "pad": "2"}));
     assert_eq!(s["return"], json!({"reference": "U11", "pad": "1"}));
-    // the MCU's 658 mA from its part row and the declared 2 mA
-    assert_eq!(s["load_milliamps"], 660);
+    // the MCU's 658 mA from its part row and the fixture's 90 mA of other
+    // sinks, each cited, derived or declared
+    assert_eq!(s["load_milliamps"], 748);
     let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
     assert_eq!((vdd.len(), vss.len()), (16, 10), "{s}");
     for p in vdd.iter().chain(&vss) {
@@ -177,7 +180,7 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .unwrap()
     };
     let drop = s["drop_bound_microvolts"].as_u64().unwrap();
-    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 660).div_ceil(1000));
+    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 748).div_ceil(1000));
     assert!(drop <= 165_000, "{drop}");
     assert!(s.get("note").is_none(), "{s}");
     let conditions: Vec<&str> = s["conditions"]

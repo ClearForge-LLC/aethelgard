@@ -2392,6 +2392,22 @@ mod tests {
                         "width {w} outside {:?}",
                         table.widths[f]
                     );
+                    for i in 0..n {
+                        for j in 0..n {
+                            let (x0, y0) = (-e + step * i as f64, -e + step * j as f64);
+                            if dx >= x0 - 1e-12
+                                && dx <= x0 + step + 1e-12
+                                && dy >= y0 - 1e-12
+                                && dy <= y0 + step + 1e-12
+                            {
+                                let (lo, hi) = table.box_widths[i * n + j][f];
+                                assert!(
+                                    lo.lo <= w && w <= hi.hi,
+                                    "box ({i}, {j}) width {w} outside ({lo:?}, {hi:?})"
+                                );
+                            }
+                        }
+                    }
                 }
             }
             let nominal = direct(d, u, u + h, beta);
@@ -2408,6 +2424,67 @@ mod tests {
                 "{top} far over the worst sampled {worst}"
             );
         }
+    }
+
+    /// A group is priced at its worst box: one edge carrying the whole
+    /// current, its coefficient 1 in one box and 3 in another, costs 3.
+    #[test]
+    fn a_group_is_priced_at_its_worst_box() {
+        let mut net = Network::default();
+        let (s, t) = (net.node(), net.node());
+        let e = net.edge(s, t, 1.0);
+        net.elements.push(Element::Group {
+            edges: vec![e],
+            kappa: vec![vec![1.0], vec![3.0], vec![2.0]],
+            talls: vec![],
+            widths: vec![vec![], vec![], vec![]],
+        });
+        let b = net.bound(s, t, 10, 1e-12).unwrap();
+        assert!(
+            b.energy.hi >= 3.0 && b.energy.hi <= 3.0 * (1.0 + 1e-12),
+            "{:?}",
+            b.energy
+        );
+    }
+
+    /// A face nearer the hole's centre than the band's outer radius, at
+    /// some position the box allows, is refused: its rays would start
+    /// inside the band.
+    #[test]
+    fn a_grazing_face_is_refused() {
+        let (r_d, beta, t_p) = (Iv::exact(0.15), Iv::exact(0.01), Iv::exact(0.018));
+        assert!(junction_core(Iv::exact(0.25), Iv::exact(0.0), 0.0625, r_d, beta, t_p, 8).is_ok());
+        // the face line 0.155 from the centre, its segment across the foot
+        assert_eq!(
+            junction_core(
+                Iv::exact(0.155),
+                Iv::exact(-0.03),
+                0.0625,
+                r_d,
+                beta,
+                t_p,
+                8
+            )
+            .unwrap_err(),
+            JunctionError::Grazing
+        );
+        // a segment off to the side, its nearest point 0.17 away, is fine
+        assert!(
+            junction_core(Iv::exact(0.155), Iv::exact(0.07), 0.0625, r_d, beta, t_p, 8).is_ok()
+        );
+        // a box of positions reaching too near is refused
+        assert!(
+            junction_core(
+                Iv { lo: 0.15, hi: 0.25 },
+                Iv::exact(0.0),
+                0.0625,
+                r_d,
+                beta,
+                t_p,
+                8
+            )
+            .is_err()
+        );
     }
 
     /// The branch and bound's result is never below the true maximum and
