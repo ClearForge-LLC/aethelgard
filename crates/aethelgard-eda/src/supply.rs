@@ -433,11 +433,7 @@ fn pad_needed(drill_nm: i64, m: &Model) -> i64 {
 /// distance the tolerance moves its centre, `e·√2` (per axis), rounded up.
 fn hole_radius(drill_nm: i64, e_nm: i64) -> i64 {
     let r = drill_nm / 2 + drill_nm % 2;
-    let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
-    while 2 * i128::from(e_nm) * i128::from(e_nm) > i128::from(d) * i128::from(d) {
-        d += 1;
-    }
-    r + d
+    r + crate::stack::diagonal_nm(e_nm)
 }
 
 /// The convex hull `hull` (nm) lies inside the union of `shapes` (nm × 4):

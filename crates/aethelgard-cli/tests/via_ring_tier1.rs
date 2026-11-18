@@ -7,26 +7,18 @@
 
 #![allow(clippy::unwrap_used)]
 
+mod common;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
 
+use common::verify::{root, scratch};
 use serde_json::{Value, json};
 
 const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
-
-fn root() -> PathBuf {
-    fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
-}
-
-fn scratch(label: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("aet-1314-{label}-{}", std::process::id()));
-    let _ = fs::remove_dir_all(&dir);
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
 
 fn run(args: &[&str]) -> (i32, Value) {
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))

@@ -344,7 +344,6 @@ fn the_reference_declares_todays_two_layer_board() {
                 "/SPI_SCK".into(),
                 "/SPI_MOSI".into(),
             ],
-            ring: None,
             notes: vec![],
             copper: vec!["F.Cu".into(), "B.Cu".into()],
             planes: vec![],

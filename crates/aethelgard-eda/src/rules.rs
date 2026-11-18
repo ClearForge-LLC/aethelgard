@@ -339,4 +339,23 @@ mod tests {
             assert!(crate::sexpr::parse(&wrapped).is_ok(), "{wrapped}");
         }
     }
+
+    /// The Default net class's via is the board's own: the engine's 0.6/0.3
+    /// mm, or the ring rule's where the tolerances are declared
+    /// (`AET-WO-1314`), never a constant written in the project.
+    #[test]
+    fn the_projects_default_via_is_the_boards() {
+        let mut stack = crate::stack::reference();
+        let plain = Rules::from_stack(&stack).project("p");
+        assert!(
+            plain.contains("\"via_diameter\": 0.6, \"via_drill\": 0.3,"),
+            "{plain}"
+        );
+        stack.via_nm = 750_000;
+        let ruled = Rules::from_stack(&stack).project("p");
+        assert!(
+            ruled.contains("\"via_diameter\": 0.75, \"via_drill\": 0.3,"),
+            "{ruled}"
+        );
+    }
 }

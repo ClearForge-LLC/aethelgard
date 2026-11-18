@@ -23,6 +23,17 @@ pub fn kicad_id(name: &str) -> Option<&'static str> {
     })
 }
 
+/// `⌈e·√2⌉`, nm: the farthest a per-axis tolerance `e` moves a centre,
+/// exact in integers (the float's ceiling raised until `2e² ≤ d²`). One
+/// source for the via ring rule and the supply gate's holes.
+pub fn diagonal_nm(e_nm: i64) -> i64 {
+    let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
+    while 2 * i128::from(e_nm).pow(2) > i128::from(d).pow(2) {
+        d += 1;
+    }
+    d
+}
+
 /// The ring rule (`AET-WO-1314`, ruling 6982875594 D1): a via drilled `d`
 /// finishes anywhere up to `d + plus`, its centre anywhere within
 /// `position` per axis of its pad's, so up to `⌈position·√2⌉` off centre. A
@@ -69,10 +80,7 @@ impl RingRule {
     /// The smallest pad, nm, that keeps the ring round a hole drilled
     /// `drill_nm`.
     pub fn pad_nm(&self, drill_nm: i64) -> i64 {
-        let mut reach = (self.position_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
-        while 2 * i128::from(self.position_nm).pow(2) > i128::from(reach).pow(2) {
-            reach += 1;
-        }
+        let reach = diagonal_nm(self.position_nm);
         let d = drill_nm + self.plus_nm + 2 * reach + 2 * self.ring_nm;
         (d + 9_999) / 10_000 * 10_000
     }
@@ -125,9 +133,6 @@ pub struct Stack {
     /// (`AET-WO-1314`); a constrained net `extract` does not bound is not
     /// among them.
     pub bounded: Vec<String>,
-    /// The ring rule, where the specification declares the fabricator's
-    /// tolerances it needs ([`RingRule`]).
-    pub ring: Option<RingRule>,
     /// What the ring rule changed that the specification did not declare:
     /// each thermal array's via raised to it, for the verdict.
     pub notes: Vec<String>,
@@ -268,7 +273,6 @@ impl Stack {
         let mut st = Stack {
             via_nm: crate::route::VIA_NM,
             drill_nm: crate::route::DRILL_NM,
-            ring: None,
             notes: Vec::new(),
             bounded: spec
                 .i2c_buses
@@ -379,7 +383,6 @@ impl Stack {
         // declared via: an undersized one is refused before routing
         // ([`RingRule::unheld`]), never raised here.
         if let Ok(Some(rule)) = RingRule::of(spec) {
-            st.ring = Some(rule);
             st.via_nm = rule.pad_nm(st.drill_nm);
             // a class that declares no via is laid with the board's
             for c in st.classes.iter_mut().filter(|c| !c.via_declared) {
@@ -512,7 +515,6 @@ pub(crate) fn reference() -> Stack {
         via_nm: crate::route::VIA_NM,
         drill_nm: crate::route::DRILL_NM,
         bounded: vec![],
-        ring: None,
         notes: vec![],
         copper: vec!["F.Cu".into(), "B.Cu".into()],
         planes: vec![],

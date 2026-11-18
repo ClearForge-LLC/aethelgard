@@ -5286,7 +5286,6 @@ mod tests {
             via_nm: crate::route::VIA_NM,
             drill_nm: crate::route::DRILL_NM,
             bounded: vec![],
-            ring: None,
             notes: vec![],
             copper: vec!["F.Cu".into(), "B.Cu".into()],
             planes: vec![],
