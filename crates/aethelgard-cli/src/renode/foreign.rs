@@ -286,6 +286,11 @@ pub struct ForeignBoot {
     pub spi_errors_exempted: u64,
     /// Renode's `Unhandled write` warnings, each kind once (D7 (a)).
     pub warnings: Vec<WarningReport>,
+    /// The bytes of Renode's output the log filter kept and counted against
+    /// `log_budget_bytes`, and the log lines it dropped past it (D7 (c)).
+    pub log_kept_bytes: u64,
+    pub log_budget_bytes: u64,
+    pub log_lines_dropped: u64,
     /// The firmware's loaded flash segments, read back after the run.
     pub flash: Vec<FlashReport>,
     /// Each flash erase the firmware started, as the erase hook logs it.
@@ -719,6 +724,9 @@ pub fn report(
         devices: Vec::new(),
         spi_errors_exempted: 0,
         warnings: Vec::new(),
+        log_kept_bytes: 0,
+        log_budget_bytes: FOREIGN_LOG_FILTER.budget as u64,
+        log_lines_dropped: 0,
         flash: Vec::new(),
         erases: Vec::new(),
         option_changes: Vec::new(),
@@ -879,6 +887,8 @@ pub fn judge(
             log_text(line).to_owned(),
         ));
     }
+    report.log_kept_bytes = out.stdout.len() as u64;
+    report.log_lines_dropped = out.dropped_log_lines;
     // D7 (a): each kind of Renode's `Unhandled write` warning, once.
     let stamp = |t: &str| log_stamped(&format!("[{t}] x")).map(|(ns, _)| ns);
     report.warnings = out

@@ -475,3 +475,15 @@ Written before the run. U5's data step is now its listed FIFO read (`reads` `0xB
 5. **Wall time** is under 20 s of the 30 s bound.
 6. **D4's exemptions** stay at 1,073. Every earlier witness time is unchanged.
 7. **The window (D7):** 4 s holds every witness with at least 0.35 s of margin. So `FOREIGN_MAX_VIRTUAL_NS` stays 4 s as measured, with no ruling needed, unless 4 or 5 fails.
+
+## Predictions before the §2 mutations (written before any mutant runs)
+
+CI's ArduPilot (a799dfb6) on the emitted `sentinel-02-own` platform, this CLI:
+
+- **M1, window too short** (`--foreign 3500ms`, before U5's identity at 3.5693 s): fails, `spi_transaction_unwitnessed` for U5 (identity), exit 1.
+- **M2, ArduPilot without the declaration** (`--for 100ms`): refused before Renode, `FirmwareOutsideMemory`, exit 3. Its `.data` is in D2 SRAM.
+- **M3, the SPI2 receive DMA line dropped from the platform** (the repl's `DMARecieve -> dmamux1@39` under `spi2`): refused before the judge reads anything, because the platform is not the one `S` emits. I predict a named refusal of the platform, not a judged fail.
+- **M4, U5's model removed from the platform:** refused the same way as M3.
+- **M5, the `IMU` line removed** from the generated hwdef, ArduPilot rebuilt unmodified otherwise: ArduPilot never probes the ICM, so it fails `spi_transaction_unwitnessed` for U5 (identity). Every other witness holds.
+- **M6, an ELF declared foreign that loads outside its regions:** `FirmwareOutsideMemory` naming every region (tier 1, as built).
+- **M7, the generated firmware without a declaration:** today's judge, with no `judge` in its verdict (tier 1, as built).

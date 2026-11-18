@@ -2644,6 +2644,9 @@ fn a_foreign_boot_s_flash_locked_accesses_and_warnings_are_reported() {
     assert_eq!(b["warnings"][0]["count"], 3, "{v}");
     assert_eq!(b["warnings"][0]["first_ns"], 32_000_000u64, "{v}");
     assert_eq!(b["warnings"][0]["last_ns"], 34_000_000u64, "{v}");
+    assert_eq!(b["log_budget_bytes"], 8 * 1024 * 1024, "{v}");
+    assert_eq!(b["log_lines_dropped"], 0, "{v}");
+    assert!(b["log_kept_bytes"].as_u64().unwrap() > 0, "{v}");
     let infos: Vec<_> = v["findings"]
         .as_array()
         .unwrap()
