@@ -1,0 +1,11 @@
+  faces 93 odd 1 nonzero 1 disagree 0
+s024l In1.Cu net GND: ring vertices 4467 copper area 7285.228 mm2 valid True bounds [70.7005, 28.6505, 133.4495, 146.5995]
+  faces 116 odd 1 nonzero 1 disagree 0
+s024l In2.Cu net VDD_3V3: ring vertices 5167 copper area 7244.334 mm2 valid True bounds [70.7005, 28.6505, 133.4495, 146.5995]
+transform check: 201/201 board vias coincide exactly with a Gerber flash at (x, -y); Edge.Cuts rect ('70.2', '28.15', '133.95', '147.1')
+RESULT s024l GND h=62500: cells 595146 layers [np.str_('In1.Cu')] NOT inside 0
+RESULT s024l GND h=31250: cells 2380134 layers [np.str_('In1.Cu')] NOT inside 0
+RESULT s024l VDD_3V3 h=62500: cells 700199 layers [np.str_('In2.Cu')] NOT inside 0
+RESULT s024l VDD_3V3 h=31250: cells 2802670 layers [np.str_('In2.Cu')] NOT inside 2
+VDD_3V3-31250 {'layer': 'In2.Cu', 'x0': 98843750, 'y0': 49187500, 'side': 31250, 'uncovered_area_frac': 1.0, 'protrusion_nm': 755830.2249533291, 'nearest_flash': (99300000, 49650000, 'GND'), 'nearest_flash_dist_nm': 627572.8294389425}
+VDD_3V3-31250 {'layer': 'In2.Cu', 'x0': 98843750, 'y0': 48281250, 'side': 31250, 'uncovered_area_frac': 1.0, 'protrusion_nm': 741984.2427255447, 'nearest_flash': (99300000, 47850000, 'GND'), 'nearest_flash_dist_nm': 627572.8294389425}

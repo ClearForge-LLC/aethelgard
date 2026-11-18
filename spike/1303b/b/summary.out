@@ -1,0 +1,103 @@
+== sentinel-02-power (2 layers) VDD
+  pin   62.5um   31.25um  15.625um  vias carrying >= 1 %
+     6   644.197   432.279   430.683   6
+    17   740.856   499.677   496.786   8
+    30   781.521   524.232   522.086   6
+    32   751.545   503.198   501.494   6
+    33   750.268   502.478   500.810   6
+    39   796.478   535.009   532.821   8
+    52   926.736   622.940   620.192   10
+    62   965.479   648.190   645.158   10
+    72  1036.307   694.470   691.179   10
+    84  1221.988   821.848   818.013   14
+    95  1260.963   847.826   843.890   14
+   108  1316.908   886.602   882.028   16
+   121   497.356   335.367   333.934   6
+   131   525.312   354.226   352.727   6
+   143   582.119   389.426   388.152   4
+   144   578.947   387.581   386.337   4
+  bounded 16 of 16; refused none; finest pitch 333.9..882.0 mOhm
+== s024l (power fixture, 4 layers) VDD
+  pin   62.5um   31.25um  vias carrying >= 1 %
+     6    23.282    20.260   2
+    17    39.335    31.216   2
+    30    24.474    21.245   2
+    32    23.724    20.821   2
+    33    24.440    21.392   2
+    39    25.788    22.777   2
+    52    24.917    21.961   2
+    62    24.919    21.965   2
+    72    25.033    21.916   2
+    84    24.475    21.579   2
+    95    24.083    21.192   2
+   108    22.398    19.536   2
+   121    29.464    24.015   2
+   131    32.963    26.445   2
+   143    36.300    28.426   2
+   144    33.128    26.581   2
+  bounded 16 of 16; refused none; finest pitch 19.5..31.2 mOhm
+  crop 15 mm against 5 mm at 62.5um: change -7.09%..-2.87%
+== s024l (power fixture, 4 layers) GND
+  pin   62.5um   31.25um  vias carrying >= 1 %
+    16    28.764    22.449   2
+    31    41.488    31.099   2
+    38    30.074    23.702   2
+    51    29.378    23.057   2
+    61    29.372    23.054   2
+    83    29.111    22.798   2
+    94    28.745    22.433   2
+   107    28.790    22.429   2
+   120    28.057    21.749   2
+   130    28.413    22.046   2
+   138    32.839    24.685   2
+  bounded 11 of 11; refused none; finest pitch 21.7..31.1 mOhm
+== sentinel-03 VDD
+  pin   62.5um   31.25um  vias carrying >= 1 %
+     6    21.991    19.095   2
+    17    44.366    34.222   2
+    30    23.258    20.090   2
+    32    22.669    19.839   2
+    33    23.385    20.411   2
+    39    23.748    20.889   2
+    52    23.262    20.416   2
+    62    23.378    20.471   2
+    72    22.363    19.450   2
+    84    21.984    19.240   2
+    95    21.534    18.804   2
+   108    20.859    18.073   2
+   121    41.750    31.466   2
+   131    36.577    28.371   2
+   143    34.799    27.100   2
+   144    31.627    25.255   2
+  bounded 16 of 16; refused none; finest pitch 18.1..34.2 mOhm
+== sentinel-03 GND
+  pin   62.5um   31.25um  vias carrying >= 1 %
+    16    29.444    22.871   2
+    31    41.502    30.803   2
+    38    29.879    23.303   2
+    51    28.666    22.220   2
+    61    28.416    21.999   2
+    83    28.322    21.867   2
+    94    27.231    20.873   2
+   107    27.520    21.133   2
+   120    26.790    20.445   2
+   130    27.569    21.151   2
+  bounded 10 of 10; refused none; finest pitch 20.4..30.8 mOhm
+  crop 15 mm against 5 mm at 62.5um: change -4.80%..-1.74%
+
+== reference (UNCERTIFIED). 4 layers: the worst pin alone (one crop at both pitches) at 31.25 and
+   15.625 um, where a 0.2 mm track keeps 0.1875 mm of whole cells at both, extrapolated to first order.
+   It removes the plane's discretisation only: not the track-width loss, the junction or the ranges.
+  s024l-vdd-17: 32.378 -> 31.896 mOhm (-1.49%); reference 31.414
+  s024l-gnd-31: 33.284 -> 32.350 mOhm (-2.81%); reference 31.416
+  s03-vdd-17: 35.091 -> 34.372 mOhm (-2.05%); reference 33.653
+  s03-gnd-31: 31.263 -> 30.300 mOhm (-3.08%); reference 29.337
+   2 layers: every VDD_3V3 segment is axis-aligned on the 125 um grid, so a 0.2 mm track keeps
+   0.1875 mm at both fine pitches; reference = bound x 0.9375 [inferred: track runs only].
+
+== drop at the load: (worst VDD pin + worst GND pin) x load; load the MCU's 658 mA alone (the net's total is the fixtures' work)
+  s024l bound at 31.25 um (all pins, one crop): 31.2 + 31.1 = 62.3 mOhm: 41.0 mV at 658 mA; 165 mV holds to 2648 mA
+  s024l the same pins each with its own crop (less plane): bound 65.7 mOhm, reference 62.8 mOhm (-4.3%): 41.3 mV at 658 mA
+  s03 bound at 31.25 um (all pins, one crop): 34.2 + 30.8 = 65.0 mOhm: 42.8 mV at 658 mA; 165 mV holds to 2537 mA
+  s03 the same pins each with its own crop (less plane): bound 66.4 mOhm, reference 63.0 mOhm (-5.1%): 41.4 mV at 658 mA
+  s02 VDD alone (GND refused by name, GroundReturnUnread): bound 333.9..882.0 mOhm, 220..580 mV at 658 mA; reference x0.9375: 313.1..826.9 mOhm, 206..544 mV

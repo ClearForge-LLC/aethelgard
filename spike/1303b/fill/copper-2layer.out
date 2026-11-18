@@ -1,0 +1,8 @@
+== sentinel-02-power VDD_3V3 31250
+B.Cu: cells 17457 not covered 0; squares 38 not covered 0
+F.Cu: cells 106207 not covered 0; squares 38 not covered 0
+TOTAL not covered: 0
+== sentinel-02-power VDD_3V3 15625
+B.Cu: cells 72240 not covered 0; squares 38 not covered 0
+F.Cu: cells 434205 not covered 0; squares 38 not covered 0
+TOTAL not covered: 0

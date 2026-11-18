@@ -1,0 +1,84 @@
+{
+ "GND-62500": {
+  "cells": 595146,
+  "bad": 0,
+  "worst": [],
+  "all": []
+ },
+ "GND-31250": {
+  "cells": 2380134,
+  "bad": 0,
+  "worst": [],
+  "all": []
+ },
+ "VDD_3V3-62500": {
+  "cells": 700199,
+  "bad": 0,
+  "worst": [],
+  "all": []
+ },
+ "VDD_3V3-31250": {
+  "cells": 2802670,
+  "bad": 2,
+  "worst": [
+   {
+    "layer": "In2.Cu",
+    "x0": 98843750,
+    "y0": 49187500,
+    "side": 31250,
+    "uncovered_area_frac": 1.0,
+    "protrusion_nm": 755830.2249533291,
+    "nearest_flash": [
+     99300000,
+     49650000,
+     "GND"
+    ],
+    "nearest_flash_dist_nm": 627572.8294389425
+   },
+   {
+    "layer": "In2.Cu",
+    "x0": 98843750,
+    "y0": 48281250,
+    "side": 31250,
+    "uncovered_area_frac": 1.0,
+    "protrusion_nm": 741984.2427255447,
+    "nearest_flash": [
+     99300000,
+     47850000,
+     "GND"
+    ],
+    "nearest_flash_dist_nm": 627572.8294389425
+   }
+  ],
+  "all": [
+   {
+    "layer": "In2.Cu",
+    "x0": 98843750,
+    "y0": 49187500,
+    "side": 31250,
+    "uncovered_area_frac": 1.0,
+    "protrusion_nm": 755830.2249533291,
+    "nearest_flash": [
+     99300000,
+     49650000,
+     "GND"
+    ],
+    "nearest_flash_dist_nm": 627572.8294389425
+   },
+   {
+    "layer": "In2.Cu",
+    "x0": 98843750,
+    "y0": 48281250,
+    "side": 31250,
+    "uncovered_area_frac": 1.0,
+    "protrusion_nm": 741984.2427255447,
+    "nearest_flash": [
+     99300000,
+     47850000,
+     "GND"
+    ],
+    "nearest_flash_dist_nm": 627572.8294389425
+   }
+  ]
+ }
+}

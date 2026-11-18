@@ -1,0 +1,12 @@
+== s024l
+components 10 largest 2802640 others [1, 1, 1, 1, 1, 1, 1, 1, 22]
+violator (98843750, 48281250) component size 1 ISLAND
+violator (98843750, 49187500) component size 1 ISLAND
+== sentinel-03
+components 9 largest 3206794 others [1, 1, 1, 1, 1, 1, 18, 52]
+violator (95343750, 67531250) component size 1 ISLAND
+violator (95343750, 68437500) component size 1 ISLAND
+violator (122031250, 70125000) component size 1 ISLAND
+violator (122031250, 71031250) component size 1 ISLAND
+violator (122937500, 70125000) component size 1 ISLAND
+violator (122937500, 71031250) component size 1 ISLAND
