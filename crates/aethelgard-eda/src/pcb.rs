@@ -2078,22 +2078,28 @@ pub(crate) fn write(
     parts: &[Part],
     stack: &crate::stack::Stack,
 ) -> Result<String, EmitError> {
-    write_moved(project, parts, stack, &[], None, route::Rung::TODAY)
+    write_moved(project, parts, stack, &[], None)
 }
 
 /// [`write`], with each of `moves` placed where it says instead, inside
-/// `bound` when one is declared (`AET-WO-1313`), routed at `rung`
-/// (`AET-WO-1314`).
+/// `bound` when one is declared (`AET-WO-1313`), routed as today: the
+/// tests' path; `emit` places through `schematic::place` (`AET-WO-1314`).
+#[cfg(test)]
 pub(crate) fn write_moved(
     project: &str,
     parts: &[Part],
     stack: &crate::stack::Stack,
     moves: &[Move],
     bound: Option<OutlineBound>,
-    rung: route::Rung,
 ) -> Result<String, EmitError> {
     let (footprints, outline) = placed(project, parts, stack, moves, bound)?;
-    write_placed_at(project, footprints, outline, stack, rung)
+    write_placed_at(
+        project,
+        footprints,
+        outline,
+        stack,
+        Some(route::Rung::TODAY),
+    )
 }
 
 /// The placed, netted footprints of [`write_moved`] and the outline, before
@@ -2128,16 +2134,24 @@ pub fn write_placed(
     outline: Rect,
     stack: &crate::stack::Stack,
 ) -> Result<String, EmitError> {
-    write_placed_at(project, footprints, outline, stack, route::Rung::TODAY)
+    write_placed_at(
+        project,
+        footprints,
+        outline,
+        stack,
+        Some(route::Rung::TODAY),
+    )
 }
 
-/// [`write_placed`], routed at `rung` (`AET-WO-1314`).
+/// [`write_placed`], routed at `rung` (`AET-WO-1314`); with `None`, the
+/// placed board alone: the same header, footprints and outline, and no
+/// track, via or zone (`schematic::placement`).
 pub(crate) fn write_placed_at(
     project: &str,
     footprints: Vec<Sx>,
     outline: Rect,
     stack: &crate::stack::Stack,
-    rung: route::Rung,
+    rung: Option<route::Rung>,
 ) -> Result<String, EmitError> {
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
@@ -2188,15 +2202,18 @@ pub(crate) fn write_placed_at(
         parts,
         stack: stack.clone(),
     };
-    let routed =
-        route::route_with(&board, rung).map_err(|e| match (e.exhausted, e.net.is_empty()) {
-            (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
-            (None, true) => EmitError::BoardUnroutable(e.why),
-            (None, false) => EmitError::Unroutable {
-                net: e.net,
-                why: e.why,
-            },
-        })?;
+    let routed = rung
+        .map(|rung| {
+            route::route_with(&board, rung).map_err(|e| match (e.exhausted, e.net.is_empty()) {
+                (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
+                (None, true) => EmitError::BoardUnroutable(e.why),
+                (None, false) => EmitError::Unroutable {
+                    net: e.net,
+                    why: e.why,
+                },
+            })
+        })
+        .transpose()?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
         at_sx("start", (o.x0, o.y0)),
@@ -2210,7 +2227,9 @@ pub(crate) fn write_placed_at(
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
-    out.extend(copper(project, &routed, o, stack));
+    if let Some(routed) = &routed {
+        out.extend(copper(project, routed, o, stack));
+    }
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
 }
@@ -3395,8 +3414,8 @@ mod tests {
         let mut reversed = parts.clone();
         reversed.reverse();
         assert_eq!(
-            write_moved("p", &parts, &stack, &[], b, route::Rung::TODAY).unwrap(),
-            write_moved("p", &reversed, &stack, &[], b, route::Rung::TODAY).unwrap()
+            write_moved("p", &parts, &stack, &[], b).unwrap(),
+            write_moved("p", &reversed, &stack, &[], b).unwrap()
         );
     }
 

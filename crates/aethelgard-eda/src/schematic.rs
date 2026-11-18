@@ -802,36 +802,24 @@ pub fn emit_moved(
     table: &PinTable,
     moves: &[crate::pcb::Move],
 ) -> Result<Emission, EmitError> {
-    spec.validate().map_err(EmitError::InvalidSpecification)?;
-    let (parts, rails) = design(spec, solved, table)?;
-    let stack = crate::stack::Stack::of(spec);
-    // the via ring rule (`AET-WO-1314`): every input it needs declared, and
-    // no class declaring a via it cannot hold
-    let rule = crate::stack::RingRule::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
-    if let Some(rule) = rule
-        && let Some((class, via_nm, pad_nm)) = rule.unheld(&stack).into_iter().next()
-    {
-        return Err(EmitError::ViaRingUnheld {
-            class,
-            via_nm,
-            pad_nm,
-        });
-    }
-    let bound = spec.board.max_outline_um;
-    if let Some(b) = bound {
-        crate::pcb::bound_holds(&parts, b)?;
-    }
-    let (board, ladder) = if rule.is_some() {
-        let (board, ladder) = laddered(spec, solved, table, &parts, &stack, moves, bound)?;
+    let Placed {
+        parts,
+        rails,
+        stack,
+        ruled,
+        footprints,
+        outline,
+    } = place(spec, solved, table, moves)?;
+    let (board, ladder) = if ruled {
+        let (board, ladder) = laddered(spec, solved, table, &stack, footprints, outline)?;
         (board, Some(ladder))
     } else {
-        let board = crate::pcb::write_moved(
+        let board = crate::pcb::write_placed_at(
             &spec.project_name,
-            &parts,
+            footprints,
+            outline,
             &stack,
-            moves,
-            bound,
-            crate::route::Rung::TODAY,
+            Some(crate::route::Rung::TODAY),
         )?;
         (board, None)
     };
@@ -852,6 +840,76 @@ pub fn emit_moved(
     })
 }
 
+/// The design placed, before any routing: the one path [`emit`] takes up to
+/// the router, and [`placement`] stops at (`AET-WO-1314`, ruling
+/// 6987450886).
+struct Placed {
+    parts: Vec<Part>,
+    rails: BTreeSet<String>,
+    stack: crate::stack::Stack,
+    /// Whether the via ring rule applies (the fabricator's tolerances are
+    /// declared): the board is then routed by the capacitance ladder.
+    ruled: bool,
+    footprints: Vec<crate::sexpr::Sx>,
+    outline: crate::pcb::Rect,
+}
+
+/// Validates, designs and places, refusing by name as [`emit`] does: the
+/// specification, the via ring rule's inputs and classes
+/// (`FabToleranceUndeclared`, `ViaRingUnheld`), the declared outline
+/// (`OutlineTooSmall`, `OutlineUnreachable`, `CompactionUnbounded`).
+fn place(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+    moves: &[crate::pcb::Move],
+) -> Result<Placed, EmitError> {
+    spec.validate().map_err(EmitError::InvalidSpecification)?;
+    let (parts, rails) = design(spec, solved, table)?;
+    let stack = crate::stack::Stack::of(spec);
+    // the via ring rule (`AET-WO-1314`): every input it needs declared, and
+    // no class declaring a via it cannot hold
+    let rule = crate::stack::RingRule::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
+    if let Some(rule) = rule
+        && let Some((class, via_nm, pad_nm)) = rule.unheld(&stack).into_iter().next()
+    {
+        return Err(EmitError::ViaRingUnheld {
+            class,
+            via_nm,
+            pad_nm,
+        });
+    }
+    let bound = spec.board.max_outline_um;
+    if let Some(b) = bound {
+        crate::pcb::bound_holds(&parts, b)?;
+    }
+    let (footprints, outline) =
+        crate::pcb::placed(&spec.project_name, &parts, &stack, moves, bound)?;
+    Ok(Placed {
+        parts,
+        rails,
+        stack,
+        ruled: rule.is_some(),
+        footprints,
+        outline,
+    })
+}
+
+/// The placed board, NOT a routed one (`AET-WO-1314`, ruling 6987450886):
+/// [`emit`]'s own placement ([`place`]) written as a `.kicad_pcb` with its
+/// footprints and outline and no track, via or zone. It refuses by name as
+/// [`emit`] does before routing. For a check of placement alone, which need
+/// not pay for routing (the capacitance ladder routes a board with the
+/// fabricator's tolerances eight times); the CLI does not expose it.
+pub fn placement(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<String, EmitError> {
+    let p = place(spec, solved, table, &[])?;
+    crate::pcb::write_placed_at(&spec.project_name, p.footprints, p.outline, &p.stack, None)
+}
+
 /// The capacitance ladder (`AET-WO-1314`, ruling 6982875594 D3): the board
 /// routed at each of [`crate::route::RUNGS`], each judged by `extract`'s
 /// own arithmetic on the emitted text ([`crate::extract::read`],
@@ -869,21 +927,19 @@ fn laddered(
     spec: &Specification,
     solved: &SolvedTopology,
     table: &PinTable,
-    parts: &[Part],
     stack: &crate::stack::Stack,
-    moves: &[crate::pcb::Move],
-    bound: Option<aethelgard_ir::board::OutlineBound>,
+    footprints: Vec<crate::sexpr::Sx>,
+    outline: crate::pcb::Rect,
 ) -> Result<(String, Ladder), EmitError> {
     let lines = match crate::extract::lines(spec, solved, table) {
         Ok(lines) => lines,
         Err(r) => {
-            let board = crate::pcb::write_moved(
+            let board = crate::pcb::write_placed_at(
                 &spec.project_name,
-                parts,
+                footprints,
+                outline,
                 stack,
-                moves,
-                bound,
-                crate::route::Rung::TODAY,
+                Some(crate::route::Rung::TODAY),
             )?;
             return Ok((
                 board,
@@ -903,9 +959,9 @@ fn laddered(
             .map(|c| c.max_capacitance_femtofarads)
     };
     let mut first_error = None;
-    // placed once; each rung routed on its own thread, its result kept at
-    // its index, so the choice is the rungs' order whatever the timing
-    let (footprints, outline) = crate::pcb::placed(&spec.project_name, parts, stack, moves, bound)?;
+    // placed once ([`place`]); each rung routed on its own thread, its
+    // result kept at its index, so the choice is the rungs' order whatever
+    // the timing
     let routed: Vec<Result<String, EmitError>> = std::thread::scope(|scope| {
         let handles: Vec<_> = crate::route::RUNGS
             .iter()
@@ -917,7 +973,7 @@ fn laddered(
                         footprints,
                         outline,
                         stack,
-                        rung,
+                        Some(rung),
                     )
                 })
             })
