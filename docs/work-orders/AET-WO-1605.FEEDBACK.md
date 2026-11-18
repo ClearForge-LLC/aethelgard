@@ -308,7 +308,7 @@ Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and 
   - Not built: it is outside this WO's fence.
 - **D2:** stale steering text, protected, for the architect to close:
   - `docs/architecture.md` L464 ("its correction");
-  - `docs/roadmap.md` L395 and L402, and §7.1 L787 (the cache-maintenance row, closed by `7b687540` here). The WO's "§7.1 rows closed" is theirs.
+  - `docs/roadmap.md` L395 and L402, and §7.1 L798 at `82925510` (the cache-maintenance row, closed by `7b687540` here). The WO's "§7.1 rows closed" is theirs.
 - **D3, AWAITING-IMAGE:** `tools-image.yml` has no `workflow_dispatch`. Its `publish` job runs only on a push to main that touches `container/`, as it did for `2100`'s PR A (#57) and `4403`'s #176/#181 before their re-pins.
   - Until `container/IMAGE` names an image built from this branch's `container/`, CI's tier 2 runs on today's image, where the two RETTOBASE tests fail (measured above). So does `ardupilot-image.yml`'s `foreign` job, if this PR triggers it: it runs this CLI, which no longer has the hook, on `container/IMAGE`.
   - A main that carries only this branch's `container/` keeps every check green, by reading. `tools-image.yml`'s own job runs tier 1 only (`cargo test --workspace`, no `with-tools`), and main's unit tie to the Dockerfile reads the asset's URL and sha256, which do not change. `ci.yml` keeps using `container/IMAGE`.
@@ -329,7 +329,7 @@ Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and 
   - The PR runs and the image job run `--drift warn`. Each printed `ANSWER debian_drift kind=tools missing=1 packages=linux=6.12.115-2`, and I missed it on #223 and on #224.
   - #224 carried my table regeneration from an uncached local build (§1.2, "Debian drift"). Debian's trixie-security index serves `6.12.117-1`; its pool still holds the `115-2` files.
 - **Fix, ruled (architect, 13:20).** 1605b, #225: the table's three `linux` rows go back to `6.12.115-2`, which makes the file byte-identical to `c4a6cc6f`. That version is already mirrored (#181). The published image's apt layer is the cached one, so the image moves from the previous pin only in Renode's two DLLs.
-- **For §7.1 (ruled; the row is the architect's to write; owner: the next tools-image WO).** Resolve the tools image's apt from a pinned `snapshot.debian.org` date, so a build with no cache reproduces the layer CI publishes, and so `TOOLS-DEBIAN-GPL2.tsv` can be regenerated from any build.
+- **For §7.1 (ruled; written by the architect at roadmap L778, `82925510`; owner: the next tools-image WO).** Resolve the tools image's apt from a pinned `snapshot.debian.org` date, so a build with no cache reproduces the layer CI publishes, and so `TOOLS-DEBIAN-GPL2.tsv` can be regenerated from any build.
 - **Lesson.** I will regenerate a Debian table only from what CI's build holds, and read CI's `debian_drift` answer before READY.
 
 ## §1.4, the re-pin (architect, 11:20 and 14:20)
@@ -349,3 +349,5 @@ Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and 
 | Gates in the image | `cargo fmt --check`, `clippy --all-targets --features aethelgard-cli/with-tools -D warnings` and `check-pins.sh` pass | |
 
 - D3 is closed by this route: CI's tier 2 and `ardupilot-image.yml`'s `foreign` job now run on an image carrying the fixes.
+- **CI on `a5b1b9ed`:** ci 44330802221, tools-image 44330802155, ardupilot-image 44330802184 and engine-image 44330802165 are all green. Tier 2: `ANSWER tier2_tests_passed=190 floor=190`, exact. `ardupilot-image`'s `foreign` job passes on the re-pinned image, the job that was red on `69283800`.
+- Reduction pass (diff, §1.3–§1.4): nothing to remove. Since `69283800` this branch's own change is one line of `container/IMAGE` plus this record; 1605b's fix is on main.
