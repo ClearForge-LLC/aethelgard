@@ -1334,17 +1334,17 @@ const MODEL_SETS: [(&str, &str, &str); 5] = [
     (
         "ICM42688P",
         "bank1:0x0F,0x10",
-        "factory-trimmed `0xXX` values with no datasheet fact: read 0x00, writes ignored, a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L174, L242)",
+        "factory-trimmed `0xXX` values with no datasheet fact: read 0x00, writes ignored, a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L200, L287)",
     ),
     (
         "ICM42688P",
         "bank2:0x3B",
-        "a factory-trimmed `0xXX` value with no datasheet fact: read 0x00, writes ignored, a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L174, L242)",
+        "a factory-trimmed `0xXX` value with no datasheet fact: read 0x00, writes ignored, a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L200, L287)",
     ),
     (
         "ICM42688P",
         "bank3,bank4",
-        "banks 3 and 4 are not modelled: every access reads 0x00 with a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L172–175)",
+        "banks 3 and 4 are not modelled: every access reads 0x00 with a warning (AET-WO-4220 FEEDBACK D-B7; models/renode/ICM42688P.cs L198–201)",
     ),
     (
         "BMP581",

@@ -39,12 +39,12 @@ Labels: **[read at source]** from a document or page named here; **[measured]** 
 | J1, J3, J4 | SM04B-GHS-TB | JST GH 4-pin, horizontal SMT | **SM04B-GHS-TB** (JST) | digikey.sg `SM04B-GHS-TB` | SGD 0.53 each (q10 0.453) |
 | J2 | SM06B-SRSS-TB | JST SH 6-pin, horizontal SMT | **SM06B-SRSS-TB** (JST) | digikey.sg `SM06B-SRSS-TB` | SGD? 0.93 |
 | SW1 | PTS810 SJM 250 SMTR LFS | SW_SPST_PTS810 | **PTS810SJM250SMTRLFS** (C&K), the part `1312` cites | digikey.sg `PTS810 SJM 250 SMTR LFS` | SGD? 0.80 |
-| C1–C11, C13, C15, C19–C22 (17) | 100n | 0402 | ⚑ none chosen. A 0402 X7R 100 nF ≥ 6.3 V; priced example GRM155R71C104KA88D | digikey.sg `GRM155R71C104KA88D` | SGD 0.14 (q10 0.034); 0 stock on 2026-11-16 |
-| C12 | 4u7 | 0402 | ⚑ none chosen; priced example GRM155R60J475ME47D (6.3 V X5R) | digikey.sg `GRM155R60J475ME47D` | SGD 0.14 |
-| C14, C16 | 1u | 0402 | ⚑ none chosen. The example GRM155R61A105KE15D is **obsolete** at digikey.sg | — | unknown |
-| C17, C18 | 2u2 | 0402 | ⚑ none chosen; GRM155R61A225KE15D was not found | — | unknown |
-| R1, R2 | 2k2 | 0402 | ⚑ none chosen (1 % preferred: BENCH B6's pass line assumes it) | — | unknown, not searched |
-| R3–R8 | 10k | 0402 | ⚑ none chosen; priced example RC0402FR-0710KL (Yageo, 1 %). R8 is BOOT0's judged pull-down (`1312`) | digikey.sg `RC0402FR-0710KL` | SGD 0.14 |
+| C1–C11, C13, C15, C19–C22 (17) | 100n | 0402 | **CC0402KRX7R7BB104** (Yageo, X7R 16 V), chosen 2026-11-17 | digikey.com `311-1338-1-ND`, read 2026-11-17: 339,251 in stock | USD 0.10 (q10 0.041) |
+| C12 | 4u7 | 0402 | **GRM155R60J475ME47D** (Murata, X5R 6.3 V), chosen 2026-11-17 | digikey.com `490-5915-1-ND`, read 2026-11-17: 14,602 in stock | USD 0.10 |
+| C14, C16 | 1u | 0402 | **C1005X5R1V105K050BC** (TDK, X5R 35 V), chosen 2026-11-17 (the earlier example is obsolete) | digikey.com `445-9073-1-ND`, read 2026-11-17: 254,429 in stock | USD 0.14 |
+| C17, C18 | 2u2 | 0402 | **CL05A225MP5NSNC** (Samsung, X5R 10 V), chosen 2026-11-17 | digikey.com `1276-1467-1-ND`, read 2026-11-17: 713,085 in stock | USD 0.17 |
+| R1, R2 | 2k2 | 0402 | **RMCF0402FT2K20** (Stackpole, 1 %), chosen 2026-11-17 (1 %: BENCH B6's pass line assumes it) | digikey.com `RMCF0402FT2K20CT-ND`, read 2026-11-17: 2,643,214 in stock | USD 0.10 |
+| R3–R8 | 10k | 0402 | **RC0402FR-0710KL** (Yageo, 1 %), chosen 2026-11-17. R8 is BOOT0's judged pull-down (`1312`) | digikey.com `311-10.0KLRCT-ND`, read 2026-11-17: 4,139,753 in stock | USD 0.10 |
 
 **Each maker part matches the footprint the emitter wrote** (the adversarial check, §5 of the work order) [read at source; the package suffixes]:
 - `STM32H753ZI**T**6`: the T is LQFP;
@@ -55,16 +55,17 @@ Labels: **[read at source]** from a document or page named here; **[measured]** 
 
 The flash is drawn with KiCad's `W25Q32JVSS` symbol (same SOIC-8 pinout), as its BOM note says.
 
-**Priced lines total, per board at q1 (q10 for the 17 × 100 n): SGD 54.64?** That is 33 of 39 rows [computed; mixed SGD and SGD?]. Six rows have no price: 2 × 1 µ, 2 × 2.2 µ and 2 × 2.2 k 0402. So the true total is higher, and it is not a quote.
+**Priced lines total, per board, DigiKey US, 2026-11-17: USD 40.92 for all 39 parts** (DigiKey's BOM Manager on this list; the passives at the quantities above). Not a quote: shipping and tax are excluded, and the 100 n and 10 k lines are cheaper in total at the next cut-tape break.
+
+**Out of stock on 2026-11-17** at DigiKey US: BME280 (no date; also 0 at Mouser, Arrow, Newark and LCSC), TMP117AIDRVR (due 15 Dec 2026; LCSC had stock) and SM04B-GHS-TB (past due; LCSC had stock). The BME280's supply is a roadmap §7.1 row.
 
 ## 3. Assembly
 
 **Files.**
 - The package carries KiCad's placement file (`package/sentinel-01-bench-pos.csv`: reference, value, package, X, Y, rotation, side, in mm) and the emitter's BOM (`package/sentinel-01-bench.bom.csv`: reference, value, footprint, symbol, note).
-- **Finding:** neither is in a fabricator's upload format.
-  - JLCPCB asks for its own BOM columns (Comment, Designator, Footprint, its part number) and its own placement columns (Designator, Mid X, Mid Y, Layer, Rotation) [read at source: JLCPCB's assembly help, which `3400` read 2026-11-16].
-  - The columns map one to one, but each part's rotation offset is the fabricator's own convention, so the first order needs its placement preview checked by eye.
-  - `verify --fab-out` does not emit those formats. That is engine work if wanted, not done here.
+- **JLCPCB's formats are in the package too** (since `AET-WO-1604`, #199): `package/sentinel-01-bench-jlcpcb-bom.csv` (Comment, Designator, Footprint, JLCPCB part number left blank) and `package/sentinel-01-bench-jlcpcb-cpl.csv` (Designator, Mid X, Mid Y, Layer, Rotation).
+  - The part-number column is blank by design: the fabricator's own catalogue match is the orderer's choice.
+  - Each part's rotation offset is the fabricator's own convention, so the first assembled order needs its placement preview checked by eye (roadmap §7.1, `1604` O1).
 
 **Hand-solder-friendliness, line by line** [inferred from the packages]:
 
@@ -95,7 +96,7 @@ USD and SGD are not summed.
 
 1. **A second fab's bare-board price** for 46.35 × 54.85 mm, 2 layers, 1.6 mm, at 5 and 10 boards: JLCPCB https://cart.jlcpcb.com/quote, or PCBWay https://www.pcbway.com/orderonline.aspx.
 2. **JLCPCB assembly:** the basic or extended class of each line (https://jlcpcb.com/parts), and Economic PCBA's limits.
-3. **The ⚑ lines:** choose live parts for the 0402 1 µF, 2.2 µF and 2.2 kΩ (the priced examples' obsolete or missing listings are noted in §2).
+3. **The ⚑ lines: closed 2026-11-17.** Live parts are chosen in §2, each read in stock at DigiKey US.
 4. **ST AN2606** (the system bootloader's USART pins and protocol), which `BENCH.md` B8 needs. Three downloads timed out.
 5. **Lifecycles behind sign-in:**
    - Winbond's own page for W25Q64JVSSIQ: NRND, from Scotty's catalogue export of 2026-11-16, already accepted;
