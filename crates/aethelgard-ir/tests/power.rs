@@ -814,6 +814,27 @@ fn every_remaining_guard_refuses_by_name() {
         ("a 0 mA load", Refusal::PowerValueInvalid, "VDD_5V", |v| {
             v["power"]["loads"][0]["milliamps"] = json!(0);
         }),
+        // `AET-WO-1303b`: a drop limit is 1 to 100000 mV, once per domain
+        (
+            "a 0 mV drop limit",
+            Refusal::PowerValueInvalid,
+            "VDD_3V3",
+            |v| {
+                v["power"]["drop_limits"] =
+                    json!([{"domain": "VDD_3V3", "max_millivolts": 0, "source": "s"}]);
+            },
+        ),
+        (
+            "a drop limit named twice",
+            Refusal::PowerValueInvalid,
+            "VDD_3V3",
+            |v| {
+                v["power"]["drop_limits"] = json!([
+                    {"domain": "VDD_3V3", "max_millivolts": 165, "source": "s"},
+                    {"domain": "VDD_3V3", "max_millivolts": 160, "source": "s"}
+                ]);
+            },
+        ),
         (
             "a board range upside down",
             Refusal::PowerValueInvalid,

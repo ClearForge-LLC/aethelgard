@@ -38,8 +38,16 @@ struct Report {
     /// the specification limits none, so no other verdict moves.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     supplies: Vec<Value>,
+    /// Each declared coupled pair's conductors (`AET-WO-1303b`, D2): absent
+    /// when the specification declares none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pairs: Vec<Value>,
     findings: Vec<Finding>,
 }
+
+/// D2's stated condition: the bound holds each conductor's capacitance, not
+/// the difference between them.
+const PAIR_MISMATCH: &str = "unverified: the conductors' capacitance mismatch is a stated condition of the router's symmetric pair routing (AET-WO-1303 D2), not bounded";
 
 /// One supply domain's verdict object.
 fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
@@ -223,6 +231,42 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     }
     conditions.extend(bound::declared_conditions(&spec));
     conditions.extend(probe_conditions(&read, &lines));
+    // each declared pair's conductors, from the lines' own bounds, against
+    // the net's declared capacitance: a conductor the extraction does not
+    // bound as a line is refused by name
+    let mut pairs = Vec::new();
+    for p in &spec.diff_pairs {
+        let mut conductors = Vec::new();
+        for net in &p.nets {
+            let Some(b) = lines.iter().find(|b| &b.net == net) else {
+                return refuse(
+                    "PairConductorUnbounded",
+                    format!(
+                        "`{net}` of pair `{}` is not a line the extraction bounds",
+                        p.name
+                    ),
+                    EXIT_INVALID_SPEC,
+                );
+            };
+            let Some(c) = spec.net_constraints.iter().find(|c| &c.net_name == net) else {
+                return refuse(
+                    "MissingBusConstraint",
+                    format!(
+                        "`{net}` of pair `{}` has no declared capacitance bound",
+                        p.name
+                    ),
+                    EXIT_INVALID_SPEC,
+                );
+            };
+            conductors.push(json!({
+                "net": net,
+                "verdict": if b.c_bound_femtofarads <= c.max_capacitance_femtofarads { "pass" } else { "fail" },
+                "c_bound_femtofarads": b.c_bound_femtofarads,
+                "declared_femtofarads": c.max_capacitance_femtofarads,
+            }));
+        }
+        pairs.push(json!({"name": p.name, "conductors": conductors, "mismatch": PAIR_MISMATCH}));
+    }
     for b in lines {
         // `solve` refused a line with no constraint (`MissingBusConstraint`,
         // `MissingSpiConstraint`).
@@ -314,6 +358,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         conditions,
         lines: out,
         supplies,
+        pairs,
         findings,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })

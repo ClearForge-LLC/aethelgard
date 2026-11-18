@@ -246,3 +246,42 @@ fn the_two_layer_power_fixture_refuses_its_ground_return_by_name() {
         .count();
     assert_eq!(unbounded, vss.len(), "{v}");
 }
+
+const PAIR: &str = "crates/aethelgard-cli/tests/fixtures/pair-standin.json";
+
+/// D2 on the pair stand-in: each conductor of a declared pair gets the
+/// line's own capacitance bound against its net's declared maximum, and the
+/// mismatch is named as unverified. A conductor the extraction does not
+/// bound as a line is refused by name.
+#[test]
+fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
+    let spec = root().join(PAIR);
+    let board = emitted("pair", &spec);
+    let (code, v) = extract(&board, &spec);
+    assert_eq!(code, 0, "{v}");
+    let p = &v["pairs"][0];
+    assert_eq!(p["name"], "USB_STANDIN");
+    assert!(
+        p["mismatch"].as_str().unwrap().starts_with("unverified:"),
+        "{p}"
+    );
+    let conductors = p["conductors"].as_array().unwrap();
+    assert_eq!(conductors.len(), 2);
+    for c in conductors {
+        let line = v["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["net"] == c["net"])
+            .unwrap();
+        assert_eq!(c["c_bound_femtofarads"], line["c_bound_femtofarads"], "{c}");
+        assert_eq!(c["declared_femtofarads"], 30_000, "{c}");
+        assert_eq!(c["verdict"], "pass", "{c}");
+    }
+    let mut s: Value = serde_json::from_str(&fs::read_to_string(&spec).unwrap()).unwrap();
+    s["diff_pairs"][0]["nets"] = json!(["SPI_SCK", "SPI_MISO"]);
+    let edited = write("pair-miso", &s);
+    let (code, r) = extract(&board, &edited);
+    assert_eq!(code, 2, "{r}");
+    assert_eq!(r["error"]["kind"], "PairConductorUnbounded", "{r}");
+}

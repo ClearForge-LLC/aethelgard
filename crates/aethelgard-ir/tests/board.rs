@@ -183,6 +183,103 @@ fn a_finished_thickness_that_contradicts_itself_is_refused() {
     assert_eq!(e.kind(), "FinishedThickness");
 }
 
+/// `AET-WO-1303b`: the supply gate's inputs, each optional; where declared,
+/// a copper minimum may not exceed `copper_max_um` (the §7.1 row), the
+/// plating is above 0, the temperature 1 to 300 °C, a dielectric's maximum
+/// at least its minimum, and every source valid. Absent, the specification
+/// is as before, and serializes as before.
+#[test]
+fn the_supply_inputs_are_judged_where_declared() {
+    let with = |v: &mut Value, key: &str, value: u32| {
+        v["board"]["stackup"][key] = json!({"value": value, "source": "a source"});
+    };
+    assert!(verdict(&reference()).is_ok());
+    let mut ok = reference();
+    for (k, value) in [
+        ("outer_copper_min_um", 30),
+        ("plane_copper_min_um", 15),
+        ("plating_min_um", 18),
+        ("copper_temperature_max_c", 125),
+    ] {
+        with(&mut ok, k, value);
+    }
+    ok["board"]["stackup"]["dielectrics"][0]["max_thickness_um"] = json!(1940);
+    assert!(verdict(&ok).is_ok());
+    // absent keys stay absent when written back
+    let spec: Specification = serde_json::from_value(reference()).unwrap();
+    let back = serde_json::to_value(&spec).unwrap();
+    assert!(
+        back["board"]["stackup"]
+            .get("outer_copper_min_um")
+            .is_none()
+    );
+    assert!(
+        back["board"]["stackup"]["dielectrics"][0]
+            .get("max_thickness_um")
+            .is_none()
+    );
+    for (key, value, path) in [
+        (
+            "outer_copper_min_um",
+            71,
+            "board.stackup.outer_copper_min_um.value",
+        ),
+        (
+            "plane_copper_min_um",
+            71,
+            "board.stackup.plane_copper_min_um.value",
+        ),
+        (
+            "outer_copper_min_um",
+            0,
+            "board.stackup.outer_copper_min_um.value",
+        ),
+        ("plating_min_um", 0, "board.stackup.plating_min_um.value"),
+        (
+            "copper_temperature_max_c",
+            0,
+            "board.stackup.copper_temperature_max_c.value",
+        ),
+        (
+            "copper_temperature_max_c",
+            301,
+            "board.stackup.copper_temperature_max_c.value",
+        ),
+    ] {
+        let e = refused(ok.clone(), |v| with(v, key, value));
+        assert_eq!(
+            (e.kind(), e.path()),
+            ("StackupValue", Some(path)),
+            "{key} {value}"
+        );
+    }
+    // the minimum may equal the maximum
+    let mut at = ok.clone();
+    with(&mut at, "outer_copper_min_um", 70);
+    assert!(verdict(&at).is_ok());
+    let e = refused(ok.clone(), |v| {
+        v["board"]["stackup"]["dielectrics"][0]["max_thickness_um"] = json!(199);
+    });
+    assert_eq!(
+        (e.kind(), e.path()),
+        (
+            "StackupValue",
+            Some("board.stackup.dielectrics[0].max_thickness_um")
+        )
+    );
+    let e = refused(ok.clone(), |v| {
+        v["board"]["stackup"]["plating_min_um"]["source"] = json!("");
+    });
+    assert_eq!(
+        (e.kind(), e.path()),
+        ("InvalidSource", Some("board.stackup.plating_min_um.source"))
+    );
+    // a present key holds a value: null is refused as the wrong type
+    let mut null = ok.clone();
+    null["board"]["stackup"]["plating_min_um"] = Value::Null;
+    assert!(serde_json::from_value::<Specification>(null).is_err());
+}
+
 #[test]
 fn copper_and_permittivity_out_of_range_are_refused() {
     let e = refused(reference(), |v| {
