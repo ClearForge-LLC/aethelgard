@@ -148,7 +148,7 @@ It was run by a fresh read-only subagent over the diff. Both changes were re-che
 
 ## 6. Record
 
-- **Base:** `main` `65622f70`. Commits: the build `29dc95c0`; READY `4876fdfb`, accepted on review; the README line as asked; this READY commit (FEEDBACK only).
+- **Base:** `main` `65622f70`. Commits: the build `29dc95c0`; READY `4876fdfb`, accepted on review; the README line as asked; `main` `80e86b1c` merged (docs only: this order's work order and the roadmap); this READY commit (FEEDBACK only).
 - **CI:** it runs on pull requests only (`.github/workflows/ci.yml` L3–6). The kickoff asks for the PR to open at READY, so CI's first run is on this READY head. Every gate it runs was run locally first (§2).
 - **Files:**
   - `crates/aethelgard-eda/src/pcb.rs` (compaction, the bound, the seam, two tests);
