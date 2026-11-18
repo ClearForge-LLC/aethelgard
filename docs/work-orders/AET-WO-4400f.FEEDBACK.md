@@ -217,18 +217,21 @@
   - **The simpler form:** record `period_ns`/`high_ns` as Renode realizes them, ⌈ticks·10⁹/F⌉ (1,657 for DShot600 at 64 MHz). Then the judge, `witness_continuous` and replay all stay in integer ns, with one rule shared by the twin and replay. The spike's picosecond fields were measuring aids and are not needed.
 - **Every emitted platform's bytes** (the update entries), and so every pinned platform hash or golden that embeds them.
 - **The suite under (a), measured** (`spike/4400f/out/suite/classified.tsv`):
-  - Method: `cargo test --workspace --features aethelgard-cli/with-tools` in a scratch tree with the switch compiled in.
-    - An environment switch is not enough: 24 test sites `env_clear()` the CLI child, which then emits main's platform while the test process emits (a)'s. §2's runs called the CLI directly, so they are unaffected.
+  - Method: `cargo test --workspace --features aethelgard-cli/with-tools` on a scratch tree with the switch compiled in (`option_env!`).
+    - An environment switch is not enough: 24 test sites, plus the CLI's own children, `env_clear()`, and a child emits main's platform. §2's runs called the CLI directly, so they are unaffected.
   - The committed `boards/sentinel-01*/…repl` were re-blessed with `AETHELGARD_BLESS`: +62 lines each, the update entries only (`out/suite/bless-a.diff`).
-  - After the re-bless, 25 tests fail, every one a moved figure, none a judged behaviour:
-    - 7: replay (above).
-    - 6: `twin_tier2` motor-record goldens (424/160, 639,744/256,000, the PWM rise floor).
-    - 6: `renode::tests` judge fixtures written at 250 MHz.
-    - 3: `aethelgard-twin` platform-text goldens.
-    - 2: `motor_platform.rs`.
-    - 1: `order_2203.rs`'s pinned platform sha256.
-  - The control (no switch) passes these targets, apart from the provenance test, which follows the re-blessed board.
-  - Before the re-bless, the board goldens failed 71 more tests through `PlatformNotEmitted`, 82 in all.
+  - Whole workspace after the re-bless: **2,405 passed, 25 failed.** No judged behaviour moved:
+    - **19 moved figures:**
+      - 7 replay (above). `m1`'s is inferred: its campaign printed nothing on the DShot600 board, as the measured exit 70 does.
+      - 6 `twin_tier2` motor-record goldens (424/160, 639,744/256,000, the PWM rise floor).
+      - 3 `aethelgard-twin` platform-text goldens.
+      - 2 `motor_platform.rs`.
+      - 1 `order_2203.rs`'s pinned platform sha256.
+    - **6 spike artifacts:** `renode::tests` that reassign `(period_ns, high_ns)` after construction while the spike's `period_ps` stays stale. Under the integer-ns form they would not move.
+  - **Controls:**
+    - With no switch, the CLI bin's tests pass, apart from the provenance test, which follows the re-blessed board.
+    - For the tier-2 targets, §2's control holds: the patched CLI with no switch is byte-identical to the baseline.
+  - The first pass (environment switch, boards not re-blessed) failed 82, most through `PlatformNotEmitted` on the committed board.
 - **The foreign window:** `FOREIGN_MAX_VIRTUAL_NS` from 4 s to 5 s, on the measured last witness of 4.394 s.
   - At 5 s: RSS 771–811‰ of the 1 GiB bound (78 % today at 4 s), 1.56 MB of the 8 MiB log, wall 12.0 s.
   - 6 s would cost 881‰ and 3.73 MB.
