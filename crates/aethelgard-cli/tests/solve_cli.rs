@@ -600,8 +600,9 @@ fn a_power_tree_solves_into_the_topology_and_emits_its_board() {
     );
     assert_eq!((d.ret.reference.as_str(), d.ret.pad.as_str()), ("R21", "2"));
     assert_eq!(
+        // the fixture's cited VDD_3V3 sinks add 37 mA (`AET-WO-1303b`)
         (p.input_steady_milliamps, p.input_fault_milliamps),
-        (2679, 10_100)
+        (2716, 10_100)
     );
     // `AET-WO-4300d2` §1.7: the sense net's pin, the lowest package position
     // among the free pins that carry a single-ended ADC input.

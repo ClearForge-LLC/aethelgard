@@ -126,6 +126,80 @@ pub struct Stackup {
     /// The relative permittivity of laminate and solder mask, at most, in
     /// thousandths.
     pub relative_permittivity_max_permille: Sourced,
+    /// The supply-path bound's inputs (`AET-WO-1303b`, D3/D6): finished
+    /// copper at least this on F.Cu and B.Cu, and on an inner plane; hole
+    /// plating at least this; copper no hotter than this, °C. Each optional:
+    /// the supply gate refuses by name a specification that declares a drop
+    /// limit and lacks one, and never defaults it (`RUL-14`).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub outer_copper_min_um: Option<Sourced>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plane_copper_min_um: Option<Sourced>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plating_min_um: Option<Sourced>,
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub copper_temperature_max_c: Option<Sourced>,
+    /// The fabricator's tolerances the supply gate prices
+    /// (`AET-WO-1303b`, ruling 6974760231): a fabricator's numbers, not the
+    /// engine's. Optional, and each entry optional: refused by name when
+    /// the gate reads one that is absent.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fab_tolerances: Option<FabTolerances>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct FabTolerances {
+    /// A hole's centre anywhere within this of its pad's, per axis, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_position_um: Option<Sourced>,
+    /// A finished hole up to this larger than drawn, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_size_plus_um: Option<Sourced>,
+    /// A finished hole up to this smaller than drawn, µm.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hole_size_minus_um: Option<Sourced>,
+    /// A finished track up to this much narrower than drawn, in
+    /// thousandths of its width (the IR's integers, as
+    /// `relative_permittivity_max_permille`).
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub track_width_permille: Option<Sourced>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -145,6 +219,15 @@ pub struct Dielectric {
     pub between: Vec<String>,
     pub min_thickness_um: u32,
     pub source: String,
+    /// Its thickness at most, under the same `source` (`AET-WO-1303b`):
+    /// optional; without it a via barrel prices this dielectric at the
+    /// finished maximum less every other layer's minimum.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_thickness_um: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -321,6 +404,94 @@ impl Board {
             &s.relative_permittivity_max_permille.source,
             "board.stackup.relative_permittivity_max_permille.source",
         )?;
+        // the supply gate's inputs, each where declared (`AET-WO-1303b`): a
+        // copper minimum above 0 and at most `copper_max_um` (the §7.1 row:
+        // `copper_max_um` cannot undercut a declared minimum), the plating
+        // above 0, the temperature from 1 to 300 °C, a dielectric's maximum
+        // at least its minimum
+        for (v, path) in [
+            (&s.outer_copper_min_um, "board.stackup.outer_copper_min_um"),
+            (&s.plane_copper_min_um, "board.stackup.plane_copper_min_um"),
+        ] {
+            if let Some(v) = v {
+                bounded(v.value, MAX_THICKNESS_UM, format!("{path}.value"))?;
+                if v.value > s.copper_max_um.value {
+                    return Err(E::StackupValue {
+                        path: format!("{path}.value"),
+                        rule: "a copper minimum at most copper_max_um",
+                    });
+                }
+                source(&v.source, &format!("{path}.source"))?;
+            }
+        }
+        if let Some(v) = &s.plating_min_um {
+            bounded(
+                v.value,
+                MAX_THICKNESS_UM,
+                "board.stackup.plating_min_um.value".into(),
+            )?;
+            source(&v.source, "board.stackup.plating_min_um.source")?;
+        }
+        if let Some(v) = &s.copper_temperature_max_c {
+            if !(1..=300).contains(&v.value) {
+                return Err(E::StackupValue {
+                    path: "board.stackup.copper_temperature_max_c.value".into(),
+                    rule: "a temperature from 1 to 300 degrees C",
+                });
+            }
+            source(&v.source, "board.stackup.copper_temperature_max_c.source")?;
+        }
+        if let Some(f) = &s.fab_tolerances {
+            for (v, path, max, rule) in [
+                (
+                    &f.hole_position_um,
+                    "hole_position_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.hole_size_plus_um,
+                    "hole_size_plus_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.hole_size_minus_um,
+                    "hole_size_minus_um",
+                    1000,
+                    "a tolerance from 0 to 1000 um",
+                ),
+                (
+                    &f.track_width_permille,
+                    "track_width_permille",
+                    999,
+                    "a fraction from 0 to 999 per mille",
+                ),
+            ] {
+                if let Some(v) = v {
+                    let path = format!("board.stackup.fab_tolerances.{path}");
+                    if v.value > max {
+                        return Err(E::StackupValue {
+                            path: format!("{path}.value"),
+                            rule,
+                        });
+                    }
+                    source(&v.source, &format!("{path}.source"))?;
+                }
+            }
+        }
+        for (i, d) in s.dielectrics.iter().enumerate() {
+            if let Some(m) = d.max_thickness_um {
+                let path = format!("board.stackup.dielectrics[{i}].max_thickness_um");
+                bounded(m, MAX_THICKNESS_UM, path.clone())?;
+                if m < d.min_thickness_um {
+                    return Err(E::StackupValue {
+                        path,
+                        rule: "a dielectric's maximum at least its minimum",
+                    });
+                }
+            }
+        }
         let r = &self.rules;
         for (value, path) in [
             (r.clearance_um, "board.rules.clearance_um"),
@@ -407,6 +578,7 @@ crate::object_only!(
     FinishedThickness,
     Dielectric,
     Sourced,
+    FabTolerances,
     DesignRules,
     OutlineBound
 );

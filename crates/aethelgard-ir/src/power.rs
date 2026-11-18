@@ -29,7 +29,8 @@
 //!                "reservoir": { "reference": "C30", "part": "..." } | null, "adc_resolution_bits": 12 } ],
 //!   "crossings": [ { "reference": "U13", "part": "TXU0304PW", "bus": "IMU", "a_domain": "VDD_3V3",
 //!                    "b_domain": "VDD_1V8", "cs_pull_up": { "reference": "R40", "part": "...", "ohms": 100000 },
-//!                    "external": [ ... ], "controls": [ ... ] } ]
+//!                    "external": [ ... ], "controls": [ ... ] } ],
+//!   "drop_limits": [ { "domain": "VDD_3V3", "max_millivolts": 165, "source": "..." } ]   (optional)
 //! }
 //! ```
 //!
@@ -113,6 +114,25 @@ pub struct Power {
     pub loads: Vec<Load>,
     pub sense: Vec<Sense>,
     pub crossings: Vec<Crossing>,
+    /// The supply and ground drop each domain allows its load, VDD and VSS
+    /// together (`AET-WO-1303b`, D7). Optional: a domain named here is
+    /// judged by `extract`'s supply gate, which then needs the stackup's
+    /// minima; a domain not named is not judged.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub drop_limits: Option<Vec<DropLimit>>,
+}
+
+/// One domain's drop limit: VDD plus VSS, mV, at most, with its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct DropLimit {
+    pub domain: String,
+    pub max_millivolts: u32,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -280,6 +300,16 @@ pub struct Load {
     pub domain: String,
     pub milliamps: u32,
     pub source: String,
+    /// The part this load is (`AET-WO-1303b`, the load ruling): optional; a
+    /// domain `extract`'s supply gate judges needs one entry naming each
+    /// part on it that can draw current, other than the MCU and the child
+    /// regulators, which their part rows count.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reference: Option<String>,
 }
 
 /// The battery's voltage sense: a divider from the battery to an ADC net,
@@ -335,6 +365,7 @@ crate::object_only!(
     Resistor,
     External,
     Load,
+    DropLimit,
     Sense,
     Reservoir,
     Crossing,
@@ -786,13 +817,43 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             }
         }
     }
+    let mut named = BTreeSet::new();
     for (i, l) in power.loads.iter().enumerate() {
         known(&l.domain)?;
         crate::board::source(&l.source, &format!("power.loads[{i}].source"))?;
+        if let Some(r) = &l.reference {
+            id(r, format!("power.loads[{i}].reference"))?;
+            if !named.insert((l.domain.as_str(), r.as_str())) {
+                return Err(invalid(
+                    &l.domain,
+                    format!("power.loads[{i}] names {r} on its domain a second time"),
+                ));
+            }
+        }
         if l.milliamps == 0 {
             return Err(invalid(
                 &l.domain,
                 format!("power.loads[{i}] declares 0 mA"),
+            ));
+        }
+    }
+    let mut limited = BTreeSet::new();
+    for (i, l) in power.drop_limits.iter().flatten().enumerate() {
+        known(&l.domain)?;
+        crate::board::source(&l.source, &format!("power.drop_limits[{i}].source"))?;
+        if l.max_millivolts == 0 || l.max_millivolts > 100_000 {
+            return Err(invalid(
+                &l.domain,
+                format!(
+                    "power.drop_limits[{i}] is {} mV, not 1 to 100000",
+                    l.max_millivolts
+                ),
+            ));
+        }
+        if !limited.insert(l.domain.as_str()) {
+            return Err(invalid(
+                &l.domain,
+                format!("power.drop_limits[{i}] names a domain a second time"),
             ));
         }
     }

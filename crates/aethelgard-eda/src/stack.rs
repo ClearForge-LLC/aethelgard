@@ -33,6 +33,10 @@ pub struct Stack {
     pub thickness: Thickness,
     /// Each dielectric's (upper layer, lower layer, minimum, source).
     pub dielectrics: Vec<(String, String, i64, String)>,
+    /// Each dielectric's declared maximum, in the same order, where the
+    /// specification gives one (`AET-WO-1303b`): a via barrel prices that
+    /// row at it instead of at the finished maximum less the other minima.
+    pub dielectric_max_nm: Vec<Option<i64>>,
     pub copper_max_nm: i64,
     pub copper_source: String,
     /// Relative permittivity, at most, in thousandths.
@@ -188,6 +192,11 @@ impl Stack {
                 max_nm: nm(f.max),
                 source: f.source.clone(),
             },
+            dielectric_max_nm: s
+                .dielectrics
+                .iter()
+                .map(|d| d.max_thickness_um.map(nm))
+                .collect(),
             dielectrics: s
                 .dielectrics
                 .iter()
@@ -376,6 +385,7 @@ pub(crate) fn reference() -> Stack {
             max_nm: 2_000_000,
             source: thickness_source.into(),
         },
+        dielectric_max_nm: vec![None],
         dielectrics: vec![(
             "F.Cu".into(),
             "B.Cu".into(),
