@@ -96,7 +96,7 @@ fn s03() -> Value {
 
 /// s024l: the power fixture (as the CLI tests take it) at Sentinel-03's
 /// four layers and stackup, JLCPCB's tolerances included, as the measured
-/// stop built it (`spike/1303b/build-fixtures.py`); ruling 6976355662 (A)
+/// stop built it (`spike/1303b/build-fixtures.py`, at `81a8e619`); ruling 6976355662 (A)
 /// gates the priced four-layer drop on it.
 fn s024l() -> Value {
     let mut v = common::power::power_tree();
