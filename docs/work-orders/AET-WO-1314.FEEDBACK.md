@@ -7,7 +7,7 @@ Labels:
 
 Part B (the measured stop) is kept as a ruled record. Its evidence under `spike/1314/` is deleted with this build, as ruled, and stays in this branch's history at `69ae5142`.
 
-## 0. Status: READY
+## 0. Status: STOPPED at §8 (the ladder's cost in a placement test); otherwise built to the ruling
 
 Built to the ruling on #227 (comment 6982875594): D1–D5 accepted, with D3's three conditions.
 
@@ -193,6 +193,52 @@ CI on the PR, and Sentinel-03's tier-2 KiCad checks on its new board (`board_tie
 
 - **A filter in a mutation harness that names no test reads as a survivor.** Check that each filter matches a test before believing a result.
 - **A class with no declared via must follow the board's via, not the engine's constant.** A unit test on `Class::via_declared` found it, before any board did.
+
+## 8. STOPPED: the ladder's cost in `outline_tier1` (CI red on `bbe0a4b9`, tools-shard 2)
+
+The architect's note: `order_only_renamings_place_the_fixture_the_same_way` ran more than 16 min in shard 2 before the cancel. It had never run in this PR's CI before, because `bd85b33b` failed to compile.
+
+**Measured [`~/.cache/aet-1314/order4*.log`, 4 CPUs pinned with `AllowedCPUs=0-3`, the test alone]:**
+
+| | main `82925510` | this branch |
+|---|---|---|
+| the test | 42.7 s, pass | 543.4 s, pass (12.7×) |
+| one release emit of Sentinel-03, unpinned | 2.85 s, 1 routing | 25 s, 8 routings in parallel |
+| the same, on 4 CPUs | — | 48.4 s |
+
+On 4 CPUs the 8 rungs, routed in parallel and contending, took:
+
+| Rung | Time | Fits |
+|---|---|---|
+| 0 | 23.1 s | no: `IMU_MOSI` at 141 % |
+| 1 | 48.0 s | yes |
+| 2 | 23.1 s | no |
+| 3 | 11.4 s | yes |
+| 4 | 19.5 s | no |
+| 5 | 19.8 s | no |
+| 6 | 20.9 s | yes |
+| 7 | 12.9 s | yes, best: `IMU_SCK` at 83 % |
+
+**What this is:**
+- **It terminates:** it is slow, not a hang. Under CI's shard concurrency it passes the 16 min mark.
+- **Every seed places identically,** so there is no determinism finding: the test compares placement (`name_free`: each footprint's position and the outline), and it passes.
+- **The cause is the ladder (D3) routing every Sentinel-03 emit 8 times,** in a test that emits the fixture 21 times to check placement only. Today's routing alone does not fit the fixture's bounds (rung 0, `IMU_MOSI` 141 %), so the ladder cannot be skipped for it.
+
+**Options:**
+- **(A) Recommended: place without routing in this test.** The assertion is placement only, so the test's cost should be placement's.
+  - A small `aethelgard-eda` entry would emit the placed board without routing: `pcb::placed` exists, and the outline is the `gr_rect`.
+  - The base and 20 seeds keep their full meaning, and the ladder is unchanged.
+  - **This changes the test's cost,** so it is the architect's to rule.
+  - `each_size_sample_places_with_its_gaps_or_is_refused_by_name` also emits Sentinel-03 three times and checks the routed loops, so it keeps routing.
+- **(B) Stop at the first rung that fits.** No gain on this fixture: rung 1 fits first, and it is the slowest rung (48 s). It also changes D3's "best smallest margin". Not recommended.
+- **(C) Fewer rungs.** It changes the ruled rungs, for a small gain. Not recommended.
+
+None of these skips, ignores, cuts the seeds of, or re-shards the test.
+
+**At `bbe0a4b9`:**
+- the feature-gated compile error is fixed;
+- `board_tier2`'s size samples accept `CapacitanceOverBound` as an `emit` refusal by name;
+- tools-shard 7 passed. The rest of the run was cancelled with shard 2.
 
 # Part B: the measured stop (record, ruled in comment 6982875594)
 
