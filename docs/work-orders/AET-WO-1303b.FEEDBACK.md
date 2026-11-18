@@ -235,6 +235,8 @@ Local, on this head [measured]:
 
 CI on the PR, head `bf6f6ae6`: run 44298800920 green (gates and every tools shard). The tier-2 canary aggregated `tier2_tests_passed=191 floor=191`. The engine and ArduPilot image runs (44298800883, 44298800885) are green too [measured].
 
+**After the first READY (`6d370e29`), pushed on the architect's "push 1303b":** `ffde9ebf` (the port hole guard's label corrected, a same-net property test) and `c221a1df` (a test reaching that guard, 44/44). The workspace suite, fmt and clippy are green on them locally; CI runs on this READY head.
+
 `TIER2_MIN` stays 191: this order adds no tier-2 test. Tier 2 asserts nothing on `extract` for the changed fixtures (checked: `with_tools.rs` reads the pair stand-in's DRC only).
 
 ## 6. §7.1 rows (for the architect to apply)
