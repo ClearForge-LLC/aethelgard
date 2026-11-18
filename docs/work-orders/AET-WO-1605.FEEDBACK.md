@@ -245,13 +245,15 @@ Images: `scratch-1605-control` and `scratch-1605-patched`. Each is today's pinne
 
 ### Measured on the built image (scratch `localhost/aethelgard-tools:scratch-1605-full`, never published; this branch's CLI)
 
+Tier 2, ArduPilot, `foreign-judge.sh` and E3 ran on build `161fcde3`. Smoke and the strict source check ran on its rebuild `9628c8fe`, after the GPL-2 table and `LC_ALL` commits. Both carry the same two DLL hashes.
+
 | Check | Result | Run |
 |---|---|---|
 | Image build, twice (the second after `LC_ALL=C`, which re-ran the whole `dotnet` step) | both DLLs `OK` against the pinned sha256 both times | `full-build2.log`, `full-build3.log` |
 | `smoke.sh`, new image | pass, build line included | `smoke-new.log` |
 | `smoke.sh`, today's pinned image (`container/IMAGE`) | **fails** by name: `no line is exactly '  build: 1.17.0+20260907gitf1dd1b4af.aet1605'` | `smoke-old.log` |
 | `check-sources.sh inside tools` (strict, as the publish job runs it) | pass | `sources-new.log` |
-| Twin tier 2 + every suite, in-tree target as CI (`cargo test --workspace --all-targets --features aethelgard-cli/with-tools`) | 2,374 pass, 8 fail: all 8 are `sandbox_probe is missing` (examples are not linked by `--all-targets` here); stock/main fails the same 8, plus one `BaseOutsideRoot` from its out-of-tree target | `t2-new-branch.log` against `t2-stock-main.log` |
+| Twin tier 2 + every suite, in-tree target as CI (`cargo test --workspace --all-targets --features aethelgard-cli/with-tools`) | 2,374 pass, 8 fail: all 8 are `sandbox_probe is missing`. Here `--all-targets` built the example only as the test-mode `sandbox_probe-<hash>` (seen in `target/debug/examples`). Stock/main fails the same 8, plus one `BaseOutsideRoot` from its out-of-tree target. Counted by CI's `TIER2_RE`: tier 2 is 190 passed, 0 failed (stock/main: 191, 0) | `t2-new-branch.log` against `t2-stock-main.log` |
 | The witness, new image | `inner=0x42 outer=0x849 iabr1=0x2040000` → `RETTOBASE` 0 nested, 1 alone; both RETTOBASE tests pass | `t2-new-branch.log` |
 | The witness and the pin, **today's image**, this branch | **both fail**: nested `0x842` (left 1, right 0), and the build `1.17.0+20260907gitf1dd1b4af` is not the pinned build | twin_tier2 `rettobase` on `container/IMAGE` |
 | ArduPilot, `simulate --foreign 4000ms` | pass. Witness times identical to stock to the ns (last 3,610,548,200), instructions 81,608,436 both, warning kinds 68 → 63 (the five cache-maintenance kinds), `log_kept_bytes` 1,211,414 → 1,210,477, peak RSS 849,988 → 764,300 KiB, wall 11.77 → 10.43 s (one sample each) | `ap/new-branch.json` |
@@ -264,7 +266,7 @@ Images: `scratch-1605-control` and `scratch-1605-patched`. Each is today's pinne
 |---|---|---|---|---|---|
 | The image's Renode build | `twin_tier2.rs` `PINNED_RENODE_BUILD`; `smoke.sh` | `1.17.0+20260907gitf1dd1b4af` (in `RETTOBASE_BUILD`) | `1.17.0+20260907gitf1dd1b4af.aet1605` | R1 (ii), R2 | `smoke-new.log`; tier 2 |
 | The nested handler's `RETTOBASE`, no hook | `twin_tier2.rs` witness | 1 (`0x842`, pinned as the bug) | 0 (`0x42`) | `e7a8584c` | tier 2, new image and old |
-| `TIER2_MIN` | `ci.yml` | 191 | 190 | the hook's tests retired: 3 RETTOBASE tier-2 tests become 2 | count from `t2-new-branch.log` |
+| `TIER2_MIN` | `ci.yml` | 191 | 190 | the hook's tests retired: 3 RETTOBASE tier-2 tests become 2 | `TIER2_RE` count: 191 passed in `t2-stock-main.log`, 190 in `t2-new-branch.log`; all suites 2,385 → 2,382 (−1 tier 2, −2 unit) |
 
 - **`TIER2_MIN` is lowered,** against `ci.yml`'s "never lower it to pass". It is lowered because a test was retired with the code it tested (the ruling's "the hook retires through its pin tests"), not to pass, and it stays exact. I flag it for the architect.
 - **Not pinned, and moved (R4, accepted):** every Renode-judged archive's `trace_bytes` (+8) and `state_sequence_hash`, as in the E3 row. No test or golden pins them.
@@ -307,12 +309,15 @@ Images: `scratch-1605-control` and `scratch-1605-patched`. Each is today's pinne
 - **D2:** stale steering text, protected, for the architect to close:
   - `docs/architecture.md` L464 ("its correction");
   - `docs/roadmap.md` L395 and L402, and §7.1 L787 (the cache-maintenance row, closed by `7b687540` here). The WO's "§7.1 rows closed" is theirs.
-- **D3, AWAITING-IMAGE:** `tools-image.yml` publishes only on a push to main. Until `container/IMAGE` names an image built from this branch, CI's tier 2 runs on today's image, and the two RETTOBASE tests fail there, as measured above.
+- **D3, AWAITING-IMAGE:** `tools-image.yml` has no `workflow_dispatch`. Its `publish` job runs only on a push to main that touches `container/`, as it did for `2100`'s PR A (#57) and `4403`'s #176/#181 before their re-pins.
+  - Until `container/IMAGE` names an image built from this branch's `container/`, CI's tier 2 runs on today's image, where the two RETTOBASE tests fail (measured above). So does `ardupilot-image.yml`'s `foreign` job, if this PR triggers it: it runs this CLI, which no longer has the hook, on `container/IMAGE`.
+  - A main that carries only this branch's `container/` keeps every check green, by reading. `tools-image.yml`'s own job runs tier 1 only (`cargo test --workspace`, no `with-tools`), and main's unit tie to the Dockerfile reads the asset's URL and sha256, which do not change. `ci.yml` keeps using `container/IMAGE`.
+  - The route is the architect's: a `container/`-only merge first, then `IMAGE` re-pinned here, or another dispatch.
 
 ### Gates
 
 - `cargo fmt --check` and `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -D warnings` are clean.
 - Every suite passes in the image, except the 8 harness failures that stock shares.
 - The CI package step (`pkgstep`) passes locally: 11 crates, and the CLI is built from the unpacked packages.
-- `check-pins.sh` ok.
+- `check-pins.sh` ok. `ci/test-weights.tsv` and `ci/colocate.tsv` name none of the retired tests.
 - Reduction pass (diff): −9 net · 1 duplicate removed (the Dockerfile header's commit list, which `TOOLS-SOURCES.md` holds) · 0 dead paths removed (a fresh-agent sweep found no remnant of the hook) · 2 protected kept (the build string in both `smoke.sh` and `twin_tier2.rs`; the pin test and the witness test separately) · 0 findings below. The tier-1 stubs keep main's build string: they accept any build, so the edit was churn.
