@@ -204,8 +204,31 @@
   - `TIMER_HZ`'s users (§1.1) all move: `timer.rs` `period_ns`/`high_ns` and their unit asserts, `renode.rs` L1739's text, `campaign.rs`'s labelled `TWIN_CYCLE_NS` copy, `timer_routes.rs` L81, `motor_platform.rs` L67, and `aethelgard-evolve`'s and `aethelgard-chaos`'s motor fixtures.
 - **Every generated motor record:** `rises`/`falls` (4,716 → 1,206 in the 2 ms DShot window), `period_ns` 424 → 1,656 (judged as 1,657), `high_ns` 160 → 625, `first_ns`, `last_ns`, `off_grid`, `span_ns` 8 → 9.
   - At 64 MHz the 2 ms window holds 1,206 DShot600 periods, enough for the judge (≥ 2 rises).
-  - A PWM output at a 1 µs tick (`PSC` 63) has a period 3.906× longer in virtual time than today: a 400 Hz PWM is 2.5 ms, longer than the 2 ms DShot window. The PWM windows (`4300a`) need measuring again, with `motors-pwm` (not run here).
-- **Every emitted platform's bytes** (the update entries), and so every pinned platform hash or golden that embeds them: the suite list below.
+  - **PWM (`motors-pwm`, measured):** it passes under (a).
+    - The judge's PWM window is the whole boot (`MAX_VIRTUAL_NS`), so the 2 ms DShot window does not apply to it.
+    - Per output: `rises` 156 → 40, `period_ns` 639,744 → 2,499,000, `high_ns` 256,000 → 1,000,000, `first_ns` 661,480 → 2,520,730, `off_grid` 311 → 79, `span_ns` 8 → 0.
+    - The tick is exactly 1 µs, so there is no rounding.
+    - `twin_tier2`'s `rises >= 150` floor for PWM moves with it, since 100 ms holds 40 periods.
+    - Evidence: `spike/4400f/out/pwm/`.
+- **Replay and the archive (F6, measured).**
+  - `aethelgard-chaos`'s `TWIN_CYCLE_NS` (`campaign.rs` L2377, labelled belt-and-suspenders) refuses every 64 MHz motor record: `witness_consistent` requires `period_ns == ARR·(PSC+1)·4`. So `campaign` exits 70 ("the campaign built a run replay refuses").
+  - This failed 7 tests: the DShot600 campaign, `m1`, and all 5 `attribute_seeded` tests, through the seeded `motors-pwm` scenario.
+  - Replay checks an archive without the twin, so the archive must carry the clock: kind 25 (`MotorOutputSolved`) gains the kernel frequency, which is a trace-schema bump.
+  - **The simpler form:** record `period_ns`/`high_ns` as Renode realizes them, ⌈ticks·10⁹/F⌉ (1,657 for DShot600 at 64 MHz). Then the judge, `witness_continuous` and replay all stay in integer ns, with one rule shared by the twin and replay. The spike's picosecond fields were measuring aids and are not needed.
+- **Every emitted platform's bytes** (the update entries), and so every pinned platform hash or golden that embeds them.
+- **The suite under (a), measured** (`spike/4400f/out/suite/classified.tsv`):
+  - Method: `cargo test --workspace --features aethelgard-cli/with-tools` in a scratch tree with the switch compiled in.
+    - An environment switch is not enough: 24 test sites `env_clear()` the CLI child, which then emits main's platform while the test process emits (a)'s. §2's runs called the CLI directly, so they are unaffected.
+  - The committed `boards/sentinel-01*/…repl` were re-blessed with `AETHELGARD_BLESS`: +62 lines each, the update entries only (`out/suite/bless-a.diff`).
+  - After the re-bless, 25 tests fail, every one a moved figure, none a judged behaviour:
+    - 7: replay (above).
+    - 6: `twin_tier2` motor-record goldens (424/160, 639,744/256,000, the PWM rise floor).
+    - 6: `renode::tests` judge fixtures written at 250 MHz.
+    - 3: `aethelgard-twin` platform-text goldens.
+    - 2: `motor_platform.rs`.
+    - 1: `order_2203.rs`'s pinned platform sha256.
+  - The control (no switch) passes these targets, apart from the provenance test, which follows the re-blessed board.
+  - Before the re-bless, the board goldens failed 71 more tests through `PlatformNotEmitted`, 82 in all.
 - **The foreign window:** `FOREIGN_MAX_VIRTUAL_NS` from 4 s to 5 s, on the measured last witness of 4.394 s.
   - At 5 s: RSS 771–811‰ of the 1 GiB bound (78 % today at 4 s), 1.56 MB of the 8 MiB log, wall 12.0 s.
   - 6 s would cost 881‰ and 3.73 MB.
@@ -239,6 +262,9 @@ All three files are under `spike/4400f/patches/`.
 | F3 | Renode realizes each `LimitTimer` period in whole ns, rounded up, so a timer whose tick is not a whole number of ns runs slow. Today's 250 MHz (4 ns) hid it. | Renode 1.17.0 | the judge (§3) |
 | F4 | SysTick runs at 64 MHz from load, not `stm32h743.repl`'s 480 MHz: the RCC's constructor pushes HSI. It matches silicon's reset clock; nothing in the repository says so. | Renode 1.17.0 | the record |
 | F5 | A timer's capture/compare channels never follow a frequency change (`STM32_Timer.cs` L104, unchanged on master). | Renode 1.17.0 | upstream (§3.3) |
+| F6 | Replay's `TWIN_CYCLE_NS` copy (`aethelgard-chaos` `campaign.rs` L2377) states the 250 MHz clock as a constant. Any per-board timer frequency makes `campaign` exit 70 until kind 25 carries the clock. The archive records periods in integer ns, so the realized ⌈ticks·10⁹/F⌉ is the form that keeps replay integer. | `2302` | the (a) build: trace schema |
+
+Reduction pass (diff): nothing to remove. The branch changes no crate; the spike's patch (`spike/4400f/patches/cli-candidates.patch`) is evidence, not code to keep.
 
 ### Questions for the architect
 

@@ -1,0 +1,30 @@
+# AET-WO-4400f: cargo test --workspace under (a) (AET4400F_CLOCK=solved, TIMER_HZ 64 MHz, CEIL), compile-time switch, boards blessed
+# a (first, env switch, boards not blessed): passed 2348 failed 82
+# a2 (failing targets again, compile-time switch, boards blessed): passed 536 failed 25
+# control (no switch, bin+twin+svd-hal): passed 353 failed 6
+# control bin after spike_active: passed 161 failed 1
+a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+each_output_is_observed_at_the_model_s_timing	motor_platform.rs: observer 639744/256000 and platform golden
+m1_a_core_that_slept_without_its_boot_word_is_cpu_halted	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+out_of_order_devices_keep_the_specification_order	order_2203.rs: pinned platform sha256
+renode::tests::a_core_that_slept_is_cpu_halted_and_its_anchors_fall_back_to_their_stamps	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+renode::tests::a_dshot_output_is_witnessed_inside_its_anchored_window	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+renode::tests::a_timing_whose_edges_all_fall_on_the_grid_is_judged_static_only	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+renode::tests::each_anchor_bound_fails_by_name	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+renode::tests::f5_a_stale_stop_of_an_earlier_boot_does_nothing	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+renode::tests::judge_boot_reads_a_dshot_boot_s_window_and_stop	judge unit fixtures at 250 MHz (DShot 424/160 literals); pass in the no-switch control
+tests::an_added_spi_takes_its_base_and_interrupt_from_the_header	aethelgard-twin platform goldens: emitted text gains the update entries
+tests::the_platform_presents_the_declared_brown_out_level	aethelgard-twin platform goldens: emitted text gains the update entries
+tests::the_reference_platform_adds_spi1_and_names_every_solved_peripheral	aethelgard-twin platform goldens: emitted text gains the update entries
+the_dshot600_fixture_s_campaign_passes_inside_its_window	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route	motor_platform.rs: observer 639744/256000 and platform golden
+the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+the_sentinel_02_shaped_board_is_witnessed_whole	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot	twin_tier2 motor-record goldens (424/160 DShot, 639744/256000 PWM)
+tier2::attribute_twice_is_identical_and_a_one_byte_change_is_refused_as_replay_refuses_it	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+tier2::every_case_fails_the_way_its_manifest_says	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+tier2::p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+tier2::p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)
+tier2::the_trap_the_wrong_address_shares_i2c_timeout_with_47k_and_is_told_apart	campaign exit 70: replay's TWIN_CYCLE_NS (campaign.rs L2377) refuses the 64 MHz motor record (witness_consistent)

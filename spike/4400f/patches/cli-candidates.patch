@@ -13,7 +13,7 @@ index 1d503a5..f00f0bb 100644
  
  fn time_up_to(s: &str, max: u64) -> Result<u64, String> {
 diff --git a/crates/aethelgard-cli/src/renode.rs b/crates/aethelgard-cli/src/renode.rs
-index a90e17e..0ddfb7d 100644
+index a90e17e..df8ef72 100644
 --- a/crates/aethelgard-cli/src/renode.rs
 +++ b/crates/aethelgard-cli/src/renode.rs
 @@ -70,6 +70,23 @@ pub const CONFIG_FILE: &str = "renode.config";
@@ -48,20 +48,24 @@ index a90e17e..0ddfb7d 100644
          c.extend(self.cold());
          c.extend(self.rearm());
          c.push(self.vtor());
-@@ -1654,9 +1672,10 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
+@@ -1654,10 +1672,12 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
          w.status = "unwitnessed";
          return w;
      }
-+    // SPIKE AET-WO-4400f: predicted in ps (exact at 64 MHz), deviations back in ns.
-     let (period, high) = (
+-    let (period, high) = (
 -        i128::from(m.observer.period_ns),
 -        i128::from(m.observer.high_ns),
-+        i128::from(m.observer.period_ps),
-+        i128::from(m.observer.high_ps),
-     );
+-    );
++    // SPIKE AET-WO-4400f: predicted in ps (exact at 64 MHz), deviations back in ns.
++    let (period, high) = if aethelgard_twin::timer::spike_active() {
++        (i128::from(m.observer.period_ps), i128::from(m.observer.high_ps))
++    } else {
++        (i128::from(m.observer.period_ns) * 1000, i128::from(m.observer.high_ns) * 1000)
++    };
      let first = edges[0].0;
      w.first_ns = Some(first);
-@@ -1665,8 +1684,8 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
+     let (mut lo, mut hi) = (i128::MAX, i128::MIN);
+@@ -1665,8 +1685,8 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
      for (i, &(ns, rising)) in edges.iter().enumerate() {
          alternating &= rising == (i % 2 == 0);
          let k = (i / 2) as i128;
@@ -72,12 +76,12 @@ index a90e17e..0ddfb7d 100644
          lo = lo.min(d);
          hi = hi.max(d);
      }
-@@ -3807,6 +3826,8 @@ mod tests {
+@@ -3807,6 +3827,8 @@ mod tests {
                  source: "gpioPortA.pa8obs".into(),
                  period_ns: 639_744,
                  high_ns: 256_000,
-+                period_ps: 0,
-+                high_ps: 0,
++                period_ps: 639_744_000,
++                high_ps: 256_000_000,
              },
              psc: 63,
              arr: 2499,
@@ -94,7 +98,7 @@ index 469e4b2..53d4d8e 100644
      c.push(plan.vtor());
      c.extend(plan.witness_levels());
 diff --git a/crates/aethelgard-twin/src/platform.rs b/crates/aethelgard-twin/src/platform.rs
-index 60a7f3c..4789112 100644
+index 60a7f3c..cee98e7 100644
 --- a/crates/aethelgard-twin/src/platform.rs
 +++ b/crates/aethelgard-twin/src/platform.rs
 @@ -805,9 +805,49 @@ pub fn emit_faulted(
@@ -110,7 +114,7 @@ index 60a7f3c..4789112 100644
 +/// with the solved clock's kernel frequency (candidate (a)); with
 +/// `AET4400F_CLOCK=declared:timers=HZ,usart1=HZ` the declared values (candidate (c)).
 +fn spike_4400f_clock(out: &mut String, topology: &SolvedTopology) {
-+    let Ok(mode) = std::env::var("AET4400F_CLOCK") else { return };
++    let Some(mode) = std::env::var("AET4400F_CLOCK").ok().or(option_env!("AET4400F_CLOCK").map(String::from)) else { return };
 +    let mut entries: Vec<(String, u64)> = Vec::new();
 +    if mode == "solved" {
 +        let c = &topology.clock;
@@ -148,21 +152,26 @@ index 60a7f3c..4789112 100644
  /// `Miscellaneous.LED` on its pin, the cheapest pin observer the `4300`
  /// spike named, logging each change at `Noisy`. The pin's stock input route
 diff --git a/crates/aethelgard-twin/src/timer.rs b/crates/aethelgard-twin/src/timer.rs
-index cfd818b..5edc2f2 100644
+index cfd818b..b04a2ca 100644
 --- a/crates/aethelgard-twin/src/timer.rs
 +++ b/crates/aethelgard-twin/src/timer.rs
-@@ -33,6 +33,20 @@ pub const TIMER_HZ: u64 = 250_000_000;
+@@ -33,6 +33,25 @@ pub const TIMER_HZ: u64 = 250_000_000;
  /// One timer tick of the model at [`TIMER_HZ`] with `PSC + 1` = 1, in ns.
  pub const CYCLE_NS: u64 = 1_000_000_000 / TIMER_HZ;
  
 +/// SPIKE AET-WO-4400f: the judge's timer frequency, `AET4400F_TIMER_HZ` or [`TIMER_HZ`].
 +pub fn spike_timer_hz() -> u64 {
-+    std::env::var("AET4400F_TIMER_HZ").map_or(TIMER_HZ, |v| v.parse().expect("AET4400F_TIMER_HZ"))
++    std::env::var("AET4400F_TIMER_HZ").ok().or(option_env!("AET4400F_TIMER_HZ").map(String::from)).map_or(TIMER_HZ, |v| v.parse().expect("AET4400F_TIMER_HZ"))
++}
++
++/// SPIKE AET-WO-4400f: whether a candidate switch is on; off, the judge is main's.
++pub fn spike_active() -> bool {
++    spike_timer_hz() != TIMER_HZ || std::env::var("AET4400F_CEIL").is_ok() || option_env!("AET4400F_CEIL").is_some()
 +}
 +
 +fn spike_ps(ticks: u64) -> u64 {
 +    let hz = spike_timer_hz();
-+    if std::env::var("AET4400F_CEIL").is_ok() {
++    if std::env::var("AET4400F_CEIL").is_ok() || option_env!("AET4400F_CEIL").is_some() {
 +        (ticks * 1_000_000_000).div_ceil(hz) * 1000
 +    } else {
 +        ticks * 1_000_000_000_000 / hz
@@ -172,7 +181,7 @@ index cfd818b..5edc2f2 100644
  /// The name of a solved output's observer, `pa8obs`; it logs under
  /// `gpioPortA.pa8obs`. `aethelgard_ir::is_observer_name` refuses it as a
  /// device reference, since the description is one namespace.
-@@ -63,6 +77,9 @@ pub struct Observer {
+@@ -63,6 +82,9 @@ pub struct Observer {
      pub period_ns: u64,
      /// The model's high time, `CCR · (PSC + 1)` cycles, in ns.
      pub high_ns: u64,
@@ -182,7 +191,7 @@ index cfd818b..5edc2f2 100644
  }
  
  /// The observer of every motor output of `topology`, in the specification's
-@@ -108,8 +125,13 @@ pub fn observers(topology: &SolvedTopology) -> Result<Vec<Observer>, TwinError>
+@@ -108,8 +130,13 @@ pub fn observers(topology: &SolvedTopology) -> Result<Vec<Observer>, TwinError>
              alternate_function: af,
              source: format!("gpioPort{port}.{name}"),
              name,
