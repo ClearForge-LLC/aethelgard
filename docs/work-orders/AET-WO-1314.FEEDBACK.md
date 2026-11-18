@@ -1,11 +1,202 @@
 # AET-WO-1314 — FEEDBACK
 
 Labels:
-- **[measured]**: by a run under `spike/1314/`.
+- **[measured]**: by a run named beside it.
 - **[read at source]**: from a page or file named beside it.
 - **[inferred]**: from reasoning, neither read nor run.
 
-## 0. Status: STOPPED at the measured stop (§1.1)
+Part B (the measured stop) is kept as a ruled record. Its evidence under `spike/1314/` is deleted with this build, as ruled, and stays in this branch's history at `69ae5142`.
+
+## 0. Status: READY
+
+Built to the ruling on #227 (comment 6982875594): D1–D5 accepted, with D3's three conditions.
+
+- **The ring rule.**
+  - Where a specification declares `board.stackup.fab_tolerances`, every via keeps the declared ring (`via_ring_um`, a new optional field) round the largest finished hole at the worst declared position: `D ≥ (d + plus) + 2⌈position·√2⌉ + 2·ring`, rounded up to 10 µm.
+  - The board's own via, and any class that declares none, takes the rule's pad. A thermal array's via is raised to it, with a note in the verdict.
+  - A class declaring a smaller via is refused by name (`ViaRingUnheld`), and a missing tolerance the rule needs likewise (`FabToleranceUndeclared`).
+- **The capacitance ladder.**
+  - Such a board is routed at each of 8 engine rungs: today's routing; a bounded net's via at 48, 96 and 320; then each of those with bounded nets first.
+  - Each rung is judged by `extract`'s own arithmetic on the emitted text. The rung with the largest smallest margin is emitted, and that margin is reported.
+  - If no rung fits, the board is refused, naming every net over its bound with its figure (`CapacitanceOverBound`).
+  - It chooses; `verify` still judges by running `extract` on its own. A test proves the second run passes and finds the same margin.
+- **Acceptance (WO §2) [measured]:**
+  - **Sentinel-03 with GND on rule-sized vias (0.75/0.3 mm, thermals 0.7/0.254):** every capacitance-bounded net passes in `extract`'s own run. The smallest margin is `IMU_SCK` at 24.945 of 30 pF (16.9 %), at rung 7: bounded nets first, via 320.
+  - **Its supply gate** bounds every pin, 16/16 + 10/10, at 85.8 mV against 165 mV, with no `SupplyViaPadTooSmall` (§2).
+  - **No board without `fab_tolerances` moves a byte:** Sentinel-01 and its bench package, and every fixture (§2.3).
+  - **Each guard has a mutant a test kills** (§4.2).
+  - **CI is green and `TIER2_MIN` is exact** (§5). Sentinel-03's tier-2 KiCad checks ran on the new board (§5).
+
+## 1. What is built
+
+### 1.1 `crates/aethelgard-eda/src/stack.rs`
+
+- **`RingRule`**: `of(spec)`, `pad_nm`, `unheld`, and `diagonal_nm`, the ⌈e·√2⌉ reach, now one source for the rule and the supply gate's holes.
+- **`Stack::of`**:
+  - sizes the board's via and undeclared classes' vias by the rule;
+  - raises thermal arrays, with a note in `Stack::notes`;
+  - leaves a declared class's via as declared;
+  - `Stack::bounded` is each I2C SDA/SCL and SPI SCK/MOSI net with a declared bound: exactly the nets `extract` bounds.
+
+### 1.2 `crates/aethelgard-eda/src/route.rs`
+
+- **`Rung`, `RUNGS` (engine constants beside `VIA_COST`) and `route_with`.**
+- **`route(board)`** is `route_with(board, Rung::TODAY)`, today's router: every via 24, the order unchanged.
+
+### 1.3 `crates/aethelgard-eda/src/schematic.rs`
+
+- **`emit_moved`**: the ring refusals, then `laddered` on a board with tolerances, and `write_moved` at today's rung on any other.
+- **`laddered`**: places once and routes the 8 rungs on threads, each result kept at its index, so the choice does not depend on timing.
+  - It judges each rung with `extract::read`, `extract::lines` and `extract::bound`.
+  - **`choose`** (a pure function, unit-tested) picks the largest smallest margin among the fitting rungs, the earlier on a tie, or else the nearest rung's overs.
+  - **Unjudged boards:** where `extract::lines` refuses (the committed power fixture: `TranslatorPinUnbounded`), the board is routed as today and the ladder records `unjudged`. `extract` refuses it by the same name. That keeps `1310`'s ruled "the crossing is drawn".
+  - **Rungs that fail to route** are reported (`unrouted_rungs`).
+- **Refusals:**
+  - `FabToleranceUndeclared` (`id` is the field's path);
+  - `ViaRingUnheld` (`id` is the class);
+  - `CapacitanceOverBound` (`id` is the first net);
+  - `LadderRefused` (`extract`'s own kind, when its reader refuses the ladder's board).
+
+### 1.4 Elsewhere
+
+- **`crates/aethelgard-eda/src/pcb.rs`:** `placed` and `write_placed_at` split from `write_moved`, which takes a rung.
+- **`crates/aethelgard-eda/src/rules.rs`:** the KiCad project's Default class via is the stack's, not a typed-in 0.6/0.3. This is just outside the WO's named fence; it is the adversarial pass's "constant typed in where a declared tolerance exists" (L5).
+- **`crates/aethelgard-cli/src/main.rs`:** `emit`'s report gains `capacitance_ladder` (the rung, its price and order, `smallest_margin`, `unrouted_rungs`, `unjudged`, `judged_by`) and `notes`. Both are absent on a board without tolerances.
+- **IR:** `fab_tolerances.via_ring_um` (0–1000 µm, cited). README row 13 and the optional-keys list are updated.
+- **Fixtures** (Sentinel-03 and the power fixture):
+  - each declares `via_ring_um` 50 µm, citing JLCPCB's Drilling note ("Via diameter should be 0.1mm(0.15mm preferred) larger than Via hole size"), read 18 Nov 2026;
+  - `SUPPLY_MCU` declares 0.75/0.3.
+
+## 2. Measured
+
+### 2.1 Sentinel-03 [measured, this head's release binary]
+
+- **Vias:** 301 at 0.75/0.3 and 24 thermal at 0.7/0.254. No other size.
+- **`extract`, on its own:**
+
+  | Net | pF | Bound |
+  |---|---|---|
+  | I2C_SDA | 72.3 | 100 |
+  | I2C_SCL | 77.1 | 100 |
+  | EXT_SDA | 66.8 | 100 |
+  | EXT_SCL | 67.2 | 100 |
+  | SPI_SCK | 12.9 | 30 |
+  | SPI_MOSI | 14.3 | 30 |
+  | IMU_SCK | 24.9 | 30 |
+  | IMU_MOSI | 21.5 | 30 |
+
+  All pass. Before, on today's 0.6 mm vias, `IMU_SCK` was 20.4 pF; with GND alone on 0.7 mm vias (1303b) it was 31.3 pF.
+- **The supply gate** (limit 165 mV, the minima of 1303b's tests): pass, 16/16 VDD and 10/10 GND bounded, 85.8 mV.
+- **Emit time:** about 25 s in release, the 8 rungs routed in parallel (the slowest rung about 20 s). On the same machine it was 2.85 s for a single routing.
+
+### 2.2 The power fixture
+
+- **As the CLI tests take it** (crossing and IMU removed), s024l (4 layers) and the 2-layer board: tier 1 passes. The s024l gate is unchanged in shape.
+- **As committed:** `emit` routes it as today, with the vias the rule's, and records `unjudged: TranslatorPinUnbounded`. `extract` refuses it by that name (test).
+
+### 2.3 Bytes [measured]
+
+- **Every committed board without `fab_tolerances` is unchanged:**
+  - the workspace suite is green on this head, with every byte golden and Sentinel-01's bench package included;
+  - with tolerances absent, `emit` takes the old path at `Rung::TODAY`, and the KiCad project's via renders as before ("0.6", "0.3").
+- **What moved, as ruled (D5):**
+  - the two fixtures with tolerances (their boards);
+  - `supply_tier1`'s (A) test, now `sentinel_03_on_rule_sized_vias_bounds_every_return`;
+  - the remedy test, now on a declared ring of 0. A class under the rule is refused at `emit` (`ViaRingUnheld`), so the gate's remedy is reached through a ring smaller than the gate's need: GND vias at 0.65 mm, "via pad >= 0.7 mm". This is a deviation from the ruling's literal wording ("a class declares an undersized via"), for that reason;
+  - the per-tolerance refusals: the rule's own (position, larger size, ring) refuse at `emit`, in `via_ring_tier1`; the gate's (smaller size, etch) still refuse in `extract`.
+
+## 3. Rulings applied
+
+All of 6982875594:
+- **D1:** the field, 50 µm, cited.
+- **D2:** `ViaRingUnheld`; thermal raised, with a note.
+- **D3:** rungs as engine constants, the three knobs gone; the in-process check documented and tested as choosing, not witnessing; Sentinel-03's smallest margin reported.
+- **D4:** tolerances only.
+- **D5:** as above.
+
+## 4. Adversarial pass, mutation, reduction
+
+### 4.1 Adversarial pass (full, WO §5)
+
+A fresh subagent found no high findings. I checked each one.
+
+**Fixed:**
+- **M1:** the ladder's `extract` refusals had become an anonymous `EmitterError`. `lines` refusing now routes the board as today and records `unjudged` (test above). A refusal reading back the ladder's own board keeps `extract`'s kind (`LadderRefused`).
+- **L1:** `bounded` held every constrained net, so a net `extract` never judges was still priced. It now holds exactly the nets `extract` bounds.
+- **L2:** a board with nothing bounded reported an empty margin. The margin is now optional.
+- **L3:** a rung that failed to route was hidden behind one that routed. It is now reported.
+- **L5:** the project file's via was typed in.
+
+**Kept, by ruling:**
+- **M2:** the ladder chooses on capacitance alone and may leave rung 0 when a later rung has more margin. The supply gate, DRC and pair checks are `verify`'s, judged on the emitted board as for any other. Documented on `laddered`.
+
+**Recorded:**
+- **L4:** 8 concurrent routes take about 8 times one route's memory. `speeds.rs` calls `emit` for its capacitance message and so now pays the ladder on a tolerance board.
+- **L6:** through-hole pads' rings are outside this rule (a non-goal; a thermal via that no longer fits its pad is refused by `arrays()`, by name).
+
+**The WO's four classes:**
+- **A ring that holds at nominal, not at the worst:** the formula takes the largest hole at the position box's corner, exact in integers, and every via kind is sized by it (verified, with tests).
+- **A bounded net routed over its bound:** every emitted rung is judged by `extract`'s arithmetic, and `extract` judges it again on its own (test).
+- **A board with no tolerances whose bytes move:** none (§2.3).
+- **A constant typed in where a declared tolerance exists:** none left. The KiCad project's via was one, and is fixed (L5).
+
+### 4.2 Mutation [measured, `~/.cache/aet-1314/mut/run.py`, one mutant per guard]
+
+21 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **21 killed.**
+
+- **Not mutated: `diagonal_nm`'s integer correction loop.** It is labelled belt-and-suspenders: the float's ceiling of `e·√2` is exact for every `e` up to 3 mm (measured, every nanometre; the IR caps a tolerance at 1 mm), so no test input can reach it.
+- **Guards added for the mutation run:**
+  - `choose` became a pure function with two unit tests: the largest smallest margin, ties, a rung over its bound, an unrouted rung, no bounded net, the nearest rung's overs;
+  - the project file's via has a unit test;
+  - Sentinel-03's ladder choice is a golden: rung 7, `IMU_SCK` at 24 945 fF.
+- **A harness filter named no test once.** The `ViaRingUnheld` mutant ran zero tests and read as a survivor; it was re-run with the right filter, and killed.
+- **A guard removed instead of tested:** the filter keeping only constrained nets in `bounded`. `validate` already requires every line's bound (`MissingBusConstraint`, `MissingSpiConstraint`), so it was dead code.
+
+### 4.3 Reduction pass (diff)
+
+A fresh subagent ran it; I checked each claim.
+
+Reduction pass (diff): −13 net lines · 2 duplicates removed (the ⌈e√2⌉ reach, now `diagonal_nm`, shared with 1303b's `hole_radius`; the tier-1 `root`/`scratch` helpers, now `common::verify`'s) · 1 dead field removed (`Stack::ring`) · 1 dead mechanism removed (a shortcut for a board with nothing bounded, which `choose` already handles) · 0 protected · 2 findings:
+- 14 tier-1 files each define their own `scratch`/`root`/`run`, a repo-wide backlog;
+- `write_moved` takes a rung only to route at it.
+
+## 5. Gates
+
+Local, on this head [measured]:
+- `cargo fmt --check` and `cargo clippy --workspace --all-targets -D warnings` are clean.
+- `cargo test --workspace` is green.
+- The byte comparison against main's binary over every committed specification (§2.3).
+
+CI on the PR, and Sentinel-03's tier-2 KiCad checks on its new board (`board_tier2`, ruling D5), are recorded in the READY commit.
+
+## 6. §7.1 rows (for the architect to apply)
+
+| Item | From | Owner |
+|---|---|---|
+| The default 0.6/0.3 mm via cannot keep its band at the fabricator's worst hole (1303b) | 1303b, ruling 6974760231 | **done, `1314`:** the ring rule, where tolerances are declared |
+| Sentinel-03's supply gate needs a ground via pad of at least 0.7 mm; at 0.7, `IMU_SCK` exceeds 30 pF (1313 Q3) | 1303b, ruling 6976355662 | **done, `1314`:** rule-sized vias with the ladder; `IMU_SCK` at 24.9 pF, the gate passes |
+| The router adds vias without cost on capacitance-bounded nets | 1313 Q3 | **done for boards with tolerances, `1314`** (the ladder); boards without them as the next row |
+| `d3-24-i2c-12-spi`, `serial-four`, `sentinel-02-shaped` and `solve/stress` fail a declared capacitance bound on today's routing (`extract`'s `capacitance_over_declared_bound`); the ladder would fix or refuse them | 1314 D4 | a later router work order, triggered when those fixtures' bytes may move |
+| A fabrication package for a board with `fab_tolerances` uses the rule's via (`fab.rs` names the engine's 0.6/0.3) | 1314 ruling | `4500`'s fab step |
+| A through-hole pad's ring at the declared tolerances | 1314 adversarial L6 | trigger: a through-hole part on a board with tolerances whose ring is in question |
+
+## 7. Record
+
+- **Branch** `wo/aet-1314-via-tolerance`, PR #227, base main `acae53f7`.
+- **Evidence (Furnace):**
+  - `~/.cache/aet-1314/final/` (Sentinel-03 emitted, extracted and gated on this head);
+  - `~/.cache/aet-1314/cmp.txt` (byte identity);
+  - `~/.cache/aet-1314/mut/` (`run.py`, `final.log`);
+  - the measured stop's `~/.cache/aet-1314/m/`.
+
+### Lessons
+
+- **A filter in a mutation harness that names no test reads as a survivor.** Check that each filter matches a test before believing a result.
+- **A class with no declared via must follow the board's via, not the engine's constant.** A unit test on `Class::via_declared` found it, before any board did.
+
+# Part B: the measured stop (record, ruled in comment 6982875594)
+
+## B0. Status: STOPPED at the measured stop (§1.1)
 
 **The ring rule:** a via's pad keeps a minimum copper ring round the largest finished hole at the worst declared position.
 
@@ -33,7 +224,7 @@ A ring of 0 µm (0.65 mm pads) leaves GND refused, as 1303b predicts.
 - D4: the costing's scope.
 - D5: the bytes and goldens that move.
 
-## 1. The ring rule [read at source, inferred]
+## B1. The ring rule [read at source, inferred]
 
 **The rule.** A via drilled `d` is finished anywhere from `d − minus` to `d + plus` (`fab_tolerances.hole_size_*`). Its centre lies anywhere within `position` per axis (`hole_position_um`), so up to `⌈position·√2⌉` from the pad's centre. A pad of diameter `D` keeps a ring of at least `r` at every size and position when
 
@@ -52,9 +243,9 @@ With JLCPCB's declared figures (+0.13 mm; ±0.075 mm per axis, so a 106.07 µm r
 
 JLCPCB's "PTH annular ring ≧0.20mm" row is for component holes, not vias [read at source].
 
-## 2. Measured [`spike/1314/`]
+## B2. Measured [`spike/1314/`]
 
-### 2.1 How
+### B2.1 How
 
 The measurement knobs live on this branch, read from the environment, and are for the stop only:
 - `AET_RING_UM` sizes vias by the rule where `fab_tolerances` is declared: the board's own via, each class's via raised to at least the rule's pad, and each thermal array's via the same.
@@ -63,7 +254,7 @@ The measurement knobs live on this branch, read from the environment, and are fo
 
 The boards measured are Sentinel-03 (4 layers) and the power fixture as the CLI tests take it (2 layers). Each emit takes about 3 s; a gated extract about 3 min.
 
-### 2.2 Every bounded net, before and after [measured, `sweep1.jsonl`, `sweep2.jsonl`]
+### B2.2 Every bounded net, before and after [measured, `sweep1.jsonl`, `sweep2.jsonl`]
 
 Values are pF, with the net's via count in brackets. The run labels used below:
 - **today:** main's routing.
@@ -97,7 +288,7 @@ Values are pF, with the net's via count in brackets. The run labels used below:
 
 **The cost is congestion, not the price of a via.** At a 50 µm ring with no extra cost, `IMU_SCK` keeps 6 vias where today has 2, and its track grows from 6.7 to 9.9 pF. At cost 96–160 it still keeps 6, and its track grows to 13.4 pF. The larger stitched GND and default vias, laid before any track, block its short path.
 
-### 2.3 The costings tried, on Sentinel-03 [measured]
+### B2.3 The costings tried, on Sentinel-03 [measured]
 
 Which runs passed every bounded net, by via cost:
 
@@ -114,7 +305,7 @@ Which runs passed every bounded net, by via cost:
 
 **No single setting passes every ring.** Every ring passes at some setting.
 
-### 2.4 The supply gate on rule-sized vias [measured, `gated.jsonl`; limit 165 mV, minima as 1303b's tests]
+### B2.4 The supply gate on rule-sized vias [measured, `gated.jsonl`; limit 165 mV, minima as 1303b's tests]
 
 | Board, ring, cost | `extract` | VDD | GND | Drop |
 |---|---|---|---|---|
@@ -124,15 +315,15 @@ Which runs passed every bounded net, by via cost:
 | Sentinel-03, 50 µm, 320 | pass | 16/16 | 10/10 (≤ 52.7 mΩ) | 85.8 mV |
 | power fixture, 28 or 50 µm, 48 | lines pass | 16/16 | refused, `GroundReturnUnread` (2 layers, ruled 1303b (iii)) | none |
 
-### 2.5 Bytes [measured]
+### B2.5 Bytes [measured]
 
 - **With no knob set,** Sentinel-03's board is byte-identical to main's (`cmp`).
 - **The ring rule acts only where `fab_tolerances` is declared:** today the two regulator fixtures.
 - **The fixture-emitting tier-1 tests** under a 50 µm ring and cost 48 (`goldens.out`): `outline_tier1`, `power_board_tier1` and `campaign_tier1` pass. `supply_tier1` moves in two tests (D5).
 
-## 3. For the ruling
+## B3. For the ruling
 
-### D1. The ring and where it lives
+### B3 D1. The ring and where it lives
 
 **Recommend 50 µm, from JLCPCB's stated via rule, held at the worst declared size and position.** It is the only cited figure for a via's ring, and it covers the supply gate's own 28 µm with 22 µm to spare.
 
@@ -140,7 +331,7 @@ Which runs passed every bounded net, by via cost:
 
 The alternative is an engine constant citing JLCPCB. The WO's adversarial list names that very class: "a constant typed in where a declared tolerance exists".
 
-### D2. Which vias, and a declared via smaller than the rule
+### B3 D2. Which vias, and a declared via smaller than the rule
 
 **Measured as built for the stop:** the board's own via, each class's via and each thermal array's via are raised to at least the rule's pad.
 
@@ -149,7 +340,7 @@ The alternative is an engine constant citing JLCPCB. The WO's adversarial list n
 - a class whose declared via is smaller than the rule is refused by name (`ViaRingUnheld`, with the class and the pad that holds the ring), never silently raised. The fixtures' `SUPPLY_MCU` (0.7/0.3) would declare 0.75/0.3;
 - a thermal array's via, whose ring is the engine's parts table's, is raised to the rule, with a note.
 
-### D3. The costing
+### B3 D3. The costing
 
 **Recommend a deterministic ladder of routing attempts**, each judged by `extract`'s own per-net figure, computed in process on the emitted board text (`extract::read`, then `lines` and `bound`, the same code `extract` runs):
 1. as today;
@@ -164,7 +355,7 @@ The alternative is an engine constant citing JLCPCB. The WO's adversarial list n
 
 **Cost:** up to 8 emits of about 3 s each on a 4-layer board, only when the first attempt is over.
 
-### D4. Scope
+### B3 D4. Scope
 
 **Recommend: the ladder only where `fab_tolerances` is declared.**
 
@@ -172,7 +363,7 @@ Four committed fixtures fail a capacitance bound on today's routing, measured: `
 
 The refusal ("never routed over its bound") would then hold for boards with tolerances only. Today's boards keep `extract`'s finding as their judge.
 
-### D5. What moves
+### B3 D5. What moves
 
 - **The two fixtures with `fab_tolerances`:** the Sentinel-03 board and the power fixture's board (vias resized, routing moved).
 - **`supply_tier1`:**
@@ -185,7 +376,7 @@ The refusal ("never routed over its bound") would then hold for boards with tole
 
 `fab.rs` (the fabrication package's drill text) names the engine's 0.6/0.3 mm via. Only Sentinel-01's bench board has a package, and it declares no tolerances, so nothing is wrong today. A package for a board with tolerances would need the rule's via there too. That belongs to a fab work order.
 
-## 4. Record
+## B4. Record
 
 - **Branch** `wo/aet-1314-via-tolerance`, base main `acae53f7`.
 - **Evidence:** `spike/1314/` (scripts and outputs) and `~/.cache/aet-1314/m/` (boards).
