@@ -144,11 +144,11 @@ It was run by a fresh read-only subagent over the diff. Both changes were re-che
   - the inline comment restating the bound and the check, which `compact`'s doc paragraph already says;
   - the reason string copied into the error (`why` is now `&'static str`).
 - The new `centre` closure replaces the inline union and centre that the loop already had, and now serves the bound too: one copy, not two.
-- **Finding, outside the fence, not changed:** `crates/aethelgard-eda/README.md`'s paragraph on bounded placement names `OutlineTooSmall` and `OutlineUnreachable` but not `CompactionUnbounded`.
+- **Finding, resolved on review:** `crates/aethelgard-eda/README.md`'s paragraph on bounded placement named `OutlineTooSmall` and `OutlineUnreachable` but not `CompactionUnbounded`. The architect's review of `4876fdfb` on #220 extended the fence to that line, and it now names all three.
 
 ## 6. Record
 
-- **Base:** `main` `65622f70`. Commits: the build `29dc95c0`; this READY commit (FEEDBACK only).
+- **Base:** `main` `65622f70`. Commits: the build `29dc95c0`; READY `4876fdfb`, accepted on review; the README line as asked; this READY commit (FEEDBACK only).
 - **CI:** it runs on pull requests only (`.github/workflows/ci.yml` L3–6). The kickoff asks for the PR to open at READY, so CI's first run is on this READY head. Every gate it runs was run locally first (§2).
 - **Files:**
   - `crates/aethelgard-eda/src/pcb.rs` (compaction, the bound, the seam, two tests);
