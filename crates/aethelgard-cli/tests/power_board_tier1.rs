@@ -184,7 +184,9 @@ fn a_bucks_sw_net_takes_its_outputs_class_and_an_ldo_adds_nothing() {
         .iter()
         .find(|c| c.name == "SUPPLY_MCU")
         .unwrap();
-    assert_eq!(mcu.nets, ["VDD_3V3", "/U11_SW"]);
+    // GND is in the class for its 0.7 mm via pad (`AET-WO-1303b`, ruling
+    // 6974760231): it is no buck's output, so it brings no switch node
+    assert_eq!(mcu.nets, ["VDD_3V3", "GND", "/U11_SW"]);
 }
 
 /// `extract` (no tool) bounds the fixture's board: its through-hole pads,

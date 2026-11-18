@@ -350,6 +350,7 @@ fn the_reference_declares_todays_two_layer_board() {
                 200_000,
                 "implied: the finished minimum 340 um less twice the copper maximum 70 um".into(),
             )],
+            dielectric_max_nm: vec![None],
             copper_max_nm: 70_000,
             copper_source: "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)".into(),
             permittivity_permille: 5400,

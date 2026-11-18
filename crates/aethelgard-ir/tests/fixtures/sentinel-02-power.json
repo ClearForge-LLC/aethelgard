@@ -250,6 +250,24 @@
       "relative_permittivity_max_permille": {
         "value": 5400,
         "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      },
+      "fab_tolerances": {
+        "hole_position_um": {
+          "value": 75,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole Position Tolerance, \"+/-0.075 mm\""
+        },
+        "hole_size_plus_um": {
+          "value": 130,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+        },
+        "hole_size_minus_um": {
+          "value": 80,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+        },
+        "track_width_permille": {
+          "value": 200,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Traces, Track width tolerance, \"+/-20%\""
+        }
       }
     },
     "rules": {
@@ -277,7 +295,8 @@
         "drill_um": 300
       },
       "nets": [
-        "VDD_3V3"
+        "VDD_3V3",
+        "GND"
       ]
     }
   ],
@@ -542,6 +561,72 @@
         "domain": "VDD_1V8",
         "milliamps": 20,
         "source": "the 1.8 V I/O domain budget (AET-WO-4300d spike checks.py, LOAD_1V8)"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 2,
+        "source": "derived: 3.465 V (3.3 V + 5 %) / 2.2 kOhm = 1.575 mA, rounded up",
+        "reference": "R1"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 2,
+        "source": "derived: 3.465 V (3.3 V + 5 %) / 2.2 kOhm = 1.575 mA, rounded up",
+        "reference": "R2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "Bosch BST-BME280-DS001-24 rev 1.24 Table 1 p. 8: IDDP current during pressure measurement 714 uA (Max value at -40 C); rounded up",
+        "reference": "U2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "TI SNOSD82D Table 6.5 p. 6: IQ_ACTIVE quiescent current during active conversion max 220 uA; rounded up",
+        "reference": "U3"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 25,
+        "source": "Winbond W25Q64JV rev J 9.4 p. 61: ICC4 to ICC7 write status, page program, sector and chip erase max 25 mA",
+        "reference": "U4"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
+        "reference": "R4"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
+        "reference": "R5"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / (105 kOhm + 46.4 kOhm) = 0.023 mA, rounded up",
+        "reference": "R20"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "declared: the debug probe's target-voltage sense on the SWD header; no source",
+        "reference": "J2"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "TI SCES935A 7.5 p. 8: ICCA VCCA supply current max 6 uA (VCCA 1.1 to 5.5 V, -40 to 125 C); rounded up",
+        "reference": "U13"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 100 kOhm = 0.035 mA, rounded up",
+        "reference": "R40"
       }
     ],
     "sense": [
