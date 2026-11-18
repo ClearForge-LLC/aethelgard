@@ -1400,6 +1400,9 @@ struct Ready {
     /// The foreign firmware's memory regions, when judged as one
     /// (`AET-WO-4400e`); `None` for a generated firmware.
     foreign: Option<Vec<(&'static str, aethelgard_twin::boot::Region)>>,
+    /// The foreign firmware's loaded flash segments, read back after the run;
+    /// empty for a generated firmware.
+    flash: Vec<elf::FlashLoad>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1467,6 +1470,11 @@ fn ready(
         Some(regions) => elf::check_foreign(&bytes, regions)?,
         None => elf::check(&bytes, &memory, boot_word)?,
     };
+    // `foreign_memory` puts flash first.
+    let flash = match &foreign {
+        Some(regions) => elf::flash_loads(&bytes, &regions[0].1)?,
+        None => Vec::new(),
+    };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let motors = match boot.foreign {
         true => Vec::new(),
@@ -1518,6 +1526,7 @@ fn ready(
             absent: boot.absent,
             rail: boot.rail,
             foreign,
+            flash,
         },
     ))
 }
@@ -1845,7 +1854,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     }
     let foreign = ready.as_ref().and_then(|r| r.foreign.as_ref());
     let commands = match (&plan, foreign) {
-        (Some(plan), Some(_)) => renode::foreign::commands(plan),
+        (Some(plan), Some(_)) => {
+            renode::foreign::commands(plan, &ready.as_ref().expect("foreign is ready's").flash)
+        }
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
     };
@@ -1856,6 +1867,9 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // a droop's boot is the bridge's, which owns Renode as its child.
     let out = match (&plan, &droop) {
         (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
+        (Some(_), None) if foreign.is_some() => {
+            run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::foreign::FOREIGN_LOG_FILTER)?
+        }
         (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
         (None, _) => run.run()?,
     };
@@ -1901,8 +1915,16 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             let code = out.code("renode")?;
             let (firmware, spec, regions, parts) =
                 foreign_inputs.clone().expect("the guard holds it");
-            let (findings, machine, report) =
-                renode::foreign::judge(code, &out, plan, firmware, spec, regions, &parts)?;
+            let (findings, machine, report) = renode::foreign::judge(
+                code,
+                &out,
+                plan,
+                firmware,
+                spec,
+                regions,
+                &parts,
+                &ready.as_ref().expect("foreign is ready's").flash,
+            )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))
         }

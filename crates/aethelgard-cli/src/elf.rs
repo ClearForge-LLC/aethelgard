@@ -295,6 +295,37 @@ pub fn foreign_memory() -> Result<Vec<(&'static str, aethelgard_twin::boot::Regi
     Ok(regions)
 }
 
+/// A loaded flash segment of a foreign firmware: its physical address, its
+/// file bytes' length and their sha256 (`AET-WO-4400e`, ruled on PR #212,
+/// comment 6965511448: no write inside its own loaded ranges).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FlashLoad {
+    pub address: u64,
+    pub len: u64,
+    pub sha256: String,
+}
+
+/// Every `PT_LOAD` whose file bytes Renode writes into `flash`, in address
+/// order: what the foreign judge reads back after the run.
+pub fn flash_loads(
+    bytes: &[u8],
+    flash: &aethelgard_twin::boot::Region,
+) -> Result<Vec<FlashLoad>, Stop> {
+    let mut out: Vec<FlashLoad> = loads(bytes)?
+        .iter()
+        .filter(|l| l.filesz > 0 && flash.holds(l.paddr, l.filesz))
+        .map(|l| FlashLoad {
+            address: l.paddr,
+            len: l.filesz,
+            sha256: hex(Sha256::digest(
+                &bytes[l.offset as usize..(l.offset + l.filesz) as usize],
+            )),
+        })
+        .collect();
+    out.sort_by_key(|f| f.address);
+    Ok(out)
+}
+
 /// A foreign firmware's checks, then its image (`AET-WO-4400e`): every
 /// `PT_LOAD` with a size lies, at its physical and its virtual address,
 /// inside one region of [`foreign_memory`]; no two segments' **file bytes**

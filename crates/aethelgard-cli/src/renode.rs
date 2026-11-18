@@ -246,6 +246,7 @@ pub const LOG_FILTER: LogFilter = LogFilter {
         MODEL_LOAD_ERROR,
     ],
     discard: unjudged_access_line,
+    summarise: crate::run::summarise_none,
 };
 
 /// A whole log line of Renode's access log the judge never reads.
@@ -3798,6 +3799,7 @@ mod tests {
             },
             dropped_log_lines: dropped,
             peak_rss_kib: None,
+            summaries: Vec::new(),
         }
     }
 

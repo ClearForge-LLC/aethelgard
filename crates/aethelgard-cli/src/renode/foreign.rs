@@ -40,8 +40,8 @@ pub const RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "PT_LOAD overlap",
-        "replaced (provisional)",
-        "no two segments' file bytes overlap; zero-filled segments may share a physical address",
+        "replaced",
+        "no two segments' file bytes overlap; zero-filled segments may share a physical address (ruled on PR #212, comment 6965511448)",
     ),
     (
         "boot word",
@@ -136,32 +136,32 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "renode_error_log",
         "kept, with D4",
-        "the SPI model's slave-mode [ERROR] is exempt only directly after a CFG2 write with MASTER 0 while the last CR1 write left SPE 0, from the same access log; every exemption is counted in the verdict",
+        "the SPI model's slave-mode [ERROR] is exempt only directly after a CFG2 write with MASTER 0 while CR1 holds SPE 0, as a hook on each SPI controller's CFG2 writes logs it (ruled on PR #212, comment 6965511448, D7 (b)); every exemption is counted in the verdict",
     ),
     (
         "renode_log_flood",
-        "kept",
-        "past the budget no witness is read whole: every step is unwitnessed",
+        "kept, with D7 (a)",
+        "the 8 MiB budget stands; past it no witness is read whole: every step is unwitnessed. Renode's own Unhandled write warnings are summarised: each kind (peripheral and message, the written value elided) is one line with its count and first and last virtual time in boot.warnings (ruled on PR #212, comment 6965511448, D7 (a)); none is hidden, none floods",
     ),
     (
         "locked_peripheral_access",
-        "kept (provisional)",
-        "an access to a peripheral whose clock was off",
+        "replaced",
+        "an info finding naming each address with its first time and count (ruled on PR #212, comment 6965511448). Weakens: unclocked accesses are not judged (silicon ignores them)",
     ),
     (
         "brown-out record",
-        "dropped (provisional)",
+        "dropped",
         "Weakens: the BOR level is not judged in the twin (a foreign firmware keeps no record)",
     ),
     (
         "flash controller access",
-        "dropped (provisional)",
-        "Weakens: flash erase and program are unjudged (a foreign firmware may keep storage in flash)",
+        "replaced",
+        "the firmware's own loaded flash bytes are unchanged after the run: the judge hashes each loaded flash segment in Renode and compares it with the ELF's (ruled on PR #212, comment 6965511448). Weakens: writes elsewhere in flash are not judged",
     ),
     (
         "motor outputs",
-        "dropped (provisional)",
-        "Weakens: motor outputs are unjudged (their window is anchored on the generated bring-up's CEN)",
+        "dropped",
+        "Weakens: motor outputs are unjudged (their window is anchored on the generated bring-up's CEN; the flight-loop order's backlog)",
     ),
     (
         "serial pattern and echo",
@@ -220,6 +220,33 @@ pub struct StepReport {
     pub observed_ns: Option<u64>,
 }
 
+/// One kind of Renode `Unhandled write` warning, summarised (D7 (a)).
+#[derive(Serialize)]
+pub struct WarningReport {
+    pub line: String,
+    pub count: u64,
+    pub first_ns: Option<u64>,
+    pub last_ns: Option<u64>,
+}
+
+/// A loaded flash segment, read back after the run.
+#[derive(Serialize)]
+pub struct FlashReport {
+    pub address: String,
+    pub bytes: u64,
+    pub expected_sha256: String,
+    pub observed_sha256: Option<String>,
+}
+
+/// An access to a peripheral whose clock was off: its address, the first
+/// time and how often.
+#[derive(Serialize)]
+pub struct LockedReport {
+    pub access: String,
+    pub first_ns: Option<u64>,
+    pub count: u64,
+}
+
 /// What booted the firmware, as D5 rules it.
 #[derive(Serialize)]
 pub struct Booted {
@@ -249,6 +276,12 @@ pub struct ForeignBoot {
     /// D4: the SPI model's slave-mode `[ERROR]` lines exempted, each directly
     /// after a `CFG2` write with `MASTER` 0 while `SPE` was 0.
     pub spi_errors_exempted: u64,
+    /// Renode's `Unhandled write` warnings, each kind once (D7 (a)).
+    pub warnings: Vec<WarningReport>,
+    /// The firmware's loaded flash segments, read back after the run.
+    pub flash: Vec<FlashReport>,
+    /// Accesses to a peripheral whose clock was off (`info`).
+    pub locked: Vec<LockedReport>,
     pub unobservable: Vec<String>,
     pub rules: Vec<RuleReport>,
 }
@@ -267,6 +300,56 @@ pub fn regions_report(
         .collect()
 }
 
+/// The foreign boot's log filter (D7 (a)): today's, with Renode's own
+/// `Unhandled write` warnings summarised by [`unhandled_write_key`].
+pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
+    summarise: unhandled_write_key,
+    ..LOG_FILTER
+};
+
+/// An `Unhandled write` warning's summary key: the line after its timestamp
+/// with every written value elided, so writes of other values to the same
+/// register are one kind; `None` for every other line.
+pub fn unhandled_write_key(line: &str) -> Option<String> {
+    let body = log_body(line)?;
+    let (source, text) = body.strip_prefix("[WARNING] ")?.split_once(": ")?;
+    if !text.starts_with("Unhandled write to offset ") {
+        return None;
+    }
+    let mut key = format!("[WARNING] {source}: ");
+    let mut rest = text;
+    while let Some(at) = rest.find("value 0x") {
+        key.push_str(&rest[..at + "value 0x".len()]);
+        rest = &rest[at + "value 0x".len()..];
+        let hex = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
+        key.push('…');
+        rest = &rest[hex..];
+    }
+    key.push_str(rest);
+    Some(key)
+}
+
+/// The line D7 (b)'s hook logs for a write to an SPI controller's `CFG2`
+/// (offset `0xC`): the value written and `CR1` as it stands, in hexadecimal.
+const CFG2_MARK: &str = "AETHELGARD-CFG2 ";
+
+/// The hook on an SPI controller's writes that logs each `CFG2` write with
+/// `CR1` (D4's evidence, D7 (b)); every other write passes unlogged.
+fn cfg2_hook(controller: &str) -> String {
+    format!(
+        "sysbus SetHookBeforePeripheralWrite sysbus.{controller} \"(offset == 0xC) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{CFG2_MARK}%x %x' % (value, self.ReadDoubleWord(0)))\""
+    )
+}
+
+/// The monitor command that prints a loaded flash segment's sha256 as Renode
+/// holds it after the run, read by the judge: `AETHELGARD-FLASH <address> <sha256>`.
+fn flash_hash(f: &crate::elf::FlashLoad) -> String {
+    format!(
+        "python \"print('AETHELGARD-FLASH {:x} ' + (__import__('clr').AddReference('System.Security.Cryptography') or __import__('System').BitConverter.ToString(__import__('System.Security.Cryptography').Security.Cryptography.SHA256.Create().ComputeHash(self.Machine.SystemBus.ReadBytes({:#x}, {:#x}))).replace('-', '').lower()))\"",
+        f.address, f.address, f.len
+    )
+}
+
 /// Each SPI controller a modelled device is on, as Renode names it (`spi2`).
 fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
@@ -283,10 +366,11 @@ fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
 
 /// The foreign boot's monitor commands: the platform, the `RETTOBASE`
 /// correction, the firmware, the cold RCC, each modelled device's log level
-/// and stimulus, each SPI controller's access log (D4), the run, then the
-/// reads between the markers and the listing. No boot word, no record, no
-/// hook of ours and no injection: none of the generated runtime's contract.
-pub fn commands(plan: &BootPlan<'_>) -> String {
+/// and stimulus, each SPI controller's `CFG2` hook (D4), the run, then the
+/// reads between the markers, each loaded flash segment's sha256, and the
+/// listing. No boot word, no record, no hook on the firmware's own code and
+/// no injection: none of the generated runtime's contract.
+pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> String {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
         QUANTUM.to_owned(),
@@ -304,16 +388,13 @@ pub fn commands(plan: &BootPlan<'_>) -> String {
     c.extend(plan.cold());
     c.push(plan.vtor());
     c.extend(plan.witness_levels());
-    c.extend(
-        spi_controllers(plan)
-            .iter()
-            .map(|s| format!("sysbus LogPeripheralAccess sysbus.{s} true")),
-    );
+    c.extend(spi_controllers(plan).iter().map(|s| cfg2_hook(s)));
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
     c.extend(reads(plan).into_iter().map(|(cmd, _)| cmd));
     c.push(format!("echo \"{END}\""));
+    c.extend(flash.iter().map(flash_hash));
     c.push("peripherals".to_owned());
     c.push("quit".to_owned());
     c.join("; ")
@@ -436,52 +517,38 @@ fn find(own: &[(usize, &str)], want: &[Line], from: usize) -> Option<usize> {
 const SLAVE_MODE: &str =
     "Attempted to set peripheral into SPI slave mode. Only master mode is supported";
 
-/// An SPI access log's write: the controller, the offset and the value.
-fn spi_write(body: &str) -> Option<(&str, u64, u64)> {
-    let (source, rest) = body.split_once(": [cpu: ")?;
-    let source = source.rsplit(' ').next()?;
-    let (_, rest) = rest.split_once("] Write")?;
-    let (_, rest) = rest.split_once(" to 0x")?;
-    let (offset, rest) = rest.split_once(' ')?;
-    let (_, value) = rest.rsplit_once(", value 0x")?;
+/// A `CFG2` write as D7 (b)'s hook logs it: the controller, the value
+/// written and `CR1` as it stood.
+fn cfg2_write(body: &str) -> Option<(&str, u64, u64)> {
+    let (source, text) = body.strip_prefix("[WARNING] ")?.split_once(": ")?;
+    let (value, cr1) = text.strip_prefix(CFG2_MARK)?.split_once(' ')?;
     Some((
         source,
-        u64::from_str_radix(offset, 16).ok()?,
-        u64::from_str_radix(value.trim(), 16).ok()?,
+        u64::from_str_radix(value, 16).ok()?,
+        u64::from_str_radix(cr1, 16).ok()?,
     ))
 }
 
 /// The run's first `[ERROR]` line D4 does not exempt, and how many it did:
-/// the SPI model's slave-mode line directly after a `CFG2` (offset `0xC`)
-/// write with `MASTER` (bit 22) 0, while the controller's last `CR1`
-/// (offset 0) write left `SPE` (bit 0) 0. The bits are RM0433 Rev 9
-/// §50.11.1 and §50.11.4's (`AET-WO-4400e2` D4).
+/// the SPI model's slave-mode line directly after a `CFG2` write with `MASTER`
+/// (bit 22) 0 while `CR1` held `SPE` (bit 0) 0, as the hook logs it. The bits
+/// are RM0433 Rev 9 §50.11.1 and §50.11.4's (`AET-WO-4400e2` D4).
 fn error_lines<'l>(run_log: &[&'l str]) -> (Option<&'l str>, u64) {
-    let mut cr1: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
     let mut exempt = 0u64;
     let mut first = None;
     for (i, line) in run_log.iter().enumerate() {
-        let body = log_text(line);
-        if let Some((source, offset, value)) = spi_write(body) {
-            if offset == 0 {
-                cr1.insert(source.to_owned(), value);
-            }
-            continue;
-        }
         if !line.contains(LOG_ERROR) {
             continue;
         }
+        let body = log_text(line);
         let exempted = body
             .strip_prefix("[ERROR] ")
             .and_then(|b| b.split_once(": "))
             .filter(|(source, text)| source.starts_with("spi") && *text == SLAVE_MODE)
             .is_some_and(|(source, _)| {
                 i > 0
-                    && spi_write(log_text(run_log[i - 1])).is_some_and(|(s, offset, value)| {
-                        s == source
-                            && offset == 0xC
-                            && value & (1 << 22) == 0
-                            && cr1.get(source).copied().unwrap_or(0) & 1 == 0
+                    && cfg2_write(log_text(run_log[i - 1])).is_some_and(|(s, value, cr1)| {
+                        s == source && value & (1 << 22) == 0 && cr1 & 1 == 0
                     })
             });
         if exempted {
@@ -517,6 +584,9 @@ pub fn report(
         registers: Vec::new(),
         devices: Vec::new(),
         spi_errors_exempted: 0,
+        warnings: Vec::new(),
+        flash: Vec::new(),
+        locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
         rules: RULES
             .iter()
@@ -538,6 +608,7 @@ pub fn judge(
     specification_sha256: String,
     regions: Vec<RegionReport>,
     parts: &std::collections::BTreeMap<String, String>,
+    flash: &[crate::elf::FlashLoad],
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
     let text = out.text();
     let untrusted = |what: String| {
@@ -641,6 +712,19 @@ pub fn judge(
         }
     }
     let machine = Machine { cpus, peripherals };
+    // Each loaded flash segment's sha256 as Renode holds it after the run,
+    // printed after the end marker, one line each, in order.
+    let hashes: Vec<&str> = lines[end + 1..]
+        .iter()
+        .filter_map(|l| l.strip_prefix("AETHELGARD-FLASH "))
+        .collect();
+    if hashes.len() != flash.len() {
+        return Err(untrusted(format!(
+            "renode printed {} flash hashes, not the {} loaded flash segments'",
+            hashes.len(),
+            flash.len()
+        )));
+    }
 
     let mut findings = Vec::new();
     let whole = out.dropped_log_lines == 0;
@@ -661,17 +745,77 @@ pub fn judge(
             log_text(line).to_owned(),
         ));
     }
-    if let Some(first) = run_log
+    // D7 (a): each kind of Renode's `Unhandled write` warning, once.
+    let stamp = |t: &str| log_stamped(&format!("[{t}] x")).map(|(ns, _)| ns);
+    report.warnings = out
+        .summaries
         .iter()
-        .find(|l| LOCKED.iter().any(|w| l.contains(w)))
+        .map(|w| WarningReport {
+            line: w.key.clone(),
+            count: w.count,
+            first_ns: stamp(&w.first),
+            last_ns: stamp(&w.last),
+        })
+        .collect();
+    // An access to an unclocked peripheral: info, each address with its first
+    // time and count (ruled on PR #212, comment 6965511448).
+    for line in run_log
+        .iter()
+        .filter(|l| LOCKED.iter().any(|w| l.contains(w)))
     {
-        findings.push(Finding::plain(
+        let text = log_text(line);
+        let access = text
+            .split_once(": ")
+            .map_or(text, |(_, t)| t)
+            .split(", value")
+            .next()
+            .unwrap_or(text)
+            .to_owned();
+        match report.locked.iter_mut().find(|r| r.access == access) {
+            Some(r) => r.count += 1,
+            None => report.locked.push(LockedReport {
+                access,
+                first_ns: log_stamped(line).map(|(ns, _)| ns),
+                count: 1,
+            }),
+        }
+    }
+    if !report.locked.is_empty() {
+        findings.push(Finding::info(
             "locked_peripheral_access",
             format!(
-                "one or more accesses to a peripheral whose clock was off; the first: {}",
-                log_text(first)
+                "{} distinct accesses to a peripheral whose clock was off, each in boot.locked; silicon ignores them, so the foreign judge reports them and does not fail",
+                report.locked.len()
             ),
         ));
+    }
+    // The firmware's own loaded flash bytes, unchanged after the run.
+    for (f, line) in flash.iter().zip(&hashes) {
+        let observed = line
+            .split_once(' ')
+            .filter(|(at, _)| u64::from_str_radix(at, 16).ok() == Some(f.address))
+            .map(|(_, h)| h.trim().to_owned())
+            .ok_or_else(|| {
+                untrusted(format!(
+                    "`AETHELGARD-FLASH {line}` is not segment {:#010x}'s",
+                    f.address
+                ))
+            })?;
+        if observed != f.sha256 {
+            findings.push(Finding::plain(
+                "flash_overwritten",
+                format!(
+                    "the firmware's own loaded flash bytes at {:#010x} ({} bytes) changed during the run",
+                    f.address, f.len
+                ),
+            ));
+        }
+        report.flash.push(FlashReport {
+            address: format!("{:#010x}", f.address),
+            bytes: f.len,
+            expected_sha256: f.sha256.clone(),
+            observed_sha256: Some(observed),
+        });
     }
     let vectactive = icsr & 0x1FF;
     if vectactive != 0 {
@@ -909,15 +1053,8 @@ mod tests {
     /// `spi_lld_stop` writes them (`AET-WO-4400e2` D4, measured).
     #[test]
     fn the_slave_mode_error_is_exempt_only_after_a_disabled_cfg2_write_of_master_0() {
-        let cr1 = |v: &str| {
-            format!(
-                "[00:00:00.100000000] [INFO] spi1: [cpu: 0x8100F7C] WriteUInt32 to 0x0 (Control1), value {v}"
-            )
-        };
-        let cfg2 = |v: &str| {
-            format!(
-                "[00:00:00.100000000] [INFO] spi1: [cpu: 0x8100F82] WriteUInt32 to 0xC (Configuration2), value {v}"
-            )
+        let cfg2 = |value: &str, cr1: &str| {
+            format!("[00:00:00.100000000] [WARNING] spi1: {CFG2_MARK}{value} {cr1}")
         };
         let err = format!("[00:00:00.100000000] [ERROR] spi1: {SLAVE_MODE}");
         let other = "[00:00:00.200000000] [ERROR] spi2: something else".to_owned();
@@ -926,25 +1063,51 @@ mod tests {
             let (first, n) = error_lines(&refs);
             (first.map(str::to_owned), n)
         };
-        // spi_lld_stop: SPE cleared, CR1 = 0, CFG2 = 0: exempt.
-        assert_eq!(run(&[cr1("0x0"), cfg2("0x0"), err.clone()]), (None, 1));
+        // spi_lld_stop: SPE cleared, then CFG2 = 0: exempt.
+        assert_eq!(run(&[cfg2("0", "0"), err.clone()]), (None, 1));
         // SPE still set: not exempt.
-        assert_eq!(run(&[cr1("0x1"), cfg2("0x0"), err.clone()]).1, 0);
-        // MASTER written 1 (the model logs nothing then, but if it did): not exempt.
-        assert_eq!(run(&[cr1("0x0"), cfg2("0x400000"), err.clone()]).1, 0);
+        assert_eq!(run(&[cfg2("0", "1"), err.clone()]).1, 0);
+        // MASTER written 1: not exempt.
+        assert_eq!(run(&[cfg2("400000", "0"), err.clone()]).1, 0);
         // Not directly after the write: not exempt.
-        assert_eq!(
-            run(&[cr1("0x0"), cfg2("0x0"), other.clone(), err.clone()]).1,
-            0
-        );
+        assert_eq!(run(&[cfg2("0", "0"), other.clone(), err.clone()]).1, 0);
         // Another controller's write: not exempt.
-        let cfg2_spi2 = "[00:00:00.100000000] [INFO] spi2: [cpu: 0x8100F82] WriteUInt32 to 0xC (Configuration2), value 0x0".to_owned();
-        assert_eq!(run(&[cr1("0x0"), cfg2_spi2, err.clone()]).1, 0);
+        let spi2 = format!("[00:00:00.100000000] [WARNING] spi2: {CFG2_MARK}0 0");
+        assert_eq!(run(&[spi2, err.clone()]).1, 0);
         // Any other error is the first reported, exempt ones counted.
         assert_eq!(
-            run(&[cr1("0x0"), cfg2("0x0"), err.clone(), other.clone()]),
+            run(&[cfg2("0", "0"), err.clone(), other.clone()]),
             (Some(other), 1)
         );
+    }
+
+    /// D7 (a): an `Unhandled write` warning's key elides every written value,
+    /// so writes of other values to one register are one kind; any other line
+    /// has no key.
+    #[test]
+    fn unhandled_writes_are_one_kind_per_peripheral_and_message() {
+        let a = unhandled_write_key(
+            "[00:00:01.000000000] [WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x30012340.",
+        );
+        let b = unhandled_write_key(
+            "[00:00:02.000000000] [WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x3001FFE0.",
+        );
+        assert_eq!(a, b);
+        assert_eq!(
+            a.unwrap(),
+            "[WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x…."
+        );
+        let other = unhandled_write_key(
+            "[00:00:02.000000000] [WARNING] nvic: Unhandled write to offset 0xF70 (DCacheCleanAndInvalidateByMVAToPoCAddress), value 0x1.",
+        );
+        assert_ne!(other, b);
+        for none in [
+            "[00:00:01.000000000] [ERROR] spi1: Unhandled write to offset 0x1, value 0x2.",
+            "[00:00:01.000000000] [NOISY] i2c1.u2: Write D0",
+            "[00:00:01.000000000] [WARNING] spi1: AETHELGARD-CFG2 0 0",
+        ] {
+            assert!(unhandled_write_key(none).is_none(), "{none}");
+        }
     }
 
     /// The rule table names each of today's rules once, and every dropped or

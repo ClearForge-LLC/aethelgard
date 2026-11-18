@@ -2362,7 +2362,8 @@ case "$7" in
   *) exit 99;;
 esac
 case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac
-case "$7" in *"sysbus LogPeripheralAccess sysbus.spi1 true"*) ;; *) exit 96;; esac
+case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
+case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
 case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 /bin/cat '{out}'
 "#,
@@ -2376,10 +2377,25 @@ case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 /// Renode 1.17.0's model logs ArduPilot's (`AET-WO-4400e` §1.1, measured).
 const BME280_READ: &str = "[00:00:00.050000000] [NOISY] i2c1.u2: Write F7\n[00:00:00.050001000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0\n";
 
-/// A foreign transcript: the run's log, then the foreign reads (executed
-/// instructions, MIPS, PC, ICSR, then every image register in address order),
-/// then the listing.
+/// [`elf`]'s one loaded flash segment as Renode hashes it after the run:
+/// [`code`] unchanged.
+fn flash_unchanged() -> String {
+    let sha: String = <sha2::Sha256 as sha2::Digest>::digest(code())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    format!("AETHELGARD-FLASH 8000000 {sha}\n")
+}
+
+/// A foreign transcript of [`elf`]: the run's log, then the foreign reads
+/// (executed instructions, MIPS, PC, ICSR, then every image register in
+/// address order), its flash unchanged, then the listing.
 fn foreign_transcript(run_log: &str, icsr: &str) -> String {
+    foreign_transcript_flash(run_log, icsr, &flash_unchanged())
+}
+
+/// A foreign transcript with `flash`, the flash hash lines, as given.
+fn foreign_transcript_flash(run_log: &str, icsr: &str, flash: &str) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
@@ -2393,6 +2409,7 @@ fn foreign_transcript(run_log: &str, icsr: &str) -> String {
         s.push('\n');
     }
     s.push_str("AETHELGARD-BOOT-END\n");
+    s.push_str(flash);
     s.push_str(CPU_LISTING);
     s
 }
@@ -2505,13 +2522,13 @@ fn a_foreign_boot_no_model_witnesses_fails_by_name() {
     );
 }
 
-/// D4 (ruled on PR #215): the SPI model's slave-mode `[ERROR]` is exempt
-/// only directly after a `CFG2` write with `MASTER` 0 while the last `CR1`
-/// write left `SPE` 0, from the access log; any other `[ERROR]` fails.
+/// D4 (ruled on PR #215; its evidence narrowed by D7 (b), PR #212): the SPI
+/// model's slave-mode `[ERROR]` is exempt only directly after a `CFG2` write
+/// with `MASTER` 0 while `CR1` held `SPE` 0, as the `CFG2` hook logs it; any
+/// other `[ERROR]` fails.
 #[test]
 fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
-    let stop = "[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F7C] WriteUInt32 to 0x0 (Control1), value 0x0\n\
-[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82] WriteUInt32 to 0xC (Configuration2), value 0x0\n\
+    let stop = "[00:00:00.041000000] [WARNING] spi1: AETHELGARD-CFG2 0 0\n\
 [00:00:00.041000000] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported\n";
     let (code, v) = foreign(&foreign_transcript(
         &format!("{}{stop}", good_foreign_log()),
@@ -2519,10 +2536,7 @@ fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
     ));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["boot"]["spi_errors_exempted"], 1, "{v}");
-    let enabled = stop.replace(
-        "value 0x0\n[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82]",
-        "value 0x1\n[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82]",
-    );
+    let enabled = stop.replace("AETHELGARD-CFG2 0 0", "AETHELGARD-CFG2 0 1");
     let (code, v) = foreign(&foreign_transcript(
         &format!("{}{enabled}", good_foreign_log()),
         "0x00000800",
@@ -2530,6 +2544,61 @@ fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["renode_error_log"], "{v}");
     assert_eq!(v["boot"]["spi_errors_exempted"], 0, "{v}");
+}
+
+/// Ruled on PR #212 (comment 6965511448): the firmware's own loaded flash
+/// bytes, hashed in Renode after the run, must be the ELF's; an access to an
+/// unclocked peripheral is an `info` finding listing each address; Renode's
+/// `Unhandled write` warnings are one line per kind with their count and
+/// first and last time (D7 (a)).
+#[test]
+fn a_foreign_boot_s_flash_locked_accesses_and_warnings_are_reported() {
+    let other = format!("AETHELGARD-FLASH 8000000 {}\n", "0".repeat(64));
+    let (code, v) = foreign(&foreign_transcript_flash(
+        &good_foreign_log(),
+        "0x00000800",
+        &other,
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["flash_overwritten"], "{v}");
+    let (_, v) = foreign(&foreign_transcript_flash(
+        &good_foreign_log(),
+        "0x00000800",
+        "",
+    ));
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let noise = "[00:00:00.030000000] [WARNING] sysbus: Tried to write a locked peripheral: machine-0.dma1. Address 0x40020010.\n\
+[00:00:00.031000000] [WARNING] sysbus: Tried to write a locked peripheral: machine-0.dma1. Address 0x40020010.\n\
+[00:00:00.032000000] [WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x30012340.\n\
+[00:00:00.033000000] [WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x30012360.\n\
+[00:00:00.034000000] [WARNING] nvic: Unhandled write to offset 0xF5C (DCacheInvalidateByMVAToPoCAddress), value 0x30012380.\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{noise}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    let b = &v["boot"];
+    assert_eq!(b["flash"][0]["address"], "0x08000000", "{v}");
+    assert_eq!(
+        b["flash"][0]["expected_sha256"], b["flash"][0]["observed_sha256"],
+        "{v}"
+    );
+    assert_eq!(b["locked"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(b["locked"][0]["count"], 2, "{v}");
+    assert_eq!(b["locked"][0]["first_ns"], 30_000_000u64, "{v}");
+    assert_eq!(b["warnings"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(b["warnings"][0]["count"], 3, "{v}");
+    assert_eq!(b["warnings"][0]["first_ns"], 32_000_000u64, "{v}");
+    assert_eq!(b["warnings"][0]["last_ns"], 34_000_000u64, "{v}");
+    let infos: Vec<_> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "locked_peripheral_access")
+        .collect();
+    assert_eq!(infos.len(), 1, "{v}");
+    assert_eq!(infos[0]["severity"], "info", "{v}");
 }
 
 /// D5: the run must end in thread mode, as for a generated firmware.
@@ -2577,8 +2646,9 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     let generated = boot_with(&tb.0, &platform(), &d2, "10ms");
     assert_eq!(generated.status.code(), Some(3), "{generated:?}");
     assert_eq!(report(&generated)["error"]["kind"], "FirmwareOutsideMemory");
+    // The D2 firmware loads nothing into flash, so nothing is hashed.
     let tf = toolbox_foreign(
-        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        &foreign_transcript_flash(&good_foreign_log(), "0x00000800", ""),
         "0.010000000",
     );
     let loaded = foreign_with(&tf.0, &d2, "10ms");

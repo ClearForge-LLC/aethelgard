@@ -398,6 +398,21 @@ pub struct Output {
     /// A bounded run's peak tree RSS in KiB, sampled with the memory bound
     /// every 100 ms (`AET-WO-2302` D6); `None` for an unbounded run.
     pub peak_rss_kib: Option<u64>,
+    /// The lines a [`LogFilter`]'s `summarise` took, one per key, in the order
+    /// first seen; empty without one (`AET-WO-4400e` D7 (a)).
+    pub summaries: Vec<Summary>,
+}
+
+/// Identical log lines summarised (`AET-WO-4400e` D7 (a)): the first is kept
+/// as any line is; every later one with the same key is counted here,
+/// uncounted against the budget, with the first and last line's timestamp
+/// (Renode's `hh:mm:ss.nnnnnnnnn`, as written).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Summary {
+    pub key: String,
+    pub count: u64,
+    pub first: String,
+    pub last: String,
 }
 
 /// A bounded reading of a tool's stdout for a tool whose log can flood it
@@ -414,6 +429,15 @@ pub struct LogFilter {
     pub budget: usize,
     pub keep: &'static [&'static str],
     pub discard: fn(&str) -> bool,
+    /// A log line's summary key, or `None` for a line kept as written
+    /// (`AET-WO-4400e` D7 (a)): the first line of a key is kept; each later
+    /// one is counted in [`Output::summaries`] and dropped uncounted.
+    pub summarise: fn(&str) -> Option<String>,
+}
+
+/// Never summarise: every line is kept as written.
+pub fn summarise_none(_: &str) -> Option<String> {
+    None
 }
 
 impl Output {
@@ -539,7 +563,8 @@ impl Invocation<'_> {
         let reaper = reaper.map_err(|e| {
             Stop::tool_error(self.tool.name, format!("waiting for the reaper: {e}"))
         })?;
-        let (Some((stdout, dropped_log_lines)), Some((stderr, _))) = (stdout, stderr) else {
+        let (Some((stdout, dropped_log_lines, summaries)), Some((stderr, _, _))) = (stdout, stderr)
+        else {
             return Err(Stop::tool_error(
                 self.tool.name,
                 format!("output exceeded {MAX_CAPTURE} bytes"),
@@ -581,6 +606,7 @@ impl Invocation<'_> {
             sandbox,
             dropped_log_lines,
             peak_rss_kib: peak_of(&status),
+            summaries,
         })
     }
 }
@@ -592,7 +618,7 @@ impl Invocation<'_> {
 fn capture(
     mut pipe: impl Read + Send + 'static,
     filter: Option<LogFilter>,
-) -> thread::JoinHandle<Option<(Vec<u8>, u64)>> {
+) -> thread::JoinHandle<Option<(Vec<u8>, u64, Vec<Summary>)>> {
     thread::spawn(move || {
         let mut kept = Filtered::new(filter);
         let mut chunk = [0u8; 64 * 1024];
@@ -617,6 +643,7 @@ struct Filtered {
     kept_once: Vec<bool>,
     dropped: u64,
     overflow: bool,
+    summaries: Vec<Summary>,
 }
 
 impl Filtered {
@@ -629,6 +656,7 @@ impl Filtered {
             kept_once: vec![false; keep],
             dropped: 0,
             overflow: false,
+            summaries: Vec::new(),
         }
     }
 
@@ -678,6 +706,20 @@ impl Filtered {
         if (filter.discard)(text.trim_end_matches(['\n', '\r'])) {
             return;
         }
+        if let Some(key) = (filter.summarise)(text.trim_end_matches(['\n', '\r'])) {
+            let stamp = text.get(1..19).unwrap_or_default().to_owned();
+            if let Some(s) = self.summaries.iter_mut().find(|s| s.key == key) {
+                s.count += 1;
+                s.last = stamp;
+                return;
+            }
+            self.summaries.push(Summary {
+                key,
+                count: 1,
+                first: stamp.clone(),
+                last: stamp,
+            });
+        }
         if self.buf.len() < filter.budget {
             return self.keep(&line);
         }
@@ -693,12 +735,12 @@ impl Filtered {
         self.dropped += 1;
     }
 
-    fn finish(mut self) -> Option<(Vec<u8>, u64)> {
+    fn finish(mut self) -> Option<(Vec<u8>, u64, Vec<Summary>)> {
         // Only a filter fills `partial`.
         if let Some(filter) = self.filter.filter(|_| !self.partial.is_empty()) {
             self.line(filter);
         }
-        (!self.overflow).then_some((self.buf, self.dropped))
+        (!self.overflow).then_some((self.buf, self.dropped, self.summaries))
     }
 }
 
@@ -1720,6 +1762,7 @@ mod tests {
         budget: 64,
         keep: &["aborted", "locked"],
         discard: |l| l.ends_with("discarded"),
+        summarise: summarise_none,
     };
 
     fn read(filter: Option<LogFilter>, chunks: &[&[u8]]) -> Option<(Vec<u8>, u64)> {
@@ -1727,7 +1770,40 @@ mod tests {
         for c in chunks {
             f.push(c);
         }
-        f.finish()
+        f.finish().map(|(b, d, _)| (b, d))
+    }
+
+    /// `AET-WO-4400e` D7 (a): lines with one summary key are kept once and
+    /// counted after, with their first and last stamps, uncounted against the
+    /// budget; a line with no key is kept as written.
+    #[test]
+    fn identical_lines_are_summarised_once_with_their_count_and_stamps() {
+        let filter = LogFilter {
+            budget: 1 << 20,
+            keep: &[],
+            discard: |_| false,
+            summarise: |l| l.contains("Unhandled").then(|| "u".to_owned()),
+        };
+        let mut f = Filtered::new(Some(filter));
+        f.push(
+            b"[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n",
+        );
+        f.push(b"[00:00:00.000000003] [WARNING] a: Unhandled 2\n[00:00:00.000000004] [WARNING] a: Unhandled 3\n");
+        let (buf, dropped, summaries) = f.finish().unwrap();
+        assert_eq!(
+            String::from_utf8(buf).unwrap(),
+            "[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n"
+        );
+        assert_eq!(dropped, 0);
+        assert_eq!(
+            summaries,
+            [Summary {
+                key: "u".to_owned(),
+                count: 3,
+                first: "00:00:00.000000001".to_owned(),
+                last: "00:00:00.000000004".to_owned(),
+            }]
+        );
     }
 
     /// `AET-WO-2301` P5: what fits the budget is kept byte for byte, however

@@ -367,3 +367,14 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
     - the WO's mutations, each refused by name;
     - the full adversarial pass and the reduction pass.
 - **The provisional rules** wait on the architect's ruling.
+
+## Predictions before re-measuring under the rulings (PR #212, comment 6965511448)
+
+Written before the run. CI's ArduPilot ELF (a799dfb6), this CLI, `--foreign 4000ms`:
+
+1. **Budget:** the counted log drops from 9.29 MB to under 2 MB. Of the 6.2 MB of Renode's own `Unhandled write` warnings, one line per kind remains (tens of kinds). D4's 2.15 MB access log becomes about 1,100 hook lines (about 0.1 MB). `renode_log_flood` is absent.
+2. **D4:** every slave-mode `[ERROR]` is exempt from the hook's lines, about 1,070 of them by 4 s, as the whole-log replay found. No `renode_error_log`.
+3. **Flash:** ArduPilot keeps its parameters in flash sectors outside its image, so every loaded flash segment hashes unchanged and there is no `flash_overwritten`.
+4. **Locked:** DMA1 written before its clock is on, listed as `info`, so the verdict does not fail on it.
+5. **Booted:** with the log under budget, the identity witnesses are read and the run boots (no `foreign_not_booted`). The ICM's data read stays unwitnessed until 4220c.
+6. **Peak RSS** stays near 860 MiB. Wall time is within 20 % of the last run.
