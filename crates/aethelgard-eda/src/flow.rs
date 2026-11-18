@@ -1853,38 +1853,6 @@ mod tests {
         }
     }
 
-    /// Timing only (`--ignored`): a plane-sized sheet, Sentinel-03's
-    /// outline at 62.5 µm, between two small pads 60 mm apart.
-    #[test]
-    #[ignore]
-    fn time_a_plane_sized_sheet() {
-        let (nx, ny) = (1360i64, 1295i64);
-        let mut cells = Vec::new();
-        for x in 0..nx {
-            for y in 0..ny {
-                cells.push((x, y));
-            }
-        }
-        let src: Vec<_> = (100..104)
-            .flat_map(|x| (600..604).map(move |y| (x, y)))
-            .collect();
-        let snk: Vec<_> = (1060..1064)
-            .flat_map(|x| (600..604).map(move |y| (x, y)))
-            .collect();
-        for iters in [100, 300, 1000] {
-            let t = std::time::Instant::now();
-            let (net, s, k) = sheet(&cells, &src, &snk, Iv::exact(1.0));
-            let built = t.elapsed();
-            let b = net.bound(s, k, iters, 1e-10).unwrap();
-            eprintln!(
-                "{iters} iterations: build {built:?}, total {:?}, bound {:.5} residual {:.1e}",
-                t.elapsed(),
-                b.energy.hi,
-                b.residual
-            );
-        }
-    }
-
     /// The interval functions hold the true values (checked against the
     /// platform's, which agree to a few units in the last place).
     #[test]
