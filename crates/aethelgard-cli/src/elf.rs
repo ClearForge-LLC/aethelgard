@@ -473,6 +473,50 @@ mod tests {
         check(bytes, &memory(), WORD).unwrap().sha256
     }
 
+    /// `AET-WO-4400e`: a foreign firmware's segment must lie inside a region
+    /// at its virtual address too, and no two segments' file bytes may
+    /// overlap; zero-filled segments may share an address.
+    #[test]
+    fn a_foreign_segment_is_judged_at_both_addresses_and_file_bytes_never_overlap() {
+        let regions = foreign_memory().unwrap();
+        let code = [0u8; 64];
+        let virtual_outside = elf(&[(0x0800_0000, 0x6000_0000, &code, 64)]);
+        let e = check_foreign(&virtual_outside, &regions).unwrap_err();
+        assert_eq!(e.kind, "FirmwareOutsideMemory", "{}", e.message);
+        assert!(
+            e.message.contains("virtual address 0x60000000"),
+            "{}",
+            e.message
+        );
+        // Two read-write data segments whose file bytes overlap (an
+        // executable pair falls to the executable-overlap rule first).
+        let mut overlapping = elf(&[
+            (0x0800_0000, 0x0800_0000, &code, 64),
+            (0x3000_0000, 0x3000_0000, &code, 64),
+            (0x3000_0020, 0x3000_0020, &code, 64),
+        ]);
+        for i in [1, 2] {
+            let at = EHDR_LEN + PHDR_LEN * i + 24;
+            overlapping[at..at + 4].copy_from_slice(&6u32.to_le_bytes());
+        }
+        let e = check_foreign(&overlapping, &regions).unwrap_err();
+        assert_eq!(e.kind, "MalformedFirmware", "{}", e.message);
+        assert!(e.message.contains("overlap"), "{}", e.message);
+        let mut zero_filled = elf(&[
+            (0x0800_0000, 0x0800_0000, &code, 64),
+            (0x3000_0000, 0x3000_0000, &[], 0x100),
+            (0x3000_0000, 0x3000_0000, &[], 0x200),
+        ]);
+        // The zero-filled segments read-write (PF_R | PF_W), as ArduPilot's are.
+        for i in [1, 2] {
+            let at = EHDR_LEN + PHDR_LEN * i + 24;
+            zero_filled[at..at + 4].copy_from_slice(&6u32.to_le_bytes());
+        }
+        if let Err(e) = check_foreign(&zero_filled, &regions) {
+            panic!("{}: {}", e.kind, e.message);
+        }
+    }
+
     fn kind(bytes: &[u8]) -> &'static str {
         check(bytes, &memory(), WORD).unwrap_err().kind
     }

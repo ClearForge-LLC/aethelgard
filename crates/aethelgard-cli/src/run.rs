@@ -647,7 +647,14 @@ struct Filtered {
     dropped: u64,
     overflow: bool,
     summaries: Vec<Summary>,
+    /// Each summary's index by key.
+    summarised: std::collections::HashMap<String, usize>,
 }
+
+/// The most kinds a capture summarises (`AET-WO-4400e` adversarial pass,
+/// F5); a line of a further kind is kept or dropped as any other line, so
+/// a firmware writing ever new values cannot grow the CLI's memory.
+const MAX_SUMMARIES: usize = 1024;
 
 impl Filtered {
     fn new(filter: Option<LogFilter>) -> Self {
@@ -660,6 +667,7 @@ impl Filtered {
             dropped: 0,
             overflow: false,
             summaries: Vec::new(),
+            summarised: std::collections::HashMap::new(),
         }
     }
 
@@ -711,17 +719,21 @@ impl Filtered {
         }
         if let Some(key) = (filter.summarise)(text.trim_end_matches(['\n', '\r'])) {
             let stamp = text.get(1..19).unwrap_or_default().to_owned();
-            if let Some(s) = self.summaries.iter_mut().find(|s| s.key == key) {
+            if let Some(&i) = self.summarised.get(&key) {
+                let s = &mut self.summaries[i];
                 s.count += 1;
                 s.last = stamp;
                 return;
             }
-            self.summaries.push(Summary {
-                key,
-                count: 1,
-                first: stamp.clone(),
-                last: stamp,
-            });
+            if self.summaries.len() < MAX_SUMMARIES {
+                self.summarised.insert(key.clone(), self.summaries.len());
+                self.summaries.push(Summary {
+                    key,
+                    count: 1,
+                    first: stamp.clone(),
+                    last: stamp,
+                });
+            }
         }
         if self.buf.len() < filter.budget {
             return self.keep(&line);
@@ -1799,7 +1811,7 @@ mod tests {
         );
         assert_eq!(dropped, 0);
         assert_eq!(
-            summaries,
+            summaries.clone(),
             [Summary {
                 key: "u".to_owned(),
                 count: 3,
@@ -1807,6 +1819,30 @@ mod tests {
                 last: "00:00:00.000000004".to_owned(),
             }]
         );
+    }
+
+    /// Past [`MAX_SUMMARIES`] kinds, a line of a new kind is kept or dropped
+    /// as any other line: counted against the budget, never summarised.
+    #[test]
+    fn past_the_most_kinds_a_new_kind_is_an_ordinary_line() {
+        let filter = LogFilter {
+            budget: 1 << 30,
+            keep: &[],
+            discard: |_| false,
+            summarise: |l| Some(l.get(21..).unwrap_or_default().to_owned()),
+        };
+        let mut f = Filtered::new(Some(filter));
+        for k in 0..=MAX_SUMMARIES {
+            let line = format!("[00:00:00.000000001] k{k}\n");
+            f.push(line.as_bytes());
+            f.push(line.as_bytes());
+        }
+        let (buf, _, summaries) = f.finish().unwrap();
+        assert_eq!(summaries.len(), MAX_SUMMARIES);
+        assert!(summaries.iter().all(|s| s.count == 2));
+        let text = String::from_utf8(buf).unwrap();
+        let last = format!("k{MAX_SUMMARIES}\n");
+        assert_eq!(text.matches(&last).count(), 2, "both of the new kind kept");
     }
 
     /// `AET-WO-2301` P5: what fits the budget is kept byte for byte, however

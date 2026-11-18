@@ -2373,7 +2373,7 @@ esac
 case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac
 case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
-case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset == 0x18 and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
+case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
 case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 {hash}
 /bin/cat '{out}'

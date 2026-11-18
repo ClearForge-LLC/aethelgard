@@ -76,7 +76,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "USART CR1, CR2",
         "replaced",
-        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing",
+        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing. Weakens: CR1.RE (receive enable) is not judged, as receive is held",
     ),
     (
         "USART CR3, BRR",
@@ -378,7 +378,13 @@ const ERASE_MARK: &str = "AETHELGARD-ERASE ";
 /// `FLASH_SECTOR_TOTAL` sectors.
 pub struct Erase {
     banks: [(u32, u64); 2],
-    optcr: u32,
+    /// `FLASH_OPTCR`'s offset in `FLASH_TypeDef`, and its alias in bank 2's
+    /// half of the register map, as far from it as `CR2` is from `CR1`:
+    /// "Address offset: 0x018 or 0x118" (RM0433 Rev 9 §4.9.7, p. 211; the
+    /// header's struct has only the first). Renode's model decodes only the
+    /// first, so a mass erase at the alias would erase nothing in the twin
+    /// and everything on silicon (adversarial pass, F2).
+    optcr: [u32; 2],
     ser: u32,
     ber: u32,
     start: u32,
@@ -417,7 +423,12 @@ impl Erase {
                     u64::from(f.value("FLASH_BANK2_BASE").map_err(hal)?),
                 ),
             ],
-            optcr: layout.offset("OPTCR", 0).map_err(hal)?,
+            optcr: {
+                let optcr = layout.offset("OPTCR", 0).map_err(hal)?;
+                let bank2 =
+                    layout.offset("CR2", 0).map_err(hal)? - layout.offset("CR1", 0).map_err(hal)?;
+                [optcr, optcr + bank2]
+            },
             ser: f.position("FLASH_CR_SER_Pos").map_err(hal)?,
             ber: f.position("FLASH_CR_BER_Pos").map_err(hal)?,
             start: f.position("FLASH_CR_START_Pos").map_err(hal)?,
@@ -435,8 +446,14 @@ impl Erase {
     /// unlogged and unchanged.
     pub fn hook(&self) -> String {
         format!(
-            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in ({:#x}, {:#x})) and (value >> {}) & 1 or offset == {:#x} and ((value >> {}) & 1 or (value >> {}) & 1)) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
-            self.banks[0].0, self.banks[1].0, self.start, self.optcr, self.mer, self.optstart
+            "sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in ({:#x}, {:#x})) and (value >> {}) & 1 or offset in ({:#x}, {:#x}) and ((value >> {}) & 1 or (value >> {}) & 1)) and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{ERASE_MARK}%x %x' % (offset, value))\"",
+            self.banks[0].0,
+            self.banks[1].0,
+            self.start,
+            self.optcr[0],
+            self.optcr[1],
+            self.mer,
+            self.optstart
         )
     }
 
@@ -462,7 +479,7 @@ impl Erase {
         };
         let bit = |at: u32| value >> at & 1 == 1;
         let mut out = Vec::new();
-        if offset == self.optcr {
+        if self.optcr.contains(&offset) {
             if bit(self.mer) {
                 out.push(Started::Erase(self.banks[0].1, self.banks[1].1 + self.bank));
             }
@@ -670,26 +687,49 @@ fn cfg2_write(body: &str) -> Option<(&str, u64, u64)> {
 
 /// The run's first `[ERROR]` line D4 does not exempt, and how many it did:
 /// the SPI model's slave-mode line directly after a `CFG2` write with `MASTER`
-/// (bit 22) 0 while `CR1` held `SPE` (bit 0) 0, as the hook logs it. The bits
-/// are RM0433 Rev 9 §50.11.1 and §50.11.4's (`AET-WO-4400e2` D4).
+/// (bit 22) 0 while `CR1` held `SPE` (bit 0) 0, as the hook logs it, and only
+/// when that controller's next `CFG2` write sets `MASTER` again before any of
+/// its devices logs a line (or none does to the end): ChibiOS's
+/// `spi_lld_stop`, then its next `spi_lld_start`. A firmware that leaves the
+/// controller a slave and goes on using it is not exempt, for Renode's model
+/// stays a master (`STM32H7_SPI.cs` L187-194) where silicon would not clock.
+/// The bits are RM0433 Rev 9 §50.11.1 and §50.11.4's (`AET-WO-4400e2` D4;
+/// adversarial pass, F1).
 fn error_lines<'l>(run_log: &[&'l str]) -> (Option<&'l str>, u64) {
+    // Backwards, per controller: whether its next event after each line is a
+    // `CFG2` write with `MASTER` 1 (or the end), not a device's line.
+    let mut restored: std::collections::BTreeMap<&str, bool> = std::collections::BTreeMap::new();
+    let mut restored_after = vec![true; run_log.len()];
+    for (i, line) in run_log.iter().enumerate().rev() {
+        restored_after[i] = match error_source(line) {
+            Some(source) => restored.get(source).copied().unwrap_or(true),
+            None => true,
+        };
+        let body = log_text(line);
+        if let Some((s, value, _)) = cfg2_write(body) {
+            if value & (1 << 22) != 0 {
+                restored.insert(s, true);
+            }
+        } else if let Some(source) = log_source(body)
+            && let Some((controller, _)) = source.split_once('.')
+            && controller.starts_with("spi")
+        {
+            restored.insert(controller, false);
+        }
+    }
     let mut exempt = 0u64;
     let mut first = None;
     for (i, line) in run_log.iter().enumerate() {
         if !line.contains(LOG_ERROR) {
             continue;
         }
-        let body = log_text(line);
-        let exempted = body
-            .strip_prefix("[ERROR] ")
-            .and_then(|b| b.split_once(": "))
-            .filter(|(source, text)| source.starts_with("spi") && *text == SLAVE_MODE)
-            .is_some_and(|(source, _)| {
-                i > 0
-                    && cfg2_write(log_text(run_log[i - 1])).is_some_and(|(s, value, cr1)| {
-                        s == source && value & (1 << 22) == 0 && cr1 & 1 == 0
-                    })
-            });
+        let exempted = error_source(line).is_some_and(|source| {
+            i > 0
+                && restored_after[i]
+                && cfg2_write(log_text(run_log[i - 1])).is_some_and(|(s, value, cr1)| {
+                    s == source && value & (1 << 22) == 0 && cr1 & 1 == 0
+                })
+        });
         if exempted {
             exempt += 1;
         } else if first.is_none() {
@@ -697,6 +737,23 @@ fn error_lines<'l>(run_log: &[&'l str]) -> (Option<&'l str>, u64) {
         }
     }
     (first, exempt)
+}
+
+/// The controller of an SPI model's slave-mode `[ERROR]` line (`spi2`).
+fn error_source(line: &str) -> Option<&str> {
+    log_text(line)
+        .strip_prefix("[ERROR] ")
+        .and_then(|b| b.split_once(": "))
+        .filter(|(source, text)| source.starts_with("spi") && *text == SLAVE_MODE)
+        .map(|(source, _)| source)
+}
+
+/// A log line's source after its level (`spi2.spi2mux.u5`).
+fn log_source(body: &str) -> Option<&str> {
+    body.strip_prefix('[')
+        .and_then(|b| b.split_once("] "))
+        .and_then(|(_, rest)| rest.split_once(": "))
+        .map(|(source, _)| source)
 }
 
 /// A foreign boot's report before anything is read: what it is judged by,
@@ -1147,9 +1204,10 @@ pub fn judge(
         // Data: one of the part's reads, after the identity.
         let after = k + want.len();
         let mut candidates: Vec<(String, Vec<Line>)> = Vec::new();
-        if let Some(data) = checks
+        let data = checks
             .iter()
-            .find(|c| c.step == aethelgard_ir::parts::StepKind::Data)
+            .find(|c| c.step == aethelgard_ir::parts::StepKind::Data);
+        if let Some(data) = data
             && let Some(w) = &data.witness
         {
             candidates.push((
@@ -1181,6 +1239,17 @@ pub fn judge(
             }
         }
         if candidates.is_empty() {
+            // A data step the twin cannot witness, and no listed read: named,
+            // as today's judge names it (adversarial pass, F3).
+            if data.is_some() {
+                findings.push(Finding::plain(
+                    &format!("{bus}_witness_unavailable"),
+                    format!(
+                        "{reference} ({}): the twin knows no witness for its data step and its part lists no read",
+                        identity.device
+                    ),
+                ));
+            }
             continue;
         }
         let mut found = false;
@@ -1260,6 +1329,24 @@ mod tests {
         // Another controller's write: not exempt.
         let spi2 = format!("[00:00:00.100000000] [WARNING] spi2: {CFG2_MARK}0 0");
         assert_eq!(run(&[spi2, err.clone()]).1, 0);
+        // Left a slave while its device goes on: not exempt; restored first:
+        // exempt.
+        let device =
+            "[00:00:00.300000000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F".to_owned();
+        assert_eq!(run(&[cfg2("0", "0"), err.clone(), device.clone()]).1, 0);
+        assert_eq!(
+            run(&[
+                cfg2("0", "0"),
+                err.clone(),
+                cfg2("400000", "0"),
+                device.clone()
+            ])
+            .1,
+            1
+        );
+        // Another controller's device does not count against it.
+        let other_device = device.replace("spi1.spi1mux", "spi2.spi2mux");
+        assert_eq!(run(&[cfg2("0", "0"), err.clone(), other_device]).1, 1);
         // Any other error is the first reported, exempt ones counted.
         assert_eq!(
             run(&[cfg2("0", "0"), err.clone(), other.clone()]),
@@ -1295,6 +1382,12 @@ mod tests {
             erase(0x0800_0000, 0x0820_0000)
         );
         assert_eq!(e.started(&line("18", "2")), [Started::Options]);
+        // Its alias at 0x118 (RM0433 §4.9.7) the same.
+        assert_eq!(
+            e.started(&line("118", "10")),
+            erase(0x0800_0000, 0x0820_0000)
+        );
+        assert_eq!(e.started(&line("118", "2")), [Started::Options]);
         assert_eq!(
             e.started(&line("18", "12")),
             [Started::Erase(0x0800_0000, 0x0820_0000), Started::Options]
@@ -1309,7 +1402,7 @@ mod tests {
         );
         let hook = e.hook();
         assert!(
-            hook.contains("((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset == 0x18 and ((value >> 4) & 1 or (value >> 1) & 1))"),
+            hook.contains("((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1))"),
             "{hook}"
         );
     }
