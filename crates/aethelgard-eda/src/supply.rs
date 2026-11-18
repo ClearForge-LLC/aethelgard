@@ -1847,6 +1847,117 @@ mod tests {
         assert_eq!(through.1, flow::QUANTA, "{:?}", pb.via_transfer);
     }
 
+    /// A dielectric's declared maximum, below the finished maximum less the
+    /// other rows' minima, bounds the barrel's row: the same copper costs
+    /// less with it, and never more.
+    #[test]
+    fn a_declared_dielectric_maximum_bounds_the_barrel_row() {
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad(
+                    "1", "VDD", 15_000_000, 2_000_000, 16_000_000, 3_000_000,
+                )],
+            ),
+        ]);
+        let (v1, v2) = ((6_000_000, 2_500_000), (11_000_000, 2_500_000));
+        let routed = Routed {
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), v1),
+                seg(Layer::B, v1, v2),
+                seg(Layer::F, v2, (15_500_000, 2_500_000)),
+            ],
+            vias: [v1, v2]
+                .iter()
+                .map(|&at| Via {
+                    net: "VDD".into(),
+                    at,
+                })
+                .collect(),
+            ..Routed::default()
+        };
+        let m = model();
+        let r = |b: &Board| {
+            let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+            let nc = copper(b, &routed, "VDD", &[src, snk], &m).unwrap();
+            bound(&nc, &m, src, snk, 400).unwrap().bound.energy.hi
+        };
+        let open = r(&b);
+        let mut tight = b.clone();
+        let min = tight.stack.dielectrics[0].2;
+        tight.stack.dielectric_max_nm = vec![Some(min)];
+        let declared = r(&tight);
+        assert!(declared < open, "{declared} against {open}");
+    }
+
+    /// Plating as thick as the drill's radius leaves no hole: the via is
+    /// left out by name, not priced.
+    #[test]
+    fn plating_filling_the_hole_leaves_the_via_out() {
+        let b = board(vec![
+            part(
+                "J1",
+                vec![pad("1", "VDD", 1_000_000, 2_000_000, 2_000_000, 3_000_000)],
+            ),
+            part(
+                "J2",
+                vec![pad("1", "VDD", 9_000_000, 2_000_000, 10_000_000, 3_000_000)],
+            ),
+        ]);
+        let routed = Routed {
+            segments: vec![seg(
+                Layer::F,
+                (1_500_000, 2_500_000),
+                (9_500_000, 2_500_000),
+            )],
+            vias: vec![Via {
+                net: "VDD".into(),
+                at: (6_000_000, 2_500_000),
+            }],
+            ..Routed::default()
+        };
+        let (src, snk) = (&b.parts[0].pads[0], &b.parts[1].pads[0]);
+        let mut m = model();
+        let drill = b.stack.rule("VDD").drill_nm;
+        m.plating_nm = drill / 2;
+        let nc = copper(&b, &routed, "VDD", &[src, snk], &m).unwrap();
+        assert!(nc.vias.is_empty());
+        assert!(
+            nc.notes.iter().any(|n| n.contains("cannot hold the band")),
+            "{:?}",
+            nc.notes
+        );
+    }
+
+    /// A bound that is not a finite resistance refuses its pin by name.
+    #[test]
+    fn a_bound_that_is_not_finite_refuses_its_pin() {
+        let pb = PinBound {
+            bound: Bound {
+                energy: Iv {
+                    lo: 0.0,
+                    hi: f64::INFINITY,
+                },
+                kinds: [Iv::exact(0.0); 3],
+                flux: vec![],
+            },
+            shares: [0.0; 3],
+            via_transfer: vec![],
+        };
+        let p = pad("1", "VDD", 0, 0, 1, 1);
+        assert!(matches!(
+            bounded_pin(&p, &pb),
+            PinResult::Refused {
+                kind: "SupplyPinUnbounded",
+                ..
+            }
+        ));
+    }
+
     /// A hole's clearance is its drill's radius plus the tolerance's
     /// diagonal reach, rounded up.
     #[test]
