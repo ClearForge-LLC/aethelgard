@@ -580,7 +580,7 @@ tests/outline_tier1.rs	each_size_sample_places_with_its_gaps_or_is_refused_by_na
 tests/outline_tier1.rs	a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound	30.520
 unittests src/lib.rs	pcb::tests::under_a_bound_the_board_does_not_depend_on_the_parts_order	9.604
 unittests src/lib.rs	pcb::tests::with_anchored_parts_the_board_does_not_depend_on_the_parts_order	1.904
-# AET-WO-4220c: models_tier2's five FIFO tests below are Furnace estimates (the file's other tests 3.8-5.2 s on CI, plus the FIFO bursts' monitor commands), until the refit rule measures them.
+# AET-WO-4220c: models_tier2's five FIFO tests below are estimates, not measurements (the file's other tests take 3.8-5.2 s on CI; these add the FIFO bursts' monitor commands), until the refit rule measures them.
 tests/models_tier2.rs	the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet	6.000
 tests/models_tier2.rs	the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz	8.000
 tests/models_tier2.rs	the_fifo_stops_when_full_and_latches_its_count_in_either_order	6.000

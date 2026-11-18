@@ -13,7 +13,7 @@
 //
 // Labels on the FIFO's rules: [DS p.N] the datasheet; [TDK L] TDK InvenSense's own ICM-426xx driver,
 // eMD 2.0.9, Icm426xxDriver_HL.c (or Icm426xxDefs.h, Icm426xxTransport.c, as named); [inferred] not
-// stated by either: ArduPilot's Invensensev3 driver (Copter-4.7.2) works on silicon only if it holds.
+// stated by either: the reading ruled on #214, consistent with ArduPilot's Invensensev3 (Copter-4.7.2).
 //
 // Log contract: one Noisy line per SPI transaction, written when it ends (FinishTransmission); a
 // transaction that moved no byte logs nothing. The stimulus is a public double property each.

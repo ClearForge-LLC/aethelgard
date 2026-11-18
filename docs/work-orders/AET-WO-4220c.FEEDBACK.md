@@ -10,13 +10,16 @@ Labels: **[read at source]** from a file and line named beside it; **[rendered]*
 - **The model:** `models/renode/ICM42688P.cs` at `main` `7d52d29`.
 - **TDK InvenSense's own ICM-426xx driver (after the ruling, §8):** eMD 2.0.9 (`Icm426xxVersion.h`: "2.0.9"), from the mirror `geosmall/DK-42688-P_SmartMotion_eMD_2.0.9` at `14c056e8`, `example-raw-data-registers/src/Invn/Drivers/Icm426xx/`. It is cross-checked against the 2.0.3 copy Microchip vendors in `MicrochipTech/ml-samd21-iot-imu-data-logger` at `9fac763a`. `TDK` below = `Icm426xxDriver_HL.c` of 2.0.9. The licence is InvenSense's proprietary one, so the code is cited and never copied.
 
-## 0. Status: READY, built as ruled on #214, with `main` `d0381216` (`4400e3`) merged
+## 0. Status: READY, built as ruled on #214, with `main` `d0381216` (`4400e3`) merged; B10 open
 
 - **The FIFO is built to the ruled set (§9).** Every acceptance item of WO §2 is met and measured (§10).
 - **B1–B4 are [read at source] in TDK's driver,** which confirms each recommended reading. B5–B9 are labelled [inferred] beside each rule in the model source (§8).
-- **B10 contradicts TDK's driver, and was raised:** TDK treats the FIFO temperature `0x80` (−128) as "no new temperature", while the ruled B10 saturates at −128. I asked on the bus with both sources cited, scoped to that one constant. The architect's 23:52Z instruction approved the build "per my 6961946623 ruling" and asked for READY. So the ruled −128 stands, labelled [inferred] in the source. −127 is recorded below as a backlog item (§8).
+- **B10 is open:** TDK treats the FIFO temperature `0x80` (−128) as "no new temperature", which contradicts the ruled saturation at −128.
+  - I asked twice on the bus, with both sources cited. The architect's 23:52Z instruction ("merge … re-gate; push READY") does not mention B10.
+  - So B10 is unanswered, and the model keeps the ruled −128 ([inferred] in the source).
+  - The alternative, −127 … +127, is one constant (`FifoTempMin`), for the architect to choose (§8).
 - **The generated firmware's verdicts do not move [measured]:** `twin_tier2` 82/82 and `campaign_tier2` 9/9 in the pinned image on the new model.
-- **ArduPilot's `read_fifo` under `4400e3`'s hook is recorded [measured] (§10):** 1240 packets in 4.2 s of virtual time, every one accepted. It never resets its FIFO after start-up, and it reaches `Init Gyro`.
+- **ArduPilot's `read_fifo` under `4400e3`'s hook is recorded [measured] (§10):** 1240 packets in 4.2 s of virtual time, every one accepted, with no FIFO reset after start-up. `wait_for_sample` returns: the console's `*` after `Init Gyro` follows five `update()` calls that each wait for a sample (read at source).
 
 ## 0a. The §1.1 stop (as ruled on #214, comment 6961946623)
 
@@ -244,7 +247,7 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
 | **B7** `HEADER_ODR_*` 0 on the first packet after a flush | silent | [inferred] |
 | **B8** an empty FIFO reads `0xFF` | a header with `msg_bit` set makes the driver reset the FIFO (L1072–1076), consistent with p.39's "FIFO is empty"; nothing on the other bytes | [inferred] |
 | **B9** capacity 2048 bytes less one packet | silent | [inferred] |
-| **B10** a FIFO temperature saturates at −128 and +127 | **contradicts:** `INVALID_VALUE_FIFO_1B` is `(int8_t)0x80` (`Icm426xxDefs.h` L284), and a byte equal to it is "no new temperature" (L1115) | raised on the bus; the ruled −128 stands under the 23:52Z instruction; **backlog:** −127 … +127, keeping −128 as the invalid code, as the 16-bit floor keeps −32768 |
+| **B10** a FIFO temperature saturates at −128 and +127 | **contradicts:** `INVALID_VALUE_FIFO_1B` is `(int8_t)0x80` (`Icm426xxDefs.h` L284), and a byte equal to it is "no new temperature" (L1115) | **open:** asked twice on the bus, not yet answered; the model keeps the ruled −128. The alternative is −127 … +127, keeping −128 as the invalid code, as the 16-bit floor keeps −32768 |
 
 **B10 in practice:** only a temperature below 25 − 127.5/2.07 ≈ −36.6 °C reaches the bound. Neither ArduPilot's path nor any stimulus in the repository does. The constant is `FifoTempMin` (`ICM42688P.cs`), one line.
 
@@ -257,6 +260,9 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
 - **The count** (`0x2E`/`0x2F`): latched on `0x2E`, in records or bytes, in either byte order (B2).
 - **`FIFO_DATA`:** pops a byte; a burst holds at `0x30` (B3); empty reads `0xFF` (B8); a read ending inside a packet warns with `FIFO_RESUME_PARTIAL_RD` 0 (B4).
 - **`FIFO_FLUSH`, soft reset and `Reset()`** empty the FIFO.
+- **Two differences from the ruled §4.2, named:**
+  - `PWR_MGMT0.TEMP_DIS` with the FIFO in use is a packet-stopping selection. §4.2 did not list it. The FIFO's temperature byte has no stated value with the sensor off, so it is left out rather than guessed.
+  - The watermark, FIFO interrupts on a pin and their clear options warn, but packets continue. §4.2's "packets are not written in that configuration" applies to the packet-shaping selections only, since these leave the packets themselves unchanged.
 - **Left out, each named by a warning on the write that selects it:**
   - **No packets while selected:** the 20-bit packet; FSYNC in the FIFO; `FIFO_TEMP_EN` 0; `TEMP_DIS`; Stream-to-FIFO; a `TMST_CONFIG` other than its reset's timestamp.
   - **Warned, the FIFO itself unchanged:** the watermark; FIFO interrupts on a pin; FIFO interrupt clear on a data read.
@@ -269,11 +275,16 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
    - the count at 9, 10.25 and 40.25 ms of virtual time is 0, 1 and 61;
    - two packets byte for byte (§5's, at the start-up's 10.0 and 10.5 ms);
    - after a flush, the count is 0 and the data reads `0xFF`;
+   - a soft reset empties a non-empty FIFO and restarts the timestamp (the first packet after it carries 10406, 11.1 ms × 30/32);
    - the data registers read as before the FIFO.
-2. `the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz`: p.58's own oracle (steps of 937 and 938); the gyro slot 0 before 30 ms and 1640 from 30 ms; the temperature byte 31 at 40 °C.
-3. `the_fifo_stops_when_full_and_latches_its_count_in_either_order`: 127 packets, then `FIFO_FULL_INT`; the big-endian count and its latch; Bypass empties the FIFO.
-4. `packets_1_and_2_and_each_selection_left_out_says_so`: 8-byte packets and every warning.
-5. `a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet` (the adversarial pass, §11).
+2. `the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz`:
+   - p.58's own oracle (steps of 937 and 938);
+   - the gyro slot 0 before 30 ms and 1640 from 30 ms;
+   - the temperature byte 31 at 40 °C, and the ruled saturation at both bounds (−40 °C → `0x80`, +100 °C → `0x7F`);
+   - with the accelerometer at 2 kHz under the gyro's 1 kHz, a stale gyro slot copies the last valid sample (hold-last, p.58), with `HEADER_ODR_ACCEL`.
+3. `the_fifo_stops_when_full_and_latches_its_count_in_either_order`: 127 packets, then `FIFO_FULL_INT`; the big-endian count and its latch; Bypass empties the FIFO, which stays empty as time runs.
+4. `packets_1_and_2_and_each_selection_left_out_says_so`: 8-byte packets and every warning. A packet-stopping selection (the 20-bit packet, back in STOP-on-FULL) writes no packets as time runs: the count stays 0 and the data reads `0xFF`, so no value is guessed.
+5. `a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet` (the adversarial pass, §11), with `HEADER_ODR_ACCEL` and then `HEADER_ODR_GYRO`.
 - **The replay** `ardupilot_s_probe_and_init_pass_against_our_models` now uses the measured 2 kHz writes, through a shared `ardupilot_imu_start`. It then polls the FIFO as `read_fifo` does: the count `0x01 0x00`, and one packet with header `0x68`.
 
 **`models/renode/README.md`** (fence): the FIFO's modelled and left-out sets.
@@ -304,7 +315,11 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
   - **Then one packet per poll:** 1176 count reads of 1 and 218 of 0, one of 2.
   - **1240 packets in all,** every header `0x68`, so none fails `IV3` L458's check. Each holds the twin's stimulus as §5 works it: accel Y `0x0800`, temperature `0x08`.
   - **No warning from the model.** Exactly one `fifo_reset`, so no `need_reset` (`IV3` L616–629).
-  - **The console reaches `Init Gyro`,** and ArduPilot is past `wait_for_sample`'s first sample. It was still in its gyro calibration at 4.2 s; the run window is `4400e`'s to set (its D7), so it was not extended here.
+  - **`wait_for_sample` returns [read at source; measured]:**
+    - The console reads `Init Gyro`, then `*`.
+    - `init_gyro` prints `Init Gyro` (`AP_InertialSensor.cpp` L1712), then calls `update()` five times (L1726–1729), and only then prints `*` (L1759). Each `update()` first calls `wait_for_sample()` (L1897).
+    - So the `*` means samples arrived. `4400e3`'s run without a FIFO printed `Init Gyro` and polled a count of zero (its FEEDBACK L80).
+    - The calibration was still running at 4.2 s. The run window is `4400e`'s to set (its D7), so it was not extended here.
 - **The CLAUDE.md gates:**
   - fmt; clippy `-D warnings` with `with-tools`;
   - `cargo test --workspace` 2178 passed, 0 failed, after the merge;
@@ -325,10 +340,15 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
   - test 5's first draft wrote `INTF_CONFIG0` and `GYRO_CONFIG0` within 200 µs of the sensors leaving OFF, and the model's existing p.76 rule warned;
   - any ODR write re-phases both sensors to now + their period (the model's `OnOutputDataRate`, since 4220), so a gyro sample the draft expected at 31.0 ms came at 31.75 ms.
   Both tests were corrected; the model was right both times.
+- **What a close-out review found missing, and was added:** the review checked whether each claim in this FEEDBACK has a test behind it.
+  - Nothing asserted that a left-out selection writes no packets as time runs, or that Bypass stays empty. Only the warnings were checked.
+  - Several guards had no assertion: the temperature clamp at both bounds, `HEADER_ODR_GYRO`, the hold-last copy of a stale slot, and a soft reset emptying the FIFO and restarting the timestamp.
+  - Each now has an assertion (§9), and a mutant of each is killed (§12).
+  - The source's definition of `[inferred]` now says "the reading ruled on #214, consistent with ArduPilot's Invensensev3", not that ArduPilot depends on each one.
 
 ## 12. Mutation (diff-sized)
 
-- **25 mutants, one per guard this order adds, run against `models_tier2` in the image: all killed** (`~/.cache/aet-4220c/mut`). They cover:
+- **34 mutants, one per guard this order adds, run against `models_tier2` in the image: all killed** (`~/.cache/aet-4220c/mut`, `results-final.txt`). They cover:
   - the burst hold;
   - the count's byte order, latch and unit;
   - empty reads;
@@ -341,10 +361,12 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
   - the ODR bit;
   - the temperature coefficient;
   - the partial-read warning;
-  - each left-out selection and each warning.
-- **Two survived the first run, and both were fixed:**
+  - each left-out selection and each warning;
+  - added after the close-out review: the selection that stops packets, both temperature bounds, the gyro ODR bit, the FSYNC and `FIFO_TEMP_EN` checks, the hold-last stale copy, and soft reset (the FIFO and the timestamp's zero).
+- **Three survived a run, and all were fixed:**
   - `FIFO_FULL_INT` was set twice, on becoming full and on each dropped packet, and no test could tell them apart. The drop-time set is removed (§13);
-  - the temperature coefficient 2.0 for 2.07 survived because 4 × 2.07 = 8.28 and 4 × 2.0 both round to 8. Test 2 now runs at 40 °C (31.05 → 31, where 2.0 gives 30).
+  - the temperature coefficient 2.0 for 2.07 survived because 4 × 2.07 = 8.28 and 4 × 2.0 both round to 8. Test 2 now runs at 40 °C (31.05 → 31, where 2.0 gives 30);
+  - soft reset keeping the FIFO survived because the test reset an already-flushed FIFO. Packets now accumulate first.
 
 ## 13. Reduction pass
 

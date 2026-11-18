@@ -592,6 +592,17 @@ fn the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet() {
     c.extend(spi(&b, &[0x4B, 0x02], 0));
     c.extend(spi(&b, &[0x2E | 0x80], 2));
     c.extend(spi(&b, &[0x30 | 0x80], 3));
+    // Two more packets (40.5, 41.0 ms), then a soft reset at 41.25 ms (p.64):
+    // it empties the FIFO and restarts the timestamp (B6). After 1.1 ms (no
+    // access within 1 ms, p.64) the count is 0; configured again, the first
+    // packet at 52.35 ms carries (52.35 - 41.25) ms x 30/32 = 10406 = 0x28A6.
+    c.push("emulation RunFor \"0.001000000\"".to_owned());
+    c.extend(spi(&b, &[0x11, 0x01], 0));
+    c.push("emulation RunFor \"0.001100000\"".to_owned());
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(ardupilot_imu_start(&b, 0x05));
+    c.push("emulation RunFor \"0.010250000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 16));
     let (text, lines) = run(&b, &b.models, &c);
     assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
     let counts: Vec<u16> = reads(&lines, &b.imu, 0x2E)
@@ -600,7 +611,7 @@ fn the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet() {
         .collect();
     // 9 ms: none; 10.25 ms: the 10.0 ms packet; 40.25 ms: 10.0 to 40.0 ms,
     // one each 0.5 ms (61); two read (59); flushed (0).
-    assert_eq!(counts, [0, 1, 61, 59, 0], "{text}");
+    assert_eq!(counts, [0, 1, 61, 59, 0, 0], "{text}");
     let data = reads(&lines, &b.imu, 0x30);
     #[rustfmt::skip]
     let want: [u8; 32] = [
@@ -614,6 +625,11 @@ fn the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet() {
         "10.0 ms: 9375 = 0x249F; 10.5 ms: 9843 = 0x2673: {text}"
     );
     assert_eq!(data[1], [0xFF, 0xFF, 0xFF], "{text}");
+    assert_eq!(
+        &data[2][14..16],
+        [0xA6, 0x28],
+        "after the soft reset: {text}"
+    );
     // The data registers as before the FIFO (4220): 530 = 0x0212, 0, 2048.
     assert!(
         lines.contains(&format!(
@@ -637,8 +653,30 @@ fn the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz() {
     c.push("emulation RunFor \"0.040500000\"".to_owned());
     c.extend(spi(&b, &[0x2E | 0x80], 2));
     c.extend(spi(&b, &[0x30 | 0x80], 31 * 16));
+    // B10: -40 degrees C is -134.55 counts, saturated to -128 (0x80).
+    c.push(format!("sysbus.{} Temperature -40", b.imu));
+    c.push("emulation RunFor \"0.001000000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 16));
+    // +100 degrees C is 155.25 counts, saturated to 127; the accelerometer to
+    // 2 kHz under the gyro's 1 kHz (both re-phase at 41.5 ms): at 42.0 ms
+    // the gyro has no new sample, and with FIFO_HOLD_LAST_DATA_EN set its
+    // slot copies the last valid one (p.58), with HEADER_ODR_ACCEL (B7).
+    c.push(format!("sysbus.{} Temperature 100", b.imu));
+    c.extend(spi(&b, &[0x50, 0x05], 0));
+    c.push("emulation RunFor \"0.001000000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 32));
     let (text, lines) = run(&b, &b.models, &c);
     assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
+    let more = reads(&lines, &b.imu, 0x30);
+    assert_eq!(more[1][13], 0x80, "-40 degrees C: {text}");
+    assert_eq!(more[2][0], 0x6A, "42.0 ms header: {text}");
+    assert_eq!(more[2][13], 0x7F, "+100 degrees C: {text}");
+    assert_eq!(
+        i16::from_le_bytes([more[2][11], more[2][12]]),
+        1640,
+        "stale gyro: {text}"
+    );
+    assert_eq!(more[2][16], 0x68, "42.5 ms, both new: {text}");
     let count = reads(&lines, &b.imu, 0x2E)[0].clone();
     assert_eq!(count, [31, 0], "10 to 40 ms at 1 kHz: {text}");
     let data = &reads(&lines, &b.imu, 0x30)[0];
@@ -679,8 +717,9 @@ fn the_fifo_stops_when_full_and_latches_its_count_in_either_order() {
     c.extend(spi(&b, &[0x4C, 0xC0], 0));
     c.extend(spi(&b, &[0x2E | 0x80], 2));
     c.extend(spi(&b, &[0x2D | 0x80], 1));
-    // Bypass: no FIFO writes, so the count reads 0 (p.65).
+    // Bypass: no FIFO writes, so the count reads 0 (p.65), and stays 0.
     c.extend(spi(&b, &[0x16, 0x00], 0));
+    c.push("emulation RunFor \"0.002000000\"".to_owned());
     c.extend(spi(&b, &[0x2E | 0x80], 2));
     let (text, lines) = run(&b, &b.models, &c);
     assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
@@ -727,7 +766,20 @@ fn packets_1_and_2_and_each_selection_left_out_says_so() {
     ] {
         c.extend(spi(&b, &[r, v], 0));
     }
+    // Back in STOP-on-FULL but with the 20-bit packet selected: no packets.
+    c.extend(spi(&b, &[0x16, 0x80], 0));
+    c.extend(spi(&b, &[0x5F, 0x17], 0));
+    c.extend(spi(&b, &[0x4B, 0x02], 0));
+    c.push("emulation RunFor \"0.002000000\"".to_owned());
+    c.extend(spi(&b, &[0x2E | 0x80], 2));
+    c.extend(spi(&b, &[0x30 | 0x80], 1));
     let (text, lines) = run(&b, &b.models, &c);
+    assert_eq!(reads(&lines, &b.imu, 0x2E), [vec![0x00, 0x00]], "{text}");
+    assert_eq!(
+        reads(&lines, &b.imu, 0x30).last().unwrap(),
+        &[0xFF],
+        "{text}"
+    );
     let data = reads(&lines, &b.imu, 0x30);
     assert_eq!(
         data[0],
@@ -782,6 +834,11 @@ fn a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet() {
     c.extend(spi(&b, &[0x50, 0x06], 0));
     c.push("emulation RunFor \"0.001000000\"".to_owned());
     c.extend(spi(&b, &[0x30 | 0x80], 16));
+    // The gyro to 2 kHz at 31.75 ms: its next sample at 32.25 ms, alone, with
+    // HEADER_ODR_GYRO (B7).
+    c.extend(spi(&b, &[0x4F, 0x05], 0));
+    c.push("emulation RunFor \"0.000600000\"".to_owned());
+    c.extend(spi(&b, &[0x30 | 0x80], 16));
     let (text, lines) = run(&b, &b.models, &c);
     assert!(lines.iter().all(|l| l.starts_with("[NOISY]")), "{text}");
     // 10.0 to 30.5 ms at 2 kHz: 42 packets of 16 bytes, 672 = 0x02A0.
@@ -804,4 +861,5 @@ fn a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet() {
     assert_eq!(&packets[0][7..13], [0x80, 0x00, 0x80, 0x00, 0x80, 0x00]);
     // 31.75 ms: the first packet since the accelerometer's ODR became 1 kHz.
     assert_eq!(data[1][0], 0x6A, "HEADER_ODR_ACCEL: {text}");
+    assert_eq!(data[2][0], 0x69, "HEADER_ODR_GYRO: {text}");
 }
