@@ -552,7 +552,7 @@ U5's data step is its listed FIFO read. `parts.json` `reads` gives `0xB0`, at le
 
 ## Diff-sized mutations (one mutant per guard this order adds, against its suites)
 
-**24 mutants, all killed after two fixes.**
+**25 mutants (the first 22, then F1, F2 and F5), all killed after two fixes;** 26 with F3's table guard (see the last push below).
 - 22 ran first, through a subagent on a copy of the tree. 20 were killed.
 - The two survivors were `check_foreign`'s virtual-address containment and its file-bytes overlap. No test reached either.
 - `elf` unit tests now kill both. The overlap test needed read-write segments, because an executable pair falls to the older executable-overlap rule first.
@@ -568,7 +568,7 @@ U5's data step is its listed FIFO read. `parts.json` `reads` gives `0xB0`, at le
 - **F2 (fail-open against silicon, fixed).** RM0433 gives `FLASH_OPTCR` as "Address offset: 0x018 or 0x118" (§4.9.7, p. 211). The header's struct has only 0x18, and Renode's model decodes only 0x18, so a `MER` at 0x118 erased nothing in the twin and left no line.
   - **Now:** the hook and the judge take both offsets. The alias is derived as `OPTCR` plus the header's `CR2 − CR1`, and checked against the RM.
   - **Residual, named:** a byte-wide write to `CR2` reaches the hook before Renode widens it, so `SNB` reads 0. The judge then records bank 2's sector 0 while Renode erases the preset sector. That fails open only for an ELF with a segment in bank 2 but not in its sector 0, reprogrammed alike. On `CR1` it fails closed.
-- **F3 (latent, fixed).** A data step the twin cannot witness, with no listed read, was skipped silently. It is now `{bus}_witness_unavailable`, as today's judge names it. No current part reaches it.
+- **F3 (latent).** A data step the twin cannot witness, with no listed read, was skipped silently. First fixed with a `{bus}_witness_unavailable` branch. After the READY review the branch was removed, because no test could reach it. The case is now guarded where it lives, by a twin test over the real table (see the last push below).
 - **F4 (fixed).** `CR1.RE` is out of the frame mask. It is now named as a weakening (receive is held).
 - **F5 (fail-closed, fixed).** Summaries grew without bound and were found by linear search. They are now indexed and capped at 1,024 kinds; a further kind is an ordinary line, counted against the budget.
 - **Lens 1, a witness the firmware can forge:**
@@ -593,7 +593,7 @@ Reduction pass (diff): +12 net (rustfmt) · 1 duplicate removed · 0 dead paths 
 - **Model divergences** (TIM5 at a fixed 250 MHz; `usart1` at 200 MHz).
   - The foreign judge reads no timer or baud rule: USART `BRR`/`CR3`, the serial witness and the motor outputs are dropped.
   - But D7's window rests on TIM5's rate (above).
-  - **Re-owned:** the row stays open, and its closing re-measures `FOREIGN_MAX_VIRTUAL_NS`.
+  - **Re-owned** (ruled on PR #212, comment 6967529218): the row stays open. When TIM5 is corrected, the foreign window's 4 s bound (`FOREIGN_MAX_VIRTUAL_NS`) must be measured again; the last witness may then come at about 4.5 s [inferred]. Until then 4 s stays, as measured.
 - **The BMP581 configure row** (ArduPilot's three single-byte writes, not the `4210` script's).
   - **Closed** by D6 as ruled: identity and data only. A foreign firmware's configure step is not judged, and the weakening is named.
   - U7's data step (the script's) matches ArduPilot's read.
@@ -603,7 +603,7 @@ Reduction pass (diff): +12 net (rustfmt) · 1 duplicate removed · 0 dead paths 
 
 ## Gates at READY (this commit's tree)
 
-- **Gates:** fmt and bridge fmt clean; clippy clean (workspace, and with `with-tools`); 132 suites, 2,196 passed, 0 failed.
+- **Gates:** fmt and bridge fmt clean; clippy clean (workspace, and with `with-tools`); 132 suites, 2,197 passed, 0 failed (at the last push). The three tier-2 flash controls pass in the image.
 - **CI's package step, run on the host:** every crate packages, and the CLI builds from the packages and validates. The tools image has no `jq`.
 - **`ci/foreign-judge.sh` in the tools image:** all seven runs as expected.
 - **Generated verdicts, `main` (65622f70) against this tree:**
@@ -611,3 +611,22 @@ Reduction pass (diff): +12 net (rustfmt) · 1 duplicate removed · 0 dead paths 
   - 32 of 34 verdict lines are identical;
   - the two `simulate` verdicts differ only in `input.path` and the memory sample.
 - **Scratch removed:** the renode-infrastructure clone, the mutation tree and the runner temp. The evidence stays in `~/.cache/aet-4400e`: `thin*`, `selfwrite/`, `m5/` and `verdicts/`.
+
+## The READY review (PR #212, comment 6967529218): the last push
+
+**Accepted:** the core and F1 (D4 tightened).
+
+**The follow-up:**
+- **F3's branch: removed, not tested.** That adds less code. No test could reach the branch:
+  - A data step's witness is `None` only when its model cannot be set to one of its channels' quantities (twin `boot.rs`, the step's stimulus).
+  - The parts table is embedded and pinned, and every modelled part's data channels are stimulable: BMP581, ICM-20948, ICM-42688-P, ICP-10111.
+  - So the case now has a guard where it lives. The twin's test `every_modelled_part_s_data_channels_can_be_stimulated` reads the real table and names any modelled part whose data channel its model cannot be set to.
+  - Its mutant, the BMP581's pressure stimulus removed, is killed, and the test names "BMP581 Pressure".
+  - The judge's comment cites the test.
+- **Stale rule text fixed**, in `boot.rules` and the README:
+  - D4 states F1's condition;
+  - the flash row names `FLASH_OPTCR`'s `0x118` alias (RM0433 §4.9.7, p. 211);
+  - the flood row names the 1,024-kind summary cap.
+- **Mutations: 26 of 26 killed.** These are the first 22, F1, F2 and F5, and F3's table guard. The READY note's "24" was wrong.
+- **TIM5's row: re-owned,** with the 4 s bound to be measured again (above).
+- `main` moved by docs only (`80e86b1c`), so per the review it is not merged in.

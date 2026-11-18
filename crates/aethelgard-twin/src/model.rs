@@ -1003,6 +1003,29 @@ mod tests {
         }
     }
 
+    /// A data step's witness needs every channel's stimulus
+    /// (`crate::boot`), so a modelled part whose data channel its model
+    /// cannot be set to would have a data step no judge can witness; the
+    /// foreign judge relies on there being none (`AET-WO-4400e` adversarial
+    /// pass, F3). Each such part is named.
+    #[test]
+    fn every_modelled_part_s_data_channels_can_be_stimulated() {
+        let table = parts::table().unwrap();
+        let mut unstimulable = Vec::new();
+        for p in table.parts() {
+            let (Some(name), Some(script)) = (p.renode.as_deref(), &p.script) else {
+                continue;
+            };
+            let model = Model::from_renode(name).unwrap();
+            for c in &script.channels {
+                if model.stimulus(c.quantity).is_none() {
+                    unstimulable.push(format!("{} {:?}", p.part, c.quantity));
+                }
+            }
+        }
+        assert!(unstimulable.is_empty(), "{unstimulable:?}");
+    }
+
     #[test]
     fn every_stimulus_is_a_property_of_its_model() {
         assert_eq!(

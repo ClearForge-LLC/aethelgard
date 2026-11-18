@@ -136,12 +136,12 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "renode_error_log",
         "kept, with D4",
-        "the SPI model's slave-mode [ERROR] is exempt only directly after a CFG2 write with MASTER 0 while CR1 holds SPE 0, as a hook on each SPI controller's CFG2 writes logs it (ruled on PR #212, comment 6965511448, D7 (b)); every exemption is counted in the verdict",
+        "the SPI model's slave-mode [ERROR] is exempt only directly after a CFG2 write with MASTER 0 while CR1 holds SPE 0, and only when that controller's next CFG2 write sets MASTER again before any of its devices logs a line (adversarial F1, accepted on PR #212, comment 6967529218), as a hook on each SPI controller's CFG2 writes logs it (D7 (b)); every exemption is counted in the verdict",
     ),
     (
         "renode_log_flood",
         "kept, with D7 (a)",
-        "the 8 MiB budget stands; past it no witness is read whole: every step is unwitnessed. Renode's own Unhandled write warnings are summarised: each kind (peripheral and message, the written value elided) is one line with its count and first and last virtual time in boot.warnings (ruled on PR #212, comment 6965511448, D7 (a)); none is hidden, none floods",
+        "the 8 MiB budget stands; past it no witness is read whole: every step is unwitnessed. Renode's own Unhandled write warnings are summarised: each kind (peripheral and message, the written value elided) is one line with its count and first and last virtual time in boot.warnings (ruled on PR #212, comment 6965511448, D7 (a)); none is hidden, none floods; at most 1,024 kinds are summarised, and a line of a further kind is kept or dropped as any other, against the budget",
     ),
     (
         "locked_peripheral_access",
@@ -156,7 +156,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "flash controller access",
         "replaced",
-        "no write inside its own loaded flash (ruled on PR #212, comments 6965511448 and 6966155027): each loaded flash segment's sha256, from the ELF's file bytes on the host, equals Renode's read of it after the run; and no erase it starts (SER with SNB, BER, or MER, each from ST's header) overlaps one; an option-byte change (OPTSTART) is info. Weakens: writes elsewhere in flash are not judged; a store that changes a word of an own segment and a later store that restores it, with no erase between, passes, which silicon cannot do: programming only clears bits, and a bit returns to 1 only by erasing its whole sector (RM0433 Rev 9 §4.3.9, p. 161), an erase the hook fails",
+        "no write inside its own loaded flash (ruled on PR #212, comments 6965511448 and 6966155027): each loaded flash segment's sha256, from the ELF's file bytes on the host, equals Renode's read of it after the run; and no erase it starts (SER with SNB or BER on FLASH_CR1/CR2, or MER on FLASH_OPTCR at 0x18 or its alias 0x118, RM0433 Rev 9 §4.9.7, p. 211; each bit from ST's header) overlaps one; an option-byte change (OPTSTART) is info. Weakens: writes elsewhere in flash are not judged; a store that changes a word of an own segment and a later store that restores it, with no erase between, passes, which silicon cannot do: programming only clears bits, and a bit returns to 1 only by erasing its whole sector (RM0433 Rev 9 §4.3.9, p. 161), an erase the hook fails",
     ),
     (
         "motor outputs",
@@ -1217,10 +1217,9 @@ pub fn judge(
         // Data: one of the part's reads, after the identity.
         let after = k + want.len();
         let mut candidates: Vec<(String, Vec<Line>)> = Vec::new();
-        let data = checks
+        if let Some(data) = checks
             .iter()
-            .find(|c| c.step == aethelgard_ir::parts::StepKind::Data);
-        if let Some(data) = data
+            .find(|c| c.step == aethelgard_ir::parts::StepKind::Data)
             && let Some(w) = &data.witness
         {
             candidates.push((
@@ -1251,18 +1250,11 @@ pub fn judge(
                 }
             }
         }
+        // A data step always has a witness: every modelled part's data
+        // channels are ones its model can be set to (the twin's test
+        // `every_modelled_part_s_data_channels_can_be_stimulated`; adversarial
+        // pass, F3). No data step and no listed read: nothing to judge.
         if candidates.is_empty() {
-            // A data step the twin cannot witness, and no listed read: named,
-            // as today's judge names it (adversarial pass, F3).
-            if data.is_some() {
-                findings.push(Finding::plain(
-                    &format!("{bus}_witness_unavailable"),
-                    format!(
-                        "{reference} ({}): the twin knows no witness for its data step and its part lists no read",
-                        identity.device
-                    ),
-                ));
-            }
             continue;
         }
         let mut found = false;

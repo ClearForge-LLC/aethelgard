@@ -416,19 +416,19 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - ArduPilot without `--foreign`: `FirmwareOutsideMemory`;
 - SPI2's receive DMA line dropped, or U5's model removed, from the platform: `PlatformNotEmitted`;
 - ArduPilot rebuilt from the same hwdef without its `IMU` line: `spi_transaction_unwitnessed` (U5's identity).
-- **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0, while the controller's last `CR1` write left `SPE` 0. That is ChibiOS's `spi_lld_stop`, legal on silicon (RM0433 §50.11.4).
+- **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0 while `CR1` holds `SPE` 0, and only when that controller's next `CFG2` write sets `MASTER` again before any of its devices logs a line (or nothing follows). That is ChibiOS's `spi_lld_stop` then its next `spi_lld_start`, legal on silicon (RM0433 §50.11.4). A firmware that leaves the controller a slave and keeps using it is not exempt, since Renode's model stays a master where silicon would not clock (adversarial F1, accepted on PR #212, comment 6967529218).
   - The judge reads it from a hook on each SPI controller's writes, which logs only a `CFG2` write, with the value and `CR1` as it stands (D7 (b)); the SPI access log stays off.
   - Every exemption is counted in `boot.spi_errors_exempted`.
   - Any other `[ERROR]` is `renode_error_log`.
 
 **The flash** (ruled on PR #212, comments 6965511448 and 6966155027: never a write inside its own loaded ranges):
 - the CLI hashes each loaded flash segment's file bytes from the ELF, on the host, before the run; Renode reads the same range after it. A difference is `flash_overwritten`. The twin never witnesses itself (`INV-07`).
-- a hook logs each flash-controller write that starts an erase or an option change: `START` with `SER` (and `SNB`) or `BER` on a bank's `FLASH_CR`, or `MER` on `FLASH_OPTCR`. An erase overlapping a loaded flash segment is `flash_overwritten`, even when reprogrammed alike. Every offset, bit and size is ST's header's.
+- a hook logs each flash-controller write that starts an erase or an option change: `START` with `SER` (and `SNB`) or `BER` on a bank's `FLASH_CR`, or `MER` on `FLASH_OPTCR`, at `0x18` or its alias `0x118` (RM0433 Rev 9 §4.9.7, p. 211; the header's struct has only the first, and Renode's model decodes only the first). An erase overlapping a loaded flash segment is `flash_overwritten`, even when reprogrammed alike. Every offset, bit and size is ST's header's.
 - `OPTSTART` (an option-byte change) is the `info` finding `flash_option_change`. Its effect on protection is not judged.
 - `boot.flash`, `boot.erases` and `boot.option_changes` list all three.
 - Weakens: writes elsewhere in flash (a parameter store, say) are not judged. A store that changes a word of an own segment and a later store that restores it, with no erase between, passes. Silicon cannot do that: programming only clears bits, and a bit returns to 1 only by erasing its sector (RM0433 Rev 9 §4.3.9, p. 161), which the hook fails.
 
-**The log** (D7): the 8 MiB budget stands. Renode's own `Unhandled write` warnings are kept once per kind (the line with its written value elided); `boot.warnings` lists each kind with its count and first and last virtual time. A generated boot's filter is unchanged.
+**The log** (D7): the 8 MiB budget stands. Renode's own `Unhandled write` warnings are kept once per kind (the line with its written value elided); `boot.warnings` lists each kind with its count and first and last virtual time. At most 1,024 kinds are summarised; a line of a further kind is kept or dropped as any other, against the budget. `boot.log_kept_bytes` reports what was kept. A generated boot's filter is unchanged.
 
 **Unclocked accesses:** `locked_peripheral_access` is an `info` finding for a foreign firmware; `boot.locked` lists each access with its first time and count. Silicon ignores them.
 
