@@ -1097,10 +1097,413 @@ pub fn bound(
             (at, t)
         })
         .collect();
-    let k = net.energy_by_kind(&b.flux);
+    let k = b.kinds;
     Ok(PinBound {
         shares: [k[0].hi, k[1].hi, k[2].hi],
         bound: b,
         via_transfer,
     })
+}
+
+// ---------------------------------------------------------------------------
+// The gate (`AET-WO-1303b`, ruled on PR #222): each domain a specification
+// gives a drop limit is judged from the routed board.
+
+/// The cell side, nm: an engine constant (ruling S4), exact in binary in mm,
+/// a divisor of the router's 125 µm grid so every via centre is a cell
+/// corner. A finer pitch is the known remedy when a bound sets the margin
+/// ([`Gate::note`]).
+pub const PITCH_NM: i64 = 62_500;
+/// Plane copper further than this from the terminals' box is left out
+/// (ruling S4): less copper only raises the bound.
+pub const CROP_NM: i64 = 5_000_000;
+/// [`flow::junction`]'s band, nm: thin bands cost little (measured: 30 µm to
+/// 1 µm raises a coefficient by 1–2 %), and 10 µm lets the worst-case hole's
+/// band fit a 0.6 mm via pad.
+pub const BETA_NM: i64 = 10_000;
+/// The fabricator's hole position tolerance, per axis, nm: JLCPCB's
+/// capabilities page, "Hole Position Tolerance ±0.075 mm" (read, 1303 S4;
+/// conditions.json). Every hole is priced at every position within it
+/// (ruling S1).
+pub const HOLE_OFFSET_NM: i64 = 75_000;
+/// The plane's fill clearance to foreign copper, measured on the
+/// gate-prepared board in KiCad 10.0.7: 0.2025 mm (`AET-WO-1303` P4.7).
+pub const FILL_CLEARANCE_NM: i64 = 202_500;
+/// The zone's min-thickness opening: half of `min_thickness` 0.25 mm
+/// (`AET-WO-1303` F9).
+pub const OPENING_NM: i64 = 125_000;
+/// A plane's inset from the board's edge: the router's 0.5 mm edge
+/// clearance plus the opening.
+pub const EDGE_NM: i64 = 625_000;
+
+/// Copper's resistivity at `t_c` °C, at most, Ω·mm, as an interval:
+/// IACS annealed copper 1.7241 µΩ·cm at 20 °C (NBS Handbook 100), its
+/// temperature coefficient 0.00393 /°C (NBS Handbook 100; IPC-TM-650
+/// 2.5.14A), times k = 1.181, IPC-MF-150F §3.8.1.2's largest rated foil
+/// resistivity over IACS (0.181/0.15328 ohm·g/m², rounded up). k is cited
+/// for deposited foil; applying it to plated copper (barrels, outer
+/// plating) is a stated condition (ruling D6).
+pub fn rho_max(t_c: u32) -> Iv {
+    let rise = i64::from(t_c) - 20;
+    Iv::ratio(17_241, 1_000_000_000)
+        .mul(Iv::exact(1.0).add(Iv::ratio(393, 100_000).mul(Iv::exact(rise as f64))))
+        .mul(Iv::ratio(1181, 1000))
+}
+
+/// One pin's result: its bound, µΩ (rounded up), or why it has none.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PinResult {
+    Bounded {
+        pin: String,
+        r_bound_microohms: u64,
+    },
+    Refused {
+        pin: String,
+        kind: &'static str,
+        message: String,
+    },
+}
+
+/// One domain's verdict.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Gate {
+    pub domain: String,
+    pub limit_millivolts: u32,
+    pub limit_source: String,
+    /// Where the regulator's current enters the net, and its own return pin.
+    pub source: (String, String),
+    pub ret: (String, String),
+    pub load_milliamps: u64,
+    /// The load's pins on the domain and on `GND`, by pad.
+    pub mcu: String,
+    pub pins: Vec<PinResult>,
+    pub returns: Vec<PinResult>,
+    /// (the largest supply bound + the largest return bound) × the load, µV,
+    /// rounded up; `None` when any pin is refused.
+    pub drop_bound_microvolts: Option<u64>,
+    /// Set when the bound comes within 1.5× of the limit: the pitch set the
+    /// margin (ruling S4).
+    pub note: Option<String>,
+    pub conditions: Vec<String>,
+}
+
+fn refusal(kind: &'static str, message: String) -> crate::extract::Refused {
+    crate::extract::Refused {
+        kind,
+        id: None,
+        message,
+    }
+}
+
+/// Each domain the specification limits, judged on the read board. A
+/// specification with no `power.drop_limits` gives none, and nothing about
+/// its verdict changes.
+pub fn supplies(
+    spec: &aethelgard_ir::Specification,
+    solved: &aethelgard_ir::SolvedTopology,
+    table: &aethelgard_ir::PinTable,
+    read: &crate::extract::ReadBoard,
+) -> Result<Vec<Gate>, crate::extract::Refused> {
+    let Some(power) = &spec.power else {
+        return Ok(Vec::new());
+    };
+    let Some(limits) = &power.drop_limits else {
+        return Ok(Vec::new());
+    };
+    if limits.is_empty() {
+        return Ok(Vec::new());
+    }
+    let st = &spec.board.stackup;
+    let need = |v: &Option<aethelgard_ir::board::Sourced>, path: &str| {
+        v.as_ref().map(|s| s.value).ok_or_else(|| {
+            refusal(
+                "SupplyInputUndeclared",
+                format!("the supply gate reads `board.stackup.{path}`, and the specification does not declare it: it is never defaulted (RUL-14)"),
+            )
+        })
+    };
+    let outer = need(&st.outer_copper_min_um, "outer_copper_min_um")?;
+    let plane = need(&st.plane_copper_min_um, "plane_copper_min_um")?;
+    let plating = need(&st.plating_min_um, "plating_min_um")?;
+    let t_c = need(&st.copper_temperature_max_c, "copper_temperature_max_c")?;
+    let checked = aethelgard_ir::power::check(spec)
+        .map_err(|e| refusal(e.kind(), e.to_string()))?
+        .ok_or_else(|| {
+            refusal(
+                "SupplyInputUndeclared",
+                "the specification declares no power tree".into(),
+            )
+        })?;
+    let (parts, _) = crate::schematic::design(spec, solved, table)
+        .map_err(|e| refusal(e.kind(), e.to_string()))?;
+    let mcu = parts
+        .iter()
+        .find(|p| p.lib_id.starts_with("MCU_"))
+        .map(|p| p.reference.clone())
+        .ok_or_else(|| refusal("SupplyTerminalMissing", "the design has no MCU".into()))?;
+    let board = &read.board;
+    let model = Model {
+        h_nm: PITCH_NM,
+        rho: rho_max(t_c),
+        outer_nm: (i64::from(outer) * 1000, board.stack.copper_max_nm),
+        plane_nm: (i64::from(plane) * 1000, board.stack.copper_max_nm),
+        plating_nm: i64::from(plating) * 1000,
+        beta_nm: BETA_NM,
+        hole_offset_nm: HOLE_OFFSET_NM,
+        edge_nm: EDGE_NM,
+        crop_nm: CROP_NM,
+        fill_clearance_nm: FILL_CLEARANCE_NM,
+        opening_nm: OPENING_NM,
+    };
+    let pp = aethelgard_ir::power_parts::table().map_err(|e| refusal(e.kind(), e.to_string()))?;
+    fn pads_of<'a>(board: &'a Board, reference: &str) -> Vec<&'a Pad> {
+        board
+            .parts
+            .iter()
+            .filter(|p| p.reference == reference)
+            .flat_map(|p| p.pads.iter())
+            .collect()
+    }
+    let mut out = Vec::new();
+    for limit in limits {
+        let d = &limit.domain;
+        if !power.loads.iter().any(|l| &l.domain == d) {
+            return Err(refusal(
+                "SupplyLoadUndeclared",
+                format!(
+                    "the supply gate reads `power.loads`' entry for `{d}`, and there is none: the load's other sinks are declared there, the MCU's maximum is counted from its part row"
+                ),
+            ));
+        }
+        let load = checked
+            .domains
+            .get(d)
+            .map(|c| c.load_milliamps)
+            .ok_or_else(|| {
+                refusal(
+                    "SupplyTerminalMissing",
+                    format!("no regulator sources `{d}`"),
+                )
+            })?;
+        let reg = power
+            .regulators
+            .iter()
+            .find(|r| &r.output == d)
+            .ok_or_else(|| {
+                refusal(
+                    "SupplyTerminalMissing",
+                    format!("no regulator sources `{d}`"),
+                )
+            })?;
+        let row = pp.get(&reg.part).ok_or_else(|| {
+            refusal(
+                "SupplyTerminalMissing",
+                format!("{} is not in the power parts table", reg.part),
+            )
+        })?;
+        let pin = |name: &str| {
+            row.pins.get(name).cloned().ok_or_else(|| {
+                refusal(
+                    "SupplyTerminalMissing",
+                    format!("{} has no pin named {name}", reg.part),
+                )
+            })
+        };
+        // the source: a buck's current enters the domain at its inductor's
+        // pad on it (the inductor is the part between the SW pin's net and
+        // the domain); an LDO's at its OUT pin
+        let (source, ret_pin) = match &row.kind {
+            aethelgard_ir::power_parts::Kind::Buck(_) => {
+                let sw = pin("SW")?;
+                let sw_net = pads_of(board, &reg.reference)
+                    .into_iter()
+                    .find(|p| p.number == sw)
+                    .and_then(|p| p.net.clone())
+                    .ok_or_else(|| {
+                        refusal(
+                            "SupplyTerminalMissing",
+                            format!("{}'s SW pad has no net", reg.reference),
+                        )
+                    })?;
+                let inductor = board
+                    .parts
+                    .iter()
+                    .filter(|p| p.reference != reg.reference)
+                    .find(|p| {
+                        p.pads
+                            .iter()
+                            .any(|q| q.net.as_deref() == Some(sw_net.as_str()))
+                            && p.pads.iter().any(|q| q.net.as_deref() == Some(d.as_str()))
+                    })
+                    .ok_or_else(|| {
+                        refusal(
+                            "SupplyTerminalMissing",
+                            format!("no inductor joins {}'s SW to `{d}`", reg.reference),
+                        )
+                    })?;
+                let pad = inductor
+                    .pads
+                    .iter()
+                    .find(|q| q.net.as_deref() == Some(d.as_str()))
+                    .expect("found above");
+                // the return: PGND, never the exposed pad, which SNVSAN3F
+                // Table 6-1 (p. 5) names AGND and p. 6 rates apart from PGND
+                (
+                    (inductor.reference.clone(), pad.number.clone()),
+                    pin("PGND")?,
+                )
+            }
+            aethelgard_ir::power_parts::Kind::Ldo(_) => {
+                ((reg.reference.clone(), pin("OUT")?), pin("GND")?)
+            }
+            _ => {
+                return Err(refusal(
+                    "SupplyTerminalMissing",
+                    format!("{} is not a regulator the gate models", reg.part),
+                ));
+            }
+        };
+        let ret = (reg.reference.clone(), ret_pin);
+        let gnd = "GND";
+        let source_pad = pad(board, d, &source.0, &source.1).map_err(to_refused)?;
+        let ret_pad = pad(board, gnd, &ret.0, &ret.1).map_err(to_refused)?;
+        let mcu_pads = |net: &str| -> Vec<&Pad> {
+            let mut v: Vec<&Pad> = pads_of(board, &mcu)
+                .into_iter()
+                .filter(|p| p.net.as_deref() == Some(net))
+                .collect();
+            v.sort_by_key(|p| {
+                (
+                    p.number.parse::<u32>().unwrap_or(u32::MAX),
+                    p.number.clone(),
+                )
+            });
+            v
+        };
+        let run = |net: &str,
+                   from: &Pad,
+                   sinks: &[&Pad]|
+         -> Result<Vec<PinResult>, crate::extract::Refused> {
+            let mut terminals = vec![from];
+            terminals.extend(sinks.iter().copied());
+            let nc = copper(board, &read.routed, net, &terminals, &model).map_err(to_refused)?;
+            Ok(sinks
+                .iter()
+                .map(|p| match bound(&nc, &model, from, p, 400) {
+                    Ok(b) => bounded_pin(p, &b),
+                    Err(r) => {
+                        let (kind, message) = match r {
+                            Refusal::Named(k, m) => (k, m),
+                            Refusal::Flow(FlowError::Disconnected) => (
+                                "SupplyPinUnbounded",
+                                format!(
+                                    "no copper the gate reads joins {}.{} to {}.{}",
+                                    mcu,
+                                    p.number,
+                                    from_ref(board, from),
+                                    from.number
+                                ),
+                            ),
+                            Refusal::Flow(FlowError::Malformed(m)) => ("SupplyPinUnbounded", m),
+                        };
+                        PinResult::Refused {
+                            pin: p.number.clone(),
+                            kind,
+                            message,
+                        }
+                    }
+                })
+                .collect())
+        };
+        let vdd = mcu_pads(d);
+        let vss = mcu_pads(gnd);
+        let pins = run(d, source_pad, &vdd)?;
+        // the 2-layer return runs through a zone the emitted file leaves
+        // unfilled: refused by name (ruling (iii))
+        let gnd_plane = board.stack.planes.iter().any(|(_, n)| n == gnd);
+        let returns = if gnd_plane {
+            run(gnd, ret_pad, &vss)?
+        } else {
+            vss.iter()
+                .map(|p| PinResult::Refused {
+                    pin: p.number.clone(),
+                    kind: "GroundReturnUnread",
+                    message: format!("{mcu}.{}'s return runs through a GND zone the emitted board leaves unfilled: the gate reads no plane for GND", p.number),
+                })
+                .collect()
+        };
+        let worst = |v: &[PinResult]| -> Option<u64> {
+            v.iter()
+                .map(|r| match r {
+                    PinResult::Bounded {
+                        r_bound_microohms, ..
+                    } => Some(*r_bound_microohms),
+                    PinResult::Refused { .. } => None,
+                })
+                .collect::<Option<Vec<u64>>>()
+                .and_then(|v| v.into_iter().max())
+        };
+        // µΩ × mA = nV; rounded up to µV
+        let drop = match (worst(&pins), worst(&returns)) {
+            (Some(a), Some(b)) => {
+                Some(((u128::from(a) + u128::from(b)) * u128::from(load)).div_ceil(1000) as u64)
+            }
+            _ => None,
+        };
+        let limit_uv = u64::from(limit.max_millivolts) * 1000;
+        let note = drop.filter(|&v| v * 3 > limit_uv * 2).map(|_| {
+            format!("the bound is within 1.5x of the limit: the gate's {} um pitch sets part of this margin, and a finer pitch is the known remedy", PITCH_NM as f64 / 1000.0)
+        });
+        out.push(Gate {
+            domain: d.clone(),
+            limit_millivolts: limit.max_millivolts,
+            limit_source: limit.source.clone(),
+            source,
+            ret,
+            load_milliamps: load,
+            mcu: mcu.clone(),
+            pins,
+            returns,
+            drop_bound_microvolts: drop,
+            note,
+            conditions: conditions(),
+        });
+    }
+    Ok(out)
+}
+
+fn bounded_pin(p: &Pad, b: &PinBound) -> PinResult {
+    PinResult::Bounded {
+        pin: p.number.clone(),
+        r_bound_microohms: (b.bound.energy.hi * 1e6).ceil() as u64,
+    }
+}
+
+fn from_ref(board: &Board, pad: &Pad) -> String {
+    board
+        .parts
+        .iter()
+        .find(|p| p.pads.iter().any(|q| std::ptr::eq(q, pad)))
+        .map_or_else(String::new, |p| p.reference.clone())
+}
+
+fn to_refused(r: Refusal) -> crate::extract::Refused {
+    match r {
+        Refusal::Named(kind, message) => refusal(kind, message),
+        Refusal::Flow(f) => refusal("SupplyPinUnbounded", format!("{f:?}")),
+    }
+}
+
+/// The conditions every supply bound rests on, stated in the verdict.
+fn conditions() -> Vec<String> {
+    vec![
+        "supply: R is a certified upper bound (Thomson's principle) on a subset of the net's copper: every flux-carrying cell lies wholly inside copper the gate reads; copper left out only raises it".into(),
+        format!("supply: every hole anywhere within +-{} mm per axis of its pad (JLCPCB Hole Position Tolerance)", HOLE_OFFSET_NM as f64 / 1e6),
+        "supply: each terminal pad an equipotential: the current enters and leaves through the whole pad".into(),
+        "supply: the source is where the regulator's current enters the domain (a buck's inductor pad); at DC it is the net's highest potential, so the bound covers the regulator's sense point too".into(),
+        "supply: the return is the regulator's own ground pin; other domains' return currents in the ground copper are not bounded".into(),
+        "supply: the load's VDD and VSS pins are tied inside it, so the worst supply pin and the worst return pin bound its drop [inferred]".into(),
+        "supply: copper resistivity IACS x (1 + 0.00393 x (T - 20)) x 1.181 (IPC-MF-150F 3.8.1.2's foil maximum, applied to plated copper as a stated condition), at the declared copper temperature maximum".into(),
+        format!("supply: plane fill at least the outline less {} mm and each knockout's measured {} mm clearance and {} mm min-thickness opening (KiCad 10.0.7, measured)", EDGE_NM as f64 / 1e6, FILL_CLEARANCE_NM as f64 / 1e6, OPENING_NM as f64 / 1e6),
+    ]
 }

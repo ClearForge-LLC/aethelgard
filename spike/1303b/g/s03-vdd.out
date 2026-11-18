@@ -1,0 +1,20 @@
+== sentinel-03.kicad_pcb VDD_3V3 from L2.2 to U1 (16 pads): h 62500 nm, crop 5 mm, rho 2.87638e-5 ohm*mm; 828759 cells [("F.Cu", 12478), ("In1.Cu", 0), ("In2.Cu", 816281), ("B.Cu", 0)]; 47 vias, joins {2: 17, 3: 30}; copper in 3.11811638s
+   rows (mm): [(0.029999999999999995, 0.07000000000000002), (0.17899999999999996, 0.6910000000000001), (0.014999999999999998, 0.07000000000000002), (0.8909999999999999, 1.4030000000000002), (0.014999999999999998, 0.07000000000000002), (0.17899999999999996, 0.6910000000000001), (0.029999999999999995, 0.07000000000000002)]
+   note: In2.Cu: 29211 cells inside a knockout's opening ring admitted by a witness disc
+   note: In2.Cu: 190 plane cells no via port reaches are left out (islands)
+  U1.   6:    30.284 mOhm (sheets 10.050, junctions 7.111, barrels 13.123; iterations 106, residual 9.0e-11, 5.354495921s); vias carrying >= 1 %: (90.625,93.750) 100% (123.000,50.750) 100%
+  U1.  17:    52.055 mOhm (sheets 31.578, junctions 7.266, barrels 13.211; iterations 107, residual 9.4e-11, 5.23839489s); vias carrying >= 1 %: (85.500,99.875) 100% (123.000,50.750) 100%
+  U1.  30:    31.511 mOhm (sheets 11.080, junctions 7.329, barrels 13.102; iterations 105, residual 9.8e-11, 5.196168977s); vias carrying >= 1 %: (90.625,105.625) 100% (123.000,50.750) 100%
+  U1.  32:    29.129 mOhm (sheets 10.558, junctions 5.584, barrels 12.988; iterations 103, residual 9.6e-11, 5.196824244s); vias carrying >= 1 %: (90.500,106.875) 100% (123.000,50.750) 100%
+  U1.  33:    29.789 mOhm (sheets 11.295, junctions 5.508, barrels 12.986; iterations 112, residual 8.2e-11, 5.441781343s); vias carrying >= 1 %: (90.500,106.875) 100% (123.000,50.750) 100%
+  U1.  39:    30.996 mOhm (sheets 12.362, junctions 5.760, barrels 12.874; iterations 109, residual 8.2e-11, 5.435881873s); vias carrying >= 1 %: (92.000,112.000) 100% (123.000,50.750) 100%
+  U1.  52:    30.544 mOhm (sheets 11.917, junctions 5.757, barrels 12.870; iterations 108, residual 6.9e-11, 5.375269696s); vias carrying >= 1 %: (98.500,112.000) 100% (123.000,50.750) 100%
+  U1.  62:    30.619 mOhm (sheets 11.860, junctions 5.831, barrels 12.928; iterations 107, residual 7.7e-11, 5.363938412s); vias carrying >= 1 %: (103.500,112.000) 100% (123.000,50.750) 100%
+  U1.  72:    30.656 mOhm (sheets 10.408, junctions 7.120, barrels 13.127; iterations 105, residual 7.2e-11, 5.252000942s); vias carrying >= 1 %: (108.750,109.375) 100% (123.000,50.750) 100%
+  U1.  84:    29.532 mOhm (sheets 10.925, junctions 5.750, barrels 12.857; iterations 107, residual 8.5e-11, 5.345364139s); vias carrying >= 1 %: (112.000,103.500) 100% (123.000,50.750) 100%
+  U1.  95:    29.116 mOhm (sheets 10.515, junctions 5.747, barrels 12.854; iterations 109, residual 9.2e-11, 5.454559631s); vias carrying >= 1 %: (112.000,98.000) 100% (123.000,50.750) 100%
+  U1. 108:    29.166 mOhm (sheets 8.821, junctions 7.166, barrels 13.178; iterations 108, residual 8.5e-11, 5.338365553s); vias carrying >= 1 %: (109.875,90.750) 100% (123.000,50.750) 100%
+  U1. 121:    50.200 mOhm (sheets 29.873, junctions 7.286, barrels 13.041; iterations 112, residual 8.2e-11, 5.461415582s); vias carrying >= 1 %: (103.500,85.500) 100% (123.000,50.750) 100%
+  U1. 131:    44.141 mOhm (sheets 25.542, junctions 5.741, barrels 12.858; iterations 111, residual 9.3e-11, 5.456670652s); vias carrying >= 1 %: (98.625,86.125) 100% (123.000,50.750) 100%
+  U1. 143:    43.183 mOhm (sheets 22.953, junctions 7.109, barrels 13.121; iterations 108, residual 9.0e-11, 5.346188428s); vias carrying >= 1 %: (90.375,87.250) 100% (123.000,50.750) 100%
+  U1. 144:    40.011 mOhm (sheets 19.781, junctions 7.109, barrels 13.121; iterations 106, residual 6.6e-11, 5.317053145s); vias carrying >= 1 %: (90.375,87.250) 100% (123.000,50.750) 100%

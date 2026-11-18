@@ -113,6 +113,25 @@ pub struct Power {
     pub loads: Vec<Load>,
     pub sense: Vec<Sense>,
     pub crossings: Vec<Crossing>,
+    /// The supply and ground drop each domain allows its load, VDD and VSS
+    /// together (`AET-WO-1303b`, D7). Optional: a domain named here is
+    /// judged by `extract`'s supply gate, which then needs the stackup's
+    /// minima; a domain not named is not judged.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub drop_limits: Option<Vec<DropLimit>>,
+}
+
+/// One domain's drop limit: VDD plus VSS, mV, at most, with its source.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct DropLimit {
+    pub domain: String,
+    pub max_millivolts: u32,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -335,6 +354,7 @@ crate::object_only!(
     Resistor,
     External,
     Load,
+    DropLimit,
     Sense,
     Reservoir,
     Crossing,
@@ -793,6 +813,26 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             return Err(invalid(
                 &l.domain,
                 format!("power.loads[{i}] declares 0 mA"),
+            ));
+        }
+    }
+    let mut limited = BTreeSet::new();
+    for (i, l) in power.drop_limits.iter().flatten().enumerate() {
+        known(&l.domain)?;
+        crate::board::source(&l.source, &format!("power.drop_limits[{i}].source"))?;
+        if l.max_millivolts == 0 || l.max_millivolts > 100_000 {
+            return Err(invalid(
+                &l.domain,
+                format!(
+                    "power.drop_limits[{i}] is {} mV, not 1 to 100000",
+                    l.max_millivolts
+                ),
+            ));
+        }
+        if !limited.insert(l.domain.as_str()) {
+            return Err(invalid(
+                &l.domain,
+                format!("power.drop_limits[{i}] names a domain a second time"),
             ));
         }
     }

@@ -34,7 +34,47 @@ struct Report {
     capacitance: &'static str,
     conditions: Vec<String>,
     lines: Vec<Value>,
+    /// Each domain with a drop limit, judged (`AET-WO-1303b`); absent when
+    /// the specification limits none, so no other verdict moves.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    supplies: Vec<Value>,
     findings: Vec<Finding>,
+}
+
+/// One supply domain's verdict object.
+fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
+    use aethelgard_eda::supply::PinResult;
+    let pin = |r: &PinResult| match r {
+        PinResult::Bounded {
+            pin,
+            r_bound_microohms,
+        } => json!({"pin": pin, "r_bound_microohms": r_bound_microohms}),
+        PinResult::Refused { pin, kind, message } => {
+            json!({"pin": pin, "refused": {"kind": kind, "message": message}})
+        }
+    };
+    let pass = g
+        .drop_bound_microvolts
+        .is_some_and(|d| d <= u64::from(g.limit_millivolts) * 1000);
+    let mut v = json!({
+        "domain": g.domain,
+        "verdict": if pass { "pass" } else { "fail" },
+        "resistance": "upper bound certified from routed geometry",
+        "source": {"reference": g.source.0, "pad": g.source.1},
+        "return": {"reference": g.ret.0, "pad": g.ret.1},
+        "load": g.mcu,
+        "load_milliamps": g.load_milliamps,
+        "limit_millivolts": g.limit_millivolts,
+        "limit_source": g.limit_source,
+        "drop_bound_microvolts": g.drop_bound_microvolts,
+        "pins": g.pins.iter().map(pin).collect::<Vec<_>>(),
+        "returns": g.returns.iter().map(pin).collect::<Vec<_>>(),
+        "conditions": g.conditions,
+    });
+    if let Some(n) = &g.note {
+        v["note"] = n.clone().into();
+    }
+    v
 }
 
 #[derive(Serialize)]
@@ -149,6 +189,10 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             );
         }
     };
+    let gates = match aethelgard_eda::supply::supplies(&spec, &topology, &table, &read) {
+        Ok(g) => g,
+        Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
+    };
     let mut out = Vec::new();
     let mut conditions = bound::conditions(&stack);
     if lines.iter().any(|b| b.spi_signal.is_some()) {
@@ -201,7 +245,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         };
         out.push(line(b, declared));
     }
-    let findings: Vec<Finding> = out
+    let mut findings: Vec<Finding> = out
         .iter()
         .filter(|l| l["verdict"] == "fail")
         .map(|l| Finding {
@@ -225,6 +269,35 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             ),
         })
         .collect();
+    for g in &gates {
+        for (side, pins) in [("supply", &g.pins), ("return", &g.returns)] {
+            for r in pins.iter() {
+                if let aethelgard_eda::supply::PinResult::Refused { pin, kind, message } = r {
+                    findings.push(Finding {
+                        kind: "supply_pin_unbounded",
+                        severity: "error",
+                        message: format!(
+                            "`{}` {side} pin {}.{pin}: {kind}: {message}",
+                            g.domain, g.mcu
+                        ),
+                    });
+                }
+            }
+        }
+        if let Some(d) = g.drop_bound_microvolts
+            && d > u64::from(g.limit_millivolts) * 1000
+        {
+            findings.push(Finding {
+                kind: "supply_drop_over_limit",
+                severity: "error",
+                message: format!(
+                    "`{}`: VDD + VSS drop bound {} uV at {} mA exceeds the declared {} mV",
+                    g.domain, d, g.load_milliamps, g.limit_millivolts
+                ),
+            });
+        }
+    }
+    let supplies: Vec<Value> = gates.iter().map(supply).collect();
     let ok = findings.is_empty();
     let report = Report {
         ok,
@@ -240,6 +313,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         capacitance: CAPACITANCE,
         conditions,
         lines: out,
+        supplies,
         findings,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })

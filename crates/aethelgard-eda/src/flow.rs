@@ -63,7 +63,7 @@
 //! direct quadrature of its own field; a via in a disc, above its shorted
 //! floor.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 /// A closed interval of reals, `[lo, hi]`, with every operation rounded
 /// outward: the exact result of the operation on any reals inside the
@@ -372,6 +372,9 @@ pub struct Bound {
     /// The certified upper bound on `R`, ohms: an interval whose upper end
     /// is the bound.
     pub energy: Iv,
+    /// The energy's parts: sheet cells, junction joints, barrel cells
+    /// ([`Network::energy_by_kind`]); `energy` is their sum.
+    pub kinds: [Iv; 3],
     /// Conjugate-gradient iterations used, and the final relative residual.
     pub iterations: usize,
     pub residual: f64,
@@ -447,8 +450,10 @@ impl Network {
             .repair(&flux, source, sink)
             .ok_or(FlowError::Disconnected)?;
         self.conserves(&q, source, sink)?;
+        let kinds = self.energy_by_kind(&q);
         Ok(Bound {
-            energy: self.energy(&q),
+            energy: kinds[0].add(kinds[1]).add(kinds[2]),
+            kinds,
             flux: q,
             iterations,
             residual,
@@ -866,13 +871,20 @@ impl Network {
                         .iter()
                         .map(|&e| Iv::exact(q[e] as f64 / QUANTA as f64).sqr())
                         .collect();
-                    let fxy: Vec<(Iv, Iv)> = talls
+                    // each cell's energy is A·a + B/a at each end of its
+                    // height range: A = (ρ/t)·fx/(3b), B = (ρ/t)·fy·b/3; a
+                    // cell carrying nothing is skipped
+                    let coef: Vec<(usize, [(Iv, Iv); 2])> = talls
                         .iter()
-                        .map(|t| {
-                            (
-                                quad(face(t.node, t.w, true), face(t.node, t.e, false)),
-                                quad(face(t.node, t.s, true), face(t.node, t.n, false)),
-                            )
+                        .filter_map(|t| {
+                            let fx = quad(face(t.node, t.w, true), face(t.node, t.e, false));
+                            let fy = quad(face(t.node, t.s, true), face(t.node, t.n, false));
+                            if fx.hi == 0.0 && fy.hi == 0.0 {
+                                return None;
+                            }
+                            let r = t.rho_over_t.mul(third);
+                            let at = |b: Iv| (r.mul(fx).div(b), r.mul(fy).mul(b));
+                            Some((t.column, [at(t.b_lo), at(t.b_hi)]))
                         })
                         .collect();
                     // every box's joints and cells; the worst box's total
@@ -883,9 +895,22 @@ impl Network {
                             j = j.add(Iv::exact(c).mul(f2[k]));
                         }
                         let mut b = Iv::exact(0.0);
-                        for (t, &(fx, fy)) in talls.iter().zip(&fxy) {
-                            let (a_lo, a_hi) = wid[t.column];
-                            b = b.add(tall(fx, fy, t.rho_over_t, a_lo, a_hi, t.b_lo, t.b_hi));
+                        for (col, ends) in &coef {
+                            let (a_lo, a_hi) = wid[*col];
+                            // convex in a and in b alone: the worst corner
+                            let mut cell = f64::NEG_INFINITY;
+                            let mut cell_lo = f64::NEG_INFINITY;
+                            for &(ca, cb) in ends {
+                                for a in [a_lo, a_hi] {
+                                    let v = ca.mul(a).add(cb.div(a));
+                                    cell = cell.max(v.hi);
+                                    cell_lo = cell_lo.max(v.lo);
+                                }
+                            }
+                            b = b.add(Iv {
+                                lo: cell_lo.min(cell),
+                                hi: cell,
+                            });
                         }
                         if worst.is_none_or(|(wj, wb)| j.add(b).hi > wj.add(wb).hi) {
                             worst = Some((j, b));
@@ -955,8 +980,8 @@ impl Csr {
 
     /// `Pᵀ A P` for the piecewise-constant prolongation of `agg`.
     fn coarsen(&self, agg: &[usize], nc: usize) -> Csr {
-        let mut rows: Vec<HashMap<u32, f64>> = vec![HashMap::new(); nc];
         let mut diag = vec![0.0; nc];
+        let mut trip: Vec<(u32, u32, f64)> = Vec::with_capacity(self.val.len());
         for i in 0..self.n() {
             let ci = agg[i];
             diag[ci] += self.diag[i];
@@ -965,21 +990,29 @@ impl Csr {
                 if cj == ci {
                     diag[ci] += self.val[k];
                 } else {
-                    *rows[ci].entry(cj as u32).or_insert(0.0) += self.val[k];
+                    trip.push((ci as u32, cj as u32, self.val[k]));
                 }
             }
         }
+        trip.sort_unstable_by_key(|t| (t.0, t.1));
         let mut ptr = vec![0usize; nc + 1];
-        let mut col = Vec::new();
-        let mut val = Vec::new();
-        for (c, row) in rows.into_iter().enumerate() {
-            let mut r: Vec<(u32, f64)> = row.into_iter().collect();
-            r.sort_unstable_by_key(|e| e.0);
-            for (j, v) in r {
-                col.push(j);
+        let mut col: Vec<u32> = Vec::new();
+        let mut val: Vec<f64> = Vec::new();
+        let mut last: Option<(u32, u32)> = None;
+        for (ci, cj, v) in trip {
+            if last == Some((ci, cj)) {
+                *val.last_mut().unwrap() += v;
+            } else {
+                col.push(cj);
                 val.push(v);
+                ptr[ci as usize + 1] = col.len();
+                last = Some((ci, cj));
             }
-            ptr[c + 1] = col.len();
+        }
+        for c in 0..nc {
+            if ptr[c + 1] < ptr[c] {
+                ptr[c + 1] = ptr[c];
+            }
         }
         Csr {
             ptr,
