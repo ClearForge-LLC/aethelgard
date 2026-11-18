@@ -2341,3 +2341,258 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
     assert_eq!(code, Some(1), "{v}");
     assert!(finding(&v, "i2c_record_invalid").is_some(), "{v}");
 }
+
+// ---------------------------------------------------------------- AET-WO-4400e
+
+/// A `renode` stub for a foreign boot (`AET-WO-4400e`): it answers
+/// `--version`, accepts only the foreign command line (the `RETTOBASE`
+/// correction right after the platform, the ELF, SPI1's access log for D4,
+/// a `RunFor` of `time`, and none of the generated runtime's contract: no
+/// boot word written, no hook of ours, no capture), and prints `stdout`.
+fn toolbox_foreign(stdout: &str, time: &str) -> Dir {
+    let tb = Dir::new("tb");
+    let out = tb.write("renode.out", stdout.as_bytes());
+    let rettobase = rettobase_in_stub();
+    let body = format!(
+        r#"#!/bin/sh
+[ "$1" = --config ] || exit 97
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
+case "$7" in
+  *"mach create; machine LoadPlatformDescription @"*"; {rettobase}; sysbus LoadELF @"*"firmware.elf; "*) ;;
+  *) exit 99;;
+esac
+case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac
+case "$7" in *"sysbus LogPeripheralAccess sysbus.spi1 true"*) ;; *) exit 96;; esac
+case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
+/bin/cat '{out}'
+"#,
+        out = out.display()
+    );
+    common::stub::write_executable(&tb.0.join("renode"), body.as_bytes());
+    tb
+}
+
+/// The BME280's listed read (`parts.json` `reads`, a burst from 0xF7), as
+/// Renode 1.17.0's model logs ArduPilot's (`AET-WO-4400e` §1.1, measured).
+const BME280_READ: &str = "[00:00:00.050000000] [NOISY] i2c1.u2: Write F7\n[00:00:00.050001000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0\n";
+
+/// A foreign transcript: the run's log, then the foreign reads (executed
+/// instructions, MIPS, PC, ICSR, then every image register in address order),
+/// then the listing.
+fn foreign_transcript(run_log: &str, icsr: &str) -> String {
+    let mut s = String::from(
+        "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
+    );
+    s.push_str(run_log);
+    s.push_str("AETHELGARD-BOOT-BEGIN\n");
+    for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
+        .iter()
+        .chain(GOOD_REGISTERS.iter())
+    {
+        s.push_str(r);
+        s.push('\n');
+    }
+    s.push_str("AETHELGARD-BOOT-END\n");
+    s.push_str(CPU_LISTING);
+    s
+}
+
+fn foreign_with(path: &Path, firmware: &Path, time: &str) -> Output {
+    run(
+        path,
+        &[
+            OsStr::new("simulate"),
+            OsStr::new("--platform"),
+            platform().as_os_str(),
+            OsStr::new("--firmware"),
+            firmware.as_os_str(),
+            OsStr::new("--spec"),
+            spec().as_os_str(),
+            OsStr::new("--foreign"),
+            OsStr::new(time),
+        ],
+    )
+}
+
+fn foreign(stdout: &str) -> (Option<i32>, Value) {
+    let tb = toolbox_foreign(stdout, "0.010000000");
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let out = foreign_with(&tb.0, &fw, "10ms");
+    (out.status.code(), report(&out))
+}
+
+fn good_foreign_log() -> String {
+    format!("{GOOD_WITNESS}{BME280_READ}{GOOD_SPI_WITNESS}")
+}
+
+/// `AET-WO-4400e` D3, D5, D6 (i): a foreign boot is judged by its models'
+/// own lines, booted at the first identity a declared device's model logs,
+/// and its verdict says `judge: foreign` with the rule table; none of the
+/// generated runtime's fields is there.
+#[test]
+fn a_foreign_boot_is_judged_by_its_models_lines_and_says_so() {
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    let b = &v["boot"];
+    assert_eq!(b["judge"], "foreign", "{v}");
+    assert_eq!(b["window"], "FOREIGN_MAX_VIRTUAL_NS");
+    assert_eq!(b["booted"]["reference"], "U2", "{v}");
+    assert_eq!(b["booted"]["at_ns"], 37_620_000, "{v}");
+    assert!(
+        b.get("boot_word").is_none() && b.get("i2c").is_none(),
+        "{v}"
+    );
+    assert_eq!(b["memory_regions"].as_array().unwrap().len(), 7);
+    let steps: Vec<(String, String, Value)> = b["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| {
+            (
+                d["reference"].as_str().unwrap().to_owned(),
+                d["step"].as_str().unwrap().to_owned(),
+                d["observed_ns"].clone(),
+            )
+        })
+        .collect();
+    assert!(
+        steps.contains(&("U2".into(), "identity".into(), 37_620_000.into())),
+        "{steps:?}"
+    );
+    assert!(
+        steps.contains(&("U2".into(), "data (reads[0])".into(), 50_000_000.into())),
+        "{steps:?}"
+    );
+    assert!(
+        steps.contains(&("U4".into(), "identity".into(), 40_010_000.into())),
+        "{steps:?}"
+    );
+    let rules = b["rules"].as_array().unwrap();
+    assert!(
+        rules
+            .iter()
+            .any(|r| r["rule"] == "device configure" && r["disposition"] == "dropped")
+    );
+    assert!(
+        rules
+            .iter()
+            .all(|r| r["judges"].as_str().is_some_and(|j| !j.is_empty()))
+    );
+}
+
+/// D5: with no identity a declared device's model logged, nothing booted;
+/// a device's data read before its identity does not count (D6 (i)).
+#[test]
+fn a_foreign_boot_no_model_witnesses_fails_by_name() {
+    let (code, v) = foreign(&foreign_transcript("", "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(k.contains(&"foreign_not_booted".to_owned()), "{k:?}");
+    assert!(
+        k.contains(&"i2c_transaction_unwitnessed".to_owned()),
+        "{k:?}"
+    );
+    let (_, v) = foreign(&foreign_transcript(
+        &format!("{BME280_READ}{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
+        "0x00000800",
+    ));
+    assert_eq!(v["boot"]["booted"]["reference"], "U2", "{v}");
+    assert!(
+        kinds(&v).contains(&"i2c_transaction_unwitnessed".to_owned()),
+        "{v}"
+    );
+}
+
+/// D4 (ruled on PR #215): the SPI model's slave-mode `[ERROR]` is exempt
+/// only directly after a `CFG2` write with `MASTER` 0 while the last `CR1`
+/// write left `SPE` 0, from the access log; any other `[ERROR]` fails.
+#[test]
+fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
+    let stop = "[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F7C] WriteUInt32 to 0x0 (Control1), value 0x0\n\
+[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82] WriteUInt32 to 0xC (Configuration2), value 0x0\n\
+[00:00:00.041000000] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{stop}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 1, "{v}");
+    let enabled = stop.replace(
+        "value 0x0\n[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82]",
+        "value 0x1\n[00:00:00.041000000] [INFO] spi1: [cpu: 0x8100F82]",
+    );
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{enabled}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["renode_error_log"], "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 0, "{v}");
+}
+
+/// D5: the run must end in thread mode, as for a generated firmware.
+#[test]
+fn a_foreign_boot_ending_in_an_exception_fails() {
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000803"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["core_in_exception"], "{v}");
+}
+
+/// D3: the judge is declared, never inferred. `--for` and `--foreign`
+/// together are refused, as is a foreign window past its bound; a generated
+/// boot's verdict names no judge; an ELF with RAM in D2 SRAM is refused
+/// without the declaration and loads with it; an ELF outside every region
+/// is refused either way (`FirmwareOutsideMemory`).
+#[test]
+fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let tb = toolbox(&good());
+    let both = run(
+        &tb.0,
+        &[
+            OsStr::new("simulate"),
+            OsStr::new("--platform"),
+            platform().as_os_str(),
+            OsStr::new("--firmware"),
+            fw.as_os_str(),
+            OsStr::new("--spec"),
+            spec().as_os_str(),
+            OsStr::new("--for"),
+            OsStr::new("10ms"),
+            OsStr::new("--foreign"),
+            OsStr::new("10ms"),
+        ],
+    );
+    assert_eq!(both.status.code(), Some(64), "{both:?}");
+    let past = foreign_with(&tb.0, &fw, "4001ms");
+    assert_eq!(past.status.code(), Some(64), "{past:?}");
+    let (status, v) = boot(&good());
+    assert_eq!(status, Some(0), "{v}");
+    assert!(v["boot"].get("judge").is_none(), "{v}");
+    // A firmware whose one segment is in D2 SRAM, as ArduPilot's .data is.
+    let d2 = input.write("d2.elf", &elf_at(0x3000_0000, &code(), 40));
+    let generated = boot_with(&tb.0, &platform(), &d2, "10ms");
+    assert_eq!(generated.status.code(), Some(3), "{generated:?}");
+    assert_eq!(report(&generated)["error"]["kind"], "FirmwareOutsideMemory");
+    let tf = toolbox_foreign(
+        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        "0.010000000",
+    );
+    let loaded = foreign_with(&tf.0, &d2, "10ms");
+    assert_ne!(loaded.status.code(), Some(3), "{loaded:?}");
+    let outside = input.write("fmc.elf", &elf_at(0x6000_0000, &code(), 40));
+    let refused = foreign_with(&tf.0, &outside, "10ms");
+    assert_eq!(refused.status.code(), Some(3), "{refused:?}");
+    let e = report(&refused);
+    assert_eq!(e["error"]["kind"], "FirmwareOutsideMemory", "{e}");
+    assert!(
+        e["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("D2_AHBSRAM_BASE"),
+        "{e}"
+    );
+}

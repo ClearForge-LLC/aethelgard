@@ -643,7 +643,8 @@ mod tests {
                 ("platform", true),
                 ("firmware", false),
                 ("spec", false),
-                ("for", false)
+                ("for", false),
+                ("foreign", false)
             ]
         );
     }

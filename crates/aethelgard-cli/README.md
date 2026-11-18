@@ -373,6 +373,60 @@ The judge reads each capture whole, by descriptor and through no link, and names
 
 Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a load error. `firmware.image_sha256` is the sha256, over every `PT_LOAD` with memory in physical-address order, of its physical address, file size and memory size (each a `u32` little-endian) and then its file bytes: the memory image Renode builds. It is the firmware's identity, because the file's own hash also covers symbol names, which Cargo derives from the checkout path.
 
+### Foreign firmware (`simulate --foreign`)
+
+`AET-WO-4400e`, ruled on PR #212 (comment 6958822008), with D4 ruled on PR #215 (comment 6961943794). The foreign judge is a second judge, for a firmware this project did not generate, such as unmodified ArduPilot.
+
+**It is declared, never inferred** (`INV-06`):
+- `simulate --firmware F --spec S --foreign TIME` chooses it. `TIME` is the virtual time the boot runs, as `--for`'s, at most `FOREIGN_MAX_VIRTUAL_NS`.
+- That bound is 4 s, **provisional** until the window is measured with the IMU's reads (D7).
+- `--for` and `--foreign` together are refused (exit 64). `--for` keeps its 100 ms bound.
+- The verdict's `boot` says `"judge": "foreign"`. A generated boot's verdict names no judge and is byte for byte what it was.
+
+**What is the same:**
+- the emitted platform, which must be exactly `S`'s;
+- the analog pre-pass;
+- the sandbox, the 30 s and 1 GiB bounds;
+- the `RETTOBASE` correction and the cold RCC writes.
+
+**None of the generated runtime's contract applies:** no boot word, no records in RAM, no hook of ours, no serial injection, no motor window.
+
+**The memory rule:**
+- Every `PT_LOAD`, at both its physical and its virtual address, lies inside flash or one of the six RAM regions ST's header states (ITCM, DTCM, AXI SRAM, D2 SRAM, D3 SRAM, backup SRAM).
+- Each base is its `#define`, and each size is the one its comment states (`region_size_kib`). Nothing is typed in (`RUL-16`).
+- No two segments' file bytes may overlap. Zero-filled segments may share a physical address, as ArduPilot's `.crash_log`, `.bss` and `.heap` do (provisional).
+- An outside segment is `FirmwareOutsideMemory`, naming every region.
+
+**What witnesses the boot:** only what the firmware cannot write (`INV-07`): the models' own transaction lines and the platform's state.
+- **Booted** (D5): the first identity transaction a declared device's model logs, found in the device's own lines. In addition:
+  - the run ends in thread mode (`core_in_exception` otherwise);
+  - its final `PC` lies in an executable `PT_LOAD` (`pc_outside_firmware` otherwise).
+
+  The console banner is refused. With no identity witnessed, the verdict names `foreign_not_booted`.
+- **Each modelled device** (D6 (i)):
+  - its identity transaction;
+  - then one of its data reads after it: the script's data step, or a read its part lists in `parts.json` `reads` (the BME280's burst from `0xF7`);
+  - each with the virtual time of its first line in `boot.devices`;
+  - a missing one is `{bus}_transaction_unwitnessed`.
+
+  The configure step is not judged. The bytes of a listed read are not judged either: the stock models answer from the configuration the firmware wrote.
+- **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0, while the controller's last `CR1` write left `SPE` 0. That is ChibiOS's `spi_lld_stop`, legal on silicon (RM0433 §50.11.4).
+  - The judge reads it from each SPI controller's access log, which a foreign boot turns on.
+  - Every exemption is counted in `boot.spi_errors_exempted`.
+  - Any other `[ERROR]` is `renode_error_log`.
+
+**The rule table:** `boot.rules` lists each of today's rules as kept, replaced or dropped, with what it judges or weakens. Rules the ruled table did not name are marked `provisional`. In short:
+- **kept:** solved pins' `MODER`/`AFR`; `core_in_exception`; `pc_outside_firmware`; device warnings; `renode_error_log` with D4; the log flood; the bounds; `device_unmodelled`; `locked_peripheral_access` (provisional).
+- **replaced:**
+  - the memory rule;
+  - the boot word, by "booted";
+  - cold RCC: at least the solved bits;
+  - USART `CR1`'s frame bits and `CR2.STOP`;
+  - the device steps, by witness lines alone;
+  - the chip-select windows, by the first matching run;
+  - the 100 ms bound.
+- **dropped**, each weakening named in the verdict: the instruction count; the self-loop; USART `CR3` and `BRR`; `SysTick.CSR`; `NVIC.ISER`; the configure step; the records; the serial witness; the brown-out record, the flash-controller access rule and the motor outputs (each provisional).
+
 ### The analog pre-pass (`simulate --firmware`)
 
 `AET-WO-2200` (`RUL-17`). Before Renode is looked for, each I2C line of the solved topology has its rise computed from the declared values (`RUL-19` (1)), and the result decides the platform the boot loads:
