@@ -122,6 +122,20 @@ pub enum EmitError {
         over_um_w: i64,
         over_um_h: i64,
     },
+    /// `AET-WO-1313d`: compaction under a bound stopped because its
+    /// termination argument failed at run time: a move did not lower the
+    /// moving group's potential, or the moves passed the bound the argument
+    /// gives. `reference` is the group's IC; the potential is in nanometres.
+    /// Nothing is written.
+    #[error("compaction refused at `{reference}`, move {moves} of a bound of {bound}: {why}; its potential is |dy| {} mm, |dx| {} mm", um(*dy_nm / 1000), um(*dx_nm / 1000))]
+    CompactionUnbounded {
+        reference: String,
+        dy_nm: i64,
+        dx_nm: i64,
+        moves: u64,
+        bound: u64,
+        why: &'static str,
+    },
     /// `AET-WO-4400d`: no right-angle turn of the footprint on F.Cu puts the
     /// part's cited axes where the specification declares them.
     #[error("`{reference}` declares X toward {x} and Z toward {z}; {why}")]
@@ -156,6 +170,7 @@ impl EmitError {
             Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
             Self::OutlineTooSmall { .. } => "OutlineTooSmall",
             Self::OutlineUnreachable { .. } => "OutlineUnreachable",
+            Self::CompactionUnbounded { .. } => "CompactionUnbounded",
             Self::ImuRotationUnplaceable { .. } => "ImuRotationUnplaceable",
             Self::Internal(_) => "EmitterError",
         }
@@ -168,6 +183,7 @@ impl EmitError {
             | Self::UnsupportedAddress { reference, .. }
             | Self::PowerNotDrawable { reference, .. }
             | Self::PadEscapeExhausted { reference, .. }
+            | Self::CompactionUnbounded { reference, .. }
             | Self::ImuRotationUnplaceable { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)

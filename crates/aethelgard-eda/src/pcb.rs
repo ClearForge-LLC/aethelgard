@@ -721,7 +721,7 @@ fn place(
         });
     }
     if let Some(rank) = rank {
-        compact(items, &mut placed, &anchor_of, &rule, &approach, rank);
+        compact(items, &mut placed, &anchor_of, &rule, &approach, rank)?;
     }
     let plan = if bounded {
         BOUNDED_PLAN
@@ -1126,6 +1126,11 @@ const SIDESTEP_STEPS: i64 = 40;
 /// - out of every approach strip ([`approaches`]);
 /// - inside the x-range the parts had before compaction, so the core never
 ///   widens.
+///
+/// `AET-WO-1313d`: compaction checks its own termination argument as it runs.
+/// Each move must lower the moving group's potential strictly, and the moves
+/// may not pass [`move_bound`], computed before the first move. Either
+/// failure is [`EmitError::CompactionUnbounded`], with nothing written.
 fn compact(
     items: &[Item<'_>],
     placed: &mut [Option<Placed>],
@@ -1133,13 +1138,19 @@ fn compact(
     rule: &[Rule],
     approach: &[Rect],
     rank: &[usize],
-) {
+) -> Result<(), EmitError> {
+    // How a member moves: [`shift`]; a unit test may put a broken mover in
+    // its own thread's place (the seam, test builds only).
+    #[cfg(not(test))]
+    let mv = shift;
+    #[cfg(test)]
+    let mv = tests::MOVE.with(std::cell::Cell::get);
     let mcu = items.iter().position(|it| is_mcu(it.part));
     let Some(target) = mcu
         .and_then(|i| placed[i].as_ref())
         .map(|p| p.courtyard.centre())
     else {
-        return;
+        return Ok(());
     };
     // Connectors are not placed yet, so none is a group.
     let mut groups: Vec<Vec<usize>> = (0..items.len())
@@ -1154,7 +1165,7 @@ fn compact(
         .collect();
     groups.sort_by_key(|members| rank[members[0]]);
     let Some(core) = placed.iter().flatten().map(|p| p.keep).reduce(Rect::union) else {
-        return;
+        return Ok(());
     };
     let clear = |placed: &[Option<Placed>], members: &[usize], d: (i64, i64)| {
         members.iter().all(|&m| {
@@ -1180,21 +1191,30 @@ fn compact(
             0
         }
     };
+    let centre = |placed: &[Option<Placed>], members: &[usize]| {
+        members
+            .iter()
+            .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
+            .reduce(Rect::union)
+            .map(Rect::centre)
+    };
     // This ends: a group's potential, (|dy|, |dx|) from its keep-out box's
     // centre to the target, falls strictly (lexicographically) with every
     // move it makes, since a move in y takes one STEP off |dy| with no
     // overshoot, and a move in x alone takes one STEP off |dx|; |dy| is
     // bounded, and |dx| by the core's fixed x-range. A pass in which no
     // group moves is the last.
+    let bound = move_bound(
+        groups
+            .iter()
+            .filter_map(|members| centre(placed, members).map(|c| potential(c, target))),
+        core.x1 - core.x0,
+    );
+    let mut moves = 0u64;
     loop {
         let mut moved = false;
         for members in &groups {
-            let Some(c) = members
-                .iter()
-                .filter_map(|&m| placed[m].as_ref().map(|p| p.keep))
-                .reduce(Rect::union)
-                .map(Rect::centre)
-            else {
+            let Some(c) = centre(placed, members) else {
                 continue;
             };
             let sy = toward(target.1 - c.1);
@@ -1213,16 +1233,72 @@ fn compact(
             if let Some(d) = d {
                 for &m in members {
                     if let Some(p) = placed[m].as_mut() {
-                        shift(p, d);
+                        mv(p, d);
                     }
                 }
                 moved = true;
+                moves += 1;
+                let before = potential(c, target);
+                let after = centre(placed, members).map_or(before, |c| potential(c, target));
+                let why = if after >= before {
+                    Some("the move did not lower its potential")
+                } else if moves > bound {
+                    Some("the moves passed the bound its termination argument gives")
+                } else {
+                    None
+                };
+                if let Some(why) = why {
+                    return Err(EmitError::CompactionUnbounded {
+                        reference: items[members[0]].part.reference.clone(),
+                        dy_nm: after.0,
+                        dx_nm: after.1,
+                        moves,
+                        bound,
+                        why,
+                    });
+                }
             }
         }
         if !moved {
-            break;
+            return Ok(());
         }
     }
+}
+
+/// A group's potential, `(|dy|, |dx|)` from its keep-out box's centre `c` to
+/// the target, compared lexicographically ([`compact`]).
+fn potential(c: (i64, i64), target: (i64, i64)) -> (i64, i64) {
+    ((target.1 - c.1).abs(), (target.0 - c.0).abs())
+}
+
+/// `AET-WO-1313d`: the most moves [`compact`] can make, from each group's
+/// starting potential `(|dy0|, |dx0|)` and the core's width `w`.
+///
+/// Proof, from the termination argument:
+/// - A move in y is taken only when `|dy| >= STEP`, and takes exactly one
+///   `STEP` off `|dy|`, so a group makes at most `ny = |dy0| / STEP` of them.
+/// - A move in x leaves `|dy|` alone and takes exactly one `STEP` off `|dx|`,
+///   which is never below 0. So the moves in x number at most `|dx0| / STEP`
+///   plus every step a move in y adds to `|dx|`.
+/// - A move in y moves sideways by at most [`SIDESTEP_STEPS`] steps, so it
+///   adds at most that many: the moves in x number at most
+///   `|dx0| / STEP + ny * SIDESTEP_STEPS`.
+/// - Also, the group's centre and the target (the MCU's courtyard centre)
+///   both stay inside the core's x-range, which no move leaves, so
+///   `|dx| <= w` after every move in y: the moves in x after each of the `ny`
+///   number at most `w / STEP`, so they total at most
+///   `|dx0| / STEP + ny * (w / STEP)`.
+/// - Both bounds hold, so the smaller does. A group makes at most
+///   `ny + |dx0| / STEP + ny * min(SIDESTEP_STEPS, w / STEP)` moves, and
+///   compaction at most their sum. That is tighter than the work order's
+///   `(ny + 1) * (w / STEP + 1)`, by this proof.
+///
+/// Every term comes from the geometry before the first move or from the move
+/// rule itself; none is typed in for the bound.
+fn move_bound(starts: impl Iterator<Item = (i64, i64)>, w: i64) -> u64 {
+    let n = |v: i64| u64::try_from(v / STEP).unwrap_or(0);
+    let per_y = n(w).min(n(SIDESTEP_STEPS * STEP));
+    starts.map(|(dy, dx)| n(dy) + n(dx) + n(dy) * per_y).sum()
 }
 
 /// How far past the MCU's courtyard a pair's approach is kept clear, and how
@@ -2296,6 +2372,84 @@ mod tests {
     }
 
     use super::*;
+
+    /// How a placed part moves by `d`: [`shift`], or a test's broken one.
+    type Mover = fn(&mut Placed, (i64, i64));
+
+    thread_local! {
+        /// The seam `compact` moves its members through in test builds
+        /// (`AET-WO-1313d`): [`shift`] unless a test puts another in its own
+        /// thread's place.
+        pub(super) static MOVE: std::cell::Cell<Mover> = std::cell::Cell::new(shift);
+    }
+
+    /// `AET-WO-1313d`: the bound's arithmetic on two hand-built groups, from
+    /// `move_bound`'s proof. STEP is 0.25 mm; SIDESTEP_STEPS is 40.
+    /// - Group A starts 1.1 mm off in y (4 moves in y) and 0.6 mm in x (2
+    ///   moves in x before its first move in y). In a 20 mm core (80 steps)
+    ///   the sidestep caps the x-moves after each y-move at 40:
+    ///   4 + 2 + 4 x 40 = 166. In a 5 mm core (20 steps) the width does:
+    ///   4 + 2 + 4 x 20 = 86.
+    /// - Group B starts 0.1 mm off in y, under a step (none in y), and 2.6 mm
+    ///   in x (10): 0 + 10 + 0 = 10.
+    #[test]
+    fn the_move_bound_follows_the_termination_argument() {
+        let mm = |v: f64| (v * 1_000_000.0).round() as i64;
+        let a = (mm(1.1), mm(0.6));
+        let b = (mm(0.1), mm(2.6));
+        assert_eq!(move_bound([a].into_iter(), mm(20.0)), 166);
+        assert_eq!(move_bound([a].into_iter(), mm(5.0)), 86);
+        assert_eq!(move_bound([b].into_iter(), mm(20.0)), 10);
+        assert_eq!(move_bound([a, b].into_iter(), mm(20.0)), 176);
+        assert_eq!(move_bound(std::iter::empty(), mm(20.0)), 0);
+    }
+
+    /// `AET-WO-1313d`: compaction refuses by name, at once, when its
+    /// termination argument fails, instead of running for good.
+    /// - A move that leaves the keep-out box behind (`1313c`'s mutant of
+    ///   `shift`) does not lower the potential: refused at that move.
+    /// - A move of one nanometre lowers it, but far more slowly than the
+    ///   argument allows: refused when the moves pass the bound.
+    #[test]
+    fn a_compaction_whose_termination_argument_fails_is_refused_by_name() {
+        let gnd = || Conn::Rail("GND".into());
+        let parts = vec![
+            mcu(&[("57", net("SDA")), ("58", net("SCL"))]),
+            part(
+                "Sensor:BME280",
+                "Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering",
+                "U2",
+                &[("1", gnd()), ("3", net("SDA")), ("4", net("SCL"))],
+            ),
+        ];
+        let items = items(&parts).unwrap();
+        let ok = layout_of(&items, &[], &[], Some(bound(100, 100)));
+        assert!(ok.is_ok(), "the design compacts with shift");
+        let keep_left_behind: Mover = |p, d| {
+            p.origin = (p.origin.0 + d.0, p.origin.1 + d.1);
+            p.courtyard = p.courtyard.shift(d);
+        };
+        let one_nm: Mover = |p, d| shift(p, (d.0.signum(), d.1.signum()));
+        for (mover, why) in [
+            (keep_left_behind, "the move did not lower its potential"),
+            (one_nm, "the moves passed the bound"),
+        ] {
+            MOVE.with(|m| m.set(mover));
+            let t = std::time::Instant::now();
+            let Err(e) = layout_of(&items, &[], &[], Some(bound(100, 100))) else {
+                panic!("{why}: compaction was not refused");
+            };
+            let took = t.elapsed();
+            MOVE.with(|m| m.set(shift));
+            assert_eq!(
+                (e.kind(), e.id()),
+                ("CompactionUnbounded", Some("U2")),
+                "{e}"
+            );
+            assert!(e.to_string().contains(why), "{why}: {e}");
+            assert!(took < std::time::Duration::from_secs(1), "{why}: {took:?}");
+        }
+    }
 
     fn part(
         lib_id: &'static str,

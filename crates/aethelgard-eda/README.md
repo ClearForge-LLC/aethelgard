@@ -40,7 +40,7 @@ A part anchored to an IC (a buck's input capacitor, CBOOT, an MCU support part) 
 - each IC's group (the IC and every non-IC part placed beside it) is then compacted toward the MCU, a 0.25 mm step at a time, sidestepping up to 10 mm, keeping the gaps above, every pair's approach strip and the parts' x-range;
 - the connectors go on the left and right edges, cable out, in the rank's order.
 
-A bound the parts cannot fit is refused before placement (`OutlineTooSmall`); one the placer cannot reach is refused with the outline it reached (`OutlineUnreachable`), and nothing is written. With no bound the board is unchanged, byte for byte.
+A bound the parts cannot fit is refused before placement (`OutlineTooSmall`); one the placer cannot reach is refused with the outline it reached (`OutlineUnreachable`); a compaction whose termination argument fails at run time, a move that does not lower its group's potential or more moves than the argument's bound, is refused at that move (`CompactionUnbounded`); and nothing is written. With no bound the board is unchanged, byte for byte.
 
 **The router** (`route::route`) is integer-only, and its copper is a function of the placed pads alone:
 - **Grid:** 0.125 mm, which divides the LQFP's 0.5 mm pitch, so every LQFP pad centre is a node. Moves are axis-aligned on F.Cu and B.Cu, with a via between; the search is A* over (layer, node, entering direction), with a cost per step (B.Cu three times F.Cu's), per bend and per via. Ties go to the lower state index.
