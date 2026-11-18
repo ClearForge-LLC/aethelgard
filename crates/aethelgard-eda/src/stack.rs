@@ -23,6 +23,19 @@ pub fn kicad_id(name: &str) -> Option<&'static str> {
     })
 }
 
+/// The smallest via pad, nm, that keeps `ring_nm` of copper round the
+/// largest finished hole (`drill + plus`) at the worst position the
+/// per-axis tolerance `position` allows (`⌈position·√2⌉` off centre),
+/// rounded up to 10 µm (`AET-WO-1314`).
+pub fn ring_pad_nm(drill_nm: i64, plus_nm: i64, position_nm: i64, ring_nm: i64) -> i64 {
+    let mut reach = (position_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
+    while 2 * i128::from(position_nm).pow(2) > i128::from(reach).pow(2) {
+        reach += 1;
+    }
+    let d = drill_nm + plus_nm + 2 * reach + 2 * ring_nm;
+    (d + 9_999) / 10_000 * 10_000
+}
+
 /// The declared board, in nanometres.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack {
@@ -44,6 +57,13 @@ pub struct Stack {
     pub permittivity_source: String,
     pub clearance_nm: i64,
     pub width_nm: i64,
+    /// The board's own via, pad and drill: the engine's 0.6/0.3 mm, or the
+    /// ring rule's pad where the specification declares the fabricator's
+    /// tolerances (`AET-WO-1314`).
+    pub via_nm: i64,
+    pub drill_nm: i64,
+    /// The nets (by the board's name) with a declared capacitance bound.
+    pub bounded: Vec<String>,
     /// The declared net classes and coupled pairs (`AET-WO-1308`), each net
     /// by the board's name for it. Empty for a specification that declares
     /// none, whose board is then today's.
@@ -178,7 +198,14 @@ impl Stack {
         let b = &spec.board;
         let s = &b.stackup;
         let f = &s.finished_thickness_um;
-        Stack {
+        let mut st = Stack {
+            via_nm: crate::route::VIA_NM,
+            drill_nm: crate::route::DRILL_NM,
+            bounded: spec
+                .net_constraints
+                .iter()
+                .map(|c| board_net(spec, &c.net_name))
+                .collect(),
             copper: b.layers.iter().map(|l| l.name.clone()).collect(),
             planes: b
                 .layers
@@ -269,7 +296,30 @@ impl Stack {
             // part's axes cited, and the embedded parts table parsed.
             imus: crate::schematic::seats(spec)
                 .expect("a validated specification's IMU seats are complete"),
+        };
+        // MEASURED STOP ONLY (`AET-WO-1314` §1.1): the ring rule's pad, with
+        // the minimum ring from `AET_RING_UM`, where the fabricator's
+        // position and size tolerances are declared
+        let ring = std::env::var("AET_RING_UM")
+            .ok()
+            .and_then(|v| v.parse::<i64>().ok());
+        let tol = s.fab_tolerances.as_ref().and_then(|t| {
+            Some((
+                nm(t.hole_position_um.as_ref()?.value),
+                nm(t.hole_size_plus_um.as_ref()?.value),
+            ))
+        });
+        if let (Some(ring), Some((position, plus))) = (ring, tol) {
+            let pad = |drill: i64| ring_pad_nm(drill, plus, position, ring * 1000);
+            st.via_nm = st.via_nm.max(pad(st.drill_nm));
+            for c in &mut st.classes {
+                c.rule.via_nm = c.rule.via_nm.max(pad(c.rule.drill_nm));
+            }
+            for t in &mut st.thermal {
+                t.via_nm = t.via_nm.max(pad(t.drill_nm));
+            }
         }
+        st
     }
 
     /// The class or pair a net (by the board's name) is in: `class` or
@@ -297,8 +347,8 @@ impl Stack {
     pub fn default_rule(&self) -> Rule {
         Rule {
             width_nm: self.width_nm,
-            via_nm: crate::route::VIA_NM,
-            drill_nm: crate::route::DRILL_NM,
+            via_nm: self.via_nm,
+            drill_nm: self.drill_nm,
         }
     }
 
@@ -377,6 +427,9 @@ fn board_net(spec: &Specification, net: &str) -> String {
 pub(crate) fn reference() -> Stack {
     let thickness_source = "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %";
     Stack {
+        via_nm: crate::route::VIA_NM,
+        drill_nm: crate::route::DRILL_NM,
+        bounded: vec![],
         copper: vec!["F.Cu".into(), "B.Cu".into()],
         planes: vec![],
         thickness: Thickness {

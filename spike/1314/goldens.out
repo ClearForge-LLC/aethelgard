@@ -1,0 +1,9 @@
+test result: ok. 67 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 13.16s
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 153.68s
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 38.58s
+thread 'each_input_the_gate_reads_is_refused_by_name_when_absent' (1960529) panicked at crates/aethelgard-cli/tests/supply_tier1.rs:171:9:
+thread 'a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy' (1960528) panicked at crates/aethelgard-cli/tests/supply_tier1.rs:277:5:
+    a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy
+    each_input_the_gate_reads_is_refused_by_name_when_absent
+test result: FAILED. 6 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 461.69s
+EXIT 101

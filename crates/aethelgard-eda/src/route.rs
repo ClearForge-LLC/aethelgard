@@ -510,6 +510,8 @@ struct Router<'a> {
     banned: BTreeSet<usize>,
     /// Whether searches may not change layer: a pair's breakouts (§1.3).
     no_vias: bool,
+    /// Each net's price for a via (`AET-WO-1314`).
+    via_cost: Vec<u32>,
     /// Fixed copper on every layer, with its net: through-hole pads and
     /// thermal-array vias. It cuts every other net's fill.
     cuts: Vec<(Option<usize>, Shape)>,
@@ -1001,6 +1003,19 @@ impl<'a> Router<'a> {
                 pending_via[node] += cost;
             }
         }
+        let via_cost: Vec<u32> = {
+            // MEASURED STOP ONLY (`AET-WO-1314` §1.1): a bounded net's
+            // via at `AET_BOUNDED_VIA_COST`
+            let bounded = std::env::var("AET_BOUNDED_VIA_COST")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok());
+            nets.iter()
+                .map(|n| match bounded {
+                    Some(c) if board.stack.bounded.iter().any(|b| b == n) => c,
+                    _ => VIA_COST,
+                })
+                .collect()
+        };
         Router {
             board,
             grid,
@@ -1021,6 +1036,7 @@ impl<'a> Router<'a> {
             history: [vec![0; n], vec![0; n]],
             banned: BTreeSet::new(),
             no_vias: false,
+            via_cost,
             cuts,
             anchors,
             fixed: vec![false; count],
@@ -1265,7 +1281,7 @@ impl<'a> Router<'a> {
             if let Some(extra) = via_price.filter(|_| !self.no_vias && !self.banned.contains(&node))
             {
                 let tc = c
-                    + VIA_COST
+                    + self.via_cost[net]
                     + self.pending_via[node]
                     + self.history[0][node]
                     + self.history[1][node]
@@ -2112,7 +2128,11 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
             .iter()
             .map(|&(p, i)| yx(&board.parts[p].pads[i]))
             .collect();
-        (!is_stitched(name), list.len(), at, name.clone())
+        // MEASURED STOP ONLY (`AET-WO-1314` §1.1): bounded nets before
+        // the rest under `AET_BOUNDED_FIRST`
+        let first = std::env::var_os("AET_BOUNDED_FIRST").is_some()
+            && board.stack.bounded.iter().any(|b| b == name);
+        (!is_stitched(name), !first, list.len(), at, name.clone())
     });
     let pads: Vec<Vec<PadRef>> = nets.iter().map(|n| pads[n].clone()).collect();
     let order: Vec<usize> = (0..nets.len())
@@ -5226,6 +5246,9 @@ mod tests {
 
     fn two_layer_stack() -> crate::stack::Stack {
         crate::stack::Stack {
+            via_nm: crate::route::VIA_NM,
+            drill_nm: crate::route::DRILL_NM,
+            bounded: vec![],
             copper: vec!["F.Cu".into(), "B.Cu".into()],
             planes: vec![],
             thickness: crate::stack::Thickness {
