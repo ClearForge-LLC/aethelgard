@@ -10,13 +10,13 @@ Labels: **[read at source]** from a file and line named beside it; **[rendered]*
 - **The model:** `models/renode/ICM42688P.cs` at `main` `7d52d29`.
 - **TDK InvenSense's own ICM-426xx driver (after the ruling, §8):** eMD 2.0.9 (`Icm426xxVersion.h`: "2.0.9"), from the mirror `geosmall/DK-42688-P_SmartMotion_eMD_2.0.9` at `14c056e8`, `example-raw-data-registers/src/Invn/Drivers/Icm426xx/`. It is cross-checked against the 2.0.3 copy Microchip vendors in `MicrochipTech/ml-samd21-iot-imu-data-logger` at `9fac763a`. `TDK` below = `Icm426xxDriver_HL.c` of 2.0.9. The licence is InvenSense's proprietary one, so the code is cited and never copied.
 
-## 0. Status: BUILT as ruled on #214; READY waits on one narrow question (B10, §8)
+## 0. Status: READY, built as ruled on #214, with `main` `d0381216` (`4400e3`) merged
 
 - **The FIFO is built to the ruled set (§9).** Every acceptance item of WO §2 is met and measured (§10).
 - **B1–B4 are [read at source] in TDK's driver,** which confirms each recommended reading. B5–B9 are labelled [inferred] beside each rule in the model source (§8).
-- **B10 contradicts TDK's driver.** TDK treats the FIFO temperature `0x80` (−128) as "no new temperature", while the ruled B10 saturates at −128. That is the ruling's "contradiction: stop", scoped to that one constant. The question was asked on the bus with both sources cited. The model carries the ruled −128 until the answer arrives.
+- **B10 contradicts TDK's driver, and was raised:** TDK treats the FIFO temperature `0x80` (−128) as "no new temperature", while the ruled B10 saturates at −128. I asked on the bus with both sources cited, scoped to that one constant. The architect's 23:52Z instruction approved the build "per my 6961946623 ruling" and asked for READY. So the ruled −128 stands, labelled [inferred] in the source. −127 is recorded below as a backlog item (§8).
 - **The generated firmware's verdicts do not move [measured]:** `twin_tier2` 82/82 and `campaign_tier2` 9/9 in the pinned image on the new model.
-- **ArduPilot's `read_fifo` under the hook is not recorded:** `4400e3` has not merged. Main holds only its work order (#216).
+- **ArduPilot's `read_fifo` under `4400e3`'s hook is recorded [measured] (§10):** 1240 packets in 4.2 s of virtual time, every one accepted. It never resets its FIFO after start-up, and it reaches `Init Gyro`.
 
 ## 0a. The §1.1 stop (as ruled on #214, comment 6961946623)
 
@@ -244,7 +244,7 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
 | **B7** `HEADER_ODR_*` 0 on the first packet after a flush | silent | [inferred] |
 | **B8** an empty FIFO reads `0xFF` | a header with `msg_bit` set makes the driver reset the FIFO (L1072–1076), consistent with p.39's "FIFO is empty"; nothing on the other bytes | [inferred] |
 | **B9** capacity 2048 bytes less one packet | silent | [inferred] |
-| **B10** a FIFO temperature saturates at −128 and +127 | **contradicts:** `INVALID_VALUE_FIFO_1B` is `(int8_t)0x80` (`Icm426xxDefs.h` L284), and a byte equal to it is "no new temperature" (L1115) | **stopped, narrowly:** asked on the bus, proposing −127 … +127 |
+| **B10** a FIFO temperature saturates at −128 and +127 | **contradicts:** `INVALID_VALUE_FIFO_1B` is `(int8_t)0x80` (`Icm426xxDefs.h` L284), and a byte equal to it is "no new temperature" (L1115) | raised on the bus; the ruled −128 stands under the 23:52Z instruction; **backlog:** −127 … +127, keeping −128 as the invalid code, as the 16-bit floor keeps −32768 |
 
 **B10 in practice:** only a temperature below 25 − 127.5/2.07 ≈ −36.6 °C reaches the bound. Neither ArduPilot's path nor any stimulus in the repository does. The constant is `FifoTempMin` (`ICM42688P.cs`), one line.
 
@@ -283,7 +283,7 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
 - `crates/aethelgard-cli/src/ledger.rs` L1337, L1342 and L1347: the citations `ICM42688P.cs L174, L242` and `L172–175` now read `L200, L287` and `L198–201`, the same two warnings at their new lines.
 
 **Also outside the fence, as every new tier-2 test needs:**
-- `.github/workflows/ci.yml`: `TIER2_MIN` 185 (180 plus these five), with a comment line;
+- `.github/workflows/ci.yml`: `TIER2_MIN` 188 (`4400e3`'s 183 plus these five), with a comment line;
 - `ci/test-weights.tsv`: five rows, Furnace estimates.
 
 ## 10. Acceptance (WO §2) [measured]
@@ -294,14 +294,23 @@ The ruling (comment 6961946623): cite TDK InvenSense's own ICM-426xx driver wher
   - `twin_tier2` 82 passed, 0 failed (693.5 s): the reference, the own board and the seeded faults;
   - `campaign_tier2` 9 passed, 0 failed: every scenario;
   - `models_tier2` 12 passed, 0 failed.
+  - After `main` `d0381216` was merged (every boot now carries `4400e3`'s hook): `twin_tier2` 85/85, `campaign_tier2` 9/9 and `models_tier2` 12/12.
   - The firmware never enables the FIFO, and its only read stops at `0x22`.
   - The bench board carries no ICM-42688-P.
-- **ArduPilot's `read_fifo` under the hook: not recorded.** The ruling asks for it only if `4400e3` merges first. Main holds only `4400e3`'s work order (#216, docs), and `4400e2`'s record (#215) is a spike. What this build shows of that path is the replay: the count and one 16-byte packet, as `read_fifo` reads them.
+- **ArduPilot's `read_fifo` under the hook [measured].** `4400e3` merged first (#217, `d0381216`), so the ruling asks for this record.
+  - **What ran:** `4400e`'s CI ELF (`a799dfb6…`, artifact `generated-sentinel-02` of CI run 44148995663), on this branch's model after the merge. It ran under the CLI's own Renode script as `4400e3` captured it, with its RETTOBASE hook once and only the ELF swapped: 4.2 s of virtual time, one `RunFor`, in the pinned image. Summary at `~/.cache/aet-4220c/ap/r1-summary.txt`.
+  - **Start-up:** one `fifo_reset()` (`0x16` ← `0x80`, then `FIFO_FLUSH`), at 3.5693 s.
+  - **The first non-zero count:** `0x3E 0x00`, 62 records, at 3.6104 s. That is the start-up backlog at 2 kHz, read as 24 + 24 + 14 packets (384, 384 and 224 bytes): ArduPilot's chunked read (B3, B4) on the real driver.
+  - **Then one packet per poll:** 1176 count reads of 1 and 218 of 0, one of 2.
+  - **1240 packets in all,** every header `0x68`, so none fails `IV3` L458's check. Each holds the twin's stimulus as §5 works it: accel Y `0x0800`, temperature `0x08`.
+  - **No warning from the model.** Exactly one `fifo_reset`, so no `need_reset` (`IV3` L616–629).
+  - **The console reaches `Init Gyro`,** and ArduPilot is past `wait_for_sample`'s first sample. It was still in its gyro calibration at 4.2 s; the run window is `4400e`'s to set (its D7), so it was not extended here.
 - **The CLAUDE.md gates:**
   - fmt; clippy `-D warnings` with `with-tools`;
-  - `cargo test --workspace` 2176 passed, 0 failed;
-  - `ci/shard.sh plan` in the image: guard ok, 2377 tests, 185 tier 2;
-  - `TIER2_MIN` 185.
+  - `cargo test --workspace` 2178 passed, 0 failed, after the merge;
+  - `ci/shard.sh plan` in the image: guard ok, 2382 tests, 188 tier 2;
+  - `TIER2_MIN` 188: `4400e3`'s 183 plus these five, a comment line naming each;
+  - CI green on `36fc6eba` before the merge (run 44193015808, `tier2_tests_passed=185 floor=185`).
 
 ## 11. Adversarial pass (WO §5), targeted
 
@@ -348,7 +357,7 @@ It was run by a fresh read-only subagent over the diff. Each change applied was 
 - **Dead path removed:** the one-caller wrapper `FifoCount()`, inlined. Also merged: a two-clause mask (`& 0x0A`) and a one-use local.
 - **Findings, not changed:**
   - `WritePacket` and `FifoProblem` each decode `FIFO_CONFIG1`'s enables; sharing them needs a helper, so they are kept;
-  - `FifoTempMin` stays a named constant until B10 is ruled.
+  - `FifoTempMin` stays a named constant: it is where B10's backlog item (−127) would land.
 
 ## 14. Record
 
@@ -357,6 +366,8 @@ It was run by a fresh read-only subagent over the diff. Each change applied was 
   - the stop: `6dfb052c`;
   - the build: `3b494fbf`;
   - `main` `ff17dcf9` (4400e2's record and docs, no file of this order) merged: `af772c80`;
-  - this FEEDBACK.
+  - FEEDBACK: `36fc6eba`;
+  - `main` `d0381216` (`4400e3`) merged: `26466f3c`, with `TIER2_MIN` 188;
+  - this FEEDBACK, then the READY commit.
 - **Evidence:** `~/.cache/aet-4220c/` (the TDK copies under `tdk/` with `SOURCE.txt`, the mutant harness under `mut/`, the image runs).
 - **Not built (WO "is NOT"):** no change to the data registers' behaviour; no interrupts or INT pins for the FIFO; no APEX.
