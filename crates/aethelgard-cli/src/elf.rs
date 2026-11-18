@@ -377,7 +377,9 @@ pub fn check_foreign(
         .collect();
     executable.sort_unstable();
     if executable.windows(2).any(|p| p[0].1 > p[1].0) {
-        return Err(malformed("executable PT_LOAD segments overlap in memory".into()));
+        return Err(malformed(
+            "executable PT_LOAD segments overlap in memory".into(),
+        ));
     }
     if executable.len() > aethelgard_chaos::record::MAX_EXECUTABLE_SEGMENTS {
         return Err(malformed(format!(

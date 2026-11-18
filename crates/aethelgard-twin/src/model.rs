@@ -467,6 +467,71 @@ impl Model {
     }
 }
 
+/// One line of a listed data read's witness (`AET-WO-4400e`, D6 (i)): the
+/// whole line after the host timestamp, or a prefix then at least `at_least`
+/// bytes, each written as Renode's model writes a byte (upper-case
+/// hexadecimal, unpadded or `0x`-prefixed, as the model's own format).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WitnessLine {
+    Exact(String),
+    Bytes { prefix: String, at_least: usize },
+}
+
+impl WitnessLine {
+    /// True when `line`, after the host timestamp, is this line.
+    pub fn matches(&self, line: &str) -> bool {
+        match self {
+            WitnessLine::Exact(text) => line == text,
+            WitnessLine::Bytes { prefix, at_least } => {
+                let Some(rest) = line.strip_prefix(prefix.as_str()) else {
+                    return false;
+                };
+                let bytes: Vec<&str> = rest.split(' ').collect();
+                bytes.len() >= *at_least
+                    && bytes.iter().all(|b| {
+                        let hex = b.strip_prefix("0x").unwrap_or(b);
+                        (1..=2).contains(&hex.len())
+                            && hex
+                                .bytes()
+                                .all(|c| c.is_ascii_digit() || (b'A'..=b'F').contains(&c))
+                    })
+            }
+        }
+    }
+}
+
+impl Model {
+    /// The lines `device` writes when a firmware makes `read`, a data read
+    /// the part's table lists (`AET-WO-4400e`, D6 (i)); `None` when the twin
+    /// knows no format for it, a named failure, never a skip. The bytes'
+    /// values are not part of it: the stock models answer from the
+    /// configuration the firmware wrote, which the foreign judge does not
+    /// judge.
+    pub fn read_witness(self, device: &str, read: &parts::DataRead) -> Option<Vec<WitnessLine>> {
+        match self {
+            // `BME280.cs` L38 and L75 (as [`Model::witness`]): `Write {reg:X}`
+            // for the register written, then `Read {bytes}` for the burst.
+            Model::Bme280 => {
+                let [register] = read.write.as_slice() else {
+                    return None;
+                };
+                Some(vec![
+                    WitnessLine::Exact(format!("[NOISY] {device}: Write {register:X}")),
+                    WitnessLine::Bytes {
+                        prefix: format!("[NOISY] {device}: Read "),
+                        at_least: usize::from(read.read),
+                    },
+                ])
+            }
+            Model::GenericSpiFlash
+            | Model::Icm20948
+            | Model::Icp101xx
+            | Model::Icm42688p
+            | Model::Bmp581 => None,
+        }
+    }
+}
+
 /// The model for `part`, or `None` when the twin cannot model it.
 pub fn kind(part: &str) -> Result<Option<Model>, TwinError> {
     let table = parts::table().map_err(TwinError::InvalidTopology)?;
@@ -489,6 +554,29 @@ pub fn model(part: &str) -> Result<Option<&'static str>, TwinError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-4400e`: the BME280's listed burst from `0xF7` is witnessed by
+    /// its `Write F7`, then a `Read` of at least 6 of the model's bytes, as
+    /// ArduPilot's driver measured on the twin (`Read 0 0 90 80 0 D0`).
+    #[test]
+    fn the_bme280_s_listed_read_is_its_write_then_at_least_its_bytes() {
+        let read = parts::DataRead {
+            write: vec![0xF7],
+            read: 6,
+        };
+        let w = Model::Bme280.read_witness("i2c1.u2", &read).unwrap();
+        assert!(w[0].matches("[NOISY] i2c1.u2: Write F7"));
+        assert!(!w[0].matches("[NOISY] i2c1.u2: Write F8"));
+        assert!(w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0"));
+        assert!(w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0 80 0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 d0"));
+        assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0 "));
+        assert!(!w[1].matches("[NOISY] i2c1.u3: Read 0 0 90 80 0 D0"));
+        for m in [Model::GenericSpiFlash, Model::Icm42688p, Model::Bmp581] {
+            assert!(m.read_witness("x", &read).is_none());
+        }
+    }
 
     /// Each line the judge skips, beside the Renode source it is written by,
     /// as read at `renode-infrastructure` `066a7f13` (`AET-WO-4200` D2).

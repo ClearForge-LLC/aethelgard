@@ -11,6 +11,9 @@ use crate::run::{Bound, Bounds, LogFilter, Output, Stop};
 use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
+/// The foreign-firmware judge (`AET-WO-4400e`).
+pub mod foreign;
+
 const TOOL: &str = "renode";
 const LOAD_ERROR: &str = "There was an error executing command";
 /// Renode's error log level; a CPU listed beside one is not a clean load.

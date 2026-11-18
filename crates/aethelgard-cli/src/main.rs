@@ -166,8 +166,8 @@ enum Command {
         #[arg(long)]
         platform: PathBuf,
         /// Boot this ELF on the platform and judge the boot by the
-        /// specification. Needs --spec and --for.
-        #[arg(long, requires_all = ["spec", "for_time"])]
+        /// specification. Needs --spec, and --for or --foreign.
+        #[arg(long, requires_all = ["spec", "window"])]
         firmware: Option<PathBuf>,
         /// The specification the boot is judged by. Needs --firmware.
         #[arg(long, requires = "firmware")]
@@ -175,8 +175,15 @@ enum Command {
         /// The virtual time the boot runs: an integer with ns, us or ms, at
         /// most 100ms on every board, a whole number of 10 ns instructions.
         /// Needs --firmware.
-        #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time)]
+        #[arg(long = "for", id = "for_time", value_name = "TIME", requires = "firmware", value_parser = virtual_time, group = "window")]
         for_time: Option<u64>,
+        /// Judge the boot as a foreign firmware's, one this project did not
+        /// generate (AET-WO-4400e): declared here, never inferred from the
+        /// ELF; the verdict's boot says judge foreign. Its value is the
+        /// virtual time the boot runs, as --for's, at most 4000ms (the
+        /// foreign window). Needs --firmware; not with --for.
+        #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
+        foreign: Option<u64>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
     Campaign {
@@ -491,7 +498,8 @@ fn main() -> ExitCode {
             firmware,
             spec,
             for_time,
-        } => match (firmware, spec, for_time) {
+            foreign,
+        } => match (firmware, spec, for_time.or(foreign)) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
                 let topology = match solved(&spec) {
                     Ok((_, topology, _)) => topology,
@@ -508,6 +516,7 @@ fn main() -> ExitCode {
                         absent: Default::default(),
                         open: Default::default(),
                         rail: None,
+                        foreign: foreign.is_some(),
                     }),
                 )
             }
@@ -552,6 +561,16 @@ fn stopped(stop: run::Stop) -> ExitCode {
 /// of instructions at the platform's 100 MIPS, so the instruction witness is
 /// exact.
 fn virtual_time(s: &str) -> Result<u64, String> {
+    time_up_to(s, aethelgard_twin::boot::MAX_VIRTUAL_NS)
+}
+
+/// `--foreign`: as `--for`, up to the foreign window
+/// ([`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`], `AET-WO-4400e`).
+fn foreign_time(s: &str) -> Result<u64, String> {
+    time_up_to(s, renode::foreign::FOREIGN_MAX_VIRTUAL_NS)
+}
+
+fn time_up_to(s: &str, max: u64) -> Result<u64, String> {
     let (digits, scale) = if let Some(d) = s.strip_suffix("ns") {
         (d, 1)
     } else if let Some(d) = s.strip_suffix("us") {
@@ -566,7 +585,6 @@ fn virtual_time(s: &str) -> Result<u64, String> {
             "`{digits}` is not a positive integer without a leading zero"
         ));
     }
-    let max = aethelgard_twin::boot::MAX_VIRTUAL_NS;
     let ns = digits
         .parse::<u64>()
         .ok()
@@ -1348,6 +1366,8 @@ struct Boot {
     open: std::collections::BTreeSet<String>,
     /// A campaign scenario's declared droop (`AET-WO-2301`); `None` otherwise.
     rail: Option<analog::Rail>,
+    /// `simulate --foreign` (`AET-WO-4400e` D3): judged by the foreign judge.
+    foreign: bool,
 }
 
 /// A boot ready to run: every input copied and checked, every expectation
@@ -1377,6 +1397,9 @@ struct Ready {
     /// selects (`AET-WO-4200` D4).
     absent: std::collections::BTreeSet<String>,
     rail: Option<analog::Rail>,
+    /// The foreign firmware's memory regions, when judged as one
+    /// (`AET-WO-4400e`); `None` for a generated firmware.
+    foreign: Option<Vec<(&'static str, aethelgard_twin::boot::Region)>>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1433,9 +1456,22 @@ fn ready(
         .map_err(|e| run::Stop::unreadable(format!("cannot read the firmware's copy: {e}")))?;
     let memory = aethelgard_twin::boot::memory().map_err(twin_stop)?;
     let boot_word = aethelgard_twin::boot::boot_word().map_err(twin_stop)?;
-    let checked = elf::check(&bytes, &memory, boot_word)?;
+    // A foreign firmware is held to its own memory rule and none of the
+    // generated runtime's contract (`AET-WO-4400e`): no boot word, no
+    // self-loop, no serial injection, no motor window.
+    let foreign = match boot.foreign {
+        true => Some(elf::foreign_memory()?),
+        false => None,
+    };
+    let checked = match &foreign {
+        Some(regions) => elf::check_foreign(&bytes, regions)?,
+        None => elf::check(&bytes, &memory, boot_word)?,
+    };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
-    let motors = renode::motors(&boot.topology).map_err(twin_stop)?;
+    let motors = match boot.foreign {
+        true => Vec::new(),
+        false => renode::motors(&boot.topology).map_err(twin_stop)?,
+    };
     // `AET-WO-4300b`: each port's frame is derived from the firmware's own
     // sha256. It goes in one quantum after the last boot's boot word, port
     // after port (`AET-WO-2302` D4), by the CLI's own hooks; the boot word's
@@ -1448,7 +1484,10 @@ fn ready(
             firmware.sha256
         ))
     })?;
-    let mut serial = renode::serials(&boot.topology, &sha).map_err(twin_stop)?;
+    let mut serial = match boot.foreign {
+        true => Vec::new(),
+        false => renode::serials(&boot.topology, &sha).map_err(twin_stop)?,
+    };
     for s in &mut serial {
         s.open = boot.open.contains(&s.port.label);
     }
@@ -1478,6 +1517,7 @@ fn ready(
             held: boot.held,
             absent: boot.absent,
             rail: boot.rail,
+            foreign,
         },
     ))
 }
@@ -1803,9 +1843,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some((pass, booted))) = (&ready, &analog) {
         booted_is_emitted(&booted.path, r, pass)?;
     }
-    let commands = match &plan {
-        Some(plan) => plan.commands(),
-        None => renode::commands(&input.copy, &models),
+    let foreign = ready.as_ref().and_then(|r| r.foreign.as_ref());
+    let commands = match (&plan, foreign) {
+        (Some(plan), Some(_)) => renode::foreign::commands(plan),
+        (Some(plan), None) => plan.commands(),
+        (None, _) => renode::commands(&input.copy, &models),
     };
     let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
     let run = invocation(args, "status-run");
@@ -1817,11 +1859,52 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
         (None, _) => run.run()?,
     };
+    // The foreign judge's report (`AET-WO-4400e`): its firmware, its
+    // specification, its memory regions and every device's part.
+    let foreign_inputs = ready.as_ref().and_then(|r| {
+        r.foreign.as_ref().map(|regions| {
+            let parts: std::collections::BTreeMap<String, String> = r
+                .topology
+                .i2c_devices
+                .iter()
+                .map(|(k, d)| (k.clone(), d.part.clone()))
+                .chain(
+                    r.topology
+                        .spi_devices
+                        .iter()
+                        .map(|(k, d)| (k.clone(), d.part.clone())),
+                )
+                .collect();
+            (
+                verdict::FirmwareReport {
+                    path: r.firmware.original.display().to_string(),
+                    sha256: r.firmware.sha256.clone(),
+                    image_sha256: r.image_sha256.clone(),
+                },
+                r.specification_sha256.clone(),
+                renode::foreign::regions_report(regions),
+                parts,
+            )
+        })
+    });
+    let mut foreign_report = None;
     let (code, (mut findings, machine, observed)) = match (&plan, &out.ended) {
         // Killed at a bound: a fail that names it, with nothing read. A killed
         // tool has no exit code, so the verdict records -1.
-        (Some(_), run::Ended::Bounded(bound)) => {
+        (Some(plan), run::Ended::Bounded(bound)) => {
+            if let Some((firmware, spec, regions, _)) = foreign_inputs.clone() {
+                foreign_report = Some(renode::foreign::report(plan, firmware, spec, regions));
+            }
             (-1, (vec![renode::bounded(&out, *bound)], None, None))
+        }
+        (Some(plan), _) if foreign_inputs.is_some() => {
+            let code = out.code("renode")?;
+            let (firmware, spec, regions, parts) =
+                foreign_inputs.clone().expect("the guard holds it");
+            let (findings, machine, report) =
+                renode::foreign::judge(code, &out, plan, firmware, spec, regions, &parts)?;
+            foreign_report = Some(report);
+            (code, (findings, machine, None))
         }
         (Some(plan), _) => {
             let code = out.code("renode")?;
@@ -1890,7 +1973,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     }
     v.machine = machine;
     if let (Some(r), Some(plan)) = (&ready, &plan) {
-        v.boot = Some(boot_report(r, plan, observed.as_ref()));
+        match foreign_report {
+            Some(report) => v.foreign_boot = Some(report),
+            None => v.boot = Some(boot_report(r, plan, observed.as_ref())),
+        }
         v.memory = out
             .peak_rss_kib
             .map(|k| verdict::MemoryReport::of(k, renode::BOOT_BOUNDS.rss_kib));

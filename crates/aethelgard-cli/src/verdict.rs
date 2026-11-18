@@ -61,6 +61,12 @@ pub struct Verdict {
     /// `simulate --firmware` only: what the boot was judged by.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub boot: Option<Boot>,
+    /// `simulate --foreign` only (`AET-WO-4400e` D3): the foreign judge's
+    /// report, under the same `boot` key with `judge: "foreign"`. Exactly one
+    /// of the two is set, so a generated boot's verdict is byte for byte what
+    /// it was.
+    #[serde(rename = "boot", skip_serializing_if = "Option::is_none")]
+    pub foreign_boot: Option<crate::renode::foreign::ForeignBoot>,
     /// `simulate --firmware` only: the analog pre-pass's measurements and its
     /// fault decision, each its own record, apart from `boot` (`AET-WO-2200`).
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -663,7 +669,7 @@ pub struct I2cReport {
     pub status: Option<&'static str>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct FirmwareReport {
     pub path: String,
     /// The file's bytes as copied.
@@ -918,6 +924,7 @@ impl Verdict {
             elf: None,
             machine: None,
             boot: None,
+            foreign_boot: None,
             analog: None,
             faults: None,
             droop: None,
