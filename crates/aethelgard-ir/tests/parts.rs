@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "97e328f609f7099045b34dc1ebc15a291a9214a26630fdd2e2123f7b58ec2676";
+const PARTS_SHA256: &str = "eeb99c9a48cf4f51de9f7cdd2d633f29ac58738f77876de0592fd2f376f74b08";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -1392,8 +1392,9 @@ fn a_malformed_axes_or_frame_column_is_refused_by_name() {
 }
 
 /// `AET-WO-4400e` D6 (i): the BME280 lists the data read its datasheet
-/// states (a burst from `0xF7`, at least 6 bytes), cited; no other part lists
-/// one yet; `Part::steps` never reaches it. A `reads` entry out of shape, on
+/// states (a burst from `0xF7`, at least 6 bytes), and the ICM-42688-P its
+/// FIFO burst (`0xB0`, at least one 16-byte packet), each cited; no other part
+/// lists one yet; `Part::steps` never reaches it. A `reads` entry out of shape, on
 /// an unmodelled part, uncited, or with a citation and no reads is refused.
 #[test]
 fn reads_are_cited_data_reads_of_a_modelled_part_and_never_steps() {
@@ -1404,6 +1405,10 @@ fn reads_are_cited_data_reads_of_a_modelled_part_and_never_steps() {
             "BME280" => vec![DataRead {
                 write: vec![0xF7],
                 read: 6,
+            }],
+            "ICM42688P" => vec![DataRead {
+                write: vec![0xB0],
+                read: 16,
             }],
             _ => Vec::new(),
         };

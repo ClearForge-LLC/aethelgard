@@ -463,3 +463,15 @@ Written before the run. CI's ArduPilot ELF (a799dfb6), this CLI, `--foreign 4000
    - Gates after these: fmt and clippy (both feature sets) clean; 132 suites, 2,193 passed, 0 failed; CI's package step passes on the host (the tools image has no `jq`).
    - They join §2's mutation list: the hash compare, the hash-count check, the erase overlap, the `MER` bit, and `OPTSTART` as info.
    - Tier 1 adds the `MER` fail and the `OPTSTART` info, and requires the erase hook's exact argv.
+
+## Predictions before the FIFO run (main 65622f70 merged; 4220c's FIFO live)
+
+Written before the run. U5's data step is now its listed FIFO read (`reads` `0xB0`, at least 16 bytes: `bank 0 read 0x30 -> …`). Same ELF (a799dfb6), this CLI, `--foreign 4000ms`:
+
+1. **U5's data read is witnessed** in the first FIFO burst after `Init Gyro`, within 50 ms after its identity (3.5693 s), so before 3.62 s. It is the last witness of the run.
+2. **The verdict passes.** Only `info` findings remain (`locked_peripheral_access`, `device_unmodelled`).
+3. **The counted log stays under 2 MB.** ArduPilot reads a few packets per loop. At about 400 reads in 0.43 s of up to 24 × 16 bytes each, U5's lines add under 1 MB. No flood.
+4. **Peak RSS** rises less than 10 %, to 920 MiB or less, inside the 1 GiB bound.
+5. **Wall time** is under 20 s of the 30 s bound.
+6. **D4's exemptions** stay at 1,073. Every earlier witness time is unchanged.
+7. **The window (D7):** 4 s holds every witness with at least 0.35 s of margin. So `FOREIGN_MAX_VIRTUAL_NS` stays 4 s as measured, with no ruling needed, unless 4 or 5 fails.

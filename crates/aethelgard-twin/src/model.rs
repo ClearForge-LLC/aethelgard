@@ -523,11 +523,22 @@ impl Model {
                     },
                 ])
             }
-            Model::GenericSpiFlash
-            | Model::Icm20948
-            | Model::Icp101xx
-            | Model::Icm42688p
-            | Model::Bmp581 => None,
+            // `ICM42688P.cs` (as [`Model::witness`]): one line per
+            // transaction, `bank 0 read 0x{reg:X2} -> {bytes}`, each byte
+            // `0x{:X2}`. Only a read (the SPI read bit set) is a data read.
+            Model::Icm42688p => {
+                let [first] = read.write.as_slice() else {
+                    return None;
+                };
+                if first & 0x80 == 0 {
+                    return None;
+                }
+                Some(vec![WitnessLine::Bytes {
+                    prefix: format!("[NOISY] {device}: bank 0 read 0x{:02X} -> ", first & 0x7F),
+                    at_least: usize::from(read.read),
+                }])
+            }
+            Model::GenericSpiFlash | Model::Icm20948 | Model::Icp101xx | Model::Bmp581 => None,
         }
     }
 }
@@ -573,9 +584,46 @@ mod tests {
         assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 d0"));
         assert!(!w[1].matches("[NOISY] i2c1.u2: Read 0 0 90 80 0 D0 "));
         assert!(!w[1].matches("[NOISY] i2c1.u3: Read 0 0 90 80 0 D0"));
-        for m in [Model::GenericSpiFlash, Model::Icm42688p, Model::Bmp581] {
+        for m in [Model::GenericSpiFlash, Model::Icm20948, Model::Bmp581] {
             assert!(m.read_witness("x", &read).is_none());
         }
+    }
+
+    /// The ICM-42688-P's listed read (`AET-WO-4400e`, the FIFO burst at
+    /// `0xB0`) is one line of its own model's, `bank 0 read 0x30 -> ` and at
+    /// least 16 bytes; a write is no data read.
+    #[test]
+    fn the_icm_42688_p_s_listed_read_is_one_fifo_line_of_at_least_a_packet() {
+        let read = parts::DataRead {
+            write: vec![0xB0],
+            read: 16,
+        };
+        let lines = Model::Icm42688p
+            .read_witness("spi2.spi2mux.u5", &read)
+            .unwrap();
+        let [line] = lines.as_slice() else {
+            panic!("{}", lines.len())
+        };
+        let packet: Vec<String> = (0..16).map(|b| format!("0x{:02X}", 0x60 + b)).collect();
+        let body = format!(
+            "[NOISY] spi2.spi2mux.u5: bank 0 read 0x30 -> {}",
+            packet.join(" ")
+        );
+        assert!(line.matches(&body), "{body}");
+        assert!(!line.matches(&body.replace(" 0x6F", "")), "15 bytes");
+        assert!(
+            !line.matches(&body.replace("0x30", "0x2E")),
+            "another register"
+        );
+        let write = parts::DataRead {
+            write: vec![0x30],
+            read: 16,
+        };
+        assert!(
+            Model::Icm42688p
+                .read_witness("spi2.spi2mux.u5", &write)
+                .is_none()
+        );
     }
 
     /// Each line the judge skips, beside the Renode source it is written by,
