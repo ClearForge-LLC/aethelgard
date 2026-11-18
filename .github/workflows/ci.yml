@@ -372,7 +372,11 @@ jobs:
       # 191: plus 3 from AET-WO-4400e in twin_tier2.rs (R1's flash controls:
       # a store into its own flash, an erase of its own sector, an erase
       # outside it).
-      TIER2_MIN: "191"
+      # 190: minus 1 from AET-WO-1605 in twin_tier2.rs (ruled on #223): the
+      # pinned Renode carries upstream's RETTOBASE fix, so the CLI's
+      # correction and its with-and-without test are retired; the build pin
+      # and the witness (RETTOBASE 0 nested, with nothing of ours) remain.
+      TIER2_MIN: "190"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

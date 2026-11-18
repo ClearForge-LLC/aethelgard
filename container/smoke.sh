@@ -45,6 +45,9 @@ expect kicad-cli.version 0 kicad-cli version
 is_line kicad-cli.version "10.0.7"
 expect renode.version 0 renode --version
 is_line renode.version "Renode v1.17.0"
+# The build line names the rebuilt NVIC (AET-WO-1605, ruled on #223): the
+# stock asset's own build line fails here.
+is_line renode.version "  build: 1.17.0+20260907gitf1dd1b4af.aet1605"
 expect ngspice.version 0 ngspice --version
 contains ngspice.version "** ngspice-44.2 : "
 expect kani.version 0 cargo kani --version

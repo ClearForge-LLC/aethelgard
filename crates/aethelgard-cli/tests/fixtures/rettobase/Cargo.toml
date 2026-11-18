@@ -1,6 +1,6 @@
 # A test fixture, not a workspace member and not shipped: a firmware that nests two external
-# interrupts and records ICSR in each, the regression witness of the twin's RETTOBASE correction
-# (AET-WO-4400e3). Its own `[workspace]` keeps the repository root from claiming it; no
+# interrupts and records ICSR in each, the regression witness of Renode's RETTOBASE (AET-WO-4400e3,
+# AET-WO-1605). Its own `[workspace]` keeps the repository root from claiming it; no
 # dependencies and no build script.
 [package]
 name = "aet-rettobase-fixture"

@@ -1,5 +1,6 @@
-//! AET-WO-4400e3 RETTOBASE fixture (tier 2): the regression witness of the twin's correction of
-//! Renode 1.17.0's `ICSR.RETTOBASE`, with no ArduPilot.
+//! AET-WO-4400e3 RETTOBASE fixture (tier 2): the regression witness of Renode's `ICSR.RETTOBASE`,
+//! with no ArduPilot. Renode 1.17.0's NVIC got it wrong; the pinned build carries upstream's fix,
+//! and the twin's correction is gone (AET-WO-1605).
 //!
 //! It nests two external interrupts at the priorities `AET-WO-4400e2` measured under ArduPilot:
 //! TIM5 (IRQ 50) at `0x70` preempts DMA2 stream 1 (IRQ 57) at `0xA0`. It reads `ICSR` three times:

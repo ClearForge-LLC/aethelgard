@@ -306,27 +306,10 @@ fn toolbox_then(stdout: &str, version: &str, then: &str) -> Dir {
     toolbox_capture(stdout, version, then, &capture_of(&elf()))
 }
 
-/// The CLI's correction of the pinned Renode's `ICSR.RETTOBASE`
-/// (`AET-WO-4400e3`), exactly as every boot's command line must carry it,
-/// right after the platform loads: `data/rettobase-hook.monitor`, its double
-/// quotes escaped for the stub's double-quoted `case` pattern.
-fn rettobase_in_stub() -> String {
-    let hook = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/rettobase-hook.monitor"),
-    )
-    .unwrap();
-    assert!(
-        !hook.contains(['$', '`', '\\', '\n']),
-        "the hook is one line a double-quoted shell word holds as written"
-    );
-    hook.replace('"', "\\\"")
-}
-
 /// As [`toolbox_then`], with the stub writing `capture` where the command
 /// line's `CreateFileBackend` names USART1's file, as Renode's file backend
 /// would (`AET-WO-4300b`).
 fn toolbox_capture(stdout: &str, version: &str, then: &str, capture: &[u8]) -> Dir {
-    let rettobase = rettobase_in_stub();
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
     let bytes = tb.write("capture.bin", capture);
@@ -335,11 +318,11 @@ fn toolbox_capture(stdout: &str, version: &str, then: &str, capture: &[u8]) -> D
 [ "$1" = --config ] || exit 97
 /bin/grep -qx 'use-synchronous-logging = true' "$2" || exit 97
 /bin/grep -qx 'log-timestamps-type = Virtual' "$2" || exit 97
-if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
+if [ "$3" = --version ]; then printf '{version}\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; {rettobase}; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.010000000\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -1641,7 +1624,7 @@ fn two_devices_witness_their_own_reads_in_either_order() {
         let outf = tb.write("renode.out", text.as_bytes());
         let stub = tb.0.join("renode");
         common::stub::write_executable(&stub, format!(
-                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af\\n'; exit 0; fi\n/bin/cat '{}'\n",
+                "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\\n'; exit 0; fi\n/bin/cat '{}'\n",
                 outf.display()
             )
             .as_bytes(),);
@@ -2087,7 +2070,7 @@ fn a_boot_too_short_for_the_injection_fails_closed_on_the_echo() {
     common::stub::write_executable(&stub, format!(
             r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
 case "$7" in *INJECT-BEGIN*) exit 98;; esac
 case "$7" in *"CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.000120000\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 99;; esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -2345,8 +2328,8 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
 // ---------------------------------------------------------------- AET-WO-4400e
 
 /// A `renode` stub for a foreign boot (`AET-WO-4400e`): it answers
-/// `--version`, accepts only the foreign command line (the `RETTOBASE`
-/// correction right after the platform, the ELF, SPI1's access log for D4,
+/// `--version`, accepts only the foreign command line (the ELF right after
+/// the platform, SPI1's access log for D4,
 /// a `RunFor` of `time`, and none of the generated runtime's contract: no
 /// boot word written, no hook of ours, no capture), and prints `stdout`.
 /// A stub Renode for a foreign boot. With `flash`, the run must hash
@@ -2361,13 +2344,12 @@ fn toolbox_foreign(stdout: &str, time: &str, flash: bool) -> Dir {
         false => r#"case "$7" in *AETHELGARD-FLASH*) exit 93;; esac"#,
     };
     let out = tb.write("renode.out", stdout.as_bytes());
-    let rettobase = rettobase_in_stub();
     let body = format!(
         r#"#!/bin/sh
 [ "$1" = --config ] || exit 97
-if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af\n'; exit 0; fi
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af.aet1605\n'; exit 0; fi
 case "$7" in
-  *"mach create; machine LoadPlatformDescription @"*"; {rettobase}; sysbus LoadELF @"*"firmware.elf; "*) ;;
+  *"mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; "*) ;;
   *) exit 99;;
 esac
 case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBackend*|*LogPeripheralAccess\ sysbus.flashController*) exit 98;; esac

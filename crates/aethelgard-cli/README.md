@@ -295,21 +295,13 @@ A verdict that cannot name its input's hash and its judge's version is never pri
 
 **The run.** Every Renode the CLI starts reads `--config <scratch>/renode.config`, which sets one key, `[general]` `use-synchronous-logging = true` (`AET-WO-2204` D4): each log line is written by the thread that logs it, so a line the firmware caused is on the console before `RunFor` returns, never split below line level by the monitor's output and never dropped by a level change. Every other key is stated at Renode's own default, the value it writes when given no file (Renode writes a missing key back, and the file is sealed read-only for the tool uid). One Renode call executes:
 1. `emulation SetSeed 2100`, so the platform's random initial values are the same in every run;
-2. the platform; then the correction of the pinned Renode's `ICSR.RETTOBASE` (`AET-WO-4400e3`, below); then `sysbus LoadELF` of the firmware's copy;
+2. the platform; then `sysbus LoadELF` of the firmware's copy;
 3. `0` written to every RCC enable register that gates a solved port or peripheral, silicon's reset value (Renode resets them with every clock on), and to the boot word, so only the firmware's code can set it;
    then `cpu VectorTableOffset` set to `FLASH_BANK1_BASE`, where the part boots, rather than letting Renode guess the table from the ELF;
 4. `logLevel -1 sysbus.<bus>.<device>` for each modelled I2C device the platform declares (the device's own log, not the console's level), the CLI's own watchpoint hooks (below), then `emulation RunFor` the `--for` time, at most 100 ms on every board;
 5. then the reads between two marker lines (the boot word, `cpu ExecutedInstructions`, `cpu PerformanceInMips`, `cpu PC`, `ICSR` and each solved register), then `peripherals`. No console level is ever changed.
 
-**The `RETTOBASE` correction** (`AET-WO-4400e3`, ruled on PR #215, fix (1)). Renode 1.17.0's NVIC (build `1.17.0+20260907gitf1dd1b4af`, `renode-infrastructure` `cd4b002a`, `NVIC.cs` L1079) sets `ICSR.RETTOBASE` when at most one *system* exception is active, so a handler nested over an external interrupt's reads 1. The Armv7-M ARM (DDI 0403E.b §B3.2.4, p. B3-657) says 0 there. ChibiOS's interrupt epilogue builds a thread-mode return frame on that bit, so unmodified ArduPilot, with TIM5 nested over a DMA stream's interrupt, hard-faults on the twin and not on silicon (`AET-WO-4400e2`).
-- **The hook:** every boot carries one monitor command, right after the platform loads (`data/rettobase-hook.monitor`). It is a read hook on the NVIC that sets bit 11 of every `ICSR` read to "at most one exception active", from the model's own stack of active exceptions, system and external. That is upstream's own fix (`e7a8584c`, in no release yet). Every other bit, `VECTACTIVE` included, and every other register is the model's.
-- **Generated firmware:** it arms no interrupt, so none of its verdicts moves (measured byte for byte against `main`).
-- **The pin, tested both ways:**
-  - a unit test fails when `container/Dockerfile` pins another Renode;
-  - a tier-2 test fails when the image's `renode --version` names another build;
-  - two tier-2 tests boot `tests/fixtures/rettobase`, two nested external interrupts. Without the hook the pinned Renode must still read 1 in the nested handler, so the hook cannot outlive the bug. With it, the read is 0, and no other bit moves.
-
-  On a Renode carrying upstream's fix the hook computes the model's own answer. It is removed when a pin carries the fix and the fixture measures it.
+**The pinned Renode's `RETTOBASE`** (`AET-WO-1605`, ruled on PR #223). Renode 1.17.0's NVIC (`renode-infrastructure` `cd4b002a`, `NVIC.cs` L1079) set `ICSR.RETTOBASE` when at most one *system* exception was active, so a handler nested over an external interrupt's read 1, where the Armv7-M ARM (DDI 0403E.b §B3.2.4, p. B3-657) says 0. ChibiOS's interrupt epilogue builds a thread-mode return frame on that bit, so unmodified ArduPilot hard-faulted on the twin and not on silicon (`AET-WO-4400e2`). The CLI corrected it with a monitor hook (`AET-WO-4400e3`) until the tools image carried upstream's fix (`e7a8584c`): its Renode is 1.17.0 with that commit and upstream's cache-maintenance fix rebuilt in (build `1.17.0+20260907gitf1dd1b4af.aet1605`, `container/Dockerfile`), and the hook is gone. Two tier-2 tests hold it: the image's `renode --version` names that build, and `tests/fixtures/rettobase`, two nested external interrupts, reads 0 in the nested handler and 1 in the one beneath it, with nothing of ours.
 
 **The bounds** (`RUL-13` as amended for `simulate --firmware` only, ruled on PR #56, B1): the reaper kills Renode's whole process tree after **30 s** of wall-clock time, or once the tree's resident memory (the sum of its processes' `VmRSS`, read every 100 ms) passes **1 GiB**. The call is then a `fail` that names the bound: `wall_bound_exceeded` or `memory_cap_exceeded`, or `cpu_aborted` if Renode logged `This machine has aborted` first (its `RunFor` then never returns). Nothing is read, and `tool.exit_code` is `-1`. The highest sample the bound saw is reported back through the reaper's status file, and the verdict records it beside `boot`, as `memory`: `{"peak_rss_kib":…,"bound_kib":1048576,"share_permille":…}` (`AET-WO-2302` D6: no bound change, each board's margin recorded; the Sentinel-02-shaped board takes about two thirds). It is a sample, so it differs run to run: it is in no finding, not in `boot` and not in a campaign's archive. The constants are measured: the reference boot at `--for 100ms` took at most 2.59 s and 404,620 KiB in the tools image, and the ruling asks at least 10× and 2× of those. `RLIMIT_AS` cannot do it, because CoreCLR will not start under any address-space limit. Plain `simulate`, `prove` and `check` stay unbounded, and the caller's timeout ends them.
 
@@ -387,7 +379,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - the emitted platform, which must be exactly `S`'s;
 - the analog pre-pass;
 - the sandbox, the 30 s and 1 GiB bounds;
-- the `RETTOBASE` correction and the cold RCC writes.
+- the cold RCC writes.
 
 **None of the generated runtime's contract applies:** no boot word, no records in RAM, no hook on the firmware's code, no serial injection, no motor window. The two hooks a foreign boot adds only log: each SPI controller's `CFG2` writes (D4) and the flash controller's erase starts.
 

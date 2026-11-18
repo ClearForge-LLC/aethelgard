@@ -1,0 +1,34 @@
+From c8b2075c042d1da6ae07745a63c8bd3edea31c4f Mon Sep 17 00:00:00 2001
+From: Dawid Pietrykowski <dpietrykowski@antmicro.com>
+Date: Mon, 9 Nov 2026 17:21:43 +0100
+Subject: [PATCH] [#108913] NVIC: Add DCCMVAC and DCIMVAC stubs
+
+Software performs cache invalidation and flush by writing each address
+within some potentially large area into the corresponding NVIC register.
+
+This slows down emulation when the register is not defined in the peripheral.
+Adding writable stubs speeds up performance ~2x in the hot loops.
+
+Implementation is not needed as we don't simulate caches.
+---
+ src/Emulator/Cores/Arm-M/NVIC.cs | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/src/Emulator/Cores/Arm-M/NVIC.cs b/src/Emulator/Cores/Arm-M/NVIC.cs
+index 750afb4bd..9ec9e4bf2 100644
+--- a/src/Emulator/Cores/Arm-M/NVIC.cs
++++ b/src/Emulator/Cores/Arm-M/NVIC.cs
+@@ -1728,6 +1728,13 @@ private void DefineRegisters()
+                     name: "FORCED")
+                 .WithTaggedFlag("DEBUGEVT", 31);
+ 
++            // Cache is not simulated so the following registers are unused,
++            // but registered due to performance reasons.
++            Registers.DCacheCleanByMVAToPoCAddress.Define(RegisterCollection)
++                .WithValueField(0, 32, FieldMode.Write, name: "DCCMVAC");
++            Registers.DCacheInvalidateByMVAToPoCAddress.Define(RegisterCollection)
++                .WithValueField(0, 32, FieldMode.Write, name: "DCIMVAC");
++
+             Registers.CacheSizeSelection.Define(RegisterCollection)
+                 .WithTaggedFlag("InD (Instruction or Data Selection)", 0)
+                 .WithTag("Level", 1, 3)
