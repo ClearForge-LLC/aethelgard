@@ -30,8 +30,8 @@ pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 
 /// The rule table, in the order of the verdict: each of today's rules, what
 /// a foreign boot does with it, and what that judges or weakens (`INV-07`).
-/// `provisional` marks a rule the ruled table did not name, decided here and
-/// sent to the architect.
+/// Every row is ruled (PR #212, comments 6958822008 and 6965511448); only
+/// the bound waits on D7's measurement.
 pub const RULES: &[(&str, &str, &str)] = &[
     (
         "firmware memory",

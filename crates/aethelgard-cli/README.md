@@ -375,7 +375,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
 ### Foreign firmware (`simulate --foreign`)
 
-`AET-WO-4400e`, ruled on PR #212 (comment 6958822008), with D4 ruled on PR #215 (comment 6961943794). The foreign judge is a second judge, for a firmware this project did not generate, such as unmodified ArduPilot.
+`AET-WO-4400e`, ruled on PR #212 (comments 6958822008 and 6965511448), with D4 ruled on PR #215 (comment 6961943794). The foreign judge is a second judge, for a firmware this project did not generate, such as unmodified ArduPilot.
 
 **It is declared, never inferred** (`INV-06`):
 - `simulate --firmware F --spec S --foreign TIME` chooses it. `TIME` is the virtual time the boot runs, as `--for`'s, at most `FOREIGN_MAX_VIRTUAL_NS`.
@@ -389,12 +389,12 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - the sandbox, the 30 s and 1 GiB bounds;
 - the `RETTOBASE` correction and the cold RCC writes.
 
-**None of the generated runtime's contract applies:** no boot word, no records in RAM, no hook of ours, no serial injection, no motor window.
+**None of the generated runtime's contract applies:** no boot word, no records in RAM, no hook on the firmware's code, no serial injection, no motor window. The two hooks a foreign boot adds only log: each SPI controller's `CFG2` writes (D4) and the flash controller's erase starts.
 
 **The memory rule:**
 - Every `PT_LOAD`, at both its physical and its virtual address, lies inside flash or one of the six RAM regions ST's header states (ITCM, DTCM, AXI SRAM, D2 SRAM, D3 SRAM, backup SRAM).
 - Each base is its `#define`, and each size is the one its comment states (`region_size_kib`). Nothing is typed in (`RUL-16`).
-- No two segments' file bytes may overlap. Zero-filled segments may share a physical address, as ArduPilot's `.crash_log`, `.bss` and `.heap` do (provisional).
+- No two segments' file bytes may overlap. Zero-filled segments may share a physical address, as ArduPilot's `.crash_log`, `.bss` and `.heap` do.
 - An outside segment is `FirmwareOutsideMemory`, naming every region.
 
 **What witnesses the boot:** only what the firmware cannot write (`INV-07`): the models' own transaction lines and the platform's state.
@@ -411,12 +411,21 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 
   The configure step is not judged. The bytes of a listed read are not judged either: the stock models answer from the configuration the firmware wrote.
 - **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0, while the controller's last `CR1` write left `SPE` 0. That is ChibiOS's `spi_lld_stop`, legal on silicon (RM0433 §50.11.4).
-  - The judge reads it from each SPI controller's access log, which a foreign boot turns on.
+  - The judge reads it from a hook on each SPI controller's writes, which logs only a `CFG2` write, with the value and `CR1` as it stands (D7 (b)); the SPI access log stays off.
   - Every exemption is counted in `boot.spi_errors_exempted`.
   - Any other `[ERROR]` is `renode_error_log`.
 
-**The rule table:** `boot.rules` lists each of today's rules as kept, replaced or dropped, with what it judges or weakens. Rules the ruled table did not name are marked `provisional`. In short:
-- **kept:** solved pins' `MODER`/`AFR`; `core_in_exception`; `pc_outside_firmware`; device warnings; `renode_error_log` with D4; the log flood; the bounds; `device_unmodelled`; `locked_peripheral_access` (provisional).
+**The flash** (ruled: never a write inside its own loaded ranges):
+- after the run, Renode hashes each loaded flash segment; a change from the ELF's bytes is `flash_overwritten`;
+- a hook logs each write to a bank's `FLASH_CR` that sets `START`; a sector or bank erase overlapping a loaded flash segment is `flash_overwritten`, even when reprogrammed alike. Every offset, bit and size is ST's header's. `boot.flash` and `boot.erases` list both.
+- Writes elsewhere in flash, such as a parameter store, are not judged.
+
+**The log** (D7): the 8 MiB budget stands. Renode's own `Unhandled write` warnings are kept once per kind (the line with its written value elided); `boot.warnings` lists each kind with its count and first and last virtual time. A generated boot's filter is unchanged.
+
+**Unclocked accesses:** `locked_peripheral_access` is an `info` finding for a foreign firmware; `boot.locked` lists each access with its first time and count. Silicon ignores them.
+
+**The rule table:** `boot.rules` lists each of today's rules as kept, replaced or dropped, with what it judges or weakens. In short:
+- **kept:** solved pins' `MODER`/`AFR`; `core_in_exception`; `pc_outside_firmware`; device warnings; `renode_error_log` with D4; the log flood with D7 (a); the bounds; `device_unmodelled`.
 - **replaced:**
   - the memory rule;
   - the boot word, by "booted";
@@ -424,8 +433,10 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
   - USART `CR1`'s frame bits and `CR2.STOP`;
   - the device steps, by witness lines alone;
   - the chip-select windows, by the first matching run;
-  - the 100 ms bound.
-- **dropped**, each weakening named in the verdict: the instruction count; the self-loop; USART `CR3` and `BRR`; `SysTick.CSR`; `NVIC.ISER`; the configure step; the records; the serial witness; the brown-out record, the flash-controller access rule and the motor outputs (each provisional).
+  - the 100 ms bound;
+  - `locked_peripheral_access`, by an `info` finding;
+  - the flash-controller access rule, by the flash rule above.
+- **dropped**, each weakening named in the verdict: the instruction count; the self-loop; USART `CR3` and `BRR`; `SysTick.CSR`; `NVIC.ISER`; the configure step; the records; the serial witness; the brown-out record; the motor outputs.
 
 ### The analog pre-pass (`simulate --firmware`)
 

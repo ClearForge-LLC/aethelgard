@@ -378,3 +378,62 @@ Written before the run. CI's ArduPilot ELF (a799dfb6), this CLI, `--foreign 4000
 4. **Locked:** DMA1 written before its clock is on, listed as `info`, so the verdict does not fail on it.
 5. **Booted:** with the log under budget, the identity witnesses are read and the run boots (no `foreign_not_booted`). The ICM's data read stays unwitnessed until 4220c.
 6. **Peak RSS** stays near 860 MiB. Wall time is within 20 % of the last run.
+
+## The #212 rulings, built and measured (comment 6965511448)
+
+### Built
+- **`PT_LOAD` overlap, BOR, motors, `--foreign TIME`:** accepted as built; "provisional" is gone from those rows. The bound stays a provisional constant until D7 is measured with the ICM's reads.
+- **`locked_peripheral_access`:** for a foreign firmware it is one `info` finding. `boot.locked` lists each access (peripheral and address) with its first virtual time and count.
+- **`flash_controller_access`, replaced: no write inside its own loaded ranges.** Two witnesses, both from what the firmware cannot write, neither from the access log (labelled deviation **R1**, below):
+  1. **Program:** after the run, Renode hashes each loaded flash segment's bytes (`ReadBytes` in the monitor). Any difference from the ELF's file bytes is `flash_overwritten`.
+  2. **Erase:** a hook on the flash controller logs each write to `FLASH_CR1`/`FLASH_CR2` that sets `START`. A sector (`SER`, `SNB`) or bank (`BER`) erase overlapping a loaded flash segment is `flash_overwritten`, even when the bytes are reprogrammed alike. Every offset, bit, base and size is read from ST's header (`FLASH_TypeDef`, `FLASH_CR_*`, `FLASH_SECTOR_SIZE`, `FLASH_SECTOR_TOTAL`). `boot.erases` lists each erase.
+  - Weakens: writes elsewhere in flash are not judged. An erase is judged when started; whether the silicon would have refused it (bank locked) is not.
+- **D7 (a):** the foreign boot's log filter summarises Renode's `Unhandled write` warnings.
+  - Key: the line after its timestamp, with every written value elided.
+  - The first line of each kind is kept as written. Every later line is counted and dropped, uncounted against the budget.
+  - `boot.warnings` lists each kind with its count and first and last virtual time.
+  - Generated boots use the unchanged filter (`summarise_none`).
+- **D7 (b):** D4 reads a hook on each SPI controller's writes, which logs only a `CFG2` write with the value written and `CR1` as it stands. The whole SPI access log is gone.
+
+### Measured (CI's ArduPilot a799dfb6, `--foreign 4000ms`, this CLI)
+| | before | after |
+|---|---|---|
+| counted log | 9.29 MB (replay), over 8 MiB | under 8 MiB: no `renode_log_flood` (measured); 0.76 MB by replaying the old full log through a model of the new filter (modelled, not the run's own count) |
+| `Unhandled write` kinds | — | 68 kinds, 45,247 lines (measured; the replay model also finds 68) |
+| D4 exemptions | 909 (lines dropped by the flood) | 1,073, equal to the 1,073 slave-mode errors in the old full log |
+| booted | `foreign_not_booted` (witnesses past the budget) | U4 identity at 161.938610 ms |
+| witness times | old full log | identical: U4 161938610, U2 342585230, U2 data 382787270, U7 342780210, U5 3569253830 ns. The hooks do not move the run. |
+| flash | — | both loaded segments (0x08000000, 1,297,576 B; 0x0813cca8, 4,132 B) unchanged |
+| locked | fail | `info`, 22 accesses (DMA1 and DMA2 streams at 0.92 ms, I2C1 at 165.5 ms) |
+| erases | — | 4, of bank 2's sectors 6 and 7 (0x081C0000, 0x081E0000) in its first 15 ms: its parameter storage, outside its image; no finding |
+| peak RSS | 860 MiB | 779 MiB (with both hooks) |
+
+**What is left failing:** `spi_transaction_unwitnessed` for U5 (the ICM-42688-P). Its script's data read is not what ArduPilot does; the FIFO read waits on 4220c.
+
+**Flash controls (real Renode, hand-built ELFs in `~/.cache/aet-4400e/selfwrite`):**
+- `store` writes one word into its own image: the hash fails.
+- `nostore` (its nop twin): no finding.
+- `erase` erases sector 1, which holds its own segment of all 0xFF: the erase witness fails while the hash is unchanged.
+- `erase-other` (the same erase, no segment there): the erase is listed and nothing fails.
+
+### Predictions against outcomes
+1. Budget under 2 MB, no flood: **held**. No flood was measured; 0.76 MB is modelled.
+2. D4, about 1,070 exempt, no `renode_error_log`: **held** (1,073).
+3. Flash unchanged: **held**.
+4. Locked is DMA1 only: **missed.** There are 22 accesses, on DMA1, DMA2 and I2C1.
+5. Booted, ICM data unwitnessed: **held**.
+6. RSS near 860 MiB: **held** (779 MiB).
+
+### Labelled deviation R1: the flash rule is not read from the access log
+- The ruling called it cheap from the access log. Read at source (`STM32H7_FlashController.cs`, renode-infrastructure `cd4b002a`), that log cannot place a program write: program data are stores to the flash memory, not to the controller's registers (L182–192), and an erase is the model's own `SetRange` (L441).
+- The controller's full access log also costs budget.
+- The hash witnesses every changed byte. The `START` hook witnesses every erase of an own sector, the one way to rewrite flash and leave its hash unchanged.
+- For the architect: accept R1, or rule the access log.
+
+### Gates and the generated verdicts (this commit)
+- **Gates:** fmt and clippy clean (with and without `with-tools`); 132 suites, 2,193 passed, 0 failed.
+- **CI's package step, run locally:** every crate packages, and the CLI builds from the packages and validates.
+- **Generated verdicts, `main`'s CLI against this branch's:**
+  - the 54 campaign archive files are byte-identical;
+  - 32 of the 34 verdict lines are identical;
+  - the two `simulate` verdicts differ only in `input.path` (each tree's own) and the memory sample, as in the last comparison.
