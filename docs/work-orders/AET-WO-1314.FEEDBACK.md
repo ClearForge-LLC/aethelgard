@@ -7,9 +7,9 @@ Labels:
 
 Part B (the measured stop) is kept as a ruled record. Its evidence under `spike/1314/` is deleted with this build, as ruled, and stays in this branch's history at `69ae5142`.
 
-## 0. Status: STOPPED at §8 (the ladder's cost in a placement test); otherwise built to the ruling
+## 0. Status: READY
 
-Built to the ruling on #227 (comment 6982875594): D1–D5 accepted, with D3's three conditions.
+Built to the rulings on #227: comment 6982875594 (D1–D5 accepted, with D3's three conditions) and comment 6987450886 (§8's stop: (A), with three conditions).
 
 - **The ring rule.**
   - Where a specification declares `board.stackup.fab_tolerances`, every via keeps the declared ring (`via_ring_um`, a new optional field) round the largest finished hole at the worst declared position: `D ≥ (d + plus) + 2⌈position·√2⌉ + 2·ring`, rounded up to 10 µm.
@@ -142,7 +142,7 @@ A fresh subagent found no high findings. I checked each one.
 
 ### 4.2 Mutation [measured, `~/.cache/aet-1314/mut/run.py`, one mutant per guard]
 
-21 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **21 killed.**
+23 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **23 killed.** The last two are the placement shortcut's (§8): the routed board nudged, and `placement` routing.
 
 - **Not mutated: `diagonal_nm`'s integer correction loop.** It is labelled belt-and-suspenders: the float's ceiling of `e·√2` is exact for every `e` up to 3 mm (measured, every nanometre; the IR caps a tolerance at 1 mm), so no test input can reach it.
 - **Guards added for the mutation run:**
@@ -179,6 +179,7 @@ CI on the PR, and Sentinel-03's tier-2 KiCad checks on its new board (`board_tie
 | `d3-24-i2c-12-spi`, `serial-four`, `sentinel-02-shaped` and `solve/stress` fail a declared capacitance bound on today's routing (`extract`'s `capacitance_over_declared_bound`); the ladder would fix or refuse them | 1314 D4 | a later router work order, triggered when those fixtures' bytes may move |
 | A fabrication package for a board with `fab_tolerances` uses the rule's via (`fab.rs` names the engine's 0.6/0.3) | 1314 ruling | `4500`'s fab step |
 | A through-hole pad's ring at the declared tolerances | 1314 adversarial L6 | trigger: a through-hole part on a board with tolerances whose ring is in question |
+| The ladder's cost per emit: a Sentinel-03 `emit` goes from 2.85 s (one routing) to about 25 s unpinned, 48.4 s on 4 CPUs (eight routings in parallel, 11–48 s each); every check that emits a board with tolerances pays it | 1314 §8, ruling 6987450886 | the architect (docs PR) |
 
 ## 7. Record
 
@@ -194,7 +195,7 @@ CI on the PR, and Sentinel-03's tier-2 KiCad checks on its new board (`board_tie
 - **A filter in a mutation harness that names no test reads as a survivor.** Check that each filter matches a test before believing a result.
 - **A class with no declared via must follow the board's via, not the engine's constant.** A unit test on `Class::via_declared` found it, before any board did.
 
-## 8. STOPPED: the ladder's cost in `outline_tier1` (CI red on `bbe0a4b9`, tools-shard 2)
+## 8. The ladder's cost in `outline_tier1`: stopped at `c197dab3`, ruled (A) in 6987450886, built
 
 The architect's note: `order_only_renamings_place_the_fixture_the_same_way` ran more than 16 min in shard 2 before the cancel. It had never run in this PR's CI before, because `bd85b33b` failed to compile.
 
@@ -235,10 +236,17 @@ On 4 CPUs the 8 rungs, routed in parallel and contending, took:
 
 None of these skips, ignores, cuts the seeds of, or re-shards the test.
 
-**At `bbe0a4b9`:**
-- the feature-gated compile error is fixed;
-- `board_tier2`'s size samples accept `CapacitanceOverBound` as an `emit` refusal by name;
-- tools-shard 7 passed. The rest of the run was cancelled with shard 2.
+**Built to the ruling, (A) with its three conditions:**
+1. **One placement path.** `schematic::place` is what `emit` itself runs up to the router: validate, design, stack, the via ring rule's refusals, the declared bound, then `pcb::placed`.
+   - `emit_moved` calls it, then routes, by the ladder or at today's rung.
+   - `schematic::placement` calls it too, and writes the board through the same writer with routing off (`write_placed_at(…, None)`): no track, via or zone. Its documentation says it is the placed board, not a routed one, and the CLI does not expose it.
+   - `pcb::write_moved` became test-only.
+2. **The shortcut proven.** The test emits the base fixture once in full, ladder included, asserts the ladder ran, and asserts its `name_free` equals `placement`'s. The 20 seeds compare through `placement`.
+   - A mutant that nudges the routed board's outline by one pitch fails that assertion by name ("emit's board places otherwise than its own placement").
+   - A mutant that routes inside `placement` fails `placement_writes_no_copper_and_refuses_as_emit_does`, which also proves `placement` refuses a 60 × 60 mm bound with `emit`'s own `OutlineUnreachable`, word for word.
+3. **The shard budget,** in §5.
+
+**Measured after it [the test alone, 4 CPUs pinned]:** 50.6 s (main 42.7 s, the branch before it 543.4 s). The one full emit with the ladder is most of it.
 
 # Part B: the measured stop (record, ruled in comment 6982875594)
 
