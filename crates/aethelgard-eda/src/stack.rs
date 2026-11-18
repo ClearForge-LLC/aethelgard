@@ -28,9 +28,10 @@ pub fn kicad_id(name: &str) -> Option<&'static str> {
 /// source for the via ring rule and the supply gate's holes.
 pub fn diagonal_nm(e_nm: i64) -> i64 {
     let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
-    // belt-and-suspenders: the float's ceiling is exact for every e up to
-    // 3 mm (measured; the IR caps a tolerance at 1 mm), so this never
-    // raises it; it keeps the exactness from resting on that
+    // the float's ceiling can fall one short: first at e = 225 058 681 nm,
+    // where e·√2 lies just above an integer (d² − 2e² = −1); within the
+    // IR's 1 mm cap on a tolerance it never does (measured, every nm to
+    // 3 mm), so this exactness does not rest on that cap
     while 2 * i128::from(e_nm).pow(2) > i128::from(d).pow(2) {
         d += 1;
     }
@@ -592,6 +593,10 @@ mod ring_tests {
             "the reach of 1 nm per axis is 2 nm"
         );
         assert_eq!(p.pad_nm(299_997), 310_000);
+        // where the float's ceiling of e·√2 falls one short (a Pell pair,
+        // 318 281 039² − 2·225 058 681² = −1), the reach is still exact
+        assert_eq!(diagonal_nm(225_058_681), 318_281_040);
+        assert_eq!(diagonal_nm(75_000), 106_067);
     }
 
     /// A class whose declared via is under the rule's pad is named, with its
