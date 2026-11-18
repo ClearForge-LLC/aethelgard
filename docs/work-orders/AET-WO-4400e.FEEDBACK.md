@@ -453,12 +453,13 @@ Written before the run. CI's ArduPilot ELF (a799dfb6), this CLI, `--foreign 4000
    - mass erase, `MER` on `FLASH_OPTCR`. It sets `BER1`, `BER2`, `START1` and `START2`, per RM0433's `FLASH_OPTCR` description, so it is judged as both banks.
    - Offsets come from `FLASH_TypeDef`, bits from `FLASH_CR_*_Pos` and `FLASH_OPTCR_*_Pos`, and sizes from `FLASH_SECTOR_SIZE` × `FLASH_SECTOR_TOTAL`.
    - `OPTSTART` is the `info` finding `flash_option_change`, with each time in `boot.option_changes`.
-   - Not shown to change an own segment's protection: ArduPilot's 4 s run writes no `FLASH_OPTCR` (its summarised warnings list no offset 0x18). So no stop.
+   - Measured with the hook: ArduPilot's 4 s run starts no option change (`boot.option_changes` is empty) and the same four bank-2 erases. Nothing changes an own segment's protection, so no stop. Peak RSS 833 MiB.
 4. **The controls are tier-2 tests** in `twin_tier2.rs`, each refused by name, on the reference platform under `--foreign 10ms`:
    - `a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten`;
    - `a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds`;
    - `a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding` (bank 2 sector 6, ArduPilot's real case).
    - All three passed in the tools image (3 passed, 11.6 s).
    - TIER2_MIN 183 → 186.
+   - Gates after these: fmt and clippy (both feature sets) clean; 132 suites, 2,193 passed, 0 failed; CI's package step passes on the host (the tools image has no `jq`).
    - They join §2's mutation list: the hash compare, the hash-count check, the erase overlap, the `MER` bit, and `OPTSTART` as info.
    - Tier 1 adds the `MER` fail and the `OPTSTART` info, and requires the erase hook's exact argv.
