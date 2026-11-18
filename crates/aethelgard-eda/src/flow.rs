@@ -298,16 +298,34 @@ pub enum Element {
     },
     /// A joint carrying `kappa · F²`, `F` the flux of one edge.
     Joint { edge: usize, kappa: Iv },
-    /// A cell whose height `b` lies anywhere in `[b_lo, b_hi]` (a barrel
-    /// row, its length declared only by bounds). Its energy
-    /// `c₁/b + c₂·b` is convex in `b`, so the larger of the two ends bounds
-    /// it at every height between: only the upper end of its interval is
-    /// certified. Its node may also take [`Element::Joint`] edges that are
-    /// not faces: the plating's radial injection ([`junction`]), whose
-    /// divergence the cell's uniform divergence meets.
+    /// A via's junction joints together, priced at the worst of the hole
+    /// positions the tolerance allows: `max_b Σ_k kappa[b][k]·F_k²` over the
+    /// boxes `b` that cover the tolerance, each `kappa[b][k]` an upper bound
+    /// of edge `k`'s coefficient for every hole position in box `b`
+    /// ([`JunctionTable`]). One hole serves every layer, so the maximum is
+    /// over one position for all the via's edges.
+    Group {
+        edges: Vec<usize>,
+        kappa: Vec<Vec<f64>>,
+        /// The via's barrel cells, each in the column `widths[b][column]`
+        /// gives for box `b`: priced in the same box as the joints.
+        talls: Vec<TallCell>,
+        widths: Vec<Vec<(Iv, Iv)>>,
+    },
+    /// A cell whose width `a` lies anywhere in `[a_lo, a_hi]` and height
+    /// `b` in `[b_lo, b_hi]` (a barrel cell: its column's angle moves with
+    /// the hole's position, its row's length is declared only by bounds).
+    /// Its energy `c₁ a/b + c₂ b/a` is convex in each of `a` and `b` alone,
+    /// so its largest value over the box is at a corner: the larger of the
+    /// four bounds it at every width and height between. Only the upper end
+    /// of its interval is certified. Its node may also take
+    /// [`Element::Joint`] edges that are not faces: the plating's radial
+    /// injection ([`junction`]), whose divergence the cell's uniform
+    /// divergence meets.
     Tall {
         node: usize,
-        a: Iv,
+        a_lo: Iv,
+        a_hi: Iv,
         b_lo: Iv,
         b_hi: Iv,
         rho_over_t: Iv,
@@ -316,6 +334,25 @@ pub enum Element {
         s: Option<usize>,
         n: Option<usize>,
     },
+}
+
+/// A node an element owns: the element, the node's four faces' edges, and
+/// whether it is a barrel cell (which may also take joints).
+type Owned = (usize, [Option<usize>; 4], bool);
+
+/// A barrel cell inside an [`Element::Group`]: an [`Element::Tall`] whose
+/// width range comes from the group's box.
+#[derive(Clone, Debug)]
+pub struct TallCell {
+    pub node: usize,
+    pub column: usize,
+    pub b_lo: Iv,
+    pub b_hi: Iv,
+    pub rho_over_t: Iv,
+    pub w: Option<usize>,
+    pub e: Option<usize>,
+    pub s: Option<usize>,
+    pub n: Option<usize>,
 }
 
 /// A network: nodes (cells, terminals), edges (faces, joints), each edge
@@ -432,17 +469,18 @@ impl Network {
     /// node whose divergence no field carries, would lower it unsoundly.
     pub fn check(&self, source: usize, sink: usize) -> Result<(), FlowError> {
         let bad = |m: String| Err(FlowError::Malformed(m));
-        let mut owner: Vec<Option<(usize, bool)>> = vec![None; self.nodes]; // (element, tall)
+        // each owned node: its element, its faces, and whether it is a barrel cell
+        let mut owner: Vec<Option<Owned>> = vec![None; self.nodes];
         let mut joint = vec![false; self.edges.len()];
         let mut faced = vec![0u8; self.edges.len()];
         for (k, el) in self.elements.iter().enumerate() {
-            let (node, faces, tall) = match el {
+            let owned: Vec<Owned> = match el {
                 Element::Cell {
                     node, w, e, s, n, ..
-                } => (*node, [*w, *e, *s, *n], false),
+                } => vec![(*node, [*w, *e, *s, *n], false)],
                 Element::Tall {
                     node, w, e, s, n, ..
-                } => (*node, [*w, *e, *s, *n], true),
+                } => vec![(*node, [*w, *e, *s, *n], true)],
                 Element::Joint { edge, .. } => {
                     if *edge >= self.edges.len() || joint[*edge] {
                         return bad(format!("joint {k} names edge {edge} twice or out of range"));
@@ -450,29 +488,61 @@ impl Network {
                     joint[*edge] = true;
                     continue;
                 }
-            };
-            if node == source || node == sink {
-                return bad(format!("element {k} is on a terminal"));
-            }
-            if owner[node].replace((k, tall)).is_some() {
-                return bad(format!("node {node} has two elements"));
-            }
-            let mut mine: Vec<usize> = faces.iter().flatten().copied().collect();
-            for &e in &mine {
-                let (a, b, _) = self.edges[e];
-                if a != node && b != node {
-                    return bad(format!(
-                        "element {k}'s face edge {e} does not touch node {node}"
-                    ));
+                Element::Group {
+                    edges,
+                    kappa,
+                    talls,
+                    widths,
+                } => {
+                    if kappa.is_empty()
+                        || kappa.len() != widths.len()
+                        || kappa.iter().any(|row| row.len() != edges.len())
+                        || talls
+                            .iter()
+                            .any(|t| widths.iter().any(|w| t.column >= w.len()))
+                    {
+                        return bad(format!(
+                            "group {k}'s tables do not match its edges and cells"
+                        ));
+                    }
+                    for &edge in edges {
+                        if edge >= self.edges.len() || joint[edge] {
+                            return bad(format!(
+                                "group {k} names edge {edge} twice or out of range"
+                            ));
+                        }
+                        joint[edge] = true;
+                    }
+                    talls
+                        .iter()
+                        .map(|t| (t.node, [t.w, t.e, t.s, t.n], true))
+                        .collect()
                 }
-                faced[e] += 1;
-            }
-            mine.sort_unstable();
-            if mine.windows(2).any(|w| w[0] == w[1]) {
-                return bad(format!("element {k} names a face twice"));
+            };
+            for (node, faces, tall) in owned {
+                if node == source || node == sink {
+                    return bad(format!("element {k} is on a terminal"));
+                }
+                if owner[node].replace((k, faces, tall)).is_some() {
+                    return bad(format!("node {node} has two elements"));
+                }
+                let mut mine: Vec<usize> = faces.iter().flatten().copied().collect();
+                for &e in &mine {
+                    let (a, b, _) = self.edges[e];
+                    if a != node && b != node {
+                        return bad(format!(
+                            "element {k}'s face edge {e} does not touch node {node}"
+                        ));
+                    }
+                    faced[e] += 1;
+                }
+                mine.sort_unstable();
+                if mine.windows(2).any(|w| w[0] == w[1]) {
+                    return bad(format!("element {k} names a face twice"));
+                }
             }
         }
-        // every edge at an element node is its face (or a joint at a Tall)
+        // every edge at an element node is its face (or a joint at a barrel cell)
         let mut at: Vec<Vec<usize>> = vec![Vec::new(); self.nodes];
         for (e, &(a, b, _)) in self.edges.iter().enumerate() {
             if a == b {
@@ -482,15 +552,9 @@ impl Network {
             at[b].push(e);
         }
         for (node, o) in owner.iter().enumerate() {
-            let Some((k, tall)) = *o else { continue };
-            let faces: Vec<usize> = match &self.elements[k] {
-                Element::Cell { w, e, s, n, .. } | Element::Tall { w, e, s, n, .. } => {
-                    [*w, *e, *s, *n].iter().flatten().copied().collect()
-                }
-                Element::Joint { .. } => unreachable!(),
-            };
+            let Some((k, faces, tall)) = *o else { continue };
             for &e in &at[node] {
-                if !faces.contains(&e) && !(tall && joint[e]) {
+                if !faces.contains(&Some(e)) && !(tall && joint[e]) {
                     return bad(format!("edge {e} at node {node} is no face of element {k}"));
                 }
             }
@@ -729,9 +793,31 @@ impl Network {
         };
         let quad = |x: Iv, y: Iv| x.mul(x).add(x.mul(y)).add(y.mul(y));
         let third = Iv::ratio(1, 3);
+        // a barrel cell's energy with its width in [a_lo, a_hi] and height in
+        // [b_lo, b_hi]: convex in each alone, so the worst of the corners
+        let tall = |fx: Iv, fy: Iv, rho_over_t: Iv, a_lo: Iv, a_hi: Iv, b_lo: Iv, b_hi: Iv| {
+            let at = |a: Iv, b: Iv| {
+                rho_over_t
+                    .mul(a.div(b).mul(fx).add(b.div(a).mul(fy)))
+                    .mul(third)
+            };
+            let corners = [
+                at(a_lo, b_lo),
+                at(a_lo, b_hi),
+                at(a_hi, b_lo),
+                at(a_hi, b_hi),
+            ];
+            Iv {
+                lo: corners.iter().map(|c| c.lo).fold(f64::INFINITY, f64::min),
+                hi: corners
+                    .iter()
+                    .map(|c| c.hi)
+                    .fold(f64::NEG_INFINITY, f64::max),
+            }
+        };
         let mut total = [Iv::exact(0.0); 3];
         for el in &self.elements {
-            let term = match el {
+            match el {
                 Element::Cell {
                     node,
                     a,
@@ -748,15 +834,16 @@ impl Network {
                     let y = b
                         .div(*a)
                         .mul(quad(face(*node, *s, true), face(*node, *n, false)));
-                    rho_over_t.mul(x.add(y)).mul(third)
+                    total[0] = total[0].add(rho_over_t.mul(x.add(y)).mul(third));
                 }
                 Element::Joint { edge, kappa } => {
                     let v = Iv::exact(q[*edge] as f64 / QUANTA as f64);
-                    kappa.mul(v.sqr())
+                    total[1] = total[1].add(kappa.mul(v.sqr()));
                 }
                 Element::Tall {
                     node,
-                    a,
+                    a_lo,
+                    a_hi,
                     b_lo,
                     b_hi,
                     rho_over_t,
@@ -765,28 +852,51 @@ impl Network {
                     s,
                     n,
                 } => {
-                    let at = |b: Iv| {
-                        let x = a
-                            .div(b)
-                            .mul(quad(face(*node, *w, true), face(*node, *e, false)));
-                        let y = b
-                            .div(*a)
-                            .mul(quad(face(*node, *s, true), face(*node, *n, false)));
-                        rho_over_t.mul(x.add(y)).mul(third)
-                    };
-                    let (lo, hi) = (at(*b_lo), at(*b_hi));
-                    Iv {
-                        lo: lo.lo.min(hi.lo),
-                        hi: lo.hi.max(hi.hi),
+                    let fx = quad(face(*node, *w, true), face(*node, *e, false));
+                    let fy = quad(face(*node, *s, true), face(*node, *n, false));
+                    total[2] = total[2].add(tall(fx, fy, *rho_over_t, *a_lo, *a_hi, *b_lo, *b_hi));
+                }
+                Element::Group {
+                    edges,
+                    kappa,
+                    talls,
+                    widths,
+                } => {
+                    let f2: Vec<Iv> = edges
+                        .iter()
+                        .map(|&e| Iv::exact(q[e] as f64 / QUANTA as f64).sqr())
+                        .collect();
+                    let fxy: Vec<(Iv, Iv)> = talls
+                        .iter()
+                        .map(|t| {
+                            (
+                                quad(face(t.node, t.w, true), face(t.node, t.e, false)),
+                                quad(face(t.node, t.s, true), face(t.node, t.n, false)),
+                            )
+                        })
+                        .collect();
+                    // every box's joints and cells; the worst box's total
+                    let mut worst: Option<(Iv, Iv)> = None;
+                    for (row, wid) in kappa.iter().zip(widths) {
+                        let mut j = Iv::exact(0.0);
+                        for (k, &c) in row.iter().enumerate() {
+                            j = j.add(Iv::exact(c).mul(f2[k]));
+                        }
+                        let mut b = Iv::exact(0.0);
+                        for (t, &(fx, fy)) in talls.iter().zip(&fxy) {
+                            let (a_lo, a_hi) = wid[t.column];
+                            b = b.add(tall(fx, fy, t.rho_over_t, a_lo, a_hi, t.b_lo, t.b_hi));
+                        }
+                        if worst.is_none_or(|(wj, wb)| j.add(b).hi > wj.add(wb).hi) {
+                            worst = Some((j, b));
+                        }
+                    }
+                    if let Some((j, b)) = worst {
+                        total[1] = total[1].add(j);
+                        total[2] = total[2].add(b);
                     }
                 }
-            };
-            let k = match el {
-                Element::Cell { .. } => 0,
-                Element::Joint { .. } => 1,
-                Element::Tall { .. } => 2,
-            };
-            total[k] = total[k].add(term);
+            }
         }
         total
     }
@@ -947,16 +1057,20 @@ impl Amg {
     }
 }
 
-/// The coefficient `κ` of one grid face of a via's junction square: the
-/// energy `κ·F²` of carrying that face's flux `F` into its own barrel
-/// column (`AET-WO-1303b`).
+/// The coefficient of one face of a via's junction region: the energy
+/// `(ρ/t)·k·F²` of carrying that face's flux `F` into its own barrel column
+/// is at most `k` times `(ρ/t)·F²` (`AET-WO-1303b`). [`junction`] returns
+/// `(ρ/t)·k` for a hole at one position; [`face_bound`] bounds `k` over every
+/// position the fabricator's tolerance allows.
 ///
-/// **Geometry.** The via's hole (radius `r_d`, the drill's) is concentric
-/// with the square (a stated condition, ruled for the measured stop). The
-/// face lies on `y = a`; this grid face is its part `x` in `[u, v]`, and its
-/// barrel column is the wedge of the rays through `(u, a)` and `(v, a)`,
-/// angle `Δθ`. The square less the circle `r0 = r_d + β` is the layer's
-/// copper, `t` thick (`rho_over_t` = ρ/t, the declared minimum).
+/// **Geometry, in the face's frame.** The hole's centre `c` is the origin;
+/// the face lies on the line at distance `a` from it, its segment running
+/// over `x` in `[u, u + len]` along the line (`x` measured from the foot of
+/// the perpendicular from `c`). Its barrel column is the wedge of the rays
+/// from `c` through the segment's ends, angle `Δθ`. The wedge's part of the
+/// region between the segment and the circle `r0 = r_d + β` is the layer's
+/// copper, `t` thick (`ρ/t` at the declared minimum). Every point of the
+/// segment is at least `r0` from `c` (checked: [`JunctionError::Grazing`]).
 ///
 /// **The field, in three regions, each divergence-free, meeting with equal
 /// normal flux:**
@@ -982,56 +1096,73 @@ impl Amg {
 ///    `(ρ/t)·I/(A²Δθ)·F²`, `I = ∫(r² − r_i²)²/(4r) dr`.
 ///
 /// The energy decreases as `t` grows, term by term, so `t` is the layer's
-/// minimum.
+/// minimum. A thin band costs little: `C` is the mismatch within one
+/// narrow column (measured: β from 30 µm to 1 µm raises `k` by 1–2 %).
 ///
-/// **Rounding.** Every integral is a sum over `panels` sub-intervals of the
-/// width times the interval extension of the integrand over the
-/// sub-interval: an enclosure of the integral, with no assumption on the
-/// integrand's shape. `atan` and `ln` are [`Iv`]'s own.
+/// **Rounding.** Every integral is a sum over `panels` sub-intervals of `s =
+/// x − u` in `[0, len]` of the width times the interval extension of the
+/// integrand over the sub-interval: an enclosure of the integral, with no
+/// assumption on the integrand's shape. `a` and `u` may themselves be
+/// intervals (a range of hole positions): the enclosure then holds every
+/// position's value. Angles are differences taken in one `atan`,
+/// `θ(u + s) − θ(u) = atan(s·a/(a² + u(u + s)))`, so the hole's position
+/// cancels exactly where it can. `atan` and `ln` are [`Iv`]'s own.
 #[allow(clippy::too_many_arguments)]
-pub fn junction(
-    a: f64,
-    u: f64,
-    v: f64,
+pub fn junction_core(
+    a: Iv,
+    u: Iv,
+    len: f64,
     r_d: Iv,
     beta: Iv,
-    rho_over_t: Iv,
     t_p: Iv,
     panels: usize,
-) -> Iv {
-    let ai = Iv::exact(a);
-    let len = Iv::exact(v).sub(Iv::exact(u));
+) -> Result<(Iv, Iv), JunctionError> {
     let r0 = r_d.add(beta);
-    assert!(r0.hi < a, "the band reaches the square's face");
+    // every point of the segment at least r0 from the centre
+    let v = u.add(Iv::exact(len));
+    let nearest = if u.lo > 0.0 {
+        u.lo
+    } else if v.hi < 0.0 {
+        -v.hi
+    } else {
+        0.0
+    };
+    if !(a.lo > 0.0 && Iv::exact(nearest).sqr().add(a.sqr()).lo > r0.sqr().hi) {
+        return Err(JunctionError::Grazing);
+    }
+    let lenv = Iv::exact(len);
+    // Δθ = atan(len·a/(a² + u(u + len)))
+    let den = a.sqr().add(u.sqr()).add(u.scale(len));
+    if den.lo <= 0.0 {
+        return Err(JunctionError::Grazing);
+    }
+    let dth = lenv.mul(a).div(den).atan();
     let ln_r0 = r0.ln();
-    let theta = |x: Iv| x.div(ai).atan();
-    let th_u = theta(Iv::exact(u));
-    let dth = theta(Iv::exact(v)).sub(th_u);
     let mut i_ray = Iv::exact(0.0);
     let mut i_f2 = Iv::exact(0.0);
     let mut i_c2 = Iv::exact(0.0);
-    let width = (v - u) / panels as f64;
+    let width = len / panels as f64;
     for p in 0..panels {
-        let lo = u + width * p as f64;
+        let lo = width * p as f64;
         let hi = if p + 1 == panels {
-            v
+            len
         } else {
-            u + width * (p + 1) as f64
+            width * (p + 1) as f64
         };
-        let x = Iv { lo, hi };
-        let dx = Iv::exact(hi).sub(Iv::exact(lo));
-        let r2 = x.sqr().add(ai.sqr());
+        let sv = Iv { lo, hi };
+        let ds = Iv::exact(hi).sub(Iv::exact(lo));
+        let x = u.add(sv);
+        let r2 = x.sqr().add(a.sqr());
         // R² (ln R − ln r0) = R² (½ ln R² − ln r0)
-        i_ray = i_ray.add(r2.mul(r2.ln().scale(0.5).sub(ln_r0)).mul(dx));
-        i_f2 = i_f2.add(r2.mul(dx));
-        // C / F = (x − u)/len − (θ(x) − θ_u)/Δθ, dθ = a dx / R²
-        let phi = x
-            .sub(Iv::exact(u))
-            .div(len)
-            .sub(theta(x).sub(th_u).div(dth));
-        i_c2 = i_c2.add(phi.sqr().mul(ai.div(r2)).mul(dx));
+        i_ray = i_ray.add(r2.mul(r2.ln().scale(0.5).sub(ln_r0)).mul(ds));
+        i_f2 = i_f2.add(r2.mul(ds));
+        // C / F = s/len − (θ(x) − θ(u))/Δθ, dθ = a ds / R²
+        let d = a.sqr().add(u.sqr()).add(u.mul(sv));
+        let th = sv.mul(a).div(d).atan();
+        let phi = sv.div(lenv).sub(th.div(dth));
+        i_c2 = i_c2.add(phi.sqr().mul(a.div(r2)).mul(ds));
     }
-    let len2a = len.sqr().mul(ai);
+    let len2a = lenv.sqr().mul(a);
     let ray = i_ray.div(len2a);
     // ∫f² dθ = (1/len²)(1/a)∫R² dx;  ∫f g dθ = ∫g² dθ = 1/Δθ  (per F²)
     let f2 = i_f2.div(len2a);
@@ -1066,7 +1197,179 @@ pub fn junction(
         .scale(0.25);
     let area = d2.sub(i2).scale(0.5);
     let plating = i_p.div(area.sqr()).mul(g2);
-    rho_over_t.mul(ray.add(band).add(plating))
+    Ok((ray.add(band).add(plating), dth))
+}
+
+/// [`junction_core`] for a hole concentric with a face at distance `a`
+/// over `[u, v]`, times `rho_over_t`: `(ρ/t)·k`.
+#[allow(clippy::too_many_arguments)]
+pub fn junction(
+    a: f64,
+    u: f64,
+    v: f64,
+    r_d: Iv,
+    beta: Iv,
+    rho_over_t: Iv,
+    t_p: Iv,
+    panels: usize,
+) -> Iv {
+    let (k, _) = junction_core(Iv::exact(a), Iv::exact(u), v - u, r_d, beta, t_p, panels)
+        .expect("the band reaches the face");
+    rho_over_t.mul(k)
+}
+
+/// Why a via's junction cannot be priced.
+#[derive(Clone, Debug, PartialEq)]
+pub enum JunctionError {
+    /// A face comes nearer the hole's centre than the band's outer radius,
+    /// at some hole position the tolerance allows.
+    Grazing,
+}
+
+/// A certified bound on the largest value of `f` over the box
+/// `[x0, x1] × [y0, y1]`, by interval branch and bound: `f` evaluated on a
+/// sub-box encloses its values there; a sub-box whose upper end is within
+/// `tol` (relative) of the best value seen at a sub-box's centre is not
+/// split further, nor is one narrower than `min_width`. The result is the
+/// largest upper end over the sub-boxes that cover the box, so it is never
+/// below the true maximum. The order of work is fixed (depth first), so the
+/// result is the same on every run.
+pub fn sup_over_box<E>(
+    f: &dyn Fn(Iv, Iv) -> Result<Iv, E>,
+    (x0, x1): (f64, f64),
+    (y0, y1): (f64, f64),
+    tol: f64,
+    min_width: f64,
+) -> Result<f64, E> {
+    let mut best_lo = f64::NEG_INFINITY;
+    let mut sup = f64::NEG_INFINITY;
+    let mut stack = vec![(x0, x1, y0, y1)];
+    while let Some((a0, a1, b0, b1)) = stack.pop() {
+        let whole = f(Iv { lo: a0, hi: a1 }, Iv { lo: b0, hi: b1 })?;
+        let (ma, mb) = ((a0 + a1) / 2.0, (b0 + b1) / 2.0);
+        best_lo = best_lo.max(f(Iv::exact(ma), Iv::exact(mb))?.lo);
+        let wa = a1 - a0;
+        let wb = b1 - b0;
+        if whole.hi <= best_lo * (1.0 + tol) || wa.max(wb) <= min_width {
+            sup = sup.max(whole.hi);
+            continue;
+        }
+        if wa >= wb {
+            stack.push((ma, a1, b0, b1));
+            stack.push((a0, ma, b0, b1));
+        } else {
+            stack.push((a0, a1, mb, b1));
+            stack.push((a0, a1, b0, mb));
+        }
+    }
+    Ok(sup)
+}
+
+/// A via geometry's junction faces priced over the hole positions the
+/// tolerance allows: the square of half-side `e` about the nominal centre
+/// is cut into `n × n` boxes; `k[b][f]` is an upper bound of face `f`'s
+/// coefficient ([`junction_core`], times `ρ/t` gives `κ`) for every hole
+/// position in box `b`, and `widths[f]` holds face `f`'s barrel column
+/// `r_d·Δθ` at every position in the whole square.
+#[derive(Clone, Debug)]
+pub struct JunctionTable {
+    pub k: Vec<Vec<f64>>,
+    pub widths: Vec<(Iv, Iv)>,
+    /// Face `f`'s column width over box `b`: `box_widths[b][f]`, its ends.
+    pub box_widths: Vec<Vec<(Iv, Iv)>>,
+}
+
+/// [`JunctionTable`] for faces given by their line's distance `d0` from
+/// the nominal centre, outward normal `normal` (axis-aligned) and segment
+/// start `u0` along the normal turned counter-clockwise, each `len` long
+/// (mm). A hole at `δ` puts a face at `a = d0 − δ·n` with its segment at
+/// `u = u0 − δ·t`; over a box of positions both are intervals, and
+/// [`junction_core`] encloses every position's value.
+#[allow(clippy::too_many_arguments)]
+pub fn junction_table(
+    faces: &[(f64, (i64, i64), f64)],
+    len: f64,
+    e: f64,
+    n: usize,
+    r_d: Iv,
+    beta: Iv,
+    t_p: Iv,
+) -> Result<JunctionTable, JunctionError> {
+    let step = 2.0 * e / n as f64;
+    let edge = |i: usize| if i == n { e } else { -e + step * i as f64 };
+    let along = |v: (Iv, Iv), d: (i64, i64)| -> Iv {
+        // v·d for an axis-aligned unit d: one coordinate, signed
+        match d {
+            (1, 0) => v.0,
+            (-1, 0) => Iv {
+                lo: -v.0.hi,
+                hi: -v.0.lo,
+            },
+            (0, 1) => v.1,
+            _ => Iv {
+                lo: -v.1.hi,
+                hi: -v.1.lo,
+            },
+        }
+    };
+    let mut k = Vec::with_capacity(n * n);
+    let mut box_widths = Vec::with_capacity(n * n);
+    for i in 0..n {
+        for j in 0..n {
+            let dv = (
+                Iv {
+                    lo: edge(i),
+                    hi: edge(i + 1),
+                },
+                Iv {
+                    lo: edge(j),
+                    hi: edge(j + 1),
+                },
+            );
+            let mut row = Vec::with_capacity(faces.len());
+            let mut wrow = Vec::with_capacity(faces.len());
+            for &(d0, nrm, u0) in faces {
+                let t = (-nrm.1, nrm.0);
+                let a = Iv::exact(d0).sub(along(dv, nrm));
+                let u = Iv::exact(u0).sub(along(dv, t));
+                let (kk, dth) = junction_core(a, u, len, r_d, beta, t_p, 32)?;
+                row.push(kk.hi);
+                let w = r_d.mul(dth);
+                wrow.push((Iv::exact(w.lo.max(0.0)), Iv::exact(w.hi)));
+            }
+            k.push(row);
+            box_widths.push(wrow);
+        }
+    }
+    let mut widths = Vec::with_capacity(faces.len());
+    for &(d0, nrm, u0) in faces {
+        let t = (-nrm.1, nrm.0);
+        let dth = |dx: Iv, dy: Iv| {
+            let a = Iv::exact(d0).sub(along((dx, dy), nrm));
+            let u = Iv::exact(u0).sub(along((dx, dy), t));
+            junction_core(a, u, len, r_d, beta, t_p, 1).map(|r| r.1)
+        };
+        let min_w = (e / 64.0).max(1e-9);
+        let hi = sup_over_box(&dth, (-e, e), (-e, e), 1e-4, min_w)?;
+        let lo = -sup_over_box(
+            &|dx, dy| {
+                dth(dx, dy).map(|r| Iv {
+                    lo: -r.hi,
+                    hi: -r.lo,
+                })
+            },
+            (-e, e),
+            (-e, e),
+            1e-4,
+            min_w,
+        )?;
+        widths.push((r_d.mul(Iv::exact(lo.max(0.0))), r_d.mul(Iv::exact(hi))));
+    }
+    Ok(JunctionTable {
+        k,
+        widths,
+        box_widths,
+    })
 }
 
 /// A via's barrel: the plating shell (radii `r_d − t_p … r_d`) as a periodic
@@ -1074,36 +1377,67 @@ pub fn junction(
 /// `J = (0, p·r/A, q/A)` of `AET-WO-1303` S4, whose energy is at most
 /// `(ρ/A)∫(q² + r_d² p²) dθ dz` = `(ρ r_d / A)∫|K|² ds dz` for the sheet
 /// current `K = (p, q/r_d)`: a sheet of `ρ/t = ρ r_d/A`
-/// (`rho_over_t`). Its columns are `widths` (each `r_d Δθ_k`, closing the
-/// circle), its rows top to bottom have heights in `rows[i]` (an interval
-/// of the declared range). `top` and `bottom`, when given, are terminal
-/// nodes joined to the first and last rows through their outer faces.
-/// Returns each cell's node, `[row][column]`. A layer joins a row through
-/// [`junction`] edges into its cells, whose divergence they carry.
+/// (`rho_over_t`). Its columns have widths in `widths[k]` (each `r_d Δθ_k`
+/// for some hole position, the columns closing the circle at every one),
+/// its rows top to bottom heights in `rows[i]` (the declared range). `top`
+/// and `bottom`, when given, are terminal nodes joined to the first and
+/// last rows through their outer faces. Returns each cell's node,
+/// `[row][column]`. A layer joins a row through [`junction`] edges into its
+/// cells, whose divergence they carry.
 pub fn barrel(
     net: &mut Network,
-    widths: &[Iv],
+    widths: &[(Iv, Iv)],
     rows: &[(Iv, Iv)],
     rho_over_t: Iv,
     top: Option<usize>,
     bottom: Option<usize>,
 ) -> Vec<Vec<usize>> {
+    let (cells, talls) = barrel_cells(net, widths, rows, rho_over_t, top, bottom);
+    for t in talls {
+        let (a_lo, a_hi) = widths[t.column];
+        net.elements.push(Element::Tall {
+            node: t.node,
+            a_lo,
+            a_hi,
+            b_lo: t.b_lo,
+            b_hi: t.b_hi,
+            rho_over_t: t.rho_over_t,
+            w: t.w,
+            e: t.e,
+            s: t.s,
+            n: t.n,
+        });
+    }
+    cells
+}
+
+/// [`barrel`]'s nodes, edges and cells, the cells not yet priced: a via
+/// prices them in its [`Element::Group`], with each box's own widths.
+/// `widths` serves only the proposing solve's conductances here.
+pub fn barrel_cells(
+    net: &mut Network,
+    widths: &[(Iv, Iv)],
+    rows: &[(Iv, Iv)],
+    rho_over_t: Iv,
+    top: Option<usize>,
+    bottom: Option<usize>,
+) -> (Vec<Vec<usize>>, Vec<TallCell>) {
     let k = widths.len();
     let cells: Vec<Vec<usize>> = rows
         .iter()
         .map(|_| (0..k).map(|_| net.node()).collect())
         .collect();
     // approximate conductances for the proposing solve
+    let mid = |c: usize| (widths[c].0.hi + widths[c].1.hi) / 2.0;
     let g_s = |i: usize, c: usize| {
         let (lo, hi) = rows[i];
         let b = (lo.hi + hi.hi) / 2.0;
-        let a = widths[c].hi;
-        b / (a * rho_over_t.hi)
+        b / (mid(c) * rho_over_t.hi)
     };
     let g_z = |i: usize, c: usize| {
         let (lo, hi) = rows[i];
         let b = (lo.hi + hi.hi) / 2.0;
-        widths[c].hi / (b * rho_over_t.hi)
+        mid(c) / (b * rho_over_t.hi)
     };
     let mut east = vec![vec![usize::MAX; k]; rows.len()];
     let mut south = vec![vec![usize::MAX; k]; rows.len()];
@@ -1126,13 +1460,14 @@ pub fn barrel(
             (t, b)
         })
         .collect();
+    let mut talls = Vec::new();
     for i in 0..rows.len() {
         for c in 0..k {
             let w = (c + k - 1) % k;
             // z grows downward: "n" is the face toward the next row (+z)
-            net.elements.push(Element::Tall {
+            talls.push(TallCell {
                 node: cells[i][c],
-                a: widths[c],
+                column: c,
                 b_lo: rows[i].0,
                 b_hi: rows[i].1,
                 rho_over_t,
@@ -1151,7 +1486,7 @@ pub fn barrel(
             });
         }
     }
-    cells
+    (cells, talls)
 }
 
 /// A cell's lower-left corner, in cells.
@@ -1285,93 +1620,251 @@ pub struct Join<'a> {
     pub t_min: Iv,
 }
 
-/// A via centred on cell corner `corner`, its junction square `m` cells
-/// each side of it (half-side `a = m·h`, `h` the cell side in the units of
-/// `hole`), its barrel ([`barrel`]) with one column per grid face around
-/// the square, counter-clockwise from the east face's south end, and a
-/// [`junction`] joint from each copper or terminal cell beside the square
-/// on each joined layer to its column on the layer's row. The square's own
-/// cells must be absent from every joined sheet. Returns the barrel's
-/// cells, `[row][column]`, and each join's port edges (oriented from the
-/// layer into the barrel).
+/// A via's junction region, in cells relative to the via's nominal centre
+/// (a cell corner, the origin): every cell that meets the open disc of
+/// radius `r_nm` about it, and the region's boundary faces in
+/// counter-clockwise order. Exact in integers.
+#[derive(Clone, Debug)]
+pub struct Region {
+    pub cells: BTreeSet<Cell>,
+    pub faces: Vec<RegionFace>,
+}
+
+/// One boundary face of a [`Region`]: the cell outside it and the region's
+/// cell inside, its outward normal, the distance `d0` (in cells) from the
+/// centre to its line, and where its segment starts along the line, `u0`
+/// (in cells, measured along the normal turned counter-clockwise).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RegionFace {
+    pub outside: Cell,
+    pub inside: Cell,
+    pub normal: (i64, i64),
+    pub d0: i64,
+    pub u0: i64,
+}
+
+impl Region {
+    /// The cells meeting the open disc of radius `r_nm` about the corner
+    /// at the origin, with cells of side `h_nm`.
+    pub fn new(h_nm: i64, r_nm: i64) -> Region {
+        let near = |i: i64| {
+            if i >= 0 {
+                i
+            } else if i < 0 {
+                -(i + 1)
+            } else {
+                0
+            }
+        };
+        let n = r_nm / h_nm + 2;
+        let mut cells = BTreeSet::new();
+        for i in -n..n {
+            for j in -n..n {
+                let (dx, dy) = (i128::from(near(i) * h_nm), i128::from(near(j) * h_nm));
+                if dx * dx + dy * dy < i128::from(r_nm) * i128::from(r_nm) {
+                    cells.insert((i, j));
+                }
+            }
+        }
+        let mut faces = Vec::new();
+        for &(i, j) in &cells {
+            for (nx, ny) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+                let out = (i + nx, j + ny);
+                if cells.contains(&out) {
+                    continue;
+                }
+                let (d0, u0) = match (nx, ny) {
+                    (1, 0) => (i + 1, j),
+                    (-1, 0) => (-i, -(j + 1)),
+                    (0, 1) => (j + 1, -(i + 1)),
+                    _ => (-j, i),
+                };
+                faces.push(RegionFace {
+                    outside: out,
+                    inside: (i, j),
+                    normal: (nx, ny),
+                    d0,
+                    u0,
+                });
+            }
+        }
+        // counter-clockwise by the angle of each face's midpoint
+        let angle = |f: &RegionFace| {
+            let (nx, ny) = f.normal;
+            let (tx, ty) = (-ny, nx);
+            let s = 2 * f.u0 + 1;
+            let (mx, my) = (2 * f.d0 * nx + s * tx, 2 * f.d0 * ny + s * ty);
+            (my as f64).atan2(mx as f64)
+        };
+        faces.sort_by(|a, b| angle(a).total_cmp(&angle(b)));
+        Region { cells, faces }
+    }
+
+    /// Every face's rays reach the hole, for every hole centre in the
+    /// square of half-side `e_nm`, inside the region: the convex hull of the
+    /// face and that square meets no cell outside the region (exact, by
+    /// separating axes in integers). That makes the region star-shaped from
+    /// every centre the tolerance allows, so the faces' wedges tile the
+    /// circle in their order and no two overlap.
+    pub fn rays_inside(&self, h_nm: i64, e_nm: i64) -> bool {
+        self.faces
+            .iter()
+            .all(|f| self.hull_inside(f, h_nm, e_nm, &|c| self.cells.contains(&c)))
+    }
+
+    /// The convex hull of face `f` and the centre square meets no cell for
+    /// which `inside` is false, among the cells within the hull's box.
+    pub fn hull_inside(
+        &self,
+        f: &RegionFace,
+        h: i64,
+        e: i64,
+        inside: &dyn Fn(Cell) -> bool,
+    ) -> bool {
+        let (nx, ny) = f.normal;
+        let (tx, ty) = (-ny, nx);
+        let p = |s: i64| ((f.d0 * nx + s * tx) * h, (f.d0 * ny + s * ty) * h);
+        let pts = [p(f.u0), p(f.u0 + 1), (-e, -e), (e, -e), (e, e), (-e, e)];
+        let hull = convex_hull(&pts);
+        let (x0, x1) = (
+            pts.iter().map(|q| q.0).min().unwrap(),
+            pts.iter().map(|q| q.0).max().unwrap(),
+        );
+        let (y0, y1) = (
+            pts.iter().map(|q| q.1).min().unwrap(),
+            pts.iter().map(|q| q.1).max().unwrap(),
+        );
+        for i in x0.div_euclid(h) - 1..=x1.div_euclid(h) + 1 {
+            for j in y0.div_euclid(h) - 1..=y1.div_euclid(h) + 1 {
+                if !inside((i, j)) && overlaps(&hull, (i * h, j * h, (i + 1) * h, (j + 1) * h)) {
+                    return false;
+                }
+            }
+        }
+        true
+    }
+}
+
+/// The convex hull of points, counter-clockwise (monotone chain, exact).
+pub fn convex_hull(pts: &[(i64, i64)]) -> Vec<(i64, i64)> {
+    let mut p: Vec<(i64, i64)> = pts.to_vec();
+    p.sort_unstable();
+    p.dedup();
+    let cross = |o: (i64, i64), a: (i64, i64), b: (i64, i64)| {
+        i128::from(a.0 - o.0) * i128::from(b.1 - o.1)
+            - i128::from(a.1 - o.1) * i128::from(b.0 - o.0)
+    };
+    let mut lower: Vec<(i64, i64)> = Vec::new();
+    for &q in &p {
+        while lower.len() >= 2 && cross(lower[lower.len() - 2], lower[lower.len() - 1], q) <= 0 {
+            lower.pop();
+        }
+        lower.push(q);
+    }
+    let mut upper: Vec<(i64, i64)> = Vec::new();
+    for &q in p.iter().rev() {
+        while upper.len() >= 2 && cross(upper[upper.len() - 2], upper[upper.len() - 1], q) <= 0 {
+            upper.pop();
+        }
+        upper.push(q);
+    }
+    lower.pop();
+    upper.pop();
+    lower.extend(upper);
+    lower
+}
+
+/// A convex polygon (counter-clockwise) and the open box `(x0, y0, x1, y1)`
+/// share an interior point: no separating axis among the box's two and
+/// the polygon's edge normals (touching is not overlapping). Exact.
+pub fn overlaps(poly: &[(i64, i64)], (x0, y0, x1, y1): (i64, i64, i64, i64)) -> bool {
+    let bx = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    let span = |pts: &[(i64, i64)], ax: (i128, i128)| {
+        let v: Vec<i128> = pts
+            .iter()
+            .map(|q| ax.0 * i128::from(q.0) + ax.1 * i128::from(q.1))
+            .collect();
+        (*v.iter().min().unwrap(), *v.iter().max().unwrap())
+    };
+    let mut axes: Vec<(i128, i128)> = vec![(1, 0), (0, 1)];
+    for k in 0..poly.len() {
+        let (a, b) = (poly[k], poly[(k + 1) % poly.len()]);
+        axes.push((i128::from(b.1 - a.1), -i128::from(b.0 - a.0)));
+    }
+    axes.iter().all(|&ax| {
+        let (p0, p1) = span(poly, ax);
+        let (q0, q1) = span(&bx, ax);
+        p1 > q0 && q1 > p0
+    })
+}
+
+/// A via at nominal centre `centre` (a cell corner of the sheets), its
+/// junction region `region` (cells relative to the centre) with its
+/// [`JunctionTable`], its barrel ([`barrel`]) with one column per face, and
+/// on each joined layer an edge from each listed port face's outside cell
+/// to that face's column on the layer's row; every port of every layer and
+/// every barrel cell is priced together in one [`Element::Group`], box by
+/// box, since one hole serves them all. The region's cells must be absent from every joined sheet, and
+/// each port's outside cell present. Returns the barrel's cells,
+/// `[row][column]`, and each join's port edges (oriented from the layer
+/// into the barrel).
 #[allow(clippy::too_many_arguments)]
-pub fn via_ports(
+pub fn via(
     net: &mut Network,
-    corner: (i64, i64),
-    m: i64,
-    h: f64,
+    centre: Cell,
+    region: &Region,
+    table: &JunctionTable,
     hole: &Hole,
-    joins: Vec<Join<'_>>,
+    joins: Vec<(Join<'_>, Vec<usize>)>,
     rows: &[(Iv, Iv)],
     top: Option<usize>,
     bottom: Option<usize>,
 ) -> (Vec<Vec<usize>>, Vec<Vec<usize>>) {
-    let (cx, cy) = corner;
-    let a = m as f64 * h;
-    // (outside cell, the square's cell it faces, u, v along the face)
-    let mut ports = Vec::new();
-    let off = |k: i64| ((k as f64) * h, ((k + 1) as f64) * h);
-    for j in cy - m..cy + m {
-        let (u, v) = off(j - cy);
-        ports.push(((cx + m, j), (cx + m - 1, j), u, v));
-    }
-    for i in (cx - m..cx + m).rev() {
-        let (u, v) = off(i - cx);
-        ports.push(((i, cy + m), (i, cy + m - 1), u, v));
-    }
-    for j in (cy - m..cy + m).rev() {
-        let (u, v) = off(j - cy);
-        ports.push(((cx - m - 1, j), (cx - m, j), u, v));
-    }
-    for i in cx - m..cx + m {
-        let (u, v) = off(i - cx);
-        ports.push(((i, cy - m - 1), (i, cy - m), u, v));
-    }
-    let ai = Iv::exact(a);
-    let dth = |u: f64, v: f64| Iv::exact(v).div(ai).atan().sub(Iv::exact(u).div(ai).atan());
-    let widths: Vec<Iv> = ports
-        .iter()
-        .map(|&(_, _, u, v)| hole.r_d.mul(dth(u, v)))
-        .collect();
     let rho_barrel = hole.rho.mul(hole.r_d).div(hole.area());
-    let cells = barrel(net, &widths, rows, rho_barrel, top, bottom);
+    let (cells, talls) = barrel_cells(net, &table.widths, rows, rho_barrel, top, bottom);
+    let abs = |c: Cell| (centre.0 + c.0, centre.1 + c.1);
     let mut all = Vec::new();
-    for join in joins {
-        let mut edges = Vec::new();
-        for i in cx - m..cx + m {
-            for j in cy - m..cy + m {
-                assert!(
-                    !join.sheet.id.contains_key(&(i, j)),
-                    "a cell inside a via's junction square"
-                );
-            }
+    let mut group: Vec<usize> = Vec::new();
+    // per group edge: its face and its layer's ρ/t (upper end)
+    let mut scale: Vec<(usize, f64)> = Vec::new();
+    for (join, ports) in joins {
+        for &c in &region.cells {
+            assert!(
+                !join.sheet.id.contains_key(&abs(c)),
+                "a cell inside a via's junction region"
+            );
         }
         let rho_over_t = hole.rho.div(join.t_min);
-        let mut kappa: BTreeMap<(u64, u64), Iv> = BTreeMap::new();
-        for (k, &(cell, toward, u, v)) in ports.iter().enumerate() {
-            if !join.sheet.id.contains_key(&cell) {
-                continue; // no copper beside this face: it carries nothing
-            }
-            // κ depends on |u|, |v| only: the face's two halves mirror
-            let key = (
-                u.abs().min(v.abs()).to_bits(),
-                u.abs().max(v.abs()).to_bits(),
-            );
-            let kap = *kappa.entry(key).or_insert_with(|| {
-                let (p, q) = if u < 0.0 { (-v, -u) } else { (u, v) };
-                junction(a, p, q, hole.r_d, hole.beta, rho_over_t, hole.t_p, 256)
-            });
+        let mut edges = Vec::new();
+        for k in ports {
+            let f = &region.faces[k];
+            let worst = table.k.iter().map(|row| row[k]).fold(0.0f64, f64::max);
+            let g = 1.0 / rho_over_t.mul(Iv::exact(worst)).hi;
             let e = join
                 .sheet
-                .port(net, cell, toward, cells[join.row][k], 1.0 / kap.hi);
-            net.elements.push(Element::Joint {
-                edge: e,
-                kappa: kap,
-            });
+                .port(net, abs(f.outside), abs(f.inside), cells[join.row][k], g);
+            group.push(e);
+            scale.push((k, rho_over_t.hi));
             edges.push(e);
         }
         all.push(edges);
     }
+    let kappa = table
+        .k
+        .iter()
+        .map(|row| {
+            scale
+                .iter()
+                .map(|&(k, rt)| Iv::exact(rt).mul(Iv::exact(row[k])).hi)
+                .collect()
+        })
+        .collect();
+    net.elements.push(Element::Group {
+        edges: group,
+        kappa,
+        talls,
+        widths: table.box_widths.clone(),
+    });
     (cells, all)
 }
 
@@ -1589,8 +2082,11 @@ mod tests {
         let rho_over_t = Iv::exact(rho * r_d).div(area);
         let k = 48;
         let two_pi = Iv::exact(1.0).atan().scale(8.0);
-        let widths: Vec<Iv> = (0..k)
-            .map(|_| two_pi.mul(Iv::exact(r_d)).div(Iv::exact(k as f64)))
+        let widths: Vec<(Iv, Iv)> = (0..k)
+            .map(|_| {
+                let w = two_pi.mul(Iv::exact(r_d)).div(Iv::exact(k as f64));
+                (w, w)
+            })
             .collect();
         let rows: Vec<(Iv, Iv)> = (0..8)
             .map(|_| (Iv::exact(h / 8.0), Iv::exact(h / 8.0)))
@@ -1631,16 +2127,14 @@ mod tests {
         assert!(b.energy.hi >= exact);
     }
 
-    /// A via in a disc of copper: the outer rim (radius 2 mm) an
-    /// electrode, the via's barrel 1.6 mm long below the layer, its bottom
-    /// the other electrode. Shorting the hole wall at the layer lowers `R`
-    /// to the sheet's `ρ ln(b/r_d)/(2πt)` plus the barrel's
-    /// `ρH/(π t_p (2r_d − t_p))`: a floor the bound must hold above.
-    #[test]
-    fn a_via_in_a_disc_is_bounded_above_its_shorted_floor() {
+    /// A via in a disc of copper (the rim, radius `b`, an electrode), its
+    /// junction region the cells meeting the 0.6 mm pad's disc, each face
+    /// priced over hole offsets up to `e` per axis, its barrel `hb` long
+    /// below the layer to the other electrode. Returns the bound.
+    fn via_in_disc(e: f64, h_nm: i64) -> f64 {
         let (rho, t, t_p, r_d, b, hb) = (1.0, 0.03, 0.018, 0.15, 2.0, 1.6);
-        let h: f64 = 1.0 / 32.0;
-        let m = 6;
+        let h = h_nm as f64 / 1e6;
+        let region = Region::new(h_nm, 300_000);
         let mut net = Network::default();
         let rim = net.node();
         let bottom = net.node();
@@ -1649,7 +2143,7 @@ mod tests {
         let mut terminals = BTreeMap::new();
         for i in -n..n {
             for j in -n..n {
-                if (-m..m).contains(&i) && (-m..m).contains(&j) {
+                if region.cells.contains(&(i, j)) {
                     continue;
                 }
                 let (x0, y0) = (i as f64 * h, j as f64 * h);
@@ -1665,22 +2159,33 @@ mod tests {
         let mut sheet = Sheet::new(&mut net, &cells, &terminals, rho_over_t);
         let hole = Hole {
             r_d: Iv::exact(r_d),
-            beta: Iv::exact(0.03),
+            beta: Iv::exact(0.01),
             t_p: Iv::exact(t_p),
             rho: Iv::exact(rho),
         };
+        assert!(region.rays_inside(h_nm, (e * 1e6).round() as i64));
+        let faces: Vec<(f64, (i64, i64), f64)> = region
+            .faces
+            .iter()
+            .map(|f| (f.d0 as f64 * h, f.normal, f.u0 as f64 * h))
+            .collect();
+        let table = junction_table(&faces, h, e, 16, hole.r_d, hole.beta, hole.t_p).unwrap();
         let mut rows = vec![(Iv::exact(t), Iv::exact(t))];
         rows.extend((0..8).map(|_| (Iv::exact(hb / 8.0), Iv::exact(hb / 8.0))));
-        let joins = vec![Join {
-            sheet: &mut sheet,
-            row: 0,
-            t_min: Iv::exact(t),
-        }];
-        via_ports(
+        let ports: Vec<usize> = (0..region.faces.len()).collect();
+        let joins = vec![(
+            Join {
+                sheet: &mut sheet,
+                row: 0,
+                t_min: Iv::exact(t),
+            },
+            ports,
+        )];
+        via(
             &mut net,
             (0, 0),
-            m,
-            h,
+            &region,
+            &table,
             &hole,
             joins,
             &rows,
@@ -1688,22 +2193,262 @@ mod tests {
             Some(bottom),
         );
         sheet.finish(&mut net);
-        let bd = net.bound(rim, bottom, 2000, 1e-12).unwrap();
+        net.bound(rim, bottom, 2000, 1e-12).unwrap().energy.hi
+    }
+
+    /// The exact resistance of the disc (radius `b`) about a hole of radius
+    /// `r_d` whose centre is `d` off the disc's, between the rim and a
+    /// shorted hole wall, plus the barrel's: the floor a via's bound must
+    /// hold above (an eccentric annulus is a bipolar-coordinate case:
+    /// `ρ/(2πt)·acosh((b² + r_d² − d²)/(2 b r_d))`).
+    fn floor(d: f64) -> f64 {
+        let (rho, t, t_p, r_d, b, hb) = (1.0f64, 0.03f64, 0.018f64, 0.15f64, 2.0f64, 1.6f64);
         let pi = std::f64::consts::PI;
-        let sheet_r = rho * (b / r_d).ln() / (2.0 * pi * t);
-        let barrel_r = rho * hb / (pi * t_p * (2.0 * r_d - t_p));
-        let floor = sheet_r + barrel_r;
+        rho / (2.0 * pi * t) * ((b * b + r_d * r_d - d * d) / (2.0 * b * r_d)).acosh()
+            + rho * hb / (pi * t_p * (2.0 * r_d - t_p))
+    }
+
+    /// Concentric: the bound holds above the shorted floor and close to it.
+    #[test]
+    fn a_via_in_a_disc_is_bounded_above_its_shorted_floor() {
+        let bd = via_in_disc(0.0, 31_250);
+        let fl = floor(0.0);
         eprintln!(
-            "via in disc: bound {:.5} floor {floor:.5} (sheet {sheet_r:.5}, barrel {barrel_r:.5}), excess {:.5}",
-            bd.energy.hi,
-            bd.energy.hi - floor
+            "via in disc, concentric: bound {bd:.5} floor {fl:.5}, excess {:.5}",
+            bd - fl
         );
-        assert!(bd.energy.hi >= floor);
+        assert!(bd >= fl);
+        assert!(bd <= fl * 1.01, "{bd} far over {fl}");
+    }
+
+    /// The worst-case junction: one network priced for every hole position
+    /// within ±75 µm per axis holds above the exact floor of the eccentric
+    /// annulus at every offset tried, corners of the tolerance included,
+    /// at both pitches.
+    #[test]
+    fn a_via_with_its_hole_anywhere_in_tolerance_is_bounded_above_each_eccentric_floor() {
+        for h_nm in [62_500, 31_250] {
+            let bd = via_in_disc(0.075, h_nm);
+            for (dx, dy) in [
+                (0.0, 0.0),
+                (0.075, 0.0),
+                (0.0, -0.075),
+                (0.075, 0.075),
+                (-0.075, 0.05),
+            ] {
+                let d: f64 = f64::hypot(dx, dy);
+                let fl = floor(d);
+                eprintln!(
+                    "via in disc, h {h_nm} nm, hole off by ({dx}, {dy}): bound {bd:.5} floor {fl:.5}"
+                );
+                assert!(
+                    bd >= fl,
+                    "{bd} under the eccentric floor {fl} at ({dx}, {dy})"
+                );
+            }
+            // one flow serves every hole position, so a column the hole
+            // moves away from keeps its flux at a narrower width: measured
+            // +13.6 % at 62.5 µm and +15.8 % at 31.25 µm, at 16 boxes a side
+            // (+9.7 % at 62.5 µm with 32), a via that carries all the
+            // current from every side being the worst case
+            assert!(bd <= floor(0.0) * 1.20, "{bd} far over {}", floor(0.0));
+        }
+    }
+
+    /// The direct energy of the junction's field for a hole at one
+    /// position, in the face's frame (`a`, `[u, v]`), by midpoint
+    /// quadrature in polar coordinates.
+    fn direct(a: f64, u: f64, v: f64, beta: f64) -> f64 {
+        let (rho, t, t_p, r_d) = (1.0f64, 0.03f64, 0.018f64, 0.15f64);
+        let r_i = r_d - t_p;
+        let area = (r_d * r_d - r_i * r_i) / 2.0;
+        let r0 = r_d + beta;
+        let len = v - u;
+        let (tu, tv) = ((u / a).atan(), (v / a).atan());
+        let dth = tv - tu;
+        let g = 1.0 / dth;
+        let n = 4000;
+        let (mut ray, mut band, mut plat) = (0.0, 0.0, 0.0);
+        for k in 0..n {
+            let th = tu + dth * (k as f64 + 0.5) / n as f64;
+            let x = a * th.tan();
+            let rr = a / th.cos();
+            let f = rr * rr / (a * len);
+            let c = (x - u) / len - (th - tu) / dth;
+            ray += f * f * (rr / r0).ln() * dth / n as f64;
+            let nr = 400;
+            for j in 0..nr {
+                let r = r_d + beta * (j as f64 + 0.5) / nr as f64;
+                let w = (r - r_d) / beta;
+                let kr = (f * w + g * (1.0 - w)) / r;
+                let kt = c / beta;
+                band += (kr * kr + kt * kt) * r * (beta / nr as f64) * (dth / n as f64);
+            }
+        }
+        let cc = 1.0 / (area * dth * t);
+        let nr = 4000;
+        for j in 0..nr {
+            let r = r_i + t_p * (j as f64 + 0.5) / nr as f64;
+            let jr = cc * (r * r - r_i * r_i) / (2.0 * r);
+            plat += jr * jr * r * (t_p / nr as f64);
+        }
+        rho / t * ray + rho / t * band + plat * rho * dth * t
+    }
+
+    /// The table holds the field's direct energy at every hole position
+    /// tried, the tolerance's corners included, in every box that contains
+    /// the position; and each column's width range holds every position's
+    /// width. A table taken at the nominal position alone fails this (the
+    /// mutant it kills).
+    #[test]
+    fn a_junction_table_holds_every_hole_position_it_allows() {
+        let (t, r_d, beta, e, h) = (0.03f64, 0.15f64, 0.01f64, 0.075f64, 0.0625f64);
+        let n = 16;
+        // faces of the 0.6 mm pad's region at 62.5 µm: (d0, normal, u0) in cells
+        let cells = [
+            (5i64, (1i64, 0i64), 0i64),
+            (5, (0, 1), 2),
+            (4, (-1, 0), 3),
+            (5, (0, -1), -1),
+        ];
+        let faces: Vec<(f64, (i64, i64), f64)> = cells
+            .iter()
+            .map(|&(d0, nrm, u0)| (d0 as f64 * h, nrm, u0 as f64 * h))
+            .collect();
+        let table = junction_table(
+            &faces,
+            h,
+            e,
+            n,
+            Iv::exact(r_d),
+            Iv::exact(beta),
+            Iv::exact(0.018),
+        )
+        .unwrap();
+        let step = 2.0 * e / n as f64;
+        for (f, &(d, nrm, u)) in faces.iter().enumerate() {
+            let tv = (-nrm.1, nrm.0);
+            let mut worst: f64 = 0.0;
+            for dx in [-e, -e / 3.0, 0.0, 0.031, e] {
+                for dy in [-e, -0.02, 0.0, e / 2.0, e] {
+                    let dn = dx * nrm.0 as f64 + dy * nrm.1 as f64;
+                    let dt = dx * tv.0 as f64 + dy * tv.1 as f64;
+                    let (a, uu) = (d - dn, u - dt);
+                    let k = direct(a, uu, uu + h, beta);
+                    worst = worst.max(k);
+                    // every box containing (dx, dy)
+                    for i in 0..n {
+                        for j in 0..n {
+                            let (x0, y0) = (-e + step * i as f64, -e + step * j as f64);
+                            if dx >= x0 - 1e-12
+                                && dx <= x0 + step + 1e-12
+                                && dy >= y0 - 1e-12
+                                && dy <= y0 + step + 1e-12
+                            {
+                                let kappa = table.k[i * n + j][f] / t;
+                                assert!(
+                                    kappa >= k * (1.0 - 1e-5),
+                                    "face {f} at ({dx}, {dy}), box ({i}, {j}): {kappa} under {k}"
+                                );
+                            }
+                        }
+                    }
+                    let w = r_d * ((uu + h) / a).atan() - r_d * (uu / a).atan();
+                    assert!(
+                        table.widths[f].0.lo <= w && w <= table.widths[f].1.hi,
+                        "width {w} outside {:?}",
+                        table.widths[f]
+                    );
+                }
+            }
+            let nominal = direct(d, u, u + h, beta);
+            let top = table.k.iter().map(|r| r[f]).fold(0.0f64, f64::max) / t;
+            eprintln!(
+                "face {f}: table max {top:.4}, worst sampled {worst:.4}, nominal {nominal:.4}"
+            );
+            assert!(
+                worst > nominal * 1.01,
+                "the offsets must matter for this test to bite"
+            );
+            assert!(
+                top <= worst * 1.10,
+                "{top} far over the worst sampled {worst}"
+            );
+        }
+    }
+
+    /// The branch and bound's result is never below the true maximum and
+    /// close above it, on a function with a known maximum off the centre.
+    #[test]
+    fn the_box_supremum_is_certified_and_tight() {
+        let f = |x: Iv, y: Iv| -> Result<Iv, ()> {
+            // 1 − (x − 0.3)² − (y + 0.2)², its maximum 1 at (0.3, −0.2)
+            Ok(Iv::exact(1.0)
+                .sub(x.sub(Iv::exact(0.3)).sqr())
+                .sub(y.add(Iv::exact(0.2)).sqr()))
+        };
+        let s = sup_over_box(&f, (-1.0, 1.0), (-1.0, 1.0), 1e-3, 1e-4).unwrap();
+        assert!(s >= 1.0, "{s}");
+        assert!(s <= 1.0 + 2e-3, "{s}");
+    }
+
+    /// A barrel cell whose width and height each lie in a range is priced
+    /// at its worst corner: never below any width and height in the box.
+    #[test]
+    fn a_barrel_cell_with_ranges_holds_every_width_and_height() {
+        let rho_over_t = Iv::exact(1.0);
+        let widths = vec![(Iv::exact(0.1), Iv::exact(0.3)); 6];
+        let rows = vec![(Iv::exact(0.2), Iv::exact(0.5)); 3];
+        let mut net = Network::default();
+        let (top, bottom) = (net.node(), net.node());
+        barrel(
+            &mut net,
+            &widths,
+            &rows,
+            rho_over_t,
+            Some(top),
+            Some(bottom),
+        );
+        let b = net.bound(top, bottom, 500, 1e-12).unwrap();
+        // the same flow at any fixed width and height in the ranges
+        for (w, hgt) in [(0.1, 0.2), (0.3, 0.5), (0.2, 0.35), (0.1, 0.5), (0.3, 0.2)] {
+            let widths = vec![(Iv::exact(w), Iv::exact(w)); 6];
+            let rows = vec![(Iv::exact(hgt), Iv::exact(hgt)); 3];
+            let mut fixed = Network::default();
+            let (t2, b2) = (fixed.node(), fixed.node());
+            barrel(&mut fixed, &widths, &rows, rho_over_t, Some(t2), Some(b2));
+            let e = fixed.energy(&b.flux);
+            assert!(
+                b.energy.hi >= e.hi,
+                "{} under {} at ({w}, {hgt})",
+                b.energy.hi,
+                e.hi
+            );
+        }
+    }
+
+    /// The region of the cells meeting a pad's disc: its faces tile the
+    /// circle in order, its rays stay inside at every hole position the
+    /// tolerance allows, and a region too small for it is refused.
+    #[test]
+    fn a_junction_region_is_star_shaped_from_every_allowed_centre() {
+        let r = Region::new(62_500, 300_000);
+        assert!(r.rays_inside(62_500, 75_000));
+        // its faces' wedges close the circle at the nominal centre
+        let total: f64 = r
+            .faces
+            .iter()
+            .map(|f| {
+                let (a, u) = (f.d0 as f64, f.u0 as f64);
+                ((u + 1.0) / a).atan() - (u / a).atan()
+            })
+            .sum();
         assert!(
-            bd.energy.hi <= floor * 1.01,
-            "{} far over {floor}",
-            bd.energy.hi
+            (total - 2.0 * std::f64::consts::PI).abs() < 1e-12,
+            "{total}"
         );
+        // a centre allowed to wander as far as the region's edge is refused
+        assert!(!r.rays_inside(62_500, 300_000));
     }
 
     /// [`junction`]'s coefficient holds its own field's energy, computed

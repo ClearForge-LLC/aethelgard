@@ -33,7 +33,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::flow::{self, Bound, Cell, FlowError, Hole, Iv, Join, Network, Sheet};
+use crate::flow::{
+    self, Bound, Cell, FlowError, Hole, Iv, Join, JunctionTable, Network, Region, Sheet,
+};
 use crate::route::{Board, Layer, Pad, Routed};
 
 /// The physical model's inputs. Lengths in nm unless named otherwise.
@@ -50,6 +52,9 @@ pub struct Model {
     pub plating_nm: i64,
     /// [`flow::junction`]'s band, nm.
     pub beta_nm: i64,
+    /// The fabricator's hole position tolerance, per axis, nm: every hole
+    /// is priced at every position within it.
+    pub hole_offset_nm: i64,
     /// A plane's inset from the outline.
     pub edge_nm: i64,
     /// Plane copper further than this from the terminals' box is left out.
@@ -64,9 +69,81 @@ impl Model {
     /// A plane's knockout radius around copper `d` nm across: `d/2` plus
     /// the fill clearance, rounded up to 10 µm, plus the opening.
     pub fn knockout(&self, d: i64) -> i64 {
-        let r = d / 2 + d % 2 + self.fill_clearance_nm;
-        (r + 9_999) / 10_000 * 10_000 + self.opening_nm
+        self.knockout_raw(d) + self.opening_nm
     }
+
+    /// The fill's own knockout around copper `d` nm across, before the
+    /// min-thickness opening: `d/2` plus the fill clearance, rounded up to
+    /// 10 µm, plus [`ARC_NM`].
+    pub fn knockout_raw(&self, d: i64) -> i64 {
+        let r = d / 2 + d % 2 + self.fill_clearance_nm;
+        (r + 9_999) / 10_000 * 10_000 + ARC_NM
+    }
+}
+
+/// KiCad's arc-approximation error, taken against us on both sides of the
+/// opening: a knockout's polygon may reach this much past its circle, and
+/// the opening's disc this much short of its radius (KiCad's
+/// `ARC_HIGH_DEF`, 0.005 mm; a condition the refill check measures).
+pub const ARC_NM: i64 = 5_000;
+
+/// A cell near a fill knockout is copper when one disc of radius `w` lies
+/// in the raw fill (clear of every knockout `(centre, raw radius)` in
+/// `near`, and inside `inner`, the raw outline shrunk by `w`) and covers
+/// the cell's four corners: KiCad's opening (deflate, then inflate, by the
+/// min-thickness half-width) keeps every point such a disc covers.
+/// Candidates: the cell's centre, pushed by up to `w` away from each
+/// knockout, away from all together, and along the eight compass
+/// directions. Exact in integers for the candidate tried; a sufficient
+/// test.
+fn witnessed(
+    cell: (i64, i64, i64),
+    near: &[((i64, i64), i64)],
+    inner: (i64, i64, i64, i64),
+    w: i64,
+) -> bool {
+    let (x0, y0, h) = cell;
+    let cc = (x0 as f64 + h as f64 / 2.0, y0 as f64 + h as f64 / 2.0);
+    let mut dirs: Vec<(f64, f64)> = Vec::new();
+    let (mut sx, mut sy) = (0.0, 0.0);
+    for &((kx, ky), _) in near {
+        let (dx, dy) = (cc.0 - kx as f64, cc.1 - ky as f64);
+        let d = dx.hypot(dy).max(1.0);
+        dirs.push((dx / d, dy / d));
+        sx += dx / d;
+        sy += dy / d;
+    }
+    let n = sx.hypot(sy);
+    if n > 0.0 {
+        dirs.push((sx / n, sy / n));
+    }
+    for k in 0..8 {
+        let a = std::f64::consts::FRAC_PI_4 * k as f64;
+        dirs.push((a.cos(), a.sin()));
+    }
+    let corners = [(x0, y0), (x0 + h, y0), (x0, y0 + h), (x0 + h, y0 + h)];
+    let w2 = i128::from(w) * i128::from(w);
+    std::iter::once((0.0, 0.0))
+        .chain(dirs.iter().flat_map(|&(ux, uy)| {
+            (1..=8).map(move |k| {
+                let t = w as f64 * k as f64 / 8.0;
+                (ux * t, uy * t)
+            })
+        }))
+        .any(|(px, py)| {
+            let c = ((cc.0 + px).round() as i64, (cc.1 + py).round() as i64);
+            c.0 >= inner.0
+                && c.1 >= inner.1
+                && c.0 <= inner.2
+                && c.1 <= inner.3
+                && corners
+                    .iter()
+                    .all(|&(px, py)| sq(i128::from(px - c.0)) + sq(i128::from(py - c.1)) <= w2)
+                && near.iter().all(|&((kx, ky), r)| {
+                    let reach = i128::from(r) + i128::from(w);
+                    sq(i128::from(c.0 - kx)) + sq(i128::from(c.1 - ky)) >= reach * reach
+                })
+        })
 }
 
 /// A convex piece of copper, in nm × 4 (so a cell splits twice exactly).
@@ -208,13 +285,33 @@ pub struct ViaAt {
     pub drill_nm: i64,
 }
 
-/// One layer's copper cells (junction squares left out), its minimum
+/// One layer's copper cells (junction regions left out), its minimum
 /// thickness, nm, and whether it is a plane.
 pub struct LayerCopper {
     pub name: String,
     pub cells: Vec<Cell>,
     pub t_min_nm: i64,
     pub plane: bool,
+}
+
+/// A via geometry's junction region and its faces priced over every hole
+/// position ([`flow::junction_table`]).
+pub struct Junction {
+    pub region: Region,
+    pub table: JunctionTable,
+}
+
+/// The tolerance square is cut into this many boxes a side for
+/// [`flow::junction_table`].
+pub const OFFSET_BOXES: usize = 16;
+
+/// A via the network uses: where it is, its junction (an index into
+/// [`NetCopper::junctions`]), and each layer it joins with that layer's
+/// port faces.
+pub struct ViaUse {
+    pub via: ViaAt,
+    pub junction: usize,
+    pub joins: Vec<(usize, Vec<usize>)>,
 }
 
 /// One net's copper, ready for any pair of terminals.
@@ -225,9 +322,8 @@ pub struct NetCopper {
     pub h_nm: i64,
     /// Each copper layer, top to bottom.
     pub layers: Vec<LayerCopper>,
-    /// Each via, its square's half-side in cells, and the layers (indices
-    /// into `layers`) whose copper holds the square.
-    pub vias: Vec<(ViaAt, i64, Vec<usize>)>,
+    pub junctions: Vec<Junction>,
+    pub vias: Vec<ViaUse>,
     /// The barrel's rows, top to bottom, each a height range in mm; layer
     /// `k`'s copper is row `2k`.
     pub rows: Vec<(Iv, Iv)>,
@@ -268,7 +364,83 @@ pub fn pad<'a>(
         })
 }
 
-/// The net's copper on the grid, cropped to `crop_nm` around `terminals`.
+/// A hole's clearance radius in nm: its drill's radius plus the largest
+/// distance the tolerance moves its centre, `e·√2` (per axis), rounded up.
+fn hole_radius(drill_nm: i64, e_nm: i64) -> i64 {
+    let r = drill_nm / 2 + drill_nm % 2;
+    let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
+    while 2 * i128::from(e_nm) * i128::from(e_nm) > i128::from(d) * i128::from(d) {
+        d += 1;
+    }
+    r + d
+}
+
+/// The convex hull `hull` (nm) lies inside the union of `shapes` (nm × 4):
+/// each square of a cover of the hull's box that meets the hull lies wholly
+/// inside one shape, splitting each square into four up to `depth` times.
+/// The cover's side is rounded up to a multiple of `2^depth`, so every
+/// square is integral and the test exact (at the shapes' own scale, where
+/// the stadium test's products stay inside `u128`).
+fn hull_in_copper(hull: &[(i64, i64)], shapes: &[Shape], depth: u32) -> bool {
+    let x0 = S * i128::from(hull.iter().map(|p| p.0).min().unwrap());
+    let y0 = S * i128::from(hull.iter().map(|p| p.1).min().unwrap());
+    let w = S * i128::from(hull.iter().map(|p| p.0).max().unwrap()) - x0;
+    let hgt = S * i128::from(hull.iter().map(|p| p.1).max().unwrap()) - y0;
+    let unit = 1i128 << depth;
+    let side = (w.max(hgt).max(1) + unit - 1) / unit * unit;
+    let hq: Vec<(i128, i128)> = hull
+        .iter()
+        .map(|&(x, y)| (S * i128::from(x), S * i128::from(y)))
+        .collect();
+    fn go(
+        hq: &[(i128, i128)],
+        shapes: &[Shape],
+        x0: i128,
+        y0: i128,
+        side: i128,
+        depth: u32,
+    ) -> bool {
+        if !overlaps128(hq, (x0, y0, x0 + side, y0 + side)) {
+            return true;
+        }
+        if shapes
+            .iter()
+            .any(|sh| sh.holds_square(x0, y0, x0 + side, y0 + side))
+        {
+            return true;
+        }
+        if depth == 0 {
+            return false;
+        }
+        let h = side / 2;
+        [(x0, y0), (x0 + h, y0), (x0, y0 + h), (x0 + h, y0 + h)]
+            .iter()
+            .all(|&(a, b)| go(hq, shapes, a, b, h, depth - 1))
+    }
+    go(&hq, shapes, x0, y0, side, depth)
+}
+
+/// [`flow::overlaps`] in `i128` coordinates.
+fn overlaps128(poly: &[(i128, i128)], (x0, y0, x1, y1): (i128, i128, i128, i128)) -> bool {
+    let bx = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)];
+    let span = |pts: &[(i128, i128)], ax: (i128, i128)| {
+        let v: Vec<i128> = pts.iter().map(|q| ax.0 * q.0 + ax.1 * q.1).collect();
+        (*v.iter().min().unwrap(), *v.iter().max().unwrap())
+    };
+    let mut axes: Vec<(i128, i128)> = vec![(1, 0), (0, 1)];
+    for k in 0..poly.len() {
+        let (a, b) = (poly[k], poly[(k + 1) % poly.len()]);
+        axes.push((b.1 - a.1, -(b.0 - a.0)));
+    }
+    axes.iter().all(|&ax| {
+        let (p0, p1) = span(poly, ax);
+        let (q0, q1) = span(&bx, ax);
+        p1 > q0 && q1 > p0
+    })
+}
+
+/// The net's copper on the grid, planes cropped to `crop_nm` around
+/// `terminals`.
 pub fn copper(
     board: &Board,
     routed: &Routed,
@@ -278,6 +450,7 @@ pub fn copper(
 ) -> Result<NetCopper, Refusal> {
     let stack = &board.stack;
     let h = m.h_nm;
+    let e = m.hole_offset_nm;
     let rule = stack.rule(net);
     let mut vias: Vec<ViaAt> = routed
         .vias
@@ -307,7 +480,7 @@ pub fn copper(
     let on_grid = |v: &ViaAt| {
         (v.at.0 - origin.0).rem_euclid(h) == 0 && (v.at.1 - origin.1).rem_euclid(h) == 0
     };
-    let (vias, off): (Vec<ViaAt>, Vec<ViaAt>) = vias.into_iter().partition(on_grid);
+    let (mut vias, mut off): (Vec<ViaAt>, Vec<ViaAt>) = vias.into_iter().partition(on_grid);
     let mut notes = Vec::new();
     if !off.is_empty() {
         notes.push(format!(
@@ -316,15 +489,75 @@ pub fn copper(
             off.iter().map(|v| v.at).collect::<Vec<_>>()
         ));
     }
-    let off_holes: Vec<((i128, i128), i128)> = off
+    // each via geometry's junction region, priced once; a geometry whose
+    // region cannot hold the band at every hole position, or is not
+    // star-shaped from each, is left out like an off-grid via
+    let mut junctions: Vec<Junction> = Vec::new();
+    let mut by_geometry: BTreeMap<(i64, i64), Option<usize>> = BTreeMap::new();
+    let r_d = |drill: i64| Iv::ratio(drill, 2_000_000);
+    let beta = Iv::ratio(m.beta_nm, 1_000_000);
+    let t_p = Iv::ratio(m.plating_nm, 1_000_000);
+    let e_mm = Iv::ratio(e, 1_000_000).hi;
+    let h_mm = h as f64 / 1e6;
+    for v in &vias {
+        let key = (v.via_nm, v.drill_nm);
+        if by_geometry.contains_key(&key) {
+            continue;
+        }
+        // the band's outer circle about any centre the tolerance allows, r0
+        // + e√2: the region (cells meeting that disc) holds it, and the via
+        // pad must too, (R − r0)² ≥ 2e², R − r0 > 0
+        let r0 = r_d(v.drill_nm).add(beta).hi;
+        let reach = (v.drill_nm / 2 + v.drill_nm % 2) + m.beta_nm + hole_radius(0, e) + 1;
+        let region = Region::new(h, reach);
+        let room = (v.via_nm as f64 / 2e6) - r0;
+        let fits = room > 0.0 && Iv::exact(room).sqr().lo >= Iv::exact(e_mm).sqr().scale(2.0).hi;
+        let priced = if fits && region.rays_inside(h, e) {
+            let faces: Vec<(f64, (i64, i64), f64)> = region
+                .faces
+                .iter()
+                .map(|f| (f.d0 as f64 * h_mm, f.normal, f.u0 as f64 * h_mm))
+                .collect();
+            match flow::junction_table(&faces, h_mm, e_mm, OFFSET_BOXES, r_d(v.drill_nm), beta, t_p)
+            {
+                Ok(table) => {
+                    junctions.push(Junction { region, table });
+                    Some(junctions.len() - 1)
+                }
+                Err(_) => None,
+            }
+        } else {
+            None
+        };
+        if priced.is_none() {
+            notes.push(format!(
+                "a {}/{} nm via's junction cannot hold the band at every hole position the ±{e} nm tolerance allows: such vias are left out",
+                v.via_nm, v.drill_nm
+            ));
+        }
+        by_geometry.insert(key, priced);
+    }
+    let (kept, unpriced): (Vec<ViaAt>, Vec<ViaAt>) = vias
+        .into_iter()
+        .partition(|v| by_geometry[&(v.via_nm, v.drill_nm)].is_some());
+    vias = kept;
+    off.extend(unpriced);
+    // holes kept clear: an off-grid or unpriced via's, and the net's own
+    // through-hole pads', each at its drill plus the tolerance
+    let own_drilled: Vec<&Pad> = board
+        .parts
         .iter()
-        .map(|v| {
-            (
-                (S * i128::from(v.at.0), S * i128::from(v.at.1)),
-                S * i128::from(v.drill_nm) / 2 + S,
-            )
-        })
+        .flat_map(|p| p.pads.iter())
+        .filter(|p| p.net.as_deref() == Some(net) && p.drill_nm.is_some())
         .collect();
+    let mut holes: Vec<((i64, i64), i64)> = off
+        .iter()
+        .map(|v| (v.at, hole_radius(v.drill_nm, e)))
+        .collect();
+    for p in &own_drilled {
+        let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
+        holes.push((c, hole_radius(p.drill_nm.unwrap_or(0), e)));
+    }
     // the crop: the terminals' box, grown
     let mut bx = (i64::MAX, i64::MAX, i64::MIN, i64::MIN);
     for p in terminals {
@@ -357,35 +590,25 @@ pub fn copper(
         )
     };
     let hs = S * i128::from(h);
-    // the junction squares: half-side m cells with r_d + β < m h
-    let mut squares: Vec<(ViaAt, i64)> = Vec::new();
-    for v in vias {
-        let need = v.drill_nm / 2 + m.beta_nm;
-        let k = need / h + 1;
-        squares.push((v, k));
-    }
-    let mut in_square: BTreeSet<(i64, i64)> = BTreeSet::new();
-    for (v, k) in &squares {
-        let (ci, cj) = ((v.at.0 - origin.0) / h, (v.at.1 - origin.1) / h);
-        for i in ci - k..ci + k {
-            for j in cj - k..cj + k {
-                if !in_square.insert((i, j)) {
-                    return Err(named(
-                        "ViaSquaresOverlap",
-                        format!("the via at {:?}'s junction square meets another's", v.at),
-                    ));
-                }
+    let centre = |v: &ViaAt| ((v.at.0 - origin.0) / h, (v.at.1 - origin.1) / h);
+    // every via's region cells, which no sheet holds; two regions meeting is
+    // refused by name
+    let mut in_region: BTreeSet<Cell> = BTreeSet::new();
+    for v in &vias {
+        let c = centre(v);
+        let jn = &junctions[by_geometry[&(v.via_nm, v.drill_nm)].unwrap_or(0)];
+        for &(i, j) in &jn.region.cells {
+            if !in_region.insert((c.0 + i, c.1 + j)) {
+                return Err(named(
+                    "ViaRegionsOverlap",
+                    format!("the via at {:?}'s junction region meets another's", v.at),
+                ));
             }
         }
     }
-    let own_drilled: Vec<&Pad> = board
-        .parts
-        .iter()
-        .flat_map(|p| p.pads.iter())
-        .filter(|p| p.net.as_deref() == Some(net) && p.drill_nm.is_some())
-        .collect();
     let mut layers = Vec::new();
-    let mut blocked: Vec<BTreeSet<(i64, i64)>> = Vec::new();
+    let mut eligible: Vec<BTreeSet<Cell>> = Vec::new();
+    let mut outer_shapes: Vec<Vec<Shape>> = Vec::new();
     for name in &stack.copper {
         let outer = name == "F.Cu" || name == "B.Cu";
         let plane = stack
@@ -411,7 +634,7 @@ pub fn copper(
                     hw: S * w / 2,
                 });
             }
-            for (v, _) in &squares {
+            for v in &vias {
                 shapes.push(Shape::Disc {
                     c: (S * i128::from(v.at.0), S * i128::from(v.at.1)),
                     r: S * i128::from(v.via_nm) / 2,
@@ -422,17 +645,15 @@ pub fn copper(
                     shapes.push(Shape::pad(p));
                 }
             }
-            let mut holes: Vec<((i128, i128), i128)> = own_drilled
+            let holes4: Vec<((i128, i128), i128)> = holes
                 .iter()
-                .map(|p| {
-                    let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
+                .map(|&(c, r)| {
                     (
                         (S * i128::from(c.0), S * i128::from(c.1)),
-                        S * i128::from(p.drill_nm.unwrap_or(0)) / 2 + S,
+                        S * i128::from(r),
                     )
                 })
                 .collect();
-            holes.extend(off_holes.iter().copied());
             // each shape's cells
             let mut cand: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
             for (k, sh) in shapes.iter().enumerate() {
@@ -449,12 +670,12 @@ pub fn copper(
                 }
             }
             for (&(i, j), ks) in &cand {
-                if in_square.contains(&(i, j)) {
+                if in_region.contains(&(i, j)) {
                     continue;
                 }
                 let (x0, y0) = corner(i, j);
                 let (x1, y1) = (x0 + hs, y0 + hs);
-                if !holes.iter().all(|&(c, r)| clear(x0, y0, x1, y1, c, r)) {
+                if !holes4.iter().all(|&(c, r)| clear(x0, y0, x1, y1, c, r)) {
                     continue;
                 }
                 if in_union(&shapes, ks, x0, y0, x1, y1, 2) {
@@ -467,7 +688,8 @@ pub fn copper(
                 t_min_nm: m.outer_nm.0,
                 plane: false,
             });
-            blocked.push(BTreeSet::new());
+            eligible.push(BTreeSet::new());
+            outer_shapes.push(shapes);
         } else if plane {
             let inset = (
                 o.x0 + m.edge_nm,
@@ -475,24 +697,16 @@ pub fn copper(
                 o.x1 - m.edge_nm,
                 o.y1 - m.edge_nm,
             );
-            let mut out: BTreeSet<(i64, i64)> = BTreeSet::new();
-            let mut knock = |c: (i64, i64), r: i64| {
-                let cc = (S * i128::from(c.0), S * i128::from(c.1));
-                for i in cell_of(c.0 - r)..=cell_of(c.0 + r) {
-                    for j in row_of(c.1 - r)..=row_of(c.1 + r) {
-                        let (x0, y0) = corner(i, j);
-                        if !clear(x0, y0, x0 + hs, y0 + hs, cc, S * i128::from(r)) {
-                            out.insert((i, j));
-                        }
-                    }
-                }
-            };
+            // every knockout: its centre, raw radius and whether the fill's
+            // opening applies beside it (a hole of the net's own is not the
+            // fill's: no opening, no witness)
+            let mut knockouts: Vec<((i64, i64), i64, bool)> = Vec::new();
             for v in routed.vias.iter().filter(|v| v.net != net) {
-                knock(v.at, m.knockout(stack.rule(&v.net).via_nm));
+                knockouts.push((v.at, m.knockout_raw(stack.rule(&v.net).via_nm), true));
             }
             for a in routed.arrays.iter().filter(|a| a.net != net) {
                 for &at in &a.at {
-                    knock(at, m.knockout(a.via_nm));
+                    knockouts.push((at, m.knockout_raw(a.via_nm), true));
                 }
             }
             for p in board
@@ -507,11 +721,65 @@ pub fn copper(
                 );
                 let diag = w.hypot(hh).ceil() as i64 + 1;
                 let c = ((p.rect.x0 + p.rect.x1) / 2, (p.rect.y0 + p.rect.y1) / 2);
-                knock(c, m.knockout(diag));
+                knockouts.push((c, m.knockout_raw(diag), true));
             }
-            for v in &off {
-                knock(v.at, v.drill_nm / 2 + 1);
+            for &(c, r) in &holes {
+                knockouts.push((c, r, false));
             }
+            // a cell meeting a raw knockout is out; one meeting only the
+            // opening's ring is copper if witnessed ([`witnessed`])
+            let wit = m.opening_nm - ARC_NM;
+            let mut out: BTreeSet<(i64, i64)> = BTreeSet::new();
+            let mut ring: BTreeMap<(i64, i64), Vec<usize>> = BTreeMap::new();
+            for (k, &(c, r, opens)) in knockouts.iter().enumerate() {
+                let reach = if opens { r + m.opening_nm } else { r };
+                let cc = (S * i128::from(c.0), S * i128::from(c.1));
+                for i in cell_of(c.0 - reach)..=cell_of(c.0 + reach) {
+                    for j in row_of(c.1 - reach)..=row_of(c.1 + reach) {
+                        let (x0, y0) = corner(i, j);
+                        if !clear(x0, y0, x0 + hs, y0 + hs, cc, S * i128::from(r)) {
+                            out.insert((i, j));
+                        } else if !clear(x0, y0, x0 + hs, y0 + hs, cc, S * i128::from(reach)) {
+                            ring.entry((i, j)).or_default().push(k);
+                        }
+                    }
+                }
+            }
+            let raw_edge = m.edge_nm - m.opening_nm;
+            let inner = (
+                o.x0 + raw_edge + wit,
+                o.y0 + raw_edge + wit,
+                o.x1 - raw_edge - wit,
+                o.y1 - raw_edge - wit,
+            );
+            let mut admitted = 0usize;
+            for &(i, j) in ring.keys() {
+                if out.contains(&(i, j)) {
+                    continue;
+                }
+                let (x0, y0) = (origin.0 + i * h, origin.1 + j * h);
+                // every fill knockout whose opening could reach a witness
+                let near: Vec<((i64, i64), i64)> = knockouts
+                    .iter()
+                    .filter(|(c, r, _)| {
+                        let d = r + 2 * wit + 2 * h;
+                        (c.0 - x0).abs() <= d && (c.1 - y0).abs() <= d
+                    })
+                    .map(|&(c, r, _)| (c, r))
+                    .collect();
+                let hard = ring[&(i, j)].iter().any(|&k| !knockouts[k].2);
+                if hard || !witnessed((x0, y0, h), &near, inner, wit) {
+                    out.insert((i, j));
+                } else {
+                    admitted += 1;
+                }
+            }
+            if admitted > 0 {
+                notes.push(format!(
+                    "{name}: {admitted} cells inside a knockout's opening ring admitted by a witness disc"
+                ));
+            }
+            let mut ok = BTreeSet::new();
             for i in i0..=i1 {
                 for j in j0..=j1 {
                     let (x0, y0) = (origin.0 + i * h, origin.1 + j * h);
@@ -520,9 +788,11 @@ pub fn copper(
                         && x0 + h <= inset.2
                         && y0 + h <= inset.3
                         && !out.contains(&(i, j))
-                        && !in_square.contains(&(i, j))
                     {
-                        cells.push((i, j));
+                        ok.insert((i, j));
+                        if !in_region.contains(&(i, j)) {
+                            cells.push((i, j));
+                        }
                     }
                 }
             }
@@ -537,7 +807,8 @@ pub fn copper(
                 t_min_nm: m.plane_nm.0,
                 plane: true,
             });
-            blocked.push(out);
+            eligible.push(ok);
+            outer_shapes.push(Vec::new());
         } else {
             layers.push(LayerCopper {
                 name: name.clone(),
@@ -545,52 +816,110 @@ pub fn copper(
                 t_min_nm: m.plane_nm.0,
                 plane: false,
             });
-            blocked.push(BTreeSet::new());
+            eligible.push(BTreeSet::new());
+            outer_shapes.push(Vec::new());
         }
     }
-    // which layers hold each square wholly: on a plane, the square inside
-    // the inset outline and the crop, and none of its cells knocked out; on
-    // F.Cu and B.Cu, the square inside the via's own pad
-    let mut out_vias = Vec::new();
-    for (v, k) in squares {
-        let (ci, cj) = ((v.at.0 - origin.0) / h, (v.at.1 - origin.1) / h);
-        let mut joined = Vec::new();
+    // each via's joins: on a plane, every region cell plane copper, and a
+    // port at each face whose outside cell is plane copper; on F.Cu and
+    // B.Cu, a port at each face whose outside cell is copper and whose rays,
+    // for every hole position, run inside copper
+    let mut uses = Vec::new();
+    for v in vias {
+        let ji = by_geometry[&(v.via_nm, v.drill_nm)].unwrap_or(0);
+        let jn = &junctions[ji];
+        let c = centre(&v);
+        let abs = |q: Cell| (c.0 + q.0, c.1 + q.1);
+        let mut joins = Vec::new();
         for (li, layer) in layers.iter().enumerate() {
-            let name = &layer.name;
-            let holds = if layer.plane {
-                let inset = (
-                    o.x0 + m.edge_nm,
-                    o.y0 + m.edge_nm,
-                    o.x1 - m.edge_nm,
-                    o.y1 - m.edge_nm,
-                );
-                let (x0, y0) = (origin.0 + (ci - k) * h, origin.1 + (cj - k) * h);
-                let (x1, y1) = (origin.0 + (ci + k) * h, origin.1 + (cj + k) * h);
-                // the plane joins its own via all round (solid fill): the
-                // square holds if it is inside the inset and the crop
-                x0 >= inset.0
-                    && y0 >= inset.1
-                    && x1 <= inset.2
-                    && y1 <= inset.3
-                    && ci - k >= i0
-                    && cj - k >= j0
-                    && ci + k <= i1 + 1
-                    && cj + k <= j1 + 1
-                    && (ci - k..ci + k)
-                        .all(|i| (cj - k..cj + k).all(|j| !blocked[li].contains(&(i, j))))
-            } else if name == "F.Cu" || name == "B.Cu" {
-                // the via pad holds the square when its corner is within
-                // the pad's radius
-                let a = i128::from(k * h);
-                2 * sq(a) <= sq(i128::from(v.via_nm) / 2)
-            } else {
-                false
-            };
-            if holds {
-                joined.push(li);
+            let have: BTreeSet<Cell> = layer.cells.iter().copied().collect();
+            if layer.plane {
+                if !jn
+                    .region
+                    .cells
+                    .iter()
+                    .all(|&q| eligible[li].contains(&abs(q)))
+                {
+                    continue;
+                }
+            } else if layer.name != "F.Cu" && layer.name != "B.Cu" {
+                continue;
+            }
+            let mut ports = Vec::new();
+            for (k, f) in jn.region.faces.iter().enumerate() {
+                if !have.contains(&abs(f.outside)) {
+                    continue;
+                }
+                if !layer.plane {
+                    let (nx, ny) = f.normal;
+                    let (tx, ty) = (-ny, nx);
+                    let p = |s: i64| {
+                        (
+                            v.at.0 + (f.d0 * nx + s * tx) * h,
+                            v.at.1 + (f.d0 * ny + s * ty) * h,
+                        )
+                    };
+                    let pts = [
+                        p(f.u0),
+                        p(f.u0 + 1),
+                        (v.at.0 - e, v.at.1 - e),
+                        (v.at.0 + e, v.at.1 - e),
+                        (v.at.0 + e, v.at.1 + e),
+                        (v.at.0 - e, v.at.1 + e),
+                    ];
+                    if !hull_in_copper(&flow::convex_hull(&pts), &outer_shapes[li], 8) {
+                        continue;
+                    }
+                }
+                ports.push(k);
+            }
+            joins.push((li, ports));
+        }
+        uses.push(ViaUse {
+            via: v,
+            junction: ji,
+            joins,
+        });
+    }
+    // plane islands, as KiCad's fill drops them: a plane cell no port of a
+    // via joined to that plane reaches is left out
+    for (li, layer) in layers.iter_mut().enumerate() {
+        if !layer.plane {
+            continue;
+        }
+        let have: BTreeSet<Cell> = layer.cells.iter().copied().collect();
+        let mut seen: BTreeSet<Cell> = BTreeSet::new();
+        let mut queue: Vec<Cell> = Vec::new();
+        for u in &uses {
+            let c = centre(&u.via);
+            for (l, ports) in &u.joins {
+                if *l == li {
+                    for &k in ports {
+                        let f = &junctions[u.junction].region.faces[k];
+                        let q = (c.0 + f.outside.0, c.1 + f.outside.1);
+                        if seen.insert(q) {
+                            queue.push(q);
+                        }
+                    }
+                }
             }
         }
-        out_vias.push((v, k, joined));
+        while let Some((i, j)) = queue.pop() {
+            for q in [(i + 1, j), (i - 1, j), (i, j + 1), (i, j - 1)] {
+                if have.contains(&q) && seen.insert(q) {
+                    queue.push(q);
+                }
+            }
+        }
+        let before = layer.cells.len();
+        layer.cells.retain(|q| seen.contains(q));
+        if layer.cells.len() < before {
+            notes.push(format!(
+                "{}: {} plane cells no via port reaches are left out (islands)",
+                layer.name,
+                before - layer.cells.len()
+            ));
+        }
     }
     // the barrel's rows
     let mut rows = Vec::new();
@@ -646,7 +975,8 @@ pub fn copper(
         origin,
         h_nm: h,
         layers,
-        vias: out_vias,
+        junctions,
+        vias: uses,
         rows,
         notes,
     })
@@ -718,31 +1048,35 @@ pub fn bound(
         let rho_over_t = m.rho.div(Iv::ratio(*t_min, 1_000_000));
         sheets.push(Some(Sheet::new(&mut net, cells, &terminals, rho_over_t)));
     }
-    let h_mm = h as f64 / 1e6;
     // each via's centre and, per joined layer, its port edges
     let mut ports: Vec<(Cell, Vec<Vec<usize>>)> = Vec::new();
-    for (v, k, joined) in &nc.vias {
+    for u in &nc.vias {
+        let v = &u.via;
+        let jn = &nc.junctions[u.junction];
         let hole = Hole {
             r_d: Iv::ratio(v.drill_nm, 2_000_000),
             beta: Iv::ratio(m.beta_nm, 1_000_000),
             t_p: Iv::ratio(m.plating_nm, 1_000_000),
             rho: m.rho,
         };
-        let corner = ((v.at.0 - nc.origin.0) / h, (v.at.1 - nc.origin.1) / h);
+        let centre = ((v.at.0 - nc.origin.0) / h, (v.at.1 - nc.origin.1) / h);
         let mut joins = Vec::new();
         for (li, s) in sheets.iter_mut().enumerate() {
             if let Some(sheet) = s
-                && joined.contains(&li)
+                && let Some((_, p)) = u.joins.iter().find(|(l, _)| *l == li)
             {
-                joins.push(Join {
-                    sheet,
-                    row: 2 * li,
-                    t_min: Iv::ratio(nc.layers[li].t_min_nm, 1_000_000),
-                });
+                joins.push((
+                    Join {
+                        sheet,
+                        row: 2 * li,
+                        t_min: Iv::ratio(nc.layers[li].t_min_nm, 1_000_000),
+                    },
+                    p.clone(),
+                ));
             }
         }
-        let (_, edges) = flow::via_ports(
-            &mut net, corner, *k, h_mm, &hole, joins, &nc.rows, None, None,
+        let (_, edges) = flow::via(
+            &mut net, centre, &jn.region, &jn.table, &hole, joins, &nc.rows, None, None,
         );
         ports.push((v.at, edges));
     }

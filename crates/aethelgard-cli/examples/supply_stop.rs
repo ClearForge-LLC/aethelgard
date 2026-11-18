@@ -35,7 +35,8 @@ fn main() {
         outer_nm: (30_000, stack.copper_max_nm),
         plane_nm: (15_000, stack.copper_max_nm),
         plating_nm: 18_000,
-        beta_nm: 30_000,
+        beta_nm: 10_000,
+        hole_offset_nm: 75_000,
         edge_nm: 625_000,
         crop_nm: crop_mm * 1_000_000,
         fill_clearance_nm: 202_500,
@@ -70,16 +71,15 @@ fn main() {
         nc.vias.len(),
         {
             let mut c = std::collections::BTreeMap::new();
-            for (_, _, j) in &nc.vias {
-                *c.entry(j.len()).or_insert(0) += 1;
+            for u in &nc.vias {
+                *c.entry(u.joins.len()).or_insert(0) += 1;
             }
             c
         },
         t.elapsed()
     );
-    // AET_DUMP_CELLS=<file>: every copper cell (`cell <layer> <x0> <y0> <side>`)
-    // and every joined junction square (`square <layer> <cx> <cy> <half-side>
-    // <drill>`), nm, for the copper checks against KiCad's refill and an
+    // AET_DUMP_CELLS=<file>: every copper cell (`cell <layer> <x0> <y0>
+    // <side>`), nm, for the copper checks against KiCad's refill and an
     // independent reading of the board
     if let Ok(path) = std::env::var("AET_DUMP_CELLS") {
         let mut out = String::new();
@@ -93,18 +93,6 @@ fn main() {
                 ));
             }
         }
-        for (v, k, joined) in &nc.vias {
-            for &li in joined {
-                out.push_str(&format!(
-                    "square {} {} {} {} {}\n",
-                    nc.layers[li].name,
-                    v.at.0,
-                    v.at.1,
-                    k * h_nm,
-                    v.drill_nm
-                ));
-            }
-        }
         std::fs::write(path, out).expect("dump");
         return;
     }
@@ -115,6 +103,21 @@ fn main() {
             .map(|(l, h)| (l.lo, h.hi))
             .collect::<Vec<_>>()
     );
+    if std::env::var("AET_VIAS").is_ok() {
+        for u in &nc.vias {
+            let j: Vec<String> = u
+                .joins
+                .iter()
+                .map(|(l, p)| format!("{}:{}", nc.layers[*l].name, p.len()))
+                .collect();
+            println!(
+                "   via ({:.3},{:.3}) {}",
+                u.via.at.0 as f64 / 1e6,
+                u.via.at.1 as f64 / 1e6,
+                j.join(" ")
+            );
+        }
+    }
     for n in &nc.notes {
         println!("   note: {n}");
     }
