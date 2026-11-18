@@ -175,7 +175,7 @@ A fresh subagent ran it; I checked each finding.
 **Fixed:**
 - **H1.** A limit on a domain the load has no pin on judged nothing and passed. It is now refused, `SupplyTerminalMissing` (test). A `None` drop with no refused pin is a finding (belt-and-suspenders).
 - **L1.** The witness disc's clearance part used the cover radius. It now uses the opening plus the arc error.
-- **L2.** A port's ray hull is checked against holes (belt-and-suspenders: DRC spacing already keeps holes out of pad copper).
+- **L2.** A port's ray hull is checked against holes (belt-and-suspenders: the outside cell's own hole clearance and DRC's hole-to-hole spacing keep holes out of every hull, §4.2).
 - **L3.** `check` refuses a node with edges and no element.
 - **L4.** The copper model's notes are in the verdict.
 - **L5.** A non-finite bound refuses its pin. µΩ is rounded up past the product's rounding.
@@ -193,7 +193,12 @@ A fresh subagent ran it; I checked each finding.
 
 ### 4.2 Mutation [measured, `~/.cache/aet-1303b/mut/run.py`, one mutant per guard, run against its tests]
 
-44 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **43 killed.** The survivor is the port hull's hole test (L2), labelled belt-and-suspenders at its site: DRC spacing already keeps a hole out of pad copper.
+44 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **43 killed.** The survivor is the port hull's hole test (L2), labelled belt-and-suspenders at its site.
+
+**The survivor's label first gave the wrong reason** ("DRC spacing keeps a hole out of pad copper": false for a hole of the same net). The true reason, measured after READY at `6d370e29`:
+- a port's outside cell is already clear of every hole, so a hole crossing its hull would have to lie inside the junction region;
+- DRC's hole-to-hole spacing forbids that;
+- even a same-net pad hole 0.41 mm off, closer than DRC allows, is crossed by no port (test `a_port_whose_rays_cross_a_hole_of_the_net_is_not_joined`, a property test; the mutant still survives it).
 
 Guards that first survived, each given a test that now kills it:
 - the network's foreign-face check;

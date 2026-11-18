@@ -991,9 +991,13 @@ pub fn copper(
                         (v.at.0 - e, v.at.1 + e),
                     ];
                     let hull = flow::convex_hull(&pts);
-                    // belt-and-suspenders: a hole inside a via's own pad copper
-                    // would already break DRC spacing; the hole test keeps the
-                    // port's rays off it without relying on that
+                    // belt-and-suspenders: a port's outside cell is already
+                    // clear of every hole, so a hole crossing its hull would
+                    // lie inside the junction region, which DRC's hole-to-hole
+                    // spacing forbids (a same-net pad hole 0.41 mm off is
+                    // still not crossed: `a_port_whose_rays_cross_a_hole_…`);
+                    // the hole test keeps the rays off it without relying on
+                    // either
                     if !hull_in_copper(&hull, &outer_shapes[li], 8)
                         || !hull_clear_of_holes(&hull, &holes)
                     {
@@ -2464,6 +2468,72 @@ mod tests {
         assert!(ports.len() < beside, "{} of {beside}", ports.len());
         // no port faces the knockout
         assert!(ports.iter().all(|&k| jn.region.faces[k].normal != (0, 1)));
+    }
+
+    /// No port's rays cross a hole of the net. Copper of one net may
+    /// overlap, so an off-grid through-hole pad of the net can sit beside
+    /// the net's via, closer than DRC's hole-to-hole spacing allows, its pad
+    /// copper all round: every port's hull still clears the hole, at its
+    /// largest and anywhere the tolerance puts it.
+    #[test]
+    fn a_port_whose_rays_cross_a_hole_of_the_net_is_not_joined() {
+        let v = (6_000_000, 3_000_000);
+        // off the 62.5 um grid, so a hole kept clear, not a via
+        let c = (v.0 + 410_000, v.1);
+        let mut th = pad(
+            "1",
+            "VDD",
+            c.0 - 500_000,
+            c.1 - 500_000,
+            c.0 + 500_000,
+            c.1 + 500_000,
+        );
+        th.drill_nm = Some(300_000);
+        th.corner_nm = 500_000;
+        let b = board(vec![part("J1", vec![th])]);
+        let routed = Routed {
+            segments: vec![seg(Layer::F, (v.0 - 1_000_000, v.1), v)],
+            vias: vec![Via {
+                net: "VDD".into(),
+                at: v,
+            }],
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let m = model();
+        let nc = copper(&b, &routed, "VDD", &[src], &m).unwrap();
+        let u = &nc.vias[0];
+        let jn = &nc.junctions[u.junction];
+        let f_cu = nc.layers.iter().position(|l| l.name == "F.Cu").unwrap();
+        let ports = &u.joins.iter().find(|(l, _)| *l == f_cu).unwrap().1;
+        assert!(!ports.is_empty(), "the track side joins");
+        // every port's hull clears the pad's hole, at its largest and
+        // anywhere the tolerance puts it
+        let e = m.hole_offset_nm;
+        for &k in ports {
+            let f = &jn.region.faces[k];
+            let (nx, ny) = f.normal;
+            let (tx, ty) = (-ny, nx);
+            let p = |s: i64| {
+                (
+                    v.0 + (f.d0 * nx + s * tx) * PITCH_NM,
+                    v.1 + (f.d0 * ny + s * ty) * PITCH_NM,
+                )
+            };
+            let pts = [
+                p(f.u0),
+                p(f.u0 + 1),
+                (v.0 - e, v.1 - e),
+                (v.0 + e, v.1 - e),
+                (v.0 + e, v.1 + e),
+                (v.0 - e, v.1 + e),
+            ];
+            let hull = flow::convex_hull(&pts);
+            assert!(
+                hull_clear_of_holes(&hull, &[(c, hole_clear(300_000, &m))]),
+                "face {k}"
+            );
+        }
     }
 
     /// A port whose rays would leave copper is no port: a pad of the net
