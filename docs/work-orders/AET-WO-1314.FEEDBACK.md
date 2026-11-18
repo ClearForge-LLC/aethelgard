@@ -142,9 +142,9 @@ A fresh subagent found no high findings. I checked each one.
 
 ### 4.2 Mutation [measured, `~/.cache/aet-1314/mut/run.py`, one mutant per guard]
 
-23 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **23 killed.** The last two are the placement shortcut's (§8): the routed board nudged, and `placement` routing.
+24 mutants, one per guard this order adds or changes, each run against the suites the guard lives in. **24 killed, all on the final head** (`d152d676`, after READY `579b848b`; one stale anchor, re-pointed and re-run, killed). The last two are the placement shortcut's (§8): the routed board nudged, and `placement` routing.
 
-- **Not mutated: `diagonal_nm`'s integer correction loop.** It is labelled belt-and-suspenders: the float's ceiling of `e·√2` is exact for every `e` up to 3 mm (measured, every nanometre; the IR caps a tolerance at 1 mm), so no test input can reach it.
+- **`diagonal_nm`'s integer correction is reachable,** and tested. My READY label called it unreachable; that was wrong. The float's ceiling of `e·√2` falls one short at the Pell pair e = 225 058 681 nm (318 281 039² − 2·225 058 681² = −1). Within the IR's 1 mm cap on a tolerance it never does (measured, every nm to 3 mm). A unit test now pins `diagonal_nm(225_058_681) = 318_281_040` and kills the mutant.
 - **Guards added for the mutation run:**
   - `choose` became a pure function with two unit tests: the largest smallest margin, ties, a rung over its bound, an unrouted rung, no bounded net, the nearest rung's overs;
   - the project file's via has a unit test;
