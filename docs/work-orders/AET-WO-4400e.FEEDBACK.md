@@ -286,3 +286,84 @@ Every answer is labelled **measured**, **read at source** or **inferred**.
 - The Renode logs of `r1` (1.4 GB) and `j2` (117 MB) were deleted after their figures were taken.
 
 **STOPPED at §1.1**, 2026-11-17, for the architect's ruling on D1–D7. `main` is `0829fe83`, unchanged since this branch was cut. Title and body: `~/.cache/aet-4400e/pr-title-body.md`.
+
+# Resumed: the build without the FIFO (rulings on #212 comment 6958822008 and #215 comment 6961943794)
+
+`main` `d0381216` (`4400e2` record, `4400e3` RETTOBASE correction, `1313c`) is merged in as a merge commit, and re-gated (132 suites, 2,178 passed, 0 failed). 4220c (#214, the ICM's FIFO) is not merged: the FIFO data step and D7 wait on it, as the resume note orders.
+
+## Built
+
+- **D3, the declaration:** `simulate --firmware F --spec S --foreign TIME`.
+  - It is never inferred, and the verdict's `boot` carries `"judge": "foreign"`.
+  - `--for` and `--foreign` together are refused (exit 64). `--for` keeps its 100 ms bound and its exit 64.
+  - The foreign window's bound, `FOREIGN_MAX_VIRTUAL_NS`, is 4 s, **provisional until D7**.
+  - A separate `ForeignBoot` is serialized under the same `boot` key, so a generated verdict is byte for byte what it was (measured below).
+  - The MCP snapshot gains the `foreign` property.
+- **The memory rule** (`elf::check_foreign`, `elf::foreign_memory`):
+  - flash, plus the six RAM regions ST's header states;
+  - each base is its `#define`, and each size is its comment's. `svd-hal` gains `region_size_kib`, which reads the header's three comment shapes. The generator's `region_kib` is untouched.
+  - both addresses of every `PT_LOAD` are checked;
+  - the overlap rule applies to file bytes only (provisional).
+- **D5, "booted":** the first identity transaction a declared device's model logs. In addition, `core_in_exception` and `pc_outside_firmware` are kept. Otherwise the verdict names `foreign_not_booted`.
+- **D6 (i):**
+  - `parts.json` schema 9 → 10 adds `reads`, with a paired `reads` citation. The BME280 lists its burst from `0xF7`, at least 6 bytes, cited to BST-BME280-DS001-24 §4, p. 23.
+  - `Part::steps` never reaches a listed read, so no generated firmware performs one (tested).
+  - The twin's `Model::read_witness` gives the BME280's witness: `Write F7`, then a `Read` of at least 6 bytes. The values aren't judged, because the stock model answers from the configuration the firmware wrote (a named residual).
+  - The configure step is not judged for a foreign firmware. The verdict's rule table names that.
+- **D4:** the SPI slave-mode `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0 while the controller's last `CR1` write left `SPE` 0. It is read from each SPI controller's access log, which a foreign boot turns on, and counted in `boot.spi_errors_exempted`.
+- **The rule table:** `renode::foreign::RULES`, serialized in every foreign verdict's `boot.rules`. Each of today's rules is kept, replaced or dropped, with what it judges or weakens. The rules the ruled table did not name are marked `provisional` and were sent to the architect's inbox (00:20 UTC):
+  - overlapping zero-filled segments;
+  - the brown-out record;
+  - flash-controller access;
+  - `locked_peripheral_access`;
+  - the motor outputs;
+  - the `untrusted` halted stop.
+- **The judge is its own function** (`renode/foreign.rs`) with its own commands. A foreign boot writes no boot word and no records, and installs none of our hooks and no injection. It keeps the platform check, the analog pre-pass, the sandbox, the bounds, the `RETTOBASE` correction and the cold RCC writes.
+
+## Measured
+
+- **The thin slice:** this branch's CLI, CI's `sentinel-02-own` ArduPilot (`a799dfb6…`), `--foreign 4000ms`.
+  - **The register rules hold:** every solved pin, RCC at-least and USART1's frame bits. The core ends idle (`ICSR` `0x800`, `PC` in `.text`).
+  - **D4 exempted 909 slave-mode errors.**
+  - **The verdict fails**, for two reasons:
+    1. **`renode_log_flood`: the 8 MiB budget binds before 4 s**, so no witness is read and nothing is booted. Peak RSS was 860 MiB (82 % of 1 GiB).
+    2. **`locked_peripheral_access`:** ArduPilot writes DMA1 (`0x40020010`) before its clock is on, which silicon ignores. That rule is provisional.
+- **Where the budget goes** (the CLI's own `--foreign` script, captured from `/proc` and replayed to 4 s): 9.29 MB counted.
+  - Renode's own `Unhandled write` warnings at their default level:
+    - `nvic` 2.7 MB, from cache-maintenance writes (upstream `7b687540` "NVIC: Ignore cache maintenance operations", in no release);
+    - `dma1` 1.4 MB;
+    - `spi2` 1.1 MB;
+    - `i2c1` 1.0 MB.
+  - **D4's SPI access log:** 2.15 MB.
+  - By second: 2.46, 0.48, 0.38 and **5.97 MB** (3–4 s, where the IMU starts).
+  - On the whole log, all 1,073 slave-mode errors are exempt and no other `[ERROR]` occurs. The one the CLI run reported unexempted was a casualty of lines dropped past the budget, which fails closed.
+  - **This is D7's ruling item.** The window's budget binds before wall time, even before the FIFO's reads. Without D4's access log it would be about 7.1 MB at 4 s.
+- **No generated-firmware verdict moves:**
+  - Each firmware is judged by `main` `d0381216`'s CLI and this branch's: both boards at 100 ms, and campaigns of all 25 scenarios.
+  - **The 54 archive files are byte-identical.**
+  - Both boards' `simulate` verdicts, each tree mounted at the same path, are **byte-identical outside `memory`**. A `main`-against-`main` control differs in `memory` too (the run-to-run sample).
+- **Gates:** fmt and clippy clean (also with `with-tools`); `cargo test --workspace`: **132 suites, 2,189 passed, 0 failed**.
+- **The new tests:**
+  - `aethelgard-ir`'s `reads` test and its seven refusals;
+  - `svd-hal`'s six header regions and their bad shapes;
+  - the twin's read witness;
+  - four unit tests in `renode/foreign.rs`: D4's exemption, the rule table, the register families and the step search;
+  - five CLI tests in `boot_tier1.rs` through a foreign stub: the judge, booted and devices; no witness, `foreign_not_booted`; D4; an exception; and the declaration with the memory rule.
+
+## Moved bytes (all named)
+
+- `parts.json` (schema 10, sha256 `97e328f6…`) and `aethelgard-ir`'s pin. No generated file or verdict reads the parts table's bytes (searched).
+- `cli/tests/mcp-tools.json` (the `foreign` property, and `firmware`'s wording).
+- The `mcp.rs` unit list and the `strict_fence.rs` module list.
+
+## Remaining (not done in this stage)
+
+- **After 4220c merges:**
+  - merge `main`;
+  - add the ICM's FIFO read to `parts.json` `reads` and the twin's `read_witness`;
+  - measure the window (D7) with the IMU's reads, and stop if it needs a ruling (the budget measured above says it may);
+  - then build to acceptance:
+    - CI runs the foreign judge on the generated `sentinel-02-own` ELF, which lives in the `ardupilot-image` workflow, apart from the tools image;
+    - the WO's mutations, each refused by name;
+    - the full adversarial pass and the reduction pass.
+- **The provisional rules** wait on the architect's ruling.
