@@ -11,6 +11,9 @@ use crate::run::{Bound, Bounds, LogFilter, Output, Stop};
 use crate::said::{self, Style};
 use crate::verdict::{Finding, Machine, Peripheral};
 
+/// The foreign-firmware judge (`AET-WO-4400e`).
+pub mod foreign;
+
 const TOOL: &str = "renode";
 const LOAD_ERROR: &str = "There was an error executing command";
 /// Renode's error log level; a CPU listed beside one is not a clean load.
@@ -243,6 +246,7 @@ pub const LOG_FILTER: LogFilter = LogFilter {
         MODEL_LOAD_ERROR,
     ],
     discard: unjudged_access_line,
+    summarise: crate::run::summarise_none,
 };
 
 /// A whole log line of Renode's access log the judge never reads.
@@ -3795,6 +3799,7 @@ mod tests {
             },
             dropped_log_lines: dropped,
             peak_rss_kib: None,
+            summaries: Vec::new(),
         }
     }
 

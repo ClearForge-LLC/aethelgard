@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "f12b7a948b1eeaeaa12879cebcb78cd19163470ac742f2d4abd383ebea368d52";
+const PARTS_SHA256: &str = "eeb99c9a48cf4f51de9f7cdd2d633f29ac58738f77876de0592fd2f376f74b08";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -215,8 +215,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_to_8_and_10() {
-    for version in [2, 3, 4, 5, 6, 7, 8, 10] {
+fn refuses_schema_version_2_to_9_and_11() {
+    for version in [2, 3, 4, 5, 6, 7, 8, 9, 11] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -503,7 +503,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 9, "parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 10, "parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 
@@ -1389,4 +1389,128 @@ fn a_malformed_axes_or_frame_column_is_refused_by_name() {
         let err = refused_entry(part, mutate);
         assert_refused(&err, Some(part), field);
     }
+}
+
+/// `AET-WO-4400e` D6 (i): the BME280 lists the data read its datasheet
+/// states (a burst from `0xF7`, at least 6 bytes), and the ICM-42688-P its
+/// FIFO burst (`0xB0`, at least one 16-byte packet), each cited; no other part
+/// lists one yet; `Part::steps` never reaches it. A `reads` entry out of shape, on
+/// an unmodelled part, uncited, or with a citation and no reads is refused.
+#[test]
+fn reads_are_cited_data_reads_of_a_modelled_part_and_never_steps() {
+    use aethelgard_ir::parts::DataRead;
+    let t = parse_parts(PARTS_JSON).unwrap();
+    for p in t.parts() {
+        let want: Vec<DataRead> = match p.part.as_str() {
+            "BME280" => vec![DataRead {
+                write: vec![0xF7],
+                read: 6,
+            }],
+            "ICM42688P" => vec![DataRead {
+                write: vec![0xB0],
+                read: 16,
+            }],
+            _ => Vec::new(),
+        };
+        assert_eq!(p.reads, want, "{}", p.part);
+        assert_eq!(p.citations.reads.is_some(), !want.is_empty(), "{}", p.part);
+        assert!(
+            p.steps()
+                .iter()
+                .all(|s| p.reads.iter().all(|r| s.write != r.write)),
+            "{}: a step never performs a listed read",
+            p.part
+        );
+    }
+    let at = |part: &str| {
+        let doc = embedded();
+        let i = doc["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|p| p["part"] == part)
+            .unwrap();
+        format!("/parts/{i}")
+    };
+    let refused = |edit: &dyn Fn(&mut serde_json::Value), part: Option<&str>, why: &str| {
+        let mut doc = embedded();
+        edit(&mut doc);
+        let err = parse_parts(&doc.to_string()).unwrap_err();
+        assert_refused(&err, part, why);
+    };
+    let bme = at("BME280");
+    let tmp = at("TMP117");
+    refused(
+        &|d| {
+            d.pointer_mut(&format!("{bme}/reads/0/read"))
+                .unwrap()
+                .clone_from(&0.into())
+        },
+        Some("BME280"),
+        "1 to 64",
+    );
+    refused(
+        &|d| {
+            d.pointer_mut(&format!("{bme}/reads/0/read"))
+                .unwrap()
+                .clone_from(&65.into())
+        },
+        Some("BME280"),
+        "1 to 64",
+    );
+    refused(
+        &|d| {
+            d.pointer_mut(&format!("{bme}/reads"))
+                .unwrap()
+                .clone_from(&serde_json::json!([]))
+        },
+        Some("BME280"),
+        "not 1 to 4 reads",
+    );
+    refused(
+        &|d| {
+            let r = d.pointer(&format!("{bme}/reads/0")).unwrap().clone();
+            d.pointer_mut(&format!("{bme}/reads"))
+                .unwrap()
+                .as_array_mut()
+                .unwrap()
+                .push(r);
+        },
+        Some("BME280"),
+        "listed twice",
+    );
+    refused(
+        &|d| {
+            d.pointer_mut(&format!("{bme}/citations/reads"))
+                .unwrap()
+                .clone_from(&serde_json::Value::Null)
+        },
+        Some("BME280"),
+        "reads",
+    );
+    refused(
+        &|d| {
+            let r = d.pointer(&format!("{bme}/reads")).unwrap().clone();
+            let c = d
+                .pointer(&format!("{bme}/citations/reads"))
+                .unwrap()
+                .clone();
+            d.pointer_mut(&format!("{tmp}/reads"))
+                .unwrap()
+                .clone_from(&r);
+            d.pointer_mut(&format!("{tmp}/citations/reads"))
+                .unwrap()
+                .clone_from(&c);
+        },
+        Some("TMP117"),
+        "no `renode` model",
+    );
+    refused(
+        &|d| {
+            let o = d.pointer_mut(&bme).unwrap().as_object_mut().unwrap();
+            o.remove("reads");
+        },
+        Some("BME280"),
+        "missing field `reads`",
+    );
 }

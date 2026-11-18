@@ -609,6 +609,7 @@ fn run_one(
             absent: absent(&p.scenario.overrides),
             open: open(&p.scenario.overrides),
             rail: p.rail,
+            foreign: false,
         }),
     )
     .map_err(stop)?;

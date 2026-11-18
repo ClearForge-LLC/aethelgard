@@ -369,7 +369,10 @@ jobs:
       # timestamp step, STOP-on-FULL and the count's latch and order, packets
       # 1 and 2 and each selection left out, a big-endian packet with an
       # invalid slot), merged after 4400e3's 183.
-      TIER2_MIN: "188"
+      # 191: plus 3 from AET-WO-4400e in twin_tier2.rs (R1's flash controls:
+      # a store into its own flash, an erase of its own sector, an erase
+      # outside it).
+      TIER2_MIN: "191"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded

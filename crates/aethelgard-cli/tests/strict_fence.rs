@@ -157,6 +157,7 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-cli/src/pinout.rs", Role::Other),
     ("aethelgard-cli/src/propose.rs", Role::Other),
     ("aethelgard-cli/src/renode.rs", Role::Other),
+    ("aethelgard-cli/src/renode/foreign.rs", Role::Other),
     ("aethelgard-cli/src/run.rs", Role::Other),
     ("aethelgard-cli/src/said.rs", Role::Other),
     ("aethelgard-cli/src/speeds.rs", Role::Other),

@@ -67,7 +67,7 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// `ardupilot.frame`, the frame an IMU driver passes its samples in
 /// (`AET-WO-4400d`, ruled on PR #207), each required as a key, `null` where
 /// it does not apply.
-pub const PARTS_SCHEMA_VERSION: u32 = 9;
+pub const PARTS_SCHEMA_VERSION: u32 = 10;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -417,6 +417,8 @@ pub struct Citations {
     pub configure: Option<Citation>,
     pub start_up: Option<Citation>,
     pub data: Option<Citation>,
+    /// `Some` exactly when the part lists [`Part::reads`] (`AET-WO-4400e`).
+    pub reads: Option<Citation>,
 }
 
 impl Citations {
@@ -438,9 +440,24 @@ impl Citations {
         v.extend(self.configure.as_ref().map(|c| ("configure", c)));
         v.extend(self.start_up.as_ref().map(|c| ("start_up", c)));
         v.extend(self.data.as_ref().map(|c| ("data", c)));
+        v.extend(self.reads.as_ref().map(|c| ("reads", c)));
         v
     }
 }
+
+/// A data read a driver may make (`AET-WO-4400e`, D6 (i)): `write` sent
+/// first (the register to read from), then at least `read` bytes clocked in,
+/// as the datasheet states the burst. The bytes' values are the model's to
+/// answer and are not part of the read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DataRead {
+    pub write: Vec<u8>,
+    pub read: u8,
+}
+
+/// The most data reads a part lists, and the most bytes one reads.
+pub const MAX_READS: usize = 4;
+pub const MAX_READ_BYTES: u8 = 64;
 
 /// One part.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -476,6 +493,12 @@ pub struct Part {
     pub renode: Option<String>,
     /// The bring-up after the identity, or `None`: the identity alone.
     pub script: Option<Script>,
+    /// The data reads a driver of the part may make, as its datasheet states
+    /// them (`AET-WO-4400e`, ruled on PR #212, D6 (i)): what a foreign
+    /// firmware's read of the part is witnessed by. Only the foreign judge
+    /// reads them; [`Part::steps`] never does, so no generated firmware
+    /// performs one and no generated verdict moves. Empty: none listed.
+    pub reads: Vec<DataRead>,
     pub citations: Citations,
     /// What ArduPilot calls the part, or `None`: no `hwdef.dat` line names
     /// it (`AET-WO-4400b` D4).
@@ -661,6 +684,9 @@ struct RawPart {
     /// Required: `null` says the identity alone.
     #[serde(deserialize_with = "Option::deserialize")]
     script: Option<RawScript>,
+    /// Required: `null` says the part lists no data read (`AET-WO-4400e`).
+    #[serde(deserialize_with = "Option::deserialize")]
+    reads: Option<Vec<RawRead>>,
     citations: RawCitations,
     /// Required: `null` says no `hwdef.dat` line names the part.
     #[serde(deserialize_with = "Option::deserialize")]
@@ -700,6 +726,13 @@ struct RawArduPilot {
     /// frame is uncited.
     #[serde(deserialize_with = "Option::deserialize")]
     frame: Option<RawFrame>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRead {
+    write: Vec<String>,
+    read: u32,
 }
 
 #[derive(Deserialize)]
@@ -823,6 +856,9 @@ struct RawCitations {
     start_up: Option<RawCitation>,
     #[serde(deserialize_with = "Option::deserialize")]
     data: Option<RawCitation>,
+    /// Required: `null` exactly when `reads` is.
+    #[serde(deserialize_with = "Option::deserialize")]
+    reads: Option<RawCitation>,
 }
 
 #[derive(Deserialize)]
@@ -999,6 +1035,36 @@ fn channel(raw: &RawChannel, at: usize) -> Result<Channel, String> {
         ));
     }
     Ok(c)
+}
+
+/// The `reads` column (`AET-WO-4400e`): 1 to [`MAX_READS`] reads, each 1 to
+/// 4 bytes written and 1 to [`MAX_READ_BYTES`] read, no read listed twice,
+/// and only for a part the twin has a model of: a read no model answers
+/// could witness nothing.
+fn reads(raw: &[RawRead], modelled: bool) -> Result<Vec<DataRead>, String> {
+    if !modelled {
+        return Err("`reads` is given for a part with no `renode` model".to_owned());
+    }
+    if raw.is_empty() || raw.len() > MAX_READS {
+        return Err(format!("`reads` is not 1 to {MAX_READS} reads"));
+    }
+    let mut out: Vec<DataRead> = Vec::new();
+    for (i, r) in raw.iter().enumerate() {
+        let write = bytes(&r.write, &format!("reads[{i}].write"))?;
+        if write.len() > 4 {
+            return Err(format!("`reads[{i}].write` is more than 4 bytes"));
+        }
+        let read = u8::try_from(r.read)
+            .ok()
+            .filter(|n| (1..=MAX_READ_BYTES).contains(n))
+            .ok_or_else(|| format!("`reads[{i}].read` is {}, not 1 to {MAX_READ_BYTES}", r.read))?;
+        let d = DataRead { write, read };
+        if out.contains(&d) {
+            return Err(format!("`reads[{i}]` is listed twice"));
+        }
+        out.push(d);
+    }
+    Ok(out)
 }
 
 fn script(raw: &RawScript, stand_in: bool) -> Result<Script, String> {
@@ -1281,6 +1347,11 @@ fn part(raw: RawPart) -> Result<Part, String> {
         configure: paired(c.configure, script.is_some(), "configure", "script")?,
         start_up: paired(c.start_up, script.is_some(), "start_up", "script")?,
         data: paired(c.data, script.is_some(), "data", "script")?,
+        reads: paired(c.reads, raw.reads.is_some(), "reads", "reads")?,
+    };
+    let reads = match &raw.reads {
+        None => Vec::new(),
+        Some(r) => reads(r, raw.renode.is_some())?,
     };
     let ardupilot = match raw.ardupilot {
         None => None,
@@ -1317,6 +1388,7 @@ fn part(raw: RawPart) -> Result<Part, String> {
         spi_output_delay_max_ns: raw.spi_output_delay_max_ns,
         renode: raw.renode,
         script,
+        reads,
         citations,
         ardupilot,
         axes,
