@@ -4097,9 +4097,11 @@ mod tests {
         .map(|u| format!("sysbus.{u} CreateFileBackend @/w/capture/{u}.bin true; "))
         .collect();
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
+        // `AET-WO-3305`: then the one I2C step's status hook.
+        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(
             c.contains(&format!(
-                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; {step}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
@@ -4149,7 +4151,7 @@ mod tests {
         assert_eq!(c.matches("AddWatchpointHook 0x20000000").count(), 1);
         assert!(
             c.contains(&format!(
-                "emulation RunFor \"0.000213550\"; {hook}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
+                "emulation RunFor \"0.000213550\"; {hook}; {step}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
             )),
             "{c}"
         );
@@ -4169,11 +4171,12 @@ mod tests {
         assert_eq!((p.injection_ns(), p.last_start()), (None, None));
         assert!(!p.commands().contains("AddWatchpointHook"));
         // A board without a port: no capture, no injection; the boot word's
-        // hook only logs.
+        // hook only logs, beside its one I2C step's (`AET-WO-3305`).
         let p = plan(&image, &[]);
         assert_eq!(p.injection_ns(), None);
         let c = p.commands();
-        assert_eq!(c.matches("AddWatchpointHook").count(), 1);
+        assert_eq!(c.matches("AddWatchpointHook").count(), 2);
+        assert_eq!(c.matches("AETHELGARD-STEP").count(), 1);
         assert!(!c.contains("WriteChar") && !c.contains("ScheduleAction"));
     }
 
@@ -4199,8 +4202,11 @@ mod tests {
         let c = p.commands();
         let bw = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
         let echo = crate::anchor::echo_hook(0, &p.port_hooks(), 0x2000_0000).unwrap();
+        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(
-            c.contains(&format!("{bw}; {echo}; emulation RunFor \"0.100000000\"")),
+            c.contains(&format!(
+                "{bw}; {echo}; {step}; emulation RunFor \"0.100000000\""
+            )),
             "{c}"
         );
         assert!(!bw.contains("usart2"));
@@ -5734,8 +5740,10 @@ mod tests {
         // `AET-WO-2204` D4: no level is ever changed; the device's log is set
         // to `Noisy` once, before the run (D1).
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &[]);
+        // `AET-WO-3305`: the I2C step's status hook beside the boot word's.
+        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(static_.contains(&format!(
-            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; {step}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
         )));
         assert!(!droop.contains("logLevel 3") && !static_.contains("logLevel 3"));
         assert_eq!(static_.matches("logLevel").count(), 1);
@@ -5781,6 +5789,7 @@ mod tests {
             rec(check.value_at),
             "emulation RunFor \"0.000213550\"".to_owned(),
             hook.clone(),
+            step.clone(),
             "cpu IsHalted false".to_owned(),
             "echo \"AETHELGARD-RELEASE-0\"".to_owned(),
             "emulation RunFor \"0.000000010\"".to_owned(),
@@ -6100,6 +6109,23 @@ mod tests {
             [vec![], vec![118, 119, 117], vec![]],
             "with no status write read, every line goes to the controller's last step"
         );
+    }
+
+    #[test]
+    fn a_status_write_on_another_controller_ends_no_step_of_this_one() {
+        // Adversarial mutant M7: an absent address on I2C1 followed only by
+        // the status write of I2C2's step is still I2C1's last step's.
+        use aethelgard_ir::parts::StepKind::Identity;
+        let i2c = |address| aethelgard_twin::boot::Wire::I2c { address };
+        let checks = [
+            step(i2c(0x76), "i2c1.u2", Identity, &[]),
+            step(i2c(0x47), "i2c2.u5", Identity, &[]),
+        ];
+        let log = [
+            "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 118.",
+            "[00:00:00.003610340] [WARNING] sysbus: AETHELGARD-STEP 1 22020000 361034",
+        ];
+        assert_eq!(absent_of(&checks, &log), [vec![118], vec![]]);
     }
 
     /// The findings of `checks` against `log`, every record `ok`.
