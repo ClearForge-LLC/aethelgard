@@ -7,8 +7,9 @@ use sentinel_01_board::mmio::Mmio;
 fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
+    let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
-    let clock = rcc.reset_clock(&mut r).unwrap();
+    let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
     let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);
     let sda = b.pb7.into_i2c1_sda(&mut r);

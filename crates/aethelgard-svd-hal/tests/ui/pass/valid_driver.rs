@@ -11,8 +11,9 @@ use sentinel_01_board::{Board, Spi1Device, Spi1Selects, SpiError};
 fn firmware() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
+    let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
-    let clock = rcc.reset_clock(&mut r).unwrap();
+    let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
     let _optsr: u32 = board.flash.option_status(&mut r);
     let kernels = rcc.select_spi_kernels(&mut r, &clock);
     let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);

@@ -439,7 +439,7 @@ fn the_console_firmware_runs_in_the_contract_s_order() {
     let main = &generate(&solved, &table)["firmware/src/main.rs"];
     let at = |s: &str| main.find(s).unwrap_or_else(|| panic!("{s}\n{main}"));
     let order = [
-        at("    let Ok(clock) = rcc.reset_clock(&mut r) else {\n"),
+        at("    let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n"),
         at("    let usart2 = rcc.enable_usart2(&mut r, usart2);\n"),
         at("    let pa2 = gpioa.pa2.into_usart2_tx(&mut r);\n"),
         at("    let pa3 = gpioa.pa3.into_usart2_rx(&mut r);\n"),
@@ -652,6 +652,10 @@ fn what_the_generator_cannot_write_is_refused() {
 /// `PUPDR` written whole by `split`). Re-taken at `AET-WO-4211`: the flash is
 /// `nrnd`, so each file with a header gains its one `LIFECYCLE NRND` line, and
 /// nothing else moves (`Cargo.lock` and `firmware/Cargo.lock` carry no header).
+/// Re-taken at `AET-WO-4240v`, which moves every board on purpose (the
+/// supply and VOS Scale 2 first, `Pwr`, `Scale2` taken by `reset_clock`, the
+/// PWR proofs): `main.rs`, `board.rs` and `proofs.rs` were `ff451c44…8d2e`,
+/// `59f194d1…c792` and `e693dcba…18df`; nothing else moved.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -679,11 +683,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "ff451c44b6f7ac8b28e10611e7f12cd85b401ad2cbe93df3ed6de7edd0d08d2e",
+        "d26fab5b6ceabcc7e3b6ea3da3507bdf35dfa3f574b6693cb22cff7086f1d7fe",
     ),
     (
         "src/board.rs",
-        "59f194d1e1ce562906667f7b205eec79771b42476e9fd67c5dcab2883160c792",
+        "8184414c00d5bc96bb2b8fc74435f7fbbd8794a384a7ff95999ec2c2ced65e1e",
     ),
     (
         "src/lib.rs",
@@ -691,7 +695,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "e693dcba3c9b246246b6351d1eb5e5dc30ec8515476d479d2ca3d6e90c1418df",
+        "c0713a7ebeffb94819bcd1c3b770350267df3931f235e63235282e96dc135106",
     ),
 ];
 

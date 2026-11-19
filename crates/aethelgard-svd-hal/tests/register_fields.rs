@@ -205,6 +205,8 @@ fn a_field_dropped_from_the_list_fails_the_check() {
         "SPI1.CFG2.CPOL",
         "GPIOA.MODER.MODER5",
         "RCC.D2CCIP1R.SPI45SEL",
+        "PWR.CR3.LDOEN",
+        "PWR.D3CR.VOS",
     ] {
         let dropped: Vec<FieldUse> = rows
             .iter()
@@ -289,5 +291,47 @@ fn the_reference_rows_carry_the_solved_values() {
     assert_eq!(
         (d2.access, d2.value, d2.pos, d2.width, d2.offset),
         (FieldAccess::Reset, Some(1), 15, 1, 0)
+    );
+    // `AET-WO-4240v` §1.7: the supply bits (a read-modify-write), `D3CR`
+    // whole (its read-only `VOSRDY` written 0), the two polled ready bits and
+    // `FLASH_ACR` at reset.
+    let row = |id: &str, access: FieldAccess| {
+        let r = rows
+            .iter()
+            .find(|r| r.id() == id && r.access == access)
+            .unwrap_or_else(|| panic!("{id}"));
+        (r.offset, r.pos, r.width, r.value, r.whole_word)
+    };
+    assert_eq!(row("PWR.CR3.SCUEN", written), (0x0C, 2, 1, Some(0), false));
+    assert_eq!(row("PWR.CR3.LDOEN", written), (0x0C, 1, 1, Some(1), false));
+    assert_eq!(row("PWR.CR3.BYPASS", written), (0x0C, 0, 1, Some(0), false));
+    assert_eq!(
+        row("PWR.D3CR.VOS", written),
+        (0x18, 14, 2, Some(0b10), true)
+    );
+    assert_eq!(
+        row("PWR.D3CR.VOSRDY", written),
+        (0x18, 13, 1, Some(0), true)
+    );
+    let reset = FieldAccess::Reset;
+    assert_eq!(
+        row("PWR.CSR1.ACTVOSRDY", reset),
+        (0x04, 13, 1, Some(1), false)
+    );
+    assert_eq!(row("PWR.D3CR.VOSRDY", reset), (0x18, 13, 1, Some(1), false));
+    assert_eq!(
+        row("FLASH.ACR.LATENCY", reset),
+        (0x00, 0, 4, Some(7), false)
+    );
+    assert_eq!(
+        row("FLASH.ACR.WRHIGHFREQ", reset),
+        (0x00, 4, 2, Some(0b11), false)
+    );
+    assert_eq!(rows.iter().filter(|r| r.family == "PWR").count(), 7);
+    // No other `PWR_CR3` field is a row: every other bit is written as read.
+    assert!(
+        rows.iter()
+            .filter(|r| r.register == "PWR.CR3")
+            .all(|r| ["SCUEN", "LDOEN", "BYPASS"].contains(&r.field.as_str()))
     );
 }

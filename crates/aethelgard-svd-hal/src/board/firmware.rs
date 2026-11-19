@@ -13,6 +13,27 @@
 //! judge's contract in `aethelgard-twin`. This crate does not depend on the
 //! twin, so the constant is written twice, and a test in `tests/board.rs`
 //! compares the two.
+//!
+//! **The supply and the voltage scale first** (`AET-WO-4240v` §1.4, D-2).
+//! `main`'s first hardware access is `Pwr::scale2`: `PWR_CR3`'s supply
+//! configuration written once and read back, `PWR_CSR1.ACTVOSRDY` awaited,
+//! `PWR_D3CR.VOS` Scale 2, `VOSRDY` awaited, each wait at most [`PWR_POLLS`]
+//! reads. It runs in every firmware, a board that reads no clock included,
+//! and nothing reads the clock tree or starts a peripheral before it (the
+//! `Scale2` token). A fault writes its own boot word ([`BOOT_SUPPLY_NOT_DECLARED`],
+//! [`BOOT_ACTVOSRDY_TIMEOUT`], [`BOOT_VOSRDY_TIMEOUT`]) and parks, with
+//! nothing else written.
+//!
+//! **The residue: RAM written before `ACTVOSRDY`.** Until `ACTVOSRDY` reads 1
+//! the part is in Run* mode, where "write accesses to the RAMs are not
+//! permitted" (RM0433 Rev 9 §6.4.1, p. 262). The reset handler zeroes `.bss`
+//! and copies `.data`, the call to `main` pushes the stack, and `Board::take`
+//! sets its `TAKEN` flag (a static in RAM), before the sequence runs; so these
+//! RAM writes precede `ACTVOSRDY`. So does a fault's
+//! boot word when the fault is [`BOOT_SUPPLY_NOT_DECLARED`] or
+//! [`BOOT_ACTVOSRDY_TIMEOUT`]: on silicon that word may not land, and the
+//! bench reads `PWR_CR3` and `PWR_CSR1` themselves. The twin models no Run*
+//! mode.
 
 use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::parts::StepKind;
@@ -30,6 +51,30 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 // the generator (`INV-07`); tests/board.rs checks that the two agree.
 /// What the firmware writes to the boot word at its fixed point.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
+
+// belt-and-suspenders: the judge holds its own copies
+// (`aethelgard_twin::boot::BOOT_SUPPLY_NOT_DECLARED`, `BOOT_ACTVOSRDY_TIMEOUT`,
+// `BOOT_VOSRDY_TIMEOUT`), so the expected values never come from the generator
+// (`INV-07`); tests/board.rs checks that the two agree.
+/// What the firmware writes to the boot word when `PWR_CR3` reads back a
+/// supply configuration other than the declared one (`AET-WO-4240v` §1.4).
+pub const BOOT_SUPPLY_NOT_DECLARED: u32 = 0x2100_B0F1;
+/// What the firmware writes to the boot word when `PWR_CSR1.ACTVOSRDY` does
+/// not read 1 within [`PWR_POLLS`] reads.
+pub const BOOT_ACTVOSRDY_TIMEOUT: u32 = 0x2100_B0F2;
+/// What the firmware writes to the boot word when `PWR_D3CR.VOSRDY` does not
+/// read 1 within [`PWR_POLLS`] reads.
+pub const BOOT_VOSRDY_TIMEOUT: u32 = 0x2100_B0F3;
+
+/// The most reads of `PWR_CSR1` the `ACTVOSRDY` wait makes, and of `PWR_D3CR`
+/// the `VOSRDY` wait. DS12117 Rev 10 states no settling time or maximum delay
+/// for either bit (read at source, `AET-WO-4240v` reads §7); the only figure
+/// in either document is RM0433 Rev 9 Figure 31's annotation of 20 µs
+/// (p. 281), for VOS1 to VOS0 only, drawn, not specified as a maximum. So the
+/// bound is an engine choice, set generously, as [`ECHO_POLLS`] is: at least
+/// one core cycle a read, it waits at least 15 ms at HSI's fastest, 750 times
+/// that figure.
+pub const PWR_POLLS: u32 = 1_000_000;
 
 // belt-and-suspenders: the judge holds its own copy of the record layout and
 // the statuses (`aethelgard_twin::boot`), so what a record must hold never
@@ -426,7 +471,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             .collect::<String>()
             .as_str(),
     );
-    let mut imports = vec!["Board".to_owned()];
+    let mut imports = vec!["Board".to_owned(), "PwrFault".to_owned()];
     for (name, p) in &plan.peripherals {
         if p.kind == Kind::I2c {
             imports.push(format!("{}_speed", name.to_ascii_lowercase()));
@@ -589,6 +634,14 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          /// What the fixed point writes: `aethelgard_twin::boot::BOOT_MAGIC`, the\n\
          /// judge's constant. Neither RAM's reset value nor any register's.\n\
          const BOOT_MAGIC: u32 = {magic:#010x};\n\
+         /// What a fault of the supply and voltage-scale bring-up writes instead: the\n\
+         /// judge's `aethelgard_twin::boot::BOOT_SUPPLY_NOT_DECLARED`,\n\
+         /// `BOOT_ACTVOSRDY_TIMEOUT` and `BOOT_VOSRDY_TIMEOUT` (`AET-WO-4240v`).\n\
+         const BOOT_SUPPLY_NOT_DECLARED: u32 = {supply:#010x};\n\
+         const BOOT_ACTVOSRDY_TIMEOUT: u32 = {actvosrdy:#010x};\n\
+         const BOOT_VOSRDY_TIMEOUT: u32 = {vosrdy:#010x};\n\
+         /// The most reads each of the bring-up's two waits makes.\n\
+         const PWR_POLLS: u32 = {polls};\n\
          \n\
          /// The observable word: the first word of RAM (`link.x`, `.aethelgard_boot`).\n\
          #[unsafe(link_section = \".aethelgard_boot\")]\n\
@@ -661,9 +714,14 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          let mut r = unsafe {{ Mmio::new() }};\n    \
          let Some(Board {{\n        \
          mut rcc,\n        \
-         flash,\n",
+         flash,\n        \
+         pwr,\n",
         imports = imports.join(", "),
         magic = BOOT_MAGIC,
+        supply = BOOT_SUPPLY_NOT_DECLARED,
+        actvosrdy = BOOT_ACTVOSRDY_TIMEOUT,
+        vosrdy = BOOT_VOSRDY_TIMEOUT,
+        polls = PWR_POLLS,
         boot_static = boot_static,
         records = records,
     );
@@ -687,9 +745,39 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          }\n    \
          };\n",
     );
-    // The reset clock (`AET-WO-4230` D6), read once, first, before any write:
-    // every value the bring-up writes was solved for it, so without it the
-    // firmware stops here and never writes the boot word.
+    // The supply and the voltage scale (`AET-WO-4240v` §1.4, D-2): the first
+    // hardware access, in every firmware. A fault writes its own boot word and
+    // parks.
+    let _ = write!(
+        s,
+        "    // The supply configuration, then VOS Scale 2 (AET-WO-4240v): the first\n    \
+         // hardware access. A fault writes its own boot word and parks, nothing else\n    \
+         // written.\n    \
+         let {bind} = match pwr.scale2(&mut r, PWR_POLLS) {{\n        \
+         Ok(scale2) => scale2,\n        \
+         Err(fault) => {{\n            \
+         let word = match fault {{\n                \
+         PwrFault::SupplyNotDeclared => BOOT_SUPPLY_NOT_DECLARED,\n                \
+         PwrFault::ActvosrdyTimeout => BOOT_ACTVOSRDY_TIMEOUT,\n                \
+         PwrFault::VosrdyTimeout => BOOT_VOSRDY_TIMEOUT,\n            \
+         }};\n            \
+         // SAFETY: the boot word, in RAM the linker script placed; the fixed point\n            \
+         // below, which writes it otherwise, is never reached.\n            \
+         unsafe {{ {boot_ptr}.write_volatile(word) }};\n            \
+         loop {{\n                \
+         core::hint::spin_loop();\n            \
+         }}\n        \
+         }}\n    \
+         }};\n",
+        bind = if plan.needs_clock() {
+            "scale2"
+        } else {
+            "_scale2"
+        },
+    );
+    // The reset clock (`AET-WO-4230` D6), read once, first after the voltage
+    // scale, before any write: every value the bring-up writes was solved for
+    // it, so without it the firmware stops here and never writes the boot word.
     if plan.needs_clock() {
         s.push_str(CLOCK_CHECK);
     }
@@ -939,7 +1027,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
 const CLOCK_CHECK: &str = "    // Every value below was solved for the reset clock: read it before any write\n    \
      // (a selection the bring-up wrote reads 0 in Renode), and without it stop\n    \
      // here, and the boot word is never written.\n    \
-     let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
+     let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n        \
      loop {\n            \
      core::hint::spin_loop();\n        \
      }\n    \

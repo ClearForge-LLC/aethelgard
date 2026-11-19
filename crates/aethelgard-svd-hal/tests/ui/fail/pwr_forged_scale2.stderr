@@ -1,0 +1,5 @@
+error[E0451]: field `_private` of struct `Scale2` is private
+  --> tests/ui/fail/pwr_forged_scale2.rs:15:27
+   |
+15 |     let forged = Scale2 { _private: () };
+   |                           ^^^^^^^^ private field

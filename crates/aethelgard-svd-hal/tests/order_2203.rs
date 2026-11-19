@@ -179,18 +179,28 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and the platform's clock block removed, `main.rs` and the two platforms
 /// are `126afcb9…8d60`, `6f7b2db1…dd35` and `fc22c2c0…ccfa` exactly
 /// (measured); the boot image did not move.
+/// Moved again by `AET-WO-4240v`'s declaration (specification 18,
+/// `mcu.core_supply`), which changes no generator of these: with the
+/// version-17 specification's sha256 (`6deadfe4…e9c9`) put back for the new
+/// (`ab8ca1d8…c110`) in each text, `main.rs` and the two platforms are
+/// `5c770e1c…4722`, `88ab17b6…ce6d` and `2a8151a8…de84` exactly (measured);
+/// the boot image did not move. Then `main.rs` moved again by
+/// `AET-WO-4240v` §1.4, on purpose: the supply and VOS Scale 2 first, its
+/// three fault words and `PWR_POLLS`, `pwr` taken from the board and
+/// `reset_clock` given the token (`16a2f0ba…bae1` before); the two
+/// platforms and the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "5c770e1cf302929f14433a44c5f203f5fa36f36035615e9cf5dc9fc5d3604722",
+        "f30204e8b726b769dfbf2ad6285439fcf5a07007326895f3f8dd41cfb06dde95",
     ),
     (
         "platform",
-        "88ab17b6132d5c960d5c1f1696c9ef9ea31769a9f3f2a2a964d0ef7d42b2ce6d",
+        "55d10bbd775d2ed8512e5710611c725c7a7715c05cd8db50184f3890a7ae1f0d",
     ),
     (
         "platform faulted",
-        "2a8151a84feb178c95edfd257af8d51fa3c1f7804df36276b82128ca74ddde84",
+        "2a4eaea9ffbc267852af304832c8b4870e2bbb9b4c1f5ee82979bbd9c274e4a5",
     ),
     (
         "boot image",
