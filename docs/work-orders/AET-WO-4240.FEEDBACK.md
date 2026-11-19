@@ -18,12 +18,12 @@
 ## 0. The answer in one screen
 
 - **D1, the tree: H1** (HSE → PLL1 → 64 MHz, every prescaler 1), plus `VOS` Scale 2.
-  - Measured on all 31 fixtures: no refusal appears.
+  - Measured on the 31 fixtures: the 22 that solve on `main` gain no refusal. The 4 refused by design stay refused. The 5 stored topologies are refused `UnsupportedClock` only as a knob artefact (§7.1).
   - No `PSC`/`ARR`/`CCR`/`BRR`/`MBR` moves; only one field of each I2C `TIMINGR` moves.
   - CRSF 416666 solves with **+22,652 ppm** (−3,125 on the HSI today).
   - `4400g`'s F stays 64 MHz, and the twin's push residue vanishes.
-- **D2, the crystal (Scotty's): 16 MHz, 3225, CL ≤ 12 pF, ABM8AIG-16.000MHZ-12-2Z-T3.**
-  - It passes AN2867's oscillation rule with 2.7× room.
+- **D2, the crystal (Scotty's), PROVISIONAL: 16 MHz, 3225, CL ≤ 12 pF, ABM8AIG, ordered as `ABM8AIG-16.000MHZ-12-2Z-T3`** (a part number **constructed** from the ordering table, not seen in a listing).
+  - It passes AN2867's oscillation rule with 2.7× room. That is **[uncited]** until the current AN2867 is held: only Rev 10 is, so the rule is uncited by the ruling (§3).
   - **Every stocked CL 18 pF part at 8, 24 and 25 MHz fails** DS12117's `Gm_crit_max` (1.5 mA/V).
   - Stock is readable at LCSC only, so §3.3 is a stocking plan for Scotty's hand read.
 - **New, outside this spike's fence: F-VOS.**
@@ -211,11 +211,11 @@
    - **ABM8AIG-16.000MHZ-12-2Z-T3** (the recommendation);
    - ABM8AIG-8.000MHZ-10-1Z-T (or `-8-`), if 8 MHz is preferred;
    - ECS-160-8-33B2Q-VY-TR3 (second maker).
-   - LCSC lists none of the three (search, 2026-11-19).
+   - None of the three was found by LCSC's search (2026-11-19). That search page renders in JavaScript, so this is **unknown, not absent**.
 2. **A second-maker part with a stated `C0`** at 16 MHz and CL ≤ 12 pF, in stock at two distributors. ECX-33B2Q (C0 2 pF) qualifies on paper, at ±150 ppm stability.
 3. **NDK** becomes eligible the moment NDK's `C0` is held (ask NDK, or a full datasheet beyond the one-page brief). NX3225GA-16MHZ-STD-CRG-2 is 4,690 at LCSC and $0.19 at 150.
 
-**JLCPCB assembly**, the route Sentinel boards take: LCSC's stock is what an assembled order draws on. A part LCSC does not carry is a consignment or a substitution, which `1604`'s ruled JLCPCB files would have to say.
+**JLCPCB assembly**, the route Sentinel boards take: LCSC's stock is what an assembled order draws on. A part LCSC is not shown to carry is a consignment or a substitution, which `1604`'s ruled JLCPCB files would have to say.
 
 ## 4. The independent PLL rule (§1.3), cited per register and per limit
 
@@ -262,7 +262,7 @@
 | `PLL1RGE` ranges | 1–2 / 2–4 / 4–8 / 8–16 MHz. **The boundaries are shared** (an 8 MHz reference is in both `10` and `11`); RM0433 does not say which is inclusive | p. 402 |
 | VCO, wide | 192–960 MHz (RM0433 p. 402; DS rev V Table 136, p. 234). **836 MHz max on rev Y** (DS Table 39, p. 130) | |
 | VCO, medium | 150–420 MHz | p. 402; Tables 40/137 |
-| `DIVM1` / `DIVN1` / `DIVP1` | 1–63 / 4–512 / 1 or even 2–128 | pp. 399, 404 |
+| `DIVM1` / `DIVN1` / `DIVP1` | 1–63 / 4–512 / even 2–128 (÷1: listed on p. 404, excluded by p. 348's "can only take odd values"; refused, below) | pp. 348, 399, 404 |
 | PLL lock time | wide: 50 µs typ, **150 µs max**; medium 100 µs max | Tables 39/136 |
 | `fCPU` / `fHCLK` / `fPCLK` max, rev V | VOS3 200/100/**50**; VOS2 300/150/75; VOS1 400/200/100; VOS0 480/240/120 (VOS0: `TJmax` 105 °C, LDO only) | DS12117 Table 111 (cont.), p. 210 (image) |
 | The same, rev Y | VOS1/2/3 400/300/200, no VOS0 [inferred: DS rev Y Table 13 has no frequency rows; from Table 39 note 2 and p. 115] | |
@@ -369,7 +369,7 @@ Every word below is decoded by hand against §4.1, with every field cited there 
 | # | Prediction | Result | Score |
 |---|---|---|---|
 | P1 | ±50 ppm crystal, 64 MHz, CRSF 416666: margin about 22,650 | `BRR` 154, quantization 2,596, receiver 2,646, peer 8,002, worst 10,648, Table 407 33,300, **margin 22,652** [measured, M2] | **Confirmed** |
-| P2 | HSI-PLL at 100/200/240 MHz: 416666 margin about 3,605; 420000 fails at 100 and 200 (about −207) | 416666 **+3,605** at all three; 420000 **−207** at 100 and 200, +135 at 240 [measured, M2]. 3,605 holds only because Table 406/407's 37,500 row applies when `BRR`'s fraction is 0 (`BRR` 240, 480, 576). **Only a crystal closes both bauds** | **Confirmed** |
+| P2 | HSI-PLL at 100/200/240 MHz: 416666 margin about 3,605; 420000 fails at 100 and 200 (about −207) | 416666 **+3,605** at all three in the serial check; 420000 **−207** at 100 and 200, +135 at 240 [measured, M2]. At 240 MHz `solve` itself panics on I2C under the measurement's kernel choice, an artefact (§7.1, F-PANIC), so "solves" there means the serial check holds. 3,605 holds only because Table 406/407's 37,500 row applies when `BRR`'s fraction is 0 (`BRR` 240, 480, 576). **Only a crystal closes both bauds** | **Confirmed** |
 | P3 | Integer PLL1 reaches exactly 64 MHz from 8, 16, 24, 25 MHz, not from 8.333 MHz | 8 MHz: 32 settings; 16: 64; 24: 54; 25: 4 (e.g. `DIVM1` 5, `DIVN1` 128, `DIVP1` 10); **8.333 MHz: 0**. 8.333 MHz still reaches 400 MHz (`DIVM1` 1, `DIVN1` 96, `DIVP1` ÷2). Rev Y's 836 MHz VCO changes no conclusion [measured by enumeration against §4.2's cited limits, `py/pll-enum*.txt`] | **Confirmed** |
 | P4 | DShot600 bit within ±0.1 ns of 1,656.25 ns; PWM idle 1,000.0 ± 0.1 µs | PWM: **999.950–1,000.050 µs** (from 985.24–1,026.58 µs on the HSI). DShot600: band **±0.084 ns** about **1,671.875 ns**, not 1,656.25. The solved `ARR` is 106, so a bit is 107 ticks, and 1,656.25 ns is 106 ticks [measured, M3] | **Half:** the width holds, the centre was wrong |
 | P5 | The Nucleo's `MCO` is HSI/2 of the ST-LINK's MCU | **Not measured.** UM2407 says "fixed at 8 MHz" and no more. Rows B-0 and B-1 are for Scotty | **Open** |
@@ -633,6 +633,7 @@ Measured on `serial-four`, `sentinel-02-shaped` and `sentinel-03`, which give id
 - **No twin run of a clock-programming firmware.** The knob firmware programs no RCC, and on `main` the twin's timers run at 250 MHz. §1.7.3 is therefore answered from the source and `4400f`'s measurements, and **is to be re-checked when `4400g` merges.** At this stop `4400g` (#238, head `afb91036`) is open, unmerged.
 - **No ArduPilot build at a crystal frequency (§1.8.4).** The branches were read, not built. A build would add one container and confirm only what `mcuconf` states.
 - **No C0G load capacitors picked (§1.2.3).** Their value is `2(CL − Cs)`, and `Cs` is not yet bounded: it comes from `extract`'s copper bound plus the OSC pins' capacitance, both build-time figures. The value is 18 pF at `Cs` 3 pF, or 14 pF at 5 pF, for CL 12. A part is picked in `4240c`, against a parts row it would add. The family is C0G/NP0 0402 at ±0.25 pF or ±1 %.
+- **Per-port serial columns other than CRSF are not committed.** They are in `~/.cache/aet-4240/m/m2/*.jsonl` (MAVLINK, GPS, SBUS, CONSOLE, per tree). §7.2 commits CRSF's, which is the port §1.5.2 turns on; the others hold in every tree but HSI-PLL 100 MHz's SBUS (−594).
 - **No bench work.** No access to t9o777. Rows B-0 and B-1 are for Scotty.
 - **No stock at DigiKey or Mouser.** Both are unreadable from Furnace. No workaround was tried.
 - **No document from st.com.** AN2867 is Rev 10 from a crystal maker's copy. MB1364 and RN0093 are not held; they are asked for on the bus.
@@ -663,8 +664,8 @@ Format: `finding · where · type · recommendation · decision-needed`.
     | Every USART (`pclk`) | 64 | **50** | **over** |
 
     At **VOS2** every one of them is within (`fPCLK` 75, I2C/USART/SPI4–6 75, TIM and SPI1–3 150).
-  - **The sequence the fix needs** (RM0433 §6.4.1, p. 262; §6.8.4, p. 307), which is **more than one `PWR_D3CR` write**:
-    1. **Program the supply configuration in `PWR_CR3` first.** "The software shall then initialize the system including supply configuration programming in PWR control register 3". Its lower byte "is written once after POR and shall be written before changing VOS level or ck_sys clock frequency". An invalid `LDOEN`/`BYPASS` combination "will lock the register … The system shall be power cycled before writing a new value".
+  - **The sequence the fix needs** (RM0433 §6.4.1, p. 262; §6.8.4, pp. 307–308), which is **more than one `PWR_D3CR` write**:
+    1. **Program the supply configuration in `PWR_CR3` first.** "The software shall then initialize the system including supply configuration programming in PWR control register 3". Its lower byte "is written once after POR and shall be written before changing VOS level or ck_sys clock frequency" (p. 308). An invalid `LDOEN`/`BYPASS` combination "will lock the register … The system shall be power cycled before writing a new value".
     2. **Wait for `PWR_CSR1.ACTVOSRDY`** (bounded). "As long as ACTVOSRDY indicates that voltage levels are invalid, the system is in Run* mode, write accesses to the RAMs are not permitted and VOS shall not be changed."
     3. **Write `PWR_D3CR.VOS`** = `10` (Scale 2), then **wait for `VOSRDY`** (bounded). Raise the voltage scale before raising the frequency (p. 310).
   - **`PWR_CR3` "is reset only by POR"** (RM0433 §6.8.4, p. 307): reset value `0x0000 0006` on rev Y, `0x0000 0046` on rev V.
@@ -697,9 +698,9 @@ Format: `finding · where · type · recommendation · decision-needed`.
 - **F-REV · nowhere · missing declaration · the specification declares the MCU's silicon revision, or the rule takes the stricter row of each pair · decision-needed (with D4).**
   - Two limits differ by revision: the wide VCO maximum (836 MHz rev Y, DS12117 Table 39 p. 130; 960 MHz rev V, Table 136 p. 234) and VOS0's existence (rev V only).
   - Neither H1 (VCO 256 MHz) nor H2 (800 MHz) depends on the answer.
-- **F-RGE · RM0433 Rev 9 p. 402 · source ambiguity · the rule chooses a reference strictly inside a `PLL1RGE` range, and refuses a reference on a boundary · decision-needed (no; recorded).**
+- **F-RGE · RM0433 Rev 9 p. 402 · source ambiguity · the generated tree's judge chooses a reference strictly inside a `PLL1RGE` range, and refuses a generated tree whose reference sits on a boundary. A foreign firmware's boundary reference (ArduPilot's 16 MHz from the HSI, 8 MHz from every HSE branch) is decoded and reported, never refused · RULED (comment 7014986899): scoped to the generated tree's judge.**
   - Adjacent ranges share their endpoints (1–2, 2–4, 4–8, 8–16 MHz), and RM0433 does not say which side is inclusive.
-  - ArduPilot's own HSI tree runs a 16 MHz reference (`DIVM1` 4 from 64 MHz), at the top endpoint.
+  - ArduPilot's own HSI tree runs a 16 MHz reference (`DIVM1` 4 from 64 MHz), at the top endpoint, and every ArduPilot HSE branch runs an 8 MHz reference (§6.1), so §4.5's ArduPilot case passes the decode.
   - The rule's choice for 16 MHz is `DIVM1` 5 (3.2 MHz, inside `01`'s 2–4 MHz), which also keeps the reference an integer in Hz.
 - **F-DEC · `4400g` PR #238 `motor.rs` `from_rcc`/`pll1_p` (read only) · information · `4240`'s judge reads `PLLCFGR` itself on top of the shared decode (D8) · decision-needed (no).**
   - The decode reads no `PLLCFGR`, judging the VCO against the union 150–960 MHz and the reference against 1–16 MHz.
@@ -772,7 +773,9 @@ Each carries a recommendation and its reason. **D2 is Scotty's**; the rest are t
 - **D5, an HSE that does not start.** Recommended: **halt with a named boot word, never fall back to the HSI.**
   - **Boot:** the bring-up waits on `HSERDY` with a bound (the declared crystal's start-up maximum; DS12117 gives only "2 ms typ", so the bound is declared, `RUL-14`), then on `PLL1RDY` (150 µs max, DS12117 Table 39/136), then on `SWS`. Each timeout ends in a distinct boot word (`HSE_NOT_READY`, `PLL1_NOT_LOCKED`, `SW_NOT_TAKEN`) and a halt.
   - **CSS:** set `HSECSSON`. In hardware, CSS **itself is a fallback:** on an HSE failure it switches to the HSI, disables the PLLs, and breaks TIM1/8/15/16/17 (RM0433 §8.5.3, p. 344; quoted in §4.4).
+    - The emergency clock is the HSI while `RCC_CFGR.STOPWUCK` = 0 (reset), and the CSI if it is 1: "The selected clock is also used as emergency clock for the Clock Security System on HSE" (§8.7.7, p. 393). The bring-up leaves `STOPWUCK` at 0.
     - The recommendation is that the NMI it raises halts with a named fault word, motor outputs held at their break state, and never continues on the HSI.
+    - **The break reaches only TIM1/8/15/16/17.** A motor on TIM2–5 gets no hardware break, so the NMI handler must drive those outputs to their safe level itself, and the verdict states which motors have no CSS break. The committed `motors-pwm` board drives TIM1 (`svd-hal` `tests/ui/motors-pwm/board.rs`), so it is covered.
     - With CSS set, a silent continuation on the HSI is impossible: the NMI repeats until `HSECSSF` is cleared. Without CSS, a dead HSE would stop the core clock entirely.
   - **ArduPilot does the same at boot** (an unbounded `HSERDY` wait, §6.1), so the two agree on "never fly on the HSI".
   - **The twin cannot model either** (immediate RDY, CSS a bare flag, §6). The rule judges the bound's presence, and the bench measures it (a bypass board with SB45 off would show `HSE_NOT_READY`).
@@ -790,6 +793,12 @@ Each carries a recommendation and its reason. **D2 is Scotty's**; the rest are t
   - **(a)** Read B-0 and B-1 first (§2).
   - **(b)** `sentinel-02-bench` **does not move until `3304`'s bench has run on `375fd31a`.** M7 proves a specification still declaring no HSE moves no byte.
   - **(c)** Before `4500`, a **bench of the bring-up in bypass** on the Nucleo: a scratch `sentinel-02-bench` variant with `mcu.hse = external, 8 MHz` (if B-1 reads 8.000 MHz).
+    - **Its PLL words,** an integer reference strictly inside a range (F-RGE) [inferred: desk decode against §4.1]:
+      - `PLLCKSELR` `0x0000_0052`: `PLLSRC` HSE, `DIVM1` 5, so **1.6 MHz**;
+      - `PLLCFGR` `0x0003_0002`: `PLL1RGE` `00` (1–2 MHz), `PLL1VCOSEL` 1 (medium, 150–420 MHz, which a ≤ 2 MHz reference requires), `DIVP1EN` and `DIVQ1EN` 1, `DIVR1EN` 0;
+      - `PLL1DIVR` `0x0103_069F`: `DIVN1` 159 (×160, VCO **256 MHz**), `DIVP1` 3 (÷4, **64 MHz**), `DIVQ1` 3 (÷4, `pll1_q` 64 MHz), `DIVR1` at reset;
+      - `RCC_CR` `HSEBYP` 1, then `HSEON`.
+    - The 8 MHz power-of-two divisors land on range boundaries (8, 4, 2 MHz), and `DIVM1` 3 gives a non-integer reference, which Renode would round (§6). So `DIVM1` 5 is the setting that satisfies both.
     - It witnesses the register sequence, `SWS` = PLL1, `PA8` (`MCO1` = `pll1_q` ÷ N, which equals `sys_ck` under H1; `MCO1` cannot select `sys_ck`, RM0433 p. 392, while `MCO2` on `PC9` can) at the predicted frequency, and SPI's SCK at the predicted rate.
     - It does **not** witness a crystal's ppm (the source is the ST-LINK's).
   - **(d)** A crystal's ppm and drive level are first witnessed on Sentinel-02 hardware, which `4500` builds.
