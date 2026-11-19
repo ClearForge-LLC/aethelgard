@@ -122,7 +122,7 @@ P1–P5 hold. The label rule, configure only, fc-base with `FLASH_CS` relabelled
   - **`LabelTakesAfPrefix`**, beside `LabelCollision`. ArduPilot's 14 `af_labels` are copied once and cited (`chibios_hwdef.py:33`), and the test is case-sensitive.
   - **SERIAL7 and SERIAL8 emit no `_OPTIONS`.** `not_emitted` names the omission, so the header and the CLI's report carry it.
   - **The "Serial pulls" header sentence** appears only on a board with a `DEFAULT_SERIALn_PROTOCOL`, which is SERIAL1 or later, so no committed golden moves.
-- **`generate.rs`:** the keyword test holds 26 exact `(define, AP_SerialManager.cpp line)` pairs in place of a pattern over n.
+- **`generate.rs`:** the keyword test holds 26 exact `(define, AP_SerialManager.cpp line)` pairs in place of a pattern over n. Only `DEFAULT_SERIAL0_BAUD` is reached there, because the three committed boards have a console only. The multi-port lines, SERIAL7 included, are checked in `hwdef_tier1.rs` on solved four- and eight-port specifications.
 - **The four fixture headers:** rewritten as §1.5 asks, comment lines only (§4).
 - **READMEs:**
   - pincheck: what is judged; the residual (read from `hwdef.h`, not the ELF); CR2 read at source;
@@ -202,6 +202,10 @@ A fresh subagent ran it read-only, on Opus because it is judgement work. It work
 - **D3. A §7.1 row for the GPS receiver cap (A-D2).**
   - A third GPS-protocol port compiles and is never bound.
   - **Recommended:** the next `pincheck` work order names a third compiled GPS port, as `RcInputTwice` names a second RCIN, cited `AP_GPS_config.h:16` and `AP_GPS.cpp:345-349`.
+- **D4. SERIAL0's role is judged** (adversarial A-D1).
+  - §1.2 says "SERIAL0: no protocol is judged". That holds only while the console stands there. With no console, the first port of any role sits at SERIAL0 and runs MAVLink 2 (`:180`), so a role other than console or `mavlink` there is now a finding. The define is still never read.
+  - Built, because without it the only guard is the generator's `NoConsole`.
+  - **Recommended:** accept it as the judge's reading of §1.2.
 - **The rows the work order says the architect opens** (no action here): the run-time pull-ups against `4400b` D3 (a); the four-port generated CI board after `1911`; the twin read-back of `USART_CR2` after `4400g`.
 
 ## 7. Reduction pass, mutants and gates
@@ -209,7 +213,7 @@ A fresh subagent ran it read-only, on Opus because it is judgement work. It work
 - **Reduction pass (diff): −1 dead path, −1 duplicate; net +1 line (one comment). 2 protected kept; 0 findings.**
   - **Dead path:** the generator's unreachable `3` branch is gone. The line is now `_OPTIONS 0`, with the refusal that makes it so named at the site and in the README. No test reached the branch (§2.2).
   - **Duplicate:** the judge's `rc` flag restated `want == RCIN`.
-  - **Kept, protected:** the judge's `SERIAL_PROTOCOLS` and the generator's `protocol()`, each labelled `belt-and-suspenders:` (`RUL-20`).
+  - **Kept, protected:** the judge's `SERIAL_PROTOCOLS` table and its role match, each labelled `belt-and-suspenders:` at the site (`RUL-20`). Their twin is the generator's `protocol()`, which carries no label: it is the generator's own choice, not a copy.
   - **Kept, not dead:**
     - `MissingSerialParameters`: a hand-written topology can carry an 11th port, and skipping it would breach `INV-06`.
     - The `HAL_HAVE_SERIALn_PARAMS != 1` refusal: ArduPilot itself writes `0` for a hidden IOMCU UART (`chibios_hwdef.py:1700-1701`).
@@ -228,3 +232,16 @@ A fresh subagent ran it read-only, on Opus because it is judgement work. It work
 ## 8. Outside the fence
 
 Nothing. No change was made to `aethelgard-ir`, `.github/workflows/`, `ci/`, `container/`, any specification or any topology fixture. `main` `47ec18f6` (`1910`) is merged in; it touches none of this work order's files.
+
+## 9. Status
+
+- **Mutants** at `6edb8ab9`: **16 of 16 killed, each by a failing test.**
+  - The judge (`G1`–`G11`): SERIAL0's inversion and role; the default table; past SERIAL9; `HAL_HAVE_SERIALn_PARAMS`; a macro-named protocol; an unknown name; the protocol comparison; RCIN twice; the SERIAL7/8 options; the RC mask; the inverted non-RC rule.
+  - The generator (`H1`, `H1b`, `H2`, `H3`): a dropped prefix; a case-folded prefix; the SERIAL7/8 options; the pull-up header condition.
+  - One early mutant (G7) first died only because it did not compile. It was rewritten until a test killed it.
+- **Gates** at `7566320a` (main `47ec18f6` merged):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace`: **2,269 passed, 0 failed** (17 min 13 s, capped scope);
+  - `cargo package --no-verify` of `aethelgard-ir`, `-pincheck` and `-hwdef`: clean, and no `src/` file includes a file outside its crate.
+- One PR, left unmerged. The title and body are in `~/.cache/aet-4404/pr-title-body.md`.

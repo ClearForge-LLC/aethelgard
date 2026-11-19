@@ -810,6 +810,8 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
     let mut rcin: Option<String> = None;
     for (n, (label, p, ..)) in serial_order(t).into_iter().enumerate() {
         let at = format!("SERIAL{n}");
+        // belt-and-suspenders: the generator's `protocol()` maps a role to
+        // the define it writes; this match is the judge's own (`RUL-20`).
         let want = match p.role {
             SerialRole::Console | SerialRole::Mavlink => MAVLINK2,
             SerialRole::Gps => GPS,
