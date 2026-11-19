@@ -37,7 +37,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -187,7 +187,8 @@ fn refuses_unsupported_schema_version() {
         14,
         15,
         16,
-        18,
+        17,
+        19,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -1220,6 +1221,7 @@ fn solved() -> SolvedTopology {
         )]
         .into(),
         bor_level: 0,
+        core_supply: aethelgard_ir::vos::CoreSupplyMode::Ldo,
         mcu: "STM32H753ZITx".into(),
         pin_speeds: [
             ("FLASH_CS".to_owned(), 0),
@@ -1296,8 +1298,10 @@ fn solved_refuses_version_and_hash() {
     // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 8 the
     // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 9 the file before
     // an SPI device's `orientation` (`AET-WO-4400d`), 10 the file before
-    // `foreign_clock` (`AET-WO-4400g`), 12 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12] {
+    // `foreign_clock` (`AET-WO-4400g`), 11 the file before `core_supply`
+    // and the clock's `vos` (`AET-WO-4240v`), 13 one this build does not
+    // know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -1363,8 +1367,8 @@ fn solved_round_trip_is_equal_and_byte_stable() {
 
 #[test]
 fn solved_serialization_is_sorted_whatever_the_input_order() {
-    let a = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{}}"#;
-    let b = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{}}"#;
+    let a = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1},"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"Z":"g","C":"c"},"i2c_ceilings":{"Y":100000,"B":400000},"i2c_speeds":{"Y":100000,"B":400000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"core_supply":"ldo"}"#;
+    let b = r#"{"schema_version":4,"specification_sha256":"h","assignments":{"A":{"pin":"r","peripheral":"q","signal":"s","alternate_function":1},"B":{"pin":"p","peripheral":"q","signal":"s","alternate_function":1}},"gpio":{"C":"c","Z":"g"},"i2c_ceilings":{"B":400000,"Y":100000},"i2c_speeds":{"B":400000,"Y":100000},"analog_lines":{},"i2c_devices":{},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"core_supply":"ldo"}"#;
     let a: SolvedTopology = serde_json::from_str(a).unwrap();
     let b: SolvedTopology = serde_json::from_str(b).unwrap();
     assert_eq!(
@@ -3623,7 +3627,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 17
+                expected: 18
             }
         ),
         "{e}"

@@ -27,6 +27,7 @@ pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
+pub mod vos;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
 pub use serial::{Framing, Parity, PeerDeviationSource, SerialPort, SerialRole, SolvedSerialPort};
@@ -81,7 +82,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Version 17 adds `mcu.foreign_clock` (`AET-WO-4400g` §1.2, Q1 ruled on PR
 /// #229), optional by the same precedent: absent is no foreign clock, which
 /// `simulate --foreign` refuses by name (`INV-06`).
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 17;
+/// Version 18 requires `mcu.core_supply` (`AET-WO-4240v` D-1), the board's
+/// supply configuration with its source, and a declared foreign clock's
+/// `vos`; nothing supplies either for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 18;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -294,6 +298,9 @@ pub struct Mcu {
     pub hse_hz: u32,
     /// `0` (RM0433's factory default) to `3`.
     pub bor_level: u8,
+    /// The core supply configuration the board is built for (`AET-WO-4240v`
+    /// D-1): required, with its source.
+    pub core_supply: CoreSupply,
     /// Where the supply enters the board when no regulator of `power` drives
     /// it: one declared connector's pin on the supply (`AET-WO-4300g`).
     /// Required as a key; `null` when a regulator's output is the supply.
@@ -312,6 +319,29 @@ pub struct Mcu {
         skip_serializing_if = "Option::is_none"
     )]
     pub foreign_clock: Option<motor::ForeignClock>,
+}
+
+/// The core supply configuration (`AET-WO-4240v` §1.1, D-1), as RM0433 Rev 9
+/// Table 34 and §6.8.4 name the two this part has (it has no SMPS):
+/// - `ldo`: the internal LDO supplies VCORE, VCAP decoupled only;
+///   `PWR_CR3` is written with `LDOEN` 1 and `BYPASS` 0;
+/// - `bypass`: an external supply drives VCORE through VCAP; `LDOEN` 0 and
+///   `BYPASS` 1. `validate` and `solve` accept it; `generate`, `emit` and
+///   `simulate` refuse it as `CoreSupplyNotGenerated`, since no board this
+///   engine emits draws an external VCORE.
+///
+/// No other pair is offered: an invalid `LDOEN`/`BYPASS` pair locks
+/// `PWR_CR3` until a power cycle (§6.8.4, p. 308).
+///
+/// `source` says where the mode was read, in `foreign_clock`'s shape (1–200
+/// bytes of printable ASCII). A source is cited only with a document number
+/// and its revision (F-CITE strict, the ruling on #240): a figure without
+/// them is uncited, and nothing rests on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct CoreSupply {
+    pub mode: vos::CoreSupplyMode,
+    pub source: String,
 }
 
 /// A connector pin the supply enters by.
@@ -455,8 +485,9 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `i2c_timings` and `bor_level` (`AET-WO-4230`), version 9 `mcu` and
 /// `pin_speeds` (`AET-WO-4400b` D2), version 10 an SPI device's
 /// `orientation` (`AET-WO-4400d`), version 11 `foreign_clock`
-/// (`AET-WO-4400g`); an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 11;
+/// (`AET-WO-4400g`), version 12 `core_supply` and the clock's `vos`
+/// (`AET-WO-4240v`); an older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 12;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -532,6 +563,9 @@ pub struct SolvedTopology {
     /// `mcu.bor_level`, copied by `solve` so the twin presents it without
     /// reading the specification (`AET-WO-4230` §1.6, `RUL-16`).
     pub bor_level: u8,
+    /// `mcu.core_supply.mode`, copied by `solve` (`AET-WO-4240v`, `RUL-16`):
+    /// the generator writes `PWR_CR3` from it.
+    pub core_supply: vos::CoreSupplyMode,
     /// `mcu.part`, copied by `solve`, so a generator names the MCU without
     /// reading the specification (`AET-WO-4400b`, `RUL-16`).
     pub mcu: String,
@@ -871,6 +905,7 @@ object_only!(
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
     Mcu,
+    CoreSupply,
     SupplySource,
     VoltageDomain,
     Signal,
@@ -935,6 +970,8 @@ struct SolvedWire {
     i2c_timings: Option<BTreeMap<String, SolvedI2cTiming>>,
     #[serde(default)]
     bor_level: Option<u8>,
+    #[serde(default)]
+    core_supply: Option<vos::CoreSupplyMode>,
     #[serde(default)]
     mcu: Option<String>,
     #[serde(default, deserialize_with = "unique_keys_some")]
@@ -1049,14 +1086,18 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("spi_lines")),
                 };
-                // The same for `clock` and `motor_outputs`, which version 5
-                // added; an older file's stand-in is never read, because
-                // `validate` refuses its version first.
-                let clock = match w.clock {
-                    Some(c) => c,
-                    None if w.schema_version != SOLVED_SCHEMA_VERSION => SolvedClock::reset(),
-                    None => return Err(serde::de::Error::missing_field("clock")),
-                };
+                // `clock`, which version 5 added, and `core_supply`, which
+                // version 12 added, have no stand-in under any version: a
+                // clock carries its `vos` and nothing supplies one
+                // (`AET-WO-4240v` §1.1). An older file that lacks either is
+                // refused here; one that has both reaches `validate`, which
+                // refuses its version.
+                let clock = w
+                    .clock
+                    .ok_or_else(|| serde::de::Error::missing_field("clock"))?;
+                let core_supply = w
+                    .core_supply
+                    .ok_or_else(|| serde::de::Error::missing_field("core_supply"))?;
                 let motor_outputs = match w.motor_outputs {
                     Some(m) => m,
                     None if w.schema_version != SOLVED_SCHEMA_VERSION => BTreeMap::new(),
@@ -1128,6 +1169,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     spi_controllers,
                     i2c_timings,
                     bor_level,
+                    core_supply,
                     mcu,
                     pin_speeds,
                     foreign_clock,
@@ -1705,6 +1747,20 @@ pub enum IrValidationError {
         "the solved clock is not the reset clock (HSI at 64 MHz, every prescaler 1, TIMPRE 0, no crystal), the only one this engine generates firmware for (`AET-WO-4300a` §1.2). A firmware that programmed its clock would also leave the twin's counters at the figure Renode 1.17.0's RCC pushes on each RCC write, and their compare channels at the frequency they were built at (`AET-WO-4400f` (b), `INV-07`)"
     )]
     UnsupportedClock,
+    #[error(
+        "{clock} runs at {fastest_hz} Hz at its fastest, over its {limit_hz} Hz maximum at VOS {vos} ({cite}; `AET-WO-4240v` §1.3: judged at the source's fastest frequency, never at nominal)"
+    )]
+    VosLimitExceeded {
+        clock: String,
+        fastest_hz: u64,
+        limit_hz: u64,
+        vos: vos::Vos,
+        cite: String,
+    },
+    #[error(
+        "FLASH_ACR at reset (LATENCY 7, WRHIGHFREQ 11) is below RM0433 Rev 9 Table 17's row for VOS {vos} at an AXI clock of {hclk_fastest_hz} Hz at its fastest (`AET-WO-4240v` D-7)"
+    )]
+    FlashWaitStatesBelowTable { vos: vos::Vos, hclk_fastest_hz: u64 },
     #[error("mcu.foreign_clock.{field} is 0 Hz")]
     ForeignClockZero { field: String },
     #[error(
@@ -2140,6 +2196,8 @@ impl IrValidationError {
             Self::I2cTimingMismatch { .. } => "I2cTimingMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
+            Self::VosLimitExceeded { .. } => "VosLimitExceeded",
+            Self::FlashWaitStatesBelowTable { .. } => "FlashWaitStatesBelowTable",
             Self::ForeignClockZero { .. } => "ForeignClockZero",
             Self::ForeignClockUsarts { .. } => "ForeignClockUsarts",
             Self::ForeignClockMuxSplit { .. } => "ForeignClockMuxSplit",
@@ -2325,7 +2383,10 @@ impl IrValidationError {
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }
             | Self::I2cTimingMismatch { id } => Some(id),
-            Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
+            Self::CrystalNotSupported { .. }
+            | Self::UnsupportedClock
+            | Self::FlashWaitStatesBelowTable { .. } => None,
+            Self::VosLimitExceeded { clock, .. } => Some(clock),
             Self::ForeignClockZero { .. }
             | Self::ForeignClockUsarts { .. }
             | Self::ForeignClockMuxSplit { .. } => None,
@@ -3221,7 +3282,9 @@ impl Specification {
                 value: self.mcu.bor_level,
             });
         }
-        // 2c (`AET-WO-4400g` §1.2)
+        // 2c (`AET-WO-4240v` D-1)
+        board::source(&self.mcu.core_supply.source, "mcu.core_supply.source")?;
+        // 2d (`AET-WO-4400g` §1.2, `AET-WO-4240v` D-4)
         if let Some(c) = &self.mcu.foreign_clock {
             for (path, s) in [
                 ("mcu.foreign_clock.apb1_timers_hz.source", &c.apb1_timers_hz),
@@ -3229,6 +3292,7 @@ impl Specification {
             ] {
                 board::source(&s.source, path)?;
             }
+            board::source(&c.vos.source, "mcu.foreign_clock.vos.source")?;
             for (usart, s) in &c.usarts {
                 board::source(
                     &s.source,
@@ -4143,6 +4207,28 @@ impl SolvedTopology {
     fn validate_motor_outputs(&self) -> Result<(), IrValidationError> {
         use IrValidationError as E;
 
+        // The voltage-scaling rule first (`AET-WO-4240v` §1.3), so a tree
+        // over a limit is refused by the clock's name; then the tree must be
+        // the one this engine generates, the reset RCC tree at Scale 2.
+        let rule = vos::judge_generated(self);
+        if let Some(c) = rule.clocks.iter().find(|c| c.holds == Some(false)) {
+            return Err(E::VosLimitExceeded {
+                clock: c.clock.clone(),
+                fastest_hz: c.fastest_hz.unwrap_or(0),
+                limit_hz: c.limit_hz.unwrap_or(0),
+                vos: rule.vos,
+                cite: c.cite.unwrap_or("").to_owned(),
+            });
+        }
+        if !rule.flash.holds {
+            return Err(E::FlashWaitStatesBelowTable {
+                vos: rule.vos,
+                hclk_fastest_hz: rule.flash.hclk_fastest_hz,
+            });
+        }
+        // A kernel the rule cannot read is refused by name by the
+        // controller checks that follow (`SpiControllerMismatch`, the
+        // silicon rule), never passed: `check_silicon` holds the verdict.
         if self.clock != SolvedClock::reset() {
             return Err(E::UnsupportedClock);
         }

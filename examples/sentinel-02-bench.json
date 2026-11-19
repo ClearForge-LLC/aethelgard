@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "sentinel-02-bench",
@@ -8,6 +8,10 @@
     "supply": "VDD_3V3",
     "hse_hz": 0,
     "bor_level": 0,
+    "core_supply": {
+      "mode": "ldo",
+      "source": "MB1364 rev C-01 and E-01 schematic, MCU_144_POWER: VCAP1/VCAP2 (pins 71/106) only to C48, C50 2.2 uF to GND, fitted per MB1364-H753ZI-C01/E01 BOM; no external VCORE"
+    },
     "supply_source": {
       "connector": "J2",
       "pin": "1"

@@ -6327,6 +6327,7 @@ mod tests {
                 },
             )]),
             bor_level: 0,
+            core_supply: aethelgard_ir::vos::CoreSupplyMode::Ldo,
             mcu: "STM32H753ZITx".into(),
             pin_speeds: BTreeMap::from([("CS".into(), 0), ("SCL".into(), 0), ("SDA".into(), 0)]),
             foreign_clock: None,

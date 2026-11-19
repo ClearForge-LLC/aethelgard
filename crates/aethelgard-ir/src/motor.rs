@@ -97,6 +97,9 @@ pub struct MotorOutput {
 /// §8.7.7), every domain prescaler at its reset value 1 (`RCC_D1CFGR`,
 /// `RCC_D2CFGR` and `RCC_D3CFGR` reset 0, "not divided", §8.7.8–§8.7.10).
 /// `hse_hz` is the specification's `mcu.hse_hz`, which is 0 (no crystal).
+/// `vos` is the core's voltage scale (`AET-WO-4240v`): the generated
+/// firmware raises it from the reset `scale3` to `scale2` before any
+/// peripheral runs, and [`crate::vos`] judges every clock at it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedClock {
@@ -113,10 +116,16 @@ pub struct SolvedClock {
     pub d3ppre: u32,
     /// `RCC_CFGR.TIMPRE`.
     pub timpre: bool,
+    /// `PWR_D3CR.VOS`, the core's voltage scale.
+    pub vos: crate::vos::Vos,
 }
 
 impl SolvedClock {
-    /// The reset clock: the only one this engine generates firmware for.
+    /// The reset RCC tree at VOS Scale 2: the only clock this engine
+    /// generates firmware for (`AET-WO-4240v` §1.3). Every RCC field is at
+    /// its reset value; the core is at Scale 2, which the bring-up sets
+    /// before any peripheral (the reset scale, Scale 3, holds `fPCLK` to 50
+    /// MHz, DS12117 Rev 10 Table 111, and the tree runs it at 64).
     pub fn reset() -> Self {
         Self {
             source: "HSI".into(),
@@ -129,6 +138,7 @@ impl SolvedClock {
             d2ppre2: 1,
             d3ppre: 1,
             timpre: false,
+            vos: crate::vos::Vos::Scale2,
         }
     }
 
@@ -193,7 +203,11 @@ impl SolvedClock {
     /// divides those by 2^(n+1) (`STM32H7_RCC.cs` L242, L245) where RM0433
     /// divides by 64 to 512 (§8.7.8, p. 394), so the counters Renode clocks
     /// after an RCC write would disagree with this decode.
-    pub fn from_rcc(r: &RccRegisters, hse_hz: u32) -> Result<SolvedClock, RccDecodeError> {
+    pub fn from_rcc(
+        r: &RccRegisters,
+        hse_hz: u32,
+        vos: crate::vos::Vos,
+    ) -> Result<SolvedClock, RccDecodeError> {
         // §8.7.2, p. 385: HSIDIV[1:0] divides HSI's 64 MHz by 1, 2, 4 or 8.
         let hsi = 64_000_000u64 >> bits(r.cr, 3, 2);
         // §8.5.2: the CSI oscillator gives "about 4 MHz".
@@ -256,6 +270,9 @@ impl SolvedClock {
             d3ppre: 1,
             // §8.7.7, p. 392: TIMPRE, bit 15.
             timpre: bits(r.cfgr, 15, 1) == 1,
+            // Not read: the specification declares it
+            // (`mcu.foreign_clock.vos`, `AET-WO-4240v` D-4).
+            vos,
         })
     }
 }
@@ -421,6 +438,19 @@ pub struct ForeignClock {
     pub apb2_timers_hz: crate::board::Sourced,
     #[serde(deserialize_with = "crate::unique_keys")]
     pub usarts: std::collections::BTreeMap<String, crate::board::Sourced>,
+    /// The voltage scale the firmware runs its core at (`AET-WO-4240v`
+    /// D-4): required, with its source. The foreign judge applies
+    /// [`crate::vos`] at it, and a clock over its maximum is reported as
+    /// [`crate::vos::VOS_LIMIT_AT_BOUNDARY`], never refused.
+    pub vos: SourcedVos,
+}
+
+/// A declared voltage scale and where it was read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SourcedVos {
+    pub value: crate::vos::Vos,
+    pub source: String,
 }
 
 /// [`ForeignClock`]'s values, copied by `solve`, so the twin builds the
@@ -432,6 +462,7 @@ pub struct SolvedForeignClock {
     pub apb2_timers_hz: u64,
     #[serde(deserialize_with = "crate::unique_keys")]
     pub usarts: std::collections::BTreeMap<String, u64>,
+    pub vos: crate::vos::Vos,
 }
 
 impl SolvedForeignClock {
@@ -454,6 +485,7 @@ impl From<&ForeignClock> for SolvedForeignClock {
                 .iter()
                 .map(|(k, v)| (k.clone(), v.value.into()))
                 .collect(),
+            vos: c.vos.value,
         }
     }
 }
@@ -525,7 +557,8 @@ crate::object_only!(
     SolvedClock,
     SolvedMotorOutput,
     ForeignClock,
-    SolvedForeignClock
+    SolvedForeignClock,
+    SourcedVos
 );
 
 /// Why the solver could not derive a timer's values for an output.

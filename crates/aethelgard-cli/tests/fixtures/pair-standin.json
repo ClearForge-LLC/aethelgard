@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -14,6 +14,10 @@
     "supply": "VDD_3V3",
     "hse_hz": 0,
     "bor_level": 0,
+    "core_supply": {
+      "mode": "ldo",
+      "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
+    },
     "supply_source": {
       "connector": "J2",
       "pin": "1"
