@@ -111,6 +111,7 @@
   - Record as a finding that IR's static headroom counts no input-path drop.
   - It is not fixed here. The architect opens a §7.1 row.
 - **`TIER2_MIN` (K7):** the one line in `ci.yml` is a carve-out. Say so on the bus to `1911` before you push it.
+- **Sentinel-03 declares no ESC (Scotty, 2026-11-19, confirmed).** J5 is a bench header. When ESCs are added they are fed from the pack, not through the board's `VBAT` copper. Use `none` with that source.
 - **The `esc` field is built now,** as a required key that takes `null` (the `motor.rs` house rule). Every motor fixture gains `"esc": null`, and Sentinel-03 declares `none` with its source. Without it, Sentinel-03 cannot get a package.
 - **F3's capacitance is DC-bias-derated where the part's curve is held.** Where it is not, use the part's minimum by tolerance and name the condition. Never use the bare nominal (`RUL-14`). This is one derivation, shared with IR.
 - **EXT keeps today's rule:** named in the verdict, not counted as covered. It is not a relaxation, because nothing about it changes.
