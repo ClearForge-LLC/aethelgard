@@ -162,6 +162,8 @@ Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test 
 
 ## For the architect's docs PR (not edited here: D6, K8)
 
+- `fab/sentinel-01-bench/BENCH-EXT-BMP581.md` §0 cites `examples/sentinel-01-ext-bmp581.json`'s sha256 at specification 17 (`f8fa067e…cda4`). `3403` merged it as specification 17; this branch, landing second, bumps that example to 18, `1a6aa374…2d92`. `fab/**` is outside this fence, and no test reads the citation.
+
 - Architecture §2 / `RUL-17`: a second solve-once deck, `--chain` (the battery's `VBAT` only, constant-power sinks, one transient); the bridge's digest `5bdc40e4…`.
 - Architecture: specification 18, scenario 4, trace 15, kind 31; `RUL-16`'s question (D4).
 - Roadmap: L697 done (the loaded floor); L707's battery-sag half done, Sentinel-03's package waits on its acknowledgements (§7.1) and on F-MASK for SENSORS after the gates; the power fixture gets no package (`VDD_5V` has no consumer); K6's §7.1 row (IR's headroom counts no path drop).
