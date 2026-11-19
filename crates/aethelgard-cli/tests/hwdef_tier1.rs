@@ -268,3 +268,117 @@ fn an_rc_port_takes_no_baud_and_the_header_names_what_runs() {
     );
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `AET-WO-4404` (§7.1 L760): through `generate hwdef`, a chip select named
+/// with each of ArduPilot's alternate-function prefixes
+/// (`chibios_hwdef.py:33`) is refused by name with exit 2 and no file; one
+/// in lower case generates, as ArduPilot builds it (FEEDBACK §2.3).
+#[test]
+fn a_chip_select_named_like_an_alternate_function_is_refused() {
+    let dir = scratch("af-label");
+    let topology = solve(BOARDS[0].1);
+    assert!(topology.contains("\"FLASH_CS\""));
+    for prefix in [
+        "USART", "UART", "SPI", "I2C", "SDIO", "SDMMC", "OTG", "JT", "TIM", "CAN", "QUADSPI",
+        "OCTOSPI", "ETH", "MCO",
+    ] {
+        let net = format!("{prefix}_FLASH_CS");
+        let (code, v, text) = generate(
+            &dir,
+            prefix,
+            &topology.replace("\"FLASH_CS\"", &format!("\"{net}\"")),
+        );
+        assert_eq!(
+            (code, v["error"]["kind"].as_str(), v["error"]["id"].as_str()),
+            (Some(2), Some("LabelTakesAfPrefix"), Some(net.as_str())),
+            "{v}"
+        );
+        assert!(text.is_none(), "{prefix}");
+    }
+    let (code, v, text) = generate(
+        &dir,
+        "lower",
+        &topology.replace("\"FLASH_CS\"", "\"spi_cs\""),
+    );
+    assert_eq!(code, Some(0), "{v}");
+    assert!(text.unwrap().contains("PA0 spi_cs CS "));
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `AET-WO-4404`: eight ports reach SERIAL7, whose options ArduPilot never
+/// reads (`AP_SerialManager.cpp:357`), so none is emitted and the header
+/// names the omission; with any SERIAL1 or later, the header names the
+/// pull-ups `set_options` adds at run time. Sentinel-01, a console only,
+/// carries neither sentence.
+#[test]
+fn serial7_takes_no_options_and_the_header_names_the_pulls() {
+    let dir = scratch("eight");
+    let mut spec: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/serial-four.json")).unwrap(),
+    )
+    .unwrap();
+    let ports = spec["serial_ports"].as_array_mut().unwrap();
+    for p in ports.iter_mut() {
+        match p["role"].as_str().unwrap() {
+            "mavlink" => p["role"] = "console".into(),
+            "rc_sbus" => {
+                p["role"] = "gps".into();
+                p["framing"] = serde_json::json!({"baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false});
+            }
+            _ => {}
+        }
+    }
+    let gps = ports.iter().find(|p| p["role"] == "gps").unwrap().clone();
+    for i in 0..4 {
+        let mut p = gps.clone();
+        p["label"] = format!("EXTRA{i}").into();
+        p["tx"] = serde_json::json!({"net": format!("EXTRA{i}_TX"), "pin": null});
+        p["rx"] = serde_json::json!({"net": format!("EXTRA{i}_RX"), "pin": null});
+        ports.push(p);
+    }
+    // Each TX and RX ends at a connector pin (AET-WO-4300b): J1's shape.
+    let connectors = spec["connectors"].as_array_mut().unwrap();
+    let j1 = connectors
+        .iter()
+        .find(|c| c["reference"] == "J1")
+        .unwrap()
+        .clone();
+    for i in 0..4 {
+        let mut c = j1.clone();
+        c["reference"] = format!("J{}", 10 + i).into();
+        c["pins"][1]["net"] = format!("EXTRA{i}_TX").into();
+        c["pins"][2]["net"] = format!("EXTRA{i}_RX").into();
+        connectors.push(c);
+    }
+    let path = dir.join("eight.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let (code, v, text) = generate(&dir, "eight", &solve(path.to_str().unwrap()));
+    assert_eq!(code, Some(0), "{v}");
+    let text = text.unwrap();
+    assert!(
+        text.contains("\nSERIAL_ORDER USART1 USART2 USART3 UART4 UART5 USART6 UART7 UART8 "),
+        "{text}"
+    );
+    assert!(
+        text.contains("\ndefine DEFAULT_SERIAL7_PROTOCOL SerialProtocol_GPS "),
+        "{text}"
+    );
+    assert!(
+        text.contains("\ndefine DEFAULT_SERIAL7_BAUD 115200 "),
+        "{text}"
+    );
+    assert!(!text.contains("DEFAULT_SERIAL7_OPTIONS 0"), "{text}");
+    assert!(text.contains("\n# Not emitted: DEFAULT_SERIAL7_OPTIONS for EXTRA3: ArduPilot reads a literal 0 for SERIAL7_OPTIONS (AP_SerialManager.cpp:357).\n"), "{text}");
+    assert!(
+        text.contains("\ndefine DEFAULT_SERIAL6_OPTIONS 0 "),
+        "{text}"
+    );
+    let pulls = "# Serial pulls: FLOATING holds from reset";
+    assert!(text.contains(pulls), "{text}");
+    let console_only = fs::read_to_string(
+        root().join("crates/aethelgard-hwdef/tests/fixtures/sentinel-01.hwdef.dat"),
+    )
+    .unwrap();
+    assert!(!console_only.contains(pulls) && !console_only.contains("_OPTIONS"));
+    fs::remove_dir_all(&dir).unwrap();
+}

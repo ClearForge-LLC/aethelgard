@@ -120,6 +120,10 @@ pub enum Refusal {
         "`{net}` is a chip select whose name is also the label of an emitted pin; ArduPilot keys pins by label"
     )]
     LabelCollision { net: String },
+    #[error(
+        "`{net}` is a chip select whose name starts with `{prefix}`; ArduPilot looks such a label up as an alternate function of its pin and refuses it at configure (chibios_hwdef.py:33, 173-178)"
+    )]
+    LabelTakesAfPrefix { net: String, prefix: String },
     #[error("`{first}` and `{second}` both take the SPIDEV name `{name}`")]
     DuplicateSpidev {
         name: String,
@@ -177,6 +181,7 @@ impl Refusal {
             Self::SerialBaud { .. } => "SerialBaud",
             Self::UnsupportedSignal { .. } => "UnsupportedSignal",
             Self::LabelCollision { .. } => "LabelCollision",
+            Self::LabelTakesAfPrefix { .. } => "LabelTakesAfPrefix",
             Self::DuplicateSpidev { .. } => "DuplicateSpidev",
             Self::SpiBelowArduPilotDivider { .. } => "SpiBelowArduPilotDivider",
             Self::NoSystemTimer => "NoSystemTimer",
@@ -199,6 +204,7 @@ impl Refusal {
             | Self::SerialBaud { port, .. } => Some(port),
             Self::UnsupportedSignal { net, .. }
             | Self::LabelCollision { net }
+            | Self::LabelTakesAfPrefix { net, .. }
             | Self::SenseNotEmitted { net }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::DuplicateSpidev { second, .. } => Some(second),
@@ -260,6 +266,17 @@ fn map_baudrate(rate: u32) -> u32 {
         r => r.saturating_mul(1000),
     }
 }
+
+/// ArduPilot's `af_labels` at the tag (`chibios_hwdef.py:33`): a pin label
+/// that starts with one of these, case-sensitive (Python's `startswith`; the
+/// parser keeps the label's case, `:2840`), is looked up in the MCU's
+/// alternate-function table (`:173-178`), and configure fails when the pin
+/// has none (`AET-WO-4400b` A9). A chip select is emitted under its net's
+/// name, so a net that starts with one is refused by name.
+const AF_LABEL_PREFIXES: [&str; 14] = [
+    "USART", "UART", "SPI", "I2C", "SDIO", "SDMMC", "OTG", "JT", "TIM", "CAN", "QUADSPI",
+    "OCTOSPI", "ETH", "MCO",
+];
 
 /// ArduPilot's protocol for a role (`AP_SerialManager.h:39-62`): MAVLink 2
 /// on the console (SERIAL0's own default, `AP_SerialManager.cpp:37-38`) and
@@ -406,6 +423,14 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
     let labels: BTreeSet<&str> = t.assignments.values().map(|a| a.signal.as_str()).collect();
     if let Some(net) = t.gpio.keys().find(|n| labels.contains(n.as_str())) {
         return Err(Refusal::LabelCollision { net: net.clone() });
+    }
+    for net in t.gpio.keys() {
+        if let Some(prefix) = AF_LABEL_PREFIXES.iter().find(|p| net.starts_with(*p)) {
+            return Err(Refusal::LabelTakesAfPrefix {
+                net: net.clone(),
+                prefix: (*prefix).to_owned(),
+            });
+        }
     }
 
     // The MCU and its memory.
@@ -669,7 +694,14 @@ fn serial(
             format!("define DEFAULT_SERIAL{n}_BAUD {}", p.framing.baud),
             format!("[T] serial_ports.{label}.framing.baud"),
         );
-        if n > 0 {
+        // SERIAL7 and 8 read a literal 0, never their define
+        // (AP_SerialManager.cpp:357, 376; adversarial A4's precedent).
+        if matches!(n, 7 | 8) {
+            not_emitted.push(format!(
+                "DEFAULT_SERIAL{n}_OPTIONS for {label}: ArduPilot reads a literal 0 for SERIAL{n}_OPTIONS (AP_SerialManager.cpp:{})",
+                if n == 7 { 357 } else { 376 }
+            ));
+        } else if n > 0 {
             let options = if p.framing.inverted { 3 } else { 0 };
             l.push(
                 format!("define DEFAULT_SERIAL{n}_OPTIONS {options}"),
@@ -1061,6 +1093,14 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
     if l.0.iter().any(|(line, _)| line.starts_with("IMU ")) {
         c(
             "Board frame (AET-WO-4400d D3): x toward board.forward, y to its right, z down through F.Cu to B.Cu; the board is mounted F.Cu up, and any other mounting is AHRS_ORIENTATION's.",
+        );
+    }
+    if l.0
+        .iter()
+        .any(|(line, _)| line.starts_with("define DEFAULT_SERIAL") && line.contains("_PROTOCOL "))
+    {
+        c(
+            "Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on SERIAL1 to SERIAL9 (UARTDriver.cpp:1611, 1624), or pulls down a line it inverts, and no line here removes that.",
         );
     }
     for n in not_emitted {
