@@ -367,7 +367,11 @@ impl ClockReport {
     /// The report before the run: what was declared, nothing decoded.
     pub fn declared(topology: &aethelgard_ir::SolvedTopology) -> Option<Self> {
         let c = topology.foreign_clock.as_ref()?;
-        Some(Self {
+        Some(Self::of(c, aethelgard_twin::platform::unclocked(topology)))
+    }
+
+    fn of(c: &aethelgard_ir::motor::SolvedForeignClock, stock: Vec<&'static str>) -> Self {
+        Self {
             source: "declared",
             registers: Vec::new(),
             checked: [
@@ -390,13 +394,13 @@ impl ClockReport {
                     declared_hz: *hz,
                 })
                 .collect(),
-            stock: aethelgard_twin::platform::unclocked(topology),
+            stock,
             conditions: vec![
                 USART_UNCHECKED.to_owned(),
                 PLL1_FRACTION_UNREAD.to_owned(),
                 STOCK_UNDECLARED.to_owned(),
             ],
-        })
+        }
     }
 
     /// The check at the run's end: `values`, the RCC registers in
@@ -1660,4 +1664,49 @@ mod tests {
         assert_eq!(find(&own, &want(&["c", "a"]), 0), None);
         assert_eq!(find(&own, &[], 0), None);
     }
+
+    /// `AET-WO-4400g` §1.2: the timers' declaration held to the RCC registers
+    /// ArduPilot leaves (`AET-WO-4400f` §2): 200 MHz holds on both buses; the
+    /// stock file's 250 MHz declared is contradicted, by name, with both
+    /// figures; registers that do not decode fail by name; and the USARTs
+    /// are listed as declared only, with the condition that says so.
+    #[test]
+    fn the_declared_timer_clock_is_held_to_the_rcc_registers() {
+        let regs = [0x0300_7025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231];
+        let declared = |hz: u64| aethelgard_ir::motor::SolvedForeignClock {
+            apb1_timers_hz: hz,
+            apb2_timers_hz: hz,
+            usarts: aethelgard_ir::serial::PERIPHERALS
+                .iter()
+                .map(|p| ((*p).to_owned(), 72_000_000))
+                .collect(),
+        };
+        let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
+        assert!(r.check(regs, 0).is_empty());
+        assert!(r.checked.iter().all(|c| c.holds && c.decoded_hz == Some(200_000_000)));
+        assert_eq!(r.registers[1].name, "RCC_CFGR");
+        assert_eq!(r.registers[1].value, "0x0000801b");
+        assert_eq!(r.declared_only.len(), 8);
+        assert!(r.conditions[0].starts_with("usart_clock_declared_unchecked:"));
+        let mut r = ClockReport::of(&declared(250_000_000), vec![]);
+        let f = r.check(regs, 0);
+        assert_eq!(
+            f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
+            [CLOCK_CONTRADICTED, CLOCK_CONTRADICTED]
+        );
+        assert!(
+            f[0].message.contains("declares 250000000 Hz")
+                && f[0].message.contains("decode to 200000000 Hz"),
+            "{}",
+            f[0].message
+        );
+        assert!(r.checked.iter().all(|c| !c.holds));
+        // SWS 100 is reserved: no clock to hold the declaration to.
+        let mut r = ClockReport::of(&declared(200_000_000), vec![]);
+        let f = r.check([regs[0], 0x8023, regs[2], regs[3], regs[4], regs[5]], 0);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, CLOCK_UNDECODABLE);
+        assert!(r.checked.iter().all(|c| !c.holds && c.decoded_hz.is_none()));
+    }
+
 }

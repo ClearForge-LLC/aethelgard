@@ -278,9 +278,9 @@ fn toolbox(stdout: &str) -> Dir {
     toolbox_built(stdout, BUILD)
 }
 
-/// The build line the stubs' `--version` prints, as the pinned image's
-/// Renode prints its own (`AET-WO-2205` §1.1).
-const BUILD: &str = "1.17.0+20260907gitf1dd1b4af";
+/// The build line the stubs' `--version` prints: the pinned image's, which a
+/// boot requires (`AET-WO-2205` §1.1, `AET-WO-4400g` §1.5).
+const BUILD: &str = aethelgard_twin::platform::RENODE_BUILD;
 
 /// As [`toolbox`], with Renode reporting `build` as its build.
 fn toolbox_built(stdout: &str, build: &str) -> Dir {
@@ -512,12 +512,14 @@ fn strings(v: &Value, key: &str) -> Vec<String> {
 // 1. The reference scenarios.
 
 /// `AET-WO-2205` §1.1: the header names the tools that judged the run, each
-/// as the tool reported it, never a constant. A Renode stub that prints
-/// another build line puts that build in the archive, and `replay` reports
-/// it without requiring it equal to anything on the replaying host.
+/// as the tool reported it, never a constant, and `replay` reports it
+/// without requiring it equal to anything on the replaying host.
+/// `AET-WO-4400g` §1.5: only the pinned build may judge, so the stub prints
+/// it; any other build, a stock 1.17.0 among them, or none, is refused by
+/// name before the boot.
 #[test]
 fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
-    let tb = toolbox_built(&good(), "9.9.9+20991231gitdeadbeef0");
+    let tb = toolbox_built(&good(), BUILD);
     let work = Work::new();
     let archive = Dir::new("archive");
     let out = campaign(
@@ -540,7 +542,7 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
             identity["source_sha256"].as_str().unwrap(),
         ),
         ("ngspice", "44.2"),
-        ("renode", "9.9.9+20991231gitdeadbeef0"),
+        ("renode", BUILD),
     ];
     let got: Vec<(&str, &str)> = header
         .tools
@@ -558,9 +560,14 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         .collect();
     assert_eq!(reported, header.tools);
 
-    // A Renode that names no build, or a blank one, is not one a boot can
-    // be archived by.
-    for (build, at) in [("", "b"), ("   ", "c")] {
+    // A Renode that names another build, the stock 1.17.0's, no build or a
+    // blank one is not one a boot can be judged by.
+    for (build, at) in [
+        ("9.9.9+20991231gitdeadbeef0", "b"),
+        ("1.17.0+20260907gitf1dd1b4af", "c"),
+        ("", "d"),
+        ("   ", "e"),
+    ] {
         let tb = toolbox_built(&good(), build);
         let refused = campaign(
             &cli(Some(BRIDGE_BY_PULL_UP)),
@@ -572,11 +579,8 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         );
         let r = lines(&refused);
         assert_eq!(refused.status.code(), Some(4), "build `{build}`: {r:?}");
-        assert!(
-            r.last().unwrap()["error"]["message"]
-                .as_str()
-                .unwrap()
-                .contains("named no build"),
+        assert_eq!(
+            r.last().unwrap()["error"]["kind"], "RenodeBuildNotPinned",
             "build `{build}`: {r:?}"
         );
     }

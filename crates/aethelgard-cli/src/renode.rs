@@ -3659,7 +3659,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":10,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0}}"#,
+            r#"{"schema_version":11,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -3722,6 +3722,26 @@ mod tests {
             resets,
             serial: &[],
             capture: None,
+        }
+    }
+
+    /// `AET-WO-4400g` §1.6, `INV-07` residue (a)(3): under a declared clock
+    /// the DWT keeps the stock file's 250 MHz (a condition the foreign
+    /// verdict states), so no judge may read it. Neither boot's commands
+    /// name the DWT or an address of its block (`0xE0001000`, 4 KiB, ARMv7-M
+    /// ARM DDI 0403E.b §C1.8).
+    #[test]
+    fn no_judge_reads_the_dwt() {
+        let image = image();
+        let p = plan(&image, &[]);
+        for c in [p.commands(), foreign::commands(&p, &[]).unwrap()] {
+            assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
+            for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
+                if let Some(hex) = word.strip_prefix("0x") {
+                    let a = u64::from_str_radix(hex, 16).unwrap_or(0);
+                    assert!(!(0xE000_1000..0xE000_2000).contains(&a), "{word} in {c}");
+                }
+            }
         }
     }
 
@@ -3790,8 +3810,12 @@ mod tests {
         witness_motor(m, edges, end)
     }
 
-    /// The PWM fixture's first output: the model's 639,744 ns period and
-    /// 256,000 ns high time (PSC 63, ARR 2499, CCR 1000 at 4 ns a tick).
+    /// The PWM fixture's first output on a timer built at 250 MHz, the
+    /// stock file's figure: the model's 639,744 ns period and 256,000 ns
+    /// high time (PSC 63, ARR 2499, CCR 1000 at 4 ns a tick). The judge's
+    /// mechanics read the observer's period, not a clock, so these tests'
+    /// logs keep the 250 MHz spacing they were written at (`AET-WO-4400f`:
+    /// they do not move under the realized period).
     fn motor() -> Motor {
         Motor {
             observer: aethelgard_twin::timer::Observer {
@@ -3805,6 +3829,7 @@ mod tests {
                 alternate_function: 1,
                 name: "pa8obs".into(),
                 source: "gpioPortA.pa8obs".into(),
+                kernel_hz: 250_000_000,
                 period_ns: 639_744,
                 high_ns: 256_000,
             },
@@ -3974,7 +3999,7 @@ mod tests {
         serde_json::from_str(CONSOLE_TOPOLOGY).unwrap()
     }
 
-    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":10,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1}}"#;
+    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":11,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
     /// The console's expectations for a firmware whose sha256 is all `0x11`.
     fn console() -> Vec<Serial> {

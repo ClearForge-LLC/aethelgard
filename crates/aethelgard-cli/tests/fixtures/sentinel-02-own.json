@@ -17,6 +17,20 @@
     "supply_source": {
       "connector": "J2",
       "pin": "1"
+    },
+    "foreign_clock": {
+      "apb1_timers_hz": {"value": 200000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h, OSCILLATOR_HZ 0: PLL1 HSI/4*50/2 = 400 MHz sys_ck, HPRE /2, D2PPRE1 and D2PPRE2 /2, TIMPRE 1 (RM0433 Rev 9 Table 57)"},
+      "apb2_timers_hz": {"value": 200000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h, OSCILLATOR_HZ 0: PLL1 HSI/4*50/2 = 400 MHz sys_ck, HPRE /2, D2PPRE1 and D2PPRE2 /2, TIMPRE 1 (RM0433 Rev 9 Table 57)"},
+      "usarts": {
+        "UART4": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "UART5": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "UART7": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "UART8": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "USART1": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "USART2": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "USART3": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
+        "USART6": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"}
+      }
     }
   },
   "voltage_domains": [

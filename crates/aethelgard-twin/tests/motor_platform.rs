@@ -40,16 +40,16 @@ fn each_output_is_observed_at_the_model_s_timing() {
     assert_eq!(
         got,
         [
-            ("MOTOR1", "PA8", "gpioPortA.pa8obs", 1, 1, 639_744, 256_000),
-            ("MOTOR2", "PA9", "gpioPortA.pa9obs", 1, 2, 639_744, 256_000),
+            ("MOTOR1", "PA8", "gpioPortA.pa8obs", 1, 1, 2_499_000, 1_000_000),
+            ("MOTOR2", "PA9", "gpioPortA.pa9obs", 1, 2, 2_499_000, 1_000_000),
             (
                 "MOTOR3",
                 "PA10",
                 "gpioPortA.pa10obs",
                 1,
                 3,
-                639_744,
-                256_000
+                2_499_000,
+                1_000_000
             ),
             (
                 "MOTOR4",
@@ -57,14 +57,16 @@ fn each_output_is_observed_at_the_model_s_timing() {
                 "gpioPortA.pa11obs",
                 1,
                 4,
-                639_744,
-                256_000
+                2_499_000,
+                1_000_000
             ),
         ]
     );
-    // DShot600: ARR 106 and CCR 40 at PSC 0, 4 ns a tick.
+    // DShot600: ARR 106 and CCR 40 at PSC 0, a 15.625 ns tick at the 64 MHz
+    // reset clock, the period realized in whole ns: 1,657, not 1,656.25
+    // (`AET-WO-4400g`).
     let d = timer::observers(&topology("motors-dshot600")).unwrap();
-    assert!(d.iter().all(|o| (o.period_ns, o.high_ns) == (424, 160)));
+    assert!(d.iter().all(|o| (o.kernel_hz, o.period_ns, o.high_ns) == (64_000_000, 1_657, 625)));
 }
 
 #[test]
@@ -77,16 +79,22 @@ fn the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route() {
             "{pin}"
         );
     }
-    // Then the brown-out level's presentation (`AET-WO-4230` D10).
+    // Then the brown-out level's presentation (`AET-WO-4230` D10), and last
+    // the clock's entries (`AET-WO-4400g`), the DWT's at the core clock last.
     let presentation = aethelgard_twin::boot::brown_out(&topology("motors-pwm"))
         .unwrap()
         .presentation();
+    let (head, clock) = text
+        .split_once("\n// The clock (AET-WO-4400g)")
+        .expect("the clock's entries");
     assert!(
-        text.ends_with(&format!(
+        head.ends_with(&format!(
             "\ngpioPortA:\n    8 -> timer1@00 | pa8obs@0\n    9 -> timer1@01 | pa9obs@0\n    10 -> timer1@02 | pa10obs@0\n    11 -> timer1@03 | pa11obs@0\n{presentation}"
         )),
         "{text}"
     );
+    assert!(clock.contains("\ntimer1:\n    frequency: 64000000\n"), "{clock}");
+    assert!(clock.ends_with("\ndwt:\n    frequency: 64000000\n"), "{clock}");
     let listed: Vec<(String, String)> = platform::instances(
         &topology("motors-pwm"),
         &Default::default(),

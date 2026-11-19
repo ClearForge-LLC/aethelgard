@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":10,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1}}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":11,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -50,6 +50,14 @@ pub(crate) fn with_devices(devices: &[(&str, &str, u8)]) -> SolvedTopology {
     t
 }
 
+/// `text` up to the clock's entries, which every platform ends with
+/// (`AET-WO-4400g`): what each emission test held before them.
+fn before_clock(text: &str) -> &str {
+    text.split_once("\n// The clock (AET-WO-4400g)")
+        .expect("the clock's entries")
+        .0
+}
+
 /// The reference with `edit` applied to its JSON text.
 fn edited(from: &str, to: &str) -> SolvedTopology {
     assert!(REFERENCE.contains(from), "{from}");
@@ -62,7 +70,8 @@ fn edited(from: &str, to: &str) -> SolvedTopology {
 
 #[test]
 fn the_reference_platform_adds_spi1_and_names_every_solved_peripheral() {
-    let text = platform::emit(&bare()).unwrap();
+    let emitted = platform::emit(&bare()).unwrap();
+    let text = before_clock(&emitted);
     let declarations: Vec<&str> = text
         .lines()
         .filter(|l| !l.starts_with("//") && !l.starts_with(' ') && !l.is_empty())
@@ -114,7 +123,8 @@ fn two_emissions_are_byte_identical() {
 fn an_added_spi_takes_its_base_and_interrupt_from_the_header() {
     let f = cmsis::register_facts().unwrap();
     let t = edited("\"SPI1", "\"SPI2").clone();
-    let text = platform::emit(&t).unwrap();
+    let emitted = platform::emit(&t).unwrap();
+    let text = before_clock(&emitted);
     let block = format!(
         // `spi2_rx_dma` is DMAMUX1 input 39 (RM0433 Rev 9, Table 124).
         "spi2: SPI.STM32H7_SPI @ {{\n        sysbus 0x{:08X};\n        rcc RegistrationPeripheralAlias.SPI2\n    }}\n    IRQ -> nvic@{}\n    DMARecieve -> dmamux1@39\n",
@@ -163,7 +173,7 @@ fn what_cannot_be_lowered_is_refused() {
     assert_eq!(kind(t), "InvalidTopology");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
-        kind(edited("\"schema_version\":10", "\"schema_version\":11")),
+        kind(edited("\"schema_version\":11", "\"schema_version\":12")),
         "InvalidTopology"
     );
     assert_eq!(
@@ -791,7 +801,7 @@ fn the_platform_presents_the_declared_brown_out_level() {
                 .contains(&format!("WriteDoubleWord 0x20 0x{word:08X}\n")),
             "{level}"
         );
-        assert!(platform::emit(&t).unwrap().ends_with(&b.presentation()));
+        assert!(before_clock(&platform::emit(&t).unwrap()).ends_with(&b.presentation()));
     }
     let mut t = reference();
     t.bor_level = 4;

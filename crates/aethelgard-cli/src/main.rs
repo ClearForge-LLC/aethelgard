@@ -1740,8 +1740,7 @@ fn renode_pinned(version: &str, build: Option<&str>) -> Result<(), run::Stop> {
     }
     let want = aethelgard_twin::platform::RENODE_BUILD;
     if build != Some(want) {
-        return Err(run::Stop::refused(
-            "RenodeBuildNotPinned",
+        return Err(run::Stop::renode_build_not_pinned(
             format!(
                 "Renode's build is {}, not the tools image's `{want}`, the only build the twin's judges are measured on (AET-WO-1605, AET-WO-4400g)",
                 build.map_or_else(|| "not named".to_owned(), |b| format!("`{b}`"))
