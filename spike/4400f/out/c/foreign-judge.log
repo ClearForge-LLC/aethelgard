@@ -1,0 +1,2 @@
+ANSWER 4400e: positive exit=1 verdict=fail error=None kinds=['register_mismatch', 'spi_transaction_unwitnessed'] witnessed={('U2', 'identity'): 385637340, ('U2', 'data (reads[0])'): 435855540, ('U7', 'identity'): 385831960, ('U7', 'data (script)'): 435812030, ('U4', 'identity'): 161141150, ('U5', 'identity'): None} memory={'peak_rss_kib': 740112, 'bound_kib': 1048576, 'share_permille': 705} log_kept=210949
+positive: exit 1, not 0

@@ -1,0 +1,23 @@
+From f2ac99657469f0dfaf6e7c3ece8e2cc1a52d09ea Mon Sep 17 00:00:00 2001
+From: DonavanMartin <7544240+DonavanMartin@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 11:27:28 +0200
+Subject: [PATCH] [GH#1009] STM32H7_RCC: Propagate clocks at peripheral reset
+
+---
+ .../Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs       | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs b/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
+index ad344f551..c965bc692 100644
+--- a/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
++++ b/src/Emulator/Peripherals/Peripherals/Miscellaneous/STM32H7_RCC.cs
+@@ -1386,6 +1386,9 @@ private void ResetRegisteredPeripheral(RegistrationPeripheralAlias peripheral)
+             {
+                 this.Log(LogLevel.Debug, "Resetting {0}", peripheral);
+                 peri.Reset();
++                // Some peripherals fallback to their default clock during reset.
++                // We have to supply a new clock to them once again.
++                PropagateClock();
+             }
+         }
+ 

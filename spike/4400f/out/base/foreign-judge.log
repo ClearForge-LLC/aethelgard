@@ -1,0 +1,2 @@
+ANSWER 4400e: positive exit=1 verdict=fail error=None kinds=['memory_cap_exceeded'] witnessed={} memory={'peak_rss_kib': 1051536, 'bound_kib': 1048576, 'share_permille': 1002} log_kept=0
+positive: exit 1, not 0

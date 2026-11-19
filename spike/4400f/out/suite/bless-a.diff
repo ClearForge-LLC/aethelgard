@@ -1,0 +1,140 @@
+diff --git a/boards/sentinel-01-bench/sentinel-01-bench.repl b/boards/sentinel-01-bench/sentinel-01-bench.repl
+index 304f118..2455eeb 100644
+--- a/boards/sentinel-01-bench/sentinel-01-bench.repl
++++ b/boards/sentinel-01-bench/sentinel-01-bench.repl
+@@ -50,3 +50,65 @@ flashController:
+         WriteDoubleWord 0x20 0x0406AAFC
+         WriteDoubleWord 0x18 0x00000002
+         WriteDoubleWord 0x08 0x00000000
++
++// SPIKE AET-WO-4400f: the clock as update entries.
++timer1:
++    frequency: 64000000
++
++timer2:
++    frequency: 64000000
++
++timer3:
++    frequency: 64000000
++
++timer4:
++    frequency: 64000000
++
++timer5:
++    frequency: 64000000
++
++timer8:
++    frequency: 64000000
++
++timer12:
++    frequency: 64000000
++
++timer13:
++    frequency: 64000000
++
++timer14:
++    frequency: 64000000
++
++timer15:
++    frequency: 64000000
++
++timer16:
++    frequency: 64000000
++
++timer17:
++    frequency: 64000000
++
++usart1:
++    frequency: 64000000
++
++usart2:
++    frequency: 64000000
++
++usart3:
++    frequency: 64000000
++
++uart4:
++    frequency: 64000000
++
++uart5:
++    frequency: 64000000
++
++usart6:
++    frequency: 64000000
++
++uart7:
++    frequency: 64000000
++
++uart8:
++    frequency: 64000000
++
+diff --git a/boards/sentinel-01/sentinel-01.repl b/boards/sentinel-01/sentinel-01.repl
+index 4a162ce..8aadfd1 100644
+--- a/boards/sentinel-01/sentinel-01.repl
++++ b/boards/sentinel-01/sentinel-01.repl
+@@ -50,3 +50,65 @@ flashController:
+         WriteDoubleWord 0x20 0x0406AAFC
+         WriteDoubleWord 0x18 0x00000002
+         WriteDoubleWord 0x08 0x00000000
++
++// SPIKE AET-WO-4400f: the clock as update entries.
++timer1:
++    frequency: 64000000
++
++timer2:
++    frequency: 64000000
++
++timer3:
++    frequency: 64000000
++
++timer4:
++    frequency: 64000000
++
++timer5:
++    frequency: 64000000
++
++timer8:
++    frequency: 64000000
++
++timer12:
++    frequency: 64000000
++
++timer13:
++    frequency: 64000000
++
++timer14:
++    frequency: 64000000
++
++timer15:
++    frequency: 64000000
++
++timer16:
++    frequency: 64000000
++
++timer17:
++    frequency: 64000000
++
++usart1:
++    frequency: 64000000
++
++usart2:
++    frequency: 64000000
++
++usart3:
++    frequency: 64000000
++
++uart4:
++    frequency: 64000000
++
++uart5:
++    frequency: 64000000
++
++usart6:
++    frequency: 64000000
++
++uart7:
++    frequency: 64000000
++
++uart8:
++    frequency: 64000000
++
