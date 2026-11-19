@@ -171,7 +171,7 @@ Filled by the architect from the session's own record. Scotty was at the bench. 
 
 | Pin | Header | On this board |
 |---|---|---|
-| PB6 | CN10 pin 14 (Zio D1) | LPUART1 TX, routable to the ST-LINK virtual COM port by SB34/SB66 |
+| PB6 | CN10 pin 14 (Zio D1) | LPUART1 TX, routable to the ST-LINK virtual COM port by SB34/SB66 *(architect's correction, 2026-11-19, from `3304` §5: in UM2407 Table 11, PB6's VCP route is SB9 and SB18; SB34 and SB66 are PB7's)* |
 | PB7 | CN10 pin 16 (Zio D0) | LPUART1 RX, likewise |
 
 - **The sheet's "PB7: LD2" expectation was wrong.** It came from an older Nucleo-144. On this board, LD1 is PB0/PA5, LD2 is PE1 and LD3 is PB14.

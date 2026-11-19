@@ -1,0 +1,6 @@
+cgroup: /
+/sys/fs/cgroup/memory.peak
+17179869184
+0
+{"exit": 0, "wall_s": 1075.0, "max_child_rss_kib": 3048708, "scope_memory_peak_bytes": 3651358720}
+verdict pass [('erc', 'pass'), ('drc', 'pass'), ('support', 'pass'), ('extract', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass'), ('prove', 'pass')]
