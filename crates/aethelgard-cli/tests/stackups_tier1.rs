@@ -303,7 +303,7 @@ fn the_old_and_new_paths_agree_on_the_reference() {
     let dir = scratch("paths");
     let (code, v, board) = emit(&dir, SPEC);
     assert_eq!(code, 0, "{v}");
-    let stack = Stack::of(&spec);
+    let stack = Stack::of(&spec).unwrap();
     let read = extract::read(&board, &stack).unwrap();
     let old = extract::bound(&read, &lines).unwrap();
     let new = extract::bound_by_cap_path(&read, &lines).unwrap();
@@ -331,7 +331,7 @@ fn the_reference_declares_todays_two_layer_board() {
     let spec: aethelgard_ir::Specification =
         serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
     spec.validate().unwrap();
-    let s = Stack::of(&spec);
+    let s = Stack::of(&spec).unwrap();
     let thickness_source = "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %";
     assert_eq!(
         s,

@@ -131,7 +131,7 @@ Writes ArduPilot `Copter-4.7.2`'s board definition for a `SolvedTopology`, from 
 | Exit | When |
 |---|---|
 | `0` | written |
-| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
+| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `LabelTakesAfPrefix`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
 | `3` | the topology cannot be read or is not JSON, or `<hwdef.dat>` exists or cannot be written (`UnwritableOutput`) |
 
 ## The tool subcommands
@@ -528,7 +528,7 @@ The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a lin
 
 Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `identity` (`judged`, or `not judged: no hwdef.h`; `AET-WO-4400b2`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `WrongOutputType`, `WrongSpeed`, `WrongPull`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`; and, with `hwdef.h`, the identity judge's kinds under `check` `identity`, listed in `aethelgard-pincheck`'s README, `AET-WO-4400b2`), `pin`, `net` (or null), `expected` and `decoded`.
 
-The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes, and bauds) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
+The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes, and each serial port's baud, protocol and options) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1).
 
 | Exit | When |
 |---|---|

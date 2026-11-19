@@ -75,7 +75,7 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("IMU", "hwdef.py:248-249, 382-425"),
     ];
     // (define, where the tag reads it)
-    const DEFINES: [(&str, &str); 6] = [
+    const DEFINES: [(&str, &str); 5] = [
         (
             "AP_BOOTLOADER_FLASHING_ENABLED",
             "chibios_hwdef.py (4400 step A's refusal names it)",
@@ -90,19 +90,39 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
             "HAL_USE_ADC",
             "4400 step C's refusal: STM32_ADC_ADC12_DMA_STREAM",
         ),
-        ("DEFAULT_SERIAL0_BAUD", "AP_SerialManager.cpp:172, 419"),
     ];
-    // SERIAL1 to SERIAL9 each read their PROTOCOL, BAUD and OPTIONS defaults
-    // in an AP_GROUPINFO (AP_SerialManager.cpp:191-395); SERIAL0 reads only
-    // its BAUD (its PROTOCOL default is a literal, line 180, and it has no
-    // OPTIONS), adversarial A4.
-    let serial_n = |d: &str| {
-        d.strip_prefix("DEFAULT_SERIAL").is_some_and(|r| {
-            let (n, k) = r.split_at(1);
-            n.bytes().all(|b| (b'1'..=b'9').contains(&b))
-                && ["_PROTOCOL", "_BAUD", "_OPTIONS"].contains(&k)
-        })
-    };
+    // Each SERIALn default an AP_GROUPINFO reads (AP_SerialManager.cpp at the
+    // tag), exactly: SERIAL0 reads only its BAUD (its PROTOCOL default is a
+    // literal, line 180, and it has no OPTIONS), adversarial A4; SERIAL7 and
+    // 8 read a literal 0 for OPTIONS (lines 357, 376), AET-WO-4404.
+    const SERIAL: [(&str, &str); 26] = [
+        ("DEFAULT_SERIAL0_BAUD", "AP_SerialManager.cpp:172, 419"),
+        ("DEFAULT_SERIAL1_PROTOCOL", "AP_SerialManager.cpp:191"),
+        ("DEFAULT_SERIAL1_BAUD", "AP_SerialManager.cpp:199"),
+        ("DEFAULT_SERIAL1_OPTIONS", "AP_SerialManager.cpp:281"),
+        ("DEFAULT_SERIAL2_PROTOCOL", "AP_SerialManager.cpp:207"),
+        ("DEFAULT_SERIAL2_BAUD", "AP_SerialManager.cpp:213"),
+        ("DEFAULT_SERIAL2_OPTIONS", "AP_SerialManager.cpp:288"),
+        ("DEFAULT_SERIAL3_PROTOCOL", "AP_SerialManager.cpp:221"),
+        ("DEFAULT_SERIAL3_BAUD", "AP_SerialManager.cpp:227"),
+        ("DEFAULT_SERIAL3_OPTIONS", "AP_SerialManager.cpp:295"),
+        ("DEFAULT_SERIAL4_PROTOCOL", "AP_SerialManager.cpp:235"),
+        ("DEFAULT_SERIAL4_BAUD", "AP_SerialManager.cpp:241"),
+        ("DEFAULT_SERIAL4_OPTIONS", "AP_SerialManager.cpp:302"),
+        ("DEFAULT_SERIAL5_PROTOCOL", "AP_SerialManager.cpp:249"),
+        ("DEFAULT_SERIAL5_BAUD", "AP_SerialManager.cpp:255"),
+        ("DEFAULT_SERIAL5_OPTIONS", "AP_SerialManager.cpp:309"),
+        ("DEFAULT_SERIAL6_PROTOCOL", "AP_SerialManager.cpp:265"),
+        ("DEFAULT_SERIAL6_BAUD", "AP_SerialManager.cpp:271"),
+        ("DEFAULT_SERIAL6_OPTIONS", "AP_SerialManager.cpp:316"),
+        ("DEFAULT_SERIAL7_PROTOCOL", "AP_SerialManager.cpp:346"),
+        ("DEFAULT_SERIAL7_BAUD", "AP_SerialManager.cpp:352"),
+        ("DEFAULT_SERIAL8_PROTOCOL", "AP_SerialManager.cpp:365"),
+        ("DEFAULT_SERIAL8_BAUD", "AP_SerialManager.cpp:371"),
+        ("DEFAULT_SERIAL9_PROTOCOL", "AP_SerialManager.cpp:384"),
+        ("DEFAULT_SERIAL9_BAUD", "AP_SerialManager.cpp:390"),
+        ("DEFAULT_SERIAL9_OPTIONS", "AP_SerialManager.cpp:395"),
+    ];
     const PIN_TOKENS: [&str; 6] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
@@ -135,7 +155,7 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
                 }
             } else if w[0] == "define" {
                 assert!(
-                    DEFINES.iter().any(|(d, _)| w[1] == *d) || serial_n(w[1]),
+                    DEFINES.iter().chain(&SERIAL).any(|(d, _)| w[1] == *d),
                     "{name}: define {} in `{line}`",
                     w[1]
                 );
@@ -377,4 +397,46 @@ fn an_imu_with_no_declared_orientation_is_refused_by_name() {
         }
     );
     assert_eq!((e.kind(), e.id()), ("ImuOrientationUndeclared", Some("U5")));
+}
+
+/// `AET-WO-4404` (§7.1 L760, `AET-WO-4400b` A9): a chip select whose name
+/// starts with one of ArduPilot's alternate-function prefixes
+/// (`chibios_hwdef.py:33`) is refused by name, case-sensitive as
+/// ArduPilot's `startswith` is; ArduPilot refused each at configure
+/// (measured, FEEDBACK §2.3). A name holding a prefix elsewhere, or a
+/// lower-case one, generates.
+#[test]
+fn a_chip_select_named_like_an_alternate_function_is_refused() {
+    let renamed = |name: &str| -> Result<String, Refusal> {
+        let t = topology(&BOARDS[0].1.replace("\"FLASH_CS\"", &format!("\"{name}\"")));
+        generate(&t).map(|h| h.text)
+    };
+    for prefix in [
+        "USART", "UART", "SPI", "I2C", "SDIO", "SDMMC", "OTG", "JT", "TIM", "CAN", "QUADSPI",
+        "OCTOSPI", "ETH", "MCO",
+    ] {
+        let net = format!("{prefix}_FLASH_CS");
+        let e = renamed(&net).unwrap_err();
+        assert_eq!(
+            e,
+            Refusal::LabelTakesAfPrefix {
+                net: net.clone(),
+                prefix: prefix.into()
+            }
+        );
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("LabelTakesAfPrefix", Some(net.as_str()))
+        );
+    }
+    // ArduPilot's own carve-outs configure, but the label still reads as a
+    // peripheral's: refused all the same (FEEDBACK §2.3).
+    assert_eq!(
+        renamed("SPI_FLASH_TXINV").unwrap_err().kind(),
+        "LabelTakesAfPrefix"
+    );
+    for name in ["spi_cs", "FLASH_SPI_CS", "SP_CS"] {
+        let text = renamed(name).unwrap();
+        assert!(text.contains(&format!(" {name} CS ")), "{name}");
+    }
 }
