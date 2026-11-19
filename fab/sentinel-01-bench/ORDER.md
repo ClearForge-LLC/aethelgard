@@ -33,10 +33,10 @@ Labels: **[read at source]** from a document or page named here; **[measured]** 
 | Reference | Value | Footprint | Maker part | Distributor link, read 2026-11-16 | q1 |
 |---|---|---|---|---|---|
 | U1 | STM32H753ZITx | LQFP-144 20×20 mm, 0.5 mm | **STM32H753ZIT6** (ST) | digikey.sg `STM32H753ZIT6` | SGD? 29.15 (one tier) |
-| U2 | BME280 | Bosch LGA-8 2.5×2.5 mm | **BME280** (Bosch Sensortec) | digikey.sg `BME280` | SGD? 5.97 |
-| U3 | TMP117xxDRV | WSON-6 2×2 mm (DRV) | **TMP117AIDRVR** (TI) | digikey.sg product 9685284 | SGD 8.63 (q10 7.442) |
+| U2 | BME280 | Bosch LGA-8 2.5×2.5 mm | **BME280** (Bosch Sensortec). **Not fitted on the boards ordered 2026-11-19:** see below | digikey.sg `BME280` | SGD? 5.97 |
+| U3 | TMP117xxDRV | WSON-6 2×2 mm (DRV) | **TMP117AIDRVR** (TI). **Not on the order of 2026-11-19:** see below | digikey.sg product 9685284 | SGD 8.63 (q10 7.442) |
 | U4 | W25Q64JVSSIQ | SOIC-8 5.3 mm (208 mil) | **W25Q64JVSSIQ** (Winbond; NRND, accepted in the specification) | digikey.sg `W25Q64JVSSIQ` | SGD? 6.01 |
-| J1, J3, J4 | SM04B-GHS-TB | JST GH 4-pin, horizontal SMT | **SM04B-GHS-TB** (JST) | digikey.sg `SM04B-GHS-TB` | SGD 0.53 each (q10 0.453) |
+| J1, J3, J4 | SM04B-GHS-TB | JST GH 4-pin, horizontal SMT | **SM04B-GHS-TB** (JST). **3 on the order of 2026-11-19 for 9 positions, backordered:** see below | digikey.sg `SM04B-GHS-TB` | SGD 0.53 each (q10 0.453) |
 | J2 | SM06B-SRSS-TB | JST SH 6-pin, horizontal SMT | **SM06B-SRSS-TB** (JST) | digikey.sg `SM06B-SRSS-TB` | SGD? 0.93 |
 | SW1 | PTS810 SJM 250 SMTR LFS | SW_SPST_PTS810 | **PTS810SJM250SMTRLFS** (C&K), the part `1312` cites | digikey.sg `PTS810 SJM 250 SMTR LFS` | SGD? 0.80 |
 | C1–C11, C13, C15, C19–C22 (17) | 100n | 0402 | **CC0402KRX7R7BB104** (Yageo, X7R 16 V), chosen 2026-11-17 | digikey.com `311-1338-1-ND`, read 2026-11-17: 339,251 in stock | USD 0.10 (q10 0.041) |
@@ -59,6 +59,21 @@ The flash is drawn with KiCad's `W25Q32JVSS` symbol (same SOIC-8 pinout), as its
 
 **Out of stock on 2026-11-17** at DigiKey US: BME280 (no date; also 0 at Mouser, Arrow, Newark and LCSC), TMP117AIDRVR (due 15 Dec 2026; LCSC had stock) and SM04B-GHS-TB (past due; LCSC had stock). The BME280's supply is a roadmap §7.1 row.
 
+**U2 is not fitted on the boards Scotty ordered on 2026-11-19** (`AET-WO-3403`; the post-order review, `docs/reviews/2026-11-19-sentinel-01-as-ordered.md`, U1 and U2):
+- **Why:** the BME280 is out of stock everywhere, and the BMP581 Scotty chose instead (#237) is an LGA-10 of 2.0 × 2.0 mm, which does not land on U2's LGA-8 2.5 × 2.5 mm pads. No pad-compatible part has been verified.
+- **What it costs:** no copper. The ordered firmware reads U2 once, gets a NACK, records it and boots on (`BENCH.md`, "U2 empty"). Only the silicon witness of the firmware's own I2C read is lost; U3 (the TMP117), once fitted, witnesses I2C1 instead (`BENCH.md` B9).
+- R5 is U2's address strap (SDO to GND). Fitted or not, it changes nothing with U2 empty.
+- If any board is assembled by the fabricator, mark U2 "do not place": `package/sentinel-01-bench-jlcpcb-bom.csv` still lists it. The parts totals in §2 and §4 still include U2.
+- A BMP581 breakout can stand in on J4 (EXT) with a bench ELF and a hand-pinned cable: `BENCH-EXT-BMP581.md`.
+
+**What is on the order of 2026-11-19** (Scotty's DigiKey order, read by the architect):
+- **In full, for 3 boards:** U1, U4, J2, SW1 and every passive.
+- **U2:** not ordered (above).
+- **U3 (TMP117AIDRVR): not on the order.** Scotty may top it up from LCSC, which had stock on 2026-11-17 (above). Until then the bench plan holds with U3 empty. SENSORS then has no device, and `BENCH.md` B9 says what remains.
+- **J1, J3 and J4 (SM04B-GHS-TB): 3 ordered for 9 positions, all backordered.** Every bench row holds with any of them empty:
+  - power goes on at J3's pads 1 (`VDD_3V3`) and 4 (GND), or at TP4 and TP1;
+  - J1's and J4's pins are their bare pads or the test pads on the same nets (`BENCH.md`, Before power, steps 1 and 6).
+
 ## 3. Assembly
 
 **Files.**
@@ -79,7 +94,7 @@ The flash is drawn with KiCad's `W25Q32JVSS` symbol (same SOIC-8 pinout), as its
 **The plan** (for Scotty to confirm):
 - Order the bare boards in one batch.
 - Have **2 boards assembled by the fabricator as the control**, so a bench fault on a hand-built board can be told apart from a soldering fault.
-- **Scotty builds the rest:** U2 and U3 by hot air or hot plate, the rest by iron.
+- **Scotty builds the rest:** U3, once it is on hand, by hot air or hot plate, the rest by iron. U2 is not fitted, and U3 and the JST GH headers are not all on the order (§2).
 - A stencil is worth ordering with the boards if paste is used: the package carries both paste layers.
 
 ## 4. What it costs, as far as it is sourced
