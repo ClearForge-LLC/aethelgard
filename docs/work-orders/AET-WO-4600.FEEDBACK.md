@@ -2,7 +2,7 @@ This spike does not satisfy roadmap L455. The clause's board is written at the g
 
 # AET-WO-4600 — FEEDBACK: a field logger and a small motor driver, through every gate with no engine change
 
-**Status: STOPPED at §7, twice.** The first stop was lifted by the architect's ruling (bus, 17:08Z): `prove` on a board with an I2C bus at 16G; run the not-run list, predicted first (`spike/4600/PREDICTIONS-2.md`, `a85208c1`). The second stop: `logger-spi-only`'s `prove --harness proofs::every_valid_sequence`, at 8G under that ruling (no I2C bus), passed 900‰ of its scope, and `sh/step.sh`'s watch killed it: `killed-900`, 417.3 s, peak 8.56 GB. The batch then stopped itself. The architect re-keyed the rule (18:06Z: 16G for every unsplit-schedule board), and batch 3 (`PREDICTIONS-3.md`, `988778e9`) ran `driver-tree`, `logger-spi-only-cap` and `logger-offboard` with no further stop.
+**Status: STOPPED at §2 (the final record), after two §7 stops the architect ruled on the way.** The first stop was lifted by the architect's ruling (bus, 17:08Z): `prove` on a board with an I2C bus at 16G; run the not-run list, predicted first (`spike/4600/PREDICTIONS-2.md`, `a85208c1`). The second stop: `logger-spi-only`'s `prove --harness proofs::every_valid_sequence`, at 8G under that ruling (no I2C bus), passed 900‰ of its scope, and `sh/step.sh`'s watch killed it: `killed-900`, 417.3 s, peak 8.56 GB. No OOM: the user journal shows the scope (`run-p3120520-i175069191`) ending with a 7.9 GiB peak and no `oom-kill`. The batch then stopped itself. The architect re-keyed the rule (18:06Z: 16G for every unsplit-schedule board), and batch 3 (`PREDICTIONS-3.md`, `988778e9`) ran `driver-tree`, `logger-spi-only-cap` and `logger-offboard` with no further stop.
 
 **The first stop.** A run was killed at its cap. `prove --harness proofs::every_valid_sequence` on the logger ran at the work order's 8 GiB and the kernel's OOM killer killed it: exit 143, 1,031,971 ms, peak = `memory.max` = 8,589,934,592. The user journal records scope `run-p2508243-i174431037` as "Failed with result 'oom-kill'", 8G peak, 16:20:38Z. §7 says "stop with the numbers. A cap is never raised here." The journal shows systemd stopping the scope after the kernel killed a process in it. So the CLI was terminated (143) and printed no verdict: what `prove` reports for an OOM-killed Kani is unmeasured. Every run that was queued at that moment was frozen. The one already running, L's `verify` at its own 16 GiB cap, finished under a host-side watch that would have killed it at 900‰. The architect has the scope of the stop (bus, 2026-11-19 ~16:40Z). Every row not run says so below, with the `run.sh` line that would make it.
 
@@ -30,11 +30,17 @@ This spike does not satisfy roadmap L455. The clause's board is written at the g
 |---|---|---|
 | M | `dd640e559e0aa275d033d63b560a7897b1cd7fdd91bc7377e885f1f7743465b5` | baseline · `b3002ad5…` · `63ea895fded2201134d5e4830f345e88a0ae5c76234e6fa6ebd9e28fb5f38472`; droop-bor3 · `b8e83a06…` · `a2b05ac42f5c3f18c1f1ee3db41c87869f657afd53e2e6e2226b9024007cca98`; serial-rx-open-cmd · `2aed7a1c…` · `cc12ebbad4a5078489a267b62833195d3e62ce9ac63bbc0ea43cff3714c2ddc7` |
 | L | `4c6bfe3a613eeed069fa4507ec84be022f6f035687c464e89137fb5b4d2709c3` | baseline · `c4c170f1…` · `1921ba0ab135a535a46c81a8f660658229be9f228e3102aa3816048c1339e1f3`; pullup-3k3-temp · `7a6ee014…` · `60649cf8a1e80fdc4ec094707d6bee17be4e8692b94c7f6b6fe9b0e56b098a75`; pullup-3k3-baro · `cd3d7a0d…` · `e0f0af17264b5f0787a80b28a15ca5c49fc8d2dffbd77fca55515bf4a18b2b75`; spi-absent-u30 · `1846f8d4…` · `ae6c523201e2f8e7ed9d2f30434007b1b13e8277c048b7d018a510bf4f49f5ae`; droop-bor3 · `6166d962…` · `8211655282e8c52c772f59fa53066d36f2534092cba07a930b063786a5a9349d`; serial-rx-open-readout · `e9c94973…` · `5e78ad4b991b48632adbd135287bc3a3077c258446c31fa8877a3ca40420c694` |
+| logger-i2c-only | `a7f5da15f79034a04b9cc921c9be4fe95f60217930f49a097e165ec7130ffe5a` (ELF `748a6a732457c0a0…`) | baseline · `f65199d1…` · `9f269b827b0cb433ccc0f8c7300913fca16945fe0a3f8a36d2a21313aff2fd65`; pullup-3k3-temp · `0c5bd8e9…` · `84095721d56f6a26b903f7b4bfbb14fe54ba97d7ae5b2358a173b1e95fbd12fc`; pullup-3k3-baro · `7698edf9…` · `70f0ef3b03430ace376e2ce08e87f7d337066018e527f361ce509b74431c8516`; droop-bor3 · `4e78f6e1…` · `419c3b2da4d0763f8d507b539db46ec09fbbe1cb6d42df5a6d764c546767adce`; serial-rx-open-readout · `fc34715e…` · `7c5e05e84d28421802251ad8e943afc500780024e0edb8915b6189c36cb78e1f` |
+| logger-spi-only | `c8016f459ae409a692158802b0a19bf152142517a232823ed6d7bcc3bf064427` (ELF `783c07933be947b6…`) | baseline · `315d8178…` · `19d197ebe7dff69bd2a8fa69b78ced2006c5b6d1dc4e949c8b2adadd2a12b04e`; spi-absent-u40 · `b64ca673…` · `b116ae2d3076cad6e3100d4793dda8a3f4d7452094ee8190b7656afdc9726bbc`; spi-absent-u30 · `49349047…` · `733523c75517ca45805616e2c59a62cadda2dfac5928e4274e008c501d00f88d`; droop-bor3 · `b2eebbe9…` · `c281a9ad76a51d56b3b58ac29464b02ebd397c56491a3f1efa554c722fb8b4b6`; serial-rx-open-readout · `b8428796…` · `d70b4f084c9670114b0ff65d308c752e73e0926b2f1f9bb7262be8e839f02883` |
+| logger-spi-only-cap | `2dea343834623ea96e1f55ba89affbeb1d5af75a062d2a1e465a2103a7e16c4f` (ELF `783c07933be947b6…`) | baseline · `fceccad1…` · `a1b6939ec42659d242c5a3b0f826b24f449925040e816cf35d7ac1d97cdc3549`; spi-absent-u40 · `c6d21ccd…` · `f559cb79a9e937776a5d9e44f9312e1b71e9fe76d545d75fb7acab6dcd8ec51d`; spi-absent-u30 · `5dea47df…` · `78f3224d9c6ff3518480c707a6f79b14423b8d3865525008b80165d6e143aeba`; droop-bor3 · `9b5ac0e9…` · `3713a82fd6951aeabb6e30a40b57b3a82da954c514af7ed6780483aac18d07ec`; serial-rx-open-readout · `0b932a5b…` · `08ad3b8fad48acb9b2fdf0c61fee267e40faa06a446407946dd6ded46a9b8b4a` |
+| logger-offboard | `2bcb211697823418cab95c19dca05c27e6b7025d041b9238abebb087a04cc1f3` (ELF `170258353f30c130…`) | baseline · `bd7f137e…` · `8be1c5fca345e8410676d393dcd94b59b00223720180d628f9bfdf3eb8b56f7e`; pullup-3k3-temp · `51ef9245…` · `241bcdc83f57c4d6237ee4fcbfcb5223fae9e40e62130bad923b9a52af334b00`; pullup-3k3-baro · `d98476cf…` · `94746e15c09f76ebbebc04809c6624f65959617f6ac4f493760d176ab075e2b9`; spi-absent-u30 · `1d29ff52…` · `d5fd19ef36c1ce1dfd0cd660092d8cae88b5792e05dcabddea434fcb48860d7e`; droop-bor3 · `ad1472cf…` · `4f8690e973b7a70828ef55b778ed75e80bfd82641003eeeffff66d1b6e76394e`; serial-rx-open-readout · `d2138c1b…` · `423871a498dcebd66b525f0da25f805b209e7e856fedb2d157542b49c7654a63` |
+| driver-tree | `b8f1aa851b9c625c9189c3e2bf29bb137850bc7c9e707551ddb07ad8d64db062` (ELF `a21823e87942d49b…`) | no archive (campaign refused) |
 
 - **Specification hashes measured:**
   - M (stage 1, no acknowledgements) `12431afa4768…`;
   - L (stage 1) `d17ecab93094…`.
-  - `spike/4600/driver.json` as committed is **stage 2: acknowledgements written, never validated or run** (§7 froze it).
+  - `spike/4600/driver.json` and `spike/4600/logger.json` as committed are **stage 2**: their acknowledgement entries written. Batch 2 ran both (M `172a8be0c64b…`, package written; L `3000fe208f6b…`, refused on the campaign). The stage-1 bytes are at `e57f7cb8`.
+  - `out/driver.stage2/verify-fab.json` carries every package file's sha256 (the verdict names them; `RUL-20`). The architect may want only the manifest's quoted. Nothing from the package is committed: `git ls-files spike/4600` holds no `fab/` path.
 
 ## 1. The two boards, and what changed from the proposal
 
@@ -67,7 +73,7 @@ It differs from Sentinel-01 on purpose: no BME280, two I2C buses, five sensors, 
 | | as written (stage 1) | acknowledgement entries / fields `--fab-out` demands | bytes with them |
 |---|---|---|---|
 | Sentinel-01-minimal (reference) | — | 27 entries (in the file) | 11,446 (16,596 as formatted) |
-| L | 4,391 (5,607 formatted) | **32 / 188** (from its `verify` ledger; not written: §7) | — |
+| L | 4,391 (5,607 formatted) | **32 / 188** (written in batch 2 by `acks.py`) | 11,642: **62 % acknowledgements** (7,253) |
 | M | 3,049 (4,037 formatted) | **41 / 250** (from the refusal) | 12,389: **75 % acknowledgements** |
 
 - **What writing them took, for M:**
@@ -173,7 +179,16 @@ Exit codes: `cli/src/main.rs` L47–59. Classes per §1.4. A miss is marked **MI
 | wall / peak | 85.5 s / 2.51 GB | 1,010.3 s / 13.06 GB |
 | per gate | `out/driver.stage1/rows.tsv`, `out/driver.stage2/rows.tsv` | `out/logger.stage1/rows.tsv`, `out/logger.stage2/rows.tsv` |
 
-`verify`'s own JSON gives no per-gate wall time or RSS; the standalone rows are the per-gate figures. Neither board reached `--fab-out` with its acknowledgements.
+`verify`'s own JSON gives no per-gate wall time or RSS; the standalone rows are the per-gate figures. Both reached `--fab-out` with their acknowledgements in batch 2 (the row above). The other candidates that reached `verify`:
+
+| | `logger-i2c-only` | `driver-tree` | `logger-spi-only-cap` | `logger-offboard` |
+|---|---|---|---|---|
+| verify | **pass**, 12 gates | **pass**, 14 gates | **fail**: `extract` (F18) | **fail**: `extract` (my cable, (a)) |
+| ledger rows | 244 | 294 (M's ELF: the tree changes no firmware) | 294 | 342 (L's ELF: dropping U13 changes no firmware, F19) |
+| rows to acknowledge | 168 (28 entries) | 250 (41) | 161 (27) | 188 (32) |
+| `--fab-out` | 2, acknowledgements | 2, `PowerNotSimulated` | 2, acknowledgements | 2, acknowledgements |
+| verify wall / peak | 152.8 s / 4.77 GB | 75.5 s / 2.52 GB | 462.2 s / 10.68 GB | 887.0 s / 13.03 GB |
+| per gate | `out/logger-i2c-only/rows.tsv` | `out/driver-tree/rows.tsv` | `out/logger-spi-only-cap/rows.tsv` | `out/logger-offboard/rows.tsv` |
 
 ## 5. The §6 board-name check (§1.5)
 
@@ -211,7 +226,7 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
 - Every archive hash above.
 - A spike specification bumped to 17 validates.
 
-1315 had not merged either; `driver-tree` was not run.
+Re-checked at the final stop (~20:30Z): `4400g` (#238) and `1315` (#243) are both still OPEN, so `driver-tree` (run in batch 3) needs no re-run yet. When 1315 merges, `driver-tree`'s emit, erc, drc and support re-run (its rule).
 
 ## 7. Findings
 
@@ -227,12 +242,13 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
 | F8 | **No device off the board.** A probe on a cable exists only as copper capacitance; the engine never knows the sensor is there (c) | `ir/src/lib.rs` L363 (`I2cDevice`) | scope-question | an `offboard` placement on a device (its connector and cable), which `extract` already half-models for lines | yes |
 | F9 | **Serial roles are the flight ecosystem's plus `console`.** `console` serves a command port and a readout; there is no role for a non-console protocol (c) | `ir/src/serial.rs` L31–37 | note | none now | no |
 | F10 | **PWM ticks in whole microseconds at any rate.** 50 steps at 20 kHz (c) | `ir/src/motor.rs` L253–259 | note | with F2: a declared resolution, PSC derived from it | with F2 |
-| F11 | **The unsplit schedule proof's cost is SPI's, and the split is keyed on timers.** The schedule is split into per-peripheral parts only when the board has a timer (`plan.timers.is_empty()`, `svd-hal/src/board.rs` L3897–3909), so every board without motor outputs, Sentinel-01 included (`boards/sentinel-01/src/proofs.rs` L407), proves it whole. Measured: I2C only (`logger-i2c-only`) 110.7 s, 4.62 GB. Two SPI buses, no I2C (`logger-spi-only`): past 900‰ of 8G at 417 s (killed). Two SPI buses at 16G (`logger-spi-only-cap`): 390.4 s, 10.65 GB. I2C + SPI (L): OOM-killed at 8G (1,032 s), passed inside `verify` at 16G (13.06 GB scope peak, page cache included: an upper bound). M's timer-split parts: ≤2.49 GB. 4201 F4 measured the OOM at 8 GiB on Sentinel-01 | `svd-hal/src/board.rs` L3897–3909 | risk | a work order's `prove` cap keys on "no timer and an SPI bus" (16G), not on an I2C bus; a follow-up lifts the `timers.is_empty()` gate, since `parts()` already makes one part per I2C/SPI peripheral | yes: the cap is the architect's |
+| F11 | **The unsplit schedule proof's cost is SPI's, and the split is keyed on timers.** The schedule is split into per-peripheral parts only when the board has a timer (`plan.timers.is_empty()`, `svd-hal/src/board.rs` L3897–3909), so every board without motor outputs, Sentinel-01 included (`boards/sentinel-01/src/proofs.rs` L407), proves it whole. Measured: I2C only (`logger-i2c-only`) 110.7 s, 4.62 GB. Two SPI buses, no I2C (`logger-spi-only`): past 900‰ of 8G at 417 s (killed). Two SPI buses at 16G (`logger-spi-only-cap`): 390.4 s, 10.65 GB. I2C + SPI: L OOM-killed at 8G (1,032 s); `logger-offboard` (L's buses, standing in for L's standalone proof at 16G) 834.5 s, 13.00 GB;, passed inside `verify` at 16G (13.06 GB scope peak, page cache included: an upper bound). M's timer-split parts: ≤2.49 GB. 4201 F4 measured the OOM at 8 GiB on Sentinel-01 | `svd-hal/src/board.rs` L3897–3909 | risk | a work order's `prove` cap keys on "no timer and an SPI bus" (16G), not on an I2C bus; a follow-up lifts the `timers.is_empty()` gate, since `parts()` already makes one part per I2C/SPI peripheral | yes: the cap is the architect's |
 | F12 | **Acknowledgements dominate a specification and are learned by refusal.** M: 41 entries, 75 % of its bytes. The refusal names fields but not classes (the ledger in a second run does); the 200-byte ASCII reason rule shows up only as `InvalidSource`. The easy path, copying the ledger's own `judge` text, makes an acknowledgement say nothing the artifact did not (northstar §6, "so hard to write that people hand-edit outputs") | `cli/src/verify.rs` L1233–1246; `cli/src/ledger.rs` L1676–1693 (fields only); `ir/src/board.rs` L575–585 | risk | the refusal prints `register · class · fields` per entry with an empty reason, which a person must fill (the `InvalidSource` message does already state the 1–200 byte rule; it is met only after the reasons are written) | yes |
 | F13 | **The §6 board-name pathspec is vacuous** and roadmap §6's measured sentence may rest on it; one non-test string names Sentinel (`ledger.rs:388`) | roadmap §6 (protected); `cli/src/ledger.rs:388` | note | D5 | yes (D5) |
 | F14 | **`check pinout` cannot judge the generated firmware** (`NoSymbolTable`: the ELF is stripped), and `generate hwdef` writes each H-bridge input and servo as an ArduPilot motor line (`PA8 TIM1_CH1 TIM1 PWM(1)`), with their ranges as comments (`not_emitted`: `MOT_PWM_TYPE`, `MOT_PWM_MIN/MAX`) | `pincheck/src/elf.rs` L127; `hwdef/src/lib.rs` L485 | note | D1 excludes both by name for a board with no ArduPilot | D1 |
 | F15 | **Every part costs code** (arms in four files) and **ICP10111 has a row and no arm** (`validate` passes, `emit` refuses) | §5 | note | D4 | D4 |
-| F18 | **Placement and routing do not read the declared line-capacitance bound, so the engine can lay out a board that fails its own `extract`.** With a second SPI bus, `LOG_SCK` was routed 48.9 mm through 8 vias: 37.5 pF against the 30 pF its specification declares (Sentinel-01's figure, copied). The author has no lever but loosening the bound. On Sentinel's one-SPI shape the flash sits close enough that it never showed (b) | `eda/src/pcb.rs`, `eda/src/route.rs` (no `net_constraints`); `eda/src/extract.rs` | risk | the placer and router take each declared `max_capacitance_femtofarads` as a constraint (a length and via budget derived from it), or refuse by name when they cannot meet it, before `extract` judges | yes: an eda WO; whether before the P4 baseline (no specification change) |
+| F18 | **The routing that keeps lines within their declared capacitance runs only when the specification declares the fabricator's tolerances, and nothing says so.** The capacitance ladder (`AET-WO-1314`) re-routes until every bounded net is within its bound, but `RingRule::of` returns none without `board.stackup.fab_tolerances` (`eda/src/stack.rs` L64–66), so `ruled` is false and no ladder runs (`eda/src/schematic.rs` L812–817, L892). L and M copied Sentinel-01-minimal's board, which declares none (only Sentinel-03 and the power fixture do). On `logger-spi-only-cap` the solver put LOG on SPI2 with SCK at PA12 and MISO/MOSI at PB14/PB15, across the package. `LOG_SCK` routed 48.9 mm through 8 vias: 37.5 pF against the 30 pF declared, so the engine's own layout fails its own `extract` (b). Not run: the same board with `fab_tolerances` declared, which is the check of whether the ladder would meet the bound | `eda/src/stack.rs` L64–66; `eda/src/schematic.rs` L812–817, L892 | risk | `validate` warns or refuses when a specification bounds a line's capacitance and declares no `fab_tolerances` (the ladder cannot run), or the ladder runs from the specification's rules alone; a labelled variant measures it first | yes: an eda WO |
+| F19 | **The generated bring-up firmware reads only the devices the twin can model.** `reads()` skips every device `answers` rejects, "the twin has a model for it" (`svd-hal/src/board/firmware.rs` L339–353). So L's firmware has no identity read for any TMP117: L's ELF and `logger-offboard`'s (one TMP117 fewer) are byte-identical (`170258…`), as are M's and `driver-tree`'s. On silicon, nothing checks a TMP117 either: the twin's model set decides what the firmware does, the gate shaping the artifact (`INV-07` in spirit) (b) | `svd-hal/src/board/firmware.rs` L339–353 | risk | the bring-up reads every device whose part row has an identity (TMP117's is `0x0F` → `0x0117`), and the twin names the ones it cannot witness, as it does today (`device_unmodelled`) | yes: a svd-hal/twin WO; the TMP117 is on Sentinel-01 too, so its bench row cannot come from this firmware |
 | F17 | **A missing pin-capacitance declaration is refused at `extract`, not at `validate`.** `logger-spi-only` validated, solved, emitted, generated and built, then `extract` and `verify` refused `UnboundedPinCapacitance` for an ICM42688P whose row cites no maximum. `validate` has everything it needs to refuse it: the part's row, the bus and the empty declaration (a) | `eda/src/extract.rs` L1070; `ir/src/lib.rs` `SpiDevice.pin_capacitance` | note | `validate` refuses a device on a driven SPI or I2C line whose row cites no maximum and whose specification declares none (`INV-06`, earlier) | no |
 | F16 | `logger-1s` refused `DuplicateReference`: a power tree's references share the board's namespace, so copying a tree block onto a board collides (a) | `ir/src/lib.rs` L3568–3574 | note | none: a correct refusal; worth a line in the authoring guide | no |
 
@@ -241,7 +257,7 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
 - **The first cap stop.** The work order gives `prove` 8 GiB, and L's schedule proof needs more (F11). The stop froze the rest until the ruling.
 - **The second stop.** The ruling keyed 16G on an I2C bus. The cost is the SPI part of the unsplit schedule (F11), so `logger-spi-only` (no I2C) passed 900‰ of 8G. `logger-offboard` and `driver-tree` did not run in batch 2; they ran in batch 3 after the 18:06Z ruling.
 - **`logger-spi-only` as written** left out U40's `pin_capacitance`, so `extract` and `verify` refused it. The labelled `logger-spi-only-cap` (batch 3) declares it, and then fails `extract` on the flash's clock line instead (F18).
-- **My first stage-2 run for M** was refused `InvalidSource`: a reason over 200 bytes. It is kept in `out/driver.stage2-invalidsource/`. A second, fixed set was written and frozen before it ran.
+- **My first stage-2 run for M** was refused `InvalidSource`: a reason over 200 bytes. It is kept in `out/driver.stage2-invalidsource/`. A second, fixed set was written, frozen by the first stop, and run in batch 2 (package written).
 - **A run I started by mistake on the un-acknowledged file** was killed while it waited on the lock: no row, no container.
 - **The droop failure** was first read as 4201's BMP581 fault, then reported to the architect as new. It is `2303` F11 (roadmap L803), seen here on a non-flight board, plus the witness rule the adversarial pass found (F1).
 - **`replay` and `attribute`** ran on the first archived run in directory order, not on the failing one.
@@ -251,7 +267,7 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
 - No crate, model, parts table, golden, test, example, scenario, board, workflow or `ci/` file changed. The fence diff check is in the PR.
 - No parts row was added; §2 names them.
 - No cap was raised, and no run was retried at a larger cap.
-- No package was written, so none was ordered or uploaded.
+- M's package was written in batch 2 (manifest `048a3c4d…`). It sits only in `~/.cache/aet-4600/runs/driver/fab/`; it was never committed, uploaded or ordered. No other package was written.
 - Every specification written was run. No variant beyond `logger-1s-u50` and `logger-spi-only-cap` (each labelled, each a correction of my own malformed variant) was added.
 
 ## 9a. Gates, adversarial pass, reduction pass
@@ -260,7 +276,7 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
 - **`cargo fmt --all -- --check`:** passes.
 - **Clippy and `cargo test --workspace`:** not run. No Rust file changed, so both are `main`'s own (CLAUDE.md: "for a spike-only branch, run what applies and say so"). No test reads `spike/` or `docs/work-orders/`: `workspace_shape.rs`'s `files()` walks named crate directories and `boards/` only (L72–88, L492, L648), and the two other tests that mention `spike/` cite it in doc comments.
 - **`PREDICTIONS.md`** has exactly one commit, `e57f7cb8`.
-- **Adversarial pass:** a fresh subagent on Opus tried to refute F1–F4, F11, F12 and §3's tables, from source and from `spike/4600/out/` (report `~/.cache/aet-4600/research/adversarial.md`). I checked each correction at source before adopting it.
+- **Adversarial pass (batch 1 only):** a fresh subagent on Opus tried to refute F1–F4, F11, F12 and §3's tables, from source and from `spike/4600/out/` (report `~/.cache/aet-4600/research/adversarial.md`). I checked each correction at source before adopting it.
   - **F2, F3, F4: confirmed.**
   - **F1: weakened, and two sentences refuted.**
     - It is `2303` F11, already on roadmap L803.
@@ -294,7 +310,8 @@ The 62 hits, classified by a read-only subagent (`~/.cache/aet-4600/research/boa
   - **chaos/twin:** F1, the recovery bound from the declared boot path, and F4;
   - **ir/svd-hal:** F2 and F10, a PWM output whose idle is 0 % or a declared pulse, and a bridge pair never driven high together;
   - **cli:** F3, coverage of outputs, and F5, gates that judged nothing.
-  - **eda:** F18, placement and routing driven by the declared capacitance bounds.
+  - **eda:** F18, the capacitance ladder switched on by `fab_tolerances` only.
+  - **svd-hal/twin:** F19, the bring-up reading every device with an identity, modelled or not.
 - **Order:**
   - F1 joins `2303` F11 (owner: the author of `4500`'s droop scenario), with the witness rule added. It is needed before `4500`'s droop can pass, since the Sentinel-02 shape boots in 39 ms.
   - F2 and F3 are independent of `4500` (Sentinel-02's ESCs idle at the minimum by design). Put them after it, before the gate.
