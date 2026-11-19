@@ -1,0 +1,1 @@
+{"ok":true,"check":"attribute","run_id":"2aed7a1ca7060cc78f0a90b8389ba268","state_sequence_hash":"83c26884253c0cee8f5f01017bb3cc453b6e34108b77e29ce92d4886952b4d36","domain":"electrical","rule":"E3","evidence":[{"index":63,"kind":28},{"index":64,"kind":29}],"symptoms":[{"index":64,"kind":29}],"masked":[],"unexplained":[],"subjects":["port:CMD"]}

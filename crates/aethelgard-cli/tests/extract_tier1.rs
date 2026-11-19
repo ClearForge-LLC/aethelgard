@@ -718,7 +718,11 @@ fn the_references_smallest_foreign_gap_to_each_line_is_at_least_the_clearance() 
         .unwrap(),
     )
     .unwrap();
-    let read = extract::read(reference(), &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+    let read = extract::read(
+        reference(),
+        &aethelgard_eda::stack::Stack::of(&spec).unwrap(),
+    )
+    .unwrap();
     // (net, layers [F, B], box, radius, name)
     let mut items = Vec::new();
     for part in &read.board.parts {

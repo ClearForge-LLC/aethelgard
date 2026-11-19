@@ -5,27 +5,52 @@
 //!
 //! What each pin is tied to, and why (ERC's pin types as KiCad 10.0.7's
 //! symbols give them):
-//! - **A buck** (LMR33630, SNVSAN3F p. 19, Figure 9-1): VIN and EN on the
-//!   input, PG open (an open-collector output nothing reads), FB on its own net
+//! - **A buck** (LMR33630, SNVSAN3F p. 19, Figure 9-1): VIN on the input,
+//!   EN and PG as their `controls` declare them, FB on its own net
 //!   between the divider's resistors, VCC (`power_out`) on its own net with
 //!   CVCC, BOOT on its own net with CBOOT to SW, SW on its own net with the
 //!   inductor, whose other end is the output domain. K5 holds by
 //!   construction: RFBT's pin 1 is on the domain and RFBB's pin 2 on `GND`.
-//! - **An LDO** (TLV755, SBVS320D p. 15): IN and EN on the input, OUT
+//! - **An LDO** (TLV755, SBVS320D p. 15): IN on the input, EN as declared, OUT
 //!   (`power_out`) on the output domain, which therefore carries no
 //!   `PWR_FLAG` (`write_sheet`).
 //! - **A translator** (TXU0304, SCES935A p. 3): VCCA on side A, VCCB on side
-//!   B, OE on VCCA (always enabled), the three A-to-B channels in table order
+//!   B, OE as declared, the three A-to-B channels in table order
 //!   carrying SCK, MOSI and CS (so the pull-up sits on A3's net, ruled D9),
 //!   the B-to-A channel carrying MISO.
 //! - **The battery** is the rail [`BATTERY_NET`]; the power-in connector's
 //!   positive pad (`2`, the footprint's `+` silkscreen) is on it, the other on
 //!   `GND`.
+//! - **Each hot-plug bulk capacitor** (`power.input.hot_plug`, `AET-WO-1315`
+//!   §1.3) across the battery: its positive pin on [`BATTERY_NET`], the other
+//!   on `GND`. Its row names KiCad's `Device:C_Polarized` and
+//!   `Capacitor_SMD:CP_Elec_8x10`, vendored at 10.0.7; in both, `1` is the
+//!   positive terminal (the symbol draws its `+` beside pin 1, at
+//!   (-1.27, 2.286) with pin 1 at (0, 3.81); the footprint's silkscreen `+`
+//!   sits at x = -5 mm, beside pad 1 at x = -3.25 mm, pad 2 at +3.25 mm). It
+//!   is the last part of the first battery-fed regulator's sequence, behind
+//!   the ceramics (SNVSAN3F p. 23, 9.2.2.6: the bulk capacitor in parallel
+//!   with the ceramics), anchored to its input and ground pins; with no
+//!   battery-fed regulator it is drawn by its nets alone. A row of any other
+//!   kind (a TVS), or a part on the pack's side, is refused by name, never
+//!   skipped and never drawn as something else (`INV-06`).
+//!
+//! **Control pins** (`AET-WO-1315` §1.4) are drawn as each `controls` entry
+//! declares, never by a rule of the emitter's own: a strap `input` on the
+//! regulator's input rail, `vcca` and `vccb` on the translator's A and B
+//! rails, `open` as a no-connect; a wire as a label on its declared net, only
+//! when a connector pin or test point the specification declares ends that
+//! net. A control pin of the row with no entry, an entry for a pin the row
+//! does not list, a strap the row does not allow or the part has no rail for,
+//! a wire to a rail or to a net nothing else ends, are each refused by name
+//! (`PowerNotDrawable`, `INV-06`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use aethelgard_ir::power::{Power, Resistor};
-use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
+use aethelgard_ir::power::{Control, HotPlug, Power, Resistor, Side};
+use aethelgard_ir::power_parts::{
+    self, BulkCapacitor, ControlRule, Direction, Kind, PowerPartsTable, Role, Row, Strap,
+};
 
 use aethelgard_ir::{SolvedTopology, SpiDevice};
 
@@ -60,6 +85,12 @@ const FB_RULE: &str = "SNVSAN3F p. 33, 10.1 item 4: the feedback divider as clos
 const SW_RULE: &str = "SNVSAN3F p. 33, 10.1 item 9: the copper from the SW pin to the inductor as short as possible (4.0 mm, an engine choice set after measuring the placer: no distance is stated)";
 const LDO_RULE: &str = "SBVS320D p. 21, 7.4.1: input and output capacitors as close as possible to the device (2.0 mm, an engine choice: no distance is stated)";
 const BYPASS_RULE: &str = "SCES935A p. 25, 12.1: the bypass capacitors as close to the device as possible (2.0 mm, an engine choice: no distance is stated)";
+/// A hot-plug bulk capacitor's positive pin and pad (see the module
+/// documentation for where each vendored file marks it).
+const BULK_POSITIVE: &str = "1";
+const BULK_NEGATIVE: &str = "2";
+const HOT_PLUG_NM: i64 = 10_000_000;
+const HOT_PLUG_RULE: &str = "SNVSAN3F p. 23, 9.2.2.6: the bulk capacitor that damps the input's ring in parallel with the ceramic input capacitors, behind them (10.0 mm, an engine choice set after measuring the placer: no distance is stated)";
 const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at the ADC input pin (3.0 mm, an engine choice: no distance is stated)";
 
 /// Anchors the part just drawn to `ic`'s pads.
@@ -272,7 +303,8 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
 /// Draws the whole tree. `behind` is [`behind`]'s map; the devices
 /// themselves are drawn with the other SPI devices. `mcu` is the MCU's
 /// reference, whose solved sense pins (`SolvedTopology.power.sense`, by
-/// package position) are connected here.
+/// package position) are connected here. `ended` is every net a declared
+/// connector pin or test point ends, which a control wire may join.
 pub(crate) fn draw(
     b: &mut Builder<'_>,
     p: &Power,
@@ -280,12 +312,24 @@ pub(crate) fn draw(
     behind: &BTreeMap<String, Behind>,
     mcu: &str,
     solved: &SolvedTopology,
+    ended: &BTreeSet<String>,
 ) -> Result<(), EmitError> {
-    for r in &p.regulators {
-        regulator(b, r)?;
+    let table = power_parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
+    let fed = p
+        .regulators
+        .iter()
+        .position(|r| r.input == aethelgard_ir::power::BATTERY);
+    for (i, r) in p.regulators.iter().enumerate() {
+        regulator(b, r, ended)?;
+        if fed == Some(i) {
+            hot_plug(b, p, table, Some(r))?;
+        }
+    }
+    if fed.is_none() {
+        hot_plug(b, p, table, None)?;
     }
     for c in &p.crossings {
-        crossing(b, c, spi, behind)?;
+        crossing(b, c, spi, behind, ended)?;
     }
     for s in &p.sense {
         let pin = solved
@@ -338,14 +382,229 @@ pub(crate) fn draw(
     Ok(())
 }
 
-fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Result<(), EmitError> {
+/// A declared hot-plug part's row in `table`, when it is a bulk capacitor on
+/// the board's side of the connector: the only kind the emitter draws.
+fn bulk<'t>(
+    table: &'t PowerPartsTable,
+    h: &HotPlug,
+) -> Result<(&'t Row, &'t BulkCapacitor), EmitError> {
+    let r = table.get(&h.part).ok_or_else(|| {
+        refuse(
+            &h.reference,
+            format!("`{}` is not in the power parts table", h.part),
+        )
+    })?;
+    let Kind::BulkCapacitor(c) = &r.kind else {
+        return Err(refuse(
+            &h.reference,
+            format!(
+                "`{}` is a {} row, and the emitter draws only a bulk capacitor on the battery input",
+                h.part,
+                r.kind.name()
+            ),
+        ));
+    };
+    if h.side == Side::Pack {
+        return Err(refuse(
+            &h.reference,
+            format!(
+                "`{}` is declared on the pack's side of the connector, not on the board",
+                h.part
+            ),
+        ));
+    }
+    Ok((r, c))
+}
+
+/// Each declared hot-plug part across the battery, anchored to `fed`'s input
+/// and ground pins when a regulator is fed from the battery. Every part is
+/// judged drawable before any is drawn.
+fn hot_plug(
+    b: &mut Builder<'_>,
+    p: &Power,
+    table: &'static PowerPartsTable,
+    fed: Option<&aethelgard_ir::power::Regulator>,
+) -> Result<(), EmitError> {
+    let rows = p
+        .input
+        .hot_plug
+        .iter()
+        .map(|h| bulk(table, h))
+        .collect::<Result<Vec<_>, _>>()?;
+    let pads = match fed {
+        Some(reg) => {
+            let r = row(&reg.reference, &reg.part)?;
+            let (vin, gnd) = match &r.kind {
+                Kind::Buck(_) => ("VIN", "PGND"),
+                _ => ("IN", "GND"),
+            };
+            Some((
+                reg.reference.as_str(),
+                pin(&reg.reference, r, vin)?,
+                pin(&reg.reference, r, gnd)?,
+            ))
+        }
+        None => None,
+    };
+    for (h, (r, c)) in p.input.hot_plug.iter().zip(rows) {
+        let pf = u64::try_from(c.rated_picofarads.value)
+            .map_err(|_| refuse(&h.reference, "a negative capacitance"))?;
+        let plus = b.rail(BATTERY_NET);
+        let minus = b.ground();
+        b.parts.push(Part {
+            lib_id: r.symbol.as_str(),
+            reference: h.reference.clone(),
+            value: format!("{} {}", farads(pf), h.part),
+            footprint: r.footprint.clone(),
+            conns: BTreeMap::from([(BULK_POSITIVE.into(), plus), (BULK_NEGATIVE.into(), minus)]),
+            note: None,
+            owner: None,
+            offboard: BTreeMap::new(),
+            seat: None,
+        });
+        if let Some((u, vin, gnd)) = &pads {
+            anchor(
+                b,
+                u,
+                &[(BULK_POSITIVE, vin), (BULK_NEGATIVE, gnd)],
+                HOT_PLUG_NM,
+                HOT_PLUG_RULE,
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Each control pin of `r`'s row, by its role, on what `declared` says
+/// (`AET-WO-1315` §1.4). `strap` is the rail each strap names on this part,
+/// `None` where the part has none.
+fn controls(
+    b: &mut Builder<'_>,
+    reference: &str,
+    r: &Row,
+    declared: &[Control],
+    ended: &BTreeSet<String>,
+    strap: impl Fn(Strap) -> Option<Conn>,
+) -> Result<Vec<(String, Conn)>, EmitError> {
+    let rules: &[ControlRule] = match &r.kind {
+        Kind::Buck(k) => &k.controls,
+        Kind::Ldo(k) => &k.controls,
+        Kind::Translator(k) => &k.controls,
+        _ => {
+            return Err(refuse(
+                reference,
+                format!("`{}` has no control pins", r.part),
+            ));
+        }
+    };
+    for (i, c) in declared.iter().enumerate() {
+        if declared[..i].iter().any(|d| d.pin == c.pin) || !rules.iter().any(|x| x.pin == c.pin) {
+            return Err(refuse(
+                reference,
+                format!(
+                    "`controls` names `{}` twice, or a pin `{}`'s row lists as no control pin",
+                    c.pin, r.part
+                ),
+            ));
+        }
+    }
+    let spec = b.spec;
+    let rail = |net: &str| {
+        [aethelgard_ir::GND, BATTERY_NET]
+            .into_iter()
+            .chain(spec.voltage_domains.iter().map(|d| d.id.as_str()))
+            .any(|x| x.eq_ignore_ascii_case(net))
+    };
+    let mut out = Vec::new();
+    for rule in rules {
+        let pin = &rule.pin;
+        let Some(c) = declared.iter().find(|c| &c.pin == pin) else {
+            return Err(refuse(
+                reference,
+                format!(
+                    "{pin} is declared neither strapped nor wired, and the emitter ties no control pin by a rule of its own"
+                ),
+            ));
+        };
+        let conn = match (&c.strap, &c.wire) {
+            (Some(s), None) => rule
+                .straps
+                .contains(s)
+                .then(|| strap(*s))
+                .flatten()
+                .ok_or_else(|| {
+                    refuse(
+                        reference,
+                        format!(
+                            "{pin} is strapped `{}`, which its row does not allow or this part has no rail for",
+                            s.name()
+                        ),
+                    )
+                })?,
+            // belt-and-suspenders: `validate` refuses a wire on a pin its row
+            // allows none (`ControlPinUnwired`), and every held row's control
+            // pins are wirable.
+            (None, Some(w)) if !rule.wirable => {
+                return Err(refuse(
+                    reference,
+                    format!("{pin} is wired to `{}`, and its row allows no wire", w.net),
+                ));
+            }
+            (None, Some(w)) if rail(&w.net) => {
+                return Err(refuse(
+                    reference,
+                    format!(
+                        "{pin} is wired to `{}`, a rail: a tie to a rail is a strap",
+                        w.net
+                    ),
+                ));
+            }
+            (None, Some(w)) if !ended.contains(&w.net) => {
+                return Err(refuse(
+                    reference,
+                    format!(
+                        "{pin} is wired to `{}`, which no connector pin or test point the specification declares ends: drawn, it would be a floating pin with a name",
+                        w.net
+                    ),
+                ));
+            }
+            (None, Some(w)) => Conn::Net(w.net.clone()),
+            _ => {
+                return Err(refuse(
+                    reference,
+                    format!("{pin} is declared both strapped and wired, or neither"),
+                ));
+            }
+        };
+        out.push((pin.clone(), conn));
+    }
+    Ok(out)
+}
+
+fn regulator(
+    b: &mut Builder<'_>,
+    reg: &aethelgard_ir::power::Regulator,
+    ended: &BTreeSet<String>,
+) -> Result<(), EmitError> {
     let r = row(&reg.reference, &reg.part)?;
     let u = &reg.reference;
     let input = supply(b, &reg.input);
     let output = b.rail(&reg.output);
     let g = b.ground();
     let of = |role: Role| reg.external.iter().filter(move |e| e.role == role);
+    let not_regulator = || refuse(u, format!("`{}` is not a regulator", reg.part));
+    let (Kind::Buck(_) | Kind::Ldo(_)) = &r.kind else {
+        return Err(not_regulator());
+    };
     let mut conns = BTreeMap::new();
+    let tied = controls(b, u, r, &reg.controls, ended, |s| match s {
+        Strap::Input => Some(input.clone()),
+        Strap::Open => Some(Conn::NoConnect),
+        Strap::Vcca | Strap::Vccb => None,
+    })?;
+    for (role, conn) in tied {
+        conns.insert(pin(u, r, &role)?, conn);
+    }
     match &r.kind {
         Kind::Buck(_) => {
             let fb = b.own_net(format!("{u}_FB"))?;
@@ -356,8 +615,6 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 ("PGND", g.clone()),
                 ("EP", g.clone()),
                 ("VIN", input.clone()),
-                ("EN", input.clone()),
-                ("PG", Conn::NoConnect),
                 ("FB", Conn::Net(fb.clone())),
                 ("VCC", Conn::Net(vcc.clone())),
                 ("BOOT", Conn::Net(boot.clone())),
@@ -435,7 +692,6 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
         Kind::Ldo(_) => {
             for (role, conn) in [
                 ("IN", input.clone()),
-                ("EN", input.clone()),
                 ("GND", g.clone()),
                 ("NC", Conn::NoConnect),
                 ("OUT", output.clone()),
@@ -453,7 +709,7 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 anchor(b, u, &[("1", &outp)], NEAR_NM, LDO_RULE);
             }
         }
-        _ => return Err(refuse(u, format!("`{}` is not a regulator", reg.part))),
+        _ => return Err(not_regulator()),
     }
     Ok(())
 }
@@ -463,6 +719,7 @@ fn crossing(
     c: &aethelgard_ir::power::Crossing,
     spi: &[SpiDevice],
     behind: &BTreeMap<String, Behind>,
+    ended: &BTreeSet<String>,
 ) -> Result<(), EmitError> {
     let spec = b.spec;
     let r = row(&c.reference, &c.part)?;
@@ -485,10 +742,18 @@ fn crossing(
     for (role, conn) in [
         ("VCCA", a.clone()),
         ("VCCB", bside.clone()),
-        ("OE", a.clone()),
         ("GND", g.clone()),
     ] {
         conns.insert(pin(&c.reference, r, role)?, conn);
+    }
+    let tied = controls(b, &c.reference, r, &c.controls, ended, |s| match s {
+        Strap::Vcca => Some(a.clone()),
+        Strap::Vccb => Some(bside.clone()),
+        Strap::Open => Some(Conn::NoConnect),
+        Strap::Input => None,
+    })?;
+    for (role, conn) in tied {
+        conns.insert(pin(&c.reference, r, &role)?, conn);
     }
     let a_net = |line: Line| match line {
         Line::Sck => bus.sck.net.clone(),
@@ -550,7 +815,131 @@ fn crossing(
 
 #[cfg(test)]
 mod tests {
-    use super::{farads, henries};
+    use super::{BULK_NEGATIVE, BULK_POSITIVE, bulk, farads, henries};
+    use aethelgard_ir::power::{HotPlug, Side};
+    use aethelgard_ir::power_parts::{POWER_PARTS_JSON, PowerPartsTable, parse_power_parts};
+
+    /// The embedded table with one test-only TVS row, which no held row is
+    /// (`AET-WO-4300d3` tested its clamp the same way).
+    fn with_tvs() -> PowerPartsTable {
+        let at = r#"{"document": "NICHICON_UCZ", "section": "test only"}"#;
+        let tvs = format!(
+            r#"{{"part": "TVS_TEST", "lifecycle": "unread", "symbol": "Device:D_TVS", "footprint": "Diode_SMD:D_SMB", "pins": {{}}, "temperature_celsius": {{"min": -65, "max": 150, "at": {at}}}, "kind": {{"tvs": {{"standoff_millivolts": {{"value": 27000, "at": {at}}}, "clamp_max_millivolts": {{"value": 37000, "at": {at}}}, "clamp_condition": "test only"}}}}}},"#
+        );
+        let json = POWER_PARTS_JSON.replacen(r#""parts": ["#, &format!(r#""parts": [{tvs}"#), 1);
+        assert_ne!(json, POWER_PARTS_JSON);
+        parse_power_parts(&json).unwrap()
+    }
+
+    fn hot(part: &str, side: Side) -> HotPlug {
+        HotPlug {
+            reference: "C1".into(),
+            part: part.into(),
+            side,
+        }
+    }
+
+    /// `AET-WO-1315` §1.3: the emitter draws a bulk capacitor on the board's
+    /// side and refuses anything else by name: a TVS row, a ceramic, a part
+    /// on the pack's side, a part the table lacks.
+    #[test]
+    fn only_a_bulk_capacitor_on_the_board_side_is_drawable() {
+        let t = with_tvs();
+        let (row, c) = bulk(&t, &hot("UCZ1H470MCL1GS", Side::Board)).unwrap();
+        assert_eq!(row.symbol, "Device:C_Polarized");
+        assert_eq!(c.rated_picofarads.value, 47_000_000);
+        for (part, side, why) in [
+            ("TVS_TEST", Side::Board, "`TVS_TEST` is a tvs row"),
+            ("GCM188R71H104KA57", Side::Board, "is a capacitor row"),
+            ("UCZ1H470MCL1GS", Side::Pack, "on the pack's side"),
+            ("NOT_A_PART", Side::Board, "is not in the power parts table"),
+        ] {
+            match bulk(&t, &hot(part, side)) {
+                Err(super::EmitError::PowerNotDrawable { reference, why: w }) => {
+                    assert_eq!(reference, "C1");
+                    assert!(w.contains(why), "{part}: {w}");
+                }
+                other => panic!("{part}: {other:?}"),
+            }
+        }
+    }
+
+    /// The positive terminal is read from the vendored files themselves: the
+    /// symbol's `+` (two crossing strokes) is nearer pin [`BULK_POSITIVE`]
+    /// than pin [`BULK_NEGATIVE`], and so is the footprint's silkscreen `+`
+    /// to its pad.
+    #[test]
+    fn the_bulk_capacitors_positive_terminal_is_where_the_vendored_files_mark_it() {
+        use crate::sexpr::Sx;
+        fn xy(s: &Sx, i: usize) -> (f64, f64) {
+            (
+                s.arg(i).unwrap().parse().unwrap(),
+                s.arg(i + 1).unwrap().parse().unwrap(),
+            )
+        }
+        fn walk<'a>(s: &'a Sx, out: &mut Vec<&'a Sx>) {
+            out.push(s);
+            for c in s.items() {
+                walk(c, out);
+            }
+        }
+        let d2 = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).powi(2) + (a.1 - b.1).powi(2);
+        let nearer = |mark: (f64, f64), terminals: &[(String, (f64, f64))]| {
+            let near = |n: &str| d2(mark, terminals.iter().find(|t| t.0 == n).unwrap().1);
+            assert_eq!(terminals.len(), 2);
+            near(BULK_POSITIVE) < near(BULK_NEGATIVE)
+        };
+        // The symbol: its pins, and the `+` as the crossing of a horizontal
+        // and a vertical stroke, each under 1.5 mm.
+        let sym = crate::library::symbol("Device:C_Polarized").unwrap();
+        let mut all = Vec::new();
+        walk(&sym, &mut all);
+        let pins: Vec<(String, (f64, f64))> = all
+            .iter()
+            .filter(|s| s.head() == Some("pin"))
+            .map(|p| {
+                (
+                    p.child("number").unwrap().arg(1).unwrap().to_owned(),
+                    xy(p.child("at").unwrap(), 1),
+                )
+            })
+            .collect();
+        let strokes: Vec<((f64, f64), (f64, f64))> = all
+            .iter()
+            .filter(|s| s.head() == Some("polyline"))
+            .filter_map(|s| {
+                let pts: Vec<_> = s.child("pts")?.children("xy").map(|p| xy(p, 1)).collect();
+                let [a, b] = pts.as_slice() else { return None };
+                (d2(*a, *b) < 1.5f64.powi(2)).then_some((*a, *b))
+            })
+            .collect();
+        let mid = |s: &((f64, f64), (f64, f64))| ((s.0.0 + s.1.0) / 2.0, (s.0.1 + s.1.1) / 2.0);
+        let h = strokes.iter().find(|s| s.0.1 == s.1.1).unwrap();
+        let v = strokes.iter().find(|s| s.0.0 == s.1.0).unwrap();
+        assert!(d2(mid(h), mid(v)) < 1e-6, "{h:?} {v:?}");
+        assert!(nearer(mid(h), &pins), "symbol {pins:?} {h:?}");
+        // The footprint: its pads, and the silkscreen `+` the same way.
+        let fp = crate::library::footprint("Capacitor_SMD:CP_Elec_8x10").unwrap();
+        let pads: Vec<(String, (f64, f64))> = fp
+            .children("pad")
+            .map(|p| (p.arg(1).unwrap().to_owned(), xy(p.child("at").unwrap(), 1)))
+            .collect();
+        let silk: Vec<((f64, f64), (f64, f64))> = fp
+            .children("fp_line")
+            .filter(|l| l.child("layer").and_then(|x| x.arg(1)) == Some("F.SilkS"))
+            .map(|l| {
+                (
+                    xy(l.child("start").unwrap(), 1),
+                    xy(l.child("end").unwrap(), 1),
+                )
+            })
+            .filter(|(a, b)| d2(*a, *b) < 1.5f64.powi(2))
+            .collect();
+        let h = silk.iter().find(|s| s.0.1 == s.1.1).unwrap();
+        let v = silk.iter().find(|s| s.0.0 == s.1.0).unwrap();
+        assert!(d2(mid(h), mid(v)) < 1e-6, "{h:?} {v:?}");
+        assert!(nearer(mid(h), &pads), "footprint {pads:?} {h:?}");
+    }
 
     #[test]
     fn farads_are_written_as_schematics_write_them() {

@@ -136,12 +136,12 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
             ),
         });
     }
-    let rules = aethelgard_eda::rules::Rules::from_specification(b.spec);
+    let stack = aethelgard_eda::stack::Stack::of(b.spec).map_err(crate::undeclared)?;
+    let rules = aethelgard_eda::rules::Rules::from_stack(&stack);
     let tree =
         kicad::prepare(kicad::Check::Drc, &copy, &scratch.tool, &rules)?.ok_or_else(|| {
             Stop::tool_error("aethelgard", "no strict reading of the board".to_owned())
         })?;
-    let stack = aethelgard_eda::stack::Stack::of(b.spec);
     aethelgard_eda::route::declared(&tree, &stack).map_err(|d| {
         Stop::tool_error(
             "aethelgard",
@@ -271,6 +271,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         env!("CARGO_PKG_VERSION"),
         b.specification_sha256,
         b.spec,
+        &stack,
         &drills,
         &Stated {
             conditions: b.conditions,
@@ -335,11 +336,11 @@ fn notes(
     engine: &str,
     specification_sha256: &str,
     spec: &aethelgard_ir::Specification,
+    stack: &aethelgard_eda::stack::Stack,
     drills: &[aethelgard_eda::fab::Drill],
     stated: &Stated<'_>,
 ) -> String {
-    let stack = aethelgard_eda::stack::Stack::of(spec);
-    let layers = gerbers(&stack);
+    let layers = gerbers(stack);
     let described = describe(project, &layers);
     let mut text = aethelgard_eda::fab::notes(&aethelgard_eda::fab::Notes {
         project,
@@ -347,7 +348,7 @@ fn notes(
         specification_sha256,
         kicad_version: KICAD_VERSION,
         files: &described,
-        stack: &stack,
+        stack,
         conditions: stated.conditions,
         lifecycle: stated.lifecycle,
         drills,
@@ -969,7 +970,7 @@ mod tests {
     fn the_notes_describe_every_file_and_the_package_names_them_after_the_project() {
         let spec: aethelgard_ir::Specification =
             serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
-        let layers = gerbers(&aethelgard_eda::stack::Stack::of(&spec));
+        let layers = gerbers(&aethelgard_eda::stack::Stack::of(&spec).unwrap());
         let d = describe("p", &layers);
         assert_eq!(d.len(), LAYERS.len() + 6);
         assert!(
@@ -1051,8 +1052,9 @@ mod tests {
             // The conditions the code before 4300d2 wrote for these boards
             // (none declares off-board capacitance), which an `extract`
             // verdict now hands the notes (`AET-WO-3303`); no lifecycle line.
-            let stated =
-                aethelgard_eda::extract::conditions(&aethelgard_eda::stack::Stack::of(&spec));
+            let stated = aethelgard_eda::extract::conditions(
+                &aethelgard_eda::stack::Stack::of(&spec).unwrap(),
+            );
             // `AET-WO-4230` §1.6: a board declaring a brown-out level adds
             // its factory step after the files, and nothing else moves.
             // `AET-WO-1604` §1.3: the two JLCPCB files join the file list,
@@ -1077,6 +1079,7 @@ mod tests {
                         "0.1.0",
                         "SPEC_SHA",
                         &spec,
+                        &aethelgard_eda::stack::Stack::of(&spec).unwrap(),
                         &vias_only(n),
                         &Stated {
                             conditions: &stated,
@@ -1191,7 +1194,7 @@ mod tests {
     fn the_gerbers_are_the_declared_layers() {
         let load = |text: &str| {
             let spec: aethelgard_ir::Specification = serde_json::from_str(text).unwrap();
-            gerbers(&aethelgard_eda::stack::Stack::of(&spec))
+            gerbers(&aethelgard_eda::stack::Stack::of(&spec).unwrap())
         };
         let two = load(&repo_file("examples/sentinel-01-minimal.json"));
         let today: Vec<(String, String, usize, String)> = LAYERS

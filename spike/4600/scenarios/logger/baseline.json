@@ -1,0 +1,8 @@
+{
+  "schema_version": 3,
+  "name": "baseline",
+  "base": "../../logger.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}

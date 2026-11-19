@@ -1,0 +1,26 @@
+driver-tree	validate	0	1005	18284544	8589934592
+driver-tree	solve	0	1003	19439616	8589934592
+driver-tree	emit	0	1003	61808640	8589934592
+driver-tree	erc	0	1006	175001600	8589934592
+driver-tree	drc	0	1005	208826368	8589934592
+driver-tree	support	0	1005	176553984	8589934592
+driver-tree	speeds	0	1003	61390848	8589934592
+driver-tree	extract	0	1003	26406912	8589934592
+driver-tree	generate	0	1006	61915136	8589934592
+driver-tree	build	0	1006	44552192	8589934592
+driver-tree	prove:every_valid_sequence_tim1	0	23136	2486247424	8589934592
+driver-tree	prove:every_valid_sequence_tim2	0	23143	2484305920	8589934592
+driver-tree	prove:every_valid_sequence_gpio	0	3016	224419840	8589934592
+driver-tree	prove:reset_clock_is_ok_exactly_at_reset	0	2007	94515200	8589934592
+driver-tree	prove:tim1_start_writes_the_solved_values	0	4024	293408768	8589934592
+driver-tree	prove:tim2_start_writes_the_solved_values	0	4016	280711168	8589934592
+driver-tree	prove:usart1_start_writes_the_solved_values	0	11066	1497952256	8589934592
+driver-tree	prove:flash_option_status_is_one_read	0	2006	88948736	8589934592
+driver-tree	simulate	0	6043	423587840	8589934592
+driver-tree	campaign	2	1003	17862656	8589934592
+driver-tree	replay	not_run	-	-	needs an archived run (campaign exit 2)
+driver-tree	attribute	not_run	-	-	needs an archived run (campaign exit 2)
+driver-tree	verify	0	75482	2517368832	17179869184
+driver-tree	verify-fab	2	2014	60485632	17179869184
+driver-tree	hwdef	0	1006	18669568	8589934592
+driver-tree	pinout	3	1006	17928192	8589934592

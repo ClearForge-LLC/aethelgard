@@ -1171,7 +1171,10 @@ fn the_fixture_passes_every_new_check_and_names_each_condition() {
         "damps the input's ring through its ESR, at most 250 mOhm"
     ));
     assert!(has("VBOR3's rising maximum of 2780 mV is judged"));
-    assert!(has("(FEEDBACK D5)"));
+    // `AET-WO-1315` §1.5: the board draws the hot-plug parts and each control
+    // as declared, so no condition says it does not.
+    assert!(!has("(FEEDBACK D5)"));
+    assert!(!has("does not draw"));
 }
 
 #[test]
@@ -1812,6 +1815,13 @@ fn a_wire_to_a_rail_is_refused_and_every_wire_is_named() {
     reg(&mut v, "U10")["controls"][1] = json!({"pin": "PG", "strap": null, "wire": {"net": "PG_5V", "role": "the 5 V rail's power-good"}});
     let c = conditions(&v, &table_json());
     assert!(c.iter().any(|x| x.contains("U10: PG is declared wired to `PG_5V` (the 5 V rail's power-good)")));
+    // `AET-WO-1315` §1.5: the board draws a wire, so the condition no longer
+    // says it does not; what it does not judge stays.
+    assert!(
+        c.iter()
+            .any(|x| x.ends_with("neither the net's driver nor its level is judged"))
+    );
+    assert!(!c.iter().any(|x| x.contains("does not draw")));
 }
 
 /// `AET-WO-4400b` D4, D6: the MCU row's flash size and what ArduPilot

@@ -92,14 +92,14 @@ fn netlist_text((values, nets): &Pads) -> String {
 fn judge(spec: &Specification, pads: &Pads, board: &str) -> support::Record {
     let netlist = support::netlist(&strict::netlist(&netlist_text(pads)).unwrap()).unwrap();
     let tree = strict::board(board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     support::judge(spec, &netlist, &b).unwrap()
 }
 
 fn judge_text(spec: &Specification, text: &str, board: &str) -> support::Record {
     let n = support::netlist(&strict::netlist(text).unwrap()).unwrap();
     let tree = strict::board(board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     support::judge(spec, &n, &b).unwrap()
 }
 
@@ -321,7 +321,7 @@ fn test_points_are_out_of_the_bill_of_materials_and_the_switch_is_in() {
 fn extract_counts_a_test_pad_as_copper_and_never_as_a_pin() {
     let (spec, solved, table) = solved(&json_of(BENCH));
     let board = schematic::emit(&spec, &solved, &table).unwrap().board;
-    let read = extract::read(&board, &Stack::of(&spec)).unwrap();
+    let read = extract::read(&board, &Stack::of(&spec).unwrap()).unwrap();
     let lines = extract::lines(&spec, &solved, &table).unwrap();
     let bounds = extract::bound(&read, &lines).unwrap();
     assert_eq!(bounds.len(), 4);

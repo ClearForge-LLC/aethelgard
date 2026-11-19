@@ -1,0 +1,2 @@
+2026-11-19T17:17:55+00:00 logger validate mem=8G free -g available=44
+2026-11-19T17:17:56+00:00 logger verify-fab mem=16G free -g available=44

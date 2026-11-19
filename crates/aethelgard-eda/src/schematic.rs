@@ -866,9 +866,9 @@ fn place(
 ) -> Result<Placed, EmitError> {
     spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
-    let stack = crate::stack::Stack::of(spec);
     // the via ring rule (`AET-WO-1314`): every input it needs declared, and
     // no class declaring a via it cannot hold
+    let stack = crate::stack::Stack::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
     let rule = crate::stack::RingRule::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
     if let Some(rule) = rule
         && let Some((class, via_nm, pad_nm)) = rule.unheld(&stack).into_iter().next()
@@ -1208,6 +1208,19 @@ pub fn anchored(
         .collect())
 }
 
+/// Each drawn part's reference with its value, read from the design: what a
+/// test needs to see a part drawn where no board can be, a tree `validate`
+/// refuses (`AET-WO-1315` §1.3, the bulk capacitor with no battery-fed
+/// regulator to anchor to).
+pub fn drawn(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    Ok(parts.into_iter().map(|p| (p.reference, p.value)).collect())
+}
+
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,
@@ -1539,6 +1552,14 @@ pub(crate) fn design(
         part.seat = Some(seat);
     }
     if let Some(p) = &spec.power {
+        // Every net a declared connector pin or test point ends: the nets a
+        // control wire may be drawn to (`AET-WO-1315` §1.4).
+        let ended = spec
+            .declared_connectors()
+            .iter()
+            .flat_map(|c| c.pins.iter().filter_map(|p| p.net.clone()))
+            .chain(spec.declared_test_points().iter().map(|t| t.net.clone()))
+            .collect();
         power::draw(
             &mut b,
             p,
@@ -1546,6 +1567,7 @@ pub(crate) fn design(
             &behind,
             &mcu_ref,
             solved,
+            &ended,
         )?;
     }
     connectors(&mut b)?;
