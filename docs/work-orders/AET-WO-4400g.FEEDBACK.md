@@ -248,6 +248,7 @@ Three reviewers, each on one or two of the WO's §5 lenses, on `9c98c8f8`. Each 
   - no-spi2-rx-dma and no-u5-model (`PlatformNotEmitted`);
   - no-imu-line.
   - Its first full run caught the script's own defect: a case named `undeclared` wrote its verdict over the derived spec of the same name. Derived specs are now `spec-<how>.json`.
+- **CI on `c07c6ebd`** (run 44553437741): green, 27 checks passed and 4 skipped (publish, quickstart, and `bench-package`, which runs only on main's push). `tier2_tests_passed=190`, floor 190, so `TIER2_MIN` is exact. The tools shards ran 28–46 min, all under 55.
 - **`TIER2_MIN`:** no tier-2 test was added or removed against main, so it stays at 190 and no workflow moves.
 - **Mutants:** 12 of the guards' mutants and (a)–(e) killed (§5).
 - **Reduction pass (diff):** −18 net · 2 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.
