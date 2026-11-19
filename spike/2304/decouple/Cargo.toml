@@ -1,0 +1,16 @@
+[package]
+name = "aet2304-decouple"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# AET-WO-2304 §1.8: the emitter's own `decoupling_picofarads` on a specification,
+# measured (not hand-counted). Outside the root workspace.
+[workspace]
+
+[dependencies]
+aethelgard-ir = { path = "../../../crates/aethelgard-ir" }
+aethelgard-eda = { path = "../../../crates/aethelgard-eda" }
+aethelgard-svd-hal = { path = "../../../crates/aethelgard-svd-hal" }
+aethelgard-chaos = { path = "../../../crates/aethelgard-chaos" }
+serde_json = "1"

@@ -1,0 +1,6 @@
+{"bridge":"aethelgard-bridge","source_sha256":"91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb","version":"0.1.0"}
+{"at_ps":157000491,"falling":true,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}
+{"at_ps":171684688,"falling":true,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}
+{"at_ps":346603740,"falling":false,"level":"VBOR3_falling","method":"interpolated","microvolts":2610000,"ngspice":"44.2"}
+{"at_ps":354092318,"falling":false,"level":"VBOR3_rising","method":"interpolated","microvolts":2700000,"ngspice":"44.2"}
+{"accepted_points":100027,"minimum_microvolts":2362884,"rail":"solved"}
