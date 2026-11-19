@@ -243,7 +243,7 @@ docs_tests() {
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
     # A target that runs no test (a tier-2 binary on the host, say) judges nothing.
-    awk '/^test result: [A-Za-z]+\. [0-9]+ passed;/ { p += $4 } END { exit !(p > 0) }' "$log" \
+    awk '/^test result: [A-Za-z]+\. [0-9]+ passed; [0-9]+ failed;/ { n += $4 + $6 } END { exit !(n > 0) }' "$log" \
       || die "$pkg $t ran no test on the host; a docs-only run cannot judge it"
   done
   [ "$status" -eq 0 ] || die "a docs-only test failed"
