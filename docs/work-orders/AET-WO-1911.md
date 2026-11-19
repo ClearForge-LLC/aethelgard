@@ -87,3 +87,5 @@
 - **§1.3.**
 - **The shared build changes a test's outcome:** stop with the test.
 - **The concurrency limit cannot be read, and the measured queueing is ambiguous:** stop with the numbers.
+
+<!-- AET-WO-1911 scratch: a docs-only change, never merged -->
