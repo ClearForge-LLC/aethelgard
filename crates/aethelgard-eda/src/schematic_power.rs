@@ -5,27 +5,37 @@
 //!
 //! What each pin is tied to, and why (ERC's pin types as KiCad 10.0.7's
 //! symbols give them):
-//! - **A buck** (LMR33630, SNVSAN3F p. 19, Figure 9-1): VIN and EN on the
-//!   input, PG open (an open-collector output nothing reads), FB on its own net
+//! - **A buck** (LMR33630, SNVSAN3F p. 19, Figure 9-1): VIN on the input,
+//!   EN and PG as their `controls` declare them, FB on its own net
 //!   between the divider's resistors, VCC (`power_out`) on its own net with
 //!   CVCC, BOOT on its own net with CBOOT to SW, SW on its own net with the
 //!   inductor, whose other end is the output domain. K5 holds by
 //!   construction: RFBT's pin 1 is on the domain and RFBB's pin 2 on `GND`.
-//! - **An LDO** (TLV755, SBVS320D p. 15): IN and EN on the input, OUT
+//! - **An LDO** (TLV755, SBVS320D p. 15): IN on the input, EN as declared, OUT
 //!   (`power_out`) on the output domain, which therefore carries no
 //!   `PWR_FLAG` (`write_sheet`).
 //! - **A translator** (TXU0304, SCES935A p. 3): VCCA on side A, VCCB on side
-//!   B, OE on VCCA (always enabled), the three A-to-B channels in table order
+//!   B, OE as declared, the three A-to-B channels in table order
 //!   carrying SCK, MOSI and CS (so the pull-up sits on A3's net, ruled D9),
 //!   the B-to-A channel carrying MISO.
 //! - **The battery** is the rail [`BATTERY_NET`]; the power-in connector's
 //!   positive pad (`2`, the footprint's `+` silkscreen) is on it, the other on
 //!   `GND`.
+//!
+//! **Control pins** (`AET-WO-1315` §1.4) are drawn as each `controls` entry
+//! declares, never by a rule of the emitter's own: a strap `input` on the
+//! regulator's input rail, `vcca` and `vccb` on the translator's A and B
+//! rails, `open` as a no-connect; a wire as a label on its declared net, only
+//! when a connector pin or test point the specification declares ends that
+//! net. A control pin of the row with no entry, an entry for a pin the row
+//! does not list, a strap the row does not allow or the part has no rail for,
+//! a wire to a rail or to a net nothing else ends, are each refused by name
+//! (`PowerNotDrawable`, `INV-06`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use aethelgard_ir::power::{Power, Resistor};
-use aethelgard_ir::power_parts::{self, Direction, Kind, Role, Row};
+use aethelgard_ir::power::{Control, Power, Resistor};
+use aethelgard_ir::power_parts::{self, ControlRule, Direction, Kind, Role, Row, Strap};
 
 use aethelgard_ir::{SolvedTopology, SpiDevice};
 
@@ -272,7 +282,8 @@ fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> 
 /// Draws the whole tree. `behind` is [`behind`]'s map; the devices
 /// themselves are drawn with the other SPI devices. `mcu` is the MCU's
 /// reference, whose solved sense pins (`SolvedTopology.power.sense`, by
-/// package position) are connected here.
+/// package position) are connected here. `ended` is every net a declared
+/// connector pin or test point ends, which a control wire may join.
 pub(crate) fn draw(
     b: &mut Builder<'_>,
     p: &Power,
@@ -280,12 +291,13 @@ pub(crate) fn draw(
     behind: &BTreeMap<String, Behind>,
     mcu: &str,
     solved: &SolvedTopology,
+    ended: &BTreeSet<String>,
 ) -> Result<(), EmitError> {
     for r in &p.regulators {
-        regulator(b, r)?;
+        regulator(b, r, ended)?;
     }
     for c in &p.crossings {
-        crossing(b, c, spi, behind)?;
+        crossing(b, c, spi, behind, ended)?;
     }
     for s in &p.sense {
         let pin = solved
@@ -338,14 +350,137 @@ pub(crate) fn draw(
     Ok(())
 }
 
-fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Result<(), EmitError> {
+/// Each control pin of `r`'s row, by its role, on what `declared` says
+/// (`AET-WO-1315` §1.4). `strap` is the rail each strap names on this part,
+/// `None` where the part has none.
+fn controls(
+    b: &mut Builder<'_>,
+    reference: &str,
+    r: &Row,
+    declared: &[Control],
+    ended: &BTreeSet<String>,
+    strap: impl Fn(Strap) -> Option<Conn>,
+) -> Result<Vec<(String, Conn)>, EmitError> {
+    let rules: &[ControlRule] = match &r.kind {
+        Kind::Buck(k) => &k.controls,
+        Kind::Ldo(k) => &k.controls,
+        Kind::Translator(k) => &k.controls,
+        _ => {
+            return Err(refuse(
+                reference,
+                format!("`{}` has no control pins", r.part),
+            ));
+        }
+    };
+    for (i, c) in declared.iter().enumerate() {
+        if declared[..i].iter().any(|d| d.pin == c.pin) || !rules.iter().any(|x| x.pin == c.pin) {
+            return Err(refuse(
+                reference,
+                format!(
+                    "`controls` names `{}` twice, or a pin `{}`'s row lists as no control pin",
+                    c.pin, r.part
+                ),
+            ));
+        }
+    }
+    let spec = b.spec;
+    let rail = |net: &str| {
+        [aethelgard_ir::GND, BATTERY_NET]
+            .into_iter()
+            .chain(spec.voltage_domains.iter().map(|d| d.id.as_str()))
+            .any(|x| x.eq_ignore_ascii_case(net))
+    };
+    let mut out = Vec::new();
+    for rule in rules {
+        let pin = &rule.pin;
+        let Some(c) = declared.iter().find(|c| &c.pin == pin) else {
+            return Err(refuse(
+                reference,
+                format!(
+                    "{pin} is declared neither strapped nor wired, and the emitter ties no control pin by a rule of its own"
+                ),
+            ));
+        };
+        let conn = match (&c.strap, &c.wire) {
+            (Some(s), None) if rule.straps.contains(s) => strap(*s).ok_or_else(|| {
+                refuse(
+                    reference,
+                    format!(
+                        "{pin} is strapped `{}`, a rail this part has none of",
+                        s.name()
+                    ),
+                )
+            })?,
+            (Some(s), None) => {
+                return Err(refuse(
+                    reference,
+                    format!(
+                        "{pin} is strapped `{}`, which its row does not allow",
+                        s.name()
+                    ),
+                ));
+            }
+            (None, Some(w)) if !rule.wirable => {
+                return Err(refuse(
+                    reference,
+                    format!("{pin} is wired to `{}`, and its row allows no wire", w.net),
+                ));
+            }
+            (None, Some(w)) if rail(&w.net) => {
+                return Err(refuse(
+                    reference,
+                    format!(
+                        "{pin} is wired to `{}`, a rail: a tie to a rail is a strap",
+                        w.net
+                    ),
+                ));
+            }
+            (None, Some(w)) if !ended.contains(&w.net) => {
+                return Err(refuse(
+                    reference,
+                    format!(
+                        "{pin} is wired to `{}`, which no connector pin or test point the specification declares ends: drawn, it would be a floating pin with a name",
+                        w.net
+                    ),
+                ));
+            }
+            (None, Some(w)) => Conn::Net(w.net.clone()),
+            _ => {
+                return Err(refuse(
+                    reference,
+                    format!("{pin} is declared both strapped and wired, or neither"),
+                ));
+            }
+        };
+        out.push((pin.clone(), conn));
+    }
+    Ok(out)
+}
+
+fn regulator(
+    b: &mut Builder<'_>,
+    reg: &aethelgard_ir::power::Regulator,
+    ended: &BTreeSet<String>,
+) -> Result<(), EmitError> {
     let r = row(&reg.reference, &reg.part)?;
     let u = &reg.reference;
     let input = supply(b, &reg.input);
     let output = b.rail(&reg.output);
     let g = b.ground();
     let of = |role: Role| reg.external.iter().filter(move |e| e.role == role);
+    let not_regulator = || refuse(u, format!("`{}` is not a regulator", reg.part));
+    let (Kind::Buck(_) | Kind::Ldo(_)) = &r.kind else {
+        return Err(not_regulator());
+    };
     let mut conns = BTreeMap::new();
+    let tied = controls(b, u, r, &reg.controls, ended, |s| match s {
+        Strap::Input => Some(input.clone()),
+        Strap::Open => Some(Conn::NoConnect),
+        Strap::Vcca | Strap::Vccb => None,
+    })?;
+    for (role, conn) in tied {
+        conns.insert(pin(u, r, &role)?, conn);
+    }
     match &r.kind {
         Kind::Buck(_) => {
             let fb = b.own_net(format!("{u}_FB"))?;
@@ -356,8 +491,6 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 ("PGND", g.clone()),
                 ("EP", g.clone()),
                 ("VIN", input.clone()),
-                ("EN", input.clone()),
-                ("PG", Conn::NoConnect),
                 ("FB", Conn::Net(fb.clone())),
                 ("VCC", Conn::Net(vcc.clone())),
                 ("BOOT", Conn::Net(boot.clone())),
@@ -435,7 +568,6 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
         Kind::Ldo(_) => {
             for (role, conn) in [
                 ("IN", input.clone()),
-                ("EN", input.clone()),
                 ("GND", g.clone()),
                 ("NC", Conn::NoConnect),
                 ("OUT", output.clone()),
@@ -453,7 +585,7 @@ fn regulator(b: &mut Builder<'_>, reg: &aethelgard_ir::power::Regulator) -> Resu
                 anchor(b, u, &[("1", &outp)], NEAR_NM, LDO_RULE);
             }
         }
-        _ => return Err(refuse(u, format!("`{}` is not a regulator", reg.part))),
+        _ => return Err(not_regulator()),
     }
     Ok(())
 }
@@ -463,6 +595,7 @@ fn crossing(
     c: &aethelgard_ir::power::Crossing,
     spi: &[SpiDevice],
     behind: &BTreeMap<String, Behind>,
+    ended: &BTreeSet<String>,
 ) -> Result<(), EmitError> {
     let spec = b.spec;
     let r = row(&c.reference, &c.part)?;
@@ -485,10 +618,18 @@ fn crossing(
     for (role, conn) in [
         ("VCCA", a.clone()),
         ("VCCB", bside.clone()),
-        ("OE", a.clone()),
         ("GND", g.clone()),
     ] {
         conns.insert(pin(&c.reference, r, role)?, conn);
+    }
+    let tied = controls(b, &c.reference, r, &c.controls, ended, |s| match s {
+        Strap::Vcca => Some(a.clone()),
+        Strap::Vccb => Some(bside.clone()),
+        Strap::Open => Some(Conn::NoConnect),
+        Strap::Input => None,
+    })?;
+    for (role, conn) in tied {
+        conns.insert(pin(&c.reference, r, &role)?, conn);
     }
     let a_net = |line: Line| match line {
         Line::Sck => bus.sck.net.clone(),

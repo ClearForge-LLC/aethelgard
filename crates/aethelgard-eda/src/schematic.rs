@@ -1516,6 +1516,14 @@ pub(crate) fn design(
         part.seat = Some(seat);
     }
     if let Some(p) = &spec.power {
+        // Every net a declared connector pin or test point ends: the nets a
+        // control wire may be drawn to (`AET-WO-1315` §1.4).
+        let ended = spec
+            .declared_connectors()
+            .iter()
+            .flat_map(|c| c.pins.iter().filter_map(|p| p.net.clone()))
+            .chain(spec.declared_test_points().iter().map(|t| t.net.clone()))
+            .collect();
         power::draw(
             &mut b,
             p,
@@ -1523,6 +1531,7 @@ pub(crate) fn design(
             &behind,
             &mcu_ref,
             solved,
+            &ended,
         )?;
     }
     connectors(&mut b)?;
