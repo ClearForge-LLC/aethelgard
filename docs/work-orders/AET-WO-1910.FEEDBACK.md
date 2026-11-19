@@ -1,6 +1,6 @@
 # AET-WO-1910 — FEEDBACK
 
-**Status: built to the ruling on PR #233 (comment 6999515740).** {{STATUS}}
+**Status: built to the ruling on PR #233 (comment 6999515740).** **READY.** Three counted CI runs green on the final plan (1,831 s per shard): slowest shard 37.9, 38.0 and 35.8 min; `gates` 13.7, 17.1 and 17.5 min; suite mean 12,896 s, −18.8 % on the census mean; tier 2 190/190 in each.
 
 **Branch:** `wo/aet-1910-ci-reduction` · **Base:** `main` `2fc347fa` (`AET-WO-1605c` merged in) · **Builder:** Claude (Opus 5.5, orchestrating).
 - The census rows were written by five Sonnet subagents and the libm call-site map by one, each checked against the source and the measurements.
@@ -152,7 +152,13 @@ Reduction pass (diff): −14 net · 3 duplicates removed · 1 dead path removed 
 |---|---|---|---|---|---|---|---|
 | 1 (44477143464) | `4b619fea` | 36.6, 28.8, 27.7, 37.9, 27.7, 30.5, 34.3, 37.4 | 37.9 | 10.2 | 13,490 | 13.7 | 190 (floor 190) |
 | 2 (44542565050) | `bfcc8d55` | 34.3, 27.8, 28.1, 38.0, 27.9, 37.0, 26.8, 26.9 | 38.0 | 11.2 | 12,784 | 17.1 | 190 (floor 190) |
-{{COUNTED}}
+| 3 (44549868831) | `58be9b8d` | 31.9, 27.4, 28.2, 32.1, 33.6, 24.6, 35.8, 30.7 | 35.8 | 11.2 | 12,413 | 17.5 | 190 (floor 190) |
+
+- **Against the census runs:**
+  - suite mean 12,896 s against 15,879 (−18.8 %);
+  - shards 24.6–38.0 min against 30.0–49.3;
+  - `gates` 13.7–17.5 min against 38.2–65.9 (its test step varied 646–829 s on the hosted runner with the same tests).
+- **Acceptance:** plan 1,831 s ≤ 2,137; no plan over 2,400 s and no shard over 50 min in any run; every job green in all three; tier 2 190/190 each time; `bench-package` passed each time (D8).
 
 ## §7.1 rows, for the architect
 
