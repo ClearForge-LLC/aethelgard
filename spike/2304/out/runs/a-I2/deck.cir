@@ -1,0 +1,18 @@
+* aet2304 Sentinel-03 battery chain, weak, I_RUN 2 A
+vpack src 0 dc 9
+rpack src bat 1
+chot hot 0 0.000047 ic=9
+resr bat hot 0.25
+ccin bat 0 0.00002044 ic=9
+vctl ctl 0 dc 0 external
+ven en 0 dc 0 external
+rlag ctl lag 1k
+clag lag 0 0.000001 ic=0
+besc bat 0 i = v(lag)
+bbuck bat 0 i = v(en) * 14.158518518518518 / max(v(bat), 1.0)
+breg 0 rail i = v(en) * (min(3.3, max(0, (0.9609*(v(bat)-0.748*0.160) - 0.039100000000000024*0.748*0.110 - 0.748*0.016))) - v(rail)) / 0.05
+cdec rail 0 0.00009881 ic=3.3
+bload rail 0 i = 0.748 * min(1, max(0, v(rail)) / 0.5)
+.options reltol=1e-3 abstol=1e-12 vntol=1e-6 method=trap
+.tran 10n 1000000000n 0 1000n uic
+.end

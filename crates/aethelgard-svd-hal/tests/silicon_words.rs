@@ -18,6 +18,36 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
+/// The committed specification in `bytes`, or `None` for JSON that is not one
+/// (an object without both `mcu` and `board`): it must parse and carry the
+/// current schema version, or this fails naming it, never skipping it
+/// (`AET-WO-4400g` F5, `INV-06`). The CLI's tests hold the same rule in
+/// `tests/common/spec.rs`; this crate cannot reach that file.
+fn committed(path: &Path, bytes: &[u8]) -> Option<Specification> {
+    let v: serde_json::Value = serde_json::from_slice(bytes).unwrap_or_else(|e| {
+        panic!(
+            "{}: committed JSON that does not parse: {e}",
+            path.display()
+        )
+    });
+    if v.get("mcu").is_none() || v.get("board").is_none() {
+        return None;
+    }
+    let spec: Specification = serde_json::from_slice(bytes).unwrap_or_else(|e| {
+        panic!(
+            "{}: a specification that does not parse: {e}",
+            path.display()
+        )
+    });
+    assert_eq!(
+        spec.schema_version,
+        aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
+        "{}: a committed specification at another schema version",
+        path.display()
+    );
+    Some(spec)
+}
+
 /// Every specification under `examples/` and the CLI's fixtures that solves.
 fn solved() -> Vec<(String, SolvedTopology)> {
     let table = pin_table("STM32H753ZITx").unwrap();
@@ -34,7 +64,7 @@ fn solved() -> Vec<(String, SolvedTopology)> {
     let mut out = Vec::new();
     for p in paths {
         let bytes = std::fs::read(&p).unwrap();
-        let Ok(spec) = serde_json::from_slice::<Specification>(&bytes) else {
+        let Some(spec) = committed(&p, &bytes) else {
             continue;
         };
         let sha: String = Sha256::digest(&bytes)

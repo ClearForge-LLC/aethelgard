@@ -79,7 +79,7 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 13. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 14. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
@@ -91,9 +91,13 @@ the motor records (`AET-WO-4300a`, kinds 24 to 26), each device step's own
 records (`AET-WO-4210`, `AET-WO-4220`), the serial records (`AET-WO-4300b`,
 kinds 27 to 29), kind 10's brown-out word and flash accesses (`AET-WO-4230`),
 and the anchored windows (`AET-WO-2302`: kind 26's anchor, the edges outside
-its window and its timer's `CEN` rises, kind 29's injection instant, kind 30);
-an older trace is refused by name (`event::TRACE_VERSION`), never read under
-version 13's rules. The mirror record
+its window and its timer's `CEN` rises, kind 29's injection instant, kind 30).
+Version 14 (`AET-WO-4400g`) changed what kind 26's period and high time mean:
+the ns Renode realizes at kind 25's `kernel_hz`, the frequency the twin now
+builds every timer at (`record::realized_ns`, the one definition the twin
+also calls), no longer 4 ns cycles of a fixed 250 MHz; the golden trace's
+bytes changed in the version byte only. An older trace is refused by name
+(`event::TRACE_VERSION`), never read under version 14's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -212,7 +216,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 23 | a solved SPI controller (kind 15's analogue) | `peripheral`, `[[reference, address, select]…]` in the specification's order |
 | 24 | a solved motor output (`AET-WO-4300a`) | `label`, `timer`, `channel`, `pin`, `alternate_function`, `protocol`, `psc`, `arr`, `ccr`, `pwm?` (`[rate_hz, min_us, max_us]`) |
 | 25 | a motor output's static check for silicon | `label`, `kernel_hz`, `period_ps`, `high_ps`, `nominal_period_ps`, `nominal_high_ps`, `holds` |
-| 26 | a motor output's twin witness | `label`, `observer`, `period_ns`, `high_ns`, `grain_ns`, `quantum_ns`, `status`, `rises`, `falls`, `first_ns?`, `last_ns?`, `end_ns`, `span_ns?`, `off_grid`, `batched`; since trace 13 (`AET-WO-2302`) `anchor_ns?` (its timer's first `CEN` rise in the boot; the window ends `DSHOT_WINDOW_NS` after it for DShot, at the boot's end for PWM), `edges_before`, `edges_after` and `cen_rises` (its timer's `CEN` rises: 0 exactly when no anchor; equal across a timer's outputs) |
+| 26 | a motor output's twin witness | `label`, `observer`, `period_ns`, `high_ns` (since trace 14, `AET-WO-4400g`, each ⌈`ARR`·(`PSC`+1) or `CCR`·(`PSC`+1) × 10⁹ / kind 25's `kernel_hz`⌉, which replay checks), `grain_ns`, `quantum_ns`, `status`, `rises`, `falls`, `first_ns?`, `last_ns?`, `end_ns`, `span_ns?`, `off_grid`, `batched`; since trace 13 (`AET-WO-2302`) `anchor_ns?` (its timer's first `CEN` rise in the boot; the window ends `DSHOT_WINDOW_NS` after it for DShot, at the boot's end for PWM), `edges_before`, `edges_after` and `cen_rises` (its timer's `CEN` rises: 0 exactly when no anchor; equal across a timer's outputs) |
 | 27 | a solved serial port (`AET-WO-4300b`) | `label`, `index`, `peripheral`, `tx`, `tx_af`, `rx`, `rx_af`, `role`, `framing` `[baud, data_bits, parity, stop_bits, inverted]`, `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm` |
 | 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
 | 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |

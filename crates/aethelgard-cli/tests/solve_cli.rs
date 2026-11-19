@@ -95,8 +95,14 @@ use sha2::{Digest, Sha256};
 /// version 9 put back, the reference's output hashes to `e7b7564b…5296`, and
 /// with the stress fixture's old sha256 (`d76ac8a1…c51c`) and version 9 put
 /// back, its to `237ae5f7…1a36`, the old digests, exactly.
-const REFERENCE_DIGEST: &str = "783af0f17ab2a5b2b977b08efbc56623a410a354fdb59a6de9da0a0859c8eed5";
-const STRESS_DIGEST: &str = "4e3de62b98e34e795a6f769ac3a6bfcf721729d04530a81a87c9649d41867174";
+/// Moved by `AET-WO-4400g` (specification 17, solved 11), which moved only
+/// the specification's sha256 and `schema_version` and added a trailing
+/// `"foreign_clock":null`: with `21e1b9d5…d511` and version 10 put back and
+/// that key removed, the reference's output hashes to `783af0f1…eed5`, and
+/// with the stress fixture's old sha256 (`942bd804…`) likewise, its to
+/// `4e3de62b…7174`, the old digests, exactly.
+const REFERENCE_DIGEST: &str = "6bbb87ea47f0a5573463d5b1e47734706e483a91c8193366a3fda15ae8f0fe03";
+const STRESS_DIGEST: &str = "22bb9cb6e81be86dd8f1ae940dfb0c4909974dcf7ab8fb1f2a7402ec9cf8e6b8";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

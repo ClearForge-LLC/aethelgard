@@ -1,0 +1,4 @@
+{"trace":"trace-samples","ok":true,"events":300000,"trace_bytes":5096134,"records_folded":0,"state_hash":"c4b39a3e36ffad2f793df4fe9f616b4037a77c6dc5512d141f816116166a6a6a","replay_s":0.047,"hwm_kib_so_far":10644}
+{"trace":"trace-records","ok":true,"events":65536,"trace_bytes":2177237,"records_folded":65536,"state_hash":"3ce8d91c9a2ab2060f4fca5d68c66dd3eedce47c196f768a94217363bc8ffd9d","replay_s":0.037,"hwm_kib_so_far":44524}
+{"trace":"trace-events","ok":true,"events":3,"trace_bytes":157,"records_folded":3,"state_hash":"9e32d5eba5c651cfd2bad8fe8ceb907a72037d6d0cb7c3fffc652b6dcd4b4f6c","replay_s":0.000,"hwm_kib_so_far":44524}
+{"rejudge":"bridge actions from the VDD_3V3 samples alone, against trace-events' ResetRendered records","derived":0,"recorded":0,"equal":true}

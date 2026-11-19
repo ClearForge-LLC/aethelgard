@@ -1,0 +1,64 @@
+{
+ "cases": [
+  {
+   "name": "idle-0.0",
+   "i_esc_a": 0.0,
+   "label": "sweep: no ESC current (the board's own draw only)"
+  },
+  {
+   "name": "idle-0.1",
+   "i_esc_a": 0.1,
+   "label": "sweep: ESC idle, total of four (no maker states one)"
+  },
+  {
+   "name": "idle-0.2",
+   "i_esc_a": 0.2,
+   "label": "sweep: ESC idle, total of four (no maker states one)"
+  },
+  {
+   "name": "idle-0.4",
+   "i_esc_a": 0.4,
+   "label": "sweep: ESC idle, total of four (no maker states one); I1"
+  },
+  {
+   "name": "idle-0.8",
+   "i_esc_a": 0.8,
+   "label": "sweep: ESC idle, total of four (no maker states one)"
+  },
+  {
+   "name": "idle-2.0",
+   "i_esc_a": 2.0,
+   "label": "sweep: ESC idle, total of four (no maker states one); I2"
+  },
+  {
+   "name": "spike-10",
+   "i_esc_a": 10.0,
+   "label": "2303's spike-declared 10 A; T10"
+  },
+  {
+   "name": "sweep-60",
+   "i_esc_a": 60.0,
+   "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)"
+  },
+  {
+   "name": "sweep-100",
+   "i_esc_a": 100.0,
+   "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)"
+  },
+  {
+   "name": "sweep-127",
+   "i_esc_a": 127.0,
+   "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)"
+  },
+  {
+   "name": "rated-160",
+   "i_esc_a": 160.0,
+   "label": "upper bound: 4 x 40 A continuous, Hobbywing XRotor Micro 40A (stated); what an armed firmware could ask it to carry"
+  },
+  {
+   "name": "rated-200",
+   "i_esc_a": 200.0,
+   "label": "upper bound: 4 x 50 A continuous, Holybro Tekko32 F4 BigFET 50A (stated, 4-6S)"
+  }
+ ]
+}

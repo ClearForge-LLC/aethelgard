@@ -520,7 +520,7 @@ const TWIN_DATA: [&str; 1] = ["data/dmamux1-spi-rx.tsv"];
 /// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
 /// no longer a re-export stub. Its files, manifest keys and dependencies are
 /// fixed: the new edge `twin -> svd-hal`, for the register facts, is the
-/// ruled one, beside `twin -> ir`.
+/// ruled one, beside `twin -> ir`, and `twin -> chaos` (`AET-WO-4400g`).
 #[test]
 fn twin_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(TWIN)) {
@@ -554,9 +554,13 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
         names
     };
     // `aethelgard-renode-models`: the models the twin pins (`AET-WO-4220` D6).
+    // `aethelgard-chaos`: the realized-period function replay checks the
+    // twin's periods by, defined once with the trace format (`AET-WO-4400g`
+    // §1.3).
     assert_eq!(
         table("dependencies"),
         [
+            "aethelgard-chaos",
             "aethelgard-ir",
             "aethelgard-renode-models",
             "aethelgard-svd-hal",
