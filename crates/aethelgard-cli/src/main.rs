@@ -2392,6 +2392,7 @@ fn validate(file: Option<&Path>) -> ExitCode {
     match read_spec(file).and_then(|(spec, sha256)| {
         acknowledgements_current(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         outline_holds(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
+        loads_drawn(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         Ok((spec, sha256))
     }) {
         Ok((spec, _)) => emit(
@@ -2432,6 +2433,48 @@ fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
         }
         _ => Ok(()),
     }
+}
+
+/// `AET-WO-1209` D3, as ruled: each `power.loads` reference names a part the
+/// emitter draws for this specification (`aethelgard_eda::schematic::drawn`),
+/// so a resistor it numbers no longer, such as a removed crossing's CS
+/// pull-up, is refused by name. Step 20a held the reference's form; only the
+/// emitter's draw order knows which `R<n>` and `C<n>` exist. A specification
+/// that does not solve, or that the emitter refuses, is left to `solve` and
+/// `emit` to refuse by their names, as `outline_holds` leaves it.
+fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
+    let Some(power) = &spec.power else {
+        return Ok(());
+    };
+    if power.loads.iter().all(|l| l.reference.is_none()) {
+        return Ok(());
+    }
+    let Ok(table) = aethelgard_svd_hal::pin_table(&spec.mcu.part) else {
+        return Ok(());
+    };
+    let Ok(topology) = aethelgard_ir::solve(spec, &table, sha256) else {
+        return Ok(());
+    };
+    let Ok(drawn) = aethelgard_eda::schematic::drawn(spec, &topology, &table) else {
+        return Ok(());
+    };
+    for (i, l) in power.loads.iter().enumerate() {
+        if let Some(r) = &l.reference
+            && !drawn.contains_key(r)
+        {
+            let path = format!("power.loads[{i}].reference");
+            return Err(Refusal::new(
+                "LoadNamesUndrawnPart",
+                Some(r),
+                format!(
+                    "{path} on `{}` names `{r}`, which the emitter does not draw for this specification",
+                    l.domain
+                ),
+            )
+            .at(Some(&path)));
+        }
+    }
+    Ok(())
 }
 
 /// `AET-WO-4230` R1: every `acknowledge_unwitnessed` entry names only
