@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod archive;
+pub mod battery;
 pub mod campaign;
 pub mod cbor;
 pub mod event;

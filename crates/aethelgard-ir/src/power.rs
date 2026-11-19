@@ -3316,15 +3316,25 @@ fn credited(
     })
 }
 
-/// Each regulator's output capacitors (`Role::Cout`), by the domain they
-/// hold, at the capacitance IR's static checks credit them at the domain's
-/// maximum (`AET-WO-2304b` F3): pF, and how each was found. The emitter adds
-/// them to the rail's decoupling (`aethelgard-eda`'s
-/// `decoupling_picofarads`), so the droop's τ and the static screen read one
-/// derivation (`RUL-20`). Empty when no tree is declared.
+/// One regulator output capacitor (`Role::Cout`) as IR's static checks
+/// credit it (`AET-WO-2304b` F3): the domain it holds, pF, and how it was
+/// found.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreditedCapacitor {
+    pub domain: String,
+    pub picofarads: u64,
+    pub how: String,
+}
+
+/// Every regulator's output capacitors, by reference, at the capacitance
+/// IR's static checks credit them at the domain's maximum (`AET-WO-2304b`
+/// F3). The emitter adds each one it draws to its rail's decoupling
+/// (`aethelgard-eda`'s `decoupling_picofarads`), so the droop's τ and the
+/// static screen read one derivation (`RUL-20`). Empty when no tree is
+/// declared.
 pub fn output_capacitance(
     spec: &Specification,
-) -> Result<BTreeMap<String, (u64, Vec<String>)>, IrValidationError> {
+) -> Result<BTreeMap<String, CreditedCapacitor>, IrValidationError> {
     let Some(power) = spec.power.as_ref() else {
         return Ok(BTreeMap::new());
     };
@@ -3338,17 +3348,95 @@ pub fn output_capacitance(
         floors: Vec::new(),
         conditions: BTreeSet::new(),
     };
-    let mut out: BTreeMap<String, (u64, Vec<String>)> = BTreeMap::new();
+    let mut out = BTreeMap::new();
     for r in &power.regulators {
         let working = ctx
             .domain(&r.output)
             .map_or(0, |d| i64::try_from(range(d).1).unwrap_or(i64::MAX));
         for e in r.external.iter().filter(|e| e.role == Role::Cout) {
             let (pf, how) = credited(&ctx, &e.reference, &e.part, working)?;
-            let entry = out.entry(r.output.clone()).or_default();
-            entry.0 = entry.0.saturating_add(u64::try_from(pf).unwrap_or(0));
-            entry.1.push(format!("{}: {how}", e.reference));
+            out.insert(
+                e.reference.clone(),
+                CreditedCapacitor {
+                    domain: r.output.clone(),
+                    picofarads: u64::try_from(pf).unwrap_or(0),
+                    how,
+                },
+            );
         }
     }
     Ok(out)
+}
+
+/// What a voltage domain supplies that a fault on it could reach
+/// (`AET-WO-2304b` §1.7), from the specification alone: each serial port
+/// whose RX net (the line its off-board peer drives) is on a connector that
+/// also carries the domain, with that connector's declared standard; each
+/// SPI and I2C device whose `supply` is the domain; each I2C bus with a
+/// line on such a connector, and whether it has a device; and every other
+/// net on such a connector, with the connector's reference.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RailConsumers {
+    pub serial_rx: BTreeSet<String>,
+    /// The `standard` of each connector a rendered port's RX net is on
+    /// (`None` where it declares none).
+    pub standards: BTreeSet<Option<String>>,
+    pub spi_devices: BTreeSet<String>,
+    pub i2c_devices: BTreeSet<String>,
+    /// Each I2C bus with a line on such a connector: whether any device is
+    /// declared on it.
+    pub i2c_buses: BTreeMap<String, bool>,
+    /// `(connector, net)` for each other net on a connector carrying it.
+    pub other_nets: Vec<(String, String)>,
+}
+
+/// [`RailConsumers`] of `domain`.
+pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
+    let on = |d: &str| d == domain;
+    let mut r = RailConsumers {
+        spi_devices: spec
+            .declared_spi_devices()
+            .iter()
+            .filter(|d| on(&d.supply))
+            .map(|d| d.reference.clone())
+            .collect(),
+        i2c_devices: spec
+            .declared_i2c_devices()
+            .iter()
+            .filter(|d| on(&d.supply))
+            .map(|d| d.reference.clone())
+            .collect(),
+        ..RailConsumers::default()
+    };
+    for c in spec.declared_connectors() {
+        let nets: Vec<&str> = c.pins.iter().filter_map(|p| p.net.as_deref()).collect();
+        if !nets.iter().any(|n| on(n)) {
+            continue;
+        }
+        for net in nets {
+            if on(net) || net == crate::GND {
+                continue;
+            }
+            if let Some(p) = spec
+                .serial_ports
+                .iter()
+                .find(|p| p.rx.net == net || p.tx.net == net)
+            {
+                if p.rx.net == net {
+                    r.serial_rx.insert(p.label.clone());
+                    r.standards.insert(c.standard.clone());
+                }
+            } else if let Some(b) = spec
+                .i2c_buses
+                .iter()
+                .find(|b| b.sda.net == net || b.scl.net == net)
+            {
+                let used = spec.declared_i2c_devices().iter().any(|d| d.bus == b.id);
+                r.i2c_buses.insert(b.id.clone(), used);
+            } else {
+                r.other_nets.push((c.reference.clone(), net.to_owned()));
+            }
+        }
+    }
+    r
 }

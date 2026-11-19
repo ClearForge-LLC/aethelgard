@@ -1,6 +1,7 @@
-//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 20, one per
+//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 31, one per
 //! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`; 16 to
-//! 20, a declared supply droop, since `AET-WO-2301`). Every field is an integer, a byte
+//! 20, a declared supply droop, since `AET-WO-2301`; 31, a declared battery
+//! sag, since `AET-WO-2304b`). Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -10,8 +11,9 @@ use crate::event::{name_ok, text_ok};
 
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
-/// The last campaign kind (30, the judge's stop, since `AET-WO-2302`).
-pub const LAST_KIND: u64 = 30;
+/// The last campaign kind (31, the battery sag's declaration, since
+/// `AET-WO-2304b`).
+pub const LAST_KIND: u64 = 31;
 
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
@@ -209,6 +211,46 @@ pub enum Override {
     /// the port after it in the sequential chain goes in after the port
     /// before it instead.
     SerialRxOpen { port: String },
+    /// `[6, series_milliohms, start_ns]`: the battery's path R steps from the
+    /// specification's healthy R to this at `start_ns`, and holds to the
+    /// run's end (`AET-WO-2304b` §1.6). Scenario version 4.
+    BatterySag(BatterySag),
+    /// `[7, domain]`: the named rail held below its band for the whole run,
+    /// rendered as each declared consumer's absence through the
+    /// `serial_rx_open` and `spi_device_absent` overrides the scenario lists
+    /// beside it (`AET-WO-2304b` §1.7, K1). A modelling assumption, named in
+    /// every verdict that uses it. Scenario version 4.
+    RailOutOfBand { domain: String },
+}
+
+/// A declared battery sag (`AET-WO-2304b` §1.6): the whole path R under the
+/// fault, mΩ, and when the path steps to it from the healthy R.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BatterySag {
+    pub series_milliohms: u32,
+    pub start_ns: u64,
+}
+
+/// One battery-fed regulator as kind 31 carries it: a constant-power sink
+/// and its two floors (`AET-WO-2304b` §1.5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SagSink {
+    /// The regulator's reference.
+    pub name: String,
+    pub input_milliwatts: u64,
+    /// Its stated minimum operating input, mV (F5).
+    pub shutdown_millivolts: u64,
+    /// The input from which its regulation band is stated, mV (D-B9).
+    pub regulation_millivolts: u64,
+}
+
+impl SagSink {
+    /// The higher of its two floors, µV.
+    pub fn floor_microvolts(&self) -> u64 {
+        self.shutdown_millivolts
+            .max(self.regulation_millivolts)
+            .saturating_mul(1000)
+    }
 }
 
 /// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
@@ -664,6 +706,23 @@ pub enum Record {
         read_back: Vec<Reading>,
         cr1_after: Option<u32>,
     },
+    /// Kind 31: the battery sag's declaration (`AET-WO-2304b` §1.9), every
+    /// value the chain was judged from, so replay re-judges it without IR:
+    /// the sag; the pack's open voltage, µV, and the healthy path R, mΩ;
+    /// each battery-fed sink in the specification's order; the capacitance
+    /// on `VBAT` the deck holds, pF; the static operating point at the
+    /// fault R, µV; the deck's solved minimum, µV; and the sink whose floor
+    /// binds. Archived before the boot, after the bus faults.
+    BatterySagDeclared {
+        sag: BatterySag,
+        v_open_microvolts: u64,
+        healthy_milliohms: u32,
+        sinks: Vec<SagSink>,
+        capacitance_picofarads: u64,
+        static_microvolts: u64,
+        solved_minimum_microvolts: u64,
+        binding: String,
+    },
 }
 
 /// The most registers kind 30 reads back: a timer's solved registers
@@ -929,6 +988,12 @@ fn override_value(o: &Override) -> Value {
         }
         Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
         Override::SerialRxOpen { port } => vec![u(5), t(port)],
+        Override::BatterySag(b) => vec![
+            u(6),
+            u(b.series_milliohms.into()),
+            u(b.start_ns),
+        ],
+        Override::RailOutOfBand { domain } => vec![u(7), t(domain)],
     })
 }
 
@@ -987,6 +1052,11 @@ fn override_from(v: &Value) -> Option<Override> {
             reference: f.text()?,
         },
         5 => Override::SerialRxOpen { port: f.text()? },
+        6 => Override::BatterySag(BatterySag {
+            series_milliohms: f.u32()?,
+            start_ns: f.uint()?,
+        }),
+        7 => Override::RailOutOfBand { domain: f.text()? },
         _ => return None,
     };
     f.end()?;
@@ -1033,6 +1103,7 @@ impl Record {
                 Self::SerialFramingCheck { .. } => 23,
                 Self::SerialWitness { .. } => 24,
                 Self::JudgeStop { .. } => 25,
+                Self::BatterySagDeclared { .. } => 26,
             }
     }
 
@@ -1065,6 +1136,7 @@ impl Record {
                 | Self::LineStuckHigh { .. }
                 | Self::BusFault { .. }
                 | Self::RailDeclared { .. }
+                | Self::BatterySagDeclared { .. }
                 | Self::ExpectedCounts { .. }
         )
     }
@@ -1549,6 +1621,38 @@ impl Record {
                 Value::Array(read_back.iter().map(reading).collect()),
                 opt(cr1_after.map(u64::from)),
             ],
+            Self::BatterySagDeclared {
+                sag,
+                v_open_microvolts,
+                healthy_milliohms,
+                sinks,
+                capacitance_picofarads,
+                static_microvolts,
+                solved_minimum_microvolts,
+                binding,
+            } => vec![
+                u(sag.series_milliohms.into()),
+                u(sag.start_ns),
+                u(*v_open_microvolts),
+                u((*healthy_milliohms).into()),
+                Value::Array(
+                    sinks
+                        .iter()
+                        .map(|k| {
+                            Value::Array(vec![
+                                t(&k.name),
+                                u(k.input_milliwatts),
+                                u(k.shutdown_millivolts),
+                                u(k.regulation_millivolts),
+                            ])
+                        })
+                        .collect(),
+                ),
+                u(*capacitance_picofarads),
+                u(*static_microvolts),
+                u(*solved_minimum_microvolts),
+                t(binding),
+            ],
         }
     }
 
@@ -1902,6 +2006,38 @@ impl Record {
                 },
                 cr1_after: f.opt_u32()?,
             },
+            31 => {
+                let sag = BatterySag {
+                    series_milliohms: f.u32()?,
+                    start_ns: f.uint()?,
+                };
+                let v_open_microvolts = f.uint()?;
+                let healthy_milliohms = f.u32()?;
+                let mut sinks = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(sink) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(sink.iter());
+                    sinks.push(SagSink {
+                        name: g.text()?,
+                        input_milliwatts: g.uint()?,
+                        shutdown_millivolts: g.uint()?,
+                        regulation_millivolts: g.uint()?,
+                    });
+                    g.end()?;
+                }
+                Self::BatterySagDeclared {
+                    sag,
+                    v_open_microvolts,
+                    healthy_milliohms,
+                    sinks,
+                    capacitance_picofarads: f.uint()?,
+                    static_microvolts: f.uint()?,
+                    solved_minimum_microvolts: f.uint()?,
+                    binding: f.text()?,
+                }
+            }
             _ => return None,
         };
         f.end()?;
@@ -1939,6 +2075,8 @@ impl Record {
                     Override::Droop(d) => name_ok(&d.domain),
                     Override::SpiDeviceAbsent { reference } => name_ok(reference),
                     Override::SerialRxOpen { port } => name_ok(port),
+                    Override::BatterySag(_) => true,
+                    Override::RailOutOfBand { domain } => name_ok(domain),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");
@@ -2447,6 +2585,24 @@ impl Record {
                     Err("a judge's stop is not after its anchor")
                 } else if read_back.is_empty() || read_back.len() > MAX_STOP_REGISTERS {
                     Err("a judge's stop reads back no register, or too many")
+                } else {
+                    Ok(())
+                }
+            }
+            // The shape only; the chain is re-judged against the scenario by
+            // `campaign::check_battery_sag_records`.
+            Self::BatterySagDeclared { sinks, binding, .. } => {
+                let mut seen: Vec<&str> = sinks.iter().map(|k| k.name.as_str()).collect();
+                seen.sort_unstable();
+                seen.dedup();
+                if sinks.is_empty()
+                    || sinks.len() > crate::battery::MAX_SINKS
+                    || seen.len() != sinks.len()
+                    || !sinks.iter().all(|k| name_ok(&k.name))
+                {
+                    Err("a battery sag's sinks are not 1 to 8 distinct names")
+                } else if !sinks.iter().any(|k| k.name == *binding) {
+                    Err("a battery sag's binding floor names no sink")
                 } else {
                     Ok(())
                 }

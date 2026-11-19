@@ -89,6 +89,9 @@ pub struct Bound<'a> {
     pub lifecycle: &'a [String],
     /// The support gate's verdict, as lines for the notes (`AET-WO-4300g`).
     pub support: &'a [String],
+    /// What the campaign's verdicts do not claim, each once (`AET-WO-2304b`
+    /// §1.7, §1.11): the notes state them verbatim.
+    pub campaign: &'a [String],
 }
 
 /// What the export reports for the verdict's `fab` key: the tool it ran and
@@ -273,6 +276,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
             conditions: b.conditions,
             lifecycle: b.lifecycle,
             support: b.support,
+            campaign: b.campaign,
         },
     );
     files.insert(NOTES.to_owned(), notes.into_bytes());
@@ -320,6 +324,7 @@ struct Stated<'a> {
     conditions: &'a [String],
     lifecycle: &'a [String],
     support: &'a [String],
+    campaign: &'a [String],
 }
 
 /// `FAB-NOTES.md` for the package of `spec`'s board, whose drill file holds
@@ -350,8 +355,25 @@ fn notes(
         support: stated.support,
         acknowledged: &spec.acknowledge_unwitnessed,
     });
+    text.push_str(&campaign_section(stated.campaign));
     text.push_str(&brown_out_step(spec.mcu.bor_level));
     text.push_str(&aethelgard_eda::fab::jlcpcb_notes(project));
+    text
+}
+
+/// The campaign's conditions (`AET-WO-2304b` §1.7, §1.11), each as its
+/// verdict states it; none for a campaign that names none, so every other
+/// board's notes keep their bytes.
+fn campaign_section(conditions: &[String]) -> String {
+    if conditions.is_empty() {
+        return String::new();
+    }
+    let mut text = String::from(
+        "\n## What the fault campaign does not claim\n\nEach as the campaign's verdicts state it:\n\n",
+    );
+    for c in conditions {
+        text.push_str(&format!("- {c}\n"));
+    }
     text
 }
 
@@ -1060,6 +1082,7 @@ mod tests {
                             conditions: &stated,
                             lifecycle: &[],
                             support: &[],
+                            campaign: &[],
                         },
                     ),
                     golden,
