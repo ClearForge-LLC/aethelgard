@@ -91,18 +91,20 @@ fn witness_of(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
     Record::MotorWitness {
         label: label.into(),
         observer: observer.into(),
-        period_ns: 639_744,
-        high_ns: u64::from(ccr) * 256,
+        // At the 64 MHz kernel clock (`AET-WO-4400g`): a 1 µs tick, 2,499
+        // ticks a period, 40 rises in 100 ms.
+        period_ns: 2_499_000,
+        high_ns: u64::from(ccr) * 1_000,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: status.into(),
-        rises: if edges { 156 } else { 0 },
-        falls: if edges { 155 } else { 0 },
-        first_ns: edges.then_some(639_750),
-        last_ns: edges.then_some(99_800_070),
+        rises: if edges { 40 } else { 0 },
+        falls: if edges { 39 } else { 0 },
+        first_ns: edges.then_some(2_499_006),
+        last_ns: edges.then_some(2_499_006 + 39 * 2_499_000),
         end_ns: 100_000_000,
         span_ns: edges.then_some(if status == "mismatch" { 400 } else { 8 }),
-        off_grid: if edges { 311 } else { 0 },
+        off_grid: if edges { 79 } else { 0 },
         batched: 0,
         // Trace 13 (`AET-WO-2302`): every output of the timer names its
         // anchor, one period before the first rise.
@@ -614,15 +616,22 @@ const TIM2_SOLVED: [(&str, u32, u32, u32); 10] = [
 /// `M2`'s anchor in [`dshot`]: its window, 2 ms from it, inside the run.
 const ANCHOR: u64 = 30_670;
 
+/// A DShot600 bit at the 64 MHz kernel clock as Renode realizes it, 106
+/// ticks in 1,657 ns (`AET-WO-4400g`), and the first rise's lead over its
+/// anchor.
+const DSHOT_PERIOD: u64 = 1_657;
+const DSHOT_LEAD: u64 = 1_700;
+
 /// `M2`'s witness, DShot600 on the model's sequence from `anchor`: its first
-/// rise one period after it, a rise every period to its window's end.
+/// rise a period and a little after it, a rise every period to its window's
+/// end, 1,206 of them, as `motors-dshot600` measured.
 fn dshot_witness(anchor: Option<u64>) -> Record {
-    let rises = 4716;
+    let rises = 1206;
     Record::MotorWitness {
         label: "M2".into(),
         observer: "gpioPortA.pa0obs".into(),
-        period_ns: 424,
-        high_ns: 160,
+        period_ns: DSHOT_PERIOD,
+        high_ns: 625,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: if anchor.is_some() {
@@ -633,8 +642,8 @@ fn dshot_witness(anchor: Option<u64>) -> Record {
         .into(),
         rises,
         falls: rises,
-        first_ns: anchor.map(|a| a + 490),
-        last_ns: anchor.map(|a| a + 490 + (rises - 1) * 424),
+        first_ns: anchor.map(|a| a + DSHOT_LEAD),
+        last_ns: anchor.map(|a| a + DSHOT_LEAD + (rises - 1) * DSHOT_PERIOD),
         end_ns: anchor.map_or(100_000_000, |a| a + 2_000_000),
         span_ns: anchor.map(|_| 8),
         off_grid: 2 * rises - 1,
@@ -793,7 +802,7 @@ fn late(rises: u64) -> impl Fn(&mut Vec<Record>) {
             } = w
             {
                 (*status, *n, *falls, *off_grid) = ("stopped".into(), rises, rises, 2 * rises - 1);
-                *last_ns = Some(late + 490 + (rises - 1) * 424);
+                *last_ns = Some(late + DSHOT_LEAD + (rises - 1) * DSHOT_PERIOD);
             }
         });
     }
@@ -1054,7 +1063,7 @@ fn h1_a_window_past_the_run_is_the_harness_s_with_its_cut_witness() {
         (MOTOR_MISMATCH_FINDING, 1),
         (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
     ];
-    let r = dshot(&findings, &late(2187));
+    let r = dshot(&findings, &late(559));
     let a = attributed(&r);
     assert_eq!(
         (a.domain, a.rule),
@@ -1071,7 +1080,7 @@ fn h1_a_window_past_the_run_is_the_harness_s_with_its_cut_witness() {
     // Off the model's sequence to the run's end (`mismatch`): its edges are
     // the output's own, not cut by the bound.
     let r = dshot(&findings, &|r| {
-        late(2187)(r);
+        late(559)(r);
         set_dshot_witness(r, |w| {
             if let Record::MotorWitness {
                 status, span_ns, ..
@@ -1148,7 +1157,7 @@ fn a_harness_finding_never_masks_a_fault_nor_joins_its_evidence() {
             (MOTOR_MISMATCH_FINDING, 1),
             (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
         ],
-        &late(2187),
+        &late(559),
     );
     fault_sensors(&mut r);
     let a = attributed(&r);
@@ -1382,7 +1391,7 @@ fn h1_h2_select_each_dshot_timer_by_its_own_window_and_stop() {
             (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
         ],
         &|r| {
-            late(2187)(r);
+            late(559)(r);
             with_tim3(r, true);
         },
     );
@@ -1451,8 +1460,8 @@ const WITNESS_REFUSED: &str =
     "a motor witness's status is not what its counts and its output's timing give";
 
 /// ADV-M1: replay refuses a `stopped` witness that is not continuous, as
-/// the judge's `witness_motor` gives none: 10 rises over 0.93 ms at a 424 ns
-/// period (not spaced), or a rise every period with five falls missing (not
+/// the judge's `witness_motor` gives none: 10 rises over 0.92 ms at a
+/// 1,657 ns period (not spaced), or a rise every period with five falls missing (not
 /// alternating). Each beside the same witness unmodified, which replay
 /// accepts and `H1` takes, so the refusal is this guard's.
 #[test]
@@ -1461,10 +1470,10 @@ fn adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous() {
         (MOTOR_MISMATCH_FINDING, 1),
         (campaign::MOTOR_WINDOW_PAST_RUN_FINDING, 1),
     ];
-    let control = dshot(&findings, &late(2187));
+    let control = dshot(&findings, &late(559));
     assert_eq!(attributed(&control).rule, Rule::H1);
     let gapped = dshot(&findings, &|r| {
-        late(2187)(r);
+        late(559)(r);
         set_dshot_witness(r, |w| {
             if let Record::MotorWitness {
                 rises,
@@ -1479,7 +1488,7 @@ fn adv_m1_replay_refuses_a_stopped_witness_that_is_not_continuous() {
     });
     assert_eq!(campaign::check_run(&gapped).err(), Some(WITNESS_REFUSED));
     let unpaired = dshot(&findings, &|r| {
-        late(2187)(r);
+        late(559)(r);
         set_dshot_witness(r, |w| {
             if let Record::MotorWitness {
                 falls, off_grid, ..
@@ -1698,7 +1707,7 @@ fn adv_m4_a_cut_witness_joins_s9_s_evidence_only_as_s9_s_own() {
             (campaign::MOTOR_EDGE_BEFORE_FINDING, 1),
         ],
         &|r| {
-            late(2187)(r);
+            late(559)(r);
             set_dshot_witness(r, |w| {
                 if let Record::MotorWitness { edges_before, .. } = w {
                     *edges_before = 3;

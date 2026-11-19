@@ -82,10 +82,16 @@ fn witness(label: &str, observer: &str, status: &str) -> Record {
     witness_ccr(label, observer, status, CCR_HOLDS)
 }
 
+/// The model's PWM period at the 64 MHz kernel clock (`AET-WO-4400g`): 2,499
+/// ticks of a 1 µs tick, `realized_ns` exactly, as `motors-pwm` measured
+/// (`spike/4400f/out/pwm/pwm-a`: 40 rises in 100 ms).
+const PERIOD: u64 = 2_499_000;
+const FIRST: u64 = PWM_ANCHOR + PERIOD;
+
 fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
     let (mut rises, mut falls, mut first_ns, mut last_ns, mut span_ns) =
-        (156, 155, Some(639_750), Some(99_800_070), Some(8));
-    let (mut off_grid, mut batched) = (311, 0);
+        (40, 39, Some(FIRST), Some(FIRST + 39 * PERIOD), Some(8));
+    let (mut off_grid, mut batched) = (79, 0);
     match status {
         "static_only" => off_grid = 0,
         "unwitnessed" | "unreadable" => {
@@ -93,9 +99,9 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
         }
         "mismatch" => span_ns = Some(400),
         "batched" => batched = 3,
-        // A rise every period to 49.9 ms, short of the window's end.
+        // A rise every period to 50 ms, short of the window's end.
         "stopped" => {
-            (rises, falls, last_ns, off_grid) = (78, 77, Some(639_750 + 77 * 639_744), 155);
+            (rises, falls, last_ns, off_grid) = (20, 19, Some(FIRST + 19 * PERIOD), 39);
         }
         "unanchored" => (first_ns, last_ns, span_ns) = (None, None, None),
         _ => {}
@@ -103,8 +109,8 @@ fn witness_ccr(label: &str, observer: &str, status: &str, ccr: u32) -> Record {
     Record::MotorWitness {
         label: label.into(),
         observer: observer.into(),
-        period_ns: 639_744,
-        high_ns: u64::from(ccr) * 256,
+        period_ns: PERIOD,
+        high_ns: u64::from(ccr) * 1_000,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: status.into(),
@@ -510,7 +516,7 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     assert_eq!(forged(&|_| {}), Ok(()));
     let w = |f: fn(&mut Record)| move |r: &mut Vec<Record>| f(&mut r[8]);
     for (why, f) in [
-        // Two rises spanning 155 periods (everything else consistent).
+        // Two rises spanning 39 periods (everything else consistent).
         (
             STATUS_REFUSED,
             w(|x| {
@@ -536,8 +542,8 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
                     ..
                 } = x
                 {
-                    (*rises, *falls) = (160, 159);
-                    *last_ns = Some(639_750 + 159 * 639_744);
+                    (*rises, *falls) = (42, 41);
+                    *last_ns = Some(FIRST + 41 * PERIOD);
                 }
             }),
         ),
@@ -555,7 +561,7 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
                 } = x
                 {
                     (*rises, *falls, *off_grid) = (2, 2, 4);
-                    *last_ns = Some(639_750 + 639_744);
+                    *last_ns = Some(FIRST + PERIOD);
                     // Within a period of the last rise: covered, but not the board's.
                     *end_ns = 1_900_000;
                 }
@@ -592,7 +598,7 @@ fn replay_ties_a_witness_s_fields_its_window_and_the_kernel_clock() {
     for f in [
         w(|x| {
             if let Record::MotorWitness { rises, falls, .. } = x {
-                (*rises, *falls) = ((1 << 56) + 156, (1 << 56) + 155);
+                (*rises, *falls) = ((1 << 56) + 40, (1 << 56) + 39);
             }
         }),
         w(|x| {
@@ -672,6 +678,11 @@ const TIM2_SOLVED: [(&str, u32, u32, u32); 10] = [
 const DSHOT_WITNESS: usize = 8 + TIM2_SOLVED.len();
 const DSHOT_STOP: usize = DSHOT_WITNESS + 1;
 
+/// A DShot600 output's period at the 64 MHz kernel clock, as Renode
+/// realizes it, and its first rise's lead over its anchor.
+const DSHOT_PERIOD: u64 = 1_657;
+const DSHOT_LEAD: u64 = 1_700;
+
 /// `AET-WO-2302`: a DShot output's window is its anchor plus
 /// `DSHOT_WINDOW_NS`, derived by replay from the records, never the board's
 /// whole boot; the judge's stop (kind 30) sits at its end; and a window past
@@ -703,15 +714,18 @@ fn dshot_run(
         nominal_high_ps: 624_999,
         holds: true,
     };
-    // Its edges from its anchor: the first rise one period after it, the
-    // last within a period of its window's end.
+    // Its edges from its anchor: the first rise a period and a little after
+    // it, the last within a period of its window's end. At the 64 MHz kernel
+    // clock (`AET-WO-4400g`) a DShot600 bit of 106 ticks runs 1,657 ns and
+    // its 40-tick high time 625 ns (`realized_ns`), and the 2 ms window
+    // holds 1,206 rises, as `motors-dshot600` measured.
     let at = anchor.unwrap_or(0);
-    let rises = 4716;
+    let rises = 1206;
     r[8] = Record::MotorWitness {
         label: "M2".into(),
         observer: "gpioPortA.pa9obs".into(),
-        period_ns: 424,
-        high_ns: 160,
+        period_ns: DSHOT_PERIOD,
+        high_ns: 625,
         grain_ns: 10,
         quantum_ns: 100_000,
         status: if anchor.is_some() {
@@ -722,8 +736,8 @@ fn dshot_run(
         .into(),
         rises,
         falls: rises,
-        first_ns: anchor.map(|a| a + 490),
-        last_ns: anchor.map(|a| a + 490 + (rises - 1) * 424),
+        first_ns: anchor.map(|a| a + DSHOT_LEAD),
+        last_ns: anchor.map(|a| a + DSHOT_LEAD + (rises - 1) * DSHOT_PERIOD),
         end_ns: anchor.map_or(100_000_000, |a| a + 2_000_000),
         span_ns: anchor.map(|_| 8),
         off_grid: 2 * rises - 1,
@@ -886,9 +900,9 @@ fn a_dshot_output_s_window_is_its_anchor_plus_dshot_window_ns() {
         ..
     } = &mut r[DSHOT_WITNESS]
     {
-        // Its edges to the boot's end: 2187 rises, short of its window.
-        (*status, *rises, *falls, *off_grid) = ("stopped".into(), 2187, 2187, 4373);
-        *last_ns = Some(late + 490 + 2186 * 424);
+        // Its edges to the boot's end: 559 rises, short of its window.
+        (*status, *rises, *falls, *off_grid) = ("stopped".into(), 559, 559, 1117);
+        *last_ns = Some(late + DSHOT_LEAD + 558 * DSHOT_PERIOD);
     }
     r[0] = scenario(
         false,
@@ -1190,7 +1204,7 @@ fn replay_refuses_each_window_and_stop_join_by_its_own_message() {
     // A first rise before its anchor, the window itself right.
     let before = both(&|w| {
         if let Record::MotorWitness { anchor_ns, .. } = w {
-            *anchor_ns = Some(700_000);
+            *anchor_ns = Some(FIRST + 1);
         }
     });
     assert_eq!(verdict(&before), Err(WINDOW));
@@ -1246,8 +1260,8 @@ fn replay_refuses_each_window_and_stop_join_by_its_own_message() {
         ..
     } = &mut past[DSHOT_WITNESS]
     {
-        (*status, *rises, *falls, *off_grid) = ("stopped".into(), 2358, 2358, 4715);
-        *last_ns = Some(late + 490 + 2357 * 424);
+        (*status, *rises, *falls, *off_grid) = ("stopped".into(), 603, 603, 1205);
+        *last_ns = Some(late + DSHOT_LEAD + 602 * DSHOT_PERIOD);
     }
     past[0] = scenario(
         false,

@@ -154,7 +154,7 @@ fn solve_copies_the_declared_orientation() {
         })
     );
     assert_eq!(solved.spi_devices["U4"].orientation, None);
-    assert_eq!(solved.schema_version, 10);
+    assert_eq!(solved.schema_version, aethelgard_ir::SOLVED_SCHEMA_VERSION);
     // Written only where declared; an explicit null and a version-9 file are
     // refused (solved 10).
     let mut v = serde_json::to_value(&solved).unwrap();

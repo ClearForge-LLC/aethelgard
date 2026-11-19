@@ -180,8 +180,8 @@ enum Command {
         /// Judge the boot as a foreign firmware's, one this project did not
         /// generate (AET-WO-4400e): declared here, never inferred from the
         /// ELF; the verdict's boot says judge foreign. Its value is the
-        /// virtual time the boot runs, as --for's, at most 4000ms (the
-        /// foreign window). Needs --firmware; not with --for.
+        /// virtual time the boot runs, as --for's, at most the foreign
+        /// window. Needs --firmware; not with --for.
         #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
         foreign: Option<u64>,
     },
@@ -1433,6 +1433,25 @@ fn ready(
     boot: Boot,
     scratch: &Scratch,
 ) -> Result<(input::Input, Ready), run::Stop> {
+    // Each clock serves one run kind and never crosses (`AET-WO-4400g`,
+    // ruled on PR #229): the solved clock is the generated firmware's, a
+    // declared one a foreign firmware's. Refused first, before any input is
+    // read, as `INV-06` refuses a missing fact.
+    match (boot.foreign, &boot.topology.foreign_clock) {
+        (true, None) => {
+            return Err(run::Stop::refused(
+                "ForeignClockUndeclared",
+                "--foreign needs the firmware's clock declared in the specification (`mcu.foreign_clock`, AET-WO-4400g); without it the twin would build the timers and USARTs at the solved clock, which is the generated firmware's, not this firmware's (INV-06)".to_owned(),
+            ));
+        }
+        (false, Some(_)) => {
+            return Err(run::Stop::refused(
+                "ForeignClockOnGeneratedRun",
+                "the specification declares `mcu.foreign_clock`, a foreign firmware's clock; the generated firmware runs at the solved clock, so only `--foreign` takes this specification (AET-WO-4400g)".to_owned(),
+            ));
+        }
+        _ => {}
+    }
     if platform.as_os_str().as_encoded_bytes().starts_with(b"@") {
         return Err(run::Stop::refused(
             "PlatformNotEmitted",
@@ -1706,14 +1725,25 @@ fn renode_env() -> Vec<(&'static str, OsString)> {
 
 /// The Renode a boot needs. The stock table and the boot's measured facts
 /// are Renode 1.17.0's; another Renode is a fact the twin does not have
-/// (`INV-06`).
-fn renode_pinned(version: &str) -> Result<(), run::Stop> {
+/// (`INV-06`). Its build is the tools image's,
+/// [`RENODE_BUILD`](aethelgard_twin::platform::RENODE_BUILD): a stock 1.17.0
+/// judges nested interrupts wrongly with no warning (`AET-WO-1605`) and
+/// hard-faults unmodified ArduPilot (`AET-WO-4400f` §2), so any other build,
+/// or none named, is refused by name (`AET-WO-4400g` §1.5).
+fn renode_pinned(version: &str, build: Option<&str>) -> Result<(), run::Stop> {
     let pinned = format!("Renode v{}", aethelgard_twin::platform::RENODE_VERSION);
     if version != pinned {
         return Err(run::Stop::unusable(
             "renode",
             format!("`{version}` is not the {pinned} the twin's platform is pinned to"),
         ));
+    }
+    let want = aethelgard_twin::platform::RENODE_BUILD;
+    if build != Some(want) {
+        return Err(run::Stop::renode_build_not_pinned(format!(
+            "Renode's build is {}, not the tools image's `{want}`, the only build the twin's judges are measured on (AET-WO-1605, AET-WO-4400g)",
+            build.map_or_else(|| "not named".to_owned(), |b| format!("`{b}`"))
+        )));
     }
     Ok(())
 }
@@ -1788,16 +1818,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     };
     let reported = invocation(with_config(&["--version"]), "status-version").run()?;
     let version = version_of("renode", &reported)?;
-    if ready.is_some() {
-        renode_pinned(&version)?;
-    }
-    // A boot's archive names the build Renode reported (`AET-WO-2205` §1.1).
-    let build = match &ready {
-        Some(_) => Some(renode::build(&reported.stdout).ok_or_else(|| {
-            run::Stop::unusable("renode", "`renode --version` named no build".to_owned())
-        })?),
-        None => None,
-    };
+    // Every verdict names the build Renode reported (`AET-WO-4400g` §1.5),
+    // and a boot's archive does (`AET-WO-2205` §1.1); every call, a plain
+    // load too, refuses any build but the pinned one.
+    let build = renode::build(&reported.stdout);
+    renode_pinned(&version, build.as_deref())?;
     // A declared droop: the rail is solved once, before the boot, and its
     // crossings become the resets the boot renders (`AET-WO-2301`, ruled D1).
     let droop = match ready.as_ref().and_then(|r| r.rail.as_ref()) {
@@ -1898,6 +1923,8 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 r.specification_sha256.clone(),
                 renode::foreign::regions_report(regions),
                 parts,
+                renode::foreign::ClockReport::declared(&r.topology)
+                    .expect("ready refuses a foreign run with no declared clock"),
             )
         })
     });
@@ -1906,22 +1933,26 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         // Killed at a bound: a fail that names it, with nothing read. A killed
         // tool has no exit code, so the verdict records -1.
         (Some(plan), run::Ended::Bounded(bound)) => {
-            if let Some((firmware, spec, regions, _)) = foreign_inputs.clone() {
-                foreign_report = Some(renode::foreign::report(plan, firmware, spec, regions));
+            if let Some((firmware, spec, regions, _, clock)) = foreign_inputs.clone() {
+                foreign_report = Some(renode::foreign::report(
+                    plan, firmware, spec, regions, clock,
+                ));
             }
             (-1, (vec![renode::bounded(&out, *bound)], None, None))
         }
         (Some(plan), _) if foreign_inputs.is_some() => {
             let code = out.code("renode")?;
-            let (firmware, spec, regions, parts) =
+            let (firmware, spec, regions, parts, clock) =
                 foreign_inputs.clone().expect("the guard holds it");
+            let r = ready.as_ref().expect("foreign is ready's");
             let (findings, machine, report) = renode::foreign::judge(
                 code,
                 &out,
                 plan,
-                renode::foreign::report(plan, firmware, spec, regions),
+                renode::foreign::report(plan, firmware, spec, regions, clock),
                 &parts,
-                &ready.as_ref().expect("foreign is ready's").flash,
+                &r.flash,
+                r.topology.clock.hse_hz,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))
@@ -1987,6 +2018,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         out.sandbox,
         findings,
     );
+    v.tool.build.clone_from(&build);
     // The bridge's tools are this verdict's too (AET-WO-1601, PR #96).
     if let Some(bridge) = bridge {
         v.sandbox.unmet(bridge.uid_boundary_unmet);
@@ -2006,7 +2038,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         v.lifecycle = r.topology.lifecycle_banner().unwrap_or_default();
     }
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
-    if let Some(build) = build {
+    if let Some(build) = build.filter(|_| ready.is_some()) {
         use aethelgard_chaos::campaign::{ENGINE, RENODE};
         v.tools.push((ENGINE, env!("CARGO_PKG_VERSION").to_owned()));
         v.tools.push((RENODE, build));

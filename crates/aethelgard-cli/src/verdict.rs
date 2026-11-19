@@ -715,6 +715,10 @@ pub struct InputReport {
 pub struct ToolReport {
     pub name: &'static str,
     pub version: String,
+    /// The build the tool reported, on `simulate`'s verdicts: Renode's
+    /// `build:` line (`AET-WO-4400g` §1.5), absent where none was named.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub build: Option<String>,
     pub exit_code: i32,
 }
 
@@ -908,6 +912,7 @@ impl Verdict {
             tool: ToolReport {
                 name: tool.name,
                 version,
+                build: None,
                 exit_code: code,
             },
             sandbox,
