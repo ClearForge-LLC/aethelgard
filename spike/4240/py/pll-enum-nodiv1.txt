@@ -1,0 +1,9 @@
+# limits: py/limits-rm0433r9.json with "p_one": false (DIVP1 ÷1 refused, RM0433 p. 348)
+hse  8000000.000 ->   64000000: 32 settings; first {'m': 1, 'n': 32, 'p': 4, 'ref': 8000000.0, 'vco': 256000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse  8000000.000 ->  400000000: 4 settings; first {'m': 1, 'n': 100, 'p': 2, 'ref': 8000000.0, 'vco': 800000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse  8333333.333 ->   64000000: 0 settings
+hse  8333333.333 ->  400000000: 4 settings; first {'m': 1, 'n': 96, 'p': 2, 'ref': 8333333.333333333, 'vco': 800000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 16000000.000 ->   64000000: 64 settings; first {'m': 1, 'n': 16, 'p': 4, 'ref': 16000000.0, 'vco': 256000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 16000000.000 ->  400000000: 8 settings; first {'m': 1, 'n': 50, 'p': 2, 'ref': 16000000.0, 'vco': 800000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 25000000.000 ->   64000000: 4 settings; first {'m': 5, 'n': 128, 'p': 10, 'ref': 5000000.0, 'vco': 640000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse 25000000.000 ->  400000000: 11 settings; first {'m': 2, 'n': 64, 'p': 2, 'ref': 12500000.0, 'vco': 800000000.0, 'rge': 3, 'vcosel': ['wide']}
