@@ -454,7 +454,7 @@ P19 held, with one addition: the solved topology also bumps.
   - In ohms, at a 0.4 A lever, the firmware moves a crossing only for a declared R of 1.27–1.43 Ω. That is about 106× a healthy pack's third-party ~12 mΩ, and inferred to be 10–60× a whole cold path's tens of mΩ. No maker states a pack R.
   - The band's width is set by the unsourced idle figure: at a 2.0 A lever it is 0.91–1.43 Ω, and 1.0 Ω loops (I2, measured).
 - **(a) must refuse where it is wrong (F5).** Past the collapse (or below a regulator's shutdown), (a) gives 4,630 resets against (b)'s 24. With that refusal in place, (a) issues a verdict only where the board keeps an operating point under its declared load.
-  - There, on the generated firmware, (a) and (b) agree whenever the declared ESC load includes the idle figure. Measured at I1: 0 against 0 at both quanta. The band runs below test it either side of the band.
+  - There, on the generated firmware, (a) and (b) agree whenever the declared ESC load includes the idle figure. Measured at I1: 0 against 0 at both quanta. §1.5's band runs measured it either side of the band: at 1.20 Ω they agree, at 1.35 Ω (b) loops and (a) chatters.
   - **That condition is D2's:** a scenario that declares no ESC current on a board that drives ESCs would give (a) a pass where (b) loops. So the ESC row is not optional on such a board.
 - **Sentinel-03 drives no declared ESC (§1.2).** It has no lever at all. Its battery load is the tree's declared 14.16 W, and it browns out at 1.43 Ω with no ESC (F4).
 - **(b) at 100 µs when the flight loop lands.** An armed firmware moves the load to tens of amps, where the crossing comes at about 40–82 mΩ (the 60–127 A sweep). That is a credible weak path, inferred.
@@ -582,6 +582,22 @@ P19 held, with one addition: the solved topology also bumps.
 - **The probes** (`spike/2304/lockstep`, `spike/2304/decouple`) are `cargo fmt`-clean and build in the pinned image or on the host.
   - The lockstep probe carries one warning, an unused variable in `2303`'s `splice` mode, kept unchanged.
   - `spike/2304/ngspice` is `2303`'s FFI copied unchanged, not `fmt`-clean, as it was not there.
+- **Adversarial pass:** a fresh subagent, read-only, attacked the record. It raised three high, five medium and six low findings, and every one is applied above:
+  - **H1, H2:** §1.10 and the rail table were missing; both are now in.
+  - **H3:** D1's margin is restated in amps, the unsourced 0.8 A edge is withdrawn, and the honest R framing replaces the 1,590× lead.
+  - **M1:** the deck-rule column is added and the predictions' 3.8 V wording is noted.
+  - **M2:** F5's refusal is widened.
+  - **M3:** the millivolt margins at assertion are stated.
+  - **M4:** the band runs were made.
+  - **M5:** the mirror claim is narrowed.
+  - **Low:** P6's wording, F4's naming, `caps.log`, the quantised elements, the bound label, and the order.
+
+  It confirmed every §1.5 number against `run.json`, `actions.txt` and `stats.txt`, and the §1.4 thresholds by an independent recomputation.
+- **Reduction pass (diff): −20 net lines of code · 0 duplicates removed · 3 dead paths removed · 0 protected kept · 2 findings below.**
+  - **Removed:** the probe's `DUMP` debug block (its only use was finding F6), and two `chain.py` columns that never fired or were unused. `chain.json` is identical apart from the removed keys, `selfcheck` passes, and a re-run of (a) T10 is byte-identical (`e6193e61…`).
+  - **Finding:** the deck's load power and duty (`P_BUCKS_W`, `D`, `I3` in `lockstep/src/main.rs`) restate what `chain.py` derives from the parts table.
+  - **Finding:** `decouple`'s droop restates `dshot600-droop.json`.
+  - Both are left in the spike; in a build, the deck takes them from IR's one derivation.
 - **Evidence:** in `spike/2304/out/`, made by the scripts in `spike/2304/sh/`.
   - The traces (up to 5.1 MB) are not kept; their sha256 is in `spike/2304/out/trace-sha256.txt`.
   - Oversized logs are trimmed, each with its full sha256 beside it.

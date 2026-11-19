@@ -281,9 +281,9 @@ def thresholds(b, i_esc, eta_mode):
         res["binding"] = "collapse" if a / 2 >= b.vin_min_mv(u11["reference"]) / 1000 else "U11 below 3.8 V"
     else:
         res["binding"] = "U11 below 3.8 V"
-    res["R_3v3_below_3v8_only"] = first_r(lambda r: (lambda o: o["vbat_v"] is not None and o["vbat_v"] * 1000 < b.vin_min_mv(u11["reference"]))(chain_at(b, v_open, r, i_esc, eta_mode)), hi=res["R_collapse"] or 1000.0)
-    res["R_3v3_avail_below_bor3_max"] = first_r(rail_below(u11["output"], BOR3_FALLING_MAX_MV * 1000))
-    res["R_3v3_enters_bor3_band"] = min(x for x in (res["R_3v3_unstated"], res["R_3v3_avail_below_bor3_max"]) if x is not None)
+    # U11's `avail` at 3.8 V and 748 mA is about 3.52 V, above BOR3's 2.68 V maximum, so below
+    # its stated input range is where the script's VDD_3V3 first enters the band.
+    res["R_3v3_enters_bor3_band"] = res["R_3v3_unstated"]
     # The deck's own rule (spike/2304/lockstep `deck`): the bucks run down to the datasheet's
     # typical shutdown (about 3 V, SNVSAN3F 8.3.4) with VDD_3V3 = avail in between, which stays
     # above BOR3's 2.68 V maximum down to V_bat ~2.93 V; so the deck's VDD_3V3 first falls through

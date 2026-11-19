@@ -13,9 +13,7 @@
    },
    "rows": [
     {
-     "R_3v3_avail_below_bor3_max": 1.6379784514834834,
      "R_3v3_band_unstated": 1.6379784514834834,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.6379784514834834,
      "R_3v3_enters_bor3_band": 1.6379784514834834,
      "R_3v3_unstated": 1.6379784514834834,
@@ -105,9 +103,7 @@
      "vbat_at_collapse_v": 4.5
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.4435262435315246,
      "R_3v3_band_unstated": 1.4435262435315246,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.4435262435315246,
      "R_3v3_enters_bor3_band": 1.4435262435315246,
      "R_3v3_unstated": 1.4435262435315246,
@@ -197,9 +193,7 @@
      "vbat_at_collapse_v": 4.5
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.5809384690393373,
      "R_3v3_band_unstated": 1.5809384690393373,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.5809384690393373,
      "R_3v3_enters_bor3_band": 1.5809384690393373,
      "R_3v3_unstated": 1.5809384690393373,
@@ -289,9 +283,7 @@
      "vbat_at_collapse_v": 4.420953076548033
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.3989974945494068,
      "R_3v3_band_unstated": 1.3989974945494068,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.3989974945494068,
      "R_3v3_enters_bor3_band": 1.3989974945494068,
      "R_3v3_unstated": 1.3989974945494068,
@@ -381,9 +373,7 @@
      "vbat_at_collapse_v": 4.43005012527253
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.5285886715677277,
      "R_3v3_band_unstated": 1.5285886715677277,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.5285886715677277,
      "R_3v3_enters_bor3_band": 1.5285886715677277,
      "R_3v3_unstated": 1.5285886715677277,
@@ -473,9 +463,7 @@
      "vbat_at_collapse_v": 4.347141132843227
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.357732665751365,
      "R_3v3_band_unstated": 1.357732665751365,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.357732665751365,
      "R_3v3_enters_bor3_band": 1.357732665751365,
      "R_3v3_unstated": 1.357732665751365,
@@ -565,9 +553,7 @@
      "vbat_at_collapse_v": 4.3642267334248634
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.4356229367541293,
      "R_3v3_band_unstated": 1.4356229367541293,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.4356229367541293,
      "R_3v3_enters_bor3_band": 1.4356229367541293,
      "R_3v3_unstated": 1.4356229367541293,
@@ -657,9 +643,7 @@
      "vbat_at_collapse_v": 4.212875412649174
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.2835296806354313,
      "R_3v3_band_unstated": 1.2835296806354313,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.2835296806354313,
      "R_3v3_enters_bor3_band": 1.2835296806354313,
      "R_3v3_unstated": 1.2835296806354313,
@@ -749,9 +733,7 @@
      "vbat_at_collapse_v": 4.243294063872914
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.2851284756964536,
      "R_3v3_band_unstated": 1.2851284756964536,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.2851284756964536,
      "R_3v3_enters_bor3_band": 1.2851284756964536,
      "R_3v3_unstated": 1.2851284756964536,
@@ -841,9 +823,7 @@
      "vbat_at_collapse_v": 3.9859486097214187
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.1609644982905656,
      "R_3v3_band_unstated": 1.1609644982905656,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.1609644982905656,
      "R_3v3_enters_bor3_band": 1.1609644982905656,
      "R_3v3_unstated": 1.1609644982905656,
@@ -933,9 +913,7 @@
      "vbat_at_collapse_v": 4.035614200683773
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.9898411044542854,
      "R_3v3_band_unstated": 0.9898411044542854,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.9941761479358808,
      "R_3v3_enters_bor3_band": 0.9898411044542854,
      "R_3v3_unstated": 0.9898411044542854,
@@ -1019,9 +997,7 @@
      "vbat_at_collapse_v": 3.505823852064119
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.913624220837044,
      "R_3v3_band_unstated": 0.913624220837044,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.9157769569299833,
      "R_3v3_enters_bor3_band": 0.913624220837044,
      "R_3v3_unstated": 0.913624220837044,
@@ -1105,9 +1081,7 @@
      "vbat_at_collapse_v": 3.5842230430700166
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.3923530860079272,
      "R_3v3_band_unstated": 0.3923530860079272,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.42490109246792057,
      "R_3v3_enters_bor3_band": 0.3923530860079272,
      "R_3v3_unstated": 0.3923530860079272,
@@ -1185,9 +1159,7 @@
      "vbat_at_collapse_v": 2.3210937839029477
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.37979441328056096,
      "R_3v3_band_unstated": 0.37979441328056096,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.4088293684175112,
      "R_3v3_enters_bor3_band": 0.37979441328056096,
      "R_3v3_unstated": 0.37979441328056096,
@@ -1265,9 +1237,7 @@
      "vbat_at_collapse_v": 2.417292871886861
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.08220906063667166,
      "R_3v3_band_unstated": 0.08220906063667166,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.0935731856679155,
      "R_3v3_enters_bor3_band": 0.08220906063667166,
      "R_3v3_unstated": 0.08220906063667166,
@@ -1335,9 +1305,7 @@
      "vbat_at_collapse_v": 1.1712242684962164
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.08164339623796449,
      "R_3v3_band_unstated": 0.08164339623796449,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.09277004481976665,
      "R_3v3_enters_bor3_band": 0.08164339623796449,
      "R_3v3_unstated": 0.08164339623796449,
@@ -1405,9 +1373,7 @@
      "vbat_at_collapse_v": 1.2355122748166854
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.0503615531339879,
      "R_3v3_band_unstated": 0.0503615531339879,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.0576252998116299,
      "R_3v3_enters_bor3_band": 0.0503615531339879,
      "R_3v3_unstated": 0.0503615531339879,
@@ -1473,9 +1439,7 @@
      "vbat_at_collapse_v": 0.9384152582451417
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.05014870154040549,
      "R_3v3_band_unstated": 0.05014870154040549,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.05731970240931486,
      "R_3v3_enters_bor3_band": 0.05014870154040549,
      "R_3v3_unstated": 0.05014870154040549,
@@ -1541,9 +1505,7 @@
      "vbat_at_collapse_v": 0.9920666219654692
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.03992219213241888,
      "R_3v3_band_unstated": 0.03992219213241888,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.04575928379602773,
      "R_3v3_enters_bor3_band": 0.03992219213241888,
      "R_3v3_unstated": 0.03992219213241888,
@@ -1605,9 +1567,7 @@
      "vbat_at_collapse_v": 0.8437077006145075
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.039788320645300045,
      "R_3v3_band_unstated": 0.039788320645300045,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.045566373141717534,
      "R_3v3_enters_bor3_band": 0.039788320645300045,
      "R_3v3_unstated": 0.039788320645300045,
@@ -1669,9 +1629,7 @@
      "vbat_at_collapse_v": 0.8926979976582028
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.03185232899200353,
      "R_3v3_band_unstated": 0.03185232899200353,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.036558407743234045,
      "R_3v3_enters_bor3_band": 0.03185232899200353,
      "R_3v3_unstated": 0.03185232899200353,
@@ -1731,9 +1689,7 @@
      "vbat_at_collapse_v": 0.7602154947862583
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.03176705115166909,
      "R_3v3_band_unstated": 0.03176705115166909,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.03643517088545035,
      "R_3v3_enters_bor3_band": 0.03176705115166909,
      "R_3v3_unstated": 0.03176705115166909,
@@ -1793,9 +1749,7 @@
      "vbat_at_collapse_v": 0.8049440387400506
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.025583831846899552,
      "R_3v3_band_unstated": 0.025583831846899552,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.029394339434074893,
      "R_3v3_enters_bor3_band": 0.025583831846899552,
      "R_3v3_unstated": 0.025583831846899552,
@@ -1855,9 +1809,7 @@
      "vbat_at_collapse_v": 0.6866156697726411
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.025528787353891642,
      "R_3v3_band_unstated": 0.025528787353891642,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.02931461701598942,
      "R_3v3_enters_bor3_band": 0.025528787353891642,
      "R_3v3_unstated": 0.025528787353891642,
@@ -1940,9 +1892,7 @@
    },
    "rows": [
     {
-     "R_3v3_avail_below_bor3_max": 1.6241057393089742,
      "R_3v3_band_unstated": 1.6241057393089742,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.6241057393089742,
      "R_3v3_enters_bor3_band": 1.6241057393089742,
      "R_3v3_unstated": 1.6241057393089742,
@@ -2024,9 +1974,7 @@
      "vbat_at_collapse_v": 4.5
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.430234383174637,
      "R_3v3_band_unstated": 1.430234383174637,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.430234383174637,
      "R_3v3_enters_bor3_band": 1.430234383174637,
      "R_3v3_unstated": 1.430234383174637,
@@ -2108,9 +2056,7 @@
      "vbat_at_collapse_v": 4.5
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.5680073862016943,
      "R_3v3_band_unstated": 1.5680073862016943,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.5680073862016943,
      "R_3v3_enters_bor3_band": 1.5680073862016943,
      "R_3v3_unstated": 1.5680073862016943,
@@ -2192,9 +2138,7 @@
      "vbat_at_collapse_v": 4.421599630689915
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.386506508176514,
      "R_3v3_band_unstated": 1.386506508176514,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.386506508176514,
      "R_3v3_enters_bor3_band": 1.386506508176514,
      "R_3v3_unstated": 1.386506508176514,
@@ -2276,9 +2220,7 @@
      "vbat_at_collapse_v": 4.430674674591175
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.516486439005182,
      "R_3v3_band_unstated": 1.516486439005182,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.516486439005182,
      "R_3v3_enters_bor3_band": 1.516486439005182,
      "R_3v3_unstated": 1.516486439005182,
@@ -2360,9 +2302,7 @@
      "vbat_at_collapse_v": 4.3483513560994815
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.345956839859281,
      "R_3v3_band_unstated": 1.345956839859281,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.345956839859281,
      "R_3v3_enters_bor3_band": 1.345956839859281,
      "R_3v3_unstated": 1.345956839859281,
@@ -2444,9 +2384,7 @@
      "vbat_at_collapse_v": 4.365404316014072
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.424912041507198,
      "R_3v3_band_unstated": 1.424912041507198,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.424912041507198,
      "R_3v3_enters_bor3_band": 1.424912041507198,
      "R_3v3_unstated": 1.424912041507198,
@@ -2528,9 +2466,7 @@
      "vbat_at_collapse_v": 4.21501759169856
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.2729764822089633,
      "R_3v3_band_unstated": 1.2729764822089633,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.2729764822089633,
      "R_3v3_enters_bor3_band": 1.2729764822089633,
      "R_3v3_unstated": 1.2729764822089633,
@@ -2612,9 +2548,7 @@
      "vbat_at_collapse_v": 4.245404703558207
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.2764616703172864,
      "R_3v3_band_unstated": 1.2764616703172864,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.2764616703172864,
      "R_3v3_enters_bor3_band": 1.2764616703172864,
      "R_3v3_unstated": 1.2764616703172864,
@@ -2696,9 +2630,7 @@
      "vbat_at_collapse_v": 3.9894153318730856
     },
     {
-     "R_3v3_avail_below_bor3_max": 1.152260112081127,
      "R_3v3_band_unstated": 1.152260112081127,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 1.152260112081127,
      "R_3v3_enters_bor3_band": 1.152260112081127,
      "R_3v3_unstated": 1.152260112081127,
@@ -2780,9 +2712,7 @@
      "vbat_at_collapse_v": 4.039095955167549
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.984632556656236,
      "R_3v3_band_unstated": 0.984632556656236,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.9887882775533805,
      "R_3v3_enters_bor3_band": 0.984632556656236,
      "R_3v3_unstated": 0.984632556656236,
@@ -2859,9 +2789,7 @@
      "vbat_at_collapse_v": 3.5112117224466193
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.9081500646830531,
      "R_3v3_band_unstated": 0.9081500646830531,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.9101803396363816,
      "R_3v3_enters_bor3_band": 0.9081500646830531,
      "R_3v3_unstated": 0.9081500646830531,
@@ -2938,9 +2866,7 @@
      "vbat_at_collapse_v": 3.5898196603636183
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.3915321270339467,
      "R_3v3_band_unstated": 0.3915321270339467,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.42384455265562226,
      "R_3v3_enters_bor3_band": 0.3915321270339467,
      "R_3v3_unstated": 0.3915321270339467,
@@ -3012,9 +2938,7 @@
      "vbat_at_collapse_v": 2.327536866755937
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.3788451160280631,
      "R_3v3_band_unstated": 0.3788451160280631,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.4076223705840919,
      "R_3v3_enters_bor3_band": 0.3788451160280631,
      "R_3v3_unstated": 0.3788451160280631,
@@ -3086,9 +3010,7 @@
      "vbat_at_collapse_v": 2.424369903862128
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.08217295910814115,
      "R_3v3_band_unstated": 0.08217295910814115,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.0935218456640163,
      "R_3v3_enters_bor3_band": 0.08217295910814115,
      "R_3v3_unstated": 0.08217295910814115,
@@ -3152,9 +3074,7 @@
      "vbat_at_collapse_v": 1.1754661230285048
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.0815994420550973,
      "R_3v3_band_unstated": 0.0815994420550973,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.09270775311505733,
      "R_3v3_enters_bor3_band": 0.0815994420550973,
      "R_3v3_unstated": 0.0815994420550973,
@@ -3218,9 +3138,7 @@
      "vbat_at_collapse_v": 1.2403248383696157
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.050348002539822925,
      "R_3v3_band_unstated": 0.050348002539822925,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.057605825101034874,
      "R_3v3_enters_bor3_band": 0.050348002539822925,
      "R_3v3_unstated": 0.050348002539822925,
@@ -3282,9 +3200,7 @@
      "vbat_at_collapse_v": 0.9419471920508942
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.05013211454688287,
      "R_3v3_band_unstated": 0.05013211454688287,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.057295915720773256,
      "R_3v3_enters_bor3_band": 0.05013211454688287,
      "R_3v3_unstated": 0.05013211454688287,
@@ -3346,9 +3262,7 @@
      "vbat_at_collapse_v": 0.9960936057441989
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.039913676574792646,
      "R_3v3_band_unstated": 0.039913676574792646,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.04574700280886648,
      "R_3v3_enters_bor3_band": 0.039913676574792646,
      "R_3v3_unstated": 0.039913676574792646,
@@ -3407,9 +3321,7 @@
      "vbat_at_collapse_v": 0.8469299667316497
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.0397778785131463,
      "R_3v3_band_unstated": 0.0397778785131463,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.04555133992171969,
      "R_3v3_enters_bor3_band": 0.0397778785131463,
      "R_3v3_unstated": 0.0397778785131463,
@@ -3468,9 +3380,7 @@
      "vbat_at_collapse_v": 0.8963788622877025
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.0318469079166649,
      "R_3v3_band_unstated": 0.0318469079166649,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.03655056852378772,
      "R_3v3_enters_bor3_band": 0.0318469079166649,
      "R_3v3_unstated": 0.0318469079166649,
@@ -3527,9 +3437,7 @@
      "vbat_at_collapse_v": 0.7631552517290654
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.0317603945165822,
      "R_3v3_band_unstated": 0.0317603945165822,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.03642555845028046,
      "R_3v3_enters_bor3_band": 0.0317603945165822,
      "R_3v3_unstated": 0.0317603945165822,
@@ -3586,9 +3494,7 @@
      "vbat_at_collapse_v": 0.8083076077543372
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.02558033441885793,
      "R_3v3_band_unstated": 0.02558033441885793,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.029389271348530775,
      "R_3v3_enters_bor3_band": 0.02558033441885793,
      "R_3v3_unstated": 0.02558033441885793,
@@ -3645,9 +3551,7 @@
      "vbat_at_collapse_v": 0.6892992209052529
     },
     {
-     "R_3v3_avail_below_bor3_max": 0.02552448823764722,
      "R_3v3_band_unstated": 0.02552448823764722,
-     "R_3v3_below_3v8_only": null,
      "R_3v3_deck_rule_vbat_below_3v0": 0.02930839426182677,
      "R_3v3_enters_bor3_band": 0.02552448823764722,
      "R_3v3_unstated": 0.02552448823764722,

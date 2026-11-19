@@ -789,23 +789,6 @@ fn declared(a: &[String]) {
     let time = sp.vec("time").expect("time");
     let rail = sp.vec("rail").expect("rail");
     let bat = sp.vec("bat").expect("bat");
-    if let Some(n) = std::env::var("DUMP")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-    {
-        for i in (0..time.len()).step_by(n.max(1)) {
-            eprintln!(
-                "dump t={:.6e} bat={:.4} rail={:.4}",
-                time[i], bat[i], rail[i]
-            );
-        }
-        for v in ["en", "lag", "ctl", "src", "hot"] {
-            let x = sp.vec(v).unwrap_or_default();
-            eprintln!("vec {v}: first {:?} last {:?}", x.first(), x.last());
-        }
-        let log = sp.take_log();
-        eprintln!("log: {}", log.join(" | "));
-    }
     let mut crossings: Vec<Crossing> = Vec::new();
     for (level, uv) in levels(3) {
         let l = uv as f64 * 1e-6;
