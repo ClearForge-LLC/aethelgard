@@ -144,9 +144,32 @@ In `board.rs`'s `mod tests`:
 
 M6 survives because no plan that `parts()` builds can fail `check_parts`: the call guards against a regression in `parts()`, and any such regression is caught by the direct `check_parts` tests above. The same call was unreachable on `main`'s timer branch. A residual, stated.
 
-## 4. CI weights
+## 4. CI weights (REFIT RULE 5; fence widened to `ci/colocate.tsv` by the architect, 21:40Z)
 
-**Not yet done.** See §8: this section is completed after the first CI run on the PR. The method is REFIT RULE 5 (`ci/shard.sh`), from that run's logs.
+**Method.** Every test or block whose cost the split moves is re-weighed at its in-shard time on PR #255's run 44621800144 (head 47983ca5). `main`'s run 44613208491 (96517013) is the control. Both runs' shard logs were read with `AET-WO-1910`'s `pertest.py`.
+- A `board_tier2` prove is its `ANSWER` `wall_s`. Only that binary's provers take the lock, so "the previous completion" would count other tests.
+- A `verify_2k2_tier2` or `against_fab_tier2` test is its `ok` less the previous lock-holder's.
+- A colocated block is its libtest `finished in`.
+
+| Test or block | Row before | `main`'s run | PR's run | New row |
+|---|---|---|---|---|
+| `board_tier2::the_generated_board_proves` | 414.9 | 404.6 | 105.8 (28.8 + 77.0) | 105.8 |
+| `board_tier2::a_wrong_alternate_function_fails` | 369.7 | 317.1 | 17.9 | 17.9 |
+| `board_tier2::a_write_past_the_block_fails` | 347.9 | 380.5 | 26.1 | 26.1 |
+| `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 1165.8 | 848.4 | 356.3 | 356.3 |
+| `verify_2k2_tier2::verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 993.5 | 971.6 | 407.3 | 407.3 |
+| `against_fab_tier2::verify_against_fab_finds_the_package_it_wrote_identical` | 1164.6 | 1081.9 | 450.8 | 450.8 |
+| `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` | 1108.9 | 891.6 | 418.0 | 418.0 |
+| block `attribute_seeded` | 1086 | 985.98 | 386.04 | 387 |
+| block `verify_47k_tier2` | 448 | 504.76 | 227.97 | 228 |
+| block `four_layer_fab_tier2` | 1371 | 1272.99 | 581.82 | 582 |
+| `hot_plug_tier1::the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards` (`AET-WO-1315`, no row) | — | under 60 s | 60.48 | 60.5 |
+
+- **The rows are lowered although the tests' code is the same**, departing from the rule's "keep the larger earlier row". The cost the earlier rows measured, the whole schedule harness on a board without a timer, no longer exists. `main`'s run is the evidence of what it was.
+- **The other blocks are left alone.** `campaign_tier2`, `power_board_tier1`, `outline_tier1`, `supply_tier1` and `via_ring_tier1` run no timerless schedule proof. Their differences between the two runs are runner noise (`supply_tier1` 366 s on `main`, 684 s here).
+- **P2 fired on this PR's first run, and was right to.** It fired on `hot_plug_tier1`'s test, which arrived with `main` (`AET-WO-1315`) with no row and ran 60.48 s, past libtest's 60 s line. On `main`'s own run it stayed under the line. Every test in that shard passed; the shard failed on P2 alone.
+- **Planner.** `ci/shard.sh plan` in the pinned image on the refitted tree exits 0, so **P1 is silent**: 2,507 test names, 2,514 occurrences, 8 shards, each planned at 1,152 s. P2 is judged in the shards of the next run (§10).
+- **One run, not two:** REFIT RULE 5 asks for the worst over the measured runs. The next CI run (the package write) is the second sample, and any row it measures higher is raised to it before READY (§10).
 
 ## 5. The cap (§1.5)
 
