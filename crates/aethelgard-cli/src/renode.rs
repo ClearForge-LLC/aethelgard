@@ -5764,34 +5764,41 @@ mod tests {
     }
 
     /// The nanoseconds Renode 1.17.0 runs for a `RunFor` argument, as its
-    /// `TimeInterval.TryParse` computes them: whole seconds exactly, the
-    /// decimals through a double, truncated.
+    /// `TimeInterval.TryParse` computes them (renode-infrastructure
+    /// `cd4b002aac2398994c4a61a34a8b31b5700facf2`, the pinned source,
+    /// `src/Emulator/Main/Time/TimeInterval.cs` L53-59, a tick a nanosecond
+    /// at L292): whole seconds exactly, the decimals as
+    /// `(ulong)(double.Parse("0.<decimals>") * TicksPerSecond)`, truncated.
     fn renode_runs(arg: &str) -> u64 {
         let (seconds, decimals) = arg.split_once('.').unwrap();
         let fraction: f64 = format!("0.{decimals}").parse().unwrap();
         seconds.parse::<u64>().unwrap() * 1_000_000_000 + (fraction * 1e9) as u64
     }
 
+    /// `AET-WO-4202`: `run_for` renders `ns` as `ns + 0.5` ns. Why that
+    /// never truncates to anything but `ns`: the decimals are a fraction `f`
+    /// below 1; `double.Parse` rounds it correctly (error at most 2^-53 f),
+    /// and the product by 1e9 (exact in a double) rounds once more (2^-53
+    /// of the product). The result is `ns + 0.5` within 2^-52 × 1e9 < 2.3e-7
+    /// ns, so it lies strictly between `ns` and `ns + 1`, and the truncation
+    /// is `ns`. The sweep checks it on every value the reasoning covers.
     #[test]
     fn every_run_for_runs_exactly_its_nanoseconds_in_renode() {
-        // The measured fault (`AET-WO-4202`): the nine-digit form of
-        // 1,018,380 ns ran 1 ns short, so this test is not vacuous.
-        assert_eq!(renode_runs("0.001018380"), 1_018_379);
         let runs = |ns: u64| {
             let c = run_for(ns);
             renode_runs(c.strip_prefix("emulation RunFor \"").unwrap().strip_suffix('"').unwrap())
         };
-        let short = (0..2_000_000u64)
-            .step_by(10)
-            .filter(|&ns| renode_runs(&format!("0.{ns:09}")) != ns)
-            .count();
-        assert!(short > 4_000, "the nine-digit form truncates often: {short}");
-        // Every 10 ns step of the first 2 ms, every nanosecond around the
-        // measured one, and a stride over 3 s.
-        for ns in (0..2_000_000u64)
-            .step_by(10)
-            .chain(1_018_000..1_019_000)
-            .chain((0..3_000_000_000u64).step_by(999_983))
+        // The measured fault, by name: the nine-digit form runs 1,018,380 ns
+        // 1 ns short; the rendering runs it exactly.
+        assert_eq!(renode_runs("0.001018380"), 1_018_379);
+        assert_eq!(runs(1_018_380), 1_018_380, "{}", run_for(1_018_380));
+        // Every nanosecond of the first 2 ms, then a stride to the longest
+        // `RunFor` any boot renders (the foreign window's bound).
+        let longest = foreign::FOREIGN_MAX_VIRTUAL_NS;
+        assert!(longest >= aethelgard_twin::boot::MAX_VIRTUAL_NS);
+        for ns in (0..=2_000_000u64)
+            .chain((2_000_000..=longest).step_by(9_973))
+            .chain([longest])
         {
             assert_eq!(runs(ns), ns, "{}", run_for(ns));
         }

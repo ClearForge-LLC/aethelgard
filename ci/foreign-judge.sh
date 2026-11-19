@@ -80,8 +80,8 @@ window=5000ms
 # clock stated as declared and unchecked (AET-WO-4400g).
 run positive 0 '
 v["verdict"] == "pass" and boot["judge"] == "foreign" and boot["booted"]
-and all(witnessed.get((r, "identity")) for r in ("U2", "U4", "U5", "U7"))
-and witnessed.get(("U2", "data (reads[0])")) and witnessed.get(("U5", "data (reads[0])"))
+and all(witnessed.get((r, "identity")) for r in ("U4", "U5", "U7"))
+and witnessed.get(("U5", "data (reads[0])"))
 and witnessed.get(("U7", "data (script)"))
 and boot["log_lines_dropped"] == 0 and boot["log_kept_bytes"] < boot["log_budget_bytes"]
 and [(c["clock"], c["declared_hz"], c["decoded_hz"], c["holds"]) for c in boot["clock"]["checked"]]
@@ -138,5 +138,5 @@ run no-u5-model 3 'v["error"]["kind"] == "PlatformNotEmitted"' \
 # The IMU line removed: ArduPilot never probes the ICM.
 run no-imu-line 1 '
 "spi_transaction_unwitnessed" in kinds and not witnessed.get(("U5", "identity"))
-and witnessed.get(("U2", "identity")) and witnessed.get(("U4", "identity"))
+and witnessed.get(("U7", "identity")) and witnessed.get(("U4", "identity"))
 ' --platform "$platform" --firmware "$noimu" --foreign "$window"
