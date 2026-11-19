@@ -125,7 +125,17 @@ The sweep script is `~/.cache/aet-1315/sweep.sh`; each binary writes into one fi
 
 ### 3.2 Sentinel-01's package
 
-PACKAGE-RESULT
+**Identical: the branch moves no byte of Sentinel-01's package, `MANIFEST.json` included** [measured, in the pinned tools image].
+
+- **`--against-fab`, the `bench-package` job's own command:** branch binary, `capped-run` 16G, swap 0.
+  - It reports `differs` on `MANIFEST.json` only. All 16 other files equal the committed ones byte for byte.
+  - The cause is this host: rootless podman gives `uid_boundary: false, unmet: user_namespace`, the verdict records the sandbox, and `MANIFEST.json` carries `verdict_sha256`. The job's comment says the same: the committed package is the one CI writes (F4).
+- **So, an A/B in that same image:** `main` `cd43b207` built from `git archive` at the same `/repo` path, against the branch.
+  - Both ran `verify --fab-out` with the job's five scenarios (1227 s and 1349 s).
+  - `diff -r` of the two packages: **identical, all 17 files**, `MANIFEST.json` included (sha256 `c7516b34…` both).
+  - Against the committed package, both differ only in `MANIFEST.json`'s `verdict_sha256` line (`a3e48664…` here, `3b585ef4…` committed): the sandbox, the same for `main`.
+- **`fab/sentinel-01-bench/package/MANIFEST.json` does not move.** No file under `fab/` is touched.
+- **The authoritative check is CI's.** Since `1910`, the `bench-package` job runs on every pull request; its run is cited at READY.
 
 ### 3.3 The two power boards [measured, tier 2 in the pinned tools image, `capped-run` 12G, swap 0]
 
