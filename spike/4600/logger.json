@@ -6,10 +6,17 @@
     "supply": "VDD_3V3",
     "hse_hz": 0,
     "bor_level": 3,
-    "supply_source": { "connector": "J3", "pin": "1" }
+    "supply_source": {
+      "connector": "J3",
+      "pin": "1"
+    }
   },
   "voltage_domains": [
-    { "id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50 }
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
   ],
   "i2c_buses": [
     {
@@ -18,8 +25,14 @@
       "speed_hz": 400000,
       "pull_up_ohms": 2200,
       "domain": "VDD_3V3",
-      "sda": { "net": "TEMP_SDA", "pin": null },
-      "scl": { "net": "TEMP_SCL", "pin": null }
+      "sda": {
+        "net": "TEMP_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "TEMP_SCL",
+        "pin": null
+      }
     },
     {
       "id": "BARO",
@@ -27,8 +40,14 @@
       "speed_hz": 400000,
       "pull_up_ohms": 2200,
       "domain": "VDD_3V3",
-      "sda": { "net": "BARO_SDA", "pin": null },
-      "scl": { "net": "BARO_SCL", "pin": null }
+      "sda": {
+        "net": "BARO_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "BARO_SCL",
+        "pin": null
+      }
     }
   ],
   "spi_buses": [
@@ -37,20 +56,74 @@
       "peripheral": null,
       "speed_hz": 20000000,
       "domain": "VDD_3V3",
-      "sck": { "net": "LOG_SCK", "pin": null },
-      "mosi": { "net": "LOG_MOSI", "pin": null },
-      "miso": { "net": "LOG_MISO", "pin": null }
+      "sck": {
+        "net": "LOG_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "LOG_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "LOG_MISO",
+        "pin": null
+      }
     }
   ],
   "i2c_devices": [
-    { "reference": "U10", "part": "TMP117", "supply": "VDD_3V3", "bus": "TEMP", "address": 72, "pin_capacitance": null },
-    { "reference": "U11", "part": "TMP117", "supply": "VDD_3V3", "bus": "TEMP", "address": 73, "pin_capacitance": null },
-    { "reference": "U12", "part": "TMP117", "supply": "VDD_3V3", "bus": "TEMP", "address": 74, "pin_capacitance": null },
-    { "reference": "U13", "part": "TMP117", "supply": "VDD_3V3", "bus": "TEMP", "address": 75, "pin_capacitance": null },
-    { "reference": "U20", "part": "BMP581", "supply": "VDD_3V3", "bus": "BARO", "address": 70, "pin_capacitance": null }
+    {
+      "reference": "U10",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 72,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U11",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 73,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U12",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 74,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U13",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 75,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U20",
+      "part": "BMP581",
+      "supply": "VDD_3V3",
+      "bus": "BARO",
+      "address": 70,
+      "pin_capacitance": null
+    }
   ],
   "spi_devices": [
-    { "reference": "U30", "part": "W25Q64JVxIQ", "supply": "VDD_3V3", "bus": "LOG", "cs": { "net": "LOG_CS", "pin": null }, "pin_capacitance": null }
+    {
+      "reference": "U30",
+      "part": "W25Q64JVxIQ",
+      "supply": "VDD_3V3",
+      "bus": "LOG",
+      "cs": {
+        "net": "LOG_CS",
+        "pin": null
+      },
+      "pin_capacitance": null
+    }
   ],
   "connectors": [
     {
@@ -58,10 +131,26 @@
       "part": "SM04B-GHS-TB",
       "standard": null,
       "pins": [
-        { "pin": "1", "net": "READOUT_TX", "offboard": null },
-        { "pin": "2", "net": "READOUT_RX", "offboard": null },
-        { "pin": "3", "net": null, "offboard": null },
-        { "pin": "4", "net": "GND", "offboard": null }
+        {
+          "pin": "1",
+          "net": "READOUT_TX",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": "READOUT_RX",
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
       ]
     },
     {
@@ -69,12 +158,36 @@
       "part": "SM06B-SRSS-TB",
       "standard": null,
       "pins": [
-        { "pin": "1", "net": "VDD_3V3", "offboard": null },
-        { "pin": "2", "net": null, "offboard": null },
-        { "pin": "3", "net": null, "offboard": null },
-        { "pin": "4", "net": "SWDIO", "offboard": null },
-        { "pin": "5", "net": "SWCLK", "offboard": null },
-        { "pin": "6", "net": "GND", "offboard": null }
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "SWDIO",
+          "offboard": null
+        },
+        {
+          "pin": "5",
+          "net": "SWCLK",
+          "offboard": null
+        },
+        {
+          "pin": "6",
+          "net": "GND",
+          "offboard": null
+        }
       ]
     },
     {
@@ -82,56 +195,562 @@
       "part": "SM04B-GHS-TB",
       "standard": null,
       "pins": [
-        { "pin": "1", "net": "VDD_3V3", "offboard": null },
-        { "pin": "2", "net": null, "offboard": null },
-        { "pin": "3", "net": null, "offboard": null },
-        { "pin": "4", "net": "GND", "offboard": null }
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
       ]
     }
   ],
   "net_constraints": [
-    { "net_name": "TEMP_SDA", "max_capacitance_femtofarads": 100000, "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
-    { "net_name": "TEMP_SCL", "max_capacitance_femtofarads": 100000, "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
-    { "net_name": "BARO_SDA", "max_capacitance_femtofarads": 100000, "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
-    { "net_name": "BARO_SCL", "max_capacitance_femtofarads": 100000, "max_rise_time_nanoseconds": 300, "impedance_ohms": null },
-    { "net_name": "LOG_SCK", "max_capacitance_femtofarads": 30000, "max_rise_time_nanoseconds": 20, "impedance_ohms": null },
-    { "net_name": "LOG_MOSI", "max_capacitance_femtofarads": 30000, "max_rise_time_nanoseconds": 20, "impedance_ohms": null }
+    {
+      "net_name": "TEMP_SDA",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "TEMP_SCL",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "BARO_SDA",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "BARO_SCL",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    }
   ],
   "board": {
     "copper_layers": 2,
     "layers": [
-      { "name": "F.Cu", "role": "signal", "net": null },
-      { "name": "B.Cu", "role": "signal", "net": null }
+      {
+        "name": "F.Cu",
+        "role": "signal",
+        "net": null
+      },
+      {
+        "name": "B.Cu",
+        "role": "signal",
+        "net": null
+      }
     ],
     "stackup": {
-      "finished_thickness_um": { "nominal": 1600, "min": 340, "max": 2000, "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %" },
+      "finished_thickness_um": {
+        "nominal": 1600,
+        "min": 340,
+        "max": 2000,
+        "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"
+      },
       "dielectrics": [
-        { "between": ["F.Cu", "B.Cu"], "min_thickness_um": 200, "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um" }
+        {
+          "between": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "min_thickness_um": 200,
+          "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"
+        }
       ],
-      "copper_max_um": { "value": 70, "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)" },
-      "relative_permittivity_max_permille": { "value": 5400, "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz" }
+      "copper_max_um": {
+        "value": 70,
+        "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"
+      },
+      "relative_permittivity_max_permille": {
+        "value": 5400,
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      }
     },
-    "rules": { "clearance_um": 200, "track_width_um": 200, "via_drill_um": 300, "via_diameter_um": 600 }
+    "rules": {
+      "clearance_um": 200,
+      "track_width_um": 200,
+      "via_drill_um": 300,
+      "via_diameter_um": 600
+    }
   },
   "net_classes": [],
   "diff_pairs": [],
   "motor_outputs": [],
   "power": null,
   "accept_lifecycle": [
-    { "part": "W25Q64JVxIQ", "status": "nrnd", "statement": "The logger's record flash, NRND by its maker (Winbond's catalog, Status-Industrial N, 2026-11-16) with longevity support listed; kept because it is the only SPI flash row (AET-WO-4600 spike)" }
+    {
+      "part": "W25Q64JVxIQ",
+      "status": "nrnd",
+      "statement": "The logger's record flash, NRND by its maker (Winbond's catalog, Status-Industrial N, 2026-11-16) with longevity support listed; kept because it is the only SPI flash row (AET-WO-4600 spike)"
+    }
   ],
   "serial_ports": [
     {
       "label": "READOUT",
       "peripheral": null,
-      "tx": { "net": "READOUT_TX", "pin": null },
-      "rx": { "net": "READOUT_RX", "pin": null },
+      "tx": {
+        "net": "READOUT_TX",
+        "pin": null
+      },
+      "rx": {
+        "net": "READOUT_RX",
+        "pin": null
+      },
       "role": "console",
-      "framing": { "baud": 115200, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": false },
+      "framing": {
+        "baud": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "inverted": false
+      },
       "negotiated": null,
       "peer_deviation_ppm": 5000,
       "peer_deviation_source": "declared"
     }
   ],
-  "acknowledge_unwitnessed": []
+  "acknowledge_unwitnessed": [
+    {
+      "register": "SCB.CPACR",
+      "class": "same-source",
+      "fields": [
+        "CP10",
+        "CP11"
+      ],
+      "reason": "The FPU enable is written by the generated reset code and no model reacts to it. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.APB1LENR",
+      "class": "same-source",
+      "fields": [
+        "I2C2EN"
+      ],
+      "reason": "A clock gate the RCC model acts on only for a peripheral the platform registers; nothing independent judges it here. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15"
+      ],
+      "reason": "The GPIO model does not store an output type, so the twin cannot see push-pull versus open-drain. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15"
+      ],
+      "reason": "The pulls are stored but nothing reacts to them in the twin; no line on this board depends on an internal pull. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15"
+      ],
+      "reason": "The GPIO model does not store an output type, so the twin cannot see push-pull versus open-drain. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15"
+      ],
+      "reason": "The pulls are stored but nothing reacts to them in the twin; no line on this board depends on an internal pull. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED0",
+        "OSPEED5",
+        "OSPEED6",
+        "OSPEED7",
+        "OSPEED9",
+        "OSPEED10"
+      ],
+      "reason": "Stored with no reaction: the twin has no edge rate. check speeds judges the lines it covers. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER0",
+        "MODER5",
+        "MODER6",
+        "MODER7",
+        "MODER9",
+        "MODER10"
+      ],
+      "reason": "Mode is stored; the model drives a pin whatever MODER says. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL9",
+        "AFSEL10"
+      ],
+      "reason": "The alternate function is stored but the model routes by it only for a timer channel. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOA.AFRL",
+      "class": "same-source",
+      "fields": [
+        "AFSEL5",
+        "AFSEL6",
+        "AFSEL7"
+      ],
+      "reason": "The alternate function is stored but the model routes by it only for a timer channel. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED6",
+        "OSPEED7",
+        "OSPEED10",
+        "OSPEED11"
+      ],
+      "reason": "Stored with no reaction: the twin has no edge rate. check speeds judges the lines it covers. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL10",
+        "AFSEL11"
+      ],
+      "reason": "The alternate function is stored but the model routes by it only for a timer channel. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER6",
+        "MODER7",
+        "MODER10",
+        "MODER11"
+      ],
+      "reason": "Mode is stored; the model drives a pin whatever MODER says. Bench: read back after boot."
+    },
+    {
+      "register": "GPIOB.AFRL",
+      "class": "same-source",
+      "fields": [
+        "AFSEL6",
+        "AFSEL7"
+      ],
+      "reason": "The alternate function is stored but the model routes by it only for a timer channel. Bench: read back after boot."
+    },
+    {
+      "register": "I2C1.CR1",
+      "class": "same-source",
+      "fields": [
+        "PE"
+      ],
+      "reason": "Stored with no reaction claimed beyond the transfers the twin witnesses. Bench: read back after boot."
+    },
+    {
+      "register": "I2C1.CR2",
+      "class": "same-source",
+      "fields": [
+        "ADD10",
+        "HEAD10R",
+        "STOP",
+        "NACK",
+        "RELOAD",
+        "AUTOEND",
+        "PECBYTE"
+      ],
+      "reason": "Transfer-control bits stated only by the generator's oracle. Bench: read back after boot."
+    },
+    {
+      "register": "I2C1.ICR",
+      "class": "same-source",
+      "fields": [
+        "ADDRCF",
+        "NACKCF",
+        "STOPCF",
+        "BERRCF",
+        "ARLOCF",
+        "OVRCF",
+        "PECCF",
+        "TIMOUTCF",
+        "ALERTCF"
+      ],
+      "reason": "Flag clears with no reaction claimed. Bench: read back after boot."
+    },
+    {
+      "register": "I2C2.CR1",
+      "class": "same-source",
+      "fields": [
+        "PE"
+      ],
+      "reason": "Stored with no reaction claimed beyond the transfers the twin witnesses. Bench: read back after boot."
+    },
+    {
+      "register": "I2C2.CR2",
+      "class": "same-source",
+      "fields": [
+        "ADD10",
+        "HEAD10R",
+        "STOP",
+        "NACK",
+        "RELOAD",
+        "AUTOEND",
+        "PECBYTE"
+      ],
+      "reason": "Transfer-control bits stated only by the generator's oracle. Bench: read back after boot."
+    },
+    {
+      "register": "I2C2.ICR",
+      "class": "same-source",
+      "fields": [
+        "ADDRCF",
+        "NACKCF",
+        "STOPCF",
+        "BERRCF",
+        "ARLOCF",
+        "OVRCF",
+        "PECCF",
+        "TIMOUTCF",
+        "ALERTCF"
+      ],
+      "reason": "Flag clears with no reaction claimed. Bench: read back after boot."
+    },
+    {
+      "register": "SPI1.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "TSER"
+      ],
+      "reason": "TSER is a tag in the SPI model. Bench: read back after boot."
+    },
+    {
+      "register": "SPI1.IFCR",
+      "class": "ignored-by-model",
+      "fields": [
+        "TXTFC",
+        "UDRC",
+        "OVRC",
+        "CRCEC",
+        "TIFREC",
+        "MODFC",
+        "TSERFC"
+      ],
+      "reason": "Flag clears the SPI model ignores. Bench: read back after boot."
+    },
+    {
+      "register": "USART1.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "SLVEN",
+        "DIS_NSS",
+        "ADDM7",
+        "LBDL",
+        "LBDIE",
+        "LBCL",
+        "CPHA",
+        "CPOL",
+        "CLKEN",
+        "LINEN",
+        "SWAP",
+        "RXINV",
+        "TXINV",
+        "DATAINV",
+        "MSBFIRST",
+        "ABREN",
+        "ABRMODE",
+        "RTOEN",
+        "ADD"
+      ],
+      "reason": "Fields the USART model does not store (inversion, swap, LIN, auto-baud). Bench: read back after boot."
+    },
+    {
+      "register": "USART1.CR2",
+      "class": "same-source",
+      "fields": [
+        "STOP"
+      ],
+      "reason": "STOP is stored with no reaction claimed. Bench: read back after boot."
+    },
+    {
+      "register": "USART1.CR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "UESM",
+        "IDLEIE",
+        "WAKE",
+        "M0",
+        "MME",
+        "CMIE",
+        "DEDT",
+        "DEAT",
+        "EOBIE",
+        "M1",
+        "FIFOEN",
+        "TXFEIE",
+        "RXFFIE"
+      ],
+      "reason": "Fields the USART model does not store (word length, FIFO, wake-up). The serial judge reads them only from the access log. Bench: read back after boot."
+    },
+    {
+      "register": "USART1.CR1",
+      "class": "same-source",
+      "fields": [
+        "RXNEIE_RXFNEIE",
+        "TCIE",
+        "TXEIE_TXFNFIE",
+        "PEIE",
+        "PS",
+        "PCE",
+        "OVER8",
+        "RTOIE"
+      ],
+      "reason": "Stored with no reaction claimed; only the generator's own oracle states them. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.D1CCIPR",
+      "class": "ignored-by-model",
+      "fields": [
+        "CKPERSEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value, which the firmware keeps. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.D2CCIP1R",
+      "class": "ignored-by-model",
+      "fields": [
+        "SPI123SEL",
+        "SPI45SEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.D2CCIP2R",
+      "class": "ignored-by-model",
+      "fields": [
+        "USART16SEL",
+        "USART28SEL",
+        "I2C123SEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.CR",
+      "class": "ignored-by-model",
+      "fields": [
+        "D2CKRDY"
+      ],
+      "reason": "D2CKRDY is a tag in the model, set by hardware on silicon. Bench: read back after boot."
+    },
+    {
+      "register": "FLASH.OPTSR_CUR",
+      "class": "silicon-only",
+      "fields": [
+        "BOR_LEV"
+      ],
+      "reason": "The BOR level is an option byte the factory step programs; the twin presents it itself. Bench: read back after boot."
+    },
+    {
+      "register": "SPI1.SR",
+      "class": "ignored-by-model",
+      "fields": [
+        "MODF"
+      ],
+      "reason": "MODF is not modelled (the first scar, northstar s2). Bench: read back after boot."
+    }
+  ]
 }
