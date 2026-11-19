@@ -73,4 +73,10 @@ fn a_load_naming_a_resistor_the_emitter_does_not_draw_is_refused() {
     .unwrap();
     let (code, v) = validate(&full);
     assert_eq!(code, Some(0), "{v}");
+    // The emitter's own `U<n>` and `SW<n>` are drawn: a load naming the MCU,
+    // or the reset switch when one is asked for, is never refused.
+    let mut v = with_load(full.clone(), "U1");
+    v["mcu"]["reset_switch"] = json!(true);
+    let (code, v) = validate(&with_load(v, "SW1"));
+    assert_eq!(code, Some(0), "{v}");
 }

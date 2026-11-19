@@ -48,7 +48,7 @@ Labels: **measured** (run here), **read** (read at source, file:line), **inferre
 | Item | Result |
 |---|---|
 | **The refusal, by name, with the later step's behaviour on `main`** | `ir/tests/load_references.rs` `a_load_naming_a_part_the_board_lacks_is_refused_by_reference_and_rail`: `4202`'s case (U2 removed, its load kept) is refused at `power.loads[4].reference` on `VDD_3V3`, and so are seven spellings the emitter never gives (`r1`, `R01`, `R0`, `U99`, `SW1` with no switch asked, `Q1`, `C`). `cli/tests/load_references_tier1.rs`: the helper's board plus a load on `R40` or `R99` is refused as `LoadNamesUndrawnPart` with path and message. **On `main`:** `validate` and `emit` both accepted the U2-removed Sentinel-03 (Part A §2.2), and `validate` accepted the helper's board with its `U13` and `R40` loads [measured: `evidence/power-tree.json`]. No later step refused either. |
-| **Each allowed form passes** | `each_form_of_a_part_the_board_has_passes`: the committed fixture's declared references (i), the MCU's reference (ii), the switch with `mcu.reset_switch` set (iii), `R99` and `C7` (iv). In the CLI, the full fixture's drawn `R40` passes. |
+| **Each allowed form passes** | `each_form_of_a_part_the_board_has_passes`: the committed fixture's declared references (i), the MCU's reference (ii), the switch with `mcu.reset_switch` set (iii), `R99` and `C7` (iv). In the CLI's exact set: the full fixture's drawn `R40` passes, and so do a load on the MCU (`U1`) and one on the reset switch (`SW1`, with `mcu.reset_switch` set). Both are drawn, so the CLI check refuses no valid emitted name. |
 | **Mutants, one per guard** | Six, all killed, before and again after the reduction pass [measured: `~/.cache/aet-1209/mut/results*.txt`]. M1 removes the refusal; M2, M3, M4 and M5 each remove one form; M6 removes the CLI call. |
 | **Nothing committed newly refused** | Over the 48 committed specification files (Part A's 47, plus 3403's `examples/sentinel-01-ext-bmp581.json`), `validate` is byte-identical on `main` and on this branch: 26 pass and 22 are refused as before [measured: `corpus-main.txt`, `corpus-rule2.txt`]. Every in-code specification passes the workspace's tests (below). |
 | **The four `examples/` walkers** | `silicon_rules`, `ledger_tier1` (`every_specification_that_solves_has_a_ledger`), `svd-hal` `silicon_words` and `hwdef_tier1` all pass. |
@@ -85,6 +85,11 @@ The 40 tests rule 2 failed in Part A were each re-run with only the helpers fixe
   So the committed `R8` load on `VDD_3V3` would name a resistor that is not on that rail. Neither form catches this; it is the §7.1 row the architect wrote. **A partial catch for that row:** hold that a load's part has a pin on its load's rail. It would refuse `R8` here, not `R7`.
 - **A4, a load on the wrong rail.** `adv/s03-u2-wrong-rail.json` names U2, which sits on `VDD_3V3`, on `VDD_5V`. It passes on `main` and here. The same rail check would catch it. Backlog, with A3.
 - **A5, a load naming the MCU.** That is form (ii), as ruled. `adv/s03-mcu-load.json` passes. Its current is added to the MCU's part-row current, a double count. That errs on the safe side for a supply budget. Recorded, not refused.
+- **A2b, other entry points.** The MCP `validate` tool runs the CLI's `validate` subcommand (`cli/src/mcp.rs` `argv`), so it also gets the exact set. `loads_drawn` has the one caller, beside `outline_holds` and `acknowledgements_current` [read].
+- **A2c, tier-2 users of the changed helpers, which self-skip here** [read; inferred that nothing moves]:
+  - `board_tier2.rs:1040` and `:1099` (`power_tree()`): `emit`, ERC, DRC and `extract` on a specification with no `drop_limits`. Its loads reach neither the board nor any gate.
+  - `board_tier2.rs:1751` (`rename::sized` on Sentinel-03): also no `drop_limits`. The 2-, 6- and 8-character samples are refused at the outline before `extract` (`outline_tier1` shows it).
+  - CI's tools shards are their first real run.
 - **A6, a second list.** None. Forms (i)–(iii) call the functions step 20 already uses, and the emitter calls `switch_reference` itself. The pattern (iv) is `emitter_numbered`, unchanged. The CLI's set is the emitter's own `drawn`.
 - **A7, a form the committed specifications use, silently allowed or refused.** They use declared references (devices, connectors, the translator, a feedback resistor, a crossing's pull-up) and emitter-numbered `R1`–`R8`. Forms (i) and (iv) allow them explicitly. Nothing is silent.
 
@@ -101,6 +106,8 @@ Diff-sized, run through a fresh subagent and checked against the source.
   - **R2:** the crossing-and-IMU strip itself is a pre-existing pattern, now in four helpers.
   - **R3:** the two test files' `with_load` differ in rail and crate.
 
+**The work order's literal §2 is not met, by ruling.** It names three refusals and the pin-capacitance coverage test. D1 (ii) and D2 defer rules 1 and 3, and with them the coverage test, so this branch delivers rule 2 alone, to full acceptance.
+
 ## B5. Pending
 
 - **Merge `main` after 4202 lands, then re-measure.**
@@ -115,6 +122,12 @@ Diff-sized, run through a fresh subagent and checked against the source.
 # Part A — the §7 stop, as recorded before the rulings
 
 `origin/main` was `96517013` for Part A's measurements.
+
+**Superseded by Part B.** These statements in Part A were true of the stop and no longer are:
+
+- §5's "this file only" and "nothing wired";
+- the WIP rule's form (§3.2), with its refusal of `U<n>` and `SW<n>`;
+- F3's "none should", now that `order_only` carries the loads (D4).
 
 ## 0. The stop
 
