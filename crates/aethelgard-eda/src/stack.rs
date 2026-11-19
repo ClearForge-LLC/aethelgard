@@ -23,6 +23,87 @@ pub fn kicad_id(name: &str) -> Option<&'static str> {
     })
 }
 
+/// `⌈e·√2⌉`, nm: the farthest a per-axis tolerance `e` moves a centre,
+/// exact in integers (the float's ceiling raised until `2e² ≤ d²`). One
+/// source for the via ring rule and the supply gate's holes.
+pub fn diagonal_nm(e_nm: i64) -> i64 {
+    let mut d = (e_nm as f64 * std::f64::consts::SQRT_2).ceil() as i64;
+    // the float's ceiling can fall one short: first at e = 225 058 681 nm,
+    // where e·√2 lies just above an integer (d² − 2e² = −1); within the
+    // IR's 1 mm cap on a tolerance it never does (measured, every nm to
+    // 3 mm), so this exactness does not rest on that cap
+    while 2 * i128::from(e_nm).pow(2) > i128::from(d).pow(2) {
+        d += 1;
+    }
+    d
+}
+
+/// The ring rule (`AET-WO-1314`, ruling 6982875594 D1): a via drilled `d`
+/// finishes anywhere up to `d + plus`, its centre anywhere within
+/// `position` per axis of its pad's, so up to `⌈position·√2⌉` off centre. A
+/// pad of diameter
+///
+/// `D ≥ (d + plus) + 2⌈position·√2⌉ + 2·ring`, rounded up to 10 µm,
+///
+/// keeps at least `ring` of copper round the hole at every declared size
+/// and position: the worst case is the largest hole at a corner of the
+/// position box. The smaller tolerance (`hole_size_minus_um`) does not
+/// enter: a smaller hole only widens the ring. All three inputs are the
+/// specification's (`board.stackup.fab_tolerances`), never the engine's.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RingRule {
+    pub plus_nm: i64,
+    pub position_nm: i64,
+    pub ring_nm: i64,
+}
+
+impl RingRule {
+    /// The rule a specification declares: `None` where it declares no
+    /// `fab_tolerances`; refused with the first field the rule needs that
+    /// the block lacks (`RUL-14`: never defaulted).
+    pub fn of(spec: &Specification) -> Result<Option<RingRule>, &'static str> {
+        let Some(t) = &spec.board.stackup.fab_tolerances else {
+            return Ok(None);
+        };
+        let need = |v: &Option<aethelgard_ir::board::Sourced>, field: &'static str| {
+            v.as_ref().map(|s| nm(s.value)).ok_or(field)
+        };
+        Ok(Some(RingRule {
+            plus_nm: need(
+                &t.hole_size_plus_um,
+                "board.stackup.fab_tolerances.hole_size_plus_um",
+            )?,
+            position_nm: need(
+                &t.hole_position_um,
+                "board.stackup.fab_tolerances.hole_position_um",
+            )?,
+            ring_nm: need(&t.via_ring_um, "board.stackup.fab_tolerances.via_ring_um")?,
+        }))
+    }
+
+    /// The smallest pad, nm, that keeps the ring round a hole drilled
+    /// `drill_nm`.
+    pub fn pad_nm(&self, drill_nm: i64) -> i64 {
+        let reach = diagonal_nm(self.position_nm);
+        let d = drill_nm + self.plus_nm + 2 * reach + 2 * self.ring_nm;
+        (d + 9_999) / 10_000 * 10_000
+    }
+
+    /// Each declared class whose via is smaller than the rule's pad for its
+    /// drill: (class, its pad, the pad that holds the ring), nm.
+    pub fn unheld(&self, stack: &Stack) -> Vec<(String, i64, i64)> {
+        stack
+            .classes
+            .iter()
+            .filter(|c| c.via_declared)
+            .filter_map(|c| {
+                let pad = self.pad_nm(c.rule.drill_nm);
+                (c.rule.via_nm < pad).then(|| (c.name.clone(), c.rule.via_nm, pad))
+            })
+            .collect()
+    }
+}
+
 /// The declared board, in nanometres.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack {
@@ -44,6 +125,21 @@ pub struct Stack {
     pub permittivity_source: String,
     pub clearance_nm: i64,
     pub width_nm: i64,
+    /// The board's own via, pad and drill: the engine's 0.6/0.3 mm, or the
+    /// ring rule's pad where the specification declares the fabricator's
+    /// tolerances (`AET-WO-1314`).
+    pub via_nm: i64,
+    pub drill_nm: i64,
+    /// The nets (by the board's name) `extract` bounds: each I2C bus's SDA
+    /// and SCL, each SPI bus's SCK and MOSI (`extract::lines`), each of
+    /// which `validate` requires a capacitance bound for
+    /// (`MissingBusConstraint`, `MissingSpiConstraint`). The capacitance
+    /// ladder prices their vias (`AET-WO-1314`); a constrained net
+    /// `extract` does not bound is not among them.
+    pub bounded: Vec<String>,
+    /// What the ring rule changed that the specification did not declare:
+    /// each thermal array's via raised to it, for the verdict.
+    pub notes: Vec<String>,
     /// The declared net classes and coupled pairs (`AET-WO-1308`), each net
     /// by the board's name for it. Empty for a specification that declares
     /// none, whose board is then today's.
@@ -178,7 +274,21 @@ impl Stack {
         let b = &spec.board;
         let s = &b.stackup;
         let f = &s.finished_thickness_um;
-        Stack {
+        let mut st = Stack {
+            via_nm: crate::route::VIA_NM,
+            drill_nm: crate::route::DRILL_NM,
+            notes: Vec::new(),
+            bounded: spec
+                .i2c_buses
+                .iter()
+                .flat_map(|b| [&b.sda.net, &b.scl.net])
+                .chain(
+                    spec.spi_buses
+                        .iter()
+                        .flat_map(|b| [&b.sck.net, &b.mosi.net]),
+                )
+                .map(|n| board_net(spec, n))
+                .collect(),
             copper: b.layers.iter().map(|l| l.name.clone()).collect(),
             planes: b
                 .layers
@@ -269,7 +379,35 @@ impl Stack {
             // part's axes cited, and the embedded parts table parsed.
             imus: crate::schematic::seats(spec)
                 .expect("a validated specification's IMU seats are complete"),
+        };
+        // The ring rule (`AET-WO-1314`, ruling 6982875594 D1, D2): the
+        // board's own via is sized by it; a thermal array's via, the
+        // engine's own part, is raised to it and noted. A class keeps its
+        // declared via: an undersized one is refused before routing
+        // ([`RingRule::unheld`]), never raised here.
+        if let Ok(Some(rule)) = RingRule::of(spec) {
+            st.via_nm = rule.pad_nm(st.drill_nm);
+            // a class that declares no via is laid with the board's
+            for c in st.classes.iter_mut().filter(|c| !c.via_declared) {
+                c.rule.via_nm = st.via_nm;
+                c.rule.drill_nm = st.drill_nm;
+            }
+            for t in &mut st.thermal {
+                let pad = rule.pad_nm(t.drill_nm);
+                if t.via_nm < pad {
+                    st.notes.push(format!(
+                        "via ring: {} pad {}'s thermal vias raised from {} to {} mm, the pad that keeps the declared ring round their {} mm drill",
+                        t.reference,
+                        t.pad,
+                        crate::sexpr::mm(t.via_nm),
+                        crate::sexpr::mm(pad),
+                        crate::sexpr::mm(t.drill_nm)
+                    ));
+                    t.via_nm = pad;
+                }
+            }
         }
+        st
     }
 
     /// The class or pair a net (by the board's name) is in: `class` or
@@ -297,8 +435,8 @@ impl Stack {
     pub fn default_rule(&self) -> Rule {
         Rule {
             width_nm: self.width_nm,
-            via_nm: crate::route::VIA_NM,
-            drill_nm: crate::route::DRILL_NM,
+            via_nm: self.via_nm,
+            drill_nm: self.drill_nm,
         }
     }
 
@@ -377,6 +515,10 @@ fn board_net(spec: &Specification, net: &str) -> String {
 pub(crate) fn reference() -> Stack {
     let thickness_source = "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %";
     Stack {
+        via_nm: crate::route::VIA_NM,
+        drill_nm: crate::route::DRILL_NM,
+        bounded: vec![],
+        notes: vec![],
         copper: vec!["F.Cu".into(), "B.Cu".into()],
         planes: vec![],
         thickness: Thickness {
@@ -403,5 +545,84 @@ pub(crate) fn reference() -> Stack {
         joins: vec![],
         thermal: vec![],
         imus: vec![],
+    }
+}
+
+#[cfg(test)]
+mod ring_tests {
+    use super::*;
+
+    /// JLCPCB's declared tolerances (+0.13 mm, ±0.075 mm per axis, so a
+    /// 106 067 nm reach) and the rule's pad at each ring the stop measured.
+    fn rule(ring_nm: i64) -> RingRule {
+        RingRule {
+            plus_nm: 130_000,
+            position_nm: 75_000,
+            ring_nm,
+        }
+    }
+
+    /// The pad is the largest hole, twice the position's reach and twice the
+    /// ring, rounded up to 10 µm: exactly, at each ring the stop measured.
+    #[test]
+    fn the_pad_holds_the_ring_at_the_largest_hole_and_the_worst_position() {
+        // 300 000 + 130 000 + 2·106 067 = 642 134
+        assert_eq!(rule(0).pad_nm(300_000), 650_000);
+        assert_eq!(rule(28_000).pad_nm(300_000), 700_000);
+        assert_eq!(rule(50_000).pad_nm(300_000), 750_000);
+        assert_eq!(rule(0).pad_nm(254_000), 600_000);
+        assert_eq!(rule(28_000).pad_nm(254_000), 660_000);
+        assert_eq!(rule(50_000).pad_nm(254_000), 700_000);
+        // the reach is ⌈e·√2⌉ exactly, and the rounding is up: at a hole that
+        // lands on 10 µm the pad is exact, a nanometre more rounds up
+        let r = RingRule {
+            plus_nm: 0,
+            position_nm: 0,
+            ring_nm: 0,
+        };
+        assert_eq!(r.pad_nm(300_000), 300_000);
+        assert_eq!(r.pad_nm(300_001), 310_000);
+        let p = RingRule {
+            plus_nm: 0,
+            position_nm: 1,
+            ring_nm: 0,
+        };
+        assert_eq!(
+            p.pad_nm(299_996),
+            300_000,
+            "the reach of 1 nm per axis is 2 nm"
+        );
+        assert_eq!(p.pad_nm(299_997), 310_000);
+        // where the float's ceiling of e·√2 falls one short (a Pell pair,
+        // 318 281 039² − 2·225 058 681² = −1), the reach is still exact
+        assert_eq!(diagonal_nm(225_058_681), 318_281_040);
+        assert_eq!(diagonal_nm(75_000), 106_067);
+    }
+
+    /// A class whose declared via is under the rule's pad is named, with its
+    /// pad and the pad that holds the ring; one at or over it, or a class
+    /// that declares no via, is not.
+    #[test]
+    fn a_class_via_under_the_rule_is_named() {
+        let mut st = reference();
+        let class = |name: &str, via_nm: i64, declared: bool| Class {
+            name: name.into(),
+            rule: Rule {
+                width_nm: 200_000,
+                via_nm,
+                drill_nm: 300_000,
+            },
+            via_declared: declared,
+            nets: vec![],
+        };
+        st.classes = vec![
+            class("SMALL", 700_000, true),
+            class("EXACT", 750_000, true),
+            class("UNDECLARED", 600_000, false),
+        ];
+        assert_eq!(
+            rule(50_000).unheld(&st),
+            [("SMALL".to_string(), 700_000, 750_000)]
+        );
     }
 }

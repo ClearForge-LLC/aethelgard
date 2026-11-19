@@ -157,8 +157,10 @@ jobs:
     needs: shards
     runs-on: ubuntu-latest
     # A hang guard, not a budget (AET-WO-4230 Q-K, ruled on PR #161, comment 6911424608): the gate is a
-    # balanced plan (ci/shard.sh), and 20 minutes per shard is a target.
-    timeout-minutes: 45
+    # balanced plan (ci/shard.sh), and 20 minutes per shard is a target. 45 -> 60 (AET-WO-1314, ruled
+    # on PR #227, comment 6991936758): one plan, shard 4 at 36.0 min on run 44382374239 and cut at
+    # 45.3 min on run 44392056403, runner variance; still catches a hang, 15 minutes later.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

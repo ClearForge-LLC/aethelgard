@@ -336,6 +336,15 @@ fn the_reference_declares_todays_two_layer_board() {
     assert_eq!(
         s,
         Stack {
+            via_nm: aethelgard_eda::route::VIA_NM,
+            drill_nm: aethelgard_eda::route::DRILL_NM,
+            bounded: vec![
+                "/I2C_SDA".into(),
+                "/I2C_SCL".into(),
+                "/SPI_SCK".into(),
+                "/SPI_MOSI".into(),
+            ],
+            notes: vec![],
             copper: vec!["F.Cu".into(), "B.Cu".into()],
             planes: vec![],
             thickness: Thickness {

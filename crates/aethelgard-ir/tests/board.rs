@@ -290,6 +290,7 @@ fn the_fabricators_tolerances_are_judged_where_declared() {
             "hole_size_plus_um": {"value": plus, "source": "s"},
             "hole_size_minus_um": {"value": minus, "source": "s"},
             "track_width_permille": {"value": track, "source": "s"},
+            "via_ring_um": {"value": 50, "source": "s"},
         })
     };
     let mut ok = reference();
@@ -304,6 +305,14 @@ fn the_fabricators_tolerances_are_judged_where_declared() {
         (tol(75, 1001, 80, 200), "hole_size_plus_um"),
         (tol(75, 130, 1001, 200), "hole_size_minus_um"),
         (tol(75, 130, 80, 1000), "track_width_permille"),
+        (
+            {
+                let mut t = tol(75, 130, 80, 200);
+                t["via_ring_um"]["value"] = json!(1001);
+                t
+            },
+            "via_ring_um",
+        ),
     ] {
         let e = refused(reference(), |v| {
             v["board"]["stackup"]["fab_tolerances"] = t.clone()

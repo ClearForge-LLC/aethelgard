@@ -1032,6 +1032,11 @@ const OPTIONAL_KEYS: &[(&str, &str, &str)] = &[
         "track_width_permille",
         OPTIONAL_FAB_TOLERANCE,
     ),
+    (
+        "/board/stackup/fab_tolerances",
+        "via_ring_um",
+        OPTIONAL_FAB_TOLERANCE,
+    ),
     ("/power/loads/2", "reference", OPTIONAL_LOAD_REFERENCE),
     ("/power/loads/3", "reference", OPTIONAL_LOAD_REFERENCE),
     ("/power/loads/4", "reference", OPTIONAL_LOAD_REFERENCE),

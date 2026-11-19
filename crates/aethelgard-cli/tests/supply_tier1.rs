@@ -156,12 +156,10 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
             "{key}: {r}"
         );
     }
-    for key in [
-        "hole_position_um",
-        "hole_size_plus_um",
-        "hole_size_minus_um",
-        "track_width_permille",
-    ] {
+    // the gate's own tolerances; the via ring rule's (position, the larger
+    // size, the ring) are refused at `emit`, before any board exists
+    // (`via_ring_tier1`, `AET-WO-1314`)
+    for key in ["hole_size_minus_um", "track_width_permille"] {
         let mut v = gated(s03(), 165);
         v["board"]["stackup"]["fab_tolerances"]
             .as_object_mut()
@@ -266,14 +264,36 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     );
 }
 
-/// Sentinel-03 as drawn, GND on the default 0.6/0.3 mm vias: at JLCPCB's
-/// largest finished hole and worst position the band does not fit their
-/// pad, so every return is refused by name with the pad that would hold
-/// it, 0.7 mm (rulings 6974760231 (1) and 6976355662 (A)). Its own
-/// specification declares no drop limit; this one adds it.
+/// Sentinel-03 on the ring rule's vias (`AET-WO-1314`, ruling 6982875594
+/// D5, inverting `1303b`'s (A)): every supply and return pin bounded, no
+/// `SupplyViaPadTooSmall`, the drop within its limit. Its own specification
+/// declares no drop limit; this one adds it.
+#[test]
+fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
+    let (code, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), 165)));
+    assert_eq!(code, 0, "{r}");
+    let s = &r["supplies"][0];
+    assert_eq!(s["verdict"], "pass", "{s}");
+    let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
+    assert_eq!((vdd.len(), vss.len()), (16, 10), "{s}");
+    for p in vdd.iter().chain(&vss) {
+        assert!(p["r_bound_microohms"].is_u64(), "{p}");
+    }
+}
+
+/// A ring under the gate's own need: at a declared ring of 0, Sentinel-03's
+/// GND vias are 0.65 mm, which keep the hole in the pad but not the band
+/// the gate prices, so every return is refused by name with the pad that
+/// would hold it, 0.7 mm (rulings 6974760231 (1), 6982875594 D5). A class
+/// declaring a via under the ring rule is refused at `emit` instead
+/// (`ViaRingUnheld`, `via_ring_tier1`).
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
-    let (code, r) = extract(s03_board(), &write("s03-gnd06", &gated(s03(), 165)));
+    let mut v = gated(s03(), 165);
+    v["board"]["stackup"]["fab_tolerances"]["via_ring_um"]["value"] = json!(0);
+    let spec = write("s03-ring0", &v);
+    let board = emitted("s03-ring0", &spec);
+    let (code, r) = extract(&board, &spec);
     assert_eq!(code, 1, "{r}");
     let s = &r["supplies"][0];
     let vss = pins(s, "returns");
