@@ -123,3 +123,50 @@ Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test 
 - **D1 · F-IMU's widening of `ABSENT`.** Recommend keep: the mechanism is the device's absence, measured E2 on both IMUs; the alternative leaves every IMU row unmeetable.
 - **D2 · F-MASK.** Recommend an evolve work order (one rule, the absent addresses a witness may cite); until it lands, Sentinel-03's SENSORS row is met only as declared, not after the gates.
 - **D3 · power-parts stays 4 (K3).** No field was needed: the floors are `vin_millivolts.min` and `regulation_vin_min`.
+- **D4 · `RUL-16` and the rail's consumers (adversarial 6).** `rail_consumers` reads the specification's connectors and device lists inside `aethelgard-ir`, and the CLI decides from its answer. The fence is met in form (IR may read its own specification; the CLI's `clippy.toml` holds), but the runner does decide from declared connectors, which `RUL-16`'s amendment (`4300f`: "a connector is drawn on the board only; nothing solves it, and no runner reads it") meant to keep out. §1.7 asks for exactly that rendering. Recommend: rule it as `RUL-16`'s second exception (as `RUL-16` scoped the schematic emitter), or move the consumers into the solved topology (a solved bump this WO did not take).
+
+## Adversarial pass (a fresh subagent on Opus, at `35c94bd3`, every finding reproduced; spot-checked and each fixed with a test and a mutant)
+
+1. **High: only the first `rail_out_of_band` was judged**, so a second one escaped every refusal (the MCU's supply, an unknown domain, no consumer) and the first still covered its rail. Fixed: one rail per scenario, refused when the scenario is read and in replay (`check_rail_out_of_band`, shared).
+2. **Medium-high: a rail feeding a regulator was not its consumer**, so a rail out of band could be rendered as two RX lines while it fed the MCU's own regulator (latent: no committed board). Fixed: refused, naming the regulator (`rail_consumers.regulators`).
+3. **Medium: a rail beside another fault passed every pre-run check** and failed only after the boot, as exit 70. Fixed: refused when read (same shared rule).
+4. **Medium: replay did not re-judge kind 31's shape or "combined"** (start 0, R past 10 kΩ, 500 V, 0 pF, 0 floors, two sags in kind 5). Fixed: `check_battery_sag` judges the shape the parser and the deck hold; replay judges "combined".
+5. **Medium: one observed consumer could cover the whole rail.** Fixed: `Mechanism.all`, a rail is detected only with every rendered consumer attributed.
+6. **Medium: `RUL-16` in form only.** For the architect: D4.
+7. **Low: the battery's coverage test does no work beyond "not a fault"** (K6). The comment now says so.
+8. **Low: `unwrap_or(0)` where a row's figure must be positive.** Fixed: a named refusal (`BatterySideUnmodelled`, `PowerValueInvalid`).
+9. **Low:** (a) a TX-only peer on a rail's connector is now named in the condition; (b) a zero discriminant is now "no operating point", not "past the span".
+- **Held** (the subagent's list, abbreviated): the static edges (949/950, 1,372/1,373) and overflow to refusal; the deck against the static point at the edges, near the collapse and at the latest admitted start, all within 1 mV (off by at most 211 µV); the deck's high root; every default that must halt halts by name; no request text reaches ngspice; no external source; `--rail` unchanged; L697 moves no committed droop; F3 read from IR, never a value string; replay refuses doctored kind 31s and crossings without a droop; the §1.7/§1.11 text verbatim; `Target::Battery` cannot collide with a domain.
+- **Mutants of the fixes** (one each, run on the host, each reverted): one rail, rail alone, the shape, combined in replay, zero discriminant, the regulator-fed rail, every subject attributed: **7 of 7 killed**.
+
+## What moved, before → after (§1.13)
+
+- **Versions:** specification 17 → 18 (`ir/src/lib.rs`; the asserts in `ir/tests/{bench,board,motor,orientation,serial,validate}.rs`, `cli/tests/{bench,outline}_tier1.rs`, `ir/README.md` and its test); scenario `[1, 2, 3]` → `[1, 2, 3, 4]`; trace 14 → 15 (`chaos/src/event.rs`).
+- **Fixtures and examples:** every `schema_version` (26 files: `examples/` ×4, `crates/aethelgard-cli/tests/fixtures/` ×21, the power fixture). `"esc": null` added to every motor output of `motors-dshot600`, `motors-pwm`, `sentinel-02-shaped` and `serial-dshot-9600` (four each); Sentinel-03 declares `none` on MOTOR1–4 with the source Scotty confirmed (2026-11-19; the WO's working-declaration wording is superseded by its "Ruled at writing" item); Sentinel-03 and the power fixture declare `series_milliohms` 1 mΩ (K2's wording, ASCII: `board::source` admits printable ASCII only, so "mOhm" and "MOTOR1-4").
+- **Goldens:** `chaos/tests/golden.rs` trace `bcd082c2…8383` → `10d566b5…fe1a` (the version byte alone: set back to 14 it is the old hash, asserted) and state `ada1b631…d8f7` → `4b06f855…cbf2`.
+- **Hash pins** (each moved only with a specification's sha256, measured): `cli/tests/solve_cli.rs` reference `6bbb87ea…fe03` → `c7cc4fc4…5a1c`, stress `22bb9cb6…e6b8` → `316928c0…d502` (with the old sha256 put back, the old digests exactly); `svd-hal/tests/order_2203.rs` `main.rs` `5c770e1c…` → `aa59544e…`, platform `88ab17b6…` → `701d03eb…`, faulted `2a8151a8…` → `35a1f8d6…`, boot image unchanged; `boards/sentinel-01/**` and `boards/sentinel-01-bench/**` (16 files), `hwdef/tests/fixtures/{sentinel-01,sentinel-02,serial-dshot-9600}.{hwdef.dat,topology.json}`, `svd-hal/tests/ui/{motors-pwm,serial-four}`, `cli/README.md`: each specification hash line, old → new (sentinel-01-minimal `89865e50…` → `e47d3e71…`, sentinel-01 `4846be8b…` → `5dbe999e…`, motors-pwm `b180c715…` → `315d0b4d…`, sentinel-02-own `2abfae5c…` → `c8b7d32d…`, serial-dshot-9600 `2e60ed27…` → `d427808e…`), the byte-for-byte generation tests passing on the result. `boards/**` is fenced: these are its hash lines only, as `4400g` moved them.
+- **The bridge:** `BRIDGE_SOURCE_SHA256` `91e72fcc…cebb` → `5bdc40e4…636e` (`cli/src/analog.rs`). It is in the header of every archive whose run used the bridge: every board with an I2C bus (its rise times), every droop and every battery sag, so all 27 committed campaigns' archives (measured in the differential).
+- **Decoupling (F3):** the tree boards' rails as Q6; no committed pin moved (no test pinned a tree board's decoupling before; `battery_sag_tier1` pins them now).
+- **Not moved:** the solved topology (11), power-parts (4), every no-tree board's emit/solve/generate output beyond the hash, every ELF.
+- **`fab/sentinel-01-bench/package/`:** moves with the specification's sha256 and the verdict (`bench_board_tier1` fails until the architect's `write=true` dispatch): **AWAITING-PACKAGE**.
+
+## Deviations and fence edges
+
+- **`cli/src/fab.rs`** (not in §3's list): FAB-NOTES gains a section stating the campaign's conditions verbatim (§2 requires them there). It is empty, so no byte moves, for every campaign without a sag or a rail.
+- **The tier-2 tests are in `twin_tier2.rs`** (module `battery_sag`), not a file of their own: `ci/shard.sh` counts tier 2 by binary name, and it is outside the carve-out (F-SHARD).
+- **`rail_out_of_band`'s shape** lists its compositions beside it (ruled 20:40Z, item 2).
+- **`ABSENT` widened by `spi_data_mismatch`** (F-IMU, D1).
+- **Two scenario expectations changed after their first run:** `sentinel-03/spi-absent-u5` and `sentinel-02-power/vdd1v8-out-of-band`, each with `spi_data_mismatch` (F-IMU). Every other expectation stands as committed before the first run (`b47945aa`).
+
+## For the architect's docs PR (not edited here: D6, K8)
+
+- Architecture §2 / `RUL-17`: a second solve-once deck, `--chain` (the battery's `VBAT` only, constant-power sinks, one transient); the bridge's digest `5bdc40e4…`.
+- Architecture: specification 18, scenario 4, trace 15, kind 31; `RUL-16`'s question (D4).
+- Roadmap: L697 done (the loaded floor); L707's battery-sag half done, Sentinel-03's package waits on its acknowledgements (§7.1) and on F-MASK for SENSORS after the gates; the power fixture gets no package (`VDD_5V` has no consumer); K6's §7.1 row (IR's headroom counts no path drop).
+
+## Gates (at `f44e80bb`, `main` `96517013` merged)
+
+- `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: clean (host and pinned image). The bridge's own `fmt`, `clippy -D warnings` and `test` (23 unit, 7 `chain.rs`, 1 `edges.rs`, 5 `rail.rs`): clean, in the image.
+- The `gates` job's set (`ci/gates.sh`'s targets, with the target directory inside the repository as CI has it): **133 test binaries green; one red, as expected: `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`**, until the architect's `write=true` dispatch re-derives `fab/sentinel-01-bench/package/` (AWAITING-PACKAGE).
+- Tier 2 in the pinned image: `twin_tier2`'s `battery_sag::*` (2 tests) pass, 170 s; `ci/shard.sh plan`: 8 shards at 1,888 s planned each, guard ok. `TIER2_MIN` 190 → 192.
+- Reduction pass (diff): −39 net · 0 duplicates removed (the one found during the build, `RailOutOfBandRefused`'s kind, was made one constant there) · 5 dead fields/methods removed (`BatterySink.cite`, `.part`, `.output`; `BatteryCapacitor.how`, `.part`; `CreditedCapacitor.how`; `BatterySide::input_milliwatts`) and one dead test closure · 0 protected kept · 0 findings below.
