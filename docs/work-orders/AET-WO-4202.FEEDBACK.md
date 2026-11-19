@@ -193,6 +193,16 @@ The fence let this order edit U2 and its load row only, and §7 lists the supply
 
 Sentinel-02's own-board tier-2 reads are moved to the new truth: `twin_tier2`'s I2C steps lose `U2 identity 0x60` and keep U7's three. Before and after, each of these passes on the branch: `twin_tier2` own board ×4, `models_tier2` 12/12, `board_tier2` own parts ×2, `with_tools` keep-out.
 
+### 2.4 A turned-IMU variant over Sentinel-03's bound [measured] — §7
+
+`outline_tier1::a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound` (`4400d`'s variant: `board.forward` "top", U5 turned each of four ways). With U2 removed, the **forward** turn is refused:
+
+```
+OutlineUnreachable: board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm
+```
+
+The right, left and aft turns place, and on main `96517013` all four place (`out/turned.txt`). The fixture as declared places at 95.80 × 67.60 mm. §7 lists Sentinel-03's bound failing on a moved board as a stop, so the bound and the test are untouched and a ruling is requested on the bus (22:00Z).
+
 ## 3. Adversarial pass (targeted, §5)
 
 | Attack | Result [measured] |
