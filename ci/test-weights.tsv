@@ -35,6 +35,7 @@
 # Rows of 0.5 s or more, and every test of a lock-serialised binary at least 0.1 s; the blocks in ci/colocate.tsv at their in-process time there.
 # Then at the worse of that run and the next, 44466633965 (head 8b18b060, green), by the same rule: the heavy verify and Kani blocks ran
 # 10-30 % slower there (runner variance), so the plan weighs each test and block at its worst of the two.
+# supply_tier1 and via_ring_tier1 left these rows for ci/colocate.tsv: their tests share OnceLock boards, so a per-test time counts the shared run once per waiter (REFIT RULE 3).
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	3.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.500
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.600
@@ -307,15 +308,6 @@ tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	1.600
 tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.200
 tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	7.500
 tests/supply_libm.rs	the_net_copper_through_every_libm_call_is_the_golden	8.500
-tests/supply_tier1.rs	a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named	2.200
-tests/supply_tier1.rs	a_drop_over_its_limit_fails_with_the_pitch_note	473.400
-tests/supply_tier1.rs	a_limit_on_a_domain_the_load_does_not_use_is_refused	80.100
-tests/supply_tier1.rs	a_specification_without_a_drop_limit_has_no_supplies	125.300
-tests/supply_tier1.rs	a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy	247.300
-tests/supply_tier1.rs	each_input_the_gate_reads_is_refused_by_name_when_absent	104.700
-tests/supply_tier1.rs	sentinel_03_on_rule_sized_vias_bounds_every_return	385.500
-tests/supply_tier1.rs	the_four_layer_board_bounds_every_supply_pin_within_its_limit	470.900
-tests/supply_tier1.rs	the_two_layer_power_fixture_refuses_its_ground_return_by_name	66.700
 tests/support_tier1.rs	a_10_nf_capacitor_fails	1.600
 tests/support_tier1.rs	a_capacitor_moved_off_its_pin_fails_and_an_unbounded_one_does_not	10.700
 tests/support_tier1.rs	a_capacitor_on_another_pins_net_fails	1.900
@@ -429,10 +421,6 @@ tests/validate.rs	removing_any_key_of_any_object_is_refused	0.500
 tests/validate_cli.rs	a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify	1.600
 tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	1165.800
 tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	993.500
-tests/via_ring_tier1.rs	a_board_extract_cannot_judge_is_routed_as_today_and_named	39.800
-tests/via_ring_tier1.rs	a_board_no_rung_fits_is_refused_with_every_net_over_its_bound	83.200
-tests/via_ring_tier1.rs	a_board_without_tolerances_is_routed_as_before	24.700
-tests/via_ring_tier1.rs	sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone	111.500
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	1.700
 tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	5.900
 tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	6.500

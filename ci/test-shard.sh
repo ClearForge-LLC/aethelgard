@@ -167,4 +167,13 @@ refuses "gates: a tools-only name two packages share" "${gs[@]}" targets "$tmp/m
 meta ',{"kind":["bench"],"name":"speed"}'; printf 'a\tt2\n' >"$tmp/only.tsv"
 refuses "gates: a target of a kind neither job runs by name" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
 grep -q 'a speed (bench)' "$tmp/out" && ok "gates: the bench is named" || bad "gates: the bench is not named"
+meta ',{"kind":["example"],"name":"demo","test":true}'
+refuses "gates: an example with test = true" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+meta ',{"kind":["example"],"name":"demo","test":false}'
+accepts "gates: an example built, not tested" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+# Every test of a lock-serialised binary carries a row.
+refuses "plan: a lock-serialised binary's test with no row" "${py[@]}" assign 4 "$tmp/weights.tsv" "$tmp/entries.tsv" "$tmp/lk" 0 /dev/null "tests/board_tier2.rs"
+grep -q 'tests/board_tier2.rs v2 has no row' "$tmp/out" && ok "plan: the test is named" || bad "plan: the test is not named"
+printf 'tests/board_tier2.rs\tv1\t100\ntests/board_tier2.rs\tv2\t1\ntests/board_tier2.rs\tshared2\t1\n' >"$tmp/wl.tsv"
+accepts "plan: every lock-serialised test weighed" "${py[@]}" assign 4 "$tmp/wl.tsv" "$tmp/entries.tsv" "$tmp/lk2" 0 /dev/null "tests/board_tier2.rs"
 exit "$fail"

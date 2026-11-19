@@ -19,11 +19,12 @@ targets() {
   local meta=$1 list=$2 all moved bad
   readable "$meta"; readable "$list"
   # package<TAB>kind<TAB>name for every target of every workspace package.
-  all=$(jq -r '.packages[] | .name as $p | .targets[] | "\($p)\t\(.kind | join(","))\t\(.name)"' "$meta") \
+  all=$(jq -r '.packages[] | .name as $p | .targets[] | "\($p)\t\(.kind | join(","))\t\(.name)\t\(.test)"' "$meta") \
     || die "$meta is not cargo metadata"
   [ -n "$all" ] || die "$meta lists no targets"
   # A kind these flags do not run (a bench, say) would run in neither job by name.
-  bad=$(awk -F'\t' '$2 !~ /^(lib|rlib|proc-macro|bin|test|example|custom-build)$/ { print $1 " " $3 " (" $2 ")" }' <<<"$all")
+  # So would an example with `test = true`: `cargo test` runs it, `--examples` here only builds it (adversarial L3).
+  bad=$(awk -F'\t' '$2 !~ /^(lib|rlib|proc-macro|bin|test|example|custom-build)$/ || ($2 == "example" && $4 == "true") { print $1 " " $3 " (" $2 ($4 == "true" ? ", test = true" : "") ")" }' <<<"$all")
   [ -z "$bad" ] || die "a target of a kind gates.sh does not run: $bad"
   moved=$(awk -F'\t' '/^#/ || NF == 0 { next } NF != 2 { print "BAD " FNR; next } { print $1 "\t" $2 }' "$list")
   if grep -q '^BAD ' <<<"$moved"; then die "$list: want package<TAB>target, line $(grep '^BAD ' <<<"$moved" | head -1 | cut -d' ' -f2)"; fi

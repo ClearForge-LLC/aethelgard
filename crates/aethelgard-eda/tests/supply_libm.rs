@@ -12,9 +12,12 @@
 //! - `flow.rs`'s `Region::new`: `atan2`. It decides the order of a junction
 //!   region's faces.
 //!
-//! A libm that rounds one of these differently moves a cell, a knockout or a
-//! face, and the digest with it. A reviewer reads the counts beside each
-//! digest.
+//! Each decision a call makes on this board is pinned. Removing what one call
+//! contributes moves the digest, and so does a gross change to it (the
+//! FEEDBACK's libm coverage map lists one mutant per site, each red here).
+//! A difference of one ulp moves nothing here, nor did it in `supply_tier1`
+//! (the adversarial pass). So the goldens pin what each call decides on these
+//! boards, and a libm that rounds one of them across a decision.
 
 use aethelgard_eda::flow::{Cell, Region};
 use aethelgard_eda::pcb::Rect;
@@ -153,12 +156,16 @@ fn figures(nc: &NetCopper) -> (String, Vec<(String, usize)>, Vec<usize>) {
 }
 
 /// `supply::tests`' 4-layer board: In1.Cu is VDD's plane, joined by one VDD
-/// via. Two GND vias 1.25 mm apart cut it. Between their raw knockouts, the
-/// combined "away" direction is zero and each single one points into the
-/// other knockout, so only the compass probes (`cos`, `sin`) find a witness
-/// for four of the cells (measured without the pad: 7,236 cells with them, 7,232
-/// without).
-/// A GND through-hole pad beside them cuts it by its diagonal knockout.
+/// via, and cut by:
+/// - two GND vias 1.25 mm apart, between whose raw knockouts only the
+///   compass probes (`cos`, `sin`) witness some cells;
+/// - two GND vias 0.68 mm from (6.0, 4.6) mm at 0° and 70°, where one cell
+///   only the summed "away" direction (`hypot` at `:122`) witnesses;
+/// - a GND through-hole pad, by its diagonal knockout (`hypot` at `:838`).
+///
+/// Measured in scratch with a mutant each, In1.Cu has 6,113 cells, against
+/// 6,112 without the summed direction, 6,109 without the compass probes, and
+/// 6,109 without each single knockout's direction (`hypot` at `:117`).
 /// `copper` reaches all five calls on this board (measured with a marker
 /// per call site; `AET-WO-1910` FEEDBACK, the libm coverage map).
 #[test]
@@ -188,6 +195,9 @@ fn the_net_copper_through_every_libm_call_is_the_golden() {
         vias: vec![
             via("GND", (c.0 - 625_000, c.1)),
             via("GND", (c.0 + 625_000, c.1)),
+            // 680 µm at 0° and at 70° from (6.0, 4.6) mm
+            via("GND", (6_680_000, 4_600_000)),
+            via("GND", (6_232_573, 5_238_990)),
             via("VDD", (4_000_000, 3_000_000)),
         ],
         segments: vec![
@@ -204,12 +214,12 @@ fn the_net_copper_through_every_libm_call_is_the_golden() {
         (
             vec![
                 ("F.Cu".to_owned(), 393),
-                ("In1.Cu".to_owned(), 6480),
+                ("In1.Cu".to_owned(), 6113),
                 ("In2.Cu".to_owned(), 0),
                 ("B.Cu".to_owned(), 0),
             ],
             vec![40],
-            "58b447445b98203e".to_owned()
+            "89bfeec51ddf9ef2".to_owned()
         ),
         "the net's copper, cell by cell and face by face, is the golden: a libm call moved one"
     );

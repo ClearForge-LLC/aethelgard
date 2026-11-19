@@ -13,7 +13,7 @@
 #   shard.sh run OUT K      run shard K's tests, then check the passes against the assignment
 # Pure functions over files, each refusing with a message and a nonzero exit (INV-06):
 #   parse SUITE LOG                a `cargo test -- --list` log -> entries on stdout
-#   assign N WEIGHTS ENTRIES OUTDIR [BASE0 [COLOCATE]]
+#   assign N WEIGHTS ENTRIES OUTDIR [BASE0 [COLOCATE [LOCKED]]]
 #                                  LPT assignment -> OUTDIR/shard-K.tsv
 #   guard N ENTRIES OUTDIR         the shard lists are disjoint and their union is the list
 #   names SHARDFILE SUITE          the names a shard runs in a suite, one per line
@@ -89,7 +89,7 @@ parse() {
 # ---- assign ----------------------------------------------------------------
 
 assign() {
-  local n=$1 weights=$2 entries=$3 out=$4 base0=${5:-0} colocate=${6:-/dev/null}
+  local n=$1 weights=$2 entries=$3 out=$4 base0=${5:-0} colocate=${6:-/dev/null} locked=${7:-}
   case $n in '' | *[!0-9]* | 0) die "need at least one shard" ;; esac
   readable "$weights"; readable "$entries"; readable "$colocate"
   [ -s "$entries" ] || die "$entries lists no tests"
@@ -98,8 +98,9 @@ assign() {
   # Pass 1: one row per member of a unit: weight, the unit's first key (suite, name), the member (suite, name),
   # its occurrences. A binary whose tests overlap when run together (they share the runner's cores) is
   # kept whole: its tests are one block of the stated CI seconds, so splitting it does not lose the overlap.
-  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v dflt="$DEFAULT_WEIGHT" '
+  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v dflt="$DEFAULT_WEIGHT" -v locked="$locked" '
     function bad(m) { print "shard: " m > "/dev/stderr"; exit 1 }
+    BEGIN { nl = split(locked, lk, " "); for (i = 1; i <= nl; i++) lockb[lk[i]] = 1 }
     FILENAME == wf { if ($0 ~ /^#/ || $0 == "") next
       if (NF != 3) bad(wf ":" FNR ": want 3 tab-separated fields, got " NF)
       if ($3 !~ /^[0-9]+([.][0-9]+)?$/) bad(wf ": " $3 " is not seconds")
@@ -116,6 +117,9 @@ assign() {
       # new name would silently take DEFAULT_WEIGHT; refused by name, as is a block naming no binary.
       for (k in w) if (!(k in listed)) { split(k, kk, "\t"); bad(wf ": " kk[1] " " kk[2] " names no listed test (renamed or removed? weigh its new name)") }
       for (b in blk) if (!(b in lbin)) bad(cf ": " b " names no listed binary")
+      # A test of a lock-serialised binary waits in its queue past the libtest 60 s line, which P2 would read as an unweighted heavy test:
+      # each carries a row (AET-WO-1910 D6, the ruling; adversarial L4 asked that it be enforced).
+      for (i = 1; i <= ne; i++) if ((eb[i] in lockb) && !(eb[i] in blk) && !((eb[i] "\t" et[i]) in w)) bad(wf ": " eb[i] " " et[i] " has no row; every test of a lock-serialised binary carries one")
       for (i = 1; i <= ne; i++) { k = es[i] "\t" et[i]; occ[k]++
         if ((eb[i] in blk) && !(k in bl)) bl[k] = eb[i] }
       for (i = 1; i <= ne; i++) { k = es[i] "\t" et[i]
@@ -293,6 +297,8 @@ FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
+# The binaries whose tests serialise on one lock (ONE_AT_A_TIME, RENODE_TURN): every test of one carries a weight row (AET-WO-1910 D6).
+LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.rs tests/twin_tier2.rs'
 # Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
 BASE0=${SHARD0_FIXED_SECONDS:-25}
 
@@ -306,7 +312,7 @@ plan() {
   cargo test "${BRIDGE[@]}" -- --list >"$out/list-bridge.log" 2>&1 \
     || { cat "$out/list-bridge.log"; die "the bridge test list failed"; }
   { parse ws "$out/list-ws.log"; parse bridge "$out/list-bridge.log"; } >"$out/entries.tsv"
-  assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0" "$here/colocate.tsv"
+  assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0" "$here/colocate.tsv" "$LOCKED"
   guard "$n" "$out/entries.tsv" "$out"
 }
 
