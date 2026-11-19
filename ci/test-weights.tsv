@@ -42,6 +42,8 @@
 # previous lock-holder's; main 848.4, 971.6, 1081.9, 891.6 s). Lowered against the earlier rows although the tests' code is the same: the cost
 # those rows measured, the whole schedule harness on a board without a timer, no longer exists. hot_plug_tier1's bulk-capacitor test (AET-WO-1315)
 # had no row and ran 60.48 s on that run, past P2's line: its `ok` less its binary's `Running` (alone in the binary there), 60.5.
+# Then at the worse of that run and the next, 44624532447 (the bench-package write dispatch, same head, green): raised there a_wrong_alternate 19.45,
+# verify_binds 434.3, verify_fab_out 448.9; every other row above kept at the first run's larger figure (hot_plug 49.9 on the second).
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	3.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.500
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.600
@@ -84,7 +86,7 @@ tests/board_tier2.rs	a_cargo_configuration_another_uid_plants_in_tmp_is_not_read
 tests/board_tier2.rs	a_missing_clock_enable_fails	7.500
 tests/board_tier2.rs	a_vacuous_harness_fails	6.500
 tests/board_tier2.rs	a_write_past_the_block_fails	26.100
-tests/board_tier2.rs	a_wrong_alternate_function_fails	17.900
+tests/board_tier2.rs	a_wrong_alternate_function_fails	19.500
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.700
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	2.000
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	8.300
@@ -426,8 +428,8 @@ tests/uid_boundary_tier1.rs	a_tool_writing_past_the_file_size_cap_is_a_tool_erro
 tests/uid_boundary_tier1.rs	the_emitted_schematic_names_no_sheet	1.500
 tests/validate.rs	removing_any_key_of_any_object_is_refused	0.500
 tests/validate_cli.rs	a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify	1.600
-tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	356.300
-tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	407.300
+tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	434.300
+tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	448.900
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	1.700
 tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	5.900
 tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	6.500

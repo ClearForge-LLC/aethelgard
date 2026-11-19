@@ -154,10 +154,10 @@ M6 survives because no plan that `parts()` builds can fail `check_parts`: the ca
 | Test or block | Row before | `main`'s run | PR's run | New row |
 |---|---|---|---|---|
 | `board_tier2::the_generated_board_proves` | 414.9 | 404.6 | 105.8 (28.8 + 77.0) | 105.8 |
-| `board_tier2::a_wrong_alternate_function_fails` | 369.7 | 317.1 | 17.9 | 17.9 |
+| `board_tier2::a_wrong_alternate_function_fails` | 369.7 | 317.1 | 17.9 (19.45 on the second run) | 19.5 |
 | `board_tier2::a_write_past_the_block_fails` | 347.9 | 380.5 | 26.1 | 26.1 |
-| `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 1165.8 | 848.4 | 356.3 | 356.3 |
-| `verify_2k2_tier2::verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 993.5 | 971.6 | 407.3 | 407.3 |
+| `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 1165.8 | 848.4 | 356.3 (434.3 on the second run) | 434.3 |
+| `verify_2k2_tier2::verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 993.5 | 971.6 | 407.3 (448.9 on the second run) | 448.9 |
 | `against_fab_tier2::verify_against_fab_finds_the_package_it_wrote_identical` | 1164.6 | 1081.9 | 450.8 | 450.8 |
 | `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` | 1108.9 | 891.6 | 418.0 | 418.0 |
 | block `attribute_seeded` | 1086 | 985.98 | 386.04 | 387 |
@@ -169,7 +169,13 @@ M6 survives because no plan that `parts()` builds can fail `check_parts`: the ca
 - **The other blocks are left alone.** `campaign_tier2`, `power_board_tier1`, `outline_tier1`, `supply_tier1` and `via_ring_tier1` run no timerless schedule proof. Their differences between the two runs are runner noise (`supply_tier1` 366 s on `main`, 684 s here).
 - **P2 fired on this PR's first run, and was right to.** It fired on `hot_plug_tier1`'s test, which arrived with `main` (`AET-WO-1315`) with no row and ran 60.48 s, past libtest's 60 s line. On `main`'s own run it stayed under the line. Every test in that shard passed; the shard failed on P2 alone.
 - **Planner.** `ci/shard.sh plan` in the pinned image on the refitted tree exits 0, so **P1 is silent**: 2,507 test names, 2,514 occurrences, 8 shards, each planned at 1,152 s. P2 is judged in the shards of the next run (§10).
-- **One run, not two:** REFIT RULE 5 asks for the worst over the measured runs. The next CI run (the package write) is the second sample, and any row it measures higher is raised to it before READY (§10).
+- **Two runs, the worse of each:** run 44624532447 (the bench-package write dispatch, same head, green on every job) measured higher in three rows, which are raised to it:
+  - `a_wrong_alternate_function_fails`: 19.45 s, row 19.5;
+  - `verify_binds…`: 434.3 s;
+  - `verify_fab_out…`: 448.9 s.
+
+  Every other row keeps the first run's larger figure. Second-run figures for the rest: the generated board 25.4 + 68.3 s; `a_write_past_the_block_fails` 23.1 s; `against_fab_tier2` 364.1 and 280.2 s; `attribute_seeded` 321.89 s; `verify_47k_tier2` 226.99 s; `four_layer_fab_tier2` 485.65 s; `hot_plug_tier1` 49.9 s.
+- **1911 merges first (architect, 22:10Z), with 12 shards and its own refit.** After it lands I merge `main` and re-weigh these rows against its layout by the same rule, before READY.
 
 ## 5. The cap (§1.5)
 
