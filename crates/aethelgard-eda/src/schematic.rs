@@ -1185,6 +1185,19 @@ pub fn anchored(
         .collect())
 }
 
+/// Each drawn part's reference with its value, read from the design: what a
+/// test needs to see a part drawn where no board can be, a tree `validate`
+/// refuses (`AET-WO-1315` §1.3, the bulk capacitor with no battery-fed
+/// regulator to anchor to).
+pub fn drawn(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    Ok(parts.into_iter().map(|p| (p.reference, p.value)).collect())
+}
+
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,

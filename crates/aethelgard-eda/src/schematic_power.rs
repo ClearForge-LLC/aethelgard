@@ -527,24 +527,23 @@ fn controls(
             ));
         };
         let conn = match (&c.strap, &c.wire) {
-            (Some(s), None) if rule.straps.contains(s) => strap(*s).ok_or_else(|| {
-                refuse(
-                    reference,
-                    format!(
-                        "{pin} is strapped `{}`, a rail this part has none of",
-                        s.name()
-                    ),
-                )
-            })?,
-            (Some(s), None) => {
-                return Err(refuse(
-                    reference,
-                    format!(
-                        "{pin} is strapped `{}`, which its row does not allow",
-                        s.name()
-                    ),
-                ));
-            }
+            (Some(s), None) => rule
+                .straps
+                .contains(s)
+                .then(|| strap(*s))
+                .flatten()
+                .ok_or_else(|| {
+                    refuse(
+                        reference,
+                        format!(
+                            "{pin} is strapped `{}`, which its row does not allow or this part has no rail for",
+                            s.name()
+                        ),
+                    )
+                })?,
+            // belt-and-suspenders: `validate` refuses a wire on a pin its row
+            // allows none (`ControlPinUnwired`), and every held row's control
+            // pins are wirable.
             (None, Some(w)) if !rule.wirable => {
                 return Err(refuse(
                     reference,

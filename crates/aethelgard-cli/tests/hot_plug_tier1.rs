@@ -162,7 +162,7 @@ fn a_wire_to_a_net_nothing_else_ends_is_refused() {
 fn a_control_the_emitter_cannot_draw_as_declared_is_refused_by_name() {
     let base = full();
     let (_, solved, table) = solved(&base);
-    let cases: [(&str, &str, Option<Value>, &str); 8] = [
+    let cases: [(&str, &str, Option<Value>, &str); 9] = [
         (
             "U10",
             "PG",
@@ -185,13 +185,19 @@ fn a_control_the_emitter_cannot_draw_as_declared_is_refused_by_name() {
             "U10",
             "EN",
             Some(json!({"pin": "EN", "strap": "vcca", "wire": null})),
-            "EN is strapped `vcca`, which its row does not allow",
+            "EN is strapped `vcca`, which its row does not allow or this part has no rail for",
+        ),
+        (
+            "U10",
+            "EN",
+            Some(json!({"pin": "EN", "strap": "open", "wire": null})),
+            "EN is strapped `open`, which its row does not allow",
         ),
         (
             "U13",
             "OE",
             Some(json!({"pin": "OE", "strap": "input", "wire": null})),
-            "OE is strapped `input`, which its row does not allow",
+            "OE is strapped `input`, which its row does not allow or this part has no rail for",
         ),
         (
             "U10",
@@ -361,8 +367,11 @@ fn the_bulk_capacitor_anchors_to_the_first_battery_fed_regulator_or_to_nothing()
     let spec: Specification = serde_json::from_value(v).unwrap();
     let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
     assert_eq!(anchored.get("C1"), None);
-    let c1 = schematic::decoupling_picofarads(&spec, &solved, &table).unwrap();
-    assert!(!c1.values().any(|pf| *pf == 47_000_000), "{c1:?}");
+    let drawn = schematic::drawn(&spec, &solved, &table).unwrap();
+    assert_eq!(
+        drawn.get("C1").map(String::as_str),
+        Some("47u UCZ1H470MCL1GS")
+    );
 }
 
 /// §1.1, §5: a hot-plug reference the emitter could not hold is refused by
