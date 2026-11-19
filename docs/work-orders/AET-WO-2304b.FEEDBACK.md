@@ -150,7 +150,7 @@ Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test 
 - **The bridge:** `BRIDGE_SOURCE_SHA256` `91e72fcc…cebb` → `5bdc40e4…636e` (`cli/src/analog.rs`). It is in the header of every archive whose run used the bridge: every board with an I2C bus (its rise times), every droop and every battery sag, so all 27 committed campaigns' archives (measured in the differential).
 - **Decoupling (F3):** the tree boards' rails as Q6; no committed pin moved (no test pinned a tree board's decoupling before; `battery_sag_tier1` pins them now).
 - **Not moved:** the solved topology (11), power-parts (4), every no-tree board's emit/solve/generate output beyond the hash, every ELF.
-- **`fab/sentinel-01-bench/package/`:** moves with the specification's sha256 and the verdict (`bench_board_tier1` fails until the architect's `write=true` dispatch): **AWAITING-PACKAGE**.
+- **`fab/sentinel-01-bench/package/`:** re-derived by the architect's `write=true` dispatch (run 44624527136 on `08e2aaf7`, artifact `bench-package` 14579394591) and committed byte for byte. Two files moved, as `4400g` F4's did: `MANIFEST.json` (`specification_sha256` `4846be8b…4395` → `5dbe999e…e082`, `topology_sha256` `116ae1d9…bb68` → `341d07a5…cb58`, `verdict_sha256` `3e0bc749…5728` → `9165385c…a905`, and FAB-NOTES' entry; file `6f7187ba…` → `731a0f35…`) and `FAB-NOTES.md` (its specification line; `1f06d677…0845` → `7f9c43a1…db01`). The 15 Gerber, drill, placement, BOM and ELF files are byte-identical. `bench_board_tier1` passes, on the tree with `3403` merged too.
 
 ## Deviations and fence edges
 
