@@ -4,6 +4,7 @@
   "base": "../../crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
   "expect": "fail",
   "expect_findings": [
+    "spi_data_mismatch",
     "spi_identity_mismatch",
     "spi_transaction_unwitnessed"
   ],

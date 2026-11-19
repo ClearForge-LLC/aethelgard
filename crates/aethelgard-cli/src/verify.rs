@@ -691,7 +691,15 @@ struct Mechanism {
 /// scenario's own `expect_findings`.
 const RISE: &[&str] = &["analog_rise_exceeds_ceiling", "i2c_timeout"];
 const HELD: &[&str] = &["i2c_line_held_low", "i2c_timeout"];
-const ABSENT: &[&str] = &["spi_identity_mismatch", "spi_transaction_unwitnessed"];
+/// An absent device fails every read the firmware makes of it: its identity,
+/// and its data where the bring-up reads data (an IMU's, `AET-WO-4220c`);
+/// `attribute` decides each by the same E2 evidence (`AET-WO-2304b` F-IMU,
+/// measured on Sentinel-03's U5 and the power fixture's).
+const ABSENT: &[&str] = &[
+    "spi_data_mismatch",
+    "spi_identity_mismatch",
+    "spi_transaction_unwitnessed",
+];
 const OPEN: &[&str] = &["serial_echo_missing"];
 
 /// What one scenario seeds, judged against the specification.
