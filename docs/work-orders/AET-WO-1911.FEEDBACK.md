@@ -1,10 +1,65 @@
 # AET-WO-1911 — FEEDBACK
 
-**Status: STOPPED at §1.3 with the table (`ci/SHARDS` unchanged at 8 on this branch).** §1.1 (docs-only routing, inventory guard) and §1.2 (one shared build, sameness proven) are built on PR #242. §1.4 waits on the ruling.
+**Status: built to the ruling on the §1.3 stop (architect, bus, 2026-11-19 22:10 UTC).**
+- **D1:** `ci/SHARDS` 12, accepted.
+- **D2:** keep the shared build.
+- §1.4 is done: refit, REFIT RULE 4 rewritten, and the counted runs below.
+- The stop's record follows unchanged, as Part 1.
 
 **Branch:** `wo/aet-1911-ci-wait` · **Base:** `main` `47ec18f6`, `main` `56639a89` merged in · **Builder:** Claude (Opus 5.5).
 - A Sonnet subagent mapped which tests read documents; I checked its two readers against the source.
 - The routing, the guards and the shared build are mine (gate logic stays single-threaded).
+
+# Part 2: after the ruling (§1.4)
+
+## What changed
+
+- **`ci/SHARDS` is 12.**
+- **REFIT RULE 4** in `ci/shard.sh` cites this order and the ruling. It says to change the count only from a new measurement of the same kind. A shard planned above the mean only because one indivisible block alone exceeds the mean is the floor, not an imbalance.
+  - Rule 5's superseded "keep 8 shards" interim is removed.
+  - The §6 wording for the roadmap is in the PR body, quoted, for the architect's docs PR.
+- **The refit, by REFIT RULE 5, from five runs:** the four 12-shard runs, and the STOP head's 44622353365, which carried `main`'s new tests. Tool: `~/.cache/aet-1911/refit/refit.py`, over the shard job logs.
+  - **Rows:** every row is re-weighed at its worst in-shard seconds. A lock-serialised test is its `ok` less the previous completion. Rows under 0.5 s are dropped (4), and 17 are added.
+  - **Blocks:** every block is at its worst libtest `finished in`, rounded up.
+    - `four_layer_fab_tier2` 1,371 → 1,575 s;
+    - `attribute_seeded` 1,086 → 1,115;
+    - `verify_47k_tier2` 448 → 564;
+    - `power_board_tier1` 272 → 368;
+    - `supply_tier1` 796 → 599;
+    - `outline_tier1` 408 → 392;
+    - `via_ring_tier1` 173 → 167;
+    - `campaign_tier2` 37 → 60.
+  - **One P2 refusal fixed:** the STOP head's run failed one shard on P2 (`1910` D6), every test passing. `hot_plug_tier1`'s `the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards`, new on `main` from `1315`, ran 63 s with no row. On `main`'s own runs it stayed under libtest's 60 s line. It now has its row (63 s).
+  - **`BASE0`**, shard 0's fixed work besides tests, is the in-image fmt and clippy: measured 30–37 s, set to 37. It was 25, described as the bridge's lint, which `gates` runs.
+- **The plan at 12, on the merged tree's list** (2,504 names, 2,511 occurrences): slowest 1,575 s (the block), mean 1,322 s. P1 is silent and the guard is ok.
+
+## Counted runs at 12 shards (before: `1910`'s three at 8, per-shard build, 36.1–38.7 min)
+
+| counted run | head | `tools` green, min | all done, min | build job, s | shard setup, s | shard test, s | max queue, s | runner-min | tier 2 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 (44629224488) | `d87febc8` | 29.8 | 29.8 | 258 | 87–234 | 671–1352 | 48 | 227 | 190 (floor 190) |
+
+## Reduction pass (diff, a fresh subagent's proposals, `~/.cache/aet-1911/reduction`)
+
+- **Applied:**
+  - one `RUN` at the workflow level, not three copies;
+  - one descriptor-closing step in `gates` for both classes;
+  - the shard-success check folded into `tools`' routing step;
+  - `route.sh`'s `is_docs` and `shard.sh`'s `stamp` subcommands removed (no caller);
+  - an unused awk binding, `rows`' redundant END, the `example!` arm (identical to `unmapped!`) and `docs_tests`' `PIPESTATUS` dance removed;
+  - `decide`'s temporary directory replaced by process substitution;
+  - the two mode checks made one loop;
+  - the superseded interim ruling and comments that restated a header removed.
+- **Kept, and why:**
+  - **`decide`'s "no class" arm:** the reviewer called it unreachable, but the adversarial pass reached it with a newline path injecting a second `class=` line.
+  - **The `inventory` subcommand:** the readable view.
+  - **The plan step's `compiled_in` checks:** they guard drift between `build_all`'s flags and `FEATURES`.
+- **Proof:** both suites green, the guard ok, the docs-only tests run locally, and 24/24 mutants still killed (two re-pointed to their moved text).
+- **Finding (out of scope):** `ci/SHARDS`'s positive-integer check is written in both `ci.yml`'s route job and `shard.sh plan`, as before this order.
+
+Reduction pass (diff): −51 net · 5 duplicates removed · 6 dead paths removed · 0 protected kept · 1 finding above
+
+# Part 1: the stop (§1.1–§1.3), as reported
 
 ## Answer first
 
