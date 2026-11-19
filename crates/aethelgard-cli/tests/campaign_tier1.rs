@@ -208,6 +208,13 @@ const INSTRUCTIONS: &str = "0x0000000000989680";
 const FLASH_ACCESS: &str = "[00:00:00.000000000] [INFO] flashController: Logging is already enabled\n\
 [00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC\n";
 
+/// The PWR's access log of a generated boot (`AET-WO-4240v` §1.6; the
+/// shape measured in Renode 1.17.0, FEEDBACK): `PWR_CR3` read at `0x46` and
+/// written once (`0x42`), then `PWR_D3CR` written `0x8000`, VOS Scale 2.
+const PWR_ACCESS: &str = "[00:00:00.000000000] [INFO] pwr: [cpu: 0x800000A] ReadUInt32 from 0xC (unknown), returned 0x46\n\
+[00:00:00.000000000] [INFO] pwr: [cpu: 0x8000014] WriteUInt32 to 0xC (unknown), value 0x42\n\
+[00:00:00.000000000] [INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x8000\n";
+
 /// A transcript: the echoed command line, the run's `log`, the reads between
 /// the markers, then `listing`.
 fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
@@ -215,6 +222,7 @@ fn transcript(log: &str, reads: &[&str], listing: &str) -> String {
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
     s.push_str(FLASH_ACCESS);
+    s.push_str(PWR_ACCESS);
     s.push_str(CONSOLE_ACCESS);
     s.push_str(&injection(0));
     s.push_str(log);

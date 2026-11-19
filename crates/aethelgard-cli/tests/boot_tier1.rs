@@ -194,6 +194,18 @@ const FLASH_ACCESS: &str = "[00:00:00.000000000] [INFO] flashController: Logging
 [00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAFC
 ";
 
+/// The PWR's access log of a generated boot (`AET-WO-4240v` §1.6; the
+/// shape measured in Renode 1.17.0, FEEDBACK): `PWR_CR3` read at revision
+/// V's `0x46` and written once with `LDOEN` (`0x42`), then `PWR_D3CR`
+/// written `0x8000` (VOS Scale 2), before any RCC enable write. The waits'
+/// polls of `CSR1` and `D3CR` are discarded by the boot's log filter.
+const PWR_ACCESS: &str =
+    "[00:00:00.000000000] [INFO] pwr: [cpu: 0x800000A] ReadUInt32 from 0xC (unknown), returned 0x46
+[00:00:00.000000000] [INFO] pwr: [cpu: 0x8000014] WriteUInt32 to 0xC (unknown), value 0x42
+[00:00:00.000000000] [INFO] pwr: [cpu: 0x8000016] ReadUInt32 from 0xC (unknown), returned 0x42
+[00:00:00.000000000] [INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x8000
+";
+
 /// What USART1's file backend holds after a boot of `firmware` that sent
 /// the console's pattern and echoed its frame (`AET-WO-4300b`; measured).
 fn capture_of(firmware: &[u8]) -> Vec<u8> {
@@ -212,6 +224,7 @@ fn transcript(run_log: &str, reads: &[&str]) -> String {
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
     s.push_str(FLASH_ACCESS);
+    s.push_str(PWR_ACCESS);
     s.push_str(CONSOLE_ACCESS);
     s.push_str(INJECTION);
     s.push_str(run_log);
