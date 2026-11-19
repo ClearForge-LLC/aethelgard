@@ -250,5 +250,7 @@ The ladder's smallest relative margin improves, from 16.9 % to 25.1 %. `extract`
 
 - **`cargo fmt --all -- --check`:** clean.
 - **`cargo clippy --workspace --all-targets -- -D warnings`:** clean, and also with `--features aethelgard-cli/with-tools`.
-- **`cargo test --workspace`:** 2270 passed, 0 failed, 0 ignored, exit 0, 1091 s (capped scope, 6 threads, at `ffe449cf`, the code as pushed).
+- **`cargo test --workspace`:** 2270 passed, 0 failed, 0 ignored, exit 0, in a capped scope with 6 threads:
+  - at `ffe449cf`, 1091 s;
+  - at `ef59911d`, with `main` `47ec18f6` merged in and the size-sample pin, 974 s.
 - **Reduction pass (diff):** −5 net (`rules.rs` −7, its one test caller +2) · 1 duplicate removed (`Rules::from_specification`, a wrapper both production callers had replaced) · 1 mis-attached doc comment fixed · 0 dead paths left (the two strap refusals merged into one before the mutants) · 1 protected kept (the wirable check) · 2 findings outside scope (F5). The review was by a fresh subagent; each proposal was spot-checked against the code. Not taken: merging `extract.rs`'s refusal into `undeclared`, since its `Refusal` and the CLI's `Stop` are two types.
