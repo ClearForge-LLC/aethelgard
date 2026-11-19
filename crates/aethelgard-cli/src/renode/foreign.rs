@@ -1677,7 +1677,7 @@ mod tests {
     /// are listed as declared only, with the condition that says so.
     #[test]
     fn the_declared_timer_clock_is_held_to_the_rcc_registers() {
-        let regs = [0x0300_7025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231];
+        let regs = [0x3F00_3025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231];
         let declared = |hz: u64| aethelgard_ir::motor::SolvedForeignClock {
             apb1_timers_hz: hz,
             apb2_timers_hz: hz,

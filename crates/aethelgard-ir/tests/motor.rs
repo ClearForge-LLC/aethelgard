@@ -497,12 +497,13 @@ fn a_motor_output_named_gnd_is_refused() {
 use aethelgard_ir::motor::{Apb, RccDecodeError, RccRegisters};
 
 /// The six registers ArduPilot (ChibiOS `stm32h7_mcuconf.h`, `OSCILLATOR_HZ`
-/// 0) leaves, as the twin read them back (`AET-WO-4400f` §2): `RCC_CR`
-/// with HSI on and `HSIDIV` 0, `RCC_CFGR` `0x801B`, `RCC_D1CFGR` `0x48`,
+/// 0) leaves, as the twin read them back at a 5 s `--foreign` run's end
+/// (`AET-WO-4400g`, measured): `RCC_CR` `0x3F003025` (HSI on, `HSIDIV` 0,
+/// the PLLs on), `RCC_CFGR` `0x801B`, `RCC_D1CFGR` `0x48`,
 /// `RCC_D2CFGR` `0x440`, `RCC_PLLCKSELR` `0x408040`, `RCC_PLL1DIVR`
 /// `0x01090231`.
 fn ardupilot() -> RccRegisters {
-    RccRegisters::from_values([0x0300_7025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231])
+    RccRegisters::from_values([0x3F00_3025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231])
 }
 
 /// §1.2's exact case: HSI 64 MHz ÷ `DIVM1` 4 × `DIVN1` 50 ÷ `DIVP1` 2 is
