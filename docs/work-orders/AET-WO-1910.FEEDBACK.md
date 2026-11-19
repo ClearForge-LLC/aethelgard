@@ -1,6 +1,6 @@
 # AET-WO-1910 — FEEDBACK
 
-**Status: census done (§1), STOPPED for the ruling.**
+**Status: census done (§1), STOPPED for the ruling on PR #233.**
 - No test, fixture, `ci/` file or workflow changed. This file is the branch's only change.
 - Every saving below is measured: from CI's own logs of three runs on post-`1314` code, or from runs in a scratch copy, never from the worktree.
 - One task came in between: `AET-WO-1605c` (main red through `bench-package`), done on its own PR, #232.
