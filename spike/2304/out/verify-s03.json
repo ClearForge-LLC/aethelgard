@@ -1,0 +1,132 @@
+{
+ "full_verify_json_sha256": "91d524e879f55f6f836be7f4679e3f355f4f99abf310a246b6db57a720d365e0",
+ "full_bytes": 381321,
+ "ok": true,
+ "verdict": "pass",
+ "engine_version": "0.2.0",
+ "specification_sha256": "6720c25589bb5774564dddf4190a0b523e7f3ea41b00a338b8ed5c6a4be266a8",
+ "elf_sha256": "5756a2e05f82b9d64be5db29964efa5f090a50245c32ce352c1acf0a7b38ca51",
+ "gates": [
+  {
+   "gate": "erc",
+   "verdict": "pass",
+   "harness": null
+  },
+  {
+   "gate": "drc",
+   "verdict": "pass",
+   "harness": null
+  },
+  {
+   "gate": "support",
+   "verdict": "pass",
+   "harness": null
+  },
+  {
+   "gate": "extract",
+   "verdict": "pass",
+   "harness": null
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_i2c1"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_i2c2"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_spi1"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_spi2"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_tim1"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::every_valid_sequence_gpio"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::i2c1_transfer_is_bounded_and_ordered"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::i2c2_transfer_is_bounded_and_ordered"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::spi1_transfer_is_bounded_and_ordered"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::spi1_transfer_refuses_too_many_frames"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::spi2_transfer_is_bounded_and_ordered"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::spi2_transfer_refuses_too_many_frames"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::reset_clock_is_ok_exactly_at_reset"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::tim1_start_writes_the_solved_values"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::usart1_start_writes_the_solved_values"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::usart2_start_writes_the_solved_values"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::usart3_start_writes_the_solved_values"
+  },
+  {
+   "gate": "prove",
+   "verdict": "pass",
+   "harness": "proofs::flash_option_status_is_one_read"
+  },
+  {
+   "gate": "build",
+   "verdict": "pass",
+   "harness": null
+  },
+  {
+   "gate": "simulate",
+   "verdict": "pass",
+   "harness": null
+  }
+ ],
+ "findings_kinds": []
+}

@@ -1,0 +1,21 @@
+== b-I1-100us
+{"net":"VBAT","min_uv":6381221,"min_at_ns":53700000,"max_uv":7639467,"max_at_ns":100000,"end_uv":6381221}
+{"net":"VDD_3V3","min_uv":3262600,"min_at_ns":100000,"max_uv":3262600,"max_at_ns":100000,"end_uv":3262600}
+== b-I1-100us-r2
+{"net":"VBAT","min_uv":6381221,"min_at_ns":53700000,"max_uv":7639467,"max_at_ns":100000,"end_uv":6381221}
+{"net":"VDD_3V3","min_uv":3262600,"min_at_ns":100000,"max_uv":3262600,"max_at_ns":100000,"end_uv":3262600}
+== b-I1-10us
+{"net":"VBAT","min_uv":6381221,"min_at_ns":53630000,"max_uv":8640765,"max_at_ns":10000,"end_uv":6381221}
+{"net":"VDD_3V3","min_uv":3262600,"min_at_ns":60000,"max_uv":3267512,"max_at_ns":10000,"end_uv":3262600}
+== b-I2-100us
+{"net":"VBAT","min_uv":455858,"min_at_ns":41200000,"max_uv":7639467,"max_at_ns":100000,"end_uv":6964418}
+{"net":"VDD_3V3","min_uv":252336,"min_at_ns":41300000,"max_uv":3262600,"max_at_ns":100000,"end_uv":3262600}
+== b-I2-10us
+{"net":"VBAT","min_uv":2929615,"min_at_ns":41050000,"max_uv":8640765,"max_at_ns":10000,"end_uv":6968091}
+{"net":"VDD_3V3","min_uv":2606577,"min_at_ns":41060000,"max_uv":3267512,"max_at_ns":10000,"end_uv":3262600}
+== b-T10-100us
+{"net":"VBAT","min_uv":-1543865,"min_at_ns":39600000,"max_uv":7639467,"max_at_ns":100000,"end_uv":6968093}
+{"net":"VDD_3V3","min_uv":5315,"min_at_ns":39700000,"max_uv":3262600,"max_at_ns":100000,"end_uv":3262600}
+== b-T10-10us
+{"net":"VBAT","min_uv":2772701,"min_at_ns":39620000,"max_uv":8640765,"max_at_ns":10000,"end_uv":6762576}
+{"net":"VDD_3V3","min_uv":2492410,"min_at_ns":39580000,"max_uv":3267512,"max_at_ns":10000,"end_uv":3262600}
