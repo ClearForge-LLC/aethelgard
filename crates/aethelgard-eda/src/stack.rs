@@ -270,7 +270,10 @@ fn nm(um: u32) -> i64 {
 
 impl Stack {
     /// The declared board of a specification that `validate` accepted.
-    pub fn of(spec: &Specification) -> Stack {
+    /// Refused with the first field the ring rule needs that a declared
+    /// `fab_tolerances` block lacks ([`RingRule::of`]), never read with the
+    /// engine's via instead (`AET-WO-1315` §1.6).
+    pub fn of(spec: &Specification) -> Result<Stack, &'static str> {
         let b = &spec.board;
         let s = &b.stackup;
         let f = &s.finished_thickness_um;
@@ -385,7 +388,7 @@ impl Stack {
         // engine's own part, is raised to it and noted. A class keeps its
         // declared via: an undersized one is refused before routing
         // ([`RingRule::unheld`]), never raised here.
-        if let Ok(Some(rule)) = RingRule::of(spec) {
+        if let Some(rule) = RingRule::of(spec)? {
             st.via_nm = rule.pad_nm(st.drill_nm);
             // a class that declares no via is laid with the board's
             for c in st.classes.iter_mut().filter(|c| !c.via_declared) {
@@ -407,7 +410,7 @@ impl Stack {
                 }
             }
         }
-        st
+        Ok(st)
     }
 
     /// The class or pair a net (by the board's name) is in: `class` or

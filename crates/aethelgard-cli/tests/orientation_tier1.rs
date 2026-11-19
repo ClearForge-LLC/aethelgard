@@ -213,7 +213,7 @@ fn the_placed_imu_agrees_with_the_declared_orientation() {
         );
         assert_eq!(theta, want_theta, "{forward} {x}");
         // The DRC gate's own reading agrees (`route::declared`).
-        let stack = aethelgard_eda::stack::Stack::of(&spec);
+        let stack = aethelgard_eda::stack::Stack::of(&spec).unwrap();
         aethelgard_eda::route::declared(&strict::board(&board).unwrap(), &stack)
             .unwrap_or_else(|d| panic!("{forward} {x}: {}: {}", d.kind, d.message));
         // The F.Cu keep-out is the pad ring's, turned: 1.85 x 1.35 mm about
@@ -332,7 +332,7 @@ fn a_hand_turned_imu_footprint_is_refused_by_the_drc_gate() {
     let v = fixture();
     let (spec, solved, table) = solved(&v);
     let board = schematic::emit(&spec, &solved, &table).unwrap().board;
-    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let stack = aethelgard_eda::stack::Stack::of(&spec).unwrap();
     let judge = |b: &str| aethelgard_eda::route::declared(&strict::board(b).unwrap(), &stack);
     judge(&board).unwrap();
     // U5 is at 0 degrees: turned a quarter, a half, three quarters.
@@ -357,7 +357,7 @@ fn a_hand_turned_imu_footprint_is_refused_by_the_drc_gate() {
         let other: Specification = serde_json::from_value(declared("top", x, z)).unwrap();
         let d = aethelgard_eda::route::declared(
             &strict::board(&board).unwrap(),
-            &aethelgard_eda::stack::Stack::of(&other),
+            &aethelgard_eda::stack::Stack::of(&other).unwrap(),
         )
         .unwrap_err();
         assert_eq!(d.kind, "ImuOrientationDisagrees", "{x} {z}: {}", d.message);
