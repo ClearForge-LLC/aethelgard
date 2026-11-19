@@ -1594,13 +1594,15 @@ fn a_log_past_the_filter_s_budget_leaves_every_read_unwitnessed() {
     assert_eq!(code, Some(1), "{v}");
     // Every read, U4's on SPI too (`AET-WO-4200`), the console's writes and
     // its TX pin at the first TDR write (`AET-WO-4300b`), the flash
-    // controller's one read (`AET-WO-4230` D10), and the injection, read
-    // from the hooks' own log lines since `AET-WO-2302`: a dropped line could
-    // be one, so the echo is never counted.
+    // controller's one read (`AET-WO-4230` D10), the PWR's writes
+    // (`AET-WO-4240v` §1.6), and the injection, read from the hooks' own log
+    // lines since `AET-WO-2302`: a dropped line could be one, so the echo is
+    // never counted.
     assert_eq!(
         kinds(&v),
         [
             "flash_controller_access",
+            "pwr_access",
             "i2c_transaction_unwitnessed",
             "spi_transaction_unwitnessed",
             "serial_tag_mismatch",
