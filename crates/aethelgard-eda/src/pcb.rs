@@ -2082,7 +2082,9 @@ pub(crate) fn write(
 }
 
 /// [`write`], with each of `moves` placed where it says instead, inside
-/// `bound` when one is declared (`AET-WO-1313`).
+/// `bound` when one is declared (`AET-WO-1313`), routed as today: the
+/// tests' path; `emit` places through `schematic::place` (`AET-WO-1314`).
+#[cfg(test)]
 pub(crate) fn write_moved(
     project: &str,
     parts: &[Part],
@@ -2090,6 +2092,25 @@ pub(crate) fn write_moved(
     moves: &[Move],
     bound: Option<OutlineBound>,
 ) -> Result<String, EmitError> {
+    let (footprints, outline) = placed(project, parts, stack, moves, bound)?;
+    write_placed_at(
+        project,
+        footprints,
+        outline,
+        stack,
+        Some(route::Rung::TODAY),
+    )
+}
+
+/// The placed, netted footprints of [`write_moved`] and the outline, before
+/// routing: shared by every rung of the capacitance ladder (`AET-WO-1314`).
+pub(crate) fn placed(
+    project: &str,
+    parts: &[Part],
+    stack: &crate::stack::Stack,
+    moves: &[Move],
+    bound: Option<OutlineBound>,
+) -> Result<(Vec<Sx>, Rect), EmitError> {
     let items = items(parts)?;
     let pairs: Vec<[String; 2]> = stack.pairs.iter().map(|p| p.nets.clone()).collect();
     let layout = layout_of(&items, moves, &pairs, bound)?;
@@ -2101,7 +2122,7 @@ pub(crate) fn write_moved(
         let p = &layout.placed[i];
         footprints.push(footprint(project, &items[i], p.origin, p.rotation)?);
     }
-    write_placed(project, footprints, layout.outline, stack)
+    Ok((footprints, layout.outline))
 }
 
 /// The board of `footprints`, each already placed and netted, inside
@@ -2112,6 +2133,25 @@ pub fn write_placed(
     footprints: Vec<Sx>,
     outline: Rect,
     stack: &crate::stack::Stack,
+) -> Result<String, EmitError> {
+    write_placed_at(
+        project,
+        footprints,
+        outline,
+        stack,
+        Some(route::Rung::TODAY),
+    )
+}
+
+/// [`write_placed`], routed at `rung` (`AET-WO-1314`); with `None`, the
+/// placed board alone: the same header, footprints and outline, and no
+/// track, via or zone (`schematic::placement`).
+pub(crate) fn write_placed_at(
+    project: &str,
+    footprints: Vec<Sx>,
+    outline: Rect,
+    stack: &crate::stack::Stack,
+    rung: Option<route::Rung>,
 ) -> Result<String, EmitError> {
     let mut layers = vec![Sx::atom("layers")];
     for (id, name, kind, user) in LAYERS {
@@ -2162,14 +2202,18 @@ pub fn write_placed(
         parts,
         stack: stack.clone(),
     };
-    let routed = route::route(&board).map_err(|e| match (e.exhausted, e.net.is_empty()) {
-        (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
-        (None, true) => EmitError::BoardUnroutable(e.why),
-        (None, false) => EmitError::Unroutable {
-            net: e.net,
-            why: e.why,
-        },
-    })?;
+    let routed = rung
+        .map(|rung| {
+            route::route_with(&board, rung).map_err(|e| match (e.exhausted, e.net.is_empty()) {
+                (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
+                (None, true) => EmitError::BoardUnroutable(e.why),
+                (None, false) => EmitError::Unroutable {
+                    net: e.net,
+                    why: e.why,
+                },
+            })
+        })
+        .transpose()?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
         at_sx("start", (o.x0, o.y0)),
@@ -2183,7 +2227,9 @@ pub fn write_placed(
         Sx::List(vec![Sx::atom("layer"), Sx::str("Edge.Cuts")]),
         uuid_sx(&format!("{project}/outline")),
     ]));
-    out.extend(copper(project, &routed, o, stack));
+    if let Some(routed) = &routed {
+        out.extend(copper(project, routed, o, stack));
+    }
     out.push(Sx::node("embedded_fonts", &["no"]));
     Ok(sexpr::write(&Sx::List(out)))
 }

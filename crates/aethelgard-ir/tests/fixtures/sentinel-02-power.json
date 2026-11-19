@@ -267,6 +267,10 @@
         "track_width_permille": {
           "value": 200,
           "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Traces, Track width tolerance, \"+/-20%\""
+        },
+        "via_ring_um": {
+          "value": 50,
+          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, \"Via diameter should be 0.1mm(0.15mm preferred) larger than Via hole size\""
         }
       }
     },
@@ -291,7 +295,7 @@
       "name": "SUPPLY_MCU",
       "track_width_um": 200,
       "via": {
-        "diameter_um": 700,
+        "diameter_um": 750,
         "drill_um": 300
       },
       "nets": [

@@ -1724,7 +1724,13 @@ fn bounded_gates(spec_path: &Path, base: &Path) -> Result<Gated, String> {
     let r = one(&text);
     if code == Some(2) {
         let kind = r["error"]["kind"].as_str().unwrap().to_owned();
-        assert_eq!(kind, "OutlineUnreachable", "emit: {r}");
+        // the placer's bound, or, on a board with the fabricator's
+        // tolerances, the capacitance ladder finding no rung within every
+        // bound (`AET-WO-1314` D3): each a refusal by name before any board
+        assert!(
+            kind == "OutlineUnreachable" || kind == "CapacitanceOverBound",
+            "emit: {r}"
+        );
         assert!(!out.exists(), "emit wrote into {}", out.display());
         assert_eq!(gen_code, Some(2), "generate: {gen_text}");
         assert_eq!(

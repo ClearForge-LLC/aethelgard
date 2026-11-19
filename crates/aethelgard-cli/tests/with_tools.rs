@@ -592,6 +592,10 @@ fn a_board_whose_own_files_are_looser_is_judged_by_the_gate() {
     fs::write(&board, LOOSE10).unwrap();
     let loose = aethelgard_eda::rules::Rules {
         arrays: Vec::new(),
+        via_nm: (
+            aethelgard_eda::route::VIA_NM,
+            aethelgard_eda::route::DRILL_NM,
+        ),
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,
@@ -672,6 +676,10 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
     );
     let own = aethelgard_eda::rules::Rules {
         arrays: Vec::new(),
+        via_nm: (
+            aethelgard_eda::route::VIA_NM,
+            aethelgard_eda::route::DRILL_NM,
+        ),
         source: aethelgard_eda::rules::Source::Specification,
         clearance_nm: 50_000,
         min_track_width_nm: None,

@@ -58,6 +58,10 @@ pub struct Rules {
     /// refill ignores a custom `zone_connection` (measured, FEEDBACK B2), so
     /// the pad carries it and `route::check` judges it.
     pub arrays: Vec<crate::stack::ThermalPad>,
+    /// The Default net class's via, diameter and drill: the board's own
+    /// (the engine's, or the ring rule's where the fabricator's tolerances
+    /// are declared, `AET-WO-1314`).
+    pub via_nm: (i64, i64),
 }
 
 /// One class's or pair's rules, by the board's net names: its tracks exactly
@@ -106,6 +110,7 @@ impl Rules {
             min_track_width_nm: Some(stack.width_nm),
             classes,
             arrays: stack.thermal.clone(),
+            via_nm: (stack.via_nm, stack.drill_nm),
         }
     }
 
@@ -118,6 +123,7 @@ impl Rules {
             min_track_width_nm: None,
             classes: Vec::new(),
             arrays: Vec::new(),
+            via_nm: (crate::route::VIA_NM, crate::route::DRILL_NM),
         }
     }
 
@@ -141,6 +147,7 @@ impl Rules {
         let min_clearance = mm(self.board_minimum_nm());
         let min_track = mm(self.min_track_width_nm.unwrap_or(0));
         let width = mm(self.min_track_width_nm.unwrap_or(FLOOR_NM));
+        let (via, drill) = (mm(self.via_nm.0), mm(self.via_nm.1));
         format!(
             r#"{{
   "board": {{
@@ -154,7 +161,7 @@ impl Rules {
   "meta": {{ "filename": "{stem}.kicad_pro", "version": 1 }},
   "net_settings": {{
     "classes": [
-      {{ "name": "Default", "clearance": {clearance}, "track_width": {width}, "via_diameter": 0.6, "via_drill": 0.3, "microvia_diameter": 0.3, "microvia_drill": 0.1, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25, "diff_pair_width": 0.2, "wire_width": 6, "bus_width": 12, "line_style": 0, "pcb_color": "rgba(0, 0, 0, 0.000)", "schematic_color": "rgba(0, 0, 0, 0.000)", "priority": 2147483647 }}
+      {{ "name": "Default", "clearance": {clearance}, "track_width": {width}, "via_diameter": {via}, "via_drill": {drill}, "microvia_diameter": 0.3, "microvia_drill": 0.1, "diff_pair_gap": 0.25, "diff_pair_via_gap": 0.25, "diff_pair_width": 0.2, "wire_width": 6, "bus_width": 12, "line_style": 0, "pcb_color": "rgba(0, 0, 0, 0.000)", "schematic_color": "rgba(0, 0, 0, 0.000)", "priority": 2147483647 }}
     ],
     "meta": {{ "version": 3 }}
   }}
@@ -234,6 +241,7 @@ mod tests {
     fn the_specification_sets_every_minimum_and_kicad_default_only_the_net_class() {
         let spec = Rules {
             arrays: Vec::new(),
+            via_nm: (crate::route::VIA_NM, crate::route::DRILL_NM),
             source: Source::Specification,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
@@ -267,6 +275,7 @@ mod tests {
     fn a_class_writes_its_exact_width_and_via() {
         let rules = Rules {
             arrays: Vec::new(),
+            via_nm: (crate::route::VIA_NM, crate::route::DRILL_NM),
             source: Source::Specification,
             clearance_nm: FLOOR_NM,
             min_track_width_nm: Some(FLOOR_NM),
@@ -314,6 +323,7 @@ mod tests {
             Rules::kicad_default(),
             Rules {
                 arrays: Vec::new(),
+                via_nm: (crate::route::VIA_NM, crate::route::DRILL_NM),
                 source: Source::Specification,
                 clearance_nm: FLOOR_NM,
                 min_track_width_nm: Some(FLOOR_NM),
@@ -328,5 +338,24 @@ mod tests {
             let wrapped = format!("(file {})", rules.custom_rules());
             assert!(crate::sexpr::parse(&wrapped).is_ok(), "{wrapped}");
         }
+    }
+
+    /// The Default net class's via is the board's own: the engine's 0.6/0.3
+    /// mm, or the ring rule's where the tolerances are declared
+    /// (`AET-WO-1314`), never a constant written in the project.
+    #[test]
+    fn the_projects_default_via_is_the_boards() {
+        let mut stack = crate::stack::reference();
+        let plain = Rules::from_stack(&stack).project("p");
+        assert!(
+            plain.contains("\"via_diameter\": 0.6, \"via_drill\": 0.3,"),
+            "{plain}"
+        );
+        stack.via_nm = 750_000;
+        let ruled = Rules::from_stack(&stack).project("p");
+        assert!(
+            ruled.contains("\"via_diameter\": 0.75, \"via_drill\": 0.3,"),
+            "{ruled}"
+        );
     }
 }

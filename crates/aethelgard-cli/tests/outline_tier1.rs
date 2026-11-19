@@ -339,15 +339,28 @@ fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
 
 /// `AET-WO-1313c` §2: twenty order-only renamings (references permuted
 /// within their letters and length, bus nets prefixed) place the fixture
-/// identically once names are taken out.
+/// identically once names are taken out. The assertion is placement alone,
+/// so the seeds are placed by `schematic::placement`, `emit`'s own path up
+/// to the router (`AET-WO-1314`, ruling 6987450886): routing each of them
+/// eight times, as the capacitance ladder does, bought this test nothing.
+/// The shortcut is proven, not assumed: the base fixture's full `emit`,
+/// ladder included, places exactly as `placement` does.
 #[test]
 fn order_only_renamings_place_the_fixture_the_same_way() {
     let place = |v: &Value| {
         let (spec, solved, table) = solved(v);
-        name_free(&schematic::emit(&spec, &solved, &table).unwrap().board)
+        name_free(&schematic::placement(&spec, &solved, &table).unwrap())
     };
     let base = fixture();
     let want = place(&base);
+    let (spec, solved_base, table) = solved(&base);
+    let emitted = schematic::emit(&spec, &solved_base, &table).unwrap();
+    assert!(emitted.ladder.is_some(), "the fixture is laddered");
+    assert_eq!(
+        name_free(&emitted.board),
+        want,
+        "emit's board places otherwise than its own placement"
+    );
     let seeds: Vec<u64> = (1..=20).collect();
     let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
     std::thread::scope(|s| {
@@ -362,6 +375,29 @@ fn order_only_renamings_place_the_fixture_the_same_way() {
             });
         }
     });
+}
+
+/// `schematic::placement` (`AET-WO-1314`, ruling 6987450886) is the placed
+/// board, not a routed one: no track, via or zone; and it refuses as `emit`
+/// does before routing (a bound the placer cannot reach).
+#[test]
+fn placement_writes_no_copper_and_refuses_as_emit_does() {
+    let (spec, topology, table) = solved(&fixture());
+    let board = schematic::placement(&spec, &topology, &table).unwrap();
+    // the board's own items, not text inside a footprint
+    let tree = sexpr::parse(&board).unwrap();
+    for head in ["segment", "via", "zone", "arc"] {
+        assert_eq!(tree.children(head).count(), 0, "{head}");
+    }
+    assert!(tree.child("gr_rect").is_some());
+    assert!(tree.children("footprint").count() > 0);
+    let (spec, topology, table) = solved(&with_bound(60, 60));
+    let placed = schematic::placement(&spec, &topology, &table).unwrap_err();
+    let emitted = schematic::emit(&spec, &topology, &table)
+        .map(|_| ())
+        .unwrap_err();
+    assert_eq!(placed.kind(), "OutlineUnreachable");
+    assert_eq!(placed.to_string(), emitted.to_string());
 }
 
 /// `AET-WO-1313c` §2, size samples: every reference prefixed by 2, 6 or 8

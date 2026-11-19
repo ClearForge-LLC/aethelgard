@@ -87,17 +87,17 @@ tests/board_tier2.rs	a_wrong_alternate_function_fails	347.983
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.431
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.523
 tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	23.912
-tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	23.184
+tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	210.223
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	560.336
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	46.596
 tests/board_tier2.rs	four_layer_fixture_passes_every_gate_and_its_package_holds	952.852
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	17.182
-tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	19.070
+tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	19.667
 tests/board_tier2.rs	the_generated_board_proves	443.547
 tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	38.198
 tests/board_tier2.rs	the_own_parts_fixture_passes_erc_drc_with_parity_and_extract	18.116
 tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	67.309
-tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	6.877
+tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	70.539
 tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.987
 tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	5.495
 tests/board_ui.rs	misuse_does_not_compile_and_the_driver_does	51.039
@@ -278,14 +278,14 @@ tests/placement_tier1.rs	check_drc_runs_parity_against_a_copy_of_the_schematic_b
 tests/placement_tier1.rs	emit_writes_the_board_and_two_runs_are_byte_identical	2.955
 tests/placement_tier1.rs	every_schematic_pin_net_is_on_its_pad_and_every_footprint_is_its_symbol	1.499
 tests/placement_tier1.rs	no_courtyards_overlap_and_every_one_is_inside_the_outline	2.559
-tests/power_board_tier1.rs	a_loop_part_moved_off_its_pin_fails_its_rule	14.969
-tests/power_board_tier1.rs	a_rule_whose_part_is_missing_is_refused	2.725
-tests/power_board_tier1.rs	a_source_or_return_pad_off_its_net_fails_k5	2.667
-tests/power_board_tier1.rs	a_starved_thermal_array_is_refused	3.149
-tests/power_board_tier1.rs	every_loop_rule_holds_on_the_fixtures_own_board	5.262
-tests/power_board_tier1.rs	extract_bounds_the_power_board	2.159
-tests/power_board_tier1.rs	only_a_rail_no_power_out_pin_drives_carries_a_flag	2.162
-tests/power_board_tier1.rs	the_reader_admits_a_footprints_keepout_clearance_and_nothing_more	2.761
+tests/power_board_tier1.rs	a_loop_part_moved_off_its_pin_fails_its_rule	291.663
+tests/power_board_tier1.rs	a_rule_whose_part_is_missing_is_refused	35.026
+tests/power_board_tier1.rs	a_source_or_return_pad_off_its_net_fails_k5	49.198
+tests/power_board_tier1.rs	a_starved_thermal_array_is_refused	52.187
+tests/power_board_tier1.rs	every_loop_rule_holds_on_the_fixtures_own_board	67.430
+tests/power_board_tier1.rs	extract_bounds_the_power_board	81.511
+tests/power_board_tier1.rs	only_a_rail_no_power_out_pin_drives_carries_a_flag	100.680
+tests/power_board_tier1.rs	the_reader_admits_a_footprints_keepout_clearance_and_nothing_more	81.183
 tests/propose.rs	a_capacitance_no_floor_value_can_fix_proposes_nothing_and_shows_its_numbers	1.175
 tests/propose.rs	a_clock_gate_left_off_is_a_board_crate_report_and_a_boot_word_a_firmware_one	0.737
 tests/propose.rs	an_indeterminate_or_passing_run_proposes_nothing_and_names_its_rule	1.177
@@ -309,7 +309,7 @@ tests/serial.rs	a_failing_write_judgement_or_an_unrouted_send_is_software_s5	1.0
 tests/serial.rs	a_usart_register_or_its_clock_gate_is_the_port_s_own_evidence	0.659
 tests/serial.rs	no_register_evidence_is_never_a_guess	0.640
 tests/serial.rs	the_console_s_rx_on_the_wrong_alternate_function_is_software_s5	0.580
-tests/solve_cli.rs	a_power_tree_solves_into_the_topology_and_emits_its_board	2.245
+tests/solve_cli.rs	a_power_tree_solves_into_the_topology_and_emits_its_board	52.140
 tests/speeds_tier1.rs	a_specification_with_no_spi_bus_judges_nothing_and_says_so	1.073
 tests/speeds_tier1.rs	the_four_layer_fixture_and_d1_hold_on_every_in_scope_line	1.377
 tests/speeds_tier1.rs	the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line	1.443
@@ -543,8 +543,8 @@ tests/support_tier1.rs	a_strap_or_a_supply_pin_off_its_net_fails	2.384
 tests/support_tier1.rs	one_capacitor_serves_one_pin	3.162
 tests/support_tier1.rs	the_reference_passes_the_support_gate	1.234
 # AET-WO-1310: Furnace, each alone (tier 1 on the host, tier 2 in the pinned image), times 2.8.
-tests/power_board_tier1.rs	the_crossing_is_drawn_and_its_limits_are_refused_by_name	52.800
-tests/power_board_tier1.rs	the_nets_validate_reserves_are_the_emitters_own	1.978
+tests/power_board_tier1.rs	the_crossing_is_drawn_and_its_limits_are_refused_by_name	57.733
+tests/power_board_tier1.rs	the_nets_validate_reserves_are_the_emitters_own	102.324
 tests/subgrid_tier1.rs	a_fully_wired_qfn_routes_at_every_residue	3.400
 tests/subgrid_tier1.rs	a_pad_the_grid_reaches_gets_no_escape	1.800
 tests/subgrid_tier1.rs	a_part_moved_inside_the_board_keeps_the_outline	9.700
@@ -573,16 +573,32 @@ tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	20.000
 tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	24.000
 # AET-WO-4400d: with_tools' a_turned_keepout_is_where_kicad_draws_it is a Furnace estimate, not a run: 10.84 s alone in the pinned image on Furnace, times 2.0 (a_part_on_each_edge_passes_erc_and_drc's 6.017 s on CI over its 3.00 s measured beside it), 21.680; replace it at the next refit.
 # AET-WO-1313c: Furnace estimates, not runs (each test alone, times 2.8 as AET-WO-1310's), until the refit rule measures them: board_tier2's each_size_sample (16.3 s in the pinned image), outline_tier1's four (4.05, 16.13 on up to 8 threads, 3.99, and the turned IMU's 10.90 s after 4400d, on the host) and pcb's two order tests (3.43, 0.68 s).
-tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	45.640
-tests/outline_tier1.rs	the_fixture_places_at_the_spikes_outline_with_every_gap_kept	11.340
-tests/outline_tier1.rs	order_only_renamings_place_the_fixture_the_same_way	45.164
-tests/outline_tier1.rs	each_size_sample_places_with_its_gaps_or_is_refused_by_name	11.172
-tests/outline_tier1.rs	a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound	30.520
+tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	225.722
+tests/outline_tier1.rs	the_fixture_places_at_the_spikes_outline_with_every_gap_kept	105.985
+tests/outline_tier1.rs	order_only_renamings_place_the_fixture_the_same_way	67.891
+tests/outline_tier1.rs	each_size_sample_places_with_its_gaps_or_is_refused_by_name	85.377
+tests/outline_tier1.rs	a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound	223.538
 unittests src/lib.rs	pcb::tests::under_a_bound_the_board_does_not_depend_on_the_parts_order	9.604
 unittests src/lib.rs	pcb::tests::with_anchored_parts_the_board_does_not_depend_on_the_parts_order	1.904
 # AET-WO-4220c: models_tier2's five FIFO tests below are estimates, not measurements (the file's other tests take 3.8-5.2 s on CI; these add the FIFO bursts' monitor commands), until the refit rule measures them.
+# AET-WO-1314 refit (2026-11-18), ruling 6989277256 on PR #227, REFIT RULE 5, from run 44372757248 (head a9b79f43; shard 1 cancelled at the 45 min guard): every test whose cost this PR changed (it emits, extracts or verifies a board with fab_tolerances, so the capacitance ladder routes it eight times) at its worst in-shard time: board_tier2's Sentinel-03 and power-fixture cases (behind its lock: `ok` less the previous holder's), and every test of outline_tier1, power_board_tier1, supply_tier1, via_ring_tier1, and solve_cli's power-tree emit (`ok` less the binary's `Running`, an upper bound). supply_tier1 (1303b) and via_ring_tier1 (new) had no rows, so DEFAULT_WEIGHT 0.05 s each, which is why shard 1 ran over. the_full_power_fixture kept at its larger earlier row. No other row changed.
 tests/models_tier2.rs	the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet	6.000
 tests/models_tier2.rs	the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz	8.000
 tests/models_tier2.rs	the_fifo_stops_when_full_and_latches_its_count_in_either_order	6.000
 tests/models_tier2.rs	packets_1_and_2_and_each_selection_left_out_says_so	6.000
 tests/models_tier2.rs	a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet	9.000
+tests/outline_tier1.rs	the_fixture_fits_its_bound_with_connectors_on_the_side_edges	115.782
+tests/outline_tier1.rs	validate_refuses_a_bound_that_cannot_hold_the_parts	1.874
+tests/supply_tier1.rs	a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named	4.710
+tests/supply_tier1.rs	a_drop_over_its_limit_fails_with_the_pitch_note	250.410
+tests/supply_tier1.rs	a_limit_on_a_domain_the_load_does_not_use_is_refused	119.137
+tests/supply_tier1.rs	a_specification_without_a_drop_limit_has_no_supplies	101.509
+tests/supply_tier1.rs	a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy	192.431
+tests/supply_tier1.rs	each_input_the_gate_reads_is_refused_by_name_when_absent	85.864
+tests/supply_tier1.rs	sentinel_03_on_rule_sized_vias_bounds_every_return	366.109
+tests/supply_tier1.rs	the_four_layer_board_bounds_every_supply_pin_within_its_limit	273.184
+tests/supply_tier1.rs	the_two_layer_power_fixture_refuses_its_ground_return_by_name	67.739
+tests/via_ring_tier1.rs	a_board_extract_cannot_judge_is_routed_as_today_and_named	13.500
+tests/via_ring_tier1.rs	a_board_no_rung_fits_is_refused_with_every_net_over_its_bound	118.452
+tests/via_ring_tier1.rs	a_board_without_tolerances_is_routed_as_before	6.233
+tests/via_ring_tier1.rs	sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone	118.250
