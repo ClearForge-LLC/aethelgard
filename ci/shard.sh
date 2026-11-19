@@ -317,7 +317,7 @@ BASE0=${SHARD0_FIXED_SECONDS:-25}
 # its own later); none on a shard.
 compiled_in() {
   readable "$1"
-  awk '/^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
+  awk '{ gsub(/\033\[[0-9;]*[A-Za-z]/, "") } /^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
     && return 0
   die "$1: this shard compiled; it must run the tools-build job's binaries (a stale or partial archive?)"
 }
@@ -331,6 +331,8 @@ build_all() {
 }
 
 stamp() {
+  # A checkout with any change or untracked file is not the tree its hash names (adversarial C4).
+  [ -z "$(git status --porcelain --untracked-files=all)" ] || die "the checkout is not clean: $(git status --porcelain --untracked-files=all | head -3 | tr '\n' ' ')"
   printf 'tree=%s\nimage=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$(tr -d '[:space:]' <"$here/../container/IMAGE")"
 }
 

@@ -183,10 +183,12 @@ printf '    Finished `test` profile\n     Running tests/a.rs (target/debug/deps/
 accepts "compiled_in: a fresh build, a test's own Compiling line after Running" "${py[@]}" compiled_in "$tmp/fresh.log"
 printf '   Compiling aethelgard-cli v0.2.0 (/repo/crates/aethelgard-cli)\n    Finished `test` profile\n     Running tests/a.rs (x)\n' >"$tmp/stale.log"
 refuses "compiled_in: a shard that compiles" "${py[@]}" compiled_in "$tmp/stale.log"
+printf '\033[1m\033[32m   Compiling\033[0m aethelgard-cli v0.2.0\n     Running tests/a.rs (x)\n' >"$tmp/color.log"
+refuses "compiled_in: a coloured Compiling line" "${py[@]}" compiled_in "$tmp/color.log"
 grep -q 'this shard compiled' "$tmp/out" && ok "compiled_in: says so" || bad "compiled_in: the reason"
 # pack and unpack, on a scratch repository with its own copy of ci/ and container/IMAGE.
 g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
-mkrepo() { rm -rf "$1"; mkdir -p "$1/ci" "$1/container" "$1/src"; cp "$here/shard.sh" "$here/SHARDS" "$1/ci/"; echo img@sha256:1 >"$1/container/IMAGE"; echo a >"$1/src/a.rs"
+mkrepo() { rm -rf "$1"; mkdir -p "$1/ci" "$1/container" "$1/src"; cp "$here/shard.sh" "$here/SHARDS" "$1/ci/"; echo img@sha256:1 >"$1/container/IMAGE"; echo a >"$1/src/a.rs"; echo /target/ >"$1/.gitignore"
   (cd "$1" && g init -q . && g add -A && g commit -qm a); }
 mkrepo "$tmp/b"
 (cd "$tmp/b" && mkdir -p target/debug/deps target/debug/incremental && echo bin >target/debug/deps/t-1 && echo inc >target/debug/incremental/x && bash ci/shard.sh pack "$tmp/art" >/dev/null) \
@@ -205,6 +207,11 @@ refuses "unpack: an archive built in another image" bash -c "cd '$tmp/s' && bash
 clone; cp -r "$tmp/art" "$tmp/art2"; printf 'x' >>"$tmp/art2/target.tar.zst"
 refuses "unpack: an archive that is not its stamp's" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art2'"
 grep -q "is not its stamp's" "$tmp/out" && ok "unpack: says the sha256" || bad "unpack: sha reason"
+(cd "$tmp/b" && echo dirty >src/a.rs && rm -rf "$tmp/art3")
+refuses "pack: from a dirty tree" bash -c "cd '$tmp/b' && bash ci/shard.sh pack '$tmp/art3'"
+(cd "$tmp/b" && git checkout -q src/a.rs)
+clone; echo edited >"$tmp/s/src/a.rs"
+refuses "unpack: over an edited checkout" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
 clone; mkdir -p "$tmp/s/target"
 refuses "unpack: over an existing target/" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
 exit "$fail"

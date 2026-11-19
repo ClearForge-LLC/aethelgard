@@ -10,7 +10,8 @@
 #                                 `class=docs` only when there is at least one path and every one is a regular file
 #                                 (mode 100644, or absent on one side) on the positive list; else `class=code`
 #   route.sh decide EVENT         the route job's step: on pull_request, classifies the merge commit against its
-#                                 first parent; any other event, or a HEAD that is not a two-parent merge, is code
+#                                 first parent; any other event, a HEAD that is not a two-parent merge, or one whose
+#                                 second parent is not $PR_HEAD_SHA (the pull request's head), is code
 #   route.sh inventory            every string literal in a Rust source under crates/ or bridge/ that names a
 #                                 docs-only path, as package<TAB>target<TAB>literal (target: a test target, `unit`
 #                                 for src/, or a refusal kind); comments are skipped
@@ -66,6 +67,9 @@ decide() {
     if [ "$parents" -ne 3 ]; then
       echo "route: HEAD $(git rev-parse HEAD) is not a two-parent merge; unknown is code"
       class=code
+    elif [ -z "${PR_HEAD_SHA:-}" ] || [ "$(git rev-parse HEAD^2)" != "$PR_HEAD_SHA" ]; then
+      echo "route: HEAD's second parent is not the pull request's head (${PR_HEAD_SHA:-unset}); unknown is code"
+      class=code
     else
       echo "route: the merge commit $(git rev-parse HEAD) against its first parent $(git rev-parse HEAD^1)"
       git diff --raw --no-renames -z HEAD^1 HEAD >"$out/raw"
@@ -90,11 +94,14 @@ docs_files() { git -C "$here/.." ls-files | while IFS= read -r f; do if is_docs 
 # nested block comments; newlines and tabs inside a literal become spaces.
 lits() {
   awk '
+    function hex(h,   v, k, d) { v = 0; h = tolower(h); for (k = 1; k <= length(h); k++) { d = index("0123456789abcdef", substr(h, k, 1)) - 1; v = v * 16 + d }; return v }
     function emit(   k) { gsub(/[\t\n]/, " ", buf); k = (tail ~ /include_(str|bytes)!\($/) ? "include" : "lit"; print FILENAME "\t" k "\t" buf }
     FNR == 1 { st = 0; depth = 0; tail = "" }
     {
       line = $0; n = length(line); i = 1
-      if (st == 1 || st == 2) buf = buf " "
+      if (st == 2 || (st == 1 && !cont)) buf = buf " "
+      if (st == 1 && cont) { sub(/^[ \t]+/, "", line); n = length(line) }
+      cont = 0
       while (i <= n) {
         c = substr(line, i, 1)
         if (st == 0) {
@@ -106,7 +113,7 @@ lits() {
             if (substr(line, i, 4) == "\x27\\\"\x27") { i += 4; continue }
             i++; continue
           }
-          if (c == "r" && (i == 1 || substr(line, i - 1, 1) !~ /[A-Za-z0-9_]/ || (i > 1 && substr(line, i - 1, 1) == "b" && (i == 2 || substr(line, i - 2, 1) !~ /[A-Za-z0-9_]/)))) {
+          if (c == "r" && (i == 1 || substr(line, i - 1, 1) !~ /[A-Za-z0-9_]/ || (i > 1 && substr(line, i - 1, 1) ~ /[bc]/ && (i == 2 || substr(line, i - 2, 1) !~ /[A-Za-z0-9_]/)))) {
             j = i + 1; h = 0
             while (substr(line, j, 1) == "#") { h++; j++ }
             if (substr(line, j, 1) == "\"") { st = 2; hashes = h; buf = ""; i = j + 1; continue }
@@ -116,7 +123,12 @@ lits() {
           i++; continue
         }
         if (st == 1) {
-          if (c == "\\") { buf = buf substr(line, i + 1, 1); i += 2; continue }
+          if (c == "\\") {
+            e = substr(line, i + 1, 1)
+            if (i == n) { cont = 1; i++; continue }
+            if (e == "x" && substr(line, i + 2, 2) ~ /^[0-7][0-9A-Fa-f]$/) { buf = buf sprintf("%c", hex(substr(line, i + 2, 2))); i += 4; continue }
+            if (e == "u" && match(substr(line, i + 2), /^\{[0-9A-Fa-f]+\}/)) { v = hex(substr(line, i + 3, RLENGTH - 2)); buf = buf (v < 128 ? sprintf("%c", v) : "?"); i += 2 + RLENGTH; continue }
+            buf = buf e; i += 2; continue }
           if (c == "\"") { emit(); st = 0; tail = tail "\""; i++; continue }
           buf = buf c; i++; continue
         }
@@ -136,13 +148,15 @@ lits() {
 }
 
 inventory() {
-  local root dfile files
+  local root dfile files paths
   root=$(cd "$here/.." && pwd)
   dfile=$(mktemp); trap 'rm -f "$dfile"' RETURN
   docs_files >"$dfile"
   [ -s "$dfile" ] || die "no docs-only file in the tree"
-  mapfile -t files < <(git -C "$root" ls-files 'crates/*.rs' 'bridge/*.rs')
-  [ "${#files[@]}" -gt 0 ] || die "no Rust source under crates/ or bridge/"
+  mapfile -t files < <(git -C "$root" ls-files '*.rs')
+  [ "${#files[@]}" -gt 0 ] || die "no Rust source in the tree"
+  paths=$(mktemp); trap 'rm -f "$dfile" "$paths"' RETURN
+  path_map "$root" >"$paths"
   (cd "$root" && lits "${files[@]}") | awk -F'\t' -v df="$dfile" -v root="$root" '
     # norm: strip leading "/", "./" and "../" runs; a docs-only path is matched repository-relative.
     function norm(p) { while (sub(/^(\.\.\/|\.\/|\/)/, "", p)) ; return p }
@@ -155,9 +169,13 @@ inventory() {
         out[++m] = parts[i] }
       p = ""; for (i = 1; i <= m; i++) p = p (i > 1 ? "/" : "") out[i]; return p }
     function base(p) { sub(/.*\//, "", p); return p }
+    # A file, its name, its directory (a walker of fab/sentinel-01-bench reads BENCH.md), every docs/ directory,
+    # and the bare stems of the root names (README*, LICENSE*: format!("{}.md", "README")).
     FILENAME == df { full[$0] = 1; b[base($0)] = 1
-      d = $0; while (sub(/\/[^\/]*$/, "", d)) if (d ~ /^docs(\/|$)/) dir[d] = 1
+      d = $0; if (sub(/\/[^\/]*$/, "", d)) dir[d] = 1
+      while (sub(/\/[^\/]*$/, "", d)) if (d ~ /^docs(\/|$)/) dir[d] = 1
       next }
+    BEGIN { b["README"] = 1; b["LICENSE"] = 1 }
     {
       f = $1; kind = $2; L = $3
       if (kind == "include") {
@@ -172,23 +190,41 @@ inventory() {
       if ((n in full) || (n in b) || (n in dir) || (s in full) || (s in dir) || (p != L && (p in full)) || L == "md" || L == ".md") print "lit\t" f "\t" L
     }' "$dfile" - | while IFS="$TAB" read -r kind f lit; do
       if [ "$kind" = include ]; then printf 'include!\t%s\t%s\n' "$f" "$lit"; continue; fi
-      target_of "$root" "$f" | while IFS= read -r t; do printf '%s\t%s\n' "$t" "$lit"; done
-    done | LC_ALL=C sort -u
+      target_of "$root" "$f" "$paths" | while IFS= read -r t; do printf '%s\t%s\n' "$t" "$lit"; done
+    done | LC_ALL=C sort | uniq -c | awk '{ n = $1; sub(/^ *[0-9]+ /, ""); print $0 "\t" n }' | LC_ALL=C sort
 }
 
-# target_of ROOT FILE: package<TAB>target for each test target FILE is compiled into, or a refusal kind.
+pkg_of() { awk -F'"' '/^\[/ { sec = $0 } sec == "[package]" && /^name *=/ { print $2; exit }' "$1/Cargo.toml"; }
+
+# path_map ROOT: file<TAB>package<TAB>binary for every `#[path = "P"]` in a crate's tests/*.rs, P resolved from tests/;
+# a P that is a mod.rs stands for its whole directory (file ends in "/").
+path_map() {
+  local root=$1 t d pkg b p r
+  for t in "$root"/crates/*/tests/*.rs; do
+    d=${t%/tests/*}; pkg=$(pkg_of "$d"); b=${t##*/}; b=${b%.rs}
+    { grep -oE '#\[path *= *"[^"]+"\]' "$t" || true; } | sed -E 's/^[^"]*"//; s/"\]$//' | while IFS= read -r p; do
+      r=$(realpath -m --relative-to="$root" "${t%/*}/$p")
+      case $r in */mod.rs) r=${r%mod.rs} ;; esac
+      printf '%s\t%s\t%s\n' "$r" "$pkg" "$b"
+    done
+  done
+}
+
+# target_of ROOT FILE PATHMAP: package<TAB>target for each test target FILE is compiled into, or a refusal kind.
+# src/ is a refusal: a docs path named in production code is a build input or a constant a test may read (AET-WO-1911
+# adversarial A4, B3).
 target_of() {
-  local root=$1 f=$2 dir pkg rest sub t found=0
+  local root=$1 f=$2 map=$3 dir pkg rest sub t found=0
   case $f in
     bridge/*) printf 'bridge!\t%s\n' "$f"; return ;;
     crates/*/*) ;;
     *) printf 'unmapped!\t%s\n' "$f"; return ;;
   esac
   dir=${f#crates/}; dir=${dir%%/*}; rest=${f#crates/"$dir"/}
-  pkg=$(awk -F'"' '/^\[/ { sec = $0 } sec == "[package]" && /^name *=/ { print $2; exit }' "$root/crates/$dir/Cargo.toml")
+  pkg=$(pkg_of "$root/crates/$dir")
   [ -n "$pkg" ] || die "crates/$dir/Cargo.toml names no package"
   case $rest in
-    src/*) printf '%s\tunit\n' "$pkg" ;;
+    src/*) printf 'src!\t%s\n' "$f" ;;
     tests/*/*)
       sub=${rest#tests/}; sub=${sub%%/*}
       for t in "$root/crates/$dir"/tests/*.rs; do
@@ -196,6 +232,10 @@ target_of() {
           found=1; t=${t##*/}; printf '%s\t%s\n' "$pkg" "${t%.rs}"
         fi
       done
+      # Binaries that include it by #[path], from any crate (adversarial B2).
+      while IFS="$TAB" read -r p ppkg pb; do
+        case $f in "$p" | "$p"*) case $p in */ | "$f") found=1; printf '%s\t%s\n' "$ppkg" "$pb" ;; esac ;; esac
+      done <"$map"
       [ "$found" -eq 1 ] || printf 'unmapped!\t%s\n' "$f" ;;
     tests/*.rs) t=${rest#tests/}; printf '%s\t%s\n' "$pkg" "${t%.rs}" ;;
     build.rs) printf 'build!\t%s\n' "$f" ;;
@@ -204,15 +244,16 @@ target_of() {
   esac
 }
 
-# The list: package<TAB>target<TAB>literal<TAB>reads|cites. A `cites` row names a docs-only name that the target
-# does not read (a crate-level README, a citation in a message); `reads` rows run on a docs-only pull request.
+# The list: package<TAB>target<TAB>literal<TAB>occurrences<TAB>reads|cites. A `cites` row names a docs-only name that
+# the target does not read (a crate-level README); `reads` rows run on a docs-only pull request. The occurrence count
+# pins each row: a new use of a cited name changes it and must be classified again (adversarial B1).
 rows() {
   local list=$1
   readable "$list"
   awk -F'\t' -v lf="$list" '
     /^#/ || NF == 0 { next }
-    NF != 4 || ($4 != "reads" && $4 != "cites") { print "route: " lf ":" FNR ": want package<TAB>target<TAB>literal<TAB>reads|cites" > "/dev/stderr"; bad = 1; exit 1 }
-    { print $1 "\t" $2 "\t" $3 "\t" $4 }
+    NF != 5 || $4 !~ /^[1-9][0-9]*$/ || ($5 != "reads" && $5 != "cites") { print "route: " lf ":" FNR ": want package<TAB>target<TAB>literal<TAB>occurrences<TAB>reads|cites" > "/dev/stderr"; bad = 1; exit 1 }
+    { print $1 "\t" $2 "\t" $3 "\t" $4 "\t" $5 }
     END { if (bad) exit 1 }' "$list"
 }
 
@@ -221,17 +262,17 @@ check() {
   inv=$(inventory) || exit 1
   have=$(rows "$list") || exit 1
   refused=$(awk -F'\t' '$1 ~ /!$/' <<<"$inv")
-  [ -z "$refused" ] || die "a source no docs-only run can judge names a docs-only path (a build input, an example, the bridge, or a file no test target includes): $(tr '\t\n' ' ;' <<<"$refused")"
-  missing=$(comm -23 <(printf '%s\n' "$inv" | sort -u) <(cut -f1-3 <<<"$have" | sort -u) | sed '/^$/d')
-  stale=$(comm -13 <(printf '%s\n' "$inv" | sort -u) <(cut -f1-3 <<<"$have" | sort -u) | sed '/^$/d')
-  [ -z "$missing" ] || die "a test target names a docs-only path and is not in $(basename "$list") (classify it reads or cites): $(tr '\t\n' ' ;' <<<"$missing")"
+  [ -z "$refused" ] || die "a source no docs-only run can judge names a docs-only path (production src/, a build input, an example, the bridge, or a file no test target includes): $(tr '\t\n' ' ;' <<<"$refused")"
+  missing=$(comm -23 <(printf '%s\n' "$inv" | sort -u) <(cut -f1-4 <<<"$have" | sort -u) | sed '/^$/d')
+  stale=$(comm -13 <(printf '%s\n' "$inv" | sort -u) <(cut -f1-4 <<<"$have" | sort -u) | sed '/^$/d')
+  [ -z "$missing" ] || die "a test target names a docs-only path, or names it more often, than $(basename "$list") says (classify it reads or cites): $(tr '\t\n' ' ;' <<<"$missing")"
   [ -z "$stale" ] || die "$(basename "$list") lists a row the inventory no longer finds (renamed or removed?): $(tr '\t\n' ' ;' <<<"$stale")"
-  echo "route: inventory ok: $(wc -l <<<"$inv") rows; docs-only set: $(awk -F'\t' '$4 == "reads" { print $1 " " $2 }' <<<"$have" | sort -u | tr '\n' ';')"
+  echo "route: inventory ok: $(wc -l <<<"$inv") rows; docs-only set: $(awk -F'\t' '$5 == "reads" { print $1 " " $2 }' <<<"$have" | sort -u | tr '\n' ';')"
 }
 
 docs_tests() {
   local list=$1 pkg t log status=0 args
-  mapfile -t targets < <(rows "$list" | awk -F'\t' '$4 == "reads" { print $1 "\t" $2 }' | sort -u)
+  mapfile -t targets < <(rows "$list" | awk -F'\t' '$5 == "reads" { print $1 "\t" $2 }' | sort -u)
   [ "${#targets[@]}" -gt 0 ] || die "$list has no reads row"
   log=$(mktemp); trap 'rm -f "$log"' RETURN
   for row in "${targets[@]}"; do

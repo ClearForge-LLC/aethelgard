@@ -52,11 +52,14 @@ base; class "an empty diff (unknown is code)" code
 # decide: the event and the merge commit
 base; git_ checkout -qb pr; echo more >>docs/a.md; git_ commit -qam pr; git_ checkout -q main; echo e2 >>examples/e.json; git_ commit -qam main
 git_ merge -q --no-ff -m merge pr
-got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = docs ] && ok "decide: a docs-only PR's merge commit, main having moved -> docs" || bad "decide: merge: got '$got'"
-got=$(bash "$here/route.sh" decide push | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a push runs everything" || bad "decide: push: got '$got'"
+prhead=$(git rev-parse pr)
+got=$(PR_HEAD_SHA=$prhead bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = docs ] && ok "decide: a docs-only PR's merge commit, main having moved -> docs" || bad "decide: merge: got '$got'"
+got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: no PR head given -> code" || bad "decide: no head: got '$got'"
+got=$(PR_HEAD_SHA=$(git rev-parse main^) bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a second parent that is not the PR head (parents swapped, say) -> code" || bad "decide: wrong head: got '$got'"
+got=$(PR_HEAD_SHA=$prhead bash "$here/route.sh" decide push | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a push runs everything" || bad "decide: push: got '$got'"
 got=$(bash "$here/route.sh" decide workflow_dispatch | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a dispatch runs everything" || bad "decide: dispatch: got '$got'"
 git_ checkout -q pr
-got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a HEAD that is not a merge -> code" || bad "decide: no merge: got '$got'"
+got=$(PR_HEAD_SHA=$prhead bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a HEAD that is not a merge -> code" || bad "decide: no merge: got '$got'"
 
 # ---- the inventory guard, on a scratch tree with its own copy of route.sh ----------------------------------------
 
@@ -68,7 +71,7 @@ inv() {
   printf 'fn f() { let _ = std::fs::read("../../docs/a.md"); }\n' >crates/d/tests/reads.rs
   printf '// docs/a.md in a comment\n/* README.md in a /* nested */ comment */\nfn g() { let _ = "crates/d/README.md"; }\n' >crates/d/tests/quiet.rs
   printf 'pub fn s() -> char { \x27"\x27 }\n' >crates/d/src/lib.rs
-  printf 'demo\treads\t../../docs/a.md\treads\n' >ci/list.tsv
+  printf 'demo\treads\t../../docs/a.md\t1\treads\n' >ci/list.tsv
   git_ init -q .; git_ add -A; git_ commit -qm t
 }
 expect() { # NAME WANT(ok|refused) [PATTERN]
@@ -92,14 +95,28 @@ inv; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/mod.rs
 expect "a helper no binary includes is refused as unmapped" refused "unmapped! crates/d/tests/common/mod.rs"
 inv; printf 'pub const D: &str = include_str!(\n    "../../../docs/a.md"\n);\n' >>crates/d/src/lib.rs
 expect "an include_str! of a docs-only path is refused" refused "include! crates/d/src/lib.rs docs/a.md"
+inv; printf '#[path = "../../../docs/gen.rs"]\npub mod gen;\npub const R: &str = "docs/a.md";\n' >>crates/d/src/lib.rs; echo 'pub fn f() {}' >docs/gen.rs
+expect "production src/ naming a docs-only path (a #[path] module, a constant) is refused" refused "src! crates/d/src/lib.rs"
+inv; printf 'fn h() { let _ = "../../docs/a.md"; let _ = "../../docs/a.md"; }\n' >crates/d/tests/reads.rs
+expect "a second use of a listed literal changes its count and is refused" refused "demo reads ../../docs/a.md 2"
+inv; printf '#[path = "common/stub.rs"]\nmod stub;\n' >crates/d/tests/viapath.rs; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/stub.rs; printf 'mod common;\n' >crates/d/tests/viamod.rs
+expect "a helper included by #[path] is charged to that binary too" refused "demo viapath docs/a.md"
+inv; printf 'fn h() { let _ = cr"x\\"; let _ = "docs\\x2fa.md"; let _ = "\\u{64}ocs/a.md"; }\n' >crates/d/tests/esc.rs
+expect "escapes decoded, cr raw strings: \\x2f and \\u{64} found" refused "demo esc docs/a.md 2"
+inv; printf 'fn h() { let _ = "../../do\\\n     cs/a.md"; }\n' >crates/d/tests/cont.rs
+expect "a line continuation joined" refused "demo cont ../../docs/a.md"
+inv; mkdir -p fab/b; echo b >fab/b/BENCH.md; printf 'fn h() { let _ = std::fs::read_dir("../../fab/b"); }\n' >crates/d/tests/walkfab.rs
+expect "a walker of a fab directory holding a document is refused" refused "demo walkfab ../../fab/b"
+inv; mkdir -p boards/x/src; printf 'const R: &str = include_str!("../../../README.md");\n' >boards/x/src/lib.rs
+expect "a Rust source outside crates/ naming a document is refused" refused "boards/x/src/lib.rs"
 inv; printf 'fn main() { println!("cargo:rerun-if-changed=../../README.md"); let _ = "../../README.md"; }\n' >crates/d/build.rs
 expect "a build script naming a root document is refused" refused "build! crates/d/build.rs"
 inv; mkdir -p bridge/src; printf 'fn f() { let _ = "docs/a.md"; }\n' >bridge/src/main.rs
 expect "the bridge naming a document is refused" refused "bridge! bridge/src/main.rs"
-inv; printf 'demo\tgone\tdocs/a.md\treads\n' >>ci/list.tsv
+inv; printf 'demo\tgone\tdocs/a.md\t1\treads\n' >>ci/list.tsv
 expect "a row the inventory does not find is refused" refused "demo gone docs/a.md"
-inv; printf 'demo\treads\t../../docs/a.md\n' >ci/list.tsv
-expect "a malformed row is refused" refused "want package<TAB>target<TAB>literal<TAB>reads|cites"
+inv; printf 'demo\treads\t../../docs/a.md\treads\n' >ci/list.tsv
+expect "a malformed row is refused" refused "want package<TAB>target<TAB>literal<TAB>occurrences<TAB>reads|cites"
 inv; git_ rm -q docs/a.md README.md
 expect "a tree with no docs-only file is refused" refused "no docs-only file"
 

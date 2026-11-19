@@ -42,6 +42,9 @@ jobs:
         run: bash ci/route.sh check ci/docs-tests.tsv
       - id: decide
         name: classify the diff
+        env:
+          # The merge commit's second parent must be this head, or the diff is code.
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           bash ci/route.sh decide "$GITHUB_EVENT_NAME" | tee "$RUNNER_TEMP/route.txt"
           grep '^class=' "$RUNNER_TEMP/route.txt" >> "$GITHUB_OUTPUT"
