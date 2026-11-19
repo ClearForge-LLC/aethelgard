@@ -18,7 +18,7 @@
 > **What this is:**
 > - (a) for the generated firmware: every timer and USART at the solved clock's kernel frequency, with the judge modelling Renode's whole-ns realization;
 > - (c) for a foreign firmware: a clock declared in the specification, the timers cross-checked against the RCC registers at the run's end, the USART stated unchecked;
-> - the archive carrying the clock (kind 25);
+> - the archive carrying the clock (kind 25's existing `kernel_hz`, read by replay);
 > - the foreign window at 5 s, with its RSS margin measured;
 > - the pinned Renode build recorded and refused when absent.
 >
@@ -57,7 +57,7 @@
      - No judgement is drawn from Renode's unhandled-write log line.
      - The verdict lists which clocks were checked and which were declared only.
 3. **Replay carries the clock (F6).**
-   - **The trace.** Kind 25 (`MotorOutputSolved`) gains the timer's kernel frequency, and `TRACE_VERSION` goes from 13 to 14. Its periods are the realized integer ns.
+   - **The trace.** `TRACE_VERSION` goes from 13 to 14, and the periods in kind 26 are the realized integer ns. *Corrected 2026-11-19 at the builder's reading of `record.rs`: kind 24 is `MotorOutputSolved` and kind 25 is `MotorTimingCheck`, which already carries `kernel_hz`, the solved timer kernel clock. Replay reads the clock there; no field is added to kind 24, so the clock is not stated twice (accepted on the bus, 03:22 UTC).*
    - **One function, one home.** The realized-period function is defined once, in `aethelgard-chaos`, the trace format's own crate.
      - The twin calls it. The twin gains its first dependency on `aethelgard-chaos`.
      - This puts it in `aethelgard-chaos`, not `aethelgard-ir` as the ruling first said: replay checks an archive without the twin, so the function belongs with the format.
