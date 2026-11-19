@@ -160,7 +160,8 @@ Each run is a full `--foreign 5000ms` ArduPilot boot under the 1 GiB bound, in a
   - `twin_tier2`'s `own_board` therefore derives a copy with `mcu.foreign_clock` removed and puts `sentinel-02-own-base.json` beside it, as `ci/foreign-judge.sh` derives its undeclared spec.
   - Cost: the committed `sentinel-02-own-base.json` no longer runs a generated campaign as committed.
   - The alternative was a sibling fixture that carries the declaration. That reverses 03:22 and copies a large fixture.
-  - Raised on the bus at 08:05Z; it waits on the architect's word.
+  - **RULED (ii), accepted (architect, 14:18Z).** A declared clock refused on a generated run of a shared fixture is an input refusal, not a flipped verdict, so it is not the WO's stop. The derived undeclared copy stays.
+  - **Its cost, named:** `sentinel-02-own-base.json` no longer runs a generated campaign as committed. Only the derived copy, with the declaration removed, does.
 
 ## §4 Findings
 
@@ -169,6 +170,7 @@ Each run is a full `--foreign 5000ms` ArduPilot boot under the 1 GiB bound, in a
 | F1 | `.github/workflows/ci.yml` L69 calls its crate list "also the order docs/releasing.md publishes in", and lists `aethelgard-twin` before `aethelgard-chaos`. `docs/releasing.md` L35–36 does the same. The twin now depends on chaos, so chaos must publish first. `cargo package` in one invocation is unaffected, but a publish in that order would fail. Both files are outside this fence. | architect: a docs/workflow edit |
 | F2 | The architecture §2.27 figures move: ArduPilot at 1.00000×, the window at 5 s, and the witness times (U4 0.1611 s; the barometers 0.3856/0.4359 s; the ICM 4.343/4.394 s). | the docs PR |
 | F3 | A foreign firmware clocked from HSE can never decode: `CrystalNotSupported` holds `mcu.hse_hz` at 0, so the run fails `foreign_clock_undecodable`, which fails closed. | backlog, with the crystal part |
+| F5 | `examples/sentinel-02-bench.json` (3304, `cd43b207`, after this branch's base) is at specification schema 16, which this branch refuses. Bumping it to 17 moves the specification sha256 that 3304's bench evidence records (input hash `7127d94a…`). `silicon_rules` skips a file it cannot parse, so no test fails. | architect: bump here, or in 3304's follow-up |
 | F4 | `fab/sentinel-01-bench/package/MANIFEST.json` moves (the specification's sha256, and `tool.build` in the verdict). It is derived by the architect's dispatch of `ci.yml` with `write=true` (bus, 03:10). | before READY |
 
 ## §5 Adversarial pass (full)
