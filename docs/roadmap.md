@@ -497,6 +497,14 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - The fabricated board passes the bring-up firmware's checks, ArduPilot arms with the props off, and the board flies the prototype tethered, then free, indoors (Scotty, 2026-11-15). Every disagreement with the twin is recorded.
 - An independent review has run on the gate commit, and its adopted findings are folded in (§6, ruled by Scotty 2026-11-15).
 - **Aethelgard is general, not Sentinel's.** A second board specification that is not a flight controller (a sensor logger or a small motor driver, written then) passes every gate with no engine change (Scotty, 2026-11-15).
+  - **"Passes every gate" means** (adopted 2026-11-19: the architect's proposal from `4600` D1, which Scotty accepted as ruled):
+    - `verify --scenarios … --fab-out` writes a fabrication package. A passing `verify` without scenarios runs no campaign, so it is not `INV-03`.
+    - `check speeds` passes.
+    - `generate hwdef` and `check pinout` are excluded by name for a board that runs no ArduPilot.
+    - Every gate shows what it judged, and a gate that judged nothing counts for nothing (`4600` F5).
+  - **Kept honest** (`4600` D6):
+    - The board is written by a fresh session from a brief that names its purpose and environment, never its buses, with no access to `spike/4600/`.
+    - The gate's independent review checks that the board was not fitted to the engine.
 
 **Later, not yet a phase:** more microcontroller families.
 - **The RP2350 stays the planned second target** (`RUL-08`), because a second vendor keeps the IR from becoming one vendor's register map. It needs a hand-written Renode platform description first, because the twin is the point. **Its timing (Scotty, 2026-11-16):** after Sentinel-01's scar, not after a drone.
