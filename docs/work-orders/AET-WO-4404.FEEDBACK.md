@@ -132,7 +132,7 @@ P1–P5 hold. The label rule, configure only, fc-base with `FLASH_CS` relabelled
 
 ## 4. §2 acceptance [measured]
 
-**Each §1.1 (c) mutation is refused by name, and the bases pass.** This branch's binary (`66b10879`) runs on the boards of §2.3:
+**Each §1.1 (c) mutation is refused by name, and the bases pass.** This branch's binary runs on the boards of §2.3. It was first measured at `66b10879` and re-measured at `c3d4f4f0`, after the SERIAL0 role fix and the reduction: every verdict is identical, and the no-console topology of A-D1 now gives `WrongSerialProtocol SERIAL0`:
 
 | board | `main` | this branch |
 |---|---|---|
@@ -150,7 +150,7 @@ P1–P5 hold. The label rule, configure only, fc-base with `FLASH_CS` relabelled
 
 P6 holds exactly.
 
-**CI's pinout step, reproduced locally.** The pinned image built the four hand boards (fixtures with the new headers) and the three generated boards (from this branch's `generate hwdef`). Then `container/ardupilot-pinout.sh` ran unchanged, with `main`'s binary and with this branch's:
+**CI's pinout step, reproduced locally.** The pinned image built the four hand boards (fixtures with the new headers) and the three generated boards (from this branch's `generate hwdef`). Then `container/ardupilot-pinout.sh` ran unchanged, with `main`'s binary and with this branch's (`66b10879`, re-run at `c3d4f4f0`). The hand-board ELFs were built before the A-D3 header correction, which changes comment lines only, and ArduPilot drops those (`hwdef.py:209`).
 - the script exits **0** with both;
 - the four hand boards keep exactly the findings the script expects;
 - the three generated boards exit 0 with `identity: judged`.
