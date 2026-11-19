@@ -188,6 +188,46 @@ fn generate_refuses_what_solve_refuses_and_writes_nothing() {
     assert!(!out.exists());
 }
 
+/// `AET-WO-4240v` D-1: a core supplied in `bypass` is a true declaration
+/// `validate` and `solve` accept, and `generate`, `emit` and `simulate`
+/// refuse by name, exit 2, before any tool is looked for and writing
+/// nothing; `simulate` before it reads the firmware.
+#[test]
+fn a_bypass_core_supply_validates_and_solves_and_is_never_generated() {
+    let dir = scratch("bypass");
+    fs::create_dir_all(&dir).unwrap();
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    assert_eq!(spec["mcu"]["core_supply"]["mode"], "ldo");
+    spec["mcu"]["core_supply"]["mode"] = "bypass".into();
+    let bypass = dir.join("bypass.json");
+    fs::write(&bypass, spec.to_string()).unwrap();
+    let (code, v) = run(&["validate", "--file", s(&bypass)], true);
+    assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");
+    let (code, v) = run(&["solve", "--file", s(&bypass)], true);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["core_supply"], "bypass");
+    let out = dir.join("out");
+    let refused = |args: &[&str]| {
+        let (code, v) = run(args, true);
+        assert_eq!(code, Some(2), "{args:?}: {v}");
+        assert_eq!(v["error"]["kind"], "CoreSupplyNotGenerated", "{v}");
+        assert!(!out.exists(), "{args:?}");
+    };
+    refused(&["generate", "--spec", s(&bypass), "--out", s(&out)]);
+    refused(&["emit", "--file", s(&bypass), "--out", s(&out)]);
+    refused(&[
+        "simulate",
+        "--platform",
+        s(&root().join("boards/sentinel-01/sentinel-01.repl")),
+        "--firmware",
+        s(&dir.join("absent.elf")),
+        "--spec",
+        s(&bypass),
+        "--for",
+        "10ms",
+    ]);
+}
+
 /// §3.3 and §3.4, the half before any tool: `--against` names every
 /// differing, missing and extra file, and no gate runs.
 #[test]
