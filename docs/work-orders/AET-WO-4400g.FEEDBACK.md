@@ -51,7 +51,8 @@ Every answer is labelled **measured**, **read at source** or **inferred**. Measu
   - `boot.clock.conditions` names `usart_clock_declared_unchecked` (Renode drops `RCC_D2CCIP2R`), `pll1_fraction_not_read` (Renode tags `PLL1FRACEN` and `FRACN1`) and `stock_frequency_undeclared`.
   - No judgement is drawn from Renode's unhandled-write line.
 - **`sentinel-02-own.json` declares ArduPilot's clock,** as the architect accepted (bus 03:22): timers at 200 MHz and USARTs at 72 MHz, each sourced to Copter-4.7.2's `stm32h7_mcuconf.h`.
-  - Workflows only `solve` that fixture and generate its hwdef. The hwdef is unchanged except its header's specification sha256.
+  - The workflows solve that fixture and generate its hwdef, which is unchanged except for its header's specification sha256.
+  - **Correction (D7):** I told the architect that the workflows only solve it. That was wrong. Three generated tier-2 runs boot our own firmware on it, and a declared clock refuses them. They now boot on a copy without the declaration.
 
 ### §1.3 Replay carries the clock (F6)
 
@@ -90,11 +91,57 @@ Every answer is labelled **measured**, **read at source** or **inferred**. Measu
 
 ### §1.7 Moved figures, each re-pinned from a run
 
-To be completed with the measured runs: §2.
+Each figure was re-pinned from a run, and each moved for one stated reason. Where a figure could be set back, setting it back reproduces the old one.
+
+- **`aethelgard-chaos` golden trace** (`bcd082c2…`, state `ada1b631…`): the version byte only. Set back to 13, the trace hashes to the version-13 golden `25392c25…`.
+- **`solve_cli` digests:** schema 17's `schema_version` and solved 11's `foreign_clock: null`. The old file, version 10 and no `foreign_clock` key, give the old digests (checked).
+- **`aethelgard-svd-hal` `order_2203`** (`main.rs` `5c770e1c…`, platform `88ab17b6…`, faulted `2a8151a8…`): the spec sha and the platform's clock block. Stripping both gives the old digests (checked).
+- **Board crates** (`boards/sentinel-01*`, re-blessed): the spec sha and the clock entries, LPTIMs included.
+- **hwdef fixtures:** the header's spec sha only.
+- **Motor fixtures** (chaos, evolve):
+  - PWM: period 2,499,000 ns, first rise at `PWM_ANCHOR + PERIOD`.
+  - DShot600: 1,657/625 ns, lead 1,700 ns, 1,206 rises.
+  - Late cases: 559 and 603.
+- **`fab/sentinel-01-bench/package/MANIFEST.json`:** derived by the architect's dispatch (F4).
 
 ## §2 Measured
 
-_(in progress)_
+### §2.1 ArduPilot at its declared clock, 5 s (**measured**)
+
+- **The run:** `--foreign 5000ms` on `sentinel-02-own`'s platform, with ArduPilot Copter-4.7.2 `a799dfb6` from run 44347566685's `generated-sentinel-02` artifact.
+- **Verdict:** `pass`, with the foreign judge, `tool.build` `1.17.0+20260907gitf1dd1b4af.aet1605`, and 89,697,415 instructions.
+- **RCC read back:** `RCC_CR` `0x3F003025`, `RCC_CFGR` `0x0000801B`, `RCC_D1CFGR` `0x48`, `RCC_D2CFGR` `0x440`, `RCC_PLLCKSELR` `0x408040`, `RCC_PLL1DIVR` `0x01090231`.
+  - These decode to `sys_ck` 400 MHz and timers 200/200 MHz, and both declarations hold.
+  - The eight USARTs are `declared_only` at 72 MHz.
+- **Witnesses (ns):** identical to 4400f (c) to the ns.
+  - U4 identity 161,141,150.
+  - U2 identity 385,637,340, data 435,855,540.
+  - U7 identity 385,831,960, data 435,812,030.
+  - U5 identity 4,342,643,780, first FIFO read 4,393,959,380.
+
+### §2.2 Generated firmware at the solved clock (**measured**, tier 2)
+
+- **DShot600** (`serial-dshot-9600`, `motors-dshot600`): passes, period 1,657 ns and high time 625 ns.
+- **PWM** (`motors-pwm`): passes, period 2,499,000 ns, high 1,000,000 ns, at least 40 rises.
+- **A board without motors:** its platform moves by the clock block alone. Its verdict moves by the platform's sha256 and the new `tool.build`, and in nothing judged.
+  - 4400f measured this on Sentinel-02.
+  - Here the derived bench MANIFEST (F4) will show it on Sentinel-01-bench's verdict, diffed against main's.
+- **No generated verdict flipped:**
+  - On the merged head before D7, 2,457 tests passed and 4 failed: the bench MANIFEST (F4) and D7's three refusals.
+  - After D7, those three pass (§6).
+
+### §2.3 F1: the 5 s window under concurrency (**measured**; stop over 900 ‰)
+
+Each run is a full `--foreign 5000ms` ArduPilot boot under the 1 GiB bound, in a second container under `capped-run`.
+
+| Set | Beside | Load (1 min) | Runs | Peak RSS ‰ | Wall |
+|---|---|---|---|---|---|
+| light | nothing | 1.4–2.1 | 3/3 pass | 792–807 | 11.4–11.6 s |
+| busy | a tier-2 suite starting | 9.2→6.2 | 3/3 pass | 800–811 | 11.3–11.6 s |
+| **of record** | container A's full tier-2 suite | 2.1–3.5 | **5/5 pass** | **773, 781, 791, 800, 773** (peak 839,756 KiB) | 11.2–11.6 s |
+
+- No run was killed, and none came within 89 ‰ of the stop. The highest was 811 ‰.
+- The bound is the boot's own 1 GiB. The container's 8 GiB is never near.
 
 ## §3 Decisions and deviations
 
@@ -108,6 +155,12 @@ _(in progress)_
   - `DIVM1` at its reset value 32: Renode's PLL1 prescaler stays 1 until the field changes (`STM32H7_RCC.cs` L78, L276);
   - a reference outside 1–16 MHz or a VCO outside 150–960 MHz (§8.7.13; `RCC_PLLCFGR` is not read, so the wider of the two VCO ranges holds);
   - a source not ready.
+
+- **D7, our own firmware on `sentinel-02-own` boots without the declaration.** The fixture declares ArduPilot's clock, as ruled at 03:22, and the WO refuses a declared clock on a generated run.
+  - `twin_tier2`'s `own_board` therefore derives a copy with `mcu.foreign_clock` removed and puts `sentinel-02-own-base.json` beside it, as `ci/foreign-judge.sh` derives its undeclared spec.
+  - Cost: the committed `sentinel-02-own-base.json` no longer runs a generated campaign as committed.
+  - The alternative was a sibling fixture that carries the declaration. That reverses 03:22 and copies a large fixture.
+  - Raised on the bus at 08:05Z; it waits on the architect's word.
 
 ## §4 Findings
 
@@ -161,4 +214,31 @@ Three reviewers, each on one or two of the WO's §5 lenses, on `9c98c8f8`. Each 
 
 ## §6 Gates
 
-_(in progress)_
+- **`cargo fmt --all --check`** and **`cargo clippy --workspace --all-targets --locked -D warnings`**: clean on the final head.
+- **The whole workspace in the pinned image,** `--features aethelgard-cli/with-tools`, on the merged head `77bda410`: 2,457 passed and 4 failed.
+  - The four failures: the bench package's MANIFEST (F4), and the three generated runs D7 fixed.
+  - `fab_tier1` passes in the image, so its host failure is the host's target directory.
+- **After D7** (`twin_tier2`, the image):
+  - all 87 pass; the three runs D7 fixed are listed below;
+  - `the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed`, `without_the_cited_wait_each_data_read_answers_its_reset_value` and `the_fixture_s_campaign_archives_each_configuration_and_replays` pass (the campaign runs from the derived spec's directory, since `campaign` refuses a base outside it).
+- **`ci/foreign-judge.sh /cache/boards`** (the image, `a799dfb6` and `noimu`): every case holds, exit 0.
+  - positive at 5000 ms;
+  - window-before-u5 at 4300 ms and window-before-u5-data at 4370 ms;
+  - undeclared (`FirmwareOutsideMemory`), clock-undeclared and clock-on-generated-run (each exit 3);
+  - clock-contradicted (two `foreign_clock_contradicted`);
+  - no-spi2-rx-dma and no-u5-model (`PlatformNotEmitted`);
+  - no-imu-line.
+  - Its first full run caught the script's own defect: a case named `undeclared` wrote its verdict over the derived spec of the same name. Derived specs are now `spec-<how>.json`.
+- **`TIER2_MIN`:** no tier-2 test was added or removed against main, so it stays at 190 and no workflow moves.
+- **Mutants:** 12 of the guards' mutants and (a)–(e) killed (§5).
+- **Reduction pass (diff):** −14 net · 2 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.
+  - **Removed:**
+    - `ClockSource` and `clock_source()`, a second mechanism for `foreign_clock.is_some()`;
+    - the `--foreign` help's stale "at most 4000ms", which now says "the foreign window", with its MCP snapshot re-blessed;
+    - `foreign-judge.sh`'s six `5000ms`, now one `window`.
+  - **Kept:**
+    - `ClockReport.source`, a verdict key;
+    - A11's two replay guards, which catch different absences.
+  - **Findings, kept with their reasons:**
+    - `unclocked()`'s seven names restate `clocked()`'s seven entries in another order. One list would reorder the emitted platform or the verdict, and the timer-routes test pins both.
+    - `foreign_clock_values` re-states the USART mux groups that `serial::kernel_hz` states for the reset clock.

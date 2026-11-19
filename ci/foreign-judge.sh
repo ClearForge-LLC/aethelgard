@@ -29,7 +29,7 @@ platform=$work/gen/board/sentinel-02-own.repl
 # stock file's 250 MHz, which ArduPilot's RCC registers contradict. Each with
 # its own emitted platform, since the declaration builds the platform.
 derive() {
-  python3 -I - "$spec" "$work/$1.json" "$1" <<'PY'
+  python3 -I - "$spec" "$work/spec-$1.json" "$1" <<'PY'
 import json, sys
 src, dst, how = sys.argv[1:]
 d = json.load(open(src))
@@ -40,7 +40,7 @@ else:
         d["mcu"]["foreign_clock"][bus]["value"] = 250000000
 json.dump(d, open(dst, "w"), indent=2)
 PY
-  "$bin" generate --spec "$work/$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
+  "$bin" generate --spec "$work/spec-$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
 }
 derive undeclared
 derive contradicted
@@ -105,12 +105,12 @@ and not witnessed.get(("U5", "data (reads[0])"))
 
 # ArduPilot as the generated firmware, on the board with no declared clock:
 # today's judge refuses its D2 SRAM.
-run_spec=$work/undeclared.json run undeclared 3 'v["error"]["kind"] == "FirmwareOutsideMemory"' \
+run_spec=$work/spec-undeclared.json run undeclared 3 'v["error"]["kind"] == "FirmwareOutsideMemory"' \
   --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --for 100ms
 
 # AET-WO-4400g: --foreign with no declared clock, and a generated run on a
 # specification that declares one, are each refused by name before a boot.
-run_spec=$work/undeclared.json run clock-undeclared 3 'v["error"]["kind"] == "ForeignClockUndeclared"' \
+run_spec=$work/spec-undeclared.json run clock-undeclared 3 'v["error"]["kind"] == "ForeignClockUndeclared"' \
   --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
 run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"' \
   --platform "$platform" --firmware "$elf" --for 100ms
@@ -118,7 +118,7 @@ run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"
 # Timers declared at 250 MHz: the twin runs them there, and ArduPilot's RCC
 # registers, read back, decode to 200 MHz on both buses, so the run fails by
 # name with both figures.
-run_spec=$work/contradicted.json run clock-contradicted 1 '
+run_spec=$work/spec-contradicted.json run clock-contradicted 1 '
 kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted"]
 and [(c["declared_hz"], c["decoded_hz"]) for c in boot["clock"]["checked"]]
     == [(250000000, 200000000), (250000000, 200000000)]

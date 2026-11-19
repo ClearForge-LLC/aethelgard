@@ -3828,14 +3828,14 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
     let elf = mutant_of(&dir, "own-campaign", |_| {});
     let archive = dir.join("archive");
     let _turn = renode_turn();
+    // From the derived specification's directory, which holds the base the
+    // scenario names (a base outside the current directory is refused).
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(spec_path.parent().unwrap())
         .args([
             "campaign",
             "--scenarios",
-            spec_path
-                .with_file_name("sentinel-02-own-base.json")
-                .to_str()
-                .unwrap(),
+            "sentinel-02-own-base.json",
             "--firmware",
             elf.to_str().unwrap(),
             "--archive",
