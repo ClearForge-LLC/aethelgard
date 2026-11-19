@@ -213,6 +213,27 @@ OutlineUnreachable: board.max_outline_um is 100.000 x 100.000 mm; the placer's b
 
 The right, left and aft turns place, and on main `96517013` all four place (`out/turned.txt`). The fixture as declared places at 95.80 × 67.60 mm. §7 lists Sentinel-03's bound failing on a moved board as a stop, so the bound and the test are untouched and a ruling is requested on the bus (22:00Z).
 
+### 2.5 `ci/foreign-judge.sh` on the U2-less ArduPilot [measured] — outside the carve-out
+
+The full script runs with the carve-out edits (U2's checks out, the IMU-less run's I2C witness moved to U7). Unmodified ArduPilot is built from the regenerated hwdef. Every case holds but one:
+
+| Case | Result |
+|---|---|
+| `positive` | holds (also 3/3 standalone, 763–786‰) |
+| `window-before-u5` and `window-before-u5-data` | hold. At 4370 ms the branch also shows `core_in_exception` (exception 66): the cut lands in an interrupt. |
+| `undeclared`, `clock-undeclared`, `clock-on-generated-run`, `no-spi2-rx-dma`, `no-u5-model` | hold |
+| `no-imu-line` | holds; U7's identity is witnessed at 387.244 ms |
+| **`clock-contradicted`** | **fails** its exact check, `kinds == ["foreign_clock_contradicted"] * 2`. The branch adds `register_mismatch` ×2: GPIOB.MODER reads 0xa400a000 against the solved 0xa800a000, and AFRH 0x55000000 against 0x55500000 (PB13 not yet configured at the 5 s cut under the 250 MHz declaration). Main `96517013` with main's ELF gives exactly the two contradictions. |
+
+Without U2, ArduPilot probes one barometer fewer, so the run's cut lands at a different point in its initialisation. The two clock contradictions are unchanged. The check is not a U2 line, so it is outside the carve-out and is left alone. Ruling requested on the bus.
+
+### 2.6 Also measured on the final tree
+
+- **`3403`'s `examples/sentinel-01-ext-bmp581.json` through `droop-bor3`** (its ELF `a60306c9…`): the stamp refusal recorded in `fab/sentinel-01-bench/BENCH-EXT-BMP581.md` L35 is gone. The run now fails `brownout_unrecovered` (F1). That file is fenced, so its L35 statement is now stale: a finding for `3403`'s owner, not an edit here.
+- **`verify examples/sentinel-02-bench.json`** (`3304`): pass, every gate.
+- **`ci/shard.sh plan`:** the guard holds (2,508 test names, 8 shards; `1911`'s 12 shards are not merged yet).
+- **Sameness** (§3) covered the 33 specifications committed at `96517013`. `3403`'s new specification arrived after it, and its own run is above.
+
 ## 3. Adversarial pass (targeted, §5)
 
 | Attack | Result [measured] |
