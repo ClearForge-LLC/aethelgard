@@ -14,7 +14,8 @@ import json
 import pathlib
 
 D = pathlib.Path("spike/4600")
-SPECS = ["logger", "driver", "logger-i2c-only", "logger-spi-only", "logger-offboard", "driver-tree"]
+SPECS = ["logger", "driver", "logger-i2c-only", "logger-spi-only", "logger-offboard", "driver-tree",
+         "logger-spi-only-cap"]
 
 
 def write(spec, name, expect, findings, overrides, version=3, counts=None):

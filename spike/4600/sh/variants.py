@@ -149,3 +149,16 @@ for r in v["power"]["regulators"]:
     if r["reference"] == "U11":
         r["reference"] = "U50"
 write("logger-1s-u50.json", v)
+
+# logger-spi-only-cap (added after the second stop, ruled 18:06Z): logger-spi-only as written left
+# out the ICM-42688-P's pin capacitance, which the parts row does not bound (UnboundedPinCapacitance
+# at extract, measured). The same variant with U40 declaring it as Sentinel-02 and -03 do; no other
+# change.
+v = load("logger-spi-only.json")
+icm = next(d for d in json.loads(pathlib.Path(
+    "crates/aethelgard-cli/tests/fixtures/sentinel-03.json").read_text())["spi_devices"]
+    if d["part"] == "ICM42688P")
+for d in v["spi_devices"]:
+    if d["reference"] == "U40":
+        d["pin_capacitance"] = json.loads(json.dumps(icm["pin_capacitance"]).replace("U5's", "U40's"))
+write("logger-spi-only-cap.json", v)

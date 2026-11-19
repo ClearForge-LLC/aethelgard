@@ -36,9 +36,10 @@ roomy() { local want=$(( ${1%G} + 4 )); local n=0
   until [ "$(free -g | awk '/^Mem:/ {print $7}')" -ge "$want" ]; do n=$((n+1)); [ $n -gt 120 ] && break; sleep 30; done
   echo "$(date -u -Is) $S $2 mem=$1 free -g available=$(free -g | awk '/^Mem:/ {print $7}')" >> "$H/free.log"; }
 step() { local name=$1; shift; local m=${MEM:-8G}; roomy "$m" "$name"; MEM=$m bash $IMG bash /repo/spike/4600/sh/step.sh "$S" "$name" "$O" "$@" 2>>"$H/caps.log"; }
-# prove on a board with an I2C bus runs at 16G (the architect's ruling on the section 7 stop, 17:08Z:
-# the 3304 F3 / 4201 F4 row, 9-13 GB); every other step but verify at 8G.
-PROVE_MEM=$(python3 -I -c "import json,sys; print('16G' if json.load(open(sys.argv[1]))['i2c_buses'] else '8G')" "spike/4600/$S.json")
+# prove runs at 16G on any board whose schedule harness is unsplit, i.e. with no timer (no motor
+# output; svd-hal board.rs L3897), whatever its buses (the architect's ruling, 18:06Z, re-keying the
+# 17:08Z one); every other step but verify at 8G.
+PROVE_MEM=$(python3 -I -c "import json,sys; print('8G' if json.load(open(sys.argv[1]))['motor_outputs'] else '16G')" "spike/4600/$S.json")
 for st in $STEPS; do
   case $st in
     validate) step validate $A validate --file $SPEC ;;

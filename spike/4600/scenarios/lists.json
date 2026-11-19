@@ -38,5 +38,12 @@
     "spike/4600/scenarios/driver-tree/baseline.json",
     "spike/4600/scenarios/driver-tree/droop-bor3.json",
     "spike/4600/scenarios/driver-tree/serial-rx-open-cmd.json"
+  ],
+  "logger-spi-only-cap": [
+    "spike/4600/scenarios/logger-spi-only-cap/baseline.json",
+    "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u40.json",
+    "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u30.json",
+    "spike/4600/scenarios/logger-spi-only-cap/droop-bor3.json",
+    "spike/4600/scenarios/logger-spi-only-cap/serial-rx-open-readout.json"
   ]
 }
