@@ -467,55 +467,53 @@ fn a_second_rail_or_a_rail_beside_another_fault_is_refused_by_name() {
     assert!(aethelgard_chaos::campaign::check_rail_out_of_band(&two).is_err());
 }
 
+/// One doctoring of kind 31.
+type Edit = fn(&mut Record);
+
 /// Adversarial 4: replay re-judges kind 31's shape and the scenario's
 /// "combined" clause, so a record no scenario or deck could have made is
 /// refused.
 #[test]
 fn replay_refuses_a_kind_31_out_of_shape_or_combined() {
     let clause = "a battery sag's declaration is one its checks refuse";
-    let refused = |f: &dyn Fn(&mut Record)| {
-        let mut r = good();
-        f(&mut r);
-        check_run(&run(r)).expect_err("refused")
-    };
-    let cases: [(&str, &dyn Fn(&mut Record)); 5] = [
-        ("start 0", &|r| {
+    let cases: [(&str, Edit); 5] = [
+        ("start 0", |r| {
             if let Record::BatterySagDeclared { sag, .. } = r {
-                sag.start_ns = 0
+                sag.start_ns = 0;
             }
         }),
-        ("R past 10 kΩ", &|r| {
+        ("R past 10 kΩ", |r| {
             if let Record::BatterySagDeclared { sag, .. } = r {
-                sag.series_milliohms = 20_000_000
+                sag.series_milliohms = 20_000_000;
             }
         }),
-        ("500 V", &|r| {
+        ("500 V", |r| {
             if let Record::BatterySagDeclared {
                 v_open_microvolts, ..
             } = r
             {
-                *v_open_microvolts = 500_000_000
+                *v_open_microvolts = 500_000_000;
             }
         }),
-        ("0 pF", &|r| {
+        ("0 pF", |r| {
             if let Record::BatterySagDeclared {
                 capacitance_picofarads,
                 ..
             } = r
             {
-                *capacitance_picofarads = 0
+                *capacitance_picofarads = 0;
             }
         }),
-        ("floors 0", &|r| {
+        ("floors 0", |r| {
             if let Record::BatterySagDeclared { sinks, .. } = r {
                 for k in sinks {
-                    (k.shutdown_millivolts, k.regulation_millivolts) = (0, 0)
+                    (k.shutdown_millivolts, k.regulation_millivolts) = (0, 0);
                 }
             }
         }),
     ];
     for (what, f) in cases {
-        // The scenario's sag must match the record's for the clause to be reached.
+        // The scenario's sag matches the record's, so the clause is reached.
         let mut r = good();
         f(&mut r);
         let mut records = run(r.clone());
@@ -526,7 +524,6 @@ fn replay_refuses_a_kind_31_out_of_shape_or_combined() {
         }
         assert_eq!(check_run(&records), Err(clause), "{what}");
     }
-    let _ = refused;
     let mut combined = run(good());
     if let Record::Scenario { overrides, .. } = &mut combined[0] {
         overrides.push(Override::BatterySag(sag(600)));

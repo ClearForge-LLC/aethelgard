@@ -3082,9 +3082,6 @@ pub fn check_against(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatterySink {
     pub reference: String,
-    pub part: String,
-    /// The domain it regulates.
-    pub output: String,
     /// Its output maximum × its load, rounded up, plus its declared
     /// `loss_milliwatts`, mW: what it draws from the battery.
     pub input_milliwatts: u64,
@@ -3094,8 +3091,6 @@ pub struct BatterySink {
     /// The input from which its regulation band is stated for its output
     /// (`regulation_vin_min`, D-B9), mV.
     pub regulation_millivolts: u64,
-    /// The citations of the two floors and of the loss.
-    pub cite: String,
 }
 
 impl BatterySink {
@@ -3109,13 +3104,10 @@ impl BatterySink {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BatteryCapacitor {
     pub reference: String,
-    pub part: String,
     pub picofarads: u64,
     /// The bulk part's ESR maximum, mΩ; `None` for a ceramic, whose ESR no
     /// row holds (L723), so the deck takes it as ideal.
     pub esr_max_milliohms: Option<u64>,
-    /// How the capacitance was found.
-    pub how: String,
 }
 
 /// The battery side of a power tree (`AET-WO-2304b` §1.5): one derivation,
@@ -3135,13 +3127,6 @@ pub struct BatterySide {
     /// maximum, then the battery-fed regulators' input ceramics at the
     /// effective capacitance IR's static checks credit them.
     pub capacitors: Vec<BatteryCapacitor>,
-}
-
-impl BatterySide {
-    /// Every sink's input power, mW.
-    pub fn input_milliwatts(&self) -> u64 {
-        self.sinks.iter().map(|s| s.input_milliwatts).sum()
-    }
 }
 
 /// [`battery_side_against`] with the embedded tables. `None` when the
@@ -3204,22 +3189,12 @@ pub fn battery_side_against(
         if let Kind::BulkCapacitor(c) = &row.kind {
             capacitors.push(BatteryCapacitor {
                 reference: h.reference.clone(),
-                part: h.part.clone(),
                 picofarads: positive(&h.reference, "rated capacitance", c.rated_picofarads.value)?,
                 esr_max_milliohms: Some(positive(
                     &h.reference,
                     "ESR maximum",
                     c.esr_max_milliohms.value,
                 )?),
-                how: format!(
-                    "{}: {} pF rated ({}), ESR at most {} mΩ, {} ({}): the transient's shape only, since a step in the path R under constant-power sinks settles monotonically to the operating point",
-                    h.reference,
-                    c.rated_picofarads.value,
-                    ctx.cite(&c.rated_picofarads.at),
-                    c.esr_max_milliohms.value,
-                    c.esr_condition,
-                    ctx.cite(&c.esr_max_milliohms.at)
-                ),
             });
         }
     }
@@ -3262,23 +3237,13 @@ pub fn battery_side_against(
             .saturating_add(u64::from(j.loss_milliwatts.value));
         sinks.push(BatterySink {
             reference: r.reference.clone(),
-            part: r.part.clone(),
-            output: r.output.clone(),
             input_milliwatts,
-            shutdown_millivolts: positive(&r.reference, "minimum operating input", b.vin_millivolts.range.min)?,
-            regulation_millivolts: positive(&r.reference, "regulation input", regulation.value)?,
-            cite: format!(
-                "{}: {} µV × {} mA + {} mW declared loss ({}); minimum operating input {} mV ({}); regulation stated from {} mV ({})",
-                r.reference,
-                d.vout_max_microvolts,
-                d.load_milliamps,
-                j.loss_milliwatts.value,
-                j.loss_milliwatts.source,
+            shutdown_millivolts: positive(
+                &r.reference,
+                "minimum operating input",
                 b.vin_millivolts.range.min,
-                ctx.cite(&b.vin_millivolts.at),
-                regulation.value,
-                ctx.cite(&regulation.at)
-            ),
+            )?,
+            regulation_millivolts: positive(&r.reference, "regulation input", regulation.value)?,
         });
         let working = i64::try_from(battery_range(&power.battery).1).unwrap_or(i64::MAX);
         for e in r
@@ -3286,13 +3251,11 @@ pub fn battery_side_against(
             .iter()
             .filter(|e| matches!(e.role, Role::Cin | Role::CinHf))
         {
-            let (pf, how) = credited(&ctx, &e.reference, &e.part, working)?;
+            let pf = credited(&ctx, &e.reference, &e.part, working)?;
             capacitors.push(BatteryCapacitor {
                 reference: e.reference.clone(),
-                part: e.part.clone(),
                 picofarads: positive(&e.reference, "credited capacitance", pf)?,
                 esr_max_milliohms: None,
-                how,
             });
         }
     }
@@ -3313,29 +3276,29 @@ fn credited(
     reference: &str,
     part: &str,
     working: i64,
-) -> Result<(i64, String), IrValidationError> {
+) -> Result<i64, IrValidationError> {
     let row = ctx.row(reference, part)?;
     let Kind::Capacitor(c) = &row.kind else {
         return Err(ctx.kind_err(reference, part, "capacitor"));
     };
-    effective(ctx, part, c, working).map_err(|(kind, why)| {
-        refuse(
-            kind,
-            reference,
-            why,
-            "crates/aethelgard-ir/data/power-parts.json",
-        )
-    })
+    effective(ctx, part, c, working)
+        .map(|(pf, _)| pf)
+        .map_err(|(kind, why)| {
+            refuse(
+                kind,
+                reference,
+                why,
+                "crates/aethelgard-ir/data/power-parts.json",
+            )
+        })
 }
 
 /// One regulator output capacitor (`Role::Cout`) as IR's static checks
-/// credit it (`AET-WO-2304b` F3): the domain it holds, pF, and how it was
-/// found.
+/// credit it (`AET-WO-2304b` F3): the domain it holds, and pF.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CreditedCapacitor {
     pub domain: String,
     pub picofarads: u64,
-    pub how: String,
 }
 
 /// Every regulator's output capacitors, by reference, at the capacitance
@@ -3366,7 +3329,7 @@ pub fn output_capacitance(
             .domain(&r.output)
             .map_or(0, |d| i64::try_from(range(d).1).unwrap_or(i64::MAX));
         for e in r.external.iter().filter(|e| e.role == Role::Cout) {
-            let (pf, how) = credited(&ctx, &e.reference, &e.part, working)?;
+            let pf = credited(&ctx, &e.reference, &e.part, working)?;
             let picofarads = u64::try_from(pf).ok().filter(|v| *v > 0).ok_or_else(|| {
                 refuse(
                     Refusal::PowerValueInvalid,
@@ -3380,7 +3343,6 @@ pub fn output_capacitance(
                 CreditedCapacitor {
                     domain: r.output.clone(),
                     picofarads,
-                    how,
                 },
             );
         }

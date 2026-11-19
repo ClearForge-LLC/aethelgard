@@ -60,3 +60,66 @@ Every figure is labelled **measured**, **read at source** or **inferred**. Measu
 - **bridge `--chain`** (built by a subagent from a written brief, spot-checked: the deck takes integers only, names never reach it): V_open → R(t) (a 1 ns PWL step at `start_ns`, breakpoints set) → `vbat`; bulk C + ESR; the ceramics as one ideal C, labelled; one B-source per sink, I = P / max(V, floor); `.nodeset` at the analytic high root, checked against the first point (50 µV) so the deck starts at the right one of constant power's two solutions; no external source. `--rail` untouched. New `BRIDGE_SOURCE_SHA256` `5bdc40e4…636e`.
 - **CLI:** `PowerNotSimulated` deleted; `effective` judges a rail out of band's rendering and a sag's static clauses (so `verify`'s pre-gate pass refuses them too); `prepare` solves the deck once (`BatterySagSolvedBelowFloor` on any floor crossed; a minimum off the static point by more than 1 mV is exit 70); `run_one` archives kind 31 before the boot's records and merges the chain's tools into the header; each campaign line carries `battery_sag` (kind 31's chain) and `conditions`; `verify` carries both per run and FAB-NOTES gains a section stating every condition verbatim (`cli/src/fab.rs`, see deviations).
 - **Coverage** (`verify.rs`): `Target::Battery` (its own variant); a sag covers it when its static point lies below `battery_range`'s minimum; `rail_out_of_band` is `Detect(Rail, E3 or E2)` with its consumers' subjects; a non-MCU rail is met when covered and otherwise unmet with why; the blanket lines are gone; the droop arm judges the loaded floor (L697).
+
+## Results — measured after the predictions
+
+### The predictions, against their results
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| Q1 | Sentinel-03's P 14,752 mW (U10 11,645, U11 3,107) | **measured** by IR's `battery_side` through the campaign's kind 31: U10 11,645 mW, U11 3,107 mW, 14,752 mW; the power fixture 14,642 mW (its U11 2,997 mW: its own `VDD_3V3` load, U12 behind it) | held |
+| Q2 | D-B9's edge: 948 admitted, 949 refused; collapse at 1.372 Ω | **measured** (`chaos/tests/battery.rs`, `campaign_tier1`): **949 mΩ admitted at 7,000,070 µV, 950 refused** (`below regulation`, naming U10, 7,000,000 and 3,800,000 µV); collapse between 1,372 (4,601,271 µV) and 1,373 mΩ | **missed by 1 mΩ** (the edge is 0.94902 Ω; the prediction rounded the wrong way) |
+| Q3 | V_bat at 1 mΩ: 8,998,360 µV | measured 8,998,360 µV (static); the deck starts at 8,998,361 µV | held |
+| Q4 | about 8,088,000 µV at 500 mΩ, below 9,000 mV, covers `battery` | measured static 8,088,035 µV; the deck's solved minimum within 1 µV of it in the tier-2 campaign; `battery` covered | held |
+| Q5 | deck = static within 1 mV at three R | measured by the bridge's tests: 2 mΩ 8,996,721 against 8,996,720.58; 500 mΩ 8,088,036 against 8,088,035.67; 900 mΩ 7,140,682 against 7,140,681.73 (µV). Well inside 1 mV | held |
+| Q6 | decoupling, F3 | measured exactly as predicted on both boards: Sentinel-03 `VDD_3V3` 10,810,000 → 54,810,000 pF, `VDD_5V` 0 → 44,000,000; power fixture `VDD_3V3` 8,300,000 → 52,300,000, `VDD_1V8` 200,000 → 700,000, `VDD_5V` 0 → 44,000,000; no-tree boards unchanged (8,300,000) | held |
+| Q7 | no-tree boards identical but version lines and binding hashes | measured (a subagent's differential, spot-checked against its reports): 21 specifications solve/emit/generate identical after substituting each specification's sha256 (KiCad and BOM files identical raw), 5 refusals identical; the two tree boards also identical after the same substitution; 27 committed campaigns: every line field equal but the state hash; every `trace.cbor` the same size, and each reproduces the branch's bytes from main's with only the version byte (14 → 15), the specification/base/topology digests, the run id and the bridge digest substituted; the five ELFs byte-identical | held |
+| Q8 | no committed droop moves under L697 | measured in the differential: every committed droop scenario's verdict, findings and counts identical; `verify`'s unit tests of the seeded set unchanged; a new unit test pins the loaded-floor rule (3,140 mV at 100 mA through 500 mΩ covers; 3,200 does not) | held |
+| Q9 | the droop survives, `rail_below_tolerance` 1 | measured: `droop-tolerated` passes with its counts (brownout_reset 0, unrecovered 0, below_tolerance 1) | held |
+| Q10 | every Sentinel-03 scenario matches | measured: 9 of 10 matched on the first run; **`spi-absent-u5` also failed `spi_data_mismatch`** (finding F-IMU); with that expectation changed after the run, 10 of 10 | missed on one |
+| Q11 | `--fab-out` refused at the acknowledgements | measured: refused `UnwitnessedFieldNotAcknowledged`, 280 rows, after coverage passed on every row (below) | held |
+| Q12 | versions | specification 18, scenario `[1, 2, 3, 4]`, trace 15; solved 11 and power-parts 4 unchanged (read at source; the solve digests move only by the specification's sha256, measured) | held |
+| Q13 | +3 tier-2 tests | +2 (the two campaigns); the `--fab-out` run is tier 1, because it is refused before any gate | missed in count |
+| Q14 | kind 31 under 1 KB | measured (the tier-2 archive, `replay`): Sentinel-03's baseline 105 events, 7,273 B; the sag run 106 events, 7,362 B: kind 31 and the override's tag add 89 B | held |
+
+### The two tree boards' campaigns (tier 2, in the pinned image)
+
+- **Sentinel-03, 10 scenarios** (`scenarios/sentinel-03/`): every expectation met. The baseline, the tolerated sag (500 mΩ at 10 ms) and the droop pass. `vdd5v-out-of-band` fails `serial_echo_missing` ×2 (CRSF and MAVLINK, one E3); each serial port, SENSORS held low, and FLASH and IMU absent fail by their mechanisms.
+- **The power fixture, 3 scenarios**: the baseline and the sag pass; `vdd1v8-out-of-band` (U5 absent) fails by the absence's kinds.
+- Every run replays to its own state hash, and a second campaign writes every trace byte for byte again (`INV-04`). Both campaigns together: 187 s wall in the image, scope peak 1.94 GB of an 8 GiB cap (237 ‰).
+- **The battery sag's line** (kind 31): static 8,088,035 µV, solved minimum within 1 mV, U10 binding at 7,000,000 µV, with §1.11's sentences, the healthy R's source and each output's `esc` source. The rail's line carries §1.7's sentence verbatim.
+- **Attribution of the two IMU absences**, measured: `electrical`, rule E2, subject `device:U5`, nothing unexplained or masked.
+
+### Sentinel-03's `verify` (§2; merged tree `38bdca30`, after `1315` and `4404`)
+
+- **Run once in the pinned image under `capped-run --mem 16G`** (caps read back: `memory.max` 17179869184, `memory.swap.max` 0), with every committed scenario and no `--fab-out` (`~/.cache/aet-2304b/sh/verify-s03.sh`).
+  - **Wall 460 s; scope peak 5,718,163,456 B (5.33 GiB, 333 ‰ of 16 G).** §1.10 measured 1,075 s and 3.40 GiB with no scenarios on `main` `cd43b207`; this run adds the campaign (10 scenarios, each with its attribution) and is on the post-`4400g`/`1315` tree. The wall is shorter (not investigated: the box's load differs run to run; nothing here claims a cause).
+  - **Every gate passes but `campaign`:** ERC, DRC, support, extract, 18 Kani harnesses, build, simulate and 7 attributions. Every run matches its expectation.
+  - **`campaign` fails one detection:** `held-low-sda`, "attribute masks [{index 77, kind 13}] on the faulted bus: something else fails too". Finding F-MASK (below): a rule in `aethelgard-evolve`, outside this fence. Reported on the bus.
+- **`--fab-out`, the same scenarios:** refused `UnwitnessedFieldNotAcknowledged`, **280 rows**, first `RCC.AHB4ENR.GPIOCEN`; the 35 registers as measured before this build. Unchanged by this work (ruled 2026-11-19 20:40Z: the acknowledgements are a person's, a §7.1 row; the package stops here). Coverage, judged first, passes on every row: `VDD_3V3`, `VDD_5V`, `battery`, CONSOLE, CRSF, MAVLINK, SENSORS (declared), FLASH and IMU; `EXT` no device (tier-1 test `sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger`).
+- **The power fixture** (tier-1 test): `CampaignCoverageShort` names `rail \`VDD_5V\` (\`VDD_5V\` has no consumer a judge observes)`; `battery` and `VDD_1V8` are met by its set; no package is claimed.
+
+### Mutants (one per guard this build adds; a subagent ran them at `35c94bd3` in its own worktree, every run reported, spot-checked)
+
+30 mutants, **30 killed**, none survived:
+- chaos C1–C12: no operating point, below shutdown, below regulation, not a fault, past the span, combined, the scenario-4 gate, replay's static point, solved minimum, binding floor, rail rendering and sag/declaration pairing;
+- CLI L1–L13: no tree, `SeriesResistanceUndeclared`, `EscUndeclared`, `BatterySagSolvedBelowFloor`, the deck/static disagreement, the rail on the MCU's supply, unknown domain, no consumer, the rendering mismatch (the architect's "one composition missing, one extra": both are tier-1 cases of the one equality, which L9 removes), `battery` coverage, `rail_out_of_band` coverage, L697, F3;
+- IR I1–I5: a 0 mΩ path, an unsourced path, an unsourced `esc`, the input power's loss, the regulation-floor lookup.
+Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test inside `aethelgard-eda`; L2 and L3 are killed because the mutated run proceeds to the deck (`BridgeUnavailable`, exit 4, against the expected named refusal, exit 2).
+
+## Findings (house schema: finding · where · type · recommendation · decision-needed)
+
+- **F-MASK · evolve reads another device's absent address as a witness's wrong address · `crates/aethelgard-evolve/src/lib.rs` `witness_fields` (`elsewhere = absent.iter().copied().find(|a| a != address)`) · defect, measured · with a bus faulted, every device is left out, so the BME280's witness on Sentinel-03 carries the BMP581's 0x46 among its absent addresses; that marks U2's address field wrong, so its witness is software evidence and is masked, and `verify`'s detection refuses the run. No I2C fault on Sentinel-03's SENSORS can be detected until the rule takes only this witness's own transfers (for example, absent addresses between this check's start and the next check's). Sentinel-01 never met it: its TMP117 is unmodelled, so one device answers · outside this fence (evolve); a work order · decision: the architect's.**
+- **F-IMU · an absent IMU also fails its data read · `verify.rs` `ABSENT` · expectation changed after a run, with its reason · the bring-up reads an IMU's data as well as its identity (`4220c`), so an absent ICM42688P or ICM20948 fails `spi_data_mismatch` too; `attribute` names E2, subject `device:U5`, nothing unexplained (measured on both). `ABSENT` gained `spi_data_mismatch` and the two IMU expectations gained it after their first run. No coverage is granted without observation: detection still needs E2 with only the seeded subjects · decision-needed: is widening the closed mechanism table the architect's to rule? (default here: widened, flagged).**
+- **F-Q2 · D-B9's edge is 949/950 mΩ, not 948/949 · `chaos/src/battery.rs` · prediction miss (rounding) · none.**
+- **F-K6 · IR's static headroom counts no input-path drop · `ir/src/power.rs` `headroom` · as K6 ruled: with the healthy 1 mΩ declared, the board at rest sits at 8,998,360 µV, 1.64 mV below `battery_range`'s 9,000 mV minimum · not fixed here; the architect's §7.1 row (K6).**
+- **F-LOSS · the declared losses are typical at a 36 V input, used at 9 V · fixture `junction.loss_milliwatts` sources · condition carried from the spike (2304 §1.4) · the chain uses them as declared, as the specification states them; kind 31 carries each sink's figure, not its source text.**
+- **F-BULK · the bulk capacitor enters the deck at its rated value, with no tolerance held · `power_parts` `BulkCapacitor` has no tolerance field · the deck's steady state does not depend on C (a step in R under constant power settles monotonically), and the span clause's settle time scales with it: at 500 mΩ the chain settles in well under 1 ms of a 90 ms span · none, named.**
+- **F-SCHED · there is no `VDD_3V3` crossing to schedule · the deck solves `VBAT` only (K4), so no `VDD_3V3` node exists; the WO's "a non-empty list is an internal error" is met by construction, and replay refuses any kind 17 in a run without a droop · none.**
+- **F-SHARD · `ci/shard.sh` counts tier 2 by binary name (`TIER2_RE`) · a new tier-2 file would not be counted, and `ci/shard.sh` is outside the carve-out · the two tier-2 tests live in `twin_tier2.rs` as module `battery_sag` · none (said on the bus to `1911`).**
+
+## Decisions — each with a recommendation
+
+- **D1 · F-IMU's widening of `ABSENT`.** Recommend keep: the mechanism is the device's absence, measured E2 on both IMUs; the alternative leaves every IMU row unmeetable.
+- **D2 · F-MASK.** Recommend an evolve work order (one rule, the absent addresses a witness may cite); until it lands, Sentinel-03's SENSORS row is met only as declared, not after the gates.
+- **D3 · power-parts stays 4 (K3).** No field was needed: the floors are `vin_millivolts.min` and `regulation_vin_min`.

@@ -1967,7 +1967,10 @@ fn the_battery_side_is_derived_from_the_specification_and_the_table() {
         sinks,
         [("U10", 11_645, 3_800, 7_000), ("U11", 2_997, 3_800, 3_800)]
     );
-    assert_eq!(side.input_milliwatts(), 14_642);
+    assert_eq!(
+        side.sinks.iter().map(|k| k.input_milliwatts).sum::<u64>(),
+        14_642
+    );
     assert_eq!(side.capacitors[0].reference, "C1");
     assert_eq!(side.capacitors[0].picofarads, 47_000_000);
     assert_eq!(side.capacitors[0].esr_max_milliohms, Some(250));
@@ -2038,5 +2041,4 @@ fn each_output_capacitor_is_credited_by_ir_s_own_derivation() {
             ("C31", "VDD_1V8", 500_000),
         ]
     );
-    assert!(out.values().all(|c| c.how.contains("declared derating")));
 }
