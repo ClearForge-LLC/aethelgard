@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# AET-WO-1911 §1.1: the routing and the inventory guard fail each case they exist to fail, on scratch git repositories.
+# No cargo, no image.
+set -uo pipefail
+export LC_ALL=C
+here=$(cd "$(dirname "$0")" && pwd)
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+fail=0
+ok() { echo "PASS $1"; }
+bad() { echo "FAIL $1"; fail=1; }
+git_() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
+
+# ---- classify: one commit's change against its parent ------------------------------------------------------------
+
+base() {
+  rm -rf "$tmp/r"; mkdir -p "$tmp/r"; cd "$tmp/r" || exit 1
+  git_ init -q .
+  mkdir -p docs fab/b/package crates/x/src crates/x/tests examples
+  echo a >docs/a.md; echo r >README.md; echo l >LICENSE-MIT; echo b >fab/b/BENCH.md; echo p >fab/b/package/FAB-NOTES.md
+  echo s >crates/x/src/lib.rs; echo c >crates/x/README.md; echo e >examples/e.json
+  git_ add -A; git_ commit -qm base
+}
+# class NAME WANT: commit the working tree's changes, classify against HEAD^, expect WANT
+class() {
+  local name=$1 want=$2 got
+  git_ add -A; git_ commit -qm change --allow-empty
+  git diff --raw --no-renames -z HEAD^ HEAD >"$tmp/raw"
+  got=$(bash "$here/route.sh" classify "$tmp/raw" | sed -n 's/^class=//p')
+  [ "$got" = "$want" ] && ok "classify: $name -> $want" || bad "classify: $name: got '$got', want $want"
+}
+
+base; echo more >>docs/a.md; class "a document edited" docs
+base; echo more >>README.md; echo x >CLAUDE.md; echo m >>LICENSE-MIT; class "root README, a new root .md, a root LICENSE" docs
+base; echo more >>fab/b/BENCH.md; class "fab/**/*.md outside package/" docs
+base; git rm -q docs/a.md; class "a document deleted" docs
+base; mkdir -p "docs/with space"; printf 'n\n' >"docs/with space/new
+line.md"; class "a document whose path holds a space and a newline" docs
+base; echo more >>fab/b/package/FAB-NOTES.md; class "fab/**/package/** is code" code
+base; echo more >>crates/x/README.md; class "a crate README is code (README* is root-only)" code
+base; mkdir -p crates/x/data; echo l >crates/x/data/LICENSE.md; class "a nested LICENSE.md is code" code
+base; echo more >>examples/e.json; class "examples/ is code" code
+base; mkdir -p .github/workflows ci; echo w >.github/workflows/ci.yml; echo s >ci/SHARDS; class "a workflow and ci/ are code" code
+base; echo more >>docs/a.md; echo more >>crates/x/src/lib.rs; class "docs and code together" code
+base; git mv crates/x/src/lib.rs docs/lib.md; class "a source renamed into docs/ (its old path is code)" code
+base; git mv docs/a.md crates/x/src/a.rs; class "a document renamed into a crate" code
+base; ln -s ../crates/x/src/lib.rs docs/link.md; class "a symlink under docs/" code
+base; rm docs/a.md; ln -s ../crates/x/src/lib.rs docs/a.md; class "a document replaced by a symlink" code
+base; chmod +x docs/a.md; class "a document made executable" code
+base; class "an empty diff (unknown is code)" code
+
+# decide: the event and the merge commit
+base; git_ checkout -qb pr; echo more >>docs/a.md; git_ commit -qam pr; git_ checkout -q main; echo e2 >>examples/e.json; git_ commit -qam main
+git_ merge -q --no-ff -m merge pr
+got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = docs ] && ok "decide: a docs-only PR's merge commit, main having moved -> docs" || bad "decide: merge: got '$got'"
+got=$(bash "$here/route.sh" decide push | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a push runs everything" || bad "decide: push: got '$got'"
+got=$(bash "$here/route.sh" decide workflow_dispatch | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a dispatch runs everything" || bad "decide: dispatch: got '$got'"
+git_ checkout -q pr
+got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a HEAD that is not a merge -> code" || bad "decide: no merge: got '$got'"
+
+# ---- the inventory guard, on a scratch tree with its own copy of route.sh ----------------------------------------
+
+inv() {
+  rm -rf "$tmp/i"; mkdir -p "$tmp/i/ci" "$tmp/i/docs" "$tmp/i/crates/d/src" "$tmp/i/crates/d/tests/common"; cd "$tmp/i" || exit 1
+  cp "$here/route.sh" ci/
+  printf '[package]\nname = "demo"\n' >crates/d/Cargo.toml
+  echo a >docs/a.md; echo r >README.md
+  printf 'fn f() { let _ = std::fs::read("../../docs/a.md"); }\n' >crates/d/tests/reads.rs
+  printf '// docs/a.md in a comment\n/* README.md in a /* nested */ comment */\nfn g() { let _ = "crates/d/README.md"; }\n' >crates/d/tests/quiet.rs
+  printf 'pub fn s() -> char { \x27"\x27 }\n' >crates/d/src/lib.rs
+  printf 'demo\treads\t../../docs/a.md\treads\n' >ci/list.tsv
+  git_ init -q .; git_ add -A; git_ commit -qm t
+}
+expect() { # NAME WANT(ok|refused) [PATTERN]
+  local name=$1 want=$2 pat=${3:-} out rc
+  git_ add -A >/dev/null 2>&1; git_ commit -qm t --allow-empty
+  out=$(bash ci/route.sh check ci/list.tsv 2>&1); rc=$?
+  if [ "$want" = ok ]; then [ $rc -eq 0 ] && ok "guard: $name" || bad "guard: $name: $out"
+  elif [ $rc -ne 0 ] && { [ -z "$pat" ] || grep -qF -- "$pat" <<<"$out"; }; then ok "guard: $name: refused ($(cut -c1-110 <<<"$out"))"
+  else bad "guard: $name: rc=$rc out=$out"; fi
+}
+inv; expect "the listed reader passes; comments, a crate path and a char quote are ignored" ok
+inv; printf 'fn h() { let _ = r#"see docs/a.md"#; let _ = format!("{root}/docs/a.md"); }\n' >crates/d/tests/more.rs
+expect "a raw string and a placeholder path, unlisted, are refused by name" refused "demo more {root}/docs/a.md"
+inv; printf 'fn h() { let _ = root().join("docs").join("x"); }\n' >crates/d/tests/walk.rs
+expect "a join of \"docs\" is refused by name" refused "demo walk docs"
+inv; printf 'fn h() { let _ = "LICENSE"; let _ = "README.md"; }\n' >crates/d/tests/bare.rs
+expect "a bare root name is refused by name" refused "demo bare README.md"
+inv; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/mod.rs; printf 'mod common;\n' >crates/d/tests/uses.rs
+expect "a helper module's literal is charged to the binary that includes it" refused "demo uses docs/a.md"
+inv; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/mod.rs
+expect "a helper no binary includes is refused as unmapped" refused "unmapped! crates/d/tests/common/mod.rs"
+inv; printf 'pub const D: &str = include_str!(\n    "../../../docs/a.md"\n);\n' >>crates/d/src/lib.rs
+expect "an include_str! of a docs-only path is refused" refused "include! crates/d/src/lib.rs docs/a.md"
+inv; printf 'fn main() { println!("cargo:rerun-if-changed=../../README.md"); let _ = "../../README.md"; }\n' >crates/d/build.rs
+expect "a build script naming a root document is refused" refused "build! crates/d/build.rs"
+inv; mkdir -p bridge/src; printf 'fn f() { let _ = "docs/a.md"; }\n' >bridge/src/main.rs
+expect "the bridge naming a document is refused" refused "bridge! bridge/src/main.rs"
+inv; printf 'demo\tgone\tdocs/a.md\treads\n' >>ci/list.tsv
+expect "a row the inventory does not find is refused" refused "demo gone docs/a.md"
+inv; printf 'demo\treads\t../../docs/a.md\n' >ci/list.tsv
+expect "a malformed row is refused" refused "want package<TAB>target<TAB>literal<TAB>reads|cites"
+inv; git_ rm -q docs/a.md README.md
+expect "a tree with no docs-only file is refused" refused "no docs-only file"
+
+cd "$here" || exit 1
+[ "$fail" -eq 0 ] && echo "test-route: all passed" || { echo "test-route: FAILED"; exit 1; }

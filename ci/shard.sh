@@ -11,6 +11,15 @@
 # Job steps (run from the repository root, inside the image; the cargo commands are the job's own):
 #   shard.sh plan OUT       list every test, assign them to the shards (ci/SHARDS), run the guard
 #   shard.sh run OUT K      run shard K's tests, then check the passes against the assignment
+# AET-WO-1911 §1.2, build once and test many (the cargo commands stay the shards' own; only where the build happens moves):
+#   shard.sh build          the `tools-build` job, in the image with the network: every test binary the shards run
+#   shard.sh pack DIR       on the runner: target/ (less incremental/) as DIR/target.tar.zst, and DIR/stamp binding it to
+#                           this checkout's tree, container/IMAGE and the archive's sha256
+#   shard.sh unpack DIR     on a shard's runner: refuse unless DIR/stamp names this checkout's tree, container/IMAGE and
+#                           the archive's sha256; date every checked-out file and directory 2000-01-01 so cargo reads the
+#                           build as fresh; extract. With every mtime the same, cargo cannot see content: the stamp's tree
+#                           is the stale-binary guard.
+#   plan and run refuse any `Compiling` line cargo prints before a test binary runs (compiled_in LOG): a shard compiles nothing.
 # Pure functions over files, each refusing with a message and a nonzero exit (INV-06):
 #   parse SUITE LOG                a `cargo test -- --list` log -> entries on stdout
 #   assign N WEIGHTS ENTRIES OUTDIR [BASE0 [COLOCATE [LOCKED]]]
@@ -295,6 +304,8 @@ aggregate() {
 
 FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
+# The archive's epoch (AET-WO-1911): every checked-out path's mtime on a shard, older than any build.
+EPOCH=946684800
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # The binaries whose tests serialise on one lock (ONE_AT_A_TIME, RENODE_TURN): every test of one carries a weight row (AET-WO-1910 D6).
@@ -302,22 +313,70 @@ LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.r
 # Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
 BASE0=${SHARD0_FIXED_SECONDS:-25}
 
+# compiled_in LOG: the `Compiling` lines cargo printed before the first test binary ran (a tool a test runs may print
+# its own later); none on a shard.
+compiled_in() {
+  readable "$1"
+  awk '/^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
+    && return 0
+  die "$1: this shard compiled; it must run the tools-build job's binaries (a stale or partial archive?)"
+}
+
+# The build the shards share: what `plan` and `run` invoke, so each finds every unit fresh.
+build_all() {
+  local net=${1:-}
+  cargo test --workspace --locked $net --features aethelgard-cli/with-tools --no-run
+  cargo build --manifest-path bridge/Cargo.toml --locked $net
+  cargo test --manifest-path bridge/Cargo.toml --locked $net --no-run
+}
+
+stamp() {
+  printf 'tree=%s\nimage=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$(tr -d '[:space:]' <"$here/../container/IMAGE")"
+}
+
+pack() {
+  local dir=$1
+  mkdir -p "$dir"
+  [ -d target/debug ] || die "no target/debug to pack"
+  tar -cf - --exclude=target/debug/incremental --exclude=target/ci-shard target | zstd -q -T0 -3 -o "$dir/target.tar.zst" \
+    || die "packing target/ failed"
+  { stamp; printf 'sha256=%s\n' "$(sha256sum "$dir/target.tar.zst" | cut -d' ' -f1)"; } >"$dir/stamp"
+  cat "$dir/stamp"; ls -l "$dir/target.tar.zst"
+}
+
+unpack() {
+  local dir=$1 want got sum
+  readable "$dir/stamp"; readable "$dir/target.tar.zst"
+  [ ! -e target ] || die "target/ exists before the archive is unpacked"
+  want=$(grep -v '^sha256=' "$dir/stamp"); got=$(stamp)
+  [ "$want" = "$got" ] || die "the archive was built from another tree or image: archive [$(tr '\n' ' ' <<<"$want")], this checkout [$(tr '\n' ' ' <<<"$got")]"
+  sum=$(sha256sum "$dir/target.tar.zst" | cut -d' ' -f1)
+  [ "sha256=$sum" = "$(grep '^sha256=' "$dir/stamp")" ] || die "the archive's sha256 $sum is not its stamp's"
+  find . -path ./.git -prune -o -print0 | xargs -0 touch -h -d "@$EPOCH"
+  zstd -q -dc "$dir/target.tar.zst" | tar -xf - || die "unpacking the archive failed"
+  echo "unpacked: $(tr '\n' ' ' <"$dir/stamp")"
+}
+
 plan() {
   local out=$1 n
   n=$(tr -d '[:space:]' <"$here/SHARDS")
   case $n in '' | *[!0-9]* | 0) die "ci/SHARDS must hold a positive integer" ;; esac
+  # The shared build, found fresh (AET-WO-1911 §1.2): the commands it ran, offline, compile nothing.
+  build_all --offline >"$out/fresh.log" 2>&1 || { cat "$out/fresh.log"; die "the shared build is not usable offline"; }
+  compiled_in "$out/fresh.log"
   # stderr carries the `Running` lines the parser needs; both streams, in order.
   cargo test --workspace "${FEATURES[@]}" -- --list >"$out/list-ws.log" 2>&1 \
     || { cat "$out/list-ws.log"; die "the workspace test list failed"; }
   cargo test "${BRIDGE[@]}" -- --list >"$out/list-bridge.log" 2>&1 \
     || { cat "$out/list-bridge.log"; die "the bridge test list failed"; }
+  compiled_in "$out/list-ws.log"; compiled_in "$out/list-bridge.log"
   { parse ws "$out/list-ws.log"; parse bridge "$out/list-bridge.log"; } >"$out/entries.tsv"
   assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0" "$here/colocate.tsv" "$LOCKED"
   guard "$n" "$out/entries.tsv" "$out"
 }
 
 run() {
-  local out=$1 k=$2 shard="$1/shard-$2.tsv" ws br status=0
+  local out=$1 k=$2 shard="$1/shard-$2.tsv" ws br status=0 log
   readable "$shard"
   cp "$shard" "$out/shard.tsv"
   rm -f "$out/test-ws.log" "$out/test-bridge.log" "$out/result.txt"
@@ -336,15 +395,18 @@ run() {
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
+  for log in "$out/test-ws.log" "$out/test-bridge.log"; do [ ! -e "$log" ] || compiled_in "$log"; done
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
 
-cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run ...}
+cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run|build|pack|unpack ...}
 shift
 case $cmd in
   parse | assign | guard | names | result | aggregate | tally | heavy_unweighted) "$cmd" "$@" ;;
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
+  build) build_all ;;
+  pack | unpack | compiled_in | stamp) "$cmd" "$@" ;;
   *) echo "usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run" >&2; exit 2 ;;
 esac
