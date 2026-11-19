@@ -727,6 +727,23 @@ pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    /// `AET-WO-2304b` §2: FAB-NOTES states every campaign condition
+    /// verbatim, in a section of its own; a campaign with none adds no byte.
+    #[test]
+    fn the_campaign_s_conditions_are_stated_verbatim_and_only_when_there_are_some() {
+        assert_eq!(campaign_section(&[]), "");
+        let conditions = [
+            "The battery's load is the tree's declared static load; no motor current is commanded, so no reboot loop is shown or excluded.".to_owned(),
+            "`VDD_5V` below its band is rendered as its consumers' absence (CRSF and MAVLINK RX open).".to_owned(),
+        ];
+        let text = campaign_section(&conditions);
+        assert!(text.starts_with("\n## What the fault campaign does not claim\n"));
+        for c in &conditions {
+            assert!(text.contains(&format!("- {c}\n")), "{text}");
+        }
+    }
+
     use super::*;
 
     /// The first 20 lines of two layers, as KiCad 10.0.7 wrote them in the

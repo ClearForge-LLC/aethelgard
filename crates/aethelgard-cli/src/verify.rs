@@ -685,10 +685,11 @@ struct Mechanism {
     kinds: &'static [&'static str],
     rule: &'static str,
     subjects: std::collections::BTreeSet<String>,
-    /// Every subject must be attributed, not some: a rail out of band is
+    /// The subjects that must each be attributed: a rail out of band is
     /// detected only when each consumer it renders is (`AET-WO-2304b`,
-    /// adversarial 5).
-    all: bool,
+    /// adversarial 5), by its `port:` or `device:` subject; a controller
+    /// stays admissible, never required. Empty for every other mechanism.
+    required: std::collections::BTreeSet<String>,
 }
 
 /// Each override kind's mechanism, a closed table: the engine's, never the
@@ -748,7 +749,7 @@ fn stress(
                 kinds,
                 rule: "E1",
                 subjects: bus_subjects(bus),
-                all: false,
+                required: Default::default(),
             }),
         )
     };
@@ -791,7 +792,7 @@ fn stress(
                         format!("controller:{}", d.peripheral),
                     ]
                     .into(),
-                    all: false,
+                    required: Default::default(),
                 }),
             ))
         }
@@ -803,7 +804,7 @@ fn stress(
                     kinds: OPEN,
                     rule: "E3",
                     subjects: [format!("port:{port}")].into(),
-                    all: false,
+                    required: Default::default(),
                 }),
             ))
         }
@@ -861,13 +862,19 @@ fn stress(
                 }
                 (ABSENT, "E2", subjects)
             };
+            let required = r
+                .ports
+                .iter()
+                .map(|p| format!("port:{p}"))
+                .chain(r.devices.iter().map(|d| format!("device:{d}")))
+                .collect();
             Some((
                 Some(Target::Rail(domain.clone())),
                 Some(Mechanism {
                     kinds,
                     rule,
                     subjects,
-                    all: true,
+                    required,
                 }),
             ))
         }
@@ -1108,11 +1115,9 @@ fn detection(m: &Mechanism, run: &Run, attributed: &Value) -> Result<(), String>
             m.subjects
         ));
     }
-    let cited: std::collections::BTreeSet<&str> = subjects.iter().copied().collect();
-    if m.all && cited.len() != m.subjects.len() {
+    if let Some(missing) = m.required.iter().find(|r| !subjects.contains(&r.as_str())) {
         return Err(format!(
-            "attribute cites {subjects:?}, not every rendered consumer {:?}",
-            m.subjects
+            "attribute cites {subjects:?}, not every rendered consumer: {missing} is missing"
         ));
     }
     Ok(())
@@ -2107,19 +2112,51 @@ mod tests {
     /// when every consumer it renders is attributed, not one of them.
     #[test]
     fn a_rail_is_detected_only_with_every_rendered_consumer_attributed() {
-        let m = Mechanism {
-            kinds: OPEN,
-            rule: "E3",
-            subjects: ["port:CRSF".to_owned(), "port:MAVLINK".to_owned()].into(),
-            all: true,
-        };
-        let run = failed(json!(["serial_echo_missing"]));
-        let attributed = |subjects: Value| {
-            json!({"ok": true, "domain": "electrical", "rule": "E3", "unexplained": [],
+        let attributed = |rule: &str, subjects: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": rule, "unexplained": [],
                    "masked": [], "subjects": subjects})
         };
-        assert!(detection(&m, &run, &attributed(json!(["port:CRSF"]))).is_err());
-        assert!(detection(&m, &run, &attributed(json!(["port:CRSF", "port:MAVLINK"]))).is_ok());
+        // Sentinel-03's VDD_5V: both ports.
+        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+        let rail = |d: &str| match stress(
+            &spec,
+            &t,
+            &aethelgard_chaos::record::Override::RailOutOfBand { domain: d.into() },
+        ) {
+            Some((Some(_), Some(m))) => m,
+            other => panic!("{other:?}"),
+        };
+        let m = rail("VDD_5V");
+        let run = failed(json!(["serial_echo_missing"]));
+        assert!(detection(&m, &run, &attributed("E3", json!(["port:CRSF"]))).is_err());
+        assert!(
+            detection(
+                &m,
+                &run,
+                &attributed("E3", json!(["port:CRSF", "port:MAVLINK"]))
+            )
+            .is_ok()
+        );
+        // The power fixture's VDD_1V8, against its measured attribution
+        // (E2, `device:U5` alone): the controller is admissible, not required.
+        let (spec, t) = solved("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json");
+        let m = match stress(
+            &spec,
+            &t,
+            &aethelgard_chaos::record::Override::RailOutOfBand {
+                domain: "VDD_1V8".into(),
+            },
+        ) {
+            Some((Some(_), Some(m))) => m,
+            other => panic!("{other:?}"),
+        };
+        let run = failed(json!([
+            "spi_data_mismatch",
+            "spi_identity_mismatch",
+            "spi_transaction_unwitnessed"
+        ]));
+        assert!(detection(&m, &run, &attributed("E2", json!(["device:U5"]))).is_ok());
+        assert!(detection(&m, &run, &attributed("E2", json!(["controller:SPI2"]))).is_err());
     }
 
     fn failed(findings: Value) -> Run {
