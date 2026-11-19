@@ -30,7 +30,15 @@ need() { # need <step> <dependency>...: print a not_run row and return 1 unless 
     fi
   done
 }
-step() { local name=$1; shift; MEM=${MEM:-8G} bash $IMG bash /repo/spike/4600/sh/step.sh "$S" "$name" "$O" "$@" 2>>"$H/caps.log"; }
+# Before each container: wait until the host has the step's cap plus 4 GiB available (Furnace is
+# shared), logging what free -g showed.
+roomy() { local want=$(( ${1%G} + 4 )); local n=0
+  until [ "$(free -g | awk '/^Mem:/ {print $7}')" -ge "$want" ]; do n=$((n+1)); [ $n -gt 120 ] && break; sleep 30; done
+  echo "$(date -u -Is) $S $2 mem=$1 free -g available=$(free -g | awk '/^Mem:/ {print $7}')" >> "$H/free.log"; }
+step() { local name=$1; shift; local m=${MEM:-8G}; roomy "$m" "$name"; MEM=$m bash $IMG bash /repo/spike/4600/sh/step.sh "$S" "$name" "$O" "$@" 2>>"$H/caps.log"; }
+# prove on a board with an I2C bus runs at 16G (the architect's ruling on the section 7 stop, 17:08Z:
+# the 3304 F3 / 4201 F4 row, 9-13 GB); every other step but verify at 8G.
+PROVE_MEM=$(python3 -I -c "import json,sys; print('16G' if json.load(open(sys.argv[1]))['i2c_buses'] else '8G')" "spike/4600/$S.json")
 for st in $STEPS; do
   case $st in
     validate) step validate $A validate --file $SPEC ;;
@@ -46,7 +54,7 @@ for st in $STEPS; do
     prove)
       if need prove generate; then
         for h in $(awk '/^ *#\[kani::proof\]/{a=1;next} a&&/^ *fn /{sub(/^ *fn /,"");sub(/[^A-Za-z0-9_].*/,"");print "proofs::"$0;a=0}' "$H/gen/board/src/proofs.rs"); do
-          step "prove:${h#proofs::}" $A prove --crate $O/gen/board --harness "$h" --spec $SPEC
+          MEM=$PROVE_MEM step "prove:${h#proofs::}" $A prove --crate $O/gen/board --harness "$h" --spec $SPEC
         done
       fi ;;
     simulate) need simulate generate build && step simulate $A simulate --platform $O/gen/board/$PROJ.repl --firmware $O/fw.elf --spec $SPEC --for 100000000ns ;;
