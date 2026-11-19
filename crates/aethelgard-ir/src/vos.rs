@@ -410,7 +410,10 @@ const FLASH_ACR_RESET: u32 = 0x0000_0037;
 /// states and programming delay": per VOS, each row's upper `rcc_aclk`
 /// bound in Hz (the lower bound is the row before's, exclusive), with
 /// `LATENCY` and `WRHIGHFREQ`.
-const TABLE_17: [(Vos, &[(u64, u32, u32)]); 4] = [
+/// One row: the upper `rcc_aclk` bound in Hz, `LATENCY` and `WRHIGHFREQ`.
+type FlashRow = (u64, u32, u32);
+
+const TABLE_17: [(Vos, &[FlashRow]); 4] = [
     (
         Vos::Scale0,
         &[
