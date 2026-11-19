@@ -2421,10 +2421,7 @@ fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     if spec.board.max_outline_um.is_none() {
         return Ok(());
     }
-    let Ok(table) = aethelgard_svd_hal::pin_table(&spec.mcu.part) else {
-        return Ok(());
-    };
-    let Ok(topology) = aethelgard_ir::solve(spec, &table, sha256) else {
+    let Some((table, topology)) = quiet_solve(spec, sha256) else {
         return Ok(());
     };
     match bound_holds(spec, &topology, &table) {
@@ -2435,13 +2432,21 @@ fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     }
 }
 
+/// The pin table and solve the drawing checks judge, or `None` when either
+/// is refused: `solve` and `emit` then refuse by their own names.
+fn quiet_solve(
+    spec: &Specification,
+    sha256: &str,
+) -> Option<(aethelgard_ir::PinTable, aethelgard_ir::SolvedTopology)> {
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).ok()?;
+    let topology = aethelgard_ir::solve(spec, &table, sha256).ok()?;
+    Some((table, topology))
+}
+
 /// `AET-WO-1209` D3, as ruled: each `power.loads` reference names a part the
 /// emitter draws for this specification (`aethelgard_eda::schematic::drawn`),
-/// so a resistor it numbers no longer, such as a removed crossing's CS
-/// pull-up, is refused by name. Step 20a held the reference's form; only the
-/// emitter's draw order knows which `R<n>` and `C<n>` exist. A specification
-/// that does not solve, or that the emitter refuses, is left to `solve` and
-/// `emit` to refuse by their names, as `outline_holds` leaves it.
+/// such as a removed crossing's CS pull-up no longer; step 20a holds only the
+/// form. A specification the emitter refuses is left to `emit`.
 fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     let Some(power) = &spec.power else {
         return Ok(());
@@ -2449,10 +2454,7 @@ fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     if power.loads.iter().all(|l| l.reference.is_none()) {
         return Ok(());
     }
-    let Ok(table) = aethelgard_svd_hal::pin_table(&spec.mcu.part) else {
-        return Ok(());
-    };
-    let Ok(topology) = aethelgard_ir::solve(spec, &table, sha256) else {
+    let Some((table, topology)) = quiet_solve(spec, sha256) else {
         return Ok(());
     };
     let Ok(drawn) = aethelgard_eda::schematic::drawn(spec, &topology, &table) else {

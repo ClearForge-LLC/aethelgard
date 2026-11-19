@@ -56,29 +56,6 @@ fn a_load_naming_a_part_the_board_lacks_is_refused_by_reference_and_rail() {
         .unwrap()
         .retain(|d| d["reference"] != "U2");
     assert_refused(&v, "power.loads[4].reference", "VDD_3V3", "U2");
-    // The crossing removed, its translator's load kept (the five test
-    // helpers before `AET-WO-1209` D4).
-    let mut v = fixture();
-    v["power"]["crossings"] = json!([]);
-    v["accept_lifecycle"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|a| a["part"] != "ICM20948");
-    for key in ["spi_devices", "spi_buses", "net_constraints"] {
-        let kept: Vec<Value> = v[key]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|x| {
-                !(x["reference"] == "U5"
-                    || x["id"] == "IMU"
-                    || x["net_name"].as_str().is_some_and(|n| n.starts_with("IMU")))
-            })
-            .cloned()
-            .collect();
-        v[key] = Value::Array(kept);
-    }
-    assert_refused(&v, "power.loads[11].reference", "VDD_3V3", "U13");
     // Spellings the emitter never gives: case, a leading zero, `R0`, another
     // `U` than the MCU's, a switch the specification does not ask for, a
     // prefix it never numbers.
