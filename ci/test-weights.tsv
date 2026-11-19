@@ -36,7 +36,7 @@
 # Then at the worse of that run and the next, 44466633965 (head 8b18b060, green), by the same rule: the heavy verify and Kani blocks ran
 # 10-30 % slower there (runner variance), so the plan weighs each test and block at its worst of the two.
 # supply_tier1 and via_ring_tier1 left these rows for ci/colocate.tsv: their tests share OnceLock boards, so a per-test time counts the shared run once per waiter (REFIT RULE 3).
-# AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... are Furnace estimates, not runs: 121.02 s and 39.41 s alone in the pinned image on Furnace (libtest's `finished in`), times 2.8 (AET-WO-1310's factor); replace them from the first CI run.
+# AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348).
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	3.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.500
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.600
@@ -378,8 +378,8 @@ tests/twin_tier2.rs	an_aborted_machine_returns_inside_the_bound_as_cpu_aborted	3
 tests/twin_tier2.rs	an_echo_the_firmware_never_received_is_forged	5.200
 tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	4.000
 tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	7.100
-tests/twin_tier2.rs	battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats	338.856
-tests/twin_tier2.rs	battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats	110.348
+tests/twin_tier2.rs	battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats	288.767
+tests/twin_tier2.rs	battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats	88.251
 tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	4.300
 tests/twin_tier2.rs	f2_a_late_dshot_anchor_fails_by_name	19.800
 tests/twin_tier2.rs	h1a_a_pin_bit_banged_after_the_window_fails_by_name	5.500

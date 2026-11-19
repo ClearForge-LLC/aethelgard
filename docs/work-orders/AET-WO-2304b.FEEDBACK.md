@@ -172,3 +172,8 @@ Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test 
 - The `gates` job's set (`ci/gates.sh`'s targets, with the target directory inside the repository as CI has it): **133 test binaries green; one red, as expected: `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`**, until the architect's `write=true` dispatch re-derives `fab/sentinel-01-bench/package/` (AWAITING-PACKAGE).
 - Tier 2 in the pinned image: `twin_tier2`'s `battery_sag::*` (2 tests) pass, 170 s; `ci/shard.sh plan`: 8 shards at 1,888 s planned each, guard ok. `TIER2_MIN` 190 → 192.
 - Reduction pass (diff): −39 net · 0 duplicates removed (the one found during the build, `RailOutOfBandRefused`'s kind, was made one constant there) · 5 dead fields/methods removed (`BatterySink.cite`, `.part`, `.output`; `BatteryCapacitor.how`, `.part`; `CreditedCapacitor.how`; `BatterySide::input_milliwatts`) and one dead test closure · 0 protected kept · 0 findings below.
+
+## CI (PR #254, run 44621743414, head `08e2aaf7`)
+
+- Every job green but the one expected red test, `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit` (in `gates` and in tools shard 1, which stopped there), and `bench-package`: AWAITING-PACKAGE. `TIER2_MIN` 192 read by the aggregate.
+- Both tier-2 tests pass in CI. Their weight rows are replaced from this run by rule 5 (`ok` less twin_tier2's `Running`, an upper bound): Sentinel-03's 288.767 s, the power fixture's 88.251 s (the Furnace estimates were 338.856 and 110.348).
