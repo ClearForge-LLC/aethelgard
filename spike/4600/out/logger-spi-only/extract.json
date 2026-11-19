@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"UnboundedPinCapacitance","id":null,"message":"the design puts U40 (ICM42688P) on `VIB_SCK`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance"}}
