@@ -1,13 +1,170 @@
 # AET-WO-1910 — FEEDBACK
 
-**Status: census done (§1), STOPPED for the ruling on PR #233.**
-- No test, fixture, `ci/` file or workflow changed. This file is the branch's only change.
-- Every saving below is measured: from CI's own logs of three runs on post-`1314` code, or from runs in a scratch copy, never from the worktree.
-- One task came in between: `AET-WO-1605c` (main red through `bench-package`), done on its own PR, #232.
+**Status: built to the ruling on PR #233 (comment 6999515740).** {{STATUS}}
 
-**Branch:** `wo/aet-1910-ci-reduction` · **Base:** `b14be5bf` (`origin/main`; `565b32c5` is the last code change) · **Builder:** Claude (Opus 5.5, orchestrating).
-- The census rows were written by five Sonnet subagents, each on one schema, and checked against the source and the measured emit log (Method).
-- `AET-WO-4400g` has not merged. Its files (the twin, chaos, motor tests) are in the census as main has them, and the build would leave them alone.
+**Branch:** `wo/aet-1910-ci-reduction` · **Base:** `main` `2fc347fa` (`AET-WO-1605c` merged in) · **Builder:** Claude (Opus 5.5, orchestrating).
+- The census rows were written by five Sonnet subagents and the libm call-site map by one, each checked against the source and the measurements.
+- The adversarial pass was run by a fresh Opus subagent; its report is `~/.cache/aet-1910/adv/REPORT.md`.
+- **`AET-WO-4400g` has not merged.** Its files are left alone. F7's first item (two unused motor ELFs in `kani_proves_every_part_of_both_motor_fixtures`) waits on it, because `4400g` edits that test's helpers (`twin_tier2.rs:1808-1875`), as the ruling allows.
+
+# Part 2: the build (§2), as ruled
+
+## What changed
+
+- **D1, `power_board_tier1.rs`:** one emit of `power_tree()` per process, through `common::verify::Shared` (`EMITTED`), read by the eight tests that judge the fixture's own board.
+  - `every_loop_rule_holds_on_the_fixtures_own_board` compares the shared emission with a fresh one, so its equality property still compares two independent runs.
+  - The crossing test's pair, on the full fixture, is untouched.
+  - The binary is colocated.
+- **D2, `outline_tier1.rs`:** one emit of the committed Sentinel-03 per process, read by three tests; colocated.
+  - `order_only…`'s one full emit (ruling 6987450886) is the shared one, compared with placements.
+- **D3, `four_layer_fab_tier2.rs` (new, tier 2):** the two four-layer package tests, moved from `board_tier2.rs`, share one `--fab-out` package. Each runs its `--against-fab` on its own copy, one at a time under `ONE_AT_A_TIME`.
+  - Every assertion moved and now names its property.
+  - `TIER2_RE` names the binary; it is colocated.
+  - `TIER2_MIN` stays 190, and its comment names the two moved tests.
+- **D4, `campaign_tier1.rs`:** `a_one_byte_change_to_the_trace_is_a_hash_mismatch` and `an_extra_file_in_the_run_directory_is_refused` are removed (the coverage map below).
+- **D5 (a):**
+  - `ci/gates.sh` runs the examples' build, then every library, binary and test target by name except the five in `ci/tools-only.tsv` (`supply_tier1`, `power_board_tier1`, `outline_tier1`, `escape_tier1`, `via_ring_tier1`), then the doctests.
+  - `boot_tier1` and `campaign_tier1` stay in both jobs.
+  - **Its guard refuses by name:**
+    - a `tools-only.tsv` row naming no test target;
+    - one whose name is the test target of two packages;
+    - a target of a kind these flags do not run;
+    - an example with `test = true`.
+  - The `gates` step in `ci.yml` calls it.
+  - **The condition** is `crates/aethelgard-eda/tests/supply_libm.rs` (the libm map below).
+- **D6, `ci/shard.sh`:**
+  - **P1:** `assign` refuses a weight or colocate row that names no listed test or binary. It also refuses an unweighted test of a lock-serialised binary (`LOCKED`; adversarial L4).
+  - **P2:** `result` refuses a test with no row that libtest reports past 60 s.
+  - Their fixtures are excerpts of CI's own logs: `a9b79f43`, where P2 fires naming its 11 tests, and `565b32c5`, where it is silent. They live in `ci/fixtures/`, with the tests in `ci/test-shard.sh`.
+  - P3 goes to the backlog (§7.1 rows below).
+- **D7, root `Cargo.toml`:** `[profile.dev.package.aethelgard-svd-hal]` and `[profile.dev.package.sha2]` at `opt-level = 2`, the comment citing the measurements. No golden moved: the whole suite is green on every run below.
+- **D8:** `bench-package` runs on every pull request. On this PR it ran `verify --against-fab` against the committed package and passed (run 44461834066, 33.9 min, in parallel).
+- **F7, the second item:** `a_stale_or_impostor_bridge_is_refused` hard-links the CLI. The link lives in the target directory, so it stays on one filesystem in the container.
+- **Weights:** `ci/test-weights.tsv` and `ci/colocate.tsv` were refitted by the REFIT RULE (CI, below):
+  - every row is re-weighed from the build's own runs;
+  - the lock-serialised binaries' tests all carry rows;
+  - the 7 stale rows are gone;
+  - **`supply_tier1` and `via_ring_tier1` are colocated too** (REFIT RULE 3), because their `OnceLock` boards were counted once per waiting test.
+- **Not changed:** any production source, `ci/SHARDS` (8), the guard and the canary.
+
+## Coverage map: every removed or merged test, what it guarded, and what guards it now
+
+| test | what it guards | guarded now by | evidence |
+|---|---|---|---|
+| `a_one_byte_change_to_the_trace_is_a_hash_mismatch` (removed, D4) | a flipped trace byte is `HashMismatch`, exit 3, through `replay` | `attribute_refuses_whatever_replay_refuses_with_the_same_bytes_and_code`, which flips the same byte in a copy and checks `replay`'s refusal through `attribute`'s | Mutants `lib.rs:111` (the kind's name) and `archive.rs:359` (the hash check removed) each fail both tests (`~/.cache/aet-1910/mut/`). The adversarial pass built one location-keyed mutant that only the removed test killed: the check skipped when the run's parent directory is named `archive` (`adv/evidence/d4-mutant-archive-parent.diff`). It is contrived; the removal stands as ruled, recorded here. |
+| `an_extra_file_in_the_run_directory_is_refused` (removed, D4) | an extra entry is `UnexpectedEntry`, exit 3 | the same test, through `same(&extra, "UnexpectedEntry")` | Mutants `lib.rs:101` and `archive.rs:280` each fail both |
+| The census's R1 note on `mirror.cbor` | — | — | Corrected by the adversarial pass: the in-place run holds only `manifest.cbor` and `trace.cbor` (`adv/runs/d4-base.log`), so in place against a copy differs only in path, inode and mtime |
+| `four_layer_fixture_passes_every_gate_and_its_package_holds` (moved, D3) | the 4-layer fixture passes every gate, its package holds, and `--against-fab` is identical | itself, on the shared package's copy | adversarial C: lose (a FAB-NOTES wording mutant fails it alone), order, poison |
+| `against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies` (moved, D3) | `--against-fab` names the two changes | itself, on its own copy | adversarial C |
+| the one dropped `verify` | the same package as the shared one | — | the invocation was identical apart from its output directory (`board_tier2.rs:983`, `:1035` on main) |
+
+## The libm coverage map (D5 (a)'s condition)
+
+The five binaries leave `gates`. The libm calls their figures go through were read from the source (subagent, checked), then measured with a marker per call site.
+- **Five call sites:** `supply.rs:117` and `:122` (`hypot`), `:128` (`cos`, `sin`), `:838` (`hypot`, then `ceil`) and `flow.rs:1771` (`atan2`).
+- The census's `ln` and `atan` in `flow.rs` are the crate's own interval series (`Iv::ln`, `Iv::atan`), not libm, and `extract.rs`'s libm calls are all in `#[cfg(test)]`. The census's §1.4 overstated the list; the five are the list.
+- **Of the five binaries, only `supply_tier1` reaches them,** through `extract`'s supply gate.
+
+| call site | the gates test that pins what it decides | the mutant that shows it (scratch, each restore touched) |
+|---|---|---|
+| `supply.rs:117`, `hypot`: each knockout's "away" direction | `supply_libm::the_net_copper_through_every_libm_call_is_the_golden`: In1.Cu's 6,113 cells and their digest | the single directions removed: 6,109 cells, red |
+| `supply.rs:122`, `hypot`: the summed direction | the same golden: one cell only it witnesses (the vias at 0° and 70°) | the summed direction removed: 6,112, red |
+| `supply.rs:128`, `cos`, `sin`: the compass probes | the same golden | the compass probes removed: 6,109, red |
+| `supply.rs:838`, `hypot`: a pad's knockout diagonal | the same golden: the GND through-hole pad | `hypot` replaced by `max`: red |
+| `flow.rs:1771`, `atan2`: a junction region's face order | the same golden's face digest, and `a_junction_regions_face_order_is_the_golden` (`Region::new` at four radii) | arguments swapped: both red |
+
+- **What the goldens pin, and what they do not (adversarial M1, M2, fixed and stated):**
+  - The first golden did not pin `:122`: no cell on its board depended on the summed direction. The adversarial pass found that, and the board now has one.
+  - A difference of one ulp at any site moves nothing on these boards. The pass ran 12 mutants, `next_up` and `next_down` per site, against the golden.
+  - **Nor did one ulp move `supply_tier1`, the binary that left `gates` (13/13 green). So no coverage was lost.**
+  - The goldens pin what each call decides on these boards, and a libm that rounds across one of those decisions. The test's doc says exactly that.
+- **Deterministic:** host 11/11, at default threads, at one thread and shuffled; image 6/6.
+- **A finding beyond the fence (§7.1 row):** before this build, no test anywhere noticed the compass probes removed: all 17 `supply::tests` passed, and so did the five binaries. Only the new golden does.
+- **My own mistake, recorded.** My first round of site mutants restored files with `mv`, which kept the older mtime, so cargo kept the mutant builds. Its results were wrong, and the In1.Cu count I first pinned (6,476) came from such a build. Every mutant above was re-run with each restore touched, and the goldens were read from the clean worktree.
+
+## Mutants of the guards this build adds
+
+One each in a copy of `ci/`, each killed by `ci/test-shard.sh` (`~/.cache/aet-1910/build/gmut/run.sh`):
+- **P1:** the weight check, the block check, and the lock-serialised check (L4);
+- **P2:** the refusal in `result`, the row lookup, and the block exemption;
+- **`gates.sh`:** the row naming no target, the shared name, the kind, the example with `test = true` (L3), and the complement.
+
+The unmutated script fails nothing.
+
+## Adversarial pass (§5, targeted; a fresh Opus subagent)
+
+The report is `~/.cache/aet-1910/adv/REPORT.md`, with every log under `adv/runs/`.
+
+| | lose a failure | order | poison |
+|---|---|---|---|
+| A, `power_board_tier1` | PASS: every-rail-flagged and K5-off mutants each fail only their test | PASS: default threads, 1 thread at four shuffle seeds, each test alone | PASS at default and at 1 thread: the 9 dependants fail naming their property and the stored failure, 0.00 s, no hang; the 7 others pass |
+| B, `outline_tier1` | PASS | PASS | PASS: the 3 dependants fail |
+| C, `four_layer_fab_tier2`, in the pinned image | PASS: a FAB-NOTES wording mutant fails only the first test | PASS: forward and reverse at 1 thread, each test alone | PASS: both fail, naming their property and the stored failure |
+
+**Its findings, and what was done:**
+- **M1:** `supply_libm` did not pin `:122`. Fixed (the libm map).
+- **M2:** the golden's doc claimed one-ulp sensitivity. Corrected, measured (the libm map).
+- **L3:** `gates.sh` could drift from cargo's default selection: an example with `test = true` would leave `gates`. That case is now refused. A `test = false` target now runs in `gates` (the safe direction), and a target with `required-features` exits 101 (loud). The tree has none today.
+- **L4:** P2 is silent at one test thread, where libtest prints no 60 s line. CI never runs one thread. The "every lock-serialised test carries a row" condition is now enforced in `assign`.
+- **L5:** the D4 residual above.
+- **L6:** this Part 2, which did not exist at the reviewed head.
+- **Informational:** A's K5 test fails at an `unwrap_err()` whose message names nothing. The census's F3 style; outside this build.
+- **Verified, no defect:**
+  - `gates.sh` against the old selection: 2,258 against 2,210 tests, differing exactly by the five binaries' 48;
+  - P2's parse on all 274 real 60 s warnings in 32 CI logs;
+  - P1 silent on the real list.
+
+## Reduction pass (diff)
+
+A fresh subagent, read-only (`~/.cache/aet-1910/build/reduction.md`).
+- **Applied:**
+  - `gates.sh`'s union count, a tautology given how the complement is built (its "neither" protection is the kind check);
+  - one colocate fixture for both P2 cases;
+  - two comments that restated a header;
+  - and `with_bound`'s doc comment, which the D2 insertion had separated from its function (F1).
+- **Kept, and why:** `supply_libm.rs`'s copy of `supply::tests`' helpers (about 96 lines). They are private to a `#[cfg(test)]` module in `src`, which the fence does not include.
+- **Findings, not reduced:** the two P2 weight fixtures share about 167 rows; the hard-link block now appears in three places.
+
+Reduction pass (diff): −14 net · 3 duplicates removed · 1 dead path removed · 0 protected kept · 7 findings (reduction.md).
+
+## CI: before and after, measured
+
+- **Suite seconds** are the sum of the eight `tools-shard` test steps; a shard's time is its job, start to end.
+- **Before:** the three census runs (Part 1, Method):
+  - suite 16,910, 14,415 and 16,312 s (mean 15,879);
+  - shards 30.0–49.3 min;
+  - `gates` 38.2, 65.9 and 51.4 min.
+
+**The build's runs, as the plan converged** (each refit restarts the count):
+
+| run | head | plan, s per shard | shards, min | spread | suite s | `gates`, min | tier 2 |
+|---|---|---|---|---|---|---|---|
+| 44461834066 | `bc31f19c` (the build; census-estimated blocks) | 2,136 | 22.5–38.4 | 15.9 | 13,140 | 17.0 | 190 (floor 190) |
+| 44466633965 | `8b18b060` (refit from the run above) | 1,724 | 25.6–40.0 | 14.4 | 13,525 | 13.9 | 190 |
+| 44471583247 | `bdc27610` (refit at the worse of the two) | 1,987 | 19.9–38.1 | 18.2 | 14,052 | 13.8 | 190 |
+
+- **The last row's spread came from the plan, not the runner.** `supply_tier1`, weighed per test, carried its `OnceLock` board's wait once per test, so shard 0 planned 944 s for it and ran 188.
+- Colocating it, and `via_ring_tier1` (REFIT RULE 3), gives the final plan: **1,831 s per shard.**
+
+**The three counted runs, on the final plan** (each commit after a run records it):
+
+| counted run | head | shards 0–7, min | slowest | spread | suite s | `gates`, min | tier 2 |
+|---|---|---|---|---|---|---|---|
+| 1 (44477143464) | `4b619fea` | 36.6, 28.8, 27.7, 37.9, 27.7, 30.5, 34.3, 37.4 | 37.9 | 10.2 | 13,490 | 13.7 | 190 (floor 190) |
+{{COUNTED}}
+
+## §7.1 rows, for the architect
+
+| row | source |
+|---|---|
+| P3: per-test timing in `result` (time-stamped lines), refusing an unweighted test over 10 s, not 60 | ruling D6; census §1.5 |
+| F3: the 42 MULTI tests, split over shared runs if wanted, as their own work order | ruling D10 |
+| F1: the supply gate solves one board twice at two limits (about 300 CI s a job); only a cache inside `extract` would share it | census F1 |
+| F5: `twin_tier2`'s per-test CI seconds include `RENODE_TURN` queueing; its rows are upper bounds | census F5 |
+| F6: `1909`'s FEEDBACK is stale in places (7 prove gates, 17 package files, 30 seeded cases) | census F6 |
+| F7, the first item: the two unused motor ELFs in `kani_proves_every_part_of_both_motor_fixtures`, after `4400g` | ruling; this build |
+| No test before this build noticed `supply.rs:128`'s compass probes removed; `supply_libm` now does, on one board | the libm map |
+| A's K5 test fails at a bare `unwrap_err()`; its property is named only by the test's name | adversarial, informational |
 
 # Part 1: the census (§1)
 
