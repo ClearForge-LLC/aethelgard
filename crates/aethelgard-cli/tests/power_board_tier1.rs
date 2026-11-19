@@ -21,6 +21,24 @@ fn fixture() -> (Specification, SolvedTopology, PinTable) {
     (spec, solved, table)
 }
 
+/// The fixture through `emit`, the ladder's eight routings, made once per
+/// process (`AET-WO-1910` D1) and read by every test that judges the
+/// fixture's own board; a run that fails fails each of them by its property
+/// (`common::verify::Shared`). The two equality checks (`every_loop_rule_holds_
+/// on_the_fixtures_own_board`, and the crossing's on the full fixture) still
+/// make their second emission fresh, so each compares two independent runs.
+type Emitted = (Specification, SolvedTopology, PinTable, schematic::Emission);
+static EMITTED: common::verify::Shared<Emitted> =
+    common::verify::Shared::new("power_tree() through emit");
+
+fn emitted(property: &str) -> &'static Emitted {
+    EMITTED.get(property, || {
+        let (spec, solved, table) = fixture();
+        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        (spec, solved, table, e)
+    })
+}
+
 fn read(spec: &Specification, board: &str) -> route::Board {
     let tree = strict::board(board).unwrap();
     let (b, r) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
@@ -40,9 +58,8 @@ fn judged(
 
 #[test]
 fn every_loop_rule_holds_on_the_fixtures_own_board() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
-    let records = judged(&spec, &solved, &table, &e.board);
+    let (spec, solved, table, e) = emitted("every loop rule holds on the fixture's own board");
+    let records = judged(spec, solved, table, &e.board);
     // Every part the tree anchors: per buck the two input capacitors, CBOOT,
     // CVCC, the divider and the inductor (7 x 2); the LDO's two capacitors;
     // the sense reservoir; the hot-plug bulk capacitor on U10 (`AET-WO-1315`).
@@ -50,8 +67,8 @@ fn every_loop_rule_holds_on_the_fixtures_own_board() {
     for r in &records {
         assert_eq!(r.verdict, "pass", "{r:#?}");
     }
-    let b = read(&spec, &e.board);
-    loops::source_pads(&b, &solved).unwrap();
+    let b = read(spec, &e.board);
+    loops::source_pads(&b, solved).unwrap();
     // The reservoir sits by the MCU pin its net was solved onto.
     let sense = &solved.power.as_ref().unwrap().sense["VBAT_SENSE"];
     let c50 = records.iter().find(|r| r.part == "C50").unwrap();
@@ -65,24 +82,23 @@ fn every_loop_rule_holds_on_the_fixtures_own_board() {
         .unwrap();
     assert_eq!(pad.net.as_deref(), Some("/VBAT_SENSE"));
     // Two emissions are byte for byte the same.
-    assert_eq!(e, schematic::emit(&spec, &solved, &table).unwrap());
+    assert_eq!(*e, schematic::emit(spec, solved, table).unwrap());
 }
 
 /// §5.1: Cin far from VIN, the divider at the rail's far end, the inductor
 /// away from SW. Each is moved 25 mm off and fails its own rule, and only it.
 #[test]
 fn a_loop_part_moved_off_its_pin_fails_its_rule() {
-    let (spec, solved, table) = fixture();
-    let plain = schematic::emit(&spec, &solved, &table).unwrap();
-    let b = read(&spec, &plain.board);
+    let (spec, solved, table, plain) = emitted("a loop part moved off its pin fails its rule");
+    let b = read(spec, &plain.board);
     let o = b.outline;
     for part in ["C11", "R10", "L1", "C30", "C50"] {
         let moves = vec![(part.to_owned(), (o.x1 + 25_000_000, o.y0), 0)];
-        let moved = match schematic::emit_moved(&spec, &solved, &table, &moves) {
+        let moved = match schematic::emit_moved(spec, solved, table, &moves) {
             Ok(m) => m,
             Err(e) => panic!("{part}: {e}"),
         };
-        let records = judged(&spec, &solved, &table, &moved.board);
+        let records = judged(spec, solved, table, &moved.board);
         let failed: Vec<&str> = records
             .iter()
             .filter(|r| r.verdict == "fail")
@@ -96,10 +112,9 @@ fn a_loop_part_moved_off_its_pin_fails_its_rule() {
 /// not on the domain is refused by `K5`, whatever the labels' own agreement.
 #[test]
 fn a_source_or_return_pad_off_its_net_fails_k5() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (spec, solved, _, e) = emitted("a source or return pad off its net fails K5");
     for (reference, pad, net) in [("R20", "1", "GND"), ("R21", "2", "VDD_3V3")] {
-        let mut b = read(&spec, &e.board);
+        let mut b = read(spec, &e.board);
         let p = b
             .parts
             .iter_mut()
@@ -110,7 +125,7 @@ fn a_source_or_return_pad_off_its_net_fails_k5() {
             .find(|p| p.number == pad)
             .unwrap();
         p.net = Some(net.to_owned());
-        let err = loops::source_pads(&b, &solved).unwrap_err();
+        let err = loops::source_pads(&b, solved).unwrap_err();
         assert!(err.contains(reference) && err.contains("K5"), "{err}");
     }
 }
@@ -118,11 +133,10 @@ fn a_source_or_return_pad_off_its_net_fails_k5() {
 /// A loop rule names a part the board lacks: refused, never skipped.
 #[test]
 fn a_rule_whose_part_is_missing_is_refused() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
-    let mut b = read(&spec, &e.board);
+    let (spec, solved, table, e) = emitted("a rule whose part is missing is refused");
+    let mut b = read(spec, &e.board);
     b.parts.retain(|p| p.reference != "C13");
-    let rules = loops::rules(&spec, &solved, &table).unwrap();
+    let rules = loops::rules(spec, solved, table).unwrap();
     let err = loops::judge(&b, &rules).unwrap_err();
     assert!(err.contains("C13"), "{err}");
 }
@@ -161,8 +175,7 @@ fn a_crossing_on_a_bus_of_two_devices_is_not_drawable() {
 /// would be a second driver), and every other rail keeps its flag.
 #[test]
 fn only_a_rail_no_power_out_pin_drives_carries_a_flag() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (_, _, _, e) = emitted("only a rail no power-out pin drives carries a flag");
     let flags = e.schematic.matches("(lib_id \"power:PWR_FLAG\")").count();
     // GND, VBAT, VDD_3V3 and VDD_5V; not VDD_1V8, which U12's OUT drives.
     assert_eq!(flags, 4, "{flags} flags");
@@ -193,8 +206,7 @@ fn a_bucks_sw_net_takes_its_outputs_class_and_an_ldo_adds_nothing() {
 /// thermal vias and arc-drawn silkscreen are read, and every line passes.
 #[test]
 fn extract_bounds_the_power_board() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (_, _, _, e) = emitted("extract bounds the power board");
     let dir = std::env::temp_dir().join(format!("aet-4300d2-extract-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let board = dir.join("b.kicad_pcb");
@@ -252,10 +264,9 @@ fn a_net_spelled_vbat_beside_a_power_tree_is_refused() {
 /// a power tree's board; the array as emitted passes.
 #[test]
 fn a_starved_thermal_array_is_refused() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (spec, _, _, e) = emitted("a starved thermal array is refused");
     let tree = strict::board(&e.board).unwrap();
-    let (b, r) = route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
+    let (b, r) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     route::check(&b, &r).unwrap();
     assert_eq!(r.arrays.len(), 2);
     let mut short = r.clone();
@@ -439,8 +450,8 @@ fn a_keepout_is_read_routed_around_and_judged() {
 /// `connect_pads` carrying anything else, is still a local clearance.
 #[test]
 fn the_reader_admits_a_footprints_keepout_clearance_and_nothing_more() {
-    let (spec, solved, table) = fixture();
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (_, _, _, e) =
+        emitted("the reader admits a footprint's keepout clearance and nothing more");
     let lib = icm_footprint()
         .replacen(
             "(footprint \"InvenSense_QFN-24_3x3mm_P0.4mm\"",
@@ -546,11 +557,14 @@ fn the_nets_validate_reserves_are_the_emitters_own() {
         .unwrap(),
     )
     .unwrap();
-    let (power, ..) = fixture();
-    for spec in [reference, power] {
-        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-        let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
-        let board = schematic::emit(&spec, &solved, &table).unwrap().board;
+    let table = aethelgard_svd_hal::pin_table(&reference.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&reference, &table, &"0".repeat(64)).unwrap();
+    let reference_board = schematic::emit(&reference, &solved, &table).unwrap().board;
+    let (power, _, _, power_emitted) = emitted("the nets validate reserves are the emitter's own");
+    for (spec, board) in [
+        (&reference, &reference_board),
+        (power, &power_emitted.board),
+    ] {
         // Every net the board names: a label as `/<name>`, a rail bare.
         let drawn: BTreeSet<String> = board
             .split("(net \"")
@@ -559,8 +573,8 @@ fn the_nets_validate_reserves_are_the_emitters_own() {
             .map(|n| n.strip_prefix('/').unwrap_or(n).to_owned())
             .collect();
         let mut spelled = BTreeSet::new();
-        collect_strings(&serde_json::to_value(&spec).unwrap(), &mut spelled);
-        let own: BTreeSet<String> = aethelgard_ir::names::own_nets(&spec)
+        collect_strings(&serde_json::to_value(spec).unwrap(), &mut spelled);
+        let own: BTreeSet<String> = aethelgard_ir::names::own_nets(spec)
             .unwrap()
             .into_iter()
             .collect();
