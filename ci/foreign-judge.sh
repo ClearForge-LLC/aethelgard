@@ -117,9 +117,15 @@ run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"
 
 # Timers declared at 250 MHz: the twin runs them there, and ArduPilot's RCC
 # registers, read back, decode to 200 MHz on both buses, so the run fails by
-# name with both figures.
+# name with both figures. AET-WO-4202 (ruled 23:10Z): without U2 there is no
+# BMP280 probe, so ArduPilot's boot timeline shifts and the 5 s cut lands
+# before PB13 is configured: GPIOB.MODER and GPIOB.AFRH read short of the
+# solved words, exactly these two (main 96517013 with U2: the two
+# contradictions alone, measured). Any other kind or register still fails.
 run_spec=$work/spec-contradicted.json run clock-contradicted 1 '
-kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted"]
+kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted", "register_mismatch", "register_mismatch"]
+and sorted(f["message"].split(" ")[0] for f in v["findings"] if f["kind"] == "register_mismatch")
+    == ["GPIOB.AFRH", "GPIOB.MODER"]
 and [(c["declared_hz"], c["decoded_hz"]) for c in boot["clock"]["checked"]]
     == [(250000000, 200000000), (250000000, 200000000)]
 ' --platform "$work/gen-contradicted/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"

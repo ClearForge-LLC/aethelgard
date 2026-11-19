@@ -211,7 +211,9 @@ Sentinel-02's own-board tier-2 reads are moved to the new truth: `twin_tier2`'s 
 OutlineUnreachable: board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm
 ```
 
-The right, left and aft turns place, and on main `96517013` all four place (`out/turned.txt`). The fixture as declared places at 95.80 × 67.60 mm. §7 lists Sentinel-03's bound failing on a moved board as a stop, so the bound and the test are untouched and a ruling is requested on the bus (22:00Z).
+The right, left and aft turns place, and on main `96517013` all four place (`out/turned.txt`). The fixture as declared places at 95.80 × 67.60 mm. §7 lists Sentinel-03's bound failing on a moved board as a stop. The work stopped (22:00Z).
+
+**Ruled (i), 23:10Z.** The turned variants are `4400d`'s test hypotheticals, not the board being ordered. `forward` is now pinned to its refusal by name with its figures (`OutlineUnreachable`, best 103.500 × 67.100 mm, over by 3.500 × 0.000), as size samples 2, 6 and 8 are. The other three turns keep their placed-outline and keep-out checks. `outline_tier1` is 9/9. The finding (F6: the placer is not monotone in parts) is the architect's §7.1 row.
 
 ### 2.5 `ci/foreign-judge.sh` on the U2-less ArduPilot [measured] — outside the carve-out
 
@@ -225,7 +227,11 @@ The full script runs with the carve-out edits (U2's checks out, the IMU-less run
 | `no-imu-line` | holds; U7's identity is witnessed at 387.244 ms |
 | **`clock-contradicted`** | **fails** its exact check, `kinds == ["foreign_clock_contradicted"] * 2`. The branch adds `register_mismatch` ×2: GPIOB.MODER reads 0xa400a000 against the solved 0xa800a000, and AFRH 0x55000000 against 0x55500000 (PB13 not yet configured at the 5 s cut under the 250 MHz declaration). Main `96517013` with main's ELF gives exactly the two contradictions. |
 
-Without U2, ArduPilot probes one barometer fewer, so the run's cut lands at a different point in its initialisation. The two clock contradictions are unchanged. The check is not a U2 line, so it is outside the carve-out and is left alone. Ruling requested on the bus.
+Without U2, ArduPilot probes one barometer fewer, so the run's cut lands at a different point in its initialisation. The two clock contradictions are unchanged. The check is not a U2 line, so it was outside the carve-out and the work stopped on it (22:54Z).
+
+**Ruled 23:10Z: pin it exactly.** The check now requires the two `foreign_clock_contradicted` plus exactly two `register_mismatch`, matched by subject (`GPIOB.AFRH`, `GPIOB.MODER`), with the figures check unchanged. A third kind, or a mismatch on any other register, still fails. The cause is commented beside the check, citing the control run on main. The full script now exits 0 on the branch, every case holding.
+
+**`core_in_exception` at the 4370 ms cut (ruled: not a stop unless a fault).** Exception 66 is IRQ 50 (VECTACTIVE 0x42 = 16 + 50). That is `TIM5_IRQn`, "TIM5 global Interrupt", in ST's `stm32h753xx.h` (`crates/aethelgard-svd-hal/data/st-cmsis-device-h7/stm32h753xx.h` L110): ArduPilot's system timer, which the hwdef names. ICSR 0x00000842 also has RETTOBASE set. So a TIM5 ISR is in progress at the cut, not a fault exception (HardFault, MemManage, BusFault and UsageFault are 3–6). Main's run at the same 4370 ms cut shows only `spi_transaction_unwitnessed` (measured), so it never shows this. The check (`spi_transaction_unwitnessed` and U5's identity without its FIFO read) still holds.
 
 ### 2.6 Also measured on the final tree
 

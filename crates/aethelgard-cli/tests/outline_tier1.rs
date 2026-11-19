@@ -459,6 +459,10 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
 /// every placer gap and loop rule kept, and each keep-out zone it carries
 /// inside the outline (the zones are drawn from the part's origin and
 /// rotation, so a group moved whole carries them).
+///
+/// `AET-WO-4202` (ruled (i), 23:10Z): with U2 gone, the forward turn no
+/// longer fits and is refused by name with its figures, as size samples 2,
+/// 6 and 8 are: the placer is not monotone in parts (its FEEDBACK §2.4).
 #[test]
 fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
     for (x, rotation) in [
@@ -477,7 +481,19 @@ fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
             }
         }
         let (spec, solved, table) = solved(&v);
-        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        let emitted = schematic::emit(&spec, &solved, &table);
+        if x == "forward" {
+            let e = emitted.map(|_| ()).unwrap_err();
+            assert_eq!(e.kind(), "OutlineUnreachable", "{e}");
+            assert!(
+                e.to_string().contains(
+                    "the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm"
+                ),
+                "{e}"
+            );
+            continue;
+        }
+        let e = emitted.unwrap();
         let tree = sexpr::parse(&e.board).unwrap();
         let u5 = tree
             .children("footprint")
