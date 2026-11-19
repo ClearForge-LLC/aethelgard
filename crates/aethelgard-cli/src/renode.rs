@@ -1850,13 +1850,16 @@ fn absent_address(line: &str, bus: &str) -> Option<u8> {
 }
 
 /// For each check, the addresses its controller found no device at during
-/// its own step (`AET-WO-3305`). Each `Unknown slave` line of a controller
-/// goes to the I2C check on that controller whose status word the firmware
-/// writes first after it in the log (the check's first [`Hook::Step`]); a
-/// line no such write follows goes to the controller's last check in the
-/// image's order, the step under way when the run ended. Empty for an SPI
-/// check. A step that writes its status before its transfer leaves that
-/// transfer's line to the next step: attribution only, never a witness.
+/// its own step (`AET-WO-3305`). The firmware ends each step by writing its
+/// status word once ([`Hook::Step`]), so an `Unknown slave` line goes to the
+/// I2C check on its controller whose status write first follows it. That
+/// boundary is the firmware's, so it is trusted only as the generated
+/// firmware draws it: when every I2C check on the controller wrote its status
+/// exactly once, and a status write follows the line. Otherwise the line
+/// goes to every I2C check on the controller, as the whole run's list did
+/// before (adversarial pass, F1 to F3): a status written early, twice or
+/// never moves no address off its step, it only keeps the old masking.
+/// Empty for an SPI check. Attribution only, never a witness.
 ///
 /// [`Hook::Step`]: crate::anchor::Hook::Step
 fn absent_by_step(
@@ -1868,14 +1871,13 @@ fn absent_by_step(
         matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. })
             .then(|| c.device.split('.').next().unwrap_or_default())
     }
-    // Each check's first status write, by its position in the log.
-    let mut ended: Vec<Option<usize>> = vec![None; checks.len()];
+    // Each check's status writes, by their positions in the log.
+    let mut writes: Vec<Vec<usize>> = vec![Vec::new(); checks.len()];
     for (i, h, _) in hooks {
         if let crate::anchor::Hook::Step { check, .. } = h
-            && let Some(e) = ended.get_mut(*check)
-            && e.is_none()
+            && let Some(w) = writes.get_mut(*check)
         {
-            *e = Some(*i);
+            w.push(*i);
         }
     }
     let mut absent = vec![Vec::new(); checks.len()];
@@ -1886,17 +1888,22 @@ fn absent_by_step(
         }) else {
             continue;
         };
-        // The check on this controller whose status write first follows the
-        // line, or else the controller's last check.
-        let mine = |j: &usize| controller(&checks[*j]) == Some(bus);
-        let owner = (0..checks.len())
-            .filter(mine)
-            .filter_map(|j| ended[j].filter(|&e| e > i).map(|e| (e, j)))
-            .min()
-            .map(|(_, j)| j)
-            .or_else(|| (0..checks.len()).rev().find(mine));
-        if let Some(o) = owner {
-            absent[o].push(address);
+        let mine: Vec<usize> = (0..checks.len())
+            .filter(|&j| controller(&checks[j]) == Some(bus))
+            .collect();
+        // The check whose one status write first follows the line.
+        let owner = mine
+            .iter()
+            .all(|&j| writes[j].len() == 1)
+            .then(|| {
+                mine.iter()
+                    .filter(|&&j| writes[j][0] > i)
+                    .min_by_key(|&&j| writes[j][0])
+            })
+            .flatten();
+        match owner {
+            Some(&j) => absent[j].push(address),
+            None => mine.iter().for_each(|&j| absent[j].push(address)),
         }
     }
     absent
@@ -6085,30 +6092,55 @@ mod tests {
             [vec![117], vec![], vec![]],
             "the wrong address is U2's step's alone; U5's step met no absence"
         );
+        // A status write directly after its step's line (mutant H3).
+        let adjacent = [held[0], held[2], held[3], held[5]];
+        assert_eq!(
+            absent_of(&two_bme(), &adjacent),
+            [vec![118], vec![119], vec![]]
+        );
     }
 
+    /// The adversarial pass (F1, F1b, F2, F3): the boundary is the
+    /// firmware's, so where it is not drawn as the generated firmware draws
+    /// it (each step's status once, after its transfer) a line goes to every
+    /// step on its controller, as main's whole-run list did: the address can
+    /// still mask, never hide a fault by moving to another device's step.
     #[test]
-    fn an_absent_address_no_status_write_follows_goes_to_the_controllers_last_step() {
-        // U5's step never wrote its status (the run ended inside it), and a
-        // second write of U2's status is not where U2's step ended.
-        let log = [
+    fn an_absent_address_goes_to_every_step_when_the_boundary_is_not_one_write_each() {
+        let both = |a: Vec<u8>| vec![a.clone(), a, vec![]];
+        let u2 = "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 117.";
+        let early = "[00:00:00.000000000] [WARNING] sysbus: AETHELGARD-STEP 0 ffffffff 10";
+        let late0 = "[00:00:00.003600000] [WARNING] sysbus: AETHELGARD-STEP 0 22020001 361033";
+        let step1 = "[00:00:00.003610340] [WARNING] sysbus: AETHELGARD-STEP 1 22020000 361194";
+        // F1: U2's status written before its transfer and after it.
+        assert_eq!(
+            absent_of(&two_bme(), &[early, u2, late0, step1]),
+            both(vec![117])
+        );
+        // F2: U2's status never written; the line is not U5's alone.
+        assert_eq!(absent_of(&two_bme(), &[u2, step1]), both(vec![117]));
+        // F1b: every record marked before its transfer, then written after.
+        let early1 = "[00:00:00.003600000] [WARNING] sysbus: AETHELGARD-STEP 1 ffffffff 361040";
+        let held = [
+            early,
             "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 118.",
-            STEP0,
+            late0,
+            early1,
             "[00:00:00.003610340] [WARNING] i2c1: Unknown slave at address 119.",
-            "[00:00:00.003610340] [WARNING] sysbus: AETHELGARD-STEP 0 22020000 361034",
-            "[00:00:00.003610340] [WARNING] i2c2: Unknown slave at address 118.",
-            "[00:00:00.003610340] [WARNING] i2c1: Unknown slave at address 117.",
+            "[00:00:00.007200000] [WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093",
         ];
+        assert_eq!(absent_of(&two_bme(), &held), both(vec![118, 119]));
+        // F3: a line after every step has ended is no one step's.
+        let after = "[00:00:00.003611970] [WARNING] i2c1: Unknown slave at address 117.";
         assert_eq!(
-            absent_of(&two_bme(), &log),
-            [vec![118], vec![119, 117], vec![]],
-            "after U2's first status write the step under way is U5's; another controller's line is no check's"
+            absent_of(&two_bme(), &[late0, step1, after]),
+            both(vec![117])
         );
-        assert_eq!(
-            absent_by_step(&two_bme(), &log, &[]),
-            [vec![], vec![118, 119, 117], vec![]],
-            "with no status write read, every line goes to the controller's last step"
-        );
+        // No status write read at all: every line to every step.
+        assert_eq!(absent_by_step(&two_bme(), &[u2], &[]), both(vec![117]));
+        // Another controller's line is none of these steps'.
+        let other = "[00:00:00.000000000] [WARNING] i2c2: Unknown slave at address 118.";
+        assert_eq!(absent_of(&two_bme(), &[other, late0, step1]), both(vec![]));
     }
 
     #[test]
