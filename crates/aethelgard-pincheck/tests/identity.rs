@@ -1042,6 +1042,26 @@ fn the_console_s_protocol_is_not_read_and_its_inversion_is_named() {
         serial(&[("console", false)], ignored).unwrap(),
         Vec::<String>::new()
     );
+    // Adversarial D1: with no console, the first port stands at SERIAL0 and
+    // runs MAVLink 2 whatever its role; a MAVLink port there passes.
+    assert_eq!(
+        serial(
+            &[("gps", false), ("rc_crsf", false)],
+            "#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN\n"
+        )
+        .unwrap(),
+        [
+            "WrongSerialProtocol SERIAL0 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_MAVLink2 (2): SERIAL0's literal (AP_SerialManager.cpp:180)]"
+        ]
+    );
+    assert_eq!(
+        serial(&[("mavlink", false)], ignored).unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        kinds(&serial(&[("rc_sbus", true)], "").unwrap()),
+        ["WrongSerialProtocol", "WrongSerialOptions"]
+    );
 }
 
 /// A port's parameters compile only where `HAL_HAVE_SERIALn_PARAMS` does

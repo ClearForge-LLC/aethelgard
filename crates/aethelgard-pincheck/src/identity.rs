@@ -788,10 +788,11 @@ fn protocol_value(h: &Preprocessed, define: &str, v: &str) -> Result<i64, Refusa
 
 /// Each port's protocol and options as ArduPilot compiles them from
 /// `hwdef.h`, against the topology's role and declared inversion:
-/// - **SERIAL0:** its protocol is never judged: the parameter's default is a
+/// - **SERIAL0:** its define is never read: the parameter's default is a
 ///   literal MAVLink 2 (`AP_SerialManager.cpp:180`), whatever
-///   `DEFAULT_SERIAL0_PROTOCOL` says, and it has no options parameter, so a
-///   console declared inverted runs not inverted.
+///   `DEFAULT_SERIAL0_PROTOCOL` says, so the port there must be the console
+///   or a MAVLink port. It has no options parameter, so a port there
+///   declared inverted runs not inverted.
 /// - **SERIAL1–9 protocol:** the define, else the tag's default for that n
 ///   ([`DEFAULT_PROTOCOLS`]), each row compiled only where
 ///   `HAL_HAVE_SERIALn_PARAMS` is (`:183` … `:379`). Expected by role, exactly:
@@ -810,6 +811,11 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
     for (n, (label, p, ..)) in serial_order(t).into_iter().enumerate() {
         let at = format!("SERIAL{n}");
         let rc = matches!(p.role, SerialRole::RcCrsf | SerialRole::RcSbus);
+        let want = match p.role {
+            SerialRole::Console | SerialRole::Mavlink => MAVLINK2,
+            SerialRole::Gps => GPS,
+            SerialRole::RcCrsf | SerialRole::RcSbus => RCIN,
+        };
         let declared = |bits: u64| {
             if bits == 0 {
                 "none".to_owned()
@@ -818,6 +824,21 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
             }
         };
         if n == 0 {
+            // Not read, but known: whatever port stands first runs MAVLink 2
+            // (adversarial D1: a topology with no console puts another role
+            // here).
+            if want != MAVLINK2 {
+                out.push(
+                    "WrongSerialProtocol",
+                    &at,
+                    Some(label),
+                    format!("{}, for a {} port", protocol_name(want), p.role.name()),
+                    format!(
+                        "{}: SERIAL0's literal (AP_SerialManager.cpp:180)",
+                        protocol_name(MAVLINK2)
+                    ),
+                );
+            }
             if p.framing.inverted {
                 out.push(
                     "WrongSerialOptions",
@@ -849,18 +870,15 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
         {
             return malformed(
                 &params,
-                format!("is `{v}`, so SERIAL{n}'s parameters are not compiled"),
+                format!(
+                    "is `{v}`, not the `1` ArduPilot's script writes for a listed port (chibios_hwdef.py:1700-1709); any other value may drop SERIAL{n}'s parameters"
+                ),
             );
         }
         let define = format!("DEFAULT_SERIAL{n}_PROTOCOL");
         let runs = match h.value(&define)? {
             Some(v) => protocol_value(h, &define, &v)?,
             None => *default,
-        };
-        let want = match p.role {
-            SerialRole::Console | SerialRole::Mavlink => MAVLINK2,
-            SerialRole::Gps => GPS,
-            SerialRole::RcCrsf | SerialRole::RcSbus => RCIN,
         };
         if runs != want {
             out.push(
