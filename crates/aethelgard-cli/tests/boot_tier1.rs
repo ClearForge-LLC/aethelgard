@@ -478,13 +478,16 @@ fn three_agreeing_witnesses_pass() {
     // `AET-WO-2204` A2 (ruled D6): no interrupt armed.
     assert_eq!(b["registers"][18]["name"], "SysTick.CSR");
     assert_eq!(b["registers"][23]["name"], "NVIC.ISER4");
-    // Every configured port's `OTYPER`, written whole (`AET-WO-4230` B0).
+    // Every configured port's `OTYPER`, written whole (`AET-WO-4230` B0);
+    // the two PWR bits the emitted PWR reads 1 (`AET-WO-4240v` §1.6).
     assert_eq!(
         b["unobservable"],
         serde_json::json!([
             "GPIOA.OTYPER",
             "GPIOB.OTYPER",
             "I2C1.TIMINGR",
+            "PWR.CSR1.ACTVOSRDY",
+            "PWR.D3CR.VOSRDY",
             "USART1.CR1.FIFOEN",
             "USART1.CR1.M0",
             "USART1.CR1.M1",
