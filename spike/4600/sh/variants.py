@@ -29,6 +29,9 @@ def constraint(net, ff, ns):
 
 L = load("logger.json")
 M = load("driver.json")
+# Variants derive from the boards as authored, before stage 2 wrote acknowledgements.
+L["acknowledge_unwitnessed"] = []
+M["acknowledge_unwitnessed"] = []
 fixture = json.loads(FIX.read_text())
 
 # logger-i2c-only: no SPI bus. Forced with it: its flash, its two net
@@ -136,3 +139,13 @@ for m in v["motor_outputs"]:
     if m["label"].startswith("HB_"):
         m["pwm"]["pulse_min_us"] = 0
 write("driver-idle-zero.json", v)
+
+# logger-1s-u50 (added after the predictions, at the stop; not run): logger-1s as
+# written collided with itself, the power fixture's regulator reference U11 against
+# the logger's TMP117 U11 (DuplicateReference, measured). The same variant with the
+# regulator renamed U50; no other change.
+v = load("logger-1s.json")
+for r in v["power"]["regulators"]:
+    if r["reference"] == "U11":
+        r["reference"] = "U50"
+write("logger-1s-u50.json", v)
