@@ -49,9 +49,7 @@ jobs:
               if [ "$n" -gt 2 ]; then eval "exec $n>&-"; fi
             done
             ls -l /proc/self/fd
-            # AET-WO-1910 D5 (a), ruled on PR #233 (comment 6999515740): every test target but the
-            # tier-1 ones ci/tools-only.tsv names, which run in `tools` alone; a guard refuses by
-            # name any test target in neither job (ci/gates.sh).
+            # AET-WO-1910 D5 (a): every test target but ci/tools-only.tsv's (ci/gates.sh).
             exec bash ci/gates.sh run
           )
 

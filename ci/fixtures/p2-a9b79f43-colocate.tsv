@@ -1,4 +1,0 @@
-# AET-WO-1910 P2 fixture: ci/colocate.tsv at a9b79f43.
-tests/attribute_seeded.rs	1124
-tests/verify_47k_tier2.rs	563
-tests/campaign_tier2.rs	85

@@ -29,7 +29,7 @@ targets() {
   if grep -q '^BAD ' <<<"$moved"; then die "$list: want package<TAB>target, line $(grep '^BAD ' <<<"$moved" | head -1 | cut -d' ' -f2)"; fi
   awk -F'\t' -v moved="$moved" '
     BEGIN { n = split(moved, m, "\n"); for (i = 1; i <= n; i++) if (m[i] != "") want[m[i]] = 1 }
-    $2 == "test" { tests++; have[$1 "\t" $3] = 1; owners[$3]++; name[$1 "\t" $3] = $3 }
+    $2 == "test" { have[$1 "\t" $3] = 1; owners[$3]++; name[$1 "\t" $3] = $3 }
     END {
       for (k in want) {
         if (!(k in have)) { split(k, kk, "\t"); print "gates: tools-only names no test target: " kk[1] " " kk[2] > "/dev/stderr"; failed = 1; continue }
@@ -37,12 +37,9 @@ targets() {
       }
       if (failed) exit 1
       for (k in have) if (!(k in want)) { split(k, kk, "\t"); run[kk[2]] = 1 }
-      ran = 0; for (r in run) ran++
+      # Every test target either runs here by name or is named tools-only: the union is the list by
+      # construction, and the kind check above refuses a target these flags would not run.
       for (r in run) print r
-      # The union is the list: every test target either runs here by name or is named tools-only.
-      moved = 0; for (k in want) moved++
-      covered = 0; for (k in have) if ((k in want) || (name[k] in run)) covered++
-      if (covered != tests) { print "gates: " tests - covered " test target(s) in neither job" > "/dev/stderr"; exit 1 }
     }' <<<"$all" | sort
 }
 

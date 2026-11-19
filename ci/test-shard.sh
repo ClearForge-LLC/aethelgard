@@ -131,12 +131,12 @@ refuses "P1: a block naming no listed binary" "${py[@]}" assign 4 "$tmp/weights.
 grep -q 'tests/gone.rs names no listed binary' "$tmp/out" && ok "P1: the block is named" || bad "P1: the block is not named"
 # P2 on CI's own logs: a9b79f43's shards (AET-WO-1314, run 44372757248) against that commit's weights name the eleven
 # tests behind its overrun; main 565b32c5's (run 44441889769), against its weights with the rows this build adds, name none.
-"${py[@]}" heavy_unweighted "$fx/p2-a9b79f43.log" "$fx/p2-a9b79f43-weights.tsv" "$fx/p2-a9b79f43-colocate.tsv" >"$tmp/a9b" 2>&1
+"${py[@]}" heavy_unweighted "$fx/p2-a9b79f43.log" "$fx/p2-a9b79f43-weights.tsv" "$fx/p2-colocate.tsv" >"$tmp/a9b" 2>&1
 [ "$(wc -l <"$tmp/a9b")" -eq 11 ] && [ "$(grep -c '^tests/supply_tier1.rs	' "$tmp/a9b")" -eq 8 ] \
   && [ "$(grep -c '^tests/via_ring_tier1.rs	' "$tmp/a9b")" -eq 2 ] \
   && grep -q '^tests/outline_tier1.rs	the_fixture_fits_its_bound_with_connectors_on_the_side_edges$' "$tmp/a9b" \
   && ok "P2: a9b79f43 names its eleven unweighted heavy tests" || bad "P2: a9b79f43: $(tr '\n' ';' <"$tmp/a9b")"
-"${py[@]}" heavy_unweighted "$fx/p2-565b32c5.log" "$fx/p2-565b32c5-weights.tsv" "$fx/p2-565b32c5-colocate.tsv" >"$tmp/base" 2>&1 \
+"${py[@]}" heavy_unweighted "$fx/p2-565b32c5.log" "$fx/p2-565b32c5-weights.tsv" "$fx/p2-colocate.tsv" >"$tmp/base" 2>&1 \
   && [ ! -s "$tmp/base" ] && ok "P2: silent on main 565b32c5" || bad "P2: main 565b32c5: $(tr '\n' ';' <"$tmp/base")"
 # P2 in a shard's result: a test with no row that libtest reports past 60 s is refused, by name; weighed, accepted.
 mk_heavy() { # passed

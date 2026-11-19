@@ -951,10 +951,6 @@ fn every_admitted_identifier_character_survives_every_output() {
 }
 
 const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
-// The 4-layer fixture's two package tests (`AET-WO-4100` §2.6, §4, §5.4)
-// are in `four_layer_fab_tier2.rs`, sharing one `--fab-out` package
-// (`AET-WO-1910` D3).
-
 const CONNECTORS: &str = "crates/aethelgard-cli/tests/fixtures/connectors.json";
 
 /// `AET-WO-4300f`: the connectors fixture (JST GH headers at the bottom

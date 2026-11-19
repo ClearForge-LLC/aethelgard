@@ -34,7 +34,6 @@ fn solved(v: &Value) -> (Specification, SolvedTopology, PinTable) {
     (spec, solved, table)
 }
 
-/// The fixture with a bound of `width` x `height` whole millimetres.
 /// The committed fixture through `emit`, the ladder's eight routings, made
 /// once per process (`AET-WO-1910` D2) and read by each test that judges that
 /// board; a run that fails fails each of them by its property
@@ -51,6 +50,7 @@ fn emitted(property: &str) -> &'static Emitted {
     })
 }
 
+/// The fixture with a bound of `width` x `height` whole millimetres.
 fn with_bound(width: u32, height: u32) -> Value {
     let mut v = fixture();
     v["board"]["max_outline_um"] = json!({"width": width * 1000, "height": height * 1000});
