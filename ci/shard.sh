@@ -55,8 +55,13 @@ DEFAULT_WEIGHT=0.05
 #     test from a shared-process run: tests that take a lock (board_tier2) read as their queue time.
 #  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
-#  4. ci/SHARDS stays 8 (Scotty, 2026-11-14). Rebalance with the block whole (ci/colocate.tsv), and
-#     check the plan with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds.
+#  4. ci/SHARDS is 12 (AET-WO-1911 §1.3, measured at 8, 12 and 16 shards, lone and three pull requests at once; ruled D1 by
+#     the architect on PR #242, 2026-11-19 22:10 UTC; it replaces Scotty's 2026-11-14 "stays 8"). From 11 shards up the slowest
+#     shard is one indivisible block (four_layer_fab_tier2), so more shards bought no wall time (31.4 min lone at 12, 31.6 at 16),
+#     and each costs a job against the account's ceiling (consistent with 60 concurrent jobs; GitHub does not report it). Change
+#     the count only from a new measurement of the same kind. Rebalance with each block whole (ci/colocate.tsv), and check the plan
+#     with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds: a shard planned above the mean only because one
+#     indivisible block alone exceeds the mean is the floor, not an imbalance.
 #  5. (AET-WO-4300b, architect's ruling on PR #152, comment 6903399822, Q10.) A CPU-heavy test (Kani, verify,
 #     board_tier2, the colocated blocks, twin_tier2's timing test) is weighed at its WORST IN-SHARD time over the
 #     measured normal runs, not its alone time: cargo runs test binaries one after another and a binary's tests in
@@ -68,7 +73,7 @@ DEFAULT_WEIGHT=0.05
 #     both runs is real and needs a refit. MEASURED (runs 43771580225, 43774296207): the in-shard weights total about
 #     8,368 s against 8 x 1,006 = 8,048 s, so NO 8-shard plan fits the 1,006 s line (assign plans 1,046 s per shard).
 #     INTERIM ruling (architect, 2026-11-16 01:20 UTC): keep 8 shards with these weights (about 1,046 s planned) and
-#     judge by the measurement clause alone; ci/SHARDS 9 (planned 930-947 s) is put to Scotty, not set here.
+#     judge by the measurement clause alone; ci/SHARDS 9 (planned 930-947 s) is put to Scotty, not set here. (Superseded: rule 4.)
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }
@@ -310,8 +315,9 @@ EPOCH=946684800
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # The binaries whose tests serialise on one lock (ONE_AT_A_TIME, RENODE_TURN): every test of one carries a weight row (AET-WO-1910 D6).
 LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.rs tests/twin_tier2.rs'
-# Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
-BASE0=${SHARD0_FIXED_SECONDS:-25}
+# Fixed work shard 0 does besides tests (the in-image cargo fmt and clippy), in seconds, measured on CI: 30-37 s over the four
+# 12-shard runs of AET-WO-1911 (44585686986, 44605214137, 44605212605, 44605218028), weighed at the worst.
+BASE0=${SHARD0_FIXED_SECONDS:-37}
 
 # compiled_in LOG: the `Compiling` lines cargo printed before the first test binary ran (a tool a test runs may print
 # its own later); none on a shard.
