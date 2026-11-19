@@ -553,6 +553,32 @@ fn renode_version_printing_nothing_is_tool_unusable() {
     );
 }
 
+/// `AET-WO-4400g` §1.5: a plain load is held to the pinned build too; the
+/// pinned version with no build line, or the stock release's, is refused
+/// by name before the load.
+#[test]
+fn a_load_on_another_renode_build_is_refused_by_name() {
+    for line in [
+        "Renode v1.17.0",
+        "Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af",
+    ] {
+        let tb = Dir::new("tb");
+        renode_stub(
+            &tb,
+            Version::Prints(Box::leak(line.to_owned().into_boxed_str())),
+            0,
+            CPU_LISTING,
+        );
+        let p = input("p.repl", b"x\n");
+        refused_id(
+            &simulate(&tb, p.path.as_os_str()),
+            4,
+            "RenodeBuildNotPinned",
+            "renode",
+        );
+    }
+}
+
 #[test]
 fn renode_version_exiting_nonzero_is_tool_unusable() {
     let tb = Dir::new("tb");
