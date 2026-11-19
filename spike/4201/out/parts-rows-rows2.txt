@@ -1,0 +1,3 @@
+thread 'parts::tests::the_embedded_table_parses_and_holds_the_seven_parts' (526964) panicked at crates/aethelgard-ir/src/parts.rs:1599:25:
+called `Result::unwrap()` on an `Err` value: PartsTable { part: Some("SHT45"), reason: "`identity.datasheet_value` is false, which only a twin stand-in may be" }
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.00s

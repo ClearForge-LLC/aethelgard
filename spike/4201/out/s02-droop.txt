@@ -1,0 +1,2 @@
+# Sentinel-02 (unchanged main c3f8ddbb) through the bench's BOR droop, base retargeted (measured)
+{"scenario": "s02-droop-bor3", "verdict": "fail", "expect": "pass", "matched": false, "findings": ["brownout_unrecovered"], "expect_findings": []}
