@@ -6,7 +6,7 @@ use crate::platform;
 
 /// The reference topology, as `aethelgard solve` gives it for
 /// `examples/sentinel-01-minimal.json`.
-pub(crate) const REFERENCE: &str = r#"{"schema_version":11,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
+pub(crate) const REFERENCE: &str = r#"{"schema_version":12,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -173,7 +173,7 @@ fn what_cannot_be_lowered_is_refused() {
     assert_eq!(kind(t), "InvalidTopology");
     assert_eq!(kind(edited("\"PA0\"", "\"PZ0\"")), "InvalidPin");
     assert_eq!(
-        kind(edited("\"schema_version\":11", "\"schema_version\":12")),
+        kind(edited("\"schema_version\":12", "\"schema_version\":13")),
         "InvalidTopology"
     );
     assert_eq!(
@@ -268,9 +268,17 @@ fn the_reference_image_is_the_one_the_spike_read_back() {
     );
     // Every configured port's `OTYPER` is written whole (`AET-WO-4230` B0):
     // port A's SPI and chip-select pins too.
+    // The two PWR bits the bring-up waits on, read 1 by the emitted PWR
+    // whatever happens (`AET-WO-4240v` §1.6).
     assert_eq!(
         image.unobservable,
-        ["GPIOA.OTYPER", "GPIOB.OTYPER", "I2C1.TIMINGR"]
+        [
+            "GPIOA.OTYPER",
+            "GPIOB.OTYPER",
+            "I2C1.TIMINGR",
+            "PWR.CSR1.ACTVOSRDY",
+            "PWR.D3CR.VOSRDY"
+        ]
     );
 }
 
@@ -307,6 +315,8 @@ fn the_console_adds_its_usart_its_pins_and_its_gate() {
             "GPIOA.OTYPER",
             "GPIOB.OTYPER",
             "I2C1.TIMINGR",
+            "PWR.CSR1.ACTVOSRDY",
+            "PWR.D3CR.VOSRDY",
             "USART1.CR1.FIFOEN",
             "USART1.CR1.M0",
             "USART1.CR1.M1",
@@ -998,4 +1008,110 @@ fn a_malformed_dma_row_is_refused() {
         platform::dma_rows("# a comment\n\nSPI1\tspi1_rx_dma\t37").unwrap(),
         [("SPI1", "spi1_rx_dma", 37)]
     );
+}
+
+/// `AET-WO-4240v` D-3 (a): the PWR override, whole, as every generated
+/// platform ends with it (measured in Renode 1.17.0, FEEDBACK: the entry
+/// replaces the stock script; the firmware's read of `PWR_CR3` returns
+/// `0x46`, its write `0x42` reads back, a second write is ignored, `D3CR`
+/// `0x8000` reads back `0xA000`, `CSR1` then `0xA000`, `CR1` `0xF000C100`).
+#[test]
+fn a_generated_platform_ends_with_the_pwr_override_from_rm0433() {
+    let want = "
+// The PWR (AET-WO-4240v D-3 (a)): the stock stub's script replaced, from RM0433 Rev 9
+// §6.8: PWR_CR3 reads revision V's power-on 0x00000046 until its first write, stores that
+// write (USB33RDY 0) and ignores later ones; PWR_D3CR stores VOS (Scale 3 from reset) with
+// VOSRDY 1; PWR_CSR1 reads ACTVOS as the stored VOS with ACTVOSRDY 1; any other offset as stock.
+pwr:
+    initable: true
+    script: '''
+if request.IsInit:
+    cr3 = 0x00000046
+    cr3_written = False
+    vos = 0x00004000
+elif request.Offset == 0x00:
+    request.Value = 0xF000C100
+elif request.Offset == 0x04:
+    request.Value = vos | 0x00002000
+elif request.Offset == 0x0C:
+    if request.IsWrite:
+        if not cr3_written:
+            cr3 = request.Value & 0xFBFFFFFF
+            cr3_written = True
+    else:
+        request.Value = cr3
+elif request.Offset == 0x18:
+    if request.IsWrite:
+        vos = request.Value & 0x0000C000
+    else:
+        request.Value = vos | 0x00002000
+else:
+    self.WarningLog(\"Unhandled access to offset 0x{0:X}\", request.Offset)
+'''
+";
+    assert_eq!(platform::pwr_override().unwrap(), want);
+    assert!(platform::emit(&bare()).unwrap().ends_with(want));
+    // `ACTVOS` is read as the stored `VOS` in place: the header puts both
+    // at bits 15:14.
+    let f = cmsis::register_facts().unwrap();
+    assert_eq!(f.field("PWR_CSR1_ACTVOS").unwrap(), (14, 2));
+    assert_eq!(f.field("PWR_D3CR_VOS").unwrap(), (14, 2));
+    // The stock stub the entry replaces is the vendored file's, unedited
+    // (its hash is pinned in `RENODE_FILES`).
+    let stock = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/renode-1.17.0")
+            .join(platform::STOCK_FILE),
+    )
+    .unwrap();
+    assert!(stock.contains(
+        "pwr: Python.PythonPeripheral @ sysbus 0x58024800\n    size: 0x400\n    initable: false\n"
+    ));
+}
+
+/// `AET-WO-4240v` §1.6: a platform with `mcu.foreign_clock` keeps the stock
+/// PWR stub byte for byte (ArduPilot's witnesses), and its image names no
+/// PWR field.
+#[test]
+fn a_foreign_platform_keeps_the_stock_pwr_stub() {
+    let mut t = bare();
+    t.foreign_clock = Some(aethelgard_ir::motor::SolvedForeignClock {
+        apb1_timers_hz: 200_000_000,
+        apb2_timers_hz: 200_000_000,
+        usarts: aethelgard_ir::serial::PERIPHERALS
+            .iter()
+            .map(|p| ((*p).to_owned(), 100_000_000))
+            .collect(),
+        vos: aethelgard_ir::vos::Vos::Scale1,
+    });
+    let emitted = platform::emit(&t).unwrap();
+    assert!(!emitted.contains("pwr:"), "{emitted}");
+    let generated = platform::emit(&bare()).unwrap();
+    assert!(generated.contains("\npwr:\n"));
+    assert!(
+        boot::expected(&t)
+            .unwrap()
+            .unobservable
+            .iter()
+            .all(|u| !u.starts_with("PWR."))
+    );
+}
+
+/// `AET-WO-4240v` §1.4: each PWR boot word names its fault; any other
+/// word, the magic included, is none of them.
+#[test]
+fn each_pwr_boot_word_names_its_fault() {
+    let name = |w| boot::pwr_boot_word(w).map(|n| n.0);
+    assert_eq!(
+        name(boot::BOOT_SUPPLY_NOT_DECLARED),
+        Some("boot_supply_not_declared")
+    );
+    assert_eq!(
+        name(boot::BOOT_ACTVOSRDY_TIMEOUT),
+        Some("boot_actvosrdy_timeout")
+    );
+    assert_eq!(name(boot::BOOT_VOSRDY_TIMEOUT), Some("boot_vosrdy_timeout"));
+    for other in [boot::BOOT_MAGIC, 0, 0x2100_B0F0, 0x2100_B0F4] {
+        assert_eq!(name(other), None, "{other:#x}");
+    }
 }

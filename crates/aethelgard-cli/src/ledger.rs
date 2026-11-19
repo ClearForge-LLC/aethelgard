@@ -624,6 +624,93 @@ fn table() -> Vec<Entry> {
         "set by the declaration and the factory step in FAB-NOTES, a read-modify-write of the word as read, the only correct procedure (AET-WO-4230 R8, the architect's ruling on Q-J); the whole word differs above bit 15 among the three values on record, each at BOR_LEV 00: the bench's 0x1BC6_AAF0 (AET-WO-3302, NUCLEO-H753ZI rev V, 2026-11-16 05:00 UTC), RM0433 Rev 9 Table 21's 0x0006_AAF0 and Renode's 0x0406_AAF0 (plus the level, as the twin presents it), visible to a firmware that reads all of it",
     ));
 
+    // ---- PWR: the supply configuration and VOS Scale 2 (`AET-WO-4240v`
+    // §1.7), and the reset flash wait states the scale is judged with.
+    let pwr_stub = "the stock pwr stub (stm32h7.repl L728–745, a Python.PythonPeripheral) drops every write; the generated platform's override stores PWR_CR3's first write and D3CR.VOS (aethelgard_twin::platform::pwr_override, measured in AET-WO-4240v FEEDBACK)";
+    let pwr_rule = "aethelgard_ir::vos (cr3_supply_bits of the declared mcu.core_supply, D3CR_VOS_SCALE2), held by the twin's PwrRule (pwr_access: one CR3 write with the declared supply bits and the other bits as read, then one D3CR write of 0x8000, before any RCC enable write) and by the Kani oracle's PWR clause, whose expected words are the rule's";
+    for (register, field, what) in [
+        (
+            "CR3",
+            "SCUEN",
+            "a read-modify-write of the word as read: 0, the update locked after the single write (RM0433 Rev 9 §6.8.4, p. 308)",
+        ),
+        (
+            "CR3",
+            "LDOEN",
+            "a read-modify-write of the word as read: the declared mode's row of RM0433 Rev 9 Table 34",
+        ),
+        (
+            "CR3",
+            "BYPASS",
+            "a read-modify-write of the word as read: the declared mode's row of RM0433 Rev 9 Table 34",
+        ),
+        (
+            "D3CR",
+            "VOS",
+            "written whole: 10, Scale 2 (RM0433 Rev 9 §6.8.6, p. 310)",
+        ),
+        (
+            "D3CR",
+            "VOSRDY",
+            "read-only, 0 inside the rule's whole word",
+        ),
+    ] {
+        t.push(e(
+            "PWR",
+            register,
+            field,
+            W,
+            Rule,
+            pwr_rule,
+            pwr_stub,
+            &format!("{what}; also ignored by the stock model: {pwr_stub}"),
+        ));
+    }
+    for (register, field, what) in [
+        (
+            "CSR1",
+            "ACTVOSRDY",
+            "polled, a bounded wait (RM0433 Rev 9 §6.4.1, p. 262): the twin's PWR reads it 1 whatever happens, so the wait never times out there (aethelgard_twin::boot::Image::unobservable)",
+        ),
+        (
+            "D3CR",
+            "VOSRDY",
+            "polled, a bounded wait (RM0433 Rev 9 §6.8.6, p. 310): the twin's PWR reads it 1 whatever happens, so the wait never times out there (aethelgard_twin::boot::Image::unobservable)",
+        ),
+    ] {
+        t.push(e(
+            "PWR",
+            register,
+            field,
+            R,
+            Si,
+            "none: the twin models no voltage regulator; only the bench reads the bit (AET-WO-4240v bench row B-2)",
+            "",
+            what,
+        ));
+    }
+    for (field, what) in [
+        (
+            "LATENCY",
+            "7 wait states at reset (RM0433 Rev 9 p. 201, reset 0x37), against Table 17's VOS2 row (p. 160: 1 WS for hclk in ]55; 110] MHz), a safety margin p. 160 names; aethelgard_ir::vos::flash_at_reset judges it",
+        ),
+        (
+            "WRHIGHFREQ",
+            "11 at reset (RM0433 Rev 9 p. 201), against Table 17's VOS2 row (p. 160: 01); aethelgard_ir::vos::flash_at_reset judges it",
+        ),
+    ] {
+        t.push(e(
+            "FLASH",
+            "ACR",
+            field,
+            R,
+            Si,
+            "none: Renode's flash controller models no wait state; only the bench shows the flash read at this latency (AET-WO-4240v D-7: FLASH_ACR is not written in this slice)",
+            "",
+            what,
+        ));
+    }
+
     // ---- GPIO.
     t.push(e(
         "GPIO",
@@ -2129,6 +2216,34 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    /// `AET-WO-4240v` §1.7: the PWR rows the bring-up writes are the IR
+    /// rule's; the bits it polls, and the flash wait states at reset it
+    /// depends on, only the bench measures.
+    #[test]
+    fn the_pwr_and_flash_latency_rows_are_classed() {
+        use FieldAccess::{Reset as R, Written as W};
+        for (register, field, access, class) in [
+            ("CR3", "SCUEN", W, Class::IndependentRule),
+            ("CR3", "LDOEN", W, Class::IndependentRule),
+            ("CR3", "BYPASS", W, Class::IndependentRule),
+            ("D3CR", "VOS", W, Class::IndependentRule),
+            ("D3CR", "VOSRDY", W, Class::IndependentRule),
+            ("CSR1", "ACTVOSRDY", R, Class::SiliconOnly),
+            ("D3CR", "VOSRDY", R, Class::SiliconOnly),
+        ] {
+            let e = classify(&TABLE, "PWR", register, field, access, field).unwrap();
+            assert_eq!(e.class, class, "PWR.{register}.{field}");
+        }
+        for field in ["LATENCY", "WRHIGHFREQ"] {
+            let e = classify(&TABLE, "FLASH", "ACR", field, R, field).unwrap();
+            assert_eq!(e.class, Class::SiliconOnly, "{field}");
+            assert!(classify(&TABLE, "FLASH", "ACR", field, W, field).is_err());
+        }
+        // Nothing else of the PWR is classified: no other field is written.
+        assert!(classify(&TABLE, "PWR", "CR3", "USB33DEN", W, "u").is_err());
+        assert!(classify(&TABLE, "PWR", "CSR1", "ACTVOS", R, "a").is_err());
     }
 
     #[test]

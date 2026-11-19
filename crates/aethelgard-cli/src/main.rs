@@ -1403,6 +1403,9 @@ struct Ready {
     /// The foreign firmware's loaded flash segments, read back after the run;
     /// empty for a generated firmware.
     flash: Vec<elf::FlashLoad>,
+    /// The generated firmware's PWR rule (`AET-WO-4240v` §1.6); `None` for a
+    /// foreign firmware, which is never given it.
+    pwr: Option<aethelgard_twin::serial::PwrRule>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1422,6 +1425,21 @@ fn twin_stop(err: aethelgard_twin::TwinError) -> run::Stop {
         kind: err.kind(),
         id: None,
         message: err.to_string(),
+    }
+}
+
+/// The PWR rule a boot is judged by (`AET-WO-4240v` §1.6): the generated
+/// firmware's, from the topology; none for a foreign firmware, which is
+/// never given it.
+fn pwr_of(
+    foreign: bool,
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Result<Option<aethelgard_twin::serial::PwrRule>, run::Stop> {
+    match foreign {
+        true => Ok(None),
+        false => aethelgard_twin::serial::pwr_rule(topology)
+            .map(Some)
+            .map_err(twin_stop),
     }
 }
 
@@ -1451,6 +1469,14 @@ fn ready(
             ));
         }
         _ => {}
+    }
+    if let Err(err) = aethelgard_cli::generate::core_supply_generated(&boot.topology) {
+        return Err(run::Stop {
+            code: EXIT_INVALID_SPEC,
+            kind: err.kind(),
+            id: None,
+            message: err.to_string(),
+        });
     }
     if platform.as_os_str().as_encoded_bytes().starts_with(b"@") {
         return Err(run::Stop::refused(
@@ -1495,6 +1521,7 @@ fn ready(
         None => Vec::new(),
     };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
+    let pwr = pwr_of(boot.foreign, &boot.topology)?;
     let motors = match boot.foreign {
         true => Vec::new(),
         false => renode::motors(&boot.topology).map_err(twin_stop)?,
@@ -1546,6 +1573,7 @@ fn ready(
             rail: boot.rail,
             foreign,
             flash,
+            pwr,
         },
     ))
 }
@@ -1860,6 +1888,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
             serial: &r.serial,
             capture: r.capture.as_deref(),
+            pwr: r.pwr.as_ref(),
         });
     // A rendered release moves the injection (`AET-WO-4300b`): when even
     // its earliest instant, one quantum after the last boot's start, and the
@@ -2378,6 +2407,11 @@ fn boot_report(
             .any(|m| m.observer.protocol.bit_rate().is_some())
             .then_some(verdict::DSHOT_STOP_RESIDUAL)
             .into_iter()
+            .chain(
+                r.pwr
+                    .is_some()
+                    .then_some(aethelgard_twin::serial::PWR_RESIDUAL),
+            )
             .collect(),
         executable: plan.executable.to_vec(),
     }
@@ -2620,6 +2654,12 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         Ok(solved) => solved,
         Err(code) => return code,
     };
+    if let Err(err) = aethelgard_cli::generate::core_supply_generated(&topology) {
+        return emit(
+            &Refusal::new(err.kind(), None, err.to_string()),
+            EXIT_INVALID_SPEC,
+        );
+    }
     let emission = match aethelgard_eda::schematic::emit(&spec, &topology, &table) {
         Ok(e) => e,
         Err(err @ aethelgard_eda::schematic::EmitError::Library(_)) => {
@@ -2857,6 +2897,17 @@ mod tests {
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// `AET-WO-4240v` §1.6: a generated boot is given the PWR rule of its
+    /// declared supply; a foreign boot never is.
+    #[test]
+    fn only_a_generated_boot_is_given_the_pwr_rule() {
+        let spec = root().join("examples/sentinel-01-minimal.json");
+        let (_, topology, _) = solved(&spec).unwrap();
+        let rule = pwr_of(false, &topology).unwrap().unwrap();
+        assert_eq!(rule.supply, "ldo");
+        assert!(pwr_of(true, &topology).unwrap().is_none());
     }
 
     /// `AET-WO-3301` §1.4 in tier 1: the committed board is the generated

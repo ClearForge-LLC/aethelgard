@@ -1917,7 +1917,8 @@ fn windowed_dshot(v: &Value, rises: u64) {
     assert_eq!(
         v["boot"]["residuals"],
         serde_json::json!([
-            "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact"
+            "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact",
+            aethelgard_twin::serial::PWR_RESIDUAL
         ])
     );
     let memory = &v["memory"];
