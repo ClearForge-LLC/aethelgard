@@ -1307,8 +1307,8 @@ fn spi1_transfer_is_bounded_and_ordered() {
     kani::assume(pick < devices.len());
     let device = devices[pick];
     // The state `init` and every transfer leave: `CR1` idle, `SSI` alone
-    // (`every_valid_sequence`, and the end of this proof); `CFG2` as `init`
-    // wrote it.
+    // (the schedule harness or each of its parts, and the end of this proof);
+    // `CFG2` as `init` wrote it.
     let cr1: u32 = 0x00001000;
     let cfg2 = img.spi1[3];
     let (wl, rl): (usize, usize) = (kani::any(), kani::any());
@@ -1383,8 +1383,8 @@ fn spi1_transfer_refuses_too_many_frames() {
     kani::assume(pick < devices.len());
     let device = devices[pick];
     // The state `init` and every transfer leave: `CR1` idle, `SSI` alone
-    // (`every_valid_sequence`, and the end of this proof); `CFG2` as `init`
-    // wrote it.
+    // (the schedule harness or each of its parts, and the end of this proof);
+    // `CFG2` as `init` wrote it.
     let cr1: u32 = 0x00001000;
     let cfg2 = img.spi1[3];
     let (wl, out) = (1, [0u8; 2]);

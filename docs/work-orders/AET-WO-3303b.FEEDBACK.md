@@ -184,22 +184,37 @@ Reduction pass (diff): −27 lines net · 1 duplicate removed · 0 dead paths re
   One helper in `tests/common/` would hold it, but `common/` and `twin_tier2` are outside this fence. Backlog.
 - **Finding R2:** `spike/3303b/table.py` restates PREDICTIONS §2's numbers. Parsing the Markdown would add lines, not remove them, so it is kept: a record, not a mechanism.
 
-## 8. Fence deviations, and decisions for the architect
+## 8. Fence deviations and rulings (architect, 21:40Z, `~/.cache/aet-bus/3303b.md`)
 
-- **F1, existing tests edited (fence: "the tests you add").** Without these edits CI would fail or run the old harness name:
-  - `board_tier2.rs`: the reference's parts proved; the two I2C1 seeds on `_i2c1`.
-  - `attribute_seeded.rs`: every schedule harness of the proposal.
-  - `verify_2k2_tier2.rs`: eight prove gates, pinned by name.
-  - `serial_ports.rs`: the `src/proofs.rs` digest row, from `AETHELGARD_PRINT_DIGESTS=1`, with the re-take logged in its doc comment.
-  - `board.rs`'s `a_board_without_timers_keeps_the_whole_schedule_harness` is replaced. It is inside the fence.
-- **F2, the bench package moves.** `fab/sentinel-01-bench/package/MANIFEST.json` binds `verdict_sha256`, and the verdict now names a new board crate hash and three schedule gates where there was one. The `bench-package` job's `--against-fab` fails until the package is re-written by its own job. **Asked:** dispatch `bench-package` write on this branch. I commit the artifact unchanged.
-- **F3, `ci/colocate.tsv` is outside the fence.** These blocks get cheaper, because `verify` on a timerless board no longer proves the whole schedule:
-  - `attribute_seeded` (one prove of the whole per re-gate);
-  - `four_layer_fab_tier2` and `verify_47k_tier2` (Sentinel-01 verifies).
+- **F1, existing tests edited to name the parts: accepted.** One line each:
+  - `board_tier2.rs`: `the_generated_board_proves` proves each schedule part of `boards/sentinel-01` (asserting exactly `_i2c1`, `_spi1`); the seeds `a_wrong_alternate_function_fails` and `a_write_past_the_block_fails` run on `_i2c1` (both measured failing on their own message there, in the image); the hand-written vacuous harness keeps its own name.
+  - `attribute_seeded.rs`: the re-gate proves every schedule harness of the proposal's crate (`schedule_harnesses`), the whole or its parts.
+  - `verify_2k2_tier2.rs`: eight prove rows where there were seven, and the prove gates pinned by name.
+  - `svd-hal/tests/serial_ports.rs`: the `src/proofs.rs` digest row, from `AETHELGARD_PRINT_DIGESTS=1` (accepted as tooling output), the re-take logged in its doc comment.
+- **F2, the bench package moves: accepted, the established flow.** `MANIFEST.json` binds `verdict_sha256`, whose verdict names the new board crate hash and three schedule gates. Pushed AWAITING-PACKAGE; the architect dispatches `ci.yml` `write=true`, and I commit the package unchanged.
+- **F3, `ci/colocate.tsv`: the fence is widened** to the rows this change makes cheaper (`attribute_seeded`, `four_layer_fab_tier2`, `verify_47k_tier2`, any other measured), re-weighed by the documented method from measured CI runs (§4).
+- **F4, the stale crate READMEs: fixed** (fence widened to those lines): `svd-hal/README.md` L67 (the split's rule and its reason) and `cli/README.md` L912 (the example prove gate is `proofs::every_valid_sequence_i2c1`, `cover_count` 6, as measured).
+- **D1, the cap (§5):** 8G for `prove` and `verify` on a board without a timer. The architect's call.
 
-  Over-weighted rows are not refused by P1 or P2. I leave them unless the fence is widened.
-- **F4, stale documentation outside the fence:** `crates/aethelgard-svd-hal/README.md` L67 ("A board without a timer emits the whole harness … byte for byte as before") and `crates/aethelgard-cli/README.md` L912 (an example verdict naming `proofs::every_valid_sequence`). The roadmap's "split per peripheral and timer" is still true. One sentence for the architect's docs PR.
-- **D1, the cap (§5):** 8G for `prove` and `verify` on a board without a timer.
+### 8.1 Every caller of the unsplit name (`every_valid_sequence` not followed by `_`), grep of the whole tree and `~/.cache/aet-*` scripts
+
+| Where | What it is | Needs |
+|---|---|---|
+| `svd-hal/src/board.rs` L4874 (`fn every_valid_sequence{sfx}`) and the tests at L7436, L7481, L7485 | the generator's name for the whole or a part; tests asserting which is emitted | nothing |
+| `svd-hal/src/board.rs` (the SPI transfer harness's comment) and its two lines in each committed `proofs.rs` | named the whole harness as where `CR1` is checked idle | **fixed**: "the schedule harness or each of its parts" (comment only; boards re-blessed, digest re-printed; the measured after-tree 13fef3ac differs from the final head by these comment lines only) |
+| `svd-hal/README.md` L67 | the split's rule | **fixed** (F4) |
+| `svd-hal/README.md` L74 | "`every_valid_sequence`, and on a motor board each of its parts, takes no USART step" | outside the widened lines: "on a motor board" should read "on a board with two or more parts". The architect's |
+| `svd-hal/README.md` L78–82 | a measurement table from `AET-WO-4300b` | nothing (a record) |
+| `svd-hal/tests/motor_outputs.rs` L321; `cli/tests/twin_tier2.rs` L2507, `board_tier2.rs` L123, `attribute_seeded.rs` L1180 | prefix matches that enumerate the whole or its parts | nothing (finding R1, §7) |
+| `cli/tests/board_tier2.rs` L424, L433; `generate_tier1.rs` L282; `cli/src/verify.rs` L2462 | hand-written harnesses named so in their own text | nothing |
+| `cli/tests/generate_tier1.rs` L350 | `prove --spec` refused before any tool (`SchemaViolation`) | nothing; the name is never looked up |
+| `cli/README.md` L912 | example verdict | **fixed** (F4) |
+| `docs/roadmap.md` L808 | a §7.1 CI-cost row ("Kani's `every_valid_sequence` takes 158–245 s per seed") | the architect's: this work order removes that cost on timerless boards (§1.2) |
+| `docs/work-orders/*` (3303, 3303b, 4300a/b, 1400, 1601, 1909, 1910, 3200, 3301, 3304, 4200, 4230, 4600 and their FEEDBACK), `docs/reviews/2026-11-15-mythos-5-2.md` | records | nothing |
+| `spike/4600/**`, `spike/4201/out/*`, `spike/3303b/**` | run records | nothing |
+| No `.yml`, `ci/` or repository `.sh` | — | — |
+| Furnace, for information: `~/.cache/aet-4240v/a1/kani/batch.sh` L8, L9, L15 and `batch2.sh` L10, L11 | an active builder's runner proving `every_valid_sequence` by name on Sentinel-01 | after this merges, `harness_not_found` on a split crate: prove `every_valid_sequence_i2c1` and `_spi1` (and `_i2c2` on the bench board). Told on the bus |
+| Furnace: `~/.cache/aet-4230/b1/kani-mutants.sh` L25, `~/.cache/aet-4230/r3fix/queue.sh` L4 | a merged work order's old runners | nothing |
 
 ## 9. Gates
 

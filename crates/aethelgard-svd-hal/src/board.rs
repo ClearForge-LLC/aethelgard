@@ -5969,8 +5969,8 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              kani::assume(pick < devices.len());\n    \
              let device = devices[pick];\n    \
              // The state `init` and every transfer leave: `CR1` idle, `SSI` alone\n    \
-             // (`every_valid_sequence`, and the end of this proof); `CFG2` as `init`\n    \
-             // wrote it.\n    \
+             // (the schedule harness or each of its parts, and the end of this proof);\n    \
+             // `CFG2` as `init` wrote it.\n    \
              let cr1: u32 = {idle:#010x};\n    \
              let cfg2 = img.{m}[{cfg2_word}];",
             args = args.join(", "),
