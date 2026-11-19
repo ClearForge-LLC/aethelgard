@@ -10,7 +10,7 @@
     "bor_level": 0,
     "core_supply": {
       "mode": "ldo",
-      "source": "MB1364 rev C-01 and E-01 schematic, MCU_144_POWER: VCAP1/VCAP2 (pins 71/106) only to C48, C50 2.2 uF to GND, fitted per MB1364-H753ZI-C01/E01 BOM; no external VCORE"
+      "source": "ST MB1364 C-01/E-01 MCU_144_POWER.SchDoc (mb1364_bdp.zip 5be5f236): VCAP1/2 only to C48, C50 2.2 uF to GND, fitted per MB1364-H753ZI-C01/E01_BOM (mb1364-bom.zip bc54a0c6)"
     },
     "supply_source": {
       "connector": "J2",

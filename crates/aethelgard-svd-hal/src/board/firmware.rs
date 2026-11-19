@@ -67,8 +67,11 @@ pub const BOOT_ACTVOSRDY_TIMEOUT: u32 = 0x2100_B0F2;
 pub const BOOT_VOSRDY_TIMEOUT: u32 = 0x2100_B0F3;
 
 /// The most reads of `PWR_CSR1` the `ACTVOSRDY` wait makes, and of `PWR_D3CR`
-/// the `VOSRDY` wait. DS12117 Rev 10 states no settling time or maximum delay
-/// for either bit (read at source, `AET-WO-4240v` reads §7); the only figure
+/// the `VOSRDY` wait. No maximum is stated in DS12117 Rev 10 for either bit,
+/// nor for a VOS change: its reset and power control tables (Table 16, pp.
+/// 107–108, rev Y; Table 115, pp. 212–213, rev V) and its wakeup timings
+/// (Table 30, p. 122; Table 127, p. 226) carry none (read at source from the
+/// page images, `AET-WO-4240v` FEEDBACK §1.4); the only figure
 /// in either document is RM0433 Rev 9 Figure 31's annotation of 20 µs
 /// (p. 281), for VOS1 to VOS0 only, drawn, not specified as a maximum. So the
 /// bound is an engine choice, set generously, as [`ECHO_POLLS`] is: at least

@@ -116,6 +116,103 @@ The solved fixtures were re-derived by `solve` (`hwdef` ×3: only the spec sha25
   - a clock over its maximum adds `vos_limit_at_boundary: <clock> …` to `conditions`, never a finding;
   - ArduPilot's measured registers at VOS1 name `fCPU`, `fHCLK`, `fPCLK1`–`3` and both timer kernels (tested), and its 72 MHz USARTs hold.
 
+### §1.4 The bring-up (`aethelgard-svd-hal`)
+
+- **`Block::Pwr`** at `0x5802_4800`. Every offset and bit position is read from ST's header (`PWR_TypeDef`, `PWR_CR3_SCUEN/LDOEN/BYPASS`, `PWR_CSR1_ACTVOSRDY`, `PWR_D3CR_VOS/VOSRDY`), and `Board` gains `pwr: Pwr`.
+- **`Pwr::scale2(self, r, polls) -> Result<Scale2, PwrFault>`** consumes the singleton, so it runs once. Under `ldo` it:
+  1. writes `CR3` to `(read & !0x7) | 0x2` and reads it back;
+  2. compares under `0x3` (`LDOEN`, `BYPASS`), and on a mismatch returns `SupplyNotDeclared` with no further write;
+  3. polls `CSR1` bit 13 at most `polls` times (`ActvosrdyTimeout`);
+  4. writes `D3CR` whole as `0x0000_8000`;
+  5. polls `D3CR` bit 13 at most `polls` times (`VosrdyTimeout`).
+- **The generator's words are its own:** `PwrFacts` reads the header and the mode, with no default arm. The generator never calls `aethelgard_ir::vos`; only the oracle, the spy harness and the tests do.
+- **`PWR_POLLS` = 1,000,000.** DS12117 Rev 10 states no settling maximum for either bit: Tables 16, 30, 115 and 127 were read from the page images. The only figure in either document is a "20 µs" dimension drawn on RM0433 Figure 31 (p. 281), for VOS1→VOS0 only. So the bound is an engine choice, set generously, as `ECHO_POLLS` is.
+- **The token.** `Rcc::reset_clock(&self, r, &Scale2)`, so no `ResetClock`, and so no I2C, SPI, USART, timer or kernel-select call, can precede it. `RESET_CLOCK_FIELDS` is unchanged, and `ResetClock`'s documentation says the core is at VOS2. Four ui fail cases show it: `pwr_reset_clock_without_scale2`, `pwr_reset_clock_without_token`, `pwr_forged_scale2` and `pwr_scale2_twice`.
+- **`main`:** the sequence is the first hardware access, before the reset-clock read and the `FLASH_OPTSR_CUR` read. On a fault, the fault's word goes to word 0, then the firmware parks. A plan with no clock still runs it and binds `_scale2`; no committed board is such a plan (measured on all 20 that generate), so a test-only GPIO-only topology covers it.
+- **Refusals:**
+  - `generate` (and `register_fields`) refuses `bypass` as `CoreSupplyNotGenerated` in `Plan::new`;
+  - `check_silicon` runs `vos::judge_generated` first and refuses a verdict that does not hold (`VosRuleFails`, by clock). That is stricter than `validate`: a clock with no cited maximum, or a kernel the rule cannot read, is refused there. No committed board hits it.
+- **The residue,** written in the firmware module, the ledger and the README:
+  - the reset handler's `.bss`/`.data`, the stack and `Board::take`'s `TAKEN` flag are RAM writes made before `ACTVOSRDY` (RM0433 §6.4.1, p. 262: in Run*, "write accesses to the RAMs are not permitted");
+  - so are the boot words of `SUPPLY_NOT_DECLARED` and `ACTVOSRDY_TIMEOUT` themselves. **On silicon those two words may not land.** Bench row B-2 therefore reads `PWR_CR3` and `PWR_CSR1` directly, not word 0, for those faults.
+- **No solved word moved:** across all 20 boards that generate, no register word other than the new `PWR` ones moved (measured by the svd-hal slice). For `solve`, see §2.
+
+### §1.5 Kani
+
+- **The prelude, not a scheduled action.** Every schedule harness, whole and per part, runs `scale2(&mut img, 1)` with `assume(ok)` before its loop. A `PWR` action owned by one part would overlap the other parts' footprints, since every part needs the token. So `PWR` is in no footprint and no rely; each part's write guarantee skips `Block::Pwr`; and each part's final check fixes `PWR` exactly. This narrows "every order" to "`PWR` first", which is the order `main` takes.
+- **The oracle clause:** "PWR is not before plus exactly the declared supply and VOS Scale 2":
+  - `after.CR3` equals `before.CR3` except the three supply bits, which are `vos::cr3_supply_bits`;
+  - `after.D3CR & !VOSRDY == vos::D3CR_VOS_SCALE2`, with `VOS == 10`;
+  - the image holds `D3CR.VOSRDY` read-only and refuses any `PWR` write but `CR3` and `D3CR`.
+  - **Deviation:** the WO's "before except VOS" cannot hold for `D3CR`, because the WO also requires a whole-word write. A whole word cannot equal "before except VOS" from an arbitrary starting image, so the clause is the rule's whole word.
+- **`pwr_scale2_is_once_in_order_and_bounded`,** on a spy with nondeterministic reads and a bound of two polls. It proves:
+  - the writes are exactly `[CR3, D3CR]` with the rule's words;
+  - no write follows a fault;
+  - each fault has its own name;
+  - `Scale2` comes back only when `CR3` read back as declared and both bits read 1;
+  - no other block is touched;
+  - all four `kani::cover!` outcomes are reached.
+
+  It takes about 1 s (3,819 symex steps).
+- **Harness counts** (measured): every board goes from N to N + 1. The committed `boards/sentinel-01` goes 7 → 8 and `sentinel-01-bench` 8 → 9, as §0.2 predicted. `examples/sentinel-01.json` as generated goes 8 → 9, motors-pwm 9 → 10 and Sentinel-03 18 → 19.
+- **The cost** on Sentinel-01's `every_valid_sequence`, one sample each; memory is a 1 s poll of summed RSS, not the cgroup peak; §2 has the scope peaks:
+
+  | | Wall | Symex steps | Summed RSS |
+  |---|---|---|---|
+  | before (`e62eb70c`) | 945 s | 1,461,330 | 11.3 GiB |
+  | after | 1,192 s / 1,181 s | 1,532,173 | 13.3 GiB |
+
+  That is about +26 % in time, with about 2.7 GiB left under the 16 GiB cap.
+- **Mutants:** K1–K7 were applied to the generated `board.rs` text; M6–M11 to the generator.
+
+  | Mutant | Killed by |
+  |---|---|
+  | K1, drop the `D3CR` write | the oracle clause in `every_valid_sequence` |
+  | K2, write `CR3` twice | **only `pwr_scale2_is_once_in_order_and_bounded`.** A second identical write leaves the same final state, so the oracle clause cannot kill it, though the WO names "the Kani clause" for both mutants (finding F2) |
+  | K3–K7: no supply check, no `ACTVOSRDY` wait, no `VOSRDY` wait, a fault's name swapped, `D3CR` before the read-back | the PWR harness |
+  | M6, token bypass | `board_ui` |
+  | M7, `bypass` not refused | `a_bypass_supply_is_refused_as_not_generated` |
+  | M8, no VOS refusal in `check_silicon` | `check_silicon_refuses_a_tree_the_vos_rule_does_not_hold` |
+  | M9, a boot word's value changed | `the_firmware_follows_the_judges_pwr_boot_words` |
+  | M10, fault-to-word mapping swapped; M11, a hardware access before the sequence | `main_runs_the_supply_and_scale2_first_and_a_fault_writes_only_its_word` |
+
+### §1.6 The twin and the CLI
+
+- **Measured** in the pinned tools image (Renode `1.17.0+20260907gitf1dd1b4af.aet1605`), with a test firmware doing the bring-up's accesses plus a second `CR3` write:
+  - **The emitted platform's update entry replaces the stock `pwr` script.** Measured twice: on a hand-written override, and on the platform `generate` emits for `sentinel-01-minimal`.
+    - Stock: `CR3` reads `0x4000000`, the write is dropped, and `D3CR` reads `0x2000`.
+    - Override: `CR3` `0x46` → write `0x42` → reads `0x42`; a second write is ignored.
+    - Override: `D3CR` `0x6000` → write `0x8000` → reads `0xA000`; `CSR1` then reads `0xA000`.
+  - **`LogPeripheralAccess sysbus.pwr true` logs the script's accesses** in the shape the parser already reads, e.g. `pwr: [cpu: 0x8000014] WriteUInt32 to 0xC (unknown), value 0x42`.
+  - **`machine Reset` re-runs the script's initialization**, so `CR3` reads `0x46` again. The twin's warm reset is a power-on reset for `CR3`: the lock across a warm reset is not modelled at all. This is a measured narrowing of the WO's residue ("only as far as D-3 (a) stores the first write").
+- **The override** (`platform::pwr_override`) is written from RM0433. It uses the header's offsets and `serial::PWR_CR3_POR` = `0x46`, and is emitted last on a generated platform only, never when `foreign_clock` is declared. It stores `CR3`'s first write and ignores the rest; stores `D3CR.VOS` with `VOSRDY` 1; reads `CSR1` as `ACTVOS` = the stored `VOS` with `ACTVOSRDY` 1; and answers any other offset as stock does.
+  - **Deviation:** `USB33RDY` reads 0, not the stock 1. Rev V's power-on word has it 0; no generated firmware touches USB; and ArduPilot, the reason the stock stub sets it, keeps the stock stub.
+- **`PwrRule`** (`twin` `serial.rs` `pwr_rule`, `judge_pwr`) takes `vos::cr3_supply_bits(topology.core_supply)` and `vos::D3CR_VOS_SCALE2`, never `svd-hal`'s words; the offsets are the header's, as the RCC rule's are.
+  - One finding, `pwr_access`, joins every departure: a second write, `D3CR` before `CR3`, a wrong supply bit, `CR3`'s other bits not as read, a `D3CR` other than `0x8000`, a `PWR` write after an RCC enable-register write, any other `PWR` write, a byte write, and (beyond the WO) "never written in the boot the reads judge".
+  - Only a generated boot is given it. Only RCC enable-register writes count as "after RCC", per the WO's wording; a select write before `PWR` is left to Kani and the reset-clock read.
+- **The CLI:**
+  - `PWR` and RCC are logged on every generated boot; `PWR` reads are filtered except `CR3`'s, so the polls are not kept.
+  - `boot_word_missing` keeps its kind and names the word: `boot_supply_not_declared`, `boot_actvosrdy_timeout`, `boot_vosrdy_timeout`.
+  - `Image::unobservable` gains `PWR.CSR1.ACTVOSRDY` and `PWR.D3CR.VOSRDY`, and every generated verdict's `boot.residuals` carries `serial::PWR_RESIDUAL`.
+  - `CoreSupplyNotGenerated` (exit 2) is raised at `generate` (and so `verify` and `prove`), `emit` and `ready()` (`simulate`, `campaign`, and `--foreign` too).
+- **A `bypass` board's acknowledgements are stale.** It has no generated firmware, so no ledger, and `validate` refuses an acknowledgement as `UnwitnessedAcknowledgementStale`. A `bypass` board without acknowledgements validates. Tested.
+- **23 mutants, 23 killed**, all by tier-1 tests (`~/.cache/aet-4240v/a2/py/mutants.log`); `TIER2_MIN` does not move.
+
+### §1.7 The ledger
+
+Nine rows (`svd-hal` `register_fields`, `cli` `ledger.rs`); the reference ledger goes from 289 to 298 rows.
+
+| Row | Access | Class |
+|---|---|---|
+| `PWR.CR3.SCUEN` = 0, `.LDOEN` = 1, `.BYPASS` = 0 | written (read-modify-write) | `independent-rule`; ignored by the stock model |
+| `PWR.D3CR.VOS` = 2 | written (whole word) | `independent-rule`; ignored by the stock model |
+| `PWR.D3CR.VOSRDY` = 0 | written (whole word; the bit is read-only, but every field of a whole-word write has a row) | `independent-rule` |
+| `PWR.CSR1.ACTVOSRDY` = 1, `PWR.D3CR.VOSRDY` = 1 | polled (`@reset`, the `D2CKRDY` precedent) | `silicon-only` |
+| `FLASH.ACR.LATENCY` = 7, `.WRHIGHFREQ` = 3 | depended on at reset | `silicon-only` |
+
+- Each `silicon-only` register is acknowledged by name in every specification that acknowledges: `examples/sentinel-01.json`, `sentinel-01-minimal.json`, and the `four-layer`, `sentinel-01-bench` and `sentinel-03` fixtures.
+- The bench rows gain `PWR.CSR1` (`ACTVOSRDY`) and `FLASH.ACR` (`LATENCY`, `WRHIGHFREQ`). `PWR.D3CR.VOSRDY@reset` is not a bench row, because its written row is judged; B-2 reads `D3CR` whole.
+
 ### §1.9 Bench row B-2, extended (for the architect to place; Nucleo, t9o777, Scotty's)
 
 `P=~/tools/probe-rs/bin/probe-rs`, chip `STM32H753ZITx`, syntax as `3304.bench.md` L90 uses it (`$P read --chip STM32H753ZITx b32 <address> 1`). Each predicted value has its class: **rule** (RM0433 text), **generator** (the firmware's write), **inferred**, or **not predicted**.
