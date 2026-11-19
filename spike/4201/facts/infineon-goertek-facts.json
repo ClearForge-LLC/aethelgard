@@ -1,0 +1,586 @@
+{
+ "DPS310": {
+  "source": {
+   "url": "https://community.infineon.com/gfawx74859/attachments/gfawx74859/KnowledgeBaseArticles/10104/3/Infineon-DPS310-DataSheet.pdf",
+   "host_note": "Infineon Developer Community knowledge-base attachment (Infineon-hosted); infineon.com/assets/.../infineon-dps310-datasheet-en.pdf returned HTTP 202 with empty body (not downloaded)",
+   "fetched_utc": "2026-11-19T06:47:43Z",
+   "sha256": "c856826f913193c53a83fe73bc853b7517d36a2c5a75d1de19e701c1a88e0d00",
+   "file": "/home/forge/.cache/aet-4201/ds/dps310/Infineon-DPS310-DataSheet.pdf",
+   "pages": 41
+  },
+  "orderable_mpn": "DPS310XTSA1",
+  "i2c_addr_7bit": {
+   "value": "0x77 (SDO floating or pulled to VDDIO); 0x76 (SDO to GND). CSB must be tied to VDDIO for I2C; SDO also doubles as interrupt pin",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "20 (also 5 Table 2)",
+   "section": "6.1 I2C Interface"
+  },
+  "id_register": {
+   "value": "reg 0x0D reset value 0x10: REV_ID[7:4]=1, PROD_ID[3:0]=0. Datasheet does not say which bits are fixed vs revision-variable",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "25 (Table 15), 36",
+   "section": "7 Register Map; 8.10 Product and Revision ID"
+  },
+  "vdd": {
+   "value": "1.7 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "6 (Table 3)",
+   "section": "3.1 Operating Range"
+  },
+  "vddio": {
+   "value": "1.2 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "6 (Table 3)",
+   "section": "3.1 Operating Range"
+  },
+  "package": {
+   "value": "PG-VLGA-8-1, 2.0 x 2.5 x 1.0 mm, 8 pins, 0.65 mm pitch (Feature list says 1.0 mm height); no package drawing or land pattern in this revision",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "38; 1",
+   "section": "9 Package Dimensions"
+  },
+  "footprint_vs_bme280": "NOT drop-in. Body 2.0x2.5 vs 2.5x2.5. Same 8-pin order (1 GND,2 CSB,3 SDI,4 SCK,5 SDO,6 VDDIO,7 GND,8 VDD) and 0.65 pitch. Land pattern is only in the DPS368 datasheet (Fig 18 p41, covers -1,-2): pads 0.35x0.35, row-to-row 1.45 mm centre-centre. Project's KiCad Bosch_LGA-8_2.5x2.5mm_P0.65mm footprint has pad centres at y=+-1.025 mm, pad 0.35x0.5 mm (rows 2.05 mm apart): pad overlap only ~0.125 mm of 0.35. BME280 comparison is against the repo's KiCad library, NOT Bosch's own drawing.",
+  "pressure_abs_accuracy": {
+   "value": "+/-100 Pa (+/-1 hPa), 300-1200 hPa, 0..65 C, excluding solder effects",
+   "typ_or_max": "typ column (Table 7)",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "9 (Table 7; also p1 feature list)",
+   "section": "3.5 Pressure Transfer Function"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-6 Pa (+/-0.06 hPa), any 1 hPa delta in 800-1200 hPa, constant T 20..60 C",
+   "typ_or_max": "typ column",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "9",
+   "section": "3.5"
+  },
+  "pressure_noise_lowest": {
+   "value": "0.2 PaRMS, High Precision mode (1.0 Low Power, 0.35 Standard)",
+   "typ_or_max": "typ column",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "9 (Table 7)",
+   "section": "3.5"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C (condition not given in table; table header says Typ at 25 C, Min/Max at 0..65 C)",
+   "typ_or_max": "typ column",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "8 (Table 6)",
+   "section": "3.4 Temperature Transfer Function"
+  },
+  "supply_current_1Hz": {
+   "value": "2.1 uA Low precision, 11 uA Standard, 38 uA High precision (1 pressure + 1 temperature per s; VDD=VDDIO=1.8 V, 25 C). Feature list: 1.7 uA pressure, 1.5 uA temperature at 1 Hz",
+   "typ_or_max": "typ column",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "7 (Table 5); 1",
+   "section": "3.3 Current Consumption"
+  },
+  "standby_current": {
+   "value": "0.5 uA",
+   "typ_or_max": "typ column",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "7 (Table 5)",
+   "section": "3.3"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "6 (Table 3)",
+   "section": "3.1"
+  },
+  "startup_time_ready": {
+   "value": "Time to sensor ready 12 ms; time to coefficients available 40 ms; both measured from VDD>1.2 V & VDDIO>0.6 V OR soft reset (so same bound after soft reset)",
+   "typ_or_max": "max",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "10 (Table 8)",
+   "section": "3.6 Timing Characteristics"
+  },
+  "ready_flags": {
+   "value": "MEAS_CFG (0x08) bit7 COEF_RDY, bit6 SENSOR_RDY; reset value C0h",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "32; 25",
+   "section": "8.5 MEAS_CFG"
+  },
+  "soft_reset": {
+   "value": "write 0b1001 to RESET (0x0C) bits[3:0]; runs same sequence as power-on reset",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "36",
+   "section": "8.9"
+  },
+  "max_pin_capacitance": {
+   "value": "not printed (only I2C bus load Cb 400 pF max on SDI/SCK, a bus limit, not a pin spec)",
+   "typ_or_max": "max",
+   "doc": "Infineon DPS310 datasheet, doc ref IFX-sch1406115644540",
+   "rev": "V1.2 2020-10-15",
+   "page": "22 (Table 12)",
+   "section": "6.3.1"
+  },
+  "lifecycle": {
+   "vendor_page": "UNVERIFIED: infineon.com/part/DPS310 and cms product page fetched (06:5x UTC) but WebFetch returned only navigation menus, no status text",
+   "indirect_evidence": "WebSearch summary of an Infineon community thread: forum user says DPS310 carries 'not for new design' label; Infineon rep gave no EOL date; DPS368 named as replacement (thread fetch returned HTTP 403, so not quoted verbatim). Search summary also says element14 'No Longer Manufactured', Findchips 'Obsolete', DigiKey NZ page 'Obsolete' while DigiKey CN page 'Active'. Datasheet itself has no lifecycle statement."
+  },
+  "distributors": {
+   "digikey": "6099978 (DPS310XTSA1TR-ND / CT-ND / DKR-ND) via search summary; https://www.digikey.com/en/products/detail/infineon-technologies/DPS310XTSA1/6099978",
+   "mouser": "726-DPS310XTSA1 (search summary, unverified)",
+   "lcsc": "C130156 (LCSC page: MPN shown 'DPS310', package LGA-8(2x2.5); LCSC page fetched, mapping to DPS310XTSA1 not confirmed)"
+  },
+  "digikey_search_fetch": {
+   "url": "https://www.digikey.com/en/products/result?keywords=DPS310XTSA1",
+   "utc": "2026-11-19T06:5x (approx 06:52)",
+   "verbatim": "The server returned HTTP 403 Forbidden.",
+   "note": "blocked; no price/stock recorded; not circumvented"
+  },
+  "breakout": {
+   "product": "Adafruit 4494 DPS310 Precision Barometric Pressure / Altitude Sensor - STEMMA QT / Qwiic",
+   "url": "https://www.adafruit.com/product/4494",
+   "status": "page says 'No longer stocked', suggests SPA06-003",
+   "pullups": "Adafruit pinouts page: 10K pull-up on SCK/SCL and SDI/SDA lines; removability NOT stated; has on-board regulator 3-5 V in -> 3.3 V (Vin/3Vo) so 3.3 V logic OK; address 0x77, solder jumper on back or SDO to GND -> 0x76"
+  }
+ },
+ "DPS368": {
+  "source": {
+   "url": "https://www.infineon.com/assets/row/public/documents/30/49/infineon-dps368-datasheet-en.pdf",
+   "host_note": "curl returned HTTP 202 empty body (bot challenge; not circumvented); fetched ONCE via WebFetch which saved the 5.8 MB PDF; copied from the WebFetch tool-results file",
+   "fetched_utc": "2026-11-19T06:48:42Z (WebFetch save time)",
+   "sha256": "16d3f60378b9554c2ae6406f709a03624977fd29afc005c9a423e0dee36c281a",
+   "file": "/home/forge/.cache/aet-4201/ds/dps368/infineon-dps368-datasheet-en.pdf",
+   "pages": 44
+  },
+  "orderable_mpn": "DPS368XTSA1",
+  "positioned_as_successor": "Not stated in the datasheet. Only indirect: Infineon community thread (via search summary, unverified) names DPS368 as replacement for DPS310. Register/pin/timing tables are textually identical to DPS310 except IPx8 package PG-VLGA-8-2 1.1 mm.",
+  "i2c_addr_7bit": {
+   "value": "0x77 default (SDO floating/VDDIO); 0x76 (SDO to GND)",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "13 (4.5), 21",
+   "section": "4.5 Sensor Interface; 6.1 I2C"
+  },
+  "id_register": {
+   "value": "reg 0x0D reset 0x10 (REV_ID[7:4]=1, PROD_ID[3:0]=0); fixed bits not stated. Identical to DPS310 and SPL06-001, so a chip-ID check cannot tell them apart",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "26 (Table 15), 37",
+   "section": "7; 8.10"
+  },
+  "vdd": {
+   "value": "1.7 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "7 (Table 3)",
+   "section": "3.1"
+  },
+  "vddio": {
+   "value": "1.2 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "7 (Table 3)",
+   "section": "3.1"
+  },
+  "package": {
+   "value": "PG-VLGA-8-2, 2.0 x 2.5 x 1.1 mm max (side view 1.1 MAX, body 2.5+-0.1 x 2.0+-0.1), 8 pins, 0.65 pitch; IPx8 rated (features p1)",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "39-40",
+   "section": "9 Package Dimensions; Fig 17"
+  },
+  "footprint_vs_bme280": "Same finding as DPS310: pads 0.35x0.35 mm, 0.65 pitch, rows 1.45 mm c-c (Fig 17 p40, Fig 18 p41 'PG-VLGA-8 -1,-2'); body 2.0x2.5. Not a drop-in for project's BME280 KiCad footprint (rows 2.05 mm c-c, pads 0.35x0.5).",
+  "pressure_abs_accuracy": {
+   "value": "+/-100 Pa (+/-1 hPa), 300-1200 hPa, 0..65 C, excl. solder",
+   "typ_or_max": "typ column (same table as DPS310)",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "10 (Table 7)",
+   "section": "3.5"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-6 Pa, 800-1200 hPa, 20..60 C",
+   "typ_or_max": "typ",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "10",
+   "section": "3.5"
+  },
+  "pressure_noise_lowest": {
+   "value": "0.2 PaRMS High Precision",
+   "typ_or_max": "typ",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "10",
+   "section": "3.5"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C",
+   "typ_or_max": "typ",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "9 (Table 6)",
+   "section": "3.4"
+  },
+  "supply_current_1Hz": {
+   "value": "2.1 / 11 / 38 uA (low/std/high precision); feature list 1.7 uA pressure, 1.5 uA temperature",
+   "typ_or_max": "typ",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "8 (Table 5); 1",
+   "section": "3.3"
+  },
+  "standby_current": {
+   "value": "0.5 uA",
+   "typ_or_max": "typ",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "8",
+   "section": "3.3"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C",
+   "typ_or_max": "min/max",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "7",
+   "section": "3.1"
+  },
+  "startup_time_ready": {
+   "value": "sensor ready 12 ms, coefficients 40 ms, from power-up or soft reset",
+   "typ_or_max": "max (same table layout as DPS310; text extraction only, table not rendered)",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "11 (Table 8)",
+   "section": "3.6"
+  },
+  "ready_flags": {
+   "value": "MEAS_CFG COEF_RDY bit7 / SENSOR_RDY bit6",
+   "typ_or_max": "n/a",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "33",
+   "section": "8.5"
+  },
+  "max_pin_capacitance": {
+   "value": "not printed (I2C bus load Cb 400 pF max only)",
+   "typ_or_max": "max",
+   "doc": "Infineon DPS368 datasheet, doc ref IFX-duu1493988991355",
+   "rev": "v1.1 2019-07-03",
+   "page": "23",
+   "section": "6.3.1"
+  },
+  "lifecycle": {
+   "vendor_page": "UNVERIFIED: infineon.com/part/DPS368 fetched, only navigation text returned",
+   "indirect_evidence": "WebSearch summary: Infineon part page lists Active, 'planned to be available until at least 2034' (not verified by fetch)."
+  },
+  "distributors": {
+   "digikey": "10244079 / 10244081 (two listings seen via search; CT-ND code 'DPS368XTSA1CT-ND' per search summary)",
+   "mouser": "726-DPS368XTSA1 (search summary)",
+   "lcsc": "C3232508 (search; MPN DPS368XTSA1)"
+  },
+  "digikey_search_fetch": {
+   "url": "https://www.digikey.com/en/products/result?keywords=DPS368XTSA1",
+   "utc": "approx 2026-11-19T06:52Z",
+   "verbatim": "The server returned HTTP 403 Forbidden."
+  },
+  "breakout": "Not looked up (no Adafruit DPS368 breakout confirmed). Infineon eval boards (KIT_DPS368_2GO, S2GO-PRESSURE-DPS368) exist per search; not evaluated."
+ },
+ "SPL06-001": {
+  "source": {
+   "url": "https://datasheet.lcsc.com/datasheet/pdf/7f52851b2beb8afe5cf68acd1d437ed6.pdf?productCode=C2684428",
+   "host_note": "LCSC-hosted; reached via LCSC datasheet page redirect script (www.lcsc.com/datasheet/C2684428.pdf -> viewer HTML -> this URL). Goertek publishes no public datasheet found. Doc is marked Confidential.",
+   "fetched_utc": "2026-11-19T06:48:14Z",
+   "sha256": "e5d365e4f918ec8d075e82e58babf6fb6def71179ce210e20a46152e6f158de9",
+   "file": "/home/forge/.cache/aet-4201/ds/spl06-001/Goertek-SPL06-001_C2684428.pdf",
+   "pages": 35
+  },
+  "orderable_mpn": "SPL06-001",
+  "positioned_as_successor": "SPA06-003 is NOT named as successor in either datasheet; search found no source linking them. Adafruit names SPA06-003 as alternative to DPS310 only.",
+  "i2c_addr_7bit": {
+   "value": "0x77 default; 0x76 if SDO pulled to GND (datasheet says 'default' = SDO not pulled down; floating behavior not explicit)",
+   "typ_or_max": "n/a",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "9",
+   "section": "5.3.1 I2C interface"
+  },
+  "id_register": {
+   "value": "reg 0x0D: section 8.10 says reset 0x10, PROD_ID[7:4]=1, REV_ID[3:0]=0; BUT register map Table (p17) says reset 00h and lists PROD_ID[3:0]/REV_ID[3:0] - datasheet is internally inconsistent. Fixed bits not stated",
+   "typ_or_max": "n/a",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "27 (8.10); 17 (map)",
+   "section": "8.10; 7 Register Map"
+  },
+  "vdd": {
+   "value": "1.7 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "6 (Table 3); 5",
+   "section": "4"
+  },
+  "vddio": {
+   "value": "1.2 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "6; 5",
+   "section": "4"
+  },
+  "package": {
+   "value": "8-pin LGA with metal lid, 2.5 (+-0.1) x 2.0 (+-0.1) x 0.95 (+-0.05) mm; pads 0.35x0.35, pitch 0.65, rows 1.45 mm c-c; vent hole 0.825/0.825 from corner",
+   "typ_or_max": "n/a",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "30 (Fig 4,5)",
+   "section": "9.2 Outline dimensions"
+  },
+  "footprint_vs_bme280": "Same land pattern as DPS3xx (0.35 pads, 0.65 pitch, 1.45 row spacing), body 2.0x2.5. Not a drop-in for the project's BME280 KiCad footprint (rows 2.05 c-c). Pin order 1 GND,2 CSB,3 SDA,4 SCK,5 SDO,6 VDDIO,7 GND,8 VDD matches BME280-style order (p29).",
+  "pressure_abs_accuracy": {
+   "value": "+/-1.0 hPa, 300-1100 hPa, 0..+65 C",
+   "typ_or_max": "max column (rendered)",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "7 (Table 3)",
+   "section": "4"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-6 Pa (+/-0.5 m), 950-1050 hPa, +25..+40 C",
+   "typ_or_max": "max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "7",
+   "section": "4"
+  },
+  "pressure_noise_lowest": {
+   "value": "High precision mode 0.3 PaRMS typ / 0.6 max (Standard 0.5/1.2; Low power 2/5)",
+   "typ_or_max": "typ and max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "7",
+   "section": "4"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C at +25 C; +/-1 C at 0..+65 C",
+   "typ_or_max": "max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "7",
+   "section": "4"
+  },
+  "supply_current_1Hz": {
+   "value": "Low power 3 uA typ / 5 max; Standard 11 / 15; High precision 40 / 50 (1 meas/s, VDD=VDDIO=1.8 V). Key-features text on p5 says 'High precision: 60 uA' - conflicts with table",
+   "typ_or_max": "typ and max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "6 (Table 3); 5",
+   "section": "4"
+  },
+  "standby_current": {
+   "value": "1 uA (entered in Max column; features say '<1 uA')",
+   "typ_or_max": "max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "6",
+   "section": "4"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C operational; full accuracy 0 to +65 C",
+   "typ_or_max": "min/max",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "6; 32",
+   "section": "4; 10"
+  },
+  "startup_time_ready": {
+   "value": "Time to sensor ready 12 ms; coefficients available 40 ms. Datasheet does not state the reference event (power-on vs soft reset) for these; soft reset 'runs the same sequences as power-on reset' (p27)",
+   "typ_or_max": "max (rendered table)",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "7; 27",
+   "section": "4; 8.9"
+  },
+  "ready_flags": {
+   "value": "MEAS_CFG (0x08) COEF_RDY bit7, SENSOR_RDY bit6 (register-map reset shown 00h on p17, not C0h as DPS310)",
+   "typ_or_max": "n/a",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "23; 17",
+   "section": "8.5"
+  },
+  "max_pin_capacitance": {
+   "value": "not printed",
+   "typ_or_max": "n/a",
+   "doc": "Goertek SPL06-001 datasheet (no doc number; LCSC-hosted copy, marked 'Confidential Degree: Confidential')",
+   "rev": "Version 7.0 (history entry 2018.1.26)",
+   "page": "-",
+   "section": "-"
+  },
+  "lifecycle": {
+   "vendor_page": "none found (no Goertek product page located)",
+   "indirect_evidence": "WebSearch summary of DigiKey listing 17005535: 'Obsolete'; DigiKey document 'PCN Obsolescence/ EOL SPL06-001 EOL/Obs 31/Dec/2023' (notice itself not read). Earlier search summary says LCSC marks it discontinued; LCSC page fetch showed no status text."
+  },
+  "distributors": {
+   "digikey": "17005535 (Goertek Microelectronics Inc; https://www.digikey.com/en/products/detail/goertek-microelectronics-inc/SPL06-001/17005535; product-detail fetch HTTP 403)",
+   "mouser": "not found",
+   "lcsc": "C2684428 (page confirms MPN SPL06-001, LGA-8(2x2.5))"
+  },
+  "digikey_search_fetch": {
+   "url": "https://www.digikey.com/en/products/result?keywords=SPL06-001",
+   "utc": "approx 2026-11-19T06:52Z",
+   "verbatim": "The server returned HTTP 403 Forbidden."
+  },
+  "breakout": "No Adafruit/Seeed SPL06-001 breakout identified (part is obsolete). Not verified."
+ },
+ "SPA06-003": {
+  "source": {
+   "url": "https://datasheet.lcsc.com/datasheet/pdf/f11af3d36680da63e45f00c5b1db2c97.pdf?productCode=C30589048",
+   "host_note": "LCSC-hosted via redirect from www.lcsc.com/datasheet/C30589048.pdf; no Goertek/Goermicro page found",
+   "fetched_utc": "2026-11-19T06:51:49Z",
+   "sha256": "aee86bb46a424bc88263b2e7a993c32ca8adb177b8dffb292febcf11b3ff5f6c",
+   "file": "/home/forge/.cache/aet-4201/ds/spa06-003/Goertek-SPA06-003_C30589048.pdf",
+   "pages": 37
+  },
+  "orderable_mpn": "SPA06-003",
+  "i2c_addr_7bit": {
+   "value": "0x77 default; 0x76 if SDO to GND",
+   "typ_or_max": "n/a",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "9",
+   "section": "4.3.1"
+  },
+  "id_register": {
+   "value": "reg 0x0D reset 0x11: REV_ID[7:4]=1, PROD_ID[3:0]=1 (differs from 0x10 of DPS310/DPS368/SPL06-001; also nibble order differs from SPL06-001)",
+   "typ_or_max": "n/a",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "21 (map), 32",
+   "section": "6; 7.10"
+  },
+  "vdd": {
+   "value": "1.7 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6 (Table 2)",
+   "section": "3"
+  },
+  "vddio": {
+   "value": "1.08 to 3.6 V",
+   "typ_or_max": "min/max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6",
+   "section": "3"
+  },
+  "package": {
+   "value": "8-pin LGA metal lid 2.0 x 2.5 x 0.95 mm typ, pads 0.35, pitch 0.65, rows 1.45 c-c (same as SPL06-001)",
+   "typ_or_max": "n/a",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "35",
+   "section": "8.2"
+  },
+  "pressure_abs_accuracy": {
+   "value": "+/-0.3 hPa, 300-1100 hPa, 0..65 C",
+   "typ_or_max": "typ column (rendered p7 shows values in typ column for several rows; the +/-0.3 row not rendered here)",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6 (Table 2); 5",
+   "section": "3"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-3 Pa (+/-0.25 m), 300-1100 hPa, 25..40 C",
+   "typ_or_max": "typ (features say typ)",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6",
+   "section": "3"
+  },
+  "pressure_noise_lowest": {
+   "value": "High precision 0.3 PaRMS typ / 0.6 max",
+   "typ_or_max": "typ and max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "7",
+   "section": "3"
+  },
+  "temperature_accuracy": {
+   "value": "+/-1 C, 0..65 C",
+   "typ_or_max": "typ (rendered)",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "7",
+   "section": "3"
+  },
+  "supply_current_1Hz": {
+   "value": "Low power 3 uA typ/5 max; Standard 11/15; High 40/50; features: 1.7 uA pressure, 1.5 uA temp at 1x OSR",
+   "typ_or_max": "typ and max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6; 5",
+   "section": "3"
+  },
+  "standby_current": {
+   "value": "0.5 uA typ / 1 uA max",
+   "typ_or_max": "typ and max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6",
+   "section": "3"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C",
+   "typ_or_max": "min/max",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "6",
+   "section": "3"
+  },
+  "startup_time_ready": {
+   "value": "sensor ready 2 ms; coefficients 4 ms (note: 12/40 ms on SPL06-001). Reference event not stated",
+   "typ_or_max": "max (rendered)",
+   "doc": "Goermicro (Goertek) SPA06-003 datasheet (no doc number; LCSC-hosted, marked Confidential)",
+   "rev": "Ver2.0 2023-12-05",
+   "page": "7",
+   "section": "3"
+  },
+  "lifecycle": "DigiKey DE/NL listings show Active per search summary (unverified); vendor page not found",
+  "distributors": {
+   "digikey": "22188103 (search)",
+   "mouser": "not found",
+   "lcsc": "C30589048 (page confirms MPN SPA06-003, LGA-8(2x2.5))"
+  },
+  "breakout": {
+   "product": "Adafruit SPA06-003 Temperature + Pressure Sensor - STEMMA QT, product 6420",
+   "url": "https://www.adafruit.com/product/6420",
+   "price_text": "$4.95; 'In stock' (page text, breakout board not chip)",
+   "pullups": "NOT stated on product or pinouts pages (removability unknown); onboard regulator 3-5 V -> 3.3 V, 3Vo up to 100 mA; address 0x77, back solder jumper to SDO selects 0x76"
+  }
+ }
+}

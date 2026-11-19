@@ -266,7 +266,10 @@ fn renode_stub(tb: &Dir, version: Version, exit: i32, stdout: &str) {
         // Every Renode the CLI starts is handed its configuration first
         // (`AET-WO-2204` D4): `--config <file>`, then the call's own arguments.
         "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n/bin/cat '{}'\nexit {exit}",
-        version.shell("Renode v1.17.0"),
+        version.shell(&format!(
+            "Renode v1.17.0\n  build: {}",
+            aethelgard_twin::platform::RENODE_BUILD
+        )),
         tb.join("renode.out").display()
     );
     tb.script("renode", &body);
@@ -548,6 +551,32 @@ fn renode_version_printing_nothing_is_tool_unusable() {
         "ToolUnusable",
         "renode",
     );
+}
+
+/// `AET-WO-4400g` §1.5: a plain load is held to the pinned build too; the
+/// pinned version with no build line, or the stock release's, is refused
+/// by name before the load.
+#[test]
+fn a_load_on_another_renode_build_is_refused_by_name() {
+    for line in [
+        "Renode v1.17.0",
+        "Renode v1.17.0\n  build: 1.17.0+20260907gitf1dd1b4af",
+    ] {
+        let tb = Dir::new("tb");
+        renode_stub(
+            &tb,
+            Version::Prints(Box::leak(line.to_owned().into_boxed_str())),
+            0,
+            CPU_LISTING,
+        );
+        let p = input("p.repl", b"x\n");
+        refused_id(
+            &simulate(&tb, p.path.as_os_str()),
+            4,
+            "RenodeBuildNotPinned",
+            "renode",
+        );
+    }
 }
 
 #[test]
@@ -1180,7 +1209,10 @@ fn simulate_killed_by_sigkill_is_tool_error() {
     let tb = Dir::new("tb");
     tb.script(
         "renode",
-        "if [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\nkill -9 $$",
+        &format!(
+            "if [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: {}\\n'; exit 0; fi\nkill -9 $$",
+            aethelgard_twin::platform::RENODE_BUILD
+        ),
     );
     let p = input("p.repl", b"x\n");
     refused_id(&simulate(&tb, p.path.as_os_str()), 5, "ToolError", "renode");

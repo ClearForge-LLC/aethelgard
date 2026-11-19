@@ -173,18 +173,24 @@ fn digests() -> Vec<(&'static str, String)> {
 /// for the new in each text, `main.rs` is `d7b69000…e51b` and the two
 /// platforms are `4400c2`'s `b2bc0dcf…d676` and `bfa37e13…ae21` exactly
 /// (measured on the merge); the boot image did not move.
+/// Moved again by `AET-WO-4400g` (specification 17, and the clock's update
+/// entries at the end of each platform): with the version-16
+/// specification's sha256 (`e70351f0…`) put back for the new (`6deadfe4…`)
+/// and the platform's clock block removed, `main.rs` and the two platforms
+/// are `126afcb9…8d60`, `6f7b2db1…dd35` and `fc22c2c0…ccfa` exactly
+/// (measured); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "126afcb9f3d0f947b1a22e8bebaa88142a49090d12e29b70580fd8a9f20d8d60",
+        "5c770e1cf302929f14433a44c5f203f5fa36f36035615e9cf5dc9fc5d3604722",
     ),
     (
         "platform",
-        "6f7b2db16627ad594a99b5dbf45691521fa810dbe74a6e808396f79510e2dd35",
+        "88ab17b6132d5c960d5c1f1696c9ef9ea31769a9f3f2a2a964d0ef7d42b2ce6d",
     ),
     (
         "platform faulted",
-        "fc22c2c0c9fa62fe102afe830080ff4a3fcceb58cfc8658669cda4ed49b3ccfa",
+        "2a8151a84feb178c95edfd257af8d51fa3c1f7804df36276b82128ca74ddde84",
     ),
     (
         "boot image",

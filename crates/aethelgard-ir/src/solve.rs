@@ -299,6 +299,7 @@ fn solve_inner(
         bor_level: spec.mcu.bor_level,
         mcu: spec.mcu.part.clone(),
         pin_speeds: BTreeMap::new(),
+        foreign_clock: spec.mcu.foreign_clock.as_ref().map(Into::into),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec);
@@ -2241,6 +2242,7 @@ mod differential {
                     pin: "1".into(),
                 }),
                 reset_switch: false,
+                foreign_clock: None,
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),

@@ -491,3 +491,343 @@ fn a_motor_output_named_gnd_is_refused() {
         assert_eq!(e.kind(), "NetShadowsDomain", "{label}: {e}");
     }
 }
+
+// ---- AET-WO-4400g: the clock decoded from the RCC, and a foreign clock ----
+
+use aethelgard_ir::motor::{Apb, RccDecodeError, RccRegisters};
+
+/// The six registers ArduPilot (ChibiOS `stm32h7_mcuconf.h`, `OSCILLATOR_HZ`
+/// 0) leaves, as the twin read them back at a 5 s `--foreign` run's end
+/// (`AET-WO-4400g`, measured): `RCC_CR` `0x3F003025` (HSI on, `HSIDIV` 0,
+/// the PLLs on), `RCC_CFGR` `0x801B`, `RCC_D1CFGR` `0x48`,
+/// `RCC_D2CFGR` `0x440`, `RCC_PLLCKSELR` `0x408040`, `RCC_PLL1DIVR`
+/// `0x01090231`.
+fn ardupilot() -> RccRegisters {
+    RccRegisters::from_values([0x3F00_3025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231])
+}
+
+/// §1.2's exact case: HSI 64 MHz ÷ `DIVM1` 4 × `DIVN1` 50 ÷ `DIVP1` 2 is
+/// `sys_ck` 400 MHz; `HPRE` ÷2 gives `rcc_hclk1` 200 MHz; `D2PPRE1` and
+/// `D2PPRE2` ÷2 with `TIMPRE` 1 give 200 MHz timers on both buses (Table 57).
+#[test]
+fn ardupilot_s_rcc_registers_decode_to_400_mhz_and_200_mhz_timers() {
+    let c = SolvedClock::from_rcc(&ardupilot(), 0).unwrap();
+    assert_eq!(c.source, "PLL1");
+    assert_eq!(c.sysclk_hz, 400_000_000);
+    assert_eq!(
+        (c.d1cpre, c.hpre, c.d1ppre, c.d2ppre1, c.d2ppre2),
+        (1, 2, 2, 2, 2)
+    );
+    assert!(c.timpre);
+    assert_eq!(c.hclk_hz(), 200_000_000);
+    assert_eq!(c.core_hz(), 400_000_000);
+    assert_eq!(c.timer_kernel_hz(Apb::Apb1), 200_000_000);
+    assert_eq!(c.timer_kernel_hz(Apb::Apb2), 200_000_000);
+}
+
+/// `HSIDIV` divides HSI before it clocks the system or PLL1 (§8.7.2): 01 is
+/// 32 MHz; and each APB bus's timers take that bus's prescaler (§8.7.9):
+/// `D2PPRE1` ÷2 and `D2PPRE2` ÷4 with `TIMPRE` 0 give `rcc_hclk1` on APB1 and
+/// half of it on APB2 (Table 57). Adversarial pass: both mutants survived
+/// while every fixture had `HSIDIV` 0 and equal buses.
+#[test]
+fn hsidiv_and_each_bus_s_prescaler_are_read_apart() {
+    let hsi32 = RccRegisters::from_values([0x0000_002D, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
+    assert_eq!(
+        SolvedClock::from_rcc(&hsi32, 0).unwrap().sysclk_hz,
+        32_000_000
+    );
+    let mut r = ardupilot();
+    r.cr |= 0b01 << 3;
+    assert_eq!(SolvedClock::from_rcc(&r, 0).unwrap().sysclk_hz, 200_000_000);
+    let mut r = ardupilot();
+    r.cfgr &= !(1 << 15);
+    r.d2cfgr = (0b101 << 8) | (0b100 << 4);
+    let c = SolvedClock::from_rcc(&r, 0).unwrap();
+    assert_eq!((c.d2ppre1, c.d2ppre2), (2, 4));
+    assert_eq!(c.timer_kernel_hz(Apb::Apb1), 200_000_000);
+    assert_eq!(c.timer_kernel_hz(Apb::Apb2), 100_000_000);
+}
+
+/// Each register at its reset value (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9,
+/// §8.7.11, §8.7.13) decodes to the solved reset clock.
+#[test]
+fn the_reset_registers_decode_to_the_reset_clock() {
+    // `RCC_CR` as Renode 1.17.0 reads it at reset: HSION, HSIRDY (which
+    // mirrors HSION, `STM32H7_RCC.cs` L147) and HSIDIVF (always 1, L158).
+    let r = RccRegisters::from_values([0x0000_0025, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
+    assert_eq!(SolvedClock::from_rcc(&r, 0), Ok(SolvedClock::reset()));
+}
+
+/// Every refusal of the decode, by name.
+#[test]
+fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
+    let refused = |edit: &dyn Fn(&mut RccRegisters), hse: u32| {
+        let mut r = ardupilot();
+        edit(&mut r);
+        SolvedClock::from_rcc(&r, hse).unwrap_err()
+    };
+    let reserved = |field: &'static str, value: u32| RccDecodeError::Reserved { field, value };
+    // SWS 100 is reserved; 010 is HSE, which no crystal backs.
+    assert_eq!(
+        refused(&|r| r.cfgr = 0x8023, 0),
+        reserved("RCC_CFGR.SWS", 4)
+    );
+    assert_eq!(
+        refused(
+            &|r| {
+                r.cfgr = 0x8012;
+                r.cr |= 1 << 17;
+            },
+            0
+        ),
+        RccDecodeError::HseUndeclared
+    );
+    // PLLSRC 11 clocks no PLL; 10 is HSE; DIVM1 0 disables the prescaler.
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8043, 0),
+        reserved("RCC_PLLCKSELR.PLLSRC", 3)
+    );
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8042, 0),
+        RccDecodeError::HseUndeclared
+    );
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8000, 0),
+        reserved("RCC_PLLCKSELR.DIVM1", 0)
+    );
+    // DIVN1 below 0x003 is a wrong configuration; DIVP1 2 divides by 3, odd.
+    assert_eq!(
+        refused(&|r| r.pll1divr = 0x0109_0202, 0),
+        reserved("RCC_PLL1DIVR.DIVN1", 2)
+    );
+    assert_eq!(
+        refused(&|r| r.pll1divr = 0x0109_0431, 0),
+        reserved("RCC_PLL1DIVR.DIVP1", 2)
+    );
+    // D1CPRE and HPRE of 11xx: Renode divides by 2^(n+1), RM0433 by 64 up.
+    let unmodelled = |field: &'static str, value: u32| RccDecodeError::Unmodelled { field, value };
+    assert_eq!(
+        refused(&|r| r.d1cfgr = 0x4C, 0),
+        unmodelled("RCC_D1CFGR.HPRE", 0xC)
+    );
+    assert_eq!(
+        refused(&|r| r.d1cfgr = 0xC48, 0),
+        unmodelled("RCC_D1CFGR.D1CPRE", 0xC)
+    );
+    // With a crystal declared, HSE decodes, once ready (HSERDY, bit 17).
+    let mut r = ardupilot();
+    r.cfgr = 0x8012;
+    r.cr |= 1 << 17;
+    assert_eq!(
+        SolvedClock::from_rcc(&r, 25_000_000).unwrap().sysclk_hz,
+        25_000_000
+    );
+    // A source whose ready flag is clear (adversarial pass: Renode's SWS
+    // mirrors SW): PLL1 off and not ready.
+    assert_eq!(
+        refused(&|r| r.cr = 0x0000_0025, 0),
+        RccDecodeError::NotReady { clock: "PLL1" }
+    );
+    // DIVM1 at its reset 32, where Renode's prescaler may still be 1.
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x0202_0200, 0),
+        unmodelled("RCC_PLLCKSELR.DIVM1", 32)
+    );
+    // A 64 MHz reference (DIVM1 1), and a 4.096 GHz VCO (DIVN1 x64).
+    let range = |quantity: &'static str, hz: u64| RccDecodeError::OutOfRange { quantity, hz };
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8010, 0),
+        range("ref1_ck", 64_000_000)
+    );
+    assert_eq!(
+        refused(
+            &|r| {
+                r.pllckselr = 0x40_8040;
+                r.pll1divr = 0x0109_00FF;
+            },
+            0
+        ),
+        range("vco1_ck", 4_096_000_000)
+    );
+}
+
+/// RM0433 Rev 9 Table 57, every row: `rcc_hclk1` while `D2PPREx` divides by
+/// at most 2 (`TIMPRE` 0) or 4 (`TIMPRE` 1), else 2 or 4 × `rcc_pclkx`.
+#[test]
+fn the_timer_kernel_clock_is_table_57_for_both_timpre() {
+    for (timpre, ppre, want) in [
+        (false, 1, 64),
+        (false, 2, 64),
+        (false, 4, 32),
+        (false, 8, 16),
+        (false, 16, 8),
+        (true, 1, 64),
+        (true, 2, 64),
+        (true, 4, 64),
+        (true, 8, 32),
+        (true, 16, 16),
+    ] {
+        let c = SolvedClock {
+            timpre,
+            d2ppre1: ppre,
+            d2ppre2: ppre,
+            ..SolvedClock::reset()
+        };
+        assert_eq!(
+            c.timer_kernel_hz(Apb::Apb1),
+            want * 1_000_000,
+            "{timpre} {ppre}"
+        );
+        assert_eq!(
+            c.timer_kernel_hz(Apb::Apb2),
+            want * 1_000_000,
+            "{timpre} {ppre}"
+        );
+    }
+}
+
+/// `INV-07` residue (a)(2) (`AET-WO-4400g` §1.6): `validate` refuses any
+/// solved clock but the reset one, and says the second reason, so a future
+/// clock-programming engine trips here instead of rediscovering (b): Renode's
+/// RCC pushes its figure to a timer's counter on each RCC write, while the
+/// counter's compare channels keep the frequency they were built at.
+#[test]
+fn a_clock_programming_firmware_is_refused_because_renode_s_rcc_push_reaches_counters_not_channels()
+{
+    let mut t = topology();
+    t.clock = SolvedClock::from_rcc(&ardupilot(), 0).unwrap();
+    let e = t.validate().unwrap_err();
+    assert_eq!(e.kind(), "UnsupportedClock");
+    let m = e.to_string();
+    assert!(
+        m.contains("counters") && m.contains("compare channels") && m.contains("INV-07"),
+        "{m}"
+    );
+}
+
+fn foreign_clock(timers: u32, usart: u32) -> Value {
+    let s = |v: u32| json!({"value": v, "source": "ChibiOS stm32h7_mcuconf.h"});
+    let usarts: serde_json::Map<String, Value> = aethelgard_ir::serial::PERIPHERALS
+        .iter()
+        .map(|p| ((*p).to_owned(), s(usart)))
+        .collect();
+    json!({"apb1_timers_hz": s(timers), "apb2_timers_hz": s(timers), "usarts": usarts})
+}
+
+fn with_foreign_clock(c: Value) -> Value {
+    let mut v = spec_json(vec![]);
+    v["mcu"]["foreign_clock"] = c;
+    v
+}
+
+/// `mcu.foreign_clock` (`AET-WO-4400g` §1.2): declared, it validates and
+/// `solve` copies its values; absent, the topology's is `null`.
+#[test]
+fn a_declared_foreign_clock_validates_and_solve_copies_its_values() {
+    let s: Specification =
+        serde_json::from_value(with_foreign_clock(foreign_clock(200_000_000, 72_000_000))).unwrap();
+    s.validate().unwrap();
+    let t = solve(&s, &table(), HASH).unwrap();
+    let c = t.foreign_clock.as_ref().unwrap();
+    assert_eq!(
+        (c.timer_hz(Apb::Apb1), c.timer_hz(Apb::Apb2)),
+        (200_000_000, 200_000_000)
+    );
+    assert_eq!(c.usarts.len(), 8);
+    assert!(c.usarts.values().all(|hz| *hz == 72_000_000));
+    t.validate().unwrap();
+    let text = serde_json::to_string(&t).unwrap();
+    assert_eq!(serde_json::from_str::<SolvedTopology>(&text).unwrap(), t);
+    assert!(topology().foreign_clock.is_none());
+    let none = serde_json::to_value(topology()).unwrap();
+    assert_eq!(none["foreign_clock"], Value::Null);
+}
+
+/// A topology carries the declaration's rules too: one written by hand
+/// with a zero or a split mux is refused (adversarial pass: dropping the
+/// check from `SolvedTopology::validate` survived).
+#[test]
+fn a_topology_s_foreign_clock_is_held_to_the_declaration_s_rules() {
+    let s: Specification =
+        serde_json::from_value(with_foreign_clock(foreign_clock(200_000_000, 72_000_000))).unwrap();
+    let t = solve(&s, &table(), HASH).unwrap();
+    let kind = |edit: &dyn Fn(&mut aethelgard_ir::motor::SolvedForeignClock)| {
+        let mut t = t.clone();
+        edit(t.foreign_clock.as_mut().unwrap());
+        t.validate().map_err(|e| e.kind())
+    };
+    assert_eq!(kind(&|_| {}), Ok(()));
+    assert_eq!(kind(&|c| c.apb1_timers_hz = 0), Err("ForeignClockZero"));
+    assert_eq!(
+        kind(&|c| {
+            c.usarts.remove("UART4");
+        }),
+        Err("ForeignClockUsarts")
+    );
+    assert_eq!(
+        kind(&|c| {
+            c.usarts.insert("USART3".into(), 1);
+        }),
+        Err("ForeignClockMuxSplit")
+    );
+}
+
+/// Each refusal of a declaration, by name.
+#[test]
+fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
+    let kind = |v: Value| {
+        serde_json::from_value::<Specification>(with_foreign_clock(v))
+            .unwrap()
+            .validate()
+            .unwrap_err()
+            .kind()
+    };
+    let mut zero = foreign_clock(200_000_000, 72_000_000);
+    zero["apb2_timers_hz"]["value"] = json!(0);
+    assert_eq!(kind(zero), "ForeignClockZero");
+    let mut missing = foreign_clock(200_000_000, 72_000_000);
+    missing["usarts"].as_object_mut().unwrap().remove("UART8");
+    assert_eq!(kind(missing), "ForeignClockUsarts");
+    let mut unknown = foreign_clock(200_000_000, 72_000_000);
+    unknown["usarts"]["LPUART1"] = json!({"value": 1, "source": "s"});
+    assert_eq!(kind(unknown), "ForeignClockUsarts");
+    let mut split = foreign_clock(200_000_000, 72_000_000);
+    split["usarts"]["USART6"]["value"] = json!(64_000_000);
+    assert_eq!(kind(split), "ForeignClockMuxSplit");
+    // The other mux's six, USART234578SEL (adversarial pass: its loop
+    // survived while only USART6 was split).
+    let mut split = foreign_clock(200_000_000, 72_000_000);
+    split["usarts"]["UART8"]["value"] = json!(64_000_000);
+    assert_eq!(kind(split), "ForeignClockMuxSplit");
+    let mut sourceless = foreign_clock(200_000_000, 72_000_000);
+    sourceless["apb1_timers_hz"]["source"] = json!("");
+    assert_eq!(kind(sourceless), "InvalidSource");
+    // An explicit null is refused when parsing, as every optional key is.
+    assert!(serde_json::from_value::<Specification>(with_foreign_clock(Value::Null)).is_err());
+}
+
+/// Specification 17: a version-16 file is refused by its version, with or
+/// without `mcu.foreign_clock`, never read as today's board.
+#[test]
+fn a_version_16_file_is_refused_by_its_version() {
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 17);
+    for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
+        let mut v = match c {
+            Some(c) => with_foreign_clock(c),
+            None => spec_json(vec![]),
+        };
+        v["schema_version"] = json!(16);
+        let e = serde_json::from_value::<Specification>(v)
+            .unwrap()
+            .validate()
+            .unwrap_err();
+        assert_eq!(
+            e,
+            IrValidationError::UnsupportedSchemaVersion {
+                version: 16,
+                expected: 17
+            }
+        );
+    }
+}

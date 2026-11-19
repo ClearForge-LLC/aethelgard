@@ -37,7 +37,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -186,7 +186,8 @@ fn refuses_unsupported_schema_version() {
         13,
         14,
         15,
-        17,
+        16,
+        18,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -1227,6 +1228,7 @@ fn solved() -> SolvedTopology {
             ("SPI_SCK".to_owned(), 1),
         ]
         .into(),
+        foreign_clock: None,
     }
 }
 
@@ -1293,9 +1295,9 @@ fn solved_refuses_version_and_hash() {
     // file before `serial_ports` (`AET-WO-4300b`), 7 the file before
     // `spi_controllers`, `i2c_timings` and `bor_level` (`AET-WO-4230`), 8 the
     // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 9 the file before
-    // an SPI device's `orientation` (`AET-WO-4400d`), 11 one this build does
-    // not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11] {
+    // an SPI device's `orientation` (`AET-WO-4400d`), 10 the file before
+    // `foreign_clock` (`AET-WO-4400g`), 12 one this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3621,7 +3623,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 16
+                expected: 17
             }
         ),
         "{e}"

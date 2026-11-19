@@ -1,0 +1,15 @@
+# baseline (c3f8ddbb, U2 BME280): two campaign runs of the five bench scenarios
+== campaign run 1
+{"ok":true,"verdict":"pass","check":"campaign","scenarios":5,"matched":5,"virtual_time_ns":100000000,"trace_bytes":18932}
+== campaign run 2
+{"ok":true,"verdict":"pass","check":"campaign","scenarios":5,"matched":5,"virtual_time_ns":100000000,"trace_bytes":18932}
+# U2 BMP581 at 0x46: two runs
+== campaign run 1
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"`[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 1962227 28a801 770`: its count places it at 20854010 ns in a boot started at 1231740 ns, but it is stamped 20854009 ns"}}
+== campaign run 2
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"`[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 1962227 28a801 770`: its count places it at 20854010 ns in a boot started at 1231740 ns, but it is stamped 20854009 ns"}}
+# U2 BMP581: each scenario alone
+== droop-bor3
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"`[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 1962227 28a801 770`: its count places it at 20854010 ns in a boot started at 1231740 ns, but it is stamped 20854009 ns"}}
+== serial-rx-open-console
+{"ok":true,"verdict":"pass","check":"campaign","scenarios":1,"matched":1,"virtual_time_ns":100000000,"trace_bytes":3999}
