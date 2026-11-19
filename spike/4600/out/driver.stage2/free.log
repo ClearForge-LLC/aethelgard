@@ -1,0 +1,2 @@
+2026-11-19T17:15:54+00:00 driver validate mem=8G free -g available=42
+2026-11-19T17:15:55+00:00 driver verify-fab mem=16G free -g available=41
