@@ -70,10 +70,7 @@ DEFAULT_WEIGHT=0.05
 #     CPU-heavy test is its `ok` timestamp less its binary's `Running` line (an upper bound).
 #     The clause: plan every shard's test step at or under 1006 s, and the head's final run green with every shard
 #     under 20 min; if one shard is over while the plan holds, ONE re-run of the same head decides; a shard over on
-#     both runs is real and needs a refit. MEASURED (runs 43771580225, 43774296207): the in-shard weights total about
-#     8,368 s against 8 x 1,006 = 8,048 s, so NO 8-shard plan fits the 1,006 s line (assign plans 1,046 s per shard).
-#     INTERIM ruling (architect, 2026-11-16 01:20 UTC): keep 8 shards with these weights (about 1,046 s planned) and
-#     judge by the measurement clause alone; ci/SHARDS 9 (planned 930-947 s) is put to Scotty, not set here. (Superseded: rule 4.)
+#     both runs is real and needs a refit.
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }
@@ -415,6 +412,6 @@ case $cmd in
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
   build) build_all ;;
-  pack | unpack | compiled_in | stamp) "$cmd" "$@" ;;
+  pack | unpack | compiled_in) "$cmd" "$@" ;;
   *) echo "usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run" >&2; exit 2 ;;
 esac
