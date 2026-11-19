@@ -810,7 +810,6 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
     let mut rcin: Option<String> = None;
     for (n, (label, p, ..)) in serial_order(t).into_iter().enumerate() {
         let at = format!("SERIAL{n}");
-        let rc = matches!(p.role, SerialRole::RcCrsf | SerialRole::RcSbus);
         let want = match p.role {
             SerialRole::Console | SerialRole::Mavlink => MAVLINK2,
             SerialRole::Gps => GPS,
@@ -906,7 +905,7 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
         } else {
             defined_number(h, &format!("DEFAULT_SERIAL{n}_OPTIONS"))?.unwrap_or(0)
         };
-        let (wrong, expected) = if rc {
+        let (wrong, expected) = if want == RCIN {
             (
                 options & !RXINV != 0,
                 "no bit but RXINV, which RC input sets (AP_RCProtocol.cpp:326-336)".to_owned(),

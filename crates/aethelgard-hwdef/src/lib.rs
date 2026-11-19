@@ -702,10 +702,11 @@ fn serial(
                 if n == 7 { 357 } else { 376 }
             ));
         } else if n > 0 {
-            let options = if p.framing.inverted { 3 } else { 0 };
+            // Not inverted: only SBUS may be (FramingNotImplied above), and an
+            // RC-input port took its `continue`.
             l.push(
-                format!("define DEFAULT_SERIAL{n}_OPTIONS {options}"),
-                format!("[T] serial_ports.{label}.framing.inverted (RXINV and TXINV, UARTDriver.h:90-91)"),
+                format!("define DEFAULT_SERIAL{n}_OPTIONS 0"),
+                format!("[T] serial_ports.{label}.framing.inverted false (UARTDriver.h:90-91)"),
             );
         }
     }
