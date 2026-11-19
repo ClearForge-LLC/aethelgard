@@ -84,7 +84,8 @@ fn read() -> aethelgard_eda::route::Board {
     let tree = aethelgard_eda::strict::board(&text).unwrap();
     let spec: aethelgard_ir::Specification = serde_json::from_value(spec()).unwrap();
     let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec).unwrap())
+            .unwrap();
     b
 }
 

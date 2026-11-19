@@ -1212,7 +1212,8 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
     let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec).unwrap())
+            .unwrap();
     let moves = vec![(
         "C11".to_owned(),
         (b.outline.x1 + 25_000_000, b.outline.y0),
@@ -1367,7 +1368,8 @@ fn the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails() {
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
     let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec)).unwrap();
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(&spec).unwrap())
+            .unwrap();
     let moves = vec![(
         moved_part.clone(),
         (b.outline.x1 + 25_000_000, b.outline.y0),

@@ -81,9 +81,10 @@ pub struct ClassRules {
 
 impl Rules {
     /// The rules a specification declares (`board.rules`): its clearance and
-    /// track width, each at or above the floor once `validate` has passed.
-    pub fn from_specification(spec: &Specification) -> Rules {
-        Rules::from_stack(&crate::stack::Stack::of(spec))
+    /// track width, each at or above the floor once `validate` has passed;
+    /// refused as [`crate::stack::Stack::of`] refuses.
+    pub fn from_specification(spec: &Specification) -> Result<Rules, &'static str> {
+        Ok(Rules::from_stack(&crate::stack::Stack::of(spec)?))
     }
 
     /// The same from the declared board itself.

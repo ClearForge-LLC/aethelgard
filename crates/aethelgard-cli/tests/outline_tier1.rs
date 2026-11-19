@@ -300,7 +300,8 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
     assert!(!rules.is_empty());
     let tree = strict::board(board).unwrap();
     let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(spec)).unwrap();
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(spec).unwrap())
+            .unwrap();
     for l in aethelgard_eda::loops::judge(&b, &rules).unwrap() {
         assert_eq!(
             l.verdict, "pass",

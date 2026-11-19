@@ -276,3 +276,51 @@ fn a_board_extract_cannot_judge_is_routed_as_today_and_named() {
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["error"]["kind"], "TranslatorPinUnbounded", "{v}");
 }
+
+/// `AET-WO-1315` §1.6: every production reader of a board refuses a
+/// specification whose `fab_tolerances` block lacks a field the ring rule
+/// needs, as `emit` does, and never reads the board with the engine's via
+/// instead (`Stack::of`). The refusal comes before any tool is looked for.
+#[test]
+fn every_reader_of_a_board_refuses_a_partial_tolerance_block_by_name() {
+    let (code, r, board) = s03_emitted();
+    assert_eq!(*code, 0, "{r}");
+    let board = board.as_ref().unwrap();
+    let schematic = board.with_extension("kicad_sch");
+    let mut v = s03();
+    v["board"]["stackup"]["fab_tolerances"]
+        .as_object_mut()
+        .unwrap()
+        .remove("via_ring_um");
+    let spec = write("partial-readers", &v);
+    let (board, schematic, spec) = (
+        board.to_str().unwrap(),
+        schematic.to_str().unwrap(),
+        spec.to_str().unwrap(),
+    );
+    for args in [
+        vec!["check", "drc", "--board", board, "--spec", spec],
+        vec![
+            "check",
+            "support",
+            "--schematic",
+            schematic,
+            "--board",
+            board,
+            "--spec",
+            spec,
+        ],
+        vec!["extract", "--board", board, "--spec", spec],
+    ] {
+        let (code, r) = run(&args);
+        assert_eq!(code, 2, "{args:?}: {r}");
+        assert_eq!(
+            r["error"]["kind"], "FabToleranceUndeclared",
+            "{args:?}: {r}"
+        );
+        assert_eq!(
+            r["error"]["id"], "board.stackup.fab_tolerances.via_ring_um",
+            "{args:?}: {r}"
+        );
+    }
+}

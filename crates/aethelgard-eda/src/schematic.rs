@@ -866,9 +866,9 @@ fn place(
 ) -> Result<Placed, EmitError> {
     spec.validate().map_err(EmitError::InvalidSpecification)?;
     let (parts, rails) = design(spec, solved, table)?;
-    let stack = crate::stack::Stack::of(spec);
     // the via ring rule (`AET-WO-1314`): every input it needs declared, and
     // no class declaring a via it cannot hold
+    let stack = crate::stack::Stack::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
     let rule = crate::stack::RingRule::of(spec).map_err(EmitError::FabToleranceUndeclared)?;
     if let Some(rule) = rule
         && let Some((class, via_nm, pad_nm)) = rule.unheld(&stack).into_iter().next()

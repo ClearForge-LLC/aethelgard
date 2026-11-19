@@ -23,7 +23,7 @@ fn fixture() -> (Specification, SolvedTopology, PinTable) {
 
 fn read(spec: &Specification, board: &str) -> route::Board {
     let tree = strict::board(board).unwrap();
-    let (b, r) = route::read(&tree, &Stack::of(spec)).unwrap();
+    let (b, r) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     route::connectivity(&b, &r).unwrap();
     b
 }
@@ -176,7 +176,7 @@ fn a_bucks_sw_net_takes_its_outputs_class_and_an_ldo_adds_nothing() {
     v["net_classes"][0]["nets"] = serde_json::json!(["VBAT", "VDD_5V", "VDD_1V8"]);
     let spec: Specification = serde_json::from_value(v).unwrap();
     spec.validate().unwrap();
-    let stack = Stack::of(&spec);
+    let stack = Stack::of(&spec).unwrap();
     let power = stack.classes.iter().find(|c| c.name == "POWER").unwrap();
     assert_eq!(power.nets, ["VBAT", "VDD_5V", "VDD_1V8", "/U10_SW"]);
     let mcu = stack
@@ -255,7 +255,7 @@ fn a_starved_thermal_array_is_refused() {
     let (spec, solved, table) = fixture();
     let e = schematic::emit(&spec, &solved, &table).unwrap();
     let tree = strict::board(&e.board).unwrap();
-    let (b, r) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    let (b, r) = route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
     route::check(&b, &r).unwrap();
     assert_eq!(r.arrays.len(), 2);
     let mut short = r.clone();
@@ -298,7 +298,11 @@ fn full() -> (Specification, SolvedTopology, PinTable) {
 fn the_crossing_is_drawn_and_its_limits_are_refused_by_name() {
     let (spec, solved, table) = full();
     let e = schematic::emit(&spec, &solved, &table).unwrap();
-    let (b, r) = route::read(&strict::board(&e.board).unwrap(), &Stack::of(&spec)).unwrap();
+    let (b, r) = route::read(
+        &strict::board(&e.board).unwrap(),
+        &Stack::of(&spec).unwrap(),
+    )
+    .unwrap();
     route::check(&b, &r).unwrap();
     route::connectivity(&b, &r).unwrap();
     let u5 = b.parts.iter().find(|p| p.reference == "U5").unwrap();
@@ -393,7 +397,7 @@ fn a_keepout_is_read_routed_around_and_judged() {
         parts: vec![part],
         stack: {
             // The fixture's board, without its power parts' arrays and joins.
-            let mut stack = Stack::of(&spec);
+            let mut stack = Stack::of(&spec).unwrap();
             stack.thermal.clear();
             stack.joins.clear();
             stack
@@ -507,7 +511,7 @@ fn the_router_goes_around_a_keepout() {
         }],
     };
     let (spec, _, _) = fixture();
-    let mut stack = Stack::of(&spec);
+    let mut stack = Stack::of(&spec).unwrap();
     stack.thermal.clear();
     stack.joins.clear();
     stack.classes.clear();

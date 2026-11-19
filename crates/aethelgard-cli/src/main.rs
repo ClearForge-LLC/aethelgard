@@ -846,12 +846,11 @@ fn check_kicad(
                 id: refusal.error.id,
                 message: refusal.error.message,
             })?;
-            declared = Some(aethelgard_eda::stack::Stack::of(&spec));
+            let stack = aethelgard_eda::stack::Stack::of(&spec).map_err(undeclared)?;
+            let rules = aethelgard_eda::rules::Rules::from_stack(&stack);
+            declared = Some(stack);
             read_spec_value = Some((spec.clone(), sha256.clone()));
-            (
-                aethelgard_eda::rules::Rules::from_specification(&spec),
-                Some(sha256),
-            )
+            (rules, Some(sha256))
         }
         None => (aethelgard_eda::rules::Rules::kicad_default(), None),
     };
@@ -1021,7 +1020,7 @@ fn check_support(
         id: r.id().map(str::to_owned),
         message: r.to_string(),
     })?;
-    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let stack = aethelgard_eda::stack::Stack::of(&spec).map_err(undeclared)?;
     let (placed, _) =
         aethelgard_eda::route::read(&tree, &stack).map_err(unreadable("BoardUnreadable"))?;
     let tool = run::Tool::find("kicad-cli")?;
@@ -2799,6 +2798,19 @@ fn read_input(file: Option<&Path>) -> Result<Vec<u8>, Refusal> {
 
 /// Writes exactly one JSON line to stdout. A report that cannot be written
 /// exits 70, never the code the report would have carried.
+/// A declared `fab_tolerances` block that lacks `path`, which the ring rule
+/// needs: refused by every reader of a board as `emit` refuses it
+/// (`AET-WO-1315` §1.6), never read with the engine's via.
+fn undeclared(path: &'static str) -> run::Stop {
+    let e = aethelgard_eda::schematic::EmitError::FabToleranceUndeclared(path);
+    run::Stop {
+        code: EXIT_INVALID_SPEC,
+        kind: e.kind(),
+        id: e.id().map(str::to_owned),
+        message: e.to_string(),
+    }
+}
+
 fn emit(report: &impl Serialize, code: u8) -> ExitCode {
     let mut out = io::stdout().lock();
     let written = serde_json::to_writer(&mut out, report)
