@@ -1,0 +1,18 @@
+hse  8000000.000 ->   64000000: 32 settings; first {'m': 1, 'n': 32, 'p': 4, 'ref': 8000000.0, 'vco': 256000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse  8000000.000 ->  400000000: 12 settings; first {'m': 1, 'n': 50, 'p': 1, 'ref': 8000000.0, 'vco': 400000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse  8000000.000 ->  480000000: 8 settings; first {'m': 1, 'n': 60, 'p': 1, 'ref': 8000000.0, 'vco': 480000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse  8333333.333 ->   64000000: 0 settings
+hse  8333333.333 ->  400000000: 12 settings; first {'m': 1, 'n': 48, 'p': 1, 'ref': 8333333.333333333, 'vco': 400000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse  8333333.333 ->  480000000: 0 settings
+hse 12000000.000 ->   64000000: 28 settings; first {'m': 1, 'n': 32, 'p': 6, 'ref': 12000000.0, 'vco': 384000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 12000000.000 ->  400000000: 6 settings; first {'m': 3, 'n': 100, 'p': 1, 'ref': 4000000.0, 'vco': 400000000.0, 'rge': 1, 'vcosel': ['wide']}
+hse 12000000.000 ->  480000000: 12 settings; first {'m': 1, 'n': 40, 'p': 1, 'ref': 12000000.0, 'vco': 480000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 16000000.000 ->   64000000: 64 settings; first {'m': 1, 'n': 16, 'p': 4, 'ref': 16000000.0, 'vco': 256000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 16000000.000 ->  400000000: 24 settings; first {'m': 1, 'n': 25, 'p': 1, 'ref': 16000000.0, 'vco': 400000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 16000000.000 ->  480000000: 16 settings; first {'m': 1, 'n': 30, 'p': 1, 'ref': 16000000.0, 'vco': 480000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 24000000.000 ->   64000000: 54 settings; first {'m': 2, 'n': 32, 'p': 6, 'ref': 12000000.0, 'vco': 384000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 24000000.000 ->  400000000: 12 settings; first {'m': 3, 'n': 50, 'p': 1, 'ref': 8000000.0, 'vco': 400000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse 24000000.000 ->  480000000: 22 settings; first {'m': 2, 'n': 40, 'p': 1, 'ref': 12000000.0, 'vco': 480000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 25000000.000 ->   64000000: 4 settings; first {'m': 5, 'n': 128, 'p': 10, 'ref': 5000000.0, 'vco': 640000000.0, 'rge': 2, 'vcosel': ['wide']}
+hse 25000000.000 ->  400000000: 35 settings; first {'m': 2, 'n': 32, 'p': 1, 'ref': 12500000.0, 'vco': 400000000.0, 'rge': 3, 'vcosel': ['wide']}
+hse 25000000.000 ->  480000000: 4 settings; first {'m': 5, 'n': 96, 'p': 1, 'ref': 5000000.0, 'vco': 480000000.0, 'rge': 2, 'vcosel': ['wide']}
