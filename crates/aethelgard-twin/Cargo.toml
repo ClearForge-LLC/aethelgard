@@ -10,6 +10,9 @@ keywords = ["simulation","digital-twin","embedded","renode"]
 categories = ["simulation","embedded"]
 
 [dependencies]
+# The realized-period function, defined once with the trace format replay
+# checks it by (AET-WO-4400g §1.3).
+aethelgard-chaos.workspace = true
 aethelgard-ir.workspace = true
 # The models of our own the platform pins (AET-WO-4220 D6).
 aethelgard-renode-models.workspace = true

@@ -21,7 +21,7 @@ fn stack() -> Stack {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let spec: aethelgard_ir::Specification =
         serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    Stack::of(&spec)
+    Stack::of(&spec).unwrap()
 }
 
 fn rect(c: (i64, i64), w: i64, h: i64) -> Rect {
@@ -274,7 +274,7 @@ fn a_pad_the_grid_reaches_gets_no_escape() {
     let e = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap();
     let (b, r) = route::read(
         &aethelgard_eda::strict::board(&e.board).unwrap(),
-        &Stack::of(&spec),
+        &Stack::of(&spec).unwrap(),
     )
     .unwrap();
     assert_on_grid(&b, &r);
@@ -803,7 +803,7 @@ fn a_part_moved_inside_the_board_keeps_the_outline() {
     let outline = |board: &str| {
         route::read(
             &aethelgard_eda::strict::board(board).unwrap(),
-            &Stack::of(&spec),
+            &Stack::of(&spec).unwrap(),
         )
         .unwrap()
         .0

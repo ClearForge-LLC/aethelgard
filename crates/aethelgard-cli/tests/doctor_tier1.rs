@@ -72,12 +72,15 @@ fn toolbox(except: &[(&str, Option<&str>)]) -> Toolbox {
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let dir = Scratch::new(&format!("doctor-box-{n}"));
     let homes = Scratch::new(&format!("doctor-homes-{n}"));
+    // The pinned build, which `doctor` holds Renode to as a boot does
+    // (`AET-WO-4400g` §1.5).
+    let renode = format!(
+        "#!/bin/sh\necho 'Renode v1.17.0'\necho 'build: {}'\n",
+        aethelgard_twin::platform::RENODE_BUILD
+    );
     let tools = [
         ("kicad-cli", "#!/bin/sh\necho 10.0.7\n"),
-        (
-            "renode",
-            "#!/bin/sh\necho 'Renode v1.17.0'\necho 'build: 1.17.0.0-stub'\n",
-        ),
+        ("renode", renode.as_str()),
         (
             "cargo",
             "#!/bin/sh\nif [ \"$1\" = kani ]; then echo 'cargo-kani 0.66.0'; else echo 'cargo 1.95.0 (stub)'; fi\n",
@@ -297,11 +300,28 @@ fn a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it() {
     );
     assert_eq!(
         v["missing"][1]["blocks"],
-        json!(["simulate --firmware", "campaign", "verify"]),
+        json!(["simulate", "campaign", "verify"]),
         "{v}"
     );
     assert_eq!(tool(&v, "kicad-cli")["version"], "10.0.8", "{v}");
     assert_eq!(tool(&v, "renode")["version"], "Renode v1.16.0", "{v}");
+    // `AET-WO-4400g` §1.5: the pinned version but another build, the stock
+    // release's, blocks the same, by its own name.
+    let tb = toolbox(&[(
+        "renode",
+        Some("#!/bin/sh\necho 'Renode v1.17.0'\necho '  build: 1.17.0+20260907gitf1dd1b4af'\n"),
+    )]);
+    let (code, v) = doctor(&cli, &tb, &tmp.0);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        missing(&v),
+        [("RenodeBuildNotPinned".into(), "renode".into())]
+    );
+    assert_eq!(
+        v["missing"][0]["blocks"],
+        json!(["simulate", "campaign", "verify"]),
+        "{v}"
+    );
 }
 
 #[test]
@@ -463,17 +483,16 @@ fn doctor_takes_no_argument() {
 #[test]
 fn each_probe_has_a_scratch_of_its_own() {
     let cli = cli(Some(USAGE_BRIDGE), true);
+    let renode = format!(
+        "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; echo 'build: {}'; fi\n",
+        aethelgard_twin::platform::RENODE_BUILD
+    );
     let tb = toolbox(&[
         (
             "kicad-cli",
             Some("#!/bin/sh\n: > \"$HOME/planted\"\necho 10.0.7\n"),
         ),
-        (
-            "renode",
-            Some(
-                "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; fi\n",
-            ),
-        ),
+        ("renode", Some(renode.as_str())),
     ]);
     let tmp = private_tmp("doctor-own-scratch");
     let (code, v) = doctor(&cli, &tb, &tmp.0);

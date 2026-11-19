@@ -1808,6 +1808,8 @@ fn motors(v: &Value) -> &Vec<Value> {
 /// PA8..PA11 at 400 Hz from a 1 µs tick, are witnessed in the twin at the
 /// model's timing with edges off the 100 µs grid, every judged TIM1 field
 /// reads its solved value, and the static check holds (measured, FEEDBACK).
+/// `AET-WO-4400g`: TIM1 at the solved 64 MHz, so 2,499 ticks are 2.499 ms
+/// exactly and 100 ms holds 40 rises (`spike/4400f/out/pwm/pwm-a`).
 #[test]
 fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
     let (platform, spec, elf) = motor_board("motors-pwm", "pwm", |_| {}, |_| {});
@@ -1819,9 +1821,9 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
         assert_eq!(t["status"], "witnessed", "{m}");
         assert_eq!(
             (&t["period_ns"], &t["high_ns"]),
-            (&639_744.into(), &256_000.into())
+            (&2_499_000.into(), &1_000_000.into())
         );
-        assert!(t["rises"].as_u64().unwrap() >= 150, "{m}");
+        assert!(t["rises"].as_u64().unwrap() >= 40, "{m}");
         assert!(t["span_ns"].as_u64().unwrap() < 10, "{m}");
         assert!(t["off_grid"].as_u64().unwrap() > 0, "{m}");
         assert_eq!(t["batched"], 0);
@@ -1846,8 +1848,8 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
     }
 }
 
-/// `AET-WO-4300a` §2: DShot600's bit timing (PSC 0, ARR 106, CCR 40; 424 ns
-/// and 160 ns in the model). `AET-WO-2302`, ruled (a-i): the board boots
+/// `AET-WO-4300a` §2: DShot600's bit timing (PSC 0, ARR 106, CCR 40; at the
+/// solved 64 MHz, `AET-WO-4400g`, 1,657 ns realized and 625 ns in the model). `AET-WO-2302`, ruled (a-i): the board boots
 /// 100 ms like any other, and each output is witnessed inside its window,
 /// from TIM1's `CEN` to `DSHOT_WINDOW_NS` after it, when the judge's stop
 /// read TIM1 back at its solved values, silenced the observers and cleared
@@ -1873,7 +1875,11 @@ fn windowed_dshot(v: &Value, rises: u64) {
     for m in motors(v) {
         let t = &m["twin"];
         assert_eq!(t["status"], "witnessed", "{m}");
-        assert_eq!((&t["period_ns"], &t["high_ns"]), (&424.into(), &160.into()));
+        // `AET-WO-4400g`: 106 ticks at 64 MHz, realized in whole ns.
+        assert_eq!(
+            (&t["period_ns"], &t["high_ns"]),
+            (&1_657.into(), &625.into())
+        );
         assert!(t["rises"].as_u64().unwrap() > rises, "{m}");
         let anchor = t["anchor_ns"].as_u64().unwrap();
         assert_eq!(t["end_ns"].as_u64(), Some(anchor + 2_000_000), "{m}");
@@ -3623,8 +3629,32 @@ fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
 /// `AET-WO-4300d2` emits it, and the twin judges the buses alone. The board
 /// crate comes from its generator and the platform from the twin's emitter,
 /// as the CLI makes them (KiCad has no symbol for either part yet: D5).
+///
+/// The fixture declares ArduPilot's clock (`mcu.foreign_clock`,
+/// `AET-WO-4400g`), which only `--foreign` takes, so our own firmware boots on
+/// a copy without it, its scenario file beside it; the specification is
+/// otherwise the fixture's.
 fn own_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
-    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
+    let fixtures = root().join("crates/aethelgard-cli/tests/fixtures");
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(fixtures.join("sentinel-02-own.json")).unwrap()).unwrap();
+    assert!(
+        spec["mcu"]
+            .as_object_mut()
+            .unwrap()
+            .remove("foreign_clock")
+            .is_some()
+    );
+    let spec_dir =
+        std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}-spec", std::process::id()));
+    fs::create_dir_all(&spec_dir).unwrap();
+    let spec_path = spec_dir.join("sentinel-02-own.json");
+    fs::write(&spec_path, serde_json::to_vec_pretty(&spec).unwrap()).unwrap();
+    fs::copy(
+        fixtures.join("sentinel-02-own-base.json"),
+        spec_dir.join("sentinel-02-own-base.json"),
+    )
+    .unwrap();
     let (solved, files) = common::verify::generated(&spec_path, "sentinel-01-board");
     let dir = std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}", std::process::id()));
     common::verify::write_files(&dir, &files);
@@ -3794,18 +3824,18 @@ fn the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused() {
 /// archive refuses as a step read twice.
 #[test]
 fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
-    let (dir, _, _) = own_board("campaign");
+    let (dir, _, spec_path) = own_board("campaign");
     let elf = mutant_of(&dir, "own-campaign", |_| {});
     let archive = dir.join("archive");
     let _turn = renode_turn();
+    // From the derived specification's directory, which holds the base the
+    // scenario names (a base outside the current directory is refused).
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .current_dir(spec_path.parent().unwrap())
         .args([
             "campaign",
             "--scenarios",
-            root()
-                .join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json")
-                .to_str()
-                .unwrap(),
+            "sentinel-02-own-base.json",
             "--firmware",
             elf.to_str().unwrap(),
             "--archive",
@@ -4117,8 +4147,9 @@ fn a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge() 
 /// The build the pinned image's `renode --version` names (`AET-WO-1605`,
 /// ruled on #223): Renode 1.17.0 with upstream's NVIC fixes, rebuilt by
 /// `container/Dockerfile`'s `renode-nvic` stage, the build the `RETTOBASE`
-/// witness below measured.
-const PINNED_RENODE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af.aet1605";
+/// witness below measured: the twin's one constant (`AET-WO-4400g` §1.5),
+/// which its tier-1 test holds equal to `container/smoke.sh`'s line.
+const PINNED_RENODE_BUILD: &str = aethelgard_twin::platform::RENODE_BUILD;
 
 /// What `tests/fixtures/rettobase` recorded, in one run: `ICSR` in IRQ 57's
 /// handler (the only active exception) and in IRQ 50's, nested over it
@@ -4321,20 +4352,23 @@ fn sector_erase(sector: u32) -> u32 {
     0x84 | sector << 8
 }
 
-/// One foreign boot of `segments` on the reference platform, 10 ms.
+/// One foreign boot of `segments` on the reference board, 10 ms.
 fn foreign_boot(label: &str, segments: &[(u32, Vec<u8>, u32)]) -> (Option<i32>, Value) {
     let dir = std::env::temp_dir().join(format!("aet-t2-{}-{label}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let elf = dir.join(format!("{label}.elf"));
     fs::write(&elf, foreign_elf(segments)).unwrap();
+    // The reference board with a foreign clock declared at the reset
+    // clock's figures, and its platform (`AET-WO-4400g`).
+    let (spec, platform) = common::foreign::write(&dir);
     let (code, v) = aethelgard(&[
         "simulate",
         "--platform",
-        platform().to_str().unwrap(),
+        platform.to_str().unwrap(),
         "--firmware",
         elf.to_str().unwrap(),
         "--spec",
-        spec().to_str().unwrap(),
+        spec.to_str().unwrap(),
         "--foreign",
         "10ms",
     ]);

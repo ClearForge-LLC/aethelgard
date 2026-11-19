@@ -91,7 +91,7 @@ fn the_power_class_is_laid_at_its_width_and_via_and_nothing_else_is() {
     let dir = scratch("power");
     let (code, v, board) = emit(&dir, POWER);
     assert_eq!(code, 0, "{v}");
-    let stack = Stack::of(&spec_of(POWER));
+    let stack = Stack::of(&spec_of(POWER)).unwrap();
     let (_, routed) = read(&board, &stack);
     let class = ["VDD_3V3", "GND"];
     let (mut ours, mut theirs) = (0, 0);
@@ -145,7 +145,7 @@ fn the_reader_refuses_copper_that_is_not_its_class() {
     let dir = scratch("lie");
     let (code, v, board) = emit(&dir, POWER);
     assert_eq!(code, 0, "{v}");
-    let stack = Stack::of(&spec_of(POWER));
+    let stack = Stack::of(&spec_of(POWER)).unwrap();
     let i = board.find("(width 0.25)").unwrap();
     for (from, to, what) in [
         ("(width 0.25)", "(width 0.2)", "segment"),
@@ -186,7 +186,7 @@ fn the_stand_in_pair_is_routed_coupled_and_measured() {
     let dir = scratch("pair");
     let (code, v, board) = emit(&dir, PAIR);
     assert_eq!(code, 0, "{v}");
-    let stack = Stack::of(&spec_of(PAIR));
+    let stack = Stack::of(&spec_of(PAIR)).unwrap();
     let (b, r) = read(&board, &stack);
     let reports = route::pairs(&b, &r).unwrap();
     let [p] = &reports[..] else {
@@ -304,7 +304,7 @@ fn the_pair_judge_refuses_each_breakage() {
     let dir = scratch("break");
     let (code, v, board) = emit(&dir, PAIR);
     assert_eq!(code, 0, "{v}");
-    let stack = Stack::of(&spec_of(PAIR));
+    let stack = Stack::of(&spec_of(PAIR)).unwrap();
     let (b, routed) = read(&board, &stack);
     let (pos, neg) = ("/SPI_SCK", "/SPI_MOSI");
     // The negative conductor stands across from the positive: the jog goes
@@ -427,7 +427,7 @@ fn rotation_is_kicads_as_measured() {
 fn a_part_on_each_edge_is_routed_and_read_back_where_kicad_puts_it() {
     let (spec, emitted) = common::edges::moved();
     let board = emitted.board;
-    let stack = Stack::of(&spec);
+    let stack = Stack::of(&spec).unwrap();
     let (b, r) = read(&board, &stack);
     assert!(!r.segments.is_empty());
     for (reference, theta) in [("U2", "90"), ("R1", "180"), ("U4", "270")] {
@@ -501,7 +501,7 @@ fn extract_bounds_a_classed_line_at_its_own_width() {
     let spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
-    let stack = Stack::of(&spec);
+    let stack = Stack::of(&spec).unwrap();
     let read = extract::read(&board, &stack).unwrap();
     let lines = extract::lines(&spec, &solved, &table).unwrap();
     let sck = extract::bound(&read, &lines)

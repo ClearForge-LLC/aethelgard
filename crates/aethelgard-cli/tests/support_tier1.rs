@@ -84,7 +84,7 @@ fn netlist_text((values, nets): &Pads) -> String {
 fn judge(spec: &Specification, pads: &Pads, board: &str) -> support::Record {
     let n = support::netlist(&strict::netlist(&netlist_text(pads)).unwrap()).unwrap();
     let tree = strict::board(board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     support::judge(spec, &n, &b).unwrap()
 }
 
@@ -215,7 +215,7 @@ fn a_capacitor_moved_off_its_pin_fails_and_an_unbounded_one_does_not() {
     let (spec, solved, table) = reference();
     let (_, _, plain, r) = passing();
     let tree = strict::board(&plain).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
     let away = (b.outline.x1 + 25_000_000, b.outline.y0);
     for (role, pin, fails) in [
         ("vdd_bypass", "52", true),
@@ -294,7 +294,7 @@ fn a_source_pin_off_the_supply_fails() {
 fn an_unjudgeable_netlist_is_refused() {
     let (spec, mut pads, board, _) = passing();
     let tree = strict::board(&board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
     // No MCU of the declared part.
     pads.0.insert("U1".into(), "STM32F407".into());
     let n = support::netlist(&strict::netlist(&netlist_text(&pads)).unwrap()).unwrap();
@@ -321,7 +321,7 @@ fn one_capacitor_serves_one_pin() {
     let (spec, mut pads, board, r) = passing();
     let shared = part_at(&r, "vdd_bypass", "30");
     let tree = strict::board(&board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(&spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
     let pad = |reference: &str, number: &str| {
         b.parts
             .iter()
@@ -398,7 +398,7 @@ fn a_ground_or_powered_pin_off_its_net_fails() {
 fn judge_text(spec: &Specification, text: &str, board: &str) -> support::Record {
     let n = support::netlist(&strict::netlist(text).unwrap()).unwrap();
     let tree = strict::board(board).unwrap();
-    let (b, _) = route::read(&tree, &Stack::of(spec)).unwrap();
+    let (b, _) = route::read(&tree, &Stack::of(spec).unwrap()).unwrap();
     support::judge(spec, &n, &b).unwrap()
 }
 

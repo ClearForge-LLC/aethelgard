@@ -184,7 +184,7 @@ fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
         "{verdict}"
     );
     assert_eq!(
-        verdict["error"]["message"], "schema_version is 14, not 16",
+        verdict["error"]["message"], "schema_version is 14, not 17",
         "{verdict}"
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -315,7 +315,8 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
     assert!(!rules.is_empty());
     let tree = strict::board(board).unwrap();
     let (b, _) =
-        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(spec)).unwrap();
+        aethelgard_eda::route::read(&tree, &aethelgard_eda::stack::Stack::of(spec).unwrap())
+            .unwrap();
     for l in aethelgard_eda::loops::judge(&b, &rules).unwrap() {
         assert_eq!(
             l.verdict, "pass",
@@ -325,24 +326,25 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
     }
 }
 
-/// The fixture's placement with every name taken out ([`name_free`]), as
-/// `AET-WO-1313b`'s prototype placed it (`spike/1313b/placer.patch`,
-/// `AET_1313B=kms`, at `457d644`; byte-identical, FEEDBACK §1.3). Re-pin it
+/// The fixture's placement with every name taken out ([`name_free`]).
+/// `AET-WO-1313b`'s prototype placed it at `5e30de78…` (`457d644`, FEEDBACK
+/// §1.3); re-pinned by `AET-WO-1315` from a measured run, the hot-plug bulk
+/// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2). Re-pin it
 /// only with the change that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "5e30de786b428a91ba2f6a953f934fbe1626ec5c57d46b881ee1d3f5757c75dc";
+    "9b83d1208acd175fc1bea74cf9594f17ea86e9277b79ca065562273425c4a44f";
 
-/// `AET-WO-1313c` §2: the fixture places at `1313b`'s measured outline,
-/// 85.25 x 80.95 mm (FEEDBACK §2.1, (k)+(m)+(s)), at the prototype's every
-/// position, with every placer gap and every loop rule kept after
-/// compaction.
+/// `AET-WO-1313c` §2: the fixture places at its measured outline, with
+/// every placer gap and every loop rule kept after compaction: 85.25 x
+/// 80.95 mm at `1313b`'s (FEEDBACK §2.1, (k)+(m)+(s)), 96.50 x 69.35 mm
+/// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_250_000, 80_950_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (96_500_000, 69_350_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -419,25 +421,32 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// not the method's, so no size is promised: each sample either places
 /// inside the bound with every placer gap kept (its gates are tier 2's), or
 /// is refused by name, writing nothing.
+///
+/// `AET-WO-1315` (ruled (a), C1 anchored to U10): 1 character places, at its
+/// measured outline, so the pass branch stays exercised; 2, 6 and 8 are
+/// refused (the x headroom fell from 14.75 to 3.5 mm, its FEEDBACK D1).
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
-    for len in [2, 6, 8] {
+    for (len, placed) in [
+        (1, Some((98_800_000, 70_350_000))),
+        (2, None),
+        (6, None),
+        (8, None),
+    ] {
         let v = rename::sized(&fixture(), len);
         let (spec, solved, table) = solved(&v);
-        match schematic::emit(&spec, &solved, &table) {
-            Ok(e) => {
+        match (schematic::emit(&spec, &solved, &table), placed) {
+            (Ok(e), Some(outline)) => {
                 let o = outline_nm(&e.board);
-                assert!(
-                    o.x1 - o.x0 <= 100_000_000 && o.y1 - o.y0 <= 100_000_000,
-                    "{len}: {o:?}"
-                );
+                assert_eq!((o.x1 - o.x0, o.y1 - o.y0), outline, "{len}");
                 assert_gaps(&e);
                 assert_loops(&spec, &solved, &table, &e.board);
             }
-            Err(e) => assert!(
+            (Err(e), None) => assert!(
                 matches!(e.kind(), "OutlineUnreachable" | "OutlineTooSmall"),
                 "{len}: {e}"
             ),
+            (r, _) => panic!("{len}: {:?}", r.map(|e| outline_nm(&e.board))),
         }
     }
 }

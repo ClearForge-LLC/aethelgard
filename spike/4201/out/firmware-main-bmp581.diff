@@ -1,0 +1,100 @@
+8c8
+< //! - Solved topology of specification sha256 `9b09e7bb6058b6742ed92405ab2cc7fd8096a8fd22e35830ad3df6da321fd6b7`.
+---
+> //! - Solved topology of specification sha256 `552934b95b7e0312891db42b091d54c856016e1dc9b38dcbe839eba9f9121a45`.
+30c30
+< static mut AETHELGARD_BOOT: [u32; 6] = [0; 6];
+---
+> static mut AETHELGARD_BOOT: [u32; 11] = [0; 11];
+44,45c44,46
+< /// Record `index`: the status word, then the value word, after the boot word.
+< fn record(index: usize, status: u32, value: u32) {
+---
+> /// The record at word `at` after the boot word: the status word, then the
+> /// value in `words` words, its most significant first.
+> fn record(at: usize, words: usize, status: u32, value: u64) {
+47c48
+<     // SAFETY: two words of the array above, which `link.x` placed in RAM; the
+---
+>     // SAFETY: words of the array above, which `link.x` placed in RAM; the
+50,51c51,66
+<         base.add(2 + 2 * index).write_volatile(status);
+<         base.add(3 + 2 * index).write_volatile(value);
+---
+>         base.add(at).write_volatile(status);
+>         for i in 0..words {
+>             let word = (value >> (32 * (words - 1 - i))) & 0xFFFF_FFFF;
+>             base.add(at + 1 + i).write_volatile(u32::try_from(word).unwrap_or(RECORD_UNSET));
+>         }
+>     }
+> }
+> 
+> /// Waits at least `spins` core cycles (AET-WO-4220): each iteration is a volatile
+> /// load the compiler keeps, at least one cycle. The counts are sized at HSI's
+> /// fastest, 64958976 Hz (DS12117 Rev 10 Table 36; AET-WO-4230 amendment 1).
+> fn settle(spins: u32) {
+>     let boot = (&raw const AETHELGARD_BOOT).cast::<u32>();
+>     for _ in 0..spins {
+>         // SAFETY: the first word of the array above; reading it changes nothing.
+>         let _ = unsafe { boot.read_volatile() };
+174c189,202
+<     let (status, value) = match i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0) {
+---
+>     let (status, value) = match i2c1.transfer(&mut r, 0x46, &[0x01], &mut buf0) {
+>         Ok(_) => (
+>             STATUS_OK,
+>             buf0.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)),
+>         ),
+>         Err(I2cError::Txis) => (STATUS_TXIS, 0),
+>         Err(I2cError::Tc) => (STATUS_TC, 0),
+>         Err(I2cError::Rxne) => (STATUS_RXNE, 0),
+>         Err(I2cError::Stop) => (STATUS_STOP, 0),
+>         Err(I2cError::Length) => (RECORD_UNSET, u64::MAX),
+>     };
+>     record(2, 1, status, value);
+>     let mut buf1 = [0u8; 0];
+>     let (status, value) = match i2c1.transfer(&mut r, 0x46, &[0x36, 0x40, 0x81], &mut buf1) {
+177c205
+<             buf0.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+---
+>             buf1.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)),
+183c211
+<         Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),
+---
+>         Err(I2cError::Length) => (RECORD_UNSET, u64::MAX),
+185,187c213,215
+<     record(0, status, value);
+<     let mut buf1 = [0u8; 3];
+<     let (status, value) = match spi1.transfer(&mut r, Spi1Device::U4, &[0x9f], &mut buf1) {
+---
+>     record(4, 1, status, value);
+>     let mut buf2 = [0u8; 3];
+>     let (status, value) = match spi1.transfer(&mut r, Spi1Device::U4, &[0x9f], &mut buf2) {
+190c218
+<             buf1.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+---
+>             buf2.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)),
+194c222,238
+<         Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),
+---
+>         Err(SpiError::Length) => (RECORD_UNSET, u64::MAX),
+>     };
+>     record(6, 1, status, value);
+>     // One wait for every scripted part's start-up, the largest cited
+>     // (AET-WO-4220; AET-WO-4230 R6), 10000 us, before any data read.
+>     settle(649590);
+>     let mut buf3 = [0u8; 6];
+>     let (status, value) = match i2c1.transfer(&mut r, 0x46, &[0x1d], &mut buf3) {
+>         Ok(_) => (
+>             STATUS_OK,
+>             buf3.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)),
+>         ),
+>         Err(I2cError::Txis) => (STATUS_TXIS, 0),
+>         Err(I2cError::Tc) => (STATUS_TC, 0),
+>         Err(I2cError::Rxne) => (STATUS_RXNE, 0),
+>         Err(I2cError::Stop) => (STATUS_STOP, 0),
+>         Err(I2cError::Length) => (RECORD_UNSET, u64::MAX),
+196c240
+<     record(1, status, value);
+---
+>     record(8, 2, status, value);

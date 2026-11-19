@@ -12,7 +12,13 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 50] = [
+pub const FILES: [(&str, &[u8]); 52] = [
+    (
+        "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod"
+        ),
+    ),
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         include_bytes!(
@@ -154,6 +160,10 @@ pub const FILES: [(&str, &[u8]); 50] = [
     (
         "symbols/Device.kicad_symdir/C.kicad_sym",
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/C.kicad_sym"),
+    ),
+    (
+        "symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/C_Polarized.kicad_sym"),
     ),
     (
         "symbols/Device.kicad_symdir/L.kicad_sym",

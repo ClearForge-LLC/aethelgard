@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"PowerNotSimulated","id":null,"message":"scenario `baseline`, base: the specification declares a power tree, which the twin does not model; a campaign over one waits for the battery-sag work order (AET-WO-4300d2 §1.9)"}}

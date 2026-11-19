@@ -35,7 +35,7 @@ pub fn stack(four: bool) -> Stack {
     };
     let spec: aethelgard_ir::Specification =
         serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    Stack::of(&spec)
+    Stack::of(&spec).unwrap()
 }
 
 /// LMR33630's thermal-via rule as the fixture declares it: TI SNVSAZ9

@@ -78,7 +78,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// its version, never by an unknown key.
 /// Version 16 adds `board.forward` and an SPI device's `orientation`
 /// (`AET-WO-4400d`, ruled on PR #207), each optional by the same precedent.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 16;
+/// Version 17 adds `mcu.foreign_clock` (`AET-WO-4400g` §1.2, Q1 ruled on PR
+/// #229), optional by the same precedent: absent is no foreign clock, which
+/// `simulate --foreign` refuses by name (`INV-06`).
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 17;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -300,6 +303,15 @@ pub struct Mcu {
     /// as the work order states, and `false` is not written back.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reset_switch: bool,
+    /// The kernel clocks a foreign firmware programs (`AET-WO-4400g` §1.2):
+    /// `simulate --foreign` requires it and a run of the generated firmware
+    /// refuses it. Absent is none, and none is not written back.
+    #[serde(
+        default,
+        deserialize_with = "board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub foreign_clock: Option<motor::ForeignClock>,
 }
 
 /// A connector pin the supply enters by.
@@ -442,9 +454,9 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `serial_ports` (`AET-WO-4300b`), version 8 `spi_controllers`,
 /// `i2c_timings` and `bor_level` (`AET-WO-4230`), version 9 `mcu` and
 /// `pin_speeds` (`AET-WO-4400b` D2), version 10 an SPI device's
-/// `orientation` (`AET-WO-4400d`); an older file is refused, never
-/// defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 10;
+/// `orientation` (`AET-WO-4400d`), version 11 `foreign_clock`
+/// (`AET-WO-4400g`); an older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 11;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -531,6 +543,11 @@ pub struct SolvedTopology {
     /// pinout check read it; neither chooses (`AET-WO-4400b` D2, `RUL-20`).
     #[serde(deserialize_with = "unique_keys")]
     pub pin_speeds: BTreeMap<String, u8>,
+    /// `mcu.foreign_clock`'s values, copied by `solve` (`AET-WO-4400g`,
+    /// `RUL-16`), or `null` when none is declared. When present, the twin
+    /// builds every timer and USART at them instead of at `clock`'s.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub foreign_clock: Option<motor::SolvedForeignClock>,
 }
 
 /// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
@@ -922,6 +939,9 @@ struct SolvedWire {
     mcu: Option<String>,
     #[serde(default, deserialize_with = "unique_keys_some")]
     pin_speeds: Option<BTreeMap<String, u8>>,
+    /// Absent under an older version; `null` or a clock under this one.
+    #[serde(default, deserialize_with = "present")]
+    foreign_clock: Option<Option<motor::SolvedForeignClock>>,
 }
 
 /// A key that is present, whatever its value: `null` reads as `Some(None)`.
@@ -929,6 +949,59 @@ fn present<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     deserializer: D,
 ) -> Result<Option<Option<V>>, D::Error> {
     Option::<V>::deserialize(deserializer).map(Some)
+}
+
+/// A foreign clock's values (`AET-WO-4400g` §1.2), in the specification
+/// and in a topology alike: no zero, each USART the platform carries
+/// ([`serial::PERIPHERALS`]) and no other, and the USARTs one mux selects
+/// for at one clock (RM0433 Rev 9 §8.7.21, `RCC_D2CCIP2R`: `USART16SEL`
+/// for USART1 and USART6, `USART234578SEL` for the other six).
+fn foreign_clock_values(c: &motor::SolvedForeignClock) -> Result<(), IrValidationError> {
+    use IrValidationError as E;
+
+    for (field, hz) in [
+        ("apb1_timers_hz".to_owned(), c.apb1_timers_hz),
+        ("apb2_timers_hz".to_owned(), c.apb2_timers_hz),
+    ]
+    .into_iter()
+    .chain(c.usarts.iter().map(|(k, v)| (format!("usarts.{k}"), *v)))
+    {
+        if hz == 0 {
+            return Err(E::ForeignClockZero { field });
+        }
+    }
+    let expected: BTreeSet<&str> = serial::PERIPHERALS.into_iter().collect();
+    let named: BTreeSet<&str> = c.usarts.keys().map(String::as_str).collect();
+    if named != expected {
+        let list = |a: &BTreeSet<&str>, b: &BTreeSet<&str>| {
+            a.difference(b).map(|s| (*s).to_owned()).collect::<Vec<_>>()
+        };
+        return Err(E::ForeignClockUsarts {
+            expected: serial::PERIPHERALS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
+            missing: list(&expected, &named),
+            unknown: list(&named, &expected),
+        });
+    }
+    for group in [
+        &["USART1", "USART6"][..],
+        &["USART2", "USART3", "UART4", "UART5", "UART7", "UART8"][..],
+    ] {
+        let first = group[0];
+        for second in &group[1..] {
+            if c.usarts[first] != c.usarts[*second] {
+                return Err(E::ForeignClockMuxSplit {
+                    first: first.to_owned(),
+                    first_hz: c.usarts[first],
+                    second: (*second).to_owned(),
+                    second_hz: c.usarts[*second],
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn unique_keys_some<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
@@ -1031,6 +1104,12 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if !current => BTreeMap::new(),
                     None => return Err(serde::de::Error::missing_field("pin_speeds")),
                 };
+                // The same for `foreign_clock`, which version 11 added.
+                let foreign_clock = match w.foreign_clock {
+                    Some(c) => c,
+                    None if !current => None,
+                    None => return Err(serde::de::Error::missing_field("foreign_clock")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
@@ -1051,6 +1130,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     bor_level,
                     mcu,
                     pin_speeds,
+                    foreign_clock,
                 })
             }
         }
@@ -1622,9 +1702,28 @@ pub enum IrValidationError {
     )]
     TimerShared { id: String },
     #[error(
-        "the solved clock is not the reset clock (HSI at 64 MHz, every prescaler 1, TIMPRE 0, no crystal), the only one this engine generates firmware for (`AET-WO-4300a` §1.2)"
+        "the solved clock is not the reset clock (HSI at 64 MHz, every prescaler 1, TIMPRE 0, no crystal), the only one this engine generates firmware for (`AET-WO-4300a` §1.2). A firmware that programmed its clock would also leave the twin's counters at the figure Renode 1.17.0's RCC pushes on each RCC write, and their compare channels at the frequency they were built at (`AET-WO-4400f` (b), `INV-07`)"
     )]
     UnsupportedClock,
+    #[error("mcu.foreign_clock.{field} is 0 Hz")]
+    ForeignClockZero { field: String },
+    #[error(
+        "mcu.foreign_clock.usarts must name each USART the platform carries, {expected:?}, once: missing {missing:?}, unknown {unknown:?}"
+    )]
+    ForeignClockUsarts {
+        expected: Vec<String>,
+        missing: Vec<String>,
+        unknown: Vec<String>,
+    },
+    #[error(
+        "mcu.foreign_clock.usarts declares {first} at {first_hz} Hz and {second} at {second_hz} Hz, but one kernel clock mux selects both (RM0433 Rev 9 §8.7.21: USART16SEL for USART1 and USART6, USART234578SEL for the rest)"
+    )]
+    ForeignClockMuxSplit {
+        first: String,
+        first_hz: u64,
+        second: String,
+        second_hz: u64,
+    },
     #[error("connector `{id}` names part `{part}`, which is not in the connectors table")]
     UnknownConnectorPart { id: String, part: String },
     #[error("connector `{id}` lists pin `{pin}`; its part's signal pins are `1` to `{pins}`")]
@@ -2041,6 +2140,9 @@ impl IrValidationError {
             Self::I2cTimingMismatch { .. } => "I2cTimingMismatch",
             Self::TimerShared { .. } => "TimerShared",
             Self::UnsupportedClock => "UnsupportedClock",
+            Self::ForeignClockZero { .. } => "ForeignClockZero",
+            Self::ForeignClockUsarts { .. } => "ForeignClockUsarts",
+            Self::ForeignClockMuxSplit { .. } => "ForeignClockMuxSplit",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
             Self::ConnectorPinUnknown { .. } => "ConnectorPinUnknown",
             Self::ConnectorPinRepeated { .. } => "ConnectorPinRepeated",
@@ -2224,6 +2326,9 @@ impl IrValidationError {
             | Self::SpiControllerMismatch { id }
             | Self::I2cTimingMismatch { id } => Some(id),
             Self::CrystalNotSupported { .. } | Self::UnsupportedClock => None,
+            Self::ForeignClockZero { .. }
+            | Self::ForeignClockUsarts { .. }
+            | Self::ForeignClockMuxSplit { .. } => None,
             Self::PartsTable { part, .. } | Self::PowerPartsTable { part, .. } => part.as_deref(),
             Self::Power { id, .. } => Some(id),
             Self::BorLevelOutOfRange { .. } => None,
@@ -3116,6 +3221,22 @@ impl Specification {
                 value: self.mcu.bor_level,
             });
         }
+        // 2c (`AET-WO-4400g` §1.2)
+        if let Some(c) = &self.mcu.foreign_clock {
+            for (path, s) in [
+                ("mcu.foreign_clock.apb1_timers_hz.source", &c.apb1_timers_hz),
+                ("mcu.foreign_clock.apb2_timers_hz.source", &c.apb2_timers_hz),
+            ] {
+                board::source(&s.source, path)?;
+            }
+            for (usart, s) in &c.usarts {
+                board::source(
+                    &s.source,
+                    &format!("mcu.foreign_clock.usarts.{usart}.source"),
+                )?;
+            }
+            foreign_clock_values(&motor::SolvedForeignClock::from(c))?;
+        }
         // 3
         if self.voltage_domains.is_empty() {
             return Err(E::NoVoltageDomain);
@@ -3965,6 +4086,9 @@ impl SolvedTopology {
             return Err(E::BorLevelOutOfRange {
                 value: self.bor_level,
             });
+        }
+        if let Some(c) = &self.foreign_clock {
+            foreign_clock_values(c)?;
         }
         let on = |prefix: &str| -> BTreeSet<&str> {
             self.assignments

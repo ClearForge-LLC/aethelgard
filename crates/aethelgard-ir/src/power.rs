@@ -83,9 +83,11 @@ pub const BATTERY_NET: &str = "VBAT";
 
 /// Every reference the power tree declares, in the emitter's claim order
 /// (moved from `aethelgard-eda` by `AET-WO-1206`, so `validate`'s name checks
-/// and the emitter read one list).
+/// and the emitter read one list); each hot-plug part's after the power-in
+/// connector's (`AET-WO-1315` §1.1).
 pub fn references(p: &Power) -> Vec<&String> {
     let mut out = vec![&p.input.reference];
+    out.extend(p.input.hot_plug.iter().map(|h| &h.reference));
     for r in &p.regulators {
         out.push(&r.reference);
         if let Some(d) = &r.feedback {
@@ -2887,7 +2889,7 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     )));
                 }
                 (_, Some(w)) => wires.push(format!(
-                    "{reference}: {} is declared wired to `{}` ({}); neither the net's driver nor its level is judged, and the board does not draw it (FEEDBACK D5)",
+                    "{reference}: {} is declared wired to `{}` ({}); neither the net's driver nor its level is judged",
                     rule.pin, w.net, w.role
                 )),
                 _ => {}
@@ -2981,14 +2983,6 @@ pub fn check_against(
             d.retained_permille,
             d.source
         ));
-    }
-    if !power.input.hot_plug.is_empty()
-        || power.regulators.iter().any(|r| !r.controls.is_empty())
-        || power.crossings.iter().any(|c| !c.controls.is_empty())
-    {
-        ctx.note(
-            "power: the hot-plug parts and the control declarations are judged here, and the board emitter does not draw them: it ties a regulator's EN to its input, leaves PG open and ties OE to VCCA (FEEDBACK D5)",
-        );
     }
     let (steady, fault) = power_in(&mut ctx, &derived, &load)?;
     sense(&mut ctx)?;

@@ -1,0 +1,13 @@
+{
+  "schema_version": 3,
+  "name": "pullup-3k3-baro",
+  "base": "../../logger-i2c-only.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": [
+    {
+      "bus": "BARO",
+      "pull_up_ohms": 3300
+    }
+  ]
+}

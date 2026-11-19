@@ -670,9 +670,12 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
             "\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net 1))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net 2))\n",
             &format!("{footprint}\t(segment (start 110 111.455) (end 120 111.455) (width 0.25) (layer \"F.Cu\") (net 2))\n"),
         );
-    let gate = aethelgard_eda::rules::Rules::from_specification(
-        &serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
-            .unwrap(),
+    let gate = aethelgard_eda::rules::Rules::from_stack(
+        &aethelgard_eda::stack::Stack::of(
+            &serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
+                .unwrap(),
+        )
+        .unwrap(),
     );
     let own = aethelgard_eda::rules::Rules {
         arrays: Vec::new(),
@@ -859,7 +862,8 @@ fn p1_gate_clause_1_the_reference_board_passes_erc_and_drc_with_no_finding() {
             &aethelgard_eda::stack::Stack::of(
                 &serde_json::from_slice::<aethelgard_ir::Specification>(&fs::read(&spec).unwrap())
                     .unwrap(),
-            ),
+            )
+            .unwrap(),
         )
         .unwrap();
         let again = aethelgard_eda::route::route(&pads).unwrap();
@@ -1565,7 +1569,7 @@ fn a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it() {
         &fs::read_to_string(example_spec("sentinel-01-minimal.json")).unwrap(),
     )
     .unwrap();
-    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let stack = aethelgard_eda::stack::Stack::of(&spec).unwrap();
     for (gap, judged, kicad) in [
         (600, false, false),
         (640, false, false),

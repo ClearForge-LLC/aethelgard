@@ -16,7 +16,11 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 50] = [
+const PINS: [(&str, &str); 52] = [
+    (
+        "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
+        "03187d2ed4dca904a6c0379cff9fe3a9fd0e1139b59fb9669db42160ca40cc3f",
+    ),
     (
         "footprints/Capacitor_SMD.pretty/C_0402_1005Metric.kicad_mod",
         "0403382fc4583ed510b461b1fa4a36dfaec6f4c0d9b1a67e6b0027837a54e1b5",
@@ -112,6 +116,10 @@ const PINS: [(&str, &str); 50] = [
     (
         "symbols/Device.kicad_symdir/C.kicad_sym",
         "533df5a016c224a83701e2e66b767864f39fc44c972a2a4f821987f1fd99573e",
+    ),
+    (
+        "symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
+        "e0371fff515df9a22bc5e6d82a2164943da1d389e2ccf0d220ff03d7d77cc87a",
     ),
     (
         "symbols/Device.kicad_symdir/L.kicad_sym",

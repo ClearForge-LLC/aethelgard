@@ -1,0 +1,3 @@
+2026-11-19T17:17:35+00:00 logger verify-fab mem=16G free -g available=45
+2026-11-19T17:17:37+00:00 logger hwdef mem=8G free -g available=45
+2026-11-19T17:17:38+00:00 logger pinout mem=8G free -g available=45

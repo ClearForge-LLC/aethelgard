@@ -380,7 +380,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 51] = [
+    const DATA: [&str; 53] = [
         "data/aethelgard/README.md",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
@@ -433,6 +433,9 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/footprints/TestPoint.pretty/TestPoint_Pad_D1.0mm.kicad_mod",
         "data/kicad-10.0.7/symbols/Connector.kicad_symdir/TestPoint.kicad_sym",
         "data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym",
+        // `AET-WO-1315`: the hot-plug bulk capacitor.
+        "data/kicad-10.0.7/footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
+        "data/kicad-10.0.7/symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
@@ -517,7 +520,7 @@ const TWIN_DATA: [&str; 1] = ["data/dmamux1-spi-rx.tsv"];
 /// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
 /// no longer a re-export stub. Its files, manifest keys and dependencies are
 /// fixed: the new edge `twin -> svd-hal`, for the register facts, is the
-/// ruled one, beside `twin -> ir`.
+/// ruled one, beside `twin -> ir`, and `twin -> chaos` (`AET-WO-4400g`).
 #[test]
 fn twin_has_only_its_known_files_keys_and_dependencies() {
     for file in files(&root().join(TWIN)) {
@@ -551,9 +554,13 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
         names
     };
     // `aethelgard-renode-models`: the models the twin pins (`AET-WO-4220` D6).
+    // `aethelgard-chaos`: the realized-period function replay checks the
+    // twin's periods by, defined once with the trace format (`AET-WO-4400g`
+    // §1.3).
     assert_eq!(
         table("dependencies"),
         [
+            "aethelgard-chaos",
             "aethelgard-ir",
             "aethelgard-renode-models",
             "aethelgard-svd-hal",

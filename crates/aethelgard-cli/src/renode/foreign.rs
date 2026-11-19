@@ -21,11 +21,13 @@ pub const JUDGE: &str = "foreign";
 
 /// The longest boot `--foreign` admits, in virtual nanoseconds, and its name
 /// in the verdict (`AET-WO-4400e` D7, measured with the ICM-42688-P's FIFO
-/// live): unmodified ArduPilot's last witness, the ICM's first FIFO read, is
-/// at 3.6105 s, so 4 s leaves 0.39 s; the boot takes 10.6-12.0 s of wall and
-/// 775-821 MiB peak on Furnace, inside the 30 s and 1 GiB bounds, and its log
-/// keeps 1.21 MB of the 8 MiB budget.
-pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 4_000_000_000;
+/// live; `AET-WO-4400g` §1.4 since the twin's timers run at ArduPilot's
+/// declared 200 MHz, not 250): unmodified ArduPilot's last witness, the ICM's
+/// first FIFO read, is at 4.394 s (it was 3.6105 s at 1.25× virtual time),
+/// so 5 s leaves 0.61 s. Its RSS margin under concurrency is FEEDBACK's F1
+/// measurement; the 1 GiB bound itself is a ruling of its own, never widened
+/// here.
+pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 5_000_000_000;
 pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 
 /// The rule table, in the order of the verdict: each of today's rules, what
@@ -101,7 +103,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "--for at most 100 ms",
         "replaced",
-        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 4 s as D7 measured it (the last witness of unmodified ArduPilot at 3.61 s)",
+        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 5 s (the last witness of unmodified ArduPilot at 4.394 s at its declared clock, AET-WO-4400g)",
     ),
     (
         "device identity",
@@ -301,6 +303,154 @@ pub struct ForeignBoot {
     pub locked: Vec<LockedReport>,
     pub unobservable: Vec<String>,
     pub rules: Vec<RuleReport>,
+    /// The clock the platform was built at, and what of it was checked
+    /// (`AET-WO-4400g` §1.2).
+    pub clock: ClockReport,
+}
+
+/// The foreign firmware's clock in the verdict (`AET-WO-4400g` §1.2, Q2
+/// ruled on PR #229): the timers' kernel clocks declared and checked
+/// against the RCC registers read back at the run's end, each USART's
+/// declared and not checked, and what neither sets.
+#[derive(Serialize, Clone)]
+pub struct ClockReport {
+    /// `declared`: `mcu.foreign_clock` built every timer and USART.
+    pub source: &'static str,
+    /// The RCC registers read back at the run's end, each `{name, value}`;
+    /// empty when the run never reached its end.
+    pub registers: Vec<RccRead>,
+    /// The timers' kernel clocks, declared and decoded.
+    pub checked: Vec<ClockCheck>,
+    /// The USARTs' kernel clocks: declared, never read back.
+    pub declared_only: Vec<DeclaredClock>,
+    /// The instances at the stock file's frequency, which nothing declares.
+    pub stock: Vec<&'static str>,
+    /// What the check rests on, each a named sentence.
+    pub conditions: Vec<String>,
+}
+
+/// One RCC register as read back.
+#[derive(Serialize, Clone)]
+pub struct RccRead {
+    pub name: &'static str,
+    pub value: String,
+}
+
+/// One timer bus's kernel clock: declared, decoded from the RCC registers
+/// (`null` when they were not read or do not decode), and whether the two
+/// agree.
+#[derive(Serialize, Clone)]
+pub struct ClockCheck {
+    pub clock: &'static str,
+    pub declared_hz: u64,
+    pub decoded_hz: Option<u64>,
+    pub holds: bool,
+}
+
+/// A clock declared and not read back.
+#[derive(Serialize, Clone)]
+pub struct DeclaredClock {
+    pub instance: String,
+    pub declared_hz: u64,
+}
+
+/// The conditions every foreign verdict states (`AET-WO-4400g` §1.2, §1.6).
+pub const USART_UNCHECKED: &str = "usart_clock_declared_unchecked: each USART's kernel clock is the declared one, not read back: Renode 1.17.0 drops RCC_D2CCIP2R, so no register says what the firmware selected (AET-WO-4400f F2)";
+pub const PLL1_FRACTION_UNREAD: &str = "pll1_fraction_not_read: the decode is PLL1's integer divider: Renode 1.17.0 tags PLL1FRACEN and FRACN1, so a fractional PLL is not read back";
+pub const STOCK_UNDECLARED: &str = "stock_frequency_undeclared: the instances in `stock` keep the stock file's frequencies (dwt 250 MHz, lptimer1-5 32 MHz, lpuart1 125 MHz), which no declaration sets; no judge reads any of them";
+
+/// The finding kinds of the clock check.
+pub const CLOCK_CONTRADICTED: &str = "foreign_clock_contradicted";
+pub const CLOCK_UNDECODABLE: &str = "foreign_clock_undecodable";
+
+impl ClockReport {
+    /// The report before the run: what was declared, nothing decoded.
+    pub fn declared(topology: &aethelgard_ir::SolvedTopology) -> Option<Self> {
+        let c = topology.foreign_clock.as_ref()?;
+        Some(Self::of(c, aethelgard_twin::platform::unclocked(topology)))
+    }
+
+    fn of(c: &aethelgard_ir::motor::SolvedForeignClock, stock: Vec<&'static str>) -> Self {
+        Self {
+            source: "declared",
+            registers: Vec::new(),
+            checked: [
+                ("apb1_timers_hz", c.apb1_timers_hz),
+                ("apb2_timers_hz", c.apb2_timers_hz),
+            ]
+            .into_iter()
+            .map(|(clock, declared_hz)| ClockCheck {
+                clock,
+                declared_hz,
+                decoded_hz: None,
+                holds: false,
+            })
+            .collect(),
+            declared_only: c
+                .usarts
+                .iter()
+                .map(|(instance, hz)| DeclaredClock {
+                    instance: instance.clone(),
+                    declared_hz: *hz,
+                })
+                .collect(),
+            stock,
+            conditions: vec![
+                USART_UNCHECKED.to_owned(),
+                PLL1_FRACTION_UNREAD.to_owned(),
+                STOCK_UNDECLARED.to_owned(),
+            ],
+        }
+    }
+
+    /// The check at the run's end: `values`, the RCC registers in
+    /// [`RccRegisters::OFFSETS`]' order, decoded with the declared
+    /// crystal `hse_hz` (RM0433 Rev 9, `SolvedClock::from_rcc`), and each
+    /// timer bus's decoded clock held to its declaration. Each disagreement
+    /// is a failing finding with both figures.
+    ///
+    /// [`RccRegisters::OFFSETS`]: aethelgard_ir::motor::RccRegisters::OFFSETS
+    fn check(&mut self, values: [u32; 6], hse_hz: u32) -> Vec<Finding> {
+        use aethelgard_ir::motor::{Apb, RccRegisters};
+        self.registers = RccRegisters::OFFSETS
+            .iter()
+            .zip(values)
+            .map(|(&(name, _), v)| RccRead {
+                name,
+                value: format!("{v:#010x}"),
+            })
+            .collect();
+        let decoded = match aethelgard_ir::SolvedClock::from_rcc(
+            &RccRegisters::from_values(values),
+            hse_hz,
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                return vec![Finding::plain(
+                    CLOCK_UNDECODABLE,
+                    format!(
+                        "the RCC registers read back at the run's end do not decode to a timer kernel clock: {e}"
+                    ),
+                )];
+            }
+        };
+        let mut out = Vec::new();
+        for (check, apb) in self.checked.iter_mut().zip([Apb::Apb1, Apb::Apb2]) {
+            let hz = decoded.timer_kernel_hz(apb);
+            check.decoded_hz = Some(hz);
+            check.holds = hz == check.declared_hz;
+            if !check.holds {
+                out.push(Finding::plain(
+                    CLOCK_CONTRADICTED,
+                    format!(
+                        "mcu.foreign_clock.{} declares {} Hz; the RCC registers read back at the run's end decode to {hz} Hz (RM0433 Rev 9 Table 57, sys_ck {} Hz from {})",
+                        check.clock, check.declared_hz, decoded.sysclk_hz, decoded.source
+                    ),
+                ));
+            }
+        }
+        out
+    }
 }
 
 /// The regions as the verdict names them.
@@ -559,7 +709,7 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
-    c.extend(reads(plan).into_iter().map(|(cmd, _)| cmd));
+    c.extend(reads(plan)?.into_iter().map(|(cmd, _)| cmd));
     c.push(format!("echo \"{END}\""));
     c.extend(flash.iter().map(flash_hash));
     c.push("peripherals".to_owned());
@@ -575,9 +725,14 @@ enum ForeignRead {
     Pc,
     Icsr,
     Register(usize),
+    /// The RCC register at this index of `RccRegisters::OFFSETS`.
+    Rcc(usize),
 }
 
-fn reads(plan: &BootPlan<'_>) -> Vec<(String, ForeignRead)> {
+fn reads(plan: &BootPlan<'_>) -> Result<Vec<(String, ForeignRead)>, Stop> {
+    let rcc = aethelgard_svd_hal::cmsis::register_facts()
+        .and_then(|f| f.base("RCC"))
+        .map_err(|e| Stop::tool_error("aethelgard-svd-hal", e.to_string()))?;
     let mut r = vec![
         (
             "cpu ExecutedInstructions".to_owned(),
@@ -599,7 +754,16 @@ fn reads(plan: &BootPlan<'_>) -> Vec<(String, ForeignRead)> {
             ForeignRead::Register(i),
         ));
     }
-    r
+    for (i, (_, offset)) in aethelgard_ir::motor::RccRegisters::OFFSETS
+        .iter()
+        .enumerate()
+    {
+        r.push((
+            format!("sysbus ReadDoubleWord {:#010x}", rcc + offset),
+            ForeignRead::Rcc(i),
+        ));
+    }
+    Ok(r)
 }
 
 /// How the foreign judge reads a register of the image, by its name, or
@@ -774,6 +938,7 @@ pub fn report(
     firmware: FirmwareReport,
     specification_sha256: String,
     regions: Vec<RegionReport>,
+    clock: ClockReport,
 ) -> ForeignBoot {
     ForeignBoot {
         judge: JUDGE,
@@ -808,6 +973,7 @@ pub fn report(
                 judges,
             })
             .collect(),
+        clock,
     }
 }
 
@@ -820,6 +986,7 @@ pub fn judge(
     mut report: ForeignBoot,
     parts: &std::collections::BTreeMap<String, String>,
     flash: &[crate::elf::FlashLoad],
+    hse_hz: u32,
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
     let text = out.text();
     let untrusted = |what: String| {
@@ -869,7 +1036,7 @@ pub fn judge(
         ));
     }
     let run_log: Vec<&str> = lines[..begin].to_vec();
-    let wanted = reads(plan);
+    let wanted = reads(plan)?;
     let mut values = Vec::with_capacity(wanted.len());
     for line in &lines[begin + 1..end] {
         if value(line).is_some() {
@@ -893,6 +1060,7 @@ pub fn judge(
         )));
     }
     let mut observed = vec![0u32; plan.image.registers.len()];
+    let mut rcc = [0u32; 6];
     let (mut pc, mut icsr) = (0u32, 0u32);
     for ((cmd, read), line) in wanted.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -903,6 +1071,7 @@ pub fn judge(
             ForeignRead::Pc => pc = word()?,
             ForeignRead::Icsr => icsr = word()?,
             ForeignRead::Register(i) => observed[i] = word()?,
+            ForeignRead::Rcc(i) => rcc[i] = word()?,
         }
     }
     report.pc = Some(format!("{pc:#010x}"));
@@ -936,7 +1105,8 @@ pub fn judge(
         )));
     }
 
-    let mut findings = Vec::new();
+    // The timers' declared clock held to the RCC registers (`AET-WO-4400g`).
+    let mut findings = report.clock.check(rcc, hse_hz);
     let whole = out.dropped_log_lines == 0;
     if !whole {
         findings.push(Finding::info(
@@ -1498,5 +1668,53 @@ mod tests {
         assert_eq!(find(&own, &want(&["a", "b"]), 1), None);
         assert_eq!(find(&own, &want(&["c", "a"]), 0), None);
         assert_eq!(find(&own, &[], 0), None);
+    }
+
+    /// `AET-WO-4400g` §1.2: the timers' declaration held to the RCC registers
+    /// ArduPilot leaves (`AET-WO-4400f` §2): 200 MHz holds on both buses; the
+    /// stock file's 250 MHz declared is contradicted, by name, with both
+    /// figures; registers that do not decode fail by name; and the USARTs
+    /// are listed as declared only, with the condition that says so.
+    #[test]
+    fn the_declared_timer_clock_is_held_to_the_rcc_registers() {
+        let regs = [0x3F00_3025, 0x801B, 0x48, 0x440, 0x40_8040, 0x0109_0231];
+        let declared = |hz: u64| aethelgard_ir::motor::SolvedForeignClock {
+            apb1_timers_hz: hz,
+            apb2_timers_hz: hz,
+            usarts: aethelgard_ir::serial::PERIPHERALS
+                .iter()
+                .map(|p| ((*p).to_owned(), 72_000_000))
+                .collect(),
+        };
+        let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
+        assert!(r.check(regs, 0).is_empty());
+        assert!(
+            r.checked
+                .iter()
+                .all(|c| c.holds && c.decoded_hz == Some(200_000_000))
+        );
+        assert_eq!(r.registers[1].name, "RCC_CFGR");
+        assert_eq!(r.registers[1].value, "0x0000801b");
+        assert_eq!(r.declared_only.len(), 8);
+        assert!(r.conditions[0].starts_with("usart_clock_declared_unchecked:"));
+        let mut r = ClockReport::of(&declared(250_000_000), vec![]);
+        let f = r.check(regs, 0);
+        assert_eq!(
+            f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
+            [CLOCK_CONTRADICTED, CLOCK_CONTRADICTED]
+        );
+        assert!(
+            f[0].message.contains("declares 250000000 Hz")
+                && f[0].message.contains("decode to 200000000 Hz"),
+            "{}",
+            f[0].message
+        );
+        assert!(r.checked.iter().all(|c| !c.holds));
+        // SWS 100 is reserved: no clock to hold the declaration to.
+        let mut r = ClockReport::of(&declared(200_000_000), vec![]);
+        let f = r.check([regs[0], 0x8023, regs[2], regs[3], regs[4], regs[5]], 0);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, CLOCK_UNDECODABLE);
+        assert!(r.checked.iter().all(|c| !c.holds && c.decoded_hz.is_none()));
     }
 }

@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"NoSymbolTable","id":null,"message":"the ELF has no .symtab"}}
