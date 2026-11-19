@@ -11,6 +11,12 @@ Every prediction here was written by the 3304 builder **before** the bench, from
 
 ## 0. Setup and safety
 
+> **Architect's note, 2026-11-19 (finding F-VOS, from `AET-WO-4240`).** This firmware, like every generated image so far, runs its APB and USART kernel clocks at 64 MHz with the core at its reset voltage scale, VOS3.
+> - DS12117 Rev 10 Table 111 (p. 210) and RM0433 Rev 9 Table 60 (p. 356) cap them at 50 MHz at VOS3. Nothing in the engine reads or sets VOS.
+> - The run is outside ST's guarantee. It is not known to be harmful: `3302` ran the same clock on this board.
+> - The bench is not held for it. A disagreement on this bench may have this cause: record the row as measured and say so beside it.
+> - The fix (VOS2, which keeps every solved word, and the limits judged per declared VOS) is ruled after `4240`'s spike.
+
 - Everything is 3.3 V. Power comes from the ST-LINK USB only. The breakouts take 3V3 from the Nucleo (CN8 pin 7), and **nothing touches 5V**.
 - Change wiring only with the USB unplugged.
 - **No solder bridge or jumper changes** (§B0): every pin this firmware uses is free on the board as delivered.
