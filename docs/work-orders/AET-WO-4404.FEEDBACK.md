@@ -233,7 +233,7 @@ A fresh subagent ran it read-only, on Opus because it is judgement work. It work
 
 Nothing. No change was made to `aethelgard-ir`, `.github/workflows/`, `ci/`, `container/`, any specification or any topology fixture. `main` `47ec18f6` (`1910`) is merged in; it touches none of this work order's files.
 
-## 9. Status
+## 9. Status: READY
 
 - **Mutants** at `6edb8ab9`: **16 of 16 killed, each by a failing test.**
   - The judge (`G1`–`G11`): SERIAL0's inversion and role; the default table; past SERIAL9; `HAL_HAVE_SERIALn_PARAMS`; a macro-named protocol; an unknown name; the protocol comparison; RCIN twice; the SERIAL7/8 options; the RC mask; the inverted non-RC rule.
@@ -245,3 +245,9 @@ Nothing. No change was made to `aethelgard-ir`, `.github/workflows/`, `ci/`, `co
   - `cargo test --workspace`: **2,269 passed, 0 failed** (17 min 13 s, capped scope);
   - `cargo package --no-verify` of `aethelgard-ir`, `-pincheck` and `-hwdef`: clean, and no `src/` file includes a file outside its crate.
 - One PR, left unmerged. The title and body are in `~/.cache/aet-4404/pr-title-body.md`.
+- **CI green on `80c7037d`** (PR #244):
+  - `ci.yml`, run 44571977189: gates; tools shards 0–7; bench-package;
+  - `ardupilot-image.yml`, run 44571977384: the four hand boards; the generated `sentinel-01`, `sentinel-02`, `sentinel-02-noimu` and `serial-dshot-9600`; pinout; foreign; pinned;
+  - run 44571977477: image.
+- **The READY commit** merges `main` `56639a89` (docs and the 4240 spike only, none of this work order's files) and adds this line. It is the last push.
+- **READY.** The architect merges. The title and body are in `~/.cache/aet-4404/pr-title-body.md`.
