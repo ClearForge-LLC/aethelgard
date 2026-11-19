@@ -184,11 +184,15 @@ fn digests() -> Vec<(&'static str, String)> {
 /// version-17 specification's sha256 (`6deadfe4…e9c9`) put back for the new
 /// (`ab8ca1d8…c110`) in each text, `main.rs` and the two platforms are
 /// `5c770e1c…4722`, `88ab17b6…ce6d` and `2a8151a8…de84` exactly (measured);
-/// the boot image did not move.
+/// the boot image did not move. Then `main.rs` moved again by
+/// `AET-WO-4240v` §1.4, on purpose: the supply and VOS Scale 2 first, its
+/// three fault words and `PWR_POLLS`, `pwr` taken from the board and
+/// `reset_clock` given the token (`16a2f0ba…bae1` before); the two
+/// platforms and the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "16a2f0bab34357b650e58b79215ebe685ca473ef08443bf239e5d532e27abae1",
+        "f30204e8b726b769dfbf2ad6285439fcf5a07007326895f3f8dd41cfb06dde95",
     ),
     (
         "platform",

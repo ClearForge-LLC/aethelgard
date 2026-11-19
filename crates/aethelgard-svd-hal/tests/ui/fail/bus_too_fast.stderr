@@ -1,7 +1,7 @@
 error[E0277]: the trait bound `FastPlus1M: AtMostCeiling` is not satisfied
-  --> tests/ui/fail/bus_too_fast.rs:16:27
+  --> tests/ui/fail/bus_too_fast.rs:17:27
    |
-16 |     let _bus = i2c.init::<FastPlus1M, _>(&mut r, &clock, scl, sda);
+17 |     let _bus = i2c.init::<FastPlus1M, _>(&mut r, &clock, scl, sda);
    |                    ----   ^^^^^^^^^^ the trait `AtMostCeiling` is not implemented for `FastPlus1M`
    |                    |
    |                    required by a bound introduced by this call

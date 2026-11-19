@@ -110,7 +110,7 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
     assert_eq!(board.matches("ResetClock { _private: () }").count(), 1);
     let rcc = item(board, "impl Rcc {");
     assert!(rcc.contains(
-        "    pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {\n        \
+        "    pub fn reset_clock<R: Registers>(&self, r: &mut R, _scale2: &Scale2) -> Result<ResetClock, NotResetClock> {\n        \
          let cr = r.read(TOKEN, Block::Rcc, 0x000);\n        \
          let cfgr = r.read(TOKEN, Block::Rcc, 0x010);\n        \
          let d1cfgr = r.read(TOKEN, Block::Rcc, 0x018);\n        \
@@ -154,7 +154,7 @@ fn the_firmware_reads_the_clock_first_and_starts_the_timer_after_the_reads() {
     let last_read = main.rfind("record(").unwrap();
     let clock = main
         .find(
-            "    let Ok(clock) = rcc.reset_clock(&mut r) else {\n        \
+            "    let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n        \
              loop {\n            \
              core::hint::spin_loop();\n        \
              }\n    \
