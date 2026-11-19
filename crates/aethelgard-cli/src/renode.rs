@@ -5804,6 +5804,30 @@ mod tests {
         }
     }
 
+    /// `AET-WO-4202` §5: the judge stays exact. A scheduled line (here the
+    /// first injected byte, as the bench's boot logged it) is placed only at
+    /// `start_ns + 10 ns × count`; stamped 1 ns before, it is refused (a
+    /// core ahead of its time), and 1 ns after, it is the core's sleep.
+    #[test]
+    fn a_scheduled_line_is_placed_only_at_its_count_s_exact_instant() {
+        let (start, count) = (1_231_740, 1_962_227);
+        let line = |stamp| {
+            let l = at(
+                stamp,
+                &format!("[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 {count} 28a801 770"),
+            );
+            hooks_of(&[l.as_str()], start)
+        };
+        let exact = start + 10 * count;
+        let (hooks, slept) = line(exact).unwrap();
+        assert_eq!((hooks.len(), slept), (1, None));
+        assert_eq!(hooks[0].2, exact);
+        let early = line(exact - 1).unwrap_err();
+        assert!(early.contains("but it is stamped 20854009 ns"), "{early}");
+        let (_, slept) = line(exact + 1).unwrap();
+        assert!(slept.is_some());
+    }
+
     #[test]
     fn a_probe_is_read_only_between_its_own_whole_line_markers() {
         let image = image();

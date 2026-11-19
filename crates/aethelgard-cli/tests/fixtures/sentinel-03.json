@@ -1196,13 +1196,13 @@
         "domain": "VDD_3V3",
         "milliamps": 1,
         "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
-        "reference": "R7"
+        "reference": "R6"
       },
       {
         "domain": "VDD_3V3",
         "milliamps": 1,
         "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
-        "reference": "R8"
+        "reference": "R7"
       },
       {
         "domain": "VDD_3V3",
