@@ -2891,11 +2891,23 @@ fn a_rail_out_of_band_is_refused_by_name_and_rendered_by_exactly_its_consumers()
     let r = "RailOutOfBandRefused";
     let rail = |d: &str| json!({"rail_out_of_band": d});
     let open = |p: &str| json!({"serial_rx_open": p});
-    sag_refused(&s03(), json!([rail("VDD_3V3")]), r, "the MCU's supply");
-    sag_refused(&s03(), json!([rail("VDD_9V")]), r, "no domain");
+    // A lone rail with no composition is refused when the scenario is read.
+    sag_refused(&s03(), json!([rail("VDD_5V")]), r, "or by none");
+    sag_refused(
+        &s03(),
+        json!([rail("VDD_3V3"), open("CRSF")]),
+        r,
+        "the MCU's supply",
+    );
+    sag_refused(
+        &s03(),
+        json!([rail("VDD_9V"), open("CRSF")]),
+        r,
+        "no domain",
+    );
     sag_refused(
         &common::power::power_tree(),
-        json!([rail("VDD_5V")]),
+        json!([rail("VDD_5V"), {"spi_device_absent": "U4"}]),
         r,
         "no consumer a judge observes",
     );
@@ -2922,6 +2934,46 @@ fn a_rail_out_of_band_is_refused_by_name_and_rendered_by_exactly_its_consumers()
         None,
     );
     expect_refusal(&out, 4, "BridgeUnavailable");
+}
+
+/// The adversarial pass (`AET-WO-2304b`): a second rail, whichever comes
+/// first, is refused before any run (1); and a rail that feeds a regulator
+/// is refused naming it, since its output would fall too (2).
+#[test]
+fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
+    let r = "RailOutOfBandRefused";
+    let rail = |d: &str| json!({"rail_out_of_band": d});
+    let open = |p: &str| json!({"serial_rx_open": p});
+    for o in [
+        json!([
+            rail("VDD_5V"),
+            open("CRSF"),
+            open("MAVLINK"),
+            rail("VDD_3V3")
+        ]),
+        json!([
+            rail("VDD_3V3"),
+            open("CRSF"),
+            open("MAVLINK"),
+            rail("VDD_5V")
+        ]),
+    ] {
+        sag_refused(&s03(), o, r, "more than one rail out of band");
+    }
+    let mut spec = s03();
+    let u11 = spec["power"]["regulators"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|g| g["reference"] == "U11")
+        .unwrap();
+    u11["input"] = json!("VDD_5V");
+    sag_refused(
+        &spec,
+        json!([rail("VDD_5V"), open("CRSF"), open("MAVLINK")]),
+        r,
+        "feeds regulator U11",
+    );
 }
 
 /// `AET-WO-2302`, ruled (a-i): a board with a DShot output boots

@@ -750,6 +750,10 @@ impl Scenario {
                 "combined: more than one battery_sag, or a battery_sag with a droop, in one scenario; their interaction is not modelled".to_owned(),
             ));
         }
+        // §1.7: one rail out of band, rendered by its consumers' absences and
+        // nothing else (adversarial 1 and 3), so every clause judges it.
+        check_rail_out_of_band(&overrides)
+            .map_err(|m| ScenarioError::new(RAIL_REFUSED, Some(&raw.name), m.to_owned()))?;
         if expect_counts.len() > MAX_EXPECTED {
             return Err(schema(format!(
                 "a scenario expects at most {MAX_EXPECTED} counts"
@@ -1584,6 +1588,14 @@ fn check_battery_sag_records(
     let declared = records
         .iter()
         .find(|r| matches!(r, Record::BatterySagDeclared { .. }));
+    // §1.6 combined, judged again from the scenario's own record.
+    let sags = overrides
+        .iter()
+        .filter(|o| matches!(o, Override::BatterySag(_)))
+        .count();
+    if sags > 1 || (sags == 1 && overrides.iter().any(|o| matches!(o, Override::Droop(_)))) {
+        return Err("a battery sag is combined with another sag or a droop");
+    }
     let (sag, declared) = match (sag, declared) {
         (None, None) => return Ok(()),
         (Some(s), Some(d)) => (s, d),
@@ -1634,17 +1646,28 @@ fn check_battery_sag_records(
     Ok(())
 }
 
+/// The refusal of a rail out of band (`AET-WO-2304b` §1.7), one kind with a
+/// message per clause.
+pub const RAIL_REFUSED: &str = "RailOutOfBandRefused";
+
 /// A rail out of band is rendered through the compositions the scenario
-/// lists beside it (`AET-WO-2304b` §1.7, K1): at least one consumer's
-/// absence, a `serial_rx_open` or a `spi_device_absent`, and nothing else
-/// faulted with it. Which consumers the specification gives is the
-/// runner's check; the records carry no specification (`RUL-16`).
-fn check_rail_out_of_band(overrides: &[Override]) -> Result<(), &'static str> {
-    if !overrides
+/// lists beside it (`AET-WO-2304b` §1.7, K1): one rail, at least one
+/// consumer's absence, a `serial_rx_open` or a `spi_device_absent`, and
+/// nothing else faulted with it. Which consumers the specification gives is
+/// the runner's check; the records carry no specification (`RUL-16`). The
+/// parser and replay both apply it.
+pub fn check_rail_out_of_band(overrides: &[Override]) -> Result<(), &'static str> {
+    let rails = overrides
         .iter()
-        .any(|o| matches!(o, Override::RailOutOfBand { .. }))
-    {
+        .filter(|o| matches!(o, Override::RailOutOfBand { .. }))
+        .count();
+    if rails == 0 {
         return Ok(());
+    }
+    if rails > 1 {
+        return Err(
+            "more than one rail out of band in one scenario: their interaction is not modelled",
+        );
     }
     let rendered = |o: &Override| {
         matches!(

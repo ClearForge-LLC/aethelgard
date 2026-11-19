@@ -3187,6 +3187,16 @@ pub fn battery_side_against(
             "docs/work-orders/AET-WO-2304b.md §1.5",
         )
     };
+    // A row's figure the chain needs is positive, or the chain is refused by
+    // name; never read as 0 (`INV-06`, adversarial 8).
+    let positive = |reference: &str, what: &str, v: i64| {
+        u64::try_from(v).ok().filter(|v| *v > 0).ok_or_else(|| {
+            unmodelled(
+                reference,
+                format!("its {what} is {v}, not a positive figure"),
+            )
+        })
+    };
     let mut sinks = Vec::new();
     let mut capacitors = Vec::new();
     for h in &power.input.hot_plug {
@@ -3195,8 +3205,12 @@ pub fn battery_side_against(
             capacitors.push(BatteryCapacitor {
                 reference: h.reference.clone(),
                 part: h.part.clone(),
-                picofarads: u64::try_from(c.rated_picofarads.value).unwrap_or(0),
-                esr_max_milliohms: Some(u64::try_from(c.esr_max_milliohms.value).unwrap_or(0)),
+                picofarads: positive(&h.reference, "rated capacitance", c.rated_picofarads.value)?,
+                esr_max_milliohms: Some(positive(
+                    &h.reference,
+                    "ESR maximum",
+                    c.esr_max_milliohms.value,
+                )?),
                 how: format!(
                     "{}: {} pF rated ({}), ESR at most {} mΩ, {} ({}): the transient's shape only, since a step in the path R under constant-power sinks settles monotonically to the operating point",
                     h.reference,
@@ -3251,8 +3265,8 @@ pub fn battery_side_against(
             part: r.part.clone(),
             output: r.output.clone(),
             input_milliwatts,
-            shutdown_millivolts: u64::try_from(b.vin_millivolts.range.min).unwrap_or(0),
-            regulation_millivolts: u64::try_from(regulation.value).unwrap_or(0),
+            shutdown_millivolts: positive(&r.reference, "minimum operating input", b.vin_millivolts.range.min)?,
+            regulation_millivolts: positive(&r.reference, "regulation input", regulation.value)?,
             cite: format!(
                 "{}: {} µV × {} mA + {} mW declared loss ({}); minimum operating input {} mV ({}); regulation stated from {} mV ({})",
                 r.reference,
@@ -3276,7 +3290,7 @@ pub fn battery_side_against(
             capacitors.push(BatteryCapacitor {
                 reference: e.reference.clone(),
                 part: e.part.clone(),
-                picofarads: u64::try_from(pf).unwrap_or(0),
+                picofarads: positive(&e.reference, "credited capacitance", pf)?,
                 esr_max_milliohms: None,
                 how,
             });
@@ -3353,11 +3367,19 @@ pub fn output_capacitance(
             .map_or(0, |d| i64::try_from(range(d).1).unwrap_or(i64::MAX));
         for e in r.external.iter().filter(|e| e.role == Role::Cout) {
             let (pf, how) = credited(&ctx, &e.reference, &e.part, working)?;
+            let picofarads = u64::try_from(pf).ok().filter(|v| *v > 0).ok_or_else(|| {
+                refuse(
+                    Refusal::PowerValueInvalid,
+                    &e.reference,
+                    format!("its credited capacitance is {pf} pF, not a positive figure"),
+                    "crates/aethelgard-ir/data/power-parts.json",
+                )
+            })?;
             out.insert(
                 e.reference.clone(),
                 CreditedCapacitor {
                     domain: r.output.clone(),
-                    picofarads: u64::try_from(pf).unwrap_or(0),
+                    picofarads,
                     how,
                 },
             );
@@ -3384,6 +3406,11 @@ pub struct RailConsumers {
     /// Each I2C bus with a line on such a connector: whether any device is
     /// declared on it.
     pub i2c_buses: BTreeMap<String, bool>,
+    /// Serial ports, by label, with only their TX net on such a connector:
+    /// their peer is fed from the domain, and nothing observes its absence.
+    pub tx_only: BTreeSet<String>,
+    /// Each regulator whose input is the domain.
+    pub regulators: BTreeSet<String>,
     /// `(connector, net)` for each other net on a connector carrying it.
     pub other_nets: Vec<(String, String)>,
 }
@@ -3404,6 +3431,13 @@ pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
             .filter(|d| on(&d.supply))
             .map(|d| d.reference.clone())
             .collect(),
+        regulators: spec
+            .power
+            .iter()
+            .flat_map(|p| &p.regulators)
+            .filter(|r| on(&r.input))
+            .map(|r| r.reference.clone())
+            .collect(),
         ..RailConsumers::default()
     };
     for c in spec.declared_connectors() {
@@ -3423,6 +3457,8 @@ pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
                 if p.rx.net == net {
                     r.serial_rx.insert(p.label.clone());
                     r.standards.insert(c.standard.clone());
+                } else {
+                    r.tx_only.insert(p.label.clone());
                 }
             } else if let Some(b) = spec
                 .i2c_buses
@@ -3436,5 +3472,7 @@ pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
             }
         }
     }
+    let rx = r.serial_rx.clone();
+    r.tx_only.retain(|p| !rx.contains(p));
     r
 }

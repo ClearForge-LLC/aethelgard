@@ -685,6 +685,10 @@ struct Mechanism {
     kinds: &'static [&'static str],
     rule: &'static str,
     subjects: std::collections::BTreeSet<String>,
+    /// Every subject must be attributed, not some: a rail out of band is
+    /// detected only when each consumer it renders is (`AET-WO-2304b`,
+    /// adversarial 5).
+    all: bool,
 }
 
 /// Each override kind's mechanism, a closed table: the engine's, never the
@@ -744,6 +748,7 @@ fn stress(
                 kinds,
                 rule: "E1",
                 subjects: bus_subjects(bus),
+                all: false,
             }),
         )
     };
@@ -786,6 +791,7 @@ fn stress(
                         format!("controller:{}", d.peripheral),
                     ]
                     .into(),
+                    all: false,
                 }),
             ))
         }
@@ -797,6 +803,7 @@ fn stress(
                     kinds: OPEN,
                     rule: "E3",
                     subjects: [format!("port:{port}")].into(),
+                    all: false,
                 }),
             ))
         }
@@ -821,9 +828,11 @@ fn stress(
         }
         // A battery sag the checks admit stresses the battery when its
         // static operating point lies below the battery's declared minimum
-        // (`AET-WO-2304b` §1.10, L704's principle). The clause "its R exceeds
-        // the healthy R" (§1.6) keeps a non-fault from covering it (K6). A
-        // sag the checks refuse stresses nothing.
+        // (`AET-WO-2304b` §1.10, L704's principle). IR counts no path drop
+        // (K6), so every admitted sag lies below it, even 1 mΩ above the
+        // healthy R: what keeps a non-fault from covering is the clause "its R
+        // exceeds the healthy R" (§1.6), as K6 ruled. A sag the checks refuse
+        // stresses nothing.
         Override::BatterySag(sag) => {
             let s = crate::campaign::resolve_battery_sag(sag, spec).ok()?;
             Some(if s.static_microvolts < s.chain.v_open_microvolts {
@@ -858,6 +867,7 @@ fn stress(
                     kinds,
                     rule,
                     subjects,
+                    all: true,
                 }),
             ))
         }
@@ -1095,6 +1105,13 @@ fn detection(m: &Mechanism, run: &Run, attributed: &Value) -> Result<(), String>
     if subjects.is_empty() || !other.is_empty() {
         return Err(format!(
             "attribute cites {other:?} beyond the seeded {:?}",
+            m.subjects
+        ));
+    }
+    let cited: std::collections::BTreeSet<&str> = subjects.iter().copied().collect();
+    if m.all && cited.len() != m.subjects.len() {
+        return Err(format!(
+            "attribute cites {subjects:?}, not every rendered consumer {:?}",
             m.subjects
         ));
     }
@@ -2084,6 +2101,25 @@ mod tests {
             Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())])
         );
         assert_eq!(classify(&spec, &t, &droop(3200)), Seeded::Tolerable(vec![]));
+    }
+
+    /// Adversarial 5 (`AET-WO-2304b`): a rail out of band is detected only
+    /// when every consumer it renders is attributed, not one of them.
+    #[test]
+    fn a_rail_is_detected_only_with_every_rendered_consumer_attributed() {
+        let m = Mechanism {
+            kinds: OPEN,
+            rule: "E3",
+            subjects: ["port:CRSF".to_owned(), "port:MAVLINK".to_owned()].into(),
+            all: true,
+        };
+        let run = failed(json!(["serial_echo_missing"]));
+        let attributed = |subjects: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": "E3", "unexplained": [],
+                   "masked": [], "subjects": subjects})
+        };
+        assert!(detection(&m, &run, &attributed(json!(["port:CRSF"]))).is_err());
+        assert!(detection(&m, &run, &attributed(json!(["port:CRSF", "port:MAVLINK"]))).is_ok());
     }
 
     fn failed(findings: Value) -> Run {

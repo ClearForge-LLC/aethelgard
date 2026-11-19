@@ -589,9 +589,7 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
     })
 }
 
-/// The refusal of a rail out of band (`AET-WO-2304b` §1.7), one kind with a
-/// message per clause.
-const RAIL_REFUSED: &str = "RailOutOfBandRefused";
+use aethelgard_chaos::campaign::RAIL_REFUSED;
 
 /// What a rail out of band renders (`AET-WO-2304b` §1.7, D4 option 1, K1):
 /// each serial port whose RX net is on a connector that also carries the
@@ -669,6 +667,13 @@ pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, 
         )));
     }
     let c = aethelgard_ir::power::rail_consumers(spec, domain);
+    // A rail that feeds a regulator would take that regulator's output with
+    // it, which no composition renders (adversarial 2).
+    if let Some(r) = c.regulators.first() {
+        return Err(refuse(format!(
+            "`{domain}` feeds regulator {r}: a rail out of band would take its output down too, which is not modelled"
+        )));
+    }
     if let Some(d) = c.i2c_devices.first() {
         return Err(refuse(format!(
             "{d} is an I2C device on `{domain}`, and no composition renders an I2C device's absence"
@@ -696,6 +701,11 @@ pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, 
             }
         })
         .collect();
+    unrendered.extend(
+        c.tx_only
+            .iter()
+            .map(|p| format!("`{p}`'s peer (on its TX line only) is not rendered")),
+    );
     unrendered.extend(
         c.other_nets
             .iter()

@@ -441,3 +441,113 @@ fn a_rail_out_of_band_without_its_rendering_is_refused_in_replay() {
         Err(reason)
     );
 }
+
+// ---- the adversarial pass's findings, each refused (AET-WO-2304b FEEDBACK) ----
+
+/// Adversarial 1 and 3: one rail out of band per scenario, rendered by its
+/// consumers' absences alone, refused before any run as in replay.
+#[test]
+fn a_second_rail_or_a_rail_beside_another_fault_is_refused_by_name() {
+    let rail = |d: &str| json!({"rail_out_of_band": d});
+    let open = |p: &str| json!({"serial_rx_open": p});
+    for overrides in [
+        json!([rail("VDD_5V"), open("CRSF"), rail("VDD_3V3")]),
+        json!([rail("VDD_5V"), open("CRSF"), {"bus": "SENSORS", "line_held_low": "sda"}]),
+        json!([rail("VDD_5V"), open("CRSF"), sag_json(500, 1)]),
+        json!([rail("VDD_5V")]),
+    ] {
+        let e = parse(&scenario(4, overrides.clone())).unwrap_err();
+        assert_eq!(e.kind, "RailOutOfBandRefused", "{overrides}: {e}");
+    }
+    let two = vec![
+        Override::RailOutOfBand { domain: "A".into() },
+        Override::SerialRxOpen { port: "P".into() },
+        Override::RailOutOfBand { domain: "B".into() },
+    ];
+    assert!(aethelgard_chaos::campaign::check_rail_out_of_band(&two).is_err());
+}
+
+/// Adversarial 4: replay re-judges kind 31's shape and the scenario's
+/// "combined" clause, so a record no scenario or deck could have made is
+/// refused.
+#[test]
+fn replay_refuses_a_kind_31_out_of_shape_or_combined() {
+    let clause = "a battery sag's declaration is one its checks refuse";
+    let refused = |f: &dyn Fn(&mut Record)| {
+        let mut r = good();
+        f(&mut r);
+        check_run(&run(r)).expect_err("refused")
+    };
+    let cases: [(&str, &dyn Fn(&mut Record)); 5] = [
+        ("start 0", &|r| {
+            if let Record::BatterySagDeclared { sag, .. } = r {
+                sag.start_ns = 0
+            }
+        }),
+        ("R past 10 kΩ", &|r| {
+            if let Record::BatterySagDeclared { sag, .. } = r {
+                sag.series_milliohms = 20_000_000
+            }
+        }),
+        ("500 V", &|r| {
+            if let Record::BatterySagDeclared {
+                v_open_microvolts, ..
+            } = r
+            {
+                *v_open_microvolts = 500_000_000
+            }
+        }),
+        ("0 pF", &|r| {
+            if let Record::BatterySagDeclared {
+                capacitance_picofarads,
+                ..
+            } = r
+            {
+                *capacitance_picofarads = 0
+            }
+        }),
+        ("floors 0", &|r| {
+            if let Record::BatterySagDeclared { sinks, .. } = r {
+                for k in sinks {
+                    (k.shutdown_millivolts, k.regulation_millivolts) = (0, 0)
+                }
+            }
+        }),
+    ];
+    for (what, f) in cases {
+        // The scenario's sag must match the record's for the clause to be reached.
+        let mut r = good();
+        f(&mut r);
+        let mut records = run(r.clone());
+        if let (Record::Scenario { overrides, .. }, Record::BatterySagDeclared { sag, .. }) =
+            (&mut records[0], &r)
+        {
+            overrides[0] = Override::BatterySag(sag.clone());
+        }
+        assert_eq!(check_run(&records), Err(clause), "{what}");
+    }
+    let _ = refused;
+    let mut combined = run(good());
+    if let Record::Scenario { overrides, .. } = &mut combined[0] {
+        overrides.push(Override::BatterySag(sag(600)));
+    }
+    assert_eq!(
+        check_run(&combined),
+        Err("a battery sag is combined with another sag or a droop")
+    );
+}
+
+/// Adversarial 9b: at a zero discriminant the roots meet; that is the
+/// collapse, refused as no operating point.
+#[test]
+fn a_zero_discriminant_is_no_operating_point() {
+    assert_eq!(operating_point_uv(2_000_000, 1_000, 1_000), None);
+    let c = SagChain {
+        v_open_microvolts: 2_000_000,
+        healthy_milliohms: 1,
+        sinks: vec![sink("U1", 1_000, 1, 1)],
+        capacitance_picofarads: 1_000_000,
+    };
+    let e = refusal(&sag(1_000), &c);
+    assert!(e.message.starts_with("no operating point"), "{e}");
+}

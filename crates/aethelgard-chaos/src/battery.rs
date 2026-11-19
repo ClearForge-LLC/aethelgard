@@ -28,6 +28,9 @@ pub const SOLVE_TOLERANCE_UV: u64 = 1_000;
 /// their own (§1.6).
 pub const REFUSED: &str = "BatterySagRefused";
 
+/// The open voltage the bridge's deck admits, µV (100 V).
+pub const V_OPEN_MAX_UV: u64 = 100_000_000;
+
 /// The chain the specification declares, as the scenario's checks and kind
 /// 31 read it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -59,7 +62,9 @@ pub fn operating_point_uv(v_open_uv: u64, r_mohm: u64, p_mw: u64) -> Option<u64>
         .checked_mul(u128::from(r_mohm))?
         .checked_mul(u128::from(p_mw))?
         .checked_mul(1_000_000)?;
-    let disc = (v * v).checked_sub(load)?;
+    // At a zero discriminant the two roots meet: the collapse itself, no
+    // operating point to hold (adversarial 9b).
+    let disc = (v * v).checked_sub(load).filter(|d| *d > 0)?;
     u64::try_from((v + disc.isqrt()) / 2).ok()
 }
 
@@ -97,6 +102,25 @@ pub fn check_battery_sag(
 ) -> Result<u64, ScenarioError> {
     let refuse = |m: String| ScenarioError::new(REFUSED, None, m);
     let r = u64::from(sag.series_milliohms);
+    // The shape the parser and the deck hold, judged here too, so replay
+    // refuses a record no scenario could have made (adversarial 4).
+    let shaped = (1..=SERIES_MILLIOHMS_MAX).contains(&r)
+        && (1..=START_NS_MAX).contains(&sag.start_ns)
+        && (1..=V_OPEN_MAX_UV).contains(&chain.v_open_microvolts)
+        && chain.capacitance_picofarads > 0
+        && (1..=MAX_SINKS).contains(&chain.sinks.len())
+        && chain.sinks.iter().all(|k| {
+            k.input_milliwatts > 0 && k.shutdown_millivolts > 0 && k.regulation_millivolts > 0
+        });
+    if !shaped {
+        return Err(refuse(format!(
+            "out of shape: {r} mΩ from {} ns, {} µV open, {} pF on the battery, {} sinks, each with power and both floors above 0, outside the bounds the scenario and the deck hold",
+            sag.start_ns,
+            chain.v_open_microvolts,
+            chain.capacitance_picofarads,
+            chain.sinks.len()
+        )));
+    }
     if sag.series_milliohms <= chain.healthy_milliohms {
         return Err(refuse(format!(
             "not a fault: its {r} mΩ is not above the healthy path's {} mΩ",
