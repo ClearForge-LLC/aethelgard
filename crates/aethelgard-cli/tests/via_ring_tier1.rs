@@ -115,13 +115,15 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden (measured at `AET-WO-1314`): the last rung,
-    // bounded nets first at a via cost of 320, nearest at IMU_SCK
-    assert_eq!(ladder["rung"], 7, "{ladder}");
-    assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
+    // the fixture's golden, measured at `AET-WO-1315` (C1 drawn, the board
+    // re-placed; FEEDBACK §2): rung 5, bounded nets first at a via cost of
+    // 48, nearest at I2C_SCL. At `AET-WO-1314` it was the last rung (7, cost
+    // 320), nearest at IMU_SCK, 24 945 fF of 30 000.
+    assert_eq!(ladder["rung"], 5, "{ladder}");
+    assert_eq!(ladder["bounded_via_cost"], 48, "{ladder}");
     assert_eq!(ladder["bounded_first"], true, "{ladder}");
-    assert_eq!(margin["net"], "IMU_SCK", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 24_945, "{ladder}");
+    assert_eq!(margin["net"], "I2C_SCL", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 74_937, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");

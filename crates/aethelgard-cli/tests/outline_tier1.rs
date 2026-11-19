@@ -311,24 +311,25 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
     }
 }
 
-/// The fixture's placement with every name taken out ([`name_free`]), as
-/// `AET-WO-1313b`'s prototype placed it (`spike/1313b/placer.patch`,
-/// `AET_1313B=kms`, at `457d644`; byte-identical, FEEDBACK §1.3). Re-pin it
+/// The fixture's placement with every name taken out ([`name_free`]).
+/// `AET-WO-1313b`'s prototype placed it at `5e30de78…` (`457d644`, FEEDBACK
+/// §1.3); re-pinned by `AET-WO-1315` from a measured run, the hot-plug bulk
+/// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2). Re-pin it
 /// only with the change that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "5e30de786b428a91ba2f6a953f934fbe1626ec5c57d46b881ee1d3f5757c75dc";
+    "9b83d1208acd175fc1bea74cf9594f17ea86e9277b79ca065562273425c4a44f";
 
-/// `AET-WO-1313c` §2: the fixture places at `1313b`'s measured outline,
-/// 85.25 x 80.95 mm (FEEDBACK §2.1, (k)+(m)+(s)), at the prototype's every
-/// position, with every placer gap and every loop rule kept after
-/// compaction.
+/// `AET-WO-1313c` §2: the fixture places at its measured outline, with
+/// every placer gap and every loop rule kept after compaction: 85.25 x
+/// 80.95 mm at `1313b`'s (FEEDBACK §2.1, (k)+(m)+(s)), 96.50 x 69.35 mm
+/// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table) = solved(&fixture());
     let e = schematic::emit(&spec, &solved, &table).unwrap();
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_250_000, 80_950_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (96_500_000, 69_350_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))

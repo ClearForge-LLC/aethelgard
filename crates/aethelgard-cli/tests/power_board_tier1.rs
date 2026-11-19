@@ -45,8 +45,8 @@ fn every_loop_rule_holds_on_the_fixtures_own_board() {
     let records = judged(&spec, &solved, &table, &e.board);
     // Every part the tree anchors: per buck the two input capacitors, CBOOT,
     // CVCC, the divider and the inductor (7 x 2); the LDO's two capacitors;
-    // the sense reservoir.
-    assert_eq!(records.len(), 17, "{records:#?}");
+    // the sense reservoir; the hot-plug bulk capacitor on U10 (`AET-WO-1315`).
+    assert_eq!(records.len(), 18, "{records:#?}");
     for r in &records {
         assert_eq!(r.verdict, "pass", "{r:#?}");
     }

@@ -1183,7 +1183,8 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     assert_eq!(v["verdict"], "pass", "drc: {v}");
     assert_eq!(v["findings"], Value::Array(vec![]), "drc has findings");
     let loops = v["power"]["loops"].as_array().unwrap();
-    assert_eq!(loops.len(), 17, "{v}");
+    // 17, and the hot-plug bulk capacitor's since `AET-WO-1315`.
+    assert_eq!(loops.len(), 18, "{v}");
     assert!(loops.iter().all(|l| l["verdict"] == "pass"), "{v}");
     let classes: Vec<(&str, i64)> = v["power"]["classes"]
         .as_array()

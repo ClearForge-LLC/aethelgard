@@ -227,3 +227,179 @@ fn a_control_the_emitter_cannot_draw_as_declared_is_refused_by_name() {
         assert!(why.contains(want), "{reference} {pin}: {why}");
     }
 }
+
+/// Every footprint on a board: its reference and its value.
+fn values(board: &str) -> Vec<(String, String)> {
+    board
+        .split("\n\t(footprint ")
+        .skip(1)
+        .map(|f| {
+            let prop = |name: &str| {
+                let key = format!("(property \"{name}\" \"");
+                let at = f.find(&key).unwrap() + key.len();
+                f[at..].split('"').next().unwrap().to_owned()
+            };
+            (prop("Reference"), prop("Value"))
+        })
+        .collect()
+}
+
+/// Every `reference` and `part` pair under the specification's `power`,
+/// read from the JSON itself.
+fn declared_parts(v: &Value, out: &mut Vec<(String, String)>) {
+    match v {
+        Value::Object(m) => {
+            if let (Some(Value::String(r)), Some(Value::String(p))) =
+                (m.get("reference"), m.get("part"))
+            {
+                out.push((r.clone(), p.clone()));
+            }
+            m.values().for_each(|x| declared_parts(x, out));
+        }
+        Value::Array(a) => a.iter().for_each(|x| declared_parts(x, out)),
+        _ => {}
+    }
+}
+
+fn sentinel_03() -> Value {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sentinel-03.json");
+    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+}
+
+/// §2, the parity test: every reference `power::references` lists is on
+/// the placed board, valued with the part number the specification declares
+/// for it, on both committed power boards. The pairs are read from the
+/// specification, never from the emitter's part list (`INV-07`).
+#[test]
+fn every_declared_power_reference_is_on_the_board_with_its_part() {
+    for v in [full(), sentinel_03()] {
+        let (spec, solved, table) = solved(&v);
+        let mut parts = Vec::new();
+        declared_parts(&v["power"], &mut parts);
+        let listed: Vec<&String> = aethelgard_ir::power::references(spec.power.as_ref().unwrap());
+        let mut a: Vec<&String> = parts.iter().map(|(r, _)| r).collect();
+        let mut b = listed.clone();
+        a.sort();
+        b.sort();
+        assert_eq!(a, b, "{}", spec.project_name);
+        assert!(listed.iter().any(|r| *r == "C1"));
+        let on_board = values(&schematic::placement(&spec, &solved, &table).unwrap());
+        for (reference, part) in &parts {
+            let found: Vec<_> = on_board.iter().filter(|(r, _)| r == reference).collect();
+            assert_eq!(found.len(), 1, "{}: {reference}", spec.project_name);
+            assert!(
+                found[0].1.split(' ').any(|w| w == part),
+                "{}: {reference} is valued {:?}, not {part}",
+                spec.project_name,
+                found[0].1
+            );
+        }
+    }
+}
+
+/// §2: on both power boards the declared bulk capacitor is `C1`, its
+/// positive pad on `VBAT` and the other on `GND`, in the schematic, on the
+/// board and in the bill of materials; no part the emitter numbers is `C1`.
+#[test]
+fn the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards() {
+    for v in [common::power::power_tree(), sentinel_03()] {
+        let (spec, solved, table) = solved(&v);
+        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        let name = &spec.project_name;
+        let bom: Vec<&str> = e.bom.lines().filter(|l| l.starts_with("C1,")).collect();
+        assert_eq!(
+            bom,
+            ["C1,47u UCZ1H470MCL1GS,Capacitor_SMD:CP_Elec_8x10,Device:C_Polarized,"],
+            "{name}"
+        );
+        let sch: Vec<&str> = e
+            .schematic
+            .split("\n\t(symbol\n")
+            .skip(1)
+            .filter(|s| s.contains("(property \"Reference\" \"C1\""))
+            .collect();
+        assert_eq!(sch.len(), 1, "{name}");
+        assert!(sch[0].contains("(lib_id \"Device:C_Polarized\")"), "{name}");
+        assert!(
+            sch[0].contains("(property \"Value\" \"47u UCZ1H470MCL1GS\""),
+            "{name}"
+        );
+        let (b, _) = route::read(
+            &strict::board(&e.board).unwrap(),
+            &Stack::of(&spec).unwrap(),
+        )
+        .unwrap();
+        let c1: Vec<_> = b.parts.iter().filter(|p| p.reference == "C1").collect();
+        assert_eq!(c1.len(), 1, "{name}");
+        let nets: Vec<(&str, Option<&str>)> = c1[0]
+            .pads
+            .iter()
+            .map(|p| (p.number.as_str(), p.net.as_deref()))
+            .collect();
+        assert_eq!(nets, [("1", Some("VBAT")), ("2", Some("GND"))], "{name}");
+    }
+}
+
+/// §1.3: the bulk capacitor is the last part of the first battery-fed
+/// regulator's sequence, anchored to it; with no regulator fed from the
+/// battery it is drawn by its nets alone, anchored to nothing.
+#[test]
+fn the_bulk_capacitor_anchors_to_the_first_battery_fed_regulator_or_to_nothing() {
+    let v = full();
+    let (spec, solved, table) = solved(&v);
+    let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
+    assert_eq!(anchored.get("C1").map(String::as_str), Some("U10"));
+    // No regulator fed from the battery: each battery-fed one moved onto
+    // `VDD_3V3` (drawn without `validate`, which judges the tree).
+    let mut v = full();
+    for r in v["power"]["regulators"].as_array_mut().unwrap() {
+        if r["input"] == "battery" {
+            r["input"] = json!("VDD_3V3");
+        }
+    }
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
+    assert_eq!(anchored.get("C1"), None);
+    let c1 = schematic::decoupling_picofarads(&spec, &solved, &table).unwrap();
+    assert!(!c1.values().any(|pf| *pf == 47_000_000), "{c1:?}");
+}
+
+/// §1.1, §5: a hot-plug reference the emitter could not hold is refused by
+/// `validate` with the emitter's own kind and id: KiCad's `#` prefix, a
+/// case-only twin of the `C1` the emitter would otherwise number, a
+/// declared device's reference, and a test point's.
+#[test]
+fn a_hot_plug_reference_the_emitter_refuses_is_refused_at_validate() {
+    let valid: Specification = serde_json::from_value(common::power::power_tree()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&valid.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&valid, &table, &"0".repeat(64)).unwrap();
+    // (name, validate's kind and id, the emitter's kind: a test point's
+    // reference is `validate`'s own refusal, `AET-WO-1312`)
+    for (name, kind, id, emitter) in [
+        ("#C1", "ReservedName", "#C1", "ReservedName"),
+        (
+            "c1",
+            "DuplicateReference",
+            "C1 and c1",
+            "DuplicateReference",
+        ),
+        ("C10", "DuplicateReference", "C10", "DuplicateReference"),
+        (
+            "TP9",
+            "TestPointReferenceTaken",
+            "TP9",
+            "DuplicateReference",
+        ),
+    ] {
+        let mut v = common::power::power_tree();
+        v["power"]["input"]["hot_plug"][0]["reference"] = name.into();
+        v["test_points"] = json!([{"net": "GND", "reference": "TP9"}]);
+        let spec: Specification = serde_json::from_value(v).unwrap();
+        let refused = spec.validate().unwrap_err();
+        assert_eq!(refused.kind(), kind, "{name}: {refused}");
+        assert_eq!(refused.id(), Some(id), "{name}: {refused}");
+        let e = schematic::anchored(&spec, &solved, &table).unwrap_err();
+        assert_eq!(e.kind(), emitter, "{name}: {e}");
+    }
+}
