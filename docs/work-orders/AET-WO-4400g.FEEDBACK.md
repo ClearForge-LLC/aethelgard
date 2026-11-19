@@ -163,6 +163,22 @@ Each run is a full `--foreign 5000ms` ArduPilot boot under the 1 GiB bound, in a
   - **RULED (ii), accepted (architect, 14:18Z).** A declared clock refused on a generated run of a shared fixture is an input refusal, not a flipped verdict, so it is not the WO's stop. The derived undeclared copy stays.
   - **Its cost, named:** `sentinel-02-own-base.json` no longer runs a generated campaign as committed. Only the derived copy, with the declaration removed, does.
 
+- **D8, F5 as ruled: the bench specification moves to schema 17, and no walker skips a specification.**
+  - **The bump.** `examples/sentinel-02-bench.json` moves to schema 17, its version line only. Its sha256 goes from `25597b3d…f4c3` to `fe89ba38…97fe`.
+  - **3304's evidence, re-derived** (**measured**: this branch's CLI in the pinned image, `generate` then `build`):
+    - **The ELF does not move:** sha256 `375fd31a…9c02`, 3304's.
+    - **The board crate's input hash moves,** from `7127d94a…f55b` to `4a5571e2…c75c`. Diffed against 3304's crate (`~/.cache/aet-3304/runs/gen1/board`), two things differ:
+      - the specification sha256 in the header comments of eight files;
+      - the platform's clock block (§1.1), 29 update entries in `sentinel-02-bench.repl`.
+
+      Neither reaches the firmware's bytes.
+  - **The walkers.** `silicon_rules`, `ledger_tier1`, `hwdef_tier1` and `silicon_words` walk `examples/`, and some walk more. They used to skip a specification that did not parse, and one `solve` refused for its version.
+    - Each now calls one rule (`tests/common/spec.rs`, and a copy in `silicon_words`, which cannot reach that file). A JSON object with both `mcu` and `board` is a specification: every committed one that parses has both, and no other committed JSON does.
+    - It must parse and carry the current schema version, or the walker fails naming it.
+    - Refusals for any other reason keep their skip: those are the deliberately invalid fixtures, and each walker states its scope as the specifications that solve.
+    - No other test walks specifications: the remaining walkers read sources, crate trees or scenarios.
+  - **The mutant:** a schema-16 copy of `sentinel-01-minimal.json` left in `examples/`. It is killed by all four walkers, each naming the file and "a committed specification at another schema version" (five tests).
+
 ## §4 Findings
 
 | # | Finding | For |
@@ -170,7 +186,7 @@ Each run is a full `--foreign 5000ms` ArduPilot boot under the 1 GiB bound, in a
 | F1 | `.github/workflows/ci.yml` L69 calls its crate list "also the order docs/releasing.md publishes in", and lists `aethelgard-twin` before `aethelgard-chaos`. `docs/releasing.md` L35–36 does the same. The twin now depends on chaos, so chaos must publish first. `cargo package` in one invocation is unaffected, but a publish in that order would fail. Both files are outside this fence. | architect: a docs/workflow edit |
 | F2 | The architecture §2.27 figures move: ArduPilot at 1.00000×, the window at 5 s, and the witness times (U4 0.1611 s; the barometers 0.3856/0.4359 s; the ICM 4.343/4.394 s). | the docs PR |
 | F3 | A foreign firmware clocked from HSE can never decode: `CrystalNotSupported` holds `mcu.hse_hz` at 0, so the run fails `foreign_clock_undecodable`, which fails closed. | backlog, with the crystal part |
-| F5 | `examples/sentinel-02-bench.json` (3304, `cd43b207`, after this branch's base) is at specification schema 16, which this branch refuses. Bumping it to 17 moves the specification sha256 that 3304's bench evidence records (input hash `7127d94a…`). `silicon_rules` skips a file it cannot parse, so no test fails. | architect: bump here, or in 3304's follow-up |
+| F5 | `examples/sentinel-02-bench.json` (3304, `cd43b207`) was at specification schema 16, which this branch refuses. A walker that cannot use a specification skipped it, so a committed board fell out of the rule checks and no test failed (`INV-06`). | **ruled 14:39Z, built (D8)** |
 | F4 | `fab/sentinel-01-bench/package/MANIFEST.json` moves (the specification's sha256, and `tool.build` in the verdict). It is derived by the architect's dispatch of `ci.yml` with `write=true` (bus, 03:10). | before READY |
 
 ## §5 Adversarial pass (full)
