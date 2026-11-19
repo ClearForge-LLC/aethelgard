@@ -357,9 +357,19 @@ const PROBE_END: &str = "AETHELGARD-PROBE-END-";
 /// The sentinel at each release, numbered as the probes are: the log lines
 /// from it to the probe's `BEGIN` are the recovered boot's (`AET-WO-2204`).
 const RELEASE: &str = "AETHELGARD-RELEASE-";
+
+/// `emulation RunFor` for exactly `ns`. Renode 1.17.0 reads the decimals as a
+/// fraction of a second through a double and truncates
+/// (`TimeInterval.TryParse`: `(ulong)(double.Parse("0.<decimals>") *
+/// TicksPerSecond)`, a tick a nanosecond), so `"0.001018380"` ran 1,018,379
+/// ns: about 2 % of 10 ns durations ran 1 ns short, and every instant after
+/// one was 1 ns early, a droop's boot start among them (`AET-WO-4202`,
+/// measured). A tenth decimal of 5 puts the value half a nanosecond above
+/// `ns`; the double's error below a second is under 1e-6 ns, so the
+/// truncation lands on `ns`.
 fn run_for(ns: u64) -> String {
     format!(
-        "emulation RunFor \"{}.{:09}\"",
+        "emulation RunFor \"{}.{:09}5\"",
         ns / 1_000_000_000,
         ns % 1_000_000_000
     )
@@ -4044,7 +4054,7 @@ mod tests {
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
         assert!(
             c.contains(&format!(
-                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
@@ -4094,7 +4104,7 @@ mod tests {
         assert_eq!(c.matches("AddWatchpointHook 0x20000000").count(), 1);
         assert!(
             c.contains(&format!(
-                "emulation RunFor \"0.000213550\"; {hook}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
+                "emulation RunFor \"0.0002135505\"; {hook}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
             )),
             "{c}"
         );
@@ -4145,7 +4155,7 @@ mod tests {
         let bw = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
         let echo = crate::anchor::echo_hook(0, &p.port_hooks(), 0x2000_0000).unwrap();
         assert!(
-            c.contains(&format!("{bw}; {echo}; emulation RunFor \"0.100000000\"")),
+            c.contains(&format!("{bw}; {echo}; emulation RunFor \"0.1000000005\"")),
             "{c}"
         );
         assert!(!bw.contains("usart2"));
@@ -5680,7 +5690,7 @@ mod tests {
         // to `Noisy` once, before the run (D1).
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &[]);
         assert!(static_.contains(&format!(
-            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
         )));
         assert!(!droop.contains("logLevel 3") && !static_.contains("logLevel 3"));
         assert_eq!(static_.matches("logLevel").count(), 1);
@@ -5712,7 +5722,7 @@ mod tests {
         let want = [
             "cpu VectorTableOffset 0x08000000".to_owned(),
             "logLevel -1 sysbus.i2c1.u2".to_owned(),
-            "emulation RunFor \"0.001014430\"".to_owned(),
+            "emulation RunFor \"0.0010144305\"".to_owned(),
             "machine Reset".to_owned(),
         ]
         .join("; ");
@@ -5724,18 +5734,18 @@ mod tests {
             rec(image.brown_out.word_at),
             rec(check.status_at),
             rec(check.value_at),
-            "emulation RunFor \"0.000213550\"".to_owned(),
+            "emulation RunFor \"0.0002135505\"".to_owned(),
             hook.clone(),
             "cpu IsHalted false".to_owned(),
             "echo \"AETHELGARD-RELEASE-0\"".to_owned(),
-            "emulation RunFor \"0.000000010\"".to_owned(),
-            "emulation RunFor \"0.000099990\"".to_owned(),
+            "emulation RunFor \"0.0000000105\"".to_owned(),
+            "emulation RunFor \"0.0000999905\"".to_owned(),
             "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
         ]
         .join("; ");
         assert!(droop.contains(&rest), "{droop}");
         assert!(droop.contains(
-            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.0986720205\"; echo \"AETHELGARD-BOOT-BEGIN\""
         ));
         // After `machine Reset` alone the core never runs (F3): the cold
         // writes and the vector table follow it.
@@ -5748,9 +5758,43 @@ mod tests {
                 .unwrap()
                 .ends_with("cpu VectorTableOffset 0x08000000")
         );
-        assert_eq!(droop.matches("emulation RunFor \"0.000000010\"").count(), 1);
+        assert_eq!(droop.matches("emulation RunFor \"0.0000000105\"").count(), 1);
         assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
         assert_eq!(plan(&image, &[]).instructions(), 10_000_000);
+    }
+
+    /// The nanoseconds Renode 1.17.0 runs for a `RunFor` argument, as its
+    /// `TimeInterval.TryParse` computes them: whole seconds exactly, the
+    /// decimals through a double, truncated.
+    fn renode_runs(arg: &str) -> u64 {
+        let (seconds, decimals) = arg.split_once('.').unwrap();
+        let fraction: f64 = format!("0.{decimals}").parse().unwrap();
+        seconds.parse::<u64>().unwrap() * 1_000_000_000 + (fraction * 1e9) as u64
+    }
+
+    #[test]
+    fn every_run_for_runs_exactly_its_nanoseconds_in_renode() {
+        // The measured fault (`AET-WO-4202`): the nine-digit form of
+        // 1,018,380 ns ran 1 ns short, so this test is not vacuous.
+        assert_eq!(renode_runs("0.001018380"), 1_018_379);
+        let runs = |ns: u64| {
+            let c = run_for(ns);
+            renode_runs(c.strip_prefix("emulation RunFor \"").unwrap().strip_suffix('"').unwrap())
+        };
+        let short = (0..2_000_000u64)
+            .step_by(10)
+            .filter(|&ns| renode_runs(&format!("0.{ns:09}")) != ns)
+            .count();
+        assert!(short > 4_000, "the nine-digit form truncates often: {short}");
+        // Every 10 ns step of the first 2 ms, every nanosecond around the
+        // measured one, and a stride over 3 s.
+        for ns in (0..2_000_000u64)
+            .step_by(10)
+            .chain(1_018_000..1_019_000)
+            .chain((0..3_000_000_000u64).step_by(999_983))
+        {
+            assert_eq!(runs(ns), ns, "{}", run_for(ns));
+        }
     }
 
     #[test]
