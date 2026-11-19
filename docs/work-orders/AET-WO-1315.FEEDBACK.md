@@ -114,3 +114,122 @@ The sweep script is `~/.cache/aet-1315/sweep.sh`; each binary writes into one fi
 - **`rules.rs` is outside the eda fence list but is a named caller** (WO grounds). `Rules::from_specification` returns the same `Result`, which is the only change there. Its production callers now build `Rules::from_stack` from the stack they hold.
 - **Tests unwrap:** 42 call sites, mechanically.
 - **Every production board reader takes its stack from `Stack::of`** [grep of `route::read`, `route::declared`, `extract::read*` and `bound::read` in `cli/src` and `eda/src`].
+
+## 3. Acceptance (§2), measured
+
+### 3.1 Boards without a power tree
+
+- **The final sweep** (`hp-bin`, the full branch with the 10 mm rule) gives 34 of 36 specifications byte-identical to `main` `cd43b207`, solve, emit and generate outputs and exit codes alike, unmasked. Only `sentinel-03.json` and `sentinel-02-power.json` move, 9 files each.
+- **Every other step was swept on its own** (§1). The vendoring, `Stack::of` and the controls each moved nothing, the power boards included.
+
+### 3.2 Sentinel-01's package
+
+PACKAGE-RESULT
+
+### 3.3 The two power boards [measured, tier 2 in the pinned tools image, `capped-run` 12G, swap 0]
+
+**`board_tier2`, four tests, all pass (66 s):**
+- `the_sentinel_03_fixture_passes_every_gate_inside_its_bound`: `validate`, `generate`, `emit`, ERC, DRC with and without parity, `check support` and `extract`, each with no finding. **ANSWER 96.50 × 69.35 mm, least `extract` slack 8.6 pF.**
+- `the_power_fixture_passes_erc_drc_its_loop_rules_and_extract`: 18 loop rules, all passing.
+- `the_full_power_fixture_routes_and_passes_every_gate_it_reaches`: still refused `TranslatorPinUnbounded`, by that name only.
+- `each_size_sample_passes_every_gate_or_is_refused_by_name`: passes, but only on its refusal branch. See D1.
+
+**Tier 1:** `hot_plug_tier1` (9 tests), `power_board_tier1`, `outline_tier1`, `supply_tier1`, `via_ring_tier1`, `solve_cli` and `campaign_tier1` all pass.
+
+**C1 on both boards** (`the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards`):
+- **BOM:** `C1,47u UCZ1H470MCL1GS,Capacitor_SMD:CP_Elec_8x10,Device:C_Polarized,` is its only `C1` row.
+- **Schematic:** one `C1` symbol, `Device:C_Polarized`, with that value.
+- **Board:** pad 1 on `VBAT` and pad 2 on `GND`.
+- **The schematic's pins** are proven equal to the board's by tier 2's DRC with schematic parity.
+
+**The parity test** (`every_declared_power_reference_is_on_the_board_with_its_part`, tier 1, both boards):
+- The set of every `reference`/`part` pair under `power` in the JSON equals the set `power::references` lists.
+- Each reference is on the placed board exactly once, valued with its declared part number.
+- The pairs are read from the specification, never from the emitter's part list.
+
+### 3.4 Re-pinned figures, each from a measured run
+
+| Pin | Before | After | Run |
+|---|---|---|---|
+| `power_board_tier1` `every_loop_rule_holds…` | 17 | 18 | tier 1 |
+| `board_tier2` `the_power_fixture_passes…` loops | 17 | 18 | tier 2, in the image |
+| `outline_tier1` outline | 85.25 × 80.95 mm | 96.50 × 69.35 mm | tier 1 |
+| `outline_tier1` `FIXTURE_PLACEMENT_SHA256` | `5e30de78…` | `9b83d120…` | tier 1, from the failing assertion's `left` |
+| `via_ring_tier1` ladder golden | rung 7, cost 320, IMU_SCK 24 945 fF | rung 5, cost 48, I2C_SCL 74 937 fF | `emit`'s `capacitance_ladder`, both binaries |
+| `ANSWER 1313c-fixture` (stderr, not pinned) | 85.25 × 80.95, 9.2 pF | 96.50 × 69.35, 8.6 pF | tier 2 |
+| `ANSWER 1313c-size` 2, 6, 8 (stderr) | `extract` refused (−5.1 pF), pass (5.4 pF), `OutlineUnreachable` | all `OutlineUnreachable` | tier 2 |
+
+The ladder's smallest relative margin improves, from 16.9 % to 25.1 %. `extract`'s least absolute slack falls from 9.2 to 8.6 pF. These are two different measures: one relative, one absolute.
+
+## 4. Decisions
+
+### D1 · decision needed: the anchor costs Sentinel-03 its size headroom
+
+**Measured** (`emit` under the fixture's own 100 × 100 mm bound, host release binaries; the in-image tier-2 tests agree):
+
+| Sample (`common::rename::sized`) | `main` | Branch (C1 anchored, 10 mm rule) | C1 unanchored (scratch build) |
+|---|---|---|---|
+| fixture | 85.25 × 80.95 | 96.50 × 69.35 | 86.70 × 81.70 |
+| 1 character | 87.75 × 82.70 | 98.80 × 70.35 | — |
+| 2 | 89.20 × 84.95 | `OutlineUnreachable`, 100.50 wide | 89.20 × 82.70 |
+| 4 | 91.75 × 83.20 | `OutlineUnreachable`, 107.25 | 91.95 × 85.20 |
+| 6 | 96.90 × 87.95 | `OutlineUnreachable`, 112.15 | 96.90 × 88.45 |
+| 8 | `OutlineUnreachable`, 101.90 | `OutlineUnreachable`, 119.75 | — |
+
+**The cause is the anchor:**
+- Lifting the loop bound to 30 mm gives identical outlines.
+- With C1 in U10's group, the placer moves U10 and U11 from the top row (x ≈ 40 and 67 mm) into a right-hand column (x ≈ 78 mm). The board grows 11.25 mm wider and 11.6 mm shorter.
+- The x headroom under the bound drops from 14.75 to 3.5 mm.
+
+**Unanchored, C1 sits about 17 mm from U10,** and no loop rule judges it.
+
+**Options:**
+- (a) Accept as built: the fixture fits, and `1313c` promised no size.
+- (b) Draw C1 unanchored on every board: the headroom stays as on `main`, and C1's distance is not judged.
+- (c) Teach `pcb.rs` to place a large anchored passive. That is outside this fence and was not tried.
+
+**Recommended (a), the loss recorded.** It is the placement the WO specified, and the committed board passes every gate. Reported on the bus to the architect.
+
+### Forks taken (each for the architect to overturn)
+
+- **D2 · `side: pack` at the emitter is refused by name, not drawn.** Drawing it on the board would contradict the declaration.
+- **D3 · `BULK_POSITIVE` is a constant cited to the vendored files** (§2.1), not a table role: a role would be a schema change.
+- **D4 · `Stack::of` returns `Result<Stack, &'static str>`.** `Rules::from_specification` was deleted in the reduction pass; each reader builds `Rules::from_stack` from the stack it holds.
+- **D5 · `schematic::drawn`**, a second test-facing accessor beside `anchored`. It lets a test see the unanchored C1, which only a tree `validate` refuses (`PowerLoop`) can produce.
+- **D6 · the unanchored C1 sits where its nets put it**, after the regulators, never placed by a rule. No committed tree reaches this case.
+
+## 5. Findings
+
+- **F1 · A control wire can reach a connector only on a net the specification already names.** `validate` lets a connector pin or test point name only a declared signal, a domain, `GND` or a debug net (`ir/src/connectors.rs` `net_kinds`, `ConnectorNetUnknown`, `TestPointNetUnknown`). So PG to a spare header pin as a new net (`PG_5V`) cannot be declared without a schema change. The tier-1 fixture wires PG to `NRST` beside J2 pin 3, which is a real pattern: hold the MCU in reset until the rail is good. **For `4500` or whoever wants a free control net.**
+- **F2 · `unconnected-C1` as a hot-plug reference passes both `validate` and the emitter.** The `1206` F3 rule exists because a regulator's or crossing's reference names its own nets (`unconnected-x_FB`). A hot-plug reference names no net. Sentinel-03 with its C1 renamed `unconnected-C1` passes `validate`, `emit`, ERC, and DRC with `--spec` and schematic parity, each with no finding [measured in the image]. So this is harmless as far as KiCad reads it. `names.rs` is outside the carve-out, so nothing was changed there.
+- **F3 · Test weights (for 1910/1911).** New tier-1 tests: `hot_plug_tier1` (9 tests, about 19 s locally in debug; two of them emit both power boards) and one `via_ring_tier1` test (about 39 s, one Sentinel-03 emit). Existing power-board tests now place and route a larger Sentinel-03. Posted on the bus; `ci/` is not mine.
+- **F4 · Sentinel-01's committed MANIFEST cannot be matched off CI.** Rootless podman on Furnace gives `uid_boundary: false, unmet: user_namespace`. The verdict, and so `verdict_sha256` in `MANIFEST.json`, records it (§3.2). This is as the `bench-package` job's comment says, and is no change here.
+- **F5 · Reduction findings outside scope:**
+  - `solved()` is copied in `bench_tier1`, `outline_tier1` and `orientation_tier1`; `hot_plug_tier1` adds a fourth, and `power_board_tier1`'s `full()` a fifth body. One `tests/common` helper would remove about 22 lines.
+  - The path of `sentinel-02-power.json` is re-derived in `power_board_tier1` (twice), `board_tier2`, `common::power` and `hot_plug_tier1`.
+
+## 6. Adversarial pass (§5) and mutants
+
+| Attack | Result |
+|---|---|
+| **A reference collision** (§2.4) | `#C1`, `c1`, `C10`, `C01` and a test point's `TP9` are each refused by `validate` and by the emitter. The emitter never numbers `C1` (the BOM's one `C1` row is the declared part). `unconnected-C1`: F2. |
+| **A reversed electrolytic** | Pad 1 on `VBAT` on board, BOM symbol and value pinned; schematic pins equal the board's by tier 2's parity DRC; the positive terminal is read from the vendored files by a test. Mutant M10 is killed. |
+| **A declaration ignored** | OE `vccb`, PG wired to `NRST`, EN `open` on a buck, and a strap where a wire is declared (and the reverse) are each tested: M3, M4, M7. |
+| **The old default coming back** | A missing EN, PG or OE given to the emitter without `validate` is refused by name (M1). The committed declarations draw as before (M8). |
+| **A floating pin with a name** | Refused, naming the pin and the net (M6). |
+| **A non-bulk row** | A TVS from a test-only table, a ceramic, a pack-side part and an unknown part are all refused (M9). A mutant admitting another kind does not compile: the let-else binds the bulk row's own type. |
+| **`Stack::of` still quiet** | Every production reader takes its stack from `Stack::of` [grep]. `check drc`, `check support` and `extract` are tested (M15–M18). |
+| **Sentinel-01 moving** | §3.1 and §3.2. |
+| **Two bulk capacitors** (probe) | Both are anchored to U10 and pass: 9.852 / 4.659 mm and 9.143 / 7.975 mm. |
+| **A battery-fed LDO first** (probe, unvalidated) | C1 is anchored to it (IN and GND pins). |
+
+**Mutants:** 18, one per guard added or changed, each against the test named for it, in a detached worktree (`~/.cache/aet-1315/mut.py`, log `mut.log`). **18 killed.**
+- M19's first run read as a survivor. Its filter (`control`) matched other tests but not the one asserting the wire condition; rerun on the right test, it was killed. A filter that matches some other test hides a survivor, and the harness's "no test ran" check cannot see that.
+- One branch is labelled `belt-and-suspenders:` and has no mutant: a wire on a pin its row does not let be wired. No held row has such a pin.
+
+## 7. Gates, reduction
+
+- **`cargo fmt --all -- --check`:** clean.
+- **`cargo clippy --workspace --all-targets -- -D warnings`:** clean, and also with `--features aethelgard-cli/with-tools`.
+- **`cargo test --workspace`:** 2270 passed, 0 failed, 0 ignored, exit 0, 1091 s (capped scope, 6 threads, at `ffe449cf`, the code as pushed).
+- **Reduction pass (diff):** −5 net (`rules.rs` −7, its one test caller +2) · 1 duplicate removed (`Rules::from_specification`, a wrapper both production callers had replaced) · 1 mis-attached doc comment fixed · 0 dead paths left (the two strap refusals merged into one before the mutants) · 1 protected kept (the wirable check) · 2 findings outside scope (F5). The review was by a fresh subagent; each proposal was spot-checked against the code. Not taken: merging `extract.rs`'s refusal into `undeclared`, since its `Refusal` and the CLI's `Stop` are two types.
