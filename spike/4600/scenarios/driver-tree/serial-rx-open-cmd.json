@@ -1,0 +1,14 @@
+{
+  "schema_version": 3,
+  "name": "serial-rx-open-cmd",
+  "base": "../../driver-tree.json",
+  "expect": "fail",
+  "expect_findings": [
+    "serial_echo_missing"
+  ],
+  "overrides": [
+    {
+      "serial_rx_open": "CMD"
+    }
+  ]
+}

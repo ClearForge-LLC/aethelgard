@@ -188,7 +188,13 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(l) => l,
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
     };
-    let stack = aethelgard_eda::stack::Stack::of(&spec);
+    let stack = match aethelgard_eda::stack::Stack::of(&spec) {
+        Ok(s) => s,
+        Err(path) => {
+            let s = crate::undeclared(path);
+            return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
+        }
+    };
     let bounded = bound::read(text, &stack)
         .and_then(|read| bound::bound(&read, &wanted).map(|lines| (read, lines)));
     let (read, lines) = match bounded {

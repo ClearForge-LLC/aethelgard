@@ -1,0 +1,15 @@
+{
+  "schema_version": 3,
+  "name": "spi-absent-u30",
+  "base": "../../logger-spi-only-cap.json",
+  "expect": "fail",
+  "expect_findings": [
+    "spi_identity_mismatch",
+    "spi_transaction_unwitnessed"
+  ],
+  "overrides": [
+    {
+      "spi_device_absent": "U30"
+    }
+  ]
+}

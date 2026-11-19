@@ -1,0 +1,458 @@
+{
+  "schema_version": 16,
+  "project_name": "field-logger",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3",
+    "hse_hz": 0,
+    "bor_level": 3,
+    "supply_source": null
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [
+    {
+      "id": "TEMP",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "TEMP_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "TEMP_SCL",
+        "pin": null
+      }
+    },
+    {
+      "id": "BARO",
+      "peripheral": null,
+      "speed_hz": 400000,
+      "pull_up_ohms": 2200,
+      "domain": "VDD_3V3",
+      "sda": {
+        "net": "BARO_SDA",
+        "pin": null
+      },
+      "scl": {
+        "net": "BARO_SCL",
+        "pin": null
+      }
+    }
+  ],
+  "spi_buses": [
+    {
+      "id": "LOG",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "LOG_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "LOG_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "LOG_MISO",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [
+    {
+      "reference": "U10",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 72,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U11",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 73,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U12",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 74,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U13",
+      "part": "TMP117",
+      "supply": "VDD_3V3",
+      "bus": "TEMP",
+      "address": 75,
+      "pin_capacitance": null
+    },
+    {
+      "reference": "U20",
+      "part": "BMP581",
+      "supply": "VDD_3V3",
+      "bus": "BARO",
+      "address": 70,
+      "pin_capacitance": null
+    }
+  ],
+  "spi_devices": [
+    {
+      "reference": "U30",
+      "part": "W25Q64JVxIQ",
+      "supply": "VDD_3V3",
+      "bus": "LOG",
+      "cs": {
+        "net": "LOG_CS",
+        "pin": null
+      },
+      "pin_capacitance": null
+    }
+  ],
+  "connectors": [
+    {
+      "reference": "J1",
+      "part": "SM04B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "READOUT_TX",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": "READOUT_RX",
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    },
+    {
+      "reference": "J2",
+      "part": "SM06B-SRSS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "SWDIO",
+          "offboard": null
+        },
+        {
+          "pin": "5",
+          "net": "SWCLK",
+          "offboard": null
+        },
+        {
+          "pin": "6",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    }
+  ],
+  "net_constraints": [
+    {
+      "net_name": "TEMP_SDA",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "TEMP_SCL",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "BARO_SDA",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "BARO_SCL",
+      "max_capacitance_femtofarads": 100000,
+      "max_rise_time_nanoseconds": 300,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    }
+  ],
+  "board": {
+    "copper_layers": 2,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "role": "signal",
+        "net": null
+      },
+      {
+        "name": "B.Cu",
+        "role": "signal",
+        "net": null
+      }
+    ],
+    "stackup": {
+      "finished_thickness_um": {
+        "nominal": 1600,
+        "min": 340,
+        "max": 2000,
+        "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"
+      },
+      "dielectrics": [
+        {
+          "between": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "min_thickness_um": 200,
+          "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"
+        }
+      ],
+      "copper_max_um": {
+        "value": 70,
+        "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"
+      },
+      "relative_permittivity_max_permille": {
+        "value": 5400,
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      }
+    },
+    "rules": {
+      "clearance_um": 200,
+      "track_width_um": 200,
+      "via_drill_um": 300,
+      "via_diameter_um": 600
+    }
+  },
+  "net_classes": [],
+  "diff_pairs": [],
+  "motor_outputs": [],
+  "power": {
+    "conditions": {
+      "board_temperature_celsius": {
+        "min": -20,
+        "max": 85,
+        "source": "Sentinel-02 declared range: the XT30's -20 C floor and the 5 V output capacitors' 85 C ceiling"
+      },
+      "dc_bias_derating": [
+        {
+          "dielectrics": [
+            "X5R",
+            "X7R",
+            "X7S"
+          ],
+          "ratio_max_permille": 1000,
+          "retained_permille": 500,
+          "source": "TI SBVS320D (TLV755P) p. 15, 7.1.1: generally, derate ceramic capacitors by 50 % (p. 3, note 1: the nominal derating is 50 %); no maker DC-bias figure is held (AET-WO-4300d3 FEEDBACK D2)"
+        }
+      ]
+    },
+    "input": {
+      "reference": "J4",
+      "part": "XT30PW-M",
+      "hot_plug": [
+        {
+          "reference": "C1",
+          "part": "UCZ1H470MCL1GS",
+          "side": "board"
+        }
+      ]
+    },
+    "battery": {
+      "chemistry": "LiPo or Li-ion, one cell",
+      "cells": {
+        "min": 1,
+        "max": 1
+      },
+      "cell_min_millivolts": {
+        "value": 3000,
+        "source": "declared: the cell's discharge floor, as the power fixture declares it per cell"
+      },
+      "cell_max_millivolts": {
+        "value": 4200,
+        "source": "declared: a standard LiPo cell's full charge"
+      }
+    },
+    "regulators": [
+      {
+        "reference": "U50",
+        "part": "LMR33630ADDA",
+        "input": "battery",
+        "output": "VDD_3V3",
+        "feedback": {
+          "top": {
+            "reference": "R20",
+            "part": "TNPW0603_B_E",
+            "ohms": 105000
+          },
+          "bottom": {
+            "reference": "R21",
+            "part": "TNPW0603_B_E",
+            "ohms": 46400
+          }
+        },
+        "external": [
+          {
+            "role": "cin",
+            "reference": "C20",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin_hf",
+            "reference": "C21",
+            "part": "GCM188R71H224KA64"
+          },
+          {
+            "role": "cboot",
+            "reference": "C22",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "cvcc",
+            "reference": "C23",
+            "part": "GRM188R71C105KA12"
+          },
+          {
+            "role": "cout",
+            "reference": "C24",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C25",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C26",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C27",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "inductor",
+            "reference": "L2",
+            "part": "IHLP5050FDER8R2M01"
+          }
+        ],
+        "junction": {
+          "copper_square_centimetres": {
+            "value": 20,
+            "source": "declared by the fixture: the copper around U11 on each layer; not measured on the drawn board"
+          },
+          "loss_milliwatts": {
+            "value": 550,
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 81 % on the 36 V curve at 0.68 A; P_loss = 3.417 V x 679 mA x (1/0.81 - 1) = 544 mW, rounded up"
+          }
+        },
+        "controls": [
+          {
+            "pin": "EN",
+            "strap": "input",
+            "wire": null
+          },
+          {
+            "pin": "PG",
+            "strap": "open",
+            "wire": null
+          }
+        ]
+      }
+    ],
+    "loads": [
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 25,
+        "source": "Winbond W25Q64JV rev J 9.4 p. 61: ICC4 to ICC7 max 25 mA",
+        "reference": "U30"
+      }
+    ],
+    "sense": [],
+    "crossings": []
+  },
+  "accept_lifecycle": [
+    {
+      "part": "W25Q64JVxIQ",
+      "status": "nrnd",
+      "statement": "The logger's record flash, NRND by its maker (Winbond's catalog, Status-Industrial N, 2026-11-16) with longevity support listed; kept because it is the only SPI flash row (AET-WO-4600 spike)"
+    }
+  ],
+  "serial_ports": [
+    {
+      "label": "READOUT",
+      "peripheral": null,
+      "tx": {
+        "net": "READOUT_TX",
+        "pin": null
+      },
+      "rx": {
+        "net": "READOUT_RX",
+        "pin": null
+      },
+      "role": "console",
+      "framing": {
+        "baud": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "inverted": false
+      },
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
+    }
+  ],
+  "acknowledge_unwitnessed": []
+}

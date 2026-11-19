@@ -33,7 +33,7 @@ pub fn moved() -> (aethelgard_ir::Specification, Emission) {
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     let plain = aethelgard_eda::schematic::emit(&spec, &solved, &table).unwrap();
     let tree = aethelgard_eda::strict::board(&plain.board).unwrap();
-    let (b, _) = aethelgard_eda::route::read(&tree, &Stack::of(&spec)).unwrap();
+    let (b, _) = aethelgard_eda::route::read(&tree, &Stack::of(&spec).unwrap()).unwrap();
     let o = b.outline;
     let (cx, cy) = ((o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2);
     let mm = 1_000_000;

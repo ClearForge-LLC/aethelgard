@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"ImuOrientationUndeclared","id":"U40","message":"`U40` (ICM42688P) is an IMU with no declared orientation; ArduPilot's IMU line needs its rotation (AET-WO-4400d)"}}

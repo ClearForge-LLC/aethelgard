@@ -62,7 +62,7 @@ fn emit(dir: &Path, spec: &str) -> (i32, Value, String) {
 
 fn stack_of(spec: &str) -> Stack {
     let bytes = fs::read(root().join(spec)).unwrap();
-    Stack::of(&serde_json::from_slice::<aethelgard_ir::Specification>(&bytes).unwrap())
+    Stack::of(&serde_json::from_slice::<aethelgard_ir::Specification>(&bytes).unwrap()).unwrap()
 }
 
 /// The emitted board of `spec`, as the router reads it, and its copper.
