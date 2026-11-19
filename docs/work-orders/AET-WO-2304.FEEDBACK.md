@@ -433,7 +433,7 @@ None is prototyped (§7: the relaxation is not prototyped as if ruled). Option 1
 
 ### §1.9 What `4400g` moves
 
-Read at source on #238, head `afb91036`. It was **open and unmerged** at every check during this spike (`main` stayed `cd43b207`). Every figure here was measured on `main`.
+Read at source on #238 at head `afb91036`, and re-checked at the stop on head `c07c6ebd` (main merged in, plus `4400g` F5's bench package): the same version bumps and file set for everything below. It was **open and unmerged** at every check (`main` stayed `cd43b207`). Every figure here was measured on `main`.
 
 | Figure | Moves under `4400g`? | Why (read at source on #238) |
 |---|---|---|
@@ -600,7 +600,7 @@ P19 held, with one addition: the solved topology also bumps.
   - `VDD_5V` has one non-relaxing option (D4 option 1), which needs the architect's ruling on its modelling assumption.
   - Nothing was prototyped.
 - **"A candidate turns out to be sampling":** none. (c) is named only.
-- **"`4400g` merges and moves a figure":** it did not merge during the spike (#238 open at `afb91036`; `main` at `cd43b207` at every check).
+- **"`4400g` merges and moves a figure":** it did not merge during the spike (#238 still open at the stop, its head moved from `afb91036` to `c07c6ebd`: main `cd43b207` merged in, and `4400g` F5's bench package added. The same three version bumps; still none of `cli/src/campaign.rs`, `chaos/src/power.rs`, `bridge/`, `power_parts.rs`, `verify.rs` or the emitter. `main` was at `cd43b207` at every check).
 
 ## Gates (spike)
 
