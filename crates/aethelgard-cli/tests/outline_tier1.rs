@@ -35,6 +35,22 @@ fn solved(v: &Value) -> (Specification, SolvedTopology, PinTable) {
 }
 
 /// The fixture with a bound of `width` x `height` whole millimetres.
+/// The committed fixture through `emit`, the ladder's eight routings, made
+/// once per process (`AET-WO-1910` D2) and read by each test that judges that
+/// board; a run that fails fails each of them by its property
+/// (`common::verify::Shared`).
+type Emitted = (Specification, SolvedTopology, PinTable, schematic::Emission);
+static EMITTED: common::verify::Shared<Emitted> =
+    common::verify::Shared::new("the committed Sentinel-03 through emit");
+
+fn emitted(property: &str) -> &'static Emitted {
+    EMITTED.get(property, || {
+        let (spec, solved, table) = solved(&fixture());
+        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        (spec, solved, table, e)
+    })
+}
+
 fn with_bound(width: u32, height: u32) -> Value {
     let mut v = fixture();
     v["board"]["max_outline_um"] = json!({"width": width * 1000, "height": height * 1000});
@@ -86,9 +102,8 @@ fn scratch(label: &str) -> PathBuf {
 
 #[test]
 fn the_fixture_fits_its_bound_with_connectors_on_the_side_edges() {
-    let (spec, solved, table) = solved(&fixture());
+    let (spec, _, _, e) = emitted("the fixture fits its bound with connectors on the side edges");
     assert!(spec.board.max_outline_um.is_some());
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
     let ((w, h), rotations) = outline_and_rotations(&e.board);
     assert!(w <= 100.0 && h <= 100.0, "{w} x {h}");
     assert!(!rotations.is_empty());
@@ -324,8 +339,8 @@ const FIXTURE_PLACEMENT_SHA256: &str =
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
-    let (spec, solved, table) = solved(&fixture());
-    let e = schematic::emit(&spec, &solved, &table).unwrap();
+    let (spec, solved, table, e) =
+        emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
     assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_250_000, 80_950_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
@@ -333,8 +348,8 @@ fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
         .map(|b| format!("{b:02x}"))
         .collect();
     assert_eq!(digest, FIXTURE_PLACEMENT_SHA256);
-    assert_gaps(&e);
-    assert_loops(&spec, &solved, &table, &e.board);
+    assert_gaps(e);
+    assert_loops(spec, solved, table, &e.board);
 }
 
 /// `AET-WO-1313c` §2: twenty order-only renamings (references permuted
@@ -353,8 +368,7 @@ fn order_only_renamings_place_the_fixture_the_same_way() {
     };
     let base = fixture();
     let want = place(&base);
-    let (spec, solved_base, table) = solved(&base);
-    let emitted = schematic::emit(&spec, &solved_base, &table).unwrap();
+    let (_, _, _, emitted) = emitted("order-only renamings place the fixture the same way");
     assert!(emitted.ladder.is_some(), "the fixture is laddered");
     assert_eq!(
         name_free(&emitted.board),

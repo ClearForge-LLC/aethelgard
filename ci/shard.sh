@@ -17,8 +17,11 @@
 #                                  LPT assignment -> OUTDIR/shard-K.tsv
 #   guard N ENTRIES OUTDIR         the shard lists are disjoint and their union is the list
 #   names SHARDFILE SUITE          the names a shard runs in a suite, one per line
-#   result K SHARDFILE WSLOG BRIDGELOG TIER2_RE
-#                                  passes in the logs equal the assignment; prints the result line
+#   result K SHARDFILE WSLOG BRIDGELOG TIER2_RE [WEIGHTS [COLOCATE]]
+#                                  passes in the logs equal the assignment; with WEIGHTS, no test with no row
+#                                  ran past libtest's 60 s line (AET-WO-1910 P2); prints the result line
+#   heavy_unweighted LOG WEIGHTS COLOCATE
+#                                  the tests P2 refuses, one per line
 #   aggregate DIR N TIER2_MIN      across the shards' artifacts: nothing missing, floor held
 set -euo pipefail
 export LC_ALL=C
@@ -107,8 +110,12 @@ assign() {
       blk[$1] = $2; next }
     { if (NF != 3) bad("entries:" FNR ": want 3 tab-separated fields, got " NF)
       if ($1 != "ws" && $1 != "bridge") bad("entries: unknown suite " $1)
-      ne++; es[ne] = $1; eb[ne] = $2; et[ne] = $3 }
+      ne++; es[ne] = $1; eb[ne] = $2; et[ne] = $3; listed[$2 "\t" $3] = 1; lbin[$2] = 1 }
     END {
+      # AET-WO-1910 P1 (ruled D6): a row that names no listed test is a renamed or removed test, whose
+      # new name would silently take DEFAULT_WEIGHT; refused by name, as is a block naming no binary.
+      for (k in w) if (!(k in listed)) { split(k, kk, "\t"); bad(wf ": " kk[1] " " kk[2] " names no listed test (renamed or removed? weigh its new name)") }
+      for (b in blk) if (!(b in lbin)) bad(cf ": " b " names no listed binary")
       for (i = 1; i <= ne; i++) { k = es[i] "\t" et[i]; occ[k]++
         if ((eb[i] in blk) && !(k in bl)) bl[k] = eb[i] }
       for (i = 1; i <= ne; i++) { k = es[i] "\t" et[i]
@@ -197,8 +204,26 @@ tally() {
   ' "$log"
 }
 
+# heavy_unweighted LOG WEIGHTS COLOCATE: each test libtest itself reports as running for over 60 seconds
+# that has no row in WEIGHTS and is in no binary of COLOCATE, as `binary<TAB>test`.
+heavy_unweighted() {
+  local log=$1 weights=$2 colocate=$3
+  readable "$log"; readable "$weights"; readable "$colocate"
+  awk -F'\t' -v wf="$weights" -v cf="$colocate" '
+    FILENAME == wf { if ($0 !~ /^#/ && NF == 3) w[$1 "\t" $2] = 1; next }
+    FILENAME == cf { if ($0 !~ /^#/ && NF == 2) blk[$1] = 1; next }
+    /^ +Running / { split($0, f, " "); binary = f[2]; if (f[3] ~ /^src\//) binary = f[2] " " f[3]; next }
+    /^ +Doc-tests / { binary = ""; next }
+    # A tool line can precede the libtest warning on one line (board_ui, trybuild): match its end.
+    match($0, /(^| )test [^ ]+ has been running for over 60 seconds$/) {
+      name = substr($0, RSTART, RLENGTH); sub(/^ /, "", name); sub(/^test /, "", name)
+      sub(/ has been running for over 60 seconds$/, "", name)
+      if (binary != "" && !(binary in blk) && !((binary "\t" name) in w)) print binary "\t" name }
+  ' "$weights" "$colocate" "$log"
+}
+
 result() {
-  local k=$1 shardfile=$2 wslog=$3 bridgelog=$4 re=$5
+  local k=$1 shardfile=$2 wslog=$3 bridgelog=$4 re=$5 weights=${6:-} colocate=${7:-/dev/null}
   readable "$shardfile"
   [ -s "$shardfile" ] || die "shard $k lists nothing; a shard that runs nothing fails"
   local suite log expect total=0 tier2=0 expected=0 p f ig t2
@@ -215,6 +240,14 @@ result() {
     [ "$p" -eq "$expect" ] || die "$suite: $p passed, the assignment is $expect"
     total=$((total + p))
     tier2=$((tier2 + t2))
+    # AET-WO-1910 P2 (ruled D6): the plan gave a test with no row DEFAULT_WEIGHT; one libtest reports
+    # running past 60 s is heavy, and is refused by name (a test queued behind a lock reads the same, so
+    # every test of a lock-serialised binary carries a row).
+    if [ -n "$weights" ]; then
+      local heavy
+      heavy=$(heavy_unweighted "$log" "$weights" "$colocate") || exit 1
+      [ -z "$heavy" ] || die "$suite: ran over 60 s with no row in $(basename "$weights") (the plan gave each $DEFAULT_WEIGHT s; weigh it by the REFIT RULE): $(tr '\t\n' ' ;' <<<"$heavy")"
+    fi
   done
   echo "shard=$k expected=$expected passed=$total tier2=$tier2"
 }
@@ -259,7 +292,7 @@ aggregate() {
 FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
-TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
+TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
 BASE0=${SHARD0_FIXED_SECONDS:-25}
 
@@ -298,13 +331,13 @@ run() {
     set -e
   fi
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
-  result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" | tee "$out/result.txt"
+  result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
 
 cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run ...}
 shift
 case $cmd in
-  parse | assign | guard | names | result | aggregate | tally) "$cmd" "$@" ;;
+  parse | assign | guard | names | result | aggregate | tally | heavy_unweighted) "$cmd" "$@" ;;
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
   *) echo "usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run" >&2; exit 2 ;;

@@ -61,3 +61,16 @@ tokio = { version = "1", default-features = false, features = ["rt", "macros", "
 # release profile and every generated file are untouched.
 [profile.dev.package.aethelgard-eda]
 opt-level = 2
+
+# The CLI hashes and parses ST's 2.1 MB `stm32h753xx.h` on every `pin_table`
+# and `register_facts` call, so every test that runs the dev-built CLI paid it
+# unoptimised (`AET-WO-1910` F2, ruled D7 on PR #233, comment 6999515740).
+# Measured on 4 CPUs: `boot_tier1` 120.8 s -> 31.5 s, `campaign_tier1` 47.1 s ->
+# 9.1 s (each stanza alone, `boot_tier1`: sha2 74.2 s, svd-hal 64.7 s). As for
+# `aethelgard-eda` above: dev builds only, with debug assertions and overflow
+# checks kept on; the release profile and every generated file are untouched.
+[profile.dev.package.aethelgard-svd-hal]
+opt-level = 2
+
+[profile.dev.package.sha2]
+opt-level = 2
