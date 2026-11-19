@@ -118,4 +118,62 @@ refuses "aggregate: a test in two shards" "${py[@]}" aggregate "$tmp/art" $N $((
 
 }
 for n in 4 5 7; do suite $n; done
+
+# AET-WO-1910 (ruled on PR #233, comment 6999515740): the planner's two refusals (D6) and the gates split (D5).
+echo "== the planner's refusals and the gates split"
+fx="$here/fixtures"
+# P1: a row that names no listed test, or a block that names no listed binary, is refused by name.
+printf 'tests/board_tier2.rs\tv1\t100\ntests/board_tier2.rs\trenamed_away\t12\n' >"$tmp/stale.tsv"
+refuses "P1: a weight row naming no listed test" "${py[@]}" assign 4 "$tmp/stale.tsv" "$tmp/entries.tsv" "$tmp/p1"
+grep -q 'renamed_away names no listed test' "$tmp/out" && ok "P1: the row is named" || bad "P1: the row is not named"
+printf 'tests/gone.rs\t30\n' >"$tmp/gone.tsv"
+refuses "P1: a block naming no listed binary" "${py[@]}" assign 4 "$tmp/weights.tsv" "$tmp/entries.tsv" "$tmp/p1b" 0 "$tmp/gone.tsv"
+grep -q 'tests/gone.rs names no listed binary' "$tmp/out" && ok "P1: the block is named" || bad "P1: the block is not named"
+# P2 on CI's own logs: a9b79f43's shards (AET-WO-1314, run 44372757248) against that commit's weights name the eleven
+# tests behind its overrun; main 565b32c5's (run 44441889769), against its weights with the rows this build adds, name none.
+"${py[@]}" heavy_unweighted "$fx/p2-a9b79f43.log" "$fx/p2-a9b79f43-weights.tsv" "$fx/p2-colocate.tsv" >"$tmp/a9b" 2>&1
+[ "$(wc -l <"$tmp/a9b")" -eq 11 ] && [ "$(grep -c '^tests/supply_tier1.rs	' "$tmp/a9b")" -eq 8 ] \
+  && [ "$(grep -c '^tests/via_ring_tier1.rs	' "$tmp/a9b")" -eq 2 ] \
+  && grep -q '^tests/outline_tier1.rs	the_fixture_fits_its_bound_with_connectors_on_the_side_edges$' "$tmp/a9b" \
+  && ok "P2: a9b79f43 names its eleven unweighted heavy tests" || bad "P2: a9b79f43: $(tr '\n' ';' <"$tmp/a9b")"
+"${py[@]}" heavy_unweighted "$fx/p2-565b32c5.log" "$fx/p2-565b32c5-weights.tsv" "$fx/p2-colocate.tsv" >"$tmp/base" 2>&1 \
+  && [ ! -s "$tmp/base" ] && ok "P2: silent on main 565b32c5" || bad "P2: main 565b32c5: $(tr '\n' ';' <"$tmp/base")"
+# P2 in a shard's result: a test with no row that libtest reports past 60 s is refused, by name; weighed, accepted.
+mk_heavy() { # passed
+  printf '     Running unittests src/lib.rs (target/debug/deps/a-1)\ntest u1 has been running for over 60 seconds\ntest result: ok. %d passed; 0 failed; 0 ignored; 0 measured; 0 filtered out\n' "$1"
+}
+shard=$(ls "$tmp"/plan/shard-*.tsv | head -1); k=${shard##*-}; k=${k%.tsv}
+want=$(awk -F'\t' '$1=="ws" {n += $3} END {print n + 0}' "$shard")
+mk_heavy "$want" >"$tmp/heavy.log"
+: >"$tmp/w0.tsv"
+refuses "P2: result refuses an unweighted test past 60 s" "${py[@]}" result "$k" "$shard" "$tmp/heavy.log" "$tmp/none.log" "$RE" "$tmp/w0.tsv"
+grep -q 'unittests src/lib.rs u1' "$tmp/out" && ok "P2: result names it" || bad "P2: result does not name it: $(head -1 "$tmp/out")"
+printf 'unittests src/lib.rs\tu1\t70\n' >"$tmp/w1.tsv"
+accepts "P2: the same test, weighed, passes" "${py[@]}" result "$k" "$shard" "$tmp/heavy.log" "$tmp/none.log" "$RE" "$tmp/w1.tsv"
+# The gates split (ci/gates.sh): the complement of tools-only by name; refused by name otherwise.
+gs=(bash "$here/gates.sh")
+meta() { # extra-target-json
+  printf '{"packages":[{"name":"a","targets":[{"kind":["lib"],"name":"a"},{"kind":["test"],"name":"t1"},{"kind":["test"],"name":"t2"}%s]},{"name":"b","targets":[{"kind":["lib"],"name":"b"},{"kind":["test"],"name":"t1"},{"kind":["test"],"name":"u"}]}]}\n' "$1" >"$tmp/meta.json"
+}
+meta ""
+printf '# comment\na\tt2\n' >"$tmp/only.tsv"
+accepts "gates: every other test target runs by name" "${py[@]/shard.sh/gates.sh}" targets "$tmp/meta.json" "$tmp/only.tsv"
+[ "$("${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv" | tr '\n' ' ')" = "t1 u " ] && ok "gates: t1 (two packages) and u run, t2 does not" || bad "gates: the complement"
+printf 'a\tgone\n' >"$tmp/only.tsv"
+refuses "gates: a tools-only row naming no test target" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+grep -q 'names no test target: a gone' "$tmp/out" && ok "gates: the row is named" || bad "gates: the row is not named"
+printf 'a\tt1\n' >"$tmp/only.tsv"
+refuses "gates: a tools-only name two packages share" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+meta ',{"kind":["bench"],"name":"speed"}'; printf 'a\tt2\n' >"$tmp/only.tsv"
+refuses "gates: a target of a kind neither job runs by name" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+grep -q 'a speed (bench)' "$tmp/out" && ok "gates: the bench is named" || bad "gates: the bench is not named"
+meta ',{"kind":["example"],"name":"demo","test":true}'
+refuses "gates: an example with test = true" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+meta ',{"kind":["example"],"name":"demo","test":false}'
+accepts "gates: an example built, not tested" "${gs[@]}" targets "$tmp/meta.json" "$tmp/only.tsv"
+# Every test of a lock-serialised binary carries a row.
+refuses "plan: a lock-serialised binary's test with no row" "${py[@]}" assign 4 "$tmp/weights.tsv" "$tmp/entries.tsv" "$tmp/lk" 0 /dev/null "tests/board_tier2.rs"
+grep -q 'tests/board_tier2.rs v2 has no row' "$tmp/out" && ok "plan: the test is named" || bad "plan: the test is not named"
+printf 'tests/board_tier2.rs\tv1\t100\ntests/board_tier2.rs\tv2\t1\ntests/board_tier2.rs\tshared2\t1\n' >"$tmp/wl.tsv"
+accepts "plan: every lock-serialised test weighed" "${py[@]}" assign 4 "$tmp/wl.tsv" "$tmp/entries.tsv" "$tmp/lk2" 0 /dev/null "tests/board_tier2.rs"
 exit "$fail"
