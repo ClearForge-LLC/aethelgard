@@ -76,6 +76,15 @@ Every figure is labelled **measured**, **read at source** or **inferred**. Measu
   - Caps read back inside the scope before each container: `memory.max=8589934592 memory.swap.max=0 pids.max=8192`, or `17179869184` for `verify` (`spike/2304/out/caps.log`).
 - Image: `container/IMAGE`, the pinned tools image (Renode 1.17.0, ngspice 44.2).
 - The CLI and the bridge were built unmodified from `cd43b207`. The probe was built from `spike/2304/lockstep` (2303's, restored) and `spike/2304/ngspice` (2303's FFI copy, unchanged, outside the workspace).
+- **Before the predictions were committed, the mirror's `buck_avail_uv` was evaluated at five points:**
+  - U11 at 3.8 V and 748 mA: 3.52 V;
+  - U10 at 7.0, 5.2, 5.3 and 5.4 V and 2 A.
+  - P2's 3.52 V and P5's 5.3 V came from those calls, so P2 and P5 are not blind predictions.
+- **Unpredicted** (added after the predictions, with nothing to hold them against):
+  - §1.4's 60/100/127 A rows and its deck-rule column;
+  - §1.5's band runs;
+  - §1.8's `check_droop` results and the bridge rail comparison;
+  - §1.2's pad list from the emitted board.
 - **Discarded, not reported as results:** the first three (a) runs, made with a deck error.
   - The enable source was written `dc 1 external`. Measured: ngspice adds the callback's value to the source's `dc` value, so the enable read 2.0 and the bucks drew twice their power.
   - Found by dumping the deck's nodes. Fixed to `dc 0` and re-run. Every reported (a) and (b) run uses the fixed deck.
@@ -83,7 +92,9 @@ Every figure is labelled **measured**, **read at source** or **inferred**. Measu
 
 ### §1.1 The rows, at source
 
-Each row was confirmed against the cited lines; corrections are marked. The research notes are kept off the repository; the citations below were re-read.
+Corrections are marked.
+
+**Provenance:** a read-only subagent gathered the citations, and I spot-checked them. The load-bearing ones I re-read first-hand: `verify.rs` L705, L774, L785–796, L827, L879–944; `crates/aethelgard-cli/README.md` L924; `connectors.rs` L165–168; `power.rs` L1587, L1607, L1642; `power_parts.rs` L302–307, L330–336; `schematic_power.rs` L431–432; `cli/src/campaign.rs` L380–390; and the version constants.
 
 | Row | Item | Classification | At source |
 |---|---|---|---|
@@ -107,6 +118,11 @@ Each row was confirmed against the cited lines; corrections are marked. The rese
   - J4 (`XT30PW-M`) lands on net `VBAT` (`eda/src/schematic_power.rs` L21–23, L322–327; `BATTERY_NET`, `ir/src/power.rs` L82). `VBAT` feeds U10 and U11 and the sense divider R50/R51.
   - Net class `POWER` (500 µm) holds `VBAT` and `VDD_5V`.
   - `power.loads` holds no ESC or motor load.
+- **Measured on the emitted board** (`generate`'s `kicad/sentinel-03.kicad_pcb`, sha256 `674a3980…8dba`; pads read by net):
+  - `VBAT` reaches J4.2, U10.2/3 and U11.2/3 (VIN and the EN strap), C10.1, C11.1, C20.1, C21.1 and R50.1, and nothing else.
+  - J5 carries `/MOTOR1`–`/MOTOR4` on pads 1–4, an unconnected pad 5, and GND (pad 6 and MP).
+  - C1, the hot-plug part, is not drawn yet: that is `1315`.
+- **The power fixture** (`crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json`) declares **no motor outputs at all**. Its battery input is J1, `XT30PW-M`, with the same C1. So its battery load is the tree's static load, and there is no ESC path to read.
 - **Finding F1: the specification cannot say whether ESC current passes through J4 and `VBAT` copper.** The only thing it supports is that ESCs are *not* fed through J5. The schema has no field for it.
   - So the chain's R splits two ways. For the ESC current, R is pack plus leads, plus J4 and `VBAT` copper only if a pad on the board feeds the ESC. For the board's own draw, R is pack plus leads plus J4 plus copper.
   - **L722** (J4 against ESC current) and **`1303b`'s supply gate** rest on the same undeclared fact.
@@ -210,7 +226,7 @@ While U11 regulates, the script puts `VDD_3V3` at the midpoint of IR's range: 3.
   - So the band's width is set by the ESC's unsourced idle figure. **The 0.8 A edge used in an earlier draft was not sourced, and is withdrawn** (adversarial H3).
 - **How far the band sits from a credible healthy path R.** There is no maker figure for pack R (F2), so this is inferred.
   - The band's lower edge at 0.4 A is about 106× the third-party ~12 mΩ for a healthy 850 mAh pack.
-  - A whole path (pack, leads, J4, copper) at the declared −20 °C and a low state of charge is plausibly tens of mΩ, which puts the margin at about **10–60×**.
+  - A whole cold path at a low state of charge may be several times higher. That is not quantified here, because it would be an estimate (`INV-06`), so no path ratio is claimed.
   - The ratio to J4's stated 0.8 mΩ alone (1,590×) is a connector ratio, not a path ratio, and is not the margin.
 - **The conclusion.**
   - On the generated firmware, a crossing that depends on the firmware needs **both** a declared pack R tens of times a healthy one, **and** an ESC idle difference (DShot-0 against no signal) large enough to reach that R's collapse: ≥ 1.47 A at 1.0 Ω.
@@ -331,7 +347,7 @@ Today's versions: specification 16 (`ir/src/lib.rs` L81), solved topology 10 (L4
 | Cost | (a0) lift `PowerNotSimulated` only | (a) the declared chain, a new fault kind on the battery | (b) lock-step at 100 µs with (a1) per-quantum samples | (d) re-plan at each firmware command |
 |---|---|---|---|---|
 | Specification | none | **18**: a healthy-pack series R on `Battery` (`ir/src/power.rs` L200–207; D3). An ESC per motor output (`ir/src/motor.rs` L82; `names.rs` L220 and `connectors.rs` L288 iterate it) only if the board drives one, so not for Sentinel-03 (§1.2) | as (a) | as (a) |
-| Power-parts | none | **5**, only with an `esc` kind (`power_parts.rs` `Kind` L534–544, `name()` L547–559; `data/power-parts.json`; consumers in `eda` `stack.rs`, `supply.rs` and `schematic_power.rs`, `ir/src/names.rs`, `hwdef`). Sentinel-03 needs none | as (a) | as (a) |
+| Power-parts | none | **5** for the bucks' enable thresholds (F5, D5); an `esc` kind (`power_parts.rs` `Kind` L534–544, `name()` L547–559; `data/power-parts.json`; consumers in `eda` `stack.rs`, `supply.rs` and `schematic_power.rs`, `ir/src/names.rs`, `hwdef`) is a further bump, which Sentinel-03 does not need | as (a) | as (a) |
 | Scenario version | none | **4**: a `battery_sag` override (`chaos/src/record.rs` `Override` L182–, wire L903–913 and L963, `name_ok` L1917; `chaos/src/campaign.rs` `RawDroop` L176, `droop_from` L381, sort L555–565, version gate L639–646) | **4**: the same declaration, plus the load's source (ESC per `CEN`) | as (b) |
 | Trace version and kinds | none | **15**: one new kind, the battery-sag declaration (31; `record.rs` L985–1014 numbering, `check_run` ranks L755–780, `check_joins` L2583, `tools_of`). The chain's crossings reuse kind 17 on `VDD_3V3` | **15**: a per-quantum sample kind admitted by `check_archived` (L2893) and `check_joins`, plus (a)'s declaration kind | as (a); plus a record per re-plan (inferred) |
 | Reader limits | none | `MAX_RECORDS` untouched: measured 0–45 events a run, but 47,816 in I2's no-operating-point case, which the build must refuse (below). `MAX_TRACE_BYTES` not approached | **L799 (the writer's bound) is needed.** Samples fold to one map entry per net, so `MAX_RECORDS` is never met. Measured 0.51 MB/s at 100 µs: 256 MiB at about 500 s (inferred from the rate). At 10 µs, see §1.5 | none beyond (a) (inferred) |
@@ -432,6 +448,29 @@ Read at source on #238, head `afb91036`. It was **open and unmerged** at every c
 
 P19 held, with one addition: the solved topology also bumps.
 
+### §1.10 `verify`'s weight on a tree board (measured)
+
+- **The run:** the unmodified CLI's `aethelgard verify --spec crates/aethelgard-cli/tests/fixtures/sentinel-03.json`, with no `--scenarios` and no `--fab-out` (the gates it runs today), once.
+  - It ran under `capped-run --mem 16G`, with the caps read back as `memory.max=17179869184 memory.swap.max=0 pids.max=8192` (`spike/2304/sh/verify.sh`).
+- **Verdict `pass`, exit 0.** 24 gates: ERC, DRC, support, extract, 18 Kani harnesses (`prove`), build and simulate. Findings `[]`. ELF `5756a2e0…ca51`, the same as `generate`/`build` gave (`spike/2304/out/verify-s03.json`, a summary; the full 381,321 B verdict's sha256 is in it).
+- **Wall: 1,075 s (17.9 min).**
+- **Peak memory:**
+  - the scope's `memory.peak` was **3,651,358,720 B (3.40 GiB), 213 ‰ of the 16 G cap**, also read from the host every 5 s (`spike/2304/out/verify-s03-mem.log`);
+  - the largest single process was 3,048,708 KiB (2.91 GiB, `getrusage`).
+  - It would have fit 8 G (425 ‰).
+- **P18:** predicted a peak of 6–14 GiB and a wall of 10–30 min. **The peak was missed (3.40 GiB, below the band); the wall held (17.9 min); the verdict held (pass).**
+- **For the build's tier-2 cost:**
+  - one `verify` of Sentinel-03 is about 18 min of one shard's 60-minute guard (8 shards; `TIER2_MIN` 190);
+  - a `--fab-out` run adds the campaign's scenarios, each a boot of about 9 s plus (a)'s solve (§1.6);
+  - a (b) lock-step scenario adds its wall per simulated second (§1.5).
+- **`4400g`** does not move these gates' arithmetic. Its trace and specification bumps move the verdict's hashes (§1.9).
+
+### P19 against its result
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| P19 | `4400g` moves the TIM1 clock, kind 26's values and the versions, not boot-to-`CEN`, the analog side or ngspice | as predicted, read at source on #238. Also moved: the solved topology version (10 → 11), which was not predicted. `cli/src/campaign.rs` is not touched (§1.9) | held, with one addition |
+
 ## Findings (house schema: finding · where · type · recommendation · decision-needed)
 
 - **F1 · The specification cannot say whether ESC current passes through J4 and `VBAT` copper · `sentinel-03.json` (J5 has no power pin), `ir/src/motor.rs` L82, `ir/src/power.rs` L1587–1650 · schema gap · declare it with the ESC row (D2): each ESC names its supply, either `board` (a pad on `VBAT`) or `pack` · D2.**
@@ -443,6 +482,7 @@ P19 held, with one addition: the solved topology also bumps.
 - **F7 · `VDD_5V` has no observer in the twin · `aethelgard-twin`, `chaos`, `bridge/`, `models/` (no `VDD_5V`) · coverage gap · D4 option 1 (its consumers' absence) · D4.**
 - **F8 · Roadmap L722 names the wrong connector; L696 is done · `roadmap.md` · stale rows · D6.**
 - **F9 · `4400g` also bumps the solved topology (10 → 11); the WO's list omits it; `cli/src/campaign.rs` is not shared with `4400g` · #238 · WO correction · none.**
+- **F11 · Below U10's 7.0 V `regulation_vin_min`, `VDD_5V`'s band is unstated before any `VDD_3V3` crossing · §1.4 (0.83–0.99 Ω at idle against ≥ 1.27 Ω) · rule consequence (IR's D-B9) · the build refuses below it, and `battery` is covered by a tolerated sag · D5 (Scotty's, if a brownout is to be admitted below D-B9).**
 - **F10 · Under lock-step, a reset within one boot cycle repeats while the ESC current decays · (b) T10: 6 a cycle at 10 µs, 2 at 100 µs · model sensitivity: the count rests on the regulator's undeclared hiccup behaviour and the deck's ESC lag · a build counts boot cycles (`CEN` sets) as its loop measure, and declares the regulator's enable thresholds and the ESC's current rise as data · D2, D5.**
 
 ## Decisions — each with a recommendation
@@ -451,9 +491,9 @@ P19 held, with one addition: the solved topology also bumps.
 - **The margin it rests on (§1.4), in amps:**
   - On the generated firmware the only lever is `CEN` (DShot-0 frames, or none). An ESC with no signal still draws (Hobbywing), so the lever is the DShot-0 idle minus the no-signal idle. No maker states either figure.
   - At the WO's weak pack (1.0 Ω), the firmware moves a crossing **only if that lever is at least 1.47 A in total**. The WO's 0.4 A (I1) gives no reset under either candidate (measured).
-  - In ohms, at a 0.4 A lever, the firmware moves a crossing only for a declared R of 1.27–1.43 Ω. That is about 106× a healthy pack's third-party ~12 mΩ, and inferred to be 10–60× a whole cold path's tens of mΩ. No maker states a pack R.
+  - In ohms, at a 0.4 A lever, the firmware moves a crossing only for a declared R of 1.27–1.43 Ω. For context only, since no maker states a pack R and the WO forbids estimating one: that is about 106× a third-party ~12 mΩ for a healthy pack. **The 1.47 A figure carries the margin**, not this ratio.
   - The band's width is set by the unsourced idle figure: at a 2.0 A lever it is 0.91–1.43 Ω, and 1.0 Ω loops (I2, measured).
-- **(a) must refuse where it is wrong (F5).** Past the collapse (or below a regulator's shutdown), (a) gives 4,630 resets against (b)'s 24. With that refusal in place, (a) issues a verdict only where the board keeps an operating point under its declared load.
+- **(a) must refuse where it is wrong (F5).** Past the collapse (or below a regulator's shutdown), (a) gives 4,630 resets against (b)'s 24. With that refusal in place, (a) issues a verdict only where the board keeps an operating point under its declared load, and, under D5's rule, only where every battery-fed rail stays stated.
   - There, on the generated firmware, (a) and (b) agree whenever the declared ESC load includes the idle figure. Measured at I1: 0 against 0 at both quanta. §1.5's band runs measured it either side of the band: at 1.20 Ω they agree, at 1.35 Ω (b) loops and (a) chatters.
   - **That condition is D2's:** a scenario that declares no ESC current on a board that drives ESCs would give (a) a pass where (b) loops. So the ESC row is not optional on such a board.
 - **Sentinel-03 drives no declared ESC (§1.2).** It has no lever at all. Its battery load is the tree's declared 14.16 W, and it browns out at 1.43 Ω with no ESC (F4).
@@ -490,6 +530,9 @@ P19 held, with one addition: the solved topology also bumps.
 - **The fixture's `VDD_1V8`:** it can leave tolerance only after BOR3 has reset the MCU (U12 needs 2.227 V, below BOR3's 2.54 V minimum).
   - Counting it covered by that argument would be a static rule standing in for campaign coverage: **Scotty's**.
   - Otherwise it takes option 1 with its own consumers.
+- **`4201` F5** (docs-branch roadmap row L840, owned by "`AET-WO-2304` D4, or the next coverage work order"): `3303`'s rule counts `SENSORS` as covered by passing scenarios with no modelled device on the bus.
+  - It is the same principle as option 1's caveat: a target counts as covered only if a judge observes something on it (`EXT` has no peer, and today it is named `no device: nothing to fault`, README L924).
+  - **Recommendation: the next coverage work order, not this build.** The battery chain does not touch bus coverage. That order should state the rule once for buses and rails alike.
 
 **D5 · The smallest honest step: (a0) + F3 + (a), built for Sentinel-03 first.**
 - **What it is:**
@@ -498,11 +541,18 @@ P19 held, with one addition: the solved topology also bumps.
   - add a `battery_sag` kind: the pack R fault, the tree's declared static load, and an optional declared ESC step profile;
   - solve it once by the bridge's chain deck, with crossings through `power::schedule`;
   - refuse a declared R with no operating point, or below a regulator's declared shutdown (F5); this needs the regulators' enable thresholds as power-parts data;
+  - **and refuse a declared R that puts V_bat below any battery-fed buck's `regulation_vin_min`** (F11; IR's own D-B9 rule: below it the band is unstated);
   - add the coverage rule for `battery`.
 - **Versions after `4400g`:** specification 18, scenario 4, trace 15 (one new kind: the declaration; crossings reuse kind 17). Power-parts goes to 5 for the buck's enable thresholds (F5: SNVSAN3F §8.3.4 states only typical values, so the build holds the stated 3.8 V operating minimum as the conservative edge unless the architect rules the typicals in). The `esc` kind with `4500` is a further bump. The architect dispatches the bench package afterwards (its `verdict_sha256` moves).
+- **What D-B9 leaves the first build (F11):**
+  - On Sentinel-03, V_bat falls below U10's 7.0 V `regulation_vin_min` at 0.83 Ω (0.4 A) to 0.99 Ω (0 A). That is before `VDD_3V3` can cross BOR3 (≥ 1.27 Ω).
+  - So under that refusal, a `battery_sag` scenario on this tree can only be **tolerated**: the pack sags below its declared 9.0 V floor (L695's principle: the quantity moved past its declared tolerance) and every rail stays stated. **A brownout cannot be shown on Sentinel-03 without leaving `VDD_5V`'s band unstated.**
+  - The WO's own weak case (1.0 Ω) would be refused at any ESC current.
+  - Admitting a declared R below D-B9, with `VDD_5V` named "unstated" in the verdict, would relax what the verdict covers: **Scotty's**.
+  - **Recommendation:** the first build refuses per D-B9 and covers `battery` by a tolerated sag (for example 0.5 Ω, V_bat 8.13 V at 0 A, §1.4). Showing a brownout waits for that ruling, or for a tree whose 5 V band is stated lower.
 - **It takes L697** (the loaded floor), because the change is in the same function.
 - **It does not need L799.** (a)'s largest trace is 2.2 KB once F5's refusal stands. L799 goes with (b), or with the next chaos order.
-- **Sentinel-03's package ships with the chain declared** once D4 is ruled for `VDD_5V`. The verdict says what it does not claim (`RUL-19`'s habit): "the battery's load is the tree's declared static load; no motor current is commanded, so no reboot loop is shown or excluded".
+- **Sentinel-03's package ships with the chain declared** once D4 is ruled for `VDD_5V` (its own coverage row is separate from F11). The verdict says what it does not claim (`RUL-19`'s habit): "the battery's load is the tree's declared static load; no motor current is commanded, so no reboot loop is shown or excluded".
 - **Measured cost:** `verify` on Sentinel-03 (§1.10) is the tier-2 base. (a)'s solve takes about 12 s per simulated second at a 10 µs enable step; the boot's 100 ms is inferred at about 1.2 s.
 
 **D6 · Row hygiene.**
@@ -512,6 +562,7 @@ P19 held, with one addition: the solved topology also bumps.
 - **L695's pull-up and capacitance half** and **L723** (ESR on ceramics) go to a static work order. The chain uses only C1's ESR, which is held.
 
 **D7 · Precede or fold: precede `4500`.**
+- The WO cites "the architect's note below" for D7. Neither the cached copy nor the WO on the docs branch at `0883d1d2` holds one (diffed: identical). D7 therefore answers from the evidence alone.
 - **For preceding:**
   - Sentinel-03 is first (roadmap L367, L375) and Scotty's fabrication quote waits on it (L419–424).
   - Its build needs no ESC, frame or pack choice (§1.2).
@@ -533,29 +584,6 @@ P19 held, with one addition: the solved topology also bumps.
 - The deck's bucks' enable is not put inside the deck (F10, §1.5): it is quantised at the boundaries in both candidates, and labelled.
 - No re-run with the CLI's witness logging kept: `2303` measured it changes nothing in the samples trace.
 - No re-measure on `4400g`, which did not merge during the spike.
-
-### §1.10 `verify`'s weight on a tree board (measured)
-
-- **The run:** the unmodified CLI's `aethelgard verify --spec crates/aethelgard-cli/tests/fixtures/sentinel-03.json`, with no `--scenarios` and no `--fab-out` (the gates it runs today), once.
-  - It ran under `capped-run --mem 16G`, with the caps read back as `memory.max=17179869184 memory.swap.max=0 pids.max=8192` (`spike/2304/sh/verify.sh`).
-- **Verdict `pass`, exit 0.** 24 gates: ERC, DRC, support, extract, 18 Kani harnesses (`prove`), build and simulate. Findings `[]`. ELF `5756a2e0…ca51`, the same as `generate`/`build` gave (`spike/2304/out/verify-s03.json`, a summary; the full 381,321 B verdict's sha256 is in it).
-- **Wall: 1,075 s (17.9 min).**
-- **Peak memory:**
-  - the scope's `memory.peak` was **3,651,358,720 B (3.40 GiB), 213 ‰ of the 16 G cap**, also read from the host every 5 s (`spike/2304/out/verify-s03-mem.log`);
-  - the largest single process was 3,048,708 KiB (2.91 GiB, `getrusage`).
-  - It would have fit 8 G (425 ‰).
-- **P18:** predicted a peak of 6–14 GiB and a wall of 10–30 min. **The peak was missed (3.40 GiB, below the band); the wall held (17.9 min); the verdict held (pass).**
-- **For the build's tier-2 cost:**
-  - one `verify` of Sentinel-03 is about 18 min of one shard's 60-minute guard (8 shards; `TIER2_MIN` 190);
-  - a `--fab-out` run adds the campaign's scenarios, each a boot of about 9 s plus (a)'s solve (§1.6);
-  - a (b) lock-step scenario adds its wall per simulated second (§1.5).
-- **`4400g`** does not move these gates' arithmetic. Its trace and specification bumps move the verdict's hashes (§1.9).
-
-### P19 against its result
-
-| id | Predicted | Result | |
-|---|---|---|---|
-| P19 | `4400g` moves the TIM1 clock, kind 26's values and the versions, not boot-to-`CEN`, the analog side or ngspice | as predicted, read at source on #238. Also moved: the solved topology version (10 → 11), which was not predicted. `cli/src/campaign.rs` is not touched (§1.9) | held, with one addition |
 
 ## §7 checked
 

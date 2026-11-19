@@ -41,3 +41,18 @@ capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1
 capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1777477-i173616280.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
 2026-11-19T15:31:42+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; bash /repo/spike/2304/sh/band.sh
 capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2307358-i174243025.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:36:12+00:00 mem=8G cmd: cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2367742-i174288391.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+   Compiling aet2304-lockstep v0.0.0 (/repo/spike/2304/lockstep)
+warning: unused variable: `t`
+    --> src/main.rs:1097:9
+     |
+1097 |     let t = evs[at - 1].0.timestamp();
+     |         ^ help: if this is intentional, prefix it with an underscore: `_t`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aet2304-lockstep` (bin "lockstep") generated 1 warning (run `cargo fix --bin "lockstep" -p aet2304-lockstep` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.89s
+2026-11-19T15:36:18+00:00 mem=8G cmd: bash -c mkdir -p /cache/redcheck; I_RUN_A=10 /cache/target/release/lockstep declared weak 1000000000 /cache/redcheck > /cache/redcheck/run.json 2>/cache/redcheck/err; echo exit=$?; sha256sum /cache/redcheck/trace-events/trace.cbor /cache/runs/a-T10/trace-events/trace.cbor
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2368049-i174298504.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
