@@ -58,6 +58,11 @@ got=$(bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$go
 got=$(PR_HEAD_SHA=$(git rev-parse main^) bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a second parent that is not the PR head (parents swapped, say) -> code" || bad "decide: wrong head: got '$got'"
 got=$(PR_HEAD_SHA=$prhead bash "$here/route.sh" decide push | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a push runs everything" || bad "decide: push: got '$got'"
 got=$(bash "$here/route.sh" decide workflow_dispatch | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a dispatch runs everything" || bad "decide: dispatch: got '$got'"
+git_ checkout -qb pr2 main; echo p2 >>docs/a.md; git_ commit -qam pr2
+git_ checkout -qb third main; echo t >third.md; git_ add -A; git_ commit -qm third
+git_ checkout -qb octo main; git_ merge -q --no-ff -m octopus pr2 third
+[ "$(git rev-list --parents -n 1 HEAD | wc -w)" -eq 4 ] || bad "decide: the octopus fixture has no three parents"
+got=$(PR_HEAD_SHA=$(git rev-parse HEAD^2) bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: an octopus merge whose second parent is the PR head -> code" || bad "decide: octopus: got '$got'"
 git_ checkout -q pr
 got=$(PR_HEAD_SHA=$prhead bash "$here/route.sh" decide pull_request | sed -n 's/^class=//p'); [ "$got" = code ] && ok "decide: a HEAD that is not a merge -> code" || bad "decide: no merge: got '$got'"
 
@@ -74,12 +79,13 @@ inv() {
   printf 'demo\treads\t../../docs/a.md\t1\treads\n' >ci/list.tsv
   git_ init -q .; git_ add -A; git_ commit -qm t
 }
-expect() { # NAME WANT(ok|refused) [PATTERN]
-  local name=$1 want=$2 pat=${3:-} out rc
+expect() { # NAME WANT(ok|refused) [PATTERN...]: every pattern in the refusal
+  local name=$1 want=$2 out rc p hit=1; shift 2
   git_ add -A >/dev/null 2>&1; git_ commit -qm t --allow-empty
   out=$(bash ci/route.sh check ci/list.tsv 2>&1); rc=$?
+  for p in "$@"; do grep -qF -- "$p" <<<"$out" || hit=0; done
   if [ "$want" = ok ]; then [ $rc -eq 0 ] && ok "guard: $name" || bad "guard: $name: $out"
-  elif [ $rc -ne 0 ] && { [ -z "$pat" ] || grep -qF -- "$pat" <<<"$out"; }; then ok "guard: $name: refused ($(cut -c1-110 <<<"$out"))"
+  elif [ $rc -ne 0 ] && [ $hit -eq 1 ]; then ok "guard: $name: refused ($(cut -c1-110 <<<"$out"))"
   else bad "guard: $name: rc=$rc out=$out"; fi
 }
 inv; expect "the listed reader passes; comments, a crate path and a char quote are ignored" ok
@@ -92,11 +98,11 @@ expect "a bare root name is refused by name" refused "demo bare README.md"
 inv; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/mod.rs; printf 'mod common;\n' >crates/d/tests/uses.rs
 expect "a helper module's literal is charged to the binary that includes it" refused "demo uses docs/a.md"
 inv; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/mod.rs
-expect "a helper no binary includes is refused as unmapped" refused "unmapped! crates/d/tests/common/mod.rs"
+expect "a helper no binary includes is refused as unmapped" refused "unmapped! crates/d/tests/common/mod.rs" "no docs-only run can judge"
 inv; printf 'pub const D: &str = include_str!(\n    "../../../docs/a.md"\n);\n' >>crates/d/src/lib.rs
-expect "an include_str! of a docs-only path is refused" refused "include! crates/d/src/lib.rs docs/a.md"
+expect "an include_str! of a docs-only path is refused" refused "include! crates/d/src/lib.rs docs/a.md" "no docs-only run can judge"
 inv; printf '#[path = "../../../docs/gen.rs"]\npub mod gen;\npub const R: &str = "docs/a.md";\n' >>crates/d/src/lib.rs; echo 'pub fn f() {}' >docs/gen.rs
-expect "production src/ naming a docs-only path (a #[path] module, a constant) is refused" refused "src! crates/d/src/lib.rs"
+expect "production src/ naming a docs-only path (a #[path] module, a constant) is refused" refused "src! crates/d/src/lib.rs" "no docs-only run can judge"
 inv; printf 'fn h() { let _ = "../../docs/a.md"; let _ = "../../docs/a.md"; }\n' >crates/d/tests/reads.rs
 expect "a second use of a listed literal changes its count and is refused" refused "demo reads ../../docs/a.md 2"
 inv; printf '#[path = "common/stub.rs"]\nmod stub;\n' >crates/d/tests/viapath.rs; printf 'pub fn r() -> &str { "docs/a.md" }\n' >crates/d/tests/common/stub.rs; printf 'mod common;\n' >crates/d/tests/viamod.rs
@@ -108,11 +114,11 @@ expect "a line continuation joined" refused "demo cont ../../docs/a.md"
 inv; mkdir -p fab/b; echo b >fab/b/BENCH.md; printf 'fn h() { let _ = std::fs::read_dir("../../fab/b"); }\n' >crates/d/tests/walkfab.rs
 expect "a walker of a fab directory holding a document is refused" refused "demo walkfab ../../fab/b"
 inv; mkdir -p boards/x/src; printf 'const R: &str = include_str!("../../../README.md");\n' >boards/x/src/lib.rs
-expect "a Rust source outside crates/ naming a document is refused" refused "boards/x/src/lib.rs"
+expect "a Rust source outside crates/ naming a document is refused" refused "boards/x/src/lib.rs" "no docs-only run can judge"
 inv; printf 'fn main() { println!("cargo:rerun-if-changed=../../README.md"); let _ = "../../README.md"; }\n' >crates/d/build.rs
-expect "a build script naming a root document is refused" refused "build! crates/d/build.rs"
+expect "a build script naming a root document is refused" refused "build! crates/d/build.rs" "no docs-only run can judge"
 inv; mkdir -p bridge/src; printf 'fn f() { let _ = "docs/a.md"; }\n' >bridge/src/main.rs
-expect "the bridge naming a document is refused" refused "bridge! bridge/src/main.rs"
+expect "the bridge naming a document is refused" refused "bridge! bridge/src/main.rs" "no docs-only run can judge"
 inv; printf 'demo\tgone\tdocs/a.md\t1\treads\n' >>ci/list.tsv
 expect "a row the inventory does not find is refused" refused "demo gone docs/a.md"
 inv; printf 'demo\treads\t../../docs/a.md\treads\n' >ci/list.tsv
