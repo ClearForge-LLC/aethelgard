@@ -35,6 +35,18 @@ use crate::{TwinError, kind, model, platform, split_pin};
 /// reset value (0) nor a value the cold start writes.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
 
+// belt-and-suspenders: the generator holds its own copies of these three
+// (`aethelgard-svd-hal` `board/firmware.rs`), for the reason above; the boot
+// test proves the copies agree (`AET-WO-4240v` §1.4).
+/// What a firmware writes to the boot word, then parks, when `PWR_CR3` reads
+/// back supply bits other than the declared ones: another writer locked the
+/// register since power-on (`AET-WO-4240v` §1.4).
+pub const BOOT_SUPPLY_NOT_DECLARED: u32 = 0x2100_B0F1;
+/// The same, when `PWR_CSR1.ACTVOSRDY` did not rise within the bound.
+pub const BOOT_ACTVOSRDY_TIMEOUT: u32 = 0x2100_B0F2;
+/// The same, when `PWR_D3CR.VOSRDY` did not rise within the bound.
+pub const BOOT_VOSRDY_TIMEOUT: u32 = 0x2100_B0F3;
+
 /// The seed every boot gives `emulation SetSeed`, so the platform's random
 /// initial values are the same in every run (spike F15).
 pub const SEED: u32 = 2100;
