@@ -1,7 +1,12 @@
-# Sentinel-01, hand-written as the generator would emit it from
-# the topology solved from specification sha256 a277c933439524885deb931b2b930555b74aa94aefbee7b34c83ddef73aa1196.
-# Tags: [T] emitted from the SolvedTopology today; [S] in the Specification only
-# (RUL-16 forbids reading it there); [N] in neither.
+# Sentinel-01, hand-written in AET-WO-4400 as the generator would then emit it, from the
+# topology of specification sha256 a277c933439524885deb931b2b930555b74aa94aefbee7b34c83ddef73aa1196:
+# examples/sentinel-01-minimal.json as of d00c9653 (AET-WO-4100).
+# The console's USART1 lines and SERIAL_ORDER were added in AET-WO-4300b (25640c55).
+# CI judges this board against the topology solved from examples/sentinel-01-minimal.json at
+# the commit under test (.github/workflows/ardupilot-image.yml, job pinout): by path, never by
+# a hash, which would go stale at every specification bump.
+# Tags, per line, are the spike's and are not kept current: [T] emitted from the SolvedTopology
+# then; [S] in the Specification only (RUL-16 forbids reading it there); [N] in neither.
 
 MCU STM32H7xx STM32H753xx      # [S] mcu.part STM32H753ZITx; series and table name are a mapping
 OSCILLATOR_HZ 8000000          # [N] no oscillator declared; the solver only reserves PH0/PH1
