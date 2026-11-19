@@ -57,11 +57,11 @@ fn table() -> PinTable {
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
     json!({"label": label, "pin": pin, "protocol": "pwm",
-           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}})
+           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null})
 }
 
 fn dshot(label: &str, pin: Option<&str>) -> Value {
-    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null})
+    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null, "esc": null})
 }
 
 fn spec_json(motors: Vec<Value>) -> Value {
@@ -811,7 +811,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 17);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 18);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -826,7 +826,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 16,
-                expected: 17
+                expected: 18
             }
         );
     }
