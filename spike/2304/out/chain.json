@@ -1,0 +1,3624 @@
+{
+ "boards": {
+  "sentinel-02-power": {
+   "battery_min_mv": 9000,
+   "eta_declared": {
+    "U10": 0.9,
+    "U11": 0.81
+   },
+   "loads_ma": {
+    "VDD_1V8": 20,
+    "VDD_3V3": 716,
+    "VDD_5V": 2000
+   },
+   "rows": [
+    {
+     "R_3v3_band_unstated": 1.6379784514834834,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.6379784514834834,
+     "R_3v3_enters_bor3_band": 1.6379784514834834,
+     "R_3v3_unstated": 1.6379784514834834,
+     "R_VDD_1V8_leaves_tolerance": 1.6379784514834834,
+     "R_VDD_5V_band_unstated": 1.132429546704631,
+     "R_VDD_5V_leaves_tolerance": 1.5854308085546966,
+     "R_collapse": 1.6379784514834834,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.900950232179,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.9009502321787,
+       "vbat_v": 8.998900950232178
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5186.242525766969,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1986.2425257669693,
+       "vbat_v": 8.986242525766968
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5130.785483410362,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1930.7854834103618,
+       "vbat_v": 8.930785483410363
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5060.472451466698,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1860.4724514666977,
+       "vbat_v": 8.860472451466698
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4842.378543783752,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1642.3785437837523,
+       "vbat_v": 8.642378543783753
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4450.8132451509755,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1250.8132451509755,
+       "vbat_v": 8.250813245150976
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3508.415923612455,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 308.4159236124551,
+       "vbat_v": 7.308415923612455
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.0",
+     "eta": "lossless",
+     "i_esc_a": 0.0,
+     "label": "sweep: no ESC current (the board's own draw only)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.5
+    },
+    {
+     "R_3v3_band_unstated": 1.4435262435315246,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.4435262435315246,
+     "R_3v3_enters_bor3_band": 1.4435262435315246,
+     "R_3v3_unstated": 1.4435262435315246,
+     "R_VDD_1V8_leaves_tolerance": 1.4435262435315246,
+     "R_VDD_5V_band_unstated": 0.9979934523180909,
+     "R_VDD_5V_leaves_tolerance": 1.397216781075088,
+     "R_collapse": 1.4435262435315246,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.752880686099,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.7528806860992,
+       "vbat_v": 8.9987528806861
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5184.3860804483065,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1984.3860804483065,
+       "vbat_v": 8.984386080448306
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5121.379037426286,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1921.3790374262862,
+       "vbat_v": 8.921379037426286
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5041.334493584338,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1841.334493584338,
+       "vbat_v": 8.841334493584338
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4791.816584716738,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1591.8165847167384,
+       "vbat_v": 8.591816584716739
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4338.121208251029,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1138.1212082510292,
+       "vbat_v": 8.138121208251029
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3194.3640175106466,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -5.63598248935341,
+       "vbat_v": 6.994364017510646
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.0",
+     "eta": "declared",
+     "i_esc_a": 0.0,
+     "label": "sweep: no ESC current (the board's own draw only)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.5
+    },
+    {
+     "R_3v3_band_unstated": 1.5809384690393373,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5809384690393373,
+     "R_3v3_enters_bor3_band": 1.5809384690393373,
+     "R_3v3_unstated": 1.5809384690393373,
+     "R_VDD_1V8_leaves_tolerance": 1.5809384690393373,
+     "R_VDD_5V_band_unstated": 1.0717457206724452,
+     "R_VDD_5V_leaves_tolerance": 1.5201858315106964,
+     "R_collapse": 1.5809384690393373,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.820940460373,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.820940460373,
+       "vbat_v": 8.998820940460373
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5185.240992299936,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1985.240992299936,
+       "vbat_v": 8.985240992299936
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5125.746408003963,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1925.7464080039626,
+       "vbat_v": 8.925746408003963
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5050.31227353447,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1850.3122735344696,
+       "vbat_v": 8.85031227353447
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4816.295980670393,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1616.295980670393,
+       "vbat_v": 8.616295980670394
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4395.782847735136,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1195.7828477351359,
+       "vbat_v": 8.195782847735137
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3377.5813461746657,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 177.58134617466567,
+       "vbat_v": 7.177581346174666
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.1",
+     "eta": "lossless",
+     "i_esc_a": 0.1,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.420953076548033
+    },
+    {
+     "R_3v3_band_unstated": 1.3989974945494068,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.3989974945494068,
+     "R_3v3_enters_bor3_band": 1.3989974945494068,
+     "R_3v3_unstated": 1.3989974945494068,
+     "R_VDD_1V8_leaves_tolerance": 1.3989974945494068,
+     "R_VDD_5V_band_unstated": 0.9505607805663134,
+     "R_VDD_5V_leaves_tolerance": 1.3462945989963528,
+     "R_collapse": 1.3989974945494068,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.672869597423,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.6728695974234,
+       "vbat_v": 8.998672869597423
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5183.38433933331,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1983.38433933331,
+       "vbat_v": 8.98338433933331
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5116.334557051507,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1916.3345570515066,
+       "vbat_v": 8.916334557051506
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5031.151540846466,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1831.1515408464657,
+       "vbat_v": 8.831151540846466
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4765.565621463558,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1565.5656214635583,
+       "vbat_v": 8.56556562146356
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4282.152745022857,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1082.1527450228568,
+       "vbat_v": 8.082152745022857
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3052.988108970132,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -147.0118910298679,
+       "vbat_v": 6.852988108970132
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.1",
+     "eta": "declared",
+     "i_esc_a": 0.1,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.43005012527253
+    },
+    {
+     "R_3v3_band_unstated": 1.5285886715677277,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5285886715677277,
+     "R_3v3_enters_bor3_band": 1.5285886715677277,
+     "R_3v3_unstated": 1.5285886715677277,
+     "R_VDD_1V8_leaves_tolerance": 1.5285886715677277,
+     "R_VDD_5V_band_unstated": 1.0172348649984024,
+     "R_VDD_5V_leaves_tolerance": 1.46009862932062,
+     "R_collapse": 1.5285886715677277,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.740930688395,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.7409306883947,
+       "vbat_v": 8.998740930688395
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5184.239458490481,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1984.2394584904814,
+       "vbat_v": 8.984239458490482
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5120.707288106614,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1920.7072881066142,
+       "vbat_v": 8.920707288106614
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5040.151721492022,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1840.1517214920223,
+       "vbat_v": 8.840151721492022
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4790.206556176738,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1590.2065561767376,
+       "vbat_v": 8.590206556176737
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4340.677444589272,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1140.6774445892725,
+       "vbat_v": 8.140677444589272
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3245.222107876766,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 45.22210787676613,
+       "vbat_v": 7.045222107876766
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.2",
+     "eta": "lossless",
+     "i_esc_a": 0.2,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.347141132843227
+    },
+    {
+     "R_3v3_band_unstated": 1.357732665751365,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.357732665751365,
+     "R_3v3_enters_bor3_band": 1.357732665751365,
+     "R_3v3_unstated": 1.357732665751365,
+     "R_VDD_1V8_leaves_tolerance": 1.357732665751365,
+     "R_VDD_5V_band_unstated": 0.9074323026694837,
+     "R_VDD_5V_leaves_tolerance": 1.298953659731516,
+     "R_collapse": 1.357732665751365,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.592858508549,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.5928585085494,
+       "vbat_v": 8.99859285850855
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5182.38259782929,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1982.3825978292898,
+       "vbat_v": 8.98238259782929
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5111.290025869292,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1911.2900258692916,
+       "vbat_v": 8.911290025869292
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5020.968157950967,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1820.968157950967,
+       "vbat_v": 8.820968157950967
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4739.306578367701,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1539.3065783677011,
+       "vbat_v": 8.5393065783677
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4226.090872157184,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1026.090872157184,
+       "vbat_v": 8.026090872157184
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2909.0803043315445,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -290.91969566845546,
+       "vbat_v": 6.709080304331544
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.2",
+     "eta": "declared",
+     "i_esc_a": 0.2,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.3642267334248634
+    },
+    {
+     "R_3v3_band_unstated": 1.4356229367541293,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.4356229367541293,
+     "R_3v3_enters_bor3_band": 1.4356229367541293,
+     "R_3v3_unstated": 1.4356229367541293,
+     "R_VDD_1V8_leaves_tolerance": 1.4356229367541293,
+     "R_VDD_5V_band_unstated": 0.9233123169863096,
+     "R_VDD_5V_leaves_tolerance": 1.3531303675475663,
+     "R_collapse": 1.4356229367541293,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.580911143916,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.5809111439157,
+       "vbat_v": 8.998580911143916
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5182.2363898438725,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1982.2363898438725,
+       "vbat_v": 8.982236389843873
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5110.628914532412,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1910.6289145324117,
+       "vbat_v": 8.910628914532412
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5019.829489738047,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1819.8294897380474,
+       "vbat_v": 8.819829489738048
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4738.006849309331,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1538.0068493093313,
+       "vbat_v": 8.538006849309332
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4230.234152227649,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1030.2341522276492,
+       "vbat_v": 8.03023415222765
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2975.318161368352,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -224.68183863164813,
+       "vbat_v": 6.775318161368352
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.4",
+     "eta": "lossless",
+     "i_esc_a": 0.4,
+     "label": "sweep: ESC idle, total of four (no maker states one); I1",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.212875412649174
+    },
+    {
+     "R_3v3_band_unstated": 1.2835296806354313,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2835296806354313,
+     "R_3v3_enters_bor3_band": 1.2835296806354313,
+     "R_3v3_unstated": 1.2835296806354313,
+     "R_VDD_1V8_leaves_tolerance": 1.2835296806354313,
+     "R_VDD_5V_band_unstated": 0.8319394312879667,
+     "R_VDD_5V_leaves_tolerance": 1.2136036387252538,
+     "R_collapse": 1.2835296806354313,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.43283633021,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.4328363302102,
+       "vbat_v": 8.99843283633021
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5180.379113653655,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1980.3791136536547,
+       "vbat_v": 8.980379113653655
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5101.200810730859,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1901.2008107308593,
+       "vbat_v": 8.90120081073086
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5000.600095494283,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1800.6000954942829,
+       "vbat_v": 8.800600095494282
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4686.763922124126,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1486.763922124126,
+       "vbat_v": 8.486763922124126
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4113.676980874299,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 913.6769808742993,
+       "vbat_v": 7.9136769808743
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2612.309601325489,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -587.690398674511,
+       "vbat_v": 6.412309601325489
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.4",
+     "eta": "declared",
+     "i_esc_a": 0.4,
+     "label": "sweep: ESC idle, total of four (no maker states one); I1",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.243294063872914
+    },
+    {
+     "R_3v3_band_unstated": 1.2851284756964536,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2851284756964536,
+     "R_3v3_enters_bor3_band": 1.2851284756964536,
+     "R_3v3_unstated": 1.2851284756964536,
+     "R_VDD_1V8_leaves_tolerance": 1.2851284756964536,
+     "R_VDD_5V_band_unstated": 0.779388514040128,
+     "R_VDD_5V_leaves_tolerance": 1.1802044846937552,
+     "R_collapse": 1.2851284756964536,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.260872052875,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.2608720528751,
+       "vbat_v": 8.998260872052875
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5178.230248436599,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1978.2302484365991,
+       "vbat_v": 8.9782302484366
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5090.471630109418,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1890.4716301094177,
+       "vbat_v": 8.890471630109417
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4979.180477822152,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1779.1804778221522,
+       "vbat_v": 8.779180477822152
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4633.522034153277,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1433.5220341532768,
+       "vbat_v": 8.433522034153278
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4008.361440900866,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 808.361440900866,
+       "vbat_v": 7.808361440900866
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2408.838542895117,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -791.1614571048831,
+       "vbat_v": 6.2088385428951165
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.8",
+     "eta": "lossless",
+     "i_esc_a": 0.8,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.9859486097214187
+    },
+    {
+     "R_3v3_band_unstated": 1.1609644982905656,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.1609644982905656,
+     "R_3v3_enters_bor3_band": 1.1609644982905656,
+     "R_3v3_unstated": 1.1609644982905656,
+     "R_VDD_1V8_leaves_tolerance": 1.1609644982905656,
+     "R_VDD_5V_band_unstated": 0.7132613782172239,
+     "R_VDD_5V_leaves_tolerance": 1.0726437705120064,
+     "R_collapse": 1.1609644982905656,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.1127919711635,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.1127919711635,
+       "vbat_v": 8.998112791971163
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5176.372140628335,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1976.3721406283348,
+       "vbat_v": 8.976372140628335
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5081.0217668846635,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1881.0217668846635,
+       "vbat_v": 8.881021766884663
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4959.85874014312,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1759.8587401431196,
+       "vbat_v": 8.75985874014312
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4581.577948874412,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1381.577948874412,
+       "vbat_v": 8.381577948874412
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3887.6136033978146,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 687.6136033978146,
+       "vbat_v": 7.687613603397814
+      },
+      {
+       "R": 1.0,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 1967.8884410690807,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1232.1115589309193,
+       "vbat_v": 5.767888441069081
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.8",
+     "eta": "declared",
+     "i_esc_a": 0.8,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.035614200683773
+    },
+    {
+     "R_3v3_band_unstated": 0.9898411044542854,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9941761479358808,
+     "R_3v3_enters_bor3_band": 0.9898411044542854,
+     "R_3v3_unstated": 0.9898411044542854,
+     "R_VDD_1V8_leaves_tolerance": 0.9898411044542854,
+     "R_VDD_5V_band_unstated": 0.5310513299042596,
+     "R_VDD_5V_leaves_tolerance": 0.8531244668071105,
+     "R_collapse": 0.9941761479358808,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5197.3007547630605,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1997.3007547630605,
+       "vbat_v": 8.99730075476306
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5166.211791235977,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1966.2117912359772,
+       "vbat_v": 8.966211791235978
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5029.995433787573,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1829.9954337875733,
+       "vbat_v": 8.829995433787573
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4857.196260451239,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1657.1962604512391,
+       "vbat_v": 8.657196260451238
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4319.341029167628,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1119.3410291676282,
+       "vbat_v": 8.119341029167629
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3333.464536260144,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 133.4645362601441,
+       "vbat_v": 7.133464536260144
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "idle-2.0",
+     "eta": "lossless",
+     "i_esc_a": 2.0,
+     "label": "sweep: ESC idle, total of four (no maker states one); I2",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.505823852064119
+    },
+    {
+     "R_3v3_band_unstated": 0.913624220837044,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9157769569299833,
+     "R_3v3_enters_bor3_band": 0.913624220837044,
+     "R_3v3_unstated": 0.913624220837044,
+     "R_VDD_1V8_leaves_tolerance": 0.913624220837044,
+     "R_VDD_5V_band_unstated": 0.4994978592948893,
+     "R_VDD_5V_leaves_tolerance": 0.7954645354465162,
+     "R_collapse": 0.9157769569299833,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5197.152658875089,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1997.1526588750894,
+       "vbat_v": 8.99715265887509
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5164.351184084517,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1964.3511840845167,
+       "vbat_v": 8.964351184084517
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5020.479675343726,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1820.4796753437258,
+       "vbat_v": 8.820479675343726
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4837.591908759643,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1637.591908759643,
+       "vbat_v": 8.637591908759642
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4265.1622459553355,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1065.1622459553355,
+       "vbat_v": 8.065162245955335
+      },
+      {
+       "R": 0.5,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3197.6534032349246,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -2.3465967650754465,
+       "vbat_v": 6.997653403234924
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "idle-2.0",
+     "eta": "declared",
+     "i_esc_a": 2.0,
+     "label": "sweep: ESC idle, total of four (no maker states one); I2",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.5842230430700166
+    },
+    {
+     "R_3v3_band_unstated": 0.3923530860079272,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.42490109246792057,
+     "R_3v3_enters_bor3_band": 0.3923530860079272,
+     "R_3v3_unstated": 0.3923530860079272,
+     "R_VDD_1V8_leaves_tolerance": 0.3923530860079272,
+     "R_VDD_5V_band_unstated": 0.16997965100749424,
+     "R_VDD_5V_leaves_tolerance": 0.29959530928055667,
+     "R_collapse": 0.4357812432194105,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5190.899972190706,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1990.8999721907057,
+       "vbat_v": 8.990899972190705
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5086.08746532347,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1886.0874653234696,
+       "vbat_v": 8.88608746532347
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4626.644586267785,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1426.6445862677847,
+       "vbat_v": 8.426644586267784
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4042.358650620735,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 842.3586506207348,
+       "vbat_v": 7.842358650620735
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2183.4593466887345,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1016.5406533112655,
+       "vbat_v": 5.9834593466887345
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "spike-10",
+     "eta": "lossless",
+     "i_esc_a": 10.0,
+     "label": "2303's spike-declared 10 A; T10",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 2.3210937839029477
+    },
+    {
+     "R_3v3_band_unstated": 0.37979441328056096,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.4088293684175112,
+     "R_3v3_enters_bor3_band": 0.37979441328056096,
+     "R_3v3_unstated": 0.37979441328056096,
+     "R_VDD_1V8_leaves_tolerance": 0.37979441328056096,
+     "R_VDD_5V_band_unstated": 0.1666108358751037,
+     "R_VDD_5V_leaves_tolerance": 0.29215836986165244,
+     "R_collapse": 0.41654142562262775,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5190.7517708413525,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1990.7517708413525,
+       "vbat_v": 8.990751770841353
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5084.210021922567,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1884.2100219225667,
+       "vbat_v": 8.884210021922566
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4616.664444443852,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1416.6644444438516,
+       "vbat_v": 8.416664444443851
+      },
+      {
+       "R": 0.1,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4020.6262818005625,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 820.6262818005625,
+       "vbat_v": 7.820626281800562
+      },
+      {
+       "R": 0.25,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2106.2121456997666,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1093.7878543002334,
+       "vbat_v": 5.906212145699767
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "spike-10",
+     "eta": "declared",
+     "i_esc_a": 10.0,
+     "label": "2303's spike-declared 10 A; T10",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 2.417292871886861
+    },
+    {
+     "R_3v3_band_unstated": 0.08220906063667166,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0935731856679155,
+     "R_3v3_enters_bor3_band": 0.08220906063667166,
+     "R_3v3_unstated": 0.08220906063667166,
+     "R_VDD_1V8_leaves_tolerance": 0.08220906063667166,
+     "R_VDD_5V_band_unstated": 0.03238021402396374,
+     "R_VDD_5V_leaves_tolerance": 0.05926523360348917,
+     "R_collapse": 0.11095919105012612,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.895055752704,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.8950557527041,
+       "vbat_v": 8.950895055752705
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4585.256503489361,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1385.2565034893614,
+       "vbat_v": 8.385256503489362
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2095.144210570519,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1104.8557894294809,
+       "vbat_v": 5.895144210570519
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1293.1633697565426,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4493.163369756543,
+       "vbat_v": 2.5068366302434573
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "lossless",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.1712242684962164
+    },
+    {
+     "R_3v3_band_unstated": 0.08164339623796449,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.09277004481976665,
+     "R_3v3_enters_bor3_band": 0.08164339623796449,
+     "R_3v3_unstated": 0.08164339623796449,
+     "R_VDD_1V8_leaves_tolerance": 0.08164339623796449,
+     "R_VDD_5V_band_unstated": 0.03225597247490369,
+     "R_VDD_5V_leaves_tolerance": 0.05896829989035599,
+     "R_collapse": 0.10881625750611049,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.746191850605,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.746191850605,
+       "vbat_v": 8.950746191850605
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4583.266489063126,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1383.2664890631258,
+       "vbat_v": 8.383266489063125
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2080.7277887007294,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1119.2722112992706,
+       "vbat_v": 5.880727788700729
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1379.5733678422898,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4579.573367842289,
+       "vbat_v": 2.42042663215771
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "declared",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.2355122748166854
+    },
+    {
+     "R_3v3_band_unstated": 0.0503615531339879,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0576252998116299,
+     "R_3v3_enters_bor3_band": 0.0503615531339879,
+     "R_3v3_unstated": 0.0503615531339879,
+     "R_VDD_1V8_leaves_tolerance": 0.0503615531339879,
+     "R_VDD_5V_band_unstated": 0.019652907198411222,
+     "R_VDD_5V_leaves_tolerance": 0.03609890769680751,
+     "R_collapse": 0.07123169483509717,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.891090843104,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.8910908431044,
+       "vbat_v": 8.918891090843104
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4184.516532780358,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 984.5165327803579,
+       "vbat_v": 7.984516532780358
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3339.844,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 38.983414824614556,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3161.0165851753854,
+       "vbat_v": 3.8389834148246145
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "lossless",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9384152582451417
+    },
+    {
+     "R_3v3_band_unstated": 0.05014870154040549,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.05731970240931486,
+     "R_3v3_enters_bor3_band": 0.05014870154040549,
+     "R_3v3_unstated": 0.05014870154040549,
+     "R_VDD_1V8_leaves_tolerance": 0.05014870154040549,
+     "R_VDD_5V_band_unstated": 0.019607070164263767,
+     "R_VDD_5V_leaves_tolerance": 0.03598852550432043,
+     "R_collapse": 0.07015866756069061,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.741692617043,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.7416926170426,
+       "vbat_v": 8.918741692617042
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4182.426210053178,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 982.4262100531778,
+       "vbat_v": 7.982426210053178
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3318.704,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 16.202795007372515,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3183.7972049926275,
+       "vbat_v": 3.8162027950073725
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "declared",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9920666219654692
+    },
+    {
+     "R_3v3_band_unstated": 0.03992219213241888,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04575928379602773,
+     "R_3v3_enters_bor3_band": 0.03992219213241888,
+     "R_3v3_unstated": 0.03992219213241888,
+     "R_VDD_1V8_leaves_tolerance": 0.03992219213241888,
+     "R_VDD_5V_band_unstated": 0.015532036600578863,
+     "R_VDD_5V_leaves_tolerance": 0.02856259931147999,
+     "R_collapse": 0.05757940628953531,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.288398402172,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.2883984021719,
+       "vbat_v": 8.897288398402171
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3913.97349951906,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 713.9734995190602,
+       "vbat_v": 7.71397349951906
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1408.4705817465706,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4608.470581746571,
+       "vbat_v": 2.3915294182534295
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "lossless",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8437077006145075
+    },
+    {
+     "R_3v3_band_unstated": 0.039788320645300045,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.045566373141717534,
+     "R_3v3_enters_bor3_band": 0.039788320645300045,
+     "R_3v3_unstated": 0.039788320645300045,
+     "R_VDD_1V8_leaves_tolerance": 0.039788320645300045,
+     "R_VDD_5V_band_unstated": 0.01550339270011726,
+     "R_VDD_5V_leaves_tolerance": 0.02849345066616507,
+     "R_collapse": 0.05680790554868972,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.138637333195,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.1386373331952,
+       "vbat_v": 8.897138637333196
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3911.809524595482,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 711.8095245954819,
+       "vbat_v": 7.711809524595482
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1448.2490113992626,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4648.249011399263,
+       "vbat_v": 2.3517509886007373
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "declared",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8926979976582028
+    },
+    {
+     "R_3v3_band_unstated": 0.03185232899200353,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.036558407743234045,
+     "R_3v3_enters_bor3_band": 0.03185232899200353,
+     "R_3v3_unstated": 0.03185232899200353,
+     "R_VDD_1V8_leaves_tolerance": 0.03185232899200353,
+     "R_VDD_5V_band_unstated": 0.012363528720654542,
+     "R_VDD_5V_leaves_tolerance": 0.022756118844178067,
+     "R_collapse": 0.04674730631517177,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5070.885089830401,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1870.8850898304008,
+       "vbat_v": 8.8708850898304
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3583.2556251229707,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 383.25562512297074,
+       "vbat_v": 7.38325562512297
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-160",
+     "eta": "lossless",
+     "i_esc_a": 160.0,
+     "label": "upper bound: 4 x 40 A continuous, Hobbywing XRotor Micro 40A (stated); what an armed firmware could ask it to carry",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.7602154947862583
+    },
+    {
+     "R_3v3_band_unstated": 0.03176705115166909,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03643517088545035,
+     "R_3v3_enters_bor3_band": 0.03176705115166909,
+     "R_3v3_unstated": 0.03176705115166909,
+     "R_VDD_1V8_leaves_tolerance": 0.03176705115166909,
+     "R_VDD_5V_band_unstated": 0.012345372575506448,
+     "R_VDD_5V_leaves_tolerance": 0.022712205309030446,
+     "R_collapse": 0.046188199515749366,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5070.734882885501,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1870.734882885501,
+       "vbat_v": 8.8707348828855
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3580.9942296230947,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 380.9942296230947,
+       "vbat_v": 7.380994229623095
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-160",
+     "eta": "declared",
+     "i_esc_a": 160.0,
+     "label": "upper bound: 4 x 40 A continuous, Hobbywing XRotor Micro 40A (stated); what an armed firmware could ask it to carry",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8049440387400506
+    },
+    {
+     "R_3v3_band_unstated": 0.025583831846899552,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.029394339434074893,
+     "R_3v3_enters_bor3_band": 0.025583831846899552,
+     "R_3v3_unstated": 0.025583831846899552,
+     "R_VDD_1V8_leaves_tolerance": 0.025583831846899552,
+     "R_VDD_5V_band_unstated": 0.009912467249916651,
+     "R_VDD_5V_leaves_tolerance": 0.018257305487857922,
+     "R_collapse": 0.03813384330227359,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5038.881052936365,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1838.8810529363654,
+       "vbat_v": 8.838881052936365
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3182.2940714419865,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -17.70592855801351,
+       "vbat_v": 6.982294071441986
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-200",
+     "eta": "lossless",
+     "i_esc_a": 200.0,
+     "label": "upper bound: 4 x 50 A continuous, Holybro Tekko32 F4 BigFET 50A (stated, 4-6S)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.6866156697726411
+    },
+    {
+     "R_3v3_band_unstated": 0.025528787353891642,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.02931461701598942,
+     "R_3v3_enters_bor3_band": 0.025528787353891642,
+     "R_3v3_unstated": 0.025528787353891642,
+     "R_VDD_1V8_leaves_tolerance": 0.025528787353891642,
+     "R_VDD_5V_band_unstated": 0.009900793006373428,
+     "R_VDD_5V_leaves_tolerance": 0.018229027982348024,
+     "R_collapse": 0.03772527808186196,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5038.730301962485,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1838.730301962485,
+       "vbat_v": 8.838730301962485
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3179.9020846165367,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -20.09791538346326,
+       "vbat_v": 6.979902084616537
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-200",
+     "eta": "declared",
+     "i_esc_a": 200.0,
+     "label": "upper bound: 4 x 50 A continuous, Holybro Tekko32 F4 BigFET 50A (stated, 4-6S)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.7274721918138036
+    }
+   ],
+   "vout_uv": {
+    "U10": [
+     4818048,
+     5237403
+    ],
+    "U11": [
+     3144727,
+     3417204
+    ]
+   }
+  },
+  "sentinel-03": {
+   "battery_min_mv": 9000,
+   "eta_declared": {
+    "U10": 0.9,
+    "U11": 0.81
+   },
+   "loads_ma": {
+    "VDD_3V3": 748,
+    "VDD_5V": 2000
+   },
+   "rows": [
+    {
+     "R_3v3_band_unstated": 1.6241057393089742,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.6241057393089742,
+     "R_3v3_enters_bor3_band": 1.6241057393089742,
+     "R_3v3_unstated": 1.6241057393089742,
+     "R_VDD_5V_band_unstated": 1.1228385358185502,
+     "R_VDD_5V_leaves_tolerance": 1.5720031439479012,
+     "R_collapse": 1.6241057393089742,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.891561262617,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.891561262617,
+       "vbat_v": 8.998891561262617
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5186.124831076371,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1986.1248310763713,
+       "vbat_v": 8.98612483107637
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5130.189612194947,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1930.1896121949467,
+       "vbat_v": 8.930189612194946
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5059.261405330037,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1859.2614053300367,
+       "vbat_v": 8.859261405330036
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4839.190742162047,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1639.1907421620472,
+       "vbat_v": 8.639190742162047
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4443.768155214744,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1243.7681552147442,
+       "vbat_v": 8.243768155214743
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3489.5519353473246,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 289.5519353473246,
+       "vbat_v": 7.289551935347324
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.0",
+     "eta": "lossless",
+     "i_esc_a": 0.0,
+     "label": "sweep: no ESC current (the board's own draw only)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.5
+    },
+    {
+     "R_3v3_band_unstated": 1.430234383174637,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.430234383174637,
+     "R_3v3_enters_bor3_band": 1.430234383174637,
+     "R_3v3_unstated": 1.430234383174637,
+     "R_VDD_5V_band_unstated": 0.9888040179972801,
+     "R_VDD_5V_leaves_tolerance": 1.3843513341006601,
+     "R_collapse": 1.430234383174637,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.741288981308,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.7412889813077,
+       "vbat_v": 8.998741288981307
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5184.240717759787,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1984.240717759787,
+       "vbat_v": 8.984240717759787
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5120.641816984733,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1920.641816984733,
+       "vbat_v": 8.920641816984732
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5039.832732738458,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1839.8327327384577,
+       "vbat_v": 8.839832732738458
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4787.831989009623,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1587.8319890096227,
+       "vbat_v": 8.587831989009622
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4329.1515180191545,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1129.1515180191545,
+       "vbat_v": 8.129151518019155
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3168.0926808937875,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -31.907319106212526,
+       "vbat_v": 6.968092680893787
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.0",
+     "eta": "declared",
+     "i_esc_a": 0.0,
+     "label": "sweep: no ESC current (the board's own draw only)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.5
+    },
+    {
+     "R_3v3_band_unstated": 1.5680073862016943,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5680073862016943,
+     "R_3v3_enters_bor3_band": 1.5680073862016943,
+     "R_3v3_unstated": 1.5680073862016943,
+     "R_VDD_5V_band_unstated": 1.06315118009781,
+     "R_VDD_5V_leaves_tolerance": 1.5078362950996231,
+     "R_collapse": 1.5680073862016943,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.811551407314,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.8115514073143,
+       "vbat_v": 8.998811551407314
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5185.123284450001,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1985.123284450001,
+       "vbat_v": 8.985123284450001
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5125.150195080907,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1925.150195080907,
+       "vbat_v": 8.925150195080906
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5049.099792149924,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1849.0997921499238,
+       "vbat_v": 8.849099792149923
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4813.09768397259,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1613.09768397259,
+       "vbat_v": 8.61309768397259
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4388.680788651603,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1188.6807886516026,
+       "vbat_v": 8.188680788651602
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3358.154353060402,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 158.15435306040217,
+       "vbat_v": 7.158154353060402
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.1",
+     "eta": "lossless",
+     "i_esc_a": 0.1,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.421599630689915
+    },
+    {
+     "R_3v3_band_unstated": 1.386506508176514,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.386506508176514,
+     "R_3v3_enters_bor3_band": 1.386506508176514,
+     "R_3v3_unstated": 1.386506508176514,
+     "R_VDD_5V_band_unstated": 0.9422204496734647,
+     "R_VDD_5V_leaves_tolerance": 1.3343458271706297,
+     "R_collapse": 1.386506508176514,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.661277789533,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.6612777895334,
+       "vbat_v": 8.998661277789534
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5183.2389603783595,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1983.2389603783595,
+       "vbat_v": 8.98323896037836
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5115.596912028308,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1915.596912028308,
+       "vbat_v": 8.915596912028308
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5029.647984340614,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1829.6479843406141,
+       "vbat_v": 8.829647984340614
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4761.567576804582,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1561.5675768045821,
+       "vbat_v": 8.561567576804583
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4273.105854576923,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1073.1058545769229,
+       "vbat_v": 8.073105854576923
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3025.7065225910137,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -174.2934774089863,
+       "vbat_v": 6.825706522591013
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.1",
+     "eta": "declared",
+     "i_esc_a": 0.1,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.430674674591175
+    },
+    {
+     "R_3v3_band_unstated": 1.516486439005182,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.516486439005182,
+     "R_3v3_enters_bor3_band": 1.516486439005182,
+     "R_3v3_unstated": 1.516486439005182,
+     "R_VDD_5V_band_unstated": 1.0094891984655772,
+     "R_VDD_5V_leaves_tolerance": 1.4487024006622522,
+     "R_collapse": 1.516486439005182,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.731541551835,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.731541551835,
+       "vbat_v": 8.998731541551836
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5184.121737478257,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1984.1217374782573,
+       "vbat_v": 8.984121737478258
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5120.110733077761,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1920.1107330777613,
+       "vbat_v": 8.920110733077761
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5038.9378013487385,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1838.9378013487385,
+       "vbat_v": 8.838937801348738
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4786.997689688065,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1586.9976896880653,
+       "vbat_v": 8.586997689688065
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4333.517340803488,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1133.517340803488,
+       "vbat_v": 8.133517340803488
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3225.185707716694,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 25.185707716694196,
+       "vbat_v": 7.025185707716695
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.2",
+     "eta": "lossless",
+     "i_esc_a": 0.2,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.3483513560994815
+    },
+    {
+     "R_3v3_band_unstated": 1.345956839859281,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.345956839859281,
+     "R_3v3_enters_bor3_band": 1.345956839859281,
+     "R_3v3_unstated": 1.345956839859281,
+     "R_VDD_5V_band_unstated": 0.8998286040754149,
+     "R_VDD_5V_leaves_tolerance": 1.2878269710541206,
+     "R_collapse": 1.345956839859281,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.581266597563,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.5812665975627,
+       "vbat_v": 8.998581266597563
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5182.237202604252,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1982.2372026042522,
+       "vbat_v": 8.982237202604253
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5110.551955766581,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1910.5519557665812,
+       "vbat_v": 8.91055195576658
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5019.462801335536,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1819.462801335536,
+       "vbat_v": 8.819462801335536
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4735.2949856347095,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1535.2949856347095,
+       "vbat_v": 8.53529498563471
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4216.965200382636,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1016.9652003826359,
+       "vbat_v": 8.016965200382636
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2880.675663368531,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -319.3243366314691,
+       "vbat_v": 6.680675663368531
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.2",
+     "eta": "declared",
+     "i_esc_a": 0.2,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.365404316014072
+    },
+    {
+     "R_3v3_band_unstated": 1.424912041507198,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.424912041507198,
+     "R_3v3_enters_bor3_band": 1.424912041507198,
+     "R_3v3_unstated": 1.424912041507198,
+     "R_VDD_5V_band_unstated": 0.9169264624977087,
+     "R_VDD_5V_leaves_tolerance": 1.3433371713682598,
+     "R_collapse": 1.424912041507198,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.571521840351,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.5715218403511,
+       "vbat_v": 8.99857152184035
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5182.118642498212,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1982.1186424982116,
+       "vbat_v": 8.982118642498211
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5110.031674094656,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1910.0316740946564,
+       "vbat_v": 8.910031674094656
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5018.612681491633,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1818.6126814916333,
+       "vbat_v": 8.818612681491633
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4734.776615679248,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1534.7766156792477,
+       "vbat_v": 8.534776615679247
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4222.954595354461,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1022.9545953544612,
+       "vbat_v": 8.022954595354461
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2953.8948632734855,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -246.1051367265145,
+       "vbat_v": 6.753894863273485
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.4",
+     "eta": "lossless",
+     "i_esc_a": 0.4,
+     "label": "sweep: ESC idle, total of four (no maker states one); I1",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.21501759169856
+    },
+    {
+     "R_3v3_band_unstated": 1.2729764822089633,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2729764822089633,
+     "R_3v3_enters_bor3_band": 1.2729764822089633,
+     "R_3v3_unstated": 1.2729764822089633,
+     "R_VDD_5V_band_unstated": 0.8255438106053994,
+     "R_VDD_5V_leaves_tolerance": 1.2038856393578676,
+     "R_collapse": 1.2729764822089633,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.421244213021,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.421244213021,
+       "vbat_v": 8.998421244213022
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5180.23368587748,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1980.2336858774797,
+       "vbat_v": 8.98023368587748
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5100.461888971957,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1900.4618889719568,
+       "vbat_v": 8.900461888971957
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4999.091125242458,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1799.0911252424576,
+       "vbat_v": 8.799091125242457
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4682.724931156397,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1482.7249311563974,
+       "vbat_v": 8.482724931156397
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4104.388782760947,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 904.3887827609469,
+       "vbat_v": 7.904388782760947
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2581.221151507326,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -618.7788484926741,
+       "vbat_v": 6.381221151507326
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.4",
+     "eta": "declared",
+     "i_esc_a": 0.4,
+     "label": "sweep: ESC idle, total of four (no maker states one); I1",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.245404703558207
+    },
+    {
+     "R_3v3_band_unstated": 1.2764616703172864,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2764616703172864,
+     "R_3v3_enters_bor3_band": 1.2764616703172864,
+     "R_3v3_unstated": 1.2764616703172864,
+     "R_VDD_5V_band_unstated": 0.7748334108166749,
+     "R_VDD_5V_leaves_tolerance": 1.1727475288993134,
+     "R_collapse": 1.2764616703172864,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.251482415277,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.2514824152768,
+       "vbat_v": 8.998251482415277
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5178.112448388596,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1978.112448388596,
+       "vbat_v": 8.978112448388597
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5089.873014044737,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1889.873014044737,
+       "vbat_v": 8.889873014044737
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4977.9578506511625,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1777.9578506511625,
+       "vbat_v": 8.777957850651163
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4630.2481313189655,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1430.2481313189655,
+       "vbat_v": 8.430248131318965
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4000.82847337598,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 800.8284733759801,
+       "vbat_v": 7.80082847337598
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2383.65064250224,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -816.3493574977601,
+       "vbat_v": 6.18365064250224
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.8",
+     "eta": "lossless",
+     "i_esc_a": 0.8,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.9894153318730856
+    },
+    {
+     "R_3v3_band_unstated": 1.152260112081127,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.152260112081127,
+     "R_3v3_enters_bor3_band": 1.152260112081127,
+     "R_3v3_unstated": 1.152260112081127,
+     "R_VDD_5V_band_unstated": 0.7085551473344835,
+     "R_VDD_5V_leaves_tolerance": 1.0650450884864573,
+     "R_collapse": 1.152260112081127,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5198.101199441553,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1998.101199441553,
+       "vbat_v": 8.998101199441553
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5176.226647705986,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1976.2266477059857,
+       "vbat_v": 8.976226647705985
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5080.281135799629,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1880.2811357996288,
+       "vbat_v": 8.88028113579963
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4958.342488465543,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1758.3424884655433,
+       "vbat_v": 8.758342488465543
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4577.482918928801,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1377.4829189288012,
+       "vbat_v": 8.377482918928802
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3877.9787951881426,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 677.9787951881426,
+       "vbat_v": 7.677978795188142
+      },
+      {
+       "R": 1.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 1928.3370294510532,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1271.6629705489468,
+       "vbat_v": 5.728337029451053
+      }
+     ],
+     "binding": "collapse",
+     "case": "idle-0.8",
+     "eta": "declared",
+     "i_esc_a": 0.8,
+     "label": "sweep: ESC idle, total of four (no maker states one)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 4.039095955167549
+    },
+    {
+     "R_3v3_band_unstated": 0.984632556656236,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9887882775533805,
+     "R_3v3_enters_bor3_band": 0.984632556656236,
+     "R_3v3_unstated": 0.984632556656236,
+     "R_VDD_5V_band_unstated": 0.5289326139849786,
+     "R_VDD_5V_leaves_tolerance": 0.8492211573456268,
+     "R_collapse": 0.9887882775533805,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5197.291364123232,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1997.2913641232317,
+       "vbat_v": 8.997291364123232
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5166.093832796627,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1966.0938327966269,
+       "vbat_v": 8.966093832796627
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5029.3926519552915,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1829.3926519552915,
+       "vbat_v": 8.829392651955292
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4855.9558268384335,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1655.9558268384335,
+       "vbat_v": 8.655955826838433
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4315.928090381402,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1115.9280903814024,
+       "vbat_v": 8.115928090381402
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3325.027999874561,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 125.02799987456092,
+       "vbat_v": 7.125027999874561
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "idle-2.0",
+     "eta": "lossless",
+     "i_esc_a": 2.0,
+     "label": "sweep: ESC idle, total of four (no maker states one); I2",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.5112117224466193
+    },
+    {
+     "R_3v3_band_unstated": 0.9081500646830531,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9101803396363816,
+     "R_3v3_enters_bor3_band": 0.9081500646830531,
+     "R_3v3_unstated": 0.9081500646830531,
+     "R_VDD_5V_band_unstated": 0.4971852475403804,
+     "R_VDD_5V_leaves_tolerance": 0.7912779050364538,
+     "R_collapse": 0.9101803396363816,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5197.141065108031,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1997.1410651080314,
+       "vbat_v": 8.997141065108032
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5164.205495371756,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1964.2054953717561,
+       "vbat_v": 8.964205495371756
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5019.733867648474,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1819.7338676484742,
+       "vbat_v": 8.819733867648473
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4836.0533693696725,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1636.0533693696725,
+       "vbat_v": 8.636053369369673
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4260.888396472713,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1060.8883964727129,
+       "vbat_v": 8.060888396472713
+      },
+      {
+       "R": 0.5,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3186.760911211465,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -13.2390887885349,
+       "vbat_v": 6.986760911211465
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "idle-2.0",
+     "eta": "declared",
+     "i_esc_a": 2.0,
+     "label": "sweep: ESC idle, total of four (no maker states one); I2",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 3.5898196603636183
+    },
+    {
+     "R_3v3_band_unstated": 0.3915321270339467,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.42384455265562226,
+     "R_3v3_enters_bor3_band": 0.3915321270339467,
+     "R_3v3_unstated": 0.3915321270339467,
+     "R_VDD_5V_band_unstated": 0.16976199368485406,
+     "R_VDD_5V_leaves_tolerance": 0.2991125069435546,
+     "R_collapse": 0.43449262664881255,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5190.8905748638645,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1990.8905748638645,
+       "vbat_v": 8.990890574863865
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5085.968439923801,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1885.9684399238013,
+       "vbat_v": 8.8859684399238
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4626.012452088715,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1426.0124520887148,
+       "vbat_v": 8.426012452088715
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4040.984248861221,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 840.9842488612212,
+       "vbat_v": 7.840984248861221
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2178.626027875568,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1021.3739721244319,
+       "vbat_v": 5.978626027875568
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "spike-10",
+     "eta": "lossless",
+     "i_esc_a": 10.0,
+     "label": "2303's spike-declared 10 A; T10",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 2.327536866755937
+    },
+    {
+     "R_3v3_band_unstated": 0.3788451160280631,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.4076223705840919,
+     "R_3v3_enters_bor3_band": 0.3788451160280631,
+     "R_3v3_unstated": 0.3788451160280631,
+     "R_VDD_5V_band_unstated": 0.1663527382188817,
+     "R_VDD_5V_leaves_tolerance": 0.29159172846988846,
+     "R_collapse": 0.4151260192275744,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5190.740168817903,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1990.7401688179034,
+       "vbat_v": 8.990740168817904
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5084.063014303563,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1884.0630143035632,
+       "vbat_v": 8.884063014303564
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4615.882148365945,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1415.8821483659449,
+       "vbat_v": 8.415882148365945
+      },
+      {
+       "R": 0.1,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4018.919761941608,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 818.9197619416082,
+       "vbat_v": 7.818919761941608
+      },
+      {
+       "R": 0.25,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2100.069880280588,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1099.9301197194118,
+       "vbat_v": 5.900069880280588
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "spike-10",
+     "eta": "declared",
+     "i_esc_a": 10.0,
+     "label": "2303's spike-declared 10 A; T10",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 2.424369903862128
+    },
+    {
+     "R_3v3_band_unstated": 0.08217295910814115,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0935218456640163,
+     "R_3v3_enters_bor3_band": 0.08217295910814115,
+     "R_3v3_unstated": 0.08217295910814115,
+     "R_VDD_5V_band_unstated": 0.03237230743332979,
+     "R_VDD_5V_leaves_tolerance": 0.0592463162171087,
+     "R_collapse": 0.11081779589904983,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.88561641524,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.8856164152403,
+       "vbat_v": 8.95088561641524
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4585.130344445677,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1385.130344445677,
+       "vbat_v": 8.385130344445678
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2094.2321952462626,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1105.7678047537374,
+       "vbat_v": 5.894232195246262
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1298.4212462317305,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4498.42124623173,
+       "vbat_v": 2.5015787537682694
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "lossless",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.1754661230285048
+    },
+    {
+     "R_3v3_band_unstated": 0.0815994420550973,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.09270775311505733,
+     "R_3v3_enters_bor3_band": 0.0815994420550973,
+     "R_3v3_unstated": 0.0815994420550973,
+     "R_VDD_5V_band_unstated": 0.032246286558588154,
+     "R_VDD_5V_leaves_tolerance": 0.05894518021831198,
+     "R_collapse": 0.10865583872101281,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.734537956994,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.7345379569942,
+       "vbat_v": 8.950734537956993
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4583.110662511192,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1383.1106625111915,
+       "vbat_v": 8.383110662511191
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2079.596165102683,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1120.4038348973172,
+       "vbat_v": 5.879596165102683
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1386.6828874108687,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4586.682887410869,
+       "vbat_v": 2.4133171125891315
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "declared",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.2403248383696157
+    },
+    {
+     "R_3v3_band_unstated": 0.050348002539822925,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.057605825101034874,
+     "R_3v3_enters_bor3_band": 0.050348002539822925,
+     "R_3v3_unstated": 0.050348002539822925,
+     "R_VDD_5V_band_unstated": 0.0196499943015023,
+     "R_VDD_5V_leaves_tolerance": 0.03609188824096627,
+     "R_collapse": 0.07116105615898212,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.881617625659,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.8816176256587,
+       "vbat_v": 8.918881617625658
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4184.384017636854,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 984.384017636854,
+       "vbat_v": 7.984384017636854
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3338.883,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 37.5472783033365,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3162.4527216966635,
+       "vbat_v": 3.8375472783033366
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "lossless",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9419471920508942
+    },
+    {
+     "R_3v3_band_unstated": 0.05013211454688287,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.057295915720773256,
+     "R_3v3_enters_bor3_band": 0.05013211454688287,
+     "R_3v3_unstated": 0.05013211454688287,
+     "R_VDD_5V_band_unstated": 0.019603490873485938,
+     "R_VDD_5V_leaves_tolerance": 0.035979912812201045,
+     "R_collapse": 0.07007812788511603,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.729996892072,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.7299968920724,
+       "vbat_v": 8.918729996892072
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4182.262524597646,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 982.262524597646,
+       "vbat_v": 7.982262524597646
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3316.782,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 14.40736166773604,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3185.592638332264,
+       "vbat_v": 3.814407361667736
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "declared",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9960936057441989
+    },
+    {
+     "R_3v3_band_unstated": 0.039913676574792646,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04574700280886648,
+     "R_3v3_enters_bor3_band": 0.039913676574792646,
+     "R_3v3_unstated": 0.039913676574792646,
+     "R_VDD_5V_band_unstated": 0.01553021714349647,
+     "R_VDD_5V_leaves_tolerance": 0.02855820461981646,
+     "R_collapse": 0.05752866194123386,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.278902177884,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.2789021778844,
+       "vbat_v": 8.897278902177884
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3913.836317641997,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 713.8363176419971,
+       "vbat_v": 7.713836317641997
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1410.9487794283586,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4610.948779428359,
+       "vbat_v": 2.389051220571641
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "lossless",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8469299667316497
+    },
+    {
+     "R_3v3_band_unstated": 0.0397778785131463,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04555133992171969,
+     "R_3v3_enters_bor3_band": 0.0397778785131463,
+     "R_3v3_unstated": 0.0397778785131463,
+     "R_VDD_5V_band_unstated": 0.015501154795024251,
+     "R_VDD_5V_leaves_tolerance": 0.028488051551434253,
+     "R_collapse": 0.05674993917657162,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.126913201835,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.1269132018351,
+       "vbat_v": 8.897126913201834
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3911.6400682692965,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 711.6400682692965,
+       "vbat_v": 7.711640068269297
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1451.4282760479982,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4651.428276047998,
+       "vbat_v": 2.3485717239520016
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "declared",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8963788622877025
+    },
+    {
+     "R_3v3_band_unstated": 0.0318469079166649,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03655056852378772,
+     "R_3v3_enters_bor3_band": 0.0318469079166649,
+     "R_3v3_unstated": 0.0318469079166649,
+     "R_VDD_5V_band_unstated": 0.012362375850841038,
+     "R_VDD_5V_leaves_tolerance": 0.022753329237810982,
+     "R_collapse": 0.04671055935338668,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5070.875565334387,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1870.875565334387,
+       "vbat_v": 8.870875565334387
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3583.1122708926487,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 383.11227089264867,
+       "vbat_v": 7.383112270892648
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-160",
+     "eta": "lossless",
+     "i_esc_a": 160.0,
+     "label": "upper bound: 4 x 40 A continuous, Hobbywing XRotor Micro 40A (stated); what an armed firmware could ask it to carry",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.7631552517290654
+    },
+    {
+     "R_3v3_band_unstated": 0.0317603945165822,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03642555845028046,
+     "R_3v3_enters_bor3_band": 0.0317603945165822,
+     "R_3v3_unstated": 0.0317603945165822,
+     "R_VDD_5V_band_unstated": 0.012343953487461458,
+     "R_VDD_5V_leaves_tolerance": 0.0227087747273029,
+     "R_collapse": 0.04614615490307079,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5070.723123847214,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1870.723123847214,
+       "vbat_v": 8.870723123847213
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3580.8171395513273,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 380.8171395513273,
+       "vbat_v": 7.380817139551327
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-160",
+     "eta": "declared",
+     "i_esc_a": 160.0,
+     "label": "upper bound: 4 x 40 A continuous, Hobbywing XRotor Micro 40A (stated); what an armed firmware could ask it to carry",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8083076077543372
+    },
+    {
+     "R_3v3_band_unstated": 0.02558033441885793,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.029389271348530775,
+     "R_3v3_enters_bor3_band": 0.02558033441885793,
+     "R_3v3_unstated": 0.02558033441885793,
+     "R_VDD_5V_band_unstated": 0.009911726166759137,
+     "R_VDD_5V_leaves_tolerance": 0.018255509801723413,
+     "R_collapse": 0.03810700779094747,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5038.871493945031,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1838.871493945031,
+       "vbat_v": 8.838871493945032
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3182.1424439560196,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -17.857556043980367,
+       "vbat_v": 6.98214244395602
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-200",
+     "eta": "lossless",
+     "i_esc_a": 200.0,
+     "label": "upper bound: 4 x 50 A continuous, Holybro Tekko32 F4 BigFET 50A (stated, 4-6S)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.6892992209052529
+    },
+    {
+     "R_3v3_band_unstated": 0.02552448823764722,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.02930839426182677,
+     "R_3v3_enters_bor3_band": 0.02552448823764722,
+     "R_3v3_unstated": 0.02552448823764722,
+     "R_VDD_5V_band_unstated": 0.009899880258591558,
+     "R_VDD_5V_leaves_tolerance": 0.018226817998338862,
+     "R_collapse": 0.037694531361203744,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5038.718500333009,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1838.7185003330087,
+       "vbat_v": 8.838718500333009
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3179.714760553631,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -20.285239446368905,
+       "vbat_v": 6.979714760553631
+      },
+      {
+       "R": 0.05,
+       "vbat_v": null
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "rated-200",
+     "eta": "declared",
+     "i_esc_a": 200.0,
+     "label": "upper bound: 4 x 50 A continuous, Holybro Tekko32 F4 BigFET 50A (stated, 4-6S)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.7305468638796255
+    }
+   ],
+   "vout_uv": {
+    "U10": [
+     4818048,
+     5237403
+    ],
+    "U11": [
+     3144727,
+     3417204
+    ]
+   }
+  }
+ },
+ "bor3_falling_max_mv": 2680
+}

@@ -1,0 +1,218 @@
+10000 renode boot=0x0 cr1=0x0 ccr1=0x0
+20000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+39130000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+41050000 bucks off vbat=2.9296
+41060000 bucks on vbat=3.9394
+41060000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+41070000 renode boot=0x0 cr1=0x0 ccr1=0x0
+41070000 bridge reset_released vdd=3.1536 vbat=3.4996
+41090000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+41280000 bucks off vbat=2.9896
+41290000 bucks on vbat=4.0294
+80200000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+82120000 bucks off vbat=2.9296
+82130000 bucks on vbat=3.9394
+82130000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+82140000 renode boot=0x0 cr1=0x0 ccr1=0x0
+82140000 bridge reset_released vdd=3.1536 vbat=3.4996
+82160000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+82350000 bucks off vbat=2.9896
+82360000 bucks on vbat=4.0294
+121270000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+123190000 bucks off vbat=2.9296
+123200000 bucks on vbat=3.9394
+123200000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+123210000 renode boot=0x0 cr1=0x0 ccr1=0x0
+123210000 bridge reset_released vdd=3.1536 vbat=3.4996
+123230000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+123420000 bucks off vbat=2.9896
+123430000 bucks on vbat=4.0294
+162340000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+164260000 bucks off vbat=2.9296
+164270000 bucks on vbat=3.9394
+164270000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+164280000 renode boot=0x0 cr1=0x0 ccr1=0x0
+164280000 bridge reset_released vdd=3.1536 vbat=3.4996
+164300000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+164490000 bucks off vbat=2.9896
+164500000 bucks on vbat=4.0294
+203410000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+205330000 bucks off vbat=2.9296
+205340000 bucks on vbat=3.9394
+205340000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+205350000 renode boot=0x0 cr1=0x0 ccr1=0x0
+205350000 bridge reset_released vdd=3.1536 vbat=3.4996
+205370000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+205560000 bucks off vbat=2.9896
+205570000 bucks on vbat=4.0294
+244480000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+246400000 bucks off vbat=2.9296
+246410000 bucks on vbat=3.9394
+246410000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+246420000 renode boot=0x0 cr1=0x0 ccr1=0x0
+246420000 bridge reset_released vdd=3.1536 vbat=3.4996
+246440000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+246630000 bucks off vbat=2.9896
+246640000 bucks on vbat=4.0294
+285550000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+287470000 bucks off vbat=2.9296
+287480000 bucks on vbat=3.9394
+287480000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+287490000 renode boot=0x0 cr1=0x0 ccr1=0x0
+287490000 bridge reset_released vdd=3.1536 vbat=3.4996
+287510000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+287700000 bucks off vbat=2.9896
+287710000 bucks on vbat=4.0294
+326620000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+328540000 bucks off vbat=2.9296
+328550000 bucks on vbat=3.9394
+328550000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+328560000 renode boot=0x0 cr1=0x0 ccr1=0x0
+328560000 bridge reset_released vdd=3.1536 vbat=3.4996
+328580000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+328770000 bucks off vbat=2.9896
+328780000 bucks on vbat=4.0294
+367690000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+369610000 bucks off vbat=2.9296
+369620000 bucks on vbat=3.9394
+369620000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+369630000 renode boot=0x0 cr1=0x0 ccr1=0x0
+369630000 bridge reset_released vdd=3.1536 vbat=3.4996
+369650000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+369840000 bucks off vbat=2.9896
+369850000 bucks on vbat=4.0294
+408760000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+410680000 bucks off vbat=2.9296
+410690000 bucks on vbat=3.9394
+410690000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+410700000 renode boot=0x0 cr1=0x0 ccr1=0x0
+410700000 bridge reset_released vdd=3.1536 vbat=3.4996
+410720000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+410910000 bucks off vbat=2.9896
+410920000 bucks on vbat=4.0294
+449830000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+451750000 bucks off vbat=2.9296
+451760000 bucks on vbat=3.9394
+451760000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+451770000 renode boot=0x0 cr1=0x0 ccr1=0x0
+451770000 bridge reset_released vdd=3.1536 vbat=3.4996
+451790000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+451980000 bucks off vbat=2.9896
+451990000 bucks on vbat=4.0294
+490900000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+492820000 bucks off vbat=2.9296
+492830000 bucks on vbat=3.9394
+492830000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+492840000 renode boot=0x0 cr1=0x0 ccr1=0x0
+492840000 bridge reset_released vdd=3.1536 vbat=3.4996
+492860000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+493050000 bucks off vbat=2.9896
+493060000 bucks on vbat=4.0294
+531970000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+533890000 bucks off vbat=2.9296
+533900000 bucks on vbat=3.9394
+533900000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+533910000 renode boot=0x0 cr1=0x0 ccr1=0x0
+533910000 bridge reset_released vdd=3.1536 vbat=3.4996
+533930000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+534120000 bucks off vbat=2.9896
+534130000 bucks on vbat=4.0294
+573040000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+574960000 bucks off vbat=2.9296
+574970000 bucks on vbat=3.9394
+574970000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+574980000 renode boot=0x0 cr1=0x0 ccr1=0x0
+574980000 bridge reset_released vdd=3.1536 vbat=3.4996
+575000000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+575190000 bucks off vbat=2.9896
+575200000 bucks on vbat=4.0294
+614110000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+616030000 bucks off vbat=2.9296
+616040000 bucks on vbat=3.9394
+616040000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+616050000 renode boot=0x0 cr1=0x0 ccr1=0x0
+616050000 bridge reset_released vdd=3.1536 vbat=3.4996
+616070000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+616260000 bucks off vbat=2.9896
+616270000 bucks on vbat=4.0294
+655180000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+657100000 bucks off vbat=2.9296
+657110000 bucks on vbat=3.9394
+657110000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+657120000 renode boot=0x0 cr1=0x0 ccr1=0x0
+657120000 bridge reset_released vdd=3.1536 vbat=3.4996
+657140000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+657330000 bucks off vbat=2.9896
+657340000 bucks on vbat=4.0294
+696250000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+698170000 bucks off vbat=2.9296
+698180000 bucks on vbat=3.9394
+698180000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+698190000 renode boot=0x0 cr1=0x0 ccr1=0x0
+698190000 bridge reset_released vdd=3.1536 vbat=3.4996
+698210000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+698400000 bucks off vbat=2.9896
+698410000 bucks on vbat=4.0294
+737320000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+739240000 bucks off vbat=2.9296
+739250000 bucks on vbat=3.9394
+739250000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+739260000 renode boot=0x0 cr1=0x0 ccr1=0x0
+739260000 bridge reset_released vdd=3.1536 vbat=3.4996
+739280000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+739470000 bucks off vbat=2.9896
+739480000 bucks on vbat=4.0294
+778390000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+780310000 bucks off vbat=2.9296
+780320000 bucks on vbat=3.9394
+780320000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+780330000 renode boot=0x0 cr1=0x0 ccr1=0x0
+780330000 bridge reset_released vdd=3.1536 vbat=3.4996
+780350000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+780540000 bucks off vbat=2.9896
+780550000 bucks on vbat=4.0294
+819460000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+821380000 bucks off vbat=2.9296
+821390000 bucks on vbat=3.9394
+821390000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+821400000 renode boot=0x0 cr1=0x0 ccr1=0x0
+821400000 bridge reset_released vdd=3.1536 vbat=3.4996
+821420000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+821610000 bucks off vbat=2.9896
+821620000 bucks on vbat=4.0294
+860530000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+862450000 bucks off vbat=2.9296
+862460000 bucks on vbat=3.9394
+862460000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+862470000 renode boot=0x0 cr1=0x0 ccr1=0x0
+862470000 bridge reset_released vdd=3.1536 vbat=3.4996
+862490000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+862680000 bucks off vbat=2.9896
+862690000 bucks on vbat=4.0294
+901600000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+903520000 bucks off vbat=2.9296
+903530000 bucks on vbat=3.9394
+903530000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+903540000 renode boot=0x0 cr1=0x0 ccr1=0x0
+903540000 bridge reset_released vdd=3.1536 vbat=3.4996
+903560000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+903750000 bucks off vbat=2.9896
+903760000 bucks on vbat=4.0294
+942670000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+944590000 bucks off vbat=2.9296
+944600000 bucks on vbat=3.9394
+944600000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+944610000 renode boot=0x0 cr1=0x0 ccr1=0x0
+944610000 bridge reset_released vdd=3.1536 vbat=3.4996
+944630000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+944820000 bucks off vbat=2.9896
+944830000 bucks on vbat=4.0294
+983740000 renode boot=0x2100b007 cr1=0x81 ccr1=0x28
+985660000 bucks off vbat=2.9296
+985670000 bucks on vbat=3.9394
+985670000 bridge reset_asserted vdd=2.6066 vbat=3.9394
+985680000 renode boot=0x0 cr1=0x0 ccr1=0x0
+985680000 bridge reset_released vdd=3.1536 vbat=3.4996
+985700000 renode boot=0x0 cr1=0x0 ccr1=0xffff
+985890000 bucks off vbat=2.9896
+985900000 bucks on vbat=4.0294
