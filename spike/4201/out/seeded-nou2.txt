@@ -1,0 +1,5 @@
+# reference specification with U2 removed: seeded I2C cases (baseline c3f8ddbb matched 3/3, measured)
+{"scenario": "pullup-47k", "verdict": "fail", "expect": "fail", "matched": false, "findings": ["analog_rise_exceeds_ceiling"], "expect_findings": ["analog_rise_exceeds_ceiling", "i2c_timeout"]}
+{"scenario": "pullup-2k2", "verdict": "pass", "expect": "pass", "matched": true, "findings": [], "expect_findings": []}
+{"scenario": "held-low-sda", "verdict": "fail", "expect": "fail", "matched": false, "findings": ["i2c_line_held_low"], "expect_findings": ["i2c_line_held_low", "i2c_timeout"]}
+{"verdict": "fail", "scenarios": 3, "matched": 1}

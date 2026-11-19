@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"gate `campaign`: `[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 1962227 28a801 770`: its count places it at 20854010 ns in a boot started at 1231740 ns, but it is stamped 20854009 ns"}}

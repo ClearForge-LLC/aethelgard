@@ -22,10 +22,11 @@ use common::*;
 /// `AET-WO-4200` (`dd0dd2db…c7ff`, version 7), `AET-WO-4300a` (`43cbe654…0ea3`,
 /// version 8), `AET-WO-4210` (`d107fffb…3e75`, version 9), `AET-WO-4220`
 /// (`8271f786…1ab4`, version 10), `AET-WO-4300b` (`1db8a16f…12d9`,
-/// version 11), `AET-WO-4230` (`27753b78…c311`, version 12) and
-/// `AET-WO-2302` (version 13) each changed the version byte alone.
+/// version 11), `AET-WO-4230` (`27753b78…c311`, version 12),
+/// `AET-WO-2302` (`25392c25…8747`, version 13) and `AET-WO-4400g` (version
+/// 14) each changed the version byte alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "25392c25bb5eff96fef99dd47dfe8260e475cd7ba9ba11ff67f86abf91888747";
+    "bcd082c29bd33708606ddbef7f10b66888de0b501c5c024c4030a56b0ad48383";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -36,8 +37,9 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `AET-WO-4300a` did, then `35971fa6…2b99b` until `AET-WO-4210` did, then
 /// `8b4dc285…def7cf` until `AET-WO-4220` did, then `955d28e0…bbdbbd` until
 /// `AET-WO-4300b` did, then `d9b03ded…07124f` until `AET-WO-4230` did, then
-/// `1236d811…e1dbd4` until `AET-WO-2302` did.
-const GOLDEN_STATE_HASH: &str = "64a3c723185e534cc83f773657182a0b3fef81e01fe60ed86dc58963ca5d03e0";
+/// `1236d811…e1dbd4` until `AET-WO-2302` did, then `64a3c723…5d03e0` until
+/// `AET-WO-4400g` did.
+const GOLDEN_STATE_HASH: &str = "ada1b6312af5ebe4b55f3c5a48c80386527f14d3cddac1edd0834702e3fdd8f7";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -52,7 +54,7 @@ fn golden_trace_and_state_hash_are_pinned() {
     );
     assert_eq!(trace_sha, GOLDEN_TRACE_SHA256);
     assert_eq!(state_hash, GOLDEN_STATE_HASH);
-    // AET-WO-2302, AET-WO-4230, AET-WO-4300b, AET-WO-4220, AET-WO-4210,
+    // AET-WO-4400g, AET-WO-2302, AET-WO-4230, AET-WO-4300b, AET-WO-4220, AET-WO-4210,
     // AET-WO-4300a and AET-WO-4200 each changed the version byte alone: set
     // back to 12, the bytes are version 12's golden trace (`27753b78…c311`,
     // AET-WO-4230's); set back to 11, version 11's (`1db8a16f…12d9`,
@@ -66,6 +68,11 @@ fn golden_trace_and_state_hash_are_pinned() {
     let at = 1 + 1 + "aethelgard-trace".len();
     assert_eq!(u64::from(bytes[at]), aethelgard_chaos::event::TRACE_VERSION);
     let mut bytes = bytes.clone();
+    bytes[at] = 13;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "25392c25bb5eff96fef99dd47dfe8260e475cd7ba9ba11ff67f86abf91888747"
+    );
     bytes[at] = 12;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),

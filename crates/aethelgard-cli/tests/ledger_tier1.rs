@@ -26,6 +26,9 @@ use aethelgard_ir::{PinTable, SolvedTopology, Specification, UnwitnessedAcknowle
 use aethelgard_svd_hal::board::{FieldAccess, register_fields};
 use sha2::{Digest, Sha256};
 
+#[path = "common/spec.rs"]
+mod spec;
+
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
@@ -244,7 +247,11 @@ fn every_specification_that_solves_has_a_ledger() {
         if path.components().any(|c| c.as_os_str() == "target") {
             continue;
         }
-        let Some((t, table)) = solve(&fs::read(&path).unwrap()) else {
+        let bytes = fs::read(&path).unwrap();
+        if spec::committed(&path, &bytes).is_none() {
+            continue;
+        }
+        let Some((t, table)) = solve(&bytes) else {
             continue;
         };
         // A specification the generator refuses has no firmware to ledger.

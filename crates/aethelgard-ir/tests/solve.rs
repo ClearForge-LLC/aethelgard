@@ -166,7 +166,7 @@ fn spec(
         "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,

@@ -6,8 +6,11 @@
 
 use std::path::{Path, PathBuf};
 
-use aethelgard_ir::{Specification, silicon, solve};
+use aethelgard_ir::{silicon, solve};
 use sha2::{Digest, Sha256};
+
+#[path = "common/spec.rs"]
+mod spec;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -45,7 +48,7 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
     let (mut solved, mut skipped, mut spi, mut i2c) = (Vec::new(), Vec::new(), 0, 0);
     for path in fixtures() {
         let bytes = std::fs::read(&path).unwrap();
-        let Ok(spec) = serde_json::from_slice::<Specification>(&bytes) else {
+        let Some(spec) = spec::committed(&path, &bytes) else {
             continue;
         };
         let hash: String = Sha256::digest(&bytes)
