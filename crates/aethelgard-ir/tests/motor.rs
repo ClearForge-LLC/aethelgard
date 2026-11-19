@@ -831,3 +831,36 @@ fn a_version_16_file_is_refused_by_its_version() {
         );
     }
 }
+
+/// `AET-WO-2304b` §1.2: an output's `esc` is `null` or `{"none": {source}}`
+/// with a source; an empty source, an unknown variant and an empty object
+/// are refused, never read as a default.
+#[test]
+fn an_esc_is_null_or_none_with_a_source() {
+    let with = |esc: Value| {
+        let mut m = dshot("M1", Some("PE9"));
+        m["esc"] = esc;
+        serde_json::from_value::<Specification>(spec_json(vec![m]))
+    };
+    assert!(with(Value::Null).unwrap().validate().is_ok());
+    assert!(
+        with(json!({"none": {"source": "a bench header"}}))
+            .unwrap()
+            .validate()
+            .is_ok()
+    );
+    assert!(matches!(
+        with(json!({"none": {"source": ""}})).unwrap().validate(),
+        Err(aethelgard_ir::IrValidationError::InvalidSource { ref path })
+            if path == "motor_outputs[0].esc.none.source"
+    ));
+    for bad in [
+        json!({}),
+        json!({"part": {"source": "s"}}),
+        json!({"none": {"source": "s"}, "x": 1}),
+        json!({"none": {}}),
+        json!("none"),
+    ] {
+        assert!(with(bad.clone()).is_err(), "{bad}");
+    }
+}

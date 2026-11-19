@@ -2061,6 +2061,31 @@ mod tests {
         .unwrap()
     }
 
+    /// L697 (`AET-WO-2304b` §1.10): a droop covers its rail when its loaded
+    /// floor, the declared floor less the load's I·R drop (the floor the
+    /// scheduler renders), lies below the band. 3,140 mV with 100 mA through
+    /// 500 mΩ is 3,090 mV loaded, below 3,135 mV: covered, though the
+    /// declared floor is above it; 3,200 mV is 3,150 mV loaded: not.
+    #[test]
+    fn a_droop_covers_its_rail_by_its_loaded_floor() {
+        let (spec, t) = solved(S1);
+        let droop = |floor: u32| {
+            json_scenario(
+                true,
+                &[],
+                json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
+                    "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
+                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
+                    "bor_level": 3}}]),
+            )
+        };
+        assert_eq!(
+            classify(&spec, &t, &droop(3140)),
+            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())])
+        );
+        assert_eq!(classify(&spec, &t, &droop(3200)), Seeded::Tolerable(vec![]));
+    }
+
     fn failed(findings: Value) -> Run {
         Run {
             scenario: "x".into(),

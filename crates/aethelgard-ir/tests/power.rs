@@ -1910,3 +1910,123 @@ fn a_malformed_mcu_ardupilot_column_is_refused() {
         assert!(err.to_string().contains(field), "`{field}` not in: {err}");
     }
 }
+
+/// `AET-WO-2304b` §1.2: `series_milliohms` is `null` or `{value, source}`,
+/// a 0 mΩ path refused, an unsourced one refused; the key is required (the
+/// walker in `validate.rs` removes it).
+#[test]
+fn the_healthy_series_resistance_is_null_or_a_sourced_nonzero_value() {
+    let mut v = base();
+    v["power"]["battery"]["series_milliohms"] = Value::Null;
+    assert_eq!(spec(&v).validate(), Ok(()));
+    v["power"]["battery"]["series_milliohms"] = json!({"value": 0, "source": "s"});
+    assert_power(
+        &refused(&v),
+        Refusal::PowerValueInvalid,
+        "power.battery.series_milliohms",
+    );
+    v["power"]["battery"]["series_milliohms"] = json!({"value": 1, "source": ""});
+    assert!(
+        matches!(refused(&v), E::InvalidSource { ref path } if path == "power.battery.series_milliohms.source")
+    );
+}
+
+/// `AET-WO-2304b` §1.5: the power fixture's battery side, one derivation
+/// from the specification and the table (measured): V_open 3 × 3,000 mV;
+/// U10 and U11 at ⌈VOUT max × load⌉ + their declared loss, each with its
+/// minimum operating input and its D-B9 regulation floor; C1 at its rating
+/// with its ESR maximum, then each battery-fed input ceramic as IR credits it.
+#[test]
+fn the_battery_side_is_derived_from_the_specification_and_the_table() {
+    let side = power::battery_side(&spec(&full())).unwrap().unwrap();
+    assert_eq!(side.v_open_microvolts, 9_000_000);
+    assert_eq!(side.healthy.as_ref().map(|h| h.value), Some(1));
+    let sinks: Vec<(&str, u64, u64, u64)> = side
+        .sinks
+        .iter()
+        .map(|k| {
+            (
+                k.reference.as_str(),
+                k.input_milliwatts,
+                k.shutdown_millivolts,
+                k.regulation_millivolts,
+            )
+        })
+        .collect();
+    assert_eq!(
+        sinks,
+        [("U10", 11_645, 3_800, 7_000), ("U11", 2_997, 3_800, 3_800)]
+    );
+    assert_eq!(side.input_milliwatts(), 14_642);
+    assert_eq!(side.capacitors[0].reference, "C1");
+    assert_eq!(side.capacitors[0].picofarads, 47_000_000);
+    assert_eq!(side.capacitors[0].esr_max_milliohms, Some(250));
+    assert!(
+        side.capacitors[1..]
+            .iter()
+            .all(|c| c.esr_max_milliohms.is_none())
+    );
+    // A board with no tree has no battery side.
+    let mut none = base();
+    none["power"] = Value::Null;
+    none["mcu"]["supply_source"] = json!({"connector": "J2", "pin": "1"});
+    assert!(matches!(
+        power::battery_side(&spec(&none)),
+        Ok(None) | Err(_)
+    ));
+}
+
+/// `AET-WO-2304b` §1.6: the shutdown clause, through a test-only table that
+/// validation admits (the `1315` precedent): the 5 V row's regulation input
+/// lowered below the part's 3,800 mV minimum operating input. No row held
+/// is so; on every real one the regulation floor dominates.
+#[test]
+fn a_test_only_table_gives_a_sink_whose_shutdown_floor_binds() {
+    let mut t = table_json();
+    row(&mut t, "LMR33630ADDA")["kind"]["buck"]["regulation_vin_min"][0]["vin_min"]["value"] =
+        json!(3000);
+    let table = parse_power_parts(&t.to_string()).expect("the changed table parses");
+    let sensors = aethelgard_ir::parts::table().unwrap();
+    let side = power::battery_side_against(
+        &spec(&full()),
+        &table,
+        sensors,
+        &power::output_delays(sensors),
+    );
+    // Validation itself refuses a battery below a regulation floor only; a
+    // floor lowered below the shutdown floor is admitted.
+    let side = side.unwrap().unwrap();
+    let u10 = &side.sinks[0];
+    assert_eq!(
+        (u10.shutdown_millivolts, u10.regulation_millivolts),
+        (3_800, 3_000)
+    );
+    assert_eq!(u10.floor_millivolts(), 3_800);
+}
+
+/// F3: each regulator's output capacitors, at IR's credited figure (no
+/// maker curve is held for these parts; the fixture's 500 per mille
+/// derating), measured.
+#[test]
+fn each_output_capacitor_is_credited_by_ir_s_own_derivation() {
+    let out = power::output_capacitance(&spec(&full())).unwrap();
+    let by: Vec<(&str, &str, u64)> = out
+        .iter()
+        .map(|(r, c)| (r.as_str(), c.domain.as_str(), c.picofarads))
+        .collect();
+    assert_eq!(
+        by,
+        [
+            ("C14", "VDD_5V", 11_000_000),
+            ("C15", "VDD_5V", 11_000_000),
+            ("C16", "VDD_5V", 11_000_000),
+            ("C17", "VDD_5V", 11_000_000),
+            ("C24", "VDD_3V3", 11_000_000),
+            ("C25", "VDD_3V3", 11_000_000),
+            ("C26", "VDD_3V3", 11_000_000),
+            ("C27", "VDD_3V3", 11_000_000),
+            ("C31", "VDD_1V8", 500_000),
+        ]
+    );
+    assert!(out.values().all(|c| c.how.contains("declared derating")));
+}

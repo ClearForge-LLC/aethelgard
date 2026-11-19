@@ -1047,7 +1047,7 @@ fn run_one(
     )
     .map_err(stop)?;
     drop(scratch);
-    let mut sandbox = verdict.sandbox.clone();
+    let mut sandbox = verdict.sandbox;
     if let Some(s) = &p.sag {
         sandbox.unmet(s.sandbox.uid_boundary_unmet);
     }
