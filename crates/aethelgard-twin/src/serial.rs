@@ -2084,6 +2084,18 @@ mod tests {
         rev_y[1] = w("pwr", 0x0C, 0x02);
         assert!(judge_pwr(&rule, &[rev_y]).is_empty());
         let judged = |boot: Vec<Access>| judge_pwr(&rule, &[boot]);
+        // A warm reset after ArduPilot (`LDOEN | USB33DEN`, `0x0100_0002`):
+        // the write keeps bit 24 as read; clearing it is named (adversarial
+        // pass A6: every other case is low-byte only).
+        let mut warm = good.clone();
+        warm[0] = rd("pwr", 0x0C, 0x0100_0002);
+        warm[1] = w("pwr", 0x0C, 0x0100_0002);
+        assert!(judge_pwr(&rule, &[warm.clone()]).is_empty());
+        warm[1] = w("pwr", 0x0C, 0x0000_0002);
+        assert_eq!(
+            judged(warm),
+            ["PWR.CR3 0x2 written: its other bits are not as read (0x1000002)"]
+        );
         let mut twice = good.clone();
         twice.insert(3, w("pwr", 0x0C, 0x42));
         assert_eq!(judged(twice), ["PWR.CR3 written twice in a boot"]);

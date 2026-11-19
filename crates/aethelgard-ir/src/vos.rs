@@ -108,13 +108,13 @@ const LIMITS: [(Family, [Option<u64>; 4], &str); 12] = [
         [Some(480), Some(400), Some(300), Some(200)],
         DS12117_TABLE_111,
     ),
-    // Footnote 5: VOS0's 240 MHz holds only at TJmax 105 °C.
+    // Footnote 5 ("TJMax = 105 °C") is on VOS0's fHCLK and fPCLK cells.
     (
         Family::Hclk,
         [Some(240), Some(200), Some(150), Some(100)],
         DS12117_TABLE_111,
     ),
-    // Footnote 6: "Maximum APB clock frequency when at least one peripheral
+    // Footnote 6, on VOS3's fPCLK only: "Maximum APB clock frequency when at least one peripheral
     // is enabled".
     (
         Family::Pclk,

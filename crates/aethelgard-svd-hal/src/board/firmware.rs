@@ -34,6 +34,15 @@
 //! [`BOOT_ACTVOSRDY_TIMEOUT`]: on silicon that word may not land, and the
 //! bench reads `PWR_CR3` and `PWR_CSR1` themselves. The twin models no Run*
 //! mode.
+//!
+//! **The residue: `VOSRDY` read before it falls** (adversarial pass A2).
+//! `VOSRDY` reads 1 after reset (RM0433 Rev 9 p. 310), and RM0433 states no
+//! latency between the `D3CR` write and its fall; so the first poll after the
+//! write may read the 1 of the old level, and `Scale2` may come back while
+//! VCORE still rises. Kani proves the order, not the bit's timing, the twin's
+//! `VOSRDY` always reads 1, and the bench reads the steady state; nothing
+//! here can see it. The clocks are the reset tree's throughout, which ran at
+//! VOS3 from reset until then.
 
 use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::parts::StepKind;

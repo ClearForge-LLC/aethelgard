@@ -406,3 +406,20 @@ fn a_foreign_clock_without_vos_is_refused() {
         .remove("vos");
     assert!(parse(v).unwrap_err().contains("missing field `vos`"));
 }
+
+/// D-7 at its fastest (adversarial pass A5): at VOS2 a 54.5 MHz AXI clock is
+/// in Table 17's 0 WS row at nominal and in the 1 WS row at its fastest
+/// (55,316,628 Hz), so judged at nominal the row would be `(0, 00)`.
+#[test]
+fn flash_wait_states_are_judged_at_the_fastest_axi_clock() {
+    let mut c = SolvedClock::reset();
+    c.sysclk_hz = 54_500_000;
+    let f = vos::flash_at_reset(&c);
+    assert_eq!(f.hclk_fastest_hz, 55_316_628);
+    assert_eq!(f.needed, Some((1, 0b01)));
+    assert!(f.holds);
+    // Past the table (above 225 MHz at VOS2) no row needs anything: refused.
+    c.sysclk_hz = 225_000_000;
+    let f = vos::flash_at_reset(&c);
+    assert_eq!((f.needed, f.holds), (None, false));
+}

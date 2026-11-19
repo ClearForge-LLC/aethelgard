@@ -200,13 +200,19 @@ fn a_bypass_core_supply_validates_and_solves_and_is_never_generated() {
     assert_eq!(spec["mcu"]["core_supply"]["mode"], "ldo");
     spec["mcu"]["core_supply"]["mode"] = "bypass".into();
     let bypass = dir.join("bypass.json");
-    // An acknowledgement names a row of the generated firmware's ledger, and a
-    // `bypass` board has no generated firmware, so each is stale.
-    fs::write(&bypass, spec.to_string()).unwrap();
+    // Its acknowledgements are left unjudged: no ledger can rest on them
+    // (adversarial pass A1); `validate` accepts it with them and without.
+    assert!(
+        !spec["acknowledge_unwitnessed"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let mut bare = spec.clone();
+    bare["acknowledge_unwitnessed"] = serde_json::json!([]);
+    fs::write(&bypass, bare.to_string()).unwrap();
     let (code, v) = run(&["validate", "--file", s(&bypass)], true);
-    assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "UnwitnessedAcknowledgementStale", "{v}");
-    spec["acknowledge_unwitnessed"] = serde_json::json!([]);
+    assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");
     fs::write(&bypass, spec.to_string()).unwrap();
     let (code, v) = run(&["validate", "--file", s(&bypass)], true);
     assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");

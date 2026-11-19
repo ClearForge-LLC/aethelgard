@@ -2479,6 +2479,14 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
     let Some(first) = spec.acknowledge_unwitnessed.first() else {
         return Ok(());
     };
+    // A `bypass` board is a true declaration this engine does not build
+    // (`AET-WO-4240v` D-1): `validate` and `solve` accept it, and `generate`,
+    // `emit`, `simulate` and `verify` refuse it as `CoreSupplyNotGenerated`
+    // before any ledger is read. So no package, and no ledger, can rest on its
+    // acknowledgements, and they are left unjudged here (adversarial pass A1).
+    if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass {
+        return Ok(());
+    }
     let built = aethelgard_svd_hal::pin_table(&spec.mcu.part)
         .map_err(|e| e.to_string())
         .and_then(|table| {
