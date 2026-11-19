@@ -1,10 +1,120 @@
-# AET-WO-1209 FEEDBACK — STOPPED at §7: one committed fixture and five test helpers are newly refused
+# AET-WO-1209 FEEDBACK — `validate` refuses a load naming no part the board has; rules 1 and 3 deferred by ruling
 
 Builder: Claude (Opus 5.5), a fresh `1209` session, 2026-11-19, from ~20:40 UTC. Worktree `~/aethelgard-1209`, branch `wo/aet-1209-validate-late-refusals` from `origin/main` `96517013`. The work order is read from `~/.cache/aet-1209-wo.md`, the architect's copy of the docs branch's `docs/work-orders/AET-WO-1209.md`. This branch does not commit it.
 
-**`origin/main` was still `96517013` at the last fetch before push.** The list is measured there. `4202` moves Sentinel-02's and -03's U2 rows, and its specifications join the corpus when it lands, so the list is re-measured after any merge.
+**The order of this file.**
+
+- **Part B (first)** is the build to the architect's rulings of 22:10Z on D1–D4 (`~/.cache/aet-bus/1209.md`).
+- **Part A (below it)** is the §7 stop as pushed (`0068d566`, `2d4fdf33`) and ruled. It is kept as the record the rulings answer.
 
 Labels: **measured** (run here), **read** (read at source, file:line), **inferred** (reasoned, not run).
+
+# Part B — the build, to the rulings of 22:10Z
+
+**Base:** `origin/main` `35d23eae` (3403 merged), merged into the branch as `9ea52f61`. 3403 changed no Rust, so `main`'s baseline binary, built at `96517013`, judges the same rules [measured: `git diff --stat 96517013 35d23eae -- crates boards` is empty].
+
+**4202 has not landed.** At 22:50Z it has no PR. The ruled re-merge, and the 48-file re-measure that follows it, wait for it (B5).
+
+## B0. What is built, and what is not
+
+- **Rule 2 in `Specification::validate`, step 20a** (`ir/src/names.rs` `loads`, called from `lib.rs` after step 20) [read].
+  - Each `power.loads` reference must name a part the board has. Four forms are allowed (D3):
+    - (i) a reference the specification declares (`names::references`);
+    - (ii) the MCU's `U<n>` (`names::mcu_reference`);
+    - (iii) the reset switch's `SW<n>` (`bench::switch_reference`);
+    - (iv) `R<n>`/`C<n>` by `emitter_numbered`'s pattern.
+  - Anything else is refused as `LoadNamesNoPart`:
+    - `id` is the reference;
+    - `error.path` is `power.loads[i].reference`, rendered as the CLI's `path` through `IrValidationError::path`;
+    - the message names the rail.
+  - Each form reads the same function the emitter's own numbering mirrors or calls. No second list.
+- **The exact drawn set in the CLI's `validate`** (`cli/src/main.rs` `loads_drawn`) [read].
+  - A reference the emitter does not draw for this specification (`aethelgard_eda::schematic::drawn`) is refused as `LoadNamesUndrawnPart`, with `path`.
+  - It runs on `quiet_solve`, the one pin-table-and-solve that `outline_holds` now shares.
+  - A specification that does not solve, or that `emit` refuses, is left to those steps, as `outline_holds` leaves it.
+- **Documentation:** `crates/aethelgard-cli/README.md` names both kinds.
+- **Not built, by ruling:**
+  - rules 1 and 3, with the pin-capacitance coverage test that goes with rule 1 (D1 (ii): they stay at `extract` and `emit`, until the §7.1 "draws no board" row);
+  - D2's list.
+
+  §6's F1 and F2 are §7.1 rows, the architect's. No schema bump.
+- **D4, the test helpers** [read]:
+  - `power_tree()` (CLI `common/power.rs`), ir `power.rs` `base()` and ir `sense_pin.rs` `base()` drop the loads naming `U13` and `R40` with the crossing.
+  - `full_document()` (ir `validate.rs`) drops those and `J2`'s, whose connector it replaces.
+  - `rename::sized` and `rename::order_only` carry `power.loads` through their renaming (`carry_loads`).
+
+## B1. Acceptance (§2, as ruled)
+
+| Item | Result |
+|---|---|
+| **The refusal, by name, with the later step's behaviour on `main`** | `ir/tests/load_references.rs` `a_load_naming_a_part_the_board_lacks_is_refused_by_reference_and_rail`: `4202`'s case (U2 removed, its load kept) is refused at `power.loads[4].reference` on `VDD_3V3`, and so are seven spellings the emitter never gives (`r1`, `R01`, `R0`, `U99`, `SW1` with no switch asked, `Q1`, `C`). `cli/tests/load_references_tier1.rs`: the helper's board plus a load on `R40` or `R99` is refused as `LoadNamesUndrawnPart` with path and message. **On `main`:** `validate` and `emit` both accepted the U2-removed Sentinel-03 (Part A §2.2), and `validate` accepted the helper's board with its `U13` and `R40` loads [measured: `evidence/power-tree.json`]. No later step refused either. |
+| **Each allowed form passes** | `each_form_of_a_part_the_board_has_passes`: the committed fixture's declared references (i), the MCU's reference (ii), the switch with `mcu.reset_switch` set (iii), `R99` and `C7` (iv). In the CLI, the full fixture's drawn `R40` passes. |
+| **Mutants, one per guard** | Six, all killed, before and again after the reduction pass [measured: `~/.cache/aet-1209/mut/results*.txt`]. M1 removes the refusal; M2, M3, M4 and M5 each remove one form; M6 removes the CLI call. |
+| **Nothing committed newly refused** | Over the 48 committed specification files (Part A's 47, plus 3403's `examples/sentinel-01-ext-bmp581.json`), `validate` is byte-identical on `main` and on this branch: 26 pass and 22 are refused as before [measured: `corpus-main.txt`, `corpus-rule2.txt`]. Every in-code specification passes the workspace's tests (below). |
+| **The four `examples/` walkers** | `silicon_rules`, `ledger_tier1` (`every_specification_that_solves_has_a_ledger`), `svd-hal` `silicon_words` and `hwdef_tier1` all pass. |
+| **Gates** | `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings`: exit 0 on the final tree. `cargo test --workspace`: 139 suites, 2,301 passed and 1 failed: `fab_tier1` `BaseOutsideRoot`, this environment's target directory outside the checkout, which fails the same on `main` (Part A §1). That run predates the reduction pass. After it, the touched suites (`load_references`, `load_references_tier1`, `validate_cli`, `outline_tier1`) passed. CI is the run of record. |
+| **The pin-capacitance coverage test** | Not built: rule 1 is deferred by ruling D1 (ii). |
+
+## B2. The 40 changed expectations, one at a time
+
+The 40 tests rule 2 failed in Part A were each re-run with only the helpers fixed and `main`'s rules [measured: `~/.cache/aet-1209/helpers-only.log`].
+
+- **37 pass with no assertion changed.**
+- **3 move, all by the 2 mA of phantom load leaving the supply's input.** The removed crossing's U13 (1 mA) and R40 (1 mA) were counted on `VDD_3V3`:
+  - `ir/tests/power.rs` `the_tree_checks_to_its_hand_computed_bounds`: `VDD_3V3`'s load goes from 716 to 714 mA (the MCU's 658, U12's 21, and the other sinks' 35 instead of 37), and the input steady current from 2716 to 2714 mA.
+  - `cli/tests/solve_cli.rs` `a_power_tree_solves_into_the_topology_and_emits_its_board`: input steady current from 2716 to 2714 mA, the fixture's cited sinks from 37 to 35 mA.
+  - `cli/tests/supply_tier1.rs` `the_four_layer_board_bounds_every_supply_pin_within_its_limit`: the supply gate's `load_milliamps` from 716 to 714, and the drop formula's factor with it. The drop stays within 165 mV.
+
+`rename::order_only` now carries the loads, and moved nothing: `outline_tier1` passes 9 of 9.
+
+## B3. The adversarial pass
+
+[measured unless labelled; inputs in `~/.cache/aet-1209/adv/`]
+
+- **A1, broader than the later step?**
+  - On every committed specification with loads (`sentinel-03`, `sentinel-02-power`), every reference the specification declares is drawn by `emit`. So the CLI's exact set never refuses what form (i) allows.
+  - The corpus is byte-identical (B1). There is no later refusal to be broader than: `main` refused none of these.
+- **A2, narrower (a phantom `R<n>` still passes somewhere).**
+  - `emit`, `generate`, `verify` and library callers run `Specification::validate`, and so hold only the forms. A load on an undrawn `R<n>` passes them, and only the CLI's `validate` refuses it.
+  - That is the ruled split, D3: ir cannot read the emitter's draw order (Part A §3.2a).
+- **A3, an `R<n>` that re-points (4202's case), measured.** `adv/s03-u2-gone.json` is Sentinel-03 with U2 and its load removed, which is what 4202 does. Both forms pass it. In the emitted board:
+  - `R7`, U4's WP pull-up before, is the HOLD pull-up after;
+  - `R8`, the HOLD pull-up before, is the BOOT0 pull-down to GND after, with no pin on `VDD_3V3`;
+  - `R9` is gone.
+
+  So the committed `R8` load on `VDD_3V3` would name a resistor that is not on that rail. Neither form catches this; it is the §7.1 row the architect wrote. **A partial catch for that row:** hold that a load's part has a pin on its load's rail. It would refuse `R8` here, not `R7`.
+- **A4, a load on the wrong rail.** `adv/s03-u2-wrong-rail.json` names U2, which sits on `VDD_3V3`, on `VDD_5V`. It passes on `main` and here. The same rail check would catch it. Backlog, with A3.
+- **A5, a load naming the MCU.** That is form (ii), as ruled. `adv/s03-mcu-load.json` passes. Its current is added to the MCU's part-row current, a double count. That errs on the safe side for a supply budget. Recorded, not refused.
+- **A6, a second list.** None. Forms (i)–(iii) call the functions step 20 already uses, and the emitter calls `switch_reference` itself. The pattern (iv) is `emitter_numbered`, unchanged. The CLI's set is the emitter's own `drawn`.
+- **A7, a form the committed specifications use, silently allowed or refused.** They use declared references (devices, connectors, the translator, a feedback resistor, a crossing's pull-up) and emitter-numbered `R1`–`R8`. Forms (i) and (iv) allow them explicitly. Nothing is silent.
+
+## B4. The reduction pass
+
+Diff-sized, run through a fresh subagent and checked against the source.
+
+- Reduction pass (diff): −21 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 3 findings below.
+- **Removed:**
+  - the pin-table-and-solve prologue that `loads_drawn` copied from `outline_holds`, now `quiet_solve`, so `validate` solves once for both;
+  - the ir test's crossing case, which re-stripped the IMU to reach step 20a. The U2 case and the CLI's `R40` case cover it.
+- **Findings, not removed:**
+  - **R1:** the `U13`/`R40` retain sits in three helpers and in `full_document`. The two ir copies could share `ir/tests/common`, at about 3 lines net: marginal.
+  - **R2:** the crossing-and-IMU strip itself is a pre-existing pattern, now in four helpers.
+  - **R3:** the two test files' `with_load` differ in rail and crate.
+
+## B5. Pending
+
+- **Merge `main` after 4202 lands, then re-measure.**
+  - Re-measure the 48-file list, the corpus probes, and the committed `R6`/`R7` loads against `drawn`.
+  - 4202 renames Sentinel-03's `R7`/`R8` to `R6`/`R7`. The CLI's exact set will then judge the renamed loads.
+  - Not done: no 4202 PR exists at the time of writing.
+
+## B6. New observations
+
+- **F4:** A3 and A4's rail check, a load's part having a pin on its load's rail. It belongs with the architect's re-pointing row.
+
+# Part A — the §7 stop, as recorded before the rulings
+
+`origin/main` was `96517013` for Part A's measurements.
 
 ## 0. The stop
 
