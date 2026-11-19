@@ -525,11 +525,37 @@ fn ardupilot_s_rcc_registers_decode_to_400_mhz_and_200_mhz_timers() {
     assert_eq!(c.timer_kernel_hz(Apb::Apb2), 200_000_000);
 }
 
+/// `HSIDIV` divides HSI before it clocks the system or PLL1 (§8.7.2): 01 is
+/// 32 MHz; and each APB bus's timers take that bus's prescaler (§8.7.9):
+/// `D2PPRE1` ÷2 and `D2PPRE2` ÷4 with `TIMPRE` 0 give `rcc_hclk1` on APB1 and
+/// half of it on APB2 (Table 57). Adversarial pass: both mutants survived
+/// while every fixture had `HSIDIV` 0 and equal buses.
+#[test]
+fn hsidiv_and_each_bus_s_prescaler_are_read_apart() {
+    let hsi32 = RccRegisters::from_values([0x0000_002D, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
+    assert_eq!(
+        SolvedClock::from_rcc(&hsi32, 0).unwrap().sysclk_hz,
+        32_000_000
+    );
+    let mut r = ardupilot();
+    r.cr |= 0b01 << 3;
+    assert_eq!(SolvedClock::from_rcc(&r, 0).unwrap().sysclk_hz, 200_000_000);
+    let mut r = ardupilot();
+    r.cfgr &= !(1 << 15);
+    r.d2cfgr = (0b101 << 8) | (0b100 << 4);
+    let c = SolvedClock::from_rcc(&r, 0).unwrap();
+    assert_eq!((c.d2ppre1, c.d2ppre2), (2, 4));
+    assert_eq!(c.timer_kernel_hz(Apb::Apb1), 200_000_000);
+    assert_eq!(c.timer_kernel_hz(Apb::Apb2), 100_000_000);
+}
+
 /// Each register at its reset value (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9,
 /// §8.7.11, §8.7.13) decodes to the solved reset clock.
 #[test]
 fn the_reset_registers_decode_to_the_reset_clock() {
-    let r = RccRegisters::from_values([0x0000_0001, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
+    // `RCC_CR` as Renode 1.17.0 reads it at reset: HSION, HSIRDY (which
+    // mirrors HSION, `STM32H7_RCC.cs` L147) and HSIDIVF (always 1, L158).
+    let r = RccRegisters::from_values([0x0000_0025, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
     assert_eq!(SolvedClock::from_rcc(&r, 0), Ok(SolvedClock::reset()));
 }
 
@@ -548,7 +574,13 @@ fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
         reserved("RCC_CFGR.SWS", 4)
     );
     assert_eq!(
-        refused(&|r| r.cfgr = 0x8012, 0),
+        refused(
+            &|r| {
+                r.cfgr = 0x8012;
+                r.cr |= 1 << 17;
+            },
+            0
+        ),
         RccDecodeError::HseUndeclared
     );
     // PLLSRC 11 clocks no PLL; 10 is HSE; DIVM1 0 disables the prescaler.
@@ -583,12 +615,40 @@ fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
         refused(&|r| r.d1cfgr = 0xC48, 0),
         unmodelled("RCC_D1CFGR.D1CPRE", 0xC)
     );
-    // With a crystal declared, HSE decodes.
+    // With a crystal declared, HSE decodes, once ready (HSERDY, bit 17).
     let mut r = ardupilot();
     r.cfgr = 0x8012;
+    r.cr |= 1 << 17;
     assert_eq!(
         SolvedClock::from_rcc(&r, 25_000_000).unwrap().sysclk_hz,
         25_000_000
+    );
+    // A source whose ready flag is clear (adversarial pass: Renode's SWS
+    // mirrors SW): PLL1 off and not ready.
+    assert_eq!(
+        refused(&|r| r.cr = 0x0000_0025, 0),
+        RccDecodeError::NotReady { clock: "PLL1" }
+    );
+    // DIVM1 at its reset 32, where Renode's prescaler may still be 1.
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x0202_0200, 0),
+        unmodelled("RCC_PLLCKSELR.DIVM1", 32)
+    );
+    // A 64 MHz reference (DIVM1 1), and a 4.096 GHz VCO (DIVN1 x64).
+    let range = |quantity: &'static str, hz: u64| RccDecodeError::OutOfRange { quantity, hz };
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8010, 0),
+        range("ref1_ck", 64_000_000)
+    );
+    assert_eq!(
+        refused(
+            &|r| {
+                r.pllckselr = 0x40_8040;
+                r.pll1divr = 0x0109_00FF;
+            },
+            0
+        ),
+        range("vco1_ck", 4_096_000_000)
     );
 }
 
@@ -684,6 +744,35 @@ fn a_declared_foreign_clock_validates_and_solve_copies_its_values() {
     assert_eq!(none["foreign_clock"], Value::Null);
 }
 
+/// A topology carries the declaration's rules too: one written by hand
+/// with a zero or a split mux is refused (adversarial pass: dropping the
+/// check from `SolvedTopology::validate` survived).
+#[test]
+fn a_topology_s_foreign_clock_is_held_to_the_declaration_s_rules() {
+    let s: Specification =
+        serde_json::from_value(with_foreign_clock(foreign_clock(200_000_000, 72_000_000))).unwrap();
+    let t = solve(&s, &table(), HASH).unwrap();
+    let kind = |edit: &dyn Fn(&mut aethelgard_ir::motor::SolvedForeignClock)| {
+        let mut t = t.clone();
+        edit(t.foreign_clock.as_mut().unwrap());
+        t.validate().map_err(|e| e.kind())
+    };
+    assert_eq!(kind(&|_| {}), Ok(()));
+    assert_eq!(kind(&|c| c.apb1_timers_hz = 0), Err("ForeignClockZero"));
+    assert_eq!(
+        kind(&|c| {
+            c.usarts.remove("UART4");
+        }),
+        Err("ForeignClockUsarts")
+    );
+    assert_eq!(
+        kind(&|c| {
+            c.usarts.insert("USART3".into(), 1);
+        }),
+        Err("ForeignClockMuxSplit")
+    );
+}
+
 /// Each refusal of a declaration, by name.
 #[test]
 fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
@@ -705,6 +794,11 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
     assert_eq!(kind(unknown), "ForeignClockUsarts");
     let mut split = foreign_clock(200_000_000, 72_000_000);
     split["usarts"]["USART6"]["value"] = json!(64_000_000);
+    assert_eq!(kind(split), "ForeignClockMuxSplit");
+    // The other mux's six, USART234578SEL (adversarial pass: its loop
+    // survived while only USART6 was split).
+    let mut split = foreign_clock(200_000_000, 72_000_000);
+    split["usarts"]["UART8"]["value"] = json!(64_000_000);
     assert_eq!(kind(split), "ForeignClockMuxSplit");
     let mut sourceless = foreign_clock(200_000_000, 72_000_000);
     sourceless["apb1_timers_hz"]["source"] = json!("");

@@ -122,9 +122,9 @@ fn note(missing: &mut Vec<Missing>, m: Missing) {
 }
 
 const KICAD: [&str; 4] = ["check drc", "check erc", "check support", "verify"];
+/// What a Renode missing, or other than the pinned version and build,
+/// blocks: every `simulate`, a plain load too (`AET-WO-4400g` §1.5).
 const RENODE: [&str; 3] = ["simulate", "campaign", "verify"];
-/// A Renode other than the pinned one refuses every boot, and nothing else.
-const RENODE_BOOT: [&str; 3] = ["simulate --firmware", "campaign", "verify"];
 const BRIDGE: [&str; 3] = ["simulate --firmware", "campaign", "verify"];
 const CARGO: [&str; 3] = ["build", "prove", "verify"];
 const KANI: [&str; 2] = ["prove", "verify"];
@@ -375,7 +375,7 @@ fn renode(missing: &mut Vec<Missing>) -> ToolLine {
         &r.tool,
         probed,
         crate::renode_pinned,
-        (&RENODE, &RENODE_BOOT),
+        (&RENODE, &RENODE),
         missing,
     )
 }

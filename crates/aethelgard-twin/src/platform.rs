@@ -28,7 +28,7 @@ pub const RENODE_VERSION: &str = "1.17.0";
 /// 1.17.0 with upstream's NVIC fixes rebuilt in, as `renode --version`'s
 /// `build:` line names it. `simulate` refuses a boot on any other build
 /// (`AET-WO-4400g` §1.5). The image pins it in `container/smoke.sh`; the
-/// tier-1 test `renode_build` holds this constant equal to that line, so
+/// tier-1 test `the_renode_build_is_the_images_pin` holds this constant equal to that line, so
 /// the build is typed once here and checked against the image's pin.
 pub const RENODE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af.aet1605";
 
@@ -853,9 +853,17 @@ pub fn timer_hz(topology: &SolvedTopology, n: u32) -> u64 {
 
 /// Each instance the clock sets, as (the description's name, frequency in
 /// Hz): every timer and USART [`STOCK_FILE`] carries, and under
-/// [`ClockSource::Solved`] LPUART1 and the DWT as well. A foreign firmware
-/// declares no LPUART1 or core clock, so under [`ClockSource::Declared`]
-/// those two keep the stock file's figures, which [`unclocked`] names.
+/// [`ClockSource::Solved`] LPUART1, LPTIM1–5 and the DWT as well, each at
+/// its reset kernel clock. A foreign firmware declares none of those, so
+/// under [`ClockSource::Declared`] they keep the stock file's figures, which
+/// [`unclocked`] names.
+///
+/// Two clocked models are set by neither: the NVIC's SysTick follows the
+/// RCC (its constructor pushes HSI's 64 MHz before any firmware runs, and a
+/// firmware's own RCC writes push its clock: `AET-WO-4400f` F4, measured),
+/// and the independent watchdog counts LSI, outside the solved clock tree,
+/// at the stock file's 56 kHz where silicon's LSI is 32 kHz (RM0433 Rev 9
+/// §8.5.2); no judge reads it.
 pub fn clocked(topology: &SolvedTopology) -> Vec<(String, u64)> {
     let mut out: Vec<(String, u64)> = timer::STOCK_TIMERS
         .iter()
@@ -870,19 +878,27 @@ pub fn clocked(topology: &SolvedTopology) -> Vec<(String, u64)> {
         out.push((p.to_ascii_lowercase(), hz));
     }
     if topology.foreign_clock.is_none() {
-        out.push(("lpuart1".into(), topology.clock.lpuart1_kernel_hz()));
-        out.push(("dwt".into(), topology.clock.core_hz()));
+        let c = &topology.clock;
+        out.push(("lpuart1".into(), c.pclk4_hz()));
+        out.push(("lptimer1".into(), c.pclk1_hz()));
+        for n in 2..=5 {
+            out.push((format!("lptimer{n}"), c.pclk4_hz()));
+        }
+        out.push(("dwt".into(), c.core_hz()));
     }
     out
 }
 
-/// The instances of [`STOCK_FILE`] whose frequency neither the solved nor a
-/// declared clock sets: none under [`ClockSource::Solved`], LPUART1 and the
-/// DWT under [`ClockSource::Declared`]. A foreign verdict names them.
+/// The instances of [`STOCK_FILE`] whose frequency the solved clock sets and
+/// a declared one does not: none under [`ClockSource::Solved`]; the DWT,
+/// LPTIM1–5 and LPUART1 under [`ClockSource::Declared`]. A foreign verdict
+/// names them.
 pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
     match clock_source(topology) {
         ClockSource::Solved => Vec::new(),
-        ClockSource::Declared => vec!["dwt", "lpuart1"],
+        ClockSource::Declared => vec![
+            "dwt", "lptimer1", "lptimer2", "lptimer3", "lptimer4", "lptimer5", "lpuart1",
+        ],
     }
 }
 
@@ -902,7 +918,7 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) {
         }
         ClockSource::Declared => format!(
             "the specification's mcu.foreign_clock; {} keep the stock file's",
-            unclocked(topology).join(" and ")
+            unclocked(topology).join(", ")
         ),
     };
     let _ = write!(

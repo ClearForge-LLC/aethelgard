@@ -8,10 +8,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The six RCC registers the foreign judge reads back, at their reset values
-/// (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9, §8.7.11, §8.7.13), in the order of
-/// `aethelgard_ir::motor::RccRegisters::OFFSETS`, as a stub prints them.
+/// (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9, §8.7.11, §8.7.13) as Renode 1.17.0
+/// reads them (`RCC_CR`'s `HSIRDY` mirrors `HSION` and `HSIDIVF` reads 1), in
+/// the order of `aethelgard_ir::motor::RccRegisters::OFFSETS`, as a stub
+/// prints them.
 pub const RCC_AT_RESET: [&str; 6] = [
-    "0x00000001",
+    "0x00000025",
     "0x00000000",
     "0x00000000",
     "0x00000000",

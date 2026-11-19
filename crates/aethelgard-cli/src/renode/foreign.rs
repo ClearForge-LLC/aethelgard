@@ -357,7 +357,7 @@ pub struct DeclaredClock {
 /// The conditions every foreign verdict states (`AET-WO-4400g` §1.2, §1.6).
 pub const USART_UNCHECKED: &str = "usart_clock_declared_unchecked: each USART's kernel clock is the declared one, not read back: Renode 1.17.0 drops RCC_D2CCIP2R, so no register says what the firmware selected (AET-WO-4400f F2)";
 pub const PLL1_FRACTION_UNREAD: &str = "pll1_fraction_not_read: the decode is PLL1's integer divider: Renode 1.17.0 tags PLL1FRACEN and FRACN1, so a fractional PLL is not read back";
-pub const STOCK_UNDECLARED: &str = "stock_frequency_undeclared: dwt and lpuart1 keep the stock file's 250 MHz and 125 MHz, which no declaration sets; no judge reads either";
+pub const STOCK_UNDECLARED: &str = "stock_frequency_undeclared: the instances in `stock` keep the stock file's frequencies (dwt 250 MHz, lptimer1-5 32 MHz, lpuart1 125 MHz), which no declaration sets; no judge reads any of them";
 
 /// The finding kinds of the clock check.
 pub const CLOCK_CONTRADICTED: &str = "foreign_clock_contradicted";

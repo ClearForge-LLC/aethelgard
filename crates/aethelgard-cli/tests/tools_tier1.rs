@@ -266,7 +266,10 @@ fn renode_stub(tb: &Dir, version: Version, exit: i32, stdout: &str) {
         // Every Renode the CLI starts is handed its configuration first
         // (`AET-WO-2204` D4): `--config <file>`, then the call's own arguments.
         "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n/bin/cat '{}'\nexit {exit}",
-        version.shell("Renode v1.17.0"),
+        version.shell(&format!(
+            "Renode v1.17.0\n  build: {}",
+            aethelgard_twin::platform::RENODE_BUILD
+        )),
         tb.join("renode.out").display()
     );
     tb.script("renode", &body);
@@ -1180,7 +1183,10 @@ fn simulate_killed_by_sigkill_is_tool_error() {
     let tb = Dir::new("tb");
     tb.script(
         "renode",
-        "if [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n'; exit 0; fi\nkill -9 $$",
+        &format!(
+            "if [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: {}\\n'; exit 0; fi\nkill -9 $$",
+            aethelgard_twin::platform::RENODE_BUILD
+        ),
     );
     let p = input("p.repl", b"x\n");
     refused_id(&simulate(&tb, p.path.as_os_str()), 5, "ToolError", "renode");

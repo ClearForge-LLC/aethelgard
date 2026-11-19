@@ -827,6 +827,86 @@ fn a_clock_never_crosses_its_run_kind() {
     assert_eq!(v["error"]["kind"], "ForeignClockOnGeneratedRun", "{v}");
 }
 
+/// `AET-WO-4400g` §1.2, the check wired into the judge: the reference
+/// declared at 64 MHz, and the RCC registers reading back as ArduPilot left
+/// them (200 MHz timers, measured), fails by name on both buses, with both
+/// figures; at reset they hold (adversarial pass: dropping the check from
+/// the judge survived every tier-1 test).
+#[test]
+fn a_foreign_clock_the_rcc_registers_contradict_fails_by_name() {
+    let ardupilot = [
+        "0x3F003025",
+        "0x0000801B",
+        "0x00000048",
+        "0x00000440",
+        "0x00408040",
+        "0x01090231",
+    ];
+    let (code, v) = foreign(&foreign_transcript_rcc(
+        &good_foreign_log(),
+        "0x00000800",
+        &flash_unchanged(),
+        &ardupilot,
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["severity"] != "info")
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["foreign_clock_contradicted"; 2], "{v}");
+    let checked: Vec<(u64, u64)> = v["boot"]["clock"]["checked"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| {
+            (
+                c["declared_hz"].as_u64().unwrap(),
+                c["decoded_hz"].as_u64().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(checked, [(64_000_000, 200_000_000); 2], "{v}");
+    assert_eq!(
+        v["boot"]["clock"]["registers"][5]["value"], "0x01090231",
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert!(
+        v["boot"]["clock"]["checked"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["holds"] == true),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4400g` §1.5: a boot on Renode 1.17.0 of any build but the pinned
+/// one, the stock release's among them, is refused by name before it runs.
+#[test]
+fn a_boot_on_another_renode_build_is_refused_by_name() {
+    let tb = Dir::new("tb-stock");
+    let out = tb.write("renode.out", good().as_bytes());
+    common::stub::write_executable(
+        &tb.0.join("renode"),
+        format!(
+            "#!/bin/sh\n[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then printf 'Renode v1.17.0\\n  build: 1.17.0+20260907gitf1dd1b4af\\n'; exit 0; fi\n/bin/cat '{}'\n",
+            out.display()
+        )
+        .as_bytes(),
+    );
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let refused = boot_with(&tb.0, &platform(), &fw, "10ms");
+    let v = report(&refused);
+    assert_eq!(refused.status.code(), Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "RenodeBuildNotPinned", "{v}");
+}
+
 #[test]
 fn the_virtual_time_is_an_integer_unit_up_to_100_ms() {
     let tb = toolbox(&good());
@@ -2434,16 +2514,21 @@ fn foreign_transcript(run_log: &str, icsr: &str) -> String {
 
 /// A foreign transcript with `flash`, the flash hash lines, as given.
 fn foreign_transcript_flash(run_log: &str, icsr: &str, flash: &str) -> String {
+    foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_AT_RESET)
+}
+
+/// A foreign transcript whose RCC registers read back as `rcc`.
+fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6]) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
     s.push_str(run_log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
-    // Then the RCC registers the clock check reads, at reset (`AET-WO-4400g`).
+    // Then the RCC registers the clock check reads (`AET-WO-4400g`).
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
         .chain(GOOD_REGISTERS.iter())
-        .chain(common::foreign::RCC_AT_RESET.iter())
+        .chain(rcc.iter())
     {
         s.push_str(r);
         s.push('\n');
@@ -2496,6 +2581,8 @@ fn a_foreign_boot_is_judged_by_its_models_lines_and_says_so() {
     let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
+    // The build that judged it, as Renode named it (`AET-WO-4400g` §1.5).
+    assert_eq!(v["tool"]["build"], RENODE_BUILD, "{v}");
     let b = &v["boot"];
     assert_eq!(b["judge"], "foreign", "{v}");
     assert_eq!(b["window"], "FOREIGN_MAX_VIRTUAL_NS");

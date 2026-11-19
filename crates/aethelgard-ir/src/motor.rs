@@ -144,10 +144,18 @@ impl SolvedClock {
         u64::from(self.sysclk_hz) / u64::from(self.d1cpre.max(1))
     }
 
-    /// LPUART1's kernel clock at `LPUART1SEL`'s reset `000`, `rcc_pclk_d3`
-    /// (RM0433 Rev 9 §8.7.22, p. 420): `rcc_hclk4` / `D3PPRE` (§8.7.10). 64
-    /// MHz on the reset clock.
-    pub fn lpuart1_kernel_hz(&self) -> u64 {
+    /// `rcc_pclk1`: `rcc_hclk1` / `D2PPRE1` (RM0433 Rev 9 Figure 49,
+    /// §8.7.9). LPTIM1's kernel clock at `LPTIM1SEL`'s reset `000`
+    /// (`RCC_D2CCIP2R` bits 30:28, §8.7.21). 64 MHz on the reset clock.
+    pub fn pclk1_hz(&self) -> u64 {
+        self.hclk_hz() / u64::from(self.d2ppre1.max(1))
+    }
+
+    /// `rcc_pclk4` (`rcc_pclk_d3`): `rcc_hclk4` / `D3PPRE` (RM0433 Rev 9
+    /// §8.7.10). The kernel clock at reset of LPUART1 (`LPUART1SEL` `000`),
+    /// LPTIM2 (`LPTIM2SEL` `000`) and LPTIM3–5 (`LPTIM345SEL` `000`), all in
+    /// `RCC_D3CCIPR` (§8.7.22, p. 420). 64 MHz on the reset clock.
+    pub fn pclk4_hz(&self) -> u64 {
         self.hclk_hz() / u64::from(self.d3ppre.max(1))
     }
 
@@ -197,19 +205,31 @@ impl SolvedClock {
                 Ok(u64::from(hse_hz))
             }
         };
-        // §8.7.7, p. 393: SWS[2:0], the system clock in use.
+        // §8.7.7, p. 393: SWS[2:0], the system clock in use. Renode's SWS
+        // mirrors SW whether or not the source runs, so the source's ready
+        // flag must be set too (§8.7.2: HSIRDY bit 2, CSIRDY bit 8, HSERDY
+        // bit 17, PLL1RDY bit 25), as silicon switches only to a ready one.
         let sws = bits(r.cfgr, 3, 3);
-        let (source, sys_ck) = match sws {
-            0 => ("HSI", hsi),
-            1 => ("CSI", csi),
-            2 => ("HSE", hse()?),
-            3 => ("PLL1", pll1_p(r, hsi, csi, hse)?),
+        let (source, ready) = match sws {
+            0 => ("HSI", 2),
+            1 => ("CSI", 8),
+            2 => ("HSE", 17),
+            3 => ("PLL1", 25),
             _ => {
                 return Err(RccDecodeError::Reserved {
                     field: "RCC_CFGR.SWS",
                     value: sws,
                 });
             }
+        };
+        if bits(r.cr, ready, 1) == 0 {
+            return Err(RccDecodeError::NotReady { clock: source });
+        }
+        let sys_ck = match sws {
+            0 => hsi,
+            1 => csi,
+            2 => hse()?,
+            _ => pll1_p(r, hsi, csi, hse)?,
         };
         // §8.7.8, p. 394: D1CPRE[3:0] and HPRE[3:0], 0xxx not divided, then
         // 2, 4, 8, 16, 64, 128, 256, 512; D1PPRE[2:0] (and §8.7.9, p. 396,
@@ -275,6 +295,15 @@ fn pll1_p(
             value: 0,
         });
     }
+    // DIVM1's reset value: Renode 1.17.0's RCC starts its PLL1 prescaler at 1
+    // (`STM32H7_RCC.cs` L78) and changes it only when a write changes the
+    // field (L276), so with 32 read back Renode may be dividing by 1.
+    if divm1 == 32 {
+        return Err(RccDecodeError::Unmodelled {
+            field: "RCC_PLLCKSELR.DIVM1",
+            value: 32,
+        });
+    }
     // §8.7.13, pp. 403–404: DIVN1[8:0] from 0x003 multiplies by the field
     // plus 1 ("others: wrong configurations"); DIVP1[6:0] divides by the
     // field plus 1, which is 1 or even ("odd division factors are not
@@ -294,7 +323,24 @@ fn pll1_p(
             value: divp1,
         });
     }
-    Ok(reference * (u64::from(divn1) + 1) / (u64::from(divm1) * p))
+    // §8.7.13, p. 404 (DIVN1's caution): the reference 1 to 16 MHz, and the
+    // VCO 192 to 960 MHz (`PLL1VCOSEL` 0) or 150 to 420 MHz (1). `RCC_PLLCFGR`
+    // is not read, so the wider bound of the two holds: 150 to 960 MHz.
+    let ref1 = reference / u64::from(divm1);
+    let vco = reference * (u64::from(divn1) + 1) / u64::from(divm1);
+    if !(1_000_000..=16_000_000).contains(&ref1) {
+        return Err(RccDecodeError::OutOfRange {
+            quantity: "ref1_ck",
+            hz: ref1,
+        });
+    }
+    if !(150_000_000..=960_000_000).contains(&vco) {
+        return Err(RccDecodeError::OutOfRange {
+            quantity: "vco1_ck",
+            hz: vco,
+        });
+    }
+    Ok(vco / p)
 }
 
 /// The RCC registers [`SolvedClock::from_rcc`] decodes, each as read back.
@@ -346,6 +392,14 @@ pub enum RccDecodeError {
         "HSE clocks the system or PLL1, and the specification declares no crystal (`mcu.hse_hz` 0)"
     )]
     HseUndeclared,
+    #[error(
+        "RCC_CFGR.SWS names {clock} as the system clock, but its ready flag in RCC_CR is clear (RM0433 Rev 9 §8.7.2): silicon switches only to a ready source"
+    )]
+    NotReady { clock: &'static str },
+    #[error(
+        "{quantity} would be {hz} Hz, outside RM0433 Rev 9 §8.7.13's range (a 1 to 16 MHz reference, a 150 to 960 MHz VCO)"
+    )]
+    OutOfRange { quantity: &'static str, hz: u64 },
     #[error(
         "{field} is {value}: Renode 1.17.0's RCC divides by another figure than RM0433 Rev 9 there, so the counters it clocks would disagree with the decode"
     )]

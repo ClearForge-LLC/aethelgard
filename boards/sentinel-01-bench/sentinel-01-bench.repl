@@ -98,5 +98,15 @@ uart8:
     frequency: 64000000
 lpuart1:
     frequency: 64000000
+lptimer1:
+    frequency: 64000000
+lptimer2:
+    frequency: 64000000
+lptimer3:
+    frequency: 64000000
+lptimer4:
+    frequency: 64000000
+lptimer5:
+    frequency: 64000000
 dwt:
     frequency: 64000000

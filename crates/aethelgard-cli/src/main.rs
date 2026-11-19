@@ -1819,12 +1819,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     let reported = invocation(with_config(&["--version"]), "status-version").run()?;
     let version = version_of("renode", &reported)?;
     // Every verdict names the build Renode reported (`AET-WO-4400g` §1.5),
-    // and a boot's archive does (`AET-WO-2205` §1.1); a boot refuses any
-    // build but the pinned one.
+    // and a boot's archive does (`AET-WO-2205` §1.1); every call, a plain
+    // load too, refuses any build but the pinned one.
     let build = renode::build(&reported.stdout);
-    if ready.is_some() {
-        renode_pinned(&version, build.as_deref())?;
-    }
+    renode_pinned(&version, build.as_deref())?;
     // A declared droop: the rail is solved once, before the boot, and its
     // crossings become the resets the boot renders (`AET-WO-2301`, ruled D1).
     let droop = match ready.as_ref().and_then(|r| r.rail.as_ref()) {

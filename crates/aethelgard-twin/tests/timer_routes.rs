@@ -188,8 +188,10 @@ fn topology(fixture: &str) -> aethelgard_ir::SolvedTopology {
     aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap()
 }
 
-/// Every instance of the stock file a clock may set: its timers, USARTs
-/// (LPUART1 too) and the DWT, each with a `frequency:` line, by name.
+/// Every instance of the stock file with a `frequency:`, by name: each is a
+/// timer (LPTIM1–5 too), a USART (LPUART1 too) or the DWT, which a clock
+/// sets, or the independent watchdog, which counts LSI, outside the solved
+/// clock tree, and is held apart by name.
 fn stock_clocked() -> Vec<String> {
     let text = stock();
     let lines: Vec<&str> = text.lines().collect();
@@ -198,23 +200,30 @@ fn stock_clocked() -> Vec<String> {
         let Some((name, model)) = line.split_once(": ") else {
             continue;
         };
-        if name.contains(' ')
-            || ![
+        let clocked = lines[i..]
+            .iter()
+            .take_while(|l| !l.is_empty())
+            .any(|l| l.trim().starts_with("frequency: "));
+        if name.contains(' ') || !clocked {
+            continue;
+        }
+        if name == "watchdog" {
+            assert!(
+                model.starts_with("Timers.STM32_IndependentWatchdog @"),
+                "{model}"
+            );
+            continue;
+        }
+        assert!(
+            [
                 "Timers.STM32_Timer @",
+                "Timers.STM32L0_LpTimer @",
                 "UART.STM32F7_USART @",
                 "Miscellaneous.DWT @",
             ]
             .iter()
-            .any(|m| model.starts_with(m))
-        {
-            continue;
-        }
-        assert!(
-            lines[i..]
-                .iter()
-                .take_while(|l| !l.is_empty())
-                .any(|l| l.trim().starts_with("frequency: ")),
-            "{name}"
+            .any(|m| model.starts_with(m)),
+            "{name}: {model} has a frequency no clock sets"
         );
         out.push(name.to_owned());
     }
@@ -231,7 +240,7 @@ fn stock_clocked() -> Vec<String> {
 #[test]
 fn every_timer_usart_and_the_dwt_of_the_stock_file_is_clocked() {
     let want = stock_clocked();
-    assert_eq!(want.len(), 14 + 9 + 1, "{want:?}");
+    assert_eq!(want.len(), 14 + 5 + 9 + 1, "{want:?}");
     let names = |c: &[(String, u64)]| {
         let mut n: Vec<String> = c.iter().map(|(n, _)| n.clone()).collect();
         n.sort();
@@ -245,7 +254,12 @@ fn every_timer_usart_and_the_dwt_of_the_stock_file_is_clocked() {
     let declared = topology("sentinel-02-own");
     let c = aethelgard_twin::platform::clocked(&declared);
     let unclocked = aethelgard_twin::platform::unclocked(&declared);
-    assert_eq!(unclocked, ["dwt", "lpuart1"]);
+    assert_eq!(
+        unclocked,
+        [
+            "dwt", "lptimer1", "lptimer2", "lptimer3", "lptimer4", "lptimer5", "lpuart1"
+        ]
+    );
     let mut all = names(&c);
     all.extend(unclocked.iter().map(|s| (*s).to_owned()));
     all.sort();
@@ -257,6 +271,21 @@ fn every_timer_usart_and_the_dwt_of_the_stock_file_is_clocked() {
             72_000_000
         };
         assert_eq!(*hz, declared_hz, "{name}");
+    }
+    // Each APB bus's timers take that bus's declaration (adversarial pass: a
+    // swap of the buses survived while both were declared alike).
+    let mut split = declared.clone();
+    split.foreign_clock.as_mut().unwrap().apb2_timers_hz = 100_000_000;
+    let c = aethelgard_twin::platform::clocked(&split);
+    let hz = |n: &str| c.iter().find(|(name, _)| name == n).unwrap().1;
+    for (timer, want) in [
+        ("timer1", 100),
+        ("timer2", 200),
+        ("timer8", 100),
+        ("timer15", 100),
+        ("timer5", 200),
+    ] {
+        assert_eq!(hz(timer), want * 1_000_000, "{timer}");
     }
 }
 

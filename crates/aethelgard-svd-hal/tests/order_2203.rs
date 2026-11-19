@@ -186,11 +186,11 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "platform",
-        "95031c3831873d52361544815d47c5801b31111515b322b8de385ce620c600f4",
+        "88ab17b6132d5c960d5c1f1696c9ef9ea31769a9f3f2a2a964d0ef7d42b2ce6d",
     ),
     (
         "platform faulted",
-        "2e4994863ba556ab2fe38bf165fc38bb98935152856ddd8b85b2edaa70f961f5",
+        "2a8151a84feb178c95edfd257af8d51fa3c1f7804df36276b82128ca74ddde84",
     ),
     (
         "boot image",

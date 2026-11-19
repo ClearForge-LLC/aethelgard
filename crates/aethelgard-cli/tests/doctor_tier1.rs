@@ -300,11 +300,28 @@ fn a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it() {
     );
     assert_eq!(
         v["missing"][1]["blocks"],
-        json!(["simulate --firmware", "campaign", "verify"]),
+        json!(["simulate", "campaign", "verify"]),
         "{v}"
     );
     assert_eq!(tool(&v, "kicad-cli")["version"], "10.0.8", "{v}");
     assert_eq!(tool(&v, "renode")["version"], "Renode v1.16.0", "{v}");
+    // `AET-WO-4400g` §1.5: the pinned version but another build, the stock
+    // release's, blocks the same, by its own name.
+    let tb = toolbox(&[(
+        "renode",
+        Some("#!/bin/sh\necho 'Renode v1.17.0'\necho '  build: 1.17.0+20260907gitf1dd1b4af'\n"),
+    )]);
+    let (code, v) = doctor(&cli, &tb, &tmp.0);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        missing(&v),
+        [("RenodeBuildNotPinned".into(), "renode".into())]
+    );
+    assert_eq!(
+        v["missing"][0]["blocks"],
+        json!(["simulate", "campaign", "verify"]),
+        "{v}"
+    );
 }
 
 #[test]
