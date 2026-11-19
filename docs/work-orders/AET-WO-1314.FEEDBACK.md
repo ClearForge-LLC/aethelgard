@@ -182,8 +182,9 @@ Local, on this head [measured]:
 | this PR before the refit, `a9b79f43`, run 44372757248 | 1,700 s | 36.5, 45.3 (cancelled at the guard), 27.5, 43.3, 39.2, 27.7, 32.8, 33.2 | ≥ 35.7 |
 | this PR refit, `2a79bbe6`, run 44382374239 | 2,141 s (CI's own plan and `ci/shard.sh assign`, the same) | 32.5, 32.7, 30.9, 33.0, 36.0, 34.8, 28.0, 33.1 | 32.6 |
 | the same plan, READY `579b848b` (FEEDBACK only), run 44392056403 | 2,141 s | 38.2, 28.0, 39.6, 37.1, 45.3 (cancelled at the guard), 35.3, 29.8, 34.5 | ≥ 36.0 |
-| the guard at 60 min (this head) | 2,141 s | {{FINAL}} | |
+| the guard at 60 min, `739b4a24`, run 44426540986 | 2,141 s | 38.1, 33.4, 38.9, 40.7, 49.3, 38.3, 42.0, 32.7 | 39.2 |
 
+- **The final head is green** (run 44426540986 on `739b4a24`, with the engine and ArduPilot image runs): `tier2_tests_passed=190 floor=190`. Its slowest shard (4) took 49.3 min, under the ruling's 55 min stop line and the 60 min guard. `gates` took 38.2 min.
 - **Runner variance, measured:** one plan, the same work, and shard 4 took 36.0 min on one run and over 45.3 min on the next (about 25 %). Main shows the same spread: 30.5–40.5 min on `16404fc7`.
 - **The guard is 60 min,** as ruled in comment 6991936758. `tools-shard`'s `timeout-minutes` in `.github/workflows/ci.yml` (the one line outside this order's fence), with its comment citing the ruling and both runs. It is a hang guard, not a budget, and it still catches a hang. `ci/SHARDS` stays 8 (Scotty), and the REFIT RULE's 20 min target is untouched.
 - **Main's own shard 6 (40.5 min) was** within it, before this PR: the drift the architect takes as a CI work order.
