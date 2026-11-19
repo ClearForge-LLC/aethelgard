@@ -1048,6 +1048,28 @@ mod tests {
                 brown_out_step(spec.mcu.bor_level),
                 aethelgard_eda::fab::jlcpcb_notes(project)
             );
+            // `AET-WO-4240v` §1.7: the PWR and FLASH.ACR acknowledgements are
+            // listed first, before the brown-out row, and nothing else moves.
+            let added: String = spec
+                .acknowledge_unwitnessed
+                .iter()
+                .filter(|a| a.reason.contains("AET-WO-4240v"))
+                .map(|a| {
+                    let fields: Vec<String> = a.fields.iter().map(|f| format!("`{f}`")).collect();
+                    format!(
+                        "- `{}` ({}): {}. {}\n",
+                        a.register,
+                        a.class,
+                        fields.join(", "),
+                        a.reason
+                    )
+                })
+                .collect();
+            let golden = golden.replacen(
+                "- `FLASH.OPTSR_CUR`",
+                &format!("{added}- `FLASH.OPTSR_CUR`"),
+                1,
+            );
             for n in [1, 64] {
                 assert_eq!(
                     notes(

@@ -188,23 +188,30 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `AET-WO-4240v` §1.4, on purpose: the supply and VOS Scale 2 first, its
 /// three fault words and `PWR_POLLS`, `pwr` taken from the board and
 /// `reset_clock` given the token (`16a2f0ba…bae1` before); the two
-/// platforms and the boot image did not move.
+/// platforms and the boot image did not move. Then each moved once more, at
+/// the merge of `AET-WO-4240v`'s twin slice and its acknowledgements (§1.7),
+/// measured on the minimal specification as it was before them: `main.rs` is
+/// `f30204e8…de95` exactly there, so it moved by the specification's sha256
+/// only; each platform, cut before its `// The PWR (AET-WO-4240v` block (the
+/// `pwr` override, D-3 (a)), is `55d10bbd…1f0d` and `2a4eaea9…e4a5` exactly;
+/// and the boot image is the new digest there too, so it moved only by
+/// `Image::unobservable`'s `PWR.CSR1.ACTVOSRDY` and `PWR.D3CR.VOSRDY`.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "f30204e8b726b769dfbf2ad6285439fcf5a07007326895f3f8dd41cfb06dde95",
+        "427baa54837e63b3ad0666404ff0e53b2e71f9a1cf972ba44e949f73a9d57b38",
     ),
     (
         "platform",
-        "55d10bbd775d2ed8512e5710611c725c7a7715c05cd8db50184f3890a7ae1f0d",
+        "81a4ecaca0ba708d356a3664da0dca86d8b66434aafcb3b81c3de7109c89fb2d",
     ),
     (
         "platform faulted",
-        "2a4eaea9ffbc267852af304832c8b4870e2bbb9b4c1f5ee82979bbd9c274e4a5",
+        "7b36e730c8bb1fb6c344af770093caebdc1edefa31814deaa164c783fbc2d61b",
     ),
     (
         "boot image",
-        "d891e90edfe7db3a91d7b48015e6e7f3254a8dbbb473160a68022b1fd0e7b221",
+        "45865bbd466aa31db6b8cd4a7d97fa1273992d69ac8823189347e4190d5dc0de",
     ),
 ];
 
