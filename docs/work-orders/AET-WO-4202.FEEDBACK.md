@@ -267,6 +267,13 @@ Without U2, ArduPilot probes one barometer fewer, so the run's cut lands at a di
 
 ## 5. Gates and the reduction pass
 
+- **Gates** (on `f7bed836` + this FEEDBACK, merged with main `35d23eae`, in the pinned image):
+  - `cargo fmt --all -- --check`: 0. The bridge's fmt: 0.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: 0, with and without `aethelgard-cli/with-tools`.
+  - `cargo test --workspace`: 2,302 passed, 0 failed.
+- **Tier-2 runs of the tests this order adds or moves:** all pass (`campaign_tier2` ×2, `twin_tier2` ×4, `models_tier2` 12, `board_tier2` ×4, `with_tools` ×1). The full `ci/foreign-judge.sh` exits 0. The full tier-2 count is CI's.
+- **Merge order:** `1911` merges first. This branch merges `main` after it, re-gates, and is retitled READY.
+
 - **Reduction pass (diff): −12 net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 1 finding below.**
   - **Removed:** `campaign_tier2`'s own copy of Renode's parse. The tier-1 test owns that model and step (e) measures it in Renode. The regression now pins the reset instant (1,018,380 ns) instead. M1 still kills the regression, which fails before that line.
   - **Finding:** `campaign_tier2.rs` keeps its own `run_for` (the nine-digit form) for the `2301` recipe harness, a copy of the CLI's private function, which a test binary cannot reach. Every value it renders (1 ms, 10 ns, 10 µs, 100 µs) parses exactly, so it is stale but harmless. Left for the gate pass.
