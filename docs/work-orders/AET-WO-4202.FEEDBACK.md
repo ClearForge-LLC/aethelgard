@@ -166,16 +166,10 @@ The emitter numbers straps and pull-ups in the order it draws them, and U2's SDO
 
 Sentinel-03's `power.loads` names R7 and R8: the flash's WP and HOLD pull-ups ("no DC path but the flash pin's leakage"). On the moved board R6 (WP) is uncounted, and R8 names BOOT0 to GND. In the BOM, C41 (U2's 100 nF) goes and C42/C43 become C41/C42. No load row names a C.
 
-The fence lets this order edit U2 and its load row only. §7 lists the supply gate failing on a moved board as a stop, and renaming two other rows is outside the fence. **The fixture is not renamed here.** The ruling request is on the bus, with options (a) bring R7→R6 and R8→R7 into the fence, or (b) split, so that the `run_for` fix lands alone.
+The fence let this order edit U2 and its load row only, and §7 lists the supply gate failing on a moved board as a stop. The work stopped there and asked for a ruling.
 
-Red tests on the branch, all on Sentinel-03 (tier 1; everything else in the workspace is green):
+**Ruled (a), 21:05Z.** R7 → R6 and R8 → R7 in Sentinel-03's `power.loads`, on condition that a scratch run passes the supply gate with them. Their sources are unchanged: they describe the same two flash pull-ups.
+- **The condition, measured on the merged tree (main `96517013`):** the moved board without the rename is refused (`SupplySinkUncounted`, R6). With it, `extract` passes, gated as `supply_tier1` gates it and ungated (`out/merged.log`).
+- **The pin:** `supply_tier1::each_load_row_s_resistor_is_the_part_its_row_describes` reads the emitted copper. Each resistor a load row names connects `VDD_3V3` to the net its row describes: R1 /I2C_SDA, R2 /I2C_SCL, R3 /EXT_SDA, R4 /EXT_SCL, R6 /U4_WP, R7 /U4_HOLD, R20 /U11_FB. The rows must be exactly those, in order. Mutants in §3.
+- **The finding** (a load row named by an emitted, sequence-numbered designator breaks silently when an unrelated part leaves) is the architect's §7.1 row. The lasting fix is a specification change and is not built here.
 
-| Test | On `ee835bde` | Branch |
-|---|---|---|
-| `supply_tier1::sentinel_03_on_rule_sized_vias_bounds_every_return` | pass | `SupplySinkUncounted` (R6) |
-| `supply_tier1::each_input_the_gate_reads_is_refused_by_name_when_absent` | pass | the same refusal comes first |
-| `supply_tier1::a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy` | pass | the same refusal comes first |
-| `outline_tier1::the_fixture_places_at_the_spikes_outline_with_every_gap_kept` | 85.25 × 80.95 mm | 86.70 × 80.95 mm (inside 100 × 100); placement digest moves |
-| `via_ring_tier1::sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone` | rung 7, via cost 320, IMU_SCK 24,945 fF | rung 6, via cost 96, EXT_SDA 78,403 fF bound vs 100,000 declared |
-
-The outline, digest and rung are moves, not regressions: an earlier, cheaper rung now routes every bounded net. They are **held, not re-pinned**, until the ruling, because the specification's bytes may still change.
