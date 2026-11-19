@@ -298,49 +298,6 @@ jobs:
             target/ci-shard/result.txt
             target/ci-shard/entries.tsv
             target/ci-shard/shard.tsv
-            target/ci-shard/test-ws.log
-            target/ci-shard/test-bridge.log
-          if-no-files-found: ignore
-          overwrite: true
-          retention-days: 7
-
-  # PROOF ONLY (AET-WO-1911 §1.2, reverted before READY): the per-shard build as on main 47ec18f6,
-  # same commit, same plan, its logs kept, so each shard's tests and outcomes can be compared.
-  old-shard:
-    name: old-shard (${{ matrix.shard }})
-    needs: route
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: ${{ fromJSON(needs.route.outputs.matrix) }}
-    env:
-      RUN: >-
-        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
-        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: pull the tools image by its pinned digest
-        run: docker pull "$(cat container/IMAGE)"
-      - name: fetch crates and build, with the network
-        run: $RUN "$(cat container/IMAGE)" cargo test --workspace --all-targets --locked --features aethelgard-cli/with-tools --no-run
-      - name: build the analog bridge and its tests, with the network
-        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --manifest-path bridge/Cargo.toml --locked && cargo test --manifest-path bridge/Cargo.toml --locked --no-run"
-      - name: list every test, assign the shards, run the guard
-        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard-old.sh plan target/ci-shard
-      - name: cargo test inside the image, this shard's tests
-        run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard-old.sh run target/ci-shard ${{ matrix.shard }}
-      - if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: old-shard-${{ matrix.shard }}
-          path: |
-            target/ci-shard/result.txt
-            target/ci-shard/entries.tsv
-            target/ci-shard/shard.tsv
-            target/ci-shard/test-ws.log
-            target/ci-shard/test-bridge.log
           if-no-files-found: ignore
           overwrite: true
           retention-days: 7
