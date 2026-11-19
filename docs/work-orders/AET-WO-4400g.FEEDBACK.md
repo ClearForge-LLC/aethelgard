@@ -231,7 +231,7 @@ Three reviewers, each on one or two of the WO's §5 lenses, on `9c98c8f8`. Each 
   - Its first full run caught the script's own defect: a case named `undeclared` wrote its verdict over the derived spec of the same name. Derived specs are now `spec-<how>.json`.
 - **`TIER2_MIN`:** no tier-2 test was added or removed against main, so it stays at 190 and no workflow moves.
 - **Mutants:** 12 of the guards' mutants and (a)–(e) killed (§5).
-- **Reduction pass (diff):** −14 net · 2 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.
+- **Reduction pass (diff):** −18 net · 2 duplicates removed · 1 dead path removed · 0 protected kept · 2 findings below.
   - **Removed:**
     - `ClockSource` and `clock_source()`, a second mechanism for `foreign_clock.is_some()`;
     - the `--foreign` help's stale "at most 4000ms", which now says "the foreign window", with its MCP snapshot re-blessed;
