@@ -970,6 +970,21 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
         [vec![0x0406_aafc, 0x1], vec![0x0406_aafc, 0x1, 0x0406_aafc]],
         "OPTSR_CUR and OPTCR at the boot, then with word 1 after the recipe"
     );
+
+    // e. `AET-WO-4202`: Renode reads a `RunFor`'s decimals through a double
+    // and truncates, so `"0.001018380"` runs 1,018,379 ns; the CLI's form, a
+    // tenth decimal of 5, runs 1,018,380 ns.
+    const READ_NS: &str =
+        "python \"print('0x%x' % self.Machine.LocalTimeSource.ElapsedVirtualTime.Ticks)\"";
+    let mut r = Renode::booted();
+    r.read(&[READ_NS])
+        .add(["emulation RunFor \"0.001018380\"".to_owned()])
+        .read(&[READ_NS])
+        .add(["emulation RunFor \"0.0010183805\"".to_owned()])
+        .read(&[READ_NS]);
+    let e = r.run("e-run-for");
+    let elapsed: Vec<u64> = e.windows(2).map(|w| w[1][0] - w[0][0]).collect();
+    assert_eq!(elapsed, [1_018_379, 1_018_380], "{e:?}");
 }
 
 #[test]
@@ -1125,4 +1140,90 @@ fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
     );
     let (code, stdout) = aethelgard(&["replay", "--archive", run_dir(run).to_str().unwrap()]);
     assert_eq!(code, Some(0), "{stdout}");
+}
+
+// ---------------------------------------------------------------- AET-WO-4202
+
+/// The nanoseconds Renode 1.17.0 runs for a `RunFor` of `0.<decimals>`, as
+/// its `TimeInterval.TryParse` computes them: through a double, truncated.
+fn renode_runs(decimals: &str) -> u64 {
+    (format!("0.{decimals}").parse::<f64>().unwrap() * 1e9) as u64
+}
+
+/// `AET-WO-4202`: the bench's `droop-bor3` on Sentinel-01 as committed, its
+/// droop 50 ns later, so the brown-out reset falls on 1,018,380 ns, which
+/// the nine-digit form `"0.001018380"` runs 1 ns short. Before the fix every
+/// instant after the reset was 1 ns early, and the judge refused the first
+/// injected byte as stamped before its count. Now the run meets the
+/// scenario's own expectation, and its trace replays alike twice
+/// (`INV-04`).
+#[test]
+fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it() {
+    let dir = scratch("4202");
+    let spec = root().join("examples/sentinel-01.json");
+    // A base outside the campaign's directory is refused: a copy, beside it.
+    fs::copy(&spec, dir.join("sentinel-01.json")).unwrap();
+    let mut scenario: Value = serde_json::from_slice(
+        &fs::read(root().join("scenarios/sentinel-01-bench/droop-bor3.json")).unwrap(),
+    )
+    .unwrap();
+    scenario["name"] = "droop-bor3-50-ns-later".into();
+    scenario["base"] = "sentinel-01.json".into();
+    let start = &mut scenario["overrides"][0]["droop"]["start_ns"];
+    assert_eq!(*start, 1_000_000, "the bench's droop starts at 1 ms");
+    *start = 1_000_050.into();
+    fs::write(
+        dir.join("droop.json"),
+        serde_json::to_vec_pretty(&scenario).unwrap(),
+    )
+    .unwrap();
+    let (crate_dir, elf) = (dir.join("gen"), dir.join("fw.elf"));
+    let s = |p: &Path| p.to_str().unwrap().to_owned();
+    let (code, out) = aethelgard(&["generate", "--spec", &s(&spec), "--out", &s(&crate_dir)]);
+    assert_eq!(code, Some(0), "{out}");
+    let board = crate_dir.join("board");
+    let (code, out) = aethelgard(&["build", "--crate", &s(&board), "--out", &s(&elf)]);
+    assert_eq!(code, Some(0), "{out}");
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["campaign", "--scenarios", "droop.json", "--firmware", &s(&elf)])
+        .args(["--archive", &s(&dir.join("archive"))])
+        .current_dir(&dir)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    answer(&format!("4202 campaign exit={:?} {stdout}", out.status.code()));
+    assert_eq!(out.status.code(), Some(0), "{stdout}");
+    let lines = lines(&stdout);
+    let run = line(&lines, "droop-bor3-50-ns-later");
+    assert_eq!(run["expect"], scenario["expect"], "{run}");
+    assert_eq!(run["verdict"], scenario["expect"], "{run}");
+    assert_eq!(run["matched"], true, "the scenario's own counts: {run}");
+    // Not vacuous: the reset was asserted where the nine-digit form runs short.
+    let asserted: Vec<u64> = records(&run_dir(run))
+        .iter()
+        .filter_map(|r| match r {
+            Record::ResetRendered {
+                at_ns,
+                released: false,
+                ..
+            } => Some(*at_ns),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(asserted.len(), 1, "{asserted:?}");
+    assert!(asserted[0] < 1_000_000_000);
+    assert_eq!(
+        renode_runs(&format!("{:09}", asserted[0])),
+        asserted[0] - 1,
+        "the reset at {} ns is one the nine-digit form runs 1 ns short",
+        asserted[0]
+    );
+    let replayed: Vec<(Option<i32>, String)> = (0..2)
+        .map(|_| aethelgard(&["replay", "--archive", &s(&run_dir(run))]))
+        .collect();
+    assert_eq!(replayed[0].0, Some(0), "{}", replayed[0].1);
+    assert_eq!(replayed[0], replayed[1]);
+    let v: Value = serde_json::from_str(&replayed[0].1).unwrap();
+    assert_eq!(v["state_sequence_hash"], run["state_sequence_hash"], "{v}");
 }
