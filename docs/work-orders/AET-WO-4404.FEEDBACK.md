@@ -103,7 +103,7 @@ P1–P5 hold. The label rule, configure only, fc-base with `FLASH_CS` relabelled
   - **`DEFAULT_PROTOCOLS`:** the per-n `#ifndef` defaults, `AP_SerialManager.cpp:47-152`.
   - **The option bits:** `UARTDriver.h:90-102`.
 - **What it reads, exactly as §1.2 asks:**
-  - SERIAL0's protocol is never read. A console declared inverted is a finding, because SERIAL0 has no options parameter.
+  - SERIAL0's define is never read. Whatever stands there runs MAVLink 2 (`:180`), so a role other than console or `mavlink` there is a finding. That rule was added after the adversarial pass (§5, A-D1); §1.2's words assume the console stands there. A port at SERIAL0 declared inverted is a finding, because SERIAL0 has no options parameter.
   - SERIAL1–9's protocol is the define, else the default for its n, and must equal the role's exactly.
   - Options are the define, else 0, on 1–6 and 9; SERIAL7 and 8 are 0 whatever the define says, and the define is not read.
   - A non-RC port must have RXINV and TXINV exactly when it is inverted, and no other bit. An RC port may have RXINV and no other bit.
@@ -174,3 +174,57 @@ Lower-case `spi_cs` builds in ArduPilot and generates.
 - ArduPilot drops comment lines (`hwdef.py:209`).
 
 **Unchanged:** `the_generator_calls_none_of_the_check_s_rules` and `pincheck/tests/separation.rs` pass, and neither file was edited.
+
+## 5. Adversarial pass
+
+A fresh subagent ran it read-only, on Opus because it is judgement work. It worked at `66b10879` with the kit in `~/.cache/aet-4404`, ran in its own clone, and made two builds of its own in the pinned image. I spot-checked the defect before acting (A-D1, A-D3 below).
+
+| id | probe | severity | verdict, evidence |
+|---|---|---|---|
+| A-D1 | SERIAL0 skipped by position, not by role | **medium** | **Fixed.** A topology with no console (fc-base with port 0 made `gps`) puts the GPS port at SERIAL0, where it runs MAVLink2 (`0_PROTOCOL=2` in var_info). `check pinout` exited 0 on `main` and on `66b10879`; I reproduced it [measured]. Now `WrongSerialProtocol SERIAL0` (expected GPS (5), runs MAVLink2: SERIAL0's literal, `:180`), and the real fc-base build exits 1 on that topology [measured]. Tier 1: no console with GPS first; `mavlink` first passes; `rc_sbus` first gives two findings. Mutant G11 is killed. Without this, only the generator's `NoConsole` stood in the way, which is the cross-dependence `RUL-20` forbids. |
+| A-D2 | GPS receivers capped at two (`AP_GPS_config.h:16` `GPS_MAX_RECEIVERS 2`; `AP_GPS.cpp:345-349` binds the first two GPS ports) | medium-low | **Not built: outside this work order.** It is the same class as the RCIN rule; the eight-port board's five GPS ports pass [measured by the adversary]. Proposed as a §7.1 row (§6, D3). |
+| A-D3 | Fixture header history | low | **Fixed.** `SERIAL_ORDER` with USART3 and the PD8/PD9 lines came in `4400a` (`47a883b8`). `4300b` (`25640c55`) added the USART1 lines and put USART1 first. Checked per file with `git log -S` [measured]. The headers now say both. Grounds L779 carries the same imprecision. |
+| A-D4 | `HAL_HAVE_SERIALn_PARAMS (1)` refused with "not compiled" | low | **Wording fixed.** The refusal stands (`INV-06`). The message now says the value is not the `1` ArduPilot's script writes. |
+| A-D5 | Option bits 16 and up | low | **No change.** The HAL takes `uint16_t` (`UARTDriver.h:86`), so ArduPilot runs `0x10000` as 0 while the judge names it. That is a false positive, never a pass of something wrong. It stays strict. |
+| A-R1 | The unreachable `3` branch | — | Deleted in the reduction pass (§7). |
+| 1–10 | The A3 trap; the compiler's reading (eleven protocol forms, odd blanks, `%:`, `#if 0`, `#undef`, `push_macro`, a macro value; and a real build, `adv-numforms`, with `05`, `027`, `0x5UL`, `00` and `0x0u`, whose var_info matches the judge); the defaults; SERIAL7, 8 and 9; every option bit on RC and non-RC ports; two RCIN ports; all 14 prefixes and the case rule; the fixture bytes; the goldens; other readers (`set_protocol_and_baud`'s only caller is IOMCU, `defaults.parm`, OTG2) | — | **All hold** [measured or read, per the adversary's table, kept at `~/.cache/aet-4404/adv`]. The probe of a real AF used as a chip select (`SPI2_NSS` on PA11, AF5, guard bypassed in the `.dat`) builds as alternate. `check pinout` catches it on both binaries (`forward NotOutput PA11`). The adversary also re-ran §2.3 and §4 and confirmed every verdict and compiled value. |
+
+## 6. Decisions for the architect
+
+- **D1. Bind protocol, options and baud to the ELF.**
+  - `AP_SerialManager::var_info` is readable as bytes (§2.4). It covers exactly the compiled ports and folds in every `#ifndef`, the SERIAL7/8 literal and `HAL_HAVE_SERIALn_PARAMS`.
+  - Reading it would close §7.1 L800 for all three facts at once and retire the `hwdef.h` forms the judge must refuse.
+  - **Recommended:** a follow-up work order, with `elf.rs` in its fence. Not built here, as ruled.
+- **D2. The RC port's TX inversion.**
+  - `rc_sbus` declares `inverted` (both lines). ArduPilot's RC input inverts RX only, and the ruled rule requires TXINV clear.
+  - The judge holds ArduPilot's behaviour, and the generator's header already names it (F3).
+  - **Recommended:** no change. Confirm that the judge should not hold ArduPilot to the specification's TX inversion.
+- **D3. A §7.1 row for the GPS receiver cap (A-D2).**
+  - A third GPS-protocol port compiles and is never bound.
+  - **Recommended:** the next `pincheck` work order names a third compiled GPS port, as `RcInputTwice` names a second RCIN, cited `AP_GPS_config.h:16` and `AP_GPS.cpp:345-349`.
+- **The rows the work order says the architect opens** (no action here): the run-time pull-ups against `4400b` D3 (a); the four-port generated CI board after `1911`; the twin read-back of `USART_CR2` after `4400g`.
+
+## 7. Reduction pass, mutants and gates
+
+- **Reduction pass (diff): −1 dead path, −1 duplicate; net +1 line (one comment). 2 protected kept; 0 findings.**
+  - **Dead path:** the generator's unreachable `3` branch is gone. The line is now `_OPTIONS 0`, with the refusal that makes it so named at the site and in the README. No test reached the branch (§2.2).
+  - **Duplicate:** the judge's `rc` flag restated `want == RCIN`.
+  - **Kept, protected:** the judge's `SERIAL_PROTOCOLS` and the generator's `protocol()`, each labelled `belt-and-suspenders:` (`RUL-20`).
+  - **Kept, not dead:**
+    - `MissingSerialParameters`: a hand-written topology can carry an 11th port, and skipping it would breach `INV-06`.
+    - The `HAL_HAVE_SERIALn_PARAMS != 1` refusal: ArduPilot itself writes `0` for a hidden IOMCU UART (`chibios_hwdef.py:1700-1701`).
+  - The two tests' 14-prefix lists are the tests' own oracles, not copies to derive.
+- **Mutants:** one per guard this work order adds, each against the suite it lives in (`~/.cache/aet-4404/mut/mutants.py`). Results: §9.
+- **Gates** (results: §9):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace`: 2,269 passed, 0 failed, at `66b10879` (21 min 56 s, capped scope); re-run after the fixes, §9.
+- **CI planner (`1910`):**
+  - no test was added to a lock-serialised binary;
+  - no test was renamed or removed;
+  - every new test runs in well under a second;
+  - so no weight row is needed (P1, P2) and `TIER2_MIN` is unchanged: no tier-2 test.
+
+## 8. Outside the fence
+
+Nothing. No change was made to `aethelgard-ir`, `.github/workflows/`, `ci/`, `container/`, any specification or any topology fixture. `main` `47ec18f6` (`1910`) is merged in; it touches none of this work order's files.
