@@ -137,18 +137,270 @@ impl SolvedClock {
         u64::from(self.sysclk_hz) / u64::from(self.d1cpre.max(1)) / u64::from(self.hpre.max(1))
     }
 
-    /// The kernel clock of the timers on `apb`, by RM0433 Rev 9 Table 57:
-    /// with `TIMPRE` 0, the bus clock when its prescaler is 1, else twice it.
-    /// The reset clock gives 64 MHz on both buses. Only `TIMPRE` = 0 is
-    /// modelled; [`SolvedTopology::validate`](crate::SolvedTopology::validate)
-    /// refuses any clock but [`SolvedClock::reset`].
+    /// `sys_d1cpre_ck`, the Cortex-M7's clock, which DWT's cycle counter
+    /// counts: `sys_ck` / `D1CPRE` (RM0433 Rev 9 Figure 49, §8.7.8). 64 MHz
+    /// on the reset clock.
+    pub fn core_hz(&self) -> u64 {
+        u64::from(self.sysclk_hz) / u64::from(self.d1cpre.max(1))
+    }
+
+    /// LPUART1's kernel clock at `LPUART1SEL`'s reset `000`, `rcc_pclk_d3`
+    /// (RM0433 Rev 9 §8.7.22, p. 420): `rcc_hclk4` / `D3PPRE` (§8.7.10). 64
+    /// MHz on the reset clock.
+    pub fn lpuart1_kernel_hz(&self) -> u64 {
+        self.hclk_hz() / u64::from(self.d3ppre.max(1))
+    }
+
+    /// The kernel clock of the timers on `apb`, by RM0433 Rev 9 Table 57
+    /// (§8.5.6, pp. 350–351, with `TIMPRE`, §8.7.7 p. 392): `rcc_hclk1`
+    /// while `D2PPREx` divides by at most 2 (`TIMPRE` 0) or 4 (`TIMPRE` 1),
+    /// else 2 or 4 times `rcc_pclkx`. The reset clock gives 64 MHz on both
+    /// buses. [`SolvedTopology::validate`](crate::SolvedTopology::validate)
+    /// refuses any solved clock but [`SolvedClock::reset`]; a foreign
+    /// firmware's clock, decoded by [`SolvedClock::from_rcc`], may be any.
     pub fn timer_kernel_hz(&self, apb: Apb) -> u64 {
         let ppre = u64::from(match apb {
             Apb::Apb1 => self.d2ppre1,
             Apb::Apb2 => self.d2ppre2,
+        })
+        .max(1);
+        let factor = if self.timpre { 4 } else { 2 };
+        if ppre <= factor {
+            self.hclk_hz()
+        } else {
+            self.hclk_hz() / ppre * factor
+        }
+    }
+
+    /// The clock six RCC registers state, read back from the twin at a
+    /// foreign run's end (`AET-WO-4400g` §1.2), decoded field by field by
+    /// RM0433 Rev 9 ([`RccRegisters::OFFSETS`] cites each register). Only
+    /// what a timer's kernel clock depends on is decoded: `D3PPRE` is not
+    /// read and `d3ppre` is left 1. `hse_hz` is the specification's
+    /// `mcu.hse_hz`.
+    ///
+    /// Refused by name: a reserved or unclocked selection, a divider RM0433
+    /// calls not allowed or a wrong configuration, an HSE with no crystal
+    /// declared, and a `D1CPRE` or `HPRE` of `11xx`. Renode 1.17.0's RCC
+    /// divides those by 2^(n+1) (`STM32H7_RCC.cs` L242, L245) where RM0433
+    /// divides by 64 to 512 (§8.7.8, p. 394), so the counters Renode clocks
+    /// after an RCC write would disagree with this decode.
+    pub fn from_rcc(r: &RccRegisters, hse_hz: u32) -> Result<SolvedClock, RccDecodeError> {
+        // §8.7.2, p. 385: HSIDIV[1:0] divides HSI's 64 MHz by 1, 2, 4 or 8.
+        let hsi = 64_000_000u64 >> bits(r.cr, 3, 2);
+        // §8.5.2: the CSI oscillator gives "about 4 MHz".
+        let csi = 4_000_000u64;
+        let hse = || {
+            if hse_hz == 0 {
+                Err(RccDecodeError::HseUndeclared)
+            } else {
+                Ok(u64::from(hse_hz))
+            }
+        };
+        // §8.7.7, p. 393: SWS[2:0], the system clock in use.
+        let sws = bits(r.cfgr, 3, 3);
+        let (source, sys_ck) = match sws {
+            0 => ("HSI", hsi),
+            1 => ("CSI", csi),
+            2 => ("HSE", hse()?),
+            3 => ("PLL1", pll1_p(r, hsi, csi, hse)?),
+            _ => {
+                return Err(RccDecodeError::Reserved {
+                    field: "RCC_CFGR.SWS",
+                    value: sws,
+                });
+            }
+        };
+        // §8.7.8, p. 394: D1CPRE[3:0] and HPRE[3:0], 0xxx not divided, then
+        // 2, 4, 8, 16, 64, 128, 256, 512; D1PPRE[2:0] (and §8.7.9, p. 396,
+        // D2PPRE1[2:0] and D2PPRE2[2:0]), 0xx not divided, then 2 to 16.
+        let ahb = |field: &'static str, v: u32| match v {
+            0..=7 => Ok(1),
+            8..=11 => Ok(2u32 << (v - 8)),
+            _ => Err(RccDecodeError::Unmodelled { field, value: v }),
+        };
+        let apb = |v: u32| if v < 4 { 1 } else { 2u32 << (v - 4) };
+        let sysclk_hz = u32::try_from(sys_ck).map_err(|_| RccDecodeError::Reserved {
+            field: "sys_ck",
+            value: u32::MAX,
+        })?;
+        Ok(SolvedClock {
+            source: source.into(),
+            sysclk_hz,
+            hse_hz,
+            d1cpre: ahb("RCC_D1CFGR.D1CPRE", bits(r.d1cfgr, 8, 4))?,
+            hpre: ahb("RCC_D1CFGR.HPRE", bits(r.d1cfgr, 0, 4))?,
+            d1ppre: apb(bits(r.d1cfgr, 4, 3)),
+            d2ppre1: apb(bits(r.d2cfgr, 4, 3)),
+            d2ppre2: apb(bits(r.d2cfgr, 8, 3)),
+            d3ppre: 1,
+            // §8.7.7, p. 392: TIMPRE, bit 15.
+            timpre: bits(r.cfgr, 15, 1) == 1,
+        })
+    }
+}
+
+/// `width` bits of `v` from bit `at`.
+fn bits(v: u32, at: u32, width: u32) -> u32 {
+    (v >> at) & ((1 << width) - 1)
+}
+
+/// `pll1_p_ck`, rounded down: the reference `PLLSRC` selects, divided by
+/// `DIVM1`, multiplied by `DIVN1`, divided by `DIVP1`. The fractional part
+/// is not read: Renode 1.17.0 tags `PLL1FRACEN` and `FRACN1`
+/// (`STM32H7_RCC.cs` L291, L370), so a caller states that as a condition.
+fn pll1_p(
+    r: &RccRegisters,
+    hsi: u64,
+    csi: u64,
+    hse: impl Fn() -> Result<u64, RccDecodeError>,
+) -> Result<u64, RccDecodeError> {
+    // §8.7.11, p. 399: PLLSRC[1:0] HSI, CSI, HSE or no clock; DIVM1[5:0], 0
+    // the prescaler disabled, else the divisor.
+    let reference = match bits(r.pllckselr, 0, 2) {
+        0 => hsi,
+        1 => csi,
+        2 => hse()?,
+        v => {
+            return Err(RccDecodeError::Reserved {
+                field: "RCC_PLLCKSELR.PLLSRC",
+                value: v,
+            });
+        }
+    };
+    let divm1 = bits(r.pllckselr, 4, 6);
+    if divm1 == 0 {
+        return Err(RccDecodeError::Reserved {
+            field: "RCC_PLLCKSELR.DIVM1",
+            value: 0,
         });
-        let pclk = self.hclk_hz() / ppre.max(1);
-        if ppre <= 1 { pclk } else { 2 * pclk }
+    }
+    // §8.7.13, pp. 403–404: DIVN1[8:0] from 0x003 multiplies by the field
+    // plus 1 ("others: wrong configurations"); DIVP1[6:0] divides by the
+    // field plus 1, which is 1 or even ("odd division factors are not
+    // allowed").
+    let divn1 = bits(r.pll1divr, 0, 9);
+    if divn1 < 3 {
+        return Err(RccDecodeError::Reserved {
+            field: "RCC_PLL1DIVR.DIVN1",
+            value: divn1,
+        });
+    }
+    let divp1 = bits(r.pll1divr, 9, 7);
+    let p = u64::from(divp1) + 1;
+    if p != 1 && p % 2 != 0 {
+        return Err(RccDecodeError::Reserved {
+            field: "RCC_PLL1DIVR.DIVP1",
+            value: divp1,
+        });
+    }
+    Ok(reference * (u64::from(divn1) + 1) / (u64::from(divm1) * p))
+}
+
+/// The RCC registers [`SolvedClock::from_rcc`] decodes, each as read back.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RccRegisters {
+    pub cr: u32,
+    pub cfgr: u32,
+    pub d1cfgr: u32,
+    pub d2cfgr: u32,
+    pub pllckselr: u32,
+    pub pll1divr: u32,
+}
+
+impl RccRegisters {
+    /// Each register's name and offset from RCC's base, in the order of
+    /// [`RccRegisters::from_values`]: RM0433 Rev 9 §8.7.2 (`RCC_CR`,
+    /// 0x000), §8.7.7 (`RCC_CFGR`, 0x010), §8.7.8 (`RCC_D1CFGR`, 0x018),
+    /// §8.7.9 (`RCC_D2CFGR`, 0x01C), §8.7.11 (`RCC_PLLCKSELR`, 0x028) and
+    /// §8.7.13 (`RCC_PLL1DIVR`, 0x030).
+    pub const OFFSETS: [(&'static str, u32); 6] = [
+        ("RCC_CR", 0x000),
+        ("RCC_CFGR", 0x010),
+        ("RCC_D1CFGR", 0x018),
+        ("RCC_D2CFGR", 0x01C),
+        ("RCC_PLLCKSELR", 0x028),
+        ("RCC_PLL1DIVR", 0x030),
+    ];
+
+    pub fn from_values(v: [u32; 6]) -> Self {
+        Self {
+            cr: v[0],
+            cfgr: v[1],
+            d1cfgr: v[2],
+            d2cfgr: v[3],
+            pllckselr: v[4],
+            pll1divr: v[5],
+        }
+    }
+}
+
+/// Why six RCC registers do not decode to a clock.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum RccDecodeError {
+    #[error(
+        "{field} is {value}: RM0433 Rev 9 calls it reserved, not allowed or a wrong configuration, or it clocks nothing"
+    )]
+    Reserved { field: &'static str, value: u32 },
+    #[error(
+        "HSE clocks the system or PLL1, and the specification declares no crystal (`mcu.hse_hz` 0)"
+    )]
+    HseUndeclared,
+    #[error(
+        "{field} is {value}: Renode 1.17.0's RCC divides by another figure than RM0433 Rev 9 there, so the counters it clocks would disagree with the decode"
+    )]
+    Unmodelled { field: &'static str, value: u32 },
+}
+
+/// A foreign firmware's kernel clocks, as its specification declares them
+/// (`AET-WO-4400g` §1.2, Q1 ruled on PR #229): the timers of each APB bus,
+/// and each USART the platform carries, keyed by peripheral (each of
+/// [`crate::serial::PERIPHERALS`], no other). `simulate --foreign` builds
+/// the twin's timers and USARTs at these and checks the timers against the
+/// RCC registers at the run's end. A USART's kernel clock cannot be read
+/// back (Renode 1.17.0 drops `RCC_D2CCIP2R`), so it is declared, never
+/// checked, and the verdict says so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct ForeignClock {
+    pub apb1_timers_hz: crate::board::Sourced,
+    pub apb2_timers_hz: crate::board::Sourced,
+    #[serde(deserialize_with = "crate::unique_keys")]
+    pub usarts: std::collections::BTreeMap<String, crate::board::Sourced>,
+}
+
+/// [`ForeignClock`]'s values, copied by `solve`, so the twin builds the
+/// platform from the topology alone (`RUL-16`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedForeignClock {
+    pub apb1_timers_hz: u64,
+    pub apb2_timers_hz: u64,
+    #[serde(deserialize_with = "crate::unique_keys")]
+    pub usarts: std::collections::BTreeMap<String, u64>,
+}
+
+impl SolvedForeignClock {
+    /// The declared kernel clock of the timers on `apb`.
+    pub fn timer_hz(&self, apb: Apb) -> u64 {
+        match apb {
+            Apb::Apb1 => self.apb1_timers_hz,
+            Apb::Apb2 => self.apb2_timers_hz,
+        }
+    }
+}
+
+impl From<&ForeignClock> for SolvedForeignClock {
+    fn from(c: &ForeignClock) -> Self {
+        Self {
+            apb1_timers_hz: c.apb1_timers_hz.value.into(),
+            apb2_timers_hz: c.apb2_timers_hz.value.into(),
+            usarts: c
+                .usarts
+                .iter()
+                .map(|(k, v)| (k.clone(), v.value.into()))
+                .collect(),
+        }
     }
 }
 
@@ -213,7 +465,14 @@ pub struct SolvedMotorOutput {
     pub ccr: u32,
 }
 
-crate::object_only!(PwmTiming, MotorOutput, SolvedClock, SolvedMotorOutput);
+crate::object_only!(
+    PwmTiming,
+    MotorOutput,
+    SolvedClock,
+    SolvedMotorOutput,
+    ForeignClock,
+    SolvedForeignClock
+);
 
 /// Why the solver could not derive a timer's values for an output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

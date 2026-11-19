@@ -24,6 +24,14 @@ use crate::{Kind, TwinError, kind, split_pin, timer};
 /// The Renode release the stock table below was read from.
 pub const RENODE_VERSION: &str = "1.17.0";
 
+/// The Renode build the tools image carries (`AET-WO-1605`, ruled on #223):
+/// 1.17.0 with upstream's NVIC fixes rebuilt in, as `renode --version`'s
+/// `build:` line names it. `simulate` refuses a boot on any other build
+/// (`AET-WO-4400g` §1.5). The image pins it in `container/smoke.sh`; the
+/// tier-1 test `renode_build` holds this constant equal to that line, so
+/// the build is typed once here and checked against the image's pin.
+pub const RENODE_BUILD: &str = "1.17.0+20260907gitf1dd1b4af.aet1605";
+
 /// The include chain of `stm32h753.repl` in Renode 1.17.0, each with its
 /// sha256. The tier-2 test checks the installed files against these.
 pub const RENODE_FILES: [(&str, &str); 3] = [
@@ -805,7 +813,105 @@ pub fn emit_faulted(
     emit_spi(&mut out, &spi)?;
     emit_observers(&mut out, topology)?;
     out.push_str(&crate::boot::brown_out(topology)?.presentation());
+    emit_clock(&mut out, topology);
     Ok(out)
+}
+
+/// Where the platform's timers, USARTs and DWT take their frequency from
+/// (`AET-WO-4400g` §1.1–§1.2): never the stock file's figures (250 MHz
+/// timers, 125 and 200 MHz USARTs, a 250 MHz DWT), which no firmware chose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClockSource {
+    /// (a): the solved clock, the reset clock the generated firmware runs on.
+    Solved,
+    /// (c): `mcu.foreign_clock`, the clock a foreign firmware declares.
+    Declared,
+}
+
+/// Which clock builds `topology`'s platform: the declared one when the
+/// topology carries `foreign_clock`, else the solved one.
+pub fn clock_source(topology: &SolvedTopology) -> ClockSource {
+    if topology.foreign_clock.is_some() {
+        ClockSource::Declared
+    } else {
+        ClockSource::Solved
+    }
+}
+
+/// The kernel clock the twin builds timer `n` at: the declared one under
+/// [`ClockSource::Declared`], else [`SolvedClock::timer_kernel_hz`]. The
+/// emitter writes it, and the observers predict at it, from this one place.
+///
+/// [`SolvedClock::timer_kernel_hz`]: aethelgard_ir::SolvedClock::timer_kernel_hz
+pub fn timer_hz(topology: &SolvedTopology, n: u32) -> u64 {
+    let apb = aethelgard_ir::motor::apb(n);
+    match &topology.foreign_clock {
+        Some(c) => c.timer_hz(apb),
+        None => topology.clock.timer_kernel_hz(apb),
+    }
+}
+
+/// Each instance the clock sets, as (the description's name, frequency in
+/// Hz): every timer and USART [`STOCK_FILE`] carries, and under
+/// [`ClockSource::Solved`] LPUART1 and the DWT as well. A foreign firmware
+/// declares no LPUART1 or core clock, so under [`ClockSource::Declared`]
+/// those two keep the stock file's figures, which [`unclocked`] names.
+pub fn clocked(topology: &SolvedTopology) -> Vec<(String, u64)> {
+    let mut out: Vec<(String, u64)> = timer::STOCK_TIMERS
+        .iter()
+        .map(|&(n, _)| (format!("timer{n}"), timer_hz(topology, n)))
+        .collect();
+    for p in aethelgard_ir::serial::PERIPHERALS {
+        let hz = match &topology.foreign_clock {
+            Some(c) => c.usarts[p],
+            None => aethelgard_ir::serial::kernel_hz(&topology.clock, p)
+                .expect("every listed peripheral has a reset kernel clock"),
+        };
+        out.push((p.to_ascii_lowercase(), hz));
+    }
+    if topology.foreign_clock.is_none() {
+        out.push(("lpuart1".into(), topology.clock.lpuart1_kernel_hz()));
+        out.push(("dwt".into(), topology.clock.core_hz()));
+    }
+    out
+}
+
+/// The instances of [`STOCK_FILE`] whose frequency neither the solved nor a
+/// declared clock sets: none under [`ClockSource::Solved`], LPUART1 and the
+/// DWT under [`ClockSource::Declared`]. A foreign verdict names them.
+pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
+    match clock_source(topology) {
+        ClockSource::Solved => Vec::new(),
+        ClockSource::Declared => vec!["dwt", "lpuart1"],
+    }
+}
+
+/// The clock as update entries (`AET-WO-4400g`): each instance's
+/// `frequency`, which Renode 1.17.0 builds a timer's counter and its
+/// capture/compare channels at (`STM32_Timer.cs` L104), a USART's `BaudRate`
+/// and receiver timeout from, and the DWT's cycle counter at. Set at
+/// construction, so no RCC push undoes it at a timer's reset
+/// (`LimitTimer.cs` L324, `AET-WO-4400f`). The USART frequency drives only
+/// `BaudRate` and the receiver timeout in this build; upstream `88afd12bb`
+/// paces received characters at `BaudRate`, so from the next Renode a wrong
+/// frequency changes what the firmware receives.
+fn emit_clock(out: &mut String, topology: &SolvedTopology) {
+    let whose = match clock_source(topology) {
+        ClockSource::Solved => {
+            "the solved clock's (the reset clock, HSI at 64 MHz, RM0433 Rev 9 §8.7.2)".to_owned()
+        }
+        ClockSource::Declared => format!(
+            "the specification's mcu.foreign_clock; {} keep the stock file's",
+            unclocked(topology).join(" and ")
+        ),
+    };
+    let _ = write!(
+        out,
+        "\n// The clock (AET-WO-4400g): each timer, USART and the DWT at {whose}.\n"
+    );
+    for (name, hz) in clocked(topology) {
+        let _ = write!(out, "{name}:\n    frequency: {hz}\n");
+    }
 }
 
 /// Each motor output's observer (`AET-WO-4300a` §1.4): a

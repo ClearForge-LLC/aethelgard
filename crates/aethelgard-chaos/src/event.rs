@@ -39,8 +39,11 @@ pub const VERSION: u64 = 1;
 /// kind 26 carries its anchor beside its window's end, kind 29 its
 /// injection's instant, and kind 30 records each judge's stop. An archive of
 /// any other version is refused by name (`Fault::Version`), as 2204 refused
-/// version 4.
-pub const TRACE_VERSION: u64 = 13;
+/// version 4. 14 since `AET-WO-4400g`: the twin builds every timer at the
+/// solved kernel clock, so kind 26's period and high time are the ns Renode
+/// realizes at kind 25's `kernel_hz` (`record::realized_ns`), no longer
+/// 4 ns cycles of a fixed 250 MHz.
+pub const TRACE_VERSION: u64 = 14;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

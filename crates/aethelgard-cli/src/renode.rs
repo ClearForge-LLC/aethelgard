@@ -1733,10 +1733,10 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
     let who = motor_who(o);
     let mut out = Vec::new();
     let model = format!(
-        "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz)",
+        "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz, each realized in whole ns rounded up)",
         o.period_ns,
         o.high_ns,
-        aethelgard_twin::timer::TIMER_HZ
+        o.kernel_hz
     );
     match w.status {
         "witnessed" => {}

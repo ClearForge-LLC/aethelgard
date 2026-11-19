@@ -20,7 +20,7 @@ use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
     self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
-    SerialFraming, split_pin, step_index,
+    SerialFraming, realized_ns, split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -2200,6 +2200,17 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     // release (third adversarial review, F1).
     let mut timer_anchor: BTreeMap<&str, Option<u64>> = BTreeMap::new();
     let mut timer_rises: BTreeMap<&str, u64> = BTreeMap::new();
+    // Each output's timer kernel clock, from its kind 25: the frequency the
+    // twin builds the timer at, and so its witness's timing (trace 14).
+    let kernel: BTreeMap<&str, u64> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::MotorTimingCheck {
+                label, kernel_hz, ..
+            } => Some((label.as_str(), *kernel_hz)),
+            _ => None,
+        })
+        .collect();
     let mut checked: BTreeSet<&str> = BTreeSet::new();
     let mut witnessed: BTreeSet<&str> = BTreeSet::new();
     for r in records {
@@ -2256,7 +2267,10 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
                 {
                     return Err("two outputs of one timer name different anchors or CEN rises");
                 }
-                if !witness_consistent(m, r) {
+                let Some(&kernel_hz) = kernel.get(label.as_str()) else {
+                    return Err("a solved motor output has no static timing check");
+                };
+                if !witness_consistent(m, kernel_hz, r) {
                     return Err(
                         "a motor witness's status is not what its counts and its output's timing give",
                     );
@@ -2368,13 +2382,11 @@ fn check_stop_read_back(records: &[Record], stop: &Record) -> Result<(), &'stati
     Ok(())
 }
 
-/// The cycle of the twin's timers (4 ns at Renode's fixed 250 MHz), the
-/// stamp grain (10 ns) and the quantum (100 µs) the judge witnesses with.
-// belt-and-suspenders: `aethelgard_twin::timer::CYCLE_NS`,
-// `aethelgard-cli`'s `STAMP_GRAIN_NS` and `aethelgard_twin::boot::QUANTUM_NS`
-// state these; replay checks an archive without the twin or the CLI, so it
-// states them again.
-const TWIN_CYCLE_NS: u64 = 4;
+/// The stamp grain (10 ns) and the quantum (100 µs) the judge witnesses
+/// with.
+// belt-and-suspenders: `aethelgard-cli`'s `STAMP_GRAIN_NS` and
+// `aethelgard_twin::boot::QUANTUM_NS` state these; replay checks an archive
+// without the twin or the CLI, so it states them again.
 const TWIN_GRAIN_NS: u64 = 10;
 const TWIN_QUANTUM_NS: u64 = 100_000;
 
@@ -2466,13 +2478,14 @@ fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
     )
 }
 
-/// Whether kind 26 `w` is consistent with kind 24 `m` and with its own
-/// counts: the model's timing is the output's (`ARR` and `CCR` ticks of
-/// `PSC + 1` cycles), and a status is one its counts allow. A passing status
+/// Whether kind 26 `w` is consistent with kind 24 `m` at its timer's kernel
+/// clock `kernel_hz` (kind 25's) and with its own counts: the model's timing
+/// is the output's, `ARR` and `CCR` ticks of `PSC + 1` cycles each as
+/// [`realized_ns`] gives it (`AET-WO-4400g` §1.3), and a status is one its counts allow. A passing status
 /// needs two rises or more, alternating counts, no shared stamp, a spread
 /// under the grain, the last rise within a period and a grain of the
 /// window's end, and edges off the grid exactly when `witnessed`.
-fn witness_consistent(m: &Record, w: &Record) -> bool {
+fn witness_consistent(m: &Record, kernel_hz: u64, w: &Record) -> bool {
     let (
         Record::MotorOutputSolved { psc, arr, ccr, .. },
         Record::MotorWitness {
@@ -2496,9 +2509,10 @@ fn witness_consistent(m: &Record, w: &Record) -> bool {
     else {
         return false;
     };
-    let cycles = (u64::from(*psc) + 1) * TWIN_CYCLE_NS;
-    if *period_ns != u64::from(*arr) * cycles
-        || *high_ns != u64::from(*ccr) * cycles
+    let cycles = u64::from(*psc) + 1;
+    let realized = |ticks: u32| realized_ns(u64::from(ticks) * cycles, kernel_hz);
+    if Some(*period_ns) != realized(*arr)
+        || Some(*high_ns) != realized(*ccr)
         || *grain_ns != TWIN_GRAIN_NS
         || *quantum_ns != TWIN_QUANTUM_NS
     {

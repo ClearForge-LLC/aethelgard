@@ -17,6 +17,27 @@ pub const LAST_KIND: u64 = 30;
 /// names them.
 pub const MOTOR_PROTOCOLS: [&str; 3] = ["pwm", "dshot300", "dshot600"];
 
+/// The time Renode 1.17.0 runs `ticks` cycles of a timer counting at
+/// `kernel_hz`, in whole ns: ⌈`ticks` × 10⁹ / `kernel_hz`⌉. Virtual time has
+/// 1 ns resolution, and at each limit Renode drops the residue and rounds
+/// the time to the next limit up (`BaseClockSource.cs` L315–L325;
+/// `AET-WO-4400f` F3), so a DShot600 bit of 106 ticks at 64 MHz runs 1,657
+/// ns, not 1,656.25. A model convention, as `ARR` ticks against silicon's
+/// `ARR + 1`: the silicon check (kind 25) judges the exact period, and this
+/// rounding never reaches it. `None` for a zero clock or a period past
+/// `u64` ns.
+///
+/// The one definition (`AET-WO-4400g` §1.3): the twin predicts its
+/// observers with it and replay checks kind 26 against it, since replay
+/// reads an archive without the twin.
+pub fn realized_ns(ticks: u64, kernel_hz: u64) -> Option<u64> {
+    if kernel_hz == 0 {
+        return None;
+    }
+    let ns = (u128::from(ticks) * 1_000_000_000).div_ceil(u128::from(kernel_hz));
+    u64::try_from(ns).ok()
+}
+
 /// What kind 26's `status` may say (`AET-WO-4300a`): the observer's edges
 /// were the model's sequence with an edge off the grid; were, on the grid
 /// alone; showed fewer than two rises; could not be read whole; did not fit
@@ -523,8 +544,9 @@ pub enum Record {
         holds: bool,
     },
     /// Kind 26: one motor output's twin witness (`4300` D4): its observer,
-    /// the model's period and high time, the stamp grain and the quantum, in
-    /// ns, and what the observer showed (`status`, one of
+    /// the model's period and high time (since trace 14, `AET-WO-4400g`, as
+    /// [`realized_ns`] gives them at kind 25's `kernel_hz`, the frequency the
+    /// twin builds the timer at), the stamp grain and the quantum, in ns, and what the observer showed (`status`, one of
     /// [`MOTOR_STATUSES`]; the counts; the first rise; the deviations'
     /// spread; edges off the grid; edges sharing a stamp). Since trace 13
     /// (`AET-WO-2302`) its window: `anchor_ns`, its timer's first `CEN` rise

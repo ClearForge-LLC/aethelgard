@@ -217,6 +217,9 @@ fn probe(missing: &mut Vec<Missing>) -> (Option<SandboxReport>, Vec<ToolLine>) {
 /// A probe that ran: the version its tool printed and the sandbox it ran in.
 struct Probed {
     version: String,
+    /// The `build:` line of the output, which only Renode prints
+    /// (`AET-WO-4400g` §1.5).
+    build: Option<String>,
     sandbox: SandboxReport,
 }
 
@@ -246,6 +249,7 @@ fn ran(inv: run::Invocation<'_>) -> Result<Probed, Stop> {
     let out = inv.run()?;
     Ok(Probed {
         version: crate::version_of(name, &out)?,
+        build: crate::renode::build(&out.stdout),
         sandbox: out.sandbox,
     })
 }
@@ -284,7 +288,7 @@ fn finish(
     tool: &'static str,
     found: &run::Tool,
     probed: Result<Probed, Stop>,
-    pin: impl FnOnce(&str) -> Result<(), Stop>,
+    pin: impl FnOnce(&str, Option<&str>) -> Result<(), Stop>,
     (blocks, pinned_for): (&[&'static str], &[&'static str]),
     missing: &mut Vec<Missing>,
 ) -> ToolLine {
@@ -294,7 +298,7 @@ fn finish(
             absent(tool, Some(found))
         }
         Ok(p) => {
-            if let Err(stop) = pin(&p.version) {
+            if let Err(stop) = pin(&p.version, p.build.as_deref()) {
                 note(missing, Missing::of(stop, pinned_for));
             }
             ToolLine {
@@ -334,7 +338,7 @@ fn kicad_cli(missing: &mut Vec<Missing>) -> ToolLine {
         "kicad-cli",
         &tool,
         probed,
-        pin,
+        |v, _| pin(v),
         (&KICAD, &KICAD_PINNED),
         missing,
     )
@@ -476,7 +480,7 @@ fn cargo(missing: &mut Vec<Missing>) -> ToolLine {
         "cargo",
         &t.cargo,
         probed,
-        |_| Ok(()),
+        |_, _| Ok(()),
         (&CARGO, &[]),
         missing,
     )
@@ -508,7 +512,7 @@ fn kani(missing: &mut Vec<Missing>) -> ToolLine {
         "cargo-kani",
         &k.cargo_kani,
         probed,
-        |_| Ok(()),
+        |_, _| Ok(()),
         (&KANI, &[]),
         missing,
     )
