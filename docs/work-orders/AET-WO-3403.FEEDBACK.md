@@ -134,4 +134,43 @@ The review's first option was "TP3 at or below 0.3 V while the probe holds reset
 
 The ordered verdict's ledger (the review's Furnace run, `work/against.log`) gives `I2C1.TIMINGR`'s field values as `PRESC` 5, `SCLH` 42, `SCLL` 64: the `Standard100k` word, `0x50D32A40`. The ordered firmware writes `Fast400k`, `0x10C7123C`, to I2C1 (`main.rs` L168; `board.rs` L175). The fields' class (independent-rule) is right; only the reported value is another mode's. B2 uses the firmware's word. It looks like the ledger takes the first speed mode's word for a register the board crate can write in several modes [inferred, not traced]. A §7.1 row if the architect agrees.
 
-GATES_PLACEHOLDER
+## 7. Adversarial pass (§5, targeted)
+
+Two independent readers ran, each given the files and the work order, not my conclusions:
+- an Opus reviewer, given all four files, the ground-truth sources and §5's four lenses;
+- a reader given **only** the cable table, asked to wire it.
+
+Their findings are in `~/.cache/aet-3403/adv/` (`FINDINGS.md`, `CABLE.md`). I checked each at source before adopting it, and fixed every one except where noted.
+
+| # | Lens | Finding | Fix |
+|---|---|---|---|
+| C1 | pass line a fault slips through / fails a correct board | B6's `BSRR` does nothing on a pin in AF mode, and a `MODER` change persists. B2, B7 and B9 after it would then fail a correct board, and B9 would blame the AF | B6 gives the `MODER` read-modify-write and the `BSRR` words, then a reset; B2 runs before B6, B7 and B9 |
+| C3 | fault slips through | The records are never cleared: `.aethelgard_boot` is `NOLOAD`, and a reset keeps RAM. A boot that dies early still shows the last good boot's words | Power cycle, or zero the words, read them back, then reset (both sheets) |
+| C7 | fails a correct board | B1 left PA10 floating (no pull), so stray bytes would be echoed | The adapter's TX is wired to J1 pin 2 |
+| C2 | could mislead | B8's "1 TX, 2 RX" reads as the adapter's TX on the board's TX | Wired as B1 |
+| C4 | could mislead | B9's probe ran inside the 4 s capture that must show one transaction | Its own 60 s capture |
+| C5 | could mislead | SDO and CS were "unconnected" on any breakout; Bosch says SDO must not float | Unconnected only where the breakout straps them; otherwise tied to its supply pad |
+| C6 | WO | The never-made statement was missing from `BENCH.md` | Added to its header |
+| W1–W3 | facts | `board.rs` lines off by two; RM0433's reset text is on p. 330; `proofs.rs` also differs | Corrected |
+| N1–N12 | nits | B9's band is recorded, not judged; echo timing; header order J1 J2 J3 J4; PA9 hazard softened; Dronecode RX on BOOT0; B7's slope assumption labelled [inferred]; U2 DNP for fab assembly; flash commands; absolute scp path; source labels | Applied |
+| cable | could wire backwards | Adafruit's 3Vo pad beside VIN; a wire on SDO passed "the pad I wired"; no SCL/SDA-to-GND check; the lead's pin 1 could not be identified; the Qwiic colour column contradicted "never by colour" | Each wire is identified by continuity to the test pads with the lead in J4, and probed by the pad's printed label; three rows added; the colour column removed |
+
+**Left as is:**
+- **B1.3, counting from the first `43`:** the reviewer could not confirm whether PA9 glitches before USART1 is enabled. A byte before the first `43` is recorded, not judged.
+- **BOOT0's 15 nA leakage:** that is `1312`'s reading, unchanged.
+- **`probe-rs` 0.32's syntax:** labelled unverified throughout.
+
+**My own lens 2 check:** every twin prediction cites S1, its source, and none was edited after a run disagreed. `verify`'s expectations were written before the run (`runs/EXPECTED-before-run.md`). The droop refusal was expected there (`4201`), and the `extract` failure was not.
+
+## 8. Reduction pass and gates
+
+Reduction pass (diff): −3 lines net · 5 duplicated rationales collapsed to one home each (the TMP117 probe's reason, the held reset's reason, the bench specification's description, B7's band, the `extract` failure's meaning: each now lives in one file and the other cites it) · 0 dead paths · 0 protected kept · 0 findings outside the fence. The review file is verbatim and was not touched.
+
+**Gates** (**measured**, in the pinned image, `capped-run --mem 16G`, `nice -n 10`):
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --workspace --no-fail-fast`, with `CARGO_TARGET_DIR` inside the repository as CI has it: **136 test binaries, 2,258 passed, 0 failed.**
+  - A first run with the target directory outside the repository failed `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`. The test writes its scenarios under the target directory, and the CLI refuses a base outside the working directory. That is my harness, not the diff; in CI's layout the file passes 11/11.
+- **The four tests that walk `examples/`, with the new file in place:** `silicon_rules` 1/1, `ledger_tier1` 12/12, `hwdef_tier1` 5/5 (cli), `silicon_words` 6/6 (svd-hal).
+
+**What CI ran:** see the PR's checks. This is a docs-and-`examples/` PR, so the routing `1911` brings may change what runs.
