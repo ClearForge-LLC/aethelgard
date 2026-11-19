@@ -49,7 +49,8 @@ jobs:
               if [ "$n" -gt 2 ]; then eval "exec $n>&-"; fi
             done
             ls -l /proc/self/fd
-            exec cargo test --workspace --locked
+            # AET-WO-1910 D5 (a): every test target but ci/tools-only.tsv's (ci/gates.sh).
+            exec bash ci/gates.sh run
           )
 
       - name: validate the checked-in examples
@@ -378,6 +379,14 @@ jobs:
       # pinned Renode carries upstream's RETTOBASE fix, so the CLI's
       # correction and its with-and-without test are retired; the build pin
       # and the witness (RETTOBASE 0 nested, with nothing of ours) remain.
+      # 190 (AET-WO-1910, ruled on PR #233, comment 6999515740): unchanged. Two
+      # tests moved from board_tier2.rs to the new tier-2 binary
+      # four_layer_fab_tier2.rs, which shares one --fab-out package (D3), each
+      # still counted: four_layer_fixture_passes_every_gate_and_its_package_holds
+      # and against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies. The
+      # two tests D4 removed (campaign_tier1.rs: a_one_byte_change_to_the_trace_is_
+      # a_hash_mismatch, an_extra_file_in_the_run_directory_is_refused) are tier 1,
+      # outside the count.
       TIER2_MIN: "190"
     steps:
       # A shard that was skipped or cancelled is not a pass.
@@ -410,15 +419,17 @@ jobs:
   # as ordered (examples/sentinel-01.json, boards/sentinel-01-bench) derived
   # again, byte for byte, by `verify --against-fab` against the committed
   # fab/sentinel-01-bench/package. One verify (510-579 s on CI for the
-  # comparable reference), so it runs on main's push and on workflow_dispatch,
-  # never per pull request; per PR, bench_board_tier1.rs binds the package to
-  # its inputs and board_tier2.rs gates the board, in seconds. A red main from
-  # this job is fixed forward (roadmap section 6, main is green).
+  # comparable reference). It ran on main's push and on workflow_dispatch only
+  # until AET-WO-1910 D8 (i), ruled on PR #233 (comment 6999515740): AET-WO-1605
+  # moved every bench scenario's state_sequence_hash, which MANIFEST.json binds,
+  # and main went red unseen on its PR (fixed forward by AET-WO-1605c, #232). It
+  # now runs on every pull request too, in parallel with the shards, so a change
+  # to the verdict's recorded fields is seen on the PR that makes it. A red main
+  # from this job is fixed forward (roadmap section 6, main is green).
   # The verdict, and so MANIFEST.json, names each gate's sandbox, so the
   # committed package is the one this job writes (dispatch with `write`, then
   # commit the artifact's files), never one written on another machine.
   bench-package:
-    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:

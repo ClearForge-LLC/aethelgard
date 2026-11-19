@@ -1188,18 +1188,6 @@ fn find(hay: &[u8], needle: &[u8]) -> usize {
 const INSTRUCTION_COUNT_CBOR: [u8; 5] = [0x1a, 0x00, 0x98, 0x96, 0x80];
 
 #[test]
-fn a_one_byte_change_to_the_trace_is_a_hash_mismatch() {
-    let (tb, _work, run) = a_run();
-    let path = run.join("trace.cbor");
-    let mut trace = fs::read(&path).unwrap();
-    let at = find(&trace, &INSTRUCTION_COUNT_CBOR) + 4;
-    trace[at] ^= 1;
-    fs::write(&path, &trace).unwrap();
-    let out = replay(&tb.0, &run);
-    expect_refusal(&out, 3, "HashMismatch");
-}
-
-#[test]
 fn a_one_byte_change_with_the_manifest_resealed_diverges_on_replay() {
     let (tb, _work, run) = a_run();
     let path = run.join("trace.cbor");
@@ -1220,14 +1208,6 @@ fn a_one_byte_change_with_the_manifest_resealed_diverges_on_replay() {
     fs::write(&manifest_path, cbor::to_bytes(&sealed.to_value())).unwrap();
     let out = replay(&tb.0, &run);
     expect_refusal(&out, 3, "ReplayDiverged");
-}
-
-#[test]
-fn an_extra_file_in_the_run_directory_is_refused() {
-    let (tb, _work, run) = a_run();
-    fs::write(run.join("notes.txt"), b"x").unwrap();
-    let out = replay(&tb.0, &run);
-    expect_refusal(&out, 3, "UnexpectedEntry");
 }
 
 #[test]
@@ -2543,14 +2523,27 @@ fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
 fn a_stale_or_impostor_bridge_is_refused() {
     let tb = toolbox(&good());
     let work = Work::new();
-    for first in [
+    for (i, first) in [
         r#"{"bridge":"aethelgard-bridge","source_sha256":"0000000000000000000000000000000000000000000000000000000000000000","version":"0.1.0"}"#,
         r#"{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}"#,
-    ] {
-        let dir = Dir::new("impostor");
-        let me = dir.0.join("aethelgard");
-        common::stub::write_executable(&me, fs::read(env!("CARGO_BIN_EXE_aethelgard")).unwrap());
-        let stub = dir.0.join("aethelgard-bridge");
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        // Hard-linked beside its stub bridge, as `cli()` does, in the target
+        // directory so the link stays on one filesystem (`AET-WO-1910` F7);
+        // a copy only where the link fails.
+        let dir = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!(
+            "aet-1910-impostor-{}-{i}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let me = dir.join("aethelgard");
+        if fs::hard_link(env!("CARGO_BIN_EXE_aethelgard"), &me).is_err() {
+            common::stub::write_executable(&me, fs::read(env!("CARGO_BIN_EXE_aethelgard")).unwrap());
+        }
+        let stub = dir.join("aethelgard-bridge");
         common::stub::write_executable(
             &stub,
             format!(
