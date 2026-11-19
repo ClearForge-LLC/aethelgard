@@ -58,7 +58,15 @@ The judge places the boot at `released_ns + NUDGE_NS` = 1231740 ns, so every sch
 
 **H1, H2 and H3 are refuted by runs.** The model's timer never fires before the reset (armed at 24340 ns for 6124340 ns). With the timer never enabled (E1) or with `Now()` not calling `cpu.SyncTime()` (E2), the slip is the same, at the same instant. P2 and P3 were wrong.
 
-**Why the BMP581, then:** it moves the BOR crossing from 1,018,330 ns to 1,018,380 ns. 1,018,330 parses exactly, and 1,018,380 does not. The bridge's input that differs is the rail's decoupling: the BMP581's schematic arm draws a second 100 nF (`eda/src/schematic.rs` L1398-1401), which `decoupling_picofarads` adds to `VDD_3V3` (`cli/src/campaign.rs` L306). [read; the 50 ns follows from the bridge's solve, measured as the two assert instants]
+**Why the BMP581, then [measured, from the two traces, kinds 16, 17 and 18]:** the BMP581's schematic arm draws a second 100 nF (`eda/src/schematic.rs` L1398-1401). `decoupling_picofarads` adds it to `VDD_3V3` (`cli/src/campaign.rs` L306). The effect on the bridge's droop:
+
+| | BME280 | BMP581 |
+|---|---|---|
+| decoupling on `VDD_3V3` (kind 16) | 8,300,000 pF | 8,400,000 pF |
+| `VBOR3_falling` crossing (kind 17) | 1,018,322.818 ns | 1,018,370.136 ns |
+| reset, on the 10 ns grid (kind 18) | 1,018,330 ns | 1,018,380 ns |
+
+1,018,330 parses exactly, and 1,018,380 does not.
 
 **Not the model, and not one board [measured]:**
 
