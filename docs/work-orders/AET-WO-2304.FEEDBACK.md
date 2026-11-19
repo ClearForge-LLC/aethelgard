@@ -270,6 +270,18 @@ While U11 regulates, the script puts `VDD_3V3` at the midpoint of IR's range: 3.
   - The bridge's actions, re-derived from the recorded `VDD_3V3` samples alone, equal the archived `ResetRendered` records: 48 of 48 (I2, both quanta), 96 of 96 (T10, 100 µs), 300 of 300 (T10, 10 µs).
   - (a)'s traces hold no samples, so that check does not apply to them.
 
+**Runs added after the predictions (unpredicted): D1's band at a 0.4 A lever, either side of it** (`spike/2304/sh/band.sh`; (b) at 100 µs, 1 s each).
+
+| Declared R | Static (§1.4, 0.4 A) | (b) lock-step | (a) declared |
+|---|---|---|---|
+| 1.20 Ω | below the band: an operating point with `CEN` set | **0 resets**; one `CEN` at 39.2 ms; 122.7 s wall | **0 resets**; V_bat 5.336 V: **agree** |
+| 1.35 Ω | inside the band (1.27–1.43 Ω): an operating point only without the ESC | **a reboot loop: 24 cycles, 24 resets**, first at 41.0 ms. The firmware moves the crossing | **2,879 chattering resets** (F5): the case (a)'s refusal must catch |
+| 1.45 Ω | above R*(0) = 1.43 Ω: no operating point even without the ESC | **never boots**: no `CEN`, 470 resets from 2.4 ms | the events trace passed `MAX_RECORDS`: the writer refused record 65,537 (`TooManyRecords`) and the probe stopped. Refused, as F5 says it should be |
+
+- Measured, so the band is no longer only static.
+- Below it, (a) and (b) agree. Inside it, the firmware moves the crossing. Above it, the board cannot run at all.
+- (a)'s output inside and above the band is exactly what F5's refusal removes.
+
 **The archive per simulated second (measured, the real `TraceWriter`; stand-in kinds as in `2303`).**
 
 | Shape | 100 µs | 10 µs |
@@ -538,3 +550,42 @@ P19 held, with one addition: the solved topology also bumps.
   - a `--fab-out` run adds the campaign's scenarios, each a boot of about 9 s plus (a)'s solve (§1.6);
   - a (b) lock-step scenario adds its wall per simulated second (§1.5).
 - **`4400g`** does not move these gates' arithmetic. Its trace and specification bumps move the verdict's hashes (§1.9).
+
+### P19 against its result
+
+| id | Predicted | Result | |
+|---|---|---|---|
+| P19 | `4400g` moves the TIM1 clock, kind 26's values and the versions, not boot-to-`CEN`, the analog side or ngspice | as predicted, read at source on #238. Also moved: the solved topology version (10 → 11), which was not predicted. `cli/src/campaign.rs` is not touched (§1.9) | held, with one addition |
+
+## §7 checked
+
+- **"A measurement needs a crate or `bridge/` change":** none did.
+  - The probe owns Renode and libngspice, as `2303`'s did.
+  - The decoupling probe calls `aethelgard-eda` and `aethelgard-chaos` as path dependencies, outside the workspace.
+  - `git diff --stat cd43b207 -- crates bridge models ci .github Cargo.toml Cargo.lock` is empty.
+- **"A run is killed, or passes 900 ‰ of its cap":** none was.
+  - Peaks: `verify` 3.40 GiB of 16 GiB (213 ‰).
+  - The probe runs: Renode up to 463 MiB plus the probe up to 188 MiB, inside 8 GiB, so under 100 ‰ (inferred from the two processes' figures; the scope's peak was not read for them).
+- **"No maker states an ESC's or a pack's figure":** none does (F2). Both are swept and labelled, and D2/D3 say the sourced figure is missing. Not a stop.
+- **"The only way any candidate meets the coverage rule is to relax it":** no.
+  - `battery` is met by (a) through a rule addition.
+  - `VDD_5V` has one non-relaxing option (D4 option 1), which needs the architect's ruling on its modelling assumption.
+  - Nothing was prototyped.
+- **"A candidate turns out to be sampling":** none. (c) is named only.
+- **"`4400g` merges and moves a figure":** it did not merge during the spike (#238 open at `afb91036`; `main` at `cd43b207` at every check).
+
+## Gates (spike)
+
+- **No crate changed:** the fence diff above is empty.
+- **`cargo fmt --all -- --check`:** clean on the workspace.
+- **Clippy and `cargo test --workspace` were not run.** The workspace is byte-identical to `main` `cd43b207`, so they would test `main`.
+- **The probes** (`spike/2304/lockstep`, `spike/2304/decouple`) are `cargo fmt`-clean and build in the pinned image or on the host.
+  - The lockstep probe carries one warning, an unused variable in `2303`'s `splice` mode, kept unchanged.
+  - `spike/2304/ngspice` is `2303`'s FFI copied unchanged, not `fmt`-clean, as it was not there.
+- **Evidence:** in `spike/2304/out/`, made by the scripts in `spike/2304/sh/`.
+  - The traces (up to 5.1 MB) are not kept; their sha256 is in `spike/2304/out/trace-sha256.txt`.
+  - Oversized logs are trimmed, each with its full sha256 beside it.
+  - Datasheets are in `~/.cache/aet-ds/aet-2304/` on Furnace, never in the repository.
+
+**STOPPED at §2**, 2026-11-19, for the architect's ruling on D1–D7 (Scotty's where D4 marks it). The PR is a record, to be merged as the record (FEEDBACK plus `spike/2304/`) after the ruling.
+
