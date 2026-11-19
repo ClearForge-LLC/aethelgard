@@ -29,9 +29,9 @@ def write(spec, name, expect, findings, overrides, version=3, counts=None):
     return f"spike/4600/scenarios/{spec}/{name}.json"
 
 
-DROOP = {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
-                   "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                   "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}}
+# The droop and its expected counts are Sentinel-01-bench's, read from its scenario, not restated.
+S01_DROOP = json.loads(pathlib.Path("scenarios/sentinel-01-bench/droop-bor3.json").read_text())
+DROOP = S01_DROOP["overrides"][0]
 lists = {}
 for name in SPECS:
     spec = json.loads((D / f"{name}.json").read_text())
@@ -44,7 +44,7 @@ for name in SPECS:
                            ["spi_identity_mismatch", "spi_transaction_unwitnessed"],
                            [{"spi_device_absent": d["reference"]}]))
     files.append(write(name, "droop-bor3", "pass", [], [DROOP],
-                       counts={"brownout_reset": 1, "brownout_unrecovered": 0, "rail_below_tolerance": 1}))
+                       counts=S01_DROOP["expect_counts"]))
     for p in spec["serial_ports"]:
         files.append(write(name, f"serial-rx-open-{p['label'].lower()}", "fail",
                            ["serial_echo_missing"], [{"serial_rx_open": p["label"]}]))
