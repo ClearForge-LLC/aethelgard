@@ -23,10 +23,11 @@ use common::*;
 /// version 8), `AET-WO-4210` (`d107fffb…3e75`, version 9), `AET-WO-4220`
 /// (`8271f786…1ab4`, version 10), `AET-WO-4300b` (`1db8a16f…12d9`,
 /// version 11), `AET-WO-4230` (`27753b78…c311`, version 12),
-/// `AET-WO-2302` (`25392c25…8747`, version 13) and `AET-WO-4400g` (version
-/// 14) each changed the version byte alone.
+/// `AET-WO-2302` (`25392c25…8747`, version 13), `AET-WO-4400g` (`bcd082c2…8383`,
+/// version 14) and `AET-WO-3305` (version 16) each changed the version byte
+/// alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "bcd082c29bd33708606ddbef7f10b66888de0b501c5c024c4030a56b0ad48383";
+    "7eccc89360bb332e5f9768c101f5702fa97cfbe566e04a394cc4246896c25d31";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -38,8 +39,8 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `8b4dc285…def7cf` until `AET-WO-4220` did, then `955d28e0…bbdbbd` until
 /// `AET-WO-4300b` did, then `d9b03ded…07124f` until `AET-WO-4230` did, then
 /// `1236d811…e1dbd4` until `AET-WO-2302` did, then `64a3c723…5d03e0` until
-/// `AET-WO-4400g` did.
-const GOLDEN_STATE_HASH: &str = "ada1b6312af5ebe4b55f3c5a48c80386527f14d3cddac1edd0834702e3fdd8f7";
+/// `AET-WO-4400g` did, then `ada1b631…fdd8f7` until `AET-WO-3305` did.
+const GOLDEN_STATE_HASH: &str = "f4c133fa6962546173477aaf5cc5b6d23442b690df07407fa60d4d1f3134c693";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -68,6 +69,11 @@ fn golden_trace_and_state_hash_are_pinned() {
     let at = 1 + 1 + "aethelgard-trace".len();
     assert_eq!(u64::from(bytes[at]), aethelgard_chaos::event::TRACE_VERSION);
     let mut bytes = bytes.clone();
+    bytes[at] = 14;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "bcd082c29bd33708606ddbef7f10b66888de0b501c5c024c4030a56b0ad48383"
+    );
     bytes[at] = 13;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),

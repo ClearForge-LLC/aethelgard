@@ -42,8 +42,10 @@ pub const VERSION: u64 = 1;
 /// version 4. 14 since `AET-WO-4400g`: the twin builds every timer at the
 /// solved kernel clock, so kind 26's period and high time are the ns Renode
 /// realizes at kind 25's `kernel_hz` (`record::realized_ns`), no longer
-/// 4 ns cycles of a fixed 250 MHz.
-pub const TRACE_VERSION: u64 = 14;
+/// 4 ns cycles of a fixed 250 MHz. 16 since `AET-WO-3305` (15 is
+/// `AET-WO-2304b`'s): kind 13's `absent` holds the addresses found absent
+/// during its own step, no longer during the whole run.
+pub const TRACE_VERSION: u64 = 16;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

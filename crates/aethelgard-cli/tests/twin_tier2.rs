@@ -1178,6 +1178,97 @@ fn on_a_bus_with_two_devices_each_read_is_witnessed() {
     }
 }
 
+/// Each I2C witness's archived `absent`, by reference, in trace order.
+fn absent_by_witness(run: &str) -> Vec<(String, Vec<u8>)> {
+    aethelgard_chaos::replay_dir(Path::new(run))
+        .unwrap()
+        .state
+        .records
+        .into_iter()
+        .filter_map(|r| match r {
+            aethelgard_chaos::record::Record::I2cWitness {
+                reference, absent, ..
+            } => Some((reference, absent)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `AET-WO-3305`, measured on `main` (`spike/3305`): with SDA held low on
+/// the two-BME board, each witness carried both devices' addresses, so each
+/// read the other's as its own wrong address and `attribute` masked both:
+/// `verify`'s detection refuses a masked run. Each witness now carries only
+/// its own step's addresses: the fault is E1 with nothing masked. U2's read
+/// sent to 0x75 is still the software evidence it was, and U5's step, which
+/// met no absence, carries none.
+#[test]
+fn a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software() {
+    let (_, board) = two_bme();
+    let real = mutant_of(board, "two-3305-ref", |_| {});
+    let wrong = mutant_of(board, "two-3305-wrong", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "i2c1.transfer(&mut r, 0x75, &[0xd0], &mut buf0)",
+        );
+    });
+    let one = |tag: &str, scenario: &str, elf: &Path| -> (String, Value) {
+        let (_, code, lines) = run_campaign(
+            tag,
+            &[&format!("crates/aethelgard-cli/tests/fixtures/{scenario}")],
+            elf,
+        );
+        assert_eq!(code, Some(0), "{tag}: {lines:?}");
+        assert_eq!(lines[0]["matched"], true, "{tag}: {lines:?}");
+        let run = lines[0]["run"].as_str().unwrap().to_owned();
+        let (code, attributed) = aethelgard(&["attribute", "--archive", &run]);
+        assert_eq!(code, Some(0), "{tag}: {attributed}");
+        (run, attributed)
+    };
+    let (run, a) = one("two-3305-held", "two-bme-held-low-sda.json", &real);
+    assert_eq!(
+        absent_by_witness(&run),
+        [("U2".to_owned(), vec![0x76]), ("U5".to_owned(), vec![0x77])],
+        "each step carries only its own device's absence"
+    );
+    assert_eq!(
+        (a["domain"].as_str(), a["rule"].as_str()),
+        (Some("electrical"), Some("E1")),
+        "{a}"
+    );
+    assert_eq!(a["masked"], serde_json::json!([]), "nothing is masked: {a}");
+    assert_eq!(a["unexplained"], serde_json::json!([]), "{a}");
+    assert_eq!(
+        a["subjects"],
+        serde_json::json!(["bus:SENSORS", "device:U2", "device:U5"]),
+        "{a}"
+    );
+    let (run, a) = one("two-3305-wrong", "two-bme-i2c-timeout.json", &wrong);
+    assert_eq!(
+        absent_by_witness(&run),
+        [("U2".to_owned(), vec![0x75]), ("U5".to_owned(), vec![])],
+        "the wrong address is U2's step's; U5's step met no absence"
+    );
+    assert_eq!(
+        (a["domain"].as_str(), a["rule"].as_str()),
+        (Some("software"), Some("S1")),
+        "{a}"
+    );
+    let witness = a["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == 13)
+        .count();
+    assert_eq!(witness, 1, "U2's witness alone is the evidence: {a}");
+    assert_eq!(
+        a["subjects"],
+        serde_json::json!(["bus:SENSORS", "device:U2"]),
+        "{a}"
+    );
+}
+
 #[test]
 fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
     // AET-WO-2301 F9, AET-WO-2204 D3: `systick-before`, as a firmware edit:

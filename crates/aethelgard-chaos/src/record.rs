@@ -402,8 +402,9 @@ pub enum Record {
         expected: Vec<String>,
         observed: Option<Vec<String>>,
         /// The addresses the device's controller found no device at during
-        /// the run, in order, at most [`MAX_WITNESS_LINES`]: attribution's
-        /// evidence of a transfer to a wrong address, never a witness.
+        /// this step (`AET-WO-3305`, trace 16; the whole run before), in
+        /// order, at most [`MAX_WITNESS_LINES`]: attribution's evidence of a
+        /// transfer to a wrong address, never a witness.
         absent: Vec<u8>,
     },
     /// Kind 14: the verdict, with each distinct finding kind, its severity and

@@ -479,6 +479,16 @@ impl BootPlan<'_> {
         c.extend(
             (0..ports.len()).filter_map(|k| crate::anchor::echo_hook(k, &ports, self.boot_word)),
         );
+        // Each I2C step's status word (`AET-WO-3305`): where its step ends.
+        c.extend(
+            self.image
+                .identity
+                .checks
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| matches!(s.wire, aethelgard_twin::boot::Wire::I2c { .. }))
+                .map(|(k, s)| crate::anchor::step_hook(k, s.status_at)),
+        );
         c
     }
 
@@ -854,11 +864,12 @@ pub struct Observed {
     /// a witness's shape that fall to this step ([`attribute`]), in order;
     /// `None` when the log could not be read whole (`AET-WO-2204` D2).
     pub witnesses: Vec<Option<Vec<String>>>,
-    /// For each identity check, the addresses its bus's controller found no
-    /// device at during the run (Renode's `Unknown slave at address N.`), in
-    /// order: attribution's evidence of a transfer to a wrong address, never
-    /// a witness (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for
-    /// an SPI check.
+    /// For each I2C check, the addresses its bus's controller found no device
+    /// at during that check's own step ([`absent_by_step`], `AET-WO-3305`;
+    /// Renode's `Unknown slave at address N.`), in order: attribution's
+    /// evidence of a transfer to a wrong address, never a witness
+    /// (`AET-WO-2204`, the seeded set's `wrong-address`). Empty for an SPI
+    /// check, and for every check when the log could not be read whole.
     pub absent: Vec<Vec<u8>>,
     /// For each motor output, what its observer showed (`AET-WO-4300a`).
     pub motors: Vec<MotorWitness>,
@@ -1838,6 +1849,59 @@ fn absent_address(line: &str, bus: &str) -> Option<u8> {
         .ok()
 }
 
+/// For each check, the addresses its controller found no device at during
+/// its own step (`AET-WO-3305`). Each `Unknown slave` line of a controller
+/// goes to the I2C check on that controller whose status word the firmware
+/// writes first after it in the log (the check's first [`Hook::Step`]); a
+/// line no such write follows goes to the controller's last check in the
+/// image's order, the step under way when the run ended. Empty for an SPI
+/// check. A step that writes its status before its transfer leaves that
+/// transfer's line to the next step: attribution only, never a witness.
+///
+/// [`Hook::Step`]: crate::anchor::Hook::Step
+fn absent_by_step(
+    checks: &[aethelgard_twin::boot::StepCheck],
+    log: &[&str],
+    hooks: &[Seen],
+) -> Vec<Vec<u8>> {
+    fn controller(c: &aethelgard_twin::boot::StepCheck) -> Option<&str> {
+        matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. })
+            .then(|| c.device.split('.').next().unwrap_or_default())
+    }
+    // Each check's first status write, by its position in the log.
+    let mut ended: Vec<Option<usize>> = vec![None; checks.len()];
+    for (i, h, _) in hooks {
+        if let crate::anchor::Hook::Step { check, .. } = h
+            && let Some(e) = ended.get_mut(*check)
+            && e.is_none()
+        {
+            *e = Some(*i);
+        }
+    }
+    let mut absent = vec![Vec::new(); checks.len()];
+    for (i, line) in log.iter().enumerate() {
+        let Some((bus, address)) = checks.iter().find_map(|c| {
+            let bus = controller(c)?;
+            absent_address(line, bus).map(|a| (bus, a))
+        }) else {
+            continue;
+        };
+        // The check on this controller whose status write first follows the
+        // line, or else the controller's last check.
+        let mine = |j: &usize| controller(&checks[*j]) == Some(bus);
+        let owner = (0..checks.len())
+            .filter(mine)
+            .filter_map(|j| ended[j].filter(|&e| e > i).map(|e| (e, j)))
+            .min()
+            .map(|(_, j)| j)
+            .or_else(|| (0..checks.len()).rev().find(mine));
+        if let Some(o) = owner {
+            absent[o].push(address);
+        }
+    }
+    absent
+}
+
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
 /// the line, a log fragment included, is refused, never searched (R3).
 fn value(line: &str) -> Option<u64> {
@@ -2116,19 +2180,10 @@ pub fn judge_boot(
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
         witnesses,
-        absent: checks
-            .iter()
-            .map(|c| match c.wire {
-                aethelgard_twin::boot::Wire::I2c { .. } => {
-                    let bus = c.device.split('.').next().unwrap_or_default();
-                    last_boot
-                        .iter()
-                        .filter_map(|l| absent_address(l, bus))
-                        .collect()
-                }
-                aethelgard_twin::boot::Wire::Spi { .. } => Vec::new(),
-            })
-            .collect(),
+        absent: hooks.as_deref().map_or_else(
+            || vec![Vec::new(); checks.len()],
+            |h| absent_by_step(checks, &last_boot, h),
+        ),
         unrouted,
         serial: Vec::new(),
         // Past the filter's budget an edge may have been dropped, so no
@@ -5958,6 +6013,93 @@ mod tests {
             skipped: Vec::new(),
             stimulus: Some(Vec::new()),
         }
+    }
+
+    /// `AET-WO-3305`: each address found absent goes to the I2C step whose
+    /// status write first follows it. The logs are the measured two-bme runs
+    /// (`spike/3305`), whole lines with their stamps: held-low SDA, where
+    /// each step meets its own device's absence, and U2's read sent to 0x75,
+    /// where U5's step meets none.
+    fn absent_of(checks: &[aethelgard_twin::boot::StepCheck], log: &[&str]) -> Vec<Vec<u8>> {
+        let (hooks, slept) = hooks_of(log, 0).unwrap();
+        assert_eq!(
+            slept, None,
+            "every measured hook line is placed at its stamp"
+        );
+        absent_by_step(checks, log, &hooks)
+    }
+
+    fn two_bme() -> Vec<aethelgard_twin::boot::StepCheck> {
+        use aethelgard_ir::parts::StepKind::Identity;
+        let i2c = |address| aethelgard_twin::boot::Wire::I2c { address };
+        let spi = aethelgard_twin::boot::Wire::Spi {
+            address: 0,
+            select: "PA0".into(),
+        };
+        vec![
+            step(i2c(0x76), "i2c1.u2", Identity, &[]),
+            step(i2c(0x77), "i2c1.u5", Identity, &[]),
+            step(spi, "spi1.spi1mux.u4", Identity, &[]),
+        ]
+    }
+
+    const STEP0: &str = "[00:00:00.003600000] [WARNING] sysbus: AETHELGARD-STEP 0 22020001 361033";
+    const ICR: &str = "[00:00:00.003600000] [WARNING] i2c1: Unhandled write to offset 0x1C. Unhandled bits: [4] when writing value 0x30. Tags: NACKCF (0x1).";
+
+    #[test]
+    fn an_absent_address_belongs_to_the_step_whose_status_write_follows_it() {
+        let held = [
+            "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 118.",
+            ICR,
+            STEP0,
+            "[00:00:00.003610340] [WARNING] i2c1: Unknown slave at address 119.",
+            "[00:00:00.007200000] [WARNING] i2c1: Unhandled write to offset 0x1C. Unhandled bits: [4] when writing value 0x30. Tags: NACKCF (0x1).",
+            "[00:00:00.007200000] [WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093",
+            "[00:00:00.007210940] [WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 721647",
+        ];
+        assert_eq!(
+            absent_of(&two_bme(), &held),
+            [vec![118], vec![119], vec![]],
+            "on a faulted bus each step holds only its own device's address"
+        );
+        let wrong = [
+            "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 117.",
+            ICR,
+            STEP0,
+            "[00:00:00.003610340] [NOISY] i2c1.u5: Write D0",
+            "[00:00:00.003610340] [NOISY] i2c1.u5: Read 60",
+            "[00:00:00.003610340] [WARNING] sysbus: AETHELGARD-STEP 1 22020000 361194",
+            "[00:00:00.003611970] [WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 361750",
+        ];
+        assert_eq!(
+            absent_of(&two_bme(), &wrong),
+            [vec![117], vec![], vec![]],
+            "the wrong address is U2's step's alone; U5's step met no absence"
+        );
+    }
+
+    #[test]
+    fn an_absent_address_no_status_write_follows_goes_to_the_controllers_last_step() {
+        // U5's step never wrote its status (the run ended inside it), and a
+        // second write of U2's status is not where U2's step ended.
+        let log = [
+            "[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 118.",
+            STEP0,
+            "[00:00:00.003610340] [WARNING] i2c1: Unknown slave at address 119.",
+            "[00:00:00.003610340] [WARNING] sysbus: AETHELGARD-STEP 0 22020000 361034",
+            "[00:00:00.003610340] [WARNING] i2c2: Unknown slave at address 118.",
+            "[00:00:00.003610340] [WARNING] i2c1: Unknown slave at address 117.",
+        ];
+        assert_eq!(
+            absent_of(&two_bme(), &log),
+            [vec![118], vec![119, 117], vec![]],
+            "after U2's first status write the step under way is U5's; another controller's line is no check's"
+        );
+        assert_eq!(
+            absent_by_step(&two_bme(), &log, &[]),
+            [vec![], vec![118, 119, 117], vec![]],
+            "with no status write read, every line goes to the controller's last step"
+        );
     }
 
     /// The findings of `checks` against `log`, every record `ok`.
