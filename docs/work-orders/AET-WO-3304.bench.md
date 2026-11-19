@@ -38,6 +38,7 @@ echo "375fd31a28f4442b796110f0df82d31a9e133ce4a12f2a982fbb923cfe369c02  sentinel
 - **S2:** `campaign`, seven scenarios on the same ELF (`bench/scen/`, `bench/campaign.jsonl` sha256 `2f845626…a8c`), whose run ids are named in each row.
   - Five matched their expectations in full.
   - `sda-held-low` and `spi-absent-u5` matched in verdict, and each raised one finding more than written before the run (FEEDBACK §2). Their records, used in B2, are as reported.
+- **S2b:** `campaign`, three more scenarios at the declared 100 pF (3.3, 4.7 and 10 kΩ; `bench/campaign100.jsonl`, `bench/scen/pullup-*-100pf.json`). All three matched their expectations, written before the run from 0.8473·R·C.
 - **S3:** `verify` on the specification, with `baseline-2k2`, `pullup-2200-60pf` and `unwired-47k`. **`pass`, every gate** (ERC, DRC, support, extract, six Kani proofs, build, simulate, campaign, attribute), on this ELF's sha. So `INV-03` holds for it. Its ledger classes the sources below (`AET-WO-3304.FEEDBACK.md` §3).
 
 ## B0. Pins and the board (UM2407 Rev 6, sha256 `b493e14f…a4cd`)
@@ -166,10 +167,10 @@ Status `0x22020000` is OK, `0x22020001` is TXIS, `0x22020005` is RXP and `0x2202
 |---|---|---|---|---|---|---|
 | U7 BMP581 identity | `0x20000008` | `0x2000000c` | `0x22020001` (TXIS) / `0` | twin: S2 `unwired-47k` (`3a5de556…`) and `sda-held-low` (`a0396f68…`), the model's rendering of an absent bus (`AET-WO-2101` S6). **Repeat in kind:** `3302` read TXIS with no device on these pins and this driver | | |
 | U7 configure | `0x20000010` | `0x20000014` | `0x22020001` / `0` | twin, as above | | |
-| U5 ICM identity | `0x20000018` | `0x2000001c` | `0x22020000` (OK) / **not predicted** | twin: S2 `spi-absent-u5` (`5d5029ba…`) gives OK / `0xff`. The `0xff` is Renode's mux dummy byte, a model convention. On silicon a master clocks with no slave, so the status is OK, and the value is whatever the floating PA6 (no pull) reads | | |
+| U5 ICM identity | `0x20000018` | `0x2000001c` | `0x22020000` (OK) / twin `0x000000ff`; silicon value not predicted | twin: S2 `spi-absent-u5` (`5d5029ba…`) gives OK / `0xff`. The `0xff` is Renode's mux dummy byte, a model convention. On silicon a master clocks with no slave, so the status is OK, and the value is whatever the floating PA6 (no pull) reads | | |
 | U5 configure 1, 2, 3 | `0x20000020`, `0x20000028`, `0x20000030` | `+4` each | `0x22020000` / `0` each | twin, as above; silicon, as above | | |
 | U7 data | `0x20000038` | `0x2000003c`, `0x20000040` | `0x22020001` / `0`, `0` | twin, as U7 identity | | |
-| U5 data | `0x20000044` | `0x20000048`, `0x2000004c` | `0x22020000` / **not predicted** | twin `0x0000ffff`, `0xffffffff` (the mux dummy); silicon floats | | |
+| U5 data | `0x20000044` | `0x20000048`, `0x2000004c` | `0x22020000` / twin `0x0000ffff`, `0xffffffff`; silicon value not predicted | twin `0x0000ffff`, `0xffffffff` (the mux dummy); silicon floats | | |
 
 ## B3. The pull-ups
 
@@ -189,6 +190,15 @@ The breakouts carry their own pull-ups; the bench adds none. Read the value off 
 | 4.7 kΩ | 238.939 ns | pass | as 2.2 kΩ | `ea2cf3c4…` |
 | 10 kΩ | 508.376 ns | **fail**: `analog_rise_exceeds_ceiling`, `i2c_timeout` | **all three TXIS** (the model renders the bus absent) | `2125da01…` |
 | any other R | 0.8473 × R × 60 pF (each value above follows it to 0.01 %) | fail above 300 ns | as the row on its side of 300 ns | — |
+
+**The same, at the specification's declared 100 pF** (twin, S2b: `bench/campaign100.jsonl`, all three expectations matched). It applies only if a C0G capacitor per line brings each line to about 100 pF, as `3302`'s optional B6 did. Without one, these are the reference the campaign judges at, not the bench's prediction.
+
+| Pull-up | Rise, 30–70 % | Campaign outcome | U7 records the twin then gives | Run id |
+|---|---|---|---|---|
+| 2.2 kΩ | 186.402 ns | pass | OK `0x50`; OK; OK | S1 |
+| 3.3 kΩ | 279.601 ns | pass | as 2.2 kΩ | `d17d821f…` |
+| 4.7 kΩ | 398.230 ns | **fail**: `analog_rise_exceeds_ceiling`, `i2c_timeout` | all three TXIS | `62bd35c3…` |
+| 10 kΩ | 847.298 ns | **fail**: as 4.7 kΩ | all three TXIS | `a60e68da…` |
 
 **What in these rows can fail:**
 - **The side of 300 ns.** At 60 pF, the crossover is R = 300 ns ÷ (0.8473 × 60 pF) = **5.90 kΩ**:
@@ -443,8 +453,8 @@ Read `$P read --chip STM32H753ZITx b32 0x20000000 20` after the capture.
 | U7 configure | `0x20000010` | `0x20000014` | `0x22020000` / `0x00000000` | twin S1 | | |
 | U5 identity | `0x20000018` | `0x2000001c` | `0x22020000` / `0x00000047` | twin S1 | | |
 | U5 configure 1–3 | `0x20000020`, `28`, `30` | `+4` each | `0x22020000` / `0` each | twin S1 | | |
-| U7 data | `0x20000038` | `0x2000003c`, `0x20000040` | `0x22020000` / `0x0000t0t1`, `0xt2p0p1p2`: framing only (the twin: `0x00000000`, `0x1940f362`, its stimulus) | twin S1 (status); value not predicted | | |
-| U5 data | `0x20000044` | `0x20000048`, `0x2000004c` | `0x22020000` / `0x0000d0d1`, `0xd2d3d4d5`: framing only (the twin: `0x00001202`, `0x00000040`) | twin S1 (status); value not predicted | | |
+| U7 data | `0x20000038` | `0x2000003c`, `0x20000040` | `0x22020000` / `0x0000t0t1`, `0xt2p0p1p2`: framing only (the twin: `0x00000000`, `0x1940f362`, its stimulus) | twin S1 (status and the twin's value); silicon value not predicted | | |
+| U5 data | `0x20000044` | `0x20000048`, `0x2000004c` | `0x22020000` / `0x0000d0d1`, `0xd2d3d4d5`: framing only (the twin: `0x00001202`, `0x00000040`) | twin S1 (status and the twin's value); silicon value not predicted | | |
 
 The record words and the decoded bytes must agree with each other, byte for byte. That is a check of the bench itself, not of the twin.
 
@@ -472,7 +482,7 @@ Read on the analyzer (in PulseView, from the same `.sr` file) or with the scope.
 | SPI SCK frequency | **2.000 MHz** at HSI's 64 MHz (/32); **1.948 to 2.030 MHz** over HSI's tolerance (−25,894 / +14,984 ppm) | **rule:** the solved `MBR` 4, judged by `silicon::check_spi` (`achieved_max_hz` 2,029,968 ≤ 4 MHz declared) | analyzer: 6 samples per half-period, so average over a byte's 8 clocks; scope for the figure | |
 | SPI mode | `CPOL` 0, `CPHA` 0: **SCK is low whenever CS is high** | **rule** (S3's ledger: `CFG2.CPOL` and `CPHA` independent-rule; the part's mode by `validate`'s `SpiModeNotDriven`) | — | |
 | Wait between U5 configure 3 (CS rises) and U7 data (Start) | **≥ 20.0 ms** | **generator:** 1,299,180 spins of at least one core cycle at ≤ 64.958976 MHz. S3's ledger classes it `silicon-only` (`WAIT.U5`, `WAIT.U7`). Not judged: silicon's cycles per spin (flash wait states, no I-cache at reset) can make it several times longer. Only the lower bound is claimed | ±42 ns | |
-| Every other gap (between the first six transactions; between the two data reads) | **not predicted** | the twin pins none (every trace event of S1 carries the run's end time) | — | |
+| Every other gap (between the first six transactions; between the two data reads) | twin: none recorded; silicon: **not predicted** | S1 records one time only, the boot word at 39.039070 ms virtual (a 100 MIPS convention); every trace event carries the run's end time | — | |
 
 **The decoder cannot see the mode.** It samples on the rising edge in both mode 0 and mode 3, so a bus running mode 3 decodes to the same bytes, and B5's SPI lines would call it agreement. Only this row's idle level and B2's `CFG2` row can show the mode.
 
