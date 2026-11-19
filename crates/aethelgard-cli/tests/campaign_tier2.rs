@@ -1144,12 +1144,6 @@ fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
 
 // ---------------------------------------------------------------- AET-WO-4202
 
-/// The nanoseconds Renode 1.17.0 runs for a `RunFor` of `0.<decimals>`, as
-/// its `TimeInterval.TryParse` computes them: through a double, truncated.
-fn renode_runs(decimals: &str) -> u64 {
-    (format!("0.{decimals}").parse::<f64>().unwrap() * 1e9) as u64
-}
-
 /// `AET-WO-4202`: the bench's `droop-bor3` on Sentinel-01 as committed, its
 /// droop 50 ns later, so the brown-out reset falls on 1,018,380 ns, which
 /// the nine-digit form `"0.001018380"` runs 1 ns short. Before the fix every
@@ -1208,7 +1202,8 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
     assert_eq!(run["expect"], scenario["expect"], "{run}");
     assert_eq!(run["verdict"], scenario["expect"], "{run}");
     assert_eq!(run["matched"], true, "the scenario's own counts: {run}");
-    // Not vacuous: the reset was asserted where the nine-digit form runs short.
+    // Not vacuous: the reset was asserted at the instant whose nine-digit
+    // form Renode runs 1 ns short (step (e) of the recipe test measures it).
     let asserted: Vec<u64> = records(&run_dir(run))
         .iter()
         .filter_map(|r| match r {
@@ -1220,14 +1215,7 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
             _ => None,
         })
         .collect();
-    assert_eq!(asserted.len(), 1, "{asserted:?}");
-    assert!(asserted[0] < 1_000_000_000);
-    assert_eq!(
-        renode_runs(&format!("{:09}", asserted[0])),
-        asserted[0] - 1,
-        "the reset at {} ns is one the nine-digit form runs 1 ns short",
-        asserted[0]
-    );
+    assert_eq!(asserted, [1_018_380]);
     let replayed: Vec<(Option<i32>, String)> = (0..2)
         .map(|_| aethelgard(&["replay", "--archive", &s(&run_dir(run))]))
         .collect();

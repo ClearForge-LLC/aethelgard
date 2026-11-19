@@ -206,7 +206,7 @@ Sentinel-02's own-board tier-2 reads are moved to the new truth: `twin_tier2`'s 
 | **An orphan U2 (R)** | No `U2` or `BME280` (any case) in either moved specification, nor in any output of either board: schematic, board, BOM, generated crate and `.repl`, hwdef, solve, foreign verdicts. No load row names U2. |
 | **A renumbered designator** (ruled (a)) | M-swap (R6↔R7) and M-boot0 (R7→R8, BOOT0's strap) are killed by `each_load_row_s_resistor_is_the_part_its_row_describes`. |
 | **A check deleted rather than moved** | `foreign-judge.sh`: U2's identity and data checks go, and every U4, U5 and U7 check stays. The IMU-less run's I2C witness moves from U2 to U7. `twin_tier2` keeps every U7 step. |
-| **An expectation read from what is judged (`INV-07`)** | The regression's expectation is the bench scenario's own `expect` and `expect_counts`; only `start_ns` moves. Its precondition (the reset lands where the nine-digit form truncates) is checked by Renode's parse, not by the run's verdict. The re-pins are geometry the run produces, re-pinned only under ruling (a), each with its before. |
+| **An expectation read from what is judged (`INV-07`)** | The regression's expectation is the bench scenario's own `expect` and `expect_counts`; only `start_ns` moves. Its precondition pins the reset at 1,018,380 ns, the instant the recipe test's step (e) measures Renode running 1 ns short. It is checked against the trace, not the run's verdict. The re-pins are geometry the run produces, re-pinned only under ruling (a), each with its before. |
 
 ## 4. Findings
 
@@ -217,3 +217,9 @@ Sentinel-02's own-board tier-2 reads are moved to the new truth: `twin_tier2`'s 
 - **F5. The regression test deviates from the WO's wording.** It uses Sentinel-01 as committed with the bench droop 50 ns later, not Sentinel-01 with U2 a BMP581: that variant fails its own expectation by F1 once the stamp is fixed. The shifted droop lands the reset on the same lossy instant (1,018,380 ns) on the board as ordered.
 - **F6. The placer is not monotone in parts.** Removing U2 grew the turned-IMU variant (forward) from fitting to 103.5 mm wide (§2.4).
 - **F7. Locally, the foreign judge's memory reached 1005–1007‰ of its 1 GiB bound once each, on main and on the branch** (`memory_cap_exceeded`). Three like-for-like runs each then measured 763–789‰. This is a Furnace load effect; CI's runs are the evidence (`4400g` F1: 773–800‰).
+
+## 5. Gates and the reduction pass
+
+- **Reduction pass (diff): −12 net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 1 finding below.**
+  - **Removed:** `campaign_tier2`'s own copy of Renode's parse. The tier-1 test owns that model and step (e) measures it in Renode. The regression now pins the reset instant (1,018,380 ns) instead. M1 still kills the regression, which fails before that line.
+  - **Finding:** `campaign_tier2.rs` keeps its own `run_for` (the nine-digit form) for the `2301` recipe harness, a copy of the CLI's private function, which a test binary cannot reach. Every value it renders (1 ms, 10 ns, 10 µs, 100 µs) parses exactly, so it is stale but harmless. Left for the gate pass.
