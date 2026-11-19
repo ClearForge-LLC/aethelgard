@@ -38,6 +38,7 @@
 | counted run | head | `tools` green, min | all done, min | build job, s | shard setup, s | shard test, s | max queue, s | runner-min | tier 2 |
 |---|---|---|---|---|---|---|---|---|---|
 | 1 (44629224488) | `d87febc8` | 29.8 | 29.8 | 258 | 87–234 | 671–1352 | 48 | 227 | 190 (floor 190) |
+| 2 (44633982718) | `b9572ce0` (reduction pass) | 38.9 | 38.9 | 318 | 87–278 | 654–1451 | 203 | 242 | 190 (floor 190) |
 
 ## Reduction pass (diff, a fresh subagent's proposals, `~/.cache/aet-1911/reduction`)
 
