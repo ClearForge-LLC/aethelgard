@@ -95,3 +95,82 @@ P1–P5 hold. The label rule, configure only, fc-base with `FLASH_CS` relabelled
   - ArduPilot's RC input inverts RX only (`AP_RCProtocol.cpp:330-334`), and the ruled RC rule leaves RXINV to it and requires TXINV clear.
   - The generator already names that divergence in the header (F3, #189).
   - So the rule needs nothing the specification cannot state. It does keep ArduPilot's choice for TX. That is recorded as decision D2 (§6), not a stop.
+
+## 3. What was built
+
+- **The judge** (`aethelgard-pincheck/src/identity.rs`, `serial_settings`, beside `serial_ports`). It reads `hwdef.h` and holds each port against the topology's `role` and `framing.inverted`. Its tables are its own, labelled `belt-and-suspenders:` (`RUL-20`), and it shares no code with the generator.
+  - **`SERIAL_PROTOCOLS`:** all 51 `SerialProtocol` names, `AP_SerialManager.h:37-91`.
+  - **`DEFAULT_PROTOCOLS`:** the per-n `#ifndef` defaults, `AP_SerialManager.cpp:47-152`.
+  - **The option bits:** `UARTDriver.h:90-102`.
+- **What it reads, exactly as §1.2 asks:**
+  - SERIAL0's protocol is never read. A console declared inverted is a finding, because SERIAL0 has no options parameter.
+  - SERIAL1–9's protocol is the define, else the default for its n, and must equal the role's exactly.
+  - Options are the define, else 0, on 1–6 and 9; SERIAL7 and 8 are 0 whatever the define says, and the define is not read.
+  - A non-RC port must have RXINV and TXINV exactly when it is inverted, and no other bit. An RC port may have RXINV and no other bit.
+  - At most one port may compile as RCIN.
+- **Findings** (`check: "identity"`):
+  - `WrongSerialProtocol`;
+  - `WrongSerialOptions`;
+  - `RcInputTwice`;
+  - `MissingSerialParameters`: a topology port past SERIAL9, which no ArduPilot parameter covers. It cannot occur on an H753, which has nine U(S)ARTs; `INV-06` names it rather than skip it.
+- **Refusals** (`MalformedHeader`, by macro name, `INV-06`):
+  - a protocol that is neither a C integer constant (read as GCC does: hex, octal, `U`/`L`) nor one of the table's names;
+  - a name defined as a macro;
+  - a `HAL_HAVE_SERIALn_PARAMS` other than `1`, or one defined twice.
+  - The reader's existing refusals cover the rest: a conditional, `#undef`, `#pragma`, a second definition.
+- **The generator** (`aethelgard-hwdef/src/lib.rs`):
+  - **`LabelTakesAfPrefix`**, beside `LabelCollision`. ArduPilot's 14 `af_labels` are copied once and cited (`chibios_hwdef.py:33`), and the test is case-sensitive.
+  - **SERIAL7 and SERIAL8 emit no `_OPTIONS`.** `not_emitted` names the omission, so the header and the CLI's report carry it.
+  - **The "Serial pulls" header sentence** appears only on a board with a `DEFAULT_SERIALn_PROTOCOL`, which is SERIAL1 or later, so no committed golden moves.
+- **`generate.rs`:** the keyword test holds 26 exact `(define, AP_SerialManager.cpp line)` pairs in place of a pattern over n.
+- **The four fixture headers:** rewritten as §1.5 asks, comment lines only (§4).
+- **READMEs:**
+  - pincheck: what is judged; the residual (read from `hwdef.h`, not the ELF); CR2 read at source;
+  - cli: L134 gains `LabelTakesAfPrefix`; L520 gains protocol and options;
+  - hwdef: the SERIAL7/8 omission, the run-time pull-ups, the refusal, and what judges it.
+- **No CLI source changed.**
+
+## 4. §2 acceptance [measured]
+
+**Each §1.1 (c) mutation is refused by name, and the bases pass.** This branch's binary (`66b10879`) runs on the boards of §2.3:
+
+| board | `main` | this branch |
+|---|---|---|
+| fc-base | exit 0 | **exit 0** |
+| adv-proto-swap | exit 0 | exit 1: `WrongSerialProtocol SERIAL1` (expected GPS (5), runs RCIN (23)), `WrongSerialProtocol SERIAL2` (expected RCIN (23), runs GPS (5)) |
+| adv-opt-swap | exit 0 | exit 1: `WrongSerialOptions SERIAL1` (none, 0x8) |
+| adv-opt-inv | exit 0 | exit 1: `WrongSerialOptions SERIAL1` (none, 0x3) |
+| adv-proto-del1 | exit 0 | exit 1: `WrongSerialProtocol SERIAL1` (GPS, runs MAVLink2) |
+| fc-mav3 | exit 0 | **exit 0** |
+| adv-proto-del3 | exit 0 | exit 1: `WrongSerialProtocol SERIAL3` (MAVLink2, runs GPS) |
+| lab-lower (`spi_cs`) | exit 0 | exit 0 |
+| eight (8 ports, SERIAL7 with no `_OPTIONS`) | exit 0 | **exit 0**; `hwdef.h` and var_info: `7_PROTOCOL=2`, `7_OPTIONS=0` |
+| eight-opt7 (`DEFAULT_SERIAL7_OPTIONS 8` added) | exit 0 | **exit 0**; var_info `7_OPTIONS=0`, so ArduPilot ignores the define |
+| eight-opt6 (`DEFAULT_SERIAL6_OPTIONS 0` → 8) | exit 0 | exit 1: `WrongSerialOptions SERIAL6` (none, 0x8); var_info `6_OPTIONS=8` |
+
+P6 holds exactly.
+
+**CI's pinout step, reproduced locally.** The pinned image built the four hand boards (fixtures with the new headers) and the three generated boards (from this branch's `generate hwdef`). Then `container/ardupilot-pinout.sh` ran unchanged, with `main`'s binary and with this branch's:
+- the script exits **0** with both;
+- the four hand boards keep exactly the findings the script expects;
+- the three generated boards exit 0 with `identity: judged`.
+
+The hand boards' topology has a console only, so the judge reads nothing new there.
+
+**Goldens are byte-identical.**
+- `solve` and `generate hwdef` from this branch, `cmp` against `crates/aethelgard-hwdef/tests/fixtures/`, are byte-identical for `sentinel-01`, `sentinel-02` and `serial-dshot-9600`, in both `hwdef.dat` and `topology.json`.
+- `generate.rs`'s `each_board_generates_its_committed_file` and `hwdef_tier1.rs`'s `each_ci_board_generates_its_committed_file` pass.
+- No topology fixture changed (`git diff --stat cd43b207` lists none).
+
+**The label rule, measured once against ArduPilot.** Each of the 14 prefixes, on `SPI_FLASH_CS` and its siblings, is refused at configure (§2.3). The generator now refuses each first:
+- in `generate.rs`, per prefix, at the generator;
+- in `hwdef_tier1.rs`, per prefix, through `generate hwdef`: exit 2, `LabelTakesAfPrefix`, the net as `id`, no file.
+
+Lower-case `spi_cs` builds in ArduPilot and generates.
+
+**The fixture diff is comment lines only.** `git diff -U0 cd43b207 -- crates/aethelgard-pincheck/fixtures/` gives no `+` or `-` line that does not start with `#`. Nothing reads the header bytes:
+- `git grep` finds only the CI jobs that copy the files into ArduPilot's build, `ardupilot-build.sh d4`, and `step-g.allow.json`'s readers;
+- no digest, size or line count is pinned;
+- ArduPilot drops comment lines (`hwdef.py:209`).
+
+**Unchanged:** `the_generator_calls_none_of_the_check_s_rules` and `pincheck/tests/separation.rs` pass, and neither file was edited.
