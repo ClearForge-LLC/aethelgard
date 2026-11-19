@@ -101,6 +101,28 @@ The datasheet rows were read by a research subagent from TI's PDFs and from dist
 
 Exit codes: `cli/src/main.rs` L47–59. Classes per §1.4. A miss is marked **MISS**.
 
+### Every (specification, step), accounted for
+
+Each cell is the step's exit code from `spike/4600/out/<spec>/rows.tsv`. `prove` shows the worst of its harnesses.
+- **`nr`** is `not_run`: the step needs an output (an emitted board, a generated crate, a topology, an archived run) that a refused step did not make, as §1.3 rules. Its row names the step it needed.
+- **`·`** marks a stage-2 row: only the steps the acknowledgements change were re-run.
+- **No pair is missing.**
+
+| spec | validate | solve | emit | erc | drc | support | speeds | extract | generate | build | prove | simulate | campaign | replay | attribute | verify | verify-fab | hwdef | pinout |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| driver | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 3 |
+| driver, stage 2 | 0 | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | 0 | · | · |
+| logger | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 143 | 0 | 1 | 0 | 0 | 0 | 2 | 0 | 3 |
+| logger, stage 2 | 0 | · | · | · | · | · | · | · | · | · | · | · | · | · | · | · | 1 | · | · |
+| driver-idle-zero | 2 | 2 | 2 | nr | nr | nr | 2 | nr | 2 | nr | nr | nr | nr | nr | nr | 2 | nr | nr | nr |
+| logger-1s | 2 | 2 | 2 | nr | nr | nr | 2 | nr | 2 | nr | nr | nr | nr | nr | nr | 2 | nr | nr | nr |
+| logger-1s-u50 | 2 | 2 | 2 | nr | nr | nr | 2 | nr | 2 | nr | nr | nr | nr | nr | nr | 2 | nr | nr | nr |
+| logger-i2c-only | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 2 | 0 | 3 |
+| logger-spi-only | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | 0 | 0 | killed-900 | 0 | 1 | 0 | 0 | 2 | 2 | 2 | 3 |
+| logger-spi-only-cap | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 | 2 | 2 | 3 |
+| logger-offboard | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 | 2 | 0 | 3 |
+| driver-tree | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 2 | nr | nr | 0 | 2 | 0 | 3 |
+
 ### M — `driver.json` (stage 1, spec `12431afa…`)
 
 | Step | Predicted | Measured (exit · verdict/kind · wall · peak) | Where it arises | Class |
