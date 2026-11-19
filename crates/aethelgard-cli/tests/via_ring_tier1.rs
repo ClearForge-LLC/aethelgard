@@ -115,13 +115,15 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden (measured at `AET-WO-1314`): the last rung,
-    // bounded nets first at a via cost of 320, nearest at IMU_SCK
-    assert_eq!(ladder["rung"], 7, "{ladder}");
-    assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
+    // the fixture's golden, measured at `AET-WO-1315` (C1 drawn, the board
+    // re-placed; FEEDBACK §2): rung 5, bounded nets first at a via cost of
+    // 48, nearest at I2C_SCL. At `AET-WO-1314` it was the last rung (7, cost
+    // 320), nearest at IMU_SCK, 24 945 fF of 30 000.
+    assert_eq!(ladder["rung"], 5, "{ladder}");
+    assert_eq!(ladder["bounded_via_cost"], 48, "{ladder}");
     assert_eq!(ladder["bounded_first"], true, "{ladder}");
-    assert_eq!(margin["net"], "IMU_SCK", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 24_945, "{ladder}");
+    assert_eq!(margin["net"], "I2C_SCL", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 74_937, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");
@@ -275,4 +277,52 @@ fn a_board_extract_cannot_judge_is_routed_as_today_and_named() {
     ]);
     assert_eq!(code, 2, "{v}");
     assert_eq!(v["error"]["kind"], "TranslatorPinUnbounded", "{v}");
+}
+
+/// `AET-WO-1315` §1.6: every production reader of a board refuses a
+/// specification whose `fab_tolerances` block lacks a field the ring rule
+/// needs, as `emit` does, and never reads the board with the engine's via
+/// instead (`Stack::of`). The refusal comes before any tool is looked for.
+#[test]
+fn every_reader_of_a_board_refuses_a_partial_tolerance_block_by_name() {
+    let (code, r, board) = s03_emitted();
+    assert_eq!(*code, 0, "{r}");
+    let board = board.as_ref().unwrap();
+    let schematic = board.with_extension("kicad_sch");
+    let mut v = s03();
+    v["board"]["stackup"]["fab_tolerances"]
+        .as_object_mut()
+        .unwrap()
+        .remove("via_ring_um");
+    let spec = write("partial-readers", &v);
+    let (board, schematic, spec) = (
+        board.to_str().unwrap(),
+        schematic.to_str().unwrap(),
+        spec.to_str().unwrap(),
+    );
+    for args in [
+        vec!["check", "drc", "--board", board, "--spec", spec],
+        vec![
+            "check",
+            "support",
+            "--schematic",
+            schematic,
+            "--board",
+            board,
+            "--spec",
+            spec,
+        ],
+        vec!["extract", "--board", board, "--spec", spec],
+    ] {
+        let (code, r) = run(&args);
+        assert_eq!(code, 2, "{args:?}: {r}");
+        assert_eq!(
+            r["error"]["kind"], "FabToleranceUndeclared",
+            "{args:?}: {r}"
+        );
+        assert_eq!(
+            r["error"]["id"], "board.stackup.fab_tolerances.via_ring_um",
+            "{args:?}: {r}"
+        );
+    }
 }

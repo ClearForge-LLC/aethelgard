@@ -79,7 +79,7 @@ fn emitted(d: &Dir) -> String {
 fn stack() -> Stack {
     let spec: aethelgard_ir::Specification =
         serde_json::from_slice(&fs::read(example("sentinel-01-minimal.json")).unwrap()).unwrap();
-    Stack::of(&spec)
+    Stack::of(&spec).unwrap()
 }
 
 fn read(board: &str) -> (route::Board, route::Routed) {
