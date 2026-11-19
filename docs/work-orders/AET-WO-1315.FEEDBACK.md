@@ -2,12 +2,13 @@
 
 Labels: **[measured]** by a run named beside it; **[read]** at the source named beside it; **[inferred]** from arithmetic or reasoning.
 
-## Status: built; READY waits on one ruling, D1 (§4)
+## Status: READY (D1 ruled (a) by the architect, 2026-11-19 16:30Z)
 
 - **Everything in §1 is built.** The hot-plug bulk capacitor is drawn, placed and judged by the loop gate. Each control pin is drawn from its declaration. The hot-plug reference is claimed. The verdict no longer says "not drawn". `Stack::of` refuses a partial tolerance block at every reader.
 - **Every board without a power tree is byte-identical to `main`.** That covers 34 of the 36 specifications, Sentinel-01 among them; Sentinel-01's package is covered in §3.2.
 - **The two power boards pass every gate inside their bounds** [measured, tier 2 in the image].
-- **D1, decision needed (§4).** Drawing C1 where §1.3 says (in U10's group) reshapes Sentinel-03's placement: 85.25 × 80.95 becomes **96.50 × 69.35 mm**. Every size sample of 2 to 6 characters, which `main` places, is now refused `OutlineUnreachable`. The cause is the anchor, not its distance bound. Reported to the architect on the bus.
+- **D1, ruled (a): C1 stays anchored to U10.** Drawing it where §1.3 says reshapes Sentinel-03's placement, from 85.25 × 80.95 to **96.50 × 69.35 mm**. The cost is recorded as F6. An anchored C1 is judged by a loop rule (9.852 mm against 10.0); an unanchored one would sit about 17 mm away, judged by nothing. The pass branch of the size samples is pinned at 1 character (§3.4).
+- **`main` `47ec18f6` (1910) is merged in.** The one conflict was `power_board_tier1`'s shared emit, now with `Stack::of(spec).unwrap()`.
 - **No schema change, no stop condition hit.** `aethelgard-ir` moved only inside the carve-out (§2.5).
 
 ## 0. Prediction (§1.0), committed before the first run of the new emitter
@@ -157,13 +158,14 @@ PACKAGE-RESULT
 | `outline_tier1` `FIXTURE_PLACEMENT_SHA256` | `5e30de78…` | `9b83d120…` | tier 1, from the failing assertion's `left` |
 | `via_ring_tier1` ladder golden | rung 7, cost 320, IMU_SCK 24 945 fF | rung 5, cost 48, I2C_SCL 74 937 fF | `emit`'s `capacitance_ladder`, both binaries |
 | `ANSWER 1313c-fixture` (stderr, not pinned) | 85.25 × 80.95, 9.2 pF | 96.50 × 69.35, 8.6 pF | tier 2 |
+| `outline_tier1` `each_size_sample_…` | 2, 6, 8 each placed or refused | 1 places at 98.80 × 70.35 mm (pinned); 2, 6, 8 refused | tier 1 |
 | `ANSWER 1313c-size` 2, 6, 8 (stderr) | `extract` refused (−5.1 pF), pass (5.4 pF), `OutlineUnreachable` | all `OutlineUnreachable` | tier 2 |
 
 The ladder's smallest relative margin improves, from 16.9 % to 25.1 %. `extract`'s least absolute slack falls from 9.2 to 8.6 pF. These are two different measures: one relative, one absolute.
 
 ## 4. Decisions
 
-### D1 · decision needed: the anchor costs Sentinel-03 its size headroom
+### D1 · ruled (a), accept as built: the anchor costs Sentinel-03 its size headroom
 
 **Measured** (`emit` under the fixture's own 100 × 100 mm bound, host release binaries; the in-image tier-2 tests agree):
 
@@ -188,7 +190,7 @@ The ladder's smallest relative margin improves, from 16.9 % to 25.1 %. `extract`
 - (b) Draw C1 unanchored on every board: the headroom stays as on `main`, and C1's distance is not judged.
 - (c) Teach `pcb.rs` to place a large anchored passive. That is outside this fence and was not tried.
 
-**Recommended (a), the loss recorded.** It is the placement the WO specified, and the committed board passes every gate. Reported on the bus to the architect.
+**Ruled (a)** (architect, 2026-11-19 16:30Z, the bus): honesty over headroom. The cost is F6; option (c) becomes a §7.1 row, the architect's.
 
 ### Forks taken (each for the architect to overturn)
 
@@ -207,6 +209,13 @@ The ladder's smallest relative margin improves, from 16.9 % to 25.1 %. `extract`
 - **F5 · Reduction findings outside scope:**
   - `solved()` is copied in `bench_tier1`, `outline_tier1` and `orientation_tier1`; `hot_plug_tier1` adds a fourth, and `power_board_tier1`'s `full()` a fifth body. One `tests/common` helper would remove about 22 lines.
   - The path of `sentinel-02-power.json` is re-derived in `power_board_tier1` (twice), `board_tier2`, `common::power` and `hot_plug_tier1`.
+
+- **F6 · the cost of D1 (a), recorded as ruled:**
+  - Sentinel-03's x headroom under its 100 × 100 mm bound goes from 14.75 to 3.5 mm.
+  - Size samples of 2 to 8 characters now refuse `OutlineUnreachable`; on `main`, 2 to 6 placed.
+  - The fixture and the 1-character sample still pass. `outline_tier1`'s `each_size_sample_…` pins the 1-character sample's outline (98.80 × 70.35 mm) so the pass branch stays tested.
+  - `board_tier2`'s `each_size_sample_…` (2, 6, 8) now exercises only its refusal branch. Adding 1 there would add a full gate run, and with it a weight row, which is 1911's.
+  - A placer that packs a large anchored passive better (option (c)) is the architect's §7.1 row.
 
 ## 6. Adversarial pass (§5) and mutants
 

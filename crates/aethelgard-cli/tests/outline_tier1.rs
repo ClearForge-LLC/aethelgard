@@ -421,25 +421,32 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// not the method's, so no size is promised: each sample either places
 /// inside the bound with every placer gap kept (its gates are tier 2's), or
 /// is refused by name, writing nothing.
+///
+/// `AET-WO-1315` (ruled (a), C1 anchored to U10): 1 character places, at its
+/// measured outline, so the pass branch stays exercised; 2, 6 and 8 are
+/// refused (the x headroom fell from 14.75 to 3.5 mm, its FEEDBACK D1).
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
-    for len in [2, 6, 8] {
+    for (len, placed) in [
+        (1, Some((98_800_000, 70_350_000))),
+        (2, None),
+        (6, None),
+        (8, None),
+    ] {
         let v = rename::sized(&fixture(), len);
         let (spec, solved, table) = solved(&v);
-        match schematic::emit(&spec, &solved, &table) {
-            Ok(e) => {
+        match (schematic::emit(&spec, &solved, &table), placed) {
+            (Ok(e), Some(outline)) => {
                 let o = outline_nm(&e.board);
-                assert!(
-                    o.x1 - o.x0 <= 100_000_000 && o.y1 - o.y0 <= 100_000_000,
-                    "{len}: {o:?}"
-                );
+                assert_eq!((o.x1 - o.x0, o.y1 - o.y0), outline, "{len}");
                 assert_gaps(&e);
                 assert_loops(&spec, &solved, &table, &e.board);
             }
-            Err(e) => assert!(
+            (Err(e), None) => assert!(
                 matches!(e.kind(), "OutlineUnreachable" | "OutlineTooSmall"),
                 "{len}: {e}"
             ),
+            (r, _) => panic!("{len}: {:?}", r.map(|e| outline_nm(&e.board))),
         }
     }
 }
