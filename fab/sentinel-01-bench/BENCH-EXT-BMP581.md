@@ -34,7 +34,7 @@ echo "a60306c9ac32fbbf13bea1e610c546c94307bd04b080166651fef9953febb761  sentinel
   - **With the ordered package's five scenarios** (`pullup-3k3`, `droop-bor3`, `spi-absent-u4`, `pullup-2k2`, `serial-rx-open-console`, each copied with its `base` pointed at this specification and nothing else changed): **refused** at the campaign, exit 5, no verdict. `droop-bor3` alone refuses the same way: the twin stamps the console injection after the brown-out reboot at 20,855,539 ns where its count places it at 20,855,540 ns. That is `4201`'s fault (a BMP581 through `droop-bor3` is stamped 1 ns early, #237), a roadmap §7.1 row in `4400g`'s area; the twin was not touched. The ordered ELF passes the same scenario (the package's verdict).
   - **With the other four:** verdict **`fail`**, on one gate. **`extract` fails:** `SPI_MOSI`'s bound is 47.4 pF (trace 17.2, vias 19.7, pads 2.5, pins 8.0) against the declared 30 pF. ERC, DRC, support, all eight proofs, build, simulate, both `attribute` runs and the campaign pass; all four scenarios matched their expectations (`pullup-3k3` and `pullup-2k2` pass; `spi-absent-u4` and `serial-rx-open-console` fail as expected). None of the four touches EXT or U5: they move SENSORS' pull-up, remove U4 and open the console's RX. Only `droop-bor3` reached U5, and it is the one refused. Verdict `bench/verify-verdict.json`, sha256 `a9245654…4bdb`, ELF `a60306c9…`, topology `0c60dc20…`.
   - **What the failure is about** [measured: `extract` on each specification's emitted board]: with U5 as an on-board footprint, the board is placed and routed differently. Its SPI_MOSI is 49.9 mm and 47.4 pF, against 20.9 mm and 24.6 pF on the ordered board's emitted copper (whose input sha256 `401b9e1e…` is the one the package's verdict judged). That board was never made. The ordered board's `extract` passes (the package's verdict), and the ELF does not depend on the copper. So the failure says nothing about the ordered boards, and nothing about this ELF on them.
-  - **What it does mean:** this ELF has no passing `verify` verdict. Whether it goes to the bench anyway is the architect's call (`AET-WO-3403.FEEDBACK.md` §3). The clean route to a passing verdict is the review's U3 (b), a device declared behind a connector, which is engine work.
+  - **So, plainly: this specification's `verify` verdict fails,** because its `extract` judges copper that does not exist, and its campaign cannot run `droop-bor3`, the known BMP581 twin fault (`4201`). **The verdict that judges the copper on the bench is the ordered package's** (`package/MANIFEST.json`). What comes to the bench from this specification is its ELF, and its solved topology equals the ordered one in every assignment, timing, clock and pin speed. Ruled by the architect (D1, accept), 2026-11-19. A specification that names the breakout behind J4 and passes is the review's U3 (b), engine work.
 
 **After this sheet, flash the ordered ELF back** (`BENCH.md` B1): every row of `BENCH.md` assumes `package/sentinel-01-bench.elf`.
 
@@ -59,11 +59,13 @@ $P read  --chip STM32H753ZITx b32 0x40005818 1
 
 `ISR & 0x00008030` reads `0x00000020` at the address that answers (ACK) and `0x00000030` at the one that does not (`NACKF`): RM0433 Rev 9 p. 1975, as `BENCH.md` B9. **Exactly one of the two should answer.** `probe-rs`'s `write` syntax was not run on Furnace: check `--help` first.
 
-**`3304`'s Nucleo wiring tied this breakout's SDO to GND (`0x46`).** If it is still wired that way, undo it: here SDO is left to the breakout's strap or tied high.
+**Read the strap before power, and record it.** The specification addresses `0x47` (ruled by the architect, D2: the common breakouts' default). `3304`'s Nucleo sheet assumed SDO to GND (`0x46`), so this breakout may be strapped that way. **Both straps are predicted:**
+- **SDO high, `0x47`:** the probe above ACKs at `0x47`, and §3's records and §4's decode are the `0x47` case.
+- **SDO low, `0x46`:** the probe ACKs at `0x46` only, and the bench ELF's three U5 transfers are NACKed at `0x47`: §3's "SDO low" column, and the decoder shows `Start`, `Write`, `Address write: 47`, `NACK`, `Stop` three times.
 
-**If `0x46` answers,** do not edit the specification at the bench. Move the breakout to `0x47` by its maker's strap (Adafruit: leave SDO unconnected and the `addr` jumper open; a breakout with SDO free: SDO to its supply pad). If that is not possible, run as is and record it: every U5 record below then reads TXIS (`0x22020001`), and the decoder shows `Address write: 47`, `NACK`, `Stop` three times.
+Do not edit the specification at the bench. Either strap is a result.
 
-Breakout (maker, name, revision): ________ · `0x47` ISR: ________ · `0x46` ISR: ________
+Breakout (maker, name, revision): ________ · SDO strap, read before power (high / low): ________ · `0x47` ISR: ________ · `0x46` ISR: ________
 
 ### 2.2 The pull-ups and the load
 
@@ -139,18 +141,20 @@ $P read  --chip STM32H753ZITx b32 0x20000000 13
 
 The layout is the generated `main.rs`'s (`record(at, words, …)`): status at the word named, value in the words after it, most significant first. Status `0x22020000` is OK, `0x22020001` is TXIS (address unanswered).
 
-| Word | Address | What | Predicted on the bench (U2 empty, U5 at `0x47`) | Source | Bench |
-|---|---|---|---|---|---|
-| 0 | `0x20000000` | boot word | `0x2100B007` | twin (S1) | |
-| 1 | `0x20000004` | `FLASH_OPTSR_CUR` | bits 3:2 = `11` after `BENCH.md` B3 | as `BENCH.md` B3 | |
-| 2, 3 | `0x20000008`, `0x2000000C` | U2 identity (I2C1, `0x76`, register `0xD0`) | `0x22020001` / `0x00000000` | generator and RM0433 (`BENCH.md`, "U2 empty"); **repeat in kind** (`3302`). The twin's S1 read `0x60` because its U2 is fitted | |
-| 4, 5 | `0x20000010`, `0x20000014` | U5 identity (I2C2, `0x47`, register `0x01`) | `0x22020000` / `0x00000050` | twin (S1: `read 0x01 -> 0x50`); the BMP581's chip ID | |
-| 6, 7 | `0x20000018`, `0x2000001C` | U5 configure (write `0x36` ← `0x40 0x81`) | `0x22020000` / `0x00000000` | twin (S1: `write 0x36 <- 0x40 0x81`) | |
-| 8, 9 | `0x20000020`, `0x20000024` | U4 identity (SPI1, `0x9F`) | `0x22020000` / `0x00EF4017` | twin; Winbond (`BENCH.md` B4). **Its address differs from the ordered ELF's** (`0x20000010`) | |
-| 10 | `0x20000028` | U5 data status (6 bytes from `0x1D`, after the 10 ms wait) | `0x22020000` | twin (S1) | |
-| 11, 12 | `0x2000002C`, `0x20000030` | U5 data value | **not predicted:** the bench reads the room. The twin's stimulus gives `0x00000000`, `0x1940F362` (25 °C, 101,325 Pa) | twin's value is its stimulus | |
+| Word | Address | What | Predicted, SDO high (`0x47`) | Predicted, SDO low (`0x46`) | Source | Bench |
+|---|---|---|---|---|---|---|
+| 0 | `0x20000000` | boot word | `0x2100B007` | `0x2100B007` | twin (S1) | |
+| 1 | `0x20000004` | `FLASH_OPTSR_CUR` | bits 3:2 = `11` after `BENCH.md` B3 | the same | as `BENCH.md` B3 | |
+| 2, 3 | `0x20000008`, `0x2000000C` | U2 identity (I2C1, `0x76`, register `0xD0`) | `0x22020001` / `0x00000000` | the same | generator and RM0433 (`BENCH.md`, "U2 empty"); **repeat in kind** (`3302`). The twin's S1 read `0x60` because its U2 is fitted | |
+| 4, 5 | `0x20000010`, `0x20000014` | U5 identity (I2C2, `0x47`, register `0x01`) | `0x22020000` / `0x00000050` | `0x22020001` / `0x00000000` (TXIS) | twin (S1: `read 0x01 -> 0x50`); the BMP581's chip ID | |
+| 6, 7 | `0x20000018`, `0x2000001C` | U5 configure (write `0x36` ← `0x40 0x81`) | `0x22020000` / `0x00000000` | `0x22020001` / `0x00000000` | twin (S1: `write 0x36 <- 0x40 0x81`) | |
+| 8, 9 | `0x20000020`, `0x20000024` | U4 identity (SPI1, `0x9F`) | `0x22020000` / `0x00EF4017` | the same | twin; Winbond (`BENCH.md` B4). **Its address differs from the ordered ELF's** (`0x20000010`) | |
+| 10 | `0x20000028` | U5 data status (6 bytes from `0x1D`, after the 10 ms wait) | `0x22020000` | `0x22020001` | twin (S1) | |
+| 11, 12 | `0x2000002C`, `0x20000030` | U5 data value | **not predicted:** the bench reads the room. The twin's stimulus gives `0x00000000`, `0x1940F362` (25 °C, 101,325 Pa) | `0x00000000`, `0x00000000` | twin's value is its stimulus | |
 
-**What fails here, and for what:** a U5 record of TXIS means the breakout did not answer `0x47`: the address (§2.1), the cable (§2.3), the breakout's supply, or PB10/PB11. Words 8–9 still reading `EF4017` shows the board and the SPI path are unaffected by the breakout.
+The SDO-low column is the generated code's own path for an unanswered address (`main.rs`: `Err(I2cError::Txis) => (STATUS_TXIS, 0)`, each wait bounded) and RM0433's NACK (p. 1975), as `BENCH.md`'s "U2 empty" traces for I2C1: **generator**; the twin was not run with U5 absent.
+
+**What fails here, and for what:** a U5 record that differs from the column of the strap read before power. With SDO high, TXIS means the breakout did not answer `0x47`: the cable (§2.3), the breakout's supply, or PB10/PB11. With SDO low, an OK record means the strap was misread. Words 8–9 still reading `EF4017` shows the board and the SPI path are unaffected by the breakout.
 
 To read the data for the record: T = signed(`t2 t1 t0`) / 65,536 °C and P = (`p2 p1 p0`) / 64 Pa, the bytes in the order read (`0x1D`–`0x22`; `AET-WO-3304.bench.md` B5). Bench T ____ °C · P ____ Pa.
 
@@ -169,7 +173,7 @@ sigrok-cli -i s01-ext.sr -P i2c:scl=D0:sda=D1 -A i2c=addr-data
 
 **The line format** (as `3304`): `Write` or `Read` prints before the `Address …` line. `Start repeat` prints only for a START with no STOP since the last one, so `Stop` then `Start` before a `Read` is a **disagreement**. The repeated starts are the **generator**'s: the transfer writes `CR2` with `START` after `TC`, `AUTOEND` 0 in the write phase (RM0433), and Renode's I2C model cannot tell Sr from P then S.
 
-**Predicted output** (`#` lines are sources, not decoder output). This holds for U5 answering at `0x47`; otherwise §2.1's NACK form.
+**Predicted output** (`#` lines are sources, not decoder output). This is the SDO-high case. With SDO low (§2.1), each of the three blocks is instead `Start`, `Write`, `Address write: 47`, `NACK`, `Stop`.
 
 ```
 # U5 identity: twin read 0x01 -> 0x50 (S1)
