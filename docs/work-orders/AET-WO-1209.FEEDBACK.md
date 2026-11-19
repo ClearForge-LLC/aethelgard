@@ -121,6 +121,39 @@ They must be named. `eda/src/supply.rs:1453–1483` (`SupplySinkUncounted`) requ
   - `evidence/power-tree.json` is the helper's specification. With its `U13` load removed (`power-tree-no-u13.json`), the WIP `validate` passes it, `R40` included.
   - `main`'s `emit` of `power-tree.json` draws `R1`–`R5`, `R10`, `R11`, `R20`, `R21`, `R50` and `R51`, and no `R40` (`evidence/emit-power-tree/*.bom.csv`). The exact set is `aethelgard_eda::schematic::drawn` (`schematic.rs:1192`). It needs the solve and lives in eda, so it could run only in the CLI's `validate`, as `outline_holds` does (`cli/src/main.rs:2418`). That is D3.
 
+#### 3.2a Every designator the emitter assigns, and from what
+
+Written after the architect's note of 21:05Z in `~/.cache/aet-bus/1209.md`. It answers which emitted designators `validate` can know before `emit` runs [read].
+
+| Designator | Assigned by | From | Can `validate` know it exactly? |
+|---|---|---|---|
+| The MCU's `U<n>` | `Builder::reference('U')`, `eda/src/schematic.rs:1259` | the first `U<n>` the specification does not spell | **Yes:** `names::mcu_reference` (`ir/src/names.rs`) computes the same, and step 20 already uses it |
+| The reset switch's `SW<n>` | `aethelgard_ir::bench::switch_reference` (`ir/src/bench.rs:126`), which the emitter calls (`schematic.rs:1577`) | `mcu.reset_switch` and the spelled references | **Yes:** the emitter reads ir's own function |
+| `R<n>`, each I2C bus's two pull-ups | `Builder::passive('R')`, `schematic.rs:1318–1325` | `i2c_buses`, in document order | the pattern only |
+| `R<n>`, the SDO strap of a BME280 or BMP581 | `Builder::strap`, `schematic.rs:1343`, `:1368` | the device's part and address | the pattern only |
+| `R<n>`, the flash's WP and HOLD straps | `Builder::strap`, `schematic.rs:1448–1449` | a `W25Q64JVxIQ` device (Sentinel-03's `R7` and `R8`, per the architect's note) | the pattern only |
+| `R<n>`, the BOOT0 pull-down | `schematic.rs:1569` | `bench::carries_boot0` | the pattern only |
+| `C<n>`, every decoupling, support and REGOUT capacitor | `Builder::decouple` (`schematic.rs:771`), `support::draw` (`schematic_support.rs:107`), `:1484` | each IC's part and the MCU's row | the pattern only |
+
+Each `R<n>` and `C<n>` is the next number in **draw order** (`Builder::reference`, `schematic.rs:643–662`), skipping each reference the specification spells.
+
+- **The number depends on everything drawn before the part.** Removing U2 (a BME280, with its SDO strap) shifts every later strap down by one. That is why `4202` renames Sentinel-03's `R7`/`R8` to `R6`/`R7`.
+- **A load naming `R7` can therefore silently re-point** to a different resistor when an earlier part leaves. No reference check, pattern or exact, sees that. It is §6 F3's family.
+
+**Whether `validate` can know the exact set: not without the emitter.** The inputs are all in the specification; no solve is needed for the numbering. But the numbering *is* `design`'s draw order (the rows above). Reproducing it in ir would be a second copy of the emitter's order, the drift `INV-01` forbids and §5 warns against. Moving it means moving those lines out of `aethelgard-eda`. **This is the §7 stop the architect's note names, for the exact set.** The lines are the six `R`/`C` rows above, plus `Builder::reference` (`schematic.rs:643–662`).
+
+What `validate` *can* hold without refusing any valid emitted name:
+
+- **(i)** a declared reference (`names::references`);
+- **(ii)** the MCU's `U<n>` (`names::mcu_reference`);
+- **(iii)** the reset switch's `SW<n>` (`bench::switch_reference`);
+- **(iv)** any `R<n>` or `C<n>` (`names::emitter_numbered`).
+
+**Correction to the WIP rule** (local patch, unwired): it allows (i) and (iv) and refuses (ii) and (iii). Under the architect's constraint that is wrong: it would refuse a valid emitted name.
+
+- No committed file names the MCU or the switch in `power.loads`, so the measurement in §1 is unchanged [measured: §3.2's list].
+- The rule to build, if ruled, allows all four.
+
 ### 3.3 Drawable parts: the set is two `match` blocks in eda (§7 third condition)
 
 [read]
@@ -148,8 +181,9 @@ The ways open:
 - **D2, rule 3's set:** (a), (b) or (c) of §3.3. **Recommendation: (a).** It keeps the refusal in `Specification::validate`, so every entry point gets it. It moves no code across crates, and its coverage test makes the list fail on any drift over the table's rows. A part with no row is already refused at step 14.
 - **D3, rule 2's allowed form.** §1's list depends on this. Without an `R<n>` form, `sentinel-03.json` and `sentinel-02-power.json` are newly refused too.
   - The options are the IR's `emitter_numbered` pattern (the WIP rule; `R99` and `power_tree()`'s `R40` pass), or the emitter's exact drawn set in the CLI's `validate` (needs the solve, as `outline_holds` does).
-  - **Recommendation: both.** The pattern goes in `Specification::validate`, so every entry point refuses a phantom `U`/`J` reference. The exact set (`schematic::drawn`) goes in the CLI's `validate`, so a phantom `R<n>` is refused there too.
-  - The measured `R40` is why the pattern alone is not enough.
+  - **Recommendation: both.** In `Specification::validate`, allow §3.2a's (i) to (iv). That refuses a phantom declared-style reference (`U13`, `J2`) at every entry point and refuses no valid emitted name. The exact set (`schematic::drawn`) goes in the CLI's `validate`, so a phantom `R<n>` is refused there too.
+  - The measured `R40` is why the pattern alone is not enough. The exact set cannot be in ir without moving the emitter's draw order out of eda (§3.2a, the §7 stop the architect's 21:05Z note names), so only the CLI's `validate` can hold it.
+  - Neither form sees a load whose `R<n>` re-points after an earlier part leaves (`4202`'s `R7`/`R8` renumbering); that needs a reference that does not move, which is a specification change.
 - **D4, the five helpers that keep loads for parts they removed or renamed:** file or rule? This is the second half of the stop.
   - The helpers are listed in §1's table:
     - `power_tree()` (CLI `common/power.rs:7`);
