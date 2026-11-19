@@ -221,6 +221,7 @@ Three reviewers, each on one or two of the WO's §5 lenses, on `9c98c8f8`. Each 
 - **After D7** (`twin_tier2`, the image):
   - all 87 pass; the three runs D7 fixed are listed below;
   - `the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed`, `without_the_cited_wait_each_data_read_answers_its_reset_value` and `the_fixture_s_campaign_archives_each_configuration_and_replays` pass (the campaign runs from the derived spec's directory, since `campaign` refuses a base outside it).
+- **The whole workspace again on the final head `4bb2485f`** (the image, with-tools): 2,460 passed and 1 failed. The failure is the bench package's MANIFEST (F4) alone.
 - **`ci/foreign-judge.sh /cache/boards`** (the image, `a799dfb6` and `noimu`): every case holds, exit 0.
   - positive at 5000 ms;
   - window-before-u5 at 4300 ms and window-before-u5-data at 4370 ms;
