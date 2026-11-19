@@ -1,0 +1,12 @@
+4c4
+< // - Solved topology of specification sha256 `9b09e7bb6058b6742ed92405ab2cc7fd8096a8fd22e35830ad3df6da321fd6b7`.
+---
+> // - Solved topology of specification sha256 `552934b95b7e0312891db42b091d54c856016e1dc9b38dcbe839eba9f9121a45`.
+7a8
+> // - Model of our own (AET-WO-4220): `models/renode/BMP581.cs` sha256 `7fa329f066b40ee3779063a0054ec630cecf0f38a19ddef1026377ec6342c802`.
+20,21c21,22
+< // U2: Renode 1.17.0's `I2C.BME280`, at 0x76 on i2c1.
+< u2: I2C.BME280 @ i2c1 0x76
+---
+> // U2: Aethelgard's own `Sensors.BMP581` (`models/renode/BMP581.cs`), at 0x46 on i2c1.
+> u2: Sensors.BMP581 @ i2c1 0x46
