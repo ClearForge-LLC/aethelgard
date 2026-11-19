@@ -1,0 +1,19 @@
+driver-idle-zero	validate	2	3	16969728	8589934592
+driver-idle-zero	solve	2	4	17694720	8589934592
+driver-idle-zero	emit	2	4	16826368	8589934592
+driver-idle-zero	erc	not_run	-	-	needs emit (exit 2)
+driver-idle-zero	drc	not_run	-	-	needs emit (exit 2)
+driver-idle-zero	support	not_run	-	-	needs emit (exit 2)
+driver-idle-zero	speeds	2	3	17092608	8589934592
+driver-idle-zero	extract	not_run	-	-	needs emit (exit 2)
+driver-idle-zero	generate	2	3	16584704	8589934592
+driver-idle-zero	build	not_run	-	-	needs generate (exit 2)
+driver-idle-zero	prove	not_run	-	-	needs generate (exit 2)
+driver-idle-zero	simulate	not_run	-	-	needs generate (exit 2)
+driver-idle-zero	campaign	not_run	-	-	no scenarios written
+driver-idle-zero	replay	not_run	-	-	needs an archived run (campaign exit not_run)
+driver-idle-zero	attribute	not_run	-	-	needs an archived run (campaign exit not_run)
+driver-idle-zero	verify	2	4	16896000	17179869184
+driver-idle-zero	verify-fab	not_run	-	-	no scenarios written
+driver-idle-zero	hwdef	not_run	-	-	needs solve (exit 2)
+driver-idle-zero	pinout	not_run	-	-	needs solve (exit 2)

@@ -1,0 +1,19 @@
+logger-1s	validate	2	10	17768448	8589934592
+logger-1s	solve	2	9	16662528	8589934592
+logger-1s	emit	2	9	17768448	8589934592
+logger-1s	erc	not_run	-	-	needs emit (exit 2)
+logger-1s	drc	not_run	-	-	needs emit (exit 2)
+logger-1s	support	not_run	-	-	needs emit (exit 2)
+logger-1s	speeds	2	9	17072128	8589934592
+logger-1s	extract	not_run	-	-	needs emit (exit 2)
+logger-1s	generate	2	9	16850944	8589934592
+logger-1s	build	not_run	-	-	needs generate (exit 2)
+logger-1s	prove	not_run	-	-	needs generate (exit 2)
+logger-1s	simulate	not_run	-	-	needs generate (exit 2)
+logger-1s	campaign	not_run	-	-	no scenarios written
+logger-1s	replay	not_run	-	-	needs an archived run (campaign exit not_run)
+logger-1s	attribute	not_run	-	-	needs an archived run (campaign exit not_run)
+logger-1s	verify	2	10	17879040	17179869184
+logger-1s	verify-fab	not_run	-	-	no scenarios written
+logger-1s	hwdef	not_run	-	-	needs solve (exit 2)
+logger-1s	pinout	not_run	-	-	needs solve (exit 2)
