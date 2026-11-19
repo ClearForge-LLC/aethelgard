@@ -120,7 +120,44 @@ _(in progress)_
 
 ## §5 Adversarial pass (full)
 
-_(in progress)_
+Three reviewers, each on one or two of the WO's §5 lenses, on `9c98c8f8`. Each ran in a git worktree of its own, with tier-1 suites and mutants on the host, and no container. Their findings, and what was done with each:
+
+| # | Lens | Finding | Severity | Outcome |
+|---|---|---|---|---|
+| A1 | a frequency typed in | LPTIM1–5 stayed at the stock 32 MHz and were not named; the completeness test saw only three model kinds | medium | **fixed**: (a) clocks them at `rcc_pclk1`/`rcc_pclk4` (§8.7.21–§8.7.22); (c) names them in `boot.clock.stock`; the test now covers every instance with a `frequency:` line, and holds the watchdog (LSI) apart by name |
+| A2 | a frequency typed in | SysTick's stock 480 MHz and the watchdog's 56 kHz were not stated | low | **named** (§1.6): SysTick follows the RCC (measured, 4400f F4); no judge reads the watchdog |
+| A3 | the decode | APB1 and APB2 were indistinguishable: every fixture had equal buses, and HSIDIV was never exercised (mutants M4, M6 and M8 survived) | medium | **fixed**: a split-bus declaration, a split `D2CFGR`, and HSIDIV 01 tests (M4, M6 and M8 killed) |
+| A4 | the decode | Renode's `SWS` mirrors `SW` whether or not the source is ready | low | **fixed**: the decode requires the source's ready flag (`NotReady`) |
+| A5 | the decode | `DIVM1` at its reset 32: Renode's prescaler stays 1 until the field changes | low–medium | **fixed**: refused as `Unmodelled` |
+| A6 | the decode | no PLL range check: 4.096 GHz decoded | low | **fixed**: a 1–16 MHz reference and a 150–960 MHz VCO (§8.7.13), `OutOfRange` |
+| A7 | a contradicted declaration passing | removing the clock check from the judge survived every tier-1 test; only CI's ArduPilot case caught it | medium | **fixed**: `a_foreign_clock_the_rcc_registers_contradict_fails_by_name` (mutant Mb killed) |
+| A8 | a non-pinned Renode | a plain `simulate --platform` load judged on any build and version | medium | **fixed** (D4): every `simulate` is pinned; `a_load_on_another_renode_build_is_refused_by_name` (Mk killed) |
+| A9 | a non-pinned Renode | doctor's build pin, `tool.build` recording and a boot-level refusal had no test | medium/low | **fixed**: a doctor case for the stock build (Md killed), `tool.build` asserted (Mg killed), and `a_boot_on_another_renode_build_is_refused_by_name` |
+| A10 | the declaration's rules | the second USART mux group and the topology-side check were untested (mutants survived) | low | **fixed**: tests added (Me and Mf killed) |
+| A11 | replay | the witness arm's "no static timing check" repeats the final count check, and kind 25's F is pinned to 64 MHz by `silicon_check` | low (reduction) | **kept**: the early return is the lookup's own guard, and the final check keeps its own message; noted for the reduction pass |
+| A12 | the verdict | after a bound kill, `boot.clock.checked` lists both buses with `decoded_hz` null and `holds` false | info | **kept**: the run fails by its bound; nothing reads as checked |
+| A13 | the declaration | a foreign firmware on HSE cannot decode (`mcu.hse_hz` is held at 0) | info | finding F3 |
+
+**What held,** across all three reviewers:
+- No judge predicts the nominal 1,656.25 ns, and the silicon verdicts use `ARR + 1` exactly.
+- Replay refused every forged or missing kind 25, a non-64 MHz F, the old 4 ns periods, and kind 26 before kind 25. `realized_ns` cannot overflow.
+- Every field position, encoding and page of the decode matches RM0433.
+- The emitted text is deterministic and the update entries' syntax is valid.
+- `campaign` reaches `ready()` with `foreign: false`. `--for` and `--foreign` cannot be combined.
+- Every reader of an archive goes through the version check.
+
+**The guards' mutants** (`~/.cache/aet-4400g/mut/run.py`; each applied alone, its suite run, then reverted with `git checkout`). Killed:
+- **(a) `ForeignClockUndeclared` disabled, and (b) `ForeignClockOnGeneratedRun` disabled:** by `boot_tier1` `a_clock_never_crosses_its_run_kind`.
+- **(c) the RCC compare forced to hold:** by `renode::foreign::tests`. The check cut from the judge: by `boot_tier1` (Mb).
+- **(d) the build pin disabled:** by `campaign_tier1`'s 2205 test. Doctor's pin forced: by `doctor_tier1` (Md). A load not pinned: by `tools_tier1` (Mk).
+- **(e) the trace reader accepting 13:** by `archive` `an_unknown_version_is_refused`. `TRACE_VERSION` left at 13: by `golden`.
+- **The decode:** HSIDIV ignored (M6), D2PPRE swapped (M8), the ready flag ignored (Mh), DIVM1 32 accepted (Mi) and the VCO range dropped (Mj).
+- **The declaration:** the second mux group dropped (Me), and the topology's check dropped (Mf).
+- **Elsewhere:** `tool.build` not recorded (Mg), and the declared APB buses swapped (M4).
+
+**Before the fixes:**
+- M4, M6, M8, Mb, Md, Me, Mf, Mg and Mk survived.
+- `realized_ns` rounding down, `witness_consistent` dropping `high_ns` and the mux-split check dropped were already killed (reviewer A).
 
 ## §6 Gates
 
