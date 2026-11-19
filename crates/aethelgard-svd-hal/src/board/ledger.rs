@@ -18,7 +18,11 @@
 //! The first writes listed are the bring-up's first (`AET-WO-4240v` §1.4):
 //! `PWR_CR3`'s `SCUEN`, `LDOEN` and `BYPASS` (a read-modify-write), then
 //! `PWR_D3CR` whole, whose `VOSRDY` is read-only and written 0, so it has a
-//! written row beside its polled one.
+//! written row beside its polled one. The residue no row covers: RAM is
+//! written before `ACTVOSRDY` reads 1 (the reset handler's `.bss` and `.data`,
+//! the stack, `Board::take`'s flag, and a supply or `ACTVOSRDY` fault's boot
+//! word), though in Run* "write accesses to the RAMs are not permitted"
+//! (RM0433 Rev 9 §6.4.1, p. 262).
 //!
 //! The writes listed are every one the board crate can make on the bring-up
 //! path the reference firmware takes (each port's split and pins, each

@@ -27,8 +27,9 @@
 //! **The residue: RAM written before `ACTVOSRDY`.** Until `ACTVOSRDY` reads 1
 //! the part is in Run* mode, where "write accesses to the RAMs are not
 //! permitted" (RM0433 Rev 9 §6.4.1, p. 262). The reset handler zeroes `.bss`
-//! and copies `.data`, and the call to `main` pushes the stack, before the
-//! sequence runs; so these RAM writes precede `ACTVOSRDY`. So does a fault's
+//! and copies `.data`, the call to `main` pushes the stack, and `Board::take`
+//! sets its `TAKEN` flag (a static in RAM), before the sequence runs; so these
+//! RAM writes precede `ACTVOSRDY`. So does a fault's
 //! boot word when the fault is [`BOOT_SUPPLY_NOT_DECLARED`] or
 //! [`BOOT_ACTVOSRDY_TIMEOUT`]: on silicon that word may not land, and the
 //! bench reads `PWR_CR3` and `PWR_CSR1` themselves. The twin models no Run*
