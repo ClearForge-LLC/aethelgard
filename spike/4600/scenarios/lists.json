@@ -1,0 +1,49 @@
+{
+  "logger": [
+    "spike/4600/scenarios/logger/baseline.json",
+    "spike/4600/scenarios/logger/pullup-3k3-temp.json",
+    "spike/4600/scenarios/logger/pullup-3k3-baro.json",
+    "spike/4600/scenarios/logger/spi-absent-u30.json",
+    "spike/4600/scenarios/logger/droop-bor3.json",
+    "spike/4600/scenarios/logger/serial-rx-open-readout.json"
+  ],
+  "driver": [
+    "spike/4600/scenarios/driver/baseline.json",
+    "spike/4600/scenarios/driver/droop-bor3.json",
+    "spike/4600/scenarios/driver/serial-rx-open-cmd.json"
+  ],
+  "logger-i2c-only": [
+    "spike/4600/scenarios/logger-i2c-only/baseline.json",
+    "spike/4600/scenarios/logger-i2c-only/pullup-3k3-temp.json",
+    "spike/4600/scenarios/logger-i2c-only/pullup-3k3-baro.json",
+    "spike/4600/scenarios/logger-i2c-only/droop-bor3.json",
+    "spike/4600/scenarios/logger-i2c-only/serial-rx-open-readout.json"
+  ],
+  "logger-spi-only": [
+    "spike/4600/scenarios/logger-spi-only/baseline.json",
+    "spike/4600/scenarios/logger-spi-only/spi-absent-u40.json",
+    "spike/4600/scenarios/logger-spi-only/spi-absent-u30.json",
+    "spike/4600/scenarios/logger-spi-only/droop-bor3.json",
+    "spike/4600/scenarios/logger-spi-only/serial-rx-open-readout.json"
+  ],
+  "logger-offboard": [
+    "spike/4600/scenarios/logger-offboard/baseline.json",
+    "spike/4600/scenarios/logger-offboard/pullup-3k3-temp.json",
+    "spike/4600/scenarios/logger-offboard/pullup-3k3-baro.json",
+    "spike/4600/scenarios/logger-offboard/spi-absent-u30.json",
+    "spike/4600/scenarios/logger-offboard/droop-bor3.json",
+    "spike/4600/scenarios/logger-offboard/serial-rx-open-readout.json"
+  ],
+  "driver-tree": [
+    "spike/4600/scenarios/driver-tree/baseline.json",
+    "spike/4600/scenarios/driver-tree/droop-bor3.json",
+    "spike/4600/scenarios/driver-tree/serial-rx-open-cmd.json"
+  ],
+  "logger-spi-only-cap": [
+    "spike/4600/scenarios/logger-spi-only-cap/baseline.json",
+    "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u40.json",
+    "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u30.json",
+    "spike/4600/scenarios/logger-spi-only-cap/droop-bor3.json",
+    "spike/4600/scenarios/logger-spi-only-cap/serial-rx-open-readout.json"
+  ]
+}

@@ -1,0 +1,19 @@
+logger-1s-u50	validate	2	1006	17956864	8589934592
+logger-1s-u50	solve	2	1006	18698240	8589934592
+logger-1s-u50	emit	2	1005	19005440	8589934592
+logger-1s-u50	erc	not_run	-	-	needs emit (exit 2)
+logger-1s-u50	drc	not_run	-	-	needs emit (exit 2)
+logger-1s-u50	support	not_run	-	-	needs emit (exit 2)
+logger-1s-u50	speeds	2	1006	18124800	8589934592
+logger-1s-u50	extract	not_run	-	-	needs emit (exit 2)
+logger-1s-u50	generate	2	1006	18255872	8589934592
+logger-1s-u50	build	not_run	-	-	needs generate (exit 2)
+logger-1s-u50	prove	not_run	-	-	needs generate (exit 2)
+logger-1s-u50	simulate	not_run	-	-	needs generate (exit 2)
+logger-1s-u50	campaign	not_run	-	-	no scenarios written
+logger-1s-u50	replay	not_run	-	-	needs an archived run (campaign exit not_run)
+logger-1s-u50	attribute	not_run	-	-	needs an archived run (campaign exit not_run)
+logger-1s-u50	verify	2	1006	18685952	17179869184
+logger-1s-u50	verify-fab	not_run	-	-	no scenarios written
+logger-1s-u50	hwdef	not_run	-	-	needs solve (exit 2)
+logger-1s-u50	pinout	not_run	-	-	needs solve (exit 2)

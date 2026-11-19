@@ -1,0 +1,1 @@
+{"ok":true,"check":"attribute","run_id":"1d29ff52978cd07f59a1308d936f1dab","state_sequence_hash":"8a620e11f372bba0d07a5d6917e840b825c483b083b08a828c6da3c420f2e884","domain":"electrical","rule":"E2","evidence":[{"index":43,"kind":22}],"symptoms":[{"index":42,"kind":21},{"index":43,"kind":22}],"masked":[],"unexplained":[],"subjects":["device:U30"]}
