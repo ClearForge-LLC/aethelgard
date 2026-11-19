@@ -1734,9 +1734,7 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
     let mut out = Vec::new();
     let model = format!(
         "the model's period {} ns and high time {} ns (ARR and CCR ticks at {} Hz, each realized in whole ns rounded up)",
-        o.period_ns,
-        o.high_ns,
-        o.kernel_hz
+        o.period_ns, o.high_ns, o.kernel_hz
     );
     match w.status {
         "witnessed" => {}

@@ -513,7 +513,10 @@ fn ardupilot_s_rcc_registers_decode_to_400_mhz_and_200_mhz_timers() {
     let c = SolvedClock::from_rcc(&ardupilot(), 0).unwrap();
     assert_eq!(c.source, "PLL1");
     assert_eq!(c.sysclk_hz, 400_000_000);
-    assert_eq!((c.d1cpre, c.hpre, c.d1ppre, c.d2ppre1, c.d2ppre2), (1, 2, 2, 2, 2));
+    assert_eq!(
+        (c.d1cpre, c.hpre, c.d1ppre, c.d2ppre1, c.d2ppre2),
+        (1, 2, 2, 2, 2)
+    );
     assert!(c.timpre);
     assert_eq!(c.hclk_hz(), 200_000_000);
     assert_eq!(c.core_hz(), 400_000_000);
@@ -539,23 +542,53 @@ fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
     };
     let reserved = |field: &'static str, value: u32| RccDecodeError::Reserved { field, value };
     // SWS 100 is reserved; 010 is HSE, which no crystal backs.
-    assert_eq!(refused(&|r| r.cfgr = 0x8023, 0), reserved("RCC_CFGR.SWS", 4));
-    assert_eq!(refused(&|r| r.cfgr = 0x8012, 0), RccDecodeError::HseUndeclared);
+    assert_eq!(
+        refused(&|r| r.cfgr = 0x8023, 0),
+        reserved("RCC_CFGR.SWS", 4)
+    );
+    assert_eq!(
+        refused(&|r| r.cfgr = 0x8012, 0),
+        RccDecodeError::HseUndeclared
+    );
     // PLLSRC 11 clocks no PLL; 10 is HSE; DIVM1 0 disables the prescaler.
-    assert_eq!(refused(&|r| r.pllckselr = 0x40_8043, 0), reserved("RCC_PLLCKSELR.PLLSRC", 3));
-    assert_eq!(refused(&|r| r.pllckselr = 0x40_8042, 0), RccDecodeError::HseUndeclared);
-    assert_eq!(refused(&|r| r.pllckselr = 0x40_8000, 0), reserved("RCC_PLLCKSELR.DIVM1", 0));
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8043, 0),
+        reserved("RCC_PLLCKSELR.PLLSRC", 3)
+    );
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8042, 0),
+        RccDecodeError::HseUndeclared
+    );
+    assert_eq!(
+        refused(&|r| r.pllckselr = 0x40_8000, 0),
+        reserved("RCC_PLLCKSELR.DIVM1", 0)
+    );
     // DIVN1 below 0x003 is a wrong configuration; DIVP1 2 divides by 3, odd.
-    assert_eq!(refused(&|r| r.pll1divr = 0x0109_0202, 0), reserved("RCC_PLL1DIVR.DIVN1", 2));
-    assert_eq!(refused(&|r| r.pll1divr = 0x0109_0431, 0), reserved("RCC_PLL1DIVR.DIVP1", 2));
+    assert_eq!(
+        refused(&|r| r.pll1divr = 0x0109_0202, 0),
+        reserved("RCC_PLL1DIVR.DIVN1", 2)
+    );
+    assert_eq!(
+        refused(&|r| r.pll1divr = 0x0109_0431, 0),
+        reserved("RCC_PLL1DIVR.DIVP1", 2)
+    );
     // D1CPRE and HPRE of 11xx: Renode divides by 2^(n+1), RM0433 by 64 up.
     let unmodelled = |field: &'static str, value: u32| RccDecodeError::Unmodelled { field, value };
-    assert_eq!(refused(&|r| r.d1cfgr = 0x4C, 0), unmodelled("RCC_D1CFGR.HPRE", 0xC));
-    assert_eq!(refused(&|r| r.d1cfgr = 0xC48, 0), unmodelled("RCC_D1CFGR.D1CPRE", 0xC));
+    assert_eq!(
+        refused(&|r| r.d1cfgr = 0x4C, 0),
+        unmodelled("RCC_D1CFGR.HPRE", 0xC)
+    );
+    assert_eq!(
+        refused(&|r| r.d1cfgr = 0xC48, 0),
+        unmodelled("RCC_D1CFGR.D1CPRE", 0xC)
+    );
     // With a crystal declared, HSE decodes.
     let mut r = ardupilot();
     r.cfgr = 0x8012;
-    assert_eq!(SolvedClock::from_rcc(&r, 25_000_000).unwrap().sysclk_hz, 25_000_000);
+    assert_eq!(
+        SolvedClock::from_rcc(&r, 25_000_000).unwrap().sysclk_hz,
+        25_000_000
+    );
 }
 
 /// RM0433 Rev 9 Table 57, every row: `rcc_hclk1` while `D2PPREx` divides by
@@ -580,8 +613,16 @@ fn the_timer_kernel_clock_is_table_57_for_both_timpre() {
             d2ppre2: ppre,
             ..SolvedClock::reset()
         };
-        assert_eq!(c.timer_kernel_hz(Apb::Apb1), want * 1_000_000, "{timpre} {ppre}");
-        assert_eq!(c.timer_kernel_hz(Apb::Apb2), want * 1_000_000, "{timpre} {ppre}");
+        assert_eq!(
+            c.timer_kernel_hz(Apb::Apb1),
+            want * 1_000_000,
+            "{timpre} {ppre}"
+        );
+        assert_eq!(
+            c.timer_kernel_hz(Apb::Apb2),
+            want * 1_000_000,
+            "{timpre} {ppre}"
+        );
     }
 }
 
@@ -623,11 +664,15 @@ fn with_foreign_clock(c: Value) -> Value {
 /// `solve` copies its values; absent, the topology's is `null`.
 #[test]
 fn a_declared_foreign_clock_validates_and_solve_copies_its_values() {
-    let s: Specification = serde_json::from_value(with_foreign_clock(foreign_clock(200_000_000, 72_000_000))).unwrap();
+    let s: Specification =
+        serde_json::from_value(with_foreign_clock(foreign_clock(200_000_000, 72_000_000))).unwrap();
     s.validate().unwrap();
     let t = solve(&s, &table(), HASH).unwrap();
     let c = t.foreign_clock.as_ref().unwrap();
-    assert_eq!((c.timer_hz(Apb::Apb1), c.timer_hz(Apb::Apb2)), (200_000_000, 200_000_000));
+    assert_eq!(
+        (c.timer_hz(Apb::Apb1), c.timer_hz(Apb::Apb2)),
+        (200_000_000, 200_000_000)
+    );
     assert_eq!(c.usarts.len(), 8);
     assert!(c.usarts.values().all(|hz| *hz == 72_000_000));
     t.validate().unwrap();
@@ -678,7 +723,10 @@ fn a_version_16_file_is_refused_by_its_version() {
             None => spec_json(vec![]),
         };
         v["schema_version"] = json!(16);
-        let e = serde_json::from_value::<Specification>(v).unwrap().validate().unwrap_err();
+        let e = serde_json::from_value::<Specification>(v)
+            .unwrap()
+            .validate()
+            .unwrap_err();
         assert_eq!(
             e,
             IrValidationError::UnsupportedSchemaVersion {

@@ -1876,7 +1876,10 @@ fn windowed_dshot(v: &Value, rises: u64) {
         let t = &m["twin"];
         assert_eq!(t["status"], "witnessed", "{m}");
         // `AET-WO-4400g`: 106 ticks at 64 MHz, realized in whole ns.
-        assert_eq!((&t["period_ns"], &t["high_ns"]), (&1_657.into(), &625.into()));
+        assert_eq!(
+            (&t["period_ns"], &t["high_ns"]),
+            (&1_657.into(), &625.into())
+        );
         assert!(t["rises"].as_u64().unwrap() > rises, "{m}");
         let anchor = t["anchor_ns"].as_u64().unwrap();
         assert_eq!(t["end_ns"].as_u64(), Some(anchor + 2_000_000), "{m}");

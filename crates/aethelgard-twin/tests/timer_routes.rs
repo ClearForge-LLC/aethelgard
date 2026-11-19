@@ -199,9 +199,13 @@ fn stock_clocked() -> Vec<String> {
             continue;
         };
         if name.contains(' ')
-            || !["Timers.STM32_Timer @", "UART.STM32F7_USART @", "Miscellaneous.DWT @"]
-                .iter()
-                .any(|m| model.starts_with(m))
+            || ![
+                "Timers.STM32_Timer @",
+                "UART.STM32F7_USART @",
+                "Miscellaneous.DWT @",
+            ]
+            .iter()
+            .any(|m| model.starts_with(m))
         {
             continue;
         }
@@ -247,7 +251,11 @@ fn every_timer_usart_and_the_dwt_of_the_stock_file_is_clocked() {
     all.sort();
     assert_eq!(all, want);
     for (name, hz) in &c {
-        let declared_hz = if name.starts_with("timer") { 200_000_000 } else { 72_000_000 };
+        let declared_hz = if name.starts_with("timer") {
+            200_000_000
+        } else {
+            72_000_000
+        };
         assert_eq!(*hz, declared_hz, "{name}");
     }
 }
@@ -256,10 +264,9 @@ fn every_timer_usart_and_the_dwt_of_the_stock_file_is_clocked() {
 /// tools image's: `container/smoke.sh` holds the image to that `build:` line.
 #[test]
 fn the_renode_build_is_the_images_pin() {
-    let smoke = fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../container/smoke.sh"),
-    )
-    .unwrap();
+    let smoke =
+        fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../container/smoke.sh"))
+            .unwrap();
     let pinned: Vec<&str> = smoke
         .lines()
         .filter_map(|l| l.strip_prefix("is_line renode.version \"  build: "))

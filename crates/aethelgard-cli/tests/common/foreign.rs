@@ -21,12 +21,18 @@ pub const RCC_AT_RESET: [&str; 6] = [
 
 /// `examples/sentinel-01-minimal.json` with every foreign clock at 64 MHz.
 pub fn spec_json() -> serde_json::Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
+    let path =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let mut v: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     let hz = |source: &str| serde_json::json!({"value": 64_000_000, "source": source});
     let usarts: serde_json::Map<String, serde_json::Value> = aethelgard_ir::serial::PERIPHERALS
         .iter()
-        .map(|p| ((*p).to_owned(), hz("the reset clock's rcc_pclk (RM0433 Rev 9 §8.7.21)")))
+        .map(|p| {
+            (
+                (*p).to_owned(),
+                hz("the reset clock's rcc_pclk (RM0433 Rev 9 8.7.21)"),
+            )
+        })
         .collect();
     v["mcu"]["foreign_clock"] = serde_json::json!({
         "apb1_timers_hz": hz("the reset clock (RM0433 Rev 9 Table 57)"),
@@ -50,6 +56,10 @@ pub fn write(dir: &Path) -> (PathBuf, PathBuf) {
         .collect();
     let topology = aethelgard_ir::solve(&spec, &table, &hash).unwrap();
     let platform = dir.join("foreign-platform.repl");
-    fs::write(&platform, aethelgard_twin::platform::emit(&topology).unwrap()).unwrap();
+    fs::write(
+        &platform,
+        aethelgard_twin::platform::emit(&topology).unwrap(),
+    )
+    .unwrap();
     (spec_path, platform)
 }

@@ -72,12 +72,15 @@ fn toolbox(except: &[(&str, Option<&str>)]) -> Toolbox {
     let n = NEXT.fetch_add(1, Ordering::Relaxed);
     let dir = Scratch::new(&format!("doctor-box-{n}"));
     let homes = Scratch::new(&format!("doctor-homes-{n}"));
+    // The pinned build, which `doctor` holds Renode to as a boot does
+    // (`AET-WO-4400g` §1.5).
+    let renode = format!(
+        "#!/bin/sh\necho 'Renode v1.17.0'\necho 'build: {}'\n",
+        aethelgard_twin::platform::RENODE_BUILD
+    );
     let tools = [
         ("kicad-cli", "#!/bin/sh\necho 10.0.7\n"),
-        (
-            "renode",
-            "#!/bin/sh\necho 'Renode v1.17.0'\necho 'build: 1.17.0.0-stub'\n",
-        ),
+        ("renode", renode.as_str()),
         (
             "cargo",
             "#!/bin/sh\nif [ \"$1\" = kani ]; then echo 'cargo-kani 0.66.0'; else echo 'cargo 1.95.0 (stub)'; fi\n",
@@ -463,17 +466,16 @@ fn doctor_takes_no_argument() {
 #[test]
 fn each_probe_has_a_scratch_of_its_own() {
     let cli = cli(Some(USAGE_BRIDGE), true);
+    let renode = format!(
+        "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; echo 'build: {}'; fi\n",
+        aethelgard_twin::platform::RENODE_BUILD
+    );
     let tb = toolbox(&[
         (
             "kicad-cli",
             Some("#!/bin/sh\n: > \"$HOME/planted\"\necho 10.0.7\n"),
         ),
-        (
-            "renode",
-            Some(
-                "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; fi\n",
-            ),
-        ),
+        ("renode", Some(renode.as_str())),
     ]);
     let tmp = private_tmp("doctor-own-scratch");
     let (code, v) = doctor(&cli, &tb, &tmp.0);

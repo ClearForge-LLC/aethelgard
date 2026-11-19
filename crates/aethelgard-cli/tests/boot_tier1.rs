@@ -2725,7 +2725,7 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
         ],
     );
     assert_eq!(both.status.code(), Some(64), "{both:?}");
-    let past = foreign_with(&tb.0, &fw, "4001ms");
+    let past = foreign_with(&tb.0, &fw, "5001ms");
     assert_eq!(past.status.code(), Some(64), "{past:?}");
     let (status, v) = boot(&good());
     assert_eq!(status, Some(0), "{v}");

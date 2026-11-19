@@ -40,8 +40,24 @@ fn each_output_is_observed_at_the_model_s_timing() {
     assert_eq!(
         got,
         [
-            ("MOTOR1", "PA8", "gpioPortA.pa8obs", 1, 1, 2_499_000, 1_000_000),
-            ("MOTOR2", "PA9", "gpioPortA.pa9obs", 1, 2, 2_499_000, 1_000_000),
+            (
+                "MOTOR1",
+                "PA8",
+                "gpioPortA.pa8obs",
+                1,
+                1,
+                2_499_000,
+                1_000_000
+            ),
+            (
+                "MOTOR2",
+                "PA9",
+                "gpioPortA.pa9obs",
+                1,
+                2,
+                2_499_000,
+                1_000_000
+            ),
             (
                 "MOTOR3",
                 "PA10",
@@ -66,7 +82,10 @@ fn each_output_is_observed_at_the_model_s_timing() {
     // reset clock, the period realized in whole ns: 1,657, not 1,656.25
     // (`AET-WO-4400g`).
     let d = timer::observers(&topology("motors-dshot600")).unwrap();
-    assert!(d.iter().all(|o| (o.kernel_hz, o.period_ns, o.high_ns) == (64_000_000, 1_657, 625)));
+    assert!(
+        d.iter()
+            .all(|o| (o.kernel_hz, o.period_ns, o.high_ns) == (64_000_000, 1_657, 625))
+    );
 }
 
 #[test]
@@ -93,8 +112,14 @@ fn the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route() {
         )),
         "{text}"
     );
-    assert!(clock.contains("\ntimer1:\n    frequency: 64000000\n"), "{clock}");
-    assert!(clock.ends_with("\ndwt:\n    frequency: 64000000\n"), "{clock}");
+    assert!(
+        clock.contains("\ntimer1:\n    frequency: 64000000\n"),
+        "{clock}"
+    );
+    assert!(
+        clock.ends_with("\ndwt:\n    frequency: 64000000\n"),
+        "{clock}"
+    );
     let listed: Vec<(String, String)> = platform::instances(
         &topology("motors-pwm"),
         &Default::default(),

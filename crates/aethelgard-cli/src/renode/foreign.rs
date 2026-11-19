@@ -428,7 +428,9 @@ impl ClockReport {
             Err(e) => {
                 return vec![Finding::plain(
                     CLOCK_UNDECODABLE,
-                    format!("the RCC registers read back at the run's end do not decode to a timer kernel clock: {e}"),
+                    format!(
+                        "the RCC registers read back at the run's end do not decode to a timer kernel clock: {e}"
+                    ),
                 )];
             }
         };
@@ -752,7 +754,10 @@ fn reads(plan: &BootPlan<'_>) -> Result<Vec<(String, ForeignRead)>, Stop> {
             ForeignRead::Register(i),
         ));
     }
-    for (i, (_, offset)) in aethelgard_ir::motor::RccRegisters::OFFSETS.iter().enumerate() {
+    for (i, (_, offset)) in aethelgard_ir::motor::RccRegisters::OFFSETS
+        .iter()
+        .enumerate()
+    {
         r.push((
             format!("sysbus ReadDoubleWord {:#010x}", rcc + offset),
             ForeignRead::Rcc(i),
@@ -1683,7 +1688,11 @@ mod tests {
         };
         let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
         assert!(r.check(regs, 0).is_empty());
-        assert!(r.checked.iter().all(|c| c.holds && c.decoded_hz == Some(200_000_000)));
+        assert!(
+            r.checked
+                .iter()
+                .all(|c| c.holds && c.decoded_hz == Some(200_000_000))
+        );
         assert_eq!(r.registers[1].name, "RCC_CFGR");
         assert_eq!(r.registers[1].value, "0x0000801b");
         assert_eq!(r.declared_only.len(), 8);
@@ -1708,5 +1717,4 @@ mod tests {
         assert_eq!(f[0].kind, CLOCK_UNDECODABLE);
         assert!(r.checked.iter().all(|c| !c.holds && c.decoded_hz.is_none()));
     }
-
 }

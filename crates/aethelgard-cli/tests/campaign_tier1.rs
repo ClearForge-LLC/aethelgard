@@ -580,7 +580,8 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         let r = lines(&refused);
         assert_eq!(refused.status.code(), Some(4), "build `{build}`: {r:?}");
         assert_eq!(
-            r.last().unwrap()["error"]["kind"], "RenodeBuildNotPinned",
+            r.last().unwrap()["error"]["kind"],
+            "RenodeBuildNotPinned",
             "build `{build}`: {r:?}"
         );
     }

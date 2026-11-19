@@ -333,7 +333,14 @@ fn prove_with_spec_refuses_an_invalid_specification_before_any_tool() {
     let dir = scratch("prove-spec");
     fs::create_dir_all(&dir).unwrap();
     let bad = dir.join("bad.json");
-    fs::write(&bad, "{\"schema_version\": 16}").unwrap();
+    fs::write(
+        &bad,
+        format!(
+            "{{\"schema_version\": {}}}",
+            aethelgard_ir::SPECIFICATION_SCHEMA_VERSION
+        ),
+    )
+    .unwrap();
     let (code, v) = run(
         &[
             "prove",

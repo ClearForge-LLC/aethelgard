@@ -977,7 +977,10 @@ fn foreign_clock_values(c: &motor::SolvedForeignClock) -> Result<(), IrValidatio
             a.difference(b).map(|s| (*s).to_owned()).collect::<Vec<_>>()
         };
         return Err(E::ForeignClockUsarts {
-            expected: serial::PERIPHERALS.iter().map(|s| (*s).to_owned()).collect(),
+            expected: serial::PERIPHERALS
+                .iter()
+                .map(|s| (*s).to_owned())
+                .collect(),
             missing: list(&expected, &named),
             unknown: list(&named, &expected),
         });
@@ -3227,7 +3230,10 @@ impl Specification {
                 board::source(&s.source, path)?;
             }
             for (usart, s) in &c.usarts {
-                board::source(&s.source, &format!("mcu.foreign_clock.usarts.{usart}.source"))?;
+                board::source(
+                    &s.source,
+                    &format!("mcu.foreign_clock.usarts.{usart}.source"),
+                )?;
             }
             foreign_clock_values(&motor::SolvedForeignClock::from(c))?;
         }
