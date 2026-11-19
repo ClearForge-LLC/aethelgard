@@ -1,0 +1,6 @@
+proofs::every_valid_sequence
+proofs::i2c1_transfer_is_bounded_and_ordered
+proofs::i2c2_transfer_is_bounded_and_ordered
+proofs::reset_clock_is_ok_exactly_at_reset
+proofs::usart1_start_writes_the_solved_values
+proofs::flash_option_status_is_one_read
