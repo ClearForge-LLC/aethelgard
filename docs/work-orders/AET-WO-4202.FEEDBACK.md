@@ -173,3 +173,47 @@ The fence let this order edit U2 and its load row only, and §7 lists the supply
 - **The pin:** `supply_tier1::each_load_row_s_resistor_is_the_part_its_row_describes` reads the emitted copper. Each resistor a load row names connects `VDD_3V3` to the net its row describes: R1 /I2C_SDA, R2 /I2C_SCL, R3 /EXT_SDA, R4 /EXT_SCL, R6 /U4_WP, R7 /U4_HOLD, R20 /U11_FB. The rows must be exactly those, in order. Mutants in §3.
 - **The finding** (a load row named by an emitted, sequence-numbered designator breaks silently when an unrelated part leaves) is the architect's §7.1 row. The lasting fix is a specification change and is not built here.
 
+
+### 2.3 Every moved figure, re-pinned from a measured run [measured, on main `96517013` + branch, then `35d23eae`]
+
+| Figure | Before (main) | After (branch) | Where pinned |
+|---|---|---|---|
+| Sentinel-03 outline | 96.50 × 69.35 mm (`1315`) | 95.80 × 67.60 mm | `outline_tier1` fixture test; `board_tier2` ANSWER |
+| Sentinel-03 placement digest | `9b83d120…` | `bd276856…` | `outline_tier1::FIXTURE_PLACEMENT_SHA256` |
+| Size sample 1 | 98.80 × 70.35 mm | 98.80 × 69.85 mm (2, 6, 8 still refused by name) | `outline_tier1` |
+| Capacitance ladder | rung 5, via cost 48, nearest I2C_SCL 74,937 fF | rung 7, via cost 320, nearest EXT_SDA 75,697 fF of 100,000 | `via_ring_tier1` |
+| Least `extract` slack | 8.6 pF | 8.5 pF | `board_tier2` ANSWER (not pinned) |
+| Supply gate | passes | passes after the rename (§2.2) | `supply_tier1` 10/10 |
+| `generate hwdef` on Sentinel-03 | `SenseNotEmitted` (VBAT_SENSE) | the same, by that name only | measured |
+| `sentinel-02.hwdef.dat` | `BARO BMP280 I2C:0:0x76` + `BARO BMP581 I2C:0:0x46` | `BARO BMP581 I2C:0:0x46` only | `hwdef_tier1`, CI `cmp` |
+| Foreign witnesses (`positive`, 3 runs each, all pass) | U7 id 385.832 ms, U7 data 435.812 ms, U5 id 4342.644 ms, U5 FIFO 4393.959 ms; 786–789‰ | U7 id 385.639 ms, U7 data 435.807 ms, U5 id 4341.081 ms, U5 FIFO 4392.421 ms; 763–786‰ | `ci/foreign-judge.sh` (windows unchanged: 4300 ms < U5 id < 4370 ms < FIFO < 5000 ms still holds) |
+| Campaign `state_sequence_hash`, the six committed droop scenarios | `71a6ffb3…`, `d58b7d39…`, `e21b21b5…`, `b0f9ff9c…`, `76b42f30…`, `297ab68a…` | identical | measured (`out/dh-{m,b}.txt`) |
+| Sentinel-01 bench campaign (5 scenarios) | — | identical hashes (§1.3) | measured |
+| `TIER2_MIN` | 190 | 191 (one tier-2 test; carried at `1911`'s word) | `ci.yml` |
+
+Sentinel-02's own-board tier-2 reads are moved to the new truth: `twin_tier2`'s I2C steps lose `U2 identity 0x60` and keep U7's three. Before and after, each of these passes on the branch: `twin_tier2` own board ×4, `models_tier2` 12/12, `board_tier2` own parts ×2, `with_tools` keep-out.
+
+## 3. Adversarial pass (targeted, §5)
+
+| Attack | Result [measured] |
+|---|---|
+| **The judge loosened** (M2: `hooks_of` accepts a scheduled line stamped 1 ns early) | Survived every existing test (bins 165, `boot_tier1` 61, `campaign_tier1` 65). Fixed: `a_scheduled_line_is_placed_only_at_its_count_s_exact_instant` (tier 1) now kills it. |
+| **The fix reverted** (M1: `run_for` without its tenth decimal) | Killed by the tier-1 test (on 1,018,380 by name) and by the tier-2 regression, which then fails with the pre-fix refusal: `INJECT 0 0 2813 12813 …: placed at 1359880 ns in a boot started at 1231750 ns, but it is stamped 1359879 ns`. That is the regression failing on the unfixed tree. |
+| **The fix in the wrong place** | The cause is the rendering. The BME280 board (no timed model of ours) fails the same way when the droop is shifted (§1.2), and the fix holds there. Sentinel-02 (ICM-42688-P + BMP581) with D1 also passes the stamp after the fix. |
+| **The fix at one instant only** | The BME280 bench droop shifted +1, +3, +5, +7, +9, +10, +20, +50, +100,000 (a quantum) and +100,050 ns: 10/10 pass on the fix (`out/a3-shifts-fix.txt`). |
+| **Replay** | The regression's archive is replayed twice in the test: identical output, and its hash equals the campaign's. |
+| **Sentinel-01 moving** | The bench campaign's hashes are identical (§1.3). A/B `verify --fab-out`, main's binary against the branch's, writes byte-identical packages (17 files). `--against-fab` locally differs only in `MANIFEST.json`'s `verdict_sha256`, as it does with main's binary: the sandbox (`uid_boundary` false under rootless podman). CI's `bench-package` is the authority. All 33 committed specifications give byte-identical `solve`, `emit`, `generate` and `generate hwdef` under main's binary and the branch's (`out/sameness.log`). |
+| **An orphan U2 (R)** | No `U2` or `BME280` (any case) in either moved specification, nor in any output of either board: schematic, board, BOM, generated crate and `.repl`, hwdef, solve, foreign verdicts. No load row names U2. |
+| **A renumbered designator** (ruled (a)) | M-swap (R6↔R7) and M-boot0 (R7→R8, BOOT0's strap) are killed by `each_load_row_s_resistor_is_the_part_its_row_describes`. |
+| **A check deleted rather than moved** | `foreign-judge.sh`: U2's identity and data checks go, and every U4, U5 and U7 check stays. The IMU-less run's I2C witness moves from U2 to U7. `twin_tier2` keeps every U7 step. |
+| **An expectation read from what is judged (`INV-07`)** | The regression's expectation is the bench scenario's own `expect` and `expect_counts`; only `start_ns` moves. Its precondition (the reset lands where the nine-digit form truncates) is checked by Renode's parse, not by the run's verdict. The re-pins are geometry the run produces, re-pinned only under ruling (a), each with its before. |
+
+## 4. Findings
+
+- **F1. With a BMP581 as the first scripted device, a BOR droop cannot recover within 100 µs** (§1.4). The generated firmware writes the boot word after every device's script, and the BMP581's script settles 10 ms. This affects `3403`'s bench specification with a BMP581 on J4 (told on the bus) and Sentinel-02's own board (U7). Not fixed here.
+- **F2. A `power.loads` row naming an emitted, sequence-numbered designator breaks silently when an unrelated part leaves** (§2.2). The architect's §7.1 row. The pin test guards Sentinel-03 only.
+- **F3. `validate` does not check that a load's `reference` names a declared part** (the WO's Grounds). Recorded, not built.
+- **F4. Post-`4400g` `sentinel-02-own` declares `mcu.foreign_clock`,** so a generated campaign on it is refused (`ForeignClockOnGeneratedRun`). The WO's §1.1 step "run `s02-droop-bor3` on `sentinel-02-own`, unchanged" was run on a scratch copy without the declaration, as `twin_tier2::own_board` does.
+- **F5. The regression test deviates from the WO's wording.** It uses Sentinel-01 as committed with the bench droop 50 ns later, not Sentinel-01 with U2 a BMP581: that variant fails its own expectation by F1 once the stamp is fixed. The shifted droop lands the reset on the same lossy instant (1,018,380 ns) on the board as ordered.
+- **F6. The placer is not monotone in parts.** Removing U2 grew the turned-IMU variant (forward) from fitting to 103.5 mm wide (§2.4).
+- **F7. Locally, the foreign judge's memory reached 1005–1007‰ of its 1 GiB bound once each, on main and on the branch** (`memory_cap_exceeded`). Three like-for-like runs each then measured 763–789‰. This is a Furnace load effect; CI's runs are the evidence (`4400g` F1: 773–800‰).
