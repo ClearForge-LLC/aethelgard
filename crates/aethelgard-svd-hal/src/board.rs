@@ -3899,9 +3899,10 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
     // more, timers or not (`AET-WO-3303` §1.2, `AET-WO-3303b` §1.2): the whole
     // harness does not finish on a motor board (`AET-WO-4300a` Q5) and needs
     // more than 8 GiB on a board with an SPI bus (`AET-WO-4600` F11). A split
-    // into one part is the whole, so such a board emits the whole harness,
-    // byte for byte as before. The whole image stays: the targeted harnesses
-    // set up through it.
+    // into one part is the whole, so such a board emits the whole harness (a
+    // board with one timer and no other unit proved a one-part split before
+    // `AET-WO-3303b`). The whole image stays: the targeted harnesses set up
+    // through it.
     let parts = parts(plan);
     if parts.len() < 2 {
         emit_schedule(w, plan, facts, speeds, &Scope::whole(plan), false);
