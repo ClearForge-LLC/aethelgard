@@ -10,7 +10,7 @@
 
 ## 0. How the runs were made
 
-- **Image and cap.** The pinned tools image (`container/IMAGE`) ran under `~/bin/capped-run --mem 16G` (`MemorySwapMax=0`, read back inside the scope), with `--network none` and `nice -n 10`. One container of mine ran at a time (`spike/3303b/sh/img.sh`, `flock`). Each harness had its own container, so each row's peak is that step's own scope `memory.peak`. Page cache is included, so a peak is an upper bound (`spike/3303b/sh/step.sh`, from `4600`).
+- **Image and cap.** The pinned tools image (`container/IMAGE`) ran under `~/bin/capped-run --mem 16G` (`MemorySwapMax=0`, read back inside the scope), with `--network none` and `nice -n 10`. One container of mine ran at a time (`spike/3303b/sh/img.sh`, `flock`). Each harness had its own container, so each row's peak is that step's own scope `memory.peak`. Page cache is included, so a peak is an upper bound (`spike/4600/sh/step.sh`, used as it is on `main`).
 - **Trees.** Neither phase read the live worktree. Each mounted a `git archive` snapshot read-only:
   - before: `main` 3f989435;
   - after: 13fef3ac. It holds the split (bba3e60c) and PREDICTIONS (2fb2f0fc). Later commits change comments, tests' text, spike files and this file only.
@@ -172,9 +172,17 @@ M6 survives because no plan that `parts()` builds can fail `check_parts`: the ca
 
 **Untested shape (residual):** a timerless board's `gpio` part that configures an output pin, under Kani. Of the four boards run, only `logger-i2c-only` has a `gpio` part, and it holds a port enable alone. A `gpio` part with an output is covered by tier-1 text tests and by `AET-WO-3303`'s throwaway motor board (2.6 s), not by a run here.
 
-## 7. Reduction pass
+## 7. Reduction pass (diff)
 
-See the PR commit list; done after the CI refit (§8).
+Reduction pass (diff): −27 lines net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 2 findings below.
+- **Removed:** `spike/3303b/sh/step.sh`, a byte-identical copy of `spike/4600/sh/step.sh` on `main` (`cmp`). `run.sh` now copies `main`'s file into the cache. The runs above were made with the copy, which is the same bytes.
+- **Finding R1 (outside the fence):** three copies of "the schedule harnesses of a board crate" (`strip_prefix("fn every_valid_sequence")`):
+  - `board_tier2.rs:123`;
+  - `attribute_seeded.rs:1180`;
+  - `twin_tier2.rs:2507`.
+
+  One helper in `tests/common/` would hold it, but `common/` and `twin_tier2` are outside this fence. Backlog.
+- **Finding R2:** `spike/3303b/table.py` restates PREDICTIONS §2's numbers. Parsing the Markdown would add lines, not remove them, so it is kept: a record, not a mechanism.
 
 ## 8. Fence deviations, and decisions for the architect
 

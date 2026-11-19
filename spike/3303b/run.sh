@@ -23,7 +23,7 @@ esac
 IMG="bash $PWD/spike/3303b/sh/img.sh"
 O=/cache/runs/$P/$B
 H=$C/runs/$P/$B
-mkdir -p "$H" "$C/sh"; cp spike/3303b/sh/step.sh "$C/sh/step.sh"
+mkdir -p "$H" "$C/sh"; cp spike/4600/sh/step.sh "$C/sh/step.sh"
 [ -f "$TREE/SHA" ] && echo "$(date -u -Is) tree $(cat "$TREE/SHA")" >> "$H/free.log"
 roomy() { local want=20 n=0
   until [ "$(free -g | awk '/^Mem:/ {print $7}')" -ge "$want" ]; do n=$((n+1)); [ $n -gt 120 ] && break; sleep 30; done
