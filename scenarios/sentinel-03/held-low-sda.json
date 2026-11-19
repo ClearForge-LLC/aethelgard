@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "name": "held-low-sda",
+  "base": "../../crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
+  "expect": "fail",
+  "expect_findings": [
+    "i2c_line_held_low",
+    "i2c_timeout"
+  ],
+  "overrides": [
+    {
+      "bus": "SENSORS",
+      "line_held_low": "sda"
+    }
+  ]
+}
