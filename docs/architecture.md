@@ -466,6 +466,7 @@ The records are the FEEDBACK files of `4400c`, `4400c2`, `4400e2`, `4400e3`, `42
 - **Two model divergences, named** (`4400c`, measured again at `4400e`):
   - *TIM5* runs at a fixed 250 MHz, so ArduPilot's clock runs 1.25 × virtual time. The foreign window's 4 s bound rests on it: when TIM5 is corrected, the last witness may move to about 4.5 s [inferred], and the bound is measured again.
   - *`usart1`* runs at a fixed 200 MHz, giving `BRR` `0x271`. The foreign judge drops `BRR`, so the divergence is a bench row.
+- **Why the clock is 250 MHz, and the ruling** (`4400f`, PR #229, measured 2026-11-18). Renode's RCC does push ArduPilot's programmed clock: TIM5 reads 200 MHz at 3.98 µs. ChibiOS then resets every timer at 0.900 ms, and `LimitTimer.Reset` restores the stock platform's 250 MHz. So today's figure is no one's choice. Renode realizes each period in whole ns, rounded up (`BaseClockSource.cs` L315–L325): exact at 250 and 200 MHz, but a 64 MHz DShot600 period of 106 ticks runs as 1,657 ns. Renode drops the D2 kernel-clock selections (`D2CCIP2R` reads 0). Ruled (comment 6996346321): a frequency set at construction, from the solved clock for the generated firmware and from a declared, cross-checked clock for a foreign one; ArduPilot then runs 1.00000× and its last witness is 4.394 s. Built by `AET-WO-4400g`; until it merges, the two divergences above stand.
 
 ### 2.28 Measurements from AET-WO-1303b (2026-11-18, Furnace and GitHub Actions)
 
@@ -738,6 +739,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-18 | §2.27 | Added §2.27: the flight path's measurements. Unmodified ArduPilot passes the foreign judge; Renode 1.17.0's `RETTOBASE` fault and its correction; the ICM FIFO; the TIM5 and `usart1` divergences, named | PRs #212, #214, #215, #217 |
 | 2026-11-18 | §2.28 | Added §2.28: `1303b`'s measurements (the closed forms' looseness, the certified discrete flow, the fabricator's tolerances priced, the 2-layer supply finding) | PR #222 |
 | 2026-11-18 | §2.27 | The `RETTOBASE` correction is retired: the pinned Renode carries upstream's NVIC fixes (`AET-WO-1605`) | PR #223 |
+| 2026-11-19 | §2.27 | Why the twin's timers run at 250 MHz (Renode's RCC push undone by ChibiOS's timer reset), Renode's whole-ns realization and the dropped USART mux; the ruling: a frequency set at construction, solved or declared (`AET-WO-4400f`, built by `4400g`) | PR #229, comment 6996346321 |
 
 New sections continue the sequence and never reuse a number.
 
