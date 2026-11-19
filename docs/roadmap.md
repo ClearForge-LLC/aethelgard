@@ -430,6 +430,15 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
     - The `esc` row is built with `4500`.
   - **`AET-WO-4240v`** (written 2026-11-19; a build after `4400g`): VOS2 with a declared core supply, and the clock limits judged per VOS at the fastest source.
   - **`AET-WO-2304b`** (written 2026-11-19; a build after `4400g`): the battery-sag chain, with Sentinel-03 first.
+  - **`AET-WO-4400g` merged** (#238, `ee835bd`): the twin's timers and USARTs at 64 MHz, set at construction. A foreign firmware runs at its declared clock (specification 17), cross-checked against the RCC registers. Replay checks kind 26 against kind 25's `kernel_hz` (trace 14). Any Renode but the pinned build is refused. ArduPilot runs at 1.00000× in a 5 s window.
+  - **`AET-WO-4201` merged as the record** (#237): the BMP581 chosen (Scotty, 2026-11-19).
+  - **`AET-WO-4202`** (written 2026-11-19; a build): U2 leaves Sentinel-02 and -03, and U7's BMP581 stays their barometer. The twin's BMP581 brown-out stamp fault is fixed. Sentinel-01 stays as ordered.
+  - **Sentinel-01 as ordered** (Scotty's DigiKey order, 2026-11-17, read 2026-11-19):
+    - U2 (BME280) was not ordered;
+    - **U3 (TMP117) was not ordered**;
+    - J1, J3 and J4 (SM04B-GHS-TB): only 3 of 9, all backordered.
+    - A top-up from LCSC is Scotty's choice. `3403`'s bench plan holds either way.
+  - **Sentinel-03 declares no ESC** (Scotty, 2026-11-19): J5 is a bench header, and ESCs are pack-fed when added.
   - **The Sentinel-01 order-gate review, held after the order:** no reorder. The bench plan's findings go to **`AET-WO-3403`** (#247): every row made able to fail, U2 left empty, and a BMP581 on J4 through a bench specification. The review is stored in `docs/reviews/`.
   - **The Sentinel-01 order-gate review** (line 434 of this file) runs after the order. Scotty ordered the boards and parts on 2026-11-19, before the review. It is a read-only fresh session on Furnace, and its first question is whether anything ordered needs a reorder.
   - **`AET-WO-1314` stopped and was ruled** (#227, comment 6982875594): a 50 µm via ring as an optional declared field; an undersized declared via refused (`ViaRingUnheld`); a deterministic ladder of routing attempts, chosen by `extract`'s own figure but judged again by `verify`; only for boards declaring `fab_tolerances`.
@@ -866,6 +875,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The placer handles a large anchored passive by moving its whole group: Sentinel-03's x headroom fell from 14.75 to 3.5 mm when C1 was anchored to U10 | `1315` (c), ruled (a) | the next placer work order |
 | Bind each serial port's protocol, options and baud to the ELF's `var_info`, closing L800's residual for all three | `4404` D1 | a `pincheck` work order |
 | A third GPS-protocol port compiles and is never bound (`AP_GPS_config.h:16`, `AP_GPS.cpp:345-349`) | `4404` D3 | the next `pincheck` work order |
+| `validate` does not check that a `power.loads` reference names a declared part (`ir/src/power.rs` L821–838). The `4201` spike's "U2 removed" Sentinel-03 kept a load row for the BME280, and it passed | `4202` (draft) | the next validation work order |
 | Flying Sentinel-02's forward direction. `4400d`'s fixture declares forward as the board's top edge, a fixture choice, not the airframe's | `4400d` D5, #207 | `AET-WO-4500` (with the drone body) |
 | USART receive DMA lines in the twin's platform: held. ArduPilot needs USART1's line to receive at all, but with the SPI lines too, a second 64-byte receive-buffer turnover during the dataflash erase ends in a repeatable `HardFault` (UsageFault `INVSTATE`, a corrupted code pointer; cause not established: Renode's `STM32DMA` or ArduPilot). Renode's `STM32F7_USART` never raises IDLE, so a frame under 64 bytes is never handed on: a model change. Timer DMA is not emitted either | `4400c2` D2, D3, #204 | `AET-WO-4400e`, only if its §1.1 shows the judge needs SERIAL0 receive; otherwise the foreign-firmware judge's next order (D3: establish the fault's cause first) |
 
