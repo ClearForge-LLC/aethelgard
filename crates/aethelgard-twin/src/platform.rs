@@ -817,29 +817,10 @@ pub fn emit_faulted(
     Ok(out)
 }
 
-/// Where the platform's timers, USARTs and DWT take their frequency from
-/// (`AET-WO-4400g` §1.1–§1.2): never the stock file's figures (250 MHz
-/// timers, 125 and 200 MHz USARTs, a 250 MHz DWT), which no firmware chose.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClockSource {
-    /// (a): the solved clock, the reset clock the generated firmware runs on.
-    Solved,
-    /// (c): `mcu.foreign_clock`, the clock a foreign firmware declares.
-    Declared,
-}
-
-/// Which clock builds `topology`'s platform: the declared one when the
-/// topology carries `foreign_clock`, else the solved one.
-pub fn clock_source(topology: &SolvedTopology) -> ClockSource {
-    if topology.foreign_clock.is_some() {
-        ClockSource::Declared
-    } else {
-        ClockSource::Solved
-    }
-}
-
-/// The kernel clock the twin builds timer `n` at: the declared one under
-/// [`ClockSource::Declared`], else [`SolvedClock::timer_kernel_hz`]. The
+/// The kernel clock the twin builds timer `n` at (`AET-WO-4400g` §1.1–§1.2):
+/// the declared one when the topology carries `foreign_clock`, else
+/// [`SolvedClock::timer_kernel_hz`]; never the stock file's 250 MHz, which no
+/// firmware chose. The
 /// emitter writes it, and the observers predict at it, from this one place.
 ///
 /// [`SolvedClock::timer_kernel_hz`]: aethelgard_ir::SolvedClock::timer_kernel_hz
@@ -852,10 +833,10 @@ pub fn timer_hz(topology: &SolvedTopology, n: u32) -> u64 {
 }
 
 /// Each instance the clock sets, as (the description's name, frequency in
-/// Hz): every timer and USART [`STOCK_FILE`] carries, and under
-/// [`ClockSource::Solved`] LPUART1, LPTIM1–5 and the DWT as well, each at
-/// its reset kernel clock. A foreign firmware declares none of those, so
-/// under [`ClockSource::Declared`] they keep the stock file's figures, which
+/// Hz): every timer and USART [`STOCK_FILE`] carries, and under the solved
+/// clock LPUART1, LPTIM1–5 and the DWT as well, each at its reset kernel
+/// clock. A foreign firmware declares none of those, so under a declared
+/// clock they keep the stock file's figures, which
 /// [`unclocked`] names.
 ///
 /// Two clocked models are set by neither: the NVIC's SysTick follows the
@@ -890,16 +871,15 @@ pub fn clocked(topology: &SolvedTopology) -> Vec<(String, u64)> {
 }
 
 /// The instances of [`STOCK_FILE`] whose frequency the solved clock sets and
-/// a declared one does not: none under [`ClockSource::Solved`]; the DWT,
-/// LPTIM1–5 and LPUART1 under [`ClockSource::Declared`]. A foreign verdict
-/// names them.
+/// a declared one does not: none under the solved clock; the DWT, LPTIM1–5
+/// and LPUART1 under a declared one. A foreign verdict names them.
 pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
-    match clock_source(topology) {
-        ClockSource::Solved => Vec::new(),
-        ClockSource::Declared => vec![
-            "dwt", "lptimer1", "lptimer2", "lptimer3", "lptimer4", "lptimer5", "lpuart1",
-        ],
+    if topology.foreign_clock.is_none() {
+        return Vec::new();
     }
+    vec![
+        "dwt", "lptimer1", "lptimer2", "lptimer3", "lptimer4", "lptimer5", "lpuart1",
+    ]
 }
 
 /// The clock as update entries (`AET-WO-4400g`): each instance's
@@ -912,14 +892,13 @@ pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
 /// paces received characters at `BaudRate`, so from the next Renode a wrong
 /// frequency changes what the firmware receives.
 fn emit_clock(out: &mut String, topology: &SolvedTopology) {
-    let whose = match clock_source(topology) {
-        ClockSource::Solved => {
-            "the solved clock's (the reset clock, HSI at 64 MHz, RM0433 Rev 9 §8.7.2)".to_owned()
-        }
-        ClockSource::Declared => format!(
+    let whose = if topology.foreign_clock.is_some() {
+        format!(
             "the specification's mcu.foreign_clock; {} keep the stock file's",
             unclocked(topology).join(", ")
-        ),
+        )
+    } else {
+        "the solved clock's (the reset clock, HSI at 64 MHz, RM0433 Rev 9 §8.7.2)".to_owned()
     };
     let _ = write!(
         out,

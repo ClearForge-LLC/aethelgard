@@ -180,8 +180,8 @@ enum Command {
         /// Judge the boot as a foreign firmware's, one this project did not
         /// generate (AET-WO-4400e): declared here, never inferred from the
         /// ELF; the verdict's boot says judge foreign. Its value is the
-        /// virtual time the boot runs, as --for's, at most 4000ms (the
-        /// foreign window). Needs --firmware; not with --for.
+        /// virtual time the boot runs, as --for's, at most the foreign
+        /// window. Needs --firmware; not with --for.
         #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
         foreign: Option<u64>,
     },

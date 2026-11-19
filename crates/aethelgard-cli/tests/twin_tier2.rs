@@ -3629,8 +3629,32 @@ fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
 /// `AET-WO-4300d2` emits it, and the twin judges the buses alone. The board
 /// crate comes from its generator and the platform from the twin's emitter,
 /// as the CLI makes them (KiCad has no symbol for either part yet: D5).
+///
+/// The fixture declares ArduPilot's clock (`mcu.foreign_clock`,
+/// `AET-WO-4400g`), which only `--foreign` takes, so our own firmware boots on
+/// a copy without it, its scenario file beside it; the specification is
+/// otherwise the fixture's.
 fn own_board(label: &str) -> (PathBuf, PathBuf, PathBuf) {
-    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json");
+    let fixtures = root().join("crates/aethelgard-cli/tests/fixtures");
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(fixtures.join("sentinel-02-own.json")).unwrap()).unwrap();
+    assert!(
+        spec["mcu"]
+            .as_object_mut()
+            .unwrap()
+            .remove("foreign_clock")
+            .is_some()
+    );
+    let spec_dir =
+        std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}-spec", std::process::id()));
+    fs::create_dir_all(&spec_dir).unwrap();
+    let spec_path = spec_dir.join("sentinel-02-own.json");
+    fs::write(&spec_path, serde_json::to_vec_pretty(&spec).unwrap()).unwrap();
+    fs::copy(
+        fixtures.join("sentinel-02-own-base.json"),
+        spec_dir.join("sentinel-02-own-base.json"),
+    )
+    .unwrap();
     let (solved, files) = common::verify::generated(&spec_path, "sentinel-01-board");
     let dir = std::env::temp_dir().join(format!("aet-4220-t2-{}-{label}", std::process::id()));
     common::verify::write_files(&dir, &files);
@@ -3800,7 +3824,7 @@ fn the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused() {
 /// archive refuses as a step read twice.
 #[test]
 fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
-    let (dir, _, _) = own_board("campaign");
+    let (dir, _, spec_path) = own_board("campaign");
     let elf = mutant_of(&dir, "own-campaign", |_| {});
     let archive = dir.join("archive");
     let _turn = renode_turn();
@@ -3808,8 +3832,8 @@ fn the_fixture_s_campaign_archives_each_configuration_and_replays() {
         .args([
             "campaign",
             "--scenarios",
-            root()
-                .join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json")
+            spec_path
+                .with_file_name("sentinel-02-own-base.json")
                 .to_str()
                 .unwrap(),
             "--firmware",

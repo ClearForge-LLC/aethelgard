@@ -71,6 +71,9 @@ if not eval("(" + check + ")"):
 PY
 }
 
+# The foreign window, FOREIGN_MAX_VIRTUAL_NS (AET-WO-4400g §1.4).
+window=5000ms
+
 # The positive case: pass, the foreign judge, booted, and each modelled
 # device's identity and a data read witnessed in the run; the timers'
 # declared 200 MHz held by the RCC registers read back, and the USARTs'
@@ -86,7 +89,7 @@ and [(c["clock"], c["declared_hz"], c["decoded_hz"], c["holds"]) for c in boot["
 and len(boot["clock"]["declared_only"]) == 8
 and any(c.startswith("usart_clock_declared_unchecked:") for c in boot["clock"]["conditions"])
 and v["tool"].get("build")
-' --platform "$platform" --firmware "$elf" --foreign 5000ms
+' --platform "$platform" --firmware "$elf" --foreign "$window"
 
 # The window too short for a declared witness: U5's identity (4.343 s at the
 # declared clock) and its first FIFO read (4.394 s) are past it.
@@ -108,7 +111,7 @@ run_spec=$work/undeclared.json run undeclared 3 'v["error"]["kind"] == "Firmware
 # AET-WO-4400g: --foreign with no declared clock, and a generated run on a
 # specification that declares one, are each refused by name before a boot.
 run_spec=$work/undeclared.json run clock-undeclared 3 'v["error"]["kind"] == "ForeignClockUndeclared"' \
-  --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --foreign 5000ms
+  --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
 run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"' \
   --platform "$platform" --firmware "$elf" --for 100ms
 
@@ -119,21 +122,21 @@ run_spec=$work/contradicted.json run clock-contradicted 1 '
 kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted"]
 and [(c["declared_hz"], c["decoded_hz"]) for c in boot["clock"]["checked"]]
     == [(250000000, 200000000), (250000000, 200000000)]
-' --platform "$work/gen-contradicted/board/sentinel-02-own.repl" --firmware "$elf" --foreign 5000ms
+' --platform "$work/gen-contradicted/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
 
 # SPI2's receive DMA line dropped from the platform, and U5's model removed:
 # neither is the platform the specification emits.
 grep -c 'DMARecieve -> dmamux1@39' "$platform" | grep -qx 1
 sed '/DMARecieve -> dmamux1@39/d' "$platform" > "$work/no-spi2-rx-dma.repl"
 run no-spi2-rx-dma 3 'v["error"]["kind"] == "PlatformNotEmitted"' \
-  --platform "$work/no-spi2-rx-dma.repl" --firmware "$elf" --foreign 5000ms
+  --platform "$work/no-spi2-rx-dma.repl" --firmware "$elf" --foreign "$window"
 grep -c '^u5: Sensors.ICM42688P' "$platform" | grep -qx 1
 sed '/^u5: Sensors.ICM42688P/d' "$platform" > "$work/no-u5.repl"
 run no-u5-model 3 'v["error"]["kind"] == "PlatformNotEmitted"' \
-  --platform "$work/no-u5.repl" --firmware "$elf" --foreign 5000ms
+  --platform "$work/no-u5.repl" --firmware "$elf" --foreign "$window"
 
 # The IMU line removed: ArduPilot never probes the ICM.
 run no-imu-line 1 '
 "spi_transaction_unwitnessed" in kinds and not witnessed.get(("U5", "identity"))
 and witnessed.get(("U2", "identity")) and witnessed.get(("U4", "identity"))
-' --platform "$platform" --firmware "$noimu" --foreign 5000ms
+' --platform "$platform" --firmware "$noimu" --foreign "$window"
