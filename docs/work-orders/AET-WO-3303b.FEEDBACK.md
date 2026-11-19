@@ -13,13 +13,13 @@
 - **Image and cap.** The pinned tools image (`container/IMAGE`) ran under `~/bin/capped-run --mem 16G` (`MemorySwapMax=0`, read back inside the scope), with `--network none` and `nice -n 10`. One container of mine ran at a time (`spike/3303b/sh/img.sh`, `flock`). Each harness had its own container, so each row's peak is that step's own scope `memory.peak`. Page cache is included, so a peak is an upper bound (`spike/4600/sh/step.sh`, used as it is on `main`).
 - **Trees.** Neither phase read the live worktree. Each mounted a `git archive` snapshot read-only:
   - before: `main` 3f989435;
-  - after: 13fef3ac. It holds the split (bba3e60c) and PREDICTIONS (2fb2f0fc). Later commits change comments, tests' text, spike files and this file only.
+  - after: 13fef3ac. It holds the split (bba3e60c) and PREDICTIONS (2fb2f0fc). Later commits do not change any harness's claim. They change: comments (one generated comment, §8.1, so the boards were re-blessed and the digest re-printed); the tests' text; two crate READMEs; `ci/`; the bench package's `MANIFEST.json`; spike files; this file; and two merges of `main` that touch no generator or board input. The final head's proofs are evidenced by CI on dd50ffa4 (§9): `verify_2k2_tier2`'s eight prove gates and `bench-package`'s ten.
 - **Binaries.** Each phase used its own CLI, built in the image (`debug`, `--locked`), plus the bridge:
   - before: `aethelgard` `6f121539…`;
   - after: `aethelgard` `4aa63ffd…`;
   - `aethelgard-bridge` `44abce24…` in both phases.
 - **Boards.**
-  - The two committed crates, proved with `--spec`: `boards/sentinel-01` from `sentinel-01-minimal.json`, and `boards/sentinel-01-bench` from `sentinel-01.json`. Every verdict says `harness_provenance: generated`.
+  - The two committed crates, proved with `--spec`: `boards/sentinel-01` from `sentinel-01-minimal.json`, and `boards/sentinel-01-bench` from `sentinel-01.json`. Every verdict says `harness_provenance: generated`: all 68 prove verdicts of both phases, checked.
   - `4600`'s `logger-i2c-only.json` and `logger-spi-only-cap.json`, copied to `~/.cache/aet-3303b/specs` and re-pinned from schema 16 to 17. That is the only line that changed in either (`diff` shows `2c2` and nothing else). Each phase's CLI generated them.
 - **Runner:** `spike/3303b/run.sh <before|after> <board>`.
   - It proves each `#[kani::proof]` the crate declares.
@@ -66,14 +66,22 @@ PREDICTIONS.md was committed alone (2fb2f0fc) before any run on split output. "H
 | logger-i2c-only | `every_valid_sequence_i2c1` | — | 0 · 19.1 s · 1.53 GB | 0 · 15 s · 1.0 GB | time held, peak held |
 | logger-i2c-only | `every_valid_sequence_i2c2` | — | 0 · 19.1 s · 1.52 GB | 0 · 15 s · 1.0 GB | time held, peak held |
 | logger-i2c-only | `every_valid_sequence_gpio` | — | 0 · 3.0 s · 0.21 GB | 0 · 4 s · 0.3 GB | time held, peak held |
-| logger-i2c-only | the five targeted harnesses | 0 ×5 · ≤12.1 s · ≤0.88 GB | 0 ×5 · ≤12.1 s · ≤0.85 GB | unchanged | held |
+| logger-i2c-only | `i2c1_transfer_is_bounded_and_ordered` | 0 · 9.1 s · 0.70 GB | 0 · 8.0 s · 0.65 GB | unchanged | held |
+| logger-i2c-only | `i2c2_transfer_is_bounded_and_ordered` | 0 · 12.1 s · 0.88 GB | 0 · 12.1 s · 0.85 GB | unchanged | held |
+| logger-i2c-only | `reset_clock_is_ok_exactly_at_reset` | 0 · 2.0 s · 0.09 GB | 0 · 2.0 s · 0.10 GB | unchanged | held |
+| logger-i2c-only | `usart1_start_writes_the_solved_values` | 0 · 8.0 s · 0.81 GB | 0 · 9.0 s · 0.81 GB | unchanged | held |
+| logger-i2c-only | `flash_option_status_is_one_read` | 0 · 1.0 s · 0.09 GB | 0 · 1.0 s · 0.09 GB | unchanged | held |
 | logger-i2c-only | `every_valid_sequence` (old name) | — | **1 · `harness_not_found`** · 1.0 s | refused | held |
 | logger-spi-only-cap | `every_valid_sequence` | 0 · 465.9 s · 10.65 GB | (a part list) | 4600's 390.4 s ±30 %, 10.65 GB ±10 % | held, held |
 | logger-spi-only-cap | `every_valid_sequence_spi1` | — | 0 · 62.2 s · **3.64 GB** | 0 · 45 s · 2.0 GB (1.0–3.5) | time held, **peak MISS** |
 | logger-spi-only-cap | `every_valid_sequence_spi2` | — | 0 · 102.5 s · **4.44 GB** | 0 · 45 s · 2.0 GB (1.0–3.5) | time held, **peak MISS** |
 | logger-spi-only-cap | `spi1_transfer_is_bounded_and_ordered` | 0 · 16.1 s · 1.37 GB | 0 · 22.1 s · 1.18 GB | unchanged | **time +38 %, peak −14 %** |
 | logger-spi-only-cap | `flash_option_status_is_one_read` | 0 · 2.0 s · 0.09 GB | 0 · 2.0 s · 0.12 GB | unchanged | **peak +32 %** |
-| logger-spi-only-cap | the other five targeted harnesses | 0 ×5 · ≤16.1 s · ≤1.26 GB | 0 ×5 · ≤16.1 s · ≤1.26 GB | unchanged | held |
+| logger-spi-only-cap | `spi1_transfer_refuses_too_many_frames` | 0 · 6.0 s · 0.50 GB | 0 · 6.0 s · 0.49 GB | unchanged | held |
+| logger-spi-only-cap | `spi2_transfer_is_bounded_and_ordered` | 0 · 16.1 s · 1.26 GB | 0 · 16.1 s · 1.26 GB | unchanged | held |
+| logger-spi-only-cap | `spi2_transfer_refuses_too_many_frames` | 0 · 7.0 s · 0.58 GB | 0 · 7.0 s · 0.55 GB | unchanged | held |
+| logger-spi-only-cap | `reset_clock_is_ok_exactly_at_reset` | 0 · 2.0 s · 0.10 GB | 0 · 2.0 s · 0.10 GB | unchanged | held |
+| logger-spi-only-cap | `usart1_start_writes_the_solved_values` | 0 · 8.0 s · 0.85 GB | 0 · 8.0 s · 0.86 GB | unchanged | held |
 | logger-spi-only-cap | `every_valid_sequence` (old name) | — | **1 · `harness_not_found`** · 1.0 s | refused | held |
 
 Every row, with no aggregation, is in `spike/3303b/out/table.md`.
@@ -103,7 +111,7 @@ Every row, with no aggregation, is in `spike/3303b/out/table.md`.
 
 ## 2. The split
 
-- **The change** (`crates/aethelgard-svd-hal/src/board.rs` L3905–3909): `emit_proofs` computes `parts(plan)` and splits whenever it yields two or more. A board with fewer keeps the whole harness. `check_parts` (L3829) is unchanged and runs on every split. `parts()`, `Scope::actions` and `footprint` are unchanged: nothing had to change for a board without a timer.
+- **The change** (`crates/aethelgard-svd-hal/src/board.rs` L3906–3910): `emit_proofs` computes `parts(plan)` and splits whenever it yields two or more. A board with fewer keeps the whole harness. `check_parts` (L3829) is unchanged and runs on every split. `parts()`, `Scope::actions` and `footprint` are unchanged: nothing had to change for a board without a timer.
 - **One behaviour change beyond the work order's words.** A board with one timer and no other unit used to emit a one-part split (`_tim1`); it now emits the whole harness. That is the rule "a split into one part is the whole". No fixture has that shape, and it was not run.
 - **The reset-clock read with no timer.** `check_parts` does **not** treat it as one owner, as it does a port enable or the kernel selection. The work order's wording expected it to; this is what the code does:
   - `Scope::actions` schedules `ResetClock` in every part with a peripheral or a timer (L3676–3677), so with no timer each peripheral part schedules it.
@@ -151,31 +159,31 @@ M6 survives because no plan that `parts()` builds can fail `check_parts`: the ca
 - A `verify_2k2_tier2` or `against_fab_tier2` test is its `ok` less the previous lock-holder's.
 - A colocated block is its libtest `finished in`.
 
-| Test or block | Row before | `main`'s run | PR's run | New row |
+| Test or block | Row before | `main`'s run | PR's runs: 44621800144; 44624532447; 44629051297 | New row (the worst) |
 |---|---|---|---|---|
-| `board_tier2::the_generated_board_proves` | 414.9 | 404.6 | 105.8 (28.8 + 77.0) | 105.8 |
-| `board_tier2::a_wrong_alternate_function_fails` | 369.7 | 317.1 | 17.9 (19.45 on the second run) | 19.5 |
-| `board_tier2::a_write_past_the_block_fails` | 347.9 | 380.5 | 26.1 | 26.1 |
-| `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 1165.8 | 848.4 | 356.3 (434.3 on the second run) | 434.3 |
-| `verify_2k2_tier2::verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 993.5 | 971.6 | 407.3 (448.9 on the second run) | 448.9 |
-| `against_fab_tier2::verify_against_fab_finds_the_package_it_wrote_identical` | 1164.6 | 1081.9 | 450.8 | 450.8 |
-| `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` | 1108.9 | 891.6 | 418.0 | 418.0 |
-| block `attribute_seeded` | 1086 | 985.98 | 386.04 | 387 |
-| block `verify_47k_tier2` | 448 | 504.76 | 227.97 | 228 |
-| block `four_layer_fab_tier2` | 1371 | 1272.99 | 581.82 | 582 |
+| `board_tier2::the_generated_board_proves` | 414.9 | 404.6 | 105.8 (28.8 + 77.0); 93.6; 118.2 | 118.3 |
+| `board_tier2::a_wrong_alternate_function_fails` | 369.7 | 317.1 | 17.9; 19.45; 17.0 | 19.5 |
+| `board_tier2::a_write_past_the_block_fails` | 347.9 | 380.5 | 26.1; 23.1; 26.5 | 26.6 |
+| `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` | 1165.8 | 848.4 | 356.3; 434.3; 374.1 | 434.3 |
+| `verify_2k2_tier2::verify_fab_out_writes_the_package_its_verdict_names_at_any_path` | 993.5 | 971.6 | 407.3; 448.9; 461.3 | 461.3 |
+| `against_fab_tier2::verify_against_fab_finds_the_package_it_wrote_identical` | 1164.6 | 1081.9 | 450.8; 364.1; 385.9 | 450.8 |
+| `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` | 1108.9 | 891.6 | 418.0; 280.2; 428.4 | 428.4 |
+| block `attribute_seeded` | 1086 | 985.98 | 386.04; 321.89; 478.53 | 479 |
+| block `verify_47k_tier2` | 448 | 504.76 | 227.97; 226.99; 226.61 | 228 |
+| block `four_layer_fab_tier2` | 1371 | 1272.99 | 581.82; 485.65; 556.99 | 582 |
 | `hot_plug_tier1::the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards` (`AET-WO-1315`, no row) | — | under 60 s | 60.48 | 60.5 |
 
 - **The rows are lowered although the tests' code is the same**, departing from the rule's "keep the larger earlier row". The cost the earlier rows measured, the whole schedule harness on a board without a timer, no longer exists. `main`'s run is the evidence of what it was.
 - **The other blocks are left alone.** `campaign_tier2`, `power_board_tier1`, `outline_tier1`, `supply_tier1` and `via_ring_tier1` run no timerless schedule proof. Their differences between the two runs are runner noise (`supply_tier1` 366 s on `main`, 684 s here).
 - **P2 fired on this PR's first run, and was right to.** It fired on `hot_plug_tier1`'s test, which arrived with `main` (`AET-WO-1315`) with no row and ran 60.48 s, past libtest's 60 s line. On `main`'s own run it stayed under the line. Every test in that shard passed; the shard failed on P2 alone.
 - **Planner.** `ci/shard.sh plan` in the pinned image on the refitted tree exits 0, so **P1 is silent**: 2,507 test names, 2,514 occurrences, 8 shards, each planned at 1,152 s. P2 is judged in the shards of the next run (§10).
-- **Two runs, the worse of each:** run 44624532447 (the bench-package write dispatch, same head, green on every job) measured higher in three rows, which are raised to it:
-  - `a_wrong_alternate_function_fails`: 19.45 s, row 19.5;
-  - `verify_binds…`: 434.3 s;
-  - `verify_fab_out…`: 448.9 s.
+- **Three runs, the worst of each.** The rows are at the worst over:
+  - 44621800144 (47983ca5, old weights);
+  - 44624532447 (the bench-package write dispatch, same head, green on every job);
+  - 44629051297 (dd50ffa4, the first run on these rows, green).
 
-  Every other row keeps the first run's larger figure. Second-run figures for the rest: the generated board 25.4 + 68.3 s; `a_write_past_the_block_fails` 23.1 s; `against_fab_tier2` 364.1 and 280.2 s; `attribute_seeded` 321.89 s; `verify_47k_tier2` 226.99 s; `four_layer_fab_tier2` 485.65 s; `hot_plug_tier1` 49.9 s.
-- **1911 merges first (architect, 22:10Z), with 12 shards and its own refit.** After it lands I merge `main` and re-weigh these rows against its layout by the same rule, before READY.
+  The third raised four rows and the `attribute_seeded` block. The spread between runs is up to ±30 % on one test (`against_fab_tier2` 280–428 s; `attribute_seeded` 322–479 s), which is why one run is not a weight.
+- **1911 merges first (architect, 22:10Z), with 12 shards and its own refit.** After it lands, `main` is merged here and these rows are re-weighed against its layout by the same rule. That waits on the architect's sequencing.
 
 ## 5. The cap (§1.5)
 
@@ -192,7 +200,7 @@ M6 survives because no plan that `parts()` builds can fail `check_parts`: the ca
 
 | Attack | Result | What catches it |
 |---|---|---|
-| An action no part schedules | not possible on a generated board | `check_parts` `UnscheduledAction` (L3830–3838); mutant 2; M1 killed |
+| An action no part schedules | not possible on a generated board | `check_parts` `UnscheduledAction` (L3831–3838); mutant 2; M1 killed |
 | A shared bit with two owners | not possible | `disjoint` (L3866); port enables and `SelectKernels` are single owners (L3842–3845); each part asserts every write against its running action's footprint, so an under-stated footprint fails the part's proof; mutant 1; M2 killed |
 | An ordering the whole constrained and no part does | none found | every `assume` in a part is the whole's for the same action. The shared tokens (`clock`, `kernels`) come from shared actions that each part schedules itself, once. Residual stated: the I2C part havocs `rcc[20]` (D2CCIP1R) whole before `reset_clock` reads it (`boards/sentinel-01/src/proofs.rs` L342, L604), which is more permissive than the whole, not less. |
 | A harness that no longer runs under `verify` or CI | none | `harnesses()`, `unplanned()`; `verify_2k2_tier2` pins the eight gates; `board_tier2` and `attribute_seeded` enumerate the parts; the old name is `harness_not_found` |
@@ -247,9 +255,37 @@ Reduction pass (diff): −27 lines net · 1 duplicate removed · 0 dead paths re
 
 ## 9. Gates
 
-- On bba3e60c (host): `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings` 0; `cargo test --workspace` 2,279 passed, 0 failed.
-- Re-run on the final head: §10.
+- **Host, 47983ca5** (the code at its final state; later commits add the package, weights, a merge of `main` that touches docs, `fab/**/*.md` and a new example only, and this file):
+  - `cargo fmt --all -- --check`: 0;
+  - `cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`: 0;
+  - `cargo test --workspace`: 2,302 passed, 0 failed.
+- **Pinned image, 47983ca5:**
+  - the edited tier-2 tests pass: `board_tier2`'s three in 89.3 s, `verify_2k2_tier2::verify_binds…` in 234.0 s;
+  - `ci/shard.sh plan` on the refitted tree exits 0, so **P1 is silent**.
+- **CI on dd50ffa4 (run 44629051297): green on every job.**
+  - The tools aggregate: `tools_total_passed=2514 names=2507`, `tier2_tests_passed=190 floor=190`. TIER2_MIN is unchanged: the new tests are tier 1.
+  - All eight shards passed, so **P2 is silent**. The shards ran 12.5–24.1 min on `main`'s 8-shard layout, before 1911.
+  - `bench-package` passed, so `--against-fab` is identical to the committed package.
+  - engine-image and ardupilot-image are green on the same head.
+- **Reduction pass (diff):** −27 lines net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 2 findings (§7).
 
 ## 10. Final state
 
-Filled at READY.
+**READY** on PR #255, with `main` 35d23eae merged.
+- **§2 acceptance, every item met:**
+  - every board under `boards/` proves every harness in the pinned image, and every part passes where the whole passed (§1);
+  - the before and after table sits beside the predictions (§1);
+  - the three tests pass, and each mutant fails with its condition removed (§3);
+  - the planner is silent (§4, §9);
+  - the gates pass and CI is green (§9).
+- **No §7 stop.**
+- **Left to the architect:**
+  - D1, the 8G cap (§5);
+  - `svd-hal/README.md` L74 and roadmap L808 (§8.1);
+  - R1, one helper for the part enumeration (§7).
+  - M6: the `check_parts` call in `emit_proofs` has no killing test (§3), so it goes to the backlog.
+- **The merge order is the architect's (22:10Z: 1911 first).** These obligations wait on it:
+  - after 1911, merge `main` and re-weigh the moved rows (§4) on its 12-shard layout;
+  - `4240v` and this branch both regenerate `boards/`, so whichever merges second re-blesses on top of the other;
+  - of `2304b` and this branch, the second to merge re-dispatches the bench package (22:10Z);
+  - `2304b`'s specification bump does not touch this work order's committed files. Only the two re-pinned scratch specifications (§0) would need it, if anyone re-ran §1.

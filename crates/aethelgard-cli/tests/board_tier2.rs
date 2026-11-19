@@ -31,9 +31,10 @@ use serde_json::Value;
 const HARNESS: &str = "proofs::every_valid_sequence_i2c1";
 /// The cheapest harness that runs SPI1's whole bring-up (the reset clock,
 /// GPIOA, the kernel selects, `enable_spi1`, `init`) through the image, so a
-/// seed there fails it in seconds where [`HARNESS`] takes minutes (`AET-WO-4230`
-/// Q-K, measured in the image: the missing clock enable fails in 3 s here,
-/// 228 s there).
+/// seed there fails it in seconds where the whole schedule harness took minutes
+/// (`AET-WO-4230` Q-K, measured in the image: the missing clock enable fails in
+/// 3 s here, 228 s there; since `AET-WO-3303b` the schedule's SPI1 part takes
+/// about a minute).
 const SPI_SETUP: &str = "proofs::spi1_transfer_refuses_too_many_frames";
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
