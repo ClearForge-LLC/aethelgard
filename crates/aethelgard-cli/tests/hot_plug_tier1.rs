@@ -93,6 +93,27 @@ fn not_drawable<T: std::fmt::Debug>(result: Result<T, EmitError>, reference: &st
     }
 }
 
+/// The committed fixture's declarations, drawn as declared: each buck's EN
+/// on its input and PG open, the LDO's EN on its input, OE on VCCA (the
+/// pins the emitter tied by its own rule before `AET-WO-1315`, unmoved).
+#[test]
+fn the_committed_declarations_are_drawn_as_declared() {
+    let b = placed(&full());
+    let buck = |r: &str, role: &str| net(&b, r, &pad("LMR33630ADDA", role));
+    for u in ["U10", "U11"] {
+        assert!(buck(u, "EN").is_some());
+        assert_eq!(buck(u, "EN"), buck(u, "VIN"), "{u}");
+        // KiCad's name for a pad on no net (`aethelgard_ir::names::UNCONNECTED`).
+        assert!(buck(u, "PG").unwrap().starts_with("unconnected-"), "{u}");
+    }
+    let ldo = |role: &str| net(&b, "U12", &pad("TLV75518PDBV", role));
+    assert!(ldo("EN").is_some());
+    assert_eq!(ldo("EN"), ldo("IN"));
+    let tx = |role: &str| net(&b, "U13", &pad("TXU0304PW", role));
+    assert_eq!(tx("OE"), tx("VCCA"));
+    assert_ne!(tx("OE"), tx("VCCB"));
+}
+
 /// OE strapped `vccb` is drawn on the translator's B rail, not its A rail
 /// as the emitter's old rule tied it.
 #[test]
