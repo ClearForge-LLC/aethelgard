@@ -489,3 +489,33 @@ Read on the analyzer (in PulseView, from the same `.sr` file) or with the scope.
 ## B7. Results
 
 Filled at the bench. Send the `.sr` file, the three decoder outputs, the `probe-rs` output and the sheet to the architect. **Every disagreement is written beside its prediction, with its size.**
+
+## Appendix: S1's twin records and witness lines, verbatim
+
+The boot judge's record table from `bench/simulate-verdict.json` (S1), unedited. Every row above that cites "twin S1" is one of these.
+
+| Bus | Device | Step | Command or register | Width | Expected | Observed | Status |
+|---|---|---|---|---|---|---|---|
+| I2C1 | U7 `0x46` | identity | `0x01` | 1 | `0x50` | `0x50` | ok |
+| I2C1 | U7 `0x46` | configure | `0x36 0x40 0x81` | 0 | `0x0` | `0x0` | ok |
+| I2C1 | U7 `0x46` | data | `0x1d` | 6 | `0x1940f362` | `0x1940f362` | ok |
+| SPI1 (CS PD14) | U5 | identity | `0xf5` | 1 | `0x47` | `0x47` | ok |
+| SPI1 (CS PD14) | U5 | configure 1 | `0x4c 0xc0` | 0 | `0x0` | `0x0` | ok |
+| SPI1 (CS PD14) | U5 | configure 2 | `0x50 0x66` | 0 | `0x0` | `0x0` | ok |
+| SPI1 (CS PD14) | U5 | configure 3 | `0x4e 0x03` | 0 | `0x0` | `0x0` | ok |
+| SPI1 (CS PD14) | U5 | data | `0x9d` | 6 | `0x120200000040` | `0x120200000040` | ok |
+
+The device models' own lines (trace kinds 13 and 22), each `observed` equal to `expected`:
+
+```
+[NOISY] i2c1.u7: read 0x01 -> 0x50
+[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81
+[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62
+[NOISY] spi1.spi1mux.u5: bank 0 read 0x75 -> 0x47
+[NOISY] spi1.spi1mux.u5: bank 0 write 0x4C <- 0xC0
+[NOISY] spi1.spi1mux.u5: bank 0 write 0x50 <- 0x66
+[NOISY] spi1.spi1mux.u5: bank 0 write 0x4E <- 0x03
+[NOISY] spi1.spi1mux.u5: bank 0 read 0x1D -> 0x12 0x02 0x00 0x00 0x00 0x40
+```
+
+Boot word observed `0x2100b007` at 39,039,070 ns virtual; brown-out word observed `0x0406aaf0`; 22 masked register rows equal (B2); peak RSS 601,372 KiB.
