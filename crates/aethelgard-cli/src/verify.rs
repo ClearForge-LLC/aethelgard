@@ -947,8 +947,10 @@ struct Coverage {
 /// fault covers its target; a detected one covers its bus or port only when
 /// the campaign holds a baseline (ruled (a)). A serial port is covered only
 /// by a detected `serial_rx_open` (`AET-WO-2302` D5, ending the exemption
-/// ruled on #155). Rails other than the MCU's supply and the battery stay
-/// `unmet` until a fault kind reaches them (ruled (b)).
+/// ruled on #155). A rail other than the MCU's supply is met by a detected
+/// `rail_out_of_band` beside a baseline, and unmet otherwise, with why when
+/// no such fault can reach it; the battery is met by a tolerated
+/// `battery_sag` (`AET-WO-2304b` §1.10).
 fn coverage(
     spec: &aethelgard_ir::Specification,
     topology: &aethelgard_ir::SolvedTopology,
@@ -2127,9 +2129,10 @@ mod tests {
         );
     }
 
-    /// Ruled (b) and (c): a rail other than the MCU's supply stays `unmet`
-    /// whatever is seeded; a bus no device uses is named as having nothing to
-    /// fault and does not block.
+    /// Ruled (b) and (c), with `AET-WO-2304b` §1.10: a rail other than the
+    /// MCU's supply that no `rail_out_of_band` covers stays `unmet`, named
+    /// with why (here, no consumer a judge observes); a bus no device uses is
+    /// named as having nothing to fault and does not block.
     #[test]
     fn a_rail_no_kind_reaches_is_unmet_and_a_deviceless_bus_does_not_block() {
         let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/connectors.json");
@@ -2152,9 +2155,10 @@ mod tests {
             .map(|x| classify(&spec, &t, x))
             .collect();
         let c = coverage(&spec, &t, &s, None);
+        // `AET-WO-2304b` §1.10: a non-MCU rail no fault reaches says why.
         assert_eq!(
             c.unmet,
-            ["rail `VDD_5V` (not the MCU's supply: no fault kind droops it)"]
+            ["rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]
         );
         assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
     }

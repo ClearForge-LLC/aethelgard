@@ -300,14 +300,21 @@ pub(crate) const SAG_OUTPUTS: &str = "Each battery-fed regulator's output is in 
 /// a rail out of band's modelling assumption; a battery sag's load and
 /// admission, the healthy R's source, and each motor output's `esc`
 /// declaration with its source. Empty for every other scenario.
-pub(crate) fn conditions(scenario: &Scenario, spec: &Specification) -> Result<Vec<String>, ScenarioError> {
+pub(crate) fn conditions(
+    scenario: &Scenario,
+    spec: &Specification,
+) -> Result<Vec<String>, ScenarioError> {
     let mut out = Vec::new();
     if let Some(domain) = scenario.rail_out_of_band() {
         out.push(rail_condition(domain, &rendered(spec, domain)?));
     }
     if scenario.battery_sag().is_some() {
         out.extend([SAG_LOAD, SAG_ADMITTED, SAG_OUTPUTS].map(str::to_owned));
-        if let Some(r) = spec.power.as_ref().and_then(|p| p.battery.series_milliohms.as_ref()) {
+        if let Some(r) = spec
+            .power
+            .as_ref()
+            .and_then(|p| p.battery.series_milliohms.as_ref())
+        {
             out.push(format!(
                 "The healthy path R is declared {} mΩ, a lower bound on the path where its source says so: {}",
                 r.value, r.source
@@ -652,7 +659,9 @@ pub(crate) fn rail_condition(domain: &str, r: &Rendering) -> String {
 pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, ScenarioError> {
     let refuse = |m: String| ScenarioError::new(RAIL_REFUSED, Some(domain), m);
     let Some(v) = spec.voltage_domains.iter().find(|v| v.id == domain) else {
-        return Err(refuse(format!("the specification has no domain `{domain}`")));
+        return Err(refuse(format!(
+            "the specification has no domain `{domain}`"
+        )));
     };
     if domain == spec.mcu.supply {
         return Err(refuse(format!(
@@ -672,7 +681,9 @@ pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, 
         )));
     }
     if c.serial_rx.is_empty() && c.spi_devices.is_empty() {
-        return Err(refuse(format!("`{domain}` has no consumer a judge observes")));
+        return Err(refuse(format!(
+            "`{domain}` has no consumer a judge observes"
+        )));
     }
     let mut unrendered: Vec<String> = c
         .i2c_buses
@@ -699,7 +710,11 @@ pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, 
         .collect();
     let who = if !c.spi_devices.is_empty() {
         let d: Vec<String> = c.spi_devices.iter().cloned().collect();
-        format!("{} {}", listed(&d), if d.len() == 1 { "behaves" } else { "behave" })
+        format!(
+            "{} {}",
+            listed(&d),
+            if d.len() == 1 { "behaves" } else { "behave" }
+        )
     } else {
         match firsts.into_iter().collect::<Vec<_>>().as_slice() {
             [Some(std)] => format!("a {std} peer behaves"),
@@ -815,7 +830,8 @@ fn solve_battery_sag(s: &SagStatic, scenario: &str) -> Result<SagSolved, ExitCod
                 solved.minimum_microvolts,
                 c.name,
                 c.floor_microvolts,
-                c.at_ps.map_or_else(String::new, |t| format!(", crossing it at {t} ps")),
+                c.at_ps
+                    .map_or_else(String::new, |t| format!(", crossing it at {t} ps")),
                 s.static_microvolts
             ),
             EXIT_INVALID_SPEC,

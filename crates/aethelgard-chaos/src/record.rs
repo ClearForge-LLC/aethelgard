@@ -988,11 +988,7 @@ fn override_value(o: &Override) -> Value {
         }
         Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
         Override::SerialRxOpen { port } => vec![u(5), t(port)],
-        Override::BatterySag(b) => vec![
-            u(6),
-            u(b.series_milliohms.into()),
-            u(b.start_ns),
-        ],
+        Override::BatterySag(b) => vec![u(6), u(b.series_milliohms.into()), u(b.start_ns)],
         Override::RailOutOfBand { domain } => vec![u(7), t(domain)],
     })
 }

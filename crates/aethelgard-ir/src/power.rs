@@ -3222,7 +3222,10 @@ pub fn battery_side_against(
         let Kind::Buck(b) = &row.kind else {
             return Err(unmodelled(
                 &r.reference,
-                format!("{} is not a buck: the chain models a battery-fed buck only", r.part),
+                format!(
+                    "{} is not a buck: the chain models a battery-fed buck only",
+                    r.part
+                ),
             ));
         };
         // `junctions` refuses a buck with no junction declaration.
@@ -3246,8 +3249,9 @@ pub fn battery_side_against(
         let out_mw = u128::from(d.vout_max_microvolts)
             .saturating_mul(u128::from(d.load_milliamps))
             .div_ceil(1_000_000);
-        let input_milliwatts =
-            u64::try_from(out_mw).unwrap_or(u64::MAX).saturating_add(u64::from(j.loss_milliwatts.value));
+        let input_milliwatts = u64::try_from(out_mw)
+            .unwrap_or(u64::MAX)
+            .saturating_add(u64::from(j.loss_milliwatts.value));
         sinks.push(BatterySink {
             reference: r.reference.clone(),
             part: r.part.clone(),

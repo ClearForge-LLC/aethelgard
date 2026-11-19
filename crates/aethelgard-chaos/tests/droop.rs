@@ -248,8 +248,8 @@ fn a_droop_domain_must_be_1_to_64_printable_ascii_bytes() {
 }
 
 #[test]
-fn schema_version_four_is_unsupported_for_a_droop_too() {
-    let v = scenario_json(4, json!([{ "droop": droop_json() }]), None);
+fn schema_version_five_is_unsupported_for_a_droop_too() {
+    let v = scenario_json(5, json!([{ "droop": droop_json() }]), None);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
 }
 
@@ -936,7 +936,7 @@ fn a_second_declared_rail_is_refused() {
     r.insert(3, declared());
     assert_eq!(
         refused(&r),
-        "a run holds at most one declared rail and one set of expected counts"
+        "a run holds at most one declared rail or battery sag and one set of expected counts"
     );
 }
 

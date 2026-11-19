@@ -136,12 +136,12 @@ fn a_duplicate_key_inside_an_override_is_refused() {
 }
 
 #[test]
-fn schema_version_four_is_unsupported() {
+fn schema_version_five_is_unsupported() {
     let mut v: Value = serde_json::from_slice(&pass_doc(json!([]))).unwrap();
-    v["schema_version"] = json!(4);
+    v["schema_version"] = json!(5);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
-    // Version 3 reads a version-1 file's content as it always did.
-    v["schema_version"] = json!(3);
+    // Version 4 reads a version-1 file's content as it always did.
+    v["schema_version"] = json!(4);
     assert!(parse(&v).is_ok());
 }
 

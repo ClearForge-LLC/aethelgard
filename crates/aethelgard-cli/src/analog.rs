@@ -454,7 +454,10 @@ fn chain_answer(
 ) -> Result<(u64, Vec<SinkCrossing>), String> {
     let lines: Vec<&str> = stdout.lines().collect();
     let [line] = lines.as_slice() else {
-        return Err(format!("the chain answer is {} lines, not one", lines.len()));
+        return Err(format!(
+            "the chain answer is {} lines, not one",
+            lines.len()
+        ));
     };
     let Ok(Value::Object(o)) = serde_json::from_str::<Value>(line) else {
         return Err(format!("`{}` is not a JSON object", line.escape_debug()));
@@ -474,9 +477,15 @@ fn chain_answer(
     if keys != FIELDS
         || o["chain"] != "solved"
         || o["ngspice"] != NGSPICE
-        || ["accepted_points", "final_microvolts", "initial_microvolts", "minimum_at_ns", "step_ns"]
-            .iter()
-            .any(|k| o[*k].as_u64().is_none())
+        || [
+            "accepted_points",
+            "final_microvolts",
+            "initial_microvolts",
+            "minimum_at_ns",
+            "step_ns",
+        ]
+        .iter()
+        .any(|k| o[*k].as_u64().is_none())
     {
         return Err(format!("`{line}` is not the chain's answer"));
     }
@@ -485,7 +494,11 @@ fn chain_answer(
         .ok_or_else(|| format!("`{line}` holds no minimum"))?;
     let sinks = o["sinks"].as_array().map_or(&[][..], Vec::as_slice);
     if sinks.len() != chain.sinks.len() {
-        return Err(format!("`{line}` answers {} sinks, not {}", sinks.len(), chain.sinks.len()));
+        return Err(format!(
+            "`{line}` answers {} sinks, not {}",
+            sinks.len(),
+            chain.sinks.len()
+        ));
     }
     let mut out = Vec::new();
     for (v, k) in sinks.iter().zip(&chain.sinks) {

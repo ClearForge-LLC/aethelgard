@@ -1126,8 +1126,8 @@ pub fn decoupling_picofarads(
 ) -> Result<BTreeMap<String, u64>, EmitError> {
     let (parts, _) = design(spec, solved, table)?;
     let mut out: BTreeMap<String, u64> = BTreeMap::new();
-    let outputs = aethelgard_ir::power::output_capacitance(spec)
-        .map_err(EmitError::InvalidSpecification)?;
+    let outputs =
+        aethelgard_ir::power::output_capacitance(spec).map_err(EmitError::InvalidSpecification)?;
     for (reference, c) in &outputs {
         let drawn = parts.iter().any(|p| {
             p.reference == *reference

@@ -20,8 +20,7 @@ use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
     self, BatterySag, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN,
-    SerialCapture,
-    SerialFraming, realized_ns, split_pin, step_index,
+    SerialCapture, SerialFraming, realized_ns, split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -920,6 +919,11 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             "a run holds at most one declared rail or battery sag and one set of expected counts",
         );
     }
+    // The scenario's own shape before any join: a rail out of band names
+    // the consumers it renders (`AET-WO-2304b` §1.7).
+    if let Record::Scenario { overrides, .. } = &records[0] {
+        check_rail_out_of_band(overrides)?;
+    }
     check_joins(records)?;
     let booted = records.iter().any(|r| {
         matches!(r, Record::BootObserved { boot_word, .. }
@@ -1238,7 +1242,6 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         }
     }
     check_battery_sag_records(records, overrides)?;
-    check_rail_out_of_band(overrides)?;
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
         if any_severity(kind) != want {

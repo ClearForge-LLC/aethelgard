@@ -66,10 +66,7 @@ pub fn operating_point_uv(v_open_uv: u64, r_mohm: u64, p_mw: u64) -> Option<u64>
 /// The sink whose floor binds: the highest, the first in the
 /// specification's order on a tie.
 pub fn binding(sinks: &[SagSink]) -> Option<&SagSink> {
-    sinks
-        .iter()
-        .rev()
-        .max_by_key(|k| k.floor_microvolts())
+    sinks.iter().rev().max_by_key(|k| k.floor_microvolts())
 }
 
 /// The time after the step by which the chain has settled, ns: 10 τ, where
@@ -162,7 +159,10 @@ mod tests {
         // Sentinel-03 (predictions Q1-Q4): 14,752 mW from 9 V.
         assert_eq!(operating_point_uv(9_000_000, 1, 14_752), Some(8_998_360));
         assert_eq!(operating_point_uv(9_000_000, 500, 14_752), Some(8_088_035));
-        assert_eq!(operating_point_uv(9_000_000, 1_372, 14_752), Some(4_601_271));
+        assert_eq!(
+            operating_point_uv(9_000_000, 1_372, 14_752),
+            Some(4_601_271)
+        );
         assert_eq!(operating_point_uv(9_000_000, 1_373, 14_752), None);
         assert_eq!(operating_point_uv(9_000_000, 0, 14_752), Some(9_000_000));
         assert_eq!(operating_point_uv(u64::MAX, u64::MAX, u64::MAX), None);
