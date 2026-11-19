@@ -151,6 +151,7 @@ Reduction pass (diff): −14 net · 3 duplicates removed · 1 dead path removed 
 | counted run | head | shards 0–7, min | slowest | spread | suite s | `gates`, min | tier 2 |
 |---|---|---|---|---|---|---|---|
 | 1 (44477143464) | `4b619fea` | 36.6, 28.8, 27.7, 37.9, 27.7, 30.5, 34.3, 37.4 | 37.9 | 10.2 | 13,490 | 13.7 | 190 (floor 190) |
+| 2 (44542565050) | `bfcc8d55` | 34.3, 27.8, 28.1, 38.0, 27.9, 37.0, 26.8, 26.9 | 38.0 | 11.2 | 12,784 | 17.1 | 190 (floor 190) |
 {{COUNTED}}
 
 ## §7.1 rows, for the architect
