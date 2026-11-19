@@ -25,7 +25,10 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-const HARNESS: &str = "proofs::every_valid_sequence";
+/// The schedule's I2C1 part: the whole-schedule harness is proved in parts on
+/// every board with two or more (`AET-WO-3303b` §1.2), and on the reference
+/// I2C1's pins and its `write_byte` are this part's.
+const HARNESS: &str = "proofs::every_valid_sequence_i2c1";
 /// The cheapest harness that runs SPI1's whole bring-up (the reset clock,
 /// GPIOA, the kernel selects, `enable_spi1`, `init`) through the image, so a
 /// seed there fails it in seconds where [`HARNESS`] takes minutes (`AET-WO-4230`
@@ -110,11 +113,23 @@ fn fails_on(label: &str, harness: &str, from: &str, to: &str, kind: &str, messag
     assert!(messages.contains(&message), "{messages:?}");
 }
 
+/// Every part of the reference's schedule proves (`AET-WO-3303b` §1.2): the
+/// board crate names exactly these schedule harnesses, and no whole one.
 #[test]
 fn the_generated_board_proves() {
-    let v = prove("board", &board(), HARNESS, 0);
-    assert_eq!(v["verdict"], "pass");
-    assert_eq!(v["findings"], serde_json::json!([]));
+    let proofs = fs::read_to_string(board().join("src/proofs.rs")).unwrap();
+    let parts: Vec<&str> = proofs
+        .lines()
+        .filter_map(|l| l.strip_prefix("fn every_valid_sequence"))
+        .map(|l| l.split('(').next().unwrap())
+        .collect();
+    assert_eq!(parts, ["_i2c1", "_spi1"]);
+    for part in parts {
+        let harness = format!("proofs::every_valid_sequence{part}");
+        let v = prove(&format!("board{part}"), &board(), &harness, 0);
+        assert_eq!(v["verdict"], "pass", "{harness}");
+        assert_eq!(v["findings"], serde_json::json!([]), "{harness}");
+    }
 }
 
 /// `AET-WO-4210` §2.2: the 1.8 V IMU and barometer fixture's board crate
@@ -415,7 +430,7 @@ fn prove_with_spec_tells_a_hand_written_harness_from_the_generated_one() {
             "--crate".to_owned(),
             c.to_str().unwrap().to_owned(),
             "--harness".to_owned(),
-            HARNESS.to_owned(),
+            "proofs::every_valid_sequence".to_owned(),
             "--spec".to_owned(),
             SPEC.to_owned(),
         ]

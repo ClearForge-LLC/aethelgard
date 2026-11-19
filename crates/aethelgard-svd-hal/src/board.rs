@@ -3685,11 +3685,12 @@ impl Scope {
     }
 }
 
-/// The parts a board with motor outputs proves its schedule in
-/// (`AET-WO-3303` §1.2): one per I2C or SPI peripheral, holding its pins and
-/// its chip selects; one per timer, holding its channel pins; and one for the
-/// GPIO outputs no unit owns, if there are any. Each part also schedules the
-/// enable of every port its pins are on, and a timer's the reset-clock read.
+/// The parts a board proves its schedule in when there are two or more
+/// (`AET-WO-3303` §1.2, `AET-WO-3303b` §1.2): one per I2C or SPI peripheral,
+/// holding its pins and its chip selects; one per timer, holding its channel
+/// pins; and one for the GPIO outputs no unit owns, if there are any. Each
+/// part also schedules the enable of every port its pins are on, and a
+/// peripheral's or a timer's the reset-clock read ([`Scope::actions`]).
 /// A USART's pins are in no part (no step configures one, `AET-WO-4300b`); a
 /// port whose every pin is a USART's still has its enable scheduled, in the
 /// `gpio` part.
@@ -3894,14 +3895,17 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
          use crate::board::sealed;\n\
          use crate::*;\n"
     );
-    // A board with motor outputs proves its schedule in parts (`AET-WO-3303`
-    // §1.2): the whole harness does not finish on one (`AET-WO-4300a` Q5).
-    // Without a timer, the whole harness is emitted, byte for byte as before.
-    // The whole image stays: the targeted harnesses set up through it.
-    if plan.timers.is_empty() {
+    // A board proves its schedule in parts whenever `parts` yields two or
+    // more, timers or not (`AET-WO-3303` §1.2, `AET-WO-3303b` §1.2): the whole
+    // harness does not finish on a motor board (`AET-WO-4300a` Q5) and needs
+    // more than 8 GiB on a board with an SPI bus (`AET-WO-4600` F11). A split
+    // into one part is the whole, so such a board emits the whole harness,
+    // byte for byte as before. The whole image stays: the targeted harnesses
+    // set up through it.
+    let parts = parts(plan);
+    if parts.len() < 2 {
         emit_schedule(w, plan, facts, speeds, &Scope::whole(plan), false);
     } else {
-        let parts = parts(plan);
         check_parts(plan, facts, &parts)?;
         emit_schedule(w, plan, facts, speeds, &Scope::whole(plan), true);
         for (i, part) in parts.iter().enumerate() {
@@ -7345,12 +7349,144 @@ mod tests {
         assert!(!gpio.contains("Usart2") && !gpio.contains("Uart4"));
     }
 
+    /// [`with_spi`] with a second I2C bus and no timer (`AET-WO-3303b` §1.3):
+    /// I2C1 on PB6/PB7 (bus A), I2C2 on PB10/PB11 (bus B), SPI1 on PA5-PA7
+    /// with U4's chip select on PA0.
+    fn two_i2c_one_spi() -> (SolvedTopology, Plan, Facts) {
+        let mut s = with_spi(&[("U4", "CS", "PA0")]);
+        s.assignments
+            .insert("SCL2".into(), assign("PB10", "I2C2", "I2C2_SCL", 4));
+        s.assignments
+            .insert("SDA2".into(), assign("PB11", "I2C2", "I2C2_SDA", 4));
+        s.i2c_ceilings = BTreeMap::new();
+        s.i2c_speeds = BTreeMap::new();
+        s.analog_lines = analog_lines(&[("SCL", "A"), ("SDA", "A"), ("SCL2", "B"), ("SDA2", "B")]);
+        set_ceiling(&mut s, "A", 400_000);
+        set_ceiling(&mut s, "B", 400_000);
+        s.derive_controllers();
+        let plan = Plan::new("b", &s, &table()).unwrap();
+        let facts = Facts::new(&plan, &cmsis::register_facts().unwrap()).unwrap();
+        (s, plan, facts)
+    }
+
+    /// `AET-WO-3303b` §1.2: a board without a timer splits its schedule
+    /// whenever [`parts`] yields two or more, and each part's scope is what
+    /// [`parts`] documents: its peripheral, its pins and chip selects, their
+    /// ports' enables, the reset-clock read, and for SPI the kernel selection.
     #[test]
-    fn a_board_without_timers_keeps_the_whole_schedule_harness() {
-        let proofs = &generate("b", &solved(), &table()).unwrap()["src/proofs.rs"];
+    fn a_board_without_timers_splits_its_schedule_into_its_parts() {
+        let (solved, plan, facts) = two_i2c_one_spi();
+        assert!(plan.timers.is_empty());
+        let parts = parts(&plan);
+        let names: Vec<&str> = parts.iter().filter_map(|p| p.part.as_deref()).collect();
+        assert_eq!(names, ["i2c1", "i2c2", "spi1"]);
+        assert_eq!(check_parts(&plan, &facts, &parts), Ok(()));
+        let set =
+            |items: &[&str]| -> BTreeSet<String> { items.iter().map(|&i| i.into()).collect() };
+        for (part, peripheral, pins, port) in [
+            (&parts[0], "I2C1", set(&["PB6", "PB7"]), 'B'),
+            (&parts[1], "I2C2", set(&["PB10", "PB11"]), 'B'),
+            (&parts[2], "SPI1", set(&["PA0", "PA5", "PA6", "PA7"]), 'A'),
+        ] {
+            assert_eq!(part.peripherals, set(&[peripheral]));
+            assert_eq!(part.pins, pins);
+            assert_eq!(part.ports, BTreeSet::from([port]));
+            assert!(part.timers.is_empty());
+        }
+        use Action::{Clock, Pin, Port, ResetClock, SelectKernels, Start};
+        assert_eq!(
+            parts[1].actions(&plan),
+            [
+                Port('B'),
+                Clock("I2C2".into()),
+                Pin("PB10".into()),
+                Pin("PB11".into()),
+                Start("I2C2".into()),
+                ResetClock,
+            ]
+        );
+        assert_eq!(
+            parts[2].actions(&plan),
+            [
+                Port('A'),
+                Clock("SPI1".into()),
+                Pin("PA0".into()),
+                Pin("PA5".into()),
+                Pin("PA6".into()),
+                Pin("PA7".into()),
+                Start("SPI1".into()),
+                ResetClock,
+                SelectKernels,
+            ]
+        );
+        // Emitted as parts, each a proof, and the whole schedule is no proof.
+        let proofs = &generate("b", &solved, &table()).unwrap()["src/proofs.rs"];
+        for part in names {
+            let at = proofs
+                .find(&format!("fn every_valid_sequence_{part}() {{"))
+                .unwrap_or_else(|| panic!("no {part} part"));
+            assert!(
+                proofs[..at]
+                    .rfind("#[kani::proof]\n#[kani::unwind(")
+                    .is_some_and(|h| at - h < 40),
+                "{part}"
+            );
+        }
+        assert!(!proofs.contains("fn every_valid_sequence() {"));
+        assert_eq!(proofs.matches("fn every_valid_sequence_").count(), 3);
+    }
+
+    /// A mutant of [`a_board_without_timers_splits_its_schedule_into_its_parts`]:
+    /// one of PB10's bits in a second part is two owners of one bit.
+    #[test]
+    fn a_timerless_split_whose_parts_share_a_bit_is_refused() {
+        let (_, plan, facts) = two_i2c_one_spi();
+        let mut parts = parts(&plan);
+        parts[0].pins.insert("PB10".into());
+        assert_eq!(
+            check_parts(&plan, &facts, &parts),
+            Err(BoardError::FootprintOverlap {
+                first: "the i2c1 part".into(),
+                second: "the i2c2 part".into(),
+                register: "GpioB at 0x0, bits 0x00300000".into(),
+            })
+        );
+    }
+
+    /// A mutant of [`a_board_without_timers_splits_its_schedule_into_its_parts`]:
+    /// an action of the whole schedule that no part schedules.
+    #[test]
+    fn a_timerless_split_that_leaves_an_action_unscheduled_is_refused() {
+        let (_, plan, facts) = two_i2c_one_spi();
+        let mut parts = parts(&plan);
+        parts[1].pins.remove("PB11");
+        assert_eq!(
+            check_parts(&plan, &facts, &parts),
+            Err(BoardError::UnscheduledAction {
+                action: "the PB11 configure".into(),
+            })
+        );
+    }
+
+    /// `AET-WO-3303b` §1.2: a split into one part is the whole, so a board
+    /// whose [`parts`] yields one keeps the whole harness, byte for byte; the
+    /// reference's I2C1 with an output no unit owns is two parts.
+    #[test]
+    fn a_board_with_one_part_keeps_the_whole_schedule_harness() {
+        let mut one = solved();
+        one.gpio.clear();
+        one.pin_speeds.remove("CS");
+        let proofs = &generate("b", &one, &table()).unwrap()["src/proofs.rs"];
         assert!(proofs.contains("fn every_valid_sequence() {"));
         assert!(!proofs.contains("fn every_valid_sequence_"));
         assert!(!proofs.contains("fn rely("));
+        let proofs = &generate("b", &solved(), &table()).unwrap()["src/proofs.rs"];
+        assert!(!proofs.contains("fn every_valid_sequence() {"));
+        for part in ["i2c1", "gpio"] {
+            assert!(proofs.contains(&format!("fn every_valid_sequence_{part}() {{")));
+        }
+        let gpio = block(proofs, "fn every_valid_sequence_gpio() {");
+        assert!(gpio.contains("into_output("), "the gpio part drives PA0");
     }
 
     /// `AET-WO-1207` §1.5: the one SPI mode the generated firmware drives is
