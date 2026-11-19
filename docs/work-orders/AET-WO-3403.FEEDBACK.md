@@ -1,4 +1,4 @@
-# AET-WO-3403 — FEEDBACK (build: Sentinel-01 as ordered, the bench plan made able to fail)
+# AET-WO-3403 — FEEDBACK (build: Sentinel-01 as ordered, the bench plan made able to fail) — READY
 
 **Branch and inputs.**
 - Branch `wo/aet-3403-s01-bench-plan`, from `main` at `47ec18f6`.
@@ -180,4 +180,8 @@ Reduction pass (diff): −3 lines net · 5 duplicated rationales collapsed to on
   - A first run with the target directory outside the repository failed `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`. The test writes its scenarios under the target directory, and the CLI refuses a base outside the working directory. That is my harness, not the diff; in CI's layout the file passes 11/11.
 - **The four tests that walk `examples/`, with the new file in place:** `silicon_rules` 1/1, `ledger_tier1` 12/12, `hwdef_tier1` 5/5 (cli), `silicon_words` 6/6 (svd-hal).
 
-**What CI ran:** see the PR's checks. This is a docs-and-`examples/` PR, so the routing `1911` brings may change what runs.
+**What CI ran** (**measured**, PR #247 at `e9ce63c7`, with `origin/main` `56639a89` merged in):
+- `ci` run 44579084240 and `ardupilot-image` run 44579084211: every job passed (27), and `publish` was skipped as designed.
+- That covers `gates`, eight shards, eight tools shards and `bench-package`. Tier 2: **190 passed, floor 190**; the tools jobs passed 2,470.
+- `1911` has not landed, so a docs-and-`examples/` PR still ran the full matrix.
+- The READY commit after it changes only this file and `BENCH-EXT-BMP581.md`, the architect's D1 and D2 rulings. Its own CI run is the record.
