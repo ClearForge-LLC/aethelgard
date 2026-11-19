@@ -145,6 +145,16 @@ impl Stop {
             message,
         }
     }
+    /// Renode at the pinned version but another build, or none named: exit
+    /// 4, as an unusable tool, under its own name (`AET-WO-4400g` §1.5).
+    pub fn renode_build_not_pinned(message: String) -> Self {
+        Self {
+            code: EXIT_TOOL_UNAVAILABLE,
+            kind: "RenodeBuildNotPinned",
+            id: Some("renode".to_owned()),
+            message,
+        }
+    }
     /// A required sandbox layer that cannot be enforced: exit 4,
     /// `SandboxUnavailable`, never a run without it (`INV-06`).
     pub fn sandbox(layer: &str, message: String) -> Self {

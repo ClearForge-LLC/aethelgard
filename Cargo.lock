@@ -113,6 +113,7 @@ dependencies = [
 name = "aethelgard-twin"
 version = "0.2.0"
 dependencies = [
+ "aethelgard-chaos",
  "aethelgard-ir",
  "aethelgard-renode-models",
  "aethelgard-svd-hal",

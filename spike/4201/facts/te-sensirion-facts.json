@@ -1,0 +1,305 @@
+{
+ "MS8607": {
+  "source": "NOT DOWNLOADED. Datasheet ENG_DS_MS8607-02BA01__C4.pdf (rev C4 per te.com product page filename); curl plain -> HTTP 403 (te.com DDEController, 2026-11-19T06:48:26Z; earlier guessed URL also 403; te.com.cn HTTP 567 bot wall; WebFetch of te.com datasheet URL 404). Not circumvented.",
+  "i2c_addresses": "not obtained (datasheet unavailable; do not use memory)",
+  "identity": "not obtained",
+  "supply_voltage": {
+   "value": "1.5 - 3.6 V",
+   "doc": "te.com product page 'Supply Voltage Range (V): 1.5 \u2013 3.6' (WebFetch 2026-11-19), not datasheet"
+  },
+  "package": {
+   "value": "surface mount; product page: length 5 mm, width 3 mm, height 1.15 mm; QFN-8 per LCSC. Clearly not 2.5x2.5 mm LGA-8 -> not footprint compatible by body size",
+   "doc": "te.com product page"
+  },
+  "accuracy_current_times_capacitance": "not obtained",
+  "lifecycle": {
+   "value": "\"Active\"; also page notice \"This product is not currently available. For more information, including distributor inventory, please contact us.\"",
+   "fetched_utc": "2026-11-19 (approx 06:48Z)",
+   "doc": "https://www.te.com/en/product-MS860702BA01-50.html"
+  },
+  "mpns": "MS860702BA01-50",
+  "distributors": {
+   "lcsc": "C5334082",
+   "digikey": "not found by search",
+   "mouser": "not found by search",
+   "digikey_search_fetch": "HTTP 403 at 2026-11-19T06:48:41Z"
+  },
+  "breakout": {
+   "value": "Adafruit product 4716 MS8607 PHT STEMMA QT/Qwiic https://www.adafruit.com/products/4716 ('In stock' on Adafruit page; a Pimoroni copy says no longer stocked); address and pull-up removability not obtained (learn guide URL guess 404)"
+  }
+ },
+ "SHT40": {
+  "source": {
+   "url": "https://sensirion.com/media/documents/33FD6951/6A7C10A0/HT_DS_Datasheet_SHT4x_V7.3.pdf",
+   "fetched_utc": "2026-11-19T06:47:41Z",
+   "sha256": "8db4a43f17149b76811cfb504caaeca4ef844ddc710cb9b45905c51c7ddfe3c2",
+   "note": "one datasheet covers SHT40/41/43/45; same file copied into sht45/. Text extracted with pypdf (uv, isolated); figures/drawings not machine-readable"
+  },
+  "chip_id_register": {
+   "value": "none printed; no WHO_AM_I/chip-ID register (command-only interface)",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 12,
+   "section": "4.5 Table 8 / 4.7"
+  },
+  "identity_read": {
+   "value": "command 0x89 returns 2x16-bit words + CRC-8 = unique per-device serial number (OTP, assigned in production). No fixed identity value printed; serial differs per unit, so cannot be compared to a datasheet constant. CRC-8 poly 0x31 init 0xFF is checkable.",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 13,
+   "section": "4.7; Table 7 p11"
+  },
+  "supply_voltage": {
+   "value": "1.08 min / 3.3 typ / 3.6 max V; no separate I/O range (VIL 0.3*VDD, VIH 0.7*VDD)",
+   "typ_or_max": "min/typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "package": {
+   "value": "DFN, 4 pins (SDA,SCL,VDD,VSS), open cavity; body 1.5 x 1.5 x 0.5 mm per Sensirion product page (WebFetch 2026-11-19), datasheet dims only in drawing Fig 15 p15 (not extracted); pitch not printed in text. Central die pad not to be soldered (p16). Definitely NOT LGA-8 2.5x2.5 P0.65 compatible (4 pins vs 8).",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "15-17",
+   "section": "5.1-5.4"
+  },
+  "operating_temp": {
+   "value": "-40 to 125 C (specified range -40..+125 C); RH 0-100 %RH; best performance 5-60 C / 20-80 %RH",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 6,
+   "section": "2.2 Table 2; 3.2 Table 6; 2.3"
+  },
+  "powerup_time": {
+   "value": "0.3 typ / 1 max ms (VDD>=VPOR to idle; measured at -40C, 1.08V)",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 10,
+   "section": "3.1 Table 5"
+  },
+  "soft_reset_time": {
+   "value": "1 max ms (after ACK of reset cmd 0x94; also valid for I2C general call reset 0x06 to addr 0x00)",
+   "typ_or_max": "max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 10,
+   "section": "3.1 Table 5; 4.8 p13"
+  },
+  "pin_capacitance": {
+   "value": "pin/input capacitance not printed; bus load limit Cb 400 pF (fast mode, Rp<=820 ohm), 340 pF (FM+, Rp=390 ohm)",
+   "typ_or_max": "max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "pressure": "not applicable (no pressure sensor)",
+  "supply_current": {
+   "value": "idle 0.08 typ uA at 25C (1.0 at ~ 25C? table: 0.08 / 1.0 / 3.4 uA listed as 'At 25 C / At 125 C' - column alignment ambiguous in extraction, recheck figure); measurement 320 typ / 500 max uA; power-up 50 typ uA; avg @1 meas/s: 2.2 (high rep.) / 1.2 (med) / 0.4 (low) uA typ",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "heater": {
+   "value": "Integrated heater, 3 powers 20/110/200 mW (typ, VDD=3.3V), 0.1 s or 1 s pulses, commands 0x15/0x1E/0x24/0x2F/0x32/0x39; max duty 10%; heater-on idle current 6/33/60 mA typ, 10/55/100 mA max. Off by default: each heater command self-terminates after 1 s max, there is no heater-on state to persist; 'no dedicated command to turn off' (Table 9: 0 = off). Datasheet does not literally say 'off at power-up'.",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "13-14",
+   "section": "4.9; Tables 4,8,9"
+  },
+  "temperature_accuracy_note": "graph-only max (Fig 10-13 p7)",
+  "lifecycle": {
+   "value": "no status word on Sensirion catalog page (checked via WebFetch 2026-11-19; page shows only 'Buy now / See inventory / Contact sales')",
+   "doc": "sensirion.com/products/catalog/SHT40 and /SHT45"
+  },
+  "mpns": "SHT40-AD1B-R2 (Sensirion 3.000.465, 0x44, 2500 T&R); SHT40-AD1B-R3 (3.000.353, 10000); SHT40-BD1B-R2 (3.000.492, 0x45); SHT40-BD1B-R3 (3.000.610); SHT40-CD1B-R3 (3.000.691, 0x46); AD1F membrane; AD1P cover",
+  "i2c_addresses": {
+   "value": "0x44 (xD1B, A), 0x45 (B), 0x46 (C); fixed per ordering code, NOT pin-selectable",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "12/21/22",
+   "section": "1 Highlights p1; 9 Table 11 p21; Table 12 p22"
+  },
+  "humidity_accuracy": {
+   "value": "SHT40 RH accuracy typ 1.8 %RH (25C); max in Fig 2 graph only",
+   "typ_or_max": "typ",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 4,
+   "section": "2.1 Table 1"
+  },
+  "temperature_accuracy": {
+   "value": "SHT40 typ 0.2 C; max graph only (Fig 10)",
+   "typ_or_max": "typ",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 6,
+   "section": "2.2 Table 2"
+  },
+  "humidity_resolution_repeatability": {
+   "value": "0.01 %RH res; repeatability 3sigma high 0.08/med 0.15/low 0.25 %RH",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 4,
+   "section": "2.1 Table 1"
+  },
+  "temp_resolution": {
+   "value": "0.01 C",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 6,
+   "section": "2.2 Table 2"
+  },
+  "distributors": {
+   "digikey": "1649-SHT40-AD1B-R2TR-ND / -CT-ND / -DKR-ND (from search snippet, unverified); product URL https://www.digikey.com/en/products/detail/sensirion-ag/SHT40-AD1B-R2/13532084 (search result)",
+   "mouser": "403-SHT40-AD1B-R2 (search snippet, unverified)",
+   "lcsc": "C-number not obtained (flux.ai/lcsc listing seen, number not captured)",
+   "digikey_search_fetch": "HTTP 403 from WebFetch at 2026-11-19T06:48:41Z; no price/stock quote obtained (not circumvented)"
+  },
+  "breakout": {
+   "value": "Adafruit product 4885 Sensirion SHT40 STEMMA QT/Qwiic https://www.adafruit.com/product/4885; 0x44 fixed; 3-5V with regulator+level shifting, 3V out 100 mA; 10K pull-up on SDA/SCL; removable? guide does not say (not stated)",
+   "doc": "learn.adafruit.com/adafruit-sht40-temperature-humidity-sensor"
+  }
+ },
+ "SHT45": {
+  "source": {
+   "url": "https://sensirion.com/media/documents/33FD6951/6A7C10A0/HT_DS_Datasheet_SHT4x_V7.3.pdf",
+   "fetched_utc": "2026-11-19T06:47:41Z",
+   "sha256": "8db4a43f17149b76811cfb504caaeca4ef844ddc710cb9b45905c51c7ddfe3c2",
+   "note": "one datasheet covers SHT40/41/43/45; same file copied into sht45/. Text extracted with pypdf (uv, isolated); figures/drawings not machine-readable"
+  },
+  "chip_id_register": {
+   "value": "none printed; no WHO_AM_I/chip-ID register (command-only interface)",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 12,
+   "section": "4.5 Table 8 / 4.7"
+  },
+  "identity_read": {
+   "value": "command 0x89 returns 2x16-bit words + CRC-8 = unique per-device serial number (OTP, assigned in production). No fixed identity value printed; serial differs per unit, so cannot be compared to a datasheet constant. CRC-8 poly 0x31 init 0xFF is checkable.",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 13,
+   "section": "4.7; Table 7 p11"
+  },
+  "supply_voltage": {
+   "value": "1.08 min / 3.3 typ / 3.6 max V; no separate I/O range (VIL 0.3*VDD, VIH 0.7*VDD)",
+   "typ_or_max": "min/typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "package": {
+   "value": "DFN, 4 pins (SDA,SCL,VDD,VSS), open cavity; body 1.5 x 1.5 x 0.5 mm per Sensirion product page (WebFetch 2026-11-19), datasheet dims only in drawing Fig 15 p15 (not extracted); pitch not printed in text. Central die pad not to be soldered (p16). Definitely NOT LGA-8 2.5x2.5 P0.65 compatible (4 pins vs 8).",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "15-17",
+   "section": "5.1-5.4"
+  },
+  "operating_temp": {
+   "value": "-40 to 125 C (specified range -40..+125 C); RH 0-100 %RH; best performance 5-60 C / 20-80 %RH",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 6,
+   "section": "2.2 Table 2; 3.2 Table 6; 2.3"
+  },
+  "powerup_time": {
+   "value": "0.3 typ / 1 max ms (VDD>=VPOR to idle; measured at -40C, 1.08V)",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 10,
+   "section": "3.1 Table 5"
+  },
+  "soft_reset_time": {
+   "value": "1 max ms (after ACK of reset cmd 0x94; also valid for I2C general call reset 0x06 to addr 0x00)",
+   "typ_or_max": "max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 10,
+   "section": "3.1 Table 5; 4.8 p13"
+  },
+  "pin_capacitance": {
+   "value": "pin/input capacitance not printed; bus load limit Cb 400 pF (fast mode, Rp<=820 ohm), 340 pF (FM+, Rp=390 ohm)",
+   "typ_or_max": "max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "pressure": "not applicable (no pressure sensor)",
+  "supply_current": {
+   "value": "idle 0.08 typ uA at 25C (1.0 at ~ 25C? table: 0.08 / 1.0 / 3.4 uA listed as 'At 25 C / At 125 C' - column alignment ambiguous in extraction, recheck figure); measurement 320 typ / 500 max uA; power-up 50 typ uA; avg @1 meas/s: 2.2 (high rep.) / 1.2 (med) / 0.4 (low) uA typ",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 9,
+   "section": "3 Table 4"
+  },
+  "heater": {
+   "value": "Integrated heater, 3 powers 20/110/200 mW (typ, VDD=3.3V), 0.1 s or 1 s pulses, commands 0x15/0x1E/0x24/0x2F/0x32/0x39; max duty 10%; heater-on idle current 6/33/60 mA typ, 10/55/100 mA max. Off by default: each heater command self-terminates after 1 s max, there is no heater-on state to persist; 'no dedicated command to turn off' (Table 9: 0 = off). Datasheet does not literally say 'off at power-up'.",
+   "typ_or_max": "typ/max",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "13-14",
+   "section": "4.9; Tables 4,8,9"
+  },
+  "temperature_accuracy_note": "graph-only max (Fig 10-13 p7)",
+  "lifecycle": {
+   "value": "no status word on Sensirion catalog page (checked via WebFetch 2026-11-19; page shows only 'Buy now / See inventory / Contact sales')",
+   "doc": "sensirion.com/products/catalog/SHT40 and /SHT45"
+  },
+  "mpns": "SHT45-AD1B-R2 (Sensirion 3.000.645, 2500 T&R); SHT45-AD1B-R3 (3.000.750, 10000); SHT45-AD1F-R2 (membrane)",
+  "i2c_addresses": {
+   "value": "0x44 only (SHT45-AD1B); no variant listed in Table 12; not selectable",
+   "typ_or_max": "-",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": "1/22",
+   "section": "Product Details p1; Table 12"
+  },
+  "humidity_accuracy": {
+   "value": "SHT45 RH accuracy typ 1.0 %RH (25C); max graph only (Fig 5); long-term production 0.5 %RH",
+   "typ_or_max": "typ",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 4,
+   "section": "2.1 Table 1"
+  },
+  "temperature_accuracy": {
+   "value": "SHT45 typ 0.1 C; max graph only (Fig 13)",
+   "typ_or_max": "typ",
+   "doc": "Sensirion Datasheet SHT4x (D1)",
+   "rev": "Version 7.3 - June 2026",
+   "page": 6,
+   "section": "2.2 Table 2"
+  },
+  "distributors": {
+   "digikey": "1649-SHT45-AD1B-R2 (+TR/CT/DKR variants; snippet, unverified); https://www.digikey.cn/en/products/detail/sensirion-ag/SHT45-AD1B-R2/16360969",
+   "mouser": "part number not captured",
+   "lcsc": "C5221601 (from LCSC datasheet filename in search result)",
+   "digikey_search_fetch": "HTTP 403 at 2026-11-19T06:48:41Z; no quote"
+  },
+  "breakout": {
+   "value": "Adafruit product 5665 SHT45 https://www.adafruit.com/product/5665 (also 6174 with PTFE); same board family: 10K pull-ups, removability not stated",
+   "doc": "learn.adafruit.com/adafruit-sht40-temperature-humidity-sensor"
+  }
+ }
+}

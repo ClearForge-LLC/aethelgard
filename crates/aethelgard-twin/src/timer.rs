@@ -4,9 +4,15 @@
 //! its `STM32_Timer.cs` line (Renode 1.17.0, Infrastructure `066a7f13`).
 //!
 //! **The model's conventions**, never blended with silicon's (`4300` D3):
-//! - every timer counts at the platform's fixed `frequency: 250000000`
-//!   ([`TIMER_HZ`], `stm32h7.repl` L321 for `timer1`), not the firmware's
-//!   clock tree;
+//! - every timer counts at the frequency the platform builds it at
+//!   ([`platform::timer_hz`](crate::platform::timer_hz)): the solved kernel
+//!   clock for the generated firmware, the declared one for a foreign
+//!   firmware (`AET-WO-4400g`), never the stock file's 250 MHz;
+//! - a period is realized in whole ns, rounded up
+//!   ([`aethelgard_chaos::record::realized_ns`], `BaseClockSource.cs`
+//!   L315–L325): at 64 MHz a DShot600 bit of 106 ticks runs 1,657 ns, where
+//!   silicon runs 1,656.25. The silicon check judges the exact period, so
+//!   this rounding never reaches a silicon verdict;
 //! - a period is `ARR` ticks, where silicon counts `ARR + 1`
 //!   (`STM32_Timer.cs` L62, `Limit = autoReloadValue`);
 //! - each output rises at the update event (L50–78, PWM mode 1 `Set`) and
@@ -25,13 +31,6 @@ use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::motor::{self, MotorProtocol};
 
 use crate::{TwinError, split_pin};
-
-/// The `frequency` of every `Timers.STM32_Timer` in [`STOCK_FILE`](crate::platform::STOCK_FILE) (L321
-/// for `timer1`).
-pub const TIMER_HZ: u64 = 250_000_000;
-
-/// One timer tick of the model at [`TIMER_HZ`] with `PSC + 1` = 1, in ns.
-pub const CYCLE_NS: u64 = 1_000_000_000 / TIMER_HZ;
 
 /// The name of a solved output's observer, `pa8obs`; it logs under
 /// `gpioPortA.pa8obs`. `aethelgard_ir::is_observer_name` refuses it as a
@@ -59,9 +58,12 @@ pub struct Observer {
     /// source, `gpioPortA.pa8obs`.
     pub name: String,
     pub source: String,
-    /// The model's period, `ARR · (PSC + 1)` cycles of [`TIMER_HZ`], in ns.
+    /// The frequency the platform builds the output's timer at, in Hz.
+    pub kernel_hz: u64,
+    /// The model's period, `ARR · (PSC + 1)` cycles of `kernel_hz`, as
+    /// Renode realizes it, in ns.
     pub period_ns: u64,
-    /// The model's high time, `CCR · (PSC + 1)` cycles, in ns.
+    /// The model's high time, `CCR · (PSC + 1)` cycles, likewise.
     pub high_ns: u64,
 }
 
@@ -96,6 +98,13 @@ pub fn observers(topology: &SolvedTopology) -> Result<Vec<Observer>, TwinError> 
             });
         }
         let cycles = u64::from(m.psc) + 1;
+        let kernel_hz = crate::platform::timer_hz(topology, timer);
+        // `validate` above refuses a zero clock, and 16-bit `ARR`, `CCR` and
+        // `PSC` keep every period far inside `u64` ns.
+        let realized = |ticks: u32| {
+            aethelgard_chaos::record::realized_ns(u64::from(ticks) * cycles, kernel_hz)
+                .expect("a validated clock realizes every 16-bit period")
+        };
         let name = observer_name(port, index);
         out.push(Observer {
             label: label.to_owned(),
@@ -108,8 +117,9 @@ pub fn observers(topology: &SolvedTopology) -> Result<Vec<Observer>, TwinError> 
             alternate_function: af,
             source: format!("gpioPort{port}.{name}"),
             name,
-            period_ns: u64::from(m.arr) * cycles * CYCLE_NS,
-            high_ns: u64::from(m.ccr) * cycles * CYCLE_NS,
+            kernel_hz,
+            period_ns: realized(m.arr),
+            high_ns: realized(m.ccr),
         });
     }
     Ok(out)
@@ -370,11 +380,17 @@ mod tests {
         assert_eq!(stock_input('A', 4), None);
     }
 
+    /// At the 64 MHz reset clock (`AET-WO-4400g`): the probes' `pwm400`
+    /// (`PSC` 63, `ARR` 2499, `CCR` 1000) is a 1 µs tick, exact; DShot600
+    /// (`PSC` 0, `ARR` 106, `CCR` 40) is 1,657 ns realized, not the
+    /// nominal 1,656.25, and its high time 625 ns, exact.
     #[test]
-    fn the_model_s_tick_is_4_ns() {
-        assert_eq!(CYCLE_NS, 4);
-        // The probes' `pwm400`: PSC 63, ARR 2499, CCR 1000.
-        assert_eq!(2499 * 64 * CYCLE_NS, 639_744);
-        assert_eq!(1000 * 64 * CYCLE_NS, 256_000);
+    fn the_model_s_periods_are_realized_at_64_mhz() {
+        let r = |ticks| aethelgard_chaos::record::realized_ns(ticks, 64_000_000);
+        assert_eq!(r(2499 * 64), Some(2_499_000));
+        assert_eq!(r(1000 * 64), Some(1_000_000));
+        assert_eq!(r(106), Some(1_657));
+        assert_eq!(r(40), Some(625));
+        assert_eq!(aethelgard_chaos::record::realized_ns(1, 0), None);
     }
 }

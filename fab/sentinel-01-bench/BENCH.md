@@ -20,6 +20,11 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 
 > **U2 is not fitted on these boards.** The BME280 is out of stock everywhere, and its replacement, the BMP581, is an LGA-10 of 2.0 × 2.0 mm that does not land on U2's LGA-8 2.5 × 2.5 mm pads (the review's U2; Scotty chose the BMP581 on #237). What the ordered ELF does with U2 empty, row by row, is in "U2 empty" below. A BMP581 breakout can stand in on J4 instead (`BENCH-EXT-BMP581.md`).
 
+> **What is on order** (Scotty's DigiKey order, 2026-11-19, read by the architect; `ORDER.md` §2): U1, U4, J2, SW1 and every passive, for 3 boards.
+> - **U2 is not ordered** (above).
+> - **U3 (TMP117AIDRVR) is not on the order.** Scotty may top it up from LCSC. Until he does, this plan holds with U3 empty: B9 says what remains.
+> - **J1, J3 and J4: 3 headers for 9 positions, all backordered.** Every row holds with any of them empty (Before power, steps 1 and 6).
+
 ## Before power
 
 Every step here runs with nothing powered. Each catches a fault that a later row could not tell apart from a pass.
@@ -28,6 +33,7 @@ Every step here runs with nothing powered. Each catches a fault that a later row
    - **J1, J3 and J4 are identical JST GH 4-pin headers** in one row along an edge, with J2 (the 6-pin SH) between J1 and J3: left to right, J1, J2, J3, J4. Label each cable for its header before the first plug-in.
    - **J1 and J3 are never swapped.** J3 pin 1 is `VDD_3V3`, wired straight to every VDD pin with no regulator, no reverse-polarity element and no clamp. A supply moved to J1 drives PA9 (CONSOLE_TX) of an unpowered MCU and leaves the board unpowered (the review's F9). Power into J4 is benign: it shares J3's pin 1 and pin 4.
    - **J2 has the project's own pinout:** 1 VDD_3V3, 2 BOOT0, 3 NRST, 4 SWDIO, 5 SWCLK, 6 GND. It is **not** the Dronecode/Pixhawk JST-SH 6 debug pinout, which carries UART on pins 2 and 3: such a cable puts its UART TX on NRST, so every byte it sends resets the board, and its UART RX on BOOT0, where an adapter's pull-up can fight R8. Wire the SWD cable to J2's own pinout, pin by pin.
+   - **A header not fitted** (only 3 are on order for 9 positions): a row's pin of J1 or J4 is then its bare pad, or the test pad on the same net. J1 pin 1 is TP6 (CONSOLE_TX), J1 pin 2 is TP5 (CONSOLE_RX), J4 pin 2 is TP11 (EXT_SCL), J4 pin 3 is TP12 (EXT_SDA), and pin 4 of either is GND, TP1 (source: **rule**, the netlist). J3 is in step 6.
 2. **SW1 (PTS810), before fitting it** (review F11). With the DMM on continuity: pads 1–1 continuous, pads 2–2 continuous, 1–2 open until pressed, closed while pressed. KiCad's pairing was not read at the maker's source. If it were wrong, NRST would be tied to GND and the board would never leave reset. SW1 is optional: reset also works through J2 pin 3 and by power cycling. Source: **not predicted** (C&K's sheet was unreadable; the review's F11).
 3. **Resistances, read with the DMM** (review F4, F5).
    - Read each pair in both lead polarities and record both; the pass line is on the **higher** reading. A parallel junction in an unpowered part can only lower a reading.
@@ -46,6 +52,8 @@ Every step here runs with nothing powered. Each catches a fault that a later row
 4. **NRST, the copper half** (review F3). Continuity under 1 Ω from the SWD cable's NRST wire, at the probe end, to TP3. That holds the cable, J2 pin 3 and the copper together. B1 holds the powered half. Source: **rule** (the netlist: J2 pin 3 and TP3 are both `NRST`).
 5. **Probe capacitance, `C_p`.** Read `C_p` from your probe's own data (a ×10 passive probe prints its input capacitance, typically about 10–15 pF) and write it down before the first rise-time row. A probe clipped to a test pad is an off-board load, outside `extract`'s bound (ruled on #191, Q2). So every rise-time pass line below adds `C_p` to the line.
 6. **Supply.** J3 is the power header: pin 1 is `VDD_3V3`, the MCU's rail, which the board takes from J3 (`mcu.supply_source`); pin 4 is GND. Use a current-limited bench supply, **set and checked at 3.30 V before it is connected, never above 3.6 V** (DS12117 Rev 10, VDD absolute maximum 4.0 V), limited to 100 mA.
+   - **Without J3 fitted,** the supply goes on by hand, on two nets only: `VDD_3V3` at J3's pad 1 or TP4, and GND at J3's pad 4 or TP1. J4's pads 1 and 4 are the same two nets. Source: **rule** (the netlist).
+   - Before power, check each lead by DMM continuity, under 1 Ω: the supply's + lead to TP4 and its − lead to TP1, at the pads where they will be soldered or clipped. Any other pad is a signal; J1's pad 1, for instance, is PA9 (above).
 
 **Test points** (bare 1 mm pads):
 
@@ -118,11 +126,11 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 | B2 | Unchanged: no row depends on the transfer (`I2C1.CR2`'s mask leaves out the fields a transfer sets) |
 | B3, B5, B8 | Unchanged: nothing in them touches I2C1 |
 | B4 | Unchanged: record 1 follows record 0 whatever it holds |
-| B6 | SENSORS' bounds still hold. They include U2's pads and pin capacitance, so with U2 off they are looser by up to U2's pins |
+| B6 | SENSORS' bounds still hold. They include U2's and U3's pads and pin capacitance, so with U2 off (and U3, while it is not fitted) they are looser by up to those pins |
 | B7 | Unchanged: EXT, not SENSORS |
-| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. U3 (the TMP117) is the positive witness of I2C1 |
+| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. U3 (the TMP117), if fitted, is the positive witness of I2C1 |
 
-**What is lost:** only the silicon witness of a full I2C read on SENSORS by the firmware (record 0 = `0x60`). B9's TMP117 probe witnesses PB6/PB7 at AF4 and the SENSORS copper without it.
+**What is lost:** the silicon witness of a full I2C read on SENSORS by the firmware (record 0 = `0x60`). With U3 fitted, B9's TMP117 probe witnesses PB6/PB7 at AF4 and the SENSORS copper without it. With U3 empty as well, no device on I2C1 acknowledges anything (B9).
 
 ## B1. Programming by SWD, with connect-under-reset
 
@@ -344,7 +352,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
     On a scope, the address byte is `1110 1100` (`0xEC`, the 7-bit `0x76` and the write bit). Source: **generator** (the address, `main.rs` L179) and **RM0433** (the STOP after a NACK, p. 1975); **repeat** (`3302`: `0xEC`, NACK, STOP).
   - **SCL's period inside the address byte: at least 2.5247 µs** (at most 396.1 kHz). Expected **2.65–2.90 µs**, recorded beside it, not a pass line: the band is from `3302`'s Nucleo rig (about 59 pF), not this board. The floor is **rule** (`silicon.rs`: 160 programmed kernel cycles of `TIMINGR` `0x10C7123C` plus `t_SYNC1 + t_SYNC2` ≥ 4 cycles, at HSI's fastest 64.958976 MHz). The expected band is **repeat-derived** (`3302`'s ≈ 0.26 µs excess at 2K; `AET-WO-3304.bench.md` §B6). Read the period on a scope: the FX2's 41.7 ns sample is too coarse for the margin. "400 kHz" exactly is not a pass line: a correct board runs slower, by its edges and its synchronisation.
   - **Record 0** (`0x20000008`, `0x2000000C`) = `0x22020001` / `0x00000000` (U2 empty, above).
-- **2. The TMP117 (U3, `0x48`) answers on I2C1, over SWD, no firmware change.** After the boot, start a second, longer untriggered capture (`--time 60s`, file `s01-i2c1-probe.sr`), then run the six commands within it:
+- **2. Only if U3 is fitted: the TMP117 (U3, `0x48`) answers on I2C1, over SWD, no firmware change.** After the boot, start a second, longer untriggered capture (`--time 60s`, file `s01-i2c1-probe.sr`), then run the six commands within it:
   ```
   $P write --chip STM32H753ZITx b32 0x4000541C 0x00000030   # I2C1.ICR: clear STOPF, NACKF
   $P write --chip STM32H753ZITx b32 0x40005404 0x02002090   # I2C1.CR2: address 0x48, write, NBYTES 0, AUTOEND, START
@@ -358,6 +366,10 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   - **`0x76`: `ISR & 0x00008030` = `0x00000030`** (`NACKF` 1), and `Address write: 76`, **`NACK`**, `Stop`. This is the control: it shows the probe's write reached the controller, and that the ACK above was the TMP117's, not a stuck-low SDA.
   - Source: the address is the specification's (`U3`, 72 = `0x48`, its ADD0 on GND); the flags are **RM0433**'s (with `AUTOEND` 1 and `NBYTES` 0, a STOP follows the address; on a NACK, `NACKF` and a STOP, p. 1975). The twin has no TMP117 model (`simulate`: `device_unmodelled`), so this is **not predicted by the twin**.
   - **Not a read of register `0x0F`:** a debugger-paced read holds SCL low past the TMP117's 20–40 ms bus timeout and would fail for a reason this row does not name (`AET-WO-3403.FEEDBACK.md` §2.1). The address probe never stretches SCL.
+- **With U3 empty** (it is not on the order of 2026-11-19), SENSORS has no device and part 2 is not run: `0x48` would NACK like `0x76`, and would witness nothing.
+  - What remains is part 1: the `0xEC` address phase at TP13/TP14, its NACK and STOP, and record 0 = `0x22020001`.
+  - That shows PB6 and PB7 driving SCL and SDA at AF4 onto the SENSORS net. A wrong AF or an open line leaves the pads without the address phase [inferred].
+  - It does not show an ACK. With no device to pull SDA, the controller's receive path and a device's reach over the SENSORS copper go unwitnessed until U3 is fitted.
 - **On a disagreement:** a NACK at `0x48` with the `0x76` control behaving implicates PB6/PB7's AF, the SENSORS copper or U3's fitting: record which line the scope shows not moving. A corrections row against the generator's AF for I2C1 if the lines are dead at the pins.
 
 ## What this plan cannot measure
@@ -365,5 +377,5 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 - **A GND pad beside the I2C pads.** The placer cannot be steered to put one there (`AET-WO-3402` F1); a placer rule is on the architect's backlog (1313b). The probe grounds by lead (B6).
 - **The buck, the flight sensors and the witness:** they are Sentinel-03's (ruled on PR #184).
 - **SPI rise times** against `extract` are not a row: SPI's declared bound (30 pF) chooses the pin speed and is judged by `check speeds`. The SPI pads (TP8–TP10) are for logic timing.
-- **U2's identity read on silicon** (record 0 = `0x60`): U2 is not fitted (above). B9 witnesses I2C1 through U3 instead.
+- **U2's identity read on silicon** (record 0 = `0x60`): U2 is not fitted (above). B9 witnesses I2C1 through U3 instead, if U3 is fitted. **With U3 empty, no ACK on I2C1 is witnessed at all** (B9).
 - **The ordered ELF inside DS12117's conditions.** It runs at VOS3 with 64 MHz APB clocks (B2, `4240` F-VOS). Every reading here is of that ELF as ordered; `4240v`'s ELF re-runs B2 and B4.

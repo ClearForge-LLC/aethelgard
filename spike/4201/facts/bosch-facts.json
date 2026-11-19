@@ -1,0 +1,751 @@
+{
+ "BMP390": {
+  "_source": {
+   "url": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp390-ds002.pdf",
+   "fetched_utc": "2026-11-19T06:47:41Z",
+   "sha256": "8dcf0f74449cb1627e865c7f24d328b76c204d8b9621091ede8c6869fb393e48",
+   "local": "/home/forge/.cache/aet-4201/ds/bmp390/bst-bmp390-ds002.pdf",
+   "note": "Bosch product page 2026-11-19 lists the same file name; page shows no revision text. Text extracted with pypdf (Read tool cannot render PDFs here: pdftoppm absent); package drawing pages checked visually via pypdfium2 PNG."
+  },
+  "i2c_addresses": {
+   "value": "0x76 (SDO=GND), 0x77 (SDO=VDDIO); SDO must not float; 0x77 is same as BMP180",
+   "typ_or_max": "n/a",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 40,
+   "section": "5.2 I2C Interface"
+  },
+  "chip_id": {
+   "value": "register 0x00 CHIP_ID, reset value 0x60 (REV_ID reg 0x01 = 0x01)",
+   "typ_or_max": "fixed",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 30,
+   "section": "4.2 register map (Table 25); desc p31 4.3.1"
+  },
+  "vdd": {
+   "value": "1.65 min / 1.8 typ / 3.6 max V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2"
+  },
+  "vddio": {
+   "value": "1.2 min / 1.8 typ / 3.6 max V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2"
+  },
+  "package": {
+   "value": "10-pin metal-lid LGA 2.0x2.0x0.75 mm (typ); pad pitch not printed as a labeled value (drawing dims 0.5/1.0/1.525; pads 0.275x0.25 and 0.25x0.275)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 49,
+   "section": "7.1 Fig 26; pin table p46 Table 52"
+  },
+  "footprint_compatible_with_BME280": {
+   "value": "NO: 10 pads on 2.0x2.0 mm body vs BME280 8 pads on 2.5x2.5 mm at 0.65 mm pitch; pin function order differs (BMP390 pin1 VDDIO,2 SCK,3 VSS,4 SDI,5 SDO,6 CSB,7 INT,8 VSS,9 VSS,10 VDD)",
+   "typ_or_max": "n/a",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 46,
+   "section": "6.1 Table 52 vs BME280 DS p38 7.1 / p42 Fig 20"
+  },
+  "pressure_abs_accuracy": {
+   "value": "+/-0.50 hPa (300-1100 hPa, 0-65 C); +/-0.33 hPa (900 hPa, 25 C); +/-0.40 hPa (900-1100 hPa, 25-40 C); +/-0.50 hPa (1100-1250 hPa, 0-65 C); +/-0.50 hPa (300-1100 hPa, -20 C)",
+   "typ_or_max": "typ (printed in Typ column)",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2 (cont. p8)"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-0.03 hPa (700-1100 hPa, 25-40 C, per 10 kPa steps) = +/-25 cm",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2"
+  },
+  "pressure_rms_noise": {
+   "value": "0.9 Pa (25 Hz ODR, 32x OSR_P, 2x OSR_T); 0.02 Pa filtered (lowest bandwidth, highest resolution, see ch 3.4.4)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 8,
+   "section": "Table 2"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C at 25 C; +/-1.50 C over 0..+65 C",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 8,
+   "section": "Table 2"
+  },
+  "humidity_accuracy": "n/a (no humidity sensor)",
+  "idd_1hz": {
+   "value": "3.2 uA typ at 1 Hz forced, ultra-low-power (P x1, T x1); 'calculated' 4.3; max 7.4 uA",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 26,
+   "section": "3.8 Table 22"
+  },
+  "sleep_current": {
+   "value": "1.4 uA typ (VDD=VDDIO=1.8 V); 1.5 uA typ (3.6 V)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C operational; 0 to +65 C full accuracy",
+   "typ_or_max": "min/max",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 7,
+   "section": "Table 2"
+  },
+  "startup_time": {
+   "value": "2 ms (time to first communication after VDD>1.8 V and VDDIO>1.8 V); value in max column",
+   "typ_or_max": "max",
+   "doc": "BST-BMP390-DS002-07",
+   "rev": "1.7 (March 2021)",
+   "page": 8,
+   "section": "Table 2"
+  },
+  "soft_reset_time": "not printed (softreset cmd 0xB6 at p39 Table 48; por_detected bit flags completion; only 'power-on time from stand-by mode 3 ms' p8)",
+  "pin_capacitance": "not printed (only I2C bus load Cb max 400 pF on SDI/SCK, p43 Table 49 - a bus limit, not pin capacitance)",
+  "lifecycle": {
+   "fetched_utc": "2026-11-19T06:49Z (approx)",
+   "page": "https://www.bosch-sensortec.com/products/environmental-sensors/pressure-sensors/bmp390/",
+   "status": "no status word on page (WebFetch summary: 'no status word')"
+  },
+  "distributors": {
+   "digikey": {
+    "product_id_in_url": "16164575 (also 16164577 seen in search URLs, variant unknown)",
+    "url": "https://www.digikey.com/en/products/detail/bosch-sensortec/BMP390/16164575",
+    "digikey_pn": "not found (detail page returned HTTP 403; search page shows none)",
+    "search_fetch_utc": "2026-11-19T06:50:20Z (WebFetch batch begun after this timestamp)",
+    "verbatim": "\"$3.58000\" (listing price; quantity break not labelled, WebFetch summary said 'presumably qty-1'); description \"SENSOR 18.13PSIA 10LGA\"; stock: no stock text on the page"
+   },
+   "lcsc": "C5124834 (from lcsc.com URL in search results; not page-verified)",
+   "mouser": "262-BMP390 (search-result summary; Mouser page fetch timed out; not page-verified). 262-SB3.0BMP390 / 262-SHTLBRD3.0BMP390 are shuttle boards - NOT the chip"
+  },
+  "breakout": {
+   "adafruit": {
+    "product": "Adafruit BMP390 STEMMA QT / Qwiic, product ID 4816",
+    "url": "https://www.adafruit.com/product/4816",
+    "price_page": "$10.95 qty 1-9 (page, 2026-11-19)",
+    "power": "has 3.3V regulator + level shifting (3-5V logic safe) - regulator/shifter inline, not a bare 3.3 V board",
+    "pullups_removable": "not stated on product page or on https://learn.adafruit.com/adafruit-bmp388-bmp390-bmp3xx/pinouts (page says SDO/CS left disconnected for I2C; address jumper: default 0x77, shorting jumper gives 0x76)"
+   }
+  }
+ },
+ "BME680": {
+  "_source": {
+   "url": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme680-ds001.pdf",
+   "fetched_utc": "2026-11-19T06:47:42Z",
+   "sha256": "8e42b591a9cabd84ae3377f2ea11e794120e4140dc4f0e4f29a30be3d1f6c9f6",
+   "local": "/home/forge/.cache/aet-4201/ds/bme680/bst-bme680-ds001.pdf",
+   "note": "web-search summaries claimed rev 1.0 (2017); the file actually served is rev 1.9 Feb 2024"
+  },
+  "i2c_addresses": {
+   "value": "0x76 (SDO=GND), 0x77 (SDO=VDDIO); SDO must not float; 0x77 same as BMP280",
+   "typ_or_max": "n/a",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 38,
+   "section": "6.2 I2C Interface"
+  },
+  "chip_id": {
+   "value": "register 0xD0 (I2C) / 0x50 (SPI page 0), reset value 0x61",
+   "typ_or_max": "fixed",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 28,
+   "section": "5.3 memory map (Id row); 5.3.1.6 p30"
+  },
+  "vdd": {
+   "value": "1.71 / 1.8 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "vddio": {
+   "value": "1.2 / 1.6 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "package": {
+   "value": "8-pin metal-lid LGA 3.0x3.0x0.93 mm; pad pitch 0.80 mm, pads 0.40x0.40 (drawing p46: 0.80 / 2.40 span, 0.400+/-0.03)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 46,
+   "section": "7.3 Picture 13; p2-3"
+  },
+  "footprint_compatible_with_BME280": {
+   "value": "NO: same 8-pin function order as BME280 (1 GND,2 CSB,3 SDI,4 SCK,5 SDO,6 VDDIO,7 GND,8 VDD) but 3.0x3.0 mm body, 0.80 mm pitch vs BME280 2.5x2.5 mm, 0.65 mm pitch; landing pattern 3.00 mm square (p47)",
+   "typ_or_max": "n/a",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 44,
+   "section": "7.1 Table 24; 7.4 p47; vs BME280 DS p42 Fig 20"
+  },
+  "pressure_abs_accuracy": {
+   "value": "+/-0.6 hPa (300-1100 hPa, 0-65 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 11,
+   "section": "Table 7"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-0.12 hPa (700-900 hPa and 900-1100 hPa, 25-40 C, constant humidity)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 11,
+   "section": "Table 7"
+  },
+  "pressure_rms_noise": {
+   "value": "1.4 Pa full bandwidth, highest oversampling; 0.2 Pa reduced bandwidth, highest oversampling",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 11,
+   "section": "Table 7"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C at 25 C; +/-1.0 C 0-65 C",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 12,
+   "section": "Table 8"
+  },
+  "humidity_accuracy": {
+   "value": "+/-3 %rH (20-80 %rH, 25 C, incl. hysteresis); hysteresis +/-1.5; full accuracy range 0-65 C, 10-90 %rH",
+   "typ_or_max": "typ",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 10,
+   "section": "Table 6"
+  },
+  "idd_1hz": {
+   "value": "3.1 uA typ / 4.2 max (1 Hz forced, P+T, lowest power); H+T 2.1 typ / 2.8 max; T only 1.0 typ",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 11,
+   "section": "Table 7 (p10 Table 6, p12 Table 8)"
+  },
+  "sleep_current": {
+   "value": "0.15 uA typ / 1 uA max; standby 0.29 typ / 0.8 max",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C operational; 0 to +65 C full accuracy",
+   "typ_or_max": "min/max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 11,
+   "section": "Table 7; gas range p8 Table 2"
+  },
+  "startup_time": {
+   "value": "2 ms (time to first communication after VDD>1.58 V and VDDIO>0.65 V); in max column",
+   "typ_or_max": "max",
+   "doc": "BST-BME680-DS001-09",
+   "rev": "1.9 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "soft_reset_time": "not printed (reset reg 0xE0, write 0xB6, 'same effect like power-on reset', p30 5.3.1.5; no duration)",
+  "pin_capacitance": "not printed (only I2C bus load Cb max 400 pF, p41 6.4.1)",
+  "heater": {
+   "heater_current": {
+    "value": "12 mA typ (min 9, max 13) constant operation at 320 C target, VDD<=1.8 V, 25 C; peak 17 mA typ (15-18) in first ms; avg IAQ: ULP 0.09 mA, LP 0.9 mA, continuous 12 mA",
+    "typ_or_max": "min/typ/max",
+    "doc": "BST-BME680-DS001-09",
+    "rev": "1.9 (February 2024)",
+    "page": 8,
+    "section": "Table 2"
+   },
+   "works_with_heater_off": {
+    "value": "YES per datasheet: gas conversions run only if run_gas=1 (ctrl_gas_1 0x71) and heat_off bit (ctrl_gas_0 0x70 bit3) turns heater current off; 'Gas sensor heater only operates during gas measurement'; Tables 6-8 quote 1 Hz T+H and P+T currents (2.1/3.1 uA) without gas",
+    "typ_or_max": "n/a",
+    "doc": "BST-BME680-DS001-09",
+    "rev": "1.9 (February 2024)",
+    "page": 14,
+    "section": "3.x p14; 5.3.3.4 p33; 5.3.3.6 p34"
+   }
+  },
+  "lifecycle": {
+   "fetched_utc": "2026-11-19T06:49Z (approx)",
+   "page": "https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme680/",
+   "status": "no status word on Bosch page (only distributor table 'Out of Stock'). Search snippets say DigiKey/Mouser/LCSC mark it NRND/Not For New Designs: UNVERIFIED (DigiKey page 403)"
+  },
+  "distributors": {
+   "digikey": {
+    "product_id_in_url": "7401317 (listing), 7401321 (detail)",
+    "url": "https://www.digikey.com/en/products/detail/bosch-sensortec/BME680/7401317",
+    "digikey_pn": "828-1077-1-ND (from a search-result URL digikey.co.uk/.../BME680/828-1077-1-ND/7401321; detail page 403, not page-verified)",
+    "search_fetch_utc": "2026-11-19T06:50:20Z",
+    "verbatim": "\"$9.89000\" (quantity break not labelled); description \"SENSOR GAS/HUM/PRES/TEMP I2C SPI\"; stock: no stock text on the page"
+   },
+   "lcsc": "C125972 (LCSC URL in search results; snippet says 'Not recommended for new designs' - unverified)",
+   "mouser": "262-BME680 (search summary; not page-verified; snippet says NRND - unverified)"
+  },
+  "breakout": {
+   "adafruit": {
+    "product": "Adafruit BME680 STEMMA QT, product ID 3660",
+    "url": "https://www.adafruit.com/product/3660",
+    "power": "3.3V regulator + level shifting",
+    "pullups_removable": "not stated on product page or guide pinouts page"
+   },
+   "sparkfun": {
+    "product": "SEN-16466 SparkFun Environmental Sensor Breakout BME680 (Qwiic)",
+    "url": "https://www.sparkfun.com/sparkfun-environmental-sensor-breakout-bme680-qwiic.html",
+    "power": "page: 1.71-3.6 V, 'Typically 3.3V if using the Qwiic cable'; addresses 0x77 default or 0x76",
+    "pullups_removable": "not stated on product page; hookup guide fetch returned HTTP 403 (not bypassed)"
+   }
+  }
+ },
+ "BME688": {
+  "_source": {
+   "url": "https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bme688-ds000.pdf",
+   "fetched_utc": "2026-11-19T06:47:43Z",
+   "sha256": "fce73ae028a985b3265ce3dbc17ab5b7bea1ae31b7ea84c6698c7694083e2478",
+   "local": "/home/forge/.cache/aet-4201/ds/bme688/bst-bme688-ds000.pdf",
+   "note": "bst-bme688-ds002.pdf returned HTTP 404 (nothing saved); ds000 is the file the Bosch product page links"
+  },
+  "i2c_addresses": {
+   "value": "0x76 (SDO=GND), 0x77 (SDO=VDDIO); SDO must not float",
+   "typ_or_max": "n/a",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 45,
+   "section": "6.2 I2C Interface"
+  },
+  "chip_id": {
+   "value": "register 0xD0 (I2C) / 0x50 (SPI page 0), reset value 0x61 (same as BME680)",
+   "typ_or_max": "fixed",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 33,
+   "section": "5.3 Table 22 memory map; 5.3.2.2 p36"
+  },
+  "vdd": {
+   "value": "1.71 / 1.8 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "vddio": {
+   "value": "1.2 / 1.6 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "package": {
+   "value": "8-pin metal-lid LGA 3.0x3.0x0.93 mm (p3); landing pattern 3.00 mm square, same numbers as BME680 (p54 Picture 17); pad pitch not read (drawing p53 not viewed)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 3,
+   "section": "1 key features; 7.3-7.4"
+  },
+  "footprint_compatible_with_BME280": {
+   "value": "NO: 3.0x3.0 mm body vs 2.5x2.5; landing pattern identical to BME680 (3.00 mm); pin function order same as BME280",
+   "typ_or_max": "n/a",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 51,
+   "section": "7.1 Table 26; 7.4 p54"
+  },
+  "pressure_abs_accuracy": {
+   "value": "+/-0.6 hPa (300-1100 hPa, 0-65 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 13,
+   "section": "Table 9"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-0.12 hPa (700-900 and 900-1100 hPa, 25-40 C, constant humidity)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 13,
+   "section": "Table 9"
+  },
+  "pressure_rms_noise": {
+   "value": "1.4 Pa full BW highest oversampling; 0.2 Pa reduced BW highest oversampling",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 13,
+   "section": "Table 9"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C over 0-65 C (differs from BME680: +/-0.5 @25 C, +/-1.0 0-65 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 14,
+   "section": "Table 10"
+  },
+  "humidity_accuracy": {
+   "value": "+/-3 %rH (20-80 %rH, 25 C, incl. hysteresis); hysteresis +/-1.5",
+   "typ_or_max": "typ",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 12,
+   "section": "Table 8"
+  },
+  "idd_1hz": {
+   "value": "3.1 uA typ / 4.2 max (1 Hz forced, P+T, lowest power); H+T 2.1 / 2.8; T only 1.0",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 13,
+   "section": "Table 9 (p12 Table 8, p14 Table 10)"
+  },
+  "sleep_current": {
+   "value": "0.15 uA typ / 1 uA max; standby 0.29 / 0.8",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C operational; 0 to +65 C full accuracy",
+   "typ_or_max": "min/max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 13,
+   "section": "Table 9"
+  },
+  "startup_time": {
+   "value": "2 ms (to first communication, VDD>1.58 V, VDDIO>0.65 V); max column",
+   "typ_or_max": "max",
+   "doc": "BST-BME688-DS000-03",
+   "rev": "1.3 (February 2024)",
+   "page": 7,
+   "section": "Table 1"
+  },
+  "soft_reset_time": "not printed (reset reg 0xE0 write 0xB6, p36 5.3.2.1; no duration)",
+  "pin_capacitance": "not printed (only I2C bus load Cb max 400 pF, p48 Table 23)",
+  "heater": {
+   "heater_current": {
+    "value": "12 mA typ (9-13) constant at 320 C target; peak 17 mA (15-18); BSEC standard gas scan mode avg 3.96 mA (Table 19, p30)",
+    "typ_or_max": "min/typ/max",
+    "doc": "BST-BME688-DS000-03",
+    "rev": "1.3 (February 2024)",
+    "page": 8,
+    "section": "Table 2"
+   },
+   "works_with_heater_off": {
+    "value": "YES per datasheet: run_gas (reg 0x71 bit5) gates gas conversions, heat_off bit (0x70 bit3); 'Gas sensor heater only operates during gas measurement'",
+    "typ_or_max": "n/a",
+    "doc": "BST-BME688-DS000-03",
+    "rev": "1.3 (February 2024)",
+    "page": 17,
+    "section": "p17; 5.3.4.5 p39; run_gas p40"
+   }
+  },
+  "lifecycle": {
+   "fetched_utc": "2026-11-19T06:49Z (approx)",
+   "page": "https://www.bosch-sensortec.com/products/environmental-sensors/gas-sensors/bme688/",
+   "status": "no status word on Bosch page (only distributor table 'Out of Stock'). Search snippets conflict (Findchips 'Obsolete', Future 'Active'): UNVERIFIED"
+  },
+  "distributors": {
+   "digikey": {
+    "product_id_in_url": "13681261 (13681287 also seen in search URL)",
+    "url": "https://www.digikey.com/en/products/detail/bosch-sensortec/BME688/13681261",
+    "digikey_pn": "not found (detail page 403)",
+    "search_fetch_utc": "2026-11-19T06:50:20Z",
+    "verbatim": "\"$9.89000\" (quantity break not labelled); description \"SENSOR GAS/HUM/PRES/TEMP I2C SPI\"; stock: no item-specific stock text (only generic filter label 'In Stock', not a status for this part)"
+   },
+   "lcsc": "C3664478 (LCSC URL in search results; not page-verified)",
+   "mouser": "262-BME688 (search summary; not page-verified)"
+  },
+  "breakout": {
+   "adafruit": {
+    "product": "Adafruit BME688 STEMMA QT, product ID 5046",
+    "url": "https://www.adafruit.com/product/5046",
+    "power": "3.3V regulator + level shifting",
+    "pullups_removable": "not stated on product page; guide URL guess returned 404"
+   }
+  }
+ },
+ "BME280": {
+  "_source": {
+   "local": "/home/forge/.cache/aet-4200/ds/bme280.pdf",
+   "sha256_given_by_caller": "a2ccdb44..."
+  },
+  "i2c_addresses": {
+   "value": "0x76 (SDO=GND), 0x77 (SDO=VDDIO)",
+   "typ_or_max": "n/a",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 32,
+   "section": "6.2 I2C interface"
+  },
+  "chip_id": {
+   "value": "register 0xD0 'id', 0x60",
+   "typ_or_max": "fixed",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 27,
+   "section": "5.3 memory map Table 18; 5.4.1"
+  },
+  "vdd": {
+   "value": "1.71 / 1.8 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 8,
+   "section": "Table 1"
+  },
+  "vddio": {
+   "value": "1.2 / 1.8 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 8,
+   "section": "Table 1"
+  },
+  "package": {
+   "value": "8-pin metal-lid LGA 2.5x2.5x0.93+/-0.07 mm (1.00 max), LGA pitch 0.65, pad 0.35x0.35",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 42,
+   "section": "7.5 Fig 20 (drawing viewed)"
+  },
+  "footprint_compatible_with_BME280": "reference part",
+  "pressure_abs_accuracy": {
+   "value": "+/-1.0 hPa (300-1100 hPa, 0-65 C); +/-1.7 hPa (-20..0 C); +/-1.5 hPa (1100-1250 hPa, 25-40 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 11,
+   "section": "Table 3"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-0.12 hPa (700-900 hPa, 25-40 C, VDD=3.3 V)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 11,
+   "section": "Table 3"
+  },
+  "pressure_rms_noise": {
+   "value": "1.3 Pa full bandwidth; 0.2 Pa reduced bandwidth (highest oversampling)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 11,
+   "section": "Table 3"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 C (0-65 C); +/-1.25 C (-20..0, target values not guaranteed); +/-1.5 C (-40..-20, target)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 12,
+   "section": "Table 4"
+  },
+  "humidity_accuracy": {
+   "value": "+/-3 %RH (20-80 %RH, 25 C, incl. hysteresis)",
+   "typ_or_max": "typ",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 9,
+   "section": "Table 2"
+  },
+  "idd_1hz": {
+   "value": "2.8 uA typ / 4.2 max (1 Hz forced, P+T lowest power); H+T 1.8 / 2.8",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 10,
+   "section": "Table 3 (p9 Table 2)"
+  },
+  "sleep_current": {
+   "value": "0.1 uA typ / 0.3 uA max",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 8,
+   "section": "Table 1"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C; full accuracy 0 to +65 C",
+   "typ_or_max": "min/max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 10,
+   "section": "Table 3"
+  },
+  "startup_time": {
+   "value": "2 ms (to first communication after VDD>1.58 V, VDDIO>0.65 V)",
+   "typ_or_max": "max",
+   "doc": "BST-BME280-DS001-24",
+   "rev": "1.24 (February 2024) per cover p1; page footers print 'DS001-23 Revision_1.23_012022' (internal inconsistency in held PDF)",
+   "page": 8,
+   "section": "Table 1"
+  },
+  "soft_reset_time": "not printed (reset reg 0xE0 = 0xB6 'complete power-on-reset procedure', p27; no duration)",
+  "pin_capacitance": "not printed (only Cb 400 pF I2C bus load, p35 6.4.1)"
+ },
+ "BMP581": {
+  "_source": {
+   "local": "/home/forge/.cache/aet-4230/ds/bmp581.pdf"
+  },
+  "i2c_addresses": {
+   "value": "0x46 (SDO=0), 0x47 (SDO=1); SDO must not float",
+   "typ_or_max": "n/a",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 38,
+   "section": "5.6 I2C protocol"
+  },
+  "chip_id": {
+   "value": "register 0x01 CHIP_ID = 0x50 (section 7.1 'ASIC identification ID'; address 0x01, not 0x00/0xD0)",
+   "typ_or_max": "fixed",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 50,
+   "section": "memory map; 7.1 p51"
+  },
+  "vdd": {
+   "value": "1.71 / 1.8 or 3.3 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 4"
+  },
+  "vddio": {
+   "value": "1.08 / 1.2,1.8,3.3 / 3.6 V",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 4"
+  },
+  "package": {
+   "value": "10-pin metal-lid LGA 2.0x2.0 mm (1.90-2.10), height 0.7/0.75/0.8; pitch not printed in text",
+   "typ_or_max": "min/typ/max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 3; p2"
+  },
+  "footprint_compatible_with_BME280": {
+   "value": "NO: 10 pins, 2.0x2.0 mm",
+   "typ_or_max": "n/a",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 46,
+   "section": "6.1 Table 28"
+  },
+  "pressure_abs_accuracy": {
+   "value": "+/-30 Pa (300-1100 hPa, -5..65 C incl. TCO); +/-75 Pa full range (-40..85 C incl solder drift); key-features p2 states '+/-0.5 hPa (max)' (INCONSISTENT with +/-30 Pa typ: different statistic)",
+   "typ_or_max": "typ (+/-0.5 hPa 'max' on p2)",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 8,
+   "section": "Table 1 (cont. p9); key features p2"
+  },
+  "pressure_rel_accuracy": {
+   "value": "+/-6 Pa (700-1100 hPa, 15-55 C, 10 kPa steps); +/-0.4 Pa (900-1100 hPa, 25 C, 1 kPa steps)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 8,
+   "section": "Table 1"
+  },
+  "pressure_rms_noise": {
+   "value": "0.78 Pa RMS typ / 0.95 max (lowest power OSR); 0.21 / 0.25 (high resolution); 0.08 Pa typ (second 'high resolution' row, as printed); p2: <0.1 Pa RMS natively",
+   "typ_or_max": "typ and max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 9,
+   "section": "Table 1"
+  },
+  "temperature_accuracy": {
+   "value": "+/-0.5 K (-5..55 C) and +/-0.5 K (-40..85 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 2"
+  },
+  "humidity_accuracy": "n/a",
+  "idd_1hz": {
+   "value": "1.3 uA typ (lowest-power OSR, low power mode ODR=1 Hz, 25 C)",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 12,
+   "section": "Table 4"
+  },
+  "sleep_current": {
+   "value": "no 'sleep': deep standby 0.55 uA typ (25 C, 1.8 or 3.6 V), 1.5 uA at 55 C; standby 1.0 uA typ (25 C), 3.5 at 55 C",
+   "typ_or_max": "typ",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 12,
+   "section": "Table 4"
+  },
+  "operating_temperature": {
+   "value": "-40 to +85 C",
+   "typ_or_max": "min/max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 4"
+  },
+  "startup_time": {
+   "value": "2 ms power-up time to first communication",
+   "typ_or_max": "max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 10,
+   "section": "Table 4 (cont. p11)"
+  },
+  "soft_reset_time": {
+   "value": "2 ms (tsoft_res, trigger to device ready)",
+   "typ_or_max": "max",
+   "doc": "BST-BMP581-DS004-13",
+   "rev": "1.13 (April 2025)",
+   "page": 11,
+   "section": "Table 4; 4.3.10 p18"
+  },
+  "pin_capacitance": "not printed (only Cbus limits for interface clocks, p11)"
+ }
+}

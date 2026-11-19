@@ -1,0 +1,158 @@
+{
+ "ok": true,
+ "verdict": "pass",
+ "specification_sha256": "08f7a0b667778be13280046167caf9fca1badc45b180710ee06341f7d047b3cc",
+ "elf_sha256": "21cc7bcd2d9922a570b9199a391102aee45f388306cd7c794040f3627495fdb8",
+ "gates": [
+  {
+   "gate": "erc",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "drc",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "support",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "extract",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::every_valid_sequence",
+   "verdict": "pass",
+   "cover_count": 12,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::i2c1_transfer_is_bounded_and_ordered",
+   "verdict": "pass",
+   "cover_count": 7,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::i2c2_transfer_is_bounded_and_ordered",
+   "verdict": "pass",
+   "cover_count": 7,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::spi1_transfer_is_bounded_and_ordered",
+   "verdict": "pass",
+   "cover_count": 5,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::spi1_transfer_refuses_too_many_frames",
+   "verdict": "pass",
+   "cover_count": 1,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::reset_clock_is_ok_exactly_at_reset",
+   "verdict": "pass",
+   "cover_count": 2,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::usart1_start_writes_the_solved_values",
+   "verdict": "pass",
+   "cover_count": 1,
+   "findings": []
+  },
+  {
+   "gate": "prove",
+   "harness": "proofs::flash_option_status_is_one_read",
+   "verdict": "pass",
+   "cover_count": 1,
+   "findings": []
+  },
+  {
+   "gate": "build",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "simulate",
+   "verdict": "pass",
+   "findings": [
+    {
+     "kind": "device_unmodelled",
+     "message": "U3 (TMP117) at I2C address 0x48 has no Renode 1.17.0 model, so its identity was not read",
+     "severity": "info",
+     "where": []
+    }
+   ]
+  },
+  {
+   "gate": "attribute",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "attribute",
+   "verdict": "pass",
+   "findings": []
+  },
+  {
+   "gate": "campaign",
+   "verdict": "pass",
+   "findings": []
+  }
+ ],
+ "campaign": [
+  {
+   "scenario": "pullup-3k3",
+   "verdict": "pass",
+   "expect": "pass",
+   "matched": true,
+   "findings": []
+  },
+  {
+   "scenario": "droop-bor3",
+   "verdict": "pass",
+   "expect": "pass",
+   "matched": true,
+   "findings": []
+  },
+  {
+   "scenario": "spi-absent-u4",
+   "verdict": "fail",
+   "expect": "fail",
+   "matched": true,
+   "findings": [
+    "spi_identity_mismatch",
+    "spi_transaction_unwitnessed"
+   ]
+  },
+  {
+   "scenario": "pullup-2k2",
+   "verdict": "pass",
+   "expect": "pass",
+   "matched": true,
+   "findings": []
+  },
+  {
+   "scenario": "serial-rx-open-console",
+   "verdict": "fail",
+   "expect": "fail",
+   "matched": true,
+   "findings": [
+    "serial_echo_missing"
+   ]
+  }
+ ]
+}

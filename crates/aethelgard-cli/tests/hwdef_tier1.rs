@@ -8,6 +8,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
+#[path = "common/spec.rs"]
+mod spec;
+
 use serde_json::Value;
 
 fn root() -> PathBuf {
@@ -190,9 +193,7 @@ fn the_board_crate_s_speeds_equal_the_stored_ones() {
             if path.extension().is_none_or(|e| e != "json") {
                 continue;
             }
-            let Ok(spec) =
-                serde_json::from_slice::<aethelgard_ir::Specification>(&fs::read(&path).unwrap())
-            else {
+            let Some(spec) = spec::committed(&path, &fs::read(&path).unwrap()) else {
                 continue;
             };
             let Ok(table) = aethelgard_svd_hal::pin_table(&spec.mcu.part) else {
