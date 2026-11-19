@@ -18,6 +18,16 @@ Labels: **measured** (a run shown here or in `4201`), **read** (a file read), **
 | P8 | Campaign `state_sequence_hash`es | Those of scenarios on `sentinel-02-own` move (D1). If the fix is in the twin's reset path, every droop scenario's hash could move, Sentinel-01's included, which is a §7 stop; a fix that renders the same commands for a BME280-only board leaves Sentinel-01's unchanged. | inferred |
 | P9 | Tier-2 tests added | One (the regression run through the reset with a timed model of ours), plus one tier-1 test of the mechanism. | inferred |
 
+**Scored after the runs:**
+- **P1:** right on the fault; wrong on the numbers, which were `4201`'s exactly.
+- **P2, P3:** wrong. The cause is Renode's parse, not the model (§1.2).
+- **P4:** right that the figures move, wrong in direction. The outline shrank on the merged tree (96.50 × 69.35 → 95.80 × 67.60 mm), the ladder went from rung 5 to 7, and a turned-IMU variant went over the bound (§2.4).
+- **P5:** right only after ruling (a). U2's 1 mA row went, and the renumbering broke the gate first (§2.2).
+- **P6:** right.
+- **P7:** half right. The witnesses moved by under 2 ms (U7's identity 0.19 ms earlier, U5's 1.56 ms earlier), and the windows still bracket.
+- **P8:** right. No committed scenario's hash moved, Sentinel-01's included. No scenario is based on `sentinel-02-own` (its campaign base copy is test-local).
+- **P9:** right. One tier-2 test, plus two tier-1 tests (`run_for`, and `hooks_of` exactness after M2 survived) and one tier-1 pin (load rows).
+
 ## 1. The twin fault: re-measured, root-caused, fixed
 
 All runs in the pinned tools image under `capped-run --mem 16G` (memory.swap.max 0 read back), on scratch trees outside the repository (`~/.cache/aet-4202/scratch/`). Kit: `~/.cache/aet-4202/tools/`, outputs `~/.cache/aet-4202/out/`.
