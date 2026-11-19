@@ -120,6 +120,24 @@ The boot word's own anchor (count 1952227) places its write at 20,754,010 ns, wh
 
 This is the same `brownout_unrecovered` that `4201` saw on Sentinel-02 (U7 is a BMP581). It is present on Sentinel-02 with or without U2, and its hash is unchanged by the fix. It is not the stamp fault. The WO puts it out of scope, so it is a finding (F1).
 
+### 1.5 The bug's reach, and the proof [measured; ruled 20:40Z: the fence takes `run_for`]
+
+**Reach.** Every `RunFor` the CLI composes goes through `run_for`: a droop's schedule (each assert, release, nudge, probe and the run's end), a static boot's one `RunFor` (`--for`, or a campaign's 100 ms), and a foreign boot's window (`renode/foreign.rs` L710). A truncated `RunFor` runs 1 ns short. Every instant after it is then 1 ns early. Only the judge's model of a droop's boot start (`released_ns + NUDGE_NS`) sees that, through a scheduled line (an injected byte, a DShot stop). A hook line is allowed to come early, and the last `RunFor` of a run only ends it 1 ns early, so neither is seen.
+
+**Committed results that could have been affected: none, checked two ways.**
+- Every `RunFor` the six committed droop scenarios render was logged and parsed as Renode parses it (§1.2, `out/survey-runfor.txt`).
+- Every static and foreign duration committed in tests, CI and scenarios parses exactly: 10 ms, 100 ms, 120 µs, 1 ms, 4300 ms, 4370 ms and 5000 ms (computed).
+- Re-running the committed droop scenarios with main's binary and the branch's gives the same archive hashes (§3).
+
+**Why the rendering is exact.** `run_for(ns)` writes `ns + 0.5` ns as decimals of a second. `double.Parse` rounds the fraction (below 1) correctly, to within 2^-53 of it, and the product by 1e9 (exact in a double) rounds once more. The result is `ns + 0.5` to within 2^-52 × 1e9 < 2.3e-7 ns. It lies strictly between `ns` and `ns + 1`, so the truncation is `ns` and can never reach `ns + 1`. Whole seconds are parsed as integers.
+
+`every_run_for_runs_exactly_its_nanoseconds_in_renode` (tier 1, `renode.rs`) re-implements `TryParse` as the pinned source writes it (cited by file and line). It asserts `parse(render(ns)) == ns`:
+- for 1,018,380 by name, after asserting that the nine-digit form runs it as 1,018,379;
+- for every ns in 0..=2,000,000;
+- on a stride of 9,973 ns up to `FOREIGN_MAX_VIRTUAL_NS` (5 s), the longest `RunFor` any boot renders, and at 5 s itself.
+
+The tier-2 recipe test's step (e) measures the same truncation in Renode itself: `"0.001018380"` advances virtual time by 1,018,379 ns, and `"0.0010183805"` by 1,018,380 ns.
+
 ## 2. D1 (R) applied, and the §7 stop on Sentinel-03
 
 ### 2.1 The edit [measured]
