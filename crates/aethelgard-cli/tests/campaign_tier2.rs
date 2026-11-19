@@ -1185,14 +1185,23 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
     let (code, out) = aethelgard(&["build", "--crate", &s(&board), "--out", &s(&elf)]);
     assert_eq!(code, Some(0), "{out}");
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
-        .args(["campaign", "--scenarios", "droop.json", "--firmware", &s(&elf)])
+        .args([
+            "campaign",
+            "--scenarios",
+            "droop.json",
+            "--firmware",
+            &s(&elf),
+        ])
         .args(["--archive", &s(&dir.join("archive"))])
         .current_dir(&dir)
         .stdin(Stdio::null())
         .output()
         .unwrap();
     let stdout = String::from_utf8(out.stdout).unwrap();
-    answer(&format!("4202 campaign exit={:?} {stdout}", out.status.code()));
+    answer(&format!(
+        "4202 campaign exit={:?} {stdout}",
+        out.status.code()
+    ));
     assert_eq!(out.status.code(), Some(0), "{stdout}");
     let lines = lines(&stdout);
     let run = line(&lines, "droop-bor3-50-ns-later");

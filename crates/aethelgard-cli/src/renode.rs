@@ -5758,7 +5758,10 @@ mod tests {
                 .unwrap()
                 .ends_with("cpu VectorTableOffset 0x08000000")
         );
-        assert_eq!(droop.matches("emulation RunFor \"0.0000000105\"").count(), 1);
+        assert_eq!(
+            droop.matches("emulation RunFor \"0.0000000105\"").count(),
+            1
+        );
         assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
         assert_eq!(plan(&image, &[]).instructions(), 10_000_000);
     }
@@ -5786,7 +5789,12 @@ mod tests {
     fn every_run_for_runs_exactly_its_nanoseconds_in_renode() {
         let runs = |ns: u64| {
             let c = run_for(ns);
-            renode_runs(c.strip_prefix("emulation RunFor \"").unwrap().strip_suffix('"').unwrap())
+            renode_runs(
+                c.strip_prefix("emulation RunFor \"")
+                    .unwrap()
+                    .strip_suffix('"')
+                    .unwrap(),
+            )
         };
         // The measured fault, by name: the nine-digit form runs 1,018,380 ns
         // 1 ns short; the rendering runs it exactly.
