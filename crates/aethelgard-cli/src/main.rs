@@ -1428,6 +1428,21 @@ fn twin_stop(err: aethelgard_twin::TwinError) -> run::Stop {
     }
 }
 
+/// The PWR rule a boot is judged by (`AET-WO-4240v` §1.6): the generated
+/// firmware's, from the topology; none for a foreign firmware, which is
+/// never given it.
+fn pwr_of(
+    foreign: bool,
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Result<Option<aethelgard_twin::serial::PwrRule>, run::Stop> {
+    match foreign {
+        true => Ok(None),
+        false => aethelgard_twin::serial::pwr_rule(topology)
+            .map(Some)
+            .map_err(twin_stop),
+    }
+}
+
 /// Copies and checks a boot's inputs before any tool is looked for: the
 /// platform must be exactly the one emitted for the topology (R6, F1), and
 /// the firmware must pass the ELF checks (R2).
@@ -1506,10 +1521,7 @@ fn ready(
         None => Vec::new(),
     };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
-    let pwr = match boot.foreign {
-        true => None,
-        false => Some(aethelgard_twin::serial::pwr_rule(&boot.topology).map_err(twin_stop)?),
-    };
+    let pwr = pwr_of(boot.foreign, &boot.topology)?;
     let motors = match boot.foreign {
         true => Vec::new(),
         false => renode::motors(&boot.topology).map_err(twin_stop)?,
@@ -2885,6 +2897,17 @@ mod tests {
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// `AET-WO-4240v` §1.6: a generated boot is given the PWR rule of its
+    /// declared supply; a foreign boot never is.
+    #[test]
+    fn only_a_generated_boot_is_given_the_pwr_rule() {
+        let spec = root().join("examples/sentinel-01-minimal.json");
+        let (_, topology, _) = solved(&spec).unwrap();
+        let rule = pwr_of(false, &topology).unwrap().unwrap();
+        assert_eq!(rule.supply, "ldo");
+        assert!(pwr_of(true, &topology).unwrap().is_none());
     }
 
     /// `AET-WO-3301` §1.4 in tier 1: the committed board is the generated

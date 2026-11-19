@@ -2078,6 +2078,11 @@ mod tests {
         assert!(judge_pwr(&rule, &[vec![], good.clone()]).is_empty());
         // Nothing read: the write's other bits are held to the POR word.
         assert!(judge_pwr(&rule, &[good[1..].to_vec()]).is_empty());
+        // Read as revision Y's `0x06`: held to the read, not the POR word.
+        let mut rev_y = good.clone();
+        rev_y[0] = rd("pwr", 0x0C, 0x06);
+        rev_y[1] = w("pwr", 0x0C, 0x02);
+        assert!(judge_pwr(&rule, &[rev_y]).is_empty());
         let judged = |boot: Vec<Access>| judge_pwr(&rule, &[boot]);
         let mut twice = good.clone();
         twice.insert(3, w("pwr", 0x0C, 0x42));
