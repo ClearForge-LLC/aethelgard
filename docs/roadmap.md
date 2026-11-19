@@ -418,6 +418,19 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
   - **`AET-WO-4240`** (reserved 2026-11-16, written 2026-11-19 as a spike ending in a stop): the HSE clock tree. Its build waits for `4400g`'s schema and for `3304`'s bench.
   - **`AET-WO-4404`** (written 2026-11-19; a build with one measured stop): `check pinout` judges each serial port's protocol and options from ArduPilot's own reading, never from the generator. The generator refuses an AF-prefixed label by name, and the `pincheck` fixture headers are made true.
   - **`AET-WO-4600`** (written 2026-11-19; a spike, ending in a stop): a field logger and a small motor driver run through every gate with no engine change, to find the Sentinel-shaped assumptions before P4's gate does. It does not satisfy the gate clause, whose board is written at the gate.
+  - **`AET-WO-1910` merged** (#233, `47ec18f`): CI's second reduction pass. `gates` went from 38–66 min to 14–18 min, and the suite dropped 19 % over three counted runs. Every guarded failure is kept, with eight shards. The planner now refuses a stale weight row and a heavy unweighted test.
+  - **`AET-WO-1911`** running: docs-only routing, one shared build, and the shard count measured.
+  - **`AET-WO-4240` stopped and was ruled** (#240, merged as the record; comment 7014986899):
+    - H1 (HSE → PLL1 → 64 MHz) plus VOS2, with the 16 MHz crystal Scotty's.
+    - Stock read by hand on 2026-11-19: ABM8AIG-16.000MHZ-12-2Z-T3, 24,630 at DigiKey, US$1.38. It stays provisional until AN2867 Rev 25 is checked.
+    - Split: `4240v`, then `4240a`, `4240b`, `4240c`, then a bypass bench.
+  - **`AET-WO-2304` stopped and was ruled** (#241, merged as the record; comment 7014981925):
+    - (a), a declared chain solved once, precedes `4500`.
+    - D-B9 is refused, so the battery is covered by a tolerated sag.
+    - The `esc` row is built with `4500`.
+  - **`AET-WO-4240v`** (written 2026-11-19; a build after `4400g`): VOS2 with a declared core supply, and the clock limits judged per VOS at the fastest source.
+  - **`AET-WO-2304b`** (written 2026-11-19; a build after `4400g`): the battery-sag chain, with Sentinel-03 first.
+  - **The Sentinel-01 order-gate review, held after the order:** no reorder. The bench plan's findings go to **`AET-WO-3403`** (#247): every row made able to fail, U2 left empty, and a BMP581 on J4 through a bench specification. The review is stored in `docs/reviews/`.
   - **The Sentinel-01 order-gate review** (line 434 of this file) runs after the order. Scotty ordered the boards and parts on 2026-11-19, before the review. It is a read-only fresh session on Furnace, and its first question is whether anything ordered needs a reorder.
   - **`AET-WO-1314` stopped and was ruled** (#227, comment 6982875594): a 50 µm via ring as an optional declared field; an undersized declared via refused (`ViaRingUnheld`); a deterministic ladder of routing attempts, chosen by `extract`'s own figure but judged again by `verify`; only for boards declaring `fab_tolerances`.
   - **`AET-WO-1303b`** (written 2026-11-18; a build with one measured stop): extraction's build as ruled on #133. Its preconditions (`1308`, `4300d2`) are merged.
@@ -846,6 +859,13 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | ArduPilot pulls up every SERIAL1–9 line at run time: on H7, `set_options` sets TX and RX pull-ups whenever a line is not inverted (`AP_HAL_ChibiOS/UARTDriver.cpp:1611, 1624`). That undercuts `4400b` D3 (a)'s "no internal pull" there. `check pinout` judges the reset state, so it never sees this | `4404` (draft) | ruling needed: name only (`4404` does), or revisit D3 (a) |
 | A four-port generated board in CI. Every CI board has a console only, so nothing generated exercises SERIAL1–9 | `4404` (draft) | after `1911` (workflows) |
 | The serial options' run-time effect in `USART_CR2`, read back in the twin. `4404` reads it at source | `4404` (draft) | a twin work order after `4400g` |
+| `verify`'s gates take each AF number and pin position from one source, ST's pin table. `check pinout`, the only independent judge, never sees a board whose firmware is not ArduPilot. Add a tier-1 test holding `pin_table` against ArduPilot's pinned `STM32H753xx.py`; add `examples/sentinel-01.json` to the ArduPilot matrix (after `1911`); add a hand-entered DS12117 pad table as a third source | the Sentinel-01 review F7 (2026-11-19) | an engine work order (`INV-07`) |
+| A board whose schedule harness is unsplit (no timer, `svd-hal` `board.rs` L3897) needs more than 8 GiB to `prove`: 13 GB measured on an I2C+SPI logger. Its cost is the SPI part | `4600` F11 | the work order that splits the schedule harness |
+| `validate` accepts a device with no declared `pin_capacitance`; only `extract` refuses it | `4600` F17 | the next validation work order |
+| IR's static headroom counts no input-path drop, so a healthy board already sits below its battery's declared minimum by I·R | `2304b` K6 | the next power work order |
+| The placer handles a large anchored passive by moving its whole group: Sentinel-03's x headroom fell from 14.75 to 3.5 mm when C1 was anchored to U10 | `1315` (c), ruled (a) | the next placer work order |
+| Bind each serial port's protocol, options and baud to the ELF's `var_info`, closing L800's residual for all three | `4404` D1 | a `pincheck` work order |
+| A third GPS-protocol port compiles and is never bound (`AP_GPS_config.h:16`, `AP_GPS.cpp:345-349`) | `4404` D3 | the next `pincheck` work order |
 | Flying Sentinel-02's forward direction. `4400d`'s fixture declares forward as the board's top edge, a fixture choice, not the airframe's | `4400d` D5, #207 | `AET-WO-4500` (with the drone body) |
 | USART receive DMA lines in the twin's platform: held. ArduPilot needs USART1's line to receive at all, but with the SPI lines too, a second 64-byte receive-buffer turnover during the dataflash erase ends in a repeatable `HardFault` (UsageFault `INVSTATE`, a corrupted code pointer; cause not established: Renode's `STM32DMA` or ArduPilot). Renode's `STM32F7_USART` never raises IDLE, so a frame under 64 bytes is never handed on: a model change. Timer DMA is not emitted either | `4400c2` D2, D3, #204 | `AET-WO-4400e`, only if its §1.1 shows the judge needs SERIAL0 receive; otherwise the foreign-firmware judge's next order (D3: establish the fault's cause first) |
 
