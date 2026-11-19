@@ -154,6 +154,12 @@ The other rows are one read each, for example `$P read --chip STM32H753ZITx b32 
 
 ### The records, nothing wired
 
+**The twin's bus, nothing wired.** The twin renders an unwired I2C bus as its devices' absence. It does so from either cause:
+- the rise: S2 `unwired-47k`, 3,982.301 ns at 100 pF, over the 300 ns ceiling;
+- SDA held low: S2 `sda-held-low`.
+
+It claims no waveform for that bus. With no device, the wire form expected is `Start`, `Write`, `Address write: 46`, `NACK`, `Stop`, once per U7 step, from RM0433, not the twin. With no pull-ups at all, `3302` saw SDA float low and `ARLO` set, so the analyzer may show no START at all.
+
 Status `0x22020000` is OK, `0x22020001` is TXIS, `0x22020005` is RXP and `0x22020006` is EOT. A record's value is in the words after its status, most significant first.
 
 | Step | Status at | Value at | Predicted, nothing wired | Source | Bench status | Bench value |
@@ -361,7 +367,8 @@ i2c-1: Stop
 | U7 identity | the 13 lines above | | |
 | U7 configure | the 11 lines above | | |
 | U7 data, framing (Sr, 6 reads, 5 ACK, last NACK, Stop) | as above | | |
-| U7 data, values `t0..p2` | **not predicted.** The twin's `00 00 19 40 F3 62` is its stimulus (25 °C, 101,325 Pa), not the room | | — |
+| U7 data, values `t0..p2`: **the twin's** | `Data read: 00`, `00`, `19`, `40`, `F3`, `62` (S1, kind 13: `read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62`; its stimulus, 25 °C and 101,325 Pa) | | — |
+| U7 data, values `t0..p2`: **silicon** | **not predicted:** the bench reads the room, not the stimulus | | — |
 
 To read the data bytes: T = signed(`t2 t1 t0`) / 65,536 °C, and P = (`p2 p1 p0`) / 64 Pa (DS registers `0x1D`–`0x22`, the part table's channels). Bench T ____ °C · P ____ Pa (for the record; no prediction).
 
@@ -381,7 +388,19 @@ spi-1: 4E 03
 spi-1: 9D 00 00 00 00 00 00
 ```
 
-**MISO** (`??` marks a byte not predicted):
+**MISO, as the twin's model gives it.** This is the twin's full answer:
+- The model returns `0x00` on every command byte and every write data byte (`models/renode/ICM42688P.cs` L97 and L99/L116, read at source; S1's witness records only the read bytes). Each read byte is its register.
+- The data bytes are its stimulus: 29 °C, x 0 g, y +1 g.
+
+```
+spi-1: 00 47
+spi-1: 00 00
+spi-1: 00 00
+spi-1: 00 00
+spi-1: 00 12 02 00 00 00 40
+```
+
+**MISO, as predicted for silicon.** `??` marks a byte the twin's value does not carry over to silicon; the reasons are below the table.
 
 ```
 spi-1: ?? 47
@@ -391,13 +410,13 @@ spi-1: ?? ??
 spi-1: ?? d0 d1 d2 d3 d4 d5
 ```
 
-| Frame | Predicted MOSI | Predicted MISO | Bench MOSI | Bench MISO | Agree? |
-|---|---|---|---|---|---|
-| identity | `F5 00` | `?? 47` (twin S1: `0x47`) | | | |
-| configure 1 (`INTF_CONFIG0` = `0xC0`) | `4C C0` | `?? ??` | | | |
-| configure 2 (`ACCEL_CONFIG0` = `0x66`) | `50 66` | `?? ??` | | | |
-| configure 3 (`PWR_MGMT0` = `0x03`) | `4E 03` | `?? ??` | | | |
-| data | `9D 00 00 00 00 00 00` | `?? d0..d5` | | | |
+| Frame | Predicted MOSI | Twin's MISO (model) | Predicted MISO, silicon | Bench MOSI | Bench MISO | Agree? |
+|---|---|---|---|---|---|---|
+| identity | `F5 00` | `00 47` | `?? 47` (twin S1: `0x47`) | | | |
+| configure 1 (`INTF_CONFIG0` = `0xC0`) | `4C C0` | `00 00` | `?? ??` | | | |
+| configure 2 (`ACCEL_CONFIG0` = `0x66`) | `50 66` | `00 00` | `?? ??` | | | |
+| configure 3 (`PWR_MGMT0` = `0x03`) | `4E 03` | `00 00` | `?? ??` | | | |
+| data | `9D 00 00 00 00 00 00` | `00 12 02 00 00 00 40` | `?? d0..d5` | | | |
 
 **Not predicted, and why:**
 - **The MISO byte during a command byte, and during a write's data byte.** DS-000347 says SDO is high-Z while CS is high, and nothing about it during the command byte. The twin's witness records only the bytes the model returns for a read.
