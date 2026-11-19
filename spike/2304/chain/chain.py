@@ -194,7 +194,7 @@ def operating_point(v_open, r_ohm, i_esc_a, p_board_w):
     the constant-power input collapses)."""
     a = v_open - r_ohm * i_esc_a
     disc = a * a - 4 * r_ohm * p_board_w
-    if disc < 0:
+    if a <= 0 or disc < 0:
         return None
     return (a + math.sqrt(disc)) / 2
 
@@ -274,6 +274,14 @@ def thresholds(b, i_esc, eta_mode):
     res["R_collapse"] = first_r(collapse)
     u11 = next(x for x in b.regs.values() if x["output"] == b.spec["mcu"]["supply"])
     res["R_3v3_unstated"] = first_r(vbat_below(b.vin_min_mv(u11["reference"])))
+    # Which limit binds: the operating point's last V_bat before it vanishes, against U11's floor.
+    if res["R_collapse"] is not None:
+        a = v_open - res["R_collapse"] * i_esc
+        res["vbat_at_collapse_v"] = a / 2
+        res["binding"] = "collapse" if a / 2 >= b.vin_min_mv(u11["reference"]) / 1000 else "U11 below 3.8 V"
+    else:
+        res["binding"] = "U11 below 3.8 V"
+    res["R_3v3_below_3v8_only"] = first_r(lambda r: (lambda o: o["vbat_v"] is not None and o["vbat_v"] * 1000 < b.vin_min_mv(u11["reference"]))(chain_at(b, v_open, r, i_esc, eta_mode)), hi=res["R_collapse"] or 1000.0)
     res["R_3v3_avail_below_bor3_max"] = first_r(rail_below(u11["output"], BOR3_FALLING_MAX_MV * 1000))
     res["R_3v3_enters_bor3_band"] = min(x for x in (res["R_3v3_unstated"], res["R_3v3_avail_below_bor3_max"]) if x is not None)
     for x in b.regs.values():

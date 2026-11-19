@@ -1,6 +1,9 @@
-//! AET-WO-2303 spike: one per-quantum lock-step run of a firmware-dependent
-//! load, the battery under the motors' current, on the Sentinel-02-shaped
-//! board, and what it costs the archive.
+//! AET-WO-2304 spike (restored from AET-WO-2303's `spike/2303/lockstep` at
+//! cd43b207): the battery chain under the ESCs on Sentinel-03, under two
+//! candidates: (b) per-quantum lock-step (`lockstep`) and (a) a declared
+//! profile solved once (`declared`). The deck is Sentinel-03's declared tree
+//! (`deck`, FEEDBACK "The model, as designed"); the ESC current is `I_RUN_A`.
+//! The text below is 2303's, for the modes it kept.
 //!
 //! Modes:
 //! - `lockstep CASE SPAN_NS SCRIPT OUT`: libngspice in this process (AET-WO-2101's
@@ -57,18 +60,35 @@ fn quantum_ns() -> u64 {
 }
 const NUDGE_NS: u64 = 10;
 
-// The deck, spike-declared.
-const PACK_V: f64 = 11.1; // 3S at 3.7 V a cell
-const BULK_F: f64 = 47e-6;
-const RUN_A: f64 = 10.0; // four motors at 2.5 A while TIM1 runs
-const LAG_S: f64 = 1e-3; // the current's first-order rise
-const DROPOUT_V: f64 = 0.5;
+// The deck (AET-WO-2304 §1.5; FEEDBACK "The model, as designed"). Sentinel-03's
+// declared tree, with the spike's model where nothing is declared.
+/// The pack's floor: cells.min (3) x cell_min_millivolts (3000), the fixture.
+const PACK_V: f64 = 9.0;
+/// C1, UCZ1H470MCL1GS: 47 uF, ESR max 250 mOhm (Nichicon UCZ p. 2, the parts table).
+const HOTPLUG_F: f64 = 47e-6;
+const HOTPLUG_ESR: f64 = 0.25;
+/// C10, C20 (10 uF) and C11, C21 (0.22 uF): the bucks' input ceramics, nominal.
+const CIN_F: f64 = 20.44e-6;
+/// The bucks' input power at the declared loads and the fixture's declared
+/// efficiencies: U10 5.0 V x 2.000 A / 0.90, U11 3.3 V x 0.748 A / 0.81 (W).
+const P_BUCKS_W: f64 = 5.0 * 2.0 / 0.90 + 3.3 * 0.748 / 0.81;
+/// U11's duty-limited output, IR's `headroom` arithmetic (power.rs L1462-1491):
+/// D 0.9609, RDS_hi 160 mOhm, RDS_lo 110 mOhm, DCR 16 mOhm, at 0.748 A, in V.
+const D: f64 = 0.9609;
+const I3: f64 = 0.748;
+/// U11's enable, with the datasheet's hysteresis (SNVSAN3F p. 15, 8.3.4, typical:
+/// starts at about 3.7 V, shuts down below about 3 V); decided at each boundary.
+const EN_ON_V: f64 = 3.7;
+const EN_OFF_V: f64 = 3.0;
 const REG_OHMS: f64 = 0.05;
-/// Four 100 nF, one per IC on VDD_3V3, as `2301` (the emitter's rule).
-const DECOUPLING_F: f64 = 400e-9;
-const MCU_A: f64 = 0.1;
-/// DS12117 Rev 7 Table 26, typical: (falling, rising), as `2301`.
+/// VDD_3V3: the emitter's decoupling (10.81 uF) plus U11's four 22 uF outputs
+/// at nominal (C24-C27), FEEDBACK §1.8.
+const DECOUPLING_F: f64 = 98.81e-6;
+const LAG_S: f64 = 1e-3; // the ESC current's first-order rise (2303's; unsourced)
+/// DS12117 Table 16 typical, as aethelgard-chaos (falling, rising).
 const BOR3: (f64, f64) = (2.61, 2.70);
+/// The declared (a) profile's step time: a scenario's number, not the artifact's.
+const DECLARED_STEP_NS: u64 = 40_000_000;
 
 fn pack_ohms(case: &str) -> f64 {
     match case {
@@ -78,22 +98,49 @@ fn pack_ohms(case: &str) -> f64 {
     }
 }
 
+/// The ESC current while the firmware's timer runs, A: from the run's
+/// environment, never a default (INV-06).
+fn run_a() -> f64 {
+    static A: std::sync::OnceLock<f64> = std::sync::OnceLock::new();
+    *A.get_or_init(|| {
+        std::env::var("I_RUN_A")
+            .expect("I_RUN_A: the ESC current while CEN is set")
+            .parse()
+            .unwrap()
+    })
+}
+
 fn deck(case: &str, span_ns: u64) -> Vec<String> {
+    let avail = format!(
+        "({D}*(v(bat)-{i}*0.160) - {k}*{i}*0.110 - {i}*0.016)",
+        i = I3,
+        k = 1.0 - D
+    );
     vec![
-        format!("* aet2303 battery under the motors, {case}"),
+        format!(
+            "* aet2304 Sentinel-03 battery chain, {case}, I_RUN {} A",
+            run_a()
+        ),
         format!("vpack src 0 dc {PACK_V}"),
         format!("rpack src bat {}", pack_ohms(case)),
-        format!("cbulk bat 0 {BULK_F} ic={PACK_V}"),
+        format!("chot hot 0 {HOTPLUG_F} ic={PACK_V}"),
+        format!("resr bat hot {HOTPLUG_ESR}"),
+        format!("ccin bat 0 {CIN_F} ic={PACK_V}"),
         "vctl ctl 0 dc 0 external".to_owned(),
+        // An external source adds the callback value to its dc value (measured), so dc 0.
+        "ven en 0 dc 0 external".to_owned(),
         "rlag ctl lag 1k".to_owned(),
         format!("clag lag 0 {} ic=0", LAG_S / 1e3),
-        "bmot bat 0 i = v(lag)".to_owned(),
-        format!("breg reg 0 v = min(3.3, max(0, v(bat) - {DROPOUT_V}))"),
-        format!("rreg reg rail {REG_OHMS}"),
+        "besc bat 0 i = v(lag)".to_owned(),
+        // Both bucks: constant power from VBAT while enabled.
+        format!("bbuck bat 0 i = v(en) * {P_BUCKS_W} / max(v(bat), 1.0)"),
+        // U11: toward min(3.3 V, avail) through REG_OHMS while enabled.
+        format!("breg 0 rail i = v(en) * (min(3.3, max(0, {avail})) - v(rail)) / {REG_OHMS}"),
         format!("cdec rail 0 {DECOUPLING_F} ic=3.3"),
-        format!("iload rail 0 dc {MCU_A}"),
+        // The declared 748 mA, smoothed to zero below 0.5 V.
+        format!("bload rail 0 i = {I3} * min(1, max(0, v(rail)) / 0.5)"),
         ".options reltol=1e-3 abstol=1e-12 vntol=1e-6 method=trap".to_owned(),
-        // A 1 µs step cap (2301 F12: same crossings as 10 ns, 50x cheaper).
+        // A 1 us step cap (2301 F12).
         format!(".tran 10n {span_ns}n 0 1000n uic"),
         ".end".to_owned(),
     ]
@@ -436,6 +483,10 @@ struct Ioc {
     traces: Option<Traces>,
     /// The motors' commanded current for the next quantum, A.
     ctl: f64,
+    /// U11/U10's enable (hysteresis, decided at each boundary).
+    en: bool,
+    /// Declared mode (candidate (a)): no Renode; the profile is the load.
+    declared: bool,
     held: bool,
     nudged: u64,
     last: (u32, u32, u32),
@@ -453,6 +504,26 @@ impl Ioc {
         let t_ns = k * quantum_ns();
         let vbat = ng_probe::ffi::vec_last("bat").map_or(f64::NAN, |(_, v)| v);
         let vdd = ng_probe::ffi::vec_last("rail").map_or(f64::NAN, |(_, v)| v);
+        // The bucks' enable, from the boundary sample (both candidates).
+        if self.en && vbat < EN_OFF_V {
+            self.en = false;
+            self.actions
+                .push(format!("{t_ns} bucks off vbat={vbat:.4}"));
+        } else if !self.en && vbat >= EN_ON_V {
+            self.en = true;
+            self.actions.push(format!("{t_ns} bucks on vbat={vbat:.4}"));
+        }
+        if self.declared {
+            // Candidate (a): the declared profile, nothing from a firmware.
+            self.ctl = if t_ns >= DECLARED_STEP_NS {
+                run_a()
+            } else {
+                0.0
+            };
+            self.next_k += 1;
+            self.since = Instant::now();
+            return;
+        }
         // 1. Renode runs the quantum that ends here; three words are read.
         let got = self.renode.as_mut().unwrap().exec(&[
             run_for(quantum_ns() - std::mem::take(&mut self.nudged)),
@@ -525,7 +596,7 @@ impl Ioc {
         self.ctl = if self.held {
             0.0
         } else {
-            f64::from(cen) * RUN_A
+            f64::from(cen) * run_a()
         };
         if t_ns % 10_000_000 == 0 {
             self.rss
@@ -553,8 +624,12 @@ fn rendered(t_ns: u64, released: bool) -> Record {
 }
 
 impl Hooks for Ioc {
-    fn vsrc(&mut self, _time: f64, _name: &str) -> f64 {
-        self.ctl
+    fn vsrc(&mut self, _time: f64, name: &str) -> f64 {
+        if name.eq_ignore_ascii_case("ven") {
+            if self.en { 1.0 } else { 0.0 }
+        } else {
+            self.ctl
+        }
     }
     fn sync(&mut self, time: f64, _delta: &mut f64, _old: f64, _redo: i32, loc: i32) -> i32 {
         if loc == 0
@@ -588,6 +663,8 @@ fn lockstep(a: &[String]) {
         setup,
         traces: Some(Traces::create(&out)),
         ctl: 0.0,
+        en: true,
+        declared: false,
         held: false,
         nudged: 0,
         last: (u32::MAX, u32::MAX, u32::MAX),
@@ -635,7 +712,8 @@ fn lockstep(a: &[String]) {
     fs::write(out.join("actions.txt"), actions.join("\n") + "\n").unwrap();
     let rss_s: Vec<String> = rss.iter().map(|(t, k)| format!("[{t},{k}]")).collect();
     println!(
-        "{{\"case\":\"{case}\",\"pack_ohms\":{},\"quantum_ns\":{},\"full_setup\":{},\"span_ns\":{span_ns},\"quanta\":{quanta},\"renode_start_s\":{renode_start_s:.3},\"run_s\":{run_s:.3},\"renode_busy_s\":{busy:.3},\"ngspice_between_boundaries_s\":{ng_busy:.3},\"wall_s\":{:.3},\"cen_set_ms\":{cen_ms:.3},\"renode_rss_kib_start\":{rss_start},\"renode_rss_kib_end\":{rss_end},\"probe_hwm_kib\":{},\"final\":{fin:?},\"resets\":{},\"actions\":{}{tail},\"rss_every_10ms\":[{}]}}",
+        "{{\"case\":\"{case}\",\"i_run_a\":{},\"pack_ohms\":{},\"quantum_ns\":{},\"full_setup\":{},\"span_ns\":{span_ns},\"quanta\":{quanta},\"renode_start_s\":{renode_start_s:.3},\"run_s\":{run_s:.3},\"renode_busy_s\":{busy:.3},\"ngspice_between_boundaries_s\":{ng_busy:.3},\"wall_s\":{:.3},\"cen_set_ms\":{cen_ms:.3},\"renode_rss_kib_start\":{rss_start},\"renode_rss_kib_end\":{rss_end},\"probe_hwm_kib\":{},\"final\":{fin:?},\"resets\":{},\"actions\":{}{tail},\"rss_every_10ms\":[{}]}}",
+        run_a(),
         pack_ohms(&case),
         quantum_ns(),
         std::env::var_os("FULL_SETUP").is_some(),
@@ -647,6 +725,180 @@ fn lockstep(a: &[String]) {
             .count(),
         actions.len(),
         rss_s.join(",")
+    );
+}
+
+// ---------------------------------------------------------------- candidate (a)
+
+/// `declared CASE SPAN_NS OUT`: candidate (a). The same deck, solved once by
+/// ngspice with no Renode: the ESC current steps to `I_RUN_A` at the declared
+/// time and stays (it does not follow any firmware). The bucks' enable is
+/// decided at each 10 us boundary from V_bat, as in (b). `VDD_3V3`'s crossings
+/// of the active levels (`aethelgard_chaos::power::levels(3)`) are found on
+/// ngspice's own points, linearly interpolated to the ps, and scheduled by
+/// `aethelgard_chaos::power::schedule(3, ..)`. The events trace holds the
+/// crossings (kind 17) and the resets (kind 24) with the real writer.
+fn declared(a: &[String]) {
+    use aethelgard_chaos::power::{Crossing, levels, schedule};
+    let case = a[1].clone();
+    let span_ns: u64 = a[2].parse().unwrap();
+    let out = PathBuf::from(&a[3]);
+    fs::create_dir_all(&out).unwrap();
+    let quanta = span_ns / quantum_ns();
+    let t0 = Instant::now();
+    let mut sp = Spice::init(Ioc {
+        quanta,
+        next_k: 1,
+        renode: None,
+        setup: Setup {
+            commands: Vec::new(),
+            cold: Vec::new(),
+            rearm: Vec::new(),
+            vtor: String::new(),
+        },
+        traces: None,
+        ctl: 0.0,
+        en: true,
+        declared: true,
+        held: false,
+        nudged: 0,
+        last: (u32::MAX, u32::MAX, u32::MAX),
+        actions: Vec::new(),
+        cen_time_ns: 0,
+        rss: Vec::new(),
+        since: Instant::now(),
+        ng_busy: Duration::ZERO,
+    })
+    .unwrap();
+    fs::write(out.join("deck.cir"), deck(&case, span_ns).join("\n") + "\n").unwrap();
+    sp.circ(&deck(&case, span_ns)).unwrap();
+    for k in 1..=quanta {
+        assert!(
+            sp.set_bkpt((k * quantum_ns()) as f64 * 1e-9),
+            "breakpoint {k}"
+        );
+    }
+    let r = sp.command("run");
+    assert_eq!(r, 0, "run: {:?}", sp.take_log());
+    let solve_s = t0.elapsed().as_secs_f64();
+    let time = sp.vec("time").expect("time");
+    let rail = sp.vec("rail").expect("rail");
+    let bat = sp.vec("bat").expect("bat");
+    if let Some(n) = std::env::var("DUMP")
+        .ok()
+        .and_then(|v| v.parse::<usize>().ok())
+    {
+        for i in (0..time.len()).step_by(n.max(1)) {
+            eprintln!(
+                "dump t={:.6e} bat={:.4} rail={:.4}",
+                time[i], bat[i], rail[i]
+            );
+        }
+        for v in ["en", "lag", "ctl", "src", "hot"] {
+            let x = sp.vec(v).unwrap_or_default();
+            eprintln!("vec {v}: first {:?} last {:?}", x.first(), x.last());
+        }
+        let log = sp.take_log();
+        eprintln!("log: {}", log.join(" | "));
+    }
+    let mut crossings: Vec<Crossing> = Vec::new();
+    for (level, uv) in levels(3) {
+        let l = uv as f64 * 1e-6;
+        for i in 1..rail.len() {
+            let (v0, v1) = (rail[i - 1], rail[i]);
+            if (v0 - l) * (v1 - l) < 0.0 || (v1 == l && v0 != l) {
+                let f = (l - v0) / (v1 - v0);
+                let t = time[i - 1] + f * (time[i] - time[i - 1]);
+                crossings.push(Crossing {
+                    level: level.clone(),
+                    microvolts: uv,
+                    at_ps: (t * 1e12).round() as u64,
+                    falling: v1 < v0,
+                });
+            }
+        }
+    }
+    crossings.sort_by_key(|c| c.at_ps);
+    let resets = schedule(3, &crossings);
+    // One time-ordered list: each crossing (kind 17) and each scheduled reset
+    // edge (kind 24); at equal times the crossing comes first.
+    let mut evs: Vec<(u64, u8, Record)> = crossings
+        .iter()
+        .map(|c| {
+            (
+                c.at_ps / 1000,
+                0,
+                Record::RailCrossing {
+                    domain: "VDD_3V3".to_owned(),
+                    level: c.level.clone(),
+                    microvolts: c.microvolts,
+                    at_ps: c.at_ps,
+                    falling: c.falling,
+                },
+            )
+        })
+        .collect();
+    let mut resets_json = Vec::new();
+    if let Ok(rs) = &resets {
+        for r in rs {
+            let edge = |t: u64, released: bool| {
+                (
+                    t,
+                    1,
+                    Record::ResetRendered {
+                        at_ns: t,
+                        released,
+                        cause: r.cause.clone(),
+                        rendering: "held reset, the CLI's rendering".to_owned(),
+                    },
+                )
+            };
+            evs.push(edge(r.asserted_ns, false));
+            if let Some(t) = r.released_ns {
+                evs.push(edge(t, true));
+            }
+            resets_json.push(format!(
+                "[{},{}]",
+                r.asserted_ns,
+                r.released_ns.map_or("null".to_owned(), |t| t.to_string())
+            ));
+        }
+    }
+    evs.sort_by_key(|e| (e.0, e.1));
+    let mut traces = Traces::create(&out);
+    for (t, _, rec) in evs {
+        traces.event(t, rec);
+    }
+    let tail = traces.commit();
+    let (min_i, min_v) = rail
+        .iter()
+        .enumerate()
+        .fold((0, f64::MAX), |m, (i, &v)| if v < m.1 { (i, v) } else { m });
+    let min_bat = bat.iter().cloned().fold(f64::MAX, f64::min);
+    let xs: Vec<String> = crossings
+        .iter()
+        .map(|c| format!("[\"{}\",{},{}]", c.level, c.at_ps, c.falling))
+        .collect();
+    fs::write(
+        out.join("actions.txt"),
+        sp.hooks().actions.join("\n") + "\n",
+    )
+    .unwrap();
+    println!(
+        "{{\"mode\":\"declared\",\"case\":\"{case}\",\"i_run_a\":{},\"pack_ohms\":{},\"step_ns\":{DECLARED_STEP_NS},\"span_ns\":{span_ns},\"points\":{},\"solve_s\":{solve_s:.3},\"probe_hwm_kib\":{},\"vdd_min_v\":{min_v:.4},\"vdd_min_at_ns\":{},\"vbat_min_v\":{min_bat:.4},\"vbat_end_v\":{:.4},\"vdd_end_v\":{:.4},\"crossings\":[{}],\"schedule\":{},\"resets\":[{}]{tail}}}",
+        run_a(),
+        pack_ohms(&case),
+        rail.len(),
+        self_hwm_kib(),
+        (time[min_i] * 1e9) as u64,
+        bat.last().unwrap(),
+        rail.last().unwrap(),
+        xs.join(","),
+        match &resets {
+            Ok(_) => "\"ok\"".to_owned(),
+            Err(e) => format!("{e:?}"),
+        },
+        resets_json.join(",")
     );
 }
 
@@ -721,9 +973,10 @@ fn replay(dir: &Path) {
         .into_iter()
         .filter_map(|(e, _, _)| match e {
             Event::Record {
-                record: Record::ResetRendered {
-                    at_ns, released, ..
-                },
+                record:
+                    Record::ResetRendered {
+                        at_ns, released, ..
+                    },
                 ..
             } => Some(format!(
                 "{at_ns} {}",
@@ -821,20 +1074,19 @@ fn splice(run: &Path, base: &Path) {
     let t = evs[at - 1].0.timestamp();
     // In time order after the run's last droop record (rank 7 of
     // `check_run`), so the campaign's order rule is met.
-    let last_ps = evs
-        .iter()
-        .filter_map(|(e, _, _)| match e {
-            Event::Record { record, .. } => match record {
-                Record::RailCrossing { at_ps, .. } => Some(*at_ps),
-                Record::ResetRendered { at_ns, .. } | Record::FirmwareObserved { at_ns, .. } => {
-                    Some(at_ns * 1000)
-                }
+    let last_ps =
+        evs.iter()
+            .filter_map(|(e, _, _)| match e {
+                Event::Record { record, .. } => match record {
+                    Record::RailCrossing { at_ps, .. } => Some(*at_ps),
+                    Record::ResetRendered { at_ns, .. }
+                    | Record::FirmwareObserved { at_ns, .. } => Some(at_ns * 1000),
+                    _ => None,
+                },
                 _ => None,
-            },
-            _ => None,
-        })
-        .max()
-        .unwrap_or(0);
+            })
+            .max()
+            .unwrap_or(0);
     let at = evs
         .iter()
         .rposition(|(e, _, _)| {
@@ -990,6 +1242,7 @@ fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     match a.first().map(String::as_str) {
         Some("lockstep") => lockstep(&a),
+        Some("declared") => declared(&a),
         Some("replay") => replay(Path::new(&a[1])),
         Some("flip") => flip(Path::new(&a[1]), Path::new(&a[2])),
         Some("splice") => splice(Path::new(&a[1]), Path::new(&a[2])),
