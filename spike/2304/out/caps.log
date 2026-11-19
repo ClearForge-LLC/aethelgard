@@ -1,0 +1,43 @@
+2026-11-19T14:45:42+00:00 mem=8G cmd: bash -c set -e; cargo build -p aethelgard-cli --features aethelgard-cli/with-tools --locked --offline 2>&1 | tail -3; cargo build --manifest-path bridge/Cargo.toml --locked --offline 2>&1 | tail -3; cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | tail -3; ls -la /cache/target/debug/aethelgard /cache/target/debug/aethelgard-bridge /cache/target/release/lockstep
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p947787-i172925250.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:46:29+00:00 mem=8G cmd: bash /repo/spike/2304/sh/gen.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p953476-i172906628.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:56:23+00:00 mem=8G cmd: cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1122317-i173050153.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+   Compiling aet2304-lockstep v0.0.0 (/repo/spike/2304/lockstep)
+warning: unused variable: `t`
+    --> src/main.rs:1055:9
+     |
+1055 |     let t = evs[at - 1].0.timestamp();
+     |         ^ help: if this is intentional, prefix it with an underscore: `_t`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `aet2304-lockstep` (bin "lockstep") generated 1 warning (run `cargo fix --bin "lockstep" -p aet2304-lockstep` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.87s
+2026-11-19T14:56:39+00:00 mem=8G cmd: bash /repo/spike/2304/sh/runa.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1131187-i173101477.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:57:50+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" ; mkdir -p /cache/dbg; DUMP=20 I_RUN_A=0 /cache/target/release/lockstep declared weak 300000 /cache/dbg > /cache/dbg/run.json 2> /cache/dbg/err; head -40 /cache/dbg/err; grep log: /cache/dbg/err | cut -c1-1500
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1142466-i173064122.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:58:13+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; DUMP=40 I_RUN_A=0 /cache/target/release/lockstep declared healthy 100000 /cache/dbg > /cache/dbg/run.json 2> /cache/dbg/err; grep -v log: /cache/dbg/err | head -20
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1143012-i173064138.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:58:42+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; DUMP=40 I_RUN_A=0 /cache/target/release/lockstep declared healthy 100000 /cache/dbg > /cache/dbg/run.json 2> /cache/dbg/err; grep -v log: /cache/dbg/err | head -20; cat /cache/dbg/deck.cir
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1146935-i173091851.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:58:49+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; for c in healthy weak; do DUMP=200 I_RUN_A=0 /cache/target/release/lockstep declared $c 2000000 /cache/dbg > /cache/dbg/run.json 2> /cache/dbg/err; grep -v log: /cache/dbg/err | tail -8; done
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1149511-i173074633.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:58:58+00:00 mem=8G cmd: bash /repo/spike/2304/sh/runa.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1152318-i173095155.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T14:59:50+00:00 mem=8G cmd: bash -c SIM=1 bash /repo/spike/2304/sh/gen.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1155321-i173072239.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:00:32+00:00 mem=8G cmd: bash /repo/spike/2304/sh/runb.sh I1-100us-smoke 0.4 100000 100000000
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1159494-i173118910.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:00:53+00:00 mem=8G cmd: bash /repo/spike/2304/sh/batchb.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1161472-i173121869.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:12:45+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; cd /cache/runs; for r in b-*; do [ "$r" = b-I1-100us-smoke ] && continue; echo "== $r"; /cache/target/release/lockstep stats $r; done
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1774528-i173688320.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:13:31+00:00 mem=8G cmd: bash /repo/spike/2304/sh/rail.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1777099-i173728114.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+2026-11-19T15:13:38+00:00 mem=16G cmd: bash /repo/spike/2304/sh/verify.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1777477-i173616280.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
+2026-11-19T15:31:42+00:00 mem=8G cmd: bash -c cargo build --release --locked --offline --manifest-path spike/2304/lockstep/Cargo.toml 2>&1 | grep -E "^error" -A5; bash /repo/spike/2304/sh/band.sh
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2307358-i174243025.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192

@@ -94,7 +94,12 @@ fn pack_ohms(case: &str) -> f64 {
     match case {
         "healthy" => 0.05,
         "weak" => 1.0,
-        other => panic!("unknown case {other}"),
+        // `r<ohms>`: a pack R named in the case (runs added after the
+        // predictions: D1's band, either side of it).
+        other => other
+            .strip_prefix('r')
+            .and_then(|v| v.parse().ok())
+            .unwrap_or_else(|| panic!("unknown case {other}")),
     }
 }
 
@@ -917,6 +922,41 @@ fn events_of(trace: &[u8]) -> (Header, Vec<(Event, usize, usize)>) {
     (header, out)
 }
 
+/// `stats DIR`: each per-quantum net's minimum and maximum (with their
+/// times) and its value at the run's end, read from `trace-samples` alone.
+fn stats(dir: &Path) {
+    let bytes = fs::read(dir.join("trace-samples").join("trace.cbor")).unwrap();
+    let (_, evs) = events_of(&bytes);
+    let mut m: std::collections::BTreeMap<String, (i64, u64, i64, u64, i64)> =
+        std::collections::BTreeMap::new();
+    for (e, _, _) in &evs {
+        if let Event::AnalogSample {
+            timestamp,
+            net,
+            microvolts,
+        } = e
+        {
+            let s = m
+                .entry(net.clone())
+                .or_insert((i64::MAX, 0, i64::MIN, 0, 0));
+            if *microvolts < s.0 {
+                s.0 = *microvolts;
+                s.1 = *timestamp;
+            }
+            if *microvolts > s.2 {
+                s.2 = *microvolts;
+                s.3 = *timestamp;
+            }
+            s.4 = *microvolts;
+        }
+    }
+    for (net, (lo, tlo, hi, thi, end)) in m {
+        println!(
+            "{{\"net\":\"{net}\",\"min_uv\":{lo},\"min_at_ns\":{tlo},\"max_uv\":{hi},\"max_at_ns\":{thi},\"end_uv\":{end}}}"
+        );
+    }
+}
+
 fn replay(dir: &Path) {
     for name in ["trace-samples", "trace-records", "trace-events"] {
         let d = dir.join(name);
@@ -1243,6 +1283,7 @@ fn main() {
     match a.first().map(String::as_str) {
         Some("lockstep") => lockstep(&a),
         Some("declared") => declared(&a),
+        Some("stats") => stats(Path::new(&a[1])),
         Some("replay") => replay(Path::new(&a[1])),
         Some("flip") => flip(Path::new(&a[1]), Path::new(&a[2])),
         Some("splice") => splice(Path::new(&a[1]), Path::new(&a[2])),

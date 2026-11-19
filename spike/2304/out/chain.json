@@ -16,6 +16,7 @@
      "R_3v3_avail_below_bor3_max": 1.6379784514834834,
      "R_3v3_band_unstated": 1.6379784514834834,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.6379784514834834,
      "R_3v3_enters_bor3_band": 1.6379784514834834,
      "R_3v3_unstated": 1.6379784514834834,
      "R_VDD_1V8_leaves_tolerance": 1.6379784514834834,
@@ -107,6 +108,7 @@
      "R_3v3_avail_below_bor3_max": 1.4435262435315246,
      "R_3v3_band_unstated": 1.4435262435315246,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.4435262435315246,
      "R_3v3_enters_bor3_band": 1.4435262435315246,
      "R_3v3_unstated": 1.4435262435315246,
      "R_VDD_1V8_leaves_tolerance": 1.4435262435315246,
@@ -198,6 +200,7 @@
      "R_3v3_avail_below_bor3_max": 1.5809384690393373,
      "R_3v3_band_unstated": 1.5809384690393373,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5809384690393373,
      "R_3v3_enters_bor3_band": 1.5809384690393373,
      "R_3v3_unstated": 1.5809384690393373,
      "R_VDD_1V8_leaves_tolerance": 1.5809384690393373,
@@ -289,6 +292,7 @@
      "R_3v3_avail_below_bor3_max": 1.3989974945494068,
      "R_3v3_band_unstated": 1.3989974945494068,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.3989974945494068,
      "R_3v3_enters_bor3_band": 1.3989974945494068,
      "R_3v3_unstated": 1.3989974945494068,
      "R_VDD_1V8_leaves_tolerance": 1.3989974945494068,
@@ -380,6 +384,7 @@
      "R_3v3_avail_below_bor3_max": 1.5285886715677277,
      "R_3v3_band_unstated": 1.5285886715677277,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5285886715677277,
      "R_3v3_enters_bor3_band": 1.5285886715677277,
      "R_3v3_unstated": 1.5285886715677277,
      "R_VDD_1V8_leaves_tolerance": 1.5285886715677277,
@@ -471,6 +476,7 @@
      "R_3v3_avail_below_bor3_max": 1.357732665751365,
      "R_3v3_band_unstated": 1.357732665751365,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.357732665751365,
      "R_3v3_enters_bor3_band": 1.357732665751365,
      "R_3v3_unstated": 1.357732665751365,
      "R_VDD_1V8_leaves_tolerance": 1.357732665751365,
@@ -562,6 +568,7 @@
      "R_3v3_avail_below_bor3_max": 1.4356229367541293,
      "R_3v3_band_unstated": 1.4356229367541293,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.4356229367541293,
      "R_3v3_enters_bor3_band": 1.4356229367541293,
      "R_3v3_unstated": 1.4356229367541293,
      "R_VDD_1V8_leaves_tolerance": 1.4356229367541293,
@@ -653,6 +660,7 @@
      "R_3v3_avail_below_bor3_max": 1.2835296806354313,
      "R_3v3_band_unstated": 1.2835296806354313,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2835296806354313,
      "R_3v3_enters_bor3_band": 1.2835296806354313,
      "R_3v3_unstated": 1.2835296806354313,
      "R_VDD_1V8_leaves_tolerance": 1.2835296806354313,
@@ -744,6 +752,7 @@
      "R_3v3_avail_below_bor3_max": 1.2851284756964536,
      "R_3v3_band_unstated": 1.2851284756964536,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2851284756964536,
      "R_3v3_enters_bor3_band": 1.2851284756964536,
      "R_3v3_unstated": 1.2851284756964536,
      "R_VDD_1V8_leaves_tolerance": 1.2851284756964536,
@@ -835,6 +844,7 @@
      "R_3v3_avail_below_bor3_max": 1.1609644982905656,
      "R_3v3_band_unstated": 1.1609644982905656,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.1609644982905656,
      "R_3v3_enters_bor3_band": 1.1609644982905656,
      "R_3v3_unstated": 1.1609644982905656,
      "R_VDD_1V8_leaves_tolerance": 1.1609644982905656,
@@ -926,6 +936,7 @@
      "R_3v3_avail_below_bor3_max": 0.9898411044542854,
      "R_3v3_band_unstated": 0.9898411044542854,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9941761479358808,
      "R_3v3_enters_bor3_band": 0.9898411044542854,
      "R_3v3_unstated": 0.9898411044542854,
      "R_VDD_1V8_leaves_tolerance": 0.9898411044542854,
@@ -1011,6 +1022,7 @@
      "R_3v3_avail_below_bor3_max": 0.913624220837044,
      "R_3v3_band_unstated": 0.913624220837044,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9157769569299833,
      "R_3v3_enters_bor3_band": 0.913624220837044,
      "R_3v3_unstated": 0.913624220837044,
      "R_VDD_1V8_leaves_tolerance": 0.913624220837044,
@@ -1096,6 +1108,7 @@
      "R_3v3_avail_below_bor3_max": 0.3923530860079272,
      "R_3v3_band_unstated": 0.3923530860079272,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.42490109246792057,
      "R_3v3_enters_bor3_band": 0.3923530860079272,
      "R_3v3_unstated": 0.3923530860079272,
      "R_VDD_1V8_leaves_tolerance": 0.3923530860079272,
@@ -1175,6 +1188,7 @@
      "R_3v3_avail_below_bor3_max": 0.37979441328056096,
      "R_3v3_band_unstated": 0.37979441328056096,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.4088293684175112,
      "R_3v3_enters_bor3_band": 0.37979441328056096,
      "R_3v3_unstated": 0.37979441328056096,
      "R_VDD_1V8_leaves_tolerance": 0.37979441328056096,
@@ -1251,9 +1265,414 @@
      "vbat_at_collapse_v": 2.417292871886861
     },
     {
+     "R_3v3_avail_below_bor3_max": 0.08220906063667166,
+     "R_3v3_band_unstated": 0.08220906063667166,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0935731856679155,
+     "R_3v3_enters_bor3_band": 0.08220906063667166,
+     "R_3v3_unstated": 0.08220906063667166,
+     "R_VDD_1V8_leaves_tolerance": 0.08220906063667166,
+     "R_VDD_5V_band_unstated": 0.03238021402396374,
+     "R_VDD_5V_leaves_tolerance": 0.05926523360348917,
+     "R_collapse": 0.11095919105012612,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.895055752704,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.8950557527041,
+       "vbat_v": 8.950895055752705
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4585.256503489361,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1385.2565034893614,
+       "vbat_v": 8.385256503489362
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2095.144210570519,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1104.8557894294809,
+       "vbat_v": 5.895144210570519
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1293.1633697565426,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4493.163369756543,
+       "vbat_v": 2.5068366302434573
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "lossless",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.1712242684962164
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.08164339623796449,
+     "R_3v3_band_unstated": 0.08164339623796449,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.09277004481976665,
+     "R_3v3_enters_bor3_band": 0.08164339623796449,
+     "R_3v3_unstated": 0.08164339623796449,
+     "R_VDD_1V8_leaves_tolerance": 0.08164339623796449,
+     "R_VDD_5V_band_unstated": 0.03225597247490369,
+     "R_VDD_5V_leaves_tolerance": 0.05896829989035599,
+     "R_collapse": 0.10881625750611049,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.746191850605,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.746191850605,
+       "vbat_v": 8.950746191850605
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4583.266489063126,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1383.2664890631258,
+       "vbat_v": 8.383266489063125
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2080.7277887007294,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1119.2722112992706,
+       "vbat_v": 5.880727788700729
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1379.5733678422898,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4579.573367842289,
+       "vbat_v": 2.42042663215771
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "declared",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.2355122748166854
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.0503615531339879,
+     "R_3v3_band_unstated": 0.0503615531339879,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0576252998116299,
+     "R_3v3_enters_bor3_band": 0.0503615531339879,
+     "R_3v3_unstated": 0.0503615531339879,
+     "R_VDD_1V8_leaves_tolerance": 0.0503615531339879,
+     "R_VDD_5V_band_unstated": 0.019652907198411222,
+     "R_VDD_5V_leaves_tolerance": 0.03609890769680751,
+     "R_collapse": 0.07123169483509717,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.891090843104,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.8910908431044,
+       "vbat_v": 8.918891090843104
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4184.516532780358,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 984.5165327803579,
+       "vbat_v": 7.984516532780358
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3339.844,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 38.983414824614556,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3161.0165851753854,
+       "vbat_v": 3.8389834148246145
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "lossless",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9384152582451417
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.05014870154040549,
+     "R_3v3_band_unstated": 0.05014870154040549,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.05731970240931486,
+     "R_3v3_enters_bor3_band": 0.05014870154040549,
+     "R_3v3_unstated": 0.05014870154040549,
+     "R_VDD_1V8_leaves_tolerance": 0.05014870154040549,
+     "R_VDD_5V_band_unstated": 0.019607070164263767,
+     "R_VDD_5V_leaves_tolerance": 0.03598852550432043,
+     "R_collapse": 0.07015866756069061,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.741692617043,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.7416926170426,
+       "vbat_v": 8.918741692617042
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4182.426210053178,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 982.4262100531778,
+       "vbat_v": 7.982426210053178
+      },
+      {
+       "R": 0.05,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3318.704,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 16.202795007372515,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3183.7972049926275,
+       "vbat_v": 3.8162027950073725
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "declared",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9920666219654692
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.03992219213241888,
+     "R_3v3_band_unstated": 0.03992219213241888,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04575928379602773,
+     "R_3v3_enters_bor3_band": 0.03992219213241888,
+     "R_3v3_unstated": 0.03992219213241888,
+     "R_VDD_1V8_leaves_tolerance": 0.03992219213241888,
+     "R_VDD_5V_band_unstated": 0.015532036600578863,
+     "R_VDD_5V_leaves_tolerance": 0.02856259931147999,
+     "R_collapse": 0.05757940628953531,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.288398402172,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.2883984021719,
+       "vbat_v": 8.897288398402171
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3913.97349951906,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 713.9734995190602,
+       "vbat_v": 7.71397349951906
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1408.4705817465706,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4608.470581746571,
+       "vbat_v": 2.3915294182534295
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "lossless",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.3628,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8437077006145075
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.039788320645300045,
+     "R_3v3_band_unstated": 0.039788320645300045,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.045566373141717534,
+     "R_3v3_enters_bor3_band": 0.039788320645300045,
+     "R_3v3_unstated": 0.039788320645300045,
+     "R_VDD_1V8_leaves_tolerance": 0.039788320645300045,
+     "R_VDD_5V_band_unstated": 0.01550339270011726,
+     "R_VDD_5V_leaves_tolerance": 0.02849345066616507,
+     "R_collapse": 0.05680790554868972,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.138637333195,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.1386373331952,
+       "vbat_v": 8.897138637333196
+      },
+      {
+       "R": 0.01,
+       "VDD_1V8_mv": 1773.0,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3911.809524595482,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 711.8095245954819,
+       "vbat_v": 7.711809524595482
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1448.2490113992626,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4648.249011399263,
+       "vbat_v": 2.3517509886007373
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "declared",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.028148148148148,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8926979976582028
+    },
+    {
      "R_3v3_avail_below_bor3_max": 0.03185232899200353,
      "R_3v3_band_unstated": 0.03185232899200353,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.036558407743234045,
      "R_3v3_enters_bor3_band": 0.03185232899200353,
      "R_3v3_unstated": 0.03185232899200353,
      "R_VDD_1V8_leaves_tolerance": 0.03185232899200353,
@@ -1315,6 +1734,7 @@
      "R_3v3_avail_below_bor3_max": 0.03176705115166909,
      "R_3v3_band_unstated": 0.03176705115166909,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03643517088545035,
      "R_3v3_enters_bor3_band": 0.03176705115166909,
      "R_3v3_unstated": 0.03176705115166909,
      "R_VDD_1V8_leaves_tolerance": 0.03176705115166909,
@@ -1376,6 +1796,7 @@
      "R_3v3_avail_below_bor3_max": 0.025583831846899552,
      "R_3v3_band_unstated": 0.025583831846899552,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.029394339434074893,
      "R_3v3_enters_bor3_band": 0.025583831846899552,
      "R_3v3_unstated": 0.025583831846899552,
      "R_VDD_1V8_leaves_tolerance": 0.025583831846899552,
@@ -1437,6 +1858,7 @@
      "R_3v3_avail_below_bor3_max": 0.025528787353891642,
      "R_3v3_band_unstated": 0.025528787353891642,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.02931461701598942,
      "R_3v3_enters_bor3_band": 0.025528787353891642,
      "R_3v3_unstated": 0.025528787353891642,
      "R_VDD_1V8_leaves_tolerance": 0.025528787353891642,
@@ -1521,6 +1943,7 @@
      "R_3v3_avail_below_bor3_max": 1.6241057393089742,
      "R_3v3_band_unstated": 1.6241057393089742,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.6241057393089742,
      "R_3v3_enters_bor3_band": 1.6241057393089742,
      "R_3v3_unstated": 1.6241057393089742,
      "R_VDD_5V_band_unstated": 1.1228385358185502,
@@ -1604,6 +2027,7 @@
      "R_3v3_avail_below_bor3_max": 1.430234383174637,
      "R_3v3_band_unstated": 1.430234383174637,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.430234383174637,
      "R_3v3_enters_bor3_band": 1.430234383174637,
      "R_3v3_unstated": 1.430234383174637,
      "R_VDD_5V_band_unstated": 0.9888040179972801,
@@ -1687,6 +2111,7 @@
      "R_3v3_avail_below_bor3_max": 1.5680073862016943,
      "R_3v3_band_unstated": 1.5680073862016943,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.5680073862016943,
      "R_3v3_enters_bor3_band": 1.5680073862016943,
      "R_3v3_unstated": 1.5680073862016943,
      "R_VDD_5V_band_unstated": 1.06315118009781,
@@ -1770,6 +2195,7 @@
      "R_3v3_avail_below_bor3_max": 1.386506508176514,
      "R_3v3_band_unstated": 1.386506508176514,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.386506508176514,
      "R_3v3_enters_bor3_band": 1.386506508176514,
      "R_3v3_unstated": 1.386506508176514,
      "R_VDD_5V_band_unstated": 0.9422204496734647,
@@ -1853,6 +2279,7 @@
      "R_3v3_avail_below_bor3_max": 1.516486439005182,
      "R_3v3_band_unstated": 1.516486439005182,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.516486439005182,
      "R_3v3_enters_bor3_band": 1.516486439005182,
      "R_3v3_unstated": 1.516486439005182,
      "R_VDD_5V_band_unstated": 1.0094891984655772,
@@ -1936,6 +2363,7 @@
      "R_3v3_avail_below_bor3_max": 1.345956839859281,
      "R_3v3_band_unstated": 1.345956839859281,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.345956839859281,
      "R_3v3_enters_bor3_band": 1.345956839859281,
      "R_3v3_unstated": 1.345956839859281,
      "R_VDD_5V_band_unstated": 0.8998286040754149,
@@ -2019,6 +2447,7 @@
      "R_3v3_avail_below_bor3_max": 1.424912041507198,
      "R_3v3_band_unstated": 1.424912041507198,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.424912041507198,
      "R_3v3_enters_bor3_band": 1.424912041507198,
      "R_3v3_unstated": 1.424912041507198,
      "R_VDD_5V_band_unstated": 0.9169264624977087,
@@ -2102,6 +2531,7 @@
      "R_3v3_avail_below_bor3_max": 1.2729764822089633,
      "R_3v3_band_unstated": 1.2729764822089633,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2729764822089633,
      "R_3v3_enters_bor3_band": 1.2729764822089633,
      "R_3v3_unstated": 1.2729764822089633,
      "R_VDD_5V_band_unstated": 0.8255438106053994,
@@ -2185,6 +2615,7 @@
      "R_3v3_avail_below_bor3_max": 1.2764616703172864,
      "R_3v3_band_unstated": 1.2764616703172864,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.2764616703172864,
      "R_3v3_enters_bor3_band": 1.2764616703172864,
      "R_3v3_unstated": 1.2764616703172864,
      "R_VDD_5V_band_unstated": 0.7748334108166749,
@@ -2268,6 +2699,7 @@
      "R_3v3_avail_below_bor3_max": 1.152260112081127,
      "R_3v3_band_unstated": 1.152260112081127,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 1.152260112081127,
      "R_3v3_enters_bor3_band": 1.152260112081127,
      "R_3v3_unstated": 1.152260112081127,
      "R_VDD_5V_band_unstated": 0.7085551473344835,
@@ -2351,6 +2783,7 @@
      "R_3v3_avail_below_bor3_max": 0.984632556656236,
      "R_3v3_band_unstated": 0.984632556656236,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9887882775533805,
      "R_3v3_enters_bor3_band": 0.984632556656236,
      "R_3v3_unstated": 0.984632556656236,
      "R_VDD_5V_band_unstated": 0.5289326139849786,
@@ -2429,6 +2862,7 @@
      "R_3v3_avail_below_bor3_max": 0.9081500646830531,
      "R_3v3_band_unstated": 0.9081500646830531,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.9101803396363816,
      "R_3v3_enters_bor3_band": 0.9081500646830531,
      "R_3v3_unstated": 0.9081500646830531,
      "R_VDD_5V_band_unstated": 0.4971852475403804,
@@ -2507,6 +2941,7 @@
      "R_3v3_avail_below_bor3_max": 0.3915321270339467,
      "R_3v3_band_unstated": 0.3915321270339467,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.42384455265562226,
      "R_3v3_enters_bor3_band": 0.3915321270339467,
      "R_3v3_unstated": 0.3915321270339467,
      "R_VDD_5V_band_unstated": 0.16976199368485406,
@@ -2580,6 +3015,7 @@
      "R_3v3_avail_below_bor3_max": 0.3788451160280631,
      "R_3v3_band_unstated": 0.3788451160280631,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.4076223705840919,
      "R_3v3_enters_bor3_band": 0.3788451160280631,
      "R_3v3_unstated": 0.3788451160280631,
      "R_VDD_5V_band_unstated": 0.1663527382188817,
@@ -2650,9 +3086,392 @@
      "vbat_at_collapse_v": 2.424369903862128
     },
     {
+     "R_3v3_avail_below_bor3_max": 0.08217295910814115,
+     "R_3v3_band_unstated": 0.08217295910814115,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.0935218456640163,
+     "R_3v3_enters_bor3_band": 0.08217295910814115,
+     "R_3v3_unstated": 0.08217295910814115,
+     "R_VDD_5V_band_unstated": 0.03237230743332979,
+     "R_VDD_5V_leaves_tolerance": 0.0592463162171087,
+     "R_collapse": 0.11081779589904983,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.88561641524,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.8856164152403,
+       "vbat_v": 8.95088561641524
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4585.130344445677,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1385.130344445677,
+       "vbat_v": 8.385130344445678
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2094.2321952462626,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1105.7678047537374,
+       "vbat_v": 5.894232195246262
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1298.4212462317305,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4498.42124623173,
+       "vbat_v": 2.5015787537682694
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "lossless",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.1754661230285048
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.0815994420550973,
+     "R_3v3_band_unstated": 0.0815994420550973,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.09270775311505733,
+     "R_3v3_enters_bor3_band": 0.0815994420550973,
+     "R_3v3_unstated": 0.0815994420550973,
+     "R_VDD_5V_band_unstated": 0.032246286558588154,
+     "R_VDD_5V_leaves_tolerance": 0.05894518021831198,
+     "R_collapse": 0.10865583872101281,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5150.734537956994,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1950.7345379569942,
+       "vbat_v": 8.950734537956993
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4583.110662511192,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1383.1106625111915,
+       "vbat_v": 8.383110662511191
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 2079.596165102683,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -1120.4038348973172,
+       "vbat_v": 5.879596165102683
+      },
+      {
+       "R": 0.1,
+       "margin_vbat_to_3v3_unstated_mv": -1386.6828874108687,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4586.682887410869,
+       "vbat_v": 2.4133171125891315
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-60",
+     "eta": "declared",
+     "i_esc_a": 60.0,
+     "label": "sweep: 60 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 1.2403248383696157
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.050348002539822925,
+     "R_3v3_band_unstated": 0.050348002539822925,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.057605825101034874,
+     "R_3v3_enters_bor3_band": 0.050348002539822925,
+     "R_3v3_unstated": 0.050348002539822925,
+     "R_VDD_5V_band_unstated": 0.0196499943015023,
+     "R_VDD_5V_leaves_tolerance": 0.03609188824096627,
+     "R_collapse": 0.07116105615898212,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.881617625659,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.8816176256587,
+       "vbat_v": 8.918881617625658
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4184.384017636854,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 984.384017636854,
+       "vbat_v": 7.984384017636854
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3338.883,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 37.5472783033365,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3162.4527216966635,
+       "vbat_v": 3.8375472783033366
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "lossless",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9419471920508942
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.05013211454688287,
+     "R_3v3_band_unstated": 0.05013211454688287,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.057295915720773256,
+     "R_3v3_enters_bor3_band": 0.05013211454688287,
+     "R_3v3_unstated": 0.05013211454688287,
+     "R_VDD_5V_band_unstated": 0.019603490873485938,
+     "R_VDD_5V_leaves_tolerance": 0.035979912812201045,
+     "R_collapse": 0.07007812788511603,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5118.729996892072,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1918.7299968920724,
+       "vbat_v": 8.918729996892072
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 4182.262524597646,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 982.262524597646,
+       "vbat_v": 7.982262524597646
+      },
+      {
+       "R": 0.05,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 3316.782,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 14.40736166773604,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -3185.592638332264,
+       "vbat_v": 3.814407361667736
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-100",
+     "eta": "declared",
+     "i_esc_a": 100.0,
+     "label": "sweep: 100 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.9960936057441989
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.039913676574792646,
+     "R_3v3_band_unstated": 0.039913676574792646,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04574700280886648,
+     "R_3v3_enters_bor3_band": 0.039913676574792646,
+     "R_3v3_unstated": 0.039913676574792646,
+     "R_VDD_5V_band_unstated": 0.01553021714349647,
+     "R_VDD_5V_leaves_tolerance": 0.02855820461981646,
+     "R_collapse": 0.05752866194123386,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.278902177884,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.2789021778844,
+       "vbat_v": 8.897278902177884
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3913.836317641997,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 713.8363176419971,
+       "vbat_v": 7.713836317641997
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1410.9487794283586,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4610.948779428359,
+       "vbat_v": 2.389051220571641
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "lossless",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 12.468399999999999,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8469299667316497
+    },
+    {
+     "R_3v3_avail_below_bor3_max": 0.0397778785131463,
+     "R_3v3_band_unstated": 0.0397778785131463,
+     "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.04555133992171969,
+     "R_3v3_enters_bor3_band": 0.0397778785131463,
+     "R_3v3_unstated": 0.0397778785131463,
+     "R_VDD_5V_band_unstated": 0.015501154795024251,
+     "R_VDD_5V_leaves_tolerance": 0.028488051551434253,
+     "R_collapse": 0.05674993917657162,
+     "at": [
+      {
+       "R": 0.0008,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 5097.126913201835,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 1897.1269132018351,
+       "vbat_v": 8.897126913201834
+      },
+      {
+       "R": 0.01,
+       "VDD_3V3_mv": 3280.965,
+       "VDD_5V_mv": 5027.725,
+       "margin_3v3_to_bor3_max_mv": 600.9650000000001,
+       "margin_vbat_to_3v3_unstated_mv": 3911.6400682692965,
+       "margin_vbat_to_U10_regulation_vin_min_mv": 711.6400682692965,
+       "vbat_v": 7.711640068269297
+      },
+      {
+       "R": 0.05,
+       "margin_vbat_to_3v3_unstated_mv": -1451.4282760479982,
+       "margin_vbat_to_U10_regulation_vin_min_mv": -4651.428276047998,
+       "vbat_v": 2.3485717239520016
+      },
+      {
+       "R": 0.1,
+       "vbat_v": null
+      },
+      {
+       "R": 0.25,
+       "vbat_v": null
+      },
+      {
+       "R": 0.5,
+       "vbat_v": null
+      },
+      {
+       "R": 1.0,
+       "vbat_v": null
+      }
+     ],
+     "binding": "U11 below 3.8 V",
+     "case": "sweep-127",
+     "eta": "declared",
+     "i_esc_a": 127.0,
+     "label": "sweep: 127 A total (adversarial H3: 127 A is an 850 mAh pack at its stated 150C, Tattu R-Line V5 retailer page; not a measured draw)",
+     "p_board_w_at_nominal": 14.158518518518518,
+     "v_open_v": 9.0,
+     "vbat_at_collapse_v": 0.8963788622877025
+    },
+    {
      "R_3v3_avail_below_bor3_max": 0.0318469079166649,
      "R_3v3_band_unstated": 0.0318469079166649,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03655056852378772,
      "R_3v3_enters_bor3_band": 0.0318469079166649,
      "R_3v3_unstated": 0.0318469079166649,
      "R_VDD_5V_band_unstated": 0.012362375850841038,
@@ -2711,6 +3530,7 @@
      "R_3v3_avail_below_bor3_max": 0.0317603945165822,
      "R_3v3_band_unstated": 0.0317603945165822,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.03642555845028046,
      "R_3v3_enters_bor3_band": 0.0317603945165822,
      "R_3v3_unstated": 0.0317603945165822,
      "R_VDD_5V_band_unstated": 0.012343953487461458,
@@ -2769,6 +3589,7 @@
      "R_3v3_avail_below_bor3_max": 0.02558033441885793,
      "R_3v3_band_unstated": 0.02558033441885793,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.029389271348530775,
      "R_3v3_enters_bor3_band": 0.02558033441885793,
      "R_3v3_unstated": 0.02558033441885793,
      "R_VDD_5V_band_unstated": 0.009911726166759137,
@@ -2827,6 +3648,7 @@
      "R_3v3_avail_below_bor3_max": 0.02552448823764722,
      "R_3v3_band_unstated": 0.02552448823764722,
      "R_3v3_below_3v8_only": null,
+     "R_3v3_deck_rule_vbat_below_3v0": 0.02930839426182677,
      "R_3v3_enters_bor3_band": 0.02552448823764722,
      "R_3v3_unstated": 0.02552448823764722,
      "R_VDD_5V_band_unstated": 0.009899880258591558,

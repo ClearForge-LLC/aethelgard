@@ -284,6 +284,12 @@ def thresholds(b, i_esc, eta_mode):
     res["R_3v3_below_3v8_only"] = first_r(lambda r: (lambda o: o["vbat_v"] is not None and o["vbat_v"] * 1000 < b.vin_min_mv(u11["reference"]))(chain_at(b, v_open, r, i_esc, eta_mode)), hi=res["R_collapse"] or 1000.0)
     res["R_3v3_avail_below_bor3_max"] = first_r(rail_below(u11["output"], BOR3_FALLING_MAX_MV * 1000))
     res["R_3v3_enters_bor3_band"] = min(x for x in (res["R_3v3_unstated"], res["R_3v3_avail_below_bor3_max"]) if x is not None)
+    # The deck's own rule (spike/2304/lockstep `deck`): the bucks run down to the datasheet's
+    # typical shutdown (about 3 V, SNVSAN3F 8.3.4) with VDD_3V3 = avail in between, which stays
+    # above BOR3's 2.68 V maximum down to V_bat ~2.93 V; so the deck's VDD_3V3 first falls through
+    # BOR3 when V_bat < 3.0 V or there is no operating point. Adversarial M1: the static column
+    # above counts below 3.8 V (U11's stated input range) instead.
+    res["R_3v3_deck_rule_vbat_below_3v0"] = first_r(vbat_below(3000))
     for x in b.regs.values():
         if x["input"] == "battery" and x["output"] != u11["output"]:
             d = b.domains[x["output"]]

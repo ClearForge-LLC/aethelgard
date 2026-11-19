@@ -13,9 +13,9 @@ if [ ! -f $T/firmware.elf ]; then
   cp /repo/models/renode/BMP581.cs /repo/models/renode/ICM42688P.cs $T/models/
 fi
 ARGV=$(ls /cache/s03/renode-argv.* | head -1)
-N=$1; I=$2; Q=$3; SPAN=${4:-1000000000}
+N=$1; I=$2; Q=$3; SPAN=${4:-1000000000}; CASE=${5:-weak}
 O=/cache/runs/b-$N; rm -rf $O; mkdir -p $O
 s=$(date +%s%N)
-TOOL=$T I_RUN_A=$I Q_NS=$Q $L lockstep weak $SPAN $ARGV $O > $O/run.json 2> $O/run.err
+TOOL=$T I_RUN_A=$I Q_NS=$Q $L lockstep $CASE $SPAN $ARGV $O > $O/run.json 2> $O/run.err
 echo "$N exit=$? wall_ms=$(( ($(date +%s%N)-s)/1000000 ))"; tail -c 600 $O/run.err | tail -3
 $L replay $O > $O/replay.jsonl 2>&1; echo "  replay exit=$?"
