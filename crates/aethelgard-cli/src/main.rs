@@ -2796,8 +2796,6 @@ fn read_input(file: Option<&Path>) -> Result<Vec<u8>, Refusal> {
     }
 }
 
-/// Writes exactly one JSON line to stdout. A report that cannot be written
-/// exits 70, never the code the report would have carried.
 /// A declared `fab_tolerances` block that lacks `path`, which the ring rule
 /// needs: refused by every reader of a board as `emit` refuses it
 /// (`AET-WO-1315` §1.6), never read with the engine's via.
@@ -2811,6 +2809,8 @@ fn undeclared(path: &'static str) -> run::Stop {
     }
 }
 
+/// Writes exactly one JSON line to stdout. A report that cannot be written
+/// exits 70, never the code the report would have carried.
 fn emit(report: &impl Serialize, code: u8) -> ExitCode {
     let mut out = io::stdout().lock();
     let written = serde_json::to_writer(&mut out, report)

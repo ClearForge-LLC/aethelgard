@@ -670,11 +670,13 @@ fn with_a_token_free_setup_the_project_step_is_load_bearing() {
             "\t(segment (start 105 110) (end 125 110) (width 0.25) (layer \"F.Cu\") (net 1))\n\t(segment (start 105 110.35) (end 125 110.35) (width 0.25) (layer \"F.Cu\") (net 2))\n",
             &format!("{footprint}\t(segment (start 110 111.455) (end 120 111.455) (width 0.25) (layer \"F.Cu\") (net 2))\n"),
         );
-    let gate = aethelgard_eda::rules::Rules::from_specification(
-        &serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
-            .unwrap(),
-    )
-    .unwrap();
+    let gate = aethelgard_eda::rules::Rules::from_stack(
+        &aethelgard_eda::stack::Stack::of(
+            &serde_json::from_slice(&fs::read(example_spec("sentinel-01-minimal.json")).unwrap())
+                .unwrap(),
+        )
+        .unwrap(),
+    );
     let own = aethelgard_eda::rules::Rules {
         arrays: Vec::new(),
         via_nm: (

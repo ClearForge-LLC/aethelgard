@@ -16,8 +16,6 @@
 //! The project shape is the one the spike measured KiCad 10.0.7 reading in
 //! full (net class, `min_clearance` and `rule_severities`).
 
-use aethelgard_ir::Specification;
-
 use crate::sexpr::mm;
 
 /// The engine's floor: KiCad's default net-class clearance and track width,
@@ -80,14 +78,9 @@ pub struct ClassRules {
 }
 
 impl Rules {
-    /// The rules a specification declares (`board.rules`): its clearance and
-    /// track width, each at or above the floor once `validate` has passed;
-    /// refused as [`crate::stack::Stack::of`] refuses.
-    pub fn from_specification(spec: &Specification) -> Result<Rules, &'static str> {
-        Ok(Rules::from_stack(&crate::stack::Stack::of(spec)?))
-    }
-
-    /// The same from the declared board itself.
+    /// The rules a specification declares (`board.rules`), from its declared
+    /// board ([`crate::stack::Stack::of`]): its clearance and track width,
+    /// each at or above the floor once `validate` has passed.
     pub fn from_stack(stack: &crate::stack::Stack) -> Rules {
         let classes = stack
             .classes
