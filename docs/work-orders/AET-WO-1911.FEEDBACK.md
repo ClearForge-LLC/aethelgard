@@ -14,20 +14,24 @@
   - 16 adds four jobs a run toward the account's ceiling and buys nothing.
 - **The concurrent-job limit:**
   - GitHub does not report it to my token (`orgs/ClearForge-LLC` → `plan: null`).
-  - **Measured, it is 60 jobs:** in each three-PR window, the org's public repos held at exactly 59–60 jobs running for 15–20 minutes while 1–20 more queued. No sample ever exceeded 60.
-  - A run takes N + 6 jobs: 14 at 8 shards, 18 at 12, 22 at 16. Three PRs at 16 alone need 66.
-  - An earlier window (16:36–16:50) queued with only 31–37 running. The cause is not visible to me: perhaps private repositories' hosted jobs, perhaps provisioning. Stated, not explained.
+  - **Measured, it is consistent with 60 jobs:** in each of four windows, the org's public repos held at 59–60 jobs running for 15–20 minutes while 1–25 more queued. Re-counted after every job had completed, the exact maximum is 60 in every window.
+    - Two first counts, a maximum of 70 and a plateau at 31–37, were artifacts of counting while jobs were still in flight.
+    - Private repositories' hosted jobs, if any, are not visible to my token.
+  - **Job counts:**
+    - A scratch run takes N + 5 jobs: 13 at 8 shards, 17 at 12, 21 at 16. At most about N + 2 run at once (`route` and `tools-build` finish before the shards start, and `tools` starts after).
+    - Three runs at 16 peak near 54 jobs, under the ceiling by themselves; the queueing came from the other jobs running.
+    - A real code PR touching `crates/**` also starts the path-filtered image workflows, which these scratch PRs did not (they changed only `ci/SHARDS`). So they understate a real PR's share of the ceiling.
 - **Queueing under three PRs at once is dominated by the other builders' load, not by my shard count.**
   - Three PRs at 8 queued up to 824 s and went green at 42.8–52.4 min.
   - At 12: up to 464 s, green at 35.4–44.5.
   - At 16: up to 547 s, green at 28.0–35.0.
   - The windows had 20–57 other jobs running. The measured queueing is ambiguous as a function of N (§7), so the recommendation rests on the lone times, the ceiling arithmetic and the plan.
-- **A docs-only PR is green in 93 s** (scratch #246, run 44578347985): every document-reading test ran. A README edit that breaks `readme_status` turned `gates` red in 91 s (run 44578760473).
+- **A docs-only PR is green in 93 s** (scratch #246, run 44578347985, at `0a98b9c0`, before §4's fixes changed `decide` and the list's format): every document-reading test ran. A README edit that breaks `readme_status` turned `gates` red in 91 s (run 44578760473).
 - **The shared build produces the same tests with the same outcomes:** 8 of 8 shards byte-identical, 2,470 tests (§2).
 - **The shared build, measured, as predicted on the bus before it was built:**
   - It cuts each shard's setup from 211–331 s to 80–375 s (typically 85–240), but puts a 247–322 s build job in series in front of every shard.
   - For a lone PR at 8 shards, that is 2–4.6 min *slower* (40.7 against 36.1–38.7).
-  - It saves about 190 s of runner time per shard. Runner-minutes per run stay 232–268 at 8, 12 and 16 shards, against 244–260 at 8 before.
+  - It saves about 119 s of runner time per shard, net of the download and unpack: 258 s against 139 s before the test step, mean over the 8 shards of the same-commit proof run. Less the build job, that is about 11 runner-minutes a run at 8 shards and about 19 at 12. Runner-minutes per run stay 232–268 at 8, 12 and 16 shards, against 244–260 at 8 before.
   - Whether to keep it is decision D2.
 - **Past 12, the levers are not the shard count:**
   - `four_layer_fab_tier2`'s block (about 23–25 min);
@@ -57,16 +61,17 @@
   - `bench-package` is skipped.
   - `main`'s push always runs everything.
 - **The inventory and its guard:**
-  - `route.sh inventory` reads every string literal, comments skipped, in every Rust source under `crates/` and `bridge/`. It lists those that name a docs-only file: its path, a docs directory, or a docs-only file's bare name.
-  - Each literal is charged to the test target that compiles it. A `tests/<dir>/` helper is charged to each binary that declares `mod <dir>;`, and `src/` to the crate's unit tests.
-  - `check` refuses, by target and literal, a row missing from `ci/docs-tests.tsv`, and a row the inventory no longer finds.
-  - `check` also refuses, by file, any of these that names a docs-only path: a build script, an example, the bridge, a source no test target includes, or an `include_str!`/`include_bytes!` that resolves into a docs-only path.
-  - Each row says `reads` (run on a docs-only PR) or `cites` (a crate-level file of the same name), with its reason in a comment.
+  - `route.sh inventory` reads every string literal, comments skipped, in every Rust source in the tree, with escapes and continuations decoded. It lists those that name a docs-only file: its path, its directory, a docs directory, a docs-only file's bare name, or the stems `README` and `LICENSE`.
+  - Each literal is charged, with its number of uses, to the test target that compiles it. A `tests/<dir>/` helper is charged to each binary that declares `mod <dir>;`, and to each binary in any crate that includes it by `#[path]`.
+  - `check` refuses, by target, literal and count, a row missing from `ci/docs-tests.tsv`, and a row the inventory no longer finds.
+  - `check` also refuses, by file, any of these that names a docs-only path: production `src/`, a build script, an example, the bridge, a source outside `crates/`, a source no test target includes, or an `include_str!`/`include_bytes!` that resolves into a docs-only path.
+  - Each row says `reads` (run on a docs-only PR) or `cites` (a crate-level file of the same name), with its reason in a comment. Adversarial fixes, §4.
+- **`decide` routes as code unless the merge commit's second parent is the pull request's head** (`PR_HEAD_SHA`).
 
 ### §1.2 Build once, test many (`ci/shard.sh build`, `pack`, `unpack`, `compiled_in`)
 
 - **`tools-build`** runs, in the pinned image, the commands each shard ran before: `cargo test --workspace --features aethelgard-cli/with-tools --no-run`, then the bridge's build and test build.
-- **`pack`** tars `target/` (cargo-home included, `incremental/` left out) as zstd. Its stamp holds the checkout's tree hash, `container/IMAGE` and the archive's sha256. The archive is uploaded once per run.
+- **`pack`** tars `target/` (cargo-home included, `incremental/` left out) as zstd. Its stamp holds the checkout's tree hash, `container/IMAGE` and the archive's sha256, and refuses a checkout that is not clean. The archive is uploaded once per run.
 - **Each shard:**
   - downloads the archive;
   - **`unpack`** refuses it unless the stamp names this checkout's tree, this image and this archive;
@@ -135,8 +140,8 @@
 - **16** (19:24–20:06): 60 running for 19:34–19:52 with 1–20 queued; 36–44 before my push.
 - **12** (20:04–20:52): 59–60 running for 20:06–20:34 with up to 19 queued; 57 running when I pushed.
 - **8** (20:50–21:40): 60 running at 11 sample points; 20–22 before my push.
-- No sample in any window exceeded 60.
-- **A first window, 16:36–16:50** (my first two runs, about 30 jobs): 31–37 running with 14–25 queued. That does not fit a ceiling of 60 seen from public repositories alone; the cause is not visible to my token.
+- **A first window, 16:36–16:52** (my first two runs, 35 jobs): 59–60 running with 14–25 queued.
+- Every window was re-counted after all its jobs completed. The exact maximum is 60 in each, and no sample exceeds it.
 
 **The plan, from today's weights** (`ci/shard.sh assign`, planned seconds per shard):
 
@@ -153,7 +158,7 @@
 - From 11 shards up, the slowest shard is the `four_layer_fab_tier2` block, so the planned wall time stops falling.
 - Measured: 31.4 min at 12 and 31.6 at 16.
 - At 11 every shard plans within 3 % of that block. With the run-to-run variance roadmap §6 records (about 25 % on one plan, `1314`'s CI), the slowest of eleven near-equal shards is likely to land above the block. At 12, only the block's shard sits at the floor.
-- 16 costs four more jobs a run against the 60-job ceiling for no measured gain.
+- 16 costs four more jobs a run toward the 60-job ceiling for no measured gain.
 - **One conflict with roadmap §6.** Its balance gate says no shard is planned more than 10 % above the mean, and 12 plans 12 % above it. No plan at 12 can meet that rule, because the block alone is above the mean. 11 is the largest count that meets it, at an expected cost in wall time. The rule needs a ruling for an indivisible block (D1).
 
 ## 4. Adversarial pass (§5, targeted; a fresh Opus subagent)
@@ -227,10 +232,10 @@
 - **D2: keep the shared build?**
   - **(a) Keep (recommended):** it is what §1.2 ordered and what this branch has.
     - It is proven identical in outcome.
-    - It frees about 190 s of runner time per shard, about 33 runner-minutes a run at 12 net of the build job. Under the 60-job ceiling that is less slot time per run.
+    - It frees about 119 s of runner time per shard (measured on the same-commit proof run), about 19 runner-minutes a run at 12 net of the build job. Under the 60-job ceiling that is less slot time per run.
     - It removes the build's 145–240 s spread from the shards.
     - A lone PR pays about 4.5–5 min of serial build: at 8 shards, 2–4.6 min slower than before.
-  - **(b) Revert to per-shard builds:** a lone PR at 12 is predicted to be about 2–3 min faster, at about 33 more runner-minutes a run. The docs routing stands either way.
+  - **(b) Revert to per-shard builds:** a lone PR at 12 is predicted to be about 2–3 min faster (the 272 s build job leaves the path, and each shard's setup grows by about 119 s), at about 19 more runner-minutes a run. The docs routing stands either way.
 - **After the ruling (§1.4):** set `ci/SHARDS`, refit by the REFIT RULE, rewrite REFIT RULE 4 citing this order and the ruling, record before-and-after wall times over three runs, then the reduction pass and READY.
 
 ## Not done

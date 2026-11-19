@@ -12,12 +12,13 @@
 #   route.sh decide EVENT         the route job's step: on pull_request, classifies the merge commit against its
 #                                 first parent; any other event, a HEAD that is not a two-parent merge, or one whose
 #                                 second parent is not $PR_HEAD_SHA (the pull request's head), is code
-#   route.sh inventory            every string literal in a Rust source under crates/ or bridge/ that names a
-#                                 docs-only path, as package<TAB>target<TAB>literal (target: a test target, `unit`
-#                                 for src/, or a refusal kind); comments are skipped
+#   route.sh inventory            every string literal in a Rust source in the tree that names a docs-only path,
+#                                 directory or name, as package<TAB>target<TAB>literal<TAB>uses (target: a test target,
+#                                 or a refusal kind ending in `!`); comments are skipped
 #   route.sh check LIST           the inventory guard: every inventory row is in LIST (ci/docs-tests.tsv) and every
-#                                 LIST row is in the inventory; refuses by name a build, example or bridge source
-#                                 or an include_str!/include_bytes! that names a docs-only path
+#                                 LIST row is in the inventory; refuses by name production src/, a build script, an
+#                                 example, the bridge, a source outside crates/ or no test target includes, or an
+#                                 include_str!/include_bytes! that names a docs-only path
 #   route.sh docs-tests LIST      run LIST's `reads` targets on the host; each must run at least one test, all pass
 set -euo pipefail
 export LC_ALL=C
@@ -277,7 +278,7 @@ docs_tests() {
   log=$(mktemp); trap 'rm -f "$log"' RETURN
   for row in "${targets[@]}"; do
     pkg=${row%%"$TAB"*}; t=${row#*"$TAB"}
-    if [ "$t" = unit ]; then args=(--lib --bins); else args=(--test "$t"); fi
+    args=(--test "$t")
     echo "route: docs-only test: $pkg $t"
     set +e
     cargo test --locked -p "$pkg" "${args[@]}" 2>&1 | tee "$log"
