@@ -1,0 +1,11 @@
+# package<TAB>test target: tier-1 test targets that run in the `tools` job alone, not in `gates` (AET-WO-1910 D5 (a), ruled on PR #233,
+# comment 6999515740). Each is pure computation over committed fixtures through `emit`, `extract` and the library: none reaches the
+# CLI's sandbox, whose path differs as root (the image) and as a user (the host), so running it twice bought only its figures on the
+# host's glibc. Every libm call those figures go through still runs in `gates` through a light test (FEEDBACK, the libm coverage map).
+# boot_tier1 and campaign_tier1 stay in both jobs: they drive the sandbox, and each job tests a uid path the other does not.
+# ci/gates.sh runs every other test target by name and refuses by name a row that names no unique test target.
+aethelgard-cli	escape_tier1
+aethelgard-cli	outline_tier1
+aethelgard-cli	power_board_tier1
+aethelgard-cli	supply_tier1
+aethelgard-cli	via_ring_tier1

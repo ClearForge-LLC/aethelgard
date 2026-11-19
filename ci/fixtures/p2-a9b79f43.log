@@ -1,0 +1,106 @@
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test a_missing_clock_enable_fails has been running for over 60 seconds
+test every_admitted_identifier_character_survives_every_output has been running for over 60 seconds
+     Running tests/escape_tier1.rs (target/debug/deps/escape_tier1-b5fdd8cf3869bc70)
+test renamings_0_to_9_route_d3_to_its_own_copper has been running for over 60 seconds
+     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-248306228363c0d4)
+test a_drop_over_its_limit_fails_with_the_pitch_note has been running for over 60 seconds
+test sentinel_03_on_rule_sized_vias_bounds_every_return has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed has been running for over 60 seconds
+test renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone has been running for over 60 seconds
+     Running tests/verify_47k_tier2.rs (target/debug/deps/verify_47k_tier2-e5d2260a882f14ca)
+test verify_fab_out_writes_nothing_when_a_gate_fails has been running for over 60 seconds
+test verify_fails_a_run_that_fails_otherwise_than_declared_and_detects_47k has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test the_imu_fixture_s_transfers_prove_within_its_scripts has been running for over 60 seconds
+test the_own_parts_fixture_s_transfers_prove_within_its_scripts has been running for over 60 seconds
+     Running tests/boot_tier1.rs (target/debug/deps/boot_tier1-4a10a9816845584b)
+test any_witness_but_the_model_s_exact_lines_fails has been running for over 60 seconds
+     Running tests/power_board_tier1.rs (target/debug/deps/power_board_tier1-1940f54d3528612c)
+test a_loop_part_moved_off_its_pin_fails_its_rule has been running for over 60 seconds
+     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-248306228363c0d4)
+test a_limit_on_a_domain_the_load_does_not_use_is_refused has been running for over 60 seconds
+test the_four_layer_board_bounds_every_supply_pin_within_its_limit has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word has been running for over 60 seconds
+test a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record has been running for over 60 seconds
+test an_interrupt_armed_after_the_boot_word_fails_naming_it has been running for over 60 seconds
+     Running tests/verify_2k2_tier2.rs (target/debug/deps/verify_2k2_tier2-a8089147500dc114)
+test verify_fab_out_writes_the_package_its_verdict_names_at_any_path has been running for over 60 seconds
+     Running tests/board_ui.rs (target/debug/deps/board_ui-38748e422b08592e)
+test tests/ui/pass/valid_driver.rs [should pass] ... test misuse_does_not_compile_and_the_driver_does has been running for over 60 seconds
+     Running tests/against_fab_tier2.rs (target/debug/deps/against_fab_tier2-86f3b615e12576f3)
+test verify_against_fab_finds_the_package_it_wrote_identical has been running for over 60 seconds
+     Running tests/outline_tier1.rs (target/debug/deps/outline_tier1-023c0909a8078f94)
+test order_only_renamings_place_the_fixture_the_same_way has been running for over 60 seconds
+     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-248306228363c0d4)
+test a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy has been running for over 60 seconds
+test the_two_layer_power_fixture_refuses_its_ground_return_by_name has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test an_open_rx_line_is_detected_by_name_and_attributed_e3 has been running for over 60 seconds
+test on_a_bus_with_two_devices_each_read_is_witnessed has been running for over 60 seconds
+     Running tests/against_fab_tier2.rs (target/debug/deps/against_fab_tier2-86f3b615e12576f3)
+test verify_against_fab_names_every_changed_and_extra_file has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test each_size_sample_passes_every_gate_or_is_refused_by_name has been running for over 60 seconds
+test the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails has been running for over 60 seconds
+test the_sentinel_03_fixture_passes_every_gate_inside_its_bound has been running for over 60 seconds
+     Running tests/escape_tier1.rs (target/debug/deps/escape_tier1-b5fdd8cf3869bc70)
+test renamings_10_to_19_route_d3_to_its_own_copper has been running for over 60 seconds
+     Running tests/outline_tier1.rs (target/debug/deps/outline_tier1-023c0909a8078f94)
+test a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound has been running for over 60 seconds
+     Running tests/power_board_tier1.rs (target/debug/deps/power_board_tier1-1940f54d3528612c)
+test only_a_rail_no_power_out_pin_drives_carries_a_flag has been running for over 60 seconds
+test the_nets_validate_reserves_are_the_emitters_own has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail has been running for over 60 seconds
+test every_bit_the_reference_writes_is_covered_by_a_ledger_row has been running for over 60 seconds
+test kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check has been running for over 60 seconds
+     Running tests/attribute_seeded.rs (target/debug/deps/attribute_seeded-df2837889809da7b)
+test tier2::attribute_twice_is_identical_and_a_one_byte_change_is_refused_as_replay_refuses_it has been running for over 60 seconds
+test tier2::every_case_fails_the_way_its_manifest_says has been running for over 60 seconds
+test tier2::p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows has been running for over 60 seconds
+test tier2::p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test a_wrong_alternate_function_fails has been running for over 60 seconds
+     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-248306228363c0d4)
+test a_specification_without_a_drop_limit_has_no_supplies has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test a_forged_spi_record_fails_unwitnessed has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test a_write_past_the_block_fails has been running for over 60 seconds
+     Running tests/outline_tier1.rs (target/debug/deps/outline_tier1-023c0909a8078f94)
+test the_fixture_fits_its_bound_with_connectors_on_the_side_edges has been running for over 60 seconds
+test the_fixture_places_at_the_spikes_outline_with_every_gap_kept has been running for over 60 seconds
+     Running tests/power_board_tier1.rs (target/debug/deps/power_board_tier1-1940f54d3528612c)
+test every_loop_rule_holds_on_the_fixtures_own_board has been running for over 60 seconds
+     Running tests/verify_2k2_tier2.rs (target/debug/deps/verify_2k2_tier2-a8089147500dc114)
+test verify_binds_the_reference_and_two_runs_print_the_same_bytes has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test four_layer_fixture_passes_every_gate_and_its_package_holds has been running for over 60 seconds
+test the_bench_board_passes_every_gate_at_two_and_four_layers has been running for over 60 seconds
+test the_power_fixture_passes_erc_drc_its_loop_rules_and_extract has been running for over 60 seconds
+     Running tests/outline_tier1.rs (target/debug/deps/outline_tier1-023c0909a8078f94)
+test each_size_sample_places_with_its_gaps_or_is_refused_by_name has been running for over 60 seconds
+     Running tests/power_board_tier1.rs (target/debug/deps/power_board_tier1-1940f54d3528612c)
+test extract_bounds_the_power_board has been running for over 60 seconds
+test the_reader_admits_a_footprints_keepout_clearance_and_nothing_more has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test kani_proves_every_part_of_both_motor_fixtures has been running for over 60 seconds
+test the_four_port_fixture_s_campaign_passes_and_replays has been running for over 60 seconds
+test the_four_port_fixture_witnesses_every_port_and_sbus_s_tags has been running for over 60 seconds
+test the_imu_and_barometer_fixture_runs_every_script_step_witnessed has been running for over 60 seconds
+test the_reference_firmware_boots_and_two_boots_agree has been running for over 60 seconds
+     Running tests/via_ring_tier1.rs (target/debug/deps/via_ring_tier1-389355fa4f86eb11)
+test a_board_no_rung_fits_is_refused_with_every_net_over_its_bound has been running for over 60 seconds
+test sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone has been running for over 60 seconds
+     Running tests/board_tier2.rs (target/debug/deps/board_tier2-bc4644cee7483b8c)
+test against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies has been running for over 60 seconds
+test the_generated_board_proves has been running for over 60 seconds
+     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-248306228363c0d4)
+test each_input_the_gate_reads_is_refused_by_name_when_absent has been running for over 60 seconds
+     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-cda7e8173000a257)
+test m1_a_core_that_slept_without_its_boot_word_is_cpu_halted has been running for over 60 seconds
+test m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped has been running for over 60 seconds
+test the_dshot600_fixture_s_campaign_passes_inside_its_window has been running for over 60 seconds
