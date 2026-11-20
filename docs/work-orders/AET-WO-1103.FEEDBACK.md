@@ -142,6 +142,10 @@ A fresh subagent was given the code, not my conclusions, and probed it in its ow
   - **Measured:** CI on #262 (`dfa24a08`, run 44650687231) was green on every job but `bench-package`. That job's one difference was `against_differs: MANIFEST.json differs from the derived file`; every fab precondition was met and no check failed.
   - **Ruled** (architect, 02:20Z): the fence is widened to `fab/sentinel-01-bench/package/`, for committing the package byte for byte only.
   - **The merge order** put this after 2304b and 3305, which each moved the same MANIFEST. The package commit is the CI `write=true` artifact on the final merge (`main` `416a6dd3`), unchanged.
+  - **The package as committed** is dispatch run 44684892971 on `73c2ce52`, every job green, artifact `bench-package` (14606192420). It is copied byte for byte, and the file set is the same.
+    - The only file that differs from `main`'s package is `MANIFEST.json`, in one line: `verdict_sha256` `ccf46917…` → `f76087ef…`.
+    - FAB-NOTES, the Gerbers, the BOM and CPL, the drill file and the ELF are byte-identical.
+    - `bench_board_tier1` and `board_names` pass on it.
 
 ## 7. The count, for roadmap §6 (§1.5)
 
@@ -208,5 +212,6 @@ So after this order the §6 sentence is true as measured by a test, with two qua
   - `a1d4ae24` reduction;
   - `4ecfddd9` FEEDBACK.
 - `main` merged at `dfa24a08` (4202), then at `0fb050d6`, `fd23a256` and `f06be8e7` (1911, 2304b with 1314b, 1209), then at `69a59578` (`416a6dd3`, 3305). Every merge was clean.
-- After this FEEDBACK update the package commit follows: the CI `write=true` artifact, byte for byte (F1).
+- `73c2ce52` (FEEDBACK) was pushed. Its PR CI (run 44680632794) failed only `bench-package`, as F1 measured; the other 16 jobs, the 12 shards included, were green.
+- **The last commit:** this FEEDBACK update with the package from dispatch run 44684892971. `main` had since moved only by docs PR #268 (`c9c5f85c`, `docs/roadmap.md` and a new work order), which merges clean and is not merged in.
 - Evidence: `~/.cache/aet-1103/`, including the runs, the table dumps and diff, `mut/final/`, `adv/` and `gates-*.txt`.
