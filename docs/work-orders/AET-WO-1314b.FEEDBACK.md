@@ -5,7 +5,7 @@ Labels:
 - **[read at source]**: from a file and line named beside it.
 - **[inferred]**: from reasoning, neither read nor run.
 
-## 0. Status: READY
+## 0. Status: BUILT; CI pending on the PR (READY follows CI green)
 
 - **The measurement (§1.1) [measured, `spike/1314b/`]:** with Sentinel-03's `fab_tolerances` block copied into `logger-spi-only-cap` and nothing else changed, **the ladder meets every bound.** It chose **rung 3** (a bounded net's via at 320, bounded nets *not* first). `LOG_SCK` is 26,886 fF against 30,000 fF (2 vias, 44.6 mm; margin 10.4 %), down from 37,508 fF (8 vias, 48.9 mm) routed once. `extract`, run on its own, agrees with the ladder's figure. No §7 condition fired.
 - **The cause (§1.2–1.3):** a `capacitance_over_declared_bound` finding carries a new optional field, `cause`, exactly when the specification declares no `fab_tolerances`. It names `board.stackup.fab_tolerances`. The message, kind, severity, exit code and every other finding are unchanged. `verify` copies the finding into its extract gate's line as it is.
@@ -25,6 +25,16 @@ Labels:
   - L197–208: `extract` reads `Stack::of` and `ladder_runs` from the specification. Either one refuses a partial tolerance block with `FabToleranceUndeclared`, through the one refusal arm that was already there.
   - L335: each `capacitance_over_declared_bound` finding sets `cause` when the ladder did not run. The supply findings set none.
 - `verify.rs`: no logic change. The extract gate's line already carries the gate's `findings` verbatim (L547, `gate_report`), so the fact reaches the verdict with them. A unit test shows it (L2358).
+  - **On a real verdict:** `4600`'s `verify` of this board (`spike/4600/out/logger-spi-only-cap/verify.json`) has an extract gate (`fail`, exit 1) whose one finding is `extract`'s object exactly. That board's sha256 there, `cc1269fa…`, is the board this branch's as-is `emit` wrote (§2.1). So the gate line will carry `cause` the same way, on the same bytes.
+
+**A premise of the work order's fence, corrected:**
+- **What the fence assumed:** `extract`'s error text lives in `aethelgard-eda/src`, and `aethelgard-cli/src` is touched only for the verdict line.
+- **What I found:** the `capacitance_over_declared_bound` finding is built in `crates/aethelgard-cli/src/extract.rs` (L290–336 at base), and eda only supplies the figures.
+- **What I did:**
+  - The finding's field is added there, in the CLI.
+  - eda holds the sentence (`LADDER_NOT_RUN`) and the predicate (`ladder_runs`).
+  - `verify.rs` gained only a unit test.
+- Nothing outside the listed directories changed.
 
 **Where `extract` learns whether the ladder ran:** from the specification alone (`ladder_runs`, `schematic.rs` L862, the same `RingRule::of` as `place` L881/L901), never from the board file. No routing output or board byte changed to carry it, so §7's second condition did not fire.
 
@@ -95,7 +105,7 @@ At rung 3, `LOG_SCK`'s terms are: trace 13,611, vias 3,712 (2 × 1,856 at the ru
   - `sentinel-02-shaped`: 2;
   - `solve/stress`: 8;
   - `examples/sentinel-01-ext-bmp581.json`: 1 (`SPI_MOSI` 47,396 fF).
-- The first four are the fixtures roadmap §7.1 L877 names. The fifth is `3403`'s bench specification. Its failure is recorded in `fab/sentinel-01-bench/BENCH-EXT-BMP581.md` L36–38 in prose, and the message it quotes is unchanged.
+- The first four are the fixtures roadmap §7.1 L886 (L877 before `70ce5403`) names. The fifth is `3403`'s bench specification. Its failure is recorded in `fab/sentinel-01-bench/BENCH-EXT-BMP581.md` L36–38 in prose, and the message it quotes is unchanged.
 - **No committed file pins a failing `extract` line except as a run record:** `spike/4600/out/*`, `spike/3303b/out/*`. They record what was printed at their own SHAs and were not touched.
 
 The first run used `b1565adf`, before the reduction. It was run again with the binary of `a3d8001e` (the code head; sha256 `c85a3b8b…`, kept as `~/.cache/aet-1314b/aethelgard-head-a3d8001e`), and every row came out the same. `out/differential.tsv` is that second run.
@@ -157,7 +167,7 @@ The file was restored from a copy after each mutant, and `git diff` was clean af
 
 ## 5. Gates
 
-Local, at the code head `a3d8001e`. Since then only this FEEDBACK, `spike/1314b/out/differential.tsv` and nothing in a crate have changed.
+Local, at the code head `a3d8001e`. Since then only this FEEDBACK, `spike/1314b/out/differential.tsv` and the docs-only merge of `main` have changed, and nothing in a crate.
 
 **Commands:**
 - `cargo fmt --all -- --check`: pass.
@@ -166,7 +176,7 @@ Local, at the code head `a3d8001e`. Since then only this FEEDBACK, `spike/1314b/
 - `cargo test --workspace --features aethelgard-cli/with-tools --no-run`: compiles.
 
 **CI and `TIER2_MIN`:**
-- `main` is still `03d89554`, this branch's base, so there was nothing to merge.
+- `main` moved to `70ce5403`, a docs-only change (this work order, byte-identical to the copy I built from, and the roadmap). It is merged as `724da8e1`. No crate changed, so the gates above stand.
 - CI runs on the PR, and its result is recorded on the PR.
 - `TIER2_MIN` is unchanged, because no tier-2 test was added.
 
@@ -178,10 +188,10 @@ Local, at the code head `a3d8001e`. Since then only this FEEDBACK, `spike/1314b/
 
 | # | finding | evidence | class | proposed | §7.1 row? |
 |---|---|---|---|---|---|
-| F1 | `extract`'s `cause` reads the specification, so it is exact only for a board emitted from that specification. A hand-supplied pair can lack it (a once-routed board under tolerances whose rule pad is the engine's 0.6 mm) | §4.1 A4, `adv/pad600.json` | risk, low: `verify` always judges its own emission | none now. If `extract` ever judges boards from elsewhere, the board could carry its rung as a comment, which is a change to the board bytes the work order excluded | no |
+| F1 | `extract`'s `cause` reads the specification, so it is exact only for a board emitted from that specification. Three ways it can overstate or miss: (a) a hand-supplied pair can lack it (a once-routed board under tolerances whose rule pad is the engine's 0.6 mm); (b) its last clause, "so its lines were routed once with no regard to their bounds", describes what `emit` does with that specification, not what was done to the board judged; (c) it is set on every missed bound with no ladder, including one no routing could meet (`extract_tier1`'s 20 pF case fails on its pins alone, 30 pF), where the ladder would only have turned the failure into `emit`'s `CapacitanceOverBound` | §4.1 A4, `adv/pad600.json`; [inferred] for (b) and (c) | risk, low: `verify` always judges its own emission, and in (c) the ladder would still have been the next step | none now; the architect may trim the clause in (b). If `extract` ever judges boards from elsewhere, the board could carry its rung as a comment, which changes the board bytes the work order excluded | no |
 | F2 | `crates/aethelgard-cli/README.md` L857 describes the finding's fields and does not name `cause` | read at source | doc | add one clause: "and `cause` where the specification declares no `fab_tolerances`, so no ladder ran". The crate README is outside this fence | yes, a doc row |
-| F3 | Five committed specifications fail a declared bound on today's routing, including `examples/sentinel-01-ext-bmp581.json`, which roadmap L877's row does not list | §2.3 | record | add `sentinel-01-ext-bmp581` to L877's row (already recorded by `3403`) | yes, an edit to L877 |
-| F4 | `4600` F18's board meets its bound when its fabricator's tolerances are declared (rung 3, `LOG_SCK` 26.9 pF) | §2.1 | answer | F18's "labelled variant measures it first" is done. What remains is the row's other half, `validate`, which the work order excluded | edit L918 |
+| F3 | Five committed specifications fail a declared bound on today's routing, including `examples/sentinel-01-ext-bmp581.json`, which roadmap L886's row does not list | §2.3 | record | add `sentinel-01-ext-bmp581` to L886's row (already recorded by `3403`) | yes, an edit to L877 |
+| F4 | `4600` F18's board meets its bound when its fabricator's tolerances are declared (rung 3, `LOG_SCK` 26.9 pF) | §2.1 | answer | F18's "labelled variant measures it first" is done. What remains is the row's other half, `validate`, which the work order excluded | edit L927 |
 
 ## 7. Record
 
