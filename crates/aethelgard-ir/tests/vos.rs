@@ -32,7 +32,7 @@ fn topology(vos: Vos) -> SolvedTopology {
         "schema_version": aethelgard_ir::SOLVED_SCHEMA_VERSION,
         "specification_sha256": "0".repeat(64),
         "assignments": {"M1": {"pin": "PE9", "peripheral": "TIM1", "signal": "TIM1_CH1", "alternate_function": 1}},
-        "gpio": {}, "i2c_ceilings": {}, "i2c_speeds": {}, "analog_lines": {}, "i2c_devices": {},
+        "gpio": {}, "adc_inputs": {}, "i2c_ceilings": {}, "i2c_speeds": {}, "analog_lines": {}, "i2c_devices": {},
         "spi_devices": {}, "spi_lines": {}, "clock": clock, "motor_outputs": {}, "power": null,
         "serial_ports": {"A": port("USART1"), "B": port("UART4")},
         "spi_controllers": {"SPI1": spi("per_ck"), "SPI4": spi("hsi_ker_ck"), "SPI6": spi("hsi_ker_ck")},

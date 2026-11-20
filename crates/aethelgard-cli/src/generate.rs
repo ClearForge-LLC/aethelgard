@@ -38,6 +38,15 @@ pub enum GenerateError {
     CoreSupplyNotGenerated,
     /// The specification declares `mcu.hse` ([`generable`]).
     HseNotGenerated,
+    /// The topology holds a pin device ([`generable`], `AET-WO-1211a`).
+    PinDeviceNotGenerated {
+        reference: String,
+        part: String,
+    },
+    /// A motor output idles high ([`generable`], `AET-WO-1211a`).
+    IdleHighNotGenerated {
+        net: String,
+    },
 }
 
 /// The declarations this engine validates and solves but does not generate,
@@ -56,12 +65,37 @@ pub enum GenerateError {
 /// `mcu.hse` is declared solves to the HSE tree (`clock.hse`), whose
 /// bring-up, `RCC` words, Kani clause and twin rule are `AET-WO-4240b`'s; the
 /// generator today writes only the reset tree.
+///
+/// `PinDeviceNotGenerated` (`AET-WO-1211a`): a topology with a pin device
+/// holds gpio inputs and ADC inputs no generator, simulation or board writes
+/// or models until its own work order; each is refused by the device's
+/// reference and part. `IdleHighNotGenerated` (`AET-WO-1211a`): a motor
+/// output whose `pwm.idle` is `Idle::Level(High)` implies a pull-up
+/// (`silicon::implied_pupd`), and the generator's own motor pull is the
+/// pull-down until `AET-WO-1211b`.
 pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
     if topology.core_supply == aethelgard_ir::vos::CoreSupplyMode::Bypass {
         return Err(GenerateError::CoreSupplyNotGenerated);
     }
     if topology.clock.hse.is_some() {
         return Err(GenerateError::HseNotGenerated);
+    }
+    if let Some((reference, d)) = topology.pin_devices.iter().next() {
+        return Err(GenerateError::PinDeviceNotGenerated {
+            reference: reference.clone(),
+            part: d.part.clone(),
+        });
+    }
+    let high = |m: &aethelgard_ir::SolvedMotorOutput| {
+        matches!(
+            m.pwm.as_ref().map(|p| p.idle),
+            Some(aethelgard_ir::motor::Idle::Level(
+                aethelgard_ir::motor::Level::High
+            ))
+        )
+    };
+    if let Some((net, _)) = topology.motor_outputs.iter().find(|(_, m)| high(m)) {
+        return Err(GenerateError::IdleHighNotGenerated { net: net.clone() });
     }
     Ok(())
 }
@@ -78,6 +112,14 @@ impl std::fmt::Display for GenerateError {
             Self::HseNotGenerated => f.write_str(
                 "mcu.hse is declared: the board solves to the HSE clock tree, whose bring-up the generator does not write until AET-WO-4240b; validate and solve accept it, generate, emit and simulate do not",
             ),
+            Self::PinDeviceNotGenerated { reference, part } => write!(
+                f,
+                "`{reference}` ({part}) is a pin device: the board, firmware and twin this engine generates drive and read none of its pins (AET-WO-1211a); validate and solve accept it, generate, emit and simulate do not"
+            ),
+            Self::IdleHighNotGenerated { net } => write!(
+                f,
+                "motor output `{net}` idles high: the generator's motor pull is the pull-down until AET-WO-1211b (AET-WO-1211a); validate and solve accept it, generate, emit and simulate do not"
+            ),
         }
     }
 }
@@ -90,12 +132,16 @@ impl GenerateError {
             Self::Twin(e) => e.kind(),
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
             Self::HseNotGenerated => "HseNotGenerated",
+            Self::PinDeviceNotGenerated { .. } => "PinDeviceNotGenerated",
+            Self::IdleHighNotGenerated { .. } => "IdleHighNotGenerated",
         }
     }
 
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::Emit(e) => e.id(),
+            Self::PinDeviceNotGenerated { reference, .. } => Some(reference),
+            Self::IdleHighNotGenerated { net } => Some(net),
             Self::Board(_)
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
@@ -116,7 +162,9 @@ impl GenerateError {
             Self::Board(_)
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
-            | Self::HseNotGenerated => false,
+            | Self::HseNotGenerated
+            | Self::PinDeviceNotGenerated { .. }
+            | Self::IdleHighNotGenerated { .. } => false,
         }
     }
 }

@@ -152,7 +152,7 @@ fn each_spi_fact_is_judged() {
 #[test]
 fn swapped_selects_with_wrong_modes_are_each_named() {
     let mut v: Value = serde_json::to_value(topology()).unwrap();
-    v["gpio"]["IMU_CS"] = "PA1".into();
+    v["gpio"]["IMU_CS"] = json!({"pin": "PA1", "direction": "output", "initial": "high"});
     v["pin_speeds"]["IMU_CS"] = 0.into();
     v["spi_devices"]["U5"] = json!({"index": 1, "part": "ICM42688P", "bus": "FLASH", "peripheral": "SPI1", "cs": "IMU_CS",
         "orientation": {"x": "right", "z": "up"}});
@@ -543,7 +543,7 @@ fn the_serial_table_is_read_with_its_driver_and_padding() {
 /// U5's `SPIDesc` and IMU probe as ArduPilot writes them.
 fn with_imu(orientation: Option<Value>) -> (SolvedTopology, String) {
     let mut v: Value = serde_json::to_value(topology()).unwrap();
-    v["gpio"]["IMU_CS"] = "PA1".into();
+    v["gpio"]["IMU_CS"] = json!({"pin": "PA1", "direction": "output", "initial": "high"});
     v["pin_speeds"]["IMU_CS"] = 0.into();
     v["spi_devices"]["U5"] = json!({"index": 1, "part": "ICM42688P", "bus": "FLASH", "peripheral": "SPI1", "cs": "IMU_CS"});
     if let Some(o) = orientation {

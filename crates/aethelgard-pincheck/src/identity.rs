@@ -255,6 +255,7 @@ pub fn judge(
     header: &Preprocessed,
     elf_bytes: &[u8],
 ) -> Result<Vec<Finding>, Refusal> {
+    crate::refuse_unjudged_gpio(t)?;
     let serial = elf::serial_table(elf_bytes)?;
     let params = elf::serial_params(elf_bytes)?;
     let receivers = elf::gps_receivers(elf_bytes)?;
@@ -366,7 +367,7 @@ fn spi(
                 bus.clone(),
             );
         }
-        let want_cs = &t.gpio[&d.cs];
+        let want_cs = &t.gpio[&d.cs].pin;
         if cs != want_cs {
             out.push(
                 "WrongChipSelect",

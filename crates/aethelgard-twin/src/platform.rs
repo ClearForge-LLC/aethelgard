@@ -367,6 +367,7 @@ fn spi_buses(
                     id: reference.to_owned(),
                 })
             })?
+            .pin
             .clone();
         let (port, pin) = split_pin(&pin_name)?;
         let port = STOCK
@@ -664,6 +665,7 @@ pub fn emit_faulted(
     faulted: &BTreeSet<String>,
     absent: &BTreeSet<String>,
 ) -> Result<String, TwinError> {
+    crate::refuse_pin_devices(topology)?;
     let instances = stock_instances(topology)?;
     let kept = present(topology, faulted)?;
     let (modelled, unmodelled) = split_devices(topology, &kept)?;
@@ -1045,8 +1047,8 @@ fn solved(topology: &SolvedTopology) -> Result<BTreeSet<String>, TwinError> {
         set.insert(a.peripheral.clone());
         set.insert(format!("GPIO{}", split_pin(&a.pin)?.0));
     }
-    for pin in topology.gpio.values() {
-        set.insert(format!("GPIO{}", split_pin(pin)?.0));
+    for g in topology.gpio.values() {
+        set.insert(format!("GPIO{}", split_pin(&g.pin)?.0));
     }
     Ok(set)
 }

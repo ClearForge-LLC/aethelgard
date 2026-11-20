@@ -365,7 +365,10 @@ fn a_motor_board_proves_its_schedule_in_one_part_per_unit() {
 #[test]
 fn an_output_no_unit_owns_is_proved_in_the_gpio_part() {
     let (mut solved, table) = fixture("motors-pwm");
-    solved.gpio.insert("LED".into(), "PB0".into());
+    solved.gpio.insert(
+        "LED".into(),
+        aethelgard_ir::pin_devices::SolvedGpio::output("PB0", aethelgard_ir::motor::Level::High),
+    );
     solved.pin_speeds.insert("LED".into(), 0);
     let files = generate_with("motors-board", &solved, &table, &answers).unwrap();
     let proofs = &files["src/proofs.rs"];

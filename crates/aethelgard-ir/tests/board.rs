@@ -479,7 +479,7 @@ fn a_malformed_outline_bound_is_a_shape_error() {
 /// board.
 #[test]
 fn a_version_14_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 21);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 22);
     for bound in [None, Some(json!({"width": 100_000, "height": 100_000}))] {
         let e = refused(reference(), |v| {
             v["schema_version"] = json!(14);
@@ -492,7 +492,7 @@ fn a_version_14_file_is_refused_by_its_version() {
                 e,
                 IrValidationError::UnsupportedSchemaVersion {
                     version: 14,
-                    expected: 21
+                    expected: 22
                 }
             ),
             "{e}"
