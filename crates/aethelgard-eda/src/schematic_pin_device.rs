@@ -428,12 +428,13 @@ fn device(
     for (name, p) in &row.pins {
         if p.kind == PinKind::Passive {
             let net = b.own_net(format!("{}_{name}", d.reference))?;
-            let c = if super::power_in(arm.symbol, &number(d, arm, row, name)?)? {
+            let n = number(d, arm, row, name)?;
+            let c = if super::power_in(arm.symbol, &n)? {
                 b.rail(&net)
             } else {
                 Conn::Net(net)
             };
-            put(number(d, arm, row, name)?, c, &mut conns)?;
+            put(n, c, &mut conns)?;
         }
     }
     // Every numbered pin is drawn; an open-drain output left undeclared is

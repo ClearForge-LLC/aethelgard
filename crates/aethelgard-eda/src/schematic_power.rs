@@ -216,8 +216,8 @@ pub(super) fn resistor(
 }
 
 /// A declared reservoir capacitor on an ADC input, by the MCU's pin at
-/// package `position`, as a battery sense's is (`AET-WO-1211d`: a pin
-/// device's analog output).
+/// package `position`: a battery sense's, and a pin device's analog output's
+/// (`AET-WO-1211d`).
 pub(super) fn reservoir(
     b: &mut Builder<'_>,
     mcu: &str,
@@ -378,8 +378,7 @@ pub(crate) fn draw(
         resistor(b, &s.bottom, net.clone(), g)?;
         if let Some(c) = &s.reservoir {
             let g = b.ground();
-            capacitor(b, &c.reference, &c.part, net, g)?;
-            anchor(b, mcu, &[("1", &position)], RESERVOIR_NM, RESERVOIR_RULE);
+            reservoir(b, mcu, c, net, g, &position)?;
         }
     }
     // The power-in connector, drawn like `4300f`'s connectors (it is placed
