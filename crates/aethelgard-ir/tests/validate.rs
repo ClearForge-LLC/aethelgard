@@ -1315,8 +1315,9 @@ fn solved_refuses_version_and_hash() {
     // an SPI device's `orientation` (`AET-WO-4400d`), 10 the file before
     // `foreign_clock` (`AET-WO-4400g`), 11 the file before `core_supply`
     // and the clock's `vos` (`AET-WO-4240v`), 12 the file before the
-    // clock's `hse` (`AET-WO-4240a`), 14 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] {
+    // clock's `hse` (`AET-WO-4240a`), 13 the file before `AET-WO-4240b`'s
+    // renumber (solved 14), 15 one this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
