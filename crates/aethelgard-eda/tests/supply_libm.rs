@@ -89,6 +89,7 @@ fn board4(parts: Vec<Part>) -> Board {
         width_nm: 250_000,
         classes: vec![],
         pairs: vec![],
+        oscillator: vec![],
         joins: vec![],
         thermal: vec![],
         imus: vec![],

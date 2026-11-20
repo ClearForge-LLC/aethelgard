@@ -4,12 +4,14 @@
 //! mutation of §5 must fail the gate by name. The gate reads the MCU's row
 //! and the specification, never the emitter's parts.
 
-use std::collections::BTreeMap;
-
 use aethelgard_eda::schematic;
 use aethelgard_eda::stack::Stack;
 use aethelgard_eda::{route, strict, support};
 use aethelgard_ir::{PinTable, SolvedTopology, Specification};
+
+#[path = "common/netlist.rs"]
+mod netlist;
+use netlist::{Pads, netlist_text, pads_of};
 
 const REFERENCE: &str = "examples/sentinel-01-minimal.json";
 
@@ -24,61 +26,6 @@ fn reference() -> (Specification, SolvedTopology, PinTable) {
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     (spec, solved, table)
-}
-
-/// Each footprint's value and each pad's net, from the board text.
-type Pads = (BTreeMap<String, String>, BTreeMap<(String, String), String>);
-
-fn pads_of(board: &str) -> Pads {
-    let tree = strict::board(board).unwrap();
-    let mut values = BTreeMap::new();
-    let mut nets = BTreeMap::new();
-    for fp in tree.root().all("footprint") {
-        let reference = fp.field("Reference").unwrap().unwrap().to_owned();
-        values.insert(
-            reference.clone(),
-            fp.field("Value").unwrap().unwrap().to_owned(),
-        );
-        for pad in fp.all("pad") {
-            let Some(net) = pad.one("net").unwrap().and_then(|n| n.last()) else {
-                continue;
-            };
-            nets.insert(
-                (reference.clone(), pad.arg(1).unwrap().to_owned()),
-                net.to_owned(),
-            );
-        }
-    }
-    (values, nets)
-}
-
-/// A netlist in KiCad 10.0.7's `kicadsexpr` shape.
-fn netlist_text((values, nets): &Pads) -> String {
-    let mut by_net: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
-    for ((r, p), n) in nets {
-        by_net.entry(n).or_default().push((r, p));
-    }
-    let mut s = String::from("(export (version \"E\") (components\n");
-    for (r, v) in values {
-        // The symbol, as KiCad writes it: every capacitor here is Device:C,
-        // every resistor Device:R (the tier-2 test reads KiCad's own export).
-        let lib = match r.chars().next() {
-            Some('C') => " (libsource (lib \"Device\") (part \"C\"))",
-            Some('R') => " (libsource (lib \"Device\") (part \"R\"))",
-            _ => "",
-        };
-        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib})\n"));
-    }
-    s.push_str(")\n(nets\n");
-    for (i, (n, nodes)) in by_net.iter().enumerate() {
-        s.push_str(&format!("(net (code \"{}\") (name \"{n}\")", i + 1));
-        for (r, p) in nodes {
-            s.push_str(&format!(" (node (ref \"{r}\") (pin \"{p}\"))"));
-        }
-        s.push_str(")\n");
-    }
-    s.push_str("))\n");
-    s
 }
 
 fn judge(spec: &Specification, pads: &Pads, board: &str) -> support::Record {

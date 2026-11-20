@@ -26,6 +26,8 @@ use crate::sexpr::{self, Sx, mm};
 
 // The power tree's drawing, a child of this module beside it in `src/`
 // (`strict_fence` gives every file of `src/` a role).
+#[path = "schematic_hse.rs"]
+mod hse;
 #[path = "schematic_power.rs"]
 mod power;
 #[path = "schematic_support.rs"]
@@ -169,6 +171,18 @@ pub enum EmitError {
     /// are `extract`'s.
     #[error("the capacitance ladder cannot judge the board: {}", .0.message)]
     LadderRefused(crate::extract::Refused),
+    /// `AET-WO-4240c` Q4 (a): an external clock's net has no declared other
+    /// end until a connector pin or test point can carry it.
+    #[error(
+        "mcu.hse is an external clock: no declared connector pin or test point can carry it to PH0 (OSC_IN), so its net would end nowhere; emit refuses it until one can (AET-WO-4240c Q4)"
+    )]
+    HseSourceNotDrawn,
+    /// `AET-WO-4240c` A2: no C0G 0402 row with a stated tolerance is rated
+    /// a declared load capacitor's value.
+    #[error(
+        "mcu.hse.crystal.load_caps_femtofarads names {femtofarads} fF, and no C0G 0402 capacitor row of the power parts table with a stated tolerance is rated that value"
+    )]
+    LoadCapacitorNoPart { femtofarads: u64 },
     /// `AET-WO-1211a`: the emitter draws no pin device (its pins, its
     /// parts) until a work order builds it.
     #[error(
@@ -206,6 +220,8 @@ impl EmitError {
             Self::ViaRingUnheld { .. } => "ViaRingUnheld",
             Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
             Self::LadderRefused(r) => r.kind,
+            Self::HseSourceNotDrawn => "HseSourceNotDrawn",
+            Self::LoadCapacitorNoPart { .. } => "LoadCapacitorNoPart",
             Self::PinDeviceNotDrawn { .. } => "PinDeviceNotDrawn",
             Self::Internal(_) => "EmitterError",
         }
@@ -230,6 +246,8 @@ impl EmitError {
             Self::CapacitanceOverBound { over } => over.first().map(|(n, _, _)| n.as_str()),
             Self::LadderRefused(r) => r.id.as_deref(),
             Self::OutlineTooSmall { reference, .. } => reference.as_deref(),
+            Self::HseSourceNotDrawn => Some("mcu.hse"),
+            Self::LoadCapacitorNoPart { .. } => Some("mcu.hse.crystal.load_caps_femtofarads"),
             Self::Library(_)
             | Self::BoardUnroutable(_)
             | Self::OutlineUnreachable { .. }
@@ -1343,6 +1361,9 @@ pub(crate) fn design(
     // Its support pins and network, from its row (`AET-WO-4300g`); signal
     // pins are set below.
     let mut conns = support::draw(&mut b, &mcu_ref)?;
+    // The oscillator pins beside a crystal (`AET-WO-4240c`); nothing for a
+    // specification that declares no HSE.
+    let hse = hse::tie(&mut b, table, &mut conns)?;
     let solved_pins = solved
         .assignments
         .iter()
@@ -1394,6 +1415,9 @@ pub(crate) fn design(
         offboard: BTreeMap::new(),
         seat: None,
     });
+    if let Some(group) = hse {
+        group.draw(&mut b, &mcu_ref)?;
+    }
 
     // The I2C buses' pull-ups, then their devices.
     for bus in &spec.i2c_buses {
@@ -1866,7 +1890,7 @@ impl Sheet<'_> {
         }
         v.push(Sx::node("dnp", &["no"]));
         v.push(uuid_sx(key));
-        for prop in sym.children("property") {
+        for prop in sym.children("property").filter(|p| !library::private(p)) {
             let name = prop.arg(1).unwrap_or("");
             let text = match name {
                 "Reference" => reference.to_owned(),
@@ -2322,6 +2346,8 @@ mod tests {
                 "VDD33USB" => "VDD33_USB",
                 "SWDIO" => "PA13",
                 "SWCLK" => "PA14",
+                "OSC_IN" => "PH0",
+                "OSC_OUT" => "PH1",
                 g => g,
             };
             for n in numbers {
