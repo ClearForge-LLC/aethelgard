@@ -878,6 +878,7 @@ const MODE_AF: u32 = 0b10;
 /// The expected register image of `topology`.
 pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
+    crate::refuse_pin_devices(topology)?;
     let identity = identity(topology)?;
     let f = cmsis::register_facts()?;
     let gpio = f.layout("GPIO")?;
@@ -910,7 +911,8 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             }
         }
     }
-    for pin in topology.gpio.values() {
+    for g in topology.gpio.values() {
+        let pin = &g.pin;
         let (port, index) = split_pin(pin)?;
         pins.insert(pin, (port, index, None));
         gates.insert(format!("GPIO{port}"));
