@@ -146,9 +146,9 @@ pub struct Stack {
     pub classes: Vec<Class>,
     pub pairs: Vec<Pair>,
     /// The oscillator nets beside a declared crystal, by the board's name
-    /// (`AET-WO-4240c` §1.6): the router lays them after the pairs, on F.Cu
-    /// with no via, and holds them. Empty for a specification that declares
-    /// no crystal, whose board is then today's.
+    /// (`AET-WO-4240c` §1.6): the router lays them right after the stitched
+    /// nets, on F.Cu, and never offers them a via. Empty for a specification
+    /// that declares no crystal, whose board is then today's.
     pub oscillator: Vec<String>,
     /// How each declared through-hole part's pads join a plane or zone of
     /// their own net, by reference (`AET-WO-1309` F5). A through-hole pad of

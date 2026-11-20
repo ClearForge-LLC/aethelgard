@@ -1028,15 +1028,15 @@ enum Load {
     /// clipped to it is outside the bound, as a part body is ([`CONDITIONS`]).
     TestPad,
     /// A part on an oscillator net beside a crystal (`AET-WO-4240c` §1.4):
-    /// copper only. The crystal's own `C0` is inside its row's `CL`, the load
-    /// capacitor is `CL1` or `CL2` itself, and the MCU's OSC pin has no
+    /// copper only. The crystal's `C0` is its own and the load capacitor is
+    /// `CL1` or `CL2` itself, so neither is counted; the MCU's OSC pin has no
     /// stated maximum (DS12117 `CIO`, 5 pF typical), so none is added here
     /// and [`OSC_PIN_CONDITION`] says so.
     Oscillator,
 }
 
 /// What an oscillator net's bound leaves out (`AET-WO-4240c` §1.4).
-pub const OSC_PIN_CONDITION: &str = "copper only: the MCU's OSC_IN and OSC_OUT pins are not counted, because DS12117 Rev 10 states their capacitance only as CIO 5 pF typical, with no minimum or maximum (Table 49 p. 137, rev Y; Table 146 p. 241, rev V); the crystal's C0 is inside its CL and each load capacitor is CL1 or CL2 itself";
+pub const OSC_PIN_CONDITION: &str = "copper only: the MCU's OSC_IN and OSC_OUT pins are not counted, because DS12117 Rev 10 states their capacitance only as CIO 5 pF typical, with no minimum or maximum (Table 49 p. 137, rev Y; Table 146 p. 241, rev V); the crystal's C0 is its own and each load capacitor is CL1 or CL2 itself, so neither is counted; each net's bound holds its mutual capacitance to the other oscillator net, which sits across the crystal";
 
 /// A connector's declared off-board capacitance for each of `pads`, the pads
 /// it has on `net`.

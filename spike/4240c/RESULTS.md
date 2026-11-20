@@ -36,16 +36,20 @@ the MCU's pads, copper edge to copper edge.
 **The pin term:** DS12117 Rev 10 gives `CIO` 5 pF **typical**, no minimum, no maximum (Table 49 p. 137, rev Y;
 Table 146 p. 241, rev V). P6 holds: no held source brackets `Cs`.
 
-**What the crystal sees** with `C1 = C2 = 18 pF`, each net's stray `s` adding to its capacitor
-(`CL = (C1+s1)(C2+s2)/(C1+C2+s1+s2)`, the per-net form [inferred]; AN2867 Rev 10's lumped `Cs` is the series of the
-two strays when `C1 = C2`):
+**Provisional:** KiCad has not yet run on this board; the bound's conditions assume a DRC-clean board.
 
-| Strays per net | Load at 18 pF | C for CL 12 pF |
-|---|---|---|
-| copper bound + CIO typical (12.47 / 11.02 pF) | 14.86 pF | 12.3 pF |
-| copper bound, no pin (7.47 / 6.02 pF) | 12.36 pF | 17.3 pF |
-| no copper, CIO typical (5 / 5 pF) | 11.50 pF | 19.0 pF |
-| nothing (0 / 0) | 9.00 pF | 24.0 pF |
+**What the crystal sees.** `extract` bounds each net with every other conductor at 0, the other oscillator net
+included, so each figure holds that net's stray to ground **and** its mutual capacitance `Cm` to the other
+oscillator net. The ground share adds to its capacitor; `Cm` sits across the crystal and adds whole:
+`load = series(C1 + s1, C2 + s2) + Cm`, with `s1 + Cm ≤ 7,473 fF` and `s2 + Cm ≤ 6,016 fF` (copper) and the pins'
+`CIO` to ground [inferred: the circuit, not a cited formula; AN2867 Rev 10 lumps one `Cs`, uncited]. **The split
+between ground and mutual is unknown.** With `C1 = C2 = 18 pF`:
 
-So the declared 18 pF fits CL 12 only for a stray near 6 pF per net, which no held source bounds. P8 (a mismatch
-at about 15 pF) holds only at the top of the bracket. Not changed: a finding.
+| Strays | Load, least | Load, most (the split that maximises it) | C giving CL 12 at the most |
+|---|---|---|---|
+| copper bound + CIO 5 pF typical per pin | 9.00 pF (no stray) | 17.87 pF (`Cm` = 6.016 pF) | 6.28 pF |
+| copper bound, no pin | 9.00 pF | 15.37 pF (`Cm` = 6.016 pF) | 11.28 pF |
+
+So the load at the declared 18 pF lies somewhere in 9.0–17.9 pF against the row's CL 12 pF, and the value that
+would give CL 12 lies anywhere from about 6 pF to 24 pF (24 pF with no stray at all). No held source narrows
+either. The declaration is not changed: a finding.
