@@ -1268,6 +1268,11 @@ struct Plan {
     /// GPIO output's declared level, as `solved.gpio` states it.
     oracle_pupd: BTreeMap<String, u32>,
     oracle_levels: BTreeMap<String, Level>,
+    /// Each timer channel's `CCRk` as the oracle derives it (`AET-WO-1211b`),
+    /// by (timer, channel): a PWM output's declared idle ([`oracle_idle_word`]),
+    /// a DShot output's solved word (its zero-bit duty, judged by
+    /// `motor::check_silicon`).
+    oracle_ccr: BTreeMap<(u32, u32), u32>,
 }
 
 impl Plan {
@@ -1632,6 +1637,24 @@ impl Plan {
             .iter()
             .map(|(pin, p)| (pin.clone(), silicon::implied_pupd(solved, &p.net)))
             .collect();
+        let mut oracle_ccr = BTreeMap::new();
+        for (net, m) in &solved.motor_outputs {
+            let channel = solved
+                .assignments
+                .get(net)
+                .and_then(|a| motor::timer_channel(&a.signal));
+            if let Some((n, k)) = channel {
+                let word = match &m.pwm {
+                    Some(p) => oracle_idle_word(p, m.arr).ok_or_else(|| {
+                        BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
+                            id: net.clone(),
+                        })
+                    })?,
+                    None => m.ccr,
+                };
+                oracle_ccr.insert((n, k), word);
+            }
+        }
         Ok(Plan {
             crate_name: crate_name.into(),
             specification_sha256: solved.specification_sha256.clone(),
@@ -1664,6 +1687,7 @@ impl Plan {
             core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
             core_supply: solved.core_supply,
             oracle_pupd,
+            oracle_ccr,
             oracle_levels: solved
                 .gpio
                 .values()
@@ -3659,13 +3683,21 @@ fn count_word(n: usize) -> String {
 /// belt-and-suspenders: this restates `emit_timer_start`'s values and order on
 /// purpose. The oracle must not read back what the crate under proof does
 /// (`INV-07`), so a slip in one copy is caught by the other.
-fn timer_oracle(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(String, u32, u32)> {
+///
+/// Each `CCRk` is the oracle's own idle word (`AET-WO-1211b`), not the
+/// plan's: [`Plan::oracle_ccr`].
+fn timer_oracle(plan: &Plan, n: u32, tf: &TimFacts) -> Vec<(String, u32, u32)> {
+    let t = &plan.timers[&n];
     let mut out = vec![
         ("PSC".to_owned(), tf.psc, t.psc),
         ("ARR".to_owned(), tf.arr, t.arr),
     ];
-    for (k, (_, ccr)) in &t.channels {
-        out.push((format!("CCR{k}"), tf.ccr[(k - 1) as usize], *ccr));
+    for k in t.channels.keys() {
+        out.push((
+            format!("CCR{k}"),
+            tf.ccr[(k - 1) as usize],
+            plan.oracle_ccr[&(n, *k)],
+        ));
     }
     for (m, channels) in [(1u32, [1u32, 2]), (2, [3, 4])] {
         let mut value = 0;
@@ -3904,6 +3936,30 @@ fn oracle_level_bit(plan: &Plan, pf: &PinFacts, pin: &str) -> u32 {
         Some(Level::Low) => 1u32 << pf.br,
         Some(Level::High) => 1u32 << pf.bs,
         None => 0,
+    }
+}
+
+/// A PWM output's `CCR` from its declared idle and its period's `ARR`
+/// (`AET-WO-1211b`; `1211` §2.4, RM0433 Rev 9 p. 1558): `0` for `low` (OCxREF
+/// held at 0), `ARR + 1` for `high` (a compare value above the auto-reload
+/// holds OCxREF at 1), and the idle pulse in ticks, `pulse_us` × 10^6 /
+/// `resolution_ps`, otherwise; `None` for a pulse off the tick, which the
+/// solver refuses.
+///
+/// belt-and-suspenders: this restates `aethelgard_ir::motor::solve_timing`'s
+/// idle on purpose; the proof's expected word must not be the topology's
+/// copy the generator writes (`INV-07`).
+fn oracle_idle_word(p: &motor::PwmTiming, arr: u32) -> Option<u32> {
+    match p.idle {
+        motor::Idle::Level(Level::Low) => Some(0),
+        motor::Idle::Level(Level::High) => arr.checked_add(1),
+        motor::Idle::PulseUs(us) => {
+            let ps = u64::from(us) * 1_000_000;
+            let res = u64::from(p.resolution_ps);
+            (res != 0 && ps % res == 0)
+                .then(|| u32::try_from(ps / res).ok())
+                .flatten()
+        }
     }
 }
 
@@ -4225,7 +4281,7 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
         }
         Action::TimerStart(n) => {
             if let Some(tf) = &facts.tim {
-                for (_, offset, _) in timer_oracle(*n, &plan.timers[n], tf) {
+                for (_, offset, _) in timer_oracle(plan, *n, tf) {
                     add(format!("Tim{n}"), offset, !0);
                 }
             }
@@ -5518,8 +5574,8 @@ fn emit_schedule(
     // Each timer: every register its start writes holds the solved value, and
     // every other word is unchanged.
     if let Some(tf) = &facts.tim {
-        for (n, t) in plan.timers.iter().filter(|(n, _)| scope.timers.contains(n)) {
-            let writes = timer_oracle(*n, t, tf);
+        for n in plan.timers.keys().filter(|n| scope.timers.contains(n)) {
+            let writes = timer_oracle(plan, *n, tf);
             for (name, offset, value) in &writes {
                 let _ = writeln!(
                     w,
@@ -6115,7 +6171,7 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
     );
     for (n, t) in &plan.timers {
         let Some(tf) = &facts.tim else { break };
-        let writes = timer_oracle(*n, t, tf);
+        let writes = timer_oracle(plan, *n, tf);
         let count = writes.len();
         let pins: Vec<&String> = t.channels.values().map(|(p, _)| p).collect();
         let setup = harness_setup(plan, &pins);
