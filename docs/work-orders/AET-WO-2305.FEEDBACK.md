@@ -176,7 +176,11 @@ The same two patched CLIs, main 943f7112 against the branch merged with it (`out
   - All pass. The rest of tier 2 is CI's.
 - **CI on 771f6e6c (run 44688610112):** green except `bench-package`. tools-build, all 12 tools-shards and `tools` pass (`tier2_tests_passed=197`, floor 197), with gates, route, cli, foreign and the images. `bench-package` fails on `MANIFEST.json` only (`against_differs`); it waits on the architect's `write=true` dispatch.
 - **The first CI run (ff894e30) failed every tools shard at `plan`:** `twin_tier2` is lock-serialised, so every test in it needs a weight row. The three rows were added (Furnace × 2.8), and `ci/shard.sh plan` passed in the image before the push.
-- **`TIER2_MIN` 194 → 197:** the three `bor_recovery` tests. Each carries a weight row, as every test of a lock-serialised binary must (see above).
+- **Merged main d0c4cfe0** (`2306`: `judged`, `nothing_in_scope` and `judged_nothing` on verdict lines, derived in the CLI with no archive byte moved).
+  - The only textual conflict was `TIER2_MIN`, recomputed as **main's 195 + my 3 = 198**.
+  - `2306`'s `observation_witness` counts each release judged when the run has a device witness, which agrees with this rule. Its doc now names replay's `first_script` (it named the removed `first_witness`) and the no-bound case.
+  - §1.1 is not re-run for this merge: nothing in a trace moved. The tier-2 droop tests, with their pinned instants and kind 32, re-check it.
+- **`TIER2_MIN` 194 → 197 (before 2306; 198 after it):** the three `bor_recovery` tests. Each carries a weight row, as every test of a lock-serialised binary must (see above).
 - **Reduction pass (diff), by a fresh reviewer:** nothing to remove · 0 duplicates removed · 0 dead paths removed · 1 kept by ruling · 2 findings below.
   - **Kept by ruling:** kind 32's `margin_ns` and `bound_ns` are determined by its instant, since `Record::check` forces both. The ruling of 05:10Z names all three for the archive. Dropping them would save about 25 lines and two fields; that is the architect's call.
   - **R1:** `recovery_bound` and `probe_ns` use checked arithmetic (`Option`) for a sum that cannot reach `u64` inside a 0.1 s run. Saturating adds would drop three error paths (about 15 lines). Kept, to match `power::schedule`'s checked style.
