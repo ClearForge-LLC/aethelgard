@@ -583,8 +583,9 @@ pub struct WitnessReport {
     pub expected: Vec<String>,
     /// `null` until Renode has run, or when the log could not be read whole.
     pub observed: Option<Vec<String>>,
-    /// The addresses the device's controller found no device at, in order:
-    /// attribution's evidence, never part of the witness.
+    /// The addresses the device's controller found no device at during this
+    /// step (`AET-WO-3305`), in order: attribution's evidence, never part of
+    /// the witness.
     pub absent: Vec<String>,
 }
 
