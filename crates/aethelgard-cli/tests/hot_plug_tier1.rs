@@ -388,7 +388,9 @@ fn the_bulk_capacitor_anchors_to_the_first_battery_fed_regulator_or_to_nothing()
     let spec: Specification = serde_json::from_value(v).unwrap();
     let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
     assert_eq!(anchored.get("C1"), None);
-    let drawn = schematic::drawn(&spec, &solved, &table).unwrap();
+    let drawn = schematic::Drawing::of(&spec, &solved, &table)
+        .unwrap()
+        .drawn();
     assert_eq!(
         drawn.get("C1").map(String::as_str),
         Some("47u UCZ1H470MCL1GS")

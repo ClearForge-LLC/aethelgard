@@ -577,7 +577,13 @@ fn ohms(v: u32) -> String {
 /// The MCU's symbol, the one part every design has.
 pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 
-use aethelgard_ir::names::VENDORED_PARTS as KNOWN_PARTS;
+/// The device parts the emitter has an arm for, as its `UnknownPart`
+/// refusal lists them, in the order the arms were added. Each has a row in
+/// the parts table; a row with no arm
+/// (ICP-10111) passes `validate` and is refused here. `AET-WO-1316`'s
+/// agreement test (`parts_arms_tier1.rs`) holds this list, the arms and the
+/// table to one another.
+pub const KNOWN_PARTS: &str = "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P";
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -1104,19 +1110,17 @@ fn choose(rungs: &[Option<&[Figure]>]) -> Choice {
     }
 }
 
-/// `AET-WO-1313`: whether a declared outline bound can hold the parts the
-/// emitter would draw at all, before any placement ([`crate::pcb::bound_holds`]).
-/// A specification that declares no bound passes.
+/// [`Drawing::bound_holds`] of one specification, drawn only when it
+/// declares a bound.
 pub fn bound_holds(
     spec: &Specification,
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<(), EmitError> {
-    let Some(b) = spec.board.max_outline_um else {
+    if spec.board.max_outline_um.is_none() {
         return Ok(());
-    };
-    let (parts, _) = design(spec, solved, table)?;
-    crate::pcb::bound_holds(&parts, b)
+    }
+    Drawing::of(spec, solved, table)?.bound_holds()
 }
 
 /// The decoupling capacitance the emitter places on each rail, in pF, keyed
@@ -1198,58 +1202,87 @@ fn picofarads(value: &str) -> Option<u64> {
     total.is_multiple_of(scale).then_some(total / scale)
 }
 
-/// Each anchored part's reference, with the IC it is anchored to
-/// (`AET-WO-4300d2` §1.3), read from the design's ownership, never from a
-/// board's layers: what a test needs to judge which references a board
-/// prints (`AET-WO-1310` D2).
+/// The drawn design of one specification, read-only: what [`design`]
+/// returns, computed once (`AET-WO-1316`) and read by [`Drawing::anchored`],
+/// [`Drawing::drawn`], [`Drawing::drawn_nets`] and [`Drawing::bound_holds`].
+/// It borrows the three inputs it was drawn from, so none of them can change
+/// while it is read.
+pub struct Drawing<'a> {
+    spec: &'a Specification,
+    parts: Vec<Part>,
+}
+
+impl<'a> Drawing<'a> {
+    /// One call of [`design`], refused as it refuses.
+    pub fn of(
+        spec: &'a Specification,
+        solved: &'a SolvedTopology,
+        table: &'a PinTable,
+    ) -> Result<Self, EmitError> {
+        let (parts, _) = design(spec, solved, table)?;
+        Ok(Self { spec, parts })
+    }
+
+    /// Each anchored part's reference, with the IC it is anchored to
+    /// (`AET-WO-4300d2` §1.3), read from the design's ownership, never from a
+    /// board's layers: what a test needs to judge which references a board
+    /// prints (`AET-WO-1310` D2).
+    pub fn anchored(&self) -> BTreeMap<String, String> {
+        self.parts
+            .iter()
+            .filter_map(|p| {
+                let o = p.owner.as_ref().filter(|o| o.anchor.is_some())?;
+                Some((p.reference.clone(), o.ic.clone()))
+            })
+            .collect()
+    }
+
+    /// Each drawn part's reference with its value: what a test needs to see
+    /// a part drawn where no board can be, a tree `validate` refuses
+    /// (`AET-WO-1315` §1.3, the bulk capacitor with no battery-fed regulator
+    /// to anchor to).
+    pub fn drawn(&self) -> BTreeMap<String, String> {
+        self.parts
+            .iter()
+            .map(|p| (p.reference.clone(), p.value.clone()))
+            .collect()
+    }
+
+    /// Each drawn part's reference with every net and rail (a domain by its
+    /// id, or `GND`) its pins are drawn on, no-connects left out: what
+    /// `validate` needs to hold a `power.loads` entry's part to the entry's
+    /// rail (`AET-WO-1209b`).
+    pub fn drawn_nets(&self) -> BTreeMap<String, BTreeSet<String>> {
+        self.parts
+            .iter()
+            .map(|p| {
+                let on = p.conns.values().filter_map(|c| match c {
+                    Conn::Net(n) | Conn::Rail(n) => Some(n.clone()),
+                    Conn::NoConnect => None,
+                });
+                (p.reference.clone(), on.collect())
+            })
+            .collect()
+    }
+
+    /// `AET-WO-1313`: whether the declared outline bound can hold these
+    /// parts at all, before any placement ([`crate::pcb::bound_holds`]). A
+    /// specification that declares no bound passes.
+    pub fn bound_holds(&self) -> Result<(), EmitError> {
+        match self.spec.board.max_outline_um {
+            Some(b) => crate::pcb::bound_holds(&self.parts, b),
+            None => Ok(()),
+        }
+    }
+}
+
+/// [`Drawing::anchored`] of one specification.
 pub fn anchored(
     spec: &Specification,
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<BTreeMap<String, String>, EmitError> {
-    let (parts, _) = design(spec, solved, table)?;
-    Ok(parts
-        .iter()
-        .filter_map(|p| {
-            let o = p.owner.as_ref().filter(|o| o.anchor.is_some())?;
-            Some((p.reference.clone(), o.ic.clone()))
-        })
-        .collect())
-}
-
-/// Each drawn part's reference with its value, read from the design: what a
-/// test needs to see a part drawn where no board can be, a tree `validate`
-/// refuses (`AET-WO-1315` §1.3, the bulk capacitor with no battery-fed
-/// regulator to anchor to).
-pub fn drawn(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<BTreeMap<String, String>, EmitError> {
-    let (parts, _) = design(spec, solved, table)?;
-    Ok(parts.into_iter().map(|p| (p.reference, p.value)).collect())
-}
-
-/// Each drawn part's reference with every net and rail (a domain by its id,
-/// or `GND`) its pins are drawn on, no-connects left out, read from the
-/// design: what `validate` needs to hold a `power.loads` entry's part to the
-/// entry's rail (`AET-WO-1209b`).
-pub fn drawn_nets(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<BTreeMap<String, BTreeSet<String>>, EmitError> {
-    let (parts, _) = design(spec, solved, table)?;
-    Ok(parts
-        .into_iter()
-        .map(|p| {
-            let on = p.conns.into_values().filter_map(|c| match c {
-                Conn::Net(n) | Conn::Rail(n) => Some(n),
-                Conn::NoConnect => None,
-            });
-            (p.reference, on.collect())
-        })
-        .collect())
+    Ok(Drawing::of(spec, solved, table)?.anchored())
 }
 
 /// Every part and what each of its pins connects to, and every rail.
@@ -2216,6 +2249,47 @@ mod tests {
             }
         }
         assert!(checked >= 6, "{checked}");
+    }
+
+    /// `AET-WO-1316` §1.2: the parts the two device matches have an arm
+    /// for are [`KNOWN_PARTS`], each once, so an arm written for a part
+    /// the list does not name (and so none the agreement test draws,
+    /// `parts_arms_tier1.rs`) fails here by name.
+    #[test]
+    fn the_arms_are_the_known_parts() {
+        let code = include_str!("schematic.rs");
+        let code = &code[..code.find("#[cfg(test)]").unwrap()];
+        let mut found = Vec::new();
+        let mut matches = 0;
+        for (at, _) in code.match_indices("match d.part.as_str() {") {
+            matches += 1;
+            let line = code[..at].rfind('\n').map_or(0, |n| n + 1);
+            let indent = code[line..].len() - code[line..].trim_start().len();
+            let arm = format!("\n{}    ", " ".repeat(indent));
+            let body = &code[at..];
+            let end = body.find(&format!("{arm}_ =>")).unwrap();
+            for chunk in body[..end].split(&arm).skip(1) {
+                if let Some(rest) = chunk.strip_prefix('"') {
+                    let (name, tail) = rest.split_once('"').unwrap();
+                    assert!(
+                        tail.starts_with(" =>"),
+                        "an arm of two or more parts: {name}{tail}"
+                    );
+                    found.push(name);
+                }
+            }
+        }
+        assert_eq!(matches, 2, "the I2C and the SPI device matches");
+        let mut known: Vec<&str> = KNOWN_PARTS.split(", ").collect();
+        for name in &found {
+            assert!(known.contains(name), "{name}: an arm, not in KNOWN_PARTS");
+        }
+        for name in &known {
+            assert!(found.contains(name), "{name}: in KNOWN_PARTS, and no arm");
+        }
+        found.sort_unstable();
+        known.sort_unstable();
+        assert_eq!(found, known, "each arm once");
     }
 
     #[test]
