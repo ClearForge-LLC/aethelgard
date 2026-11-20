@@ -30,8 +30,8 @@ use aethelgard_ir::vos::{self, CoreSupplyMode};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
     SolvedTopology, SpiKernel,
-    pin_devices::{Direction, McuPull},
     motor::Level,
+    pin_devices::{Direction, McuPull},
 };
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
@@ -1525,7 +1525,8 @@ impl Plan {
             };
             (net, &g.pin, role, pull, g.initial)
         });
-        let analog = device_adc_inputs(solved).map(|(net, a)| (net, &a.pin, Role::Analog, 0b00, None));
+        let analog =
+            device_adc_inputs(solved).map(|(net, a)| (net, &a.pin, Role::Analog, 0b00, None));
         for (net, pin, role, pull, initial) in gpio.chain(analog) {
             let (port, index) = split_pin(pin)?;
             if !table.pins.contains_key(pin) {
@@ -1677,11 +1678,7 @@ impl Plan {
 fn device_adc_inputs(
     solved: &SolvedTopology,
 ) -> impl Iterator<Item = (&String, &aethelgard_ir::pin_devices::SolvedAdcInput)> {
-    let sense: BTreeSet<&String> = solved
-        .power
-        .iter()
-        .flat_map(|p| p.sense.keys())
-        .collect();
+    let sense: BTreeSet<&String> = solved.power.iter().flat_map(|p| p.sense.keys()).collect();
     solved
         .adc_inputs
         .iter()
@@ -8399,10 +8396,14 @@ mod tests {
         assert!(generate("b", &solved(), &table()).is_ok());
     }
 
-    /// `AET-WO-1211a`: the board emits no pin of a pin device, so `generate`
-    /// refuses a topology with one by the device's reference and part.
+    /// `AET-WO-1211b`: a pin device's input is generated: `MODER` `00` alone
+    /// (no speed, no alternate function), and its declared pull in the port's
+    /// whole `PUPDR`, which the oracle takes from `silicon::implied_pupd`; an
+    /// output declared `low` (PB8) is written by its `BSRR` reset bit before
+    /// `MODER`.
     #[test]
-    fn a_pin_device_is_refused_as_not_generated() {
+    fn a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level() {
+        use aethelgard_ir::motor::Level;
         use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
         let mut s = solved();
         s.pin_devices.insert(
@@ -8420,17 +8421,49 @@ mod tests {
                 pull: Some(McuPull::Up),
             },
         );
+        s.gpio
+            .insert("SLEEP".into(), SolvedGpio::output("PB8", Level::Low));
         s.pin_speeds.insert("WAKE".into(), 0);
+        s.pin_speeds.insert("SLEEP".into(), 0);
         s.validate().unwrap();
-        let e = generate("b", &s, &table()).unwrap_err();
-        assert_eq!(
-            e,
-            BoardError::PinDeviceNotGenerated {
-                reference: "U9".into(),
-                part: "WAKE_SWITCH".into()
-            }
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        let input = block(
+            lib,
+            "    pub fn into_input<R: Registers>(self, r: &mut R) -> PB5<Input> {",
         );
-        assert_eq!(e.kind(), "PinDeviceNotGenerated");
+        assert_eq!(
+            input.lines().filter(|l| l.contains("r.modify")).count(),
+            1,
+            "{input}"
+        );
+        assert!(
+            input.contains("Block::GpioB, 0x00, |v| v & !0x00000c00"),
+            "{input}"
+        );
+        let output = block(
+            lib,
+            "    pub fn into_output<R: Registers>(self, r: &mut R) -> PB8<Output> {",
+        );
+        let reset = output.find("0x18, 0x01000000").expect("BR8");
+        let moder = output.find("Block::GpioB, 0x00,").expect("MODER");
+        assert!(reset < moder, "{output}");
+        // PB4's reset pull-up, PB5's declared pull-up; every other field 0.
+        let pupdr = 0x0000_0100 | (0b01 << 10);
+        assert!(
+            lib.contains(&format!(
+                "r.write(TOKEN, Block::GpioB, 0x0c, {pupdr:#010x});"
+            )),
+            "the generator's PUPDR"
+        );
+        let proofs = &files["src/proofs.rs"];
+        assert!(
+            proofs.contains(&format!(
+                "value == {pupdr:#010x}, \"GpioB PUPDR is not the solved word, whole\""
+            )),
+            "the oracle's PUPDR"
+        );
+        assert!(proofs.contains("PB8 is not at its declared initial level"));
         assert!(generate("b", &solved(), &table()).is_ok());
     }
 
