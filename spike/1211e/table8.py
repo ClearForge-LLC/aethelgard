@@ -26,7 +26,8 @@ for p in root.iter():
         xml[p.get("Name")] = (int(p.get("Position")), p.get("Type"))
 
 # Every row: (name line(s) joined, type, structure, page, the 8 lines before).
-page = None
+# The page the table starts on: the last marker above it.
+page = next(int(m.group(1)) for l in reversed(lines[:start]) if (m := re.match(r"^=== page (\d+) ===$", l)))
 rows = []
 for i in range(start, end):
     m = re.match(r"^=== page (\d+) ===$", lines[i])
