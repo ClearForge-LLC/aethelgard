@@ -126,10 +126,10 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
 
 ## 7. Gates, CI and status
 
-- **Gates** at `a84d59a1` (every serial fact from the ELF; `main` `d70a99e5` merged; capped scope):
+- **Gates** at `31c9e5b3` (every serial fact from the ELF; `main` `7ebca78c`, `2306` and `1209c`, merged; capped scope):
   - `cargo fmt --all -- --check`: clean;
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
-  - `cargo test --workspace`: **2,396 passed, 0 failed**. Earlier runs: `cd1fafbe`, 2,396 passed, 0 failed; `0409ad4f`, 2,360 passed, 0 failed.
+  - `cargo test --workspace`: **2,404 passed, 0 failed**. Earlier runs: `a84d59a1`, 2,396 passed, 0 failed; `cd1fafbe`, 2,396; `0409ad4f`, 2,360.
 - **The final binary on the real boards** [measured], re-run at `6d8dea95` after the boot-rate read was retired, with identical results. It reads `4240v`'s topology schema, so every topology was re-solved first: the CI three and Sentinel-01 from their committed specs, and `4404`'s three at specification 19 with Serial-Four's `core_supply`. Every regenerated `hwdef.dat` has `4404`'s lines exactly.
   - `container/ardupilot-pinout.sh`, unchanged, on the seven CI boards: exit 0, no `::error` (`spike/4405/out/pinout-final.log`).
   - The thirteen `4404` boards: each verdict is identical to the earlier branch run (`out/judge-final.txt`).
@@ -140,4 +140,5 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
   - `spike/4405/` holds Python decode and prediction scripts, as `spike/1303` does. No ELF or `hwdef.h` byte is committed.
   - Nothing else: no generator, IR, specification, `container/`, workflow or `ci/` change.
 - **CI green on `4e92c5b4`**, the code before the boot-rate read was retired (runs 44714820375, 44714820705 with `pinout`, 44714820532). A READY commit on that head (`3f2fce30`) was superseded: it still read SERIAL0's boot rate from `hwdef.h`.
-- **CI on the final code:** pending; the READY commit records it.
+- **CI green on `20110f1c`** (every serial fact from the ELF, before `main` `7ebca78c`): `ci` 44722064755, `ardupilot-image` 44722064762 (`pinout` passed), `engine-image` 44722064890.
+- **CI on the final merge:** pending; the READY commit records it.
