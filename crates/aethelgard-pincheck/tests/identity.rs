@@ -1436,8 +1436,10 @@ fn every_malformed_var_info_is_refused_by_name() {
     for (name, value) in [
         ("1_PROTOCOL", 5.5),
         ("1_PROTOCOL", 128.0),
+        ("1_PROTOCOL", -129.0),
         ("1_PROTOCOL", f32::NAN),
         ("1_BAUD", 3.0e9),
+        ("1_BAUD", -3.0e9),
         ("1_OPTIONS", f32::INFINITY),
         ("0_BAUD", -0.5),
     ] {

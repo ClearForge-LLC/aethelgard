@@ -674,9 +674,11 @@ const GPS: i64 = 5;
 const GPS2: i64 = 6;
 const RCIN: i64 = 23;
 
-/// `GPS_MAX_RECEIVERS` (`AP_GPS_config.h:16`): `AP_GPS::init` binds the
+/// `GPS_MAX_RECEIVERS` (`AP_GPS_config.h:16`): `AP_GPS::init` can give the
 /// first GPS port to receiver 1 and the second to receiver 2, and no
-/// receiver is left for a third (`AP_GPS.cpp:345-349`).
+/// receiver is left for a third (`AP_GPS.cpp:345-349`). At compiled defaults
+/// only receiver 1 takes one: `GPS2_TYPE` is 0 (`AP_GPS_Params.cpp:31`,
+/// `AP_GPS.cpp:328`), FEEDBACK D2.
 const GPS_MAX_RECEIVERS: usize = 2;
 
 /// `SERIALn_OPTIONS` bits (`AP_HAL/UARTDriver.h:90-102`).
@@ -709,8 +711,8 @@ fn protocol_name(v: i64) -> String {
 ///   port there declared inverted runs not inverted.
 /// - **One RC input at most:** a second compiled RCIN port is dropped
 ///   (`AP_SerialManager.cpp:536-541`), even where the topology asks for it.
-/// - **Two GPS ports at most:** a third compiled GPS (or GPS2) port is never
-///   bound ([`GPS_MAX_RECEIVERS`]).
+/// - **Two GPS ports at most:** a third compiled GPS (or GPS2) port can
+///   never be bound ([`GPS_MAX_RECEIVERS`]).
 ///
 /// The last two count every compiled port, declared or not, in n order, as
 /// ArduPilot's own search does (`find_protocol_instance`, `:600-612`).

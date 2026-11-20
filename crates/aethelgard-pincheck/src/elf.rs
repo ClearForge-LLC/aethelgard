@@ -11,7 +11,8 @@
 //! refused by name (`INV-06`).
 //!
 //! The symbol table itself is trusted: a `st_value` pointing at a decoy copy
-//! is caught only by the `hwdef.h` cross-check (adversarial A6).
+//! of `gpio_default_config` is caught only by the `hwdef.h` cross-check
+//! (adversarial A6), and one of `var_info` by nothing (`AET-WO-4405` A6).
 
 use crate::{GpioConfig, PORTS, PortRegisters, Refusal};
 
