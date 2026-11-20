@@ -139,4 +139,5 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
   - the two crate READMEs (`aethelgard-pincheck`, and the `check pinout` paragraph and exit-3 list in `aethelgard-cli`'s). The work order's rules make their old "read from `hwdef.h`" sentence false, so they were brought true;
   - `spike/4405/` holds Python decode and prediction scripts, as `spike/1303` does. No ELF or `hwdef.h` byte is committed.
   - Nothing else: no generator, IR, specification, `container/`, workflow or `ci/` change.
-- **Status:** built. CI on this head follows; the READY commit comes after it is green.
+- **CI green on `4e92c5b4`** (the final code, `main` `d70a99e5` merged): `ci` run 44714820375 (gates, tools shards, bench-package), `ardupilot-image` run 44714820705 (the four hand boards, the generated boards, **`pinout`**, `foreign`, `pinned`), and `engine-image` run 44714820532. `TIER2_MIN` is unchanged.
+- **Status: READY.** This commit adds only this line and the CI record above, and it is the last push. One PR (#277), left unmerged; the architect merges. The title and body are in `~/.cache/aet-4405/pr-title-body.md`.
