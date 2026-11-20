@@ -1833,6 +1833,11 @@ fn propose_on_the_47k_run_changes_only_the_pull_up_to_2700_in_identical_bytes_tw
     let buses = effective["i2c_buses"].as_array_mut().unwrap();
     let sensors = buses.iter_mut().find(|b| b["id"] == "SENSORS").unwrap();
     sensors["pull_up_ohms"] = json!(2700);
+    // The engine writes version 19's `hse_hz: 0` back as `hse: null`
+    // (`AET-WO-4240a`).
+    let mcu = effective["mcu"].as_object_mut().unwrap();
+    assert_eq!(mcu.remove("hse_hz"), Some(json!(0)));
+    mcu.insert("hse".into(), Value::Null);
     let proposed: Value = serde_json::from_slice(&spec_bytes_out).unwrap();
     assert_eq!(proposed, effective);
     let v = run_cli(
