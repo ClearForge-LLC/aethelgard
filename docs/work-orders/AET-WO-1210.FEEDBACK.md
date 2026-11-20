@@ -4,6 +4,17 @@ Builder: Claude (Opus 5.5), a fresh `1210` session, 2026-11-20, from ~09:40 UTC.
 
 Labels: **measured** (run here), **read** (read at source, file:line), **inferred** (reasoned, not run).
 
+**Status at READY (§11):**
+- **Specification 21,** renumbered after `4240a` took 20 (§9).
+- **Rulings applied:** Q1, F1 and F3 as ruled at 11:10Z, F2 a §7.1 row (§8).
+- **The package** is committed from the architect's dispatch (§11).
+- **Reading order:** §0 to §7 are the build as first pushed; §8 to §11 record what moved since, and supersede them where they differ:
+  - version 20 is now 21;
+  - Q1 was open, and is ruled;
+  - there were 10 mutants, now 13;
+  - §4 A1's `generate` writing `kicad/` and plain `verify` refusing only at its `extract` gate are both changed by F1 (§8).
+- **The prose of F1** is in the IR README, `Board.drawn`'s doc and `drawn.rs`'s module doc, all corrected in the READY commit.
+
 ## 0. The proposal (§1.1 and §1.2), written before any build
 
 ### 0.1 The field: `board.drawn`
@@ -149,7 +160,7 @@ A first run printed every mutant as surviving with no test named. That was the h
 ## 6. Gates, the reduction pass, and the version
 
 - **Gates on `d6cc9edc`** (Furnace, capped scope, `~/.cache/aet-1210/gates-1.log`): `cargo fmt --all -- --check` exit 0; `cargo clippy --workspace --all-targets -- -D warnings` exit 0; `cargo test --workspace`: 144 suites, 2,397 passed, 1 failed, `bench_board_tier1`'s package binding, which waits on the dispatch (§3). Every tier-2 test self-skips here; CI is the run of record.
-- **Reduction pass (diff): −2 net · 0 duplicates removed · 0 dead paths removed · 0 protected kept · 3 findings below.** It ran through a fresh subagent, read-only, on `git diff 943f7112 d6cc9edc`.
+- **Reduction pass (diff): −2 net · 0 duplicates removed · 0 dead paths removed · 0 protected kept · 3 findings below.** It ran through a fresh subagent, read-only, on `git diff 943f7112 d6cc9edc`. F1 and F3 (`e1d6c1d5`) came after it, and were not re-passed. They add one guard in `generate::tree`, one report field and one changed match arm in `verify`, each killed by its mutant (§8).
   - **Removed:** the IR rule-1 test's last `verdict(&reference())`, which other tests already assert; the doc sentence now points to the coverage test for the cited-maximum case.
   - **Declined, with reasons:**
     - R1, dropping `emit`'s `UnknownPart` beside rule 3's refusal: that assertion is §1.5's "early refusal shown beside `main`'s late one".
@@ -221,3 +232,33 @@ A first run printed every mutant as surviving with no test named. That was the h
     - `order_2203`: `main`'s 4241 move is taken, then `main.rs` re-taken at 21. With `ccc80f11…e8b2` put back it is `4241`'s `a95a1bb6…f918` exactly, and the platforms and the boot image did not move [measured].
   - No specification was left at 20 (the script moved 0), and no spec-sha line at 20 remained.
 - **Gates on `55f27fd7`** (`gates-4.log`): fmt and clippy exit 0. `cargo test --workspace`: 146 suites, 2,457 passed, 1 failed, the package binding. `4241`'s tests pass at 21.
+
+## 11. READY
+
+- **The package** (`68a42404`) is from the architect's write=true dispatch: run 44768311591 on `8a654918`, artifact 14647200146 (`bench-package`, success), committed byte for byte.
+  - 15 of 17 files are identical to `main`'s. Only `FAB-NOTES.md` (the specification's sha256) and `MANIFEST.json` move, as expected (§3).
+  - In `MANIFEST.json`, four values move:
+    - `specification_sha256`: `92abdb0d…` → `3973e8d0…`;
+    - `topology_sha256`: `4401d1fb…` → `e4752473…`. With the old specification sha put back in this branch's `solve` output it is `4401d1fb…`, `main`'s, exactly [measured];
+    - `verdict_sha256`, the hash of a verdict that names both [inferred];
+    - `FAB-NOTES.md`'s hash.
+  - Every Gerber, drill, BOM, placement and the ELF are unchanged, and `bench_board_tier1` passes 2/2 locally.
+- **`main` at `8df353ee` merged** (docs, the CLI README and `BENCH.md` only; clean). `solve_cli`, `readme_status`, `bench_board_tier1` and `ci/route.sh check ci/docs-tests.tsv` pass on the merged tree.
+- **Acceptance, at 21:**
+  - **The field and its proposal:** §0.1, committed before any code.
+  - **The inventory:** §0.2, §9; Q1 ruled, so `imu-baro-1v8` alone declares.
+  - **The rules:** rule 1 at step 23, rule 3 in the CLI's `validate`, and the coverage test over every parts row (§1, §3).
+  - **The refusals:**
+    - `DrawsNoBoard` at `emit`, `extract`, `verify` and its two fab flags;
+    - `generate` writes no `kicad/` for a declared specification (F1).
+  - **Tests and mutants:** 13 of 13 killed (§5, §8).
+  - **Nothing committed newly refused:** corpus 55, identical but for "not 21" (§9).
+  - **No emitted byte moves:** 24 boards byte-identical (§9).
+  - **`TIER2_MIN`:** unchanged.
+  - **Gates:** fmt, clippy and the workspace, the last run at `55f27fd7` with only the package binding failing, which this commit fixes (§10).
+- **The corpus at this head:** 58 specification-shaped files, 28 pass, the same 28 as at §9. The 3 new ones arrived with the merges and are refused alike by `main`'s binary at 20 and by this branch's [measured]:
+  - `spike/1211/fixtures/d1-drv8876.json` and `d2-drv8833.json`: `schema_version` `"22-or-23"`, `SchemaViolation`;
+  - `spike/4241/spec/sentinel-01-minimal-no-u3.json`: version 19, `UnsupportedSchemaVersion`.
+
+  None is newly refused.
+- **CI on this READY head is the run of record;** its ids go on the bus.

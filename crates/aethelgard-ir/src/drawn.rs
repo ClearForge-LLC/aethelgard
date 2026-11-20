@@ -1,8 +1,8 @@
 //! What a drawn board needs that `validate` can hold before it is drawn
 //! (`AET-WO-1210`; `AET-WO-1209` §1.1 and §1.3, rules 1 and 3). A
 //! specification that declares `board.drawn: false`, a twin stand-in, is held
-//! to neither: no board is drawn from it, and `emit`, `extract` and the fab
-//! package refuse it by name.
+//! to neither: no board is drawn from it, so `emit`, `extract` and `verify`
+//! refuse it by name and `generate` writes no `kicad/` for it.
 
 use crate::{IrValidationError as E, Specification, parts};
 

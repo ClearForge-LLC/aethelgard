@@ -89,10 +89,11 @@ pub struct Board {
     pub forward: Option<crate::orientation::Edge>,
     /// Whether a board is drawn from this specification (`AET-WO-1210`).
     /// `false` declares that none is: a twin stand-in. `emit`, `extract` and
-    /// the fab package refuse it by name, and `validate` skips the rules a
-    /// drawn board needs (step 23, and the CLI's drawable parts). Absent is
-    /// `true`, the strict case, and `true` is not written back; an explicit
-    /// `null` is refused, as `mcu.reset_switch` refuses it.
+    /// `verify` refuse it by name, `generate` writes no `kicad/` for it, and
+    /// `validate` skips the rules a drawn board needs (step 23, and the CLI's
+    /// drawable parts). Absent is `true`, the strict case, and `true` is not
+    /// written back; an explicit `null` is refused, as `mcu.reset_switch`
+    /// refuses it.
     #[serde(default = "drawn", skip_serializing_if = "is_drawn")]
     pub drawn: bool,
 }
