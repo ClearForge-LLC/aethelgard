@@ -1,0 +1,10 @@
+--- a/crates/aethelgard-cli/src/renode.rs
++++ b/crates/aethelgard-cli/src/renode.rs
+@@ -2100,6 +2100,7 @@
+     // transfer, exactly as the twin lists it, is skipped; nothing else is
+     // (`AET-WO-4200` D2).
+     let (seen, unrouted) = attribute(checks, &last_boot);
++    for l in &last_boot { eprintln!("RAWLOG {l}"); }
+     let witnesses: Vec<Option<Vec<String>>> = seen
+         .into_iter()
+         .map(|w| (out.dropped_log_lines == 0).then_some(w))

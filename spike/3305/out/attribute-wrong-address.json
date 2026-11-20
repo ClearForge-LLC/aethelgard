@@ -1,0 +1,1 @@
+{"ok":true,"check":"attribute","run_id":"e2a6ccb11555c967d8276c34f0476db1","state_sequence_hash":"82b68e4392187a54e80fdc8b00bedac6bd12d5a7ec65b5fe19af8ac65cc9de81","domain":"software","rule":"S1","evidence":[{"index":4,"kind":7},{"index":5,"kind":7},{"index":28,"kind":13}],"symptoms":[{"index":26,"kind":12}],"masked":[],"unexplained":[],"subjects":["bus:SENSORS","device:U2"]}

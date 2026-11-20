@@ -1,0 +1,36 @@
+== archives/91b1e136ec3cc53e5754e43d66a196dc
+[2] kind 15: I2cBusSolved { bus: "SENSORS", peripheral: "I2C1", lines: [BusLine { signal: "I2C1_SCL", net: "I2C_SCL", pin: "PB6", alternate_function: 4, ceiling_ps: 300000 }, BusLine { signal: "I2C1_SDA", net: "I2C_SDA", pin: "PB7", alternate_function: 4, ceiling_ps: 300000 }], devices: [("U2", 118), ("U3", 72), ("U5", 119)] }
+[4] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SCL", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[5] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SDA", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some(["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"]), absent: [] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]), absent: [] }
+[32] kind 14: Verdict { pass: true, findings: [("device_unmodelled", "info", 1)] }
+== archives/ad3c8f86b3ccb19b46c79a6622948925
+[2] kind 15: I2cBusSolved { bus: "SENSORS", peripheral: "I2C1", lines: [BusLine { signal: "I2C1_SCL", net: "I2C_SCL", pin: "PB6", alternate_function: 4, ceiling_ps: 300000 }, BusLine { signal: "I2C1_SDA", net: "I2C_SDA", pin: "PB7", alternate_function: 4, ceiling_ps: 300000 }], devices: [("U2", 118), ("U3", 72), ("U5", 119)] }
+[4] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SCL", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[5] kind 9: BusFault { bus: "SENSORS", fault: "absent", source: "scenario held-low-sda", from: ["scenario.line_held_low"], nets: ["I2C_SDA"], firmware_sees: "the bus's devices are absent from the platform. Renode 1.17.0 models no NACK, so the firmware sees the absence as a TXIS timeout: the model's rendering of the NACK an unreadable address draws, not a measured waveform (AET-WO-2101 S6)" }
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(0), status: Some("timeout_txis") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(0), status: Some("timeout_txis") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [118, 119] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some([]), absent: [118, 119] }
+[32] kind 14: Verdict { pass: false, findings: [("device_unmodelled", "info", 1), ("i2c_line_held_low", "error", 1), ("i2c_timeout", "error", 2)] }
+== archives/e2a6ccb11555c967d8276c34f0476db1
+[2] kind 15: I2cBusSolved { bus: "SENSORS", peripheral: "I2C1", lines: [BusLine { signal: "I2C1_SCL", net: "I2C_SCL", pin: "PB6", alternate_function: 4, ceiling_ps: 300000 }, BusLine { signal: "I2C1_SDA", net: "I2C_SDA", pin: "PB7", alternate_function: 4, ceiling_ps: 300000 }], devices: [("U2", 118), ("U3", 72), ("U5", 119)] }
+[4] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SCL", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[5] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SDA", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(0), status: Some("timeout_txis") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [117] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]), absent: [117] }
+[32] kind 14: Verdict { pass: false, findings: [("device_unmodelled", "info", 1), ("i2c_timeout", "error", 1)] }
+== archives/0197d90bbf3b74ed5e95b85a768cb0d6
+[2] kind 15: I2cBusSolved { bus: "SENSORS", peripheral: "I2C1", lines: [BusLine { signal: "I2C1_SCL", net: "I2C_SCL", pin: "PB6", alternate_function: 4, ceiling_ps: 300000 }, BusLine { signal: "I2C1_SDA", net: "I2C_SDA", pin: "PB7", alternate_function: 4, ceiling_ps: 300000 }], devices: [("U2", 118), ("U3", 72), ("U5", 119)] }
+[4] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SCL", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[5] kind 7: RiseComputed { bus: "SENSORS", net: "I2C_SDA", rise_30_70_ps: 186402, complete: true, ceiling_ps: 300000, exceeds: false, window: Window { deck_hz: 400000, declared_hz: 400000 } }
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60", "[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]), absent: [] }
+[32] kind 14: Verdict { pass: false, findings: [("device_unmodelled", "info", 1), ("i2c_transaction_unwitnessed", "error", 2)] }
