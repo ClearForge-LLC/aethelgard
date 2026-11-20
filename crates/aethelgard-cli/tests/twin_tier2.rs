@@ -2008,7 +2008,8 @@ fn windowed_dshot(v: &Value, rises: u64) {
     assert_eq!(
         v["boot"]["residuals"],
         serde_json::json!([
-            "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact"
+            "after its window a firmware reading its timer sees it stopped (CEN cleared by the judge): a twin artifact",
+            aethelgard_twin::serial::PWR_RESIDUAL
         ])
     );
     let memory = &v["memory"];
@@ -4082,6 +4083,10 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         }
         if source == "flashController" {
             return Some("FLASH".into());
+        }
+        // The emitted PWR override (`AET-WO-4240v` D-3 (a)).
+        if source == "pwr" {
+            return Some("PWR".into());
         }
         // Renode's `nvic` is the whole system control space from 0xE000E000.
         if source == "nvic" {

@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail/timer_pin_unconfigured.rs:23:55
+  --> tests/ui/fail/timer_pin_unconfigured.rs:24:55
    |
-23 |     let _running = tim1.start_outputs(&mut r, &clock, a.pa8, ch2, ch3, ch4);
+24 |     let _running = tim1.start_outputs(&mut r, &clock, a.pa8, ch2, ch3, ch4);
    |                         -------------                 ^^^^^ expected `PA8<AlternateFunction<1>>`, found `PA8<Unconfigured>`
    |                         |
    |                         arguments to this method are incorrect

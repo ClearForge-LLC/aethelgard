@@ -814,7 +814,98 @@ pub fn emit_faulted(
     emit_observers(&mut out, topology)?;
     out.push_str(&crate::boot::brown_out(topology)?.presentation());
     emit_clock(&mut out, topology);
+    if topology.foreign_clock.is_none() {
+        out.push_str(&pwr_override()?);
+    }
     Ok(out)
+}
+
+/// The PWR the generated firmware's bring-up meets (`AET-WO-4240v` §1.6,
+/// D-3 (a)): an update entry that replaces the script of the stock `pwr`
+/// stub ([`STOCK_FILE`] L728–745, a `Python.PythonPeripheral` that drops
+/// every write and reads `PWR_CR3`'s supply bits 0), written from RM0433 Rev
+/// 9, never from the generator. Emitted only on a generated platform: a
+/// platform with `mcu.foreign_clock` keeps the stock stub byte for byte
+/// (`AET-WO-4400g`'s ArduPilot witnesses). Measured in Renode 1.17.0
+/// (`AET-WO-4240v` FEEDBACK): the entry replaces the stock script, and
+/// `LogPeripheralAccess` logs the script's accesses as any model's.
+///
+/// What it holds, in the script's own globals:
+/// - `PWR_CR3` reads [`crate::serial::PWR_CR3_POR`], revision V's power-on
+///   value (§6.8.4, p. 307), until the first write; that write is stored
+///   whole but for `USB33RDY` (bit 26, read-only and 0 at POR: no USB is
+///   modelled, so the stock stub's 1 there is not kept), and every later write
+///   is ignored, as the write-once lower byte is on silicon (p. 308);
+/// - `PWR_D3CR` reads `VOS` as stored, `01` (Scale 3) from reset (p. 310:
+///   reset `0x0000 4000`), with `VOSRDY` 1 ("Following reset VOSRDY will be
+///   read 1"); a write stores `VOS` alone, every other bit reserved or
+///   read-only;
+/// - `PWR_CSR1` reads `ACTVOS` equal to the stored `VOS` and `ACTVOSRDY` 1
+///   (§6.8.2), as the stock stub's `0x6000` does at reset;
+/// - every other offset answers as the stock stub does (`CR1` `0xF000C100`,
+///   any other a warning and 0).
+///
+/// The residue ([`crate::serial::PWR_RESIDUAL`]): `ACTVOSRDY` and `VOSRDY`
+/// never read 0, so the twin never sees a wait time out, and an invalid
+/// `LDOEN`/`BYPASS` pair is stored rather than locking the register with the
+/// default kept (p. 308; [`crate::serial::judge_pwr`] names the write); no
+/// Run* mode is modelled; no twin clock depends on `VOS`, so a firmware left
+/// at VOS3 at 64 MHz runs the same, and only `aethelgard_ir::vos` refuses
+/// it; and `PWR_CR3`'s lock across a warm reset is modelled only as far as
+/// the stored first write: Renode re-runs the script's initialization at
+/// `machine Reset` (measured), so the twin's warm reset is a power-on reset
+/// for `PWR_CR3`.
+pub fn pwr_override() -> Result<String, TwinError> {
+    let f = cmsis::register_facts()?;
+    let pwr = f.layout("PWR")?;
+    let (cr1, csr1, cr3, d3cr) = (
+        pwr.offset("CR1", 0)?,
+        pwr.offset("CSR1", 0)?,
+        pwr.offset("CR3", 0)?,
+        pwr.offset("D3CR", 0)?,
+    );
+    let (vos_pos, vos_width) = f.field("PWR_D3CR_VOS")?;
+    let vos_mask = ((1u32 << vos_width) - 1) << vos_pos;
+    let vos_reset = 1u32 << vos_pos;
+    let vosrdy = 1u32 << f.position("PWR_D3CR_VOSRDY_Pos")?;
+    let actvosrdy = 1u32 << f.position("PWR_CSR1_ACTVOSRDY_Pos")?;
+    // `ACTVOS` is read as the stored `VOS` in place: both fields are bits
+    // 15:14 (header L14460, L14552), which a tier-1 test holds.
+    let usb33rdy = 1u32 << f.position("PWR_CR3_USB33RDY_Pos")?;
+    Ok(format!(
+        "\n// The PWR (AET-WO-4240v D-3 (a)): the stock stub's script replaced, from RM0433 Rev 9\n\
+         // §6.8: PWR_CR3 reads revision V's power-on 0x{por:08X} until its first write, stores that\n\
+         // write (USB33RDY 0) and ignores later ones; PWR_D3CR stores VOS (Scale 3 from reset) with\n\
+         // VOSRDY 1; PWR_CSR1 reads ACTVOS as the stored VOS with ACTVOSRDY 1; any other offset as stock.\n\
+         pwr:\n\
+         \x20   initable: true\n\
+         \x20   script: '''\n\
+         if request.IsInit:\n\
+         \x20   cr3 = 0x{por:08X}\n\
+         \x20   cr3_written = False\n\
+         \x20   vos = 0x{vos_reset:08X}\n\
+         elif request.Offset == 0x{cr1:02X}:\n\
+         \x20   request.Value = 0xF000C100\n\
+         elif request.Offset == 0x{csr1:02X}:\n\
+         \x20   request.Value = vos | 0x{actvosrdy:08X}\n\
+         elif request.Offset == 0x{cr3:02X}:\n\
+         \x20   if request.IsWrite:\n\
+         \x20       if not cr3_written:\n\
+         \x20           cr3 = request.Value & 0x{keep:08X}\n\
+         \x20           cr3_written = True\n\
+         \x20   else:\n\
+         \x20       request.Value = cr3\n\
+         elif request.Offset == 0x{d3cr:02X}:\n\
+         \x20   if request.IsWrite:\n\
+         \x20       vos = request.Value & 0x{vos_mask:08X}\n\
+         \x20   else:\n\
+         \x20       request.Value = vos | 0x{vosrdy:08X}\n\
+         else:\n\
+         \x20   self.WarningLog(\"Unhandled access to offset 0x{{0:X}}\", request.Offset)\n\
+         '''\n",
+        por = crate::serial::PWR_CR3_POR,
+        keep = !usb33rdy,
+    ))
 }
 
 /// The kernel clock the twin builds timer `n` at (`AET-WO-4400g` §1.1–§1.2):

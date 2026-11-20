@@ -1,20 +1,20 @@
 error[E0308]: arguments to this method are incorrect
-  --> tests/ui/fail/usart_foreign_pins.rs:21:26
+  --> tests/ui/fail/usart_foreign_pins.rs:22:26
    |
-21 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
+22 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
    |                          ^^^^^^^^^
    |
 note: expected `PA9<AlternateFunction<7>>`, found `PD8<AlternateFunction<7>>`
-  --> tests/ui/fail/usart_foreign_pins.rs:21:52
+  --> tests/ui/fail/usart_foreign_pins.rs:22:52
    |
-21 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
+22 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
    |                                                    ^^^
    = note: expected struct `PA9<AlternateFunction<7>>`
               found struct `PD8<AlternateFunction<7>>`
 note: expected `PA10<AlternateFunction<7>>`, found `PD9<AlternateFunction<7>>`
-  --> tests/ui/fail/usart_foreign_pins.rs:21:57
+  --> tests/ui/fail/usart_foreign_pins.rs:22:57
    |
-21 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
+22 |     let _usart1 = usart1.configure(&mut r, &clock, tx3, rx3);
    |                                                         ^^^
    = note: expected struct `PA10<AlternateFunction<7>>`
               found struct `PD9<AlternateFunction<7>>`

@@ -1,7 +1,7 @@
 error[E0308]: arguments to this method are incorrect
-  --> tests/ui/fail/swapped_pins.rs:15:20
+  --> tests/ui/fail/swapped_pins.rs:16:20
    |
-15 |     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, sda, scl);
+16 |     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, sda, scl);
    |                    ^^^^^^^^^^^^^^^^^^^                 ---  --- expected `PB7<AlternateFunction<4>>`, found `PB6<AlternateFunction<4>>`
    |                                                        |
    |                                                        expected `PB6<AlternateFunction<4>>`, found `PB7<AlternateFunction<4>>`
@@ -13,6 +13,6 @@ note: method defined here
    |            ^^^^
 help: swap these arguments
    |
-15 -     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, sda, scl);
-15 +     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, scl, sda);
+16 -     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, sda, scl);
+16 +     let _bus = i2c.init::<Fast400k, _>(&mut r, &clock, scl, sda);
    |

@@ -211,13 +211,18 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
             checked.1 += 1;
         }
         // No configuration register is read-modify-written (D5): the only
-        // `modify` left is an RCC gate's or a pin field's.
+        // `modify` left is an RCC gate's, a pin field's, or `PWR_CR3`'s supply
+        // bits, which keep every other bit as read (`AET-WO-4240v` §1.4:
+        // reserved bits "must be kept at reset value", RM0433 Rev 9 §6.8.4).
         for line in board.lines().filter(|l| l.contains("r.modify(")) {
             assert!(
-                line.contains("Block::Rcc") || line.contains("Block::Gpio"),
+                line.contains("Block::Rcc")
+                    || line.contains("Block::Gpio")
+                    || line.contains("r.modify(TOKEN, Block::Pwr, 0x0c, "),
                 "{name}: {line}"
             );
         }
+        assert_eq!(board.matches("Block::Pwr, 0x0c, |v|").count(), 1, "{name}");
     }
     eprintln!(
         "{} fixtures, {} SPI and {} I2C controllers",

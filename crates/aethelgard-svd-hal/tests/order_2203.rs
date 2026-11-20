@@ -183,22 +183,45 @@ fn digests() -> Vec<(&'static str, String)> {
 /// document's devices or platform read): `main.rs` and the two platforms,
 /// which carry the specification's sha256; the boot image did not move
 /// (measured).
+/// Moved again by `AET-WO-4240v`'s declaration (specification 18, now 19,
+/// `mcu.core_supply`), which changes no generator of these: with the
+/// version-17 specification's sha256 (`6deadfe4…e9c9`) put back for the new
+/// (`ab8ca1d8…c110`) in each text, `main.rs` and the two platforms are
+/// `5c770e1c…4722`, `88ab17b6…ce6d` and `2a8151a8…de84` exactly (measured);
+/// the boot image did not move. Then `main.rs` moved again by
+/// `AET-WO-4240v` §1.4, on purpose: the supply and VOS Scale 2 first, its
+/// three fault words and `PWR_POLLS`, `pwr` taken from the board and
+/// `reset_clock` given the token (`16a2f0ba…bae1` before); the two
+/// platforms and the boot image did not move. Then each moved once more, at
+/// the merge of `AET-WO-4240v`'s twin slice and its acknowledgements (§1.7),
+/// measured on the minimal specification as it was before them: `main.rs` is
+/// `f30204e8…de95` exactly there, so it moved by the specification's sha256
+/// only; each platform, cut before its `// The PWR (AET-WO-4240v` block (the
+/// `pwr` override, D-3 (a)), is `55d10bbd…1f0d` and `2a4eaea9…e4a5` exactly;
+/// and the boot image is the new digest there too, so it moved only by
+/// `Image::unobservable`'s `PWR.CSR1.ACTVOSRDY` and `PWR.D3CR.VOSRDY`.
+/// Re-taken at the merge of `main` after `2304b` (`AET-WO-4240v`,
+/// specification 19, which adds `2304b`'s keys and renumbers): with the
+/// document's sha256 before the merge (`45b7fbfb…`) put back for the new
+/// (`ffd83362…`) in each text, `main.rs` and the two platforms are
+/// `427baa54…7b38`, `81a4ecac…fb2d` and `7b36e730…d61b` exactly, the digests
+/// before the merge (measured); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "aa59544ec619451c74b3027b1e093f92e21d9b840594d9d360ad180b090fd7b1",
+        "f443af765a0c5090b3e80c26d82fd1f6b8ac3f1dd0fc0883b2ea6e7a07332c3a",
     ),
     (
         "platform",
-        "701d03ebc4c3bdfe55792fb0ebe5dada13f465af8f6fbe09871aa414af245853",
+        "b57442b48ae3bcbcd73a50a2b12c4167b127305a384a6bf42ddc8179d430e5e9",
     ),
     (
         "platform faulted",
-        "35a1f8d60089db17f98f4d4e8f88dd7ec8ec0f144ac99b9ad4596b401da6b00f",
+        "455de730d725dee2c6731b96e2d64f27c6b1974cd4832dc68508a0dc66d27a7c",
     ),
     (
         "boot image",
-        "d891e90edfe7db3a91d7b48015e6e7f3254a8dbbb473160a68022b1fd0e7b221",
+        "45865bbd466aa31db6b8cd4a7d97fa1273992d69ac8823189347e4190d5dc0de",
     ),
 ];
 
