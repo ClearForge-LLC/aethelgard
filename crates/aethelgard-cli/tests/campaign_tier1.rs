@@ -2472,6 +2472,14 @@ fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
     );
     assert_eq!(all[0]["scenario"], "droop-bor3");
     assert_eq!(all[0]["matched"], true, "{all:?}");
+    // `AET-WO-2306`'s count, with U3's unmodelled read on the board
+    // (`AET-WO-4241` §1.3): the one release is judged by U2's witness, and
+    // U3's `identity_not_witnessable` adds nothing to it.
+    assert_eq!(
+        all[0]["observation_witness"],
+        json!({"judged": 1}),
+        "{all:?}"
+    );
     // The stub exits 98 unless handed exactly `--disable-gui --console
     // --plain -e <one line>`: Renode's history is that one line.
     let run = PathBuf::from(all[0]["run"].as_str().unwrap());

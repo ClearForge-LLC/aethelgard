@@ -1340,6 +1340,21 @@ fn a_passing_identity_read_passes_and_the_unmodelled_part_is_reported_as_info() 
     let f = finding(&v, "identity_not_witnessable").expect("U3 is reported");
     assert_eq!(f["severity"], "info");
     assert!(f["message"].as_str().unwrap().contains("U3 (TMP117)"));
+    // `AET-WO-4241` §1.3: U3's read is in `not_witnessable` alone, never in
+    // the witness arrays the campaign archives as I2C and SPI witnesses,
+    // which are what `AET-WO-2306`'s droop `judged` counts.
+    let b = &v["boot"];
+    assert_eq!(b["not_witnessable"]["count"], 1, "{v}");
+    assert_eq!(b["not_witnessable"]["reads"][0]["reference"], "U3", "{v}");
+    for list in ["i2c", "i2c_witness", "spi", "spi_witness"] {
+        let refs: Vec<&str> = b[list]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|r| r["reference"].as_str())
+            .collect();
+        assert!(!refs.contains(&"U3"), "{list}: {refs:?}");
+    }
     assert_eq!(v["findings"].as_array().unwrap().len(), 1, "{v}");
 }
 

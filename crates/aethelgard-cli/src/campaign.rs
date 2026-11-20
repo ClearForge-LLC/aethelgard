@@ -917,7 +917,7 @@ struct ScenarioLine {
 }
 
 /// Why a droop's observations judged no device (`AET-WO-2306`).
-pub(crate) const NO_WITNESSED_DEVICE: &str = "no witnessed device: the boot reads no device's identity, so each recovery is judged by the boot word alone";
+pub(crate) const NO_WITNESSED_DEVICE: &str = "no witnessed device: the boot reads no modelled device's identity (an unmodelled one's is not witnessable), so each recovery is judged by the boot word alone";
 
 /// The witness scope of a run's droop observations, from the records replay
 /// judges: each release has one observation, judged against the first

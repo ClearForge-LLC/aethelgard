@@ -472,7 +472,7 @@ jobs:
       # devices_is_not_masked_and_a_wrong_address_still_is_software.
       # 195 (AET-WO-2306, on main 416a6dd3; CI counted 195 on bc96bc3f): one
       # tier-2 test, board_tier2.rs verify_names_what_judged_nothing_on_the_motor_driver.
-      TIER2_MIN: "195"
+      TIER2_MIN: "196"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
       # only when the route job succeeded, said docs, and the build and every shard were skipped.

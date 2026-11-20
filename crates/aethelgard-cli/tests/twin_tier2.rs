@@ -944,6 +944,133 @@ fn a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// The instructions the core had executed at each write of `words`, in
+/// order, in one boot of `elf` on the emitted platform, Renode run directly
+/// (as [`record_on`]): a watchpoint hook on each word logs its index and
+/// `cpu.ExecutedInstructions`.
+fn writes_at(elf: &Path, words: &[u32]) -> Vec<Vec<u64>> {
+    let boot_word = aethelgard_twin::boot::boot_word().unwrap();
+    let mut commands = vec![
+        "emulation SetSeed 2100".to_owned(),
+        "mach create".to_owned(),
+        format!("machine LoadPlatformDescription @{}", platform().display()),
+        format!("sysbus LoadELF @{}", elf.display()),
+        format!("sysbus WriteDoubleWord {boot_word:#010x} 0x0"),
+        "cpu VectorTableOffset 0x08000000".to_owned(),
+    ];
+    for (k, at) in words.iter().enumerate() {
+        commands.push(format!(
+            "sysbus AddWatchpointHook {at:#010x} DoubleWord Write \"self.Log(LogLevel.Warning, 'AET4241-WRITE {k} %d' % cpu.ExecutedInstructions)\""
+        ));
+    }
+    commands.extend([
+        "emulation RunFor \"0.100000000\"".to_owned(),
+        "quit".to_owned(),
+    ]);
+    let _turn = renode_turn();
+    let out = Command::new("renode")
+        .args([
+            "--disable-gui",
+            "--console",
+            "--plain",
+            "-e",
+            &commands.join("; "),
+        ])
+        .env("DOTNET_EnableDiagnostics", "0")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout).replace('\r', "");
+    let mut at = vec![Vec::new(); words.len()];
+    for line in text.lines() {
+        // A hook's own log line; the monitor's echo of the command carries
+        // the format, `%d`, which is no count.
+        if let Some(rest) = line.split("AET4241-WRITE ").nth(1)
+            && let Some((k, n)) = rest.trim().split_once(' ')
+            && let (Ok(k), Ok(n)) = (k.parse::<usize>(), n.parse::<u64>())
+        {
+            at[k].push(n);
+        }
+    }
+    at
+}
+
+/// `AET-WO-4241`, the architect's D4 (a), ruled 11:10Z: the unmodelled
+/// TMP117's identity read, made after every modelled step, moves no modelled
+/// step's record and its status write by at most a bounded pre-step shift
+/// (the record array's two more `.bss` words, 8 instructions of the reset's
+/// zeroing loop, and `main`'s code generation): measured −2 to +25
+/// instructions across the committed boards, bound here at 32 (0.32 µs at
+/// 100 MIPS). The reference firmware, against itself with U3's read and its
+/// record removed (the board without U3): U2's and U4's status writes each
+/// happen once in each, within the bound; the boot word follows by U3's
+/// TXIS wait, milliseconds later.
+#[test]
+fn the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions() {
+    const BOUND: u64 = 32;
+    let without = mutant("no-u3", |dir| {
+        edit(
+            dir,
+            "src/main.rs",
+            "static mut AETHELGARD_BOOT: [u32; 8] = [0; 8];",
+            "static mut AETHELGARD_BOOT: [u32; 6] = [0; 6];",
+        );
+        edit(
+            dir,
+            "src/main.rs",
+            "    let mut buf2 = [0u8; 2];
+    let (status, value) = match i2c1.transfer(&mut r, 0x48, &[0x0f], &mut buf2) {
+        Ok(_) => (
+            STATUS_OK,
+            buf2.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+        ),
+        Err(I2cError::Txis) => (STATUS_TXIS, 0),
+        Err(I2cError::Tc) => (STATUS_TC, 0),
+        Err(I2cError::Rxne) => (STATUS_RXNE, 0),
+        Err(I2cError::Stop) => (STATUS_STOP, 0),
+        Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),
+    };
+    record(2, status, value);
+",
+            "",
+        );
+    });
+    let image = aethelgard_twin::boot::expected(&topology()).unwrap();
+    let checks = &image.identity.checks;
+    assert_eq!(checks.len(), 2, "U2, then U4");
+    let words: Vec<u32> = checks
+        .iter()
+        .map(|c| c.status_at)
+        .chain([aethelgard_twin::boot::boot_word().unwrap()])
+        .collect();
+    let with = writes_at(firmware(), &words);
+    let without = writes_at(&without, &words);
+    answer(&format!("4241 D4: with U3 {with:?}, without {without:?}"));
+    for (k, c) in checks.iter().enumerate() {
+        let (a, b) = (&with[k], &without[k]);
+        assert!(
+            a.len() == 1 && b.len() == 1,
+            "{} writes its status once: {a:?} {b:?}",
+            c.reference
+        );
+        assert!(
+            a[0].abs_diff(b[0]) <= BOUND,
+            "{}'s status write moves {} instructions: {} with U3, {} without",
+            c.reference,
+            a[0].abs_diff(b[0]),
+            a[0],
+            b[0]
+        );
+    }
+    // The boot word's last write, by the TXIS wait (3.6 ms measured): the
+    // twin's cost, which the verdict states, not a modelled step's.
+    let (a, b) = (with[2].last().unwrap(), without[2].last().unwrap());
+    assert!(
+        a > &(b + 300_000),
+        "the boot word is later by U3's wait: {a} against {b}"
+    );
+}
+
 #[test]
 fn a_firmware_that_skips_the_read_or_its_record_cannot_pass() {
     // Adversarial 1, on Renode itself. Skipping the transfer leaves the read
@@ -1442,13 +1569,20 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     // word, 25.75 us later than at 100 us, so the loop starts later again
     // and 183,681 is past the run's end (measured: no locked access); at
     // about 50 ns a pair that is some 515 pairs, and the read moves 600
-    // earlier, to 183,081, still deep in the flood.
+    // earlier, to 183,081, still deep in the flood. Since `AET-WO-4241` the
+    // TMP117's identity read, the board's one unmodelled device, comes
+    // before the boot word, and its TXIS wait in the twin moves the boot
+    // word and everything after it 360,099 instructions later (measured on
+    // the reference, `spike/4241/out/rejudge`, 2662 -> 362761): at 5
+    // instructions a pair, 72,020 pairs, so the read moves to 111,061,
+    // 900 pairs before the run's end as before (the architect's D3: re-pinned
+    // from the stated shift).
     let elf = mutant("flood-locked", |d| {
         edit(
             d,
             "src/main.rs",
             "    // No sleep: the judge requires instructions executed to equal MIPS x time.\n    loop {\n        core::hint::spin_loop();\n    }\n",
-            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 183081 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
+            "    let mut n: u32 = 0;\n    loop {\n        unsafe { core::ptr::read_volatile(0x40005424 as *const u32); core::ptr::write_volatile(0x4000541c as *mut u32, 0x10); }\n        if n == 111061 { unsafe { core::ptr::read_volatile(0x5802_0800 as *const u32); } }\n        n = n.wrapping_add(1);\n    }\n",
         );
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
@@ -2073,6 +2207,11 @@ fn the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot() {
 /// inside the run and the board passes (the pattern-counting sum named
 /// both); at about 94.5 ms the frame cannot fit, named, and the echo is cut
 /// short, named (the adversary's 2.65M, 2.9M and 3.15M spins, measured).
+/// Since `AET-WO-4241` the board's unmodelled TMP117 is read before the boot
+/// word, and its TXIS wait in the twin moves the boot word 3 600 980 ns
+/// later (measured on this board, 31 660 -> 3 632 640 ns, `spike/4241`): at
+/// the spin's 30 ns, 120 033 spins come off each, so the boot words are
+/// where they were (the architect's D3: re-pinned from the stated shift).
 #[test]
 fn a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word() {
     let late = |label: &str, spins: u32| {
@@ -2094,7 +2233,7 @@ fn a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word() {
         let bw = v["boot"]["boot_word_ns"].as_u64().unwrap();
         (code, v, bw)
     };
-    for (label, spins, from_ms) in [("a2-3-79ms", 2_650_000, 79), ("a2-3-87ms", 2_900_000, 87)] {
+    for (label, spins, from_ms) in [("a2-3-79ms", 2_529_967, 79), ("a2-3-87ms", 2_779_967, 87)] {
         let (code, v, bw) = late(label, spins);
         assert_eq!(bw / 1_000_000, from_ms, "{label}: the boot word at {bw} ns");
         assert_eq!(code, Some(0), "{label}: {v}");
@@ -2105,7 +2244,7 @@ fn a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word() {
         assert_eq!(t["injected_bytes"], 8, "{label}: {t}");
         windowed_dshot(&v, 1000);
     }
-    let (code, v, bw) = late("a2-3-94ms", 3_150_000);
+    let (code, v, bw) = late("a2-3-94ms", 3_029_967);
     assert_eq!(bw / 1_000_000, 94, "the boot word at {bw} ns");
     assert_eq!(code, Some(1), "{v}");
     let k = kinds(&v);
@@ -2165,7 +2304,12 @@ fn the_sentinel_02_shaped_board_is_witnessed_whole() {
 /// firmware with a 2 000 000-spin settle before `start_outputs` puts TIM1's
 /// `CEN` at 99.07 ms. 0.93 ms of DShot would pass a 100 ms window; the
 /// anchored window ends past the run, named, and the outputs stop short of
-/// its end.
+/// its end. Since `AET-WO-4241` the board's unmodelled TMP117 is read before
+/// `start_outputs`, and its TXIS wait in the twin moves everything after it
+/// 3 600 810 ns later (measured on this board, `spike/4241/out/rejudge`): at
+/// the settle's 30 ns a spin, 120 027 spins, so the settle is 1 879 973 and
+/// `CEN` is at 99.07 ms again, late by the same margin for the same cause
+/// (the architect's D3: re-pinned from the stated shift).
 #[test]
 fn f2_a_late_dshot_anchor_fails_by_name() {
     let (platform, spec, elf) = motor_board(
@@ -2177,7 +2321,7 @@ fn f2_a_late_dshot_anchor_fails_by_name() {
                 d,
                 "src/main.rs",
                 "    let _tim1 = tim1.start_outputs",
-                "    settle(2_000_000);\n    let _tim1 = tim1.start_outputs",
+                "    settle(1_879_973);\n    let _tim1 = tim1.start_outputs",
             );
         },
     );
@@ -2187,6 +2331,10 @@ fn f2_a_late_dshot_anchor_fails_by_name() {
     assert!(k.contains(&"motor_window_past_run"), "{v}");
     let anchor = motors(&v)[0]["twin"]["anchor_ns"].as_u64().unwrap();
     assert!(anchor > 98_000_000, "{anchor}");
+    // Its own cause, not everything late (`AET-WO-4241`): the anchor is
+    // inside the run and the boot reached its fixed point.
+    assert!(anchor < 100_000_000, "{anchor}");
+    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
     for m in motors(&v) {
         assert_eq!(m["twin"]["status"], "stopped", "{m}");
     }
@@ -2336,10 +2484,16 @@ fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
 /// `wall_bound_exceeded` on a CI shard (run 44007663813, job 133786836234:
 /// 34 s against the 30 s bound, 851 per mille of memory); the outcome
 /// depends on the machine's speed, so no test asserts it.
+/// Since `AET-WO-4241` the board's unmodelled TMP117 is read before the
+/// outputs start, and its TXIS wait in the twin moves everything after it
+/// 3 600 810 ns later (measured on this board, `spike/4241/out/rejudge`): at
+/// 30 ns a spin, 120 027 spins come off the wait, so the DMA start is at
+/// about 96.9 ms again; the boot must reach its fixed point, so the fault
+/// this test plants is inside the run (its cause kept, not its symptom).
 #[test]
 fn m2_a_dma_start_of_cen_fails_closed_by_name() {
     let body = format!(
-        "    spin(3_230_000);\n{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
+        "    spin(3_109_973);\n{START}\n    let en = rd(0x5802_44d8);\n    wr(0x5802_44d8, en | 2);\n    let _ = rd(0x5802_44d8);\n    let mut src: u32 = 0x81;\n    unsafe {{ core::ptr::write_volatile(&raw mut src, 0x81) }};\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x4002_0418, (&raw const src) as u32);\n    wr(0x4002_041c, 0x4001_0000);\n    wr(0x4002_0414, 1);\n    wr(0x4002_0410, (0b10 << 6) | (2 << 11) | (2 << 13) | 1);\n    spin(1_000);\n    wr(0x4002_0410, 0);\n    wr(0x4002_0408, 0x3d);\n    wr(0x5802_44d8, en);"
     );
     let (code, v) = dshot_mutant(
         "m2-dma-start",
@@ -2347,6 +2501,10 @@ fn m2_a_dma_start_of_cen_fails_closed_by_name() {
         &[(START, &body)],
     );
     assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        v["boot"]["boot_word"]["observed"], "0x2100b007",
+        "the planted start is inside the run: {v}"
+    );
     let k = kinds(&v);
     assert_eq!(
         k.iter()

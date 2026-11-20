@@ -32,6 +32,64 @@ Each statement is labelled:
      - **With 2305 trial-merged (clean), all three pass** (measured, `out/rejudge/trial-2305*`). That is the
        ruling's prediction.
      - Per D3 the flip is a stop until 2305 merges, and then I re-run it.
+- **The second stop, ruled at 11:10Z:**
+  - **D4, (a):** the bounded pre-step shift is accepted. The bound is stated here: each modelled status write moves
+    at most 32 instructions (0.32 µs) for the unmodelled reads. It is held by a tier-2 test,
+    `twin_tier2::the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions`.
+    - The test runs Renode directly, on the reference firmware with U3's read and against itself with that read and
+      its record removed. It hooks U2's and U4's status words, and requires each written once and within 32
+      instructions, and the boot word later by U3's wait.
+    - It has a weight row in `ci/test-weights.tsv` (45 s, an estimate until the refit rule measures it), and
+      `TIER2_MIN` rises 195 → 196.
+  - **D5, confirmed:** after 2305 lands, merge `main`, re-run the re-judge, and confirm the three droops pass.
+- **CI on `f48cadd7`, every failure root-caused (the architect's 11:12Z note):**
+  - **Shards 3 and 4**, `against_fab_tier2`, and **shard 0**, `board_tier2::every_admitted_identifier_character…`:
+    each `verify` runs a droop that is `brownout_unrecovered`. That is D5, fixed by 2305.
+  - **Shard 10, `the_dshot600_fixture_s_campaign_passes_inside_its_window`:** the campaign runs `dshot600.json`,
+    which passes with findings `[]`, and `dshot600-droop.json`, the third D5 flip. That flip is the exit 1. No
+    window or instant is involved: in the re-judge every dshot line but the droop is unchanged. The test is
+    unchanged, and passes once 2305 is in (the trial merge passed this droop).
+  - **Shard 10, `a_locked_access_late_in_a_flood_reaches_the_judge_whole`:** D3's stated shift.
+    - The mutant's locked read sits at a flood pair pinned 900 pairs before the 10 ms run's end. The flood starts
+      after the boot word, which is 360,099 instructions later, measured on the reference (2662 → 362761). So pair
+      183,081 fell past the run's end, leaving no locked access in the boot.
+    - **Re-pinned from the stated shift, not widened:** 360,099 instructions at 5 instructions a pair (the test's
+      own 50 ns a pair) is 72,020 pairs, so the read moves to 111,061, 900 pairs before the end as before.
+    - The judged access is the same `GPIOC.MODER` read, so no verdict or judged access changes. §Gates gives the
+      result in the image.
+  - **Shard 7, `a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word`:** D3's stated shift.
+    - The test calibrates boot-word lateness by spins before the boot word, and the boot word moved 3,600,980 ns,
+      measured on serial-dshot-9600 (31,660 → 3,632,640 ns, `main` against the branch).
+    - At 30 ns a spin, 120,033 spins come off each: 2,650,000 → 2,529,967, 2,900,000 → 2,779,967 and
+      3,150,000 → 3,029,967.
+    - Verified in the image: 79 and 87 ms pass, and 94 ms fails with `serial_wire_past_run` and
+      `serial_echo_missing`, as before.
+  - **Negative tests that kept failing but lost their cause** (shard 5 `f2_a_late_dshot_anchor_fails_by_name`,
+    shard 11 `m2_a_dma_start_of_cen_fails_closed_by_name`).
+    - **Neither mutant passed.** Each still fails (exit 1), but by `boot_word_missing` and TIM1 `register_mismatch`,
+      not by its named mechanism (CI run 44722692266).
+    - **Mechanism:** each plants its event by spins from reset before the boot word, and the TMP117's 3,600,810 ns
+      (measured on sentinel-02-shaped) comes before it. So the planted event lands past the run's fixed end
+      (`MAX_VIRTUAL_NS`). The fault never happens in the boot; the judge missed nothing that occurred.
+    - **Proposed fix, verified locally, pushed only on the architect's word (11:27Z):** re-pin by 120,027 spins
+      (m2 3,230,000 → 3,109,973; f2 2,000,000 → 1,879,973). Both tests now assert their cause: the boot word written,
+      so the planted event is inside the run, and for f2 the anchor below 100 ms.
+    - **Verified result:** m2 fails by `motor_anchor_unobserved` ×4, and f2 by `motor_window_past_run`, its anchor
+      between 98 and 100 ms.
+  - **`bench-package`:** the committed package is `main`'s ELF. It moves by the architect's `write=true` dispatch
+    only.
+- **`main` merged:** `d0c4cfe0`, which is 2306, cleanly.
+  - **The architect's 10:55Z ask:** an `identity_not_witnessable` read never counts toward a gate's `judged`. It is
+    tested against 2306's fields:
+    - `verify`'s `a_not_witnessable_read_never_counts_toward_judged`: the boot gate is `judged: 1` with zero, one or
+      only unmodelled reads.
+    - `boot_tier1`: U3 is in `boot.not_witnessable` and in none of the witness arrays the campaign archives as
+      witnesses, which are what 2306's droop count reads.
+    - `campaign_tier1`: the reference's droop is `observation_witness: {"judged": 1}`, U2's release, with U3 on the
+      board.
+  - **2306's `NO_WITNESSED_DEVICE`** now reads "the boot reads no modelled device's identity (an unmodelled one's
+    is not witnessable)…". It stays true on the motor driver, which has no device, and is now true on an
+    all-unmodelled board (F5). `board_tier2`'s expected string moved with it.
 - **Nothing else moved** (measured):
   - **Campaign runs:** 47 committed and fixture runs. 44 are unchanged in verdict, `matched`, findings, replay and
     attribute, apart from the trace bytes.
@@ -177,7 +235,7 @@ Each statement is labelled:
   - **The rest is `main`'s code generation (inferred).** `main`'s source up to the first unmodelled read is byte for
     byte the board's without it (`the_unmodelled_read_moves_no_modelled_step`).
   - **No verdict moves by it.**
-  - **The options:**
+  - **Ruled (a) at 11:10Z** (§0). The options were:
     - **(a), recommended:** accept a bounded pre-step shift. I add a tier-2 test of the measured bound, ≤ 32
       instructions on the reference with and without U3, and keep the place test.
     - **(b):** put the unmodelled records in a separate no-load static, after the boot record. That removes the
@@ -260,12 +318,13 @@ All 12 are killed:
   - re-run the three droops and the re-judge;
   - adopt 2305's hook additions: the STEP indices are checked against it, and its trial merge was clean;
   - the package dispatch, third in the queue.
-- **Owed after 2306 lands:** merge `main`, and settle F5's sentence.
+- **Done after 2306 landed:** `main` merged, and F5's sentence settled (§0).
 - **Fence:**
   - Everything is inside it but `generate_with`'s doc comment in `svd-hal/src/board.rs` and one unit test there
     (`spi_init_takes_every_select_and_drives_it_high`, whose firmware now reads both devices).
   - No IR, specification, `BENCH.md`, workflow or `ci/` file changed.
-  - `TIER2_MIN` does not move: no tier-2 test was added, two were re-asserted.
+  - `TIER2_MIN` rises by this order's one tier-2 test, the D4 bound: 195 → 196 in `.github/workflows/ci.yml`, as
+  the WO's acceptance asks. It also has one weight row in `ci/test-weights.tsv`, as P1/P2 require.
 
 ## Gates (host, capped scope, at the pushed head)
 
