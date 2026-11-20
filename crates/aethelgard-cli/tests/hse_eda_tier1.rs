@@ -48,7 +48,8 @@ fn with_hse(hse: Value) -> Value {
 fn crystal_with(caps: [u64; 2]) -> Value {
     with_hse(
         json!({"crystal": {"part": CRYSTAL, "load_caps_femtofarads": caps,
-        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}}),
+        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
+        "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}),
     )
 }
 
