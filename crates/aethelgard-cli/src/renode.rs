@@ -357,9 +357,19 @@ const PROBE_END: &str = "AETHELGARD-PROBE-END-";
 /// The sentinel at each release, numbered as the probes are: the log lines
 /// from it to the probe's `BEGIN` are the recovered boot's (`AET-WO-2204`).
 const RELEASE: &str = "AETHELGARD-RELEASE-";
+
+/// `emulation RunFor` for exactly `ns`. Renode 1.17.0 reads the decimals as a
+/// fraction of a second through a double and truncates
+/// (`TimeInterval.TryParse`: `(ulong)(double.Parse("0.<decimals>") *
+/// TicksPerSecond)`, a tick a nanosecond), so `"0.001018380"` ran 1,018,379
+/// ns: about 2 % of 10 ns durations ran 1 ns short, and every instant after
+/// one was 1 ns early, a droop's boot start among them (`AET-WO-4202`,
+/// measured). A tenth decimal of 5 puts the value half a nanosecond above
+/// `ns`; the double's error below a second is under 1e-6 ns, so the
+/// truncation lands on `ns`.
 fn run_for(ns: u64) -> String {
     format!(
-        "emulation RunFor \"{}.{:09}\"",
+        "emulation RunFor \"{}.{:09}5\"",
         ns / 1_000_000_000,
         ns % 1_000_000_000
     )
@@ -4108,7 +4118,7 @@ mod tests {
         let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(
             c.contains(&format!(
-                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; {step}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+                "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; {step}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
             )),
             "{c}"
         );
@@ -4158,7 +4168,7 @@ mod tests {
         assert_eq!(c.matches("AddWatchpointHook 0x20000000").count(), 1);
         assert!(
             c.contains(&format!(
-                "emulation RunFor \"0.000213550\"; {hook}; {step}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
+                "emulation RunFor \"0.0002135505\"; {hook}; {step}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\""
             )),
             "{c}"
         );
@@ -4212,7 +4222,7 @@ mod tests {
         let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(
             c.contains(&format!(
-                "{bw}; {echo}; {step}; emulation RunFor \"0.100000000\""
+                "{bw}; {echo}; {step}; emulation RunFor \"0.1000000005\""
             )),
             "{c}"
         );
@@ -5750,7 +5760,7 @@ mod tests {
         // `AET-WO-3305`: the I2C step's status hook beside the boot word's.
         let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
         assert!(static_.contains(&format!(
-            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; {step}; emulation RunFor \"0.100000000\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; {step}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
         )));
         assert!(!droop.contains("logLevel 3") && !static_.contains("logLevel 3"));
         assert_eq!(static_.matches("logLevel").count(), 1);
@@ -5782,7 +5792,7 @@ mod tests {
         let want = [
             "cpu VectorTableOffset 0x08000000".to_owned(),
             "logLevel -1 sysbus.i2c1.u2".to_owned(),
-            "emulation RunFor \"0.001014430\"".to_owned(),
+            "emulation RunFor \"0.0010144305\"".to_owned(),
             "machine Reset".to_owned(),
         ]
         .join("; ");
@@ -5794,19 +5804,19 @@ mod tests {
             rec(image.brown_out.word_at),
             rec(check.status_at),
             rec(check.value_at),
-            "emulation RunFor \"0.000213550\"".to_owned(),
+            "emulation RunFor \"0.0002135505\"".to_owned(),
             hook.clone(),
             step.clone(),
             "cpu IsHalted false".to_owned(),
             "echo \"AETHELGARD-RELEASE-0\"".to_owned(),
-            "emulation RunFor \"0.000000010\"".to_owned(),
-            "emulation RunFor \"0.000099990\"".to_owned(),
+            "emulation RunFor \"0.0000000105\"".to_owned(),
+            "emulation RunFor \"0.0000999905\"".to_owned(),
             "echo \"AETHELGARD-PROBE-BEGIN-0\"".to_owned(),
         ]
         .join("; ");
         assert!(droop.contains(&rest), "{droop}");
         assert!(droop.contains(
-            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.098672020\"; echo \"AETHELGARD-BOOT-BEGIN\""
+            "echo \"AETHELGARD-PROBE-END-0\"; emulation RunFor \"0.0986720205\"; echo \"AETHELGARD-BOOT-BEGIN\""
         ));
         // After `machine Reset` alone the core never runs (F3): the cold
         // writes and the vector table follow it.
@@ -5819,9 +5829,82 @@ mod tests {
                 .unwrap()
                 .ends_with("cpu VectorTableOffset 0x08000000")
         );
-        assert_eq!(droop.matches("emulation RunFor \"0.000000010\"").count(), 1);
+        assert_eq!(
+            droop.matches("emulation RunFor \"0.0000000105\"").count(),
+            1
+        );
         assert_eq!(plan(&image, &resets).instructions(), 9_877_201);
         assert_eq!(plan(&image, &[]).instructions(), 10_000_000);
+    }
+
+    /// The nanoseconds Renode 1.17.0 runs for a `RunFor` argument, as its
+    /// `TimeInterval.TryParse` computes them (renode-infrastructure
+    /// `cd4b002aac2398994c4a61a34a8b31b5700facf2`, the pinned source,
+    /// `src/Emulator/Main/Time/TimeInterval.cs` L53-59, a tick a nanosecond
+    /// at L292): whole seconds exactly, the decimals as
+    /// `(ulong)(double.Parse("0.<decimals>") * TicksPerSecond)`, truncated.
+    fn renode_runs(arg: &str) -> u64 {
+        let (seconds, decimals) = arg.split_once('.').unwrap();
+        let fraction: f64 = format!("0.{decimals}").parse().unwrap();
+        seconds.parse::<u64>().unwrap() * 1_000_000_000 + (fraction * 1e9) as u64
+    }
+
+    /// `AET-WO-4202`: `run_for` renders `ns` as `ns + 0.5` ns. Why that
+    /// never truncates to anything but `ns`: the decimals are a fraction `f`
+    /// below 1; `double.Parse` rounds it correctly (error at most 2^-53 f),
+    /// and the product by 1e9 (exact in a double) rounds once more (2^-53
+    /// of the product). The result is `ns + 0.5` within 2^-52 × 1e9 < 2.3e-7
+    /// ns, so it lies strictly between `ns` and `ns + 1`, and the truncation
+    /// is `ns`. The sweep checks it on every value the reasoning covers.
+    #[test]
+    fn every_run_for_runs_exactly_its_nanoseconds_in_renode() {
+        let runs = |ns: u64| {
+            let c = run_for(ns);
+            renode_runs(
+                c.strip_prefix("emulation RunFor \"")
+                    .unwrap()
+                    .strip_suffix('"')
+                    .unwrap(),
+            )
+        };
+        // The measured fault, by name: the nine-digit form runs 1,018,380 ns
+        // 1 ns short; the rendering runs it exactly.
+        assert_eq!(renode_runs("0.001018380"), 1_018_379);
+        assert_eq!(runs(1_018_380), 1_018_380, "{}", run_for(1_018_380));
+        // Every nanosecond of the first 2 ms, then a stride to the longest
+        // `RunFor` any boot renders (the foreign window's bound).
+        let longest = foreign::FOREIGN_MAX_VIRTUAL_NS;
+        assert!(longest >= aethelgard_twin::boot::MAX_VIRTUAL_NS);
+        for ns in (0..=2_000_000u64)
+            .chain((2_000_000..=longest).step_by(9_973))
+            .chain([longest])
+        {
+            assert_eq!(runs(ns), ns, "{}", run_for(ns));
+        }
+    }
+
+    /// `AET-WO-4202` §5: the judge stays exact. A scheduled line (here the
+    /// first injected byte, as the bench's boot logged it) is placed only at
+    /// `start_ns + 10 ns × count`; stamped 1 ns before, it is refused (a
+    /// core ahead of its time), and 1 ns after, it is the core's sleep.
+    #[test]
+    fn a_scheduled_line_is_placed_only_at_its_count_s_exact_instant() {
+        let (start, count) = (1_231_740, 1_962_227);
+        let line = |stamp| {
+            let l = at(
+                stamp,
+                &format!("[WARNING] sysbus: AETHELGARD-INJECT 0 0 1952227 {count} 28a801 770"),
+            );
+            hooks_of(&[l.as_str()], start)
+        };
+        let exact = start + 10 * count;
+        let (hooks, slept) = line(exact).unwrap();
+        assert_eq!((hooks.len(), slept), (1, None));
+        assert_eq!(hooks[0].2, exact);
+        let early = line(exact - 1).unwrap_err();
+        assert!(early.contains("but it is stamped 20854009 ns"), "{early}");
+        let (_, slept) = line(exact + 1).unwrap();
+        assert!(slept.is_some());
     }
 
     #[test]

@@ -3712,8 +3712,8 @@ fn adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails() {
 // ---------------------------------------------------------------- AET-WO-4220
 
 /// `AET-WO-4220` §2.3: the Sentinel-02-shaped fixture with the parts of our
-/// own, `sentinel-02-own.json`: the BMP581 (U7) on I2C1 beside the BME280
-/// and the TMP117, the ICM-42688-P (U5) on its own SPI bus beside the
+/// own, `sentinel-02-own.json`: the BMP581 (U7) on I2C1 beside the TMP117
+/// (U2, the BME280, left in `AET-WO-4202`), the ICM-42688-P (U5) on its own SPI bus beside the
 /// flash's, every part `active` but the flash, `nrnd` and acknowledged
 /// (`AET-WO-4211`). Its power
 /// tree is left out (`power: null`): `campaign` refuses one until
@@ -3793,7 +3793,6 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
     assert_eq!(
         steps_of(&v, "i2c"),
         [
-            t("U2", "identity", "0x60"),
             t("U7", "identity", "0x50"),
             t("U7", "configure", "0x0"),
             t("U7", "data", "0x1940f362"),
