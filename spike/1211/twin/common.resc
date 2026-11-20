@@ -1,0 +1,9 @@
+# AET-WO-1211 §1.5: the stock platform the twin includes (Renode 1.17.0, infra cd4b002a), nothing added.
+mach create
+machine LoadPlatformDescription @platforms/cpus/stm32h753.repl
+# A one-instruction firmware (b .) so virtual time runs with the core idle; nothing else executes.
+sysbus WriteDoubleWord 0x08000000 0x20020000
+sysbus WriteDoubleWord 0x08000004 0x08000009
+sysbus WriteDoubleWord 0x08000008 0xE7FEE7FE
+cpu VectorTableOffset 0x08000000
+cpu PC 0x08000008
