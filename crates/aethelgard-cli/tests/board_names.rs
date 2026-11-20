@@ -300,20 +300,9 @@ fn lex(src: &str, file: &Path) -> Vec<(Tok, usize, usize)> {
                     i += 1;
                 }
                 Tok::Ident
-            } else if matches!(word, "b" | "c") && b.get(i) == Some(&b'"') {
-                i = string_end(b, i + 1, file);
-                Tok::Str
-            } else if word == "b" && b.get(i) == Some(&b'\'') {
-                let mut k = i + 1;
-                if b.get(k) == Some(&b'\\') {
-                    k += 2;
-                }
-                while k < b.len() && b[k] != b'\'' {
-                    k += 1;
-                }
-                i = k + 1;
-                Tok::Char
             } else {
+                // Also the `b` or `c` of `b"…"`, `c"…"` and `b'…'`: the
+                // literal after it is the next token.
                 Tok::Ident
             }
         } else {
@@ -503,23 +492,23 @@ fn test_only(src: &str, tokens: &[(Tok, usize, usize)], file: &Path) -> TestOnly
             if stop > item {
                 out.ranges.push((start, code[stop - 1].2));
             }
-            if depth == 0 {
-                if let Some(name) = mod_decl(item) {
-                    let (f, d) = module(&name, path);
-                    out.files.push(f);
-                    out.dirs.extend(d);
-                }
+            if depth == 0
+                && let Some(name) = mod_decl(item)
+            {
+                let (f, d) = module(&name, path);
+                out.files.push(f);
+                out.dirs.extend(d);
             }
             seen_item = true;
             n = stop;
             continue;
         }
-        if depth == 0 {
-            if let Some(name) = mod_decl(n) {
-                let (f, d) = module(&name, pending_path.take());
-                out.other_files.push(f);
-                out.other_dirs.extend(d);
-            }
+        if depth == 0
+            && let Some(name) = mod_decl(n)
+        {
+            let (f, d) = module(&name, pending_path.take());
+            out.other_files.push(f);
+            out.other_dirs.extend(d);
         }
         match code[n].0 {
             Tok::Punct(b'(' | b'[' | b'{') => depth += 1,
@@ -759,7 +748,9 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
          fn h() {\n    #[cfg(test)]\n    let v = \"acme-07\";\n    let w = \"acme-11\";\n}\n\
          #[doc = \"acme-07\"]\n\
          fn i() {}\n\
-         fn j<U, #[cfg(test)] T>() -> &'static str { \"acme-07\" }\n",
+         fn j<U, #[cfg(test)] T>() -> &'static str { \"acme-07\" }\n\
+         const C: u8 = b'\"'; // acme-07 after a byte char\n\
+         const B: &[u8] = b\"acme-07\";\n",
     );
     // One module declared for tests by the binary and for code by the library.
     write("crates/gadget/src/lib.rs", "mod shared;\n");
@@ -801,6 +792,7 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
             "crates/widget/src/deep/er/x.rs:19: `acme-11`",
             "crates/widget/src/deep/er/x.rs:21: `acme-07`",
             "crates/widget/src/deep/er/x.rs:23: `acme-07`",
+            "crates/widget/src/deep/er/x.rs:25: `acme-07`",
             "models/renode/src/c.rs:1: `acme-07`",
         ]
     );
@@ -816,6 +808,7 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
         [
             (Class::Comment, x, 1),
             (Class::Comment, x, 2),
+            (Class::Comment, x, 24),
             (Class::Doc, x, 3),
             (Class::Doc, "crates/widget/src/lib.rs", 1),
             (Class::TestItem, x, 11),
