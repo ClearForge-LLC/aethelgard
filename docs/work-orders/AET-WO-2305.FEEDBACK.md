@@ -147,6 +147,25 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - The run's header names the one firmware. Kind 32 does not repeat its hash: it is that run's, by construction.
 - **A probe inside the next reset, or past the boot:** refused before the boot by `RecoveryBoundPastRun` (`main.rs` `recovery_fits`; unit test `a_probe_past_the_boot_or_into_the_next_reset_is_refused_by_name`: exactly at the end fits, 1 ns past is refused, a second reset before the probe is refused, an overflow is refused), and by replay ("a release's probe lies past the run").
 
+## Gates
+
+- **Host, on 752cd167 (main c9c5f85c merged):**
+  - `cargo fmt --all -- --check`;
+  - the bridge's fmt check;
+  - `cargo clippy --workspace --all-targets -- -D warnings`, with and without `with-tools`;
+  - `cargo test --workspace`: **2,355 passed, 0 failed** (141 result lines).
+- **Tier 2, in the pinned image (16 GiB, swap 0, peak 6.0 GB):**
+  - `twin_tier2`: `bor_recovery::*` (8.2, 9.6 and 13.6 s on Furnace), `battery_sag::sentinel_03_s_campaign_…` (126.2 s, with `droop-bor3`) and `the_dshot600_fixture_s_campaign_passes_inside_its_window`;
+  - `campaign_tier2`'s two droop tests;
+  - `board_tier2`'s `every_admitted_identifier_character_survives_every_output`;
+  - `verify_47k_tier2` and `four_layer_fab_tier2`.
+  - All pass. The rest of tier 2 is CI's.
+- **`TIER2_MIN` 194 → 197:** the three `bor_recovery` tests. They are under 60 s, so they get no weight row (`4202`'s precedent), and `ci/` is unchanged.
+- **Reduction pass (diff), by a fresh reviewer:** nothing to remove · 0 duplicates removed · 0 dead paths removed · 1 kept by ruling · 2 findings below.
+  - **Kept by ruling:** kind 32's `margin_ns` and `bound_ns` are determined by its instant, since `Record::check` forces both. The ruling of 05:10Z names all three for the archive. Dropping them would save about 25 lines and two fields; that is the architect's call.
+  - **R1:** `recovery_bound` and `probe_ns` use checked arithmetic (`Option`) for a sum that cannot reach `u64` inside a 0.1 s run. Saturating adds would drop three error paths (about 15 lines). Kept, to match `power::schedule`'s checked style.
+  - **R2:** `verify.rs` `uncrossed` and `stress`'s droop arm each look up the domain, band and loaded floor. A shared helper saves about 4 lines, but the two treat a floor the drop reaches (`rail_levels` `None`) differently. Kept.
+
 ## Findings
 
 - **F1 · §1.4 left Sentinel-03's MCU rail unmet** (measured, by the rule; ruled 05:10Z: add `scenarios/sentinel-03/droop-bor3.json`).
