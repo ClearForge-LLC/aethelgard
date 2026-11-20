@@ -145,6 +145,11 @@ pub struct Stack {
     /// none, whose board is then today's.
     pub classes: Vec<Class>,
     pub pairs: Vec<Pair>,
+    /// The oscillator nets beside a declared crystal, by the board's name
+    /// (`AET-WO-4240c` §1.6): the router lays them after the pairs, on F.Cu
+    /// with no via, and holds them. Empty for a specification that declares
+    /// no crystal, whose board is then today's.
+    pub oscillator: Vec<String>,
     /// How each declared through-hole part's pads join a plane or zone of
     /// their own net, by reference (`AET-WO-1309` F5). A through-hole pad of
     /// a filled net with no entry here is refused by name (`INV-06`).
@@ -363,6 +368,17 @@ impl Stack {
                     width_nm: nm(p.width_um),
                 })
                 .collect(),
+            oscillator: match &spec.mcu.hse {
+                Some(aethelgard_ir::clock::Hse::Crystal(_)) => {
+                    aethelgard_ir::names::oscillator_nets(&aethelgard_ir::names::mcu_reference(
+                        spec,
+                    ))
+                    .iter()
+                    .map(|n| board_net(spec, n))
+                    .collect()
+                }
+                _ => Vec::new(),
+            },
             // The power tree's (`AET-WO-4300d2` §1.5, `1309` D1): the
             // power-in connector's declared join, and each buck's array from
             // its row's rule.
@@ -545,6 +561,7 @@ pub(crate) fn reference() -> Stack {
         width_nm: 200_000,
         classes: vec![],
         pairs: vec![],
+        oscillator: vec![],
         joins: vec![],
         thermal: vec![],
         imus: vec![],
