@@ -615,13 +615,13 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert!(*pass, "the tolerated droop verdict is a pass");
     let droop_findings = |f: &[(String, String, u64)]| {
         f.iter()
-            .filter(|(k, _, _)| k != "device_unmodelled")
+            .filter(|(k, _, _)| k != "identity_not_witnessable")
             .cloned()
             .collect::<Vec<_>>()
     };
     assert!(
         droop_findings(findings).is_empty(),
-        "the tolerated droop has no findings but unmodelled devices: {findings:?}"
+        "the tolerated droop has no findings but unmodelled reads: {findings:?}"
     );
 
     // droop-bor3: the supply falls through VBOR3, the reset is asserted and

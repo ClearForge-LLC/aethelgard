@@ -234,6 +234,39 @@ pub struct ObservedReport {
     pub witness: Option<Vec<String>>,
 }
 
+/// The identity reads of the devices the twin has no model for
+/// (`AET-WO-4241`): each named `identity_not_witnessable`, never judged
+/// against the part, and the twin's own cost of them, a limit of the twin
+/// (the architect's D3), never the board's.
+#[derive(Serialize)]
+pub struct NotWitnessableReport {
+    pub count: usize,
+    pub reads: Vec<NotWitnessableRead>,
+    /// Every read's cost, summed; `null` when any was not measured.
+    pub total_ns: Option<u64>,
+    pub twin_limit: &'static str,
+}
+
+/// [`NotWitnessableReport::twin_limit`].
+pub const NOT_WITNESSABLE_LIMIT: &str = "no model in the twin answers these reads, so each waits out the firmware's bounded wait (TXIS on I2C) that silicon, which answers, does not; the firmware makes them after every modelled step, so no modelled record's place moves, and the boot word and every instant after it are later in the twin than on silicon by about total_ns (measured from the status write before the first read: on a board with no modelled step, the brown-out word's, so it also counts the bring-up between)";
+
+/// One unmodelled identity read: what it asked for, what its record holds
+/// (information only) and its cost in the twin.
+#[derive(Serialize)]
+pub struct NotWitnessableRead {
+    pub reference: String,
+    pub part: String,
+    /// `I2C1 0x48`, or `SPI1 PA0`: the bus and where the device sits on it.
+    pub on: String,
+    pub register: String,
+    pub width: u8,
+    /// The part table's value, which only the bench reads.
+    pub table_value: String,
+    pub status: Option<&'static str>,
+    pub observed: Option<String>,
+    pub cost_ns: Option<u64>,
+}
+
 /// A boot's inputs, its expectations and what Renode read (`AET-WO-2100`).
 /// Every expected value comes from the specification's solved topology and
 /// the CLI's boot contract, never from the firmware (`INV-07`).
@@ -264,6 +297,10 @@ pub struct Boot {
     /// One per SPI identity read the judge expects, after the I2C ones in the
     /// records (`AET-WO-4200`).
     pub spi: Vec<SpiReport>,
+    /// The unmodelled devices' identity reads (`AET-WO-4241`); absent from
+    /// the JSON when the board has none, so such a board reports as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_witnessable: Option<NotWitnessableReport>,
     /// What Renode logged for each SPI read's device, and what its
     /// controller's multiplexer logged when a byte reached no single device.
     pub spi_witness: Vec<SpiWitnessReport>,

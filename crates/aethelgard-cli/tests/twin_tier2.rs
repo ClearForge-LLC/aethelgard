@@ -16,7 +16,9 @@
 //! `AET-WO-2202`: the firmware reads the BME280's ID register through the
 //! board crate's transfer and the judge checks it against the part table.
 //! - U2 (BME280, 0x76) reads 0x60 and passes; two boots agree; U3 (TMP117) is
-//!   reported `device_unmodelled` and does not fail the run.
+//!   read after every modelled step and named `identity_not_witnessable`
+//!   (`AET-WO-4241`): `info`, with its record and its cost in the twin, and
+//!   does not fail the run.
 //! - Negatives: a read of an address no model answers fails `i2c_timeout` at
 //!   TXIS; a record whose value is one bit off fails `i2c_identity_mismatch`;
 //!   and, with Renode run directly, a hand-built platform without the BME280
@@ -402,16 +404,38 @@ fn the_reference_firmware_boots_and_two_boots_agree() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|f| f["kind"] == "device_unmodelled")
+        .filter(|f| f["kind"] == "identity_not_witnessable")
         .collect();
     assert_eq!(
         unmodelled.len(),
         1,
-        "exactly one device is reported unmodelled: {first}"
+        "exactly one read is named not witnessable: {first}"
     );
     assert_eq!(
         unmodelled[0]["severity"], "info",
-        "the unmodelled-device finding is informational"
+        "the not-witnessable finding is informational"
+    );
+    // AET-WO-4241: the read was made, after every modelled step: Renode has
+    // no TMP117, so the controller's TXIS wait expires (measured, spike/4241),
+    // which the verdict states as the twin's cost, never the board's.
+    let nw = &b["not_witnessable"];
+    assert_eq!(
+        (
+            nw["count"].as_u64(),
+            nw["reads"][0]["reference"].as_str(),
+            nw["reads"][0]["status"].as_str()
+        ),
+        (Some(1), Some("U3"), Some("timeout_txis")),
+        "U3's identity read is made and named: {nw}"
+    );
+    let total = nw["total_ns"].as_u64().expect("the cost is measured");
+    assert!(
+        (1_000_000..10_000_000).contains(&total),
+        "one TXIS wait costs the twin milliseconds (3.6 ms measured): {total}"
+    );
+    assert!(
+        b["boot_word"]["observed"] == "0x2100b007",
+        "the boot word is still written inside the run"
     );
     // AET-WO-2204 D1: Renode's BME280 logged the read the record claims,
     // exactly; D3: the core ended in thread mode.

@@ -259,8 +259,16 @@ fn reads(word: &str, instructions: &str, mips: &str, registers: &[&str]) -> Vec<
     // JEDEC ID (`AET-WO-4200`).
     v.extend(GOOD_RECORD.iter().map(|r| (*r).to_owned()));
     v.extend(GOOD_SPI_RECORD.iter().map(|r| (*r).to_owned()));
+    // U3's, the unmodelled TMP117's identity, read after every modelled
+    // step: no model answers, so the TXIS wait expired (`AET-WO-4241`,
+    // measured).
+    v.extend(UNMODELLED_RECORD.iter().map(|r| (*r).to_owned()));
     v
 }
+
+/// The record the TMP117's identity read leaves in the twin, which has no
+/// model for it (`AET-WO-4241` §1.1, measured): `TXIS` timed out, value 0.
+const UNMODELLED_RECORD: [&str; 2] = ["0x22020001", "0x00000000"];
 
 /// The record a firmware that read U4's JEDEC ID (0x9F) as EF 40 17 leaves.
 const GOOD_SPI_RECORD: [&str; 2] = ["0x22020000", "0x00EF4017"];
@@ -336,7 +344,7 @@ if [ "$3" = --version ]; then printf '{version}\n  build: {RENODE_BUILD}\n'; exi
 # No console level is ever set (`AET-WO-2204` D4); only a device's source level.
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.0100000005\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; sysbus WriteDoubleWord 0x20000018 0xffffffff; sysbus WriteDoubleWord 0x2000001c 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.0100000005\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 cap=$(printf '%s' "$7" | /bin/sed -n 's/.*CreateFileBackend @\([^ ]*\) true.*/\1/p')
@@ -438,7 +446,7 @@ fn report(out: &Output) -> Value {
 }
 
 /// The kinds of the findings that fail a boot: everything but the `info`
-/// ones, which report what the twin could not check (`device_unmodelled`).
+/// ones, which report what the twin could not check (`identity_not_witnessable`).
 fn kinds(v: &Value) -> Vec<String> {
     v["findings"]
         .as_array()
@@ -1298,10 +1306,10 @@ fn with_log(record: [&str; 2], log: &str) -> String {
         &GOOD_REGISTERS,
     );
     // U2's record, before U4's (`AET-WO-4200`), which stays good, its
-    // witness after the test's log.
+    // witness after the test's log; then U3's (`AET-WO-4241`).
     let n = r.len();
-    r[n - 4] = record[0].to_owned();
-    r[n - 3] = record[1].to_owned();
+    r[n - 6] = record[0].to_owned();
+    r[n - 5] = record[1].to_owned();
     transcript(
         &format!("{log}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -1329,7 +1337,7 @@ fn a_passing_identity_read_passes_and_the_unmodelled_part_is_reported_as_info() 
         }])
     );
     // U3 (TMP117) is listed, not passed silently, and does not fail the run.
-    let f = finding(&v, "device_unmodelled").expect("U3 is reported");
+    let f = finding(&v, "identity_not_witnessable").expect("U3 is reported");
     assert_eq!(f["severity"], "info");
     assert!(f["message"].as_str().unwrap().contains("U3 (TMP117)"));
     assert_eq!(v["findings"].as_array().unwrap().len(), 1, "{v}");
@@ -1403,9 +1411,10 @@ fn a_record_is_not_judged_when_the_boot_word_is_missing() {
         "0x00000064",
         &GOOD_REGISTERS,
     );
+    // U4's record, before U3's unmodelled one (`AET-WO-4241`).
     let n = r.len();
-    r[n - 2] = "0xFFFFFFFF".into();
-    r[n - 1] = "0xFFFFFFFF".into();
+    r[n - 4] = "0xFFFFFFFF".into();
+    r[n - 3] = "0xFFFFFFFF".into();
     let (code, v) = boot(&transcript(
         "",
         &r.iter().map(String::as_str).collect::<Vec<_>>(),
@@ -1416,7 +1425,7 @@ fn a_record_is_not_judged_when_the_boot_word_is_missing() {
     // Nor its witness, nor where the core parked.
     assert_eq!(kinds(&v), ["boot_word_missing"], "{v}");
     // The unmodelled device is still reported on a failed boot.
-    assert!(finding(&v, "device_unmodelled").is_some());
+    assert!(finding(&v, "identity_not_witnessable").is_some());
 }
 
 // `AET-WO-2204` D1: the record is the firmware's word; the device model's own
@@ -1750,9 +1759,10 @@ fn two_devices_witness_their_own_reads_in_either_order() {
         // the one read of it returned (below).
         let at = r.iter().position(|w| w == BROWN_OUT).unwrap();
         r[at] = "0x0406AAF0".into();
-        // U5's record after U2's, before U4's on SPI (`AET-WO-4200`).
+        // U5's record after U2's, before U4's on SPI (`AET-WO-4200`) and
+        // U3's unmodelled one (`AET-WO-4241`).
         let n = r.len();
-        r.splice(n - 2..n - 2, GOOD_RECORD.iter().map(|s| (*s).to_owned()));
+        r.splice(n - 4..n - 4, GOOD_RECORD.iter().map(|s| (*s).to_owned()));
         // `two-bme.json` declares no serial port: no injection, no USART1.
         let text = transcript(
             &format!("{log}{GOOD_SPI_WITNESS}"),
@@ -2453,8 +2463,9 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
         "0x00000064",
         &GOOD_REGISTERS,
     );
+    // U4's status, before U3's unmodelled record (`AET-WO-4241`).
     let n = r.len();
-    r[n - 2] = "0x22020006".into();
+    r[n - 4] = "0x22020006".into();
     let (code, v) = boot(&transcript(
         &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
         &r.iter().map(String::as_str).collect::<Vec<_>>(),

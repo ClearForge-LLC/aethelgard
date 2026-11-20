@@ -2293,7 +2293,7 @@ fn boot_report(
                     expected: format!("{:#x}", c.expected),
                     mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
-                    status: observed.map(|o| renode::status_name(c, o.records[i].0)),
+                    status: observed.map(|o| renode::status_name(&c.wire, o.records[i].0)),
                 }),
                 aethelgard_twin::boot::Wire::Spi { .. } => None,
             })
@@ -2333,11 +2333,12 @@ fn boot_report(
                     expected: format!("{:#x}", c.expected),
                     mask: format!("{:#x}", c.mask),
                     observed: observed.map(|o| format!("{:#x}", o.records[i].1)),
-                    status: observed.map(|o| renode::status_name(c, o.records[i].0)),
+                    status: observed.map(|o| renode::status_name(&c.wire, o.records[i].0)),
                 }),
                 aethelgard_twin::boot::Wire::I2c { .. } => None,
             })
             .collect(),
+        not_witnessable: not_witnessable_report(plan, observed),
         spi_witness: r
             .image
             .identity
@@ -2414,6 +2415,54 @@ fn boot_report(
             .collect(),
         executable: plan.executable.to_vec(),
     }
+}
+
+/// The boot's unmodelled identity reads (`AET-WO-4241`), or `None` when the
+/// board has none.
+fn not_witnessable_report(
+    plan: &renode::BootPlan<'_>,
+    observed: Option<&renode::Observed>,
+) -> Option<verdict::NotWitnessableReport> {
+    let reads: Vec<verdict::NotWitnessableRead> = plan
+        .image
+        .identity
+        .unmodelled
+        .iter()
+        .enumerate()
+        .filter_map(|(j, u)| {
+            let n = u.identity.as_ref()?;
+            let seen = observed.and_then(|o| o.unmodelled.get(j));
+            let on = match &u.wire {
+                aethelgard_twin::boot::Wire::I2c { address } => {
+                    format!("{} {address:#04x}", u.peripheral)
+                }
+                aethelgard_twin::boot::Wire::Spi { select, .. } => {
+                    format!("{} {select}", u.peripheral)
+                }
+            };
+            Some(verdict::NotWitnessableRead {
+                reference: u.reference.clone(),
+                part: u.part.clone(),
+                on,
+                register: bytes(&n.write),
+                width: n.width,
+                table_value: format!("{:#x}", n.expected),
+                status: seen.map(|s| renode::status_name(&u.wire, s.record.0)),
+                observed: seen.map(|s| format!("{:#x}", s.record.1)),
+                cost_ns: seen.and_then(renode::Unwitnessed::cost_ns),
+            })
+        })
+        .collect();
+    if reads.is_empty() {
+        return None;
+    }
+    let total_ns = reads.iter().map(|r| r.cost_ns).sum::<Option<u64>>();
+    Some(verdict::NotWitnessableReport {
+        count: reads.len(),
+        reads,
+        total_ns,
+        twin_limit: verdict::NOT_WITNESSABLE_LIMIT,
+    })
 }
 
 /// Bytes as the verdict writes them: `0xef 0xc8`.
