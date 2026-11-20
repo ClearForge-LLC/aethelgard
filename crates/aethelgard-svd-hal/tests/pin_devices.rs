@@ -48,6 +48,8 @@ fn d1_s_enable_follows_its_bridge_s_cen_and_does_not_wake() {
     let enable = line_of(main, "let _pa1 = gpioa.pa1.into_output(&mut r, &_tim1);");
     let magic = line_of(main, "write_volatile(BOOT_MAGIC)");
     assert!(start < enable && enable < magic, "{main}");
+    // Configured once, there: never also with the pins, before any timer.
+    assert_eq!(main.matches("gpioa.pa1.into_output(").count(), 1, "{main}");
     assert!(!main.contains("settle("), "nSLEEP low wakes nothing");
     assert!(f["src/board.rs"].contains(
         "pub fn into_output<R: Registers>(self, r: &mut R, _cen: &Tim1<Running>) -> PA1<Output> {"
