@@ -107,14 +107,6 @@
   ],
   "i2c_devices": [
     {
-      "reference": "U2",
-      "part": "BME280",
-      "supply": "VDD_3V3",
-      "bus": "SENSORS",
-      "address": 118,
-      "pin_capacitance": null
-    },
-    {
       "reference": "U3",
       "part": "TMP117",
       "supply": "VDD_3V3",

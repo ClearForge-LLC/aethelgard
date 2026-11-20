@@ -329,22 +329,24 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
 /// The fixture's placement with every name taken out ([`name_free`]).
 /// `AET-WO-1313b`'s prototype placed it at `5e30de78…` (`457d644`, FEEDBACK
 /// §1.3); re-pinned by `AET-WO-1315` from a measured run, the hot-plug bulk
-/// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2). Re-pin it
+/// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2); re-pinned by
+/// `AET-WO-4202` from a measured run, U2 gone (its FEEDBACK §2.3). Re-pin it
 /// only with the change that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "9b83d1208acd175fc1bea74cf9594f17ea86e9277b79ca065562273425c4a44f";
+    "bd276856d6578b8c095b8ade3794acae7e4081e6c6fdc159e7f59a11c02a55c3";
 
 /// `AET-WO-1313c` §2: the fixture places at its measured outline, with
 /// every placer gap and every loop rule kept after compaction: 85.25 x
 /// 80.95 mm at `1313b`'s (FEEDBACK §2.1, (k)+(m)+(s)), 96.50 x 69.35 mm
-/// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured).
+/// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured), 95.80 x 67.60
+/// mm since `AET-WO-4202` took U2 away (its FEEDBACK §2.3, measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (96_500_000, 69_350_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (95_800_000, 67_600_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -428,7 +430,7 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
-        (1, Some((98_800_000, 70_350_000))),
+        (1, Some((98_800_000, 69_850_000))),
         (2, None),
         (6, None),
         (8, None),
@@ -457,6 +459,10 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
 /// every placer gap and loop rule kept, and each keep-out zone it carries
 /// inside the outline (the zones are drawn from the part's origin and
 /// rotation, so a group moved whole carries them).
+///
+/// `AET-WO-4202` (ruled (i), 23:10Z): with U2 gone, the forward turn no
+/// longer fits and is refused by name with its figures, as size samples 2,
+/// 6 and 8 are: the placer is not monotone in parts (its FEEDBACK §2.4).
 #[test]
 fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
     for (x, rotation) in [
@@ -475,7 +481,19 @@ fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
             }
         }
         let (spec, solved, table) = solved(&v);
-        let e = schematic::emit(&spec, &solved, &table).unwrap();
+        let emitted = schematic::emit(&spec, &solved, &table);
+        if x == "forward" {
+            let e = emitted.map(|_| ()).unwrap_err();
+            assert_eq!(e.kind(), "OutlineUnreachable", "{e}");
+            assert!(
+                e.to_string().contains(
+                    "the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm"
+                ),
+                "{e}"
+            );
+            continue;
+        }
+        let e = emitted.unwrap();
         let tree = sexpr::parse(&e.board).unwrap();
         let u5 = tree
             .children("footprint")

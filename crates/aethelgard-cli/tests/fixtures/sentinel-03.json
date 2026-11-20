@@ -453,14 +453,6 @@
   ],
   "i2c_devices": [
     {
-      "reference": "U2",
-      "part": "BME280",
-      "supply": "VDD_3V3",
-      "bus": "SENSORS",
-      "address": 118,
-      "pin_capacitance": null
-    },
-    {
       "reference": "U3",
       "part": "TMP117",
       "supply": "VDD_3V3",
@@ -1209,25 +1201,19 @@
         "domain": "VDD_3V3",
         "milliamps": 1,
         "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
-        "reference": "R7"
+        "reference": "R6"
       },
       {
         "domain": "VDD_3V3",
         "milliamps": 1,
         "source": "derived: no DC path but the flash pin's leakage, W25Q64JV rev J 9.4 ILI +-2 uA; rounded up",
-        "reference": "R8"
+        "reference": "R7"
       },
       {
         "domain": "VDD_3V3",
         "milliamps": 1,
         "source": "derived: 3.465 V / (105 kOhm + 46.4 kOhm) = 0.023 mA, rounded up",
         "reference": "R20"
-      },
-      {
-        "domain": "VDD_3V3",
-        "milliamps": 1,
-        "source": "Bosch BST-BME280-DS001-24 rev 1.24 Table 1 p. 8: IDDP current during pressure measurement 714 uA (Max value at -40 C); rounded up",
-        "reference": "U2"
       },
       {
         "domain": "VDD_3V3",

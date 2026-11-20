@@ -387,11 +387,17 @@ jobs:
       # two tests D4 removed (campaign_tier1.rs: a_one_byte_change_to_the_trace_is_
       # a_hash_mismatch, an_extra_file_in_the_run_directory_is_refused) are tier 1,
       # outside the count.
-      # 192 (AET-WO-2304b, the K7 carve-out): two tier-2 tests added to
+      # 191 (AET-WO-4202; recomputed at its merge of main 52a2d62e, which
+      # held 190): one tier-2
+      # test, campaign_tier2.rs a_reset_on_an_instant_renode_would_run_short_
+      # boots_where_the_judge_places_it (RunFor's truncation, under 60 s, no
+      # weight row).
+      # 193 (AET-WO-2304b, the K7 carve-out; recomputed at its merge of main
+      # 03d89554, which held 191): two tier-2 tests added to
       # twin_tier2.rs, battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats
       # and battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats
       # (the tree boards' campaigns, replayed and run twice).
-      TIER2_MIN: "192"
+      TIER2_MIN: "193"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
