@@ -14,7 +14,8 @@
 //! drawn, `extract` (and `verify`'s extract gate) bounds it on the routed
 //! board; where it cannot, the verdict labels it unverified and names the
 //! emitter's refusal. `judged` counts the lines judged, 0 for a
-//! specification with no SPI bus.
+//! specification with no SPI bus, which then says `nothing_in_scope`
+//! (`AET-WO-2306`).
 //!
 //! `AET-WO-4230` §1.2 (Amendment 1): a line's rate is its controller's
 //! achieved rate at the fastest HSI (`spi_controllers[..].achieved_max_hz`),
@@ -46,10 +47,17 @@ struct Report {
     /// Where the judged capacitance comes from, and whether a board can
     /// bound it.
     capacitance: String,
-    /// How many lines were judged; the others are out of scope.
-    judged: usize,
+    /// How many lines were judged; the others are out of scope. With none,
+    /// `nothing_in_scope` and its reason (`AET-WO-2306`).
+    #[serde(flatten)]
+    scope: crate::verdict::Scope,
     lines: Vec<Value>,
 }
+
+/// Why a specification with no line driven at a peripheral's rate judged
+/// nothing (`AET-WO-2306`): every listed line is out of scope, held only to
+/// the slowest speed.
+pub const NOTHING_IN_SCOPE: &str = "no declared speed: no SPI bus's SCK or MOSI, the only lines driven at a peripheral's rate; every listed line is out of scope and held only to the slowest speed";
 
 fn ospeedr(v: u8) -> &'static str {
     ["00", "01", "10", "11"][usize::from(v & 3)]
@@ -196,7 +204,7 @@ pub fn speeds(spec_path: &Path) -> ExitCode {
             "definition": speeds_table.definition,
         }),
         capacitance,
-        judged,
+        scope: crate::verdict::Scope::of(judged as u64, NOTHING_IN_SCOPE),
         lines,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })

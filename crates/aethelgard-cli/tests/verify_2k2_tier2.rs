@@ -313,6 +313,24 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     );
 
     assert_eq!(v["verdict"], "pass", "the verdict is pass: {v}");
+    // `AET-WO-2306` §1.5: on the reference every gate judged something, as
+    // the inventory found, and the droop's recovery was witnessed.
+    assert_eq!(v["judged_nothing"], serde_json::json!([]), "{v}");
+    for g in v["gates"].as_array().unwrap() {
+        assert!(g["judged"].as_u64() >= Some(1), "{g}");
+        assert!(g.get("nothing_in_scope").is_none(), "{g}");
+    }
+    for run in v["campaign"].as_array().unwrap() {
+        let w = &run["observation_witness"];
+        if run["scenario"] == "droop-bor3" {
+            assert!(
+                w["judged"].as_u64() >= Some(1) && w.get("nothing_in_scope").is_none(),
+                "{run}"
+            );
+        } else {
+            assert!(w.is_null(), "no droop, no observation: {run}");
+        }
+    }
     let fab = &v["fab"];
     assert_eq!(fab["status"], "written", "the package is written: {fab}");
     assert_eq!(

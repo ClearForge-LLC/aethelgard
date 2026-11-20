@@ -56,6 +56,7 @@
 # and 44647140730, two in a row): every row re-weighed by rule 5 from those two runs alone, on the merged tree (main 52a2d62e and 8c42b437), the
 # same method as the first refit; 17 rows under 0.5 s dropped, 7 added. It supersedes the merged values above.
 # AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7, 8 shards): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348); kept beside AET-WO-1911's 12-shard refit, which ran before these tests existed.
+# AET-WO-2306: board_tier2's verify_names_what_judged_nothing_on_the_motor_driver is a Furnace estimate, not a run: 73.14 s in the pinned image on Furnace (libtest `finished in`, one verify of the motor driver with its droop), times 2.8 (AET-WO-1310's factor), 204.792; replace it at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.200
@@ -114,6 +115,7 @@ tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	
 tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	99.800
 tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.700
 tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	40.700
+tests/board_tier2.rs	verify_names_what_judged_nothing_on_the_motor_driver	204.800
 tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	3.300
 tests/board_ui.rs	misuse_does_not_compile_and_the_driver_does	73.600
 tests/boot_tier1.rs	a_boot_on_another_renode_build_is_refused_by_name	0.700
