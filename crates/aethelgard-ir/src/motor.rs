@@ -84,6 +84,10 @@ pub struct PwmTiming {
     pub resolution_ps: u64,
 }
 
+/// What the outputs of one timer share (`AET-WO-1211a`): the protocol and,
+/// for PWM, the rate and the tick (`resolution_ps`).
+pub type TimerKey = (MotorProtocol, Option<(u32, u64)>);
+
 /// A logic level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

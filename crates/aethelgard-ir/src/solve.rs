@@ -1352,7 +1352,7 @@ struct Motor<'s, 't> {
     pwm: Option<&'s PwmTiming>,
     /// The timer-share key: outputs of one timer share its protocol, rate
     /// and tick (`AET-WO-1211a`: `resolution_ps` joins it).
-    key: (MotorProtocol, Option<(u32, u64)>),
+    key: crate::motor::TimerKey,
 }
 
 /// A timer channel on a pin: `(timer, channel, pin, af)`.
@@ -1749,7 +1749,7 @@ impl<'s, 't> Model<'s, 't> {
             for (b, second) in self.motors.iter().enumerate().skip(a + 1) {
                 if first.key != second.key && timers[a].len() == 1 && timers[a] == timers[b] {
                     let timer = timers[a].iter().next().expect("one timer");
-                    let rate = |k: &(MotorProtocol, Option<(u32, u64)>)| (k.0, k.1.map(|p| p.0));
+                    let rate = |k: &crate::motor::TimerKey| (k.0, k.1.map(|p| p.0));
                     if rate(&first.key) == rate(&second.key) {
                         return Err(SolveError::TimerResolutionConflict {
                             timer: format!("TIM{timer}"),
@@ -1980,7 +1980,7 @@ struct Search<'m, 's, 't> {
     motor_chosen: Vec<Option<Channel<'t>>>,
     /// The timer channels taken, and each timer's shared key and outputs.
     channels_used: BTreeSet<(u32, u32)>,
-    timer_keys: BTreeMap<u32, ((MotorProtocol, Option<(u32, u64)>), usize)>,
+    timer_keys: BTreeMap<u32, (crate::motor::TimerKey, usize)>,
     /// The serial ports placed once every motor output is, in order.
     serial_active: Vec<usize>,
     /// Per serial port, its placement once placed.
