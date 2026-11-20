@@ -1,0 +1,8 @@
+sentinel-01	prove:every_valid_sequence	0	314265	7434149888	17179869184
+sentinel-01	prove:i2c1_transfer_is_bounded_and_ordered	0	9041	738340864	17179869184
+sentinel-01	prove:spi1_transfer_is_bounded_and_ordered	0	14081	1051877376	17179869184
+sentinel-01	prove:spi1_transfer_refuses_too_many_frames	0	7059	524685312	17179869184
+sentinel-01	prove:reset_clock_is_ok_exactly_at_reset	0	2018	94609408	17179869184
+sentinel-01	prove:usart1_start_writes_the_solved_values	0	9052	831905792	17179869184
+sentinel-01	prove:flash_option_status_is_one_read	0	3013	92921856	17179869184
+sentinel-01	verify	0	335932	7529603072	17179869184

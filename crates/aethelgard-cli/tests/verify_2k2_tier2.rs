@@ -161,7 +161,9 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             // `AET-WO-4200` SPI1's transfer and its frame bound, and since
             // `AET-WO-4300b` the console's: the reset clock check and
             // USART1's bring-up, generated for a board with a serial port;
-            // since `AET-WO-4230` the brown-out word's one flash read.
+            // since `AET-WO-4230` the brown-out word's one flash read; since
+            // `AET-WO-3303b` the scheduler in two parts, I2C1's and SPI1's.
+            ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
@@ -174,6 +176,30 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             ("campaign", "pass"),
         ],
         "every gate runs, in order, and passes"
+    );
+    // `AET-WO-3303b` §1.2: a board without a timer proves its schedule in
+    // parts, each a gate; the whole harness is no longer a proof, so it is no
+    // gate, and no harness drops out silently.
+    let proved: Vec<&str> = v["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|g| g["gate"] == "prove")
+        .map(|g| g["harness"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        proved,
+        [
+            "proofs::every_valid_sequence_i2c1",
+            "proofs::every_valid_sequence_spi1",
+            "proofs::i2c1_transfer_is_bounded_and_ordered",
+            "proofs::spi1_transfer_is_bounded_and_ordered",
+            "proofs::spi1_transfer_refuses_too_many_frames",
+            "proofs::reset_clock_is_ok_exactly_at_reset",
+            "proofs::usart1_start_writes_the_solved_values",
+            "proofs::flash_option_status_is_one_read",
+        ],
+        "every harness of the generated crate is a prove gate"
     );
     // Each gate's boundary is what its tools' read grants make it (ruled on
     // PR #96): in the pinned image, Kani's kit is uid 1001's, so `prove` says
