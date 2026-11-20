@@ -739,5 +739,38 @@ fn a_pin_device_on_a_drawn_board_is_not_drawable() {
     let mut v = d1();
     v["board"].as_object_mut().unwrap().remove("drawn");
     let e = spec(&v).drawable_parts(&arms).unwrap_err();
-    assert_eq!((e.kind(), e.path()), ("PartNotDrawable", Some("pin_devices[0].part")));
+    assert_eq!(
+        (e.kind(), e.path()),
+        ("PartNotDrawable", Some("pin_devices[0].part"))
+    );
+}
+
+/// Mutants G7 and G9: a topology whose idle `low` output's CCR is not 0 is
+/// refused, and `check_silicon` fails a word whose prescaler does not give
+/// the declared `resolution_ps`.
+#[test]
+fn the_idle_word_and_the_tick_are_judged_in_the_topology() {
+    let t: aethelgard_ir::SolvedTopology = serde_json::from_str(include_str!(
+        "../../aethelgard-svd-hal/tests/ui/motors-pwm/topology.json"
+    ))
+    .unwrap();
+    let label = t
+        .motor_outputs
+        .iter()
+        .find(|(_, m)| m.pwm.is_some())
+        .map(|(l, _)| l.clone())
+        .unwrap();
+    let mut low = t.clone();
+    let m = low.motor_outputs.get_mut(&label).unwrap();
+    m.pwm.as_mut().unwrap().idle =
+        aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::Low);
+    assert_eq!(low.validate().unwrap_err().kind(), "MotorOutputMismatch");
+    low.motor_outputs.get_mut(&label).unwrap().ccr = 0;
+    low.validate().unwrap();
+    let timer: u32 = t.assignments[&label].peripheral[3..].parse().unwrap();
+    let m = &t.motor_outputs[&label];
+    assert!(aethelgard_ir::motor::check_silicon(&t.clock, timer, m).holds);
+    let mut coarse = m.clone();
+    coarse.pwm.as_mut().unwrap().resolution_ps = 2_000_000;
+    assert!(!aethelgard_ir::motor::check_silicon(&t.clock, timer, &coarse).holds);
 }

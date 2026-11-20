@@ -44,7 +44,16 @@
 
 ## 4. Mutants (§1.7)
 
-(filled after the run)
+`spike/1211a/mutants/mutants.py`, one mutant per guard this work order adds, in a detached copy (`result.json`). **33 of 33 killed**: 31 at the first run, and G7 (the solved CCR of an idle `low`) and G9 (`check_silicon`'s tick) after `the_idle_word_and_the_tick_are_judged_in_the_topology` was added.
+
+| the work order's four | killed by |
+|---|---|
+| W1 accept a pulsed bridge idle (every PWM idle read as `low`) | `a_pulsed_bridge_input_is_refused`, `a_driving_idle_is_refused`, `the_4600_driver_s_pair_as_a_bridge_is_refused_pulsed` |
+| W2 judge the bridge idle without nSLEEP | `a_sleeping_part_idles_whatever_its_inputs` |
+| W3 let `resolution_ps` default | `removing_any_key_of_any_object_is_refused` |
+| W4 let the solver choose ADC2 | `only_adc2_pins_left_is_adc_unmodelled`, `an_adc2_only_pin_is_never_chosen_unpinned` |
+
+The other 29 are each of step 24's guards, the solver's (reset pull-ups, IN/IN timers, ADC2 by name), the topology's (`SenseAdcMismatch`, `PinDeviceUndeclared`, the idle CCR), `check_silicon`'s idle and tick, and the cli's two refusals.
 
 ## 5. Adversarial pass (§5)
 
@@ -80,7 +89,13 @@ Weaknesses recorded, not changed: W7 (ARR + 1 at 16 bits, unreachable at 64 MHz;
 
 ## 8. Gates, fence, reduction pass
 
-(filled at close)
+- **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean.
+- **`cargo test --workspace`** (main 63334d69 merged): every test passes but two:
+  - `bench_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit` — the package waits on the dispatch (§9);
+  - `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` — `BaseOutsideRoot`: its scratch sits under my out-of-tree `CARGO_TARGET_DIR`, outside the checkout; CI builds in-tree.
+- **`TIER2_MIN`:** unchanged; no tier-2 test was added.
+- **Fence:** `crates/aethelgard-ir`; the named refusals in cli, svd-hal, twin, eda, hwdef and pincheck (and their `clippy.toml` `RUL-16` lines); committed specifications and fixtures; `boards/sentinel-01*` sha lines by the generator; tests; `spike/1211a/`; this file. No workflow, `ci/`, generator, twin, chaos or eda feature.
+- **Reduction pass (diff):** −1 (`compare.py`'s unused key). Kept on purpose: row fields no check reads yet (`t_wake_max_us`, pin numbers, the document's sha256) — ruled row data (Q6) for 1211b/1211d.
 
 ## 9. The package
 
