@@ -28,11 +28,17 @@
 //! Scale 2 ([`serial::judge_pwr`]) and states what the twin cannot show of
 //! them ([`serial::PWR_RESIDUAL`]), and [`boot`] names the three PWR boot
 //! words.
+//!
+//! `AET-WO-4240b`: [`hse`] holds a generated HSE board's RCC and flash
+//! controller accesses to the H1 bring-up ([`hse::judge_clock`]) and states
+//! what the twin cannot show of it ([`hse::HSE_RESIDUAL`]); [`platform`] sets
+//! the stock RCC's `hseFrequency`; [`boot`] names the five HSE boot words.
 
 #![forbid(unsafe_code)]
 
 pub mod analog;
 pub mod boot;
+pub mod hse;
 pub mod model;
 pub mod platform;
 pub mod serial;

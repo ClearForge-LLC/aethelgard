@@ -988,6 +988,11 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) {
             "the specification's mcu.foreign_clock; {} keep the stock file's",
             unclocked(topology).join(", ")
         )
+    } else if topology.clock.hse.is_some() {
+        format!(
+            "the solved clock's (PLL1 from the HSE at {} Hz, sys_ck {} Hz, every prescaler 1, AET-WO-4240b)",
+            topology.clock.hse_hz, topology.clock.sysclk_hz
+        )
     } else {
         "the solved clock's (the reset clock, HSI at 64 MHz, RM0433 Rev 9 §8.7.2)".to_owned()
     };
@@ -997,6 +1002,30 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) {
     );
     for (name, hz) in clocked(topology) {
         let _ = write!(out, "{name}:\n    frequency: {hz}\n");
+    }
+    emit_hse(out, topology);
+}
+
+/// The stock RCC's HSE frequency on a board with an HSE (`AET-WO-4240b`
+/// §1.6): an update entry after the stock include, `rcc:` then
+/// `hseFrequency: <clock.hse_hz>`. Measured in Renode 1.17.0
+/// (`spike/4240b/renode/results.md`): the entry is taken (`sys_ck` after `SW`
+/// = PLL1 reads 64,000,000 Hz on both fixtures, 32,000,000 without it), and a
+/// second full declaration of `rcc` is Renode's error E02. The model divides
+/// the reference in integers, so it is exact only for a whole-Hz HSE over
+/// `DIVM1`, which `aethelgard_ir::clock::judge_tree` requires. Nothing is
+/// emitted for a board with no HSE, whose platform is unchanged, nor under
+/// `mcu.foreign_clock` (`simulate --foreign` on an HSE board is `4240a` F4's,
+/// not this work order's).
+fn emit_hse(out: &mut String, topology: &SolvedTopology) {
+    if topology.clock.hse.is_some() && topology.foreign_clock.is_none() {
+        let _ = write!(
+            out,
+            "\n// The HSE (AET-WO-4240b): the stock rcc's hseFrequency (8 MHz by default) is the solved\n\
+             // clock.hse_hz.\n\
+             rcc:\n    hseFrequency: {}\n",
+            topology.clock.hse_hz
+        );
     }
 }
 
