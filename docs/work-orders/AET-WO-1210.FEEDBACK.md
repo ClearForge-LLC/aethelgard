@@ -211,3 +211,13 @@ A first run printed every mutant as surviving with no test named. That was the h
   - **`emit` of all 29 specifications:** 24 boards byte-identical; 4 refusals identical; `imu-baro-1v8` `DrawsNoBoard` for `main`'s `UnknownPart` (`emits21.txt`).
 - **The package:** not committed, as ruled. It waits for `4241`'s run and the architect's dispatch.
 - **Gates on `16be2d38`** (`gates-3.log`): fmt and clippy exit 0. `cargo test --workspace`: 145 suites, 2,441 passed, 1 failed, `bench_board_tier1`'s package binding. `hwdef_tier1` and `extract_tier1` pass.
+
+## 10. The merge after `4241` (the 15:35Z note)
+
+- **`main` at `8fdc9422` merged** (`55f27fd7`: `4241`, `4406`, `1211` as the record, docs).
+  - The package came from `main` with no conflict; this branch never touched it.
+  - Two conflicts:
+    - `generate::tree`: this branch's drawn-board guard is kept, with `4241`'s new comment.
+    - `order_2203`: `main`'s 4241 move is taken, then `main.rs` re-taken at 21. With `ccc80f11…e8b2` put back it is `4241`'s `a95a1bb6…f918` exactly, and the platforms and the boot image did not move [measured].
+  - No specification was left at 20 (the script moved 0), and no spec-sha line at 20 remained.
+- **Gates on `55f27fd7`** (`gates-4.log`): fmt and clippy exit 0. `cargo test --workspace`: 146 suites, 2,457 passed, 1 failed, the package binding. `4241`'s tests pass at 21.
