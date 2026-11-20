@@ -691,6 +691,26 @@ fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<us
     Some(starts.windows(2).map(|w| w[0]..w[1]).collect())
 }
 
+/// A transaction's shape (`AET-WO-3306`): its write, as [`witness_bytes`]
+/// gives it, and the bytes its reads return in all.
+fn shape(lines: &[String], device: &str) -> (Option<(u64, usize)>, usize) {
+    let write = lines
+        .first()
+        .and_then(|l| witness_bytes(l, device, "Write"));
+    let read = lines
+        .iter()
+        .filter_map(|l| witness_bytes(l, device, "Read"))
+        .map(|(_, n)| n)
+        .sum();
+    (write, read)
+}
+
+/// A step's write and read width as a transaction's [`shape`].
+fn step_shape(write: &[u8], width: u8) -> (Option<(u64, usize)>, usize) {
+    let value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
+    (Some((value, write.len())), usize::from(width))
+}
+
 /// A step's read as its check records it (`AET-WO-4210`), as the judge holds
 /// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
 /// bit of it lies above the read's `width` bytes (so a configuration's is 0),
@@ -1112,9 +1132,10 @@ impl<'a> Run<'a> {
     /// that start in it ([`Self::surplus`]): the device's transaction count
     /// against its script's, at the address the firmware sent them to; and
     /// for each, when exactly one other device on the bus has a step of its
-    /// shape (its write, and its read's width) whose own witness does not
-    /// hold it, that step's address field, as the firmware sent it. Two such
-    /// steps, or none, and only the address is named.
+    /// shape (its write, and its read's width) that went elsewhere
+    /// ([`Self::sent_elsewhere`]), that step's address field, as the firmware
+    /// sent it. Two such steps, none, or one that cannot be told, and only
+    /// the address is named.
     fn surplus_fields(&self, b: usize, record: &Record, address: u8) -> Vec<Field> {
         let Record::I2cWitness {
             reference, device, ..
@@ -1140,13 +1161,11 @@ impl<'a> Run<'a> {
             wrong: true,
         }];
         for t in here {
-            let write = t.first().and_then(|l| witness_bytes(l, device, "Write"));
-            let width: usize = t
-                .iter()
-                .filter_map(|l| witness_bytes(l, device, "Read"))
-                .map(|(_, n)| n)
-                .sum();
-            let owners: Vec<(&str, &str, u8)> = self
+            let extra = shape(t, device);
+            // Each step of this shape on the bus: `Some` if it went elsewhere,
+            // `None` if that cannot be told. This device's own never went
+            // elsewhere: its log holds every scripted transaction and this one.
+            let owners: Vec<Option<(&str, &str, u8)>> = self
                 .records
                 .iter()
                 .filter_map(|r| match r {
@@ -1157,21 +1176,19 @@ impl<'a> Run<'a> {
                         write: w,
                         width: n,
                         ..
-                    } if x != reference
-                        && self.buses[b].devices.iter().any(|(d, _)| d == x)
-                        && write.is_some_and(|(v, len)| {
-                            len == w.len()
-                                && v == w.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b))
-                        })
-                        && usize::from(*n) == width
-                        && !self.holds_its_own(x, step) =>
+                    } if self.buses[b].devices.iter().any(|(d, _)| d == x)
+                        && step_shape(w, *n) == extra =>
                     {
-                        Some((x.as_str(), step.as_str(), *a))
+                        match self.sent_elsewhere(r) {
+                            Some(true) => Some(Some((x.as_str(), step.as_str(), *a))),
+                            Some(false) => None,
+                            None => Some(None),
+                        }
                     }
                     _ => None,
                 })
                 .collect();
-            if let [(owner, step, solved)] = owners[..] {
+            if let [Some((owner, step, solved))] = owners[..] {
                 let owner_device = self.records.iter().find_map(|r| match r {
                     Record::I2cWitness {
                         reference: x,
@@ -1193,13 +1210,65 @@ impl<'a> Run<'a> {
         fields
     }
 
-    /// Whether `reference`'s witness of `step` observed exactly what it
-    /// expects: its transaction reached its own device.
-    fn holds_its_own(&self, reference: &str, step: &str) -> bool {
-        self.records.iter().any(|r| {
-            matches!(r, Record::I2cWitness { reference: x, step: s, expected, observed: Some(o), .. }
-                if x == reference && s == step && o == expected)
-        })
+    /// Whether check `check`'s transfer went to another device's address
+    /// that answered (`AET-WO-3306` adversarial F1): its record claims `ok`,
+    /// so something answered; its step found no device at an address not its
+    /// own; and its device's whole log holds fewer transactions of its shape
+    /// (its write, and its read's width) than its script does. `None` when
+    /// that cannot be told: no witness of the step, or one unreadable, or a
+    /// line that is not a `Write` or `Read`.
+    fn sent_elsewhere(&self, check: &Record) -> Option<bool> {
+        let Record::I2cCheck {
+            reference,
+            address,
+            step,
+            write,
+            width,
+            status,
+            ..
+        } = check
+        else {
+            return Some(false);
+        };
+        let witness = self.records.iter().find_map(|r| match r {
+            Record::I2cWitness {
+                reference: x,
+                step: s,
+                device,
+                absent,
+                ..
+            } if x == reference && s == step => Some((device, absent)),
+            _ => None,
+        });
+        let (device, absent) = witness?;
+        if status.as_deref() != Some("ok") || absent.iter().any(|a| a != address) {
+            return Some(false);
+        }
+        let mut script = Vec::new();
+        let mut log = Vec::new();
+        for r in self.records {
+            if let Record::I2cWitness {
+                reference: x,
+                expected,
+                observed,
+                ..
+            } = r
+                && x == reference
+            {
+                script.extend(expected.iter().cloned());
+                log.extend(observed.as_ref()?.iter().cloned());
+            }
+        }
+        let own = step_shape(write, *width);
+        let count = |lines: &[String]| -> Option<usize> {
+            Some(
+                transactions(lines, device)?
+                    .into_iter()
+                    .filter(|t| shape(&lines[t.clone()], device) == own)
+                    .count(),
+            )
+        };
+        Some(count(&log)? < count(&script)?)
     }
 
     /// The fields of `reading` the bus owns that are wrong.

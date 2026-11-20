@@ -2068,8 +2068,11 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
 }
 
 /// One more device's identity step (register 0xD0, a read of `width` bytes)
-/// on `bus`, whose read timed out with nothing logged.
+/// on `bus`, whose record claims the part's value while its device logged
+/// nothing: by its records alone, sent to some other device that answered.
 fn lacking(r: &mut Vec<Record>, peripheral: &str, reference: &str, address: u8, width: u8) {
+    let read = format!("Read 60{}", " 00".repeat(usize::from(width) - 1));
+    let script = ["Write D0", read.as_str()];
     insert_after_last(
         r,
         is_check,
@@ -2081,14 +2084,14 @@ fn lacking(r: &mut Vec<Record>, peripheral: &str, reference: &str, address: u8, 
             width,
             expected: 0x60,
             mask: 0xFF,
-            observed: Some(0),
-            status: Some("timeout_txis".into()),
+            observed: Some(0x60),
+            status: Some("ok".into()),
         },
     );
     insert_after_last(
         r,
         is_witness,
-        witness_with(peripheral, reference, &OK, Some(&[])),
+        witness_with(peripheral, reference, &script, Some(&[])),
     );
 }
 
@@ -2124,7 +2127,7 @@ fn the_step_named_is_on_the_same_bus_with_the_extra_reads_width() {
         replace(
             r,
             is_verdict,
-            verdict(&[("i2c_timeout", 1), ("i2c_transaction_unwitnessed", 2)]),
+            verdict(&[("i2c_transaction_unwitnessed", 3)]),
         );
     });
     assert_eq!(named(&r), ["i2c1.u2.identity.address"]);
@@ -2149,7 +2152,7 @@ fn the_step_named_is_on_the_same_bus_with_the_extra_reads_width() {
         replace(
             r,
             is_verdict,
-            verdict(&[("i2c_timeout", 1), ("i2c_transaction_unwitnessed", 2)]),
+            verdict(&[("i2c_transaction_unwitnessed", 3)]),
         );
     });
     assert_eq!(named(&r), ["i2c1.u2.identity.address"]);
@@ -2331,4 +2334,101 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
             );
         }
     }
+}
+
+/// Adversarial F1 (`AET-WO-3306` §6): a step is named as sent to the
+/// surplus's address only if it went elsewhere. If its record claims `ok`
+/// and its device's log holds its transaction, U2 was not the one at 0x77,
+/// even with its value wrong. If it timed out with its step finding no
+/// device at 0x75, it went to 0x75, not 0x77; with no record claiming
+/// `ok`, nothing answered it. Each way U5's repeated read is still
+/// software evidence, by the count alone.
+#[test]
+fn a_step_that_reached_its_own_device_or_no_device_is_not_named_as_the_surplus() {
+    let held = two_bme(&[], |r| {
+        replace(
+            r,
+            |x| matches!(x, Record::I2cCheck { reference, .. } if reference == "U2"),
+            check("ok", 0x61),
+        );
+        observe(r, "U2", &["Write D0", "Read 61"]);
+        observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+        replace(
+            r,
+            is_verdict,
+            verdict(&[
+                ("i2c_identity_mismatch", 1),
+                ("i2c_transaction_unwitnessed", 2),
+            ]),
+        );
+    });
+    // Two more, each told apart by one fact alone: a step that timed out
+    // with no absence logged, and one claiming `ok` whose step found no
+    // device at 0x75.
+    let elsewhere = |status: &'static str, absent: Vec<u8>| {
+        two_bme(&[], move |r| {
+            replace(
+                r,
+                |x| matches!(x, Record::I2cCheck { reference, .. } if reference == "U2"),
+                check(status, if status == "ok" { 0x60 } else { 0 }),
+            );
+            let i = witness_index(r, "U2");
+            if let Record::I2cWitness {
+                observed,
+                absent: a,
+                ..
+            } = &mut r[i]
+            {
+                *observed = Some(Vec::new());
+                *a = absent.clone();
+            }
+            observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+            let findings: &[(&str, u64)] = if status == "ok" {
+                &[("i2c_transaction_unwitnessed", 2)]
+            } else {
+                &[("i2c_timeout", 1), ("i2c_transaction_unwitnessed", 1)]
+            };
+            replace(r, is_verdict, verdict(findings));
+        })
+    };
+    let timed_out = elsewhere("timeout_txis", vec![]);
+    let to_0x75 = elsewhere("ok", vec![0x75]);
+    // U2's own timeout with nothing logged and no absence is indeterminate
+    // by itself (`a_txis_timeout_with_nothing_logged_is_indeterminate_not_software`),
+    // and an indeterminate symptom names the run.
+    for (r, rule) in [(held, Rule::S1), (timed_out, Rule::I4), (to_0x75, Rule::S1)] {
+        let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
+            .into_iter()
+            .filter(|f| f.4)
+            .map(|f| f.0)
+            .collect();
+        assert_eq!(wrong, ["i2c1.u5.transactions"]);
+        assert_eq!(attributed(&r).rule, rule);
+    }
+}
+
+/// Adversarial F1: a step of the surplus's shape whose device cannot be read
+/// whole (here an `[ERROR]` line in its log) might be the one, so no step
+/// is named, only the address.
+#[test]
+fn a_candidate_that_cannot_be_told_names_no_step() {
+    let r = two_bme(&[("U6", 0x75)], |r| {
+        observe(r, "U2", &[]);
+        let i = witness_index(r, "U6");
+        if let Record::I2cWitness { observed, .. } = &mut r[i] {
+            *observed = Some(vec!["[ERROR] i2c1.u6: bus error".to_owned()]);
+        }
+        observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 3)]),
+        );
+    });
+    let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
+        .into_iter()
+        .filter(|f| f.4)
+        .map(|f| f.0)
+        .collect();
+    assert_eq!(wrong, ["i2c1.u5.transactions"]);
 }
