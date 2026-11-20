@@ -712,6 +712,32 @@ pub struct InputReport {
     pub sha256: String,
 }
 
+/// What a gate judged (`AET-WO-2306`, roadmap §5's P4 clause): `judged`, a
+/// count of the items in its scope, and, exactly when that is 0,
+/// `nothing_in_scope: true` with a one-line reason. A pass with nothing in
+/// scope stays a pass; how much it counts is the reviewer's reading.
+#[derive(Serialize, Debug, PartialEq, Eq)]
+pub struct Scope {
+    pub judged: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nothing_in_scope: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nothing_in_scope_reason: Option<String>,
+}
+
+impl Scope {
+    /// `judged` items in scope; `reason` says why none were, and is stated
+    /// only when `judged` is 0.
+    pub fn of(judged: u64, reason: &str) -> Self {
+        let nothing = judged == 0;
+        Self {
+            judged,
+            nothing_in_scope: nothing.then_some(true),
+            nothing_in_scope_reason: nothing.then(|| reason.to_owned()),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct ToolReport {
     pub name: &'static str,
@@ -987,4 +1013,26 @@ pub struct FaultRecord {
     /// The bus's lines past their ceiling.
     pub nets: Vec<String>,
     pub firmware_sees: &'static str,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Scope;
+
+    /// `AET-WO-2306` §1.2: `nothing_in_scope` and its reason appear exactly
+    /// when nothing was judged, and serialize after `judged` only then.
+    #[test]
+    fn nothing_in_scope_appears_exactly_when_nothing_was_judged() {
+        let none = Scope::of(0, "why");
+        assert_eq!(
+            serde_json::to_value(&none).unwrap(),
+            serde_json::json!({"judged": 0, "nothing_in_scope": true, "nothing_in_scope_reason": "why"})
+        );
+        for n in [1, 7] {
+            assert_eq!(
+                serde_json::to_value(Scope::of(n, "why")).unwrap(),
+                serde_json::json!({"judged": n})
+            );
+        }
+    }
 }

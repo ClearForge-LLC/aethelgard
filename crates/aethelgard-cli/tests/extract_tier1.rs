@@ -122,6 +122,21 @@ fn the_reference_passes_with_every_term() {
         v["specification_sha256"],
         sha(&fs::read(root().join(SPEC)).unwrap())
     );
+    // `AET-WO-2306`: every line and supply judged is counted, and a board
+    // with something in scope says nothing more.
+    assert_eq!(
+        v["judged"].as_u64(),
+        Some(
+            (v["lines"].as_array().unwrap().len()
+                + v.get("supplies").map_or(0, |s| s.as_array().unwrap().len())) as u64
+        ),
+        "{v}"
+    );
+    assert_eq!(v["judged"], 4, "{v}");
+    assert!(
+        v.get("nothing_in_scope").is_none() && v.get("nothing_in_scope_reason").is_none(),
+        "{v}"
+    );
     assert!(!v["conditions"].as_array().unwrap().is_empty());
     let lines = v["lines"].as_array().unwrap();
     // `AET-WO-4300c` D2: the SPI bus's SCK and MOSI follow the I2C lines.
@@ -1006,4 +1021,38 @@ fn a_bound_missed_where_the_ladder_ran_states_no_cause() {
         "{v}"
     );
     assert!(f.get("cause").is_none(), "{v}");
+}
+
+/// `AET-WO-2306` §1.5: `AET-WO-4600`'s motor driver (specification 18, its
+/// outputs' `esc` undeclared) has no I2C bus, no SPI bus and no supply drop
+/// limit, so `extract` bounds no line. It passes, with `judged: 0`,
+/// `nothing_in_scope: true` and the reason; the pass is not turned into a
+/// failure.
+#[test]
+fn a_board_with_no_bounded_line_judges_nothing_and_says_so() {
+    const DRIVER: &str = "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json";
+    let dir = scratch("driver");
+    let (code, v) = run(&["emit", "--file", DRIVER, "--out", dir.to_str().unwrap()]);
+    assert_eq!(code, 0, "{v}");
+    let board = dir.join("bench-motor-driver.kicad_pcb");
+    let (code, v) = run(&[
+        "extract",
+        "--board",
+        board.to_str().unwrap(),
+        "--spec",
+        DRIVER,
+    ]);
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(v["lines"], serde_json::json!([]), "{v}");
+    assert!(v.get("supplies").is_none(), "{v}");
+    assert_eq!(v["judged"], 0, "{v}");
+    assert_eq!(v["nothing_in_scope"], true, "{v}");
+    assert_eq!(
+        v["nothing_in_scope_reason"],
+        "no bounded line: the specification declares no I2C bus, no SPI bus and no supply domain with a drop limit",
+        "{v}"
+    );
+    assert_eq!(v["findings"], serde_json::json!([]), "{v}");
 }
