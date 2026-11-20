@@ -5,7 +5,7 @@
 //! Judged from the placed board (`schematic::placement`, no routing), where
 //! each pad's net is the copper's, and from the parts table's pin roles,
 //! never from the emitter's part list (`INV-07`). Refusals of input that
-//! `validate` would refuse first are reached through `schematic::Drawing::anchored`,
+//! `validate` would refuse first are reached through `schematic::anchored`,
 //! which draws without validating, as an unvalidated caller would.
 
 #![allow(clippy::unwrap_used)]
@@ -250,10 +250,7 @@ fn a_control_the_emitter_cannot_draw_as_declared_is_refused_by_name() {
             Some(e) => list[at] = e,
         }
         let spec: Specification = serde_json::from_value(v).unwrap();
-        let why = not_drawable(
-            schematic::Drawing::of(&spec, &solved, &table).map(|d| d.anchored()),
-            reference,
-        );
+        let why = not_drawable(schematic::anchored(&spec, &solved, &table), reference);
         assert!(why.contains(want), "{reference} {pin}: {why}");
     }
 }
@@ -378,9 +375,7 @@ fn the_declared_bulk_capacitor_is_c1_positive_on_vbat_on_both_power_boards() {
 fn the_bulk_capacitor_anchors_to_the_first_battery_fed_regulator_or_to_nothing() {
     let v = full();
     let (spec, solved, table) = solved(&v);
-    let anchored = schematic::Drawing::of(&spec, &solved, &table)
-        .unwrap()
-        .anchored();
+    let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
     assert_eq!(anchored.get("C1").map(String::as_str), Some("U10"));
     // No regulator fed from the battery: each battery-fed one moved onto
     // `VDD_3V3` (drawn without `validate`, which judges the tree).
@@ -391,10 +386,13 @@ fn the_bulk_capacitor_anchors_to_the_first_battery_fed_regulator_or_to_nothing()
         }
     }
     let spec: Specification = serde_json::from_value(v).unwrap();
-    let drawing = schematic::Drawing::of(&spec, &solved, &table).unwrap();
-    assert_eq!(drawing.anchored().get("C1"), None);
+    let anchored = schematic::anchored(&spec, &solved, &table).unwrap();
+    assert_eq!(anchored.get("C1"), None);
+    let drawn = schematic::Drawing::of(&spec, &solved, &table)
+        .unwrap()
+        .drawn();
     assert_eq!(
-        drawing.drawn().get("C1").map(String::as_str),
+        drawn.get("C1").map(String::as_str),
         Some("47u UCZ1H470MCL1GS")
     );
 }
@@ -433,9 +431,7 @@ fn a_hot_plug_reference_the_emitter_refuses_is_refused_at_validate() {
         let refused = spec.validate().unwrap_err();
         assert_eq!(refused.kind(), kind, "{name}: {refused}");
         assert_eq!(refused.id(), Some(id), "{name}: {refused}");
-        let e = schematic::Drawing::of(&spec, &solved, &table)
-            .err()
-            .unwrap();
+        let e = schematic::anchored(&spec, &solved, &table).unwrap_err();
         assert_eq!(e.kind(), emitter, "{name}: {e}");
     }
 }
