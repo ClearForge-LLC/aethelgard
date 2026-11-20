@@ -481,7 +481,7 @@ fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
 #[test]
 fn a_topology_with_a_pin_device_is_refused_as_not_emitted() {
     let mut v = sentinel_01();
-    v["pin_devices"] = json!({"U9": {"part": "WAKE_SWITCH"}});
+    v["pin_devices"] = json!({"U9": {"part": "WAKE_SWITCH", "bridges": {}}});
     v["gpio"]["WAKE"] = json!({"pin": "PB5", "direction": "input", "pull": "up"});
     v["pin_speeds"]["WAKE"] = json!(0);
     let t: SolvedTopology = serde_json::from_value(v).unwrap();

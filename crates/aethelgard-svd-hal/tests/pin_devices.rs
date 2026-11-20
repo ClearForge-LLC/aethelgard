@@ -123,3 +123,91 @@ fn the_adc_takes_the_declared_resolution_or_is_refused_by_name() {
         assert_eq!(e.kind(), kind, "{e}");
     }
 }
+
+/// The adversarial pass's F2: PH as a GPIO output (`1211` Q7, ruled
+/// allowed) beside EN on TIM1 generates; PH joins TIM1's proof part, so the
+/// enable's rule there reads both its inputs.
+#[test]
+fn a_bridge_with_a_gpio_input_generates_in_its_timer_s_part() {
+    let path = format!(
+        "{}/../aethelgard-ir/tests/fixtures/d1-drv8876.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let mut v: serde_json::Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+    let motors = v["motor_outputs"].as_array_mut().unwrap();
+    motors.retain(|m| m["label"] != "DRV_PH");
+    let device = &mut v["pin_devices"][0];
+    device["signals"]
+        .as_array_mut()
+        .unwrap()
+        .push(serde_json::json!({
+            "device_pin": "PH/IN2",
+            "net": "DRV_PH",
+            "pin": null,
+            "direction": "output",
+            "initial": "low"
+        }));
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    let table = pin_table(&spec.mcu.part).unwrap();
+    let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let ph = t.gpio["DRV_PH"].pin.to_ascii_lowercase();
+    let f = files(&t, &table);
+    let main = &f["firmware/src/main.rs"];
+    assert!(
+        main.contains(&format!(
+            "let _pa1 = gpioa.pa1.into_output(&mut r, &_tim1, &_{ph});"
+        )),
+        "{main}"
+    );
+    let proofs = &f["src/proofs.rs"];
+    let part = &proofs[proofs.find("fn every_valid_sequence_tim1").unwrap()..];
+    assert!(
+        part.contains(&format!("{ph}.take().unwrap()")),
+        "{ph} is in TIM1's part"
+    );
+}
+
+/// The adversarial pass's F3: the proof's final state judges the bridge's
+/// idle against its part's truth table (PH/EN: asleep, or EN 0, brake;
+/// SLVSDS7B Table 3 p. 11), the rows the oracle reads from `pin_parts`.
+#[test]
+fn the_proof_judges_the_bridge_s_idle_against_the_truth_table() {
+    let (t, table) = d1();
+    let proofs = &files(&t, &table)["src/proofs.rs"];
+    assert!(proofs.contains(
+        "kani::assert(matches!((en, i0, i1), (0, _, _) | (1, 0, _)), \"`U2`'s `M1` idles in a driving or unlisted state of its truth table\");"
+    ));
+}
+
+/// The adversarial pass's F1: four inputs on one ADC (the sequence's most)
+/// need an unwind past the conversions' loop.
+#[test]
+fn four_adc_inputs_unwind_past_their_conversions() {
+    use aethelgard_ir::pin_devices::SolvedAdcInput;
+    let (mut t, table) = d1();
+    for (net, pin, ch) in [
+        ("A2", "PF4", "INP9"),
+        ("A3", "PF5", "INP4"),
+        ("A4", "PF6", "INP8"),
+    ] {
+        t.adc_inputs.insert(
+            net.into(),
+            SolvedAdcInput {
+                pin: pin.into(),
+                peripheral: "ADC3".into(),
+                channel: ch.into(),
+                bits: Some(12),
+            },
+        );
+    }
+    t.validate().unwrap();
+    let proofs = &files(&t, &table)["src/proofs.rs"];
+    let h = &proofs[..proofs
+        .find("fn adc3_bring_up_is_in_order_and_bounded")
+        .unwrap()];
+    assert!(
+        h.ends_with("#[kani::unwind(6)]\n"),
+        "{}",
+        &h[h.len() - 60..]
+    );
+}

@@ -174,11 +174,11 @@ pub enum BoardError {
         bridge: String,
         detail: String,
     },
-    /// `AET-WO-1211b`: a bridge whose enable must follow inputs that sit in
-    /// two of the schedule proof's parts (two timers, or a timer and a GPIO),
-    /// whose order no one part could prove.
+    /// `AET-WO-1211b`: a bridge whose enable must follow inputs on two
+    /// timers (its own two, or two bridges' sharing the enable), each its own
+    /// part of the schedule proof, whose order no one part could prove.
     #[error(
-        "bridge `{bridge}` of `{reference}`: its inputs sit on more than one timer, or on a timer and a GPIO, so no one proof part holds its enable's order"
+        "bridge `{bridge}` of `{reference}`: its enable follows inputs on more than one timer, so no one proof part holds its order"
     )]
     BridgeAcrossParts { reference: String, bridge: String },
     /// `AET-WO-1211b` (`INV-06`): the bring-up wakes a part whose row states
@@ -1337,6 +1337,90 @@ struct Plan {
     /// Each pin device's bridge with an enable (`AET-WO-1211b`): the enable
     /// is configured after every input is at its idle, and woken only after.
     bridges: Vec<BridgePlan>,
+    /// The proof oracle's own reading of each bridge with an enable
+    /// (`INV-07`; the adversarial pass's F3, F4): from the topology and the
+    /// part's row, never from [`bridge_plans`].
+    oracle_bridges: Vec<OracleBridge>,
+    /// The proof oracle's own reading of each ADC (`adc::oracle_of`).
+    oracle_adcs: BTreeMap<String, adc::OracleAdc>,
+}
+
+/// One bridge as the oracle reads it.
+#[derive(Debug, Clone)]
+struct OracleBridge {
+    /// `U2`'s `M1`.
+    name: String,
+    enable: String,
+    /// Each input: a timer channel (timer, channel) or a GPIO output's pin.
+    inputs: Vec<Result<(u32, u32), String>>,
+    /// The row's non-driving, non-forbidden states as (enable, input 0,
+    /// input 1), `None` for an input the row leaves free.
+    safe: Vec<(Level, Option<Level>, Option<Level>)>,
+}
+
+/// The oracle's bridges (`AET-WO-1211b`): each bridge, its inputs read from
+/// `assignments` and `gpio`, and its mode's non-driving rows from the part's
+/// row (`aethelgard_ir::pin_parts`, the datasheet's truth table), looked up
+/// by part and mode.
+///
+/// belt-and-suspenders: this restates what [`bridge_plans`] reads on
+/// purpose; the proof's expectations must not come from the plan the
+/// generator orders the firmware by (`INV-07`).
+fn oracle_bridges(solved: &SolvedTopology) -> Result<Vec<OracleBridge>, BoardError> {
+    let table = aethelgard_ir::parts::table().map_err(BoardError::InvalidTopology)?;
+    let mut out = Vec::new();
+    for (reference, d) in &solved.pin_devices {
+        for (id, b) in &d.bridges {
+            let refuse = |detail: &str| BoardError::BridgeIdleNotSafe {
+                reference: reference.clone(),
+                bridge: id.clone(),
+                detail: format!("the oracle cannot read it: {detail}"),
+            };
+            let Some(e) = &b.enable else {
+                return Err(refuse("no enable"));
+            };
+            let mode = table
+                .pin_part(&d.part)
+                .and_then(|row| row.mode(&b.mode))
+                .ok_or_else(|| refuse("no row or mode"))?;
+            let enable = solved
+                .gpio
+                .get(&e.net)
+                .map(|g| g.pin.clone())
+                .ok_or_else(|| refuse("the enable is no GPIO"))?;
+            let inputs = b
+                .inputs
+                .iter()
+                .map(|net| {
+                    match solved
+                        .assignments
+                        .get(net)
+                        .and_then(|a| motor::timer_channel(&a.signal))
+                    {
+                        Some(tk) => Ok(Ok(tk)),
+                        None => solved
+                            .gpio
+                            .get(net)
+                            .map(|g| Err(g.pin.clone()))
+                            .ok_or_else(|| refuse("an input is neither")),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let safe = mode
+                .states
+                .iter()
+                .filter(|st| !st.drives && !mode.forbidden.contains(&st.name))
+                .map(|st| (st.enable, st.inputs[0], st.inputs[1]))
+                .collect();
+            out.push(OracleBridge {
+                name: format!("`{reference}`'s `{id}`"),
+                enable,
+                inputs,
+                safe,
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// One bridge's enable and what it must follow (`AET-WO-1211b`; `1211`
@@ -1395,7 +1479,11 @@ fn bridge_plans(solved: &SolvedTopology) -> Result<Vec<BridgePlan>, BoardError> 
                 bridge: id.clone(),
                 detail,
             };
-            let Some(e) = &b.enable else { continue };
+            // A bridge with no enable has no idle to judge it by (validate
+            // refuses it, `DevicePinUnbound`; the adversarial pass's F7).
+            let Some(e) = &b.enable else {
+                return Err(refuse("it has no enable, so its idle is unjudged".into()));
+            };
             let row = aethelgard_ir::parts::table()
                 .map_err(BoardError::InvalidTopology)?
                 .pin_part(&d.part)
@@ -1458,7 +1546,7 @@ fn bridge_plans(solved: &SolvedTopology) -> Result<Vec<BridgePlan>, BoardError> 
                     state.name, d.part, b.mode, row.document, mode.page
                 )));
             }
-            if timers.len() > 1 || (!timers.is_empty() && !gpio_inputs.is_empty()) {
+            if timers.len() > 1 {
                 return Err(BoardError::BridgeAcrossParts {
                     reference: reference.clone(),
                     bridge: id.clone(),
@@ -1484,12 +1572,14 @@ fn bridge_plans(solved: &SolvedTopology) -> Result<Vec<BridgePlan>, BoardError> 
             });
         }
     }
-    // An enable shared by bridges follows all of them: still one part.
+    // An enable shared by bridges follows all of them: still one timer's part.
     for b in &out {
-        let shared: Vec<&BridgePlan> = out.iter().filter(|o| o.enable == b.enable).collect();
-        let timers: BTreeSet<u32> = shared.iter().filter_map(|o| o.timer).collect();
-        let gpio = shared.iter().any(|o| !o.gpio_inputs.is_empty());
-        if timers.len() > 1 || (!timers.is_empty() && gpio) {
+        let timers: BTreeSet<u32> = out
+            .iter()
+            .filter(|o| o.enable == b.enable)
+            .filter_map(|o| o.timer)
+            .collect();
+        if timers.len() > 1 {
             return Err(BoardError::BridgeAcrossParts {
                 reference: b.reference.clone(),
                 bridge: b.id.clone(),
@@ -1917,6 +2007,8 @@ impl Plan {
             oracle_ccr,
             adcs: adc::of(solved)?,
             bridges: bridge_plans(solved)?,
+            oracle_bridges: oracle_bridges(solved)?,
+            oracle_adcs: adc::oracle_of(solved),
             oracle_levels: solved
                 .gpio
                 .values()
@@ -4235,17 +4327,38 @@ fn oracle_pupdr(plan: &Plan, port: char) -> u32 {
 /// input already an output. From the header's positions, never from the
 /// typestate the enable's method takes; `None` for any other pin.
 fn oracle_enable_ready(plan: &Plan, facts: &Facts, pin: &str) -> Option<String> {
-    let e = plan.enable_after(pin)?;
+    let bridges: Vec<&OracleBridge> = plan
+        .oracle_bridges
+        .iter()
+        .filter(|b| b.enable == pin)
+        .collect();
+    if bridges.is_empty() {
+        return None;
+    }
+    let timers: BTreeSet<u32> = bridges
+        .iter()
+        .flat_map(|b| {
+            b.inputs
+                .iter()
+                .filter_map(|i| i.as_ref().ok().map(|(n, _)| *n))
+        })
+        .collect();
+    let gpio_inputs: BTreeSet<&String> = bridges
+        .iter()
+        .flat_map(|b| b.inputs.iter().filter_map(|i| i.as_ref().err()))
+        .collect();
     let g = &facts.gpio;
     let mut terms = Vec::new();
-    if let (Some(n), Some(tf)) = (e.timer, &facts.tim) {
-        terms.push(format!(
-            "self.tim{n}[{}] & {:#010x} != 0",
-            tf.cr1 / 4,
-            1u32 << tf.cen
-        ));
+    if let Some(tf) = &facts.tim {
+        for n in &timers {
+            terms.push(format!(
+                "self.tim{n}[{}] & {:#010x} != 0",
+                tf.cr1 / 4,
+                1u32 << tf.cen
+            ));
+        }
     }
-    for input in &e.gpio_inputs {
+    for input in gpio_inputs {
         let pf = &facts.pins[input];
         let p = &plan.pins[input];
         terms.push(format!(
@@ -4516,12 +4629,12 @@ fn parts(plan: &Plan) -> Vec<Scope> {
         let mut pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
         // A bridge's enable on this timer's channels, whose order this part
         // proves (`AET-WO-1211b`).
-        pins.extend(
-            plan.bridges
-                .iter()
-                .filter(|b| b.timer == Some(*n))
-                .map(|b| b.enable.clone()),
-        );
+        // Its GPIO inputs too, ruled allowed (`1211` Q7): the enable follows
+        // both in one part (the adversarial pass's F2).
+        for b in plan.bridges.iter().filter(|b| b.timer == Some(*n)) {
+            pins.insert(b.enable.clone());
+            pins.extend(b.gpio_inputs.iter().cloned());
+        }
         owned.extend(pins.iter().cloned());
         let mut part = Scope::unit(plan, format!("tim{n}"), pins);
         part.timers.insert(*n);
@@ -5974,6 +6087,7 @@ fn emit_schedule(
             }
         }
     }
+    emit_bridge_idle(w, plan, facts, scope);
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
@@ -6478,6 +6592,72 @@ fn emit_schedule(
     );
 }
 
+/// Each bridge whose enable this scope holds (`AET-WO-1211b`; `1211` §2.5,
+/// Q3; §2.7 (e) Kani): its idle as the final image leaves it is a
+/// non-driving row of its part's truth table. Each input's level is read
+/// from the image as silicon would hold it, a timer channel's in PWM mode 1
+/// by its `CCR` against `ARR` (0 holds OCxREF at 0, above `ARR` at 1, RM0433
+/// Rev 9 p. 1558; anything between is a pulse, 2, which no row holds), a
+/// GPIO's and the enable's by `ODR`; the rows are the oracle's
+/// ([`oracle_bridges`]), never the generator's judgement.
+fn emit_bridge_idle(w: &mut String, plan: &Plan, facts: &Facts, scope: &Scope) {
+    let g = &facts.gpio;
+    let level = |pin: &str| {
+        let p = &plan.pins[pin];
+        format!(
+            "((after.{}[{}] >> {}) & 1) as u8",
+            port_field(p.port),
+            g.odr / 4,
+            facts.pins[pin].bs
+        )
+    };
+    let bit = |l: Option<Level>| match l {
+        Some(Level::Low) => "0",
+        Some(Level::High) => "1",
+        None => "_",
+    };
+    for b in plan
+        .oracle_bridges
+        .iter()
+        .filter(|b| scope.pins.contains(&b.enable))
+    {
+        let mut inputs = Vec::new();
+        for i in &b.inputs {
+            match (i, &facts.tim) {
+                (Ok((n, k)), Some(tf)) => inputs.push(format!(
+                    "{{\n        let c = after.tim{n}[{c}];\n        if c == 0 {{\n            0u8\n        }} else if c > after.tim{n}[{a}] {{\n            1\n        }} else {{\n            2\n        }}\n    }}",
+                    c = tf.ccr[(*k - 1) as usize] / 4,
+                    a = tf.arr / 4,
+                )),
+                (Err(pin), _) => inputs.push(level(pin)),
+                (Ok(_), None) => inputs.push("2u8".to_owned()),
+            }
+        }
+        let rows: Vec<String> = b
+            .safe
+            .iter()
+            .map(|(e, i0, i1)| format!("({}, {}, {})", bit(Some(*e)), bit(*i0), bit(*i1)))
+            .collect();
+        let rule = if rows.is_empty() {
+            "false".to_owned()
+        } else {
+            format!("matches!((en, i0, i1), {})", rows.join(" | "))
+        };
+        let _ = writeln!(
+            w,
+            "    // {name}'s idle: a non-driving row of its part's truth table.\n    \
+             let en = {en};\n    \
+             let i0 = {i0};\n    \
+             let i1 = {i1};\n    \
+             kani::assert({rule}, \"{name} idles in a driving or unlisted state of its truth table\");",
+            name = b.name,
+            en = level(&b.enable),
+            i0 = inputs.first().cloned().unwrap_or_else(|| "2u8".into()),
+            i1 = inputs.get(1).cloned().unwrap_or_else(|| "2u8".into()),
+        );
+    }
+}
+
 /// The proofs of the motor outputs (`AET-WO-4300a` §1.3), when the topology
 /// has a timer: that `reset_clock` is `Ok` exactly when every field it checks
 /// holds its reset value, reading only its four registers and writing none;
@@ -6672,7 +6852,14 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              let {f} = rcc.enable_{f}(&mut img, board.{f});\n",
             harness_setup(plan, &pins)
         );
-        adc::emit_proof(w, name, p, &facts.adcs[name], &setup);
+        // The oracle's own reading. An ADC it does not see is proved against
+        // no input, so its proof fails: it fails closed.
+        let none = adc::OracleAdc {
+            channels: Vec::new(),
+            bits: 0,
+        };
+        let oracle = plan.oracle_adcs.get(name).unwrap_or(&none);
+        adc::emit_proof(w, name, p, oracle, &facts.adcs[name], &setup);
     }
 }
 

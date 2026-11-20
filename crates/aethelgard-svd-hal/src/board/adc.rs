@@ -550,7 +550,7 @@ fn oracle_res(bits: u8) -> u32 {
 ///
 /// belt-and-suspenders: this restates [`writes`]' values and order on
 /// purpose (`INV-07`).
-fn oracle(p: &AdcPlan, a: &AdcFacts) -> Vec<(bool, u32, u32)> {
+fn oracle(o: &OracleAdc, a: &AdcFacts) -> Vec<(bool, u32, u32)> {
     let q = &a.pos;
     let reg = (1u32 << q.advregen) | (1u32 << q.boost);
     let mut out = vec![
@@ -561,20 +561,20 @@ fn oracle(p: &AdcPlan, a: &AdcFacts) -> Vec<(bool, u32, u32)> {
     out.push((
         false,
         a.cfgr,
-        (1 << q.jqdis) | (oracle_res(p.bits) << q.res),
+        (1 << q.jqdis) | (oracle_res(o.bits) << q.res),
     ));
     let mut pcsel = 0;
     let mut smpr = [0u32; 2];
-    let mut sqr1 = u32::try_from(p.inputs.len() - 1).unwrap_or(0) << q.l;
-    for (k, i) in p.inputs.iter().enumerate() {
-        pcsel |= 1 << i.channel;
-        let (r, pos) = if i.channel < 10 {
-            (0, 3 * i.channel)
+    let mut sqr1 = u32::try_from(o.channels.len().saturating_sub(1)).unwrap_or(0) << q.l;
+    for (k, ch) in o.channels.iter().enumerate() {
+        pcsel |= 1 << ch;
+        let (r, pos) = if *ch < 10 {
+            (0, 3 * ch)
         } else {
-            (1, 3 * (i.channel - 10))
+            (1, 3 * (ch - 10))
         };
         smpr[r] |= 0b111 << pos;
-        sqr1 |= i.channel << (6 + 6 * k as u32);
+        sqr1 |= ch << (6 + 6 * k as u32);
     }
     out.push((false, a.pcsel, pcsel));
     for (r, word) in smpr.iter().enumerate() {
@@ -588,17 +588,58 @@ fn oracle(p: &AdcPlan, a: &AdcFacts) -> Vec<(bool, u32, u32)> {
     out
 }
 
+/// The oracle's own reading of one ADC (`INV-07`; the adversarial pass's
+/// F4): its device inputs' channels in ascending order and their declared
+/// resolution, read from `solved.adc_inputs` apart from [`plan`].
+#[derive(Debug, Clone)]
+pub(super) struct OracleAdc {
+    pub channels: Vec<u32>,
+    pub bits: u8,
+}
+
+/// Each ADC's [`OracleAdc`], every `power.sense` input left out.
+///
+/// belt-and-suspenders: this restates [`plan`]'s reading on purpose
+/// (`INV-07`).
+pub(super) fn oracle_of(solved: &SolvedTopology) -> BTreeMap<String, OracleAdc> {
+    let sense: std::collections::BTreeSet<&String> =
+        solved.power.iter().flat_map(|p| p.sense.keys()).collect();
+    let mut out: BTreeMap<String, OracleAdc> = BTreeMap::new();
+    for (_, a) in solved.adc_inputs.iter().filter(|(n, _)| !sense.contains(n)) {
+        let o = out.entry(a.peripheral.clone()).or_insert(OracleAdc {
+            channels: Vec::new(),
+            bits: a.bits.unwrap_or(0),
+        });
+        o.channels.extend(
+            a.channel
+                .strip_prefix("INP")
+                .and_then(|c| c.parse::<u32>().ok()),
+        );
+    }
+    for o in out.values_mut() {
+        o.channels.sort_unstable();
+    }
+    out
+}
+
 /// The proof of one ADC's bring-up on a spy of its own: every word the
 /// oracle's, in order; the calibration's hardware-set bits kept by the
 /// `ADEN` and `ADSTART` writes; no `ADC_CR` write with two command bits;
 /// each wait bounded and each expiry its own fault, with nothing written
 /// after it.
-pub(super) fn emit_proof(w: &mut String, name: &str, p: &AdcPlan, a: &AdcFacts, setup: &str) {
+pub(super) fn emit_proof(
+    w: &mut String,
+    name: &str,
+    p: &AdcPlan,
+    o: &OracleAdc,
+    a: &AdcFacts,
+    setup: &str,
+) {
     let t = block(name);
     let c = common_block(name);
     let q = &a.pos;
     let f = name.to_ascii_lowercase();
-    let expect = oracle(p, a);
+    let expect = oracle(o, a);
     let k = expect.len();
     let items: Vec<String> = expect
         .iter()
@@ -609,7 +650,7 @@ pub(super) fn emit_proof(w: &mut String, name: &str, p: &AdcPlan, a: &AdcFacts, 
             )
         })
         .collect();
-    let n = p.inputs.len();
+    let n = o.channels.len();
     let args: Vec<String> = p
         .inputs
         .iter()
@@ -719,7 +760,7 @@ pub(super) fn emit_proof(w: &mut String, name: &str, p: &AdcPlan, a: &AdcFacts, 
          /// words in order, `ADEN` and `ADSTART` read-modify-write keeping every other\n\
          /// bit, no write with two command bits, and each outcome by its own name.\n\
          #[kani::proof]\n\
-         #[kani::unwind(4)]\n\
+         #[kani::unwind({unwind})]\n\
          fn {f}_bring_up_is_in_order_and_bounded() {{\n\
          {setup}    \
              let mut spy = {t}Spy {{\n        \
@@ -768,6 +809,9 @@ pub(super) fn emit_proof(w: &mut String, name: &str, p: &AdcPlan, a: &AdcFacts, 
         eoc = 1u32 << q.eoc,
         items = items.join(", "),
         args = args.join(", "),
+        // One more than the longest loop: the bounds' 2 reads, or the inputs'
+        // conversions (the adversarial pass's F1).
+        unwind = n.max(2) + 2,
     );
 }
 

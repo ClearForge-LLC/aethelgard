@@ -1989,8 +1989,14 @@ pub fn gpio_rows(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<()
                     if let Some(row) = rows.iter_mut().find(|r| {
                         r.access == "written" && r.register == register && r.field == field
                     }) {
+                        // Nothing simulates a pin device until AET-WO-1211c
+                        // (`simulate` refuses it), so nothing observes the
+                        // level: silicon-only, as the ADC's rows (the
+                        // adversarial pass's F6).
+                        row.class = Class::SiliconOnly;
+                        row.judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the proof's ready clause takes the declared level's word (svd-hal board.rs oracle_level_bit), which is consistency, and only the bench reads the pad".to_owned();
                         row.note = format!(
-                            "pin device output `{net}` on {pin}: its declared initial level `{level}`, written before MODER makes it an output (AET-WO-1211b; RM0433 Rev 9 p. 534); the proof's ready clause takes the declared level's word (svd-hal board.rs oracle_level_bit), and the model drives the pin whatever MODER says"
+                            "pin device output `{net}` on {pin}: its declared initial level `{level}`, written before MODER makes it an output (AET-WO-1211b; RM0433 Rev 9 p. 534)"
                         );
                     }
                 }
