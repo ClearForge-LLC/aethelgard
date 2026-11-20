@@ -141,6 +141,7 @@ CI's `ardupilot-image` job runs `solve` then `generate hwdef --topology` and `cm
   - `4240c`'s two tests were brought to this work order's fixtures:
     - its external and crystal declarations carry the ruled start-up fields;
     - "no committed specification without a crystal draws one" skips the two HSE fixtures and counts them.
+  - **Ruled 19:30Z: accepted**, with the counting called the right reading of that test's intent. The §7.1 row for drawing an external clock (the bypass bench, `4240` D7 (c)) owns the rest.
 
 ## §5 Adversarial pass (full)
 
@@ -204,4 +205,8 @@ Diff-sized, on the branch's own additions:
 
 ## §10 State
 
-PR #293 (AWAITING-PACKAGE). `main` `25203c58` (`1211a`) is merged and the branch renumbered to 23/15 as its own commit. On the merged tree, against `main` `25203c58`'s baseline, every null ELF and verdict is identical and all 25 KiCad outputs are byte-identical. The bench package waits for the architect's write=true dispatch.
+**READY.** PR #293. The bench package is committed byte for byte from write=true run 44802458478 (artifact 14662341470, on `e7a1d2ca`).
+- 15 of its 17 files are identical to `main`'s, `sentinel-01-bench.elf` among them.
+- `MANIFEST.json` and `FAB-NOTES.md` moved by their sha lines alone: the specification's, the topology's, the verdict's, and FAB-NOTES' own hash in the manifest.
+- That run's only failures were the stale-package binding (`bench_board_tier1`, on shard 8) and the `tools` aggregate that follows it. Every other shard, `bench-package` and `tools-build` passed.
+- `main` `adb8f61a` is merged; specification 23, solved 15. The builder merges nothing.
