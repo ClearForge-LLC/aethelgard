@@ -8,7 +8,7 @@
   - Tier 2: `twin_tier2::each_hse_fixture_boots_to_pass_under_the_clock_rule`, 5.7 s and 5.5 s.
 - **No `null` board's ELF or verdict moved** [measured: 29 committed specifications plus ArduPilot's foreign run, against `main` `8fdc9422`'s baseline].
   - Emitted bytes moved by two causes only, each ruled:
-    - the version and sha lines (specification 22, solved 14);
+    - the version and sha lines (specification 23, solved 15 (renumbered from 22/14 after `1211a`));
     - `4240v` F2's `Scale2` lines (calls and signatures, Q2, D-2).
 - **The bring-up** (`Hse::start`), for an HSE board only, writes these words, each whole and once:
   - `RCC_CR` from its reset `0x0000_0001`: `HSEBYP` (external), then `HSEON`;
@@ -117,7 +117,31 @@
 
 ## §5 Adversarial pass (full)
 
-[pending]
+A fresh Opus subagent, given the code at `50f84cee` and the work order's §5 list but not my conclusions, tried every attack. Its probes, specs and logs are in `~/.cache/aet-4240b/adv/`. **No blocker.**
+
+| # | Finding | Severity | Done |
+|---|---|---|---|
+| A1 | No gate read `sys_ck` back. The tier-2 test checked the `.repl` text, and only motor timing caught a wrong `hseFrequency`: with it mutated to 8 MHz, all four outputs were `motor_timing_mismatch`. A motorless HSE board would pass on a wrong `sys_ck` | should-fix | **Fixed** (the tier-2 test asserts every motor witnessed at its solved timing, at a 64 MHz kernel). The motorless gap is F4 |
+| A2 | `startup_max_us` is refused only at 0. A declared 1 µs generates `HSE_POLLS` 65, which the twin passes and silicon would halt as `HSE_NOT_READY` on every boot | decision | Asked on the bus. The builder's lean: no floor here, the bypass bench measures `tSU` (F3) |
+| A3 | `FlashWaitStatesBelowTable`'s text said "FLASH_ACR at reset" for an HSE tree's written word | note | **Fixed** (text) |
+| A4 | `SpiControllerMismatch`'s text said "the reset clock" and "HSI's fastest" | note | **Fixed** (text) |
+| A5 | `HseCopyNotSolved` names a `flash_acr` edit only as "a clock field" | note | Kept: the refusal is by name, and the field is one of the clock's |
+| A6 | The solver and the judge size `FLASH_ACR` at the crystal's fastest. The word is in force on the HSI (≤ 64,958,976 Hz) until `SWS`; both fall in Table 17's VOS2 1 WS row today | note, latent | A tree under 55 MHz would need the HSI's fastest too. Recorded for any H2/H0 work order |
+| A7 | A CSS NMI between `HSECSSON` and the GPIO enables writes an unclocked port; RM0433 states no bus response there | note, unverified | No motor pin is configured in that window. For the bypass bench |
+| A8 | An HSE specification with `mcu.foreign_clock` generates a platform with no `hseFrequency` | note | `simulate --foreign` on HSE is `4400`'s (`4240a` F4) |
+| A9 | A consistently edited topology (another solve's clock spliced in) passes the topology-only paths | note | The stated residue of §3 |
+| A10 | `D3CFGR.D3PPRE` is read by `reset_clock` only with I2C4; on an HSE board SPI6's kernel `rcc_pclk4` depends on it too | note | At reset after any reset, and the twin flags any `D3CFGR` write. Backlog |
+| A11 | The poll counts are a minimum time (≥ 1 cycle per poll at the HSI's fastest): a dead HSE halts after **at least** 20 ms, not at most | note | Stated here; the code claims nothing more |
+
+**Attacked and held:**
+- the words and order against RM0433 Rev 9;
+- 13 synthetic-log probes of the twin's rule (16-bit reads, cut boots, HSI off after `SWS`, rewrites after `SW`, an `HSERDY` read of 0, no `D3CR`, an empty last boot, a select in an earlier boot), each named;
+- Kani at head, and a mutant discarding the `PLL1RDY` result, refused;
+- INV-07 provenance: the oracle's CR/CFGR words are its own RM-cited constants, not the emitter's;
+- the bounds by hand and the `u32` loop, and `HsePollsOverflow` at 4e9 µs;
+- the NMI vector and `css_hold` on six specifications;
+- all 25 null ELFs byte-identical base to head, built independently;
+- every single-field topology edit refused by `validate`, `check pinout` and `hwdef`.
 
 ## §6 Mutants (§1.9)
 
@@ -134,11 +158,17 @@
 - **F2 · `4240v` F7, the reduction proposals:**
   - P1, P6, R1 and R2 live in the IR's VOS rule, P8 in the twin's enable filter, and P7 is the CLI's and svd-hal's `CoreSupplyNotGenerated`. This rewrite touches none of them: declined, with no defect.
   - R4 was declined by ruling (Q2).
+- **F4 · a motorless HSE board has no `sys_ck` read-back** (A1). Renode pushes `sys_ck` to SysTick and the timers; the verdict reads it only through motor timing. A gate reading `nvic Frequency` at the run's end would close it (a backlog row).
 - **F3 · the bypass bench** (`4240` D7 (c)) measures the real `HSERDY` time and so tests the ruled 20,000 µs. Until then the twin and Kani cannot see it (§2.3).
 
 ## §8 Reduction pass
 
-[pending]
+Diff-sized, on the branch's own additions:
+- **Taken:** `clock::Startup`, a trait with one implementor, became `Hse`'s two inherent methods. That removes the trait and two imports.
+- **Declined:**
+  - `kernel_budget` (solver) beside `spi_kernel_budget` (rule): the pair is `RUL-20`'s, the solver's copy and the rule's.
+  - The CR words built twice, by the emitter from the header and by the Kani oracle from its RM-cited constants: `INV-07`.
+  - The twin's own copies of the five boot words: `belt-and-suspenders:`, out of bounds.
 
 ## §9 Gates and CI
 
@@ -147,4 +177,4 @@
 
 ## §10 State
 
-PR #293 (AWAITING-PACKAGE). The package is in the queue after `1211a`. This branch renumbers to 23/15 when `1211a` merges, then asks for the dispatch.
+PR #293 (AWAITING-PACKAGE). `main` `25203c58` (`1211a`) is merged and the branch renumbered to 23/15 as its own commit. On the merged tree, against `main` `25203c58`'s baseline, every null ELF and verdict is identical and all 25 KiCad outputs are byte-identical. The bench package waits for the architect's write=true dispatch.
