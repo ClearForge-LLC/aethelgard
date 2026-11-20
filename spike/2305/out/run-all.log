@@ -1,0 +1,10 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2868251-i179024931.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+s01min campaign exit 0 wall 8s fw 430e48ab
+s01bench campaign exit 0 wall 6s fw 008a2a59
+dshot600 campaign exit 0 wall 5s fw d2f84416
+four-layer campaign exit 0 wall 4s fw 08d1b050
+spi-only campaign exit 0 wall 5s fw 95fba79e
+s03 campaign exit 0 wall 11s fw c098c224
+s02 campaign exit 1 wall 12s fw c7ca3d8e
+logger campaign exit 1 wall 8s fw 17025835
+ext-bmp581 campaign exit 1 wall 8s fw a60306c9

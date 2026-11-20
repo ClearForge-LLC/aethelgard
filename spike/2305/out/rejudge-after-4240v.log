@@ -1,0 +1,20 @@
+built main2
+built branch
+s01min campaign exit 0 wall 9s fw 2bb1be79
+s01bench campaign exit 0 wall 5s fw e4e24372
+dshot600 campaign exit 0 wall 6s fw dc6af776
+four-layer campaign exit 0 wall 5s fw fb0e2955
+spi-only campaign exit 0 wall 9s fw 7c1441cb
+s03 campaign exit 1 wall 17s fw 73c34930
+s02 campaign exit 1 wall 11s fw 6e426528
+logger campaign exit 1 wall 9s fw 60e74bd0
+ext-bmp581 campaign exit 1 wall 10s fw a3618b2c
+s01min campaign exit 0 wall 11s fw 2bb1be79
+s01bench campaign exit 0 wall 7s fw e4e24372
+dshot600 campaign exit 0 wall 9s fw dc6af776
+four-layer campaign exit 0 wall 5s fw fb0e2955
+spi-only campaign exit 0 wall 8s fw 7c1441cb
+s03 campaign exit 0 wall 22s fw 73c34930
+s02 campaign exit 0 wall 16s fw 6e426528
+logger campaign exit 0 wall 13s fw 60e74bd0
+ext-bmp581 campaign exit 0 wall 14s fw a3618b2c

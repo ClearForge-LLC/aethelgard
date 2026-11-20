@@ -1386,6 +1386,9 @@ struct Ready {
     /// The boot's fresh capture directory, inside the tool's own scratch;
     /// `None` without a serial port.
     capture: Option<PathBuf>,
+    /// The undisturbed boot's, for a droop with a serial port
+    /// (`AET-WO-2305` §1.2); `None` otherwise.
+    capture_undisturbed: Option<PathBuf>,
     boot_word: u32,
     specification_sha256: String,
     virtual_ns: u64,
@@ -1546,7 +1549,12 @@ fn ready(
     }
     let capture = match serial.is_empty() {
         true => None,
-        false => Some(capture_dir(scratch)?),
+        false => Some(capture_dir(scratch, "capture")?),
+    };
+    // The undisturbed boot's own, for a droop (`AET-WO-2305` §1.2).
+    let capture_undisturbed = match (serial.is_empty(), boot.rail.is_some()) {
+        (false, true) => Some(capture_dir(scratch, "capture-undisturbed")?),
+        _ => None,
     };
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
@@ -1562,6 +1570,7 @@ fn ready(
             motors,
             serial,
             capture,
+            capture_undisturbed,
             boot_word,
             specification_sha256: boot.topology.specification_sha256.clone(),
             virtual_ns: boot.virtual_ns,
@@ -1575,6 +1584,44 @@ fn ready(
             pwr,
         },
     ))
+}
+
+/// `RecoveryBoundPastRun` (`AET-WO-2305` §1.2, ruled 2026-11-20): every
+/// release's probe, at the release, its nudge and the recovery bound, must
+/// lie inside the boot and before the next reset is asserted, or the droop
+/// is refused by name once the bound is known, never cut short. The rail's
+/// own span was checked before any run (`check_droop`).
+fn recovery_fits(
+    resets: &[aethelgard_chaos::power::Reset],
+    bound_ns: u64,
+    virtual_ns: u64,
+) -> Result<(), run::Stop> {
+    for (k, r) in resets.iter().enumerate() {
+        let Some(release) = r.released_ns else {
+            continue;
+        };
+        let next = resets
+            .get(k + 1)
+            .map_or(virtual_ns, |n| n.asserted_ns.min(virtual_ns));
+        match aethelgard_chaos::power::probe_ns(release, bound_ns) {
+            Some(probe) if probe <= next => {}
+            probe => {
+                return Err(run::Stop::refused(
+                    "RecoveryBoundPastRun",
+                    format!(
+                        "the release at {release} ns is probed at {} ns (its boot's start and the recovery bound, {bound_ns} ns: the undisturbed boot word and one quantum), past {next} ns, {}",
+                        probe.map_or_else(|| "an instant past u64".to_owned(), |p| p.to_string()),
+                        if next < virtual_ns {
+                            "where the next reset is asserted"
+                        } else {
+                            "the boot's end"
+                        }
+                    ),
+                ));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
@@ -1649,8 +1696,8 @@ fn serial_wire_fits(serial: &[renode::Serial], injection_ns: u64) -> Result<(), 
 /// any tool runs there. As root, it is the one directory there the tool uid
 /// may add to (`run::add_only`): Renode creates each port's file in it, and
 /// can change nothing the CLI made (`AET-WO-1601` §1.2).
-fn capture_dir(scratch: &Scratch) -> Result<PathBuf, run::Stop> {
-    let dir = scratch.tool.join("capture");
+fn capture_dir(scratch: &Scratch, name: &str) -> Result<PathBuf, run::Stop> {
+    let dir = scratch.tool.join(name);
     DirBuilder::new().mode(0o700).create(&dir).map_err(|e| {
         run::Stop::tool_error(
             "aethelgard",
@@ -1867,28 +1914,63 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         None => None,
     };
     let booted = analog.as_ref().map(|(_, booted)| booted.clone());
-    let plan = ready
+    let plan_with = |resets, recovery_bound_ns, capture| {
+        ready
+            .as_ref()
+            .zip(booted.as_ref())
+            .map(|(r, booted)| renode::BootPlan {
+                platform: &booted.path,
+                models: &models,
+                firmware: &r.firmware.copy,
+                virtual_ns: r.virtual_ns,
+                boot_word: r.boot_word,
+                vector_table: r.vector_table,
+                image: &r.image,
+                executable: &r.executable,
+                self_loops: &r.self_loops,
+                motors: &r.motors,
+                instances: &booted.instances,
+                resets,
+                recovery_bound_ns,
+                serial: &r.serial,
+                capture,
+                pwr: r.pwr.as_ref(),
+            })
+    };
+    let resets = droop
         .as_ref()
-        .zip(booted.as_ref())
-        .map(|(r, booted)| renode::BootPlan {
-            platform: &booted.path,
-            models: &models,
-            firmware: &r.firmware.copy,
-            virtual_ns: r.virtual_ns,
-            boot_word: r.boot_word,
-            vector_table: r.vector_table,
-            image: &r.image,
-            executable: &r.executable,
-            self_loops: &r.self_loops,
-            motors: &r.motors,
-            instances: &booted.instances,
-            resets: droop
-                .as_ref()
-                .map_or(&[][..], |(_, _, resets)| resets.as_slice()),
-            serial: &r.serial,
-            capture: r.capture.as_deref(),
-            pwr: r.pwr.as_ref(),
-        });
+        .map_or(&[][..], |(_, _, resets)| resets.as_slice());
+    // The recovery bound (`AET-WO-2305` §1.2, ruled 2026-11-20): when the
+    // droop releases a reset, the same prepared boot runs first with no
+    // reset, through the same bridge, and its boot word's instant plus one
+    // quantum bounds each recovery. Its own capture directory, so the
+    // droop's boot opens its files new.
+    let undisturbed = match plan_with(
+        &[],
+        None,
+        ready
+            .as_ref()
+            .and_then(|r| r.capture_undisturbed.as_deref()),
+    ) {
+        Some(base) if resets.iter().any(|r| r.released_ns.is_some()) => {
+            let commands = base.commands();
+            let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
+            let out = analog::boot(&invocation(args, "status-undisturbed"), &tool.path)?;
+            Some(renode::undisturbed_boot_word_ns(&out)?)
+        }
+        _ => None,
+    };
+    let recovery_bound_ns = undisturbed
+        .flatten()
+        .and_then(aethelgard_chaos::power::recovery_bound);
+    if let (Some(bound), Some(r)) = (recovery_bound_ns, &ready) {
+        recovery_fits(resets, bound, r.virtual_ns)?;
+    }
+    let plan = plan_with(
+        resets,
+        recovery_bound_ns,
+        ready.as_ref().and_then(|r| r.capture.as_deref()),
+    );
     // A rendered release moves the injection (`AET-WO-4300b`): when even
     // its earliest instant, one quantum after the last boot's start, and the
     // ports' wire time from it pass `MAX_VIRTUAL_NS`, no boot word can save
@@ -2031,6 +2113,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 probes.as_deref(),
                 &r.image,
                 r.boot_word,
+                undisturbed,
             );
             findings.extend(more);
             Some((solved, report))
@@ -2987,6 +3070,38 @@ mod tests {
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// `AET-WO-2305` §1.2: every release's probe lies inside the boot and
+    /// before the next reset's assertion, or the droop is refused by name
+    /// once the bound is known.
+    #[test]
+    fn a_probe_past_the_boot_or_into_the_next_reset_is_refused_by_name() {
+        use aethelgard_chaos::power::Reset;
+        let r = |asserted_ns, released_ns| Reset {
+            asserted_ns,
+            released_ns,
+            cause: vec!["VBOR3".to_owned()],
+        };
+        let one = [r(1_018_330, Some(1_231_690))];
+        assert!(recovery_fits(&one, 125_700, 100_000_000).is_ok());
+        // Exactly at the end fits; one ns past does not.
+        let at_end = 100_000_000 - 1_231_690 - 10;
+        assert!(recovery_fits(&one, at_end, 100_000_000).is_ok());
+        let e = recovery_fits(&one, at_end + 1, 100_000_000).unwrap_err();
+        assert_eq!(e.kind, "RecoveryBoundPastRun");
+        assert!(e.message.ends_with("the boot's end"), "{}", e.message);
+        // A second reset asserted before the first release's probe.
+        let two = [r(1_018_330, Some(1_231_690)), r(1_300_000, Some(1_500_000))];
+        let e = recovery_fits(&two, 125_700, 100_000_000).unwrap_err();
+        assert!(
+            e.message.ends_with("where the next reset is asserted"),
+            "{}",
+            e.message
+        );
+        // A release that never comes, and an instant past u64, both named.
+        assert!(recovery_fits(&[r(1, None)], u64::MAX, 100_000_000).is_ok());
+        assert!(recovery_fits(&one, u64::MAX, 100_000_000).is_err());
     }
 
     /// `AET-WO-4240v` §1.6: a generated boot is given the PWR rule of its

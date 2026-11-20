@@ -45,7 +45,8 @@ pub const PAST_CEILING_FINDING: &str = "analog_rise_exceeds_ceiling";
 /// supervisor doing its job, so it never fails a run.
 pub const RESET_FINDING: &str = "brownout_reset";
 /// One per reset the firmware did not recover from within
-/// [`power::RECOVERY_BOUND_NS`] of its release, or that was never released.
+/// its recovery bound ([`power::recovery_bound`]) of its release's boot, or
+/// that was never released, or whose bound could not be read.
 pub const UNRECOVERED_FINDING: &str = "brownout_unrecovered";
 /// A droop whose rail left the domain's declared tolerance (`info`).
 pub const BELOW_TOLERANCE_FINDING: &str = "rail_below_tolerance";
@@ -511,9 +512,11 @@ pub fn tolerance_floor_uv(nominal_millivolts: u32, tolerance_permille: u32) -> u
     u64::from(nominal_millivolts) * u64::from(1000u32.saturating_sub(tolerance_permille))
 }
 
-/// The time after which nothing a droop causes can still happen: its sag
-/// ends, the rail settles (10 τ), BOR0's temporization runs, the release's
-/// nudge, the recovery bound, and the grid's rounding on both edges.
+/// The time after which the rail does nothing more: its sag ends, the rail
+/// settles (10 τ), BOR0's temporization runs, the release's nudge, and the
+/// grid's rounding on both edges. The recovery bound is not in it: it is
+/// read from the boot the twin ran (`AET-WO-2305` §1.2), and the probe it
+/// places is checked against the run once it is known.
 pub fn droop_end_ns(droop: &Droop, decoupling_picofarads: u64) -> u64 {
     let settle = tau_ns(droop.source_milliohms, decoupling_picofarads).saturating_mul(10);
     [
@@ -524,7 +527,6 @@ pub fn droop_end_ns(droop: &Droop, decoupling_picofarads: u64) -> u64 {
         settle,
         power::T_RSTTEMPO_NS,
         power::NUDGE_NS,
-        power::RECOVERY_BOUND_NS,
         2 * power::RESOLUTION_NS,
     ]
     .into_iter()
@@ -881,7 +883,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             | Record::SerialPortSolved { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
-            Record::RailDeclared { .. } | Record::BatterySagDeclared { .. } => 6,
+            Record::RailDeclared { .. }
+            | Record::BatterySagDeclared { .. }
+            | Record::RecoveryBound { .. } => 6,
             Record::RailCrossing { .. }
             | Record::ResetRendered { .. }
             | Record::FirmwareObserved { .. } => 7,
@@ -918,7 +922,18 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if !(count_rank(0) == 1 && count_rank(2) == 1 && count_rank(8) == 1 && count_rank(18) == 1) {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
-    if count_rank(1) > 1 || count_rank(6) > 1 {
+    // Kind 32 shares rank 6 after the rail; it is held to once by
+    // `check_droop_records` (`AET-WO-2305` §1.2).
+    let declared = records
+        .iter()
+        .filter(|r| {
+            matches!(
+                r,
+                Record::RailDeclared { .. } | Record::BatterySagDeclared { .. }
+            )
+        })
+        .count();
+    if count_rank(1) > 1 || declared > 1 {
         return Err(
             "a run holds at most one declared rail or battery sag and one set of expected counts",
         );
@@ -1322,7 +1337,7 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
                 _ => None,
             })
         });
-    let has_witness = first_witness(records).is_some();
+    let has_witness = !first_script(records).is_empty();
     let same = |a: &Reading, b: &Reading| {
         (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
     };
@@ -1349,22 +1364,35 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
     Ok(())
 }
 
-/// The first identity read's expected witness lines (kind 13, or kind 22 on
-/// a board with no I2C read), which a droop's observation must show since
-/// its release.
-fn first_witness(records: &[Record]) -> Option<&[String]> {
-    records
-        .iter()
-        .find_map(|r| match r {
-            Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
-            _ => None,
-        })
-        .or_else(|| {
-            records.iter().find_map(|r| match r {
-                Record::SpiWitness { expected, .. } => Some(expected.as_slice()),
-                _ => None,
-            })
-        })
+/// The first identity read's device's steps' expected lines, in the
+/// archive's (the script's) order: the first kind 13's device, or with no
+/// I2C read the first kind 22's, which a droop's observation must show since
+/// its release (`AET-WO-2305` §1.3). Empty without one.
+fn first_script(records: &[Record]) -> Vec<&[String]> {
+    let i2c = records.iter().filter_map(|r| match r {
+        Record::I2cWitness {
+            device, expected, ..
+        } => Some((device, expected.as_slice())),
+        _ => None,
+    });
+    let spi = records.iter().filter_map(|r| match r {
+        Record::SpiWitness {
+            device, expected, ..
+        } => Some((device, expected.as_slice())),
+        _ => None,
+    });
+    let steps: Vec<(&String, &[String])> = match i2c.clone().next() {
+        Some(_) => i2c.collect(),
+        None => spi.collect(),
+    };
+    let Some((first, _)) = steps.first().copied() else {
+        return Vec::new();
+    };
+    steps
+        .into_iter()
+        .filter(|(d, _)| *d == first)
+        .map(|(_, e)| e)
+        .collect()
 }
 
 /// A reading as the judge sees it: observed, and equal to the expected
@@ -1383,7 +1411,10 @@ fn reads_as_expected(r: &Reading) -> bool {
 ///   while it rises (within 10 τ of each ramp), at the table's typical value;
 /// - the resets are exactly [`power::schedule`] of those crossings, each
 ///   with its fixed rendering;
-/// - each release has exactly one observation, at the recovery bound after it,
+/// - kind 32 is archived once exactly when a reset is released, and each
+///   probe lies inside the run (`AET-WO-2305` §1.2);
+/// - each release has exactly one observation, at its probe (the release, its
+///   nudge and the bound),
 ///   unless the boot was killed before its reads (its boot record observed
 ///   nothing), when there is none and every release counts as unrecovered.
 fn check_droop_records(
@@ -1438,7 +1469,14 @@ fn check_droop_records(
             _ => None,
         })
         .collect();
-    let want = first_witness(records);
+    let script = first_script(records);
+    let bounds: Vec<Option<u64>> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::RecoveryBound { bound_ns, .. } => Some(*bound_ns),
+            _ => None,
+        })
+        .collect();
     let observed: Vec<(u64, bool)> = records
         .iter()
         .filter_map(|r| match r {
@@ -1453,7 +1491,11 @@ fn check_droop_records(
                 [boot_word, status, value]
                     .iter()
                     .all(|r| reads_as_expected(r))
-                    && witness.as_deref() == want,
+                    && match witness {
+                        // No identity read: nothing to witness, vacuously.
+                        None => script.is_empty(),
+                        Some(w) => power::witness_recovers(&script, w),
+                    },
             )),
             _ => None,
         })
@@ -1461,7 +1503,11 @@ fn check_droop_records(
     check_observed_against_the_boot(records)?;
     let (droop, (rail, nominal, tolerance, decoupling)) = match (droop, declared) {
         (None, None) => {
-            if !(crossings.is_empty() && resets.is_empty() && observed.is_empty()) {
+            if !(crossings.is_empty()
+                && resets.is_empty()
+                && observed.is_empty()
+                && bounds.is_empty())
+            {
                 return Err("a run without a droop holds a droop's records");
             }
             return Ok([
@@ -1534,11 +1580,28 @@ fn check_droop_records(
     if resets != want {
         return Err("the rendered resets are not the supervisor's rule applied to the crossings");
     }
-    let probes: Vec<u64> = schedule
-        .iter()
-        .filter_map(|r| r.released_ns)
-        .map(|at| at + power::RECOVERY_BOUND_NS)
-        .collect();
+    // Kind 32 once exactly when a reset is released (`AET-WO-2305` §1.2):
+    // each probe at the release, its nudge and the bound, inside the run;
+    // with no bound (the undisturbed boot wrote no boot word) no probe is
+    // read, and every release is unrecovered.
+    let releases: Vec<u64> = schedule.iter().filter_map(|r| r.released_ns).collect();
+    let bound = match (releases.is_empty(), bounds.as_slice()) {
+        (true, []) => None,
+        (false, [b]) => *b,
+        _ => {
+            return Err(
+                "a droop's recovery bound is not archived once exactly when it releases a reset",
+            );
+        }
+    };
+    let probes: Vec<u64> = match bound {
+        Some(b) => releases
+            .iter()
+            .map(|&at| power::probe_ns(at, b).filter(|&p| p <= TWIN_MAX_VIRTUAL_NS))
+            .collect::<Option<_>>()
+            .ok_or("a release's probe lies past the run")?,
+        None => Vec::new(),
+    };
     let boot_read = records.iter().any(|r| {
         matches!(
             r,
@@ -1549,7 +1612,12 @@ fn check_droop_records(
         )
     });
     let at: Vec<u64> = observed.iter().map(|o| o.0).collect();
-    let unrecovered_probes = if boot_read {
+    let unrecovered_probes = if bound.is_none() {
+        if !at.is_empty() {
+            return Err("a droop with no recovery bound holds an observation");
+        }
+        releases.len() as u64
+    } else if boot_read {
         if at != probes {
             return Err("each release has not exactly one observation at the recovery bound");
         }

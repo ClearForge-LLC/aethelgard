@@ -1,7 +1,8 @@
-//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 31, one per
+//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 32, one per
 //! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`; 16 to
 //! 20, a declared supply droop, since `AET-WO-2301`; 31, a declared battery
-//! sag, since `AET-WO-2304b`). Every field is an integer, a byte
+//! sag, since `AET-WO-2304b`; 32, a droop's recovery bound, since
+//! `AET-WO-2305`). Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -11,9 +12,9 @@ use crate::event::{name_ok, text_ok};
 
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
-/// The last campaign kind (31, the battery sag's declaration, since
-/// `AET-WO-2304b`).
-pub const LAST_KIND: u64 = 31;
+/// The last campaign kind (32, a droop's recovery bound, since
+/// `AET-WO-2305`).
+pub const LAST_KIND: u64 = 32;
 
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
@@ -724,6 +725,18 @@ pub enum Record {
         solved_minimum_microvolts: u64,
         binding: String,
     },
+    /// Kind 32: a droop's recovery bound (`AET-WO-2305` §1.2, ruled
+    /// 2026-11-20): the instant the same prepared boot, run first with no
+    /// reset, wrote its boot word, counted from 0 (`None` when it wrote none,
+    /// or its log could not be read whole); the margin,
+    /// [`crate::power::RECOVERY_MARGIN_NS`]; and the bound, their sum (`None`
+    /// with no instant: no probe is read, and every release is
+    /// unrecovered, by name). Archived once, when the droop releases a reset.
+    RecoveryBound {
+        boot_word_ns: Option<u64>,
+        margin_ns: u64,
+        bound_ns: Option<u64>,
+    },
 }
 
 /// The most registers kind 30 reads back: a timer's solved registers
@@ -1101,6 +1114,7 @@ impl Record {
                 Self::SerialWitness { .. } => 24,
                 Self::JudgeStop { .. } => 25,
                 Self::BatterySagDeclared { .. } => 26,
+                Self::RecoveryBound { .. } => 27,
             }
     }
 
@@ -1134,6 +1148,7 @@ impl Record {
                 | Self::BusFault { .. }
                 | Self::RailDeclared { .. }
                 | Self::BatterySagDeclared { .. }
+                | Self::RecoveryBound { .. }
                 | Self::ExpectedCounts { .. }
         )
     }
@@ -1618,6 +1633,11 @@ impl Record {
                 Value::Array(read_back.iter().map(reading).collect()),
                 opt(cr1_after.map(u64::from)),
             ],
+            Self::RecoveryBound {
+                boot_word_ns,
+                margin_ns,
+                bound_ns,
+            } => vec![opt(*boot_word_ns), u(*margin_ns), opt(*bound_ns)],
             Self::BatterySagDeclared {
                 sag,
                 v_open_microvolts,
@@ -2002,6 +2022,11 @@ impl Record {
                     out
                 },
                 cr1_after: f.opt_u32()?,
+            },
+            32 => Self::RecoveryBound {
+                boot_word_ns: f.opt()?,
+                margin_ns: f.uint()?,
+                bound_ns: f.opt()?,
             },
             31 => {
                 let sag = BatterySag {
@@ -2582,6 +2607,24 @@ impl Record {
                     Err("a judge's stop is not after its anchor")
                 } else if read_back.is_empty() || read_back.len() > MAX_STOP_REGISTERS {
                     Err("a judge's stop reads back no register, or too many")
+                } else {
+                    Ok(())
+                }
+            }
+            // The bound is the instant plus the margin, and only the ruled
+            // margin; the probes are placed against it by
+            // `campaign::check_droop_records`.
+            Self::RecoveryBound {
+                boot_word_ns,
+                margin_ns,
+                bound_ns,
+            } => {
+                if *margin_ns != crate::power::RECOVERY_MARGIN_NS {
+                    Err("a recovery bound's margin is not the ruled one quantum")
+                } else if *bound_ns != boot_word_ns.and_then(crate::power::recovery_bound) {
+                    Err(
+                        "a recovery bound is not its undisturbed boot word's instant plus the margin",
+                    )
                 } else {
                     Ok(())
                 }
