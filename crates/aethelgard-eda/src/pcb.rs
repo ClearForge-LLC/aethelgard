@@ -1990,7 +1990,7 @@ fn layout_of(
         _ => None,
     };
     let mut best = match attempt(items, moves, pairs, bound, 0) {
-        Err(e) if bound.is_some() && over(&e).is_some() => e,
+        Err(e) if over(&e).is_some() => e,
         done => return done,
     };
     for seed in 1..=RESEEDS {

@@ -428,7 +428,7 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// measured outline, so the pass branch stays exercised; 2, 6 and 8 were
 /// refused (the x headroom fell from 14.75 to 3.5 mm, its FEEDBACK D1).
 /// `AET-WO-1317`: 2 and 6 place on the reseeded rank's second seed, at their
-/// measured outlines (its FEEDBACK §3); 8 is still refused, every seed over.
+/// measured outlines (its FEEDBACK §4.3); 8 is still refused, every seed over.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
@@ -465,16 +465,6 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     }
 }
 
-/// `AET-WO-1313c` with `AET-WO-4400d`: under the bound, the IMU turned each
-/// of its four ways (its declared orientation, the board's forward edge at
-/// the top) is placed at that rotation and compacted whole with its group:
-/// every placer gap and loop rule kept, and each keep-out zone it carries
-/// inside the outline (the zones are drawn from the part's origin and
-/// rotation, so a group moved whole carries them).
-///
-/// `AET-WO-4202` (ruled (i)) pinned the forward turn to its refusal, 103.500
-/// x 67.100 mm, once U2 left. `AET-WO-1317`: it places again, on the
-/// reseeded rank's first seed (its FEEDBACK §3), and is judged as the others.
 /// The fixture with `board.forward` "top" and U5 turned so its x axis points
 /// `x` (`AET-WO-4400d`'s variant).
 fn turned(mut v: Value, x: &str) -> Value {
@@ -489,6 +479,15 @@ fn turned(mut v: Value, x: &str) -> Value {
     v
 }
 
+/// `AET-WO-1313c` with `AET-WO-4400d`: under the bound, the IMU turned each
+/// of its four ways (its declared orientation, the board's forward edge at
+/// the top) is placed at that rotation and compacted whole with its group:
+/// every placer gap and loop rule kept, and each keep-out zone it carries
+/// inside the outline (the zones are drawn from the part's origin and
+/// rotation, so a group moved whole carries them).
+///
+/// `AET-WO-1317`: the forward turn, refused since U2 left (`AET-WO-4202`),
+/// places on the reseeded rank's first seed (its FEEDBACK §4.3).
 #[test]
 fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
     for (x, rotation) in [
@@ -582,13 +581,13 @@ fn fits(v: &Value) -> Option<bool> {
 }
 
 /// `AET-WO-1317` §1.3, the sweep's slice: from each bounded variant that
-/// places, remove each declared I2C or SPI device, connector and test point
-/// in turn (with its load rows), as a specification would. Every removal
-/// that `validate` and the solver accept still places inside the bound.
-/// On `main`'s placer, two fail: U2 from the forward turn as it was before
-/// `AET-WO-4202`, and the second test point from size sample 1 (FEEDBACK
-/// §3). The variants are the fixture, its four turns, size samples 1, 2
-/// and 6, and the forward turn with U2.
+/// places, remove each declared I2C or SPI device, connector and test point in
+/// turn (with its load rows), as a specification would. Every removal that
+/// `validate` and the solver accept still places inside the bound. On `main`'s
+/// placer the forward turn and sizes 2 and 6 do not place whole; of the rest,
+/// four removals stop fitting: U2, TP14 and TP24 from the forward turn with U2,
+/// and Q_TP2 from size sample 1 (FEEDBACK §4.4). The variants are the fixture,
+/// its four turns, size samples 1, 2 and 6, and the forward turn with U2.
 #[test]
 fn removing_one_declared_part_never_stops_a_bounded_board_fitting() {
     let mut variants: Vec<(String, Value)> = vec![("fixture".into(), fixture())];
