@@ -7,8 +7,9 @@ use sentinel_01_board::{Board, Spi1Selects};
 fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
+    let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
-    let unchecked = rcc.reset_clock(&mut r);
+    let unchecked = rcc.reset_clock(&mut r, &scale2);
     let kernels = rcc.select_spi_kernels(&mut r, unchecked.as_ref().unwrap());
     let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);

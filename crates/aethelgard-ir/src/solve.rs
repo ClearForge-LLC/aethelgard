@@ -297,6 +297,7 @@ fn solve_inner(
         spi_controllers: BTreeMap::new(),
         i2c_timings: BTreeMap::new(),
         bor_level: spec.mcu.bor_level,
+        core_supply: spec.mcu.core_supply.mode,
         mcu: spec.mcu.part.clone(),
         pin_speeds: BTreeMap::new(),
         foreign_clock: spec.mcu.foreign_clock.as_ref().map(Into::into),
@@ -2237,6 +2238,10 @@ mod differential {
                 supply: "D".into(),
                 hse_hz: 0,
                 bor_level: 0,
+                core_supply: crate::CoreSupply {
+                    mode: crate::vos::CoreSupplyMode::Ldo,
+                    source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into(),
+                },
                 supply_source: Some(crate::SupplySource {
                     connector: "J2".into(),
                     pin: "1".into(),

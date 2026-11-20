@@ -1,0 +1,15 @@
+error[E0382]: use of moved value: `pwr`
+  --> tests/ui/fail/pwr_scale2_twice.rs:17:19
+   |
+15 |     let pwr = board.pwr;
+   |         --- move occurs because `pwr` has type `Pwr`, which does not implement the `Copy` trait
+16 |     let _first = pwr.scale2(&mut r, 10);
+   |                      ------------------ `pwr` moved due to this method call
+17 |     let _second = pwr.scale2(&mut r, 10);
+   |                   ^^^ value used here after move
+   |
+note: `board::Pwr::scale2` takes ownership of the receiver `self`, which moves `pwr`
+  --> tests/ui/fail/../motors-pwm/board.rs
+   |
+   |     pub fn scale2<R: Registers>(self, r: &mut R, polls: u32) -> Result<Scale2, PwrFault> {
+   |                                 ^^^^
