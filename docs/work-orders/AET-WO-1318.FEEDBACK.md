@@ -1,14 +1,14 @@
 # AET-WO-1318 FEEDBACK — one way to read the drawing, true weights, a true README
 
-## Status: BUILT — awaiting this PR's CI for the measured-after column (§2.3)
+## Status: READY — built; CI green on 48519439 (run 44728879123); `main` a75fffcc (2305) merged in after it
 
-Builder: Claude (Opus 5.5), a fresh `1318` session, 2026-11-20, from ~10:55 UTC. Worktree `~/aethelgard-1318`, branch `wo/aet-1318-eda-housekeeping` from `origin/main` `fff49a49`, with `main` `7ebca78c` merged in (docs only). The work order built to is `docs/work-orders/AET-WO-1318.md` on `main`; it is identical to the kickoff copy (`diff`, measured).
+Builder: Claude (Opus 5.5), a fresh `1318` session, 2026-11-20, from ~10:55 UTC. Worktree `~/aethelgard-1318`, branch `wo/aet-1318-eda-housekeeping` from `origin/main` `fff49a49`, with `main` `7ebca78c` (docs only) and then `a75fffcc` (`2305`, which adds `twin_tier2` rows and raises `TIER2_MIN` to 198) merged in. Neither merge touched a fenced line. The work order built to is `docs/work-orders/AET-WO-1318.md` on `main`; it is identical to the kickoff copy (`diff`, measured).
 
 Labels: **measured** (run here), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1318/`.
 
 ## 1. The readers (§1.1)
 
-- **Callers found** [read: `grep -rn "schematic::anchored\|schematic::bound_holds"` over `crates/`, `ci/`]: five call sites, all in tests. There was no caller in library or CLI code.
+- **Callers found** [read: `grep -rn "schematic::anchored\|schematic::bound_holds"` over `crates/`, `ci/`]: seven call sites in four test files. There was no caller in library or CLI code.
   - `anchored`: `hot_plug_tier1.rs` ×4 (L253, L378, L389, L434), `adversarial_1301.rs` L213, `adversarial_1301_tools.rs` L351 (`with-tools` only).
   - `bound_holds`: `outline_tier1.rs` L130.
 - **Moved:** each reads `schematic::Drawing::of(..)` and then `.anchored()` or `.bound_holds()`.
@@ -58,24 +58,30 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 
 ### 2.3 Plan table, before and after
 
-"Measured" is the run step: `shard.sh run`'s group start to its `shard=K expected=` line.
+"Measured" is the run step: `shard.sh run`'s group start to its `shard=K expected=` line. After: run 44728879123 on this PR's head `48519439` (job minutes in brackets).
 
 | Shard | Before: planned (`main` rows, fff49a49 plan) | Before: measured, run 44724070629 | After: planned (this branch) | After: measured (this PR's CI) |
 |---|---|---|---|---|
-| 0 | 677 | 533 | 697 | pending |
-| 1 | 677 | 546 | 697 | pending |
-| 2 | 677 | **772** (holds `each_size`) | 697 | pending |
-| 3 | 677 | 548 | 697 | pending |
-| 4 | 677 | 615 | 697 | pending |
-| 5 | 677 | 748 | 697 | pending |
-| 6 | 677 | 589 | 697 | pending |
-| 7 | 677 | 678 | 697 (holds `each_size`) | pending |
-| 8 | 677 | **847** (holds `outline_tier1`) | 697 | pending |
-| 9 | 677 | 409 | 697 | pending |
-| 10 | 677 | 796 | 697 (holds `outline_tier1`) | pending |
-| 11 | 677 | 387 | 697 | pending |
+| 0 | 677 | 533 | 697 | 609 (14.1 min) |
+| 1 | 677 | 546 | 697 | 771 (15.8 min) |
+| 2 | 677 | **772** (holds `each_size`) | 697 | 625 (12.8 min) |
+| 3 | 677 | 548 | 697 | 749 (14.4 min) |
+| 4 | 677 | 615 | 697 | 528 (11.3 min) |
+| 5 | 677 | 748 | 697 | 561 (11.6 min) |
+| 6 | 677 | 589 | 697 | 848 (15.7 min) |
+| 7 | 677 | 678 | 697 (holds `each_size`) | 430 (9.3 min) |
+| 8 | 677 | **847** (holds `outline_tier1`) | 697 | 846 (15.9 min) |
+| 9 | 677 | 409 | 697 | 618 (12.8 min) |
+| 10 | 677 | 796 | 697 (holds `outline_tier1`) | 600 (12.7 min) |
+| 11 | 677 | 387 | 697 | 715 (14.3 min) |
 
 - **Under `main`'s rows**, the shard holding `each_size_sample` ran 984, 831, 1,066, 668 and 772 s against plans of 660–677 [measured, `plan/shards.tsv`].
+- **After, on this PR's run 44728879123:**
+  - CI printed the same plan as the local one (`diff` of the `planned` lines is empty).
+  - `each_size_sample` took 105.74 s in shard 7, which ran 430 s. The `outline_tier1` block finished in 202.47 s in shard 10, which ran 600 s.
+  - The slowest shard was 6, at 848 s, holding neither. Every job finished under 16.0 min. The spread (slowest less fastest run step) was 418 s, against 460 s before on 44724070629.
+  - The tools aggregate: `tools_total_passed=2627 names=2620`, `tier2_tests_passed=195 floor=195`.
+  - `main`'s `2305` (merged after this run) adds rows of its own, so the final head's plan differs by those rows only.
 - **On run 44706411946, shard 8's job took 20.1 min** (GitHub's `startedAt` to `completedAt`). That is past the REFIT RULE's 20-minute trigger, on `main` (F1).
 
 ## 3. The README (§1.3)
@@ -86,10 +92,10 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 |---|---|
 | Under a bound only, the canonical rank replaces reference order | `place` L580 (`bounded.then(\|\| canonical_rank(..))`); `placing_order` L866 |
 | The rank: footprints, ownership, draw sequence, net graph (colour refinement); the reference breaks only a remaining tie | `canonical_rank` L923, doc L909–916 |
-| An unanchored part targets the centroid of its anchor's pads on every shared net | L697 (an anchored part goes to `place_anchored` first, bound or not), L702 `centroid_target`, L1080 |
-| Each IC's group is compacted toward the MCU, 0.25 mm steps, sidestepping up to 10 mm, keeping gaps, approach strips, x-range | `compact` L1145, doc L1126–1144; `STEP` L61; `SIDESTEP_STEPS` 40 L1125; called at L725 |
+| A part not anchored to an IC targets the centroid of the pads of the part it goes beside, on every shared net | L697 (an anchored part goes to `place_anchored` first, bound or not), L702 `centroid_target`, L1080 |
+| Each IC's group is compacted toward the MCU, 0.25 mm steps, sidestepping up to 10 mm, keeping gaps, approach strips, x-range | `compact` L1145, doc L1127–1144; `STEP` L61; `SIDESTEP_STEPS` 40 L1125; called at L725 |
 | Connectors on the left and right edges, cable out, in the rank's order | `BOUNDED_PLAN = Sides` L756; `EdgePlan::Sides` doc L747–750 |
-| A placement that misses the bound is placed again, seeds 1 to 8 in turn, the first that fits kept | `layout_of` L1978, `RESEEDS = 8` L1963, loop L1996, `done => return done` L1994/L2002 |
+| A placement that misses the bound is placed again, seeds 1 to 8 in turn, the first that fits kept | `layout_of` L1978, `RESEEDS = 8` L1963, loop L1996, `done => return done` L1994/L2003 |
 | A placement that fits the first time is the one returned | L1992–1995 (seed 0 first); seed 0 is `FNV_BASIS`, `1313c`'s rank (L936) |
 | `OutlineUnreachable` names the least-over of nine attempts: larger overrun, then the sum, then the earlier seed | `over` L1985–1989 `(max, sum)`; strict `<` at L1999 keeps the earlier seed on a tie |
 
@@ -101,8 +107,8 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - Scope: every git-tracked JSON with `voltage_domains`, 53 files. 23 are emitted and 30 refused, with identical exit codes.
   - The 123 files compared (every written file plus each stdout) have identical sha256s. Binaries: `bin/main` (`7ebca78c`) and `bin/branch`.
 - **`validate`:** byte-identical on the same 53 files (`corpus-main.txt` = `corpus-branch.txt`, `cmp`).
-- **The bench package:** this branch changes no source the package job reads; only test files, one library deletion, a README and two TSV rows change. CI's `bench-package` job is the check (§6).
-- **`cargo test --workspace`:** 2,401 passed, 0 failed, 0 ignored on this branch [measured, `test-workspace.log`]. Pass set against `main`: §6.
+- **The bench package does not move.** CI's `bench-package` job runs `verify --against-fab fab/sentinel-01-bench/package`, which derives the committed package again and compares it (`.github/workflows/ci.yml`, the job's step "verify --against-fab, the committed package derived again"). It is green on `48519439` [measured: run 44728879123].
+- **`cargo test --workspace`:** 2,401 passed, 0 failed, 0 ignored on this branch [measured, `test-workspace.log`]. The pass set is identical to `main`'s, name for name (§6).
 
 ## 5. Adversarial pass, targeted (§5)
 
@@ -110,7 +116,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - Only one converted site reads a changed input: the bulk-capacitor test, which rebinds `spec`. It draws again for the new input.
   - **A1a, a stale `Drawing`:** the first drawing is reused after the rebind. The test **fails**: `hot_plug_tier1.rs:394`, `assertion left == right` (C1 is still anchored to U10). So a missed redraw at that site is caught.
   - **A1b, an in-place edit while a `Drawing` lives:** `spec.board.max_outline_um = None` while `d` borrows `spec`. This is **refused at compile time**: `error[E0506]: cannot assign to spec.board.max_outline_um because it is borrowed`.
-  - The other four sites each build their input once and draw once. Their loops (L253, L434) draw fresh each iteration.
+  - The other six call sites each build their input once and draw once. Their loops (L253, L434) draw fresh each iteration.
 - **A2. A row set so low that the planner packs a shard past its limit on a slow runner** [measured, `plan/sc-*.txt`, `plan/shards.tsv`].
   - Each row is at its worst over five runs, so neither unit is under-planned.
   - Projected at each test's worst measured time, the shard holding it comes to:
@@ -130,10 +136,11 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | `cargo fmt --all -- --check` | clean |
 | `cargo clippy --workspace --all-targets -- -D warnings` | clean; also clean with `--features aethelgard-cli/with-tools` |
 | `cargo test --workspace` (host) | **2,401 passed, 0 failed, 0 ignored** |
-| Pass set against `main` `7ebca78c` | pending (`test-workspace-main.log`) |
-| CI | pending |
+| Pass set against `main` `7ebca78c` | **identical**: 2,401 names each, `diff` empty (`passset.diff`); `main` built in its own worktree with its target inside the tree |
+| CI | green on `48519439` (run 44728879123: gates, bench-package, 12 shards, tools); the final head's run follows this commit |
+| Gates on the merged tree (`a75fffcc` in) | fmt clean; clippy clean with and without `with-tools`; `cargo test --workspace` **2,407 passed, 0 failed, 0 ignored** (`2305` adds 6) |
 
-- **Reduction pass (diff):** −9 lines net in code (crates: +29 / −38, with the README at +5 / −4) · 2 duplicate readers removed · 0 dead paths left · 1 protected kept (`pcb.rs`'s `belt-and-suspenders:` outline check, untouched) · 0 findings below.
+- **Reduction pass (diff):** −10 lines net in code (crates/ less the README: +24 / −34; the README +5 / −4) · 2 duplicate readers removed · 0 dead paths left · 1 protected kept (`pcb.rs`'s `belt-and-suspenders:` outline check, untouched) · 0 findings below.
   - A fresh subagent asked the four questions over `git diff origin/main...HEAD -- crates ci` and found nothing to remove. It checked for stale mentions, unused imports, `Drawing` methods with no caller, and two draws of one input.
   - Spot-checked here: the `grep` for stale mentions is empty, and both clippy configurations are clean.
 
@@ -149,7 +156,8 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 
 ## 8. Neighbours
 
-- Every neighbour worktree still holds `main`'s eight call lines (`1210`, `4240a`, `2305`, `4241`, `4405`) [measured: `grep` in each]. None adds a new caller [measured: `git diff origin/main` in each, `+` lines].
-  - Whichever lands second takes this branch's edits through a clean merge, with no compile break.
+- **`2305`** merged into `main` (`a75fffcc`) after this PR's first CI run. It came in through a clean merge: it edits other rows of `ci/test-weights.tsv` and adds no caller. The merged tree passes every gate (§6).
+- **The four still open** (`1210` `f33e3360`, `4240a` `7dd8799d`, `4241` `6fa7ce35`, `4405` `c7ec348d`) hold `main`'s old call lines and add no new caller [measured: `git diff origin/main -- crates`, `+` lines matching `schematic::(anchored|bound_holds)(`, 0 in each].
+  - Whichever lands after this PR takes its edits through a clean merge, with no compile break [inferred].
   - `1210` and `4240a` edit an unrelated line of `outline_tier1.rs`.
-  - `2305`, `4241`, `4240a` and `4405` edit other rows of `ci/test-weights.tsv`.
+  - `4241`, `4240a` and `4405` edit other rows of `ci/test-weights.tsv`.

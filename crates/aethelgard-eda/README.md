@@ -36,7 +36,7 @@ A part anchored to an IC (a buck's input capacitor, CBOOT, an MCU support part) 
 
 **Under a declared bound** (`board.max_outline_um`, `AET-WO-1313`, `AET-WO-1313c`, `AET-WO-1317`), and only there, no name and no list position decides a placement:
 - a canonical rank, from footprints, ownership, the draw sequence and the net graph (colour refinement), takes the place of reference order everywhere above; a reference breaks only a tie that remains between parts alike in all of those;
-- a part that is not anchored targets the centroid of its anchor's pads on every net they share (an anchored part is placed by the pads it serves, bound or not);
+- a part that is not anchored to an IC targets the centroid of the pads of the part it goes beside, on every net they share (an anchored part is placed by the pads it serves, bound or not);
 - each IC's group (the IC and every non-IC part placed beside it) is then compacted toward the MCU, a 0.25 mm step at a time, sidestepping up to 10 mm, keeping the gaps above, every pair's approach strip and the parts' x-range;
 - the connectors go on the left and right edges, cable out, in the rank's order;
 - a placement that misses the bound is placed again with the canonical rank reseeded, seeds 1 to 8 in turn, and the first that fits is kept; a placement that fits the first time is the one returned, so a board that fits is unchanged (`AET-WO-1317`).
