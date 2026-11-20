@@ -1,0 +1,307 @@
+variant	knobs	removed	class	w_mm	h_mm	full_class	full_w	full_h	ms
+base	s	-	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	0
+base	s	i2c_devices:U3	fit	84.950	98.700	OutlineUnreachable	107.300	77.350	26
+base	s	i2c_devices:U7	OutlineUnreachable	108.000	78.350	OutlineUnreachable	107.300	77.350	26
+base	s	spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+base	s	spi_devices:U5	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	25
+base	s	connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+base	s	connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+base	s	connectors:J3	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	connectors:J5	OutlineUnreachable	107.100	77.350	OutlineUnreachable	107.300	77.350	27
+base	s	connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+base	s	connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+base	s	connectors:J8	fit	86.700	97.700	OutlineUnreachable	107.300	77.350	27
+base	s	test_points:TP1	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP2	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP3	OutlineUnreachable	107.300	78.350	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP4	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP11	fit	85.250	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP13	fit	84.750	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP14	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP15	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP16	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP17	OutlineUnreachable	107.300	79.850	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP18	fit	86.700	97.700	OutlineUnreachable	107.300	77.350	27
+base	s	test_points:TP19	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP20	fit	85.450	98.050	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP21	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP22	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP23	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP24	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP25	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP26	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP27	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP28	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	26
+base	s	test_points:TP29	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	-	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	0
+turn-right	s	i2c_devices:U3	fit	84.950	98.700	OutlineUnreachable	107.300	77.350	25
+turn-right	s	i2c_devices:U7	OutlineUnreachable	108.000	78.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-right	s	spi_devices:U5	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	25
+turn-right	s	connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-right	s	connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-right	s	connectors:J3	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	connectors:J5	OutlineUnreachable	107.100	77.350	OutlineUnreachable	107.300	77.350	27
+turn-right	s	connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-right	s	connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-right	s	connectors:J8	fit	86.700	97.700	OutlineUnreachable	107.300	77.350	27
+turn-right	s	test_points:TP1	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP2	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP3	OutlineUnreachable	107.300	78.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP4	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP11	fit	85.250	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP13	fit	84.750	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP14	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP15	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	27
+turn-right	s	test_points:TP16	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP17	OutlineUnreachable	107.300	79.850	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP18	fit	86.700	97.700	OutlineUnreachable	107.300	77.350	27
+turn-right	s	test_points:TP19	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP20	fit	85.450	98.050	OutlineUnreachable	107.300	77.350	27
+turn-right	s	test_points:TP21	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP22	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP23	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP24	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP25	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP26	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP27	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP28	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	26
+turn-right	s	test_points:TP29	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-forward	s	-	OutlineUnreachable	107.750	76.850	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	i2c_devices:U3	fit	85.150	97.950	OutlineUnreachable	107.750	76.850	25
+turn-forward	s	i2c_devices:U7	OutlineUnreachable	109.250	77.600	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	spi_devices:U5	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.750	76.850	25
+turn-forward	s	connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	connectors:J3	fit	86.700	98.700	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	connectors:J5	OutlineUnreachable	107.550	77.100	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.750	76.850	0
+turn-forward	s	connectors:J8	fit	86.700	98.700	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP1	fit	85.250	98.700	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP2	fit	85.200	97.950	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP3	OutlineUnreachable	107.750	76.850	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP4	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP11	fit	85.250	98.700	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP13	fit	85.200	97.950	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP14	fit	85.250	99.450	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP15	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP16	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP17	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP18	fit	86.700	98.050	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP19	fit	85.200	97.950	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP20	fit	85.200	98.050	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP21	fit	85.200	97.950	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP22	fit	85.200	98.200	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP23	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP24	fit	85.250	98.200	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP25	fit	85.200	98.700	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP26	fit	85.200	99.450	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP27	fit	86.700	98.700	OutlineUnreachable	107.750	76.850	27
+turn-forward	s	test_points:TP28	fit	86.700	98.700	OutlineUnreachable	107.750	76.850	26
+turn-forward	s	test_points:TP29	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	76.850	26
+turn-left	s	-	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	0
+turn-left	s	i2c_devices:U3	fit	84.950	98.700	OutlineUnreachable	107.300	77.350	26
+turn-left	s	i2c_devices:U7	OutlineUnreachable	108.000	78.350	OutlineUnreachable	107.300	77.350	26
+turn-left	s	spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-left	s	spi_devices:U5	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	25
+turn-left	s	connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-left	s	connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-left	s	connectors:J3	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	26
+turn-left	s	connectors:J5	OutlineUnreachable	107.100	77.350	OutlineUnreachable	107.300	77.350	27
+turn-left	s	connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-left	s	connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.300	77.350	0
+turn-left	s	connectors:J8	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP1	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP2	fit	84.750	97.950	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP3	OutlineUnreachable	107.800	77.350	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP4	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP11	fit	85.250	97.950	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP13	fit	85.250	97.950	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP14	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP15	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP16	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP17	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP18	fit	86.700	97.700	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP19	fit	84.750	97.950	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP20	fit	85.450	98.050	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP21	fit	84.750	97.950	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP22	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP23	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP24	fit	86.700	99.450	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP25	fit	84.750	98.450	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP26	fit	85.200	99.450	OutlineUnreachable	107.300	77.350	27
+turn-left	s	test_points:TP27	fit	86.700	97.950	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP28	fit	85.450	99.450	OutlineUnreachable	107.300	77.350	26
+turn-left	s	test_points:TP29	OutlineUnreachable	107.300	77.350	OutlineUnreachable	107.300	77.350	26
+turn-aft	s	-	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	i2c_devices:U3	fit	85.150	97.950	OutlineUnreachable	107.750	77.100	25
+turn-aft	s	i2c_devices:U7	OutlineUnreachable	109.250	77.100	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	spi_devices:U5	OutlineUnreachable	107.250	77.350	OutlineUnreachable	107.750	77.100	25
+turn-aft	s	connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	connectors:J3	fit	86.700	97.950	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	connectors:J5	OutlineUnreachable	107.550	76.850	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	107.750	77.100	0
+turn-aft	s	connectors:J8	fit	86.700	97.950	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP1	fit	85.250	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP2	fit	85.200	97.950	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP3	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP4	OutlineUnreachable	108.750	77.100	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP11	fit	85.250	98.700	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP13	fit	85.200	97.950	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP14	fit	85.250	98.700	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP15	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP16	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP17	OutlineUnreachable	107.750	77.600	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP18	fit	86.700	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP19	fit	85.200	97.950	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP20	fit	85.200	98.050	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP21	fit	85.200	97.950	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP22	fit	85.200	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP23	OutlineUnreachable	107.750	77.100	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP24	fit	85.250	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP25	fit	85.200	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP26	fit	85.200	98.200	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP27	fit	86.700	98.700	OutlineUnreachable	107.750	77.100	26
+turn-aft	s	test_points:TP28	fit	85.200	98.050	OutlineUnreachable	107.750	77.100	27
+turn-aft	s	test_points:TP29	OutlineUnreachable	108.750	77.100	OutlineUnreachable	107.750	77.100	26
+size-1	s	-	OutlineUnreachable	110.300	79.600	OutlineUnreachable	110.300	79.600	0
+size-1	s	i2c_devices:Q_U4	fit	87.500	98.700	OutlineUnreachable	110.300	79.600	26
+size-1	s	i2c_devices:Q_U3	OutlineUnreachable	110.500	79.350	OutlineUnreachable	110.300	79.600	27
+size-1	s	spi_devices:Q_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	110.300	79.600	0
+size-1	s	spi_devices:Q_U7	OutlineUnreachable	109.050	79.600	OutlineUnreachable	110.300	79.600	27
+size-1	s	connectors:Q_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	110.300	79.600	0
+size-1	s	connectors:Q_J1	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	110.300	79.600	0
+size-1	s	connectors:Q_J3	fit	87.750	97.950	OutlineUnreachable	110.300	79.600	28
+size-1	s	connectors:Q_J2	OutlineUnreachable	110.100	77.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	connectors:Q_J5	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	110.300	79.600	0
+size-1	s	connectors:Q_J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	110.300	79.600	0
+size-1	s	connectors:Q_J6	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	29
+size-1	s	test_points:Q_TP4	OutlineUnreachable	87.750	100.950	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP1	fit	87.750	99.450	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP3	OutlineUnreachable	110.300	77.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP2	OutlineUnreachable	114.300	79.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP18	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP19	fit	87.750	98.700	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP14	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP15	OutlineUnreachable	110.300	79.600	OutlineUnreachable	110.300	79.600	29
+size-1	s	test_points:Q_TP16	OutlineUnreachable	110.300	79.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP17	OutlineUnreachable	110.300	80.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP11	OutlineUnreachable	91.750	100.950	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP13	fit	87.750	99.700	OutlineUnreachable	110.300	79.600	27
+size-1	s	test_points:Q_TP25	fit	87.750	97.950	OutlineUnreachable	110.300	79.600	27
+size-1	s	test_points:Q_TP24	fit	87.750	98.700	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP27	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP26	OutlineUnreachable	110.300	77.600	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP21	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP20	fit	87.750	98.700	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP23	OutlineUnreachable	87.750	101.200	OutlineUnreachable	110.300	79.600	29
+size-1	s	test_points:Q_TP22	OutlineUnreachable	91.750	100.950	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP29	OutlineUnreachable	87.750	100.950	OutlineUnreachable	110.300	79.600	28
+size-1	s	test_points:Q_TP28	OutlineUnreachable	110.300	77.700	OutlineUnreachable	110.300	79.600	28
+size-2	s	-	OutlineUnreachable	111.750	80.850	OutlineUnreachable	111.750	80.850	0
+size-2	s	i2c_devices:Qx_U3	OutlineUnreachable	88.700	101.700	OutlineUnreachable	111.750	80.850	27
+size-2	s	i2c_devices:Qx_U7	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	28
+size-2	s	spi_devices:Qx_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	111.750	80.850	0
+size-2	s	spi_devices:Qx_U4	OutlineUnreachable	111.750	79.600	OutlineUnreachable	111.750	80.850	27
+size-2	s	connectors:Qx_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	111.750	80.850	0
+size-2	s	connectors:Qx_J5	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	111.750	80.850	0
+size-2	s	connectors:Qx_J6	OutlineUnreachable	89.200	100.450	OutlineUnreachable	111.750	80.850	29
+size-2	s	connectors:Qx_J7	OutlineUnreachable	111.550	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	connectors:Qx_J1	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	111.750	80.850	0
+size-2	s	connectors:Qx_J2	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	111.750	80.850	0
+size-2	s	connectors:Qx_J3	OutlineUnreachable	89.450	101.700	OutlineUnreachable	111.750	80.850	30
+size-2	s	test_points:Qx_TP2	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP3	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP1	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP4	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP28	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP29	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP20	OutlineUnreachable	89.450	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP21	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP22	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP23	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP24	OutlineUnreachable	89.450	101.550	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP25	OutlineUnreachable	91.450	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP26	OutlineUnreachable	89.200	100.450	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP27	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP11	OutlineUnreachable	89.200	100.950	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP13	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP15	OutlineUnreachable	89.450	101.700	OutlineUnreachable	111.750	80.850	30
+size-2	s	test_points:Qx_TP14	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP17	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP16	OutlineUnreachable	89.450	101.700	OutlineUnreachable	111.750	80.850	29
+size-2	s	test_points:Qx_TP19	OutlineUnreachable	89.200	101.700	OutlineUnreachable	111.750	80.850	28
+size-2	s	test_points:Qx_TP18	OutlineUnreachable	111.750	80.600	OutlineUnreachable	111.750	80.850	29
+size-6	s	-	OutlineUnreachable	118.650	83.350	OutlineUnreachable	118.650	83.350	0
+size-6	s	i2c_devices:Qxxxxx_U5	OutlineUnreachable	94.400	104.200	OutlineUnreachable	118.650	83.350	30
+size-6	s	i2c_devices:Qxxxxx_U3	OutlineUnreachable	118.650	83.100	OutlineUnreachable	118.650	83.350	31
+size-6	s	spi_devices:Qxxxxx_U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	118.650	83.350	0
+size-6	s	spi_devices:Qxxxxx_U7	OutlineUnreachable	116.400	84.600	OutlineUnreachable	118.650	83.350	31
+size-6	s	connectors:Qxxxxx_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	118.650	83.350	0
+size-6	s	connectors:Qxxxxx_J1	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	118.650	83.350	0
+size-6	s	connectors:Qxxxxx_J2	OutlineUnreachable	96.900	104.450	OutlineUnreachable	118.650	83.350	32
+size-6	s	connectors:Qxxxxx_J3	OutlineUnreachable	118.450	83.350	OutlineUnreachable	118.650	83.350	34
+size-6	s	connectors:Qxxxxx_J5	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	118.650	83.350	0
+size-6	s	connectors:Qxxxxx_J6	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	118.650	83.350	0
+size-6	s	connectors:Qxxxxx_J7	OutlineUnreachable	96.900	104.450	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP4	OutlineUnreachable	96.650	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP2	OutlineUnreachable	98.150	104.200	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP3	OutlineUnreachable	118.650	83.100	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP1	OutlineUnreachable	118.650	83.350	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP28	OutlineUnreachable	94.650	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP29	OutlineUnreachable	99.400	104.200	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP24	OutlineUnreachable	96.900	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP25	OutlineUnreachable	118.650	83.350	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP26	OutlineUnreachable	118.650	83.100	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP27	OutlineUnreachable	118.650	83.100	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP20	OutlineUnreachable	96.900	101.200	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP21	OutlineUnreachable	99.400	102.300	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP22	OutlineUnreachable	96.900	104.200	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP23	OutlineUnreachable	99.350	102.950	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP15	OutlineUnreachable	94.400	104.950	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP14	OutlineUnreachable	118.650	81.200	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP17	OutlineUnreachable	96.650	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP16	OutlineUnreachable	98.150	102.300	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP11	OutlineUnreachable	96.650	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP13	OutlineUnreachable	96.650	104.950	OutlineUnreachable	118.650	83.350	33
+size-6	s	test_points:Qxxxxx_TP19	OutlineUnreachable	96.650	104.950	OutlineUnreachable	118.650	83.350	32
+size-6	s	test_points:Qxxxxx_TP18	OutlineUnreachable	118.650	83.350	OutlineUnreachable	118.650	83.350	35
+size-8	s	-	OutlineUnreachable	122.000	83.450	OutlineUnreachable	122.000	83.450	0
+size-8	s	i2c_devices:Qxxxxxxx_U7	OutlineUnreachable	99.350	105.200	OutlineUnreachable	122.000	83.450	32
+size-8	s	i2c_devices:Qxxxxxxx_U3	OutlineUnreachable	119.800	83.850	OutlineUnreachable	122.000	83.450	33
+size-8	s	spi_devices:Qxxxxxxx_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	122.000	83.450	0
+size-8	s	spi_devices:Qxxxxxxx_U4	OutlineUnreachable	118.800	85.100	OutlineUnreachable	122.000	83.450	32
+size-8	s	connectors:Qxxxxxxx_J6	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	122.000	83.450	0
+size-8	s	connectors:Qxxxxxxx_J7	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	122.000	83.450	0
+size-8	s	connectors:Qxxxxxxx_J5	OutlineUnreachable	102.400	104.950	OutlineUnreachable	122.000	83.450	34
+size-8	s	connectors:Qxxxxxxx_J2	OutlineUnreachable	119.000	86.350	OutlineUnreachable	122.000	83.450	36
+size-8	s	connectors:Qxxxxxxx_J3	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	122.000	83.450	0
+size-8	s	connectors:Qxxxxxxx_J1	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	122.000	83.450	0
+size-8	s	connectors:Qxxxxxxx_J8	OutlineUnreachable	102.400	104.950	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP4	OutlineUnreachable	101.400	107.450	OutlineUnreachable	122.000	83.450	35
+size-8	s	test_points:Qxxxxxxx_TP1	OutlineUnreachable	105.150	104.200	OutlineUnreachable	122.000	83.450	35
+size-8	s	test_points:Qxxxxxxx_TP2	OutlineUnreachable	118.800	83.850	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP3	OutlineUnreachable	119.800	83.850	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP17	OutlineUnreachable	99.850	106.700	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP16	OutlineUnreachable	103.900	107.450	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP15	OutlineUnreachable	101.400	104.950	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP14	OutlineUnreachable	120.250	83.350	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP13	OutlineUnreachable	119.850	84.100	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP11	OutlineUnreachable	121.800	86.850	OutlineUnreachable	122.000	83.450	35
+size-8	s	test_points:Qxxxxxxx_TP19	OutlineUnreachable	104.400	104.950	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP18	OutlineUnreachable	102.150	104.350	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP28	OutlineUnreachable	101.650	104.850	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP29	OutlineUnreachable	105.350	104.300	OutlineUnreachable	122.000	83.450	35
+size-8	s	test_points:Qxxxxxxx_TP22	OutlineUnreachable	101.400	104.950	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP23	OutlineUnreachable	119.850	83.850	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP20	OutlineUnreachable	103.150	104.950	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP21	OutlineUnreachable	103.600	103.700	OutlineUnreachable	122.000	83.450	34
+size-8	s	test_points:Qxxxxxxx_TP26	OutlineUnreachable	100.400	105.200	OutlineUnreachable	122.000	83.450	32
+size-8	s	test_points:Qxxxxxxx_TP27	OutlineUnreachable	102.400	108.200	OutlineUnreachable	122.000	83.450	33
+size-8	s	test_points:Qxxxxxxx_TP24	OutlineUnreachable	99.650	104.950	OutlineUnreachable	122.000	83.450	32
+size-8	s	test_points:Qxxxxxxx_TP25	OutlineUnreachable	119.050	84.850	OutlineUnreachable	122.000	83.450	33
