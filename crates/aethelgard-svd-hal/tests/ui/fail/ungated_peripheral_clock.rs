@@ -9,7 +9,7 @@ fn main() {
     let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
     let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
-    let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
+    let b = rcc.enable_gpiob(&mut r, board.gpiob, scale2).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);
     let sda = b.pb7.into_i2c1_sda(&mut r);
     let _bus = board.i2c1.init::<Fast400k, _>(&mut r, &clock, scl, sda);

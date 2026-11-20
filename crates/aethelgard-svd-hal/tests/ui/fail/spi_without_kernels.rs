@@ -10,5 +10,5 @@ fn main() {
     let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
     let _clock = rcc.reset_clock(&mut r, &scale2).unwrap();
-    let _spi = rcc.enable_spi1(&mut r, board.spi1);
+    let _spi = rcc.enable_spi1(&mut r, board.spi1, scale2);
 }

@@ -13,13 +13,13 @@ fn main() {
     let mut rcc = board.rcc;
     let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
     let kernels = rcc.select_spi_kernels(&mut r, &clock);
-    let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
+    let a = rcc.enable_gpioa(&mut r, board.gpioa, scale2).split(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);
     let mosi = a.pa7.into_spi1_mosi(&mut r);
     let miso = a.pa6.into_spi1_miso(&mut r);
     let pa0 = a.pa0.into_output(&mut r);
     let mut spi = rcc
-        .enable_spi1(&mut r, board.spi1, &kernels)
+        .enable_spi1(&mut r, board.spi1, scale2, &kernels)
         .init(&mut r, &clock, sck, mosi, miso, Spi1Selects { pa0 });
     let mut back = [0u8; 3];
     let _ = spi.transfer(&mut r, 0x76, &[0x9f], &mut back);

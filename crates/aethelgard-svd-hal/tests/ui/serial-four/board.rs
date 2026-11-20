@@ -137,8 +137,10 @@ pub struct Clocked;
 pub struct Enabled<S>(PhantomData<S>);
 
 /// The core at VOS Scale 2 on the declared supply configuration (`AET-WO-4240v`
-/// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] takes it, so
-/// no clock-tree read, kernel selection or peripheral start precedes it.
+/// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] and every clock
+/// enable take it, so no clock-tree read, kernel selection, clock enable or
+/// peripheral start precedes it (`AET-WO-4240v` F2).
+#[derive(Clone, Copy)]
 pub struct Scale2 {
     _private: (),
 }
@@ -1089,7 +1091,7 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_gpioa<R: Registers>(&mut self, r: &mut R, _gated: GpioA<Gated>) -> GpioA<Clocked> {
+    pub fn enable_gpioa<R: Registers>(&mut self, r: &mut R, _gated: GpioA<Gated>, _scale2: Scale2) -> GpioA<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000001);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
         let _ = r.read(TOKEN, Block::GpioA, 0x00);
@@ -1100,7 +1102,7 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_gpiob<R: Registers>(&mut self, r: &mut R, _gated: GpioB<Gated>) -> GpioB<Clocked> {
+    pub fn enable_gpiob<R: Registers>(&mut self, r: &mut R, _gated: GpioB<Gated>, _scale2: Scale2) -> GpioB<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000002);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
         let _ = r.read(TOKEN, Block::GpioB, 0x00);
@@ -1111,7 +1113,7 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_gpioc<R: Registers>(&mut self, r: &mut R, _gated: GpioC<Gated>) -> GpioC<Clocked> {
+    pub fn enable_gpioc<R: Registers>(&mut self, r: &mut R, _gated: GpioC<Gated>, _scale2: Scale2) -> GpioC<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000004);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
         let _ = r.read(TOKEN, Block::GpioC, 0x00);
@@ -1122,7 +1124,7 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_gpiod<R: Registers>(&mut self, r: &mut R, _gated: GpioD<Gated>) -> GpioD<Clocked> {
+    pub fn enable_gpiod<R: Registers>(&mut self, r: &mut R, _gated: GpioD<Gated>, _scale2: Scale2) -> GpioD<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e0, |v| v | 0x00000008);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e0);
         let _ = r.read(TOKEN, Block::GpioD, 0x00);
@@ -1133,7 +1135,7 @@ impl Rcc {
     /// pending in a write buffer, and a dummy read of the block, which takes the
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
-    pub fn enable_i2c1<R: Registers>(&mut self, r: &mut R, _gated: I2c1<Gated>) -> I2c1<Clocked> {
+    pub fn enable_i2c1<R: Registers>(&mut self, r: &mut R, _gated: I2c1<Gated>, _scale2: Scale2) -> I2c1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e8, |v| v | 0x00200000);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e8);
         let _ = r.read(TOKEN, Block::I2c1, 0x00);
@@ -1145,7 +1147,7 @@ impl Rcc {
     /// two clock periods an enable may need (RM0433 Rev 9 §8.5.10, p. 372, steps b
     /// and d).
     /// Only once its kernel clock is selected ([`SpiKernels`]).
-    pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _kernels: &SpiKernels) -> Spi1<Clocked> {
+    pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _scale2: Scale2, _kernels: &SpiKernels) -> Spi1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00001000);
         let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
         let _ = r.read(TOKEN, Block::Spi1, 0x00);
@@ -1154,7 +1156,7 @@ impl Rcc {
 
     /// `RCC_APB1LENR` bit 19. Then the register read back, so the write is not
     /// pending in a write buffer (RM0433 Rev 9 §8.5.10, p. 372, step b).
-    pub fn enable_uart4<R: Registers>(&mut self, r: &mut R, _gated: Uart4<Gated>) -> Uart4<Clocked> {
+    pub fn enable_uart4<R: Registers>(&mut self, r: &mut R, _gated: Uart4<Gated>, _scale2: Scale2) -> Uart4<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e8, |v| v | 0x00080000);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e8);
         Uart4 { _state: PhantomData }
@@ -1162,7 +1164,7 @@ impl Rcc {
 
     /// `RCC_APB2ENR` bit 4. Then the register read back, so the write is not
     /// pending in a write buffer (RM0433 Rev 9 §8.5.10, p. 372, step b).
-    pub fn enable_usart1<R: Registers>(&mut self, r: &mut R, _gated: Usart1<Gated>) -> Usart1<Clocked> {
+    pub fn enable_usart1<R: Registers>(&mut self, r: &mut R, _gated: Usart1<Gated>, _scale2: Scale2) -> Usart1<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000010);
         let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
         Usart1 { _state: PhantomData }
@@ -1170,7 +1172,7 @@ impl Rcc {
 
     /// `RCC_APB1LENR` bit 18. Then the register read back, so the write is not
     /// pending in a write buffer (RM0433 Rev 9 §8.5.10, p. 372, step b).
-    pub fn enable_usart3<R: Registers>(&mut self, r: &mut R, _gated: Usart3<Gated>) -> Usart3<Clocked> {
+    pub fn enable_usart3<R: Registers>(&mut self, r: &mut R, _gated: Usart3<Gated>, _scale2: Scale2) -> Usart3<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0e8, |v| v | 0x00040000);
         let _ = r.read(TOKEN, Block::Rcc, 0x0e8);
         Usart3 { _state: PhantomData }
@@ -1178,7 +1180,7 @@ impl Rcc {
 
     /// `RCC_APB2ENR` bit 5. Then the register read back, so the write is not
     /// pending in a write buffer (RM0433 Rev 9 §8.5.10, p. 372, step b).
-    pub fn enable_usart6<R: Registers>(&mut self, r: &mut R, _gated: Usart6<Gated>) -> Usart6<Clocked> {
+    pub fn enable_usart6<R: Registers>(&mut self, r: &mut R, _gated: Usart6<Gated>, _scale2: Scale2) -> Usart6<Clocked> {
         r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000020);
         let _ = r.read(TOKEN, Block::Rcc, 0x0f0);
         Usart6 { _state: PhantomData }

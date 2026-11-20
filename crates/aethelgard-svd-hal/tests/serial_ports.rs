@@ -340,7 +340,7 @@ fn four_ports_each_write_their_solved_values() {
     ] {
         assert!(
             rcc.contains(&format!(
-                "pub fn enable_{f}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>) -> {t}<Clocked> {{\n        \
+                "pub fn enable_{f}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>, _scale2: Scale2) -> {t}<Clocked> {{\n        \
                  r.modify(TOKEN, Block::Rcc, {offset:#05x}, |v| v | {:#010x});",
                 1u32 << bit
             )),
@@ -440,7 +440,7 @@ fn the_console_firmware_runs_in_the_contract_s_order() {
     let at = |s: &str| main.find(s).unwrap_or_else(|| panic!("{s}\n{main}"));
     let order = [
         at("    let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n"),
-        at("    let usart2 = rcc.enable_usart2(&mut r, usart2);\n"),
+        at("    let usart2 = rcc.enable_usart2(&mut r, usart2, scale2);\n"),
         at("    let pa2 = gpioa.pa2.into_usart2_tx(&mut r);\n"),
         at("    let pa3 = gpioa.pa3.into_usart2_rx(&mut r);\n"),
         at("    let mut usart2 = usart2.configure(&mut r, &clock, pa2, pa3);\n"),
@@ -662,6 +662,10 @@ fn what_the_generator_cannot_write_is_refused() {
 /// Re-taken at `AET-WO-4241` (the architect's D3): `main.rs` alone moves, by
 /// U3's (the TMP117's) identity read after every modelled read and before
 /// the boot word; it was `d26fab5b…d7fe`.
+/// Re-taken at `AET-WO-4240b` (`4240v` F2, ruled): every clock enable takes the
+/// `Scale2` token, so `board.rs` moves by that signature (and `Scale2`'s
+/// `Clone, Copy`, which keeps every ELF's bytes), `main.rs` and `proofs.rs` by
+/// the calls; they were `5dad6e44…c2f9`, `8184414c…5e1e` and `e8218507…6608`.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -689,11 +693,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "5dad6e44a99379200c8e4bb8cf8bf6b60fce0dbd305035bc0581e299b4c6c2f9",
+        "8680571d85a9c549adbd1273e3abc79a2ad3d6651645a5a20c5468f74d775ae8",
     ),
     (
         "src/board.rs",
-        "8184414c00d5bc96bb2b8fc74435f7fbbd8794a384a7ff95999ec2c2ced65e1e",
+        "975b78d80d16e897dee79cc16636942fdce19cd51ec7f0112060bbdab9a3bc7f",
     ),
     (
         "src/lib.rs",
@@ -701,7 +705,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "e82185075cc522dd538ce66e9b43e8f21629afa15c292079463e227c7ccc6608",
+        "65140d4aae8c039236ca091257b0cdf9d6255a7fb5972eed500c94fb21e532d0",
     ),
 ];
 
