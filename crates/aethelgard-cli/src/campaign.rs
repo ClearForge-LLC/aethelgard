@@ -38,7 +38,19 @@ struct Prepared {
     topology: SolvedTopology,
     held: Vec<HeldLow>,
     rail: Option<crate::analog::Rail>,
+    /// A battery sag's kind 31, solved, with the tools and sandbox the deck
+    /// ran under (`AET-WO-2304b` §1.8).
+    sag: Option<SagSolved>,
+    /// What its verdict does not claim (`AET-WO-2304b` §1.7, §1.11).
+    conditions: Vec<String>,
     run_id: [u8; 16],
+}
+
+/// A battery sag, judged statically and solved by the deck, ready to archive.
+struct SagSolved {
+    record: Record,
+    tools: Vec<(&'static str, String)>,
+    sandbox: run::SandboxReport,
 }
 
 pub(crate) fn refuse(kind: &'static str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -196,6 +208,10 @@ pub(crate) fn apply_overrides(
             // that port (`open`, `AET-WO-2302` D5). [`effective`] refuses one
             // the solved topology has no serial port for.
             Override::SerialRxOpen { .. } => {}
+            // Nor does a battery sag: the chain is resolved against the tree
+            // (`resolve_battery_sag`), nor a rail out of band: its consumers'
+            // absences are the overrides listed beside it (`rendered`).
+            Override::BatterySag(_) | Override::RailOutOfBand { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -234,7 +250,20 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         held,
         specification_sha256,
         topology,
+        chain,
     } = effective(&scenario, &base)?;
+    let sag = match &chain {
+        Some(s) => Some(solve_battery_sag(s, &scenario.name)?),
+        None => None,
+    };
+    let conditions = conditions(&scenario, &spec).map_err(|e| {
+        refuse(
+            e.kind,
+            e.id.as_deref(),
+            format!("scenario `{}`: {e}", scenario.name),
+            EXIT_INVALID_SPEC,
+        )
+    })?;
     let rail = match scenario.droop() {
         Some(d) => Some(resolve_droop(d, &spec, &topology).map_err(|e| {
             refuse(
@@ -255,7 +284,112 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         topology,
         held,
         rail,
+        sag,
+        conditions,
         run_id,
+    })
+}
+
+/// What a battery sag's verdict does not claim (`AET-WO-2304b` §1.11),
+/// verbatim in FAB-NOTES.
+pub(crate) const SAG_LOAD: &str = "The battery's load is the tree's declared static load; no motor current is commanded, so no reboot loop is shown or excluded.";
+pub(crate) const SAG_ADMITTED: &str = "A battery sag is admitted only while every battery-fed regulator stays at or above its stated regulation floor (D-B9); no brownout is shown or excluded.";
+pub(crate) const SAG_OUTPUTS: &str = "Each battery-fed regulator's output is in its stated band by rule (D-B9), not solved: the deck solves VBAT only.";
+
+/// The conditions `scenario`'s verdict names (`AET-WO-2304b` §1.7, §1.11):
+/// a rail out of band's modelling assumption; a battery sag's load and
+/// admission, the healthy R's source, and each motor output's `esc`
+/// declaration with its source. Empty for every other scenario.
+pub(crate) fn conditions(
+    scenario: &Scenario,
+    spec: &Specification,
+) -> Result<Vec<String>, ScenarioError> {
+    let mut out = Vec::new();
+    if let Some(domain) = scenario.rail_out_of_band() {
+        out.push(rail_condition(domain, &rendered(spec, domain)?));
+    }
+    if scenario.battery_sag().is_some() {
+        out.extend([SAG_LOAD, SAG_ADMITTED, SAG_OUTPUTS].map(str::to_owned));
+        if let Some(r) = spec
+            .power
+            .as_ref()
+            .and_then(|p| p.battery.series_milliohms.as_ref())
+        {
+            out.push(format!(
+                "The healthy path R is declared {} mΩ, a lower bound on the path where its source says so: {}",
+                r.value, r.source
+            ));
+        }
+        for m in &spec.motor_outputs {
+            if let Some(aethelgard_ir::motor::Esc::NoEsc(n)) = &m.esc {
+                out.push(format!(
+                    "Motor output `{}` declares no ESC on the board's path: {}",
+                    m.label, n.source
+                ));
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Kind 31 as a campaign line states it (`AET-WO-2304b` §2): the chain as
+/// declared, the solved minimum and the binding floor.
+#[derive(Serialize)]
+struct SagLine {
+    series_milliohms: u32,
+    start_ns: u64,
+    v_open_microvolts: u64,
+    healthy_milliohms: u32,
+    sinks: Vec<SinkLine>,
+    capacitance_picofarads: u64,
+    static_microvolts: u64,
+    solved_minimum_microvolts: u64,
+    binding: String,
+    binding_floor_microvolts: u64,
+}
+
+#[derive(Serialize)]
+struct SinkLine {
+    name: String,
+    input_milliwatts: u64,
+    shutdown_millivolts: u64,
+    regulation_millivolts: u64,
+}
+
+fn sag_line(r: &Record) -> Option<SagLine> {
+    let Record::BatterySagDeclared {
+        sag,
+        v_open_microvolts,
+        healthy_milliohms,
+        sinks,
+        capacitance_picofarads,
+        static_microvolts,
+        solved_minimum_microvolts,
+        binding,
+    } = r
+    else {
+        return None;
+    };
+    Some(SagLine {
+        series_milliohms: sag.series_milliohms,
+        start_ns: sag.start_ns,
+        v_open_microvolts: *v_open_microvolts,
+        healthy_milliohms: *healthy_milliohms,
+        sinks: sinks
+            .iter()
+            .map(|k| SinkLine {
+                name: k.name.clone(),
+                input_milliwatts: k.input_milliwatts,
+                shutdown_millivolts: k.shutdown_millivolts,
+                regulation_millivolts: k.regulation_millivolts,
+            })
+            .collect(),
+        capacitance_picofarads: *capacitance_picofarads,
+        static_microvolts: *static_microvolts,
+        solved_minimum_microvolts: *solved_minimum_microvolts,
+        binding_floor_microvolts: aethelgard_chaos::battery::binding(sinks)
+            .map_or(0, aethelgard_chaos::record::SagSink::floor_microvolts),
+        binding: binding.clone(),
     })
 }
 
@@ -364,6 +498,8 @@ pub(crate) struct Effective {
     pub held: Vec<HeldLow>,
     pub specification_sha256: [u8; 32],
     pub topology: SolvedTopology,
+    /// A battery sag the static checks admitted (`AET-WO-2304b` §1.6).
+    pub chain: Option<SagStatic>,
 }
 
 /// Apply `scenario`'s overrides to its base's bytes, then serialize, hash
@@ -374,20 +510,6 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
         r.error.message = format!("scenario `{}`, base: {}", scenario.name, r.error.message);
         emit(&r, code)
     })?;
-    // The twin models no power tree (`AET-WO-4300d` adversarial A6), so a
-    // campaign over one would judge rails no model drives. It stays refused
-    // until the battery-sag work order (`AET-WO-4300d2` §1.9).
-    if spec.power.is_some() {
-        return Err(refuse(
-            "PowerNotSimulated",
-            None,
-            format!(
-                "scenario `{}`, base: the specification declares a power tree, which the twin does not model; a campaign over one waits for the battery-sag work order (AET-WO-4300d2 §1.9)",
-                scenario.name
-            ),
-            EXIT_INVALID_SPEC,
-        ));
-    }
     let held = apply(scenario, &mut spec).map_err(|e| {
         refuse(
             e.kind,
@@ -432,11 +554,326 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
             EXIT_INVALID_SPEC,
         ));
     }
+    let scenario_refusal = |e: ScenarioError| {
+        refuse(
+            e.kind,
+            e.id.as_deref(),
+            format!("scenario `{}`: {e}", scenario.name),
+            EXIT_INVALID_SPEC,
+        )
+    };
+    if let Some(domain) = scenario.rail_out_of_band() {
+        let r = rendered(&spec, domain).map_err(scenario_refusal)?;
+        let want = (r.ports, r.devices);
+        let have = (open(&scenario.overrides), absent(&scenario.overrides));
+        if have != want {
+            return Err(scenario_refusal(ScenarioError::new(
+                RAIL_REFUSED,
+                Some(domain),
+                format!(
+                    "the scenario renders {have:?} (serial ports, SPI devices) absent, and `{domain}`'s consumers are {want:?}: a rail out of band is rendered by exactly its consumers' absence (AET-WO-2304b §1.7)"
+                ),
+            )));
+        }
+    }
+    let chain = match scenario.battery_sag() {
+        Some(sag) => Some(resolve_battery_sag(sag, &spec).map_err(scenario_refusal)?),
+        None => None,
+    };
     Ok(Effective {
         spec,
         held,
         specification_sha256,
         topology,
+        chain,
+    })
+}
+
+use aethelgard_chaos::campaign::RAIL_REFUSED;
+
+/// What a rail out of band renders (`AET-WO-2304b` §1.7, D4 option 1, K1):
+/// each serial port whose RX net is on a connector that also carries the
+/// rail, or each SPI device the rail supplies, each by its existing
+/// composition; and, named but never counted, everything else on such a
+/// connector (`EXT` on Sentinel-03's J8: no device).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct Rendering {
+    pub ports: BTreeSet<String>,
+    pub devices: BTreeSet<String>,
+    /// What is named and not rendered, as the condition states it.
+    pub unrendered: Vec<String>,
+    /// Who the assumption is about: the ports' peer, by the connectors'
+    /// declared standard, or the devices.
+    who: String,
+    /// The domain's tolerance floor, mV.
+    band_millivolts: u64,
+}
+
+/// `a`, `a and b`, `a, b and c`.
+fn listed(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+/// mV as volts with no trailing zero: 4750 is `4.75`.
+fn volts(mv: u64) -> String {
+    let frac = format!("{:03}", mv % 1000);
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        format!("{}", mv / 1000)
+    } else {
+        format!("{}.{frac}", mv / 1000)
+    }
+}
+
+/// The modelling assumption every verdict that uses a rail out of band
+/// names, verbatim in FAB-NOTES (`AET-WO-2304b` §1.7).
+pub(crate) fn rail_condition(domain: &str, r: &Rendering) -> String {
+    let ports: Vec<String> = r.ports.iter().cloned().collect();
+    let devices: Vec<String> = r.devices.iter().cloned().collect();
+    let mut rendered = Vec::new();
+    if !ports.is_empty() {
+        rendered.push(format!("{} RX open", listed(&ports)));
+    }
+    if !devices.is_empty() {
+        rendered.push(format!("{} absent", listed(&devices)));
+    }
+    rendered.extend(r.unrendered.iter().cloned());
+    format!(
+        "`{domain}` below its band is rendered as its consumers' absence ({}). How {} below {} V is not declared; absent is a modelling assumption (AET-WO-2304 D4).",
+        rendered.join("; "),
+        r.who,
+        volts(r.band_millivolts)
+    )
+}
+
+/// [`Rendering`] of `domain`, or why a rail out of band on it is refused: an
+/// unknown domain, the MCU's supply (a droop's), a consumer with no
+/// composition (an I2C device), consumers of both kinds, whose joint
+/// attribution is not modelled, or no consumer a judge observes.
+pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, ScenarioError> {
+    let refuse = |m: String| ScenarioError::new(RAIL_REFUSED, Some(domain), m);
+    let Some(v) = spec.voltage_domains.iter().find(|v| v.id == domain) else {
+        return Err(refuse(format!(
+            "the specification has no domain `{domain}`"
+        )));
+    };
+    if domain == spec.mcu.supply {
+        return Err(refuse(format!(
+            "`{domain}` is the MCU's supply: a droop renders it, with the supervisor's resets"
+        )));
+    }
+    let c = aethelgard_ir::power::rail_consumers(spec, domain);
+    // A rail that feeds a regulator would take that regulator's output with
+    // it, which no composition renders (adversarial 2).
+    if let Some(r) = c.regulators.first() {
+        return Err(refuse(format!(
+            "`{domain}` feeds regulator {r}: a rail out of band would take its output down too, which is not modelled"
+        )));
+    }
+    if let Some(d) = c.i2c_devices.first() {
+        return Err(refuse(format!(
+            "{d} is an I2C device on `{domain}`, and no composition renders an I2C device's absence"
+        )));
+    }
+    if !c.serial_rx.is_empty() && !c.spi_devices.is_empty() {
+        return Err(refuse(format!(
+            "`{domain}` supplies serial ports {:?} and SPI devices {:?}: their joint attribution is not modelled",
+            c.serial_rx, c.spi_devices
+        )));
+    }
+    if c.serial_rx.is_empty() && c.spi_devices.is_empty() {
+        return Err(refuse(format!(
+            "`{domain}` has no consumer a judge observes"
+        )));
+    }
+    let mut unrendered: Vec<String> = c
+        .i2c_buses
+        .iter()
+        .map(|(bus, used)| {
+            if *used {
+                format!("`{bus}`'s off-board peer is not rendered")
+            } else {
+                format!("`{bus}` has no device and is not rendered")
+            }
+        })
+        .collect();
+    unrendered.extend(
+        c.tx_only
+            .iter()
+            .map(|p| format!("`{p}`'s peer (on its TX line only) is not rendered")),
+    );
+    unrendered.extend(
+        c.other_nets
+            .iter()
+            .map(|(j, net)| format!("`{net}` on {j} is not rendered")),
+    );
+    // The peer's standard, its first word, when every port's connector
+    // declares one and they agree (`DS-009 TELEM` is a DS-009 peer).
+    let firsts: BTreeSet<Option<&str>> = c
+        .standards
+        .iter()
+        .map(|s| s.as_deref().and_then(|s| s.split(' ').next()))
+        .collect();
+    let who = if !c.spi_devices.is_empty() {
+        let d: Vec<String> = c.spi_devices.iter().cloned().collect();
+        format!(
+            "{} {}",
+            listed(&d),
+            if d.len() == 1 { "behaves" } else { "behave" }
+        )
+    } else {
+        match firsts.into_iter().collect::<Vec<_>>().as_slice() {
+            [Some(std)] => format!("a {std} peer behaves"),
+            _ => "an off-board peer behaves".to_owned(),
+        }
+    };
+    Ok(Rendering {
+        ports: c.serial_rx,
+        devices: c.spi_devices,
+        unrendered,
+        who,
+        band_millivolts: rules::tolerance_floor_uv(
+            v.nominal_millivolts,
+            u32::from(v.tolerance_permille),
+        ) / 1000,
+    })
+}
+
+/// A battery sag judged against the tree (`AET-WO-2304b` §1.6): refused with
+/// no tree, with `series_milliohms` undeclared (`SeriesResistanceUndeclared`),
+/// with a motor output whose `esc` is undeclared (`EscUndeclared`, the
+/// first), and by every clause of [`aethelgard_chaos::battery::check_battery_sag`].
+pub(crate) struct SagStatic {
+    pub sag: aethelgard_chaos::record::BatterySag,
+    pub side: aethelgard_ir::power::BatterySide,
+    pub chain: aethelgard_chaos::battery::SagChain,
+    pub static_microvolts: u64,
+}
+
+pub(crate) fn resolve_battery_sag(
+    sag: &aethelgard_chaos::record::BatterySag,
+    spec: &Specification,
+) -> Result<SagStatic, ScenarioError> {
+    use aethelgard_chaos::battery;
+    let side = aethelgard_ir::power::battery_side(spec)
+        .map_err(|e| ScenarioError::new(e.kind(), e.id(), e.to_string()))?
+        .ok_or_else(|| {
+            ScenarioError::new(
+                battery::REFUSED,
+                None,
+                "no power tree: the specification declares no battery to sag".to_owned(),
+            )
+        })?;
+    let Some(healthy) = &side.healthy else {
+        return Err(ScenarioError::new(
+            "SeriesResistanceUndeclared",
+            None,
+            "power.battery.series_milliohms is null: the healthy path R is undeclared, and a sag is the step from it (AET-WO-2304 D3)".to_owned(),
+        ));
+    };
+    if let Some(m) = spec.motor_outputs.iter().find(|m| m.esc.is_none()) {
+        return Err(ScenarioError::new(
+            "EscUndeclared",
+            Some(&m.label),
+            format!(
+                "motor output `{}` declares no ESC (`esc` is null): an ESC fed through the board would load the battery, so its absence must be declared (AET-WO-2304 D2)",
+                m.label
+            ),
+        ));
+    }
+    let chain = battery::SagChain {
+        v_open_microvolts: side.v_open_microvolts,
+        healthy_milliohms: healthy.value,
+        sinks: side
+            .sinks
+            .iter()
+            .map(|k| aethelgard_chaos::record::SagSink {
+                name: k.reference.clone(),
+                input_milliwatts: k.input_milliwatts,
+                shutdown_millivolts: k.shutdown_millivolts,
+                regulation_millivolts: k.regulation_millivolts,
+            })
+            .collect(),
+        capacitance_picofarads: side.capacitors.iter().map(|c| c.picofarads).sum(),
+    };
+    let static_microvolts =
+        battery::check_battery_sag(sag, &chain, aethelgard_twin::boot::MAX_VIRTUAL_NS)?;
+    Ok(SagStatic {
+        sag: sag.clone(),
+        side,
+        chain,
+        static_microvolts,
+    })
+}
+
+/// The deck's solve of a sag the static checks admitted (`AET-WO-2304b`
+/// §1.8): a floor crossed in the solve refuses the run by name
+/// (`BatterySagSolvedBelowFloor`), the dynamic counterpart of the static
+/// clauses; a solved minimum off the static point by more than the stated
+/// tolerance is an internal error, never a verdict.
+fn solve_battery_sag(s: &SagStatic, scenario: &str) -> Result<SagSolved, ExitCode> {
+    let stop = |e: run::Stop| emit(&Refusal::new(e.kind, e.id.as_deref(), e.message), e.code);
+    let scratch = Scratch::new().map_err(stop)?;
+    let solved = crate::analog::chain(
+        &s.sag,
+        &s.side,
+        &s.chain,
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+        &scratch.root.join("chain"),
+        &scratch.root.join("status-chain"),
+    )
+    .map_err(stop)?;
+    if let Some(c) = solved
+        .crossings
+        .iter()
+        .find(|c| c.at_ps.is_some() || solved.minimum_microvolts < c.floor_microvolts)
+    {
+        return Err(refuse(
+            "BatterySagSolvedBelowFloor",
+            Some(&c.name),
+            format!(
+                "scenario `{scenario}`: the deck takes the battery to {} µV, below {}'s {} µV floor{}; the static point was {} µV",
+                solved.minimum_microvolts,
+                c.name,
+                c.floor_microvolts,
+                c.at_ps
+                    .map_or_else(String::new, |t| format!(", crossing it at {t} ps")),
+                s.static_microvolts
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
+    if solved.minimum_microvolts.abs_diff(s.static_microvolts)
+        > aethelgard_chaos::battery::SOLVE_TOLERANCE_UV
+    {
+        crate::diagnose(&format!(
+            "scenario `{scenario}`: the deck's minimum {} µV and the static point {} µV disagree by more than {} µV",
+            solved.minimum_microvolts,
+            s.static_microvolts,
+            aethelgard_chaos::battery::SOLVE_TOLERANCE_UV
+        ));
+        return Err(ExitCode::from(EXIT_INTERNAL));
+    }
+    let binding = aethelgard_chaos::battery::binding(&s.chain.sinks)
+        .map(|k| k.name.clone())
+        .unwrap_or_default();
+    Ok(SagSolved {
+        record: Record::BatterySagDeclared {
+            sag: s.sag.clone(),
+            v_open_microvolts: s.chain.v_open_microvolts,
+            healthy_milliohms: s.chain.healthy_milliohms,
+            sinks: s.chain.sinks.clone(),
+            capacitance_picofarads: s.chain.capacitance_picofarads,
+            static_microvolts: s.static_microvolts,
+            solved_minimum_microvolts: solved.minimum_microvolts,
+            binding,
+        },
+        tools: solved.tools,
+        sandbox: solved.sandbox,
     })
 }
 
@@ -466,6 +903,12 @@ struct ScenarioLine {
     uid_boundary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     uid_boundary_unmet: Option<run::Unmet>,
+    /// A battery sag's chain (kind 31); absent otherwise (`AET-WO-2304b`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    battery_sag: Option<SagLine>,
+    /// What the verdict does not claim; absent when nothing.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    conditions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -614,10 +1057,11 @@ fn run_one(
     )
     .map_err(stop)?;
     drop(scratch);
-    let (uid_boundary, uid_boundary_unmet) = (
-        verdict.sandbox.uid_boundary,
-        verdict.sandbox.uid_boundary_unmet,
-    );
+    let mut sandbox = verdict.sandbox;
+    if let Some(s) = &p.sag {
+        sandbox.unmet(s.sandbox.uid_boundary_unmet);
+    }
+    let (uid_boundary, uid_boundary_unmet) = (sandbox.uid_boundary, sandbox.uid_boundary_unmet);
     // The run id and the header name the firmware as first read; the boot
     // judged its own copy. A file changed between the two is refused.
     let booted = verdict.boot.as_ref().map(|b| b.firmware.sha256.as_str());
@@ -649,7 +1093,24 @@ fn run_one(
     records.extend(spi_buses);
     records.extend(motors);
     records.extend(serial);
-    records.extend(records_of(&verdict).map_err(internal)?);
+    let mut boot = records_of(&verdict).map_err(internal)?;
+    // Kind 31 sits with the declared rail, after the analog records and the
+    // bus faults, before the boot's (`check_run`'s rank 6).
+    if let Some(s) = &p.sag {
+        let at = boot
+            .iter()
+            .position(|r| {
+                !matches!(
+                    r,
+                    Record::RiseComputed { .. }
+                        | Record::LineStuckHigh { .. }
+                        | Record::BusFault { .. }
+                )
+            })
+            .unwrap_or(boot.len());
+        boot.insert(at, s.record.clone());
+    }
+    records.extend(boot);
     // The run must pass the rules replay will judge it by before it is written.
     let summary = rules::check_run(&records)
         .and_then(|s| rules::check_serial_frames(firmware_sha256, &records).map(|()| s))
@@ -664,11 +1125,8 @@ fn run_one(
             ("specification".to_owned(), p.specification_sha256),
             ("topology".to_owned(), topology_sha256),
         ],
-        tools: verdict
-            .tools
-            .iter()
-            .map(|(n, v)| ((*n).to_owned(), v.clone()))
-            .collect(),
+        tools: header_tools(&verdict.tools, p.sag.as_ref().map_or(&[][..], |s| &s.tools))
+            .map_err(internal)?,
     };
     let dir = archive.join(hex(p.run_id));
     let archived = (|| {
@@ -688,6 +1146,7 @@ fn run_one(
         )
     })?;
     let ok = summary.matched;
+    let battery_sag = p.sag.as_ref().and_then(|s| sag_line(&s.record));
     Ok((
         ScenarioLine {
             scenario: summary.name,
@@ -707,9 +1166,34 @@ fn run_one(
             window: aethelgard_twin::boot::WINDOW,
             uid_boundary,
             uid_boundary_unmet,
+            battery_sag,
+            conditions: p.conditions,
         },
         ok,
     ))
+}
+
+/// The header's tools: the boot's, and the bridge and ngspice the battery
+/// chain's deck ran (`AET-WO-2304b` §1.9), sorted, each once. A tool that
+/// named two versions in one run is an internal error, never a choice.
+fn header_tools(
+    boot: &[(&'static str, String)],
+    chain: &[(&'static str, String)],
+) -> Result<Vec<(String, String)>, String> {
+    let mut tools: Vec<(String, String)> = boot
+        .iter()
+        .chain(chain)
+        .map(|(n, v)| ((*n).to_owned(), v.clone()))
+        .collect();
+    tools.sort();
+    tools.dedup();
+    if let Some(w) = tools.windows(2).find(|w| w[0].0 == w[1].0) {
+        return Err(format!(
+            "{} reported two versions in one run: `{}`, `{}`",
+            w[0].0, w[0].1, w[1].1
+        ));
+    }
+    Ok(tools)
 }
 
 /// Kind 15 for every solved I2C bus, sorted by bus (`AET-WO-3100` R1): its

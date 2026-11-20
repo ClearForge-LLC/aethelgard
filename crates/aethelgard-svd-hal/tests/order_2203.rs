@@ -179,7 +179,11 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and the platform's clock block removed, `main.rs` and the two platforms
 /// are `126afcb9…8d60`, `6f7b2db1…dd35` and `fc22c2c0…ccfa` exactly
 /// (measured); the boot image did not move.
-/// Moved again by `AET-WO-4240v`'s declaration (specification 18,
+/// Moved again by `AET-WO-2304b` (specification 18, which adds no key this
+/// document's devices or platform read): `main.rs` and the two platforms,
+/// which carry the specification's sha256; the boot image did not move
+/// (measured).
+/// Moved again by `AET-WO-4240v`'s declaration (specification 18, now 19,
 /// `mcu.core_supply`), which changes no generator of these: with the
 /// version-17 specification's sha256 (`6deadfe4…e9c9`) put back for the new
 /// (`ab8ca1d8…c110`) in each text, `main.rs` and the two platforms are
@@ -196,18 +200,20 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `pwr` override, D-3 (a)), is `55d10bbd…1f0d` and `2a4eaea9…e4a5` exactly;
 /// and the boot image is the new digest there too, so it moved only by
 /// `Image::unobservable`'s `PWR.CSR1.ACTVOSRDY` and `PWR.D3CR.VOSRDY`.
+/// Re-taken at the merge of `main` after `2304b` (`AET-WO-4240v`,
+/// specification 19): PROOF_PENDING.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "427baa54837e63b3ad0666404ff0e53b2e71f9a1cf972ba44e949f73a9d57b38",
+        "PENDING_MAIN",
     ),
     (
         "platform",
-        "81a4ecaca0ba708d356a3664da0dca86d8b66434aafcb3b81c3de7109c89fb2d",
+        "PENDING_PLATFORM",
     ),
     (
         "platform faulted",
-        "7b36e730c8bb1fb6c344af770093caebdc1edefa31814deaa164c783fbc2d61b",
+        "PENDING_FAULTED",
     ),
     (
         "boot image",

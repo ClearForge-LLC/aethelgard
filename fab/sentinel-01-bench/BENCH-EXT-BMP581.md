@@ -6,7 +6,7 @@ Every prediction here was written by the `AET-WO-3403` builder **before** any be
 
 ## 0. What this is, and what it is not
 
-- **The specification is `examples/sentinel-01-ext-bmp581.json`** (sha256 `f8fa067e2a54150fb42faf33933466e29ee32a26704bc02424b0c5d7882ccda4`, specification 17). It is `examples/sentinel-01.json` with four changes:
+- **The specification is `examples/sentinel-01-ext-bmp581.json`** (sha256 `1a6aa3749ccdce32f9fe3f02b61d8e0348be859af76bcdae334f21086bbe2d92`, specification 18). It is `examples/sentinel-01.json` with four changes:
   - **U5, a BMP581 on bus `EXT`, at address `0x47`** (71), with Sentinel-02's declared pin capacitance (`examples/sentinel-02-bench.json`'s U7 row);
   - **EXT's pins pinned to PB10 (SCL) and PB11 (SDA)**, so the solver cannot move the bus off J4's copper;
   - `project_name` `sentinel-01-ext-bmp581`;

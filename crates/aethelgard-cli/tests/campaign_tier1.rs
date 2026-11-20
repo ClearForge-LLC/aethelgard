@@ -2710,30 +2710,278 @@ fn the_droop_scenarios_carry_only_identifiers_the_base_set_admits() {
     }
 }
 
-/// `AET-WO-4300d` adversarial A6: the twin models no power tree, so a scenario
-/// whose base declares one is refused before any run, until the battery-sag
-/// work order (`AET-WO-4300d2` §1.9).
+/// `AET-WO-2304b` §1.3 (a0): the refusal `AET-WO-4300d` A6 put on a tree
+/// board is lifted. A tree board's baseline passes every check before a run
+/// and reaches the boot's analog pass, which here has no bridge
+/// (`BridgeUnavailable`): nothing refused it as a scenario. The boot itself
+/// passes in tier 2 (`battery_sag_tier2`).
 #[test]
-fn a_scenario_on_a_power_tree_is_refused_before_any_run() {
+fn a_scenario_on_a_power_tree_passes_every_check_before_its_run() {
+    let tb = toolbox(&good());
+    for spec in [common::power::power_tree(), s03()] {
+        let work = Work::new();
+        work.dir.write("power.json", spec.to_string().as_bytes());
+        let doc = json!({
+            "schema_version": 2, "name": "p", "base": "power.json", "expect": "pass",
+            "expect_findings": [], "overrides": [],
+        });
+        work.dir.write("p.json", doc.to_string().as_bytes());
+        let out = campaign(
+            &cli(None),
+            &tb.0,
+            &work.dir.0,
+            &["p.json"],
+            &work.firmware,
+            &work.archive,
+        );
+        expect_refusal(&out, 4, "BridgeUnavailable");
+    }
+}
+
+/// Sentinel-03, as committed (`AET-WO-2304b` §1.2: a healthy 1 mΩ, each
+/// output's `esc` declared `none`).
+fn s03() -> Value {
+    serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap(),
+    )
+    .unwrap()
+}
+
+fn sag(r: u64, start: u64) -> Value {
+    json!({"battery_sag": {"series_milliohms": r, "start_ns": start}})
+}
+
+/// One scenario-4 campaign over `spec` with `overrides`, with `bridge` beside
+/// the CLI (or none); its output, and whether an archive was made.
+fn sag_campaign(spec: &Value, overrides: Value, bridge: Option<&'static str>) -> (Output, bool) {
     let tb = toolbox(&good());
     let work = Work::new();
-    let spec = common::power::power_tree();
-    work.dir.write("power.json", spec.to_string().as_bytes());
+    work.dir.write("tree.json", spec.to_string().as_bytes());
     let doc = json!({
-        "schema_version": 2, "name": "p", "base": "power.json", "expect": "pass",
-        "expect_findings": [], "overrides": [],
+        "schema_version": 4, "name": "sag", "base": "tree.json", "expect": "pass",
+        "expect_findings": [], "overrides": overrides,
     });
-    work.dir.write("p.json", doc.to_string().as_bytes());
+    work.dir.write("sag.json", doc.to_string().as_bytes());
     let out = campaign(
-        &cli(None),
+        &cli(bridge),
         &tb.0,
         &work.dir.0,
-        &["p.json"],
+        &["sag.json"],
         &work.firmware,
         &work.archive,
     );
-    expect_refusal(&out, 2, "PowerNotSimulated");
-    assert!(!work.archive.exists(), "an archive was made");
+    let made = work.archive.exists();
+    (out, made)
+}
+
+/// A refusal by `kind`, before any run, whose message holds `says`.
+fn sag_refused(spec: &Value, overrides: Value, kind: &str, says: &str) -> Value {
+    let (out, made) = sag_campaign(spec, overrides, None);
+    let v = expect_refusal(&out, 2, kind);
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.contains(says), "{m}");
+    assert!(!made, "an archive was made");
+    v
+}
+
+/// §1.6: each clause of a battery sag refuses by name before any run, with
+/// its own message; a sag the clauses admit reaches the deck (here, no
+/// bridge: `BridgeUnavailable`, exit 4). The edges are measured: U10's
+/// regulation floor (7,000 mV, D-B9) admits 949 mΩ and refuses 950 mΩ.
+#[test]
+fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong() {
+    let spec = s03();
+    let start = 10_000_000;
+    let r = "BatterySagRefused";
+    sag_refused(
+        &json!(serde_json::from_slice::<Value>(&spec_bytes()).unwrap()),
+        json!([sag(500, start)]),
+        r,
+        "no power tree",
+    );
+    sag_refused(&spec, json!([sag(1, start)]), r, "not a fault");
+    sag_refused(&spec, json!([sag(1_400, start)]), r, "no operating point");
+    let v = sag_refused(&spec, json!([sag(950, start)]), r, "below regulation");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("U10") && m.contains("7000000 µV") && m.contains("3800000 µV"),
+        "{m}"
+    );
+    sag_refused(&spec, json!([sag(500, 99_999_999)]), r, "past the span");
+    let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
+        "start_ns": 1_000_000, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}});
+    sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
+    for admitted in [2, 500, 949] {
+        let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
+        expect_refusal(&out, 4, "BridgeUnavailable");
+        assert!(!made);
+    }
+}
+
+/// §1.6, `INV-06`: an undeclared healthy R and an undeclared ESC on one
+/// output of four each halt by name, never defaulted.
+#[test]
+fn an_undeclared_path_or_esc_halts_a_battery_sag_by_name() {
+    let mut spec = s03();
+    spec["power"]["battery"]["series_milliohms"] = Value::Null;
+    sag_refused(
+        &spec,
+        json!([sag(500, 10_000_000)]),
+        "SeriesResistanceUndeclared",
+        "null",
+    );
+    let mut spec = s03();
+    spec["motor_outputs"][2]["esc"] = Value::Null;
+    let v = sag_refused(
+        &spec,
+        json!([sag(500, 10_000_000)]),
+        "EscUndeclared",
+        "MOTOR3",
+    );
+    assert_eq!(v["error"]["id"], "MOTOR3", "{v}");
+}
+
+/// A chain answer from the deck, as `--chain` writes it, with U10's
+/// crossing at `at` (or none) and the minimum `min`.
+macro_rules! chain_stub {
+    ($min:literal, $at:literal) => {
+        concat!(
+            "#!/bin/sh\n[ \"$1\" = --chain ] || exit 9\nprintf '%s\\n' '{\"accepted_points\":1,\"chain\":\"solved\",\"final_microvolts\":",
+            $min,
+            ",\"initial_microvolts\":8998361,\"minimum_at_ns\":100000000,\"minimum_microvolts\":",
+            $min,
+            ",\"ngspice\":\"44.2\",\"sinks\":[{\"at_ps\":",
+            $at,
+            ",\"floor_microvolts\":7000000,\"name\":\"U10\"},{\"at_ps\":null,\"floor_microvolts\":3800000,\"name\":\"U11\"}],\"step_ns\":10000}'\n"
+        )
+    };
+}
+
+/// §1.8: a floor the deck's solve crosses refuses the run by name
+/// (`BatterySagSolvedBelowFloor`), the dynamic counterpart of the static
+/// clauses; a solved minimum off the static point (8,088,035 µV at 500 mΩ) by
+/// more than 1 mV is an internal error (exit 70), never a verdict; and an
+/// answer that is not the chain's stops the call.
+#[test]
+fn the_deck_s_answer_is_judged_before_any_run() {
+    let spec = s03();
+    let o = json!([sag(500, 10_000_000)]);
+    let (out, made) = sag_campaign(
+        &spec,
+        o.clone(),
+        Some(chain_stub!("6999999", "10395072253")),
+    );
+    let v = expect_refusal(&out, 2, "BatterySagSolvedBelowFloor");
+    assert_eq!(v["error"]["id"], "U10", "{v}");
+    assert!(!made);
+    // Below the floor with no crossing named: refused all the same.
+    let (out, _) = sag_campaign(&spec, o.clone(), Some(chain_stub!("6999999", "null")));
+    expect_refusal(&out, 2, "BatterySagSolvedBelowFloor");
+    let (out, made) = sag_campaign(&spec, o.clone(), Some(chain_stub!("8087034", "null")));
+    assert_eq!(out.status.code(), Some(70), "{:?}", out);
+    assert!(out.stdout.is_empty() && !made);
+    let (out, _) = sag_campaign(
+        &spec,
+        o,
+        Some("#!/bin/sh\nprintf '%s\\n' '{\"chain\":\"solved\"}'\n"),
+    );
+    expect_refusal(&out, 5, "ToolError");
+}
+
+/// §1.7: a rail out of band is refused on the MCU's supply, on an unknown
+/// domain, on a rail with no consumer a judge observes (the power fixture's
+/// `VDD_5V`), and when the scenario does not list exactly its consumers'
+/// absences; Sentinel-03's `VDD_5V` with CRSF and MAVLINK open passes every
+/// check before its run.
+#[test]
+fn a_rail_out_of_band_is_refused_by_name_and_rendered_by_exactly_its_consumers() {
+    let r = "RailOutOfBandRefused";
+    let rail = |d: &str| json!({"rail_out_of_band": d});
+    let open = |p: &str| json!({"serial_rx_open": p});
+    // A lone rail with no composition is refused when the scenario is read.
+    sag_refused(&s03(), json!([rail("VDD_5V")]), r, "or by none");
+    sag_refused(
+        &s03(),
+        json!([rail("VDD_3V3"), open("CRSF")]),
+        r,
+        "the MCU's supply",
+    );
+    sag_refused(
+        &s03(),
+        json!([rail("VDD_9V"), open("CRSF")]),
+        r,
+        "no domain",
+    );
+    sag_refused(
+        &common::power::power_tree(),
+        json!([rail("VDD_5V"), {"spi_device_absent": "U4"}]),
+        r,
+        "no consumer a judge observes",
+    );
+    sag_refused(
+        &s03(),
+        json!([rail("VDD_5V"), open("CRSF")]),
+        r,
+        "rendered by exactly",
+    );
+    sag_refused(
+        &s03(),
+        json!([
+            rail("VDD_5V"),
+            open("CRSF"),
+            open("MAVLINK"),
+            open("CONSOLE")
+        ]),
+        r,
+        "rendered by exactly",
+    );
+    let (out, _) = sag_campaign(
+        &s03(),
+        json!([rail("VDD_5V"), open("CRSF"), open("MAVLINK")]),
+        None,
+    );
+    expect_refusal(&out, 4, "BridgeUnavailable");
+}
+
+/// The adversarial pass (`AET-WO-2304b`): a second rail, whichever comes
+/// first, is refused before any run (1); and a rail that feeds a regulator
+/// is refused naming it, since its output would fall too (2).
+#[test]
+fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
+    let r = "RailOutOfBandRefused";
+    let rail = |d: &str| json!({"rail_out_of_band": d});
+    let open = |p: &str| json!({"serial_rx_open": p});
+    for o in [
+        json!([
+            rail("VDD_5V"),
+            open("CRSF"),
+            open("MAVLINK"),
+            rail("VDD_3V3")
+        ]),
+        json!([
+            rail("VDD_3V3"),
+            open("CRSF"),
+            open("MAVLINK"),
+            rail("VDD_5V")
+        ]),
+    ] {
+        sag_refused(&s03(), o, r, "more than one rail out of band");
+    }
+    let mut spec = s03();
+    let u11 = spec["power"]["regulators"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|g| g["reference"] == "U11")
+        .unwrap();
+    u11["input"] = json!("VDD_5V");
+    sag_refused(
+        &spec,
+        json!([rail("VDD_5V"), open("CRSF"), open("MAVLINK")]),
+        r,
+        "feeds regulator U11",
+    );
 }
 
 /// `AET-WO-2302`, ruled (a-i): a board with a DShot output boots

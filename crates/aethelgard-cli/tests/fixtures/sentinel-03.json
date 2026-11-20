@@ -948,25 +948,29 @@
       "label": "MOTOR1",
       "pin": "PE9",
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
     },
     {
       "label": "MOTOR2",
       "pin": "PE11",
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
     },
     {
       "label": "MOTOR3",
       "pin": "PE13",
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
     },
     {
       "label": "MOTOR4",
       "pin": "PE14",
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
     }
   ],
   "power": {
@@ -1013,7 +1017,8 @@
       "cell_max_millivolts": {
         "value": 4350,
         "source": "LiHV full charge (AET-WO-4300d spike P1.2)"
-      }
+      },
+      "series_milliohms": {"value": 1, "source": "J4 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"}
     },
     "regulators": [
       {

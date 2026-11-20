@@ -279,25 +279,29 @@
       "label": "MOTOR1",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR2",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR3",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR4",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     }
   ],
   "net_classes": [],

@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "baseline",
+  "base": "../../crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}

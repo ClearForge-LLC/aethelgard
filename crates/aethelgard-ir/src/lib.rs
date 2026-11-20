@@ -82,10 +82,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Version 17 adds `mcu.foreign_clock` (`AET-WO-4400g` §1.2, Q1 ruled on PR
 /// #229), optional by the same precedent: absent is no foreign clock, which
 /// `simulate --foreign` refuses by name (`INV-06`).
-/// Version 18 requires `mcu.core_supply` (`AET-WO-4240v` D-1), the board's
-/// supply configuration with its source, and a declared foreign clock's
-/// `vos`; nothing supplies either for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 18;
+/// Version 18 requires `power.battery.series_milliohms`, the healthy path's
+/// series resistance with its source or `null` (undeclared), and each motor
+/// output's `esc`, `{"none": {"source"}}` or `null` (undeclared)
+/// (`AET-WO-2304b` §1.2): both are required keys, because their absence
+/// would relax the battery-sag check (`RUL-14` as amended on PR #191).
+/// Version 19 requires `mcu.core_supply` (`AET-WO-4240v` D-1, renumbered from
+/// 18 by the same rule, merging after `2304b`), the board's supply
+/// configuration with its source, and a declared foreign clock's `vos`;
+/// nothing supplies either for an older file.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 19;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -3694,6 +3700,9 @@ impl Specification {
         for (i, m) in self.motor_outputs.iter().enumerate() {
             plain(&m.label, || format!("motor_outputs[{i}].label"))?;
             optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
+            if let Some(motor::Esc::NoEsc(n)) = &m.esc {
+                board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
+            }
         }
         for (i, p) in self.serial_ports.iter().enumerate() {
             let at = format!("serial_ports[{i}]");

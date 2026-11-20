@@ -101,15 +101,19 @@ use sha2::{Digest, Sha256};
 /// that key removed, the reference's output hashes to `783af0f1…eed5`, and
 /// with the stress fixture's old sha256 (`942bd804…`) likewise, its to
 /// `4e3de62b…7174`, the old digests, exactly.
-/// Moved by `AET-WO-4240v` (specification 18, solved 12), which moved only
+/// Moved by `AET-WO-2304b` (specification 18, solved 11 unchanged), which
+/// moved only the specification's sha256: with `89865e50…f771c` put back,
+/// the reference's output hashes to `6bbb87ea…fe03`, and with the stress
+/// fixture's old sha256 (`aa765a92…aebb`) its to `22bb9cb6…e6b8`, the old
+/// digests, exactly (measured).
+/// Moved by `AET-WO-4240v` (specification 19, solved 12), which moved only
 /// the specification's sha256 and `schema_version` and added `"vos":"scale2"`
-/// to the clock and `"core_supply":"ldo"`: with `89865e50…` and version 11 put
-/// back and those keys removed, the reference's output is byte for byte
-/// main's, hashing to `6bbb87ea…fe03`, and with the stress fixture's old
-/// sha256 (`aa765a92…`) likewise, its to `22bb9cb6…e6b8`, the old digests,
-/// exactly.
-const REFERENCE_DIGEST: &str = "67605377a1a4d3b8d9c3c25ed3f19ae2cf807371fec423cd0cae83351c9dc708";
-const STRESS_DIGEST: &str = "191df2e411fbaa976fa6cb48209044bac7d7dcbe5951f44e7e45b6b482abf2a0";
+/// to the clock and `"core_supply":"ldo"`: with `2304b`'s sha256 and version
+/// 11 put back and those keys removed, the reference's output is byte for
+/// byte main's, hashing to `c7cc4fc4…5a1c`, and the stress fixture's likewise
+/// to `316928c0…d502`, the old digests, exactly (measured).
+const REFERENCE_DIGEST: &str = "PENDING_REF";
+const STRESS_DIGEST: &str = "PENDING_STRESS";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.

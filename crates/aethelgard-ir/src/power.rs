@@ -205,6 +205,13 @@ pub struct Battery {
     pub cells: Cells,
     pub cell_min_millivolts: SourcedValue,
     pub cell_max_millivolts: SourcedValue,
+    /// The healthy path's series resistance, mΩ: the pack, its leads, the
+    /// input connector and the `VBAT` copper (`AET-WO-2304` D3), with its
+    /// source; `null` is undeclared, and a battery sag then halts by name
+    /// (`SeriesResistanceUndeclared`). `validate` judges nothing else with it
+    /// (`2304b` K6).
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub series_milliohms: Option<SourcedValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -383,6 +390,9 @@ crate::object_only!(
 pub enum Refusal {
     /// A part name the tables do not hold, or a row of the wrong kind.
     PowerPartUnknown,
+    /// A battery-fed regulator the chain cannot model: not a buck, no
+    /// declared loss, or no stated regulation input (`AET-WO-2304b` §1.5).
+    BatterySideUnmodelled,
     /// A declared value outside what the schema allows (a zero, a min above
     /// its max, a resolution the table has no row for).
     PowerValueInvalid,
@@ -437,6 +447,7 @@ impl Refusal {
             Self::DomainWithTwoSources => "DomainWithTwoSources",
             Self::PowerLoop => "PowerLoop",
             Self::BatteryOutsideRegulatorInput => "BatteryOutsideRegulatorInput",
+            Self::BatterySideUnmodelled => "BatterySideUnmodelled",
             Self::DomainOutsideConsumer => "DomainOutsideConsumer",
             Self::RegulatorOutsideDomain => "RegulatorOutsideDomain",
             Self::DropoutViolated => "DropoutViolated",
@@ -722,6 +733,15 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         &b.cell_max_millivolts.source,
         "power.battery.cell_max_millivolts.source",
     )?;
+    if let Some(r) = &b.series_milliohms {
+        crate::board::source(&r.source, "power.battery.series_milliohms.source")?;
+        if r.value == 0 {
+            return Err(invalid(
+                "power.battery.series_milliohms",
+                "a series resistance of 0 mΩ is not a path".to_owned(),
+            ));
+        }
+    }
     if b.cells.min == 0 || b.cells.min > b.cells.max || b.cells.max > 24 {
         return Err(invalid(
             "power.battery.cells",
@@ -1320,10 +1340,7 @@ fn battery_inputs(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
             let nominal = ctx
                 .domain(&r.output)
                 .map_or(0, |d| i64::from(d.nominal_millivolts));
-            if let Some((_, floor)) = b
-                .regulation_vin_min
-                .iter()
-                .find(|(from, _)| nominal >= *from)
+            if let Some(floor) = regulation_floor(b, nominal)
                 && i128::from(bmin) < i128::from(floor.value)
             {
                 return Err(refuse(
@@ -1350,6 +1367,16 @@ fn battery_inputs(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
         }
     }
     Ok(())
+}
+
+/// The input from which a buck's output regulation band is stated, for an
+/// output of `nominal` mV (D-B9): the first step whose start the output
+/// reaches. One lookup for `battery_inputs` and [`battery_side`].
+fn regulation_floor(b: &pp::Buck, nominal: i64) -> Option<&pp::Limit> {
+    b.regulation_vin_min
+        .iter()
+        .find(|(from, _)| nominal >= *from)
+        .map(|(_, floor)| floor)
 }
 
 /// Step 6: each regulator's load, mA, children first; refused above IOUT.
@@ -3048,4 +3075,366 @@ pub fn check_against(
         input_fault_milliamps: fault,
         conditions: ctx.conditions.into_iter().collect(),
     }))
+}
+
+/// One battery-fed regulator, as the battery sees it (`AET-WO-2304b` §1.5):
+/// a constant-power sink with its floors.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatterySink {
+    pub reference: String,
+    /// Its output maximum × its load, rounded up, plus its declared
+    /// `loss_milliwatts`, mW: what it draws from the battery.
+    pub input_milliwatts: u64,
+    /// Its stated minimum operating input (`vin_millivolts.min`), mV: below
+    /// it the part's behaviour is not stated (F5).
+    pub shutdown_millivolts: u64,
+    /// The input from which its regulation band is stated for its output
+    /// (`regulation_vin_min`, D-B9), mV.
+    pub regulation_millivolts: u64,
+}
+
+impl BatterySink {
+    /// The input the sink needs: the higher of its two floors, mV.
+    pub fn floor_millivolts(&self) -> u64 {
+        self.shutdown_millivolts.max(self.regulation_millivolts)
+    }
+}
+
+/// A capacitor on `VBAT`, as the chain counts it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatteryCapacitor {
+    pub reference: String,
+    pub picofarads: u64,
+    /// The bulk part's ESR maximum, mΩ; `None` for a ceramic, whose ESR no
+    /// row holds (L723), so the deck takes it as ideal.
+    pub esr_max_milliohms: Option<u64>,
+}
+
+/// The battery side of a power tree (`AET-WO-2304b` §1.5): one derivation,
+/// from the specification and the parts table alone, which the scenario's
+/// checks, the deck and the coverage rule all read. It shares no code with
+/// the generator (`RUL-20` (1)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BatterySide {
+    /// `cells.min × cell_min_millivolts`, µV: the pack's declared floor,
+    /// taken as an ideal source behind the path R.
+    pub v_open_microvolts: u64,
+    /// The healthy path R, as declared: `None` is undeclared.
+    pub healthy: Option<SourcedValue>,
+    /// Each battery-fed regulator, in the specification's order.
+    pub sinks: Vec<BatterySink>,
+    /// The hot-plug bulk parts, at their rated capacitance with their ESR
+    /// maximum, then the battery-fed regulators' input ceramics at the
+    /// effective capacitance IR's static checks credit them.
+    pub capacitors: Vec<BatteryCapacitor>,
+}
+
+/// [`battery_side_against`] with the embedded tables. `None` when the
+/// specification declares no power tree.
+pub fn battery_side(spec: &Specification) -> Result<Option<BatterySide>, IrValidationError> {
+    if spec.power.is_none() {
+        return Ok(None);
+    }
+    let sensors = crate::parts::table()?;
+    battery_side_against(
+        spec,
+        crate::power_parts::table()?,
+        sensors,
+        &output_delays(sensors),
+    )
+}
+
+/// The battery side, after every check [`check_against`] makes: a tree it
+/// refuses has no battery side.
+pub fn battery_side_against(
+    spec: &Specification,
+    table: &PowerPartsTable,
+    sensors: &crate::parts::PartsTable,
+    delays: &OutputDelays,
+) -> Result<Option<BatterySide>, IrValidationError> {
+    let Some(checked) = check_against(spec, table, sensors, delays)? else {
+        return Ok(None);
+    };
+    let power = spec.power.as_ref().expect("check_against returned a tree");
+    let ctx = Ctx {
+        spec,
+        power,
+        table,
+        delays,
+        floors: Vec::new(),
+        conditions: BTreeSet::new(),
+    };
+    let unmodelled = |reference: &str, detail: String| {
+        refuse(
+            Refusal::BatterySideUnmodelled,
+            reference,
+            detail,
+            "docs/work-orders/AET-WO-2304b.md §1.5",
+        )
+    };
+    // A row's figure the chain needs is positive, or the chain is refused by
+    // name; never read as 0 (`INV-06`, adversarial 8).
+    let positive = |reference: &str, what: &str, v: i64| {
+        u64::try_from(v).ok().filter(|v| *v > 0).ok_or_else(|| {
+            unmodelled(
+                reference,
+                format!("its {what} is {v}, not a positive figure"),
+            )
+        })
+    };
+    let mut sinks = Vec::new();
+    let mut capacitors = Vec::new();
+    for h in &power.input.hot_plug {
+        let row = ctx.row(&h.reference, &h.part)?;
+        if let Kind::BulkCapacitor(c) = &row.kind {
+            capacitors.push(BatteryCapacitor {
+                reference: h.reference.clone(),
+                picofarads: positive(&h.reference, "rated capacitance", c.rated_picofarads.value)?,
+                esr_max_milliohms: Some(positive(
+                    &h.reference,
+                    "ESR maximum",
+                    c.esr_max_milliohms.value,
+                )?),
+            });
+        }
+    }
+    for r in power.regulators.iter().filter(|r| r.input == BATTERY) {
+        let row = ctx.row(&r.reference, &r.part)?;
+        // `power_in` refuses a battery-fed LDO (no cited fault bound), so a
+        // checked tree holds only bucks here; another kind is refused.
+        let Kind::Buck(b) = &row.kind else {
+            return Err(unmodelled(
+                &r.reference,
+                format!(
+                    "{} is not a buck: the chain models a battery-fed buck only",
+                    r.part
+                ),
+            ));
+        };
+        // `junctions` refuses a buck with no junction declaration.
+        let Some(j) = &r.junction else {
+            return Err(unmodelled(
+                &r.reference,
+                "no `loss_milliwatts` is declared (`junction` is null), so its input power is not stated".to_owned(),
+            ));
+        };
+        let d = &checked.domains[&r.output];
+        let nominal = ctx
+            .domain(&r.output)
+            .map_or(0, |v| i64::from(v.nominal_millivolts));
+        let Some(regulation) = regulation_floor(b, nominal) else {
+            return Err(unmodelled(
+                &r.reference,
+                format!("its row states no regulation input for a {nominal} mV output"),
+            ));
+        };
+        // µV × mA = nW; mW rounded up, so the sink is never under-counted.
+        let out_mw = u128::from(d.vout_max_microvolts)
+            .saturating_mul(u128::from(d.load_milliamps))
+            .div_ceil(1_000_000);
+        let input_milliwatts = u64::try_from(out_mw)
+            .unwrap_or(u64::MAX)
+            .saturating_add(u64::from(j.loss_milliwatts.value));
+        sinks.push(BatterySink {
+            reference: r.reference.clone(),
+            input_milliwatts,
+            shutdown_millivolts: positive(
+                &r.reference,
+                "minimum operating input",
+                b.vin_millivolts.range.min,
+            )?,
+            regulation_millivolts: positive(&r.reference, "regulation input", regulation.value)?,
+        });
+        let working = i64::try_from(battery_range(&power.battery).1).unwrap_or(i64::MAX);
+        for e in r
+            .external
+            .iter()
+            .filter(|e| matches!(e.role, Role::Cin | Role::CinHf))
+        {
+            let pf = credited(&ctx, &e.reference, &e.part, working)?;
+            capacitors.push(BatteryCapacitor {
+                reference: e.reference.clone(),
+                picofarads: positive(&e.reference, "credited capacitance", pf)?,
+                esr_max_milliohms: None,
+            });
+        }
+    }
+    let (bmin, _) = battery_range(&power.battery);
+    Ok(Some(BatterySide {
+        v_open_microvolts: bmin.saturating_mul(1000),
+        healthy: power.battery.series_milliohms.clone(),
+        sinks,
+        capacitors,
+    }))
+}
+
+/// A ceramic's capacitance as IR's static checks credit it at `working` mV
+/// ([`effective`]): its maker's curve where held, the declared derating
+/// otherwise, refused where neither covers it, never the bare nominal.
+fn credited(
+    ctx: &Ctx<'_>,
+    reference: &str,
+    part: &str,
+    working: i64,
+) -> Result<i64, IrValidationError> {
+    let row = ctx.row(reference, part)?;
+    let Kind::Capacitor(c) = &row.kind else {
+        return Err(ctx.kind_err(reference, part, "capacitor"));
+    };
+    effective(ctx, part, c, working)
+        .map(|(pf, _)| pf)
+        .map_err(|(kind, why)| {
+            refuse(
+                kind,
+                reference,
+                why,
+                "crates/aethelgard-ir/data/power-parts.json",
+            )
+        })
+}
+
+/// One regulator output capacitor (`Role::Cout`) as IR's static checks
+/// credit it (`AET-WO-2304b` F3): the domain it holds, and pF.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CreditedCapacitor {
+    pub domain: String,
+    pub picofarads: u64,
+}
+
+/// Every regulator's output capacitors, by reference, at the capacitance
+/// IR's static checks credit them at the domain's maximum (`AET-WO-2304b`
+/// F3). The emitter adds each one it draws to its rail's decoupling
+/// (`aethelgard-eda`'s `decoupling_picofarads`), so the droop's τ and the
+/// static screen read one derivation (`RUL-20`). Empty when no tree is
+/// declared.
+pub fn output_capacitance(
+    spec: &Specification,
+) -> Result<BTreeMap<String, CreditedCapacitor>, IrValidationError> {
+    let Some(power) = spec.power.as_ref() else {
+        return Ok(BTreeMap::new());
+    };
+    let sensors = crate::parts::table()?;
+    let delays = output_delays(sensors);
+    let ctx = Ctx {
+        spec,
+        power,
+        table: crate::power_parts::table()?,
+        delays: &delays,
+        floors: Vec::new(),
+        conditions: BTreeSet::new(),
+    };
+    let mut out = BTreeMap::new();
+    for r in &power.regulators {
+        let working = ctx
+            .domain(&r.output)
+            .map_or(0, |d| i64::try_from(range(d).1).unwrap_or(i64::MAX));
+        for e in r.external.iter().filter(|e| e.role == Role::Cout) {
+            let pf = credited(&ctx, &e.reference, &e.part, working)?;
+            let picofarads = u64::try_from(pf).ok().filter(|v| *v > 0).ok_or_else(|| {
+                refuse(
+                    Refusal::PowerValueInvalid,
+                    &e.reference,
+                    format!("its credited capacitance is {pf} pF, not a positive figure"),
+                    "crates/aethelgard-ir/data/power-parts.json",
+                )
+            })?;
+            out.insert(
+                e.reference.clone(),
+                CreditedCapacitor {
+                    domain: r.output.clone(),
+                    picofarads,
+                },
+            );
+        }
+    }
+    Ok(out)
+}
+
+/// What a voltage domain supplies that a fault on it could reach
+/// (`AET-WO-2304b` §1.7), from the specification alone: each serial port
+/// whose RX net (the line its off-board peer drives) is on a connector that
+/// also carries the domain, with that connector's declared standard; each
+/// SPI and I2C device whose `supply` is the domain; each I2C bus with a
+/// line on such a connector, and whether it has a device; and every other
+/// net on such a connector, with the connector's reference.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RailConsumers {
+    pub serial_rx: BTreeSet<String>,
+    /// The `standard` of each connector a rendered port's RX net is on
+    /// (`None` where it declares none).
+    pub standards: BTreeSet<Option<String>>,
+    pub spi_devices: BTreeSet<String>,
+    pub i2c_devices: BTreeSet<String>,
+    /// Each I2C bus with a line on such a connector: whether any device is
+    /// declared on it.
+    pub i2c_buses: BTreeMap<String, bool>,
+    /// Serial ports, by label, with only their TX net on such a connector:
+    /// their peer is fed from the domain, and nothing observes its absence.
+    pub tx_only: BTreeSet<String>,
+    /// Each regulator whose input is the domain.
+    pub regulators: BTreeSet<String>,
+    /// `(connector, net)` for each other net on a connector carrying it.
+    pub other_nets: Vec<(String, String)>,
+}
+
+/// [`RailConsumers`] of `domain`.
+pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
+    let on = |d: &str| d == domain;
+    let mut r = RailConsumers {
+        spi_devices: spec
+            .declared_spi_devices()
+            .iter()
+            .filter(|d| on(&d.supply))
+            .map(|d| d.reference.clone())
+            .collect(),
+        i2c_devices: spec
+            .declared_i2c_devices()
+            .iter()
+            .filter(|d| on(&d.supply))
+            .map(|d| d.reference.clone())
+            .collect(),
+        regulators: spec
+            .power
+            .iter()
+            .flat_map(|p| &p.regulators)
+            .filter(|r| on(&r.input))
+            .map(|r| r.reference.clone())
+            .collect(),
+        ..RailConsumers::default()
+    };
+    for c in spec.declared_connectors() {
+        let nets: Vec<&str> = c.pins.iter().filter_map(|p| p.net.as_deref()).collect();
+        if !nets.iter().any(|n| on(n)) {
+            continue;
+        }
+        for net in nets {
+            if on(net) || net == crate::GND {
+                continue;
+            }
+            if let Some(p) = spec
+                .serial_ports
+                .iter()
+                .find(|p| p.rx.net == net || p.tx.net == net)
+            {
+                if p.rx.net == net {
+                    r.serial_rx.insert(p.label.clone());
+                    r.standards.insert(c.standard.clone());
+                } else {
+                    r.tx_only.insert(p.label.clone());
+                }
+            } else if let Some(b) = spec
+                .i2c_buses
+                .iter()
+                .find(|b| b.sda.net == net || b.scl.net == net)
+            {
+                let used = spec.declared_i2c_devices().iter().any(|d| d.bus == b.id);
+                r.i2c_buses.insert(b.id.clone(), used);
+            } else {
+                r.other_nets.push((c.reference.clone(), net.to_owned()));
+            }
+        }
+    }
+    let rx = r.serial_rx.clone();
+    r.tx_only.retain(|p| !rx.contains(p));
+    r
 }

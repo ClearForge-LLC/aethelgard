@@ -386,6 +386,12 @@ struct Run {
     findings: Value,
     run_id: String,
     state_sequence_hash: String,
+    /// A battery sag's chain as its campaign line states it (`AET-WO-2304b`).
+    #[serde(skip_serializing_if = "Value::is_null")]
+    battery_sag: Value,
+    /// What the run's verdict does not claim (`AET-WO-2304b` §1.7, §1.11).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    conditions: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -654,6 +660,9 @@ enum Target {
     /// D5), detected by its mechanism.
     Serial(String),
     Rail(String),
+    /// The battery (`AET-WO-2304b` §1.10): a variant of its own, so no
+    /// domain id can collide with it.
+    Battery,
 }
 
 impl Target {
@@ -663,6 +672,7 @@ impl Target {
             Self::Spi(b) => format!("SPI bus `{b}`"),
             Self::Serial(l) => format!("serial port `{l}`"),
             Self::Rail(r) => format!("rail `{r}`"),
+            Self::Battery => "rail `battery`".to_owned(),
         }
     }
 }
@@ -675,13 +685,26 @@ struct Mechanism {
     kinds: &'static [&'static str],
     rule: &'static str,
     subjects: std::collections::BTreeSet<String>,
+    /// The subjects that must each be attributed: a rail out of band is
+    /// detected only when each consumer it renders is (`AET-WO-2304b`,
+    /// adversarial 5), by its `port:` or `device:` subject; a controller
+    /// stays admissible, never required. Empty for every other mechanism.
+    required: std::collections::BTreeSet<String>,
 }
 
 /// Each override kind's mechanism, a closed table: the engine's, never the
 /// scenario's own `expect_findings`.
 const RISE: &[&str] = &["analog_rise_exceeds_ceiling", "i2c_timeout"];
 const HELD: &[&str] = &["i2c_line_held_low", "i2c_timeout"];
-const ABSENT: &[&str] = &["spi_identity_mismatch", "spi_transaction_unwitnessed"];
+/// An absent device fails every read the firmware makes of it: its identity,
+/// and its data where the bring-up reads data (an IMU's, `AET-WO-4220c`);
+/// `attribute` decides each by the same E2 evidence (`AET-WO-2304b` F-IMU,
+/// measured on Sentinel-03's U5 and the power fixture's).
+const ABSENT: &[&str] = &[
+    "spi_data_mismatch",
+    "spi_identity_mismatch",
+    "spi_transaction_unwitnessed",
+];
 const OPEN: &[&str] = &["serial_echo_missing"];
 
 /// What one scenario seeds, judged against the specification.
@@ -726,6 +749,7 @@ fn stress(
                 kinds,
                 rule: "E1",
                 subjects: bus_subjects(bus),
+                required: Default::default(),
             }),
         )
     };
@@ -768,6 +792,7 @@ fn stress(
                         format!("controller:{}", d.peripheral),
                     ]
                     .into(),
+                    required: Default::default(),
                 }),
             ))
         }
@@ -779,21 +804,79 @@ fn stress(
                     kinds: OPEN,
                     rule: "E3",
                     subjects: [format!("port:{port}")].into(),
+                    required: Default::default(),
                 }),
             ))
         }
         Override::Droop(d) => {
             // Below the domain's tolerance band: inside it the rail stays in
-            // its specification (§4 F3). A droop names no mechanism: an
-            // expected-fail droop is judged as before.
+            // its specification (§4 F3). Judged at the loaded floor, the
+            // declared floor less the load's I·R drop, which is the floor the
+            // scheduler renders (`AET-WO-2304b` §1.10, L697). A droop names
+            // no mechanism: an expected-fail droop is judged as before.
             let v = spec.voltage_domains.iter().find(|v| v.id == d.domain)?;
-            let band =
-                u64::from(v.nominal_millivolts) * (1000 - u64::from(v.tolerance_permille)) / 1000;
-            Some(if u64::from(d.floor_millivolts) < band {
+            let band = aethelgard_chaos::campaign::tolerance_floor_uv(
+                v.nominal_millivolts,
+                u32::from(v.tolerance_permille),
+            );
+            let loaded = aethelgard_chaos::campaign::rail_levels(d, v.nominal_millivolts)
+                .map(|(floor, _)| floor);
+            Some(if loaded.is_none_or(|f| f < band) {
                 (Some(Target::Rail(d.domain.clone())), None)
             } else {
                 (None, None)
             })
+        }
+        // A battery sag the checks admit stresses the battery when its
+        // static operating point lies below the battery's declared minimum
+        // (`AET-WO-2304b` §1.10, L704's principle). IR counts no path drop
+        // (K6), so every admitted sag lies below it, even 1 mΩ above the
+        // healthy R: what keeps a non-fault from covering is the clause "its R
+        // exceeds the healthy R" (§1.6), as K6 ruled. A sag the checks refuse
+        // stresses nothing.
+        Override::BatterySag(sag) => {
+            let s = crate::campaign::resolve_battery_sag(sag, spec).ok()?;
+            Some(if s.static_microvolts < s.chain.v_open_microvolts {
+                (Some(Target::Battery), None)
+            } else {
+                (None, None)
+            })
+        }
+        // A rail out of band is detected by its consumers' mechanism: E3 for
+        // serial ports, E2 for SPI devices, its subjects theirs
+        // (`AET-WO-2304b` §1.10). A rail the checks refuse stresses nothing.
+        Override::RailOutOfBand { domain } => {
+            let r = crate::campaign::rendered(spec, domain).ok()?;
+            let (kinds, rule, subjects) = if r.devices.is_empty() {
+                (
+                    OPEN,
+                    "E3",
+                    r.ports.iter().map(|p| format!("port:{p}")).collect(),
+                )
+            } else {
+                let mut subjects = std::collections::BTreeSet::new();
+                for d in &r.devices {
+                    let t = topology.spi_devices.get(d)?;
+                    subjects.insert(format!("device:{d}"));
+                    subjects.insert(format!("controller:{}", t.peripheral));
+                }
+                (ABSENT, "E2", subjects)
+            };
+            let required = r
+                .ports
+                .iter()
+                .map(|p| format!("port:{p}"))
+                .chain(r.devices.iter().map(|d| format!("device:{d}")))
+                .collect();
+            Some((
+                Some(Target::Rail(domain.clone())),
+                Some(Mechanism {
+                    kinds,
+                    rule,
+                    subjects,
+                    required,
+                }),
+            ))
         }
     }
 }
@@ -804,9 +887,20 @@ fn classify(
     topology: &aethelgard_ir::SolvedTopology,
     scenario: &aethelgard_chaos::campaign::Scenario,
 ) -> Seeded {
+    use aethelgard_chaos::record::Override;
+    // A rail out of band is one fault: the absences listed beside it are its
+    // rendering, not faults of their own (`AET-WO-2304b` §1.7).
+    let rail = scenario.rail_out_of_band().is_some();
     let changed: Vec<_> = scenario
         .overrides
         .iter()
+        .filter(|o| {
+            !(rail
+                && matches!(
+                    o,
+                    Override::SerialRxOpen { .. } | Override::SpiDeviceAbsent { .. }
+                ))
+        })
         .filter_map(|o| stress(spec, topology, o))
         .collect();
     if scenario.expect_pass {
@@ -817,14 +911,15 @@ fn classify(
         // may ease the target it stresses (adversary 2, F2). A held line, an
         // absent device or an open RX line is never a fault to survive: an
         // absent IMU or flash must be caught, not survived (ruled (a);
-        // adversary 2, F4), and so must a port that hears nothing.
-        use aethelgard_chaos::record::Override;
+        // adversary 2, F4), and so must a port that hears nothing, and a
+        // rail whose consumers are gone.
         let intolerable = scenario.overrides.iter().any(|o| {
             matches!(
                 o,
                 Override::LineHeldLow { .. }
                     | Override::SpiDeviceAbsent { .. }
                     | Override::SerialRxOpen { .. }
+                    | Override::RailOutOfBand { .. }
             )
         });
         if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
@@ -877,8 +972,10 @@ struct Coverage {
 /// fault covers its target; a detected one covers its bus or port only when
 /// the campaign holds a baseline (ruled (a)). A serial port is covered only
 /// by a detected `serial_rx_open` (`AET-WO-2302` D5, ending the exemption
-/// ruled on #155). Rails other than the MCU's supply and the battery stay
-/// `unmet` until a fault kind reaches them (ruled (b)).
+/// ruled on #155). A rail other than the MCU's supply is met by a detected
+/// `rail_out_of_band` beside a baseline, and unmet otherwise, with why when
+/// no such fault can reach it; the battery is met by a tolerated
+/// `battery_sag` (`AET-WO-2304b` §1.10).
 fn coverage(
     spec: &aethelgard_ir::Specification,
     topology: &aethelgard_ir::SolvedTopology,
@@ -929,18 +1026,19 @@ fn coverage(
     }
     for v in &spec.voltage_domains {
         let target = Target::Rail(v.id.clone());
-        if v.id != spec.mcu.supply {
-            c.unmet.push(format!(
-                "{} (not the MCU's supply: no fault kind droops it)",
-                target.name()
-            ));
-        } else if !covered.contains(&target) {
-            c.unmet.push(target.name());
+        if covered.contains(&target) {
+            continue;
+        }
+        // A rail no fault can reach says why (`AET-WO-2304b` §1.10).
+        match crate::campaign::rendered(spec, &v.id) {
+            Err(e) if v.id != spec.mcu.supply => {
+                c.unmet.push(format!("{} ({})", target.name(), e.message));
+            }
+            _ => c.unmet.push(target.name()),
         }
     }
-    if spec.power.is_some() {
-        c.unmet
-            .push("rail `battery` (no fault kind droops it)".to_owned());
+    if spec.power.is_some() && !covered.contains(&Target::Battery) {
+        c.unmet.push(Target::Battery.name());
     }
     c
 }
@@ -1015,6 +1113,11 @@ fn detection(m: &Mechanism, run: &Run, attributed: &Value) -> Result<(), String>
         return Err(format!(
             "attribute cites {other:?} beyond the seeded {:?}",
             m.subjects
+        ));
+    }
+    if let Some(missing) = m.required.iter().find(|r| !subjects.contains(&r.as_str())) {
+        return Err(format!(
+            "attribute cites {subjects:?}, not every rendered consumer: {missing} is missing"
         ));
     }
     Ok(())
@@ -1346,6 +1449,7 @@ pub fn verify(
             conditions: &conditions,
             lifecycle: &lifecycle,
             support: &support_lines(report.support.as_ref()),
+            campaign: &campaign_conditions(report.campaign.as_deref().unwrap_or_default()),
         };
         let scenarios: Vec<fab::Scenario> = expected
             .iter()
@@ -1366,6 +1470,18 @@ pub fn verify(
     }
     let code = if report.ok { 0 } else { EXIT_FAIL };
     crate::emit(&report, code)
+}
+
+/// Every condition the campaign's runs name, each once, in the order the
+/// runs first name it (`AET-WO-2304b` §1.7, §1.11): FAB-NOTES states them.
+fn campaign_conditions(runs: &[Run]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for c in runs.iter().flat_map(|r| &r.conditions) {
+        if !out.contains(c) {
+            out.push(c.clone());
+        }
+    }
+    out
 }
 
 /// The verdict passes when no finding is an error and every gate passed.
@@ -1712,6 +1828,13 @@ fn run_gates(
             findings: line["findings"].clone(),
             run_id: id,
             state_sequence_hash: text("state_sequence_hash"),
+            battery_sag: line["battery_sag"].clone(),
+            conditions: line["conditions"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c.as_str().map(str::to_owned))
+                .collect(),
         });
     }
     let mut g = gate_report("campaign", None, &ran);
@@ -1960,6 +2083,82 @@ mod tests {
         .unwrap()
     }
 
+    /// L697 (`AET-WO-2304b` §1.10): a droop covers its rail when its loaded
+    /// floor, the declared floor less the load's I·R drop (the floor the
+    /// scheduler renders), lies below the band. 3,140 mV with 100 mA through
+    /// 500 mΩ is 3,090 mV loaded, below 3,135 mV: covered, though the
+    /// declared floor is above it; 3,200 mV is 3,150 mV loaded: not.
+    #[test]
+    fn a_droop_covers_its_rail_by_its_loaded_floor() {
+        let (spec, t) = solved(S1);
+        let droop = |floor: u32| {
+            json_scenario(
+                true,
+                &[],
+                json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
+                    "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
+                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
+                    "bor_level": 3}}]),
+            )
+        };
+        assert_eq!(
+            classify(&spec, &t, &droop(3140)),
+            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())])
+        );
+        assert_eq!(classify(&spec, &t, &droop(3200)), Seeded::Tolerable(vec![]));
+    }
+
+    /// Adversarial 5 (`AET-WO-2304b`): a rail out of band is detected only
+    /// when every consumer it renders is attributed, not one of them.
+    #[test]
+    fn a_rail_is_detected_only_with_every_rendered_consumer_attributed() {
+        let attributed = |rule: &str, subjects: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": rule, "unexplained": [],
+                   "masked": [], "subjects": subjects})
+        };
+        // Sentinel-03's VDD_5V: both ports.
+        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+        let rail = |d: &str| match stress(
+            &spec,
+            &t,
+            &aethelgard_chaos::record::Override::RailOutOfBand { domain: d.into() },
+        ) {
+            Some((Some(_), Some(m))) => m,
+            other => panic!("{other:?}"),
+        };
+        let m = rail("VDD_5V");
+        let run = failed(json!(["serial_echo_missing"]));
+        assert!(detection(&m, &run, &attributed("E3", json!(["port:CRSF"]))).is_err());
+        assert!(
+            detection(
+                &m,
+                &run,
+                &attributed("E3", json!(["port:CRSF", "port:MAVLINK"]))
+            )
+            .is_ok()
+        );
+        // The power fixture's VDD_1V8, against its measured attribution
+        // (E2, `device:U5` alone): the controller is admissible, not required.
+        let (spec, t) = solved("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json");
+        let m = match stress(
+            &spec,
+            &t,
+            &aethelgard_chaos::record::Override::RailOutOfBand {
+                domain: "VDD_1V8".into(),
+            },
+        ) {
+            Some((Some(_), Some(m))) => m,
+            other => panic!("{other:?}"),
+        };
+        let run = failed(json!([
+            "spi_data_mismatch",
+            "spi_identity_mismatch",
+            "spi_transaction_unwitnessed"
+        ]));
+        assert!(detection(&m, &run, &attributed("E2", json!(["device:U5"]))).is_ok());
+        assert!(detection(&m, &run, &attributed("E2", json!(["controller:SPI2"]))).is_err());
+    }
+
     fn failed(findings: Value) -> Run {
         Run {
             scenario: "x".into(),
@@ -1969,6 +2168,8 @@ mod tests {
             findings,
             run_id: String::new(),
             state_sequence_hash: String::new(),
+            battery_sag: Value::Null,
+            conditions: Vec::new(),
         }
     }
 
@@ -2034,9 +2235,10 @@ mod tests {
         );
     }
 
-    /// Ruled (b) and (c): a rail other than the MCU's supply stays `unmet`
-    /// whatever is seeded; a bus no device uses is named as having nothing to
-    /// fault and does not block.
+    /// Ruled (b) and (c), with `AET-WO-2304b` §1.10: a rail other than the
+    /// MCU's supply that no `rail_out_of_band` covers stays `unmet`, named
+    /// with why (here, no consumer a judge observes); a bus no device uses is
+    /// named as having nothing to fault and does not block.
     #[test]
     fn a_rail_no_kind_reaches_is_unmet_and_a_deviceless_bus_does_not_block() {
         let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/connectors.json");
@@ -2059,9 +2261,10 @@ mod tests {
             .map(|x| classify(&spec, &t, x))
             .collect();
         let c = coverage(&spec, &t, &s, None);
+        // `AET-WO-2304b` §1.10: a non-MCU rail no fault reaches says why.
         assert_eq!(
             c.unmet,
-            ["rail `VDD_5V` (not the MCU's supply: no fault kind droops it)"]
+            ["rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]
         );
         assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
     }
@@ -2348,6 +2551,43 @@ mod tests {
             .unwrap(),
         )
         .unwrap()
+    }
+
+    /// `AET-WO-1314b` §1.3: the extract gate's line in the verdict, when the
+    /// gate fails a bound on a specification routed with no ladder, carries
+    /// the finding's `cause` as `extract` printed it; a finding with none
+    /// gains none.
+    #[test]
+    fn the_extract_gate_line_carries_the_ladder_cause_when_it_fails() {
+        let finding = |cause: Option<&str>| {
+            let mut f = json!({
+                "kind": "capacitance_over_declared_bound",
+                "severity": "error",
+                "message": "`LOG_SCK`: bound 37508 fF (trace 15793, vias 12152, pads 1563, pins 8000) exceeds the declared 30000 fF",
+            });
+            if let Some(c) = cause {
+                f["cause"] = c.into();
+            }
+            f
+        };
+        let line = |f: Value| {
+            let g = gate_report(
+                "extract",
+                None,
+                &Ran {
+                    code: 1,
+                    lines: vec![json!({"verdict": "fail", "findings": [f]})],
+                },
+            );
+            assert_eq!(g.verdict, "fail");
+            serde_json::to_value(&g).unwrap()
+        };
+        let cause = aethelgard_eda::extract::LADDER_NOT_RUN;
+        let v = line(finding(Some(cause)));
+        assert_eq!(v["findings"][0]["cause"], cause, "{v}");
+        assert!(cause.contains("`board.stackup.fab_tolerances`"));
+        let v = line(finding(None));
+        assert!(v["findings"][0].get("cause").is_none(), "{v}");
     }
 
     /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
