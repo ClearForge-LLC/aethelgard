@@ -863,6 +863,13 @@ fn full_document() -> serde_json::Value {
     // acknowledgement goes with it (`AET-WO-4210`); the flash's stays
     // (`AET-WO-4211`).
     v["power"]["crossings"] = json!([]);
+    // The translator's and its CS pull-up's loads go with the crossing, and
+    // J2's with J2, which the connectors below replace (`AET-WO-1209` D4): a
+    // load naming a part the board lacks is refused.
+    v["power"]["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| !["U13", "R40", "J2"].iter().any(|r| l["reference"] == *r));
     v["accept_lifecycle"]
         .as_array_mut()
         .unwrap()

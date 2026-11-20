@@ -1925,6 +1925,16 @@ pub enum IrValidationError {
         "device `{reference}` cannot be a Renode name (a lower-case letter, then letters, digits or `_`) that no stock instance already has"
     )]
     InvalidDeviceName { reference: String },
+    /// Step 20a (`AET-WO-1209` §1.2): a load naming no part the board has, so
+    /// its current would count against the rail for nothing (`4202`'s finding).
+    #[error(
+        "{path} on `{domain}` names `{reference}`, which is no part the board has: not one the specification declares, the MCU, the reset switch, nor a resistor or capacitor the emitter numbers"
+    )]
+    LoadNamesNoPart {
+        path: String,
+        domain: String,
+        reference: String,
+    },
     /// Step 14 (`AET-WO-1206` §1.8): a device whose part has no row in the
     /// parts table, so no address, supply or clock limit could be held; the
     /// emitter's `UnknownPart`, by kind, `id` and message.
@@ -2234,6 +2244,7 @@ impl IrValidationError {
             Self::EmitterReference(_) => "DuplicateReference",
             Self::ReservedName(_) => "ReservedName",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
+            Self::LoadNamesNoPart { .. } => "LoadNamesNoPart",
             Self::PartWithoutRow { .. } => "UnknownPart",
             Self::ForwardUndeclared { .. } => "ForwardUndeclared",
             Self::ImuAxesNotPerpendicular { .. } => "ImuAxesNotPerpendicular",
@@ -2439,6 +2450,7 @@ impl IrValidationError {
             }
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
+            Self::LoadNamesNoPart { reference, .. } => Some(reference),
             Self::PartWithoutRow { reference, .. }
             | Self::ForwardUndeclared { reference }
             | Self::ImuAxesNotPerpendicular { reference, .. }
@@ -2461,7 +2473,8 @@ impl IrValidationError {
             | Self::UnsupportedViaRule { path, .. }
             | Self::OutlineBound { path, .. }
             | Self::ClassBelowMinimum { path, .. }
-            | Self::ClassAboveMaximum { path, .. } => Some(path),
+            | Self::ClassAboveMaximum { path, .. }
+            | Self::LoadNamesNoPart { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -2797,6 +2810,8 @@ impl Specification {
         self.bus_constraints()?;
         // 20 (`AET-WO-1206` §1.3)
         names::check(self)?;
+        // 20a (`AET-WO-1209` §1.2, D3 as ruled)
+        names::loads(self)?;
         // 21 (`AET-WO-1207` §1.2, `AET-WO-1208` §1.3)
         self.solve_static()?;
         // 22 (`AET-WO-1208` §1.2, F1/F5 as ruled on PR #182)
