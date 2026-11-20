@@ -299,6 +299,14 @@ For each of the 26 specifications, the sweep runs `validate`, `solve`, `generate
 
 `examples/sentinel-01-ext-bmp581.json` arrived with `3403`'s merge after the sweep, so its ELF (`3403`'s `a60306c9…`) moves too, unmeasured here.
 
+**Re-taken at the architect's call** (2026-11-20 ~07:30Z), against `main` `ff7fd53d`, the main this branch merged, with a fresh baseline sweep of that `main` (`~/.cache/aet-4240v/baseline2`).
+- Against the first baseline (`3f989435`), 3 specifications differed. `main` itself had changed them since: `4202` removed U2 from `sentinel-02-own` and `sentinel-03`, and `2304b` changed the power fixture.
+- **Against `ff7fd53d`: `DIFFS 0` over all 27 specifications.** That includes `3403`'s `sentinel-01-ext-bmp581`, whose ELF moves from `a60306c9…` to `a3618b2c…`.
+- **ArduPilot's 6 witnesses** (U2 is gone since `4202`) are identical to the nanosecond, and the verdict passes.
+- **`log_kept_bytes` depends on the run directory's path length** (measured):
+  - the same binary from `/cache/baseline2` and from `/cache/basex` gives 1,513,404 and 1,513,389;
+  - this branch's binary, run twice from same-length directories, gives 1,513,389 both times, `main`'s figure exactly, which `main` also gives twice.
+
 ### §2.2 The bench package, written locally as CI's `bench-package` job writes it
 
 The command is `verify --spec examples/sentinel-01.json --scenarios` with the five scenarios, then `--fab-out`, run under `kit/step.sh` at 16 GiB.
@@ -465,5 +473,11 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
     - fmt 0 and clippy 0;
     - tier 1: 2,382 passed, and only the committed-package test failed;
     - `twin_tier2` and `verify_2k2_tier2`: 92 of 92 passed, `3305`'s new two-device test included;
-  - the head pushed when the architect called 4240v: see the READY commit's run.
+  - at the architect's call (06:55Z), after merging `main` `ff7fd53d` (`1103`, `1209b`) and the docs commit `48a78b22`:
+    - `ci/route.sh check ci/docs-tests.tsv` ok;
+    - fmt 0 and clippy 0;
+    - tier 1: 2,388 passed, and only the committed-package test failed;
+    - `twin_tier2` and `verify_2k2_tier2`: 92 of 92;
+    - the §2.1 sweep against that `main`: no diff;
+  - the pushed head and the dispatch's run: see the READY commit.
 - **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER
