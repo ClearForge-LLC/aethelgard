@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "two-bme-collide",
+  "base": "two-bme.json",
+  "expect": "fail",
+  "expect_findings": ["i2c_transaction_unwitnessed"],
+  "overrides": []
+}

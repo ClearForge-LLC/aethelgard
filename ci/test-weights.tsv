@@ -21,6 +21,7 @@
 # rounded up; the 2 ms DShot boot's row is gone with its test.
 # AET-WO-4400d: with_tools' a_turned_keepout_is_where_kicad_draws_it is a Furnace estimate, not a run: 10.84 s alone in the pinned image on Furnace, times 2.0 (a_part_on_each_edge_passes_erc_and_drc's 6.017 s on CI over its 3.00 s measured beside it), 21.680; replace it at the next refit.
 # AET-WO-1313c: Furnace estimates, not runs (each test alone, times 2.8 as AET-WO-1310's), until the refit rule measures them: board_tier2's each_size_sample (16.3 s in the pinned image), outline_tier1's four (4.05, 16.13 on up to 8 threads, 3.99, and the turned IMU's 10.90 s after 4400d, on the host) and pcb's two order tests (3.43, 0.68 s).
+# AET-WO-1318 (REFIT RULE 5): board_tier2's each_size_sample, which AET-WO-1317 made run every gate on sizes 2 and 6 (its 1.5 s row was from when all three were refused), at its worst in-shard time over the five green main runs after 1317: 44706411946 (bb1bcb8c) 113.46, 44711555077 (943f7112) 116.67, 44712465606 (d70a99e5) 156.94, 44722695274 (d0c4cfe0) 98.98, 44724070629 (fff49a49) 119.30 s; its `ok` less the previous lock-holder's, or less board_tier2's `Running` where it completed first (113.46 and 156.94, upper bounds). No other row changed.
 # AET-WO-4220c: models_tier2's five FIFO tests below are estimates, not measurements (the file's other tests take 3.8-5.2 s on CI; these add the FIFO bursts' monitor commands), until the refit rule measures them.
 # AET-WO-1314 refit (2026-11-18), ruling 6989277256 on PR #227, REFIT RULE 5, from run 44372757248 (head a9b79f43; shard 1 cancelled at the 45 min guard): every test whose cost this PR changed (it emits, extracts or verifies a board with fab_tolerances, so the capacitance ladder routes it eight times) at its worst in-shard time: board_tier2's Sentinel-03 and power-fixture cases (behind its lock: `ok` less the previous holder's), and every test of outline_tier1, power_board_tier1, supply_tier1, via_ring_tier1, and solve_cli's power-tree emit (`ok` less the binary's `Running`, an upper bound). supply_tier1 (1303b) and via_ring_tier1 (new) had no rows, so DEFAULT_WEIGHT 0.05 s each, which is why shard 1 ran over. the_full_power_fixture kept at its larger earlier row. No other row changed.
 # AET-WO-1910 build (ruled on PR #233, comment 6999515740): rows naming no listed test removed (P1 refuses them: 7 renamed or removed tests,
@@ -58,6 +59,7 @@
 # AET-WO-2305: twin_tier2's three bor_recovery:: tests (a lock-serialised binary, so each carries a row): Furnace estimates, each its libtest --report-time in the pinned image on Furnace (9.571, 8.191, 13.618 s) times 2.8, the factor 2304b's estimates used; refit when a run measures them.
 # AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7, 8 shards): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348); kept beside AET-WO-1911's 12-shard refit, which ran before these tests existed.
 # AET-WO-3305: twin_tier2's a_fault_on_a_bus_with_two_devices_is_not_masked_... is a Furnace estimate (AET-WO-2302's rule: its worst libtest `finished in` in the pinned image, 6.99 s, times 1.2, rounded up), until the refit rule measures it. On run 44654820709 (bfad4c96, before 1911) its two campaigns held the Renode lock 5.08 and 5.01 s, and its `ok` came 5.0 s after the previous completion.
+# AET-WO-3306: twin_tier2's a_step_sent_to_another_devices_address_that_answers_is_the_softwares is a Furnace estimate (AET-WO-2302's rule: its worst libtest `finished in` alone in the pinned image over three runs, 3.17 s, times 1.2, rounded up), until the refit rule measures it.
 # AET-WO-2306: board_tier2's verify_names_what_judged_nothing_on_the_motor_driver is a Furnace estimate, not a run: 73.14 s in the pinned image on Furnace (libtest `finished in`, one verify of the motor driver with its droop), times 2.8 (AET-WO-1310's factor), 204.792; replace it at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
@@ -103,7 +105,7 @@ tests/board_tier2.rs	a_wrong_alternate_function_fails	15.700
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.900
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	0.900
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.600
-tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	1.500
+tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	156.940
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	181.200
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	15.000
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	16.800
@@ -359,6 +361,7 @@ tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.100
 tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	4.600
 tests/twin_tier2.rs	a_device_named_for_a_renode_instance_or_keyword_breaks_the_load	2.100
 tests/twin_tier2.rs	a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software	8.400
+tests/twin_tier2.rs	a_step_sent_to_another_devices_address_that_answers_is_the_softwares	3.900
 tests/twin_tier2.rs	a_firmware_parked_in_its_fault_handler_fails_naming_vectactive	6.000
 tests/twin_tier2.rs	a_firmware_that_rewrites_its_loop_in_flash_is_not_parked	9.900
 tests/twin_tier2.rs	a_firmware_that_skips_the_read_or_its_record_cannot_pass	3.100
