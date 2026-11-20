@@ -1,0 +1,98 @@
+{
+ "what": "today's solve (472d2d84) of the 4600 driver with its bridge inputs pinned PA8/PA9/PC6/PC7 (today's schema; no new field)",
+ "specification_sha256": "9ef70ffca9eb35266d635846e0b9c7f647c4bd2f5524af7e6d478838a4bdaaa7",
+ "assignments": {
+  "A_IN1": {
+   "pin": "PA8",
+   "peripheral": "TIM1",
+   "signal": "TIM1_CH1",
+   "alternate_function": 1
+  },
+  "A_IN2": {
+   "pin": "PA9",
+   "peripheral": "TIM1",
+   "signal": "TIM1_CH2",
+   "alternate_function": 1
+  },
+  "B_IN1": {
+   "pin": "PC6",
+   "peripheral": "TIM3",
+   "signal": "TIM3_CH1",
+   "alternate_function": 2
+  },
+  "B_IN2": {
+   "pin": "PC7",
+   "peripheral": "TIM3",
+   "signal": "TIM3_CH2",
+   "alternate_function": 2
+  },
+  "SERVO1": {
+   "pin": "PA0",
+   "peripheral": "TIM2",
+   "signal": "TIM2_CH1",
+   "alternate_function": 1
+  }
+ },
+ "motor_outputs": {
+  "A_IN1": {
+   "index": 0,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 20000,
+    "pulse_min_us": 1,
+    "pulse_max_us": 49
+   },
+   "psc": 63,
+   "arr": 49,
+   "ccr": 1
+  },
+  "A_IN2": {
+   "index": 1,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 20000,
+    "pulse_min_us": 1,
+    "pulse_max_us": 49
+   },
+   "psc": 63,
+   "arr": 49,
+   "ccr": 1
+  },
+  "B_IN1": {
+   "index": 2,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 20000,
+    "pulse_min_us": 1,
+    "pulse_max_us": 49
+   },
+   "psc": 63,
+   "arr": 49,
+   "ccr": 1
+  },
+  "B_IN2": {
+   "index": 3,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 20000,
+    "pulse_min_us": 1,
+    "pulse_max_us": 49
+   },
+   "psc": 63,
+   "arr": 49,
+   "ccr": 1
+  },
+  "SERVO1": {
+   "index": 4,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 50,
+    "pulse_min_us": 1000,
+    "pulse_max_us": 2000
+   },
+   "psc": 63,
+   "arr": 19999,
+   "ccr": 1000
+  }
+ }
+}

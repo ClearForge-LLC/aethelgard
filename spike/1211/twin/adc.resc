@@ -1,0 +1,27 @@
+include @/repo/spike/1211/twin/common.resc
+# RCC_AHB1ENR ADC12EN; ADC1 at 0x40022000 (the stock `adcM1S2`).
+sysbus WriteDoubleWord 0x580244D8 0x00000020
+echo "A0 ADC1_CR at reset (RM0433: DEEPPWD 1, 0x20000000)"
+sysbus ReadDoubleWord 0x40022008
+sysbus WriteDoubleWord 0x40022008 0x10000000
+sysbus WriteDoubleWord 0x40022008 0x10000001
+echo "A1 ISR after ADEN (ADRDY bit 0)"
+sysbus ReadDoubleWord 0x40022000
+# PCSEL channel 5; SQR1 L=0, SQ1=5; CFGR 0.
+sysbus WriteDoubleWord 0x4002201C 0x00000020
+sysbus WriteDoubleWord 0x40022030 0x00000140
+sysbus WriteDoubleWord 0x4002200C 0x00000000
+echo "A2 no value set on channel 5: ADSTART, run 1 ms, ISR, DR"
+sysbus WriteDoubleWord 0x40022008 0x10000005
+emulation RunFor "0.001"
+sysbus ReadDoubleWord 0x40022000
+sysbus ReadDoubleWord 0x40022040
+echo "A3 the script sets channel 5 to 1.65 V (1650000 uV): ADSTART, run 1 ms, ISR, DR"
+adcM1S2 SetVoltage 1650000 5
+sysbus WriteDoubleWord 0x40022008 0x10000005
+emulation RunFor "0.001"
+sysbus ReadDoubleWord 0x40022000
+sysbus ReadDoubleWord 0x40022040
+echo "A4 channel 5 GetVoltage"
+adcM1S2 GetVoltage 5
+echo "ADC-END"

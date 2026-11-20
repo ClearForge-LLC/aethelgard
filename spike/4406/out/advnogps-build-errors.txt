@@ -1,0 +1,2 @@
+375:../../libraries/AP_AdvancedFailsafe/AP_AdvancedFailsafe.cpp:234:36: error: 'gps' is not a member of 'AP'
+381:../../libraries/AP_Airspeed/AP_Airspeed_Health.cpp:43:11: error: 'AP_GPS' does not name a type
