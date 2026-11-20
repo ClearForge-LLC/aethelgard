@@ -169,3 +169,23 @@ A first run printed every mutant as surviving with no test named. That was the h
 - **F2, plain `verify`** of a declared board draws it and runs ERC, DRC and support before its `extract` gate refuses `DrawsNoBoard` (A1, read). It is a named refusal, after wasted work. Refusing every `verify` up front is one line, but it goes beyond §1.4's "`verify --fab-out`", so it is not built.
 - **F3, the CLI README** lists no kind this work order adds. Its example hash moved with the version (a test pins it). The exit-2 row's kinds wait on the fence question on the bus.
 - **F4, `BENCH-EXT-BMP581.md` L9** had stayed at specification 18's sha256 through `4240v`. It is now at 20's, by the 10:05Z widening.
+
+## 8. The rulings of 11:10Z and 11:20Z, and what was built for them
+
+`~/.cache/aet-bus/1210.md`.
+
+- **Q1: leave all five undeclared.** Done; no file changed. `imu-baro-1v8` stays the only declaration.
+- **F1, built** (`e1d6c1d5`): `generate` on a declared board writes no `kicad/` and says why, in one field. `generate::tree` skips the emitter when `board.drawn` is `false`, so the board crate, its firmware and the platform are still written. The report's `kicad` field reads "not written: `board.drawn: false` declares a twin stand-in no board is drawn from", and is absent for a drawn board.
+  - One test, `generate_tier1.rs` `generate_writes_no_kicad_for_a_twin_stand_in_and_says_why`, on `imu-baro-1v8` itself, which `generate` refused `UnknownPart` before: it now writes `board/` only.
+  - **One consequence, built with it, flagged here:** `verify` builds its tree through the same `generate::tree` and indexes the KiCad files by key (`verify.rs` `hashes[&sch]`). On a declared board it would now panic, where it used to refuse at its `extract` gate. So `verify` refuses a declared board in every mode, by the same `DrawsNoBoard`, before any gate. It is the same kind it reached before, without the wasted ERC and DRC. The emit test gains a plain `verify` row.
+  - F2's "board gates not applicable" report is still the §7.1 row, as ruled, and would replace this refusal.
+- **F2:** a §7.1 row, the architect's. Not built.
+- **F3, built** (`e1d6c1d5`): the CLI README's exit-2 row names `UnboundedPinCapacitance`, `PartNotDrawable` and `DrawsNoBoard` (and `generate`'s `kicad` field), and, by the 11:20Z note, 1209c's `LoadNamesCountedPart`. Sentences only.
+- **Mutants for the new guards:** M11, `generate` draws a declared board, and M12, no `kicad` field, are each killed by the `generate` test; M13, plain `verify` not refused, is killed by the emit test's `verify` row (it panics, exit 101). **13 of 13 killed** in all.
+  - The first run of M11 to M13 was void. The harness restores each file with `git checkout`, and the F1 edits were not yet committed, so it put the files back without them and every kill was false. The edits were re-applied, committed, and the mutants re-run; the kills above are that run.
+- **`main` merged again** (`4f0f6d1c`, after 2306 #269 and 1209c #276).
+  - One conflict, `IrValidationError::path`'s arms: all three kept.
+  - 2306's new specification `crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json` came at 19 and is renumbered to 20 by the script. It is drawn (`extract_tier1` `emit`s it), so it is not declared.
+- **The version:** `4240a` takes 20 and merges first, so this branch renumbers to 21 after it lands: the script, the `boards/` sha lines and `BENCH-EXT-BMP581.md` L9 again, in one commit. Then the package dispatch comes after `4241`.
+- **Gates on `4f0f6d1c`** (the merged tree, `gates-2.log`): fmt and clippy exit 0. `cargo test --workspace`: 144 suites, 2,406 passed, 1 failed, the package binding (§3).
+- **CI on the first push** (run 44722197295, head `d807fee4`): every job but the package's passed. `gates` and tools shard 2 failed only `bench_board_tier1`'s binding, and `bench-package` derived the package with every gate passing, the board `401b9e1e…` unchanged, and only `FAB-NOTES.md` and `MANIFEST.json` differing from the committed package [measured from the job logs].
