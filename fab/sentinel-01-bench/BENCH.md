@@ -89,6 +89,15 @@ The ELF reports in two places, and the console carries neither record.
 
   With U2 fitted (a BME280), record 0 would be `0x22020000` / `0x00000060`, the twin's value. No board of this order has it.
 
+  **With the package ELF of `AET-WO-4241` (#279; `sentinel-01-bench.elf` `f3e871bb…52c4`), not the ordered one,** the firmware also reads U3's identity after record 1 and before the boot word (`main.rs` L230–242), so the records are **eight words**: read `b32 0x20000000 8`. Words 0–5 are as above.
+
+  | Word | Address | What | Expected | Source |
+  |---|---|---|---|---|
+  | 6 | `0x20000018` | record 2 status: I2C1, address `0x48`, register `0x0F`, two bytes (U3's `Device_ID`) | **U3 empty:** `0x22020001` (TXIS), as record 0. **U3 fitted:** `0x22020000` (OK) | empty: generator and RM0433, as record 0. Fitted: TI SNOSD82D §7.6.11 |
+  | 7 | `0x2000001C` | record 2 value | **U3 empty:** `0x00000000`. **U3 fitted:** `0x00000117` (`DID[11:0]` `0x117`, `Rev[3:0]` 0 at reset; full 16-bit mask) | SNOSD82D §7.6.11, document sha256 `78212e91…b789` (`4241` FEEDBACK §8) |
+
+  **Not predicted by the twin:** it has no TMP117 model, so its own record 2 is a TXIS timeout, a twin limit and not a prediction of the board (`simulate`: `identity_not_witnessable`). With this ELF, B9 part 1 sees a **second** I2C1 transaction after the SPI read: with U3 empty, `Address write: 48`, `NACK`, `Stop`; with U3 fitted, in order, `Address write: 48`, `ACK`, `Data write: 0F`, then `Address read: 48`, `ACK`, `Data read: 01`, `Data read: 17`, whatever framing the decoder shows between them. B9 part 1's "exactly these lines, once" is the ordered ELF's. With U3 fitted and this ELF, record 2 is the firmware's own positive witness of I2C1, and B9 part 2's address probe is a cross-check, no longer the only one.
+
 **The commands.** `probe-rs` 0.32.0 is the bench's (`AET-WO-3304.bench.md` §0). Its exact syntax was not run on Furnace (no `probe-rs` here): check `probe-rs read --help` and `probe-rs write --help` before the first row, as `3302` and `4240` said.
 
 ```
@@ -375,7 +384,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   **Pass:**
   - **`0x48`: `ISR & 0x00008030` = `0x00000020`** (`STOPF` 1, `NACKF` 0, `BUSY` 0), and the decoder shows `Start`, `Write`, `Address write: 48`, **`ACK`**, `Stop`.
   - **`0x76`: `ISR & 0x00008030` = `0x00000030`** (`NACKF` 1), and `Address write: 76`, **`NACK`**, `Stop`. This is the control: it shows the probe's write reached the controller, and that the ACK above was the TMP117's, not a stuck-low SDA.
-  - Source: the address is the specification's (`U3`, 72 = `0x48`, its ADD0 on GND); the flags are **RM0433**'s (with `AUTOEND` 1 and `NBYTES` 0, a STOP follows the address; on a NACK, `NACKF` and a STOP, p. 1975). The twin has no TMP117 model (`simulate`: `device_unmodelled`), so this is **not predicted by the twin**.
+  - Source: the address is the specification's (`U3`, 72 = `0x48`, its ADD0 on GND); the flags are **RM0433**'s (with `AUTOEND` 1 and `NBYTES` 0, a STOP follows the address; on a NACK, `NACKF` and a STOP, p. 1975). The twin has no TMP117 model (`simulate`: `device_unmodelled` on the ordered ELF; `identity_not_witnessable` on `4241`'s package ELF), so this is **not predicted by the twin**.
   - **Not a read of register `0x0F`:** a debugger-paced read holds SCL low past the TMP117's 20–40 ms bus timeout and would fail for a reason this row does not name (`AET-WO-3403.FEEDBACK.md` §2.1). The address probe never stretches SCL.
 - **With U3 empty** (it is not on the order of 2026-11-19), SENSORS has no device and part 2 is not run: `0x48` would NACK like `0x76`, and would witness nothing.
   - What remains is part 1: the `0xEC` address phase at TP13/TP14, its NACK and STOP, and record 0 = `0x22020001`.
