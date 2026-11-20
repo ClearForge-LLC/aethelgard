@@ -254,6 +254,9 @@ pub(crate) enum NetKind<'s> {
     /// no off-board capacitance (D8 covers I2C and SPI lines only).
     SerialTx(&'s str),
     SerialRx(&'s str),
+    /// A pin device's signal, ADC input or bridge output (`AET-WO-1211a`):
+    /// on no bus, like a motor output's.
+    PinDevice,
 }
 
 impl NetKind<'_> {
@@ -291,6 +294,9 @@ fn net_kinds(spec: &Specification) -> BTreeMap<&str, NetKind<'_>> {
     for p in &spec.serial_ports {
         kinds.insert(p.tx.net.as_str(), NetKind::SerialTx(&p.label));
         kinds.insert(p.rx.net.as_str(), NetKind::SerialRx(&p.label));
+    }
+    for net in crate::pin_devices::nets(spec) {
+        kinds.insert(net.as_str(), NetKind::PinDevice);
     }
     kinds
 }
