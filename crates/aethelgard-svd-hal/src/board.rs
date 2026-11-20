@@ -2037,7 +2037,7 @@ struct HseFacts {
     flash_words: u32,
 }
 
-/// `RCC_CFGR.SW`'s code for PLL1, `011` (RM0433 Rev 9 §8.7.7, p. 392). The
+/// `RCC_CFGR.SW`'s code for PLL1, `011` (RM0433 Rev 9 §8.7.7, p. 393). The
 /// generator's own copy.
 const SW_PLL1: u32 = 0b011;
 
@@ -3668,7 +3668,7 @@ fn hse_api(plan: &Plan, facts: &Facts) -> String {
 /// level, [`MOTOR_PULL`]), as a GPIO output (its `BSRR` reset bit, then its
 /// `MODER` field `01`), then a park that never returns. Every motor is
 /// driven, whatever its timer: the CSS break event reaches TIM1/8/15/16/17
-/// only through `BDTR.BKE` (RM0433 Rev 9 §38.4.20 p. 1614, §41.6.16
+/// only through `BDTR.BKE` (RM0433 Rev 9 §38.4.20 p. 1614, §41.5.16
 /// p. 1818), and [`timer_writes`] writes `BDTR` as `MOE` alone, so no timer's
 /// break is armed; TIM2–5 have no break at all.
 fn emit_css_hold(w: &mut String, plan: &Plan, facts: &Facts) {
@@ -4698,7 +4698,7 @@ const ORACLE_CR_HSEBYP: u32 = 1 << 18;
 const ORACLE_CR_HSECSSON: u32 = 1 << 19;
 const ORACLE_CR_PLL1ON: u32 = 1 << 24;
 const ORACLE_CR_PLL1RDY: u32 = 1 << 25;
-/// `RCC_CFGR.SW` (bits 2:0) and `SWS` (bits 5:3); `011` is PLL1 (p. 392).
+/// `RCC_CFGR.SW` (bits 2:0) and `SWS` (bits 5:3); `011` is PLL1 (p. 393).
 const ORACLE_CFGR_SW: u32 = 0b111;
 const ORACLE_CFGR_SWS: u32 = 0b111 << 3;
 const ORACLE_CFGR_PLL1: u32 = 0b011;

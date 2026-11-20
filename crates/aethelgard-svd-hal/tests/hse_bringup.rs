@@ -358,8 +358,7 @@ fn the_nmi_holds_every_motor_low() {
 /// crystal fixture. `AETHELGARD_BLESS=1` rewrites it.
 #[test]
 fn the_ui_hse_board_is_the_generated_one() {
-    let path: PathBuf =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/hse-crystal/board.rs");
+    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/hse-crystal/board.rs");
     let text = generated("hse-crystal-16")["src/board.rs"].clone();
     if std::env::var_os("AETHELGARD_BLESS").is_some() {
         fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -435,5 +434,37 @@ fn the_ledger_lists_every_field_the_bring_up_writes_or_polls() {
         ids.sort();
         ids.dedup();
         assert_eq!(ids.len(), n, "{name}: an id twice");
+    }
+}
+
+/// A start-up bound whose reads a `u32` cannot count is refused by name,
+/// never wrapped: at 64,958,976 Hz the most is 66,118,149 µs (4,294,967,255 reads) (contract
+/// "Bounds"); one more is refused.
+#[test]
+fn a_bound_past_a_u32_of_reads_is_refused() {
+    use aethelgard_ir::clock::Hse;
+    for (us, ok) in [
+        (66_118_149u32, true),
+        (66_118_150, false),
+        (u32::MAX, false),
+    ] {
+        let (mut solved, table) = fixture("hse-crystal-16");
+        let Hse::Crystal(c) = &mut solved.clock.hse.as_mut().unwrap().declared else {
+            panic!("a crystal");
+        };
+        c.startup_max_us = us;
+        let got = generate_with("hse-board", &solved, &table, &answers);
+        match (ok, got) {
+            (true, Ok(files)) => {
+                assert!(
+                    files["firmware/src/main.rs"].contains("const HSE_POLLS: u32 = 4294967255;")
+                );
+            }
+            (false, Err(e)) => {
+                assert_eq!(e.kind(), "HsePollsOverflow", "{us}");
+                assert!(e.to_string().contains("HSERDY"), "{e}");
+            }
+            (ok, got) => panic!("{us}: expected ok={ok}, got {:?}", got.map(|_| ())),
+        }
     }
 }
