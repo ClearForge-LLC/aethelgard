@@ -338,6 +338,10 @@ struct TestOnly {
     /// declarations, relative to the root.
     files: Vec<PathBuf>,
     dirs: Vec<PathBuf>,
+    /// The same for every other top-level `mod name;`: a file any of these
+    /// declares is not test-only, whatever else declares it.
+    other_files: Vec<PathBuf>,
+    other_dirs: Vec<PathBuf>,
 }
 
 /// The test-only regions of `src`, from its tokens without comments.
@@ -347,14 +351,18 @@ struct TestOnly {
 ///   and a bare `#[test]`. So the skip can only ever be narrower than what is
 ///   really test-only.
 /// - **Where an item ends:** at the first `;` or `,` at its own depth, after a
-///   `{…}` group at its own depth closes, or before the close of the group
-///   around it. `()`, `[]` and `{}` all count toward depth. A `,` inside
-///   generics or a closure's arguments ends the region early, which again
-///   only scans more. A region never runs past its item.
+///   `{…}` group at its own depth closes, before the close of the group
+///   around it, or before a `>` (not `->` or `=>`) that closes more `<` than
+///   the item opened, which ends a generic parameter. `()`, `[]` and `{}` all
+///   count toward depth. A `,` inside generics or a closure's arguments, or a
+///   `>` comparison, ends the region early, which again only scans more. A
+///   region never runs past its item.
 /// - **Out-of-line modules:** `#[cfg(test)] mod name;` at a file's top level
 ///   removes `name.rs`, `name/mod.rs` and everything under `name/`, by Rust's
-///   module path rule, or the file its `#[path = "…"]` names. A declaration
-///   inside an inline module is not resolved, so its file is scanned.
+///   module path rule, or the file its `#[path = "…"]` names, unless another
+///   top-level `mod` declaration without `cfg(test)` also names it. A
+///   declaration inside an inline module is not resolved, so its file is
+///   scanned.
 fn test_only(src: &str, tokens: &[(Tok, usize, usize)], file: &Path) -> TestOnly {
     let code: Vec<(Tok, usize, usize)> = tokens
         .iter()
@@ -387,9 +395,43 @@ fn test_only(src: &str, tokens: &[(Tok, usize, usize)], file: &Path) -> TestOnly
             && text(open + 3) == "test"
             && punct(open + 4, b')')
     };
+    // The files of a top-level `mod name;`: its `#[path]` file, or `name.rs`
+    // and the directory `name/`, beside this file if it is a mod-rs file.
+    let module = |name: &str, path: Option<String>| {
+        let dir = file.parent().unwrap();
+        if let Some(p) = path {
+            return (dir.join(p), None);
+        }
+        let stem = file.file_stem().unwrap().to_string_lossy();
+        let base = if matches!(&*stem, "lib" | "main" | "mod") {
+            dir.to_path_buf()
+        } else {
+            dir.join(&*stem)
+        };
+        (base.join(format!("{name}.rs")), Some(base.join(name)))
+    };
+    // `[pub[(…)]] mod name;` starting at `m`: the name.
+    let mod_decl = |mut m: usize| {
+        if text(m) == "pub" {
+            m += 1;
+            if punct(m, b'(') {
+                m = attr_end(m);
+            }
+        }
+        (m + 2 < code.len()
+            && text(m) == "mod"
+            && code[m + 1].0 == Tok::Ident
+            && punct(m + 2, b';'))
+        .then(|| text(m + 1).to_owned())
+    };
+    let path_of = |k: usize| {
+        (text(k + 2) == "path" && punct(k + 3, b'=') && code[k + 4].0 == Tok::Str)
+            .then(|| text(k + 4).trim_matches('"').to_owned())
+    };
     let mut out = TestOnly::default();
     let mut depth = 0i32;
     let mut seen_item = false;
+    let mut pending_path = None;
     let mut n = 0;
     while n < code.len() {
         let inner = punct(n, b'#') && punct(n + 1, b'!') && punct(n + 2, b'[');
@@ -406,22 +448,26 @@ fn test_only(src: &str, tokens: &[(Tok, usize, usize)], file: &Path) -> TestOnly
         if outer {
             let end = attr_end(n + 1);
             if !is_cfg_test(n + 1, end) {
+                if let Some(p) = path_of(n) {
+                    pending_path = Some(p);
+                }
                 n = end;
                 continue;
             }
             // Its further attributes, then the item itself.
             let start = code[n].1;
             let mut k = end;
-            let mut path = None;
+            let mut path = pending_path.take();
             while punct(k, b'#') && punct(k + 1, b'[') {
                 let e = attr_end(k + 1);
-                if text(k + 2) == "path" && punct(k + 3, b'=') && code[k + 4].0 == Tok::Str {
-                    path = Some(text(k + 4).trim_matches('"').to_owned());
+                if let Some(p) = path_of(k) {
+                    path = Some(p);
                 }
                 k = e;
             }
             let item = k;
             let mut d = 0i32;
+            let mut angle = 0i32;
             let stop = loop {
                 let Some(t) = code.get(k) else {
                     panic!("{}: a #[cfg(test)] item runs to the end", file.display());
@@ -438,43 +484,50 @@ fn test_only(src: &str, tokens: &[(Tok, usize, usize)], file: &Path) -> TestOnly
                         }
                     }
                     Tok::Punct(b';' | b',') if d == 0 => break k + 1,
+                    Tok::Punct(b'<') if d == 0 => angle += 1,
+                    Tok::Punct(b'>') if d == 0 => {
+                        let arrow = k > 0
+                            && matches!(code[k - 1].0, Tok::Punct(b'-' | b'='))
+                            && code[k - 1].2 == t.1;
+                        if !arrow {
+                            angle -= 1;
+                            if angle < 0 {
+                                break k;
+                            }
+                        }
+                    }
                     _ => {}
                 }
                 k += 1;
             };
-            out.ranges.push((start, code[stop - 1].2));
-            // `[pub[(…)]] mod name;` at the top level.
-            let mut m = item;
-            if text(m) == "pub" {
-                m += 1;
-                if punct(m, b'(') {
-                    m = attr_end(m);
-                }
+            if stop > item {
+                out.ranges.push((start, code[stop - 1].2));
             }
-            if depth == 0 && text(m) == "mod" && code[m + 1].0 == Tok::Ident && punct(m + 2, b';') {
-                let dir = file.parent().unwrap();
-                let name = text(m + 1);
-                if let Some(p) = path {
-                    out.files.push(dir.join(p));
-                } else {
-                    let stem = file.file_stem().unwrap().to_string_lossy();
-                    let base = if matches!(&*stem, "lib" | "main" | "mod") {
-                        dir.to_path_buf()
-                    } else {
-                        dir.join(&*stem)
-                    };
-                    out.files.push(base.join(format!("{name}.rs")));
-                    out.dirs.push(base.join(name));
+            if depth == 0 {
+                if let Some(name) = mod_decl(item) {
+                    let (f, d) = module(&name, path);
+                    out.files.push(f);
+                    out.dirs.extend(d);
                 }
             }
             seen_item = true;
             n = stop;
             continue;
         }
+        if depth == 0 {
+            if let Some(name) = mod_decl(n) {
+                let (f, d) = module(&name, pending_path.take());
+                out.other_files.push(f);
+                out.other_dirs.extend(d);
+            }
+        }
         match code[n].0 {
             Tok::Punct(b'(' | b'[' | b'{') => depth += 1,
             Tok::Punct(b')' | b']' | b'}') => depth -= 1,
             _ => {}
+        }
+        if matches!(code[n].0, Tok::Punct(b';' | b'{' | b'}')) {
+            pending_path = None;
         }
         seen_item = true;
         n += 1;
@@ -523,6 +576,8 @@ fn scan(root: &Path) -> Scan {
     let mut sources = Vec::new();
     let mut test_files = BTreeSet::new();
     let mut test_dirs = Vec::new();
+    let mut other_files = BTreeSet::new();
+    let mut other_dirs = Vec::new();
     for file in &all {
         let src = fs::read_to_string(root.join(file)).unwrap();
         let tokens = lex(&src, file);
@@ -532,14 +587,18 @@ fn scan(root: &Path) -> Scan {
         }
         test_files.extend(only.files.iter().cloned());
         test_dirs.extend(only.dirs.iter().cloned());
+        other_files.extend(only.other_files.iter().cloned());
+        other_dirs.extend(only.other_dirs.iter().cloned());
         sources.push((file, src, tokens, only.ranges));
     }
     let mut hits = Vec::new();
     let mut lines = 0;
     let mut tests = 0;
     for (file, src, tokens, ranges) in sources {
-        let in_test_file =
-            test_files.contains(file) || test_dirs.iter().any(|d| file.starts_with(d));
+        let under = |files: &BTreeSet<PathBuf>, dirs: &[PathBuf]| {
+            files.contains(file) || dirs.iter().any(|d| file.starts_with(d))
+        };
+        let in_test_file = under(&test_files, &test_dirs) && !under(&other_files, &other_dirs);
         tests += usize::from(in_test_file);
         lines += src.lines().count();
         for (offset, name) in family_hits(&src, &names.families) {
@@ -699,8 +758,20 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
          const U: &str = \"ACME07\";\n\
          fn h() {\n    #[cfg(test)]\n    let v = \"acme-07\";\n    let w = \"acme-11\";\n}\n\
          #[doc = \"acme-07\"]\n\
-         fn i() {}\n",
+         fn i() {}\n\
+         fn j<U, #[cfg(test)] T>() -> &'static str { \"acme-07\" }\n",
     );
+    // One module declared for tests by the binary and for code by the library.
+    write("crates/gadget/src/lib.rs", "mod shared;\n");
+    write(
+        "crates/gadget/src/main.rs",
+        "#[cfg(test)]\nmod shared;\n#[path = \"p.rs\"]\n#[cfg(test)]\nmod q;\n",
+    );
+    write(
+        "crates/gadget/src/shared.rs",
+        "const A: &str = \"acme-07\";\n",
+    );
+    write("crates/gadget/src/p.rs", "const A: &str = \"acme-07\";\n");
     write("crates/widget/tests/t.rs", "const A: &str = \"acme-07\";\n");
     write(
         "crates/widget/fixtures/x/src/y.rs",
@@ -722,12 +793,14 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
         code_hits(&scan),
         [
             "bridge/src/a/b.rs:1: `acme-07`",
+            "crates/gadget/src/shared.rs:1: `acme-07`",
             "crates/widget/src/deep/er/x.rs:4: `acme-07`",
             "crates/widget/src/deep/er/x.rs:5: `acme-07`",
             "crates/widget/src/deep/er/x.rs:8: `acme-07`",
             "crates/widget/src/deep/er/x.rs:15: `acme07`",
             "crates/widget/src/deep/er/x.rs:19: `acme-11`",
             "crates/widget/src/deep/er/x.rs:21: `acme-07`",
+            "crates/widget/src/deep/er/x.rs:23: `acme-07`",
             "models/renode/src/c.rs:1: `acme-07`",
         ]
     );
@@ -747,6 +820,7 @@ fn a_planted_tree_yields_exactly_its_planted_hits() {
             (Class::Doc, "crates/widget/src/lib.rs", 1),
             (Class::TestItem, x, 11),
             (Class::TestItem, x, 18),
+            (Class::TestFile, "crates/gadget/src/p.rs", 1),
             (Class::TestFile, "crates/widget/src/elsewhere.rs", 1),
             (Class::TestFile, "crates/widget/src/tests.rs", 1),
             (Class::TestFile, "crates/widget/src/tests/inner.rs", 1),
