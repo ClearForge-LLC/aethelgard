@@ -1,0 +1,8 @@
+{
+ "ok": true,
+ "verdict": "pass",
+ "check": "extract",
+ "findings": [],
+ "specification_sha256": "4ae139057fcd0a81af2bd825148ae92076c44d9ecd8281adb907a83855f2f832",
+ "input_sha256": "7b6a864c034a733d219683918e00a791c57b2550d2c7b1832a2c69e1bd9aa58d"
+}

@@ -1,6 +1,6 @@
 # AET-WO-1211d — FEEDBACK: pin devices drawn (DRV8876PWPR, DRV8833PWPR)
 
-**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
+**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs), then `adb8f61a` (4240c, 1213) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
 - an Opus subagent authored the DRV8876 symbol and footprint;
 - a Sonnet subagent ran the D4 spike;
 - a fresh Opus reviewer ran the adversarial pass;
@@ -24,7 +24,7 @@ Written 2026-11-20.
 - **Rulings** (bus `~/.cache/aet-bus/1211d.md`):
   - S1 (b) and Q1, Q2, 18:18Z;
   - Q3 (a) and the D2 shape, 18:45Z;
-  - Q4, see §3.
+  - Q4 and A1/A2 to AET-WO-1211e, 19:06Z.
 - **The measurement:** `spike/1211d/measure/sweep.sh` (`validate`, `solve` and `emit` on every committed specification, one binary) and `same.sh` (byte for byte; each command's printed JSON with its own output directory's path normalised).
 - **The drawings:** `spike/1211d/draw/` emits at library level (CLI `emit` refuses a pin device until 1211b, ruled Q2). `kit/img.sh` + `kit/judge.sh` run the CLI's four judges in the tools image, under capped-run at 8 GiB with swap 0 read back. `kit/d1-stub.sh` draws D1 past its refusal, in a scratch copy only.
 - **The datasheets:** the held SLVSDS7B and SLVSAR1E (`~/.cache/aet-1211/ds`, sha256 in the parts rows). Package pages were rendered and read.
@@ -81,18 +81,32 @@ The adversarial reviewer re-ran the sweep against its own build of `main`: ident
 | Q2 | library-level emit, CLI judges | tests | **ruled**: accepted; CLI `emit` stays refused until 1211b |
 | Q3 | KiCad's DRV8833 symbol fails ERC on grounded xISEN | kicad-lib | **ruled (a)**: our own symbol, AISEN/BISEN `passive` (SLVSAR1E p. 10: "If current control is not needed, the xISEN pins should be connected directly to ground"; TI types them `IO`, and this departs from it), no ERC exclusion |
 | F-D2 | D2 as committed is refused `PartLimitUndeclared` inside `solve` (SLVSAR1E states no input PWM maximum), so it cannot be drawn at any level | IR | **ruled**: the drawn D2 has GPIO bridge inputs; the committed D2 stays undrawable until the limit is declared from a held source. §7.1 row; no value invented |
-| Q4 | DRV8833 bulk: §9.1 p. 14 describes a local bulk in S1's words; TI's own typical application (Fig. 7 p. 12) draws one VM capacitor, C4 10 µF; p. 3 and §10.1 p. 15 state 10 µF minimum | arm | **(ruling)** |
-| A1 | **a DRV8833 nFAULT pulled by a declared resistor to VMOTOR (6.3 V) onto PA1, an FT pin (DS12117: absolute maximum min(VDD + 4.0, 6 V)), validates and passes all four gates** | IR `validate` | **§7.1 row, recommended:** a pull's domain maximum ≤ the MCU pin's tolerated input, whatever the row says |
-| A2 | **DRV8876 VREF tied to GND or a low domain validates and passes all four gates.** ITRIP = V_VREF / (A · R) (SLVSDS7B p. 13 Eq. 3): zero at GND, ≈ 0.33 A at 0.5 V against a 1.9 A full scale | IR `validate` | **§7.1 row, recommended:** with an IPROPI resistor, refuse VREF on GND, and require VREF_min / (A · R_max) ≥ the declared full scale with its band |
+| Q4 | DRV8833 bulk: §9.1 p. 14 describes a local bulk in S1's words; TI's own typical application (Fig. 7 p. 12) draws one VM capacitor, C4 10 µF; p. 3 and §10.1 p. 15 state 10 µF minimum | arm | **ruled (19:06Z): the lean.** D2's one 10 µF is the datasheet's stated VM capacitor, so D2 stays drawn. §9.1's system-level bulk is **not judged** (R2). It differs from D1's CVM2 because SLVSAR1E states a value and SLVSDS7B states none |
+| A1 | **a DRV8833 nFAULT pulled by a declared resistor to VMOTOR (6.3 V) onto PA1, an FT pin (DS12117: absolute maximum min(VDD + 4.0, 6 V)), validates and passes all four gates** | IR `validate` | **ruled (19:06Z): to AET-WO-1211e**, row R3 |
+| A2 | **DRV8876 VREF tied to GND or a low domain validates and passes all four gates.** ITRIP = V_VREF / (A · R) (SLVSDS7B p. 13 Eq. 3): zero at GND, ≈ 0.33 A at 0.5 V against a 1.9 A full scale | IR `validate` | **ruled (19:06Z): to AET-WO-1211e**, row R4 |
 | A3 | a bridge output declared on `GND` validated and drew (ERC and DRC failed it, nothing named it) | arm | **fixed**: `PinDeviceNotDrawable`, test, mutant G8 |
 | A4 | capacitor ratings are text in the value; every arm capacitor is 0402; a 10 µF 0402's DC bias is unjudged | arm | finding, ruled 18:18Z; VM-rated now reads `>6.3V`, a minimum. Folded into D4 (§4) |
-| A5 | no thermal vias or wide copper for VM/OUT/PGND; no gate judges either (SLVSDS7B §10.1 p. 32; SLVSAR1E §10.1.1 p. 15). TI draws (Ø0.2) vias under PWP0016A, below the boards' 300 µm via drill | eda | finding (ruled: no vias). A gate for a pad's thermal connection and a power net's width is a backlog row |
-| A6 | D1's IPROPI reservoir slows current regulation (R2·C1 = 150 µs; SLVSDS7B p. 13: "large capacitor values may slow down the response time") | 1211a fixture | finding |
-| F1 | an undeclared IPROPI validates; SLVSDS7B p. 13's alternative (IPROPI to GND, VREF above GND) cannot be declared, so the arm refuses it | IR | §7.1 row: a tie for a current output |
+| A5 | no thermal vias or wide copper for VM/OUT/PGND; no gate judges either (SLVSDS7B §10.1 p. 32; SLVSAR1E §10.1.1 p. 15). TI draws (Ø0.2) vias under PWP0016A, below the boards' 300 µm via drill | eda | row R6 |
+| A6 | D1's IPROPI reservoir slows current regulation (R2·C1 = 150 µs; SLVSDS7B p. 13: "large capacitor values may slow down the response time") | 1211a fixture | row R7 |
+| F1 | an undeclared IPROPI validates; SLVSDS7B p. 13's alternative (IPROPI to GND, VREF above GND) cannot be declared, so the arm refuses it | IR | row R5 |
 | F2 | an undeclared nFAULT validates and is drawn open (a no-connect) | — | as designed: the part asks for no pull |
 | F3 | the VM capacitors are not counted in `decoupling_picofarads` (`decouples: false`: their value text does not parse as a capacitance), so a droop on VM is judged without them, on the safe side | eda | finding |
 | F4 | `ir/src/drawn.rs` L69's comment says no arm draws a pin device until 1211d, which is now stale | IR | outside the fence |
 | F5 | IPROPI typed `passive` in the authored DRV8876 symbol, not `output` (p. 13 allows IPROPI tied to GND, and ERC refuses an output on a flagged rail); OUT1/OUT2 `output`, not `power_out` | kicad-lib | decision, cited in the test |
+
+### §7.1 rows (for the roadmap; R1, R3 and R4 go to AET-WO-1211e as ruled 19:06Z)
+
+| row | what | evidence | owner |
+|---|---|---|---|
+| R1 | `pin_devices[].bulk {reference, part, source}`: a cited capacitor row rated above the VM domain's maximum. **D1 is drawable with it**, and G6 (§5) becomes testable | S1; `d1_is_refused_for_cvm2_alone` | 1211e |
+| R2 | the DRV8833's §9.1 system-level bulk (SLVSAR1E p. 14) is not judged: only the stated 10 µF VM capacitor is drawn (Q4). If R1's field lands, a DRV8833 may declare one too | Q4 | beside R1 |
+| R3 | **A1: a pull's domain maximum against the MCU pin's tolerated input**, whatever the part row states. The board that passes all four gates: `spike/1211d/adv/nfault_to_vmotor.json` (D2 drawn, nFAULT pulled by R9 10 kΩ to VMOTOR 6 V ± 5 % onto PA1). Its judges are in `adv/judge/nfault_to_vmotor/` | ERC, DRC, support and extract pass, findings `[]` | 1211e |
+| R4 | **A2: VREF on GND, or a VREF below the declared full scale with its band**, when IPROPI carries a resistor. The board that passes all four gates: `spike/1211d/adv/d1_vref_gnd.json` (D1, `VREF: {tie: GND}`, drawn with `kit/d1-stub.sh`). Its judges are in `adv/judge/d1_vref_gnd/`. `adv/d1_vref_low.json` (VREF on a 500 mV domain) validates and draws; it was not judged | ERC, DRC, support and extract pass, findings `[]` (with the stub) | 1211e |
+| R5 | a tie for a current output (SLVSDS7B p. 13: IPROPI to GND with VREF above GND, regulation off); until then the arm refuses an undeclared IPROPI (F1) | `an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused` | IR |
+| R6 | thermal copper: a gate for an exposed pad's thermal connection (vias, plane) and a power net's width (VM, OUT, PGND); the boards' 300 µm via drill against TI's (Ø0.2) | A5 | eda / rules |
+| R7 | the IPROPI reservoir against current-regulation response (R2·C1 = 150 µs in D1) | A6 | 1211a fixture / IR |
+| R8 | the committed D2 stays undrawable until the DRV8833's input PWM maximum is declared from a held source (ruled 18:45Z); no value invented | F-D2 | IR |
+| R9 | capacitor ratings and footprints as rows, not value text (A4); every arm capacitor is 0402 today | A4; §4 | D4's proposal |
 
 ## 4. 4600 D4 — measured, proposed
 
@@ -135,7 +149,7 @@ The adversarial reviewer re-ran the sweep against its own build of `main`: ident
 
 (see `spike/1211d/RESULTS.md` §M; `mutants/result.json`) **11 of 12 killed.**
 - The work order's three (a strap left floating, nFAULT's pull-up missing, a bridge output to no connector) are each killed by a named test.
-- **G6 survives** (the pin device's ADC input left off the MCU): only a DRV8876 has an analog output, and D1 is refused at CVM2 before a test can read its MCU pins. It is held by the D1-stub board (MCU pin 13, PF3, on `DRV_IPROPI`) and becomes testable with S1's follow-up.
+- **G6 survives** (the pin device's ADC input left off the MCU): only a DRV8876 has an analog output, and D1 is refused at CVM2 before a test can read its MCU pins. It is held by the D1-stub board (MCU pin 13, PF3, on `DRV_IPROPI`) and becomes testable with 1211e (R1), or when CVM2 has a source (ruled 19:06Z).
 
 ## 6. Adversarial pass (§5)
 

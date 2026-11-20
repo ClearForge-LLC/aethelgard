@@ -1,0 +1,408 @@
+{
+ "schema_version": 22,
+ "project_name": "adv-nfault-to-vmotor",
+ "mcu": {
+  "part": "STM32H753ZITx",
+  "supply": "VDD_3V3",
+  "hse_hz": 0,
+  "bor_level": 3,
+  "core_supply": {
+   "mode": "ldo",
+   "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
+  },
+  "supply_source": {
+   "connector": "J3",
+   "pin": "1"
+  }
+ },
+ "voltage_domains": [
+  {
+   "id": "VDD_3V3",
+   "nominal_millivolts": 3300,
+   "tolerance_permille": 50
+  },
+  {
+   "id": "VMOTOR",
+   "nominal_millivolts": 6000,
+   "tolerance_permille": 50
+  }
+ ],
+ "i2c_buses": [],
+ "spi_buses": [],
+ "i2c_devices": [],
+ "spi_devices": [],
+ "connectors": [
+  {
+   "reference": "J1",
+   "part": "SM04B-GHS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "CMD_TX",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": "CMD_RX",
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  },
+  {
+   "reference": "J2",
+   "part": "SM06B-SRSS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "VDD_3V3",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "SWDIO",
+     "offboard": null
+    },
+    {
+     "pin": "5",
+     "net": "SWCLK",
+     "offboard": null
+    },
+    {
+     "pin": "6",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  },
+  {
+   "reference": "J3",
+   "part": "SM04B-GHS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "VDD_3V3",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  },
+  {
+   "reference": "J4",
+   "part": "SM04B-GHS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "SERVO1",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  },
+  {
+   "reference": "J5",
+   "part": "SM04B-GHS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "MA_OUT1",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": "MA_OUT2",
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": "VMOTOR",
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  },
+  {
+   "reference": "J6",
+   "part": "SM04B-GHS-TB",
+   "standard": null,
+   "pins": [
+    {
+     "pin": "1",
+     "net": "MB_OUT1",
+     "offboard": null
+    },
+    {
+     "pin": "2",
+     "net": "MB_OUT2",
+     "offboard": null
+    },
+    {
+     "pin": "3",
+     "net": null,
+     "offboard": null
+    },
+    {
+     "pin": "4",
+     "net": "GND",
+     "offboard": null
+    }
+   ]
+  }
+ ],
+ "net_constraints": [],
+ "board": {
+  "copper_layers": 2,
+  "layers": [
+   {
+    "name": "F.Cu",
+    "role": "signal",
+    "net": null
+   },
+   {
+    "name": "B.Cu",
+    "role": "signal",
+    "net": null
+   }
+  ],
+  "stackup": {
+   "finished_thickness_um": {
+    "nominal": 1600,
+    "min": 340,
+    "max": 2000,
+    "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"
+   },
+   "dielectrics": [
+    {
+     "between": [
+      "F.Cu",
+      "B.Cu"
+     ],
+     "min_thickness_um": 200,
+     "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"
+    }
+   ],
+   "copper_max_um": {
+    "value": 70,
+    "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"
+   },
+   "relative_permittivity_max_permille": {
+    "value": 5400,
+    "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+   }
+  },
+  "rules": {
+   "clearance_um": 200,
+   "track_width_um": 200,
+   "via_drill_um": 300,
+   "via_diameter_um": 600
+  }
+ },
+ "net_classes": [],
+ "diff_pairs": [],
+ "motor_outputs": [
+  {
+   "label": "SERVO1",
+   "pin": null,
+   "protocol": "pwm",
+   "pwm": {
+    "rate_hz": 50,
+    "pulse_min_us": 1000,
+    "pulse_max_us": 2000,
+    "idle": {
+     "pulse_us": 1500
+    },
+    "resolution_ps": 1000000
+   },
+   "esc": null
+  }
+ ],
+ "power": null,
+ "accept_lifecycle": [],
+ "serial_ports": [
+  {
+   "label": "CMD",
+   "peripheral": null,
+   "tx": {
+    "net": "CMD_TX",
+    "pin": null
+   },
+   "rx": {
+    "net": "CMD_RX",
+    "pin": null
+   },
+   "role": "console",
+   "framing": {
+    "baud": 115200,
+    "data_bits": 8,
+    "parity": "none",
+    "stop_bits": 1,
+    "inverted": false
+   },
+   "negotiated": null,
+   "peer_deviation_ppm": 5000,
+   "peer_deviation_source": "declared"
+  }
+ ],
+ "acknowledge_unwitnessed": [],
+ "pin_devices": [
+  {
+   "reference": "U2",
+   "part": "DRV8833PWPR",
+   "supplies": {
+    "VM": "VMOTOR"
+   },
+   "straps": {
+    "AISEN": {
+     "tie": "GND"
+    },
+    "BISEN": {
+     "tie": "GND"
+    }
+   },
+   "signals": [
+    {
+     "device_pin": "nSLEEP",
+     "net": "DRV_NSLEEP",
+     "pin": null,
+     "direction": "output",
+     "initial": "low"
+    },
+    {
+     "device_pin": "nFAULT",
+     "net": "DRV_NFAULT",
+     "pin": null,
+     "direction": "input",
+     "active": "low",
+     "pull": {
+      "resistor": {
+       "reference": "R9",
+       "part": "CRCW0603_F_K",
+       "ohms": 10000,
+       "to": "VMOTOR"
+      },
+      "source": "adv"
+     }
+    },
+    {
+     "device_pin": "AIN1",
+     "net": "A_IN1",
+     "pin": null,
+     "direction": "output",
+     "initial": "low"
+    },
+    {
+     "device_pin": "AIN2",
+     "net": "A_IN2",
+     "pin": null,
+     "direction": "output",
+     "initial": "low"
+    },
+    {
+     "device_pin": "BIN1",
+     "net": "B_IN1",
+     "pin": null,
+     "direction": "output",
+     "initial": "low"
+    },
+    {
+     "device_pin": "BIN2",
+     "net": "B_IN2",
+     "pin": null,
+     "direction": "output",
+     "initial": "low"
+    }
+   ],
+   "analog": [],
+   "bridges": [
+    {
+     "id": "MA",
+     "mode": "in_in",
+     "inputs": {
+      "AIN1": "A_IN1",
+      "AIN2": "A_IN2"
+     },
+     "outputs": {
+      "AOUT1": "MA_OUT1",
+      "AOUT2": "MA_OUT2"
+     }
+    },
+    {
+     "id": "MB",
+     "mode": "in_in",
+     "inputs": {
+      "BIN1": "B_IN1",
+      "BIN2": "B_IN2"
+     },
+     "outputs": {
+      "BOUT1": "MB_OUT1",
+      "BOUT2": "MB_OUT2"
+     }
+    }
+   ],
+   "part_limits": {
+    "input_pwm_max_hz": null
+   },
+   "temperature_celsius": {
+    "min": -20,
+    "max": 85,
+    "source": "D1 fixture, declared: Sentinel-02's board range (crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json, power.conditions)"
+   }
+  }
+ ]
+}
