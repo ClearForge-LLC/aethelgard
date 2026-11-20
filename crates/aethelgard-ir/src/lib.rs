@@ -98,7 +98,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// external clock (`{"external": {hz_num, hz_den, ppm, source}}`). The key
 /// is required; `hse_hz: 0`, the only value version 19 admitted, still reads
 /// as `null`, so a committed specification moved by its version line alone.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
+/// Version 21 is `AET-WO-1210`'s (`board.drawn`). Version 22 requires
+/// `startup_max_us` and `startup_source` on a declared `crystal` or
+/// `external` HSE (`AET-WO-4240b` §1.1, Q1 ruled 2026-11-20): the bring-up's
+/// `HSERDY` bound with its source, which no default supplies; a `null` HSE
+/// carries neither, so a committed specification moved by its version line
+/// alone.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 22;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -502,9 +508,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `orientation` (`AET-WO-4400d`), version 11 `foreign_clock`
 /// (`AET-WO-4400g`), version 12 `core_supply` and the clock's `vos`
 /// (`AET-WO-4240v`), version 13 the clock's `hse` (`AET-WO-4240a`: absent
-/// for `mcu.hse` `null`, so such a topology differs only in its version);
+/// for `mcu.hse` `null`, so such a topology differs only in its version),
+/// version 14 the HSE tree's `flash_acr`, its declaration's start-up bound
+/// and the SPI kernels `pll1_q` and `pclk` (`AET-WO-4240b` Q2, Q3, Q6);
 /// an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 13;
+pub const SOLVED_SCHEMA_VERSION: u32 = 14;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds

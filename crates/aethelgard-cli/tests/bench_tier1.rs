@@ -372,7 +372,7 @@ fn the_cli_refuses_a_version_13_file_by_its_version() {
     let r: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(out.status.code(), Some(2), "{r}");
     assert_eq!(r["error"]["kind"], "UnsupportedSchemaVersion", "{r}");
-    assert_eq!(r["error"]["message"], "schema_version is 13, not 20", "{r}");
+    assert_eq!(r["error"]["message"], "schema_version is 13, not 22", "{r}");
 }
 
 /// Adversarial F1: BOOT0's net holds the boot pin, its one pull-down and the
