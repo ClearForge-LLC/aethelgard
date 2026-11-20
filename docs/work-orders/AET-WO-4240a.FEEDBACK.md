@@ -270,8 +270,9 @@ A fresh subagent proposed the cuts, reading only; the builder ruled on each and 
 
 ## §10 State at READY
 
-- **READY.** Head: this READY commit, after `7dd8799d`.
-  - `main` `a75fffcc` (2305) is merged in, and every committed specification is at 20.
+- **READY.** Head: this READY commit.
+  - `main` `dc618bd8` (2305, 4405) is merged in, and every committed specification is at 20. 4405 changed `aethelgard-pincheck` only: no specification, and no IR change.
+  - Local gates on this head: fmt and clippy 0; 2,374 passed, and 1 failed, `fab_tier1`'s target-outside-repository artefact (F6). `bench_board_tier1` passes on the committed package.
   - The bench package is from dispatch run 44733886395 (artifact 14627643309), committed byte for byte.
   - CI on the READY head is reported on the bus with its run ids. The architect merges; the builder never does.
 - **The specification version:** 20 is this branch's (ruled 11:10Z: `1210` renumbers to 21 after this). Were `1210` to merge first, `python3 -I spike/4240a/kit/renumber.py . 20 21 13 13` renumbers by version lines only, and `boards/` and `BENCH-EXT-BMP581.md` L9 are regenerated as ruled.
