@@ -509,6 +509,11 @@ fn the_gate_judges_the_crystal_and_names_each_fault() {
         gate(&|p| renet(p, &c_out, "1", OSC_IN)),
         ["hse_load_capacitor_missing", "hse_load_capacitor_missing"]
     );
+    // Another MCU pin, a GPIO, on an oscillator net (adversarial F1).
+    assert_eq!(
+        gate(&|p| renet(p, "U1", "1", OSC_IN)),
+        ["hse_net_extra_part"]
+    );
     // The crystal's end on a ground pad.
     assert_eq!(
         gate(&|p| renet(p, "Y1", "3", "GND")),

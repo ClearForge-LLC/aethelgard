@@ -803,8 +803,9 @@ const CRYSTAL_GROUNDS: [&str; 2] = ["2", "4"];
 /// exactly one populated crystal of the declared part, its two ends on those
 /// two nets and its two ground pads on `GND`; on each net exactly one
 /// capacitor, to `GND`, of the declared value (`CL1` on `OSC_IN`, `CL2` on
-/// `OSC_OUT`), named by a C0G part of the power parts table; and no other
-/// part on either net. With no crystal declared, no crystal may be drawn.
+/// `OSC_OUT`), named by a C0G part of the power parts table rated that value
+/// and stated within ±1 % or ±0.25 pF; and no other pin on either net, the
+/// MCU's included. With no crystal declared, no crystal may be drawn.
 fn crystal(
     spec: &Specification,
     s: &Support,
@@ -861,9 +862,9 @@ fn crystal(
             );
             return Ok(());
         }
-        nets.push(n.unwrap_or_default().to_owned());
+        nets.push((pin.clone(), n.unwrap_or_default().to_owned()));
     }
-    let (osc_in, osc_out) = (nets[0].as_str(), nets[1].as_str());
+    let (osc_in, osc_out) = (nets[0].1.as_str(), nets[1].1.as_str());
     // Exactly one crystal of the declared part.
     let found: Vec<&String> = netlist
         .components
@@ -898,7 +899,7 @@ fn crystal(
         fail(
             "hse_crystal_off_net",
             format!(
-                "crystal {y}'s pads 1 and 3 are on {} and {}, not on `{osc_in}` and `{osc_out}`, or it has another pin",
+                "crystal {y}'s pads 1 and 3 are on {} and {}, and must be on `{osc_in}` and `{osc_out}`, with no pin but 1 to 4",
                 quoted(ends[0]),
                 quoted(ends[1])
             ),
@@ -915,14 +916,18 @@ fn crystal(
     }
     // One load capacitor per oscillator net, to `GND`, of the declared value
     // and a C0G part; nothing else on either net.
-    for (net, ff, name) in [
-        (osc_in, declared.load_caps_femtofarads[0], "CL1"),
-        (osc_out, declared.load_caps_femtofarads[1], "CL2"),
+    for ((pin, net), ff, name) in [
+        (&nets[0], declared.load_caps_femtofarads[0], "CL1"),
+        (&nets[1], declared.load_caps_femtofarads[1], "CL2"),
     ] {
+        let net = net.as_str();
+        // Every pin on the net but the MCU's own oscillator pin and the
+        // crystal's: another MCU pin there is a part on it too (adversarial
+        // F1).
         let on: Vec<&String> = netlist
             .nets
             .iter()
-            .filter(|((r, _), n)| n.as_str() == net && r != mcu && r != *y)
+            .filter(|((r, p), n)| n.as_str() == net && !(r == mcu && p == pin) && r != *y)
             .map(|((r, _), _)| r)
             .collect();
         let caps: Vec<&String> = on
@@ -960,18 +965,44 @@ fn crystal(
                 format!("{c} on `{net}` is `{value}`, and {name} is declared {ff} fF"),
             );
         }
-        let dielectric = value
+        // The named row: C0G, rated exactly the declared value, and within
+        // `4240` §9's family, ±1 % or ±0.25 pF (adversarial F2: the token
+        // alone could name a row of another value).
+        let row = value
             .split_once(' ')
             .and_then(|(_, part)| table.get(part))
             .and_then(|r| match &r.kind {
-                Kind::Capacitor(k) => Some(k.dielectric),
+                Kind::Capacitor(k) => Some(k),
                 _ => None,
             });
-        if dielectric != Some(power_parts::Dielectric::C0g) {
+        let Some(k) = row.filter(|k| k.dielectric == power_parts::Dielectric::C0g) else {
             fail(
                 "hse_load_capacitor_dielectric",
                 format!(
                     "{c} on `{net}` is `{value}`, which names no C0G capacitor of the power parts table"
+                ),
+            );
+            continue;
+        };
+        if k.rated_picofarads.value.checked_mul(1000) != i64::try_from(ff).ok() {
+            fail(
+                "hse_load_capacitor_value",
+                format!(
+                    "{c} on `{net}` names a part rated {} pF, and {name} is declared {ff} fF",
+                    k.rated_picofarads.value
+                ),
+            );
+        }
+        let close = match &k.tolerance {
+            Some(power_parts::Tolerance::Permille(l)) => l.value <= 10,
+            Some(power_parts::Tolerance::Femtofarads(l)) => l.value <= 250,
+            None => false,
+        };
+        if !close {
+            fail(
+                "hse_load_capacitor_tolerance",
+                format!(
+                    "{c} on `{net}` names a part whose tolerance is not stated within 1 % or 0.25 pF"
                 ),
             );
         }
