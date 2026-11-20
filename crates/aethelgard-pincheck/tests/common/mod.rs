@@ -71,6 +71,136 @@ pub struct Elf {
     /// A fifth section, writable `PROGBITS` at [`RAM`] that no `PT_LOAD`
     /// flashes, holding these bytes (a `var_info` name in RAM).
     pub ram: Option<Vec<u8>>,
+    /// `AP_GPS::var_info` (`AET-WO-4406`): its rows, after the serial table,
+    /// each name a string after them; `None` leaves the symbol out.
+    pub gps: Option<Vec<VarRow>>,
+    /// `AP_Param::param_defaults_data`'s bytes, after the GPS table; `None`
+    /// leaves the symbol out.
+    pub param_defaults: Option<Vec<u8>>,
+    /// `AP_ROMFS::files`, after those, each name a string after them;
+    /// `None` leaves the symbol out.
+    pub romfs: Option<Vec<RomfsFile>>,
+    /// `AP_Scripting::var_info`, after those; `None` leaves the symbol out.
+    pub scripting: Option<Vec<VarRow>>,
+}
+
+/// One `AP_ROMFS::embedded_file` (`AP_ROMFS.h:30-36`), its contents pointer
+/// at [`ADDR`].
+#[derive(Clone, Debug)]
+pub struct RomfsFile {
+    pub name: &'static str,
+    pub compressed: u32,
+    pub decompressed: u32,
+    pub crc: u32,
+}
+
+/// The one file every measured board's ROMFS holds (`spike/4406` §2.1),
+/// as `advromfs` lists it.
+pub const ROMFS_HWDEF: RomfsFile = RomfsFile {
+    name: "hwdef.dat",
+    compressed: 515,
+    decompressed: 1491,
+    crc: 0x31b6_cfbe,
+};
+
+/// `advromfs`'s `defaults.parm` (`4405` A1, route 1), as its ROMFS lists it.
+pub const ROMFS_DEFAULTS: RomfsFile = RomfsFile {
+    name: "defaults.parm",
+    compressed: 40,
+    decompressed: 57,
+    crc: 0x75a0_8073,
+};
+
+/// `advlua`'s script (`AET-WO-4406` adversarial A1), as its ROMFS lists it.
+pub const ROMFS_ADVLUA: RomfsFile = RomfsFile {
+    name: "scripts/adv.lua",
+    compressed: 166,
+    decompressed: 230,
+    crc: 0x9b4b_0abf,
+};
+
+/// `AP_Scripting::var_info` as `fc-base` compiles it (`spike/4406`), its
+/// `ENABLE` row (`SCR_ENABLE`, flagged `AP_PARAM_FLAG_ENABLE`) defaulting to
+/// `enable`: 0 on every measured board, 1 on `advlua`.
+pub fn scripting_var_info(enable: f32) -> Vec<VarRow> {
+    let row = |name: &str, offset, kind, default: f32, idx| VarRow {
+        offset,
+        idx,
+        ..var_row(name, kind, default)
+    };
+    vec![
+        VarRow {
+            flags: 4,
+            ..row("ENABLE", 136, 1, enable, 1)
+        },
+        row("VM_I_COUNT", 140, 3, 10_000.0, 2),
+        row("HEAP_SIZE", 144, 3, 204_800.0, 3),
+        row("DEBUG_OPTS", 148, 1, 0.0, 4),
+        row("USER1", 0, 4, 0.0, 5),
+        row("USER2", 4, 4, 0.0, 6),
+        row("USER3", 8, 4, 0.0, 7),
+        row("USER4", 12, 4, 0.0, 8),
+        row("USER5", 16, 4, 0.0, 10),
+        row("USER6", 20, 4, 0.0, 11),
+        row("DIR_DISABLE", 150, 2, 0.0, 9),
+        row("LD_CHECKSUM", 152, 3, -1.0, 12),
+        row("RUN_CHECKSUM", 156, 3, -1.0, 13),
+        row("THD_PRIORITY", 160, 1, 0.0, 14),
+        group_end(),
+    ]
+}
+
+/// `AP_Param::param_defaults_data` cut from `advapj` (`4405` A1, route 2;
+/// ELF sha256 `f9c26e75…`, `spike/4406/out/SHA256SUMS`): 1044 bytes,
+/// `max_length` 1024, `length` 67.
+pub const ADVAPJ_PARAM_DEFAULTS: &[u8] =
+    include_bytes!("../fixtures/advapj.param_defaults_data.bin");
+
+/// `AP_Param::reload_defaults_file`, defined in every build (two bytes,
+/// `bx lr`, where no defaults are compiled), as `fc-base`'s `.symtab` names it.
+pub const RELOAD_DEFAULTS_FILE: &str = "_ZN8AP_Param20reload_defaults_fileEb";
+
+/// `AP_GPS::var_info` as `fc-base` compiles it (`spike/4406` §2.2): its
+/// twelve scalar rows, then one `AP_SUBGROUPINFO` row per receiver
+/// (`receivers` of `1_` and `2_`), and `AP_GROUPEND`.
+pub fn gps_var_info(receivers: u8) -> Vec<VarRow> {
+    let scalar = |name: &str, offset, kind, default: f32, idx| VarRow {
+        offset,
+        idx,
+        ..var_row(name, kind, default)
+    };
+    let mut rows = vec![
+        scalar("_NAVFILTER", 120, 1, 8.0, 2),
+        scalar("_AUTO_SWITCH", 121, 1, 1.0, 3),
+        scalar("_SBAS_MODE", 132, 1, 2.0, 5),
+        scalar("_MIN_ELEV", 133, 1, -100.0, 6),
+        scalar("_INJECT_TO", 124, 1, 127.0, 7),
+        scalar("_SBP_LOGMASK", 122, 2, -256.0, 8),
+        scalar("_RAW_DATA", 134, 1, 0.0, 9),
+        scalar("_SAVE_CFG", 135, 1, 2.0, 11),
+        scalar("_AUTO_CONFIG", 136, 1, 1.0, 13),
+        scalar("_BLEND_MASK", 137, 1, 5.0, 20),
+        scalar("_DRV_OPTIONS", 138, 2, 0.0, 22),
+        scalar("_PRIMARY", 140, 1, 0.0, 27),
+    ];
+    for r in 0..receivers {
+        rows.push(gps_receiver(&format!("{}_", r + 1), 32 + r));
+    }
+    rows.push(group_end());
+    rows
+}
+
+/// One receiver's `AP_SUBGROUPINFO` row: flags `AP_PARAM_FLAG_NESTED_OFFSET`,
+/// type `AP_PARAM_GROUP`, the union `AP_GPS::Params::var_info`'s address.
+pub fn gps_receiver(name: &str, idx: u8) -> VarRow {
+    VarRow {
+        offset: 40 * u32::from(idx - 32),
+        value: 0x0811_5f0c,
+        flags: 1,
+        idx,
+        kind: 6,
+        ..var_row(name, 6, 0.0)
+    }
 }
 
 /// Where [`Elf::ram`]'s section runs.
@@ -90,11 +220,25 @@ pub struct VarRow {
     pub name_at: Option<u32>,
 }
 
-/// A row as `AP_GROUPINFO` writes it: no flags, `default` a float.
+/// A row as `AP_GROUPINFO` writes it: no flags, `default` a float, and a
+/// port row at its member's offset, `24n + 0 BAUD, 4 OPTIONS, 8 PROTOCOL`
+/// (`spike/4406` §2.3); any other row at offset 0.
 pub fn var_row(name: &str, kind: u8, default: f32) -> VarRow {
+    let offset = name
+        .split_once('_')
+        .and_then(|(n, field)| {
+            let at = match field {
+                "BAUD" => 0,
+                "OPTIONS" => 4,
+                "PROTOCOL" => 8,
+                _ => return None,
+            };
+            Some(24 * n.parse::<u32>().ok()? + at)
+        })
+        .unwrap_or(0);
     VarRow {
         name: name.to_owned(),
-        offset: 0,
+        offset,
         value: default.to_bits(),
         flags: 0,
         idx: 0,
@@ -212,8 +356,34 @@ impl Default for Elf {
             var_info_size: None,
             tail: Vec::new(),
             ram: None,
+            gps: None,
+            param_defaults: None,
+            romfs: None,
+            scripting: None,
         }
     }
+}
+
+/// `rows` as `AP_Param::GroupInfo` entries at `at`, each name a string
+/// after them unless the row points elsewhere.
+fn group_info(at: u32, rows: &[VarRow]) -> Vec<u8> {
+    let names_at = at + 16 * rows.len() as u32;
+    let (mut entries, mut names) = (Vec::new(), Vec::new());
+    for r in rows {
+        put32(
+            &mut entries,
+            r.name_at.unwrap_or(names_at + names.len() as u32),
+        );
+        put32(&mut entries, r.offset);
+        put32(&mut entries, r.value);
+        put16(&mut entries, r.flags);
+        entries.push(r.idx);
+        entries.push(r.kind);
+        names.extend_from_slice(r.name.as_bytes());
+        names.push(0);
+    }
+    entries.extend(names);
+    entries
 }
 
 fn put16(b: &mut Vec<u8>, v: u16) {
@@ -254,25 +424,41 @@ impl Elf {
                 data.extend_from_slice(e);
             }
         }
-        let var_at = ADDR + data.len() as u32;
-        if let Some(rows) = &self.var_info {
-            let names_at = var_at + 16 * rows.len() as u32;
+        let gps_at = ADDR + data.len() as u32;
+        if let Some(rows) = &self.gps {
+            data.extend(group_info(gps_at, rows));
+        }
+        let defaults_at = ADDR + data.len() as u32;
+        if let Some(bytes) = &self.param_defaults {
+            data.extend_from_slice(bytes);
+        }
+        let romfs_at = ADDR + data.len() as u32;
+        if let Some(files) = &self.romfs {
+            let names_at = romfs_at + 20 * files.len() as u32;
             let (mut entries, mut names) = (Vec::new(), Vec::new());
-            for r in rows {
-                put32(
-                    &mut entries,
-                    r.name_at.unwrap_or(names_at + names.len() as u32),
-                );
-                put32(&mut entries, r.offset);
-                put32(&mut entries, r.value);
-                put16(&mut entries, r.flags);
-                entries.push(r.idx);
-                entries.push(r.kind);
-                names.extend_from_slice(r.name.as_bytes());
+            for f in files {
+                for v in [
+                    names_at + names.len() as u32,
+                    f.compressed,
+                    f.decompressed,
+                    f.crc,
+                    ADDR,
+                ] {
+                    put32(&mut entries, v);
+                }
+                names.extend_from_slice(f.name.as_bytes());
                 names.push(0);
             }
             data.extend(entries);
             data.extend(names);
+        }
+        let scripting_at = ADDR + data.len() as u32;
+        if let Some(rows) = &self.scripting {
+            data.extend(group_info(scripting_at, rows));
+        }
+        let var_at = ADDR + data.len() as u32;
+        if let Some(rows) = &self.var_info {
+            data.extend(group_info(var_at, rows));
         }
         data.extend_from_slice(&self.tail);
         let mut syms = Vec::new();
@@ -318,6 +504,39 @@ impl Elf {
             }
             strtab.extend(std::iter::repeat_n(b'g', len as usize));
             strtab.push(0);
+        }
+        let mut object = |name: &[u8], at: u32, size: u32| {
+            symbol(&mut syms, strtab.len() as u32, at, size, 1, 1);
+            strtab.extend_from_slice(name);
+            strtab.push(0);
+        };
+        if let Some(rows) = &self.gps {
+            object(
+                aethelgard_pincheck::elf::GPS_VAR_INFO_SYMBOL,
+                gps_at,
+                16 * rows.len() as u32,
+            );
+        }
+        if let Some(bytes) = &self.param_defaults {
+            object(
+                aethelgard_pincheck::elf::PARAM_DEFAULTS_DATA,
+                defaults_at,
+                bytes.len() as u32,
+            );
+        }
+        if let Some(files) = &self.romfs {
+            object(
+                aethelgard_pincheck::elf::ROMFS_FILES,
+                romfs_at,
+                20 * files.len() as u32,
+            );
+        }
+        if let Some(rows) = &self.scripting {
+            object(
+                aethelgard_pincheck::elf::SCRIPTING_VAR_INFO,
+                scripting_at,
+                16 * rows.len() as u32,
+            );
         }
         // Last, so the names before it keep their offsets.
         if let Some(rows) = &self.var_info {

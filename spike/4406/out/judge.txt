@@ -1,0 +1,68 @@
+MOVED advapj
+  main   exit 0 [] 
+  branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: AP_Param::load_embedded_param_defaults is linked: defaults embedded in the image, which apj_tool can write after the build, are read at boot (AP_Param.cpp:1618-1622, :2602-2605); AP_Param::param_defaults_data holds 67 bytes of defaults (AP_Param.cpp:1618-1622)"}
+  elf-only branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: AP_Param::load_embedded_param_defaults is linked: defaults em
+MOVED advgps1
+  main   exit 0 [] 
+  branch exit 1 ["identity GpsPortUnbound SERIAL3 [at most 1 GPS port, SERIAL1 (AP_GPS::var_info compiles 1 receiver; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  elf-only branch exit 0 [] 
+SAME adv-numforms exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME adv-opt-inv exit 1 ["identity WrongSerialOptions SERIAL1 [none | 0x3]"] 
+  elf-only branch exit 0 [] 
+SAME adv-opt-swap exit 1 ["identity WrongSerialOptions SERIAL1 [none | 0x8]"] 
+  elf-only branch exit 0 [] 
+SAME adv-proto-del1 exit 1 ["identity WrongSerialProtocol SERIAL1 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_MAVLink2 (2)]"] 
+  elf-only branch exit 0 [] 
+SAME adv-proto-del3 exit 1 ["identity WrongSerialProtocol SERIAL3 [SerialProtocol_MAVLink2 (2), for a mavlink port | SerialProtocol_GPS (5)]"] 
+  elf-only branch exit 0 [] 
+SAME adv-proto-swap exit 1 ["identity WrongSerialProtocol SERIAL1 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_RCIN (23)]","identity WrongSerialProtocol SERIAL2 [SerialProtocol_RCIN (23), for a rc_crsf port | SerialProtocol_GPS (5)]"] 
+  elf-only branch exit 0 [] 
+SAME adv-realaf exit 1 ["forward NotOutput PA11 [output | alternate AF5]"] 
+  elf-only branch exit 1 ["forward NotOutput PA11 [output | alternate AF5]"] 
+MOVED advromfs
+  main   exit 0 [] 
+  branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: AP_Param::load_defaults_file is linked: a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406); ROMFS lists defaults.parm, which ChibiOS loads at boot as @ROMFS/defaults.parm (AP_HAL_ChibiOS/Util.h:43-45, AP_Param.cpp:1647-1666)"}
+  elf-only branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: AP_Param::load_defaults_file is linked: a defaults file is re
+MOVED eight
+  main   exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  branch exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  elf-only branch exit 0 [] 
+MOVED eight-opt6
+  main   exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity WrongSerialOptions SERIAL6 [none | 0x8]"] 
+  branch exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity WrongSerialOptions SERIAL6 [none | 0x8]"] 
+  elf-only branch exit 0 [] 
+MOVED eight-opt7
+  main   exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  branch exit 1 ["identity GpsPortUnbound SERIAL4 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL5 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]","identity GpsPortUnbound SERIAL6 [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  elf-only branch exit 0 [] 
+SAME fc-base exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME fc-mav3 exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME lab-lower exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME seed-af exit 1 ["forward WrongAlternateFunction PB6 [alternate AF4 | alternate AF6]","forward WrongAlternateFunction PB7 [alternate AF4 | alternate AF6]","forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA10 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA5 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA7 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA9 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB7 [OSPEEDR 00 | OSPEEDR 10]","identity UnexpectedSerialPort SERIAL1 [none | U(S)ART3 TX PD8 RX PD9]","identity WrongBaroProbe HAL_BARO_PROBE1 [BMP280 on I2C1 at 0x76 | BMP280 on I2C4 at 0x76]","identity WrongSpiMode SPIDEV dataflash [MODE0 | MODE3]","identity WrongSpiSpeed SPIDEV dataflash high [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","identity WrongSpiSpeed SPIDEV dataflash low [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]"] 
+  elf-only branch exit 1 ["forward WrongAlternateFunction PB6 [alternate AF4 | alternate AF6]","forward WrongAlternateFunction PB7 [alternate AF4 | alternate AF6]","forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUP
+SAME seed-pin exit 1 ["forward NotAlternate PB6 [alternate AF4 | input]","forward WrongOutputType PB6 [open-drain | push-pull]","forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA10 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA5 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA7 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA9 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB7 [OSPEEDR 00 | OSPEEDR 10]","identity UnexpectedSerialPort SERIAL1 [none | U(S)ART3 TX PD8 RX PD9]","identity WrongSpiMode SPIDEV dataflash [MODE0 | MODE3]","identity WrongSpiSpeed SPIDEV dataflash high [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","identity WrongSpiSpeed SPIDEV dataflash low [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","reverse UnnamedPin PB8 [reset or input | alternate AF4]"] 
+  elf-only branch exit 1 ["forward NotAlternate PB6 [alternate AF4 | input]","forward WrongOutputType PB6 [open-drain | push-pull]","forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward Wron
+SAME seed-pkg exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA10 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA5 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA7 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA9 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB7 [OSPEEDR 00 | OSPEEDR 10]","identity UnexpectedSerialPort SERIAL1 [none | U(S)ART3 TX PD8 RX PD9]","identity WrongSpiMode SPIDEV dataflash [MODE0 | MODE3]","identity WrongSpiSpeed SPIDEV dataflash high [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","identity WrongSpiSpeed SPIDEV dataflash low [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","package NotInPackage PI0 [a pin of STM32H753ZITx (LQFP144) | output]","reverse UnnamedPin PI0 [reset or input | output]"] 
+  elf-only branch exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA
+SAME sentinel-01 exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME sentinel-02 exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME sentinel-02-noimu exit 1 ["identity MissingImuProbe HAL_INS_PROBE_LIST [Invensensev3 on SPI device icm42688, ROTATION_ROLL_180_YAW_90 or ROTATION_PITCH_180_YAW_270 | none]"] 
+  elf-only branch exit 0 [] 
+SAME serial-dshot-9600 exit 0 [] 
+  elf-only branch exit 0 [] 
+SAME step-g exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA10 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA5 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA7 [OSPEEDR 01 | OSPEEDR 10]","forward WrongSpeed PA9 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB6 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PB7 [OSPEEDR 00 | OSPEEDR 10]","identity UnexpectedSerialPort SERIAL1 [none | U(S)ART3 TX PD8 RX PD9]","identity WrongSpiMode SPIDEV dataflash [MODE0 | MODE3]","identity WrongSpiSpeed SPIDEV dataflash high [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]","identity WrongSpiSpeed SPIDEV dataflash low [within 1 kHz at or below 16000000 Hz (SPI1's achieved_hz) | 20000000 Hz]"] 
+  elf-only branch exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA
+EXTRA advnoromfs main   exit 0 [] 
+EXTRA advnoromfs branch exit 0 [] 
+EXTRA advlua main   exit 0 [] 
+EXTRA advlua branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: ROMFS lists scripts/adv.lua, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550); AP_Scripting::var_info's ENABLE (SCR_ENABLE) defaults to 1: Lua scripts, from ROMFS or the SD card, run at boot and can set parameters (AP_Scripting.cpp:55-72, :220; lua_scripts.cpp:548-550)"}
+EXTRA swap main   exit 0 [] 
+EXTRA swap branch exit 3 [] {"kind":"VarInfoRowOffset","id":null,"message":"var_info entry 2 (`1_PROTOCOL`) sets the member at offset 56, not 32 (24n + 0 BAUD, 4 OPTIONS, 8 PROTOCOL, as measured on every board): ArduPilot applies the default there, whatever the name says (AP_Param.cpp:1490-1497)"}
+CI-SCRIPT aethelgard-main exit 0 errors 0
+CI-SCRIPT aethelgard-branch exit 0 errors 0

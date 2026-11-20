@@ -13,6 +13,10 @@
 //! The symbol table itself is trusted: a `st_value` pointing at a decoy copy
 //! of `gpio_default_config` is caught only by the `hwdef.h` cross-check
 //! (adversarial A6), and one of `var_info` by nothing (`AET-WO-4405` A6).
+//!
+//! The parameter tables are read as compiled defaults, so an ELF that can
+//! replace them at boot is refused before any is read ([`read`],
+//! [`defaults_signatures`], `AET-WO-4406`).
 
 use crate::{GpioConfig, PORTS, PortRegisters, Refusal};
 
@@ -268,11 +272,25 @@ fn loaded_offset(bytes: &[u8], value: u32, size: u32) -> Result<u64, Refusal> {
 }
 
 /// Reads the reset GPIO configuration out of a linked ELF.
+///
+/// An ELF that can apply parameter defaults at boot is refused
+/// (`ParamDefaultsOverride`, [`defaults_signatures`]): this check reads the
+/// defaults it compiles, and those would not be what runs (`AET-WO-4406`).
 pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
     let data = object(bytes, SYMBOL, |size| {
         (size != SYMBOL_SIZE)
             .then(|| format!("{size} bytes, not {SYMBOL_SIZE} (11 ports x 7 words)"))
     })?;
+    let overrides = defaults_signatures(bytes)?;
+    if !overrides.is_empty() {
+        return refuse(
+            "ParamDefaultsOverride",
+            format!(
+                "the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: {}",
+                overrides.join("; ")
+            ),
+        );
+    }
     let words: Vec<u32> = data
         .as_chunks::<4>()
         .0
@@ -294,14 +312,9 @@ pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
     Ok(GpioConfig { ports })
 }
 
-/// The bytes of the one `STT_OBJECT` named `symbol`, in allocated, read-only
-/// `PROGBITS`, located twice (its section and its `PT_LOAD`) and refused
-/// unless both agree; `bad_size` names a size the caller refuses.
-fn object<'a>(
-    bytes: &'a [u8],
-    symbol: &[u8],
-    bad_size: impl Fn(u32) -> Option<String>,
-) -> Result<&'a [u8], Refusal> {
+/// The ELF header held (a linked little-endian ELF32 `EM_ARM` firmware) and
+/// its section table, each refused by name if it is not.
+fn header(bytes: &[u8]) -> Result<Vec<Section>, Refusal> {
     if bytes.len() < EHDR_LEN {
         return refuse(
             "Truncated",
@@ -337,7 +350,18 @@ fn object<'a>(
             format!("e_machine is {machine}, not {EM_ARM} (EM_ARM)"),
         );
     }
-    let sections = sections(bytes)?;
+    sections(bytes)
+}
+
+/// The bytes of the one `STT_OBJECT` named `symbol`, in allocated, read-only
+/// `PROGBITS`, located twice (its section and its `PT_LOAD`) and refused
+/// unless both agree; `bad_size` names a size the caller refuses.
+fn object<'a>(
+    bytes: &'a [u8],
+    symbol: &[u8],
+    bad_size: impl Fn(u32) -> Option<String>,
+) -> Result<&'a [u8], Refusal> {
+    let sections = header(bytes)?;
     let name = String::from_utf8_lossy(symbol);
     let (value, size, kind, shndx) = match symbols_named(bytes, &sections, symbol)?.as_slice() {
         [one] => *one,
@@ -534,23 +558,41 @@ pub fn map_baudrate(rate: i32) -> u64 {
 
 /// The NUL-terminated string at `addr`, read where it is flashed: one
 /// `PT_LOAD`'s file image holds it, in place ([`loaded_offset`]: run where
-/// flashed, nothing flashed over it), and it ends within [`NAME_MAX`] bytes.
-fn flash_str(bytes: &[u8], addr: u32) -> Result<&str, Refusal> {
+/// flashed, nothing flashed over it), and it ends within `max` bytes. `what`
+/// names it, and `too_long` and `malformed` are the refusals' kinds.
+fn flash_cstr<'a>(
+    bytes: &'a [u8],
+    addr: u32,
+    max: usize,
+    what: &str,
+    [too_long, malformed]: [&'static str; 2],
+) -> Result<&'a str, Refusal> {
     let at = usize::try_from(loaded_offset(bytes, addr, 1)?).unwrap_or(usize::MAX);
     let tail = bytes.get(at..).unwrap_or_default();
-    let Some(len) = tail.iter().take(NAME_MAX + 1).position(|b| *b == 0) else {
+    let Some(len) = tail.iter().take(max + 1).position(|b| *b == 0) else {
         return refuse(
-            "VarInfoNameTooLong",
-            format!("the var_info name at {addr:#010x} has no NUL within {NAME_MAX} bytes"),
+            too_long,
+            format!("the {what} at {addr:#010x} has no NUL within {max} bytes"),
         );
     };
     loaded_offset(bytes, addr, len as u32 + 1)?;
     std::str::from_utf8(&tail[..len]).or_else(|_| {
         refuse(
-            "MalformedVarInfo",
-            format!("the var_info name at {addr:#010x} is not UTF-8"),
+            malformed,
+            format!("the {what} at {addr:#010x} is not UTF-8"),
         )
     })
+}
+
+/// A parameter's name ([`flash_cstr`], at most [`NAME_MAX`] bytes).
+fn flash_str(bytes: &[u8], addr: u32) -> Result<&str, Refusal> {
+    flash_cstr(
+        bytes,
+        addr,
+        NAME_MAX,
+        "var_info name",
+        ["VarInfoNameTooLong", "MalformedVarInfo"],
+    )
 }
 
 /// What a row's name says it is: a port's protocol, baud or options, or one
@@ -578,43 +620,95 @@ fn row(name: &str) -> Option<(Row, u8)> {
     }
 }
 
-/// Each compiled port's protocol, baud and options, SERIAL0 first, read from
-/// `AP_SerialManager::var_info`. Whole 16-byte entries are read up to the
-/// first whose type is `AP_PARAM_NONE`, where ArduPilot stops
-/// (`AP_Param.cpp:1498-1500`); that entry must be exactly `AP_GROUPEND`
-/// (`AP_Param.h:170`) and the symbol's last. Every other row must be one
-/// [`row`] names, with no flags (so its union is the `float` default:
-/// `AP_PARAM_FLAG_DEFAULT_POINTER` and the group pointers are flags,
-/// `AP_Param.h:137-170`, `AP_Param.cpp:2619-2622`), its member's type, and a
-/// default that the member holds exactly. Anything else, a row named twice,
-/// or a port without each of its rows, is refused by name (`INV-06`).
-pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
-    let data = object(bytes, VAR_INFO_SYMBOL, |size| {
+/// One `AP_Param::GroupInfo` before `AP_GROUPEND`.
+struct GroupRow<'a> {
+    /// Its index in the table.
+    i: usize,
+    name: &'a str,
+    offset: i32,
+    /// The union's bits: a `float` default when `flags` is 0.
+    bits: u32,
+    flags: u16,
+    kind: u8,
+}
+
+/// The rows of the `AP_Param::GroupInfo` array `symbol`, a whole number of
+/// 16-byte entries, read up to the first whose type is `AP_PARAM_NONE`,
+/// where ArduPilot stops (`AP_Param.cpp:1498-1500`); that entry must be
+/// exactly `AP_GROUPEND` (`AP_Param.h:170`) and the symbol's last. `table`
+/// names it in a refusal.
+fn group_rows<'a>(
+    bytes: &'a [u8],
+    symbol: &[u8],
+    table: &str,
+) -> Result<Vec<GroupRow<'a>>, Refusal> {
+    let data = object(bytes, symbol, |size| {
         (size == 0 || !(size as usize).is_multiple_of(GROUP_INFO_LEN)).then(|| {
             format!("{size} bytes, not whole {GROUP_INFO_LEN}-byte AP_Param::GroupInfo entries")
         })
     })?;
     let entries = data.as_chunks::<GROUP_INFO_LEN>().0;
-    let malformed = |i: usize, why: String| {
-        refuse::<()>("MalformedVarInfo", format!("var_info entry {i} {why}"))
-    };
-    let mut seen: Vec<String> = Vec::new();
-    // Per port: protocol, baud, options.
-    let mut ports: [(Option<i8>, Option<i32>, Option<i32>); 10] = [(None, None, None); 10];
-    let mut ended = false;
+    let mut rows = Vec::new();
     for (i, e) in entries.iter().enumerate() {
         let (name_at, flags, idx, kind) = (u32_at(e, 0), u16_at(e, 12), e[14], e[15]);
         let name = flash_str(bytes, name_at)?;
         if kind == AP_PARAM_NONE {
             if i + 1 != entries.len() || !name.is_empty() || e[4..14] != [0; 10] || idx != 0xff {
-                malformed(
-                    i,
-                    "has type AP_PARAM_NONE but is not AP_GROUPEND ({\"\", 0, 0, 0, 0xFF, 0}) as the table's last entry".to_owned(),
-                )?;
+                return refuse(
+                    "MalformedVarInfo",
+                    format!(
+                        "{table} entry {i} has type AP_PARAM_NONE but is not AP_GROUPEND ({{\"\", 0, 0, 0, 0xFF, 0}}) as the table's last entry"
+                    ),
+                );
             }
-            ended = true;
-            break;
+            return Ok(rows);
         }
+        rows.push(GroupRow {
+            i,
+            name,
+            offset: u32_at(e, 4) as i32,
+            bits: u32_at(e, 8),
+            flags,
+            kind,
+        });
+    }
+    refuse(
+        "VarInfoUnterminated",
+        format!("{table}'s {} entries hold no AP_GROUPEND", entries.len()),
+    )
+}
+
+/// `sizeof(AP_SerialManager::UARTState)` and where `baud`, `options` and
+/// `protocol` sit in it (`AP_SerialManager.h:143-162`), `state[]` at the
+/// object's offset 0: `n_BAUD` is at `24n`, `n_OPTIONS` at `24n + 4`,
+/// `n_PROTOCOL` at `24n + 8`, measured on every board (`spike/4406` §2.3).
+const UART_STATE_LEN: i64 = 24;
+
+/// Each compiled port's protocol, baud and options, SERIAL0 first, read from
+/// `AP_SerialManager::var_info` ([`group_rows`]). Every row must be one
+/// [`row`] names, with no flags (so its union is the `float` default:
+/// `AP_PARAM_FLAG_DEFAULT_POINTER` and the group pointers are flags,
+/// `AP_Param.h:137-170`, `AP_Param.cpp:2619-2622`), its member's type, its
+/// member's offset (ArduPilot applies a default by offset, not by name,
+/// `AP_Param.cpp:1490-1497`), and a default that the member holds exactly.
+/// Anything else, a row named twice, or a port without each of its rows, is
+/// refused by name (`INV-06`).
+pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
+    let malformed = |i: usize, why: String| {
+        refuse::<()>("MalformedVarInfo", format!("var_info entry {i} {why}"))
+    };
+    let mut seen: Vec<&str> = Vec::new();
+    // Per port: protocol, baud, options.
+    let mut ports: [(Option<i8>, Option<i32>, Option<i32>); 10] = [(None, None, None); 10];
+    for GroupRow {
+        i,
+        name,
+        offset,
+        bits,
+        flags,
+        kind,
+    } in group_rows(bytes, VAR_INFO_SYMBOL, "var_info")?
+    {
         if flags != 0 {
             malformed(
                 i,
@@ -630,11 +724,25 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
         if kind != want {
             malformed(i, format!("(`{name}`) has type {kind}, not {want}"))?;
         }
-        if seen.iter().any(|s| s == name) {
+        let at = match row {
+            Row::Pass => None,
+            Row::Baud(n) => Some(UART_STATE_LEN * i64::from(n)),
+            Row::Options(n) => Some(UART_STATE_LEN * i64::from(n) + 4),
+            Row::Protocol(n) => Some(UART_STATE_LEN * i64::from(n) + 8),
+        };
+        if let Some(at) = at.filter(|at| *at != i64::from(offset)) {
+            return refuse(
+                "VarInfoRowOffset",
+                format!(
+                    "var_info entry {i} (`{name}`) sets the member at offset {offset}, not {at} (24n + 0 BAUD, 4 OPTIONS, 8 PROTOCOL, as measured on every board): ArduPilot applies the default there, whatever the name says (AP_Param.cpp:1490-1497)"
+                ),
+            );
+        }
+        if seen.contains(&name) {
             return refuse("VarInfoRowTwice", format!("var_info names `{name}` twice"));
         }
-        seen.push(name.to_owned());
-        let value = f32::from_bits(u32_at(e, 8));
+        seen.push(name);
+        let value = f32::from_bits(bits);
         // ArduPilot converts the float to the member's integer type
         // (`AP_Param.cpp:1471-1489`); only a value that type holds exactly
         // is a default this reader can state.
@@ -657,12 +765,6 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
                 format!("(`{name}`) defaults to {value}, which its type does not hold exactly"),
             )?,
         }
-    }
-    if !ended {
-        return refuse(
-            "VarInfoUnterminated",
-            format!("var_info's {} entries hold no AP_GROUPEND", entries.len()),
-        );
     }
     let mut out = Vec::new();
     for (n, row) in ports.iter().enumerate() {
@@ -693,6 +795,195 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
         }
     }
     Ok(out)
+}
+
+/// ArduPilot's GPS parameter table, `AP_GPS::var_info` (`AP_GPS.cpp:135-290`).
+pub const GPS_VAR_INFO_SYMBOL: &[u8] = b"_ZN6AP_GPS8var_infoE";
+
+/// `AP_PARAM_GROUP`, and `AP_PARAM_FLAG_NESTED_OFFSET`: a receiver's row is
+/// `AP_SUBGROUPINFO(params[i], "<i+1>_", …)` (`AP_GPS.cpp:280-286`,
+/// `AP_Param.h:159`, `:81`, `:192`).
+const AP_PARAM_GROUP: u8 = 6;
+const AP_PARAM_FLAG_NESTED_OFFSET: u16 = 1;
+
+/// How many GPS receivers the ELF compiles, read from `AP_GPS::var_info`
+/// ([`group_rows`]): one subgroup row per receiver, `1_`, `2_`, … in order
+/// (`GPS_MAX_RECEIVERS`, `AP_GPS_config.h:16`; `AP_GPS.cpp:280-286`).
+/// `AP_GPS::init` gives a serial port only to a receiver (`AP_GPS.cpp:345-349`),
+/// so this is the most GPS ports ArduPilot can bind. `None` when the ELF has
+/// no `AP_GPS::var_info` (AP_GPS is not compiled). A group row that is not
+/// the next receiver's, with any other flags, is refused by name.
+pub fn gps_receivers(bytes: &[u8]) -> Result<Option<u8>, Refusal> {
+    if symbols_named(bytes, &header(bytes)?, GPS_VAR_INFO_SYMBOL)?.is_empty() {
+        return Ok(None);
+    }
+    let mut receivers: u8 = 0;
+    for r in group_rows(bytes, GPS_VAR_INFO_SYMBOL, "AP_GPS::var_info")? {
+        if r.kind != AP_PARAM_GROUP {
+            continue;
+        }
+        let next = receivers.saturating_add(1);
+        if r.name != format!("{next}_") || r.flags != AP_PARAM_FLAG_NESTED_OFFSET {
+            return refuse(
+                "MalformedGpsVarInfo",
+                format!(
+                    "AP_GPS::var_info entry {} is a group `{}` with flags {:#06x}, not receiver {next}'s `{next}_` with AP_PARAM_FLAG_NESTED_OFFSET (AP_GPS.cpp:280-286)",
+                    r.i, r.name, r.flags
+                ),
+            );
+        }
+        receivers = next;
+    }
+    Ok(Some(receivers))
+}
+
+/// The parameter-defaults signatures (`AET-WO-4405` D4, measured in
+/// `spike/4406` §2.1): what lets ArduPilot replace the defaults `var_info`
+/// compiles before it reads parameter storage (`AP_Param::load_all` calls
+/// `reload_defaults_file`, `AP_Param.cpp:1563`, `:1599-1627`;
+/// `get_default_value` takes an override first, `:2612-2622`).
+pub const LOAD_DEFAULTS_FILE: &[u8] = b"_ZN8AP_Param18load_defaults_fileEPKcb";
+pub const LOAD_EMBEDDED_PARAM_DEFAULTS: &[u8] = b"_ZN8AP_Param28load_embedded_param_defaultsEb";
+pub const PARAM_DEFAULTS_DATA: &[u8] = b"_ZN8AP_Param19param_defaults_dataE";
+pub const ROMFS_FILES: &[u8] = b"_ZN8AP_ROMFS5filesE";
+
+/// `param_defaults_struct` (`AP_Param.h:682-688`, `AP_Param.cpp:134-139`):
+/// `"PARMDEF"` and eight magic bytes, `uint16_t max_length`, `uint16_t
+/// length`, then `max_length` bytes of `NAME value` lines.
+const PARAM_DEFAULTS_MAGIC: [u8; 16] = *b"PARMDEF\0\x55\x37\xf4\xa0\x38\x5d\x48\x5b";
+const PARAM_DEFAULTS_HEADER: u32 = 20;
+
+/// ArduPilot's scripting parameter table, `AP_Scripting::var_info`
+/// (`AP_Scripting.cpp:65-170`), whose `ENABLE` row is `SCR_ENABLE`
+/// (`AP_GROUPINFO_FLAGS(..., SCRIPTING_ENABLE_DEFAULT, AP_PARAM_FLAG_ENABLE)`,
+/// `:72`; `AP_Param.h:88`).
+pub const SCRIPTING_VAR_INFO: &[u8] = b"_ZN12AP_Scripting8var_infoE";
+const AP_PARAM_FLAG_ENABLE: u16 = 1 << 2;
+
+/// `AP_ROMFS::embedded_file` on ARM32 (`AP_ROMFS.h:30-36`): `filename` (a
+/// pointer), `compressed_size`, `decompressed_size`, `crc`, `contents`.
+const ROMFS_ENTRY_LEN: u32 = 20;
+
+/// The longest ROMFS file name read: a path such as `scripts/<name>.lua`.
+const ROMFS_NAME_MAX: usize = 128;
+
+/// The file ChibiOS loads defaults from: `get_custom_defaults_file` is
+/// `@ROMFS/defaults.parm` on every board (`AP_HAL_ChibiOS/Util.h:43-45`), and
+/// ROMFS finds it by this name (`AP_Param.cpp:1647-1666`, `AP_ROMFS.cpp:37-46`).
+const ROMFS_DEFAULTS: &str = "defaults.parm";
+
+/// Every way the ELF can apply parameter defaults at boot over what
+/// `var_info` compiles, one line each (each line below cites its source;
+/// when each is linked, `spike/4406` §1.1), empty when it can apply none.
+/// Lua is two of them, ruled on the work order's PR (D-c): a script in
+/// ROMFS, and scripting compiled on by default, which runs a script from
+/// the SD card as well.
+///
+/// `AP_Param::reload_defaults_file` is defined in every build and is not a
+/// signature. A symbol that is absent is not read: a board without ROMFS
+/// lists no file. A symbol that is present but malformed is refused by name.
+pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
+    let sections = header(bytes)?;
+    let named = |symbol: &[u8]| symbols_named(bytes, &sections, symbol);
+    let mut found = Vec::new();
+    for (symbol, what) in [
+        (
+            LOAD_DEFAULTS_FILE,
+            "AP_Param::load_defaults_file is linked: a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406)",
+        ),
+        (
+            LOAD_EMBEDDED_PARAM_DEFAULTS,
+            "AP_Param::load_embedded_param_defaults is linked: defaults embedded in the image, which apj_tool can write after the build, are read at boot (AP_Param.cpp:1618-1622, :2602-2605)",
+        ),
+    ] {
+        if !named(symbol)?.is_empty() {
+            found.push(what.to_owned());
+        }
+    }
+    if !named(PARAM_DEFAULTS_DATA)?.is_empty() {
+        let data = object(bytes, PARAM_DEFAULTS_DATA, |size| {
+            (size < PARAM_DEFAULTS_HEADER).then(|| {
+                format!("{size} bytes, shorter than its {PARAM_DEFAULTS_HEADER}-byte header")
+            })
+        })?;
+        let (max, length) = (u16_at(data, 16), u16_at(data, 18));
+        let room = data.len() as u32 - PARAM_DEFAULTS_HEADER;
+        if data[..16] != PARAM_DEFAULTS_MAGIC || u32::from(max) != room || length > max {
+            return refuse(
+                "MalformedParamDefaults",
+                format!(
+                    "AP_Param::param_defaults_data is not \"PARMDEF\" and its magic, then max_length {room} and a length within it (AP_Param.h:682-688): magic {}, max_length {max}, length {length}",
+                    if data[..16] == PARAM_DEFAULTS_MAGIC {
+                        "right"
+                    } else {
+                        "wrong"
+                    }
+                ),
+            );
+        }
+        if length != 0 {
+            found.push(format!(
+                "AP_Param::param_defaults_data holds {length} bytes of defaults (AP_Param.cpp:1618-1622)"
+            ));
+        }
+    }
+    if !named(ROMFS_FILES)?.is_empty() {
+        let data = object(bytes, ROMFS_FILES, |size| {
+            // A board with no ROMFS has no such symbol (`spike/4406`
+            // `out/measure-advnoromfs.txt`); an empty one is not a form
+            // ArduPilot was measured to write.
+            (size == 0 || size % ROMFS_ENTRY_LEN != 0).then(|| {
+                format!("{size} bytes, not 1 or more whole {ROMFS_ENTRY_LEN}-byte AP_ROMFS::embedded_file entries")
+            })
+        })?;
+        for e in data.as_chunks::<{ ROMFS_ENTRY_LEN as usize }>().0 {
+            let name = flash_cstr(
+                bytes,
+                u32_at(e, 0),
+                ROMFS_NAME_MAX,
+                "ROMFS file name",
+                ["RomfsNameTooLong", "MalformedRomfs"],
+            )?;
+            if name == ROMFS_DEFAULTS {
+                found.push(format!(
+                    "ROMFS lists {ROMFS_DEFAULTS}, which ChibiOS loads at boot as @ROMFS/{ROMFS_DEFAULTS} (AP_HAL_ChibiOS/Util.h:43-45, AP_Param.cpp:1647-1666)"
+                ));
+            } else if name.starts_with("scripts") && name.ends_with(".lua") {
+                found.push(format!(
+                    "ROMFS lists {name}, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550)"
+                ));
+            }
+        }
+    }
+    if !named(SCRIPTING_VAR_INFO)?.is_empty() {
+        let rows = group_rows(bytes, SCRIPTING_VAR_INFO, "AP_Scripting::var_info")?;
+        let enable: Vec<_> = rows.iter().filter(|r| r.name == "ENABLE").collect();
+        let [r] = enable.as_slice() else {
+            return refuse(
+                "MalformedScriptingVarInfo",
+                format!(
+                    "AP_Scripting::var_info holds {} ENABLE rows, not one (AP_Scripting.cpp:72)",
+                    enable.len()
+                ),
+            );
+        };
+        if r.kind != AP_PARAM_INT8 || r.flags != AP_PARAM_FLAG_ENABLE {
+            return refuse(
+                "MalformedScriptingVarInfo",
+                format!(
+                    "AP_Scripting::var_info entry {} (`ENABLE`) has type {} and flags {:#06x}, not AP_Int8 flagged AP_PARAM_FLAG_ENABLE alone, so its default is not a float this reader can state (AP_Scripting.cpp:72, AP_Param.h:88)",
+                    r.i, r.kind, r.flags
+                ),
+            );
+        }
+        let enabled = f32::from_bits(r.bits);
+        if enabled != 0.0 {
+            found.push(format!(
+                "AP_Scripting::var_info's ENABLE (SCR_ENABLE) defaults to {enabled}: Lua scripts, from ROMFS or the SD card, run at boot and can set parameters (AP_Scripting.cpp:55-72, :220; lua_scripts.cpp:548-550)"
+            ));
+        }
+    }
+    Ok(found)
 }
 
 /// The serial table, SERIAL0 first: a whole number of `SerialDef`s, at most
