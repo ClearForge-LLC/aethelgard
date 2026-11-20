@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/pwr_reset_clock_without_scale2.rs:17:42
+   |
+17 |     let _clock = rcc.reset_clock(&mut r, &unchecked);
+   |                      -----------         ^^^^^^^^^^ expected `&Scale2`, found `&Result<Scale2, PwrFault>`
+   |                      |
+   |                      arguments to this method are incorrect
+   |
+   = note: expected reference `&Scale2`
+              found reference `&Result<Scale2, PwrFault>`
+note: method defined here
+  --> tests/ui/fail/../motors-pwm/board.rs
+   |
+   |     pub fn reset_clock<R: Registers>(&self, r: &mut R, _scale2: &Scale2) -> Result<ResetClock, NotResetClock> {
+   |            ^^^^^^^^^^^                                 ----------------

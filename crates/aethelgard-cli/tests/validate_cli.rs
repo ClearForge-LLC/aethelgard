@@ -302,7 +302,7 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
     refused(
         &v,
         "SPI2.CFG1",
-        "acknowledge_unwitnessed[27].fields",
+        "acknowledge_unwitnessed[30].fields",
         "`MBR` of register `SPI2.CFG1`",
     );
     // No ledger at all: the console's pin taken by the flash's chip select.
@@ -311,7 +311,7 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
     v["serial_ports"][0]["tx"]["pin"] = "PA9".into();
     refused(
         &v,
-        "FLASH.OPTSR_CUR",
+        "PWR.CSR1",
         "acknowledge_unwitnessed[0].fields",
         "no witness ledger exists for this specification",
     );

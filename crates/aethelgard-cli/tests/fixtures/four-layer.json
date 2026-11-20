@@ -1,6 +1,31 @@
 {
-  "schema_version": 18,
+  "schema_version": 19,
   "acknowledge_unwitnessed": [
+    {
+      "register": "PWR.CSR1",
+      "class": "silicon-only",
+      "fields": [
+        "ACTVOSRDY"
+      ],
+      "reason": "Polled by the bring-up before VOS is raised: the twin's PWR model reads it 1 always (AET-WO-4240v D-3), so no wait is witnessed; bench row B-2 reads PWR_CSR1 after boot."
+    },
+    {
+      "register": "PWR.D3CR",
+      "class": "silicon-only",
+      "fields": [
+        "VOSRDY"
+      ],
+      "reason": "Polled after VOS Scale 2 is written: the twin's PWR model reads it 1 always (AET-WO-4240v D-3), so no wait is witnessed; bench row B-2 reads PWR_D3CR after boot."
+    },
+    {
+      "register": "FLASH.ACR",
+      "class": "silicon-only",
+      "fields": [
+        "LATENCY",
+        "WRHIGHFREQ"
+      ],
+      "reason": "Depended on at reset and never written (AET-WO-4240v D-7): 7 WS and WRHIGHFREQ 11 judged against RM0433 Rev 9 Table 17 by the VOS rule; Renode models no flash wait state."
+    },
     {
       "register": "FLASH.OPTSR_CUR",
       "class": "silicon-only",
@@ -286,6 +311,10 @@
     "supply": "VDD_3V3",
     "hse_hz": 0,
     "bor_level": 0,
+    "core_supply": {
+      "mode": "ldo",
+      "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
+    },
     "supply_source": {
       "connector": "J2",
       "pin": "1"

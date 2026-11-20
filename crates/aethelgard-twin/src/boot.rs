@@ -35,6 +35,41 @@ use crate::{TwinError, kind, model, platform, split_pin};
 /// reset value (0) nor a value the cold start writes.
 pub const BOOT_MAGIC: u32 = 0x2100_B007;
 
+// belt-and-suspenders: the generator holds its own copies of these three
+// (`aethelgard-svd-hal` `board/firmware.rs`), for the reason above; the boot
+// test proves the copies agree (`AET-WO-4240v` §1.4).
+/// What a firmware writes to the boot word, then parks, when `PWR_CR3` reads
+/// back supply bits other than the declared ones: another writer locked the
+/// register since power-on (`AET-WO-4240v` §1.4).
+pub const BOOT_SUPPLY_NOT_DECLARED: u32 = 0x2100_B0F1;
+/// The same, when `PWR_CSR1.ACTVOSRDY` did not rise within the bound.
+pub const BOOT_ACTVOSRDY_TIMEOUT: u32 = 0x2100_B0F2;
+/// The same, when `PWR_D3CR.VOSRDY` did not rise within the bound.
+pub const BOOT_VOSRDY_TIMEOUT: u32 = 0x2100_B0F3;
+
+/// The name a failed boot carries when its word 0 is one of the PWR words
+/// (`AET-WO-4240v` §1.4), with what the firmware found; `None` for any other
+/// word. The twin's PWR never reads a wait's bit 0 and stores the first
+/// `PWR_CR3` write ([`crate::platform::pwr_override`]), so a generated
+/// firmware that names one in the twin has a fault of its own.
+pub fn pwr_boot_word(word: u32) -> Option<(&'static str, &'static str)> {
+    match word {
+        BOOT_SUPPLY_NOT_DECLARED => Some((
+            "boot_supply_not_declared",
+            "PWR_CR3 read back supply bits other than the declared ones",
+        )),
+        BOOT_ACTVOSRDY_TIMEOUT => Some((
+            "boot_actvosrdy_timeout",
+            "PWR_CSR1.ACTVOSRDY did not rise within the firmware's bound",
+        )),
+        BOOT_VOSRDY_TIMEOUT => Some((
+            "boot_vosrdy_timeout",
+            "PWR_D3CR.VOSRDY did not rise within the firmware's bound",
+        )),
+        _ => None,
+    }
+}
+
 /// The seed every boot gives `emulation SetSeed`, so the platform's random
 /// initial values are the same in every run (spike F15).
 pub const SEED: u32 = 2100;
@@ -666,7 +701,9 @@ pub struct Image {
     /// Solved fields Renode 1.17.0 does not store, so no read can judge them
     /// (spike F11): `OTYPER` of every port with a solved pin, which the
     /// bring-up writes whole (`AET-WO-4230` D5, B0), an I2C's `TIMINGR`;
-    /// a timer's `BDTR.MOE` and each channel's `OCxPE` (`AET-WO-4300a`).
+    /// a timer's `BDTR.MOE` and each channel's `OCxPE` (`AET-WO-4300a`);
+    /// on a generated platform, `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`,
+    /// which its PWR reads 1 whatever happens (`AET-WO-4240v` §1.6).
     pub unobservable: Vec<String>,
     /// The identity reads of the devices (`AET-WO-2202`, `AET-WO-4200`).
     pub identity: IdentityPlan,
@@ -911,6 +948,15 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     }
     timer_registers(topology, &f, &mut field)?;
     serial_registers(topology, &f, &mut field, &mut unobservable)?;
+    // The two bits the generated bring-up waits on, which the emitted
+    // platform's PWR answers 1 whatever happens (`AET-WO-4240v` §1.6,
+    // [`platform::pwr_override`]); a foreign platform keeps the stock stub.
+    if topology.foreign_clock.is_none() {
+        unobservable.extend([
+            "PWR.CSR1.ACTVOSRDY".to_owned(),
+            "PWR.D3CR.VOSRDY".to_owned(),
+        ]);
+    }
     unobservable.sort();
     unobservable.dedup();
     // Every enable register (`*ENR`, not `*LPENR`) of the header's

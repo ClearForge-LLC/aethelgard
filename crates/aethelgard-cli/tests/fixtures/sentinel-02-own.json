@@ -1,5 +1,5 @@
 {
-  "schema_version": 18,
+  "schema_version": 19,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -14,6 +14,10 @@
     "supply": "VDD_3V3",
     "hse_hz": 0,
     "bor_level": 3,
+    "core_supply": {
+      "mode": "ldo",
+      "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
+    },
     "supply_source": {
       "connector": "J2",
       "pin": "1"
@@ -21,6 +25,7 @@
     "foreign_clock": {
       "apb1_timers_hz": {"value": 200000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h, OSCILLATOR_HZ 0: PLL1 HSI/4*50/2 = 400 MHz sys_ck, HPRE /2, D2PPRE1 and D2PPRE2 /2, TIMPRE 1 (RM0433 Rev 9 Table 57)"},
       "apb2_timers_hz": {"value": 200000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h, OSCILLATOR_HZ 0: PLL1 HSI/4*50/2 = 400 MHz sys_ck, HPRE /2, D2PPRE1 and D2PPRE2 /2, TIMPRE 1 (RM0433 Rev 9 Table 57)"},
+      "vos": {"value": "scale1", "source": "ArduPilot Copter-4.7.2 (fb773567), ChibiOS stm32h7_mcuconf.h L109: STM32_VOS = STM32_VOS_SCALE1"},
       "usarts": {
         "UART4": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
         "UART5": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},

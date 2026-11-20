@@ -98,11 +98,15 @@ fn the_platform_adds_an_observer_and_keeps_each_pin_s_stock_route() {
             "{pin}"
         );
     }
-    // Then the brown-out level's presentation (`AET-WO-4230` D10), and last
-    // the clock's entries (`AET-WO-4400g`), the DWT's at the core clock last.
+    // Then the brown-out level's presentation (`AET-WO-4230` D10), the
+    // clock's entries (`AET-WO-4400g`), the DWT's at the core clock last,
+    // and last the PWR override (`AET-WO-4240v` D-3 (a)).
     let presentation = aethelgard_twin::boot::brown_out(&topology("motors-pwm"))
         .unwrap()
         .presentation();
+    let text = text
+        .strip_suffix(&platform::pwr_override().unwrap())
+        .expect("the PWR override last");
     let (head, clock) = text
         .split_once("\n// The clock (AET-WO-4400g)")
         .expect("the clock's entries");
