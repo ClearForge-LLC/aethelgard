@@ -110,6 +110,7 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - all five bench scenarios match (`droop-bor3`: pass);
   - every fab precondition is met;
   - the one difference is `"MANIFEST.json differs from the derived file"`. **No other file of the package moves.**
+- **Committed from the architect's `write=true` dispatch:** run 44727282739, at head a40d840a, after 2306 and 1209c. The `bench-package` artifact was copied byte for byte. Its 17 files equal the committed package's except `MANIFEST.json`, where only `verdict_sha256` moved (42aa6346… → 78ffb908…).
 
 ## §1.5 again, after `4240v` merged (main 943f7112; `PREDICTIONS-3.md` committed first, `ba2d0017`)
 
