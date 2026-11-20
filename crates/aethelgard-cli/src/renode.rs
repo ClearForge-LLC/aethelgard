@@ -348,6 +348,11 @@ pub struct BootPlan<'a> {
     /// The boot's fresh capture directory, which the CLI made and Renode may
     /// add to: one file backend per port. `None` without a serial port.
     pub capture: Option<&'a std::path::Path>,
+    /// The generated firmware's PWR rule (`AET-WO-4240v` §1.6): with it, the
+    /// PWR's and the RCC's accesses are logged and judged by
+    /// [`aethelgard_twin::serial::judge_pwr`]. `None` for a foreign firmware,
+    /// which is never given it.
+    pub pwr: Option<&'a aethelgard_twin::serial::PwrRule>,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -502,23 +507,25 @@ impl BootPlan<'_> {
         c
     }
 
-    /// Before the first `RunFor`, with a serial port: Renode's access log on
-    /// each port's USART, each of its pins' GPIO ports and the RCC
-    /// (adversarial F1–F4, pass 2 A1, A2; measured, fix 1 P1, P2: one line per
-    /// access, kept through `machine Reset`), then one file backend per stock
+    /// Before the first `RunFor`, after the judge's cold RCC writes: Renode's
+    /// access log on each of [`Self::logged_sources`] (adversarial F1–F4,
+    /// pass 2 A1, A2; measured, fix 1 P1, P2: one line per access, kept
+    /// through `machine Reset`; the PWR's script logs alike, `AET-WO-4240v`
+    /// FEEDBACK), then, with a serial port, one file backend per stock
     /// USART and UART in the
     /// capture directory, the ports' last and in their order: Renode opens
     /// each file new (`UartFileBackend.cs`) and writes each byte the USART
     /// transmits, flushed (`true`). A byte on a USART no port names is
     /// forged (F12).
     fn capture_commands(&self) -> Vec<String> {
+        let mut c: Vec<String> = self
+            .logged_sources()
+            .into_iter()
+            .map(|source| format!("sysbus LogPeripheralAccess sysbus.{source} true"))
+            .collect();
         let Some(dir) = self.capture else {
-            return Vec::new();
+            return c;
         };
-        let mut c: Vec<String> = Vec::new();
-        for source in self.logged_sources() {
-            c.push(format!("sysbus LogPeripheralAccess sysbus.{source} true"));
-        }
         let ports: Vec<&str> = self.serial.iter().map(|p| p.port.renode).collect();
         let others = aethelgard_twin::serial::stock_uarts()
             .into_iter()
@@ -534,7 +541,9 @@ impl BootPlan<'_> {
 
     /// Every peripheral whose accesses Renode logs: each port's USART, then
     /// each TX and RX pin's GPIO port, once each, in the ports' order, then
-    /// the RCC, whose writes may reset or reclock any of them; none without a serial
+    /// the RCC, whose writes may reset or reclock any of them, and last, with
+    /// the PWR rule, the PWR (`AET-WO-4240v` §1.6), whose writes must precede
+    /// every RCC enable write. None for a foreign firmware without a serial
     /// port.
     fn logged_sources(&self) -> Vec<&'static str> {
         let mut out: Vec<&'static str> = self.serial.iter().map(|p| p.port.renode).collect();
@@ -545,8 +554,11 @@ impl BootPlan<'_> {
                 }
             }
         }
-        if !out.is_empty() {
+        if !out.is_empty() || self.pwr.is_some() {
             out.push(aethelgard_twin::serial::RCC_RENODE);
+        }
+        if self.pwr.is_some() {
+            out.push(aethelgard_twin::serial::PWR_RENODE);
         }
         out
     }
@@ -864,6 +876,11 @@ pub struct Observed {
     /// bring-up never does ([`aethelgard_twin::boot::BrownOut::judge_accesses`]),
     /// empty when nothing; `None` when the log could not be read whole.
     pub flash_access: Option<Vec<String>>,
+    /// What the PWR's and the RCC's access log of each boot shows that the
+    /// generated bring-up never does ([`aethelgard_twin::serial::judge_pwr`],
+    /// `AET-WO-4240v` §1.6), empty when nothing; `None` when the log could not
+    /// be read whole, or for a boot given no PWR rule.
+    pub pwr_access: Option<Vec<String>>,
     /// Each ELF self-loop's two halfwords as the machine held them after the
     /// run: a firmware can rewrite its flash in Renode (adversarial A1).
     pub loops: Vec<[u32; 2]>,
@@ -2193,6 +2210,7 @@ pub fn judge_boot(
         icsr: 0,
         brown_out: 0,
         flash_access: None,
+        pwr_access: None,
         loops: vec![[0, 0]; plan.self_loops.len()],
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
@@ -2269,6 +2287,21 @@ pub fn judge_boot(
         })
         .flatten()
         .map(|b| plan.image.brown_out.judge_accesses(&b, observed.brown_out));
+    // The PWR's writes against the generated bring-up's (`AET-WO-4240v`
+    // §1.6), with the RCC's, whose enable writes they must precede.
+    observed.pwr_access = plan
+        .pwr
+        .filter(|_| out.dropped_log_lines == 0)
+        .and_then(|rule| {
+            access_boots(
+                &boots,
+                &[
+                    aethelgard_twin::serial::PWR_RENODE,
+                    aethelgard_twin::serial::RCC_RENODE,
+                ],
+            )
+            .map(|b| aethelgard_twin::serial::judge_pwr(rule, &b))
+        });
     // How many of the last boot's accesses precede each port's injection:
     // the RX pin's words there are rebuilt from them (adversarial pass 2,
     // A2), each port's at its own first byte (`AET-WO-2302` D4).
@@ -2365,14 +2398,19 @@ pub fn judge_boot(
             ),
         ));
     }
+    // A PWR boot word (`AET-WO-4240v` §1.4) is named in the finding: the
+    // firmware parked on a fault of its supply or voltage scale.
     if !booted {
         findings.push(Finding::plain(
             aethelgard_chaos::campaign::BOOT_WORD_FINDING,
             format!(
-                "the boot word at {:#010x} reads {:#010x}, not {:#010x}",
+                "the boot word at {:#010x} reads {:#010x}, not {:#010x}{}",
                 plan.boot_word,
                 observed.boot_word,
-                aethelgard_twin::boot::BOOT_MAGIC
+                aethelgard_twin::boot::BOOT_MAGIC,
+                aethelgard_twin::boot::pwr_boot_word(observed.boot_word)
+                    .map(|(name, why)| format!(": {name}, {why}"))
+                    .unwrap_or_default()
             ),
         ));
     }
@@ -2496,6 +2534,9 @@ pub fn judge_boot(
             observed.brown_out,
             observed.flash_access.as_deref(),
         ));
+        if plan.pwr.is_some() {
+            findings.extend(pwr_findings(observed.pwr_access.as_deref()));
+        }
     }
     // The identity reads. A record is only meaningful once the firmware has
     // reached its fixed point, which it does after writing every record;
@@ -3222,6 +3263,25 @@ pub fn brown_out_findings(
     out
 }
 
+/// The finding of the generated bring-up's PWR writes (`AET-WO-4240v` §1.6),
+/// once the boot word is set: each departure the rule names, in one finding;
+/// or, when the log could not be read whole, that the sequence is
+/// unwitnessed.
+pub fn pwr_findings(pwr: Option<&[String]>) -> Option<Finding> {
+    match pwr {
+        Some([]) => None,
+        Some(notes) => Some(Finding::plain(PWR_ACCESS_FINDING, notes.join("; "))),
+        None => Some(Finding::plain(
+            PWR_ACCESS_FINDING,
+            "the PWR's and the RCC's access log could not be read whole, so the supply and VOS writes are unwitnessed"
+                .to_owned(),
+        )),
+    }
+}
+
+/// The kind of [`pwr_findings`]'s finding.
+pub const PWR_ACCESS_FINDING: &str = "pwr_access";
+
 /// Each boot's accesses on `sources` ([`aethelgard_twin::serial::access`]),
 /// in log order, each write a logged source's model says it ignored
 /// ([`aethelgard_twin::serial::refused_by`]) marked refused; `None` when a
@@ -3729,7 +3789,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":11,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
+            r#"{"schema_version":12,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -3792,6 +3852,7 @@ mod tests {
             resets,
             serial: &[],
             capture: None,
+            pwr: None,
         }
     }
 
@@ -4069,7 +4130,7 @@ mod tests {
         serde_json::from_str(CONSOLE_TOPOLOGY).unwrap()
     }
 
-    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":11,"specification_sha256":"c1072b716ed55a19167f94225fb387617c643e5a5ba79fd59db4d12924752e3e","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
+    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":12,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
     /// The console's expectations for a firmware whose sha256 is all `0x11`.
     fn console() -> Vec<Serial> {
@@ -5117,6 +5178,184 @@ mod tests {
         );
         assert!(
             failing.contains(&"motor_output_unwitnessed".to_owned()),
+            "{failing:?}"
+        );
+    }
+
+    /// The generated run's PWR rule (`AET-WO-4240v` §1.6), from the
+    /// console topology's declared `ldo`.
+    static PWR: std::sync::LazyLock<aethelgard_twin::serial::PwrRule> =
+        std::sync::LazyLock::new(|| {
+            aethelgard_twin::serial::pwr_rule(&console_topology()).unwrap()
+        });
+
+    /// `AET-WO-4240v` §1.6: a generated boot logs the RCC's and the PWR's
+    /// accesses after the judge's cold writes, with or without a serial port,
+    /// and turns the RCC's off around a reset's cold writes; a foreign boot,
+    /// given no PWR rule, logs neither.
+    #[test]
+    fn a_generated_boot_logs_the_pwr_and_the_rcc_and_a_foreign_one_neither() {
+        let image = image();
+        let generated = BootPlan {
+            pwr: Some(&PWR),
+            ..plan(&image, &[])
+        };
+        let c = generated.commands();
+        let cold = generated.cold().join("; ");
+        let on = "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; sysbus LogPeripheralAccess sysbus.rcc true; sysbus LogPeripheralAccess sysbus.pwr true; ";
+        assert!(c.contains(on), "{c}");
+        assert!(c.find(&cold).unwrap() < c.find(on).unwrap(), "{c}");
+        assert_eq!(c.matches("LogPeripheralAccess").count(), 3);
+        let resets = bor3();
+        let droop = BootPlan {
+            pwr: Some(&PWR),
+            ..plan(&image, &resets)
+        };
+        let c = droop.commands();
+        assert!(
+            c.contains(&format!(
+                "machine Reset; sysbus LogPeripheralAccess sysbus.rcc false; {cold}; sysbus LogPeripheralAccess sysbus.rcc true; cpu VectorTableOffset"
+            )),
+            "{c}"
+        );
+        // With a serial port, the PWR's log comes after the port's sources.
+        let serial = console();
+        let both = BootPlan {
+            pwr: Some(&PWR),
+            ..serial_plan(&image, &[], &serial)
+        };
+        assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
+        let foreign = foreign::commands(&plan(&image, &[]), &[]).unwrap();
+        assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
+        assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
+    }
+
+    /// `AET-WO-4240v` §1.4 and §1.6, through `judge_boot` whole: the
+    /// generated bring-up's PWR writes as Renode logs them (measured,
+    /// FEEDBACK) pass; a departure is `pwr_access`, once the boot word is
+    /// set; a log not read whole fails closed; and a PWR boot word is named
+    /// in `boot_word_missing`.
+    #[test]
+    fn judge_boot_holds_the_pwr_writes_to_the_rule() {
+        let image = image();
+        let loops = [0x0800_0010u64];
+        let executable = [(0x0800_0000u64, 0x0801_0000u64)];
+        let p = BootPlan {
+            self_loops: &loops,
+            executable: &executable,
+            pwr: Some(&PWR),
+            ..plan(&image, &[])
+        };
+        let flash = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0";
+        let judge = |log: &[&str], word: u32, dropped: u64| {
+            let mut text = format!("{flash}\n");
+            for l in log {
+                text.push_str(&at(0, l));
+                text.push('\n');
+            }
+            text.push_str(&at(10_000, "[NOISY] i2c1.u2: Write D0"));
+            text.push('\n');
+            text.push_str(&at(10_000, "[NOISY] i2c1.u2: Read 60"));
+            text.push('\n');
+            text.push_str(&at(
+                30_750,
+                &format!("[WARNING] sysbus: AETHELGARD-BOOTWORD {word:x} 0 3075\n"),
+            ));
+            text.push_str("AETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(word),
+                    Read::Instructions => 10_000_000,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
+                    Read::Record(_, _) => 0x60,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = output(text.into_bytes(), dropped);
+            let (f, _, o) = judge_boot(0, &out, &p, &Captured::default()).unwrap();
+            let failing: Vec<(String, String)> = f
+                .iter()
+                .filter(|f| f.severity != "info")
+                .map(|f| (f.kind.clone(), f.message.clone()))
+                .collect();
+            (failing, o.unwrap())
+        };
+        let good = [
+            "[INFO] pwr: [cpu: 0x800000A] ReadUInt32 from 0xC (unknown), returned 0x46",
+            "[INFO] pwr: [cpu: 0x8000014] WriteUInt32 to 0xC (unknown), value 0x42",
+            "[INFO] pwr: [cpu: 0x8000016] ReadUInt32 from 0xC (unknown), returned 0x42",
+            "[INFO] pwr: [cpu: 0x8000020] ReadUInt32 from 0x4 (unknown), returned 0x6000",
+            "[INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x8000",
+            "[INFO] pwr: [cpu: 0x800002C] ReadUInt32 from 0x18 (unknown), returned 0xA000",
+            "[INFO] rcc: [cpu: 0x8000710] WriteUInt32 to 0xE0 (AHB4Clock), value 0x3",
+        ];
+        let magic = aethelgard_twin::boot::BOOT_MAGIC;
+        let (failing, o) = judge(&good, magic, 0);
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(o.pwr_access, Some(Vec::new()));
+        // VOS Scale 3, then the RCC enable before the D3CR write.
+        let mut bad = good;
+        bad[4] = "[INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x4000";
+        bad.swap(4, 6);
+        let (failing, _) = judge(&bad, magic, 0);
+        assert_eq!(
+            failing,
+            [(
+                PWR_ACCESS_FINDING.to_owned(),
+                "PWR.D3CR written after RCC.AHB4ENR, an enable register; PWR.D3CR 0x4000 written, not VOS Scale 2 alone (0x8000)".to_owned()
+            )]
+        );
+        // Not read whole: unwitnessed, by name.
+        let (failing, o) = judge(&good, magic, 1);
+        assert_eq!(o.pwr_access, None);
+        assert!(
+            failing
+                .iter()
+                .any(|(k, m)| k == PWR_ACCESS_FINDING && m.contains("could not be read whole")),
+            "{failing:?}"
+        );
+        // A PWR boot word: the boot failed, by its name; the PWR's writes are
+        // not judged before the boot word, as the flash controller's are not.
+        for (word, name) in [
+            (
+                aethelgard_twin::boot::BOOT_SUPPLY_NOT_DECLARED,
+                "boot_supply_not_declared",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_ACTVOSRDY_TIMEOUT,
+                "boot_actvosrdy_timeout",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_VOSRDY_TIMEOUT,
+                "boot_vosrdy_timeout",
+            ),
+        ] {
+            let (failing, _) = judge(&good[..2], word, 0);
+            let missing: Vec<&(String, String)> = failing
+                .iter()
+                .filter(|(k, _)| k == aethelgard_chaos::campaign::BOOT_WORD_FINDING)
+                .collect();
+            assert_eq!(missing.len(), 1, "{failing:?}");
+            assert!(missing[0].1.contains(&format!(": {name}, ")), "{failing:?}");
+            assert!(
+                failing.iter().all(|(k, _)| k != PWR_ACCESS_FINDING),
+                "{failing:?}"
+            );
+        }
+        let (failing, _) = judge(&good, 0, 0);
+        assert!(
+            failing
+                .iter()
+                .any(|(k, m)| k == aethelgard_chaos::campaign::BOOT_WORD_FINDING
+                    && m.ends_with("reads 0x00000000, not 0x2100b007")),
             "{failing:?}"
         );
     }
@@ -6254,6 +6493,7 @@ mod tests {
             icsr: 0,
             brown_out: 0,
             flash_access: None,
+            pwr_access: None,
             loops: Vec::new(),
             registers: Vec::new(),
             records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],

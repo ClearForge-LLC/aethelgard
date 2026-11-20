@@ -1,0 +1,15 @@
+error[E0061]: this method takes 2 arguments but 1 argument was supplied
+  --> tests/ui/fail/pwr_reset_clock_without_token.rs:17:22
+   |
+17 |     let _clock = rcc.reset_clock(&mut r);
+   |                      ^^^^^^^^^^^-------- argument #2 of type `&Scale2` is missing
+   |
+note: method defined here
+  --> tests/ui/fail/../motors-pwm/board.rs
+   |
+   |     pub fn reset_clock<R: Registers>(&self, r: &mut R, _scale2: &Scale2) -> Result<ResetClock, NotResetClock> {
+   |            ^^^^^^^^^^^                                 ----------------
+help: provide the argument
+   |
+17 |     let _clock = rcc.reset_clock(&mut r, /* &Scale2 */);
+   |                                        +++++++++++++++

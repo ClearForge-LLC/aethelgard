@@ -130,6 +130,7 @@ fn spec_json(ports: Vec<Value>) -> Value {
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
         "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+            "core_supply": {"mode": "ldo", "source": "DS12117 Rev 10 sec. 3.5.1 p. 27"},
             "supply_source": {"connector": "J91", "pin": "1"}},
         "voltage_domains": [
             {"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50},
@@ -1566,7 +1567,7 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
 fn a_version_9_specification_is_refused() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 18);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 19);
     let mut v = spec_json(vec![port("C", None, None, None)]);
     v["schema_version"] = json!(9);
     let e = refused(v.clone());
@@ -1575,7 +1576,7 @@ fn a_version_9_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 9,
-                expected: 18
+                expected: 19
             }
         ),
         "{e}"
@@ -1604,7 +1605,7 @@ fn a_version_10_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 10,
-                expected: 18
+                expected: 19
             }
         ),
         "{e}"
@@ -1631,7 +1632,7 @@ fn a_version_11_specification_is_refused() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 11,
-                expected: 18
+                expected: 19
             }
         ),
         "{e}"

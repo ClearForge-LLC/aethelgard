@@ -184,7 +184,7 @@ fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
         "{verdict}"
     );
     assert_eq!(
-        verdict["error"]["message"], "schema_version is 14, not 18",
+        verdict["error"]["message"], "schema_version is 14, not 19",
         "{verdict}"
     );
     let _ = std::fs::remove_dir_all(&dir);
@@ -425,14 +425,16 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// is refused by name, writing nothing.
 ///
 /// `AET-WO-1315` (ruled (a), C1 anchored to U10): 1 character places, at its
-/// measured outline, so the pass branch stays exercised; 2, 6 and 8 are
+/// measured outline, so the pass branch stays exercised; 2, 6 and 8 were
 /// refused (the x headroom fell from 14.75 to 3.5 mm, its FEEDBACK D1).
+/// `AET-WO-1317`: 2 and 6 place on the reseeded rank's second seed, at their
+/// measured outlines (its FEEDBACK §4.3); 8 is still refused, every seed over.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
         (1, Some((98_800_000, 69_850_000))),
-        (2, None),
-        (6, None),
+        (2, Some((89_200_000, 83_200_000))),
+        (6, Some((98_150_000, 87_450_000))),
         (8, None),
     ] {
         let v = rename::sized(&fixture(), len);
@@ -444,13 +446,37 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
                 assert_gaps(&e);
                 assert_loops(&spec, &solved, &table, &e.board);
             }
-            (Err(e), None) => assert!(
-                matches!(e.kind(), "OutlineUnreachable" | "OutlineTooSmall"),
-                "{len}: {e}"
-            ),
+            (Err(e), None) => {
+                assert!(
+                    matches!(e.kind(), "OutlineUnreachable" | "OutlineTooSmall"),
+                    "{len}: {e}"
+                );
+                // `AET-WO-1317`: the refusal names the least-over of the nine
+                // attempts (seed 0 was 118.500 x 79.450 mm).
+                assert!(
+                    e.to_string().contains(
+                        "the placer's best outline is 102.150 x 88.200 mm, over by 2.150 x 0.000 mm"
+                    ),
+                    "{len}: {e}"
+                );
+            }
             (r, _) => panic!("{len}: {:?}", r.map(|e| outline_nm(&e.board))),
         }
     }
+}
+
+/// The fixture with `board.forward` "top" and U5 turned so its x axis points
+/// `x` (`AET-WO-4400d`'s variant).
+fn turned(mut v: Value, x: &str) -> Value {
+    v["board"]["forward"] = json!("top");
+    for key in ["spi_devices", "i2c_devices"] {
+        for d in v[key].as_array_mut().unwrap() {
+            if d["reference"] == "U5" {
+                d["orientation"] = json!({"x": x, "z": "up"});
+            }
+        }
+    }
+    v
 }
 
 /// `AET-WO-1313c` with `AET-WO-4400d`: under the bound, the IMU turned each
@@ -460,9 +486,8 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
 /// inside the outline (the zones are drawn from the part's origin and
 /// rotation, so a group moved whole carries them).
 ///
-/// `AET-WO-4202` (ruled (i), 23:10Z): with U2 gone, the forward turn no
-/// longer fits and is refused by name with its figures, as size samples 2,
-/// 6 and 8 are: the placer is not monotone in parts (its FEEDBACK §2.4).
+/// `AET-WO-1317`: the forward turn, refused since U2 left (`AET-WO-4202`),
+/// places on the reseeded rank's first seed (its FEEDBACK §4.3).
 #[test]
 fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
     for (x, rotation) in [
@@ -471,29 +496,8 @@ fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
         ("left", "180"),
         ("aft", "270"),
     ] {
-        let mut v = fixture();
-        v["board"]["forward"] = json!("top");
-        for key in ["spi_devices", "i2c_devices"] {
-            for d in v[key].as_array_mut().unwrap() {
-                if d["reference"] == "U5" {
-                    d["orientation"] = json!({"x": x, "z": "up"});
-                }
-            }
-        }
-        let (spec, solved, table) = solved(&v);
-        let emitted = schematic::emit(&spec, &solved, &table);
-        if x == "forward" {
-            let e = emitted.map(|_| ()).unwrap_err();
-            assert_eq!(e.kind(), "OutlineUnreachable", "{e}");
-            assert!(
-                e.to_string().contains(
-                    "the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm"
-                ),
-                "{e}"
-            );
-            continue;
-        }
-        let e = emitted.unwrap();
+        let (spec, solved, table) = solved(&turned(fixture(), x));
+        let e = schematic::emit(&spec, &solved, &table).unwrap();
         let tree = sexpr::parse(&e.board).unwrap();
         let u5 = tree
             .children("footprint")
@@ -527,5 +531,134 @@ fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
         assert!(points > 0, "{x}: U5 carries no keep-out zone");
         assert_gaps(&e);
         assert_loops(&spec, &solved, &table, &e.board);
+    }
+}
+
+/// The fixture as it was before `AET-WO-4202` took U2 away: 03d89554's hunk
+/// reversed (U2's device and load rows back, the flash pull-ups' load rows
+/// renumbered R7 and R8 again).
+fn with_u2(mut v: Value) -> Value {
+    v["i2c_devices"].as_array_mut().unwrap().insert(
+        0,
+        json!({"reference": "U2", "part": "BME280", "supply": "VDD_3V3", "bus": "SENSORS",
+               "address": 118, "pin_capacitance": null}),
+    );
+    let loads = v["power"]["loads"].as_array_mut().unwrap();
+    let flash: Vec<usize> = (0..loads.len())
+        .filter(|&i| {
+            loads[i]["source"]
+                .as_str()
+                .unwrap()
+                .contains("W25Q64JV rev J 9.4 ILI")
+        })
+        .collect();
+    assert_eq!(flash.len(), 2);
+    for (i, r) in flash.into_iter().zip(["R7", "R8"]) {
+        loads[i]["reference"] = json!(r);
+    }
+    let after = loads.iter().position(|l| l["reference"] == "R20").unwrap() + 1;
+    loads.insert(
+        after,
+        json!({"domain": "VDD_3V3", "milliamps": 1, "reference": "U2",
+               "source": "Bosch BST-BME280-DS001-24 rev 1.24 Table 1 p. 8: IDDP current during pressure measurement 714 uA (Max value at -40 C); rounded up"}),
+    );
+    v
+}
+
+/// Whether `v` places inside its bound: `Some(true)` placed, `Some(false)`
+/// refused for its outline, `None` refused before placement (by `validate`
+/// or the solver: not a placement to judge).
+fn fits(v: &Value) -> Option<bool> {
+    let spec: Specification = serde_json::from_value(v.clone()).ok()?;
+    spec.validate().ok()?;
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).ok()?;
+    match schematic::placement(&spec, &solved, &table) {
+        Ok(_) => Some(true),
+        Err(e) if e.kind() == "OutlineUnreachable" => Some(false),
+        Err(e) => panic!("{e}"),
+    }
+}
+
+/// `AET-WO-1317` §1.3, the sweep's slice: from each bounded variant that
+/// places, remove each declared I2C or SPI device, connector and test point in
+/// turn (with its load rows), as a specification would. Every removal that
+/// `validate` and the solver accept still places inside the bound. On `main`'s
+/// placer the forward turn and sizes 2 and 6 do not place whole; of the rest,
+/// four removals stop fitting: U2, TP14 and TP24 from the forward turn with U2,
+/// and Q_TP2 from size sample 1 (FEEDBACK §4.4). The variants are the fixture,
+/// its four turns, size samples 1, 2 and 6, and the forward turn with U2.
+#[test]
+fn removing_one_declared_part_never_stops_a_bounded_board_fitting() {
+    let mut variants: Vec<(String, Value)> = vec![("fixture".into(), fixture())];
+    for x in ["right", "forward", "left", "aft"] {
+        variants.push((format!("{x} turn"), turned(fixture(), x)));
+    }
+    for len in [1, 2, 6] {
+        variants.push((format!("size {len}"), rename::sized(&fixture(), len)));
+    }
+    variants.push((
+        "forward turn with U2".into(),
+        turned(with_u2(fixture()), "forward"),
+    ));
+    let mut cases = Vec::new();
+    for (name, v) in &variants {
+        assert_eq!(fits(v), Some(true), "{name} places whole");
+        for key in ["i2c_devices", "spi_devices", "connectors", "test_points"] {
+            for i in 0..v[key].as_array().unwrap().len() {
+                let mut r = v.clone();
+                let gone = r[key].as_array_mut().unwrap().remove(i);
+                let reference = gone["reference"].clone();
+                if let Some(loads) = r["power"]["loads"].as_array_mut() {
+                    loads.retain(|l| l["reference"] != reference);
+                }
+                cases.push((format!("{name} less {reference}"), r));
+            }
+        }
+    }
+    let threads = std::thread::available_parallelism().map_or(4, |n| n.get().min(8));
+    let placed = std::sync::atomic::AtomicUsize::new(0);
+    let refused: std::sync::Mutex<Vec<String>> = std::sync::Mutex::default();
+    std::thread::scope(|s| {
+        for chunk in cases.chunks(cases.len().div_ceil(threads)) {
+            let (placed, refused) = (&placed, &refused);
+            s.spawn(move || {
+                for (name, r) in chunk {
+                    match fits(r) {
+                        Some(true) => {
+                            placed.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        }
+                        Some(false) => refused.lock().unwrap().push(name.clone()),
+                        None => {}
+                    }
+                }
+            });
+        }
+    });
+    let refused = refused.into_inner().unwrap();
+    assert!(refused.is_empty(), "stopped fitting: {refused:?}");
+    // 33 removals from each variant (34 with U2), 5 each refused by
+    // `validate` (a connector a serial port or the debug port needs, or the
+    // flash an acknowledgement names): 8 x 28 + 29 placed.
+    assert_eq!(placed.into_inner(), 8 * 28 + 29);
+}
+
+/// `AET-WO-1317` §1.3: a board placed on a reseeded rank (the forward turn,
+/// on seed 1) is the same bytes on two runs, and the same placement under
+/// order-only renamings once names are taken out (`AET-WO-1313c`).
+#[test]
+fn a_reseeded_placement_is_deterministic_and_name_free() {
+    let place = |v: &Value| {
+        let (spec, solved, table) = solved(v);
+        schematic::placement(&spec, &solved, &table).unwrap()
+    };
+    let base = turned(fixture(), "forward");
+    let once = place(&base);
+    assert_eq!(place(&base), once, "two runs");
+    let want = name_free(&once);
+    for seed in 1..=5 {
+        let renamed = rename::order_only(&base, seed);
+        assert_ne!(renamed, base, "seed {seed} renames nothing");
+        assert_eq!(name_free(&place(&renamed)), want, "seed {seed}");
     }
 }

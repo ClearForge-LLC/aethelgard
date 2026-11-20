@@ -404,9 +404,11 @@ pub fn refused_by(body: &str) -> Option<&str> {
 }
 
 /// True for a line of Renode's access log ([`access`]) the judge never reads:
-/// a read of a GPIO port or of the RCC (any source but a USART and the flash
+/// a read of a GPIO port or of the RCC (any source but a USART, the flash
 /// controller, [`boot::FLASH_RENODE`], whose every access is judged:
-/// `AET-WO-4230` D10), a USART's read of `ISR` or `RDR` (any
+/// `AET-WO-4230` D10, and the PWR, [`PWR_RENODE`]), a PWR read of any word
+/// but `PWR_CR3`, whose value [`judge_pwr`] holds the write's other bits to
+/// (`AET-WO-4240v`: the bring-up's waits poll `CSR1` and `D3CR`), a USART's read of `ISR` or `RDR` (any
 /// width, in the word), or a write to a GPIO port's word other than `MODER`,
 /// `OTYPER`, `OSPEEDR`, `PUPDR`, `AFRL` and `AFRH` (a sub-word write into one
 /// of those is kept, and fails closed). A USART's read of any other word is
@@ -420,11 +422,23 @@ pub fn is_unjudged_access(body: &str) -> bool {
         if a.write {
             a.source.starts_with("gpioPort")
                 && gpio_judged_offsets().is_some_and(|o| !o.contains(&(a.offset & !3)))
+        } else if a.source == PWR_RENODE {
+            pwr_cr3_offset().is_some_and(|o| o != a.offset & !3)
         } else {
             a.source != boot::FLASH_RENODE
                 && (!usart_sources().contains(&a.source.as_str())
                     || usart_polled_offsets().is_some_and(|o| o.contains(&(a.offset & !3))))
         }
+    })
+}
+
+/// `PWR_CR3`'s offset, from the header, read once; `None` if the header
+/// cannot be read (then no PWR read is discarded).
+fn pwr_cr3_offset() -> Option<u32> {
+    static OFFSET: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *OFFSET.get_or_init(|| {
+        let f = cmsis::register_facts().ok()?;
+        f.layout("PWR").ok()?.offset("CR3", 0).ok()
     })
 }
 
@@ -1298,6 +1312,200 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
     out
 }
 
+/// Renode's name of the PWR in the stock platform (`pwr:
+/// Python.PythonPeripheral @ sysbus 0x58024800`, [`platform::STOCK_FILE`]
+/// L728): a generated boot's composition logs its accesses, and the emitted
+/// platform replaces its script ([`platform::pwr_override`], `AET-WO-4240v`
+/// D-3 (a)).
+pub const PWR_RENODE: &str = "pwr";
+
+/// `PWR_CR3`'s power-on reset value on revision V, `0x0000 0046` (RM0433 Rev 9
+/// §6.8.4, p. 307; `0x0000 0006` on revision Y). The Nucleo's die is revision
+/// V, measured (`DBGMCU_IDC` `0x20036450`, `AET-WO-3302` bench sheet), so the
+/// twin presents this word until the first write, and [`judge_pwr`] holds a
+/// write's other bits to it when the firmware read nothing first.
+pub const PWR_CR3_POR: u32 = 0x0000_0046;
+
+/// What a generated boot allows the PWR's writes to be (`AET-WO-4240v` §1.6),
+/// from the topology's declared supply and `aethelgard_ir::vos`'s words, never
+/// from the generator (`INV-07`): exactly one word write to `PWR_CR3`, whose
+/// supply bits ([`aethelgard_ir::vos::CR3_SUPPLY_MASK`]) are
+/// [`aethelgard_ir::vos::cr3_supply_bits`] of the declared mode and whose
+/// other bits are as the firmware last read them; then exactly one word write
+/// to `PWR_D3CR`, [`aethelgard_ir::vos::D3CR_VOS_SCALE2`]; both before any
+/// write to an RCC enable register. A foreign firmware is never given this
+/// rule.
+///
+/// What the twin cannot show of the sequence is [`PWR_RESIDUAL`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PwrRule {
+    /// Every register of the PWR's layout: its name and offset, from the
+    /// header.
+    pub registers: Vec<(String, u32)>,
+    /// `PWR_CR3`'s and `PWR_D3CR`'s offsets.
+    pub cr3: u32,
+    pub d3cr: u32,
+    /// The declared supply, by name, and its bits under the mask.
+    pub supply: &'static str,
+    pub supply_bits: u32,
+    /// The whole `PWR_D3CR` word the bring-up writes.
+    pub d3cr_word: u32,
+    /// The offsets of the RCC's enable registers ([`RccRule::enables`]).
+    pub rcc_enables: Vec<(String, u32)>,
+}
+
+/// What the twin cannot show of the PWR sequence (`AET-WO-4240v` §1.6), as
+/// the verdict states it on every generated boot: the module documentation
+/// of [`platform::pwr_override`] gives the reasons.
+pub const PWR_RESIDUAL: &str = "PWR (AET-WO-4240v): the twin never sees ACTVOSRDY or VOSRDY low, so no wait times out; it models no Run* mode; no twin clock depends on VOS, so a firmware left at VOS3 runs the same and only the IR's VOS rule refuses it; PWR_CR3's lock across a warm reset is modelled only as far as the platform stores the first write";
+
+/// The PWR rule of `topology`'s generated firmware.
+pub fn pwr_rule(topology: &SolvedTopology) -> Result<PwrRule, TwinError> {
+    use aethelgard_ir::vos;
+    let f = cmsis::register_facts()?;
+    let pwr = f.layout("PWR")?;
+    let rcc = f.layout("RCC")?;
+    Ok(PwrRule {
+        registers: pwr
+            .fields
+            .iter()
+            .flat_map(|r| (0..r.words).map(move |k| (r.name.clone(), r.offset + 4 * k)))
+            .collect(),
+        cr3: pwr.offset("CR3", 0)?,
+        d3cr: pwr.offset("D3CR", 0)?,
+        supply: topology.core_supply.name(),
+        supply_bits: vos::cr3_supply_bits(topology.core_supply),
+        d3cr_word: vos::D3CR_VOS_SCALE2,
+        rcc_enables: rcc
+            .fields
+            .iter()
+            .filter(|r| r.name.ends_with("ENR") && !r.name.ends_with("LPENR"))
+            .map(|r| (r.name.clone(), r.offset))
+            .collect(),
+    })
+}
+
+/// The PWR's writes in `boots` the bring-up never makes (`AET-WO-4240v`
+/// §1.6), each once, in the order first seen. `boots` are each boot's
+/// accesses of [`PWR_RENODE`] and [`RCC_RENODE`] in log order; a read of
+/// `PWR_CR3` sets the word its write's other bits must equal
+/// ([`PWR_CR3_POR`] before any). Named:
+/// - a write that is not a word write at a word's offset (`WriteByte to PWR
+///   0xC`);
+/// - a write to any PWR register but `CR3` and `D3CR` (`PWR.CR1 0x1 written,
+///   not CR3 or D3CR`);
+/// - a second write to either in a boot (`PWR.CR3 written twice in a boot`);
+/// - `D3CR` written before `CR3` (`PWR.D3CR written before PWR.CR3`);
+/// - a `CR3` word whose supply bits are not the declared ones, or whose other
+///   bits are not as read;
+/// - a `D3CR` word other than VOS Scale 2 alone;
+/// - either written after a write to an RCC enable register (`PWR.CR3
+///   written after RCC.AHB4ENR, an enable register`);
+/// - in the last boot, the boot the reads judge, either never written.
+pub fn judge_pwr(rule: &PwrRule, boots: &[Vec<Access>]) -> Vec<String> {
+    use aethelgard_ir::vos::CR3_SUPPLY_MASK;
+    let mut out: Vec<String> = Vec::new();
+    let mut note = |x: String| {
+        if !out.contains(&x) {
+            out.push(x);
+        }
+    };
+    let name = |offset: u32| {
+        rule.registers
+            .iter()
+            .find(|r| r.1 == offset && !r.0.starts_with("RESERVED"))
+            .map_or_else(|| format!("{offset:#X}"), |r| r.0.clone())
+    };
+    for (k, boot) in boots.iter().enumerate() {
+        let mut read = PWR_CR3_POR;
+        let (mut cr3, mut d3cr) = (0u32, 0u32);
+        let mut enabled: Option<&str> = None;
+        for a in boot {
+            if a.source == RCC_RENODE {
+                if a.write && enabled.is_none() {
+                    enabled = rule
+                        .rcc_enables
+                        .iter()
+                        .find(|e| e.1 == a.offset & !3)
+                        .map(|e| e.0.as_str());
+                }
+                continue;
+            }
+            if a.source != PWR_RENODE {
+                continue;
+            }
+            let value = u32::try_from(a.value).unwrap_or(u32::MAX);
+            if !a.write {
+                if a.bits == 32 && a.offset == rule.cr3 {
+                    read = value;
+                }
+                continue;
+            }
+            if a.bits != 32 || a.offset % 4 != 0 {
+                note(format!(
+                    "Write{} to PWR {:#X}",
+                    width_name(a.bits),
+                    a.offset
+                ));
+                continue;
+            }
+            let at = name(a.offset);
+            let count = if a.offset == rule.cr3 {
+                &mut cr3
+            } else if a.offset == rule.d3cr {
+                &mut d3cr
+            } else {
+                note(format!("PWR.{at} {value:#X} written, not CR3 or D3CR"));
+                continue;
+            };
+            *count += 1;
+            if *count > 1 {
+                note(format!("PWR.{at} written twice in a boot"));
+                continue;
+            }
+            if let Some(e) = enabled {
+                note(format!(
+                    "PWR.{at} written after RCC.{e}, an enable register"
+                ));
+            }
+            if a.offset == rule.cr3 {
+                let supply = value & CR3_SUPPLY_MASK;
+                if supply != rule.supply_bits {
+                    note(format!(
+                        "PWR.CR3 {value:#X} written: supply bits {supply:#05b}, not the declared {} {:#05b}",
+                        rule.supply, rule.supply_bits
+                    ));
+                }
+                if value & !CR3_SUPPLY_MASK != read & !CR3_SUPPLY_MASK {
+                    note(format!(
+                        "PWR.CR3 {value:#X} written: its other bits are not as read ({read:#X})"
+                    ));
+                }
+            } else {
+                if cr3 == 0 {
+                    note("PWR.D3CR written before PWR.CR3".to_owned());
+                }
+                if value != rule.d3cr_word {
+                    note(format!(
+                        "PWR.D3CR {value:#X} written, not VOS Scale 2 alone ({:#X})",
+                        rule.d3cr_word
+                    ));
+                }
+            }
+        }
+        if k + 1 == boots.len() {
+            for (n, at) in [(cr3, "CR3"), (d3cr, "D3CR")] {
+                if n == 0 {
+                    note(format!(
+                        "PWR.{at} never written in the boot the reads judge"
+                    ));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// How Renode names an access of `bits` bits: `Byte`, `UInt16`, `UInt32`,
 /// `UInt64`.
 fn width_name(bits: u8) -> &'static str {
@@ -1717,6 +1925,29 @@ mod tests {
                 "[INFO] gpioPortA: [cpu: 0x8000A2A] ReadUInt32 from 0x4 (OutputType), returned 0x0",
                 true,
             ),
+            // `AET-WO-4240v` (measured, FEEDBACK): the PWR's reads of CR3 are
+            // kept, its waits' polls of CSR1 and D3CR discarded, every write
+            // kept.
+            (
+                "[INFO] pwr: [cpu: 0x800000A] ReadUInt32 from 0xC (unknown), returned 0x46",
+                false,
+            ),
+            (
+                "[INFO] pwr: [cpu: 0x8000020] ReadUInt32 from 0x4 (unknown), returned 0x6000",
+                true,
+            ),
+            (
+                "[INFO] pwr: [cpu: 0x800002C] ReadUInt32 from 0x18 (unknown), returned 0xA000",
+                true,
+            ),
+            (
+                "[INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x8000",
+                false,
+            ),
+            (
+                "[INFO] pwr: [cpu: 0x8000040] WriteByte to 0xC (unknown), value 0x1",
+                false,
+            ),
         ] {
             assert_eq!(is_unjudged_access(line), unjudged, "{line}");
         }
@@ -1798,6 +2029,157 @@ mod tests {
             value: value.into(),
             refused: false,
         }
+    }
+
+    fn rd(source: &str, offset: u32, value: u32) -> Access {
+        Access {
+            write: false,
+            ..w(source, offset, value)
+        }
+    }
+
+    /// `AET-WO-4240v` §1.6: the rule's offsets are the header's and its
+    /// words the IR's (`aethelgard_ir::vos`), by the declared supply.
+    #[test]
+    fn the_pwr_rule_takes_the_header_s_offsets_and_the_ir_s_words() {
+        let rule = pwr_rule(&crate::tests::bare()).unwrap();
+        assert_eq!((rule.cr3, rule.d3cr), (0x0C, 0x18));
+        assert_eq!((rule.supply, rule.supply_bits), ("ldo", 0b010));
+        assert_eq!(rule.d3cr_word, 0x0000_8000);
+        assert_eq!(
+            rule.rcc_enables.iter().map(|e| e.1).collect::<Vec<_>>(),
+            [0xD4, 0xD8, 0xDC, 0xE0, 0xE4, 0xE8, 0xEC, 0xF0, 0xF4]
+        );
+        let mut bypass = crate::tests::bare();
+        bypass.core_supply = aethelgard_ir::vos::CoreSupplyMode::Bypass;
+        let rule = pwr_rule(&bypass).unwrap();
+        assert_eq!((rule.supply, rule.supply_bits), ("bypass", 0b001));
+    }
+
+    /// The bring-up the generated firmware makes (`AET-WO-4240v` §1.4), as
+    /// the measured access log shows it (FEEDBACK: `ReadUInt32 from 0xC
+    /// (unknown), returned 0x46`, …): passes; each departure is named.
+    #[test]
+    fn the_pwr_rule_allows_one_cr3_then_one_d3cr_before_any_rcc_enable() {
+        let rule = pwr_rule(&crate::tests::bare()).unwrap();
+        let good = vec![
+            rd("pwr", 0x0C, 0x46),
+            w("pwr", 0x0C, 0x42),
+            rd("pwr", 0x0C, 0x42),
+            w("pwr", 0x18, 0x8000),
+            w("rcc", 0xE0, 1),
+            w("rcc", 0xF0, 0x10),
+        ];
+        assert!(judge_pwr(&rule, std::slice::from_ref(&good)).is_empty());
+        // Every boot of a droop holds to it, and an earlier boot cut before
+        // its writes is no finding: only the boot the reads judge must
+        // write both.
+        assert!(judge_pwr(&rule, &[good.clone(), good.clone()]).is_empty());
+        assert!(judge_pwr(&rule, &[vec![], good.clone()]).is_empty());
+        // Nothing read: the write's other bits are held to the POR word.
+        assert!(judge_pwr(&rule, &[good[1..].to_vec()]).is_empty());
+        // Read as revision Y's `0x06`: held to the read, not the POR word.
+        let mut rev_y = good.clone();
+        rev_y[0] = rd("pwr", 0x0C, 0x06);
+        rev_y[1] = w("pwr", 0x0C, 0x02);
+        assert!(judge_pwr(&rule, &[rev_y]).is_empty());
+        let judged = |boot: Vec<Access>| judge_pwr(&rule, &[boot]);
+        // A warm reset after ArduPilot (`LDOEN | USB33DEN`, `0x0100_0002`):
+        // the write keeps bit 24 as read; clearing it is named (adversarial
+        // pass A6: every other case is low-byte only).
+        let mut warm = good.clone();
+        warm[0] = rd("pwr", 0x0C, 0x0100_0002);
+        warm[1] = w("pwr", 0x0C, 0x0100_0002);
+        assert!(judge_pwr(&rule, &[warm.clone()]).is_empty());
+        warm[1] = w("pwr", 0x0C, 0x0000_0002);
+        assert_eq!(
+            judged(warm),
+            ["PWR.CR3 0x2 written: its other bits are not as read (0x1000002)"]
+        );
+        let mut twice = good.clone();
+        twice.insert(3, w("pwr", 0x0C, 0x42));
+        assert_eq!(judged(twice), ["PWR.CR3 written twice in a boot"]);
+        let mut d3cr_twice = good.clone();
+        d3cr_twice.insert(4, w("pwr", 0x18, 0x8000));
+        assert_eq!(judged(d3cr_twice), ["PWR.D3CR written twice in a boot"]);
+        let reverse = vec![
+            w("pwr", 0x18, 0x8000),
+            rd("pwr", 0x0C, 0x46),
+            w("pwr", 0x0C, 0x42),
+            w("rcc", 0xE0, 1),
+        ];
+        assert_eq!(judged(reverse), ["PWR.D3CR written before PWR.CR3"]);
+        let mut bypass = good.clone();
+        bypass[1] = w("pwr", 0x0C, 0x41);
+        assert_eq!(
+            judged(bypass),
+            ["PWR.CR3 0x41 written: supply bits 0b001, not the declared ldo 0b010"]
+        );
+        let mut scuen = good.clone();
+        scuen[1] = w("pwr", 0x0C, 0x46);
+        assert_eq!(
+            judged(scuen),
+            ["PWR.CR3 0x46 written: supply bits 0b110, not the declared ldo 0b010"]
+        );
+        let mut cleared = good.clone();
+        cleared[1] = w("pwr", 0x0C, 0x02);
+        assert_eq!(
+            judged(cleared),
+            ["PWR.CR3 0x2 written: its other bits are not as read (0x46)"]
+        );
+        for (word, what) in [
+            (0x4000, "Scale 3"),
+            (0xC000, "Scale 1"),
+            (0x0000, "reserved, Scale 3"),
+            (0xA000, "VOSRDY set"),
+        ] {
+            let mut v = good.clone();
+            v[3] = w("pwr", 0x18, word);
+            assert_eq!(
+                judged(v),
+                [format!(
+                    "PWR.D3CR {word:#X} written, not VOS Scale 2 alone (0x8000)"
+                )],
+                "{what}"
+            );
+        }
+        let mut late = good.clone();
+        late.insert(0, w("rcc", 0xE0, 1));
+        assert_eq!(
+            judged(late),
+            [
+                "PWR.CR3 written after RCC.AHB4ENR, an enable register",
+                "PWR.D3CR written after RCC.AHB4ENR, an enable register"
+            ]
+        );
+        // An RCC write that is no enable register, before the sequence, is
+        // the RCC rule's to judge, not this one's.
+        let mut select = good.clone();
+        select.insert(0, w("rcc", 0x50, 0x4000));
+        assert!(judged(select).is_empty());
+        let mut other = good.clone();
+        other.push(w("pwr", 0x00, 0xF000_C100));
+        assert_eq!(
+            judged(other),
+            ["PWR.CR1 0xF000C100 written, not CR3 or D3CR"]
+        );
+        let mut byte = good.clone();
+        byte.push(Access {
+            bits: 8,
+            ..w("pwr", 0x0C, 1)
+        });
+        assert_eq!(judged(byte), ["WriteByte to PWR 0xC"]);
+        assert_eq!(
+            judged(vec![w("rcc", 0xE0, 1)]),
+            [
+                "PWR.CR3 never written in the boot the reads judge",
+                "PWR.D3CR never written in the boot the reads judge"
+            ]
+        );
+        // A source the rule does not read is no PWR access.
+        let mut usart = good;
+        usart.insert(0, w("usart1", 0x0C, 0));
+        assert!(judged(usart).is_empty());
     }
 
     /// The four-port fixture's SBUS on UART4: BRR, CR2, CR1, CR1 | UE, then a

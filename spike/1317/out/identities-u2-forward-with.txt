@@ -1,0 +1,101 @@
+id C1 Device:C_Polarized|Capacitor_SMD:CP_Elec_8x10|{"1": "VBAT", "2": "GND"}|Some("U10:false:[(\"1\", \"2\"), (\"2\", \"1\")]")#1
+id C10 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VBAT", "2": "GND"}|Some("U10:false:[(\"1\", \"2\"), (\"2\", \"1\")]")#1
+id C11 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "VBAT", "2": "GND"}|Some("U10:false:[(\"1\", \"2\"), (\"2\", \"1\")]")#1
+id C12 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "/U10_BOOT", "2": "/U10_SW"}|Some("U10:false:[(\"1\", \"7\"), (\"2\", \"8\")]")#1
+id C13 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "/U10_VCC", "2": "GND"}|Some("U10:false:[(\"1\", \"6\")]")#1
+id C14 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_5V", "2": "GND"}|None#1
+id C15 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_5V", "2": "GND"}|None#2
+id C16 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_5V", "2": "GND"}|None#3
+id C17 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_5V", "2": "GND"}|None#4
+id C18 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"121\")]")#1
+id C19 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"131\")]")#1
+id C2 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"17\")]")#1
+id C20 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VBAT", "2": "GND"}|Some("U11:false:[(\"1\", \"2\"), (\"2\", \"1\")]")#1
+id C21 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "VBAT", "2": "GND"}|Some("U11:false:[(\"1\", \"2\"), (\"2\", \"1\")]")#1
+id C22 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "/U11_BOOT", "2": "/U11_SW"}|Some("U11:false:[(\"1\", \"7\"), (\"2\", \"8\")]")#1
+id C23 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "/U11_VCC", "2": "GND"}|Some("U11:false:[(\"1\", \"6\")]")#1
+id C24 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_3V3", "2": "GND"}|None#1
+id C25 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_3V3", "2": "GND"}|None#2
+id C26 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_3V3", "2": "GND"}|None#3
+id C27 Device:C|Capacitor_SMD:C_1210_3225Metric|{"1": "VDD_3V3", "2": "GND"}|None#4
+id C28 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"144\")]")#1
+id C29 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"17\")]")#2
+id C3 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"30\")]")#1
+id C30 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"33\")]")#1
+id C31 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"33\")]")#2
+id C32 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"95\")]")#1
+id C33 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"95\")]")#2
+id C34 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "/U1_VCAP1", "2": "GND"}|Some("U1:false:[(\"1\", \"71\")]")#1
+id C35 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "/U1_VCAP2", "2": "GND"}|Some("U1:false:[(\"1\", \"106\")]")#1
+id C36 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "/NRST", "2": "GND"}|Some("U1:false:[(\"1\", \"25\")]")#1
+id C37 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U2:true:")#1
+id C38 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U3:true:")#1
+id C39 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U7:true:")#1
+id C4 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"39\")]")#1
+id C40 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U7:true:")#2
+id C41 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U4:true:")#1
+id C42 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U5:true:")#1
+id C43 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U5:true:")#2
+id C44 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U5:true:")#3
+id C5 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"52\")]")#1
+id C50 Device:C|Capacitor_SMD:C_0603_1608Metric|{"1": "/VBAT_SENSE", "2": "GND"}|Some("U1:false:[(\"1\", \"13\")]")#1
+id C6 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"62\")]")#1
+id C7 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"72\")]")#1
+id C8 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"84\")]")#1
+id C9 Device:C|Capacitor_SMD:C_0402_1005Metric|{"1": "VDD_3V3", "2": "GND"}|Some("U1:true:[(\"1\", \"108\")]")#1
+id J1 Connector_Generic_MountingPin:Conn_01x04_MountingPin|Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal|{"1": "/CONSOLE_TX", "2": "/CONSOLE_RX", "3": "unconnected-(J1-Pin_3-Pad3)", "4": "GND", "MP": "GND"}|None#1
+id J2 Connector_Generic_MountingPin:Conn_01x06_MountingPin|Connector_JST:JST_SH_SM06B-SRSS-TB_1x06-1MP_P1.00mm_Horizontal|{"1": "VDD_3V3", "2": "/BOOT0", "3": "/NRST", "4": "/SWDIO", "5": "/SWCLK", "6": "GND", "MP": "GND"}|None#1
+id J3 Connector_Generic_MountingPin:Conn_01x04_MountingPin|Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal|{"1": "VDD_3V3", "2": "unconnected-(J3-Pin_2-Pad2)", "3": "unconnected-(J3-Pin_3-Pad3)", "4": "GND", "MP": "GND"}|None#1
+id J4 Connector_Generic:Conn_01x02|Connector_AMASS:AMASS_XT30PW-M_1x02_P2.50mm_Horizontal|{"1": "GND", "2": "VBAT"}|None#1
+id J5 Connector_Generic_MountingPin:Conn_01x06_MountingPin|Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal|{"1": "/MOTOR1", "2": "/MOTOR2", "3": "/MOTOR3", "4": "/MOTOR4", "5": "unconnected-(J5-Pin_5-Pad5)", "6": "GND", "MP": "GND"}|None#1
+id J6 Connector_Generic_MountingPin:Conn_01x06_MountingPin|Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal|{"1": "VDD_5V", "2": "/CRSF_TX", "3": "/CRSF_RX", "4": "unconnected-(J6-Pin_4-Pad4)", "5": "unconnected-(J6-Pin_5-Pad5)", "6": "GND", "MP": "GND"}|None#1
+id J7 Connector_Generic_MountingPin:Conn_01x06_MountingPin|Connector_JST:JST_GH_SM06B-GHS-TB_1x06-1MP_P1.25mm_Horizontal|{"1": "VDD_5V", "2": "/MAVLINK_TX", "3": "/MAVLINK_RX", "4": "unconnected-(J7-Pin_4-Pad4)", "5": "unconnected-(J7-Pin_5-Pad5)", "6": "GND", "MP": "GND"}|None#1
+id J8 Connector_Generic_MountingPin:Conn_01x04_MountingPin|Connector_JST:JST_GH_SM04B-GHS-TB_1x04-1MP_P1.25mm_Horizontal|{"1": "VDD_5V", "2": "/EXT_SCL", "3": "/EXT_SDA", "4": "GND", "MP": "GND"}|None#1
+id L1 Device:L|Inductor_SMD:L_Vishay_IHLP-5050|{"1": "/U10_SW", "2": "VDD_5V"}|Some("U10:false:[(\"1\", \"8\")]")#1
+id L2 Device:L|Inductor_SMD:L_Vishay_IHLP-5050|{"1": "/U11_SW", "2": "VDD_3V3"}|Some("U11:false:[(\"1\", \"8\")]")#1
+id R1 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "VDD_3V3", "2": "/I2C_SDA"}|None#1
+id R10 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "VDD_5V", "2": "/U10_FB"}|Some("U10:false:[(\"2\", \"5\")]")#1
+id R11 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "/U10_FB", "2": "GND"}|Some("U10:false:[(\"1\", \"5\")]")#1
+id R2 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "VDD_3V3", "2": "/I2C_SCL"}|None#1
+id R20 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "VDD_3V3", "2": "/U11_FB"}|Some("U11:false:[(\"2\", \"5\")]")#1
+id R21 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "/U11_FB", "2": "GND"}|Some("U11:false:[(\"1\", \"5\")]")#1
+id R3 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "VDD_3V3", "2": "/EXT_SDA"}|None#1
+id R4 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "VDD_3V3", "2": "/EXT_SCL"}|None#1
+id R5 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "/U2_SDO", "2": "GND"}|None#1
+id R50 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "VBAT", "2": "/VBAT_SENSE"}|None#1
+id R51 Device:R|Resistor_SMD:R_0603_1608Metric|{"1": "/VBAT_SENSE", "2": "GND"}|None#1
+id R6 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "/U7_SDO", "2": "GND"}|None#1
+id R7 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "/U4_WP", "2": "VDD_3V3"}|None#1
+id R8 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "/U4_HOLD", "2": "VDD_3V3"}|None#1
+id R9 Device:R|Resistor_SMD:R_0402_1005Metric|{"1": "/BOOT0", "2": "GND"}|Some("U1:false:[(\"1\", \"138\")]")#1
+id SW1 Switch:SW_Push|Button_Switch_SMD:SW_SPST_PTS810|{"1": "/NRST", "2": "GND"}|None#1
+id TP1 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/I2C_SDA"}|None#1
+id TP11 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/FLASH_CS"}|None#1
+id TP13 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/CONSOLE_TX"}|None#1
+id TP14 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/CONSOLE_RX"}|None#1
+id TP15 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/CRSF_TX"}|None#1
+id TP16 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/CRSF_RX"}|None#1
+id TP17 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MAVLINK_TX"}|None#1
+id TP18 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MAVLINK_RX"}|None#1
+id TP19 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MOTOR1"}|None#1
+id TP2 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/I2C_SCL"}|None#1
+id TP20 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MOTOR2"}|None#1
+id TP21 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MOTOR3"}|None#1
+id TP22 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/MOTOR4"}|None#1
+id TP23 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "VDD_3V3"}|None#1
+id TP24 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/BOOT0"}|None#1
+id TP25 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/NRST"}|None#1
+id TP26 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/SWDIO"}|None#1
+id TP27 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/SWCLK"}|None#1
+id TP28 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "VDD_5V"}|None#1
+id TP29 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "GND"}|None#1
+id TP3 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/EXT_SDA"}|None#1
+id TP4 Connector:TestPoint|TestPoint:TestPoint_Pad_D1.0mm|{"1": "/EXT_SCL"}|None#1
+id U1 MCU_ST_STM32H7:STM32H753ZITx|Package_QFP:LQFP-144_20x20mm_P0.5mm|{"1": "unconnected-(U1-PE2-Pad1)", "10": "unconnected-(U1-PF0-Pad10)", "100": "unconnected-(U1-PA8-Pad100)", "101": "/CONSOLE_TX", "102": "/CONSOLE_RX", "103": "unconnected-(U1-PA11-Pad103)", "104": "unconnected-(U1-PA12-Pad104)", "105": "/SWDIO", "106": "/U1_VCAP2", "107": "GND", "108": "VDD_3V3", "109": "/SWCLK", "11": "unconnected-(U1-PF1-Pad11)", "110": "unconnected-(U1-PA15-Pad110)", "111": "/MAVLINK_TX", "112": "/MAVLINK_RX", "113": "unconnected-(U1-PC12-Pad113)", "114": "unconnected-(U1-PD0-Pad114)", "115": "unconnected-(U1-PD1-Pad115)", "116": "unconnected-(U1-PD2-Pad116)", "117": "unconnected-(U1-PD3-Pad117)", "118": "unconnected-(U1-PD4-Pad118)", "119": "unconnected-(U1-PD5-Pad119)", "12": "unconnected-(U1-PF2-Pad12)", "120": "GND", "121": "VDD_3V3", "122": "unconnected-(U1-PD6-Pad122)", "123": "unconnected-(U1-PD7-Pad123)", "124": "unconnected-(U1-PG9-Pad124)", "125": "unconnected-(U1-PG10-Pad125)", "126": "unconnected-(U1-PG11-Pad126)", "127": "unconnected-(U1-PG12-Pad127)", "128": "unconnected-(U1-PG13-Pad128)", "129": "unconnected-(U1-PG14-Pad129)", "13": "/VBAT_SENSE", "130": "GND", "131": "VDD_3V3", "132": "unconnected-(U1-PG15-Pad132)", "133": "unconnected-(U1-PB3-Pad133)", "134": "unconnected-(U1-PB4-Pad134)", "135": "unconnected-(U1-PB5-Pad135)", "136": "/I2C_SCL", "137": "/I2C_SDA", "138": "/BOOT0", "139": "unconnected-(U1-PB8-Pad139)", "14": "unconnected-(U1-PF4-Pad14)", "140": "unconnected-(U1-PB9-Pad140)", "141": "unconnected-(U1-PE0-Pad141)", "142": "unconnected-(U1-PE1-Pad142)", "143": "VDD_3V3", "144": "VDD_3V3", "15": "unconnected-(U1-PF5-Pad15)", "16": "GND", "17": "VDD_3V3", "18": "unconnected-(U1-PF6-Pad18)", "19": "unconnected-(U1-PF7-Pad19)", "2": "unconnected-(U1-PE3-Pad2)", "20": "unconnected-(U1-PF8-Pad20)", "21": "unconnected-(U1-PF9-Pad21)", "22": "unconnected-(U1-PF10-Pad22)", "23": "unconnected-(U1-PH0-Pad23)", "24": "unconnected-(U1-PH1-Pad24)", "25": "/NRST", "26": "unconnected-(U1-PC0-Pad26)", "27": "unconnected-(U1-PC1-Pad27)", "28": "unconnected-(U1-PC2_C-Pad28)", "29": "unconnected-(U1-PC3_C-Pad29)", "3": "unconnected-(U1-PE4-Pad3)", "30": "VDD_3V3", "31": "GND", "32": "VDD_3V3", "33": "VDD_3V3", "34": "/FLASH_CS", "35": "unconnected-(U1-PA1-Pad35)", "36": "/CRSF_TX", "37": "/CRSF_RX", "38": "GND", "39": "VDD_3V3", "4": "unconnected-(U1-PE5-Pad4)", "40": "unconnected-(U1-PA4-Pad40)", "41": "/SPI_SCK", "42": "/SPI_MISO", "43": "/SPI_MOSI", "44": "unconnected-(U1-PC4-Pad44)", "45": "unconnected-(U1-PC5-Pad45)", "46": "unconnected-(U1-PB0-Pad46)", "47": "unconnected-(U1-PB1-Pad47)", "48": "unconnected-(U1-PB2-Pad48)", "49": "unconnected-(U1-PF11-Pad49)", "5": "unconnected-(U1-PE6-Pad5)", "50": "unconnected-(U1-PF12-Pad50)", "51": "GND", "52": "VDD_3V3", "53": "unconnected-(U1-PF13-Pad53)", "54": "unconnected-(U1-PF14-Pad54)", "55": "unconnected-(U1-PF15-Pad55)", "56": "unconnected-(U1-PG0-Pad56)", "57": "unconnected-(U1-PG1-Pad57)", "58": "unconnected-(U1-PE7-Pad58)", "59": "unconnected-(U1-PE8-Pad59)", "6": "VDD_3V3", "60": "/MOTOR1", "61": "GND", "62": "VDD_3V3", "63": "unconnected-(U1-PE10-Pad63)", "64": "/MOTOR2", "65": "unconnected-(U1-PE12-Pad65)", "66": "/MOTOR3", "67": "/MOTOR4", "68": "unconnected-(U1-PE15-Pad68)", "69": "/EXT_SCL", "7": "unconnected-(U1-PC13-Pad7)", "70": "/EXT_SDA", "71": "/U1_VCAP1", "72": "VDD_3V3", "73": "/IMU_CS", "74": "/IMU_SCK", "75": "/IMU_MISO", "76": "/IMU_MOSI", "77": "unconnected-(U1-PD8-Pad77)", "78": "unconnected-(U1-PD9-Pad78)", "79": "unconnected-(U1-PD10-Pad79)", "8": "unconnected-(U1-PC14-Pad8)", "80": "unconnected-(U1-PD11-Pad80)", "81": "unconnected-(U1-PD12-Pad81)", "82": "unconnected-(U1-PD13-Pad82)", "83": "GND", "84": "VDD_3V3", "85": "unconnected-(U1-PD14-Pad85)", "86": "unconnected-(U1-PD15-Pad86)", "87": "unconnected-(U1-PG2-Pad87)", "88": "unconnected-(U1-PG3-Pad88)", "89": "unconnected-(U1-PG4-Pad89)", "9": "unconnected-(U1-PC15-Pad9)", "90": "unconnected-(U1-PG5-Pad90)", "91": "unconnected-(U1-PG6-Pad91)", "92": "unconnected-(U1-PG7-Pad92)", "93": "unconnected-(U1-PG8-Pad93)", "94": "GND", "95": "VDD_3V3", "96": "unconnected-(U1-PC6-Pad96)", "97": "unconnected-(U1-PC7-Pad97)", "98": "unconnected-(U1-PC8-Pad98)", "99": "unconnected-(U1-PC9-Pad99)"}|None#1
+id U10 Regulator_Switching:LMR33630ADDA|Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm|{"1": "GND", "2": "VBAT", "3": "VBAT", "4": "unconnected-(U10-PG-Pad4)", "5": "/U10_FB", "6": "/U10_VCC", "7": "/U10_BOOT", "8": "/U10_SW", "9": "GND"}|None#1
+id U11 Regulator_Switching:LMR33630ADDA|Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm|{"1": "GND", "2": "VBAT", "3": "VBAT", "4": "unconnected-(U11-PG-Pad4)", "5": "/U11_FB", "6": "/U11_VCC", "7": "/U11_BOOT", "8": "/U11_SW", "9": "GND"}|None#1
+id U2 Sensor:BME280|Package_LGA:Bosch_LGA-8_2.5x2.5mm_P0.65mm_ClockwisePinNumbering|{"1": "GND", "2": "VDD_3V3", "3": "/I2C_SDA", "4": "/I2C_SCL", "5": "/U2_SDO", "6": "VDD_3V3", "7": "GND", "8": "VDD_3V3"}|None#1
+id U3 Sensor_Temperature:TMP117xxDRV|Package_SON:WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm|{"1": "/I2C_SCL", "2": "GND", "3": "unconnected-(U3-ALERT-Pad3)", "4": "GND", "5": "VDD_3V3", "6": "/I2C_SDA"}|None#1
+id U4 Memory_Flash:W25Q32JVSS|Package_SO:SOIC-8_5.3x5.3mm_P1.27mm|{"1": "/FLASH_CS", "2": "/SPI_MISO", "3": "/U4_WP", "4": "GND", "5": "/SPI_MOSI", "6": "/SPI_SCK", "7": "/U4_HOLD", "8": "VDD_3V3"}|None#1
+id U5 Aethelgard_Sensor:ICM-42688-P|Aethelgard_Sensor:TDK_LGA-14_3x2.5mm_P0.5mm|{"1": "/IMU_MISO", "10": "unconnected-(U5-RESV-Pad10)", "11": "unconnected-(U5-RESV-Pad11)", "12": "/IMU_CS", "13": "/IMU_SCK", "14": "/IMU_MOSI", "2": "unconnected-(U5-RESV-Pad2)", "3": "unconnected-(U5-RESV-Pad3)", "4": "unconnected-(U5-INT1{slash}INT-Pad4)", "5": "VDD_3V3", "6": "GND", "7": "GND", "8": "VDD_3V3", "9": "GND"}|None#1
+id U7 Aethelgard_Sensor:BMP581|Aethelgard_Sensor:Bosch_LGA-10_2x2mm_P0.5mm|{"1": "VDD_3V3", "10": "VDD_3V3", "2": "/I2C_SCL", "3": "GND", "4": "/I2C_SDA", "5": "/U7_SDO", "6": "VDD_3V3", "7": "GND", "8": "GND", "9": "GND"}|None#1

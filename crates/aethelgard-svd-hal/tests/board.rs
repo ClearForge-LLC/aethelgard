@@ -221,6 +221,33 @@ fn the_firmware_follows_the_judges_boot_contract() {
     assert!(!files.contains_key("firmware/build.rs"));
 }
 
+/// `AET-WO-4240v` §1.4: the three words a fault of the supply and
+/// voltage-scale bring-up writes are written twice, by the generator and by
+/// the judge, independently. They must agree, and the firmware must carry
+/// them.
+#[test]
+fn the_firmware_follows_the_judges_pwr_boot_words() {
+    use aethelgard_svd_hal::board::{
+        BOOT_ACTVOSRDY_TIMEOUT, BOOT_SUPPLY_NOT_DECLARED, BOOT_VOSRDY_TIMEOUT,
+    };
+    use aethelgard_twin::boot;
+    assert_eq!(BOOT_SUPPLY_NOT_DECLARED, boot::BOOT_SUPPLY_NOT_DECLARED);
+    assert_eq!(BOOT_ACTVOSRDY_TIMEOUT, boot::BOOT_ACTVOSRDY_TIMEOUT);
+    assert_eq!(BOOT_VOSRDY_TIMEOUT, boot::BOOT_VOSRDY_TIMEOUT);
+    let files = generated();
+    let main = &files["firmware/src/main.rs"];
+    for (name, v) in [
+        ("BOOT_SUPPLY_NOT_DECLARED", boot::BOOT_SUPPLY_NOT_DECLARED),
+        ("BOOT_ACTVOSRDY_TIMEOUT", boot::BOOT_ACTVOSRDY_TIMEOUT),
+        ("BOOT_VOSRDY_TIMEOUT", boot::BOOT_VOSRDY_TIMEOUT),
+    ] {
+        assert!(
+            main.contains(&format!("const {name}: u32 = {v:#010x};")),
+            "{name}"
+        );
+    }
+}
+
 /// `AET-WO-2202`, `AET-WO-4200`: the record layout and the statuses are
 /// written twice, by the firmware's generator and by the judge,
 /// independently. They must agree, and the firmware must read exactly the

@@ -1,7 +1,7 @@
 error[E0599]: no method named `configure` found for struct `Usart1<Gated>` in the current scope
-  --> tests/ui/fail/usart_ungated.rs:20:32
+  --> tests/ui/fail/usart_ungated.rs:21:32
    |
-20 |     let _usart1 = board.usart1.configure(&mut r, &clock, tx, rx);
+21 |     let _usart1 = board.usart1.configure(&mut r, &clock, tx, rx);
    |                                ^^^^^^^^^ method not found in `Usart1<Gated>`
    |
   ::: tests/ui/fail/../serial-four/board.rs

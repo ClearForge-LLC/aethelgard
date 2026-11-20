@@ -72,6 +72,7 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
         "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+                "core_supply": {"mode": "ldo", "source": "DS12117 Rev 10 sec. 3.5.1 p. 27"},
                 "supply_source": {"connector": "J2", "pin": "1"}},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
@@ -397,13 +398,16 @@ fn the_topology_refuses_a_motor_output_that_disagrees_with_its_assignment() {
 }
 
 #[test]
-fn a_version_4_topology_without_the_new_fields_is_refused_as_a_version() {
+fn a_version_4_topology_without_the_new_fields_is_refused_never_given_a_clock() {
     let mut v = serde_json::to_value(topology()).unwrap();
     v["schema_version"] = json!(4);
     v.as_object_mut().unwrap().remove("clock");
     v.as_object_mut().unwrap().remove("motor_outputs");
-    let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
-    assert_eq!(t.validate().unwrap_err().kind(), "UnsupportedSchemaVersion");
+    // No stand-in clock under any version (`AET-WO-4240v` §1.1): a clock
+    // carries its `vos`, and nothing supplies one, so the file is refused
+    // at parsing, by the key it lacks.
+    let e = serde_json::from_value::<SolvedTopology>(v.clone()).unwrap_err();
+    assert!(e.to_string().contains("missing field `clock`"), "{e}");
     // Under the current version the missing keys are refused at parsing.
     v["schema_version"] = json!(aethelgard_ir::SOLVED_SCHEMA_VERSION);
     assert!(serde_json::from_value::<SolvedTopology>(v).is_err());
@@ -511,7 +515,7 @@ fn ardupilot() -> RccRegisters {
 /// `D2PPRE2` ÷2 with `TIMPRE` 1 give 200 MHz timers on both buses (Table 57).
 #[test]
 fn ardupilot_s_rcc_registers_decode_to_400_mhz_and_200_mhz_timers() {
-    let c = SolvedClock::from_rcc(&ardupilot(), 0).unwrap();
+    let c = SolvedClock::from_rcc(&ardupilot(), 0, aethelgard_ir::vos::Vos::Scale1).unwrap();
     assert_eq!(c.source, "PLL1");
     assert_eq!(c.sysclk_hz, 400_000_000);
     assert_eq!(
@@ -534,16 +538,23 @@ fn ardupilot_s_rcc_registers_decode_to_400_mhz_and_200_mhz_timers() {
 fn hsidiv_and_each_bus_s_prescaler_are_read_apart() {
     let hsi32 = RccRegisters::from_values([0x0000_002D, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
     assert_eq!(
-        SolvedClock::from_rcc(&hsi32, 0).unwrap().sysclk_hz,
+        SolvedClock::from_rcc(&hsi32, 0, aethelgard_ir::vos::Vos::Scale1)
+            .unwrap()
+            .sysclk_hz,
         32_000_000
     );
     let mut r = ardupilot();
     r.cr |= 0b01 << 3;
-    assert_eq!(SolvedClock::from_rcc(&r, 0).unwrap().sysclk_hz, 200_000_000);
+    assert_eq!(
+        SolvedClock::from_rcc(&r, 0, aethelgard_ir::vos::Vos::Scale1)
+            .unwrap()
+            .sysclk_hz,
+        200_000_000
+    );
     let mut r = ardupilot();
     r.cfgr &= !(1 << 15);
     r.d2cfgr = (0b101 << 8) | (0b100 << 4);
-    let c = SolvedClock::from_rcc(&r, 0).unwrap();
+    let c = SolvedClock::from_rcc(&r, 0, aethelgard_ir::vos::Vos::Scale1).unwrap();
     assert_eq!((c.d2ppre1, c.d2ppre2), (2, 4));
     assert_eq!(c.timer_kernel_hz(Apb::Apb1), 200_000_000);
     assert_eq!(c.timer_kernel_hz(Apb::Apb2), 100_000_000);
@@ -556,7 +567,12 @@ fn the_reset_registers_decode_to_the_reset_clock() {
     // `RCC_CR` as Renode 1.17.0 reads it at reset: HSION, HSIRDY (which
     // mirrors HSION, `STM32H7_RCC.cs` L147) and HSIDIVF (always 1, L158).
     let r = RccRegisters::from_values([0x0000_0025, 0, 0, 0, 0x0202_0200, 0x0101_0280]);
-    assert_eq!(SolvedClock::from_rcc(&r, 0), Ok(SolvedClock::reset()));
+    // The core's scale is declared, never decoded; at Scale 2 the decode is
+    // the generated tree (`AET-WO-4240v`).
+    assert_eq!(
+        SolvedClock::from_rcc(&r, 0, aethelgard_ir::vos::Vos::Scale2),
+        Ok(SolvedClock::reset())
+    );
 }
 
 /// Every refusal of the decode, by name.
@@ -565,7 +581,7 @@ fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
     let refused = |edit: &dyn Fn(&mut RccRegisters), hse: u32| {
         let mut r = ardupilot();
         edit(&mut r);
-        SolvedClock::from_rcc(&r, hse).unwrap_err()
+        SolvedClock::from_rcc(&r, hse, aethelgard_ir::vos::Vos::Scale1).unwrap_err()
     };
     let reserved = |field: &'static str, value: u32| RccDecodeError::Reserved { field, value };
     // SWS 100 is reserved; 010 is HSE, which no crystal backs.
@@ -620,7 +636,9 @@ fn a_register_the_decode_cannot_read_as_rm0433_states_it_is_refused_by_name() {
     r.cfgr = 0x8012;
     r.cr |= 1 << 17;
     assert_eq!(
-        SolvedClock::from_rcc(&r, 25_000_000).unwrap().sysclk_hz,
+        SolvedClock::from_rcc(&r, 25_000_000, aethelgard_ir::vos::Vos::Scale1)
+            .unwrap()
+            .sysclk_hz,
         25_000_000
     );
     // A source whose ready flag is clear (adversarial pass: Renode's SWS
@@ -696,7 +714,11 @@ fn the_timer_kernel_clock_is_table_57_for_both_timpre() {
 fn a_clock_programming_firmware_is_refused_because_renode_s_rcc_push_reaches_counters_not_channels()
 {
     let mut t = topology();
-    t.clock = SolvedClock::from_rcc(&ardupilot(), 0).unwrap();
+    // At Scale 0 every clock of ArduPilot's tree is within its maximum
+    // (`AET-WO-4240v` §1.3), so the refusal is the tree's, not a limit's.
+    // `D3PPRE` is not decoded (left 1), so it is set to ArduPilot's ÷2 here.
+    t.clock = SolvedClock::from_rcc(&ardupilot(), 0, aethelgard_ir::vos::Vos::Scale0).unwrap();
+    t.clock.d3ppre = 2;
     let e = t.validate().unwrap_err();
     assert_eq!(e.kind(), "UnsupportedClock");
     let m = e.to_string();
@@ -712,7 +734,7 @@ fn foreign_clock(timers: u32, usart: u32) -> Value {
         .iter()
         .map(|p| ((*p).to_owned(), s(usart)))
         .collect();
-    json!({"apb1_timers_hz": s(timers), "apb2_timers_hz": s(timers), "usarts": usarts})
+    json!({"apb1_timers_hz": s(timers), "apb2_timers_hz": s(timers), "usarts": usarts, "vos": {"value": "scale1", "source": "ArduPilot Copter-4.7.2 stm32h7_mcuconf.h L109"}})
 }
 
 fn with_foreign_clock(c: Value) -> Value {
@@ -811,7 +833,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 18);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 19);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -826,7 +848,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 16,
-                expected: 18
+                expected: 19
             }
         );
     }

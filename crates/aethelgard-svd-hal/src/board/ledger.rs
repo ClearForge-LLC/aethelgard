@@ -9,8 +9,20 @@
 //! - a read-modify-write lists only the fields it changes;
 //! - the reset fields are [`Rcc::reset_clock`]'s (the clock tree and the
 //!   kernel-clock selects the firmware leaves at reset), `RCC_CR.D2CKRDY`,
-//!   which the firmware depends on and never polls, and `BOR_LEV`, which the
-//!   firmware reads from `FLASH_OPTSR_CUR` and never writes.
+//!   which the firmware depends on and never polls, `BOR_LEV`, which the
+//!   firmware reads from `FLASH_OPTSR_CUR` and never writes,
+//!   `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`, which the bring-up polls
+//!   until each reads 1, and `FLASH_ACR`'s `LATENCY` and `WRHIGHFREQ`, which
+//!   the firmware never writes and runs at (`AET-WO-4240v` §1.7, D-7).
+//!
+//! The first writes listed are the bring-up's first (`AET-WO-4240v` §1.4):
+//! `PWR_CR3`'s `SCUEN`, `LDOEN` and `BYPASS` (a read-modify-write), then
+//! `PWR_D3CR` whole, whose `VOSRDY` is read-only and written 0, so it has a
+//! written row beside its polled one. The residue no row covers: RAM is
+//! written before `ACTVOSRDY` reads 1 (the reset handler's `.bss` and `.data`,
+//! the stack, `Board::take`'s flag, and a supply or `ACTVOSRDY` fault's boot
+//! word), though in Run* "write accesses to the RAMs are not permitted"
+//! (RM0433 Rev 9 §6.4.1, p. 262).
 //!
 //! The writes listed are every one the board crate can make on the bring-up
 //! path the reference firmware takes (each port's split and pins, each
@@ -31,6 +43,14 @@ use super::{
     usart_values,
 };
 use crate::cmsis::{self, RegisterError, RegisterFacts};
+
+// belt-and-suspenders: `aethelgard_ir::vos` holds the rule's copy of this reset
+// value, which judges it against Table 17; the ledger states it on its own.
+/// `FLASH_ACR`'s `LATENCY` and `WRHIGHFREQ` at reset: "Reset value: 0x0000
+/// 0037" (RM0433 Rev 9 §4.9.1, p. 201), bits 3:0 7 wait states and bits 5:4
+/// `11`. The ledger's own copy: the generator writes neither.
+const FLASH_ACR_LATENCY_RESET: u32 = 7;
+const FLASH_ACR_WRHIGHFREQ_RESET: u32 = 0b11;
 
 /// Whether the firmware writes a field or depends on its reset value.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -62,7 +82,8 @@ pub struct FieldUse {
     /// address, a count, a chip select's set or reset bit. For a reset field,
     /// its reset value; for `BOR_LEV`, the level the topology declares, which
     /// the option bytes must hold and the judge compares; for `D2CKRDY`, 1,
-    /// what silicon must read once a D2 peripheral is enabled.
+    /// what silicon must read once a D2 peripheral is enabled; for
+    /// `ACTVOSRDY` and `VOSRDY`, 1, what the bring-up waits to read.
     pub value: Option<u32>,
     /// Whether the write is of the whole word; `false` for a field changed by
     /// a read-modify-write, and for a reset field.
@@ -84,6 +105,12 @@ enum Write {
     Whole { word: u32, known: u32 },
     /// A read-modify-write of the bits of `mask`, to `value`.
     Changed { mask: u32, value: u32 },
+    /// The bits of the register that no header field names, written back as
+    /// read by a read-modify-write: RM0433 Rev 9 has them "kept at reset
+    /// value" (`AET-WO-4240v`: `PWR_CR3`, whose bit 6 resets to 1 on
+    /// revision V). One row per run, named `RES[hi:lo]` or `RES[k]` by the
+    /// register's bit numbers, its value decided at run time.
+    KeptReserved,
 }
 
 /// A register the firmware writes: its family, instance, name, CMSIS prefix,
@@ -150,6 +177,30 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
         }
     };
     let whole = |word: u32| Write::Whole { word, known: !0 };
+    // The supply configuration and VOS Scale 2, first (`AET-WO-4240v` §1.4):
+    // `PWR_CR3`'s three supply bits, then `PWR_D3CR` whole, each the
+    // generator's own word.
+    let p = &facts.pwr;
+    add(
+        "PWR",
+        "PWR",
+        "CR3",
+        "PWR_CR3",
+        p.cr3,
+        Write::Changed {
+            mask: p.supply_mask(),
+            value: p.supply_bits(plan.core_supply),
+        },
+    );
+    add("PWR", "PWR", "CR3", "PWR_CR3", p.cr3, Write::KeptReserved);
+    add(
+        "PWR",
+        "PWR",
+        "D3CR",
+        "PWR_D3CR",
+        p.d3cr,
+        whole(p.d3cr_scale2()),
+    );
     // The kernel-clock selection, then each clock gate (a read-modify-write
     // of its one bit).
     for s in &facts.kernel_selects {
@@ -438,13 +489,36 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
     let mut covered = 0u32;
     let mut whole_word = false;
     let mut chosen: BTreeMap<u32, (String, u32)> = BTreeMap::new();
+    let named = fields.iter().fold(0u32, |m, (_, _, mask)| m | mask);
     for w in &r.writes {
         let touched = match w {
             Write::Whole { .. } => {
                 whole_word = true;
-                fields.iter().fold(0, |m, (_, _, mask)| m | mask)
+                named
             }
             Write::Changed { mask, .. } => *mask,
+            Write::KeptReserved => {
+                let mut rest = !named;
+                while rest != 0 {
+                    let lo = rest.trailing_zeros();
+                    let len = (rest >> lo).trailing_ones();
+                    let run = if len == 32 {
+                        !0
+                    } else {
+                        ((1u32 << len) - 1) << lo
+                    };
+                    let hi = lo + len - 1;
+                    let name = if len == 1 {
+                        format!("RES[{lo}]")
+                    } else {
+                        format!("RES[{hi}:{lo}]")
+                    };
+                    chosen.insert(lo, (name, run));
+                    rest &= !run;
+                }
+                covered |= !named;
+                continue;
+            }
         };
         for (name, _, mask) in fields.iter().filter(|(_, _, m)| m & touched != 0) {
             for (run_name, run) in runs(name, *mask) {
@@ -455,6 +529,7 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
         let written = match w {
             Write::Whole { word, known } => word & known,
             Write::Changed { mask, value } => mask | value,
+            Write::KeptReserved => 0,
         };
         if written & !covered != 0 {
             return Err(BoardError::Register(RegisterError::MalformedSource {
@@ -481,6 +556,9 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
                     Some(Some((value & mask) >> pos))
                 }
                 Write::Changed { .. } => None,
+                // Written back as read: decided at run time.
+                Write::KeptReserved if !named & mask == mask => Some(None),
+                Write::KeptReserved => None,
             });
             FieldUse {
                 family: r.family.to_owned(),
@@ -547,8 +625,48 @@ fn runs(name: &str, mask: u32) -> Vec<(String, u32)> {
 /// firmware takes on silicon having set it; its value is 1. A GPIO port alone
 /// does not list it: the ports are on AHB4, in D3 (RM0433 Rev 9 Table 8,
 /// p. 132, rendered).
+///
+/// First, in every firmware (`AET-WO-4240v` §1.7): `PWR_CSR1.ACTVOSRDY` and
+/// `PWR_D3CR.VOSRDY`, which the bring-up polls until each reads 1, so 1;
+/// then `FLASH_ACR`'s `LATENCY` and `WRHIGHFREQ`, which the firmware never
+/// writes and depends on at their reset values, 7 and `11` (reset `0x0000
+/// 0037`, RM0433 Rev 9 §4.9.1, p. 201; judged against Table 17's row by
+/// `aethelgard_ir::vos`, D-7).
 fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<FieldUse>, BoardError> {
     let mut out = Vec::new();
+    let pwr = f.layout("PWR")?;
+    let flash = f.layout("FLASH")?;
+    for (family, register, offset, field, value) in [
+        ("PWR", "CSR1", pwr.offset("CSR1", 0)?, "ACTVOSRDY", 1),
+        ("PWR", "D3CR", pwr.offset("D3CR", 0)?, "VOSRDY", 1),
+        (
+            "FLASH",
+            "ACR",
+            flash.offset("ACR", 0)?,
+            "LATENCY",
+            FLASH_ACR_LATENCY_RESET,
+        ),
+        (
+            "FLASH",
+            "ACR",
+            flash.offset("ACR", 0)?,
+            "WRHIGHFREQ",
+            FLASH_ACR_WRHIGHFREQ_RESET,
+        ),
+    ] {
+        let (pos, width) = f.field(&format!("{family}_{register}_{field}"))?;
+        out.push(FieldUse {
+            family: family.into(),
+            register: format!("{family}.{register}"),
+            offset,
+            field: field.into(),
+            pos: u8::try_from(pos).unwrap_or(u8::MAX),
+            width: u8::try_from(width).unwrap_or(u8::MAX),
+            access: FieldAccess::Reset,
+            value: Some(value),
+            whole_word: false,
+        });
+    }
     if plan.needs_clock() {
         let rcc = f.layout("RCC")?;
         for (register, fields) in clock_fields(plan) {
