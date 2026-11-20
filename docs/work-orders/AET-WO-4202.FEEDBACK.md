@@ -273,6 +273,7 @@ Without U2, ArduPilot probes one barometer fewer, so the run's cut lands at a di
   - `cargo test --workspace`: 2,302 passed, 0 failed.
 - **Tier-2 runs of the tests this order adds or moves:** all pass (`campaign_tier2` ×2, `twin_tier2` ×4, `models_tier2` 12, `board_tier2` ×4, `with_tools` ×1). The full `ci/foreign-judge.sh` exits 0. The full tier-2 count is CI's.
 - **Merge order:** `1911` merges first. This branch merges `main` after it, re-gates, and is retitled READY.
+- **`3303b` merged ahead of `1911`** (00:10Z). It carries the `hot_plug_tier1` weight row, the one red on this PR's first CI (run 44637253530, tools-shard 2, P2: 1315's test over 60 s with no row), which was red on main's `35d23eae` too. This branch merged `main` `52a2d62e`, and `TIER2_MIN` was recomputed on it: main holds 190, plus this order's one test, gives 191. Re-gated after that merge: see the bus.
 
 - **Reduction pass (diff): −12 net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 1 finding below.**
   - **Removed:** `campaign_tier2`'s own copy of Renode's parse. The tier-1 test owns that model and step (e) measures it in Renode. The regression now pins the reset instant (1,018,380 ns) instead. M1 still kills the regression, which fails before that line.
