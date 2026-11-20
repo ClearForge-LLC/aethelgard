@@ -44,25 +44,27 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
     (out.status.code(), v)
 }
 
-/// §2: Sentinel-03's scenarios cover every row before any gate:
-/// `VDD_3V3` (a survived droop), `VDD_5V` (its consumers' absence),
-/// `battery` (a tolerated sag), CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and
-/// IMU; `EXT` has no device. Coverage is judged first, so the next
-/// precondition is what refuses: the ledger's 280 unacknowledged rows
-/// (measured on `ee835bde`), a §7 stop outside this work order's fence.
+/// §2: Sentinel-03's scenarios cover every row before any gate but one:
+/// `VDD_5V` (its consumers' absence), `battery` (a tolerated sag), CONSOLE,
+/// CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device. `VDD_3V3`,
+/// the MCU's supply, is short since `AET-WO-2305` §1.4: at BOR level 3 its
+/// one droop, `droop-tolerated` (3.0 V, 2.95 V loaded), crosses no BOR
+/// threshold, so it renders no reset and judges no recovery, and the
+/// refusal names the crossing it lacks (`2305` F1: a crossing droop for
+/// Sentinel-03 is a scenario of its own). Coverage is judged before the
+/// ledger, whose 280 unacknowledged rows (measured on `ee835bde`) are what
+/// refused before.
 #[test]
-fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger() {
+fn sentinel_03_s_scenarios_cover_every_row_but_its_mcu_rail_which_no_droop_crosses() {
     let (code, v) = verify_fab_out(
         "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
         "scenarios/sentinel-03",
     );
-    assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{v}");
-    assert!(
-        v["error"]["message"]
-            .as_str()
-            .unwrap()
-            .starts_with("no package: 280 unwitnessed ledger row(s)"),
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "CampaignCoverageShort", "{v}");
+    assert_eq!(
+        v["error"]["message"],
+        "no package: the campaign covers no fault on rail `VDD_3V3` (`droop-tolerated` crosses none: at BOR level 3 a droop must cross VBOR3's falling level, 2610 mV; its loaded floor is 2950 mV)",
         "{v}"
     );
 }

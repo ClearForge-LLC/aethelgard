@@ -1349,12 +1349,10 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
     Ok(())
 }
 
-/// The first identity read's expected witness lines (kind 13, or kind 22 on
-/// a board with no I2C read), which a droop's observation must show since
-/// its release.
 /// The first identity read's device's steps' expected lines, in the
 /// archive's (the script's) order: the first kind 13's device, or with no
-/// I2C read the first kind 22's (`AET-WO-2305` §1.3). Empty without one.
+/// I2C read the first kind 22's, which a droop's observation must show since
+/// its release (`AET-WO-2305` §1.3). Empty without one.
 fn first_script(records: &[Record]) -> Vec<&[String]> {
     let i2c = records.iter().filter_map(|r| match r {
         Record::I2cWitness {
