@@ -24,10 +24,10 @@ use common::*;
 /// (`8271f786…1ab4`, version 10), `AET-WO-4300b` (`1db8a16f…12d9`,
 /// version 11), `AET-WO-4230` (`27753b78…c311`, version 12),
 /// `AET-WO-2302` (`25392c25…8747`, version 13), `AET-WO-4400g` (`bcd082c2…8383`,
-/// version 14) and `AET-WO-2304b` (version 15) each changed the version byte
-/// alone.
+/// version 14), `AET-WO-2304b` (`10d566b5…fe1a`, version 15) and
+/// `AET-WO-3305` (version 16) each changed the version byte alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "10d566b5ffd78e01f16fd7f5f54c2ca03230423b39f060ced4927b75ead5fe1a";
+    "7eccc89360bb332e5f9768c101f5702fa97cfbe566e04a394cc4246896c25d31";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -39,8 +39,9 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `8b4dc285…def7cf` until `AET-WO-4220` did, then `955d28e0…bbdbbd` until
 /// `AET-WO-4300b` did, then `d9b03ded…07124f` until `AET-WO-4230` did, then
 /// `1236d811…e1dbd4` until `AET-WO-2302` did, then `64a3c723…5d03e0` until
-/// `AET-WO-4400g` did, then `ada1b631…fdd8f7` until `AET-WO-2304b` did.
-const GOLDEN_STATE_HASH: &str = "4b06f855f9f7f6dbff956e6770e120fadd7c6678bc41d2d1f245a64dedc3cbf2";
+/// `AET-WO-4400g` did, then `ada1b631…fdd8f7` until `AET-WO-2304b` did, then
+/// `4b06f855…c3cbf2` until `AET-WO-3305` did.
+const GOLDEN_STATE_HASH: &str = "f4c133fa6962546173477aaf5cc5b6d23442b690df07407fa60d4d1f3134c693";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {

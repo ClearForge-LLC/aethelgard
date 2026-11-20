@@ -2528,6 +2528,36 @@ mod tests {
         assert!(detection(&absent, &unmatched, &a(json!(["device:U4"]))).is_err());
     }
 
+    /// `AET-WO-3305`: two-bme's held-low SDA as `attribute` measured it, on
+    /// `main` (both witnesses masked: each read the other device's absent
+    /// address as its own wrong one) and once each witness holds its own
+    /// step's addresses (nothing masked; `spike/3305`). The first is refused,
+    /// the second is the fault detected by its mechanism.
+    #[test]
+    fn a_bus_fault_with_two_devices_is_detected_once_nothing_is_masked() {
+        let fixtures = "crates/aethelgard-cli/tests/fixtures";
+        let (spec, t) = solved(&format!("{fixtures}/two-bme.json"));
+        let held = match classify(
+            &spec,
+            &t,
+            &scenario_file(&format!("{fixtures}/two-bme-held-low-sda.json")),
+        ) {
+            Seeded::Detect(_, m) => m,
+            other => panic!("{other:?}"),
+        };
+        let run = failed(json!(["i2c_line_held_low", "i2c_timeout"]));
+        let measured = |masked: Value| {
+            json!({"ok": true, "domain": "electrical", "rule": "E1", "unexplained": [],
+                "masked": masked, "subjects": ["bus:SENSORS", "device:U2", "device:U5"]})
+        };
+        let masked = json!([{"index": 28, "kind": 13}, {"index": 29, "kind": 13}]);
+        assert!(
+            detection(&held, &run, &measured(masked))
+                .is_err_and(|e| e.contains("something else fails too"))
+        );
+        assert_eq!(detection(&held, &run, &measured(json!([]))), Ok(()));
+    }
+
     fn solved(path: &str) -> (aethelgard_ir::Specification, aethelgard_ir::SolvedTopology) {
         let bytes = std::fs::read(
             Path::new(env!("CARGO_MANIFEST_DIR"))

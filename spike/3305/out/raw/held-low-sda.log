@@ -1,0 +1,42 @@
+[00:00:00.000000000] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[00:00:00.000000000] [INFO] System bus created.
+[00:00:00.000000000] [WARNING] Tried to finish transmission to device 0x0, but it's not connected
+[00:00:00.000000000] [INFO] Pseudorandom Number Generator was created with seed: 2100
+[00:00:00.000000000] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
+[00:00:00.000000000] [INFO] sysbus: Loading block of 2088 bytes length at 0x8000040.
+[00:00:00.000000000] [INFO] sysbus: Loading block of 64 bytes length at 0x8000868.
+[00:00:00.000000000] [INFO] sysbus: Loading block of 32 bytes length at 0x20000000.
+[00:00:00.000000000] [INFO] sysbus: Loading block of 4 bytes length at 0x80008A8.
+[00:00:00.000000000] [INFO] flashController: Logging is already enabled
+[00:00:00.000000000] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
+[00:00:00.000000000] [INFO] machine-0: Machine started.
+[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000822] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0
+[00:00:00.000000000] [WARNING] rcc: Unhandled write to offset 0x50. Unhandled bits: [14] when writing value 0x4000. Tags: SPI123SEL (0x4).
+[00:00:00.000000000] [WARNING] gpioPortB: Unhandled write to offset 0x4. Unhandled bits: [6-7] when writing value 0xC0. Tags: OT6 (0x1), OT7 (0x1).
+[00:00:00.000000000] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.000000000] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.000000000] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation
+[00:00:00.000000000] [WARNING] i2c1: Unhandled write to offset 0x10. Unhandled bits: [2-5, 9, 12, 16-18, 22-23, 28] when writing value 0x10C7123C. Tags: SCLL (0x3C), SCLH (0x12), SDADEL (0x7), SCLDEL (0xC), PRESC (0x1).
+[00:00:00.000000000] [WARNING] spi1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x1000. Tags: SSI (0x1).
+[00:00:00.000000000] [WARNING] spi1: Unhandled write to offset 0x8. Unhandled bits: [16-18, 28] when writing value 0x10070007. Tags: CRCSIZE (0x7), MBR (0x1).
+[00:00:00.000000000] [WARNING] spi1: Unhandled write to offset 0xC. Unhandled bits: [26, 31] when writing value 0x84400000. Tags: SSM (0x1), AFCNTR (0x1).
+[00:00:00.000000000] [WARNING] i2c1: Unknown slave at address 118.
+[00:00:00.003600000] [WARNING] i2c1: Unhandled write to offset 0x1C. Unhandled bits: [4] when writing value 0x30. Tags: NACKCF (0x1).
+[00:00:00.003600000] [WARNING] i2c1: Unknown slave at address 119.
+[00:00:00.007200000] [WARNING] i2c1: Unhandled write to offset 0x1C. Unhandled bits: [4] when writing value 0x30. Tags: NACKCF (0x1).
+[00:00:00.007200000] [NOISY] spi1.spi1mux: GPIO #0 set to False
+[00:00:00.007200000] [WARNING] spi1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x1001. Tags: SSI (0x1).
+[00:00:00.007200000] [WARNING] spi1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x1201. Tags: SSI (0x1).
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Decoded operation: Operation: ReadID, write enabled False
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0xEF
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x40
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.007200000] [NOISY] spi1.spi1mux.u4: Handled command: Operation: ReadID, returning 0x17
+[00:00:00.007200000] [WARNING] spi1: Unhandled write to offset 0x0. Unhandled bits: [12] when writing value 0x1000. Tags: SSI (0x1).
+[00:00:00.007200000] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.007200000] [NOISY] spi1.spi1mux: Finisihing transmission on device 0x0
+[00:00:00.007200000] [WARNING] sysbus: AETHELGARD-BOOTWORD 2100b007 0 721647
+[00:00:00.100000000] [INFO] machine-0: Machine paused.

@@ -102,6 +102,14 @@ pub enum Hook {
     /// `TDR <port> <value> <count>`: a `TDR` write of a port after this
     /// boot's boot word.
     Tdr { port: usize, value: u32, count: u64 },
+    /// `STEP <check> <value> <count>`: every `DoubleWord` write of an I2C
+    /// step check's status word (`AET-WO-3305`), by the check's index in the
+    /// image: where the firmware ended that step in the log.
+    Step {
+        check: usize,
+        value: u32,
+        count: u64,
+    },
     /// `STALE STOP <timer> <anchor> <count>` or `STALE INJECT <port> <byte>
     /// <anchor> <count>`: an action whose count was not its anchor's plus
     /// its delay's, which did nothing.
@@ -139,6 +147,7 @@ impl Hook {
             | Self::BootWord { count, .. }
             | Self::Inject { count, .. }
             | Self::Tdr { count, .. }
+            | Self::Step { count, .. }
             | Self::Stale { count, .. } => *count,
         }
     }
@@ -230,6 +239,13 @@ pub fn parse(body: &str) -> Option<Option<Hook>> {
         ["TDR", p, v, c] => (|| {
             Some(Hook::Tdr {
                 port: index(p)?,
+                value: hex(v)?,
+                count: dec(c)?,
+            })
+        })(),
+        ["STEP", k, v, c] => (|| {
+            Some(Hook::Step {
+                check: index(k)?,
                 value: hex(v)?,
                 count: dec(c)?,
             })
@@ -411,6 +427,18 @@ fn frame_actions(k: usize, p: &PortHook) -> String {
         })
         .collect();
     format!("({})", actions.join(", "))
+}
+
+/// The hook on an I2C step check's status word (`AET-WO-3305`): each write
+/// logged with its check's index, so the judge can attribute an address the
+/// controller found no device at to the step under way.
+pub fn step_hook(check: usize, status_at: u32) -> String {
+    hook(
+        status_at,
+        &format!(
+            "self.Log(LogLevel.Warning, '{PREFIX_TAG}STEP {check} %x %d' % (value, cpu.ExecutedInstructions))"
+        ),
+    )
 }
 
 /// The hook on the boot word: each write logged with the word before it;
@@ -654,6 +682,14 @@ mod tests {
             }))
         );
         assert_eq!(
+            p("[WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093"),
+            Some(Some(Hook::Step {
+                check: 1,
+                value: 0x2202_0001,
+                count: 721_093
+            }))
+        );
+        assert_eq!(
             p("[WARNING] sysbus: AETHELGARD-STALE STOP 1 2167 168997"),
             Some(Some(Hook::Stale {
                 what: Stale::Stop { timer: 1 },
@@ -683,6 +719,14 @@ mod tests {
             "[WARNING] sysbus: AETHELGARD-STALE NOW 1 2 3",
             "[WARNING] sysbus: AETHELGARD-TDR 0 ba",
             "[WARNING] sysbus: AETHELGARD-ECHO 0 1 ba 13125",
+            // `AET-WO-3305`: a step line is read as strictly as the rest.
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093 0",
+            "[WARNING] sysbus: AETHELGARD-STEP 01 22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 0x22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001 -1",
+            "[WARNING] sysbus: AETHELGARD-STEP x 22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 122020001 721093",
             "[WARNING] sysbus: AETHELGARD-",
         ] {
             assert_eq!(p(bad), Some(None), "{bad}");

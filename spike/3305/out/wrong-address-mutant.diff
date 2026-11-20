@@ -1,0 +1,11 @@
+--- a/board/firmware/src/main.rs
++++ b/board/firmware/src/main.rs
+@@ -153,7 +153,7 @@
+     let mut i2c1 = i2c1.init::<i2c1_speed::Fast400k, _>(&mut r, &clock, pb6, pb7);
+     let mut spi1 = spi1.init(&mut r, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
+     let mut buf0 = [0u8; 1];
+-    let (status, value) = match i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0) {
++    let (status, value) = match i2c1.transfer(&mut r, 0x75, &[0xd0], &mut buf0) {
+         Ok(_) => (
+             STATUS_OK,
+             buf0.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
