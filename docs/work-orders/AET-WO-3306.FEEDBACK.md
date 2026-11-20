@@ -21,7 +21,7 @@ Each statement is labelled:
   - Of 67 runs (§2), 66 give byte-identical `attribute` output from `main`'s CLI and the branch's, on the same archives.
   - Every `propose` run gives the same files and exit code.
   - All 154 of evolve's committed tests pass unchanged.
-- **F1 (ruled 12:22Z):** a collide onto a BMP581 stays I4, because no BMP581 witness is evidence. This is pre-existing. It is pinned by a named test and proposed as a §7.1 row (§7).
+- **F1 (ruled 12:22Z):** a collide onto a BMP581 stays I4, because no BMP581 witness is evidence. This is pre-existing. It is pinned by a named test. The architect has added it to roadmap §7.1, which owes it to "the next attribution work order" (§7).
 - **The §7 stop did not fire.** Only the collide case changes attribution.
 
 ## 1. Read first (read at source, `a75fffcc`)
@@ -149,7 +149,7 @@ Each statement is labelled:
   - M8 and M9 survived again until the helper's candidates claimed `ok` with a script of their own width. They had been excluded for another reason.
 - **M7 (the device itself can be the owner) is equivalent** under the F1 rule, so its guard was removed (reduction).
 
-**Tier-2 mutants** (`~/.cache/aet-3306/sh/mut2.sh`, measured in the image on a source copy, final code). Both are killed by the collide tier-2 test:
+**Tier-2 mutants** (`~/.cache/aet-3306/sh/mut2.sh`, measured in the image on a source copy of the merged head `030cc7f6`'s code before the reduction pass; the reduction's own proof is §Reduction). Both are killed by the collide tier-2 test:
 - **T1, first write and read only:** `attribute` gives `I4`, `ok:false`, evidence the rises only, which is `main`'s result.
 - **T2, the extra treated as the bus:** the same I4.
 - **T0, unmutated:** passes (with 3305's two-bme test, 9.3 s).
@@ -194,6 +194,7 @@ A fresh Opus subagent did the pass at `63a8b495`, in its own worktree, given the
   - Greedy matching.
   - No electrical case moves to S1.
   - `INV-04`: no new archive field.
+  - Every droop run measured (§2: Sentinel-01, the bench, Sentinel-03 and the motors' droop) classifies `equal`. A reset replays no transaction into a device's log, so no reset is read as software (`INV-05`).
 
 ## 7. Findings and rulings
 
@@ -201,7 +202,7 @@ A fresh Opus subagent did the pass at `63a8b495`, in its own worktree, given the
   - Our BMP581 model logs `read 0xRR -> 0xVV` and `write 0xRR <- …`. `witness_fields` reads only `Write XX` / `Read XX` (`witness_bytes`), so it returns `None` for every BMP581 witness. No BMP581 witness is evidence either way.
   - This is pre-existing (read at source): a wrong register on a BMP581 is I4 on `main` too.
   - The boards it reaches: Sentinel-03's U7, and Sentinel-02's barometers.
-  - **Proposed §7.1 row:** "attribution reads the BMP581 model's witness format, so a firmware fault on a BMP581 step, a collide onto one included, is software, not I4 (`3306` F1; measured on `spike/3306/spec/bme-bmp.json`)."
+  - **The roadmap row** (§7.1, added by the architect at #284) owes it to "the next attribution work order".
   - The row that fixes it must flip `a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence`.
 - **What the rule can and cannot tell (inferred from the code, then tested):**
   - It names the extra address, and its device's count.
@@ -215,7 +216,7 @@ A fresh Opus subagent did the pass at `63a8b495`, in its own worktree, given the
 - **Committed attributions not re-derivable:**
   - `spike/4600/out/*/attribute.json` are records of runs at older trace versions with no committed archive. They are not re-judged here.
   - The `spike/3305` archives are at trace 16, which `main`'s exact-version envelope refuses. The collide was re-made at trace 17 (§2).
-- **Fence edges, said on the bus:**
+- **Fence edges, said on the bus at push time:**
   - `ci/test-weights.tsv`: one row and its provenance line. twin_tier2 is lock-serialised, so every test needs a row.
   - `.github/workflows/ci.yml`: the `TIER2_MIN` line and its comment, as §2's acceptance asks.
   - `crates/aethelgard-cli/tests/fixtures/two-bme-collide.json`: a scenario fixture for the tier-2 test.
@@ -229,14 +230,15 @@ A fresh Opus subagent did the pass at `63a8b495`, in its own worktree, given the
 
 - **`cargo fmt --all -- --check`:** clean.
 - **`cargo clippy --workspace --all-targets -- -D warnings`:** clean, with and without `aethelgard-cli/with-tools` (host).
-- **`ci/gates.sh run`** (the `gates` job's set, on the host, target inside the repository): **green**, 2,367 passed and 0 failed over 139 result lines. Run three times:
-  - at `63a8b495`;
-  - at the merge of `main` `dc618bd8` (2305 docs, 4405);
-  - at the reduced head `faf36aeb`.
+- **`ci/gates.sh run`** (the `gates` job's set, on the host, target inside the repository): **green**, 0 failed over 139 result lines each time. Run three times:
+  - at `63a8b495` (2,362 passed);
+  - at the merge of `main` `dc618bd8`, 2305 docs and 4405 (2,367 passed);
+  - at the reduced head `faf36aeb` (2,367 passed).
 - **Tier 2 in the pinned image** (measured):
   - the new collide test and 3305's two-bme test pass at every stage, the last at `faf36aeb` (8.65 s for both);
-  - the seeded set (`attribute_seeded`) passes 11 of 11, three times (293 s, 269 s and 268 s), every case's exact evidence and masked included.
-- **Bench `--against-fab`, in CI's layout:** byte-identical to `main` (§7).
+  - the seeded set (`attribute_seeded`) passes 11 of 11, every case's exact evidence and masked included: at `63a8b495` (293 s), and on the final head `faf36aeb`'s code (287 s). It also passed beside the T1 and T2 mutant builds, which change no seeded case.
+- **Bench `--against-fab`, in CI's layout:** byte-identical to `main` (§7), at the merged head before the reduction pass. The reduction changes no result (§Reduction).
+- **`ci/shard.sh plan`,** in the image in CI's layout, with the new weight row: **guard ok**, 2,642 test names over 12 shards (685 s planned each). The first run refused because it compiled, a known artefact of a fresh target; the second ran on built binaries.
 
 ## Reduction pass
 
