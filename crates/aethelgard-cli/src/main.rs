@@ -2478,9 +2478,15 @@ fn quiet_solve(
 }
 
 /// `AET-WO-1209` D3, as ruled: each `power.loads` reference names a part the
-/// emitter draws for this specification (`aethelgard_eda::schematic::drawn`),
+/// emitter draws for this specification (`aethelgard_eda::schematic::drawn_nets`),
 /// such as a removed crossing's CS pull-up no longer; step 20a holds only the
-/// form. A specification the emitter refuses is left to `emit`.
+/// form. `AET-WO-1209b`: and the part, as drawn, has a pin on the entry's
+/// rail, such as a renumbered strap now on `GND` no longer. This holds every
+/// form a reference takes (declared, the MCU, the reset switch, an
+/// emitter-numbered `R<n>`/`C<n>`), since each names a drawn part. A wrong
+/// part that is also on the rail stays unseen (a renumbered `R7`, still on
+/// `VDD_3V3`: a roadmap §7.1 row). A specification the emitter refuses is
+/// left to `emit`.
 fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     let Some(power) = &spec.power else {
         return Ok(());
@@ -2491,23 +2497,37 @@ fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
     let Some((table, topology)) = quiet_solve(spec, sha256) else {
         return Ok(());
     };
-    let Ok(drawn) = aethelgard_eda::schematic::drawn(spec, &topology, &table) else {
+    let Ok(drawn) = aethelgard_eda::schematic::drawn_nets(spec, &topology, &table) else {
         return Ok(());
     };
     for (i, l) in power.loads.iter().enumerate() {
-        if let Some(r) = &l.reference
-            && !drawn.contains_key(r)
-        {
-            let path = format!("power.loads[{i}].reference");
-            return Err(Refusal::new(
-                "LoadNamesUndrawnPart",
-                Some(r),
-                format!(
-                    "{path} on `{}` names `{r}`, which the emitter does not draw for this specification",
-                    l.domain
-                ),
-            )
-            .at(Some(&path)));
+        let Some(r) = &l.reference else {
+            continue;
+        };
+        let path = format!("power.loads[{i}].reference");
+        let refuse = |kind, message| Err(Refusal::new(kind, Some(r), message).at(Some(&path)));
+        match drawn.get(r) {
+            None => {
+                return refuse(
+                    "LoadNamesUndrawnPart",
+                    format!(
+                        "{path} on `{}` names `{r}`, which the emitter does not draw for this specification",
+                        l.domain
+                    ),
+                );
+            }
+            Some(nets) if !nets.contains(&l.domain) => {
+                let on: Vec<String> = nets.iter().map(|n| format!("`{n}`")).collect();
+                return refuse(
+                    "LoadPartOffRail",
+                    format!(
+                        "{path} on `{d}` names `{r}`, which the emitter draws with no pin on `{d}`: its pins are on {}",
+                        on.join(", "),
+                        d = l.domain,
+                    ),
+                );
+            }
+            Some(_) => {}
         }
     }
     Ok(())

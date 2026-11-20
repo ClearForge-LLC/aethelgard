@@ -1230,6 +1230,28 @@ pub fn drawn(
     Ok(parts.into_iter().map(|p| (p.reference, p.value)).collect())
 }
 
+/// Each drawn part's reference with every net and rail (a domain by its id,
+/// or `GND`) its pins are drawn on, no-connects left out, read from the
+/// design: what `validate` needs to hold a `power.loads` entry's part to the
+/// entry's rail (`AET-WO-1209b`).
+pub fn drawn_nets(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, BTreeSet<String>>, EmitError> {
+    let (parts, _) = design(spec, solved, table)?;
+    Ok(parts
+        .into_iter()
+        .map(|p| {
+            let on = p.conns.into_values().filter_map(|c| match c {
+                Conn::Net(n) | Conn::Rail(n) => Some(n),
+                Conn::NoConnect => None,
+            });
+            (p.reference, on.collect())
+        })
+        .collect())
+}
+
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,
