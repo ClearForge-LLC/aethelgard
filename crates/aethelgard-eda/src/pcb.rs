@@ -573,10 +573,11 @@ fn place(
     items: &[Item<'_>],
     pairs: &[[String; 2]],
     bounded: bool,
+    seed: u64,
 ) -> Result<(Vec<Placed>, Edges), EmitError> {
     // Under a declared bound only, every choice that reference order makes
     // below is the canonical rank's instead (`AET-WO-1313c`, (k)).
-    let rank = bounded.then(|| canonical_rank(items));
+    let rank = bounded.then(|| canonical_rank(items, seed));
     let rank = rank.as_deref();
     let order = placing_order(items, rank);
     // An anchored part goes straight after its IC, in drawing order, before
@@ -913,7 +914,13 @@ const COLOUR_ROUNDS: usize = 3;
 /// test point last; an IC that owns anchored parts first (`AET-WO-1313`
 /// (r)); the larger courtyard first; the nearer to the MCU over label nets;
 /// the colour; the colours of the parts it owns; and last, the reference.
-fn canonical_rank(items: &[Item<'_>]) -> Vec<usize> {
+///
+/// `seed` 0 is the rank as `AET-WO-1313c` built it. Any other seed is hashed
+/// in ahead of every symbol and footprint ([`layout_of`]'s retries,
+/// `AET-WO-1317`): two items' colours are equal under every seed or under
+/// none (a 64-bit collision aside), so a seed reorders only what the colours
+/// order, and the reference decides the same ties it did.
+fn canonical_rank(items: &[Item<'_>], seed: u64) -> Vec<usize> {
     let real = |n: &str| !n.starts_with("unconnected-");
     let mut nets: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
     for (i, it) in items.iter().enumerate() {
@@ -925,11 +932,15 @@ fn canonical_rank(items: &[Item<'_>]) -> Vec<usize> {
             }
         }
     }
+    let start = match seed {
+        0 => FNV_BASIS,
+        s => fnv(FNV_BASIS, &s.to_le_bytes()),
+    };
     let base: Vec<u64> = items
         .iter()
         .map(|it| {
             fnv(
-                fnv(FNV_BASIS, it.part.lib_id.as_bytes()),
+                fnv(start, it.part.lib_id.as_bytes()),
                 it.part.footprint.as_bytes(),
             )
         })
@@ -1944,13 +1955,66 @@ pub struct Layout {
 /// origin and its rotation. Every other part is placed by [`place`] first.
 pub type Move = (String, (i64, i64), u16);
 
+/// How many reseeded canonical ranks [`layout_of`] tries, after the first
+/// placement, when that placement misses a declared bound (`AET-WO-1317`).
+/// Eight, frozen before the held-out runs: on the one-part-removed sweep over
+/// Sentinel-03's bounded variants it removed as many cases as sixteen (its
+/// FEEDBACK §3).
+const RESEEDS: u64 = 8;
+
+/// The placement and its outline. Under a declared bound, when the placement
+/// misses it (`AET-WO-1317`), the placer tries again with the canonical rank
+/// reseeded ([`canonical_rank`]), seeds 1 to [`RESEEDS`] in turn, and keeps
+/// the first that fits. A placement that fits the first time is the one
+/// returned, so no board that fits today moves. Removing a part re-rolls
+/// every colour tie the rank breaks by hash, and a greedy placer turns a
+/// re-rolled order into an outline some millimetres wider or narrower
+/// (FEEDBACK §2); a reseeded rank re-rolls those ties with nothing removed.
+/// A seed is a number, never a name, so no reference decides (`AET-WO-1313c`).
+///
+/// When no seed fits, the refusal names the least-over attempt (the larger
+/// overrun, then the sum, then the earlier seed): the placer's best outline.
+/// Any other refusal, on any attempt, is returned as it is.
 fn layout_of(
     items: &[Item<'_>],
     moves: &[Move],
     pairs: &[[String; 2]],
     bound: Option<OutlineBound>,
 ) -> Result<Layout, EmitError> {
-    let (mut placed, edges) = place(items, pairs, bound.is_some())?;
+    let over = |e: &EmitError| match *e {
+        EmitError::OutlineUnreachable {
+            over_um_w,
+            over_um_h,
+            ..
+        } => Some((over_um_w.max(over_um_h), over_um_w + over_um_h)),
+        _ => None,
+    };
+    let mut best = match attempt(items, moves, pairs, bound, 0) {
+        Err(e) if bound.is_some() && over(&e).is_some() => e,
+        done => return done,
+    };
+    for seed in 1..=RESEEDS {
+        match attempt(items, moves, pairs, bound, seed) {
+            Err(e) if over(&e).is_some() => {
+                if over(&e) < over(&best) {
+                    best = e;
+                }
+            }
+            done => return done,
+        }
+    }
+    Err(best)
+}
+
+/// One placement of [`layout_of`], with the canonical rank seeded by `seed`.
+fn attempt(
+    items: &[Item<'_>],
+    moves: &[Move],
+    pairs: &[[String; 2]],
+    bound: Option<OutlineBound>,
+    seed: u64,
+) -> Result<Layout, EmitError> {
+    let (mut placed, edges) = place(items, pairs, bound.is_some(), seed)?;
     let edge = edges.bottom;
     for (reference, origin, rotation) in moves {
         if !matches!(rotation, 0 | 90 | 180 | 270) {
@@ -3102,7 +3166,7 @@ mod tests {
                 .collect()
         };
         assert_eq!(names(placing_order(&items, None)), ["U1", "U2", "U9", "R1"]);
-        let rank = canonical_rank(&items);
+        let rank = canonical_rank(&items, 0);
         assert_eq!(
             names(placing_order(&items, Some(&rank))),
             ["U1", "U9", "U2", "R1"]
