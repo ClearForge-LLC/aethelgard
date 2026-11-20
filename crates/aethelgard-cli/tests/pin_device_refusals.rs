@@ -121,3 +121,27 @@ fn the_schematic_emitter_refuses_a_pin_device_by_reference_and_part() {
     assert_eq!((err.kind(), err.id()), ("PinDeviceNotDrawn", Some("U9")));
     assert!(err.to_string().contains("WAKE_SWITCH"), "{err}");
 }
+
+/// `AET-WO-1211b` §1.1: a `power.sense` input is in `adc_inputs`
+/// (`AET-WO-1211a`), but the generator brings up only a pin device's ADC
+/// inputs, so a sensed board's firmware is the one `main` generated: no
+/// analog pin, no ADC.
+#[test]
+fn a_power_sense_input_is_not_generated() {
+    let bytes = std::fs::read(format!(
+        "{}/tests/fixtures/sentinel-03.json",
+        env!("CARGO_MANIFEST_DIR")
+    ))
+    .unwrap();
+    let spec: Specification = serde_json::from_slice(&bytes).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    assert!(!t.adc_inputs.is_empty(), "the fixture senses its battery");
+    let files = aethelgard_cli::generate::tree(&spec, &t, &table).unwrap();
+    for (path, text) in files.iter().filter(|(p, _)| p.ends_with(".rs")) {
+        assert!(
+            !text.contains("into_analog") && !text.contains("Adc"),
+            "{path}"
+        );
+    }
+}
