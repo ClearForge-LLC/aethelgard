@@ -96,6 +96,30 @@ Each statement is labelled:
   - **Boots:** in 11 committed boots every verdict and every finding kind but the new info row is unchanged. Each
     boot word is later by the measured total.
 
+## 0a. Re-pins of planted instants (approved 12:06Z), each from a measured shift
+
+Each test plants its event at a count of loop iterations from reset. The TMP117's TXIS wait, made before that
+point, moves it by the measured shift. Each count is reduced by the shift divided by the loop's cost.
+
+| test | old | new | measured shift (board) | loop cost |
+|---|---|---|---|---|
+| `a_locked_access_late_in_a_flood_reaches_the_judge_whole` | pair 183,081 | pair 111,061 | 360,099 instructions, boot word 2662 → 362761 (sentinel-01-minimal) | 5 instructions a pair |
+| `a2_3_…` 79 ms | spin 2,650,000 | 2,529,967 | 3,600,980 ns, boot word 31,660 → 3,632,640 ns (serial-dshot-9600) | 30 ns a spin |
+| `a2_3_…` 87 ms | spin 2,900,000 | 2,779,967 | as above | as above |
+| `a2_3_…` 94 ms | spin 3,150,000 | 3,029,967 | as above | as above |
+| `f2_a_late_dshot_anchor_fails_by_name` | settle 2,000,000 | 1,879,973 | 3,600,810 ns, boot-word shift (sentinel-02-shaped) | 30 ns a spin |
+| `m2_a_dma_start_of_cen_fails_closed_by_name` | spin 3,230,000 | 3,109,973 | as above | as above |
+
+**Each keeps its cause, asserted:**
+- **flood, f2 and m2:** the boot word is written, so the planted event ran inside the run.
+- **f2:** its anchor is between 98 and 100 ms.
+- **a2_3:** each boot word lands at its intended millisecond.
+
+**Verified in the image:** each fails, or passes, by its own named mechanism.
+
+**Proposed §7.1 row (the architect's, 12:06Z; not built here):** an event planted at a fixed count of spins from
+reset is brittle to any change in boot length. Planting it relative to the boot word would remove these re-pins.
+
 ## 1. The measurement table (§1.1), with the predictions beside it
 
 **Static (`spike/4241/sh/survey.py`, `out/survey.md`; run before the predictions were written).**

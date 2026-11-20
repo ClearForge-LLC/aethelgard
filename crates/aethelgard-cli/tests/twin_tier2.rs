@@ -1587,6 +1587,9 @@ fn a_locked_access_late_in_a_flood_reaches_the_judge_whole() {
     });
     let (code, v) = boot_elf("flood-locked", &elf, "10ms");
     assert_eq!(code, Some(1), "a flood with a locked access exits 1: {v}");
+    // Its cause inside the run (`AET-WO-4241`): the boot reached its fixed
+    // point, so the flood, and the read planted in it, ran.
+    assert_eq!(v["boot"]["boot_word"]["observed"], "0x2100b007", "{v}");
     let k = kinds(&v);
     assert!(
         k.contains(&"locked_peripheral_access"),
