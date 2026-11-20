@@ -16,6 +16,7 @@ def row(run, scenario, log_path):
     releases = [r[1] for r in rec if r[0] == 18 and r[3] == 1]
     asserts = [r[1] for r in rec if r[0] == 18 and r[3] == 0]
     probes = [r for r in rec if r[0] == 19]
+    bound = [r for r in rec if r[0] == 32]
     w13 = [r for r in rec if r[0] in (13, 22)]
     expected = w13[0][6] if w13 else []
     device = w13[0][4] if w13 else None
@@ -56,6 +57,7 @@ def row(run, scenario, log_path):
         'device_lines_to_probe': None if at_probe is None else len(at_probe),
         'device_lines_to_boot_word': None if at_bw is None else len(at_bw),
         'identity_lines_expected': len(expected), 'device': device,
+        'recovery_bound': [r[2:] for r in bound],
     }
 
 def main(run):
