@@ -4,9 +4,9 @@
 //! - each SPI device's chip select, bus, mode and speeds (`HAL_SPI_DEVICE_LIST`);
 //! - each motor's timer channel and `PWM(n)` index (`HAL_PWM_GROUPS`);
 //! - the I2C clock (`HAL_I2C_MAX_CLOCK`, on ArduPilot's own timings);
-//! - the serial order and pins (the ELF's `_serial_tab`), each port's baud,
-//!   and its protocol and options (`DEFAULT_SERIALn_PROTOCOL` and `_OPTIONS`,
-//!   `AET-WO-4404`);
+//! - the serial order and pins (the ELF's `_serial_tab`), and each port's
+//!   protocol, options and baud (the ELF's `AP_SerialManager::var_info`,
+//!   `AET-WO-4405`), with the GPS ports ArduPilot can bind;
 //! - the barometer probes (`HAL_BARO_PROBE_LIST`);
 //! - the IMU probes (`HAL_INS_PROBE_LIST`, `AET-WO-4400d`): each driver, its
 //!   SPI device, and its rotation, judged as a matrix against the declared
@@ -27,7 +27,7 @@ use aethelgard_ir::parts::{ArduPilotKind, PartsTable};
 use aethelgard_ir::serial::SerialRole;
 use aethelgard_ir::{PinAssignment, SolvedSerialPort, SolvedTopology};
 
-use crate::elf::{self, SerialEntry};
+use crate::elf::{self, SerialEntry, SerialParam, map_baudrate};
 use crate::header::Preprocessed;
 use crate::{Finding, Refusal};
 
@@ -180,35 +180,6 @@ fn unit(peripheral: &str) -> Option<u8> {
         .ok()
 }
 
-/// `AP_SerialManager::map_baudrate` (`AP_SerialManager.cpp:737-770`): a
-/// SERIALn parameter's value as the baud ArduPilot opens the port at.
-// belt-and-suspenders: `aethelgard-hwdef` holds its own copy to choose a
-// define; this one judges it, and the judge shares no code with the
-// generator (`RUL-20`), so the two copies are deliberate.
-fn map_baudrate(rate: u64) -> u64 {
-    match if rate == 0 { 57 } else { rate } {
-        1 => 1200,
-        2 => 2400,
-        4 => 4800,
-        9 => 9600,
-        19 => 19_200,
-        38 => 38_400,
-        57 => 57_600,
-        100 => 100_000,
-        111 => 111_100,
-        115 => 115_200,
-        230 => 230_400,
-        256 => 256_000,
-        460 => 460_800,
-        500 => 500_000,
-        921 => 921_600,
-        1500 => 1_500_000,
-        2000 => 2_000_000,
-        r if r > 2000 => r,
-        r => r * 1000,
-    }
-}
-
 /// Collects findings, each named `identity`.
 struct Out(Vec<Finding>);
 
@@ -289,12 +260,13 @@ pub fn judge(
     elf_bytes: &[u8],
 ) -> Result<Vec<Finding>, Refusal> {
     let serial = elf::serial_table(elf_bytes)?;
+    let params = elf::serial_params(elf_bytes)?;
     let mut out = Out(Vec::new());
     spi(t, parts, header, &mut out)?;
     motors(t, header, &mut out)?;
     i2c_clock(t, header, &mut out)?;
-    serial_ports(t, header, &serial, &mut out)?;
-    serial_settings(t, header, &mut out)?;
+    serial_ports(t, header, &serial, &params, &mut out)?;
+    serial_settings(t, &params, &mut out);
     baros(t, parts, header, &mut out)?;
     imus(t, parts, header, elf_bytes, &mut out)?;
     Ok(out.0)
@@ -589,11 +561,13 @@ fn serial_order(
 /// The serial order, from the ELF: SERIAL0 the console, then the other ports
 /// in the specification's order, each on its solved peripheral (its driver
 /// `SDn` and its number) and pins, every later entry empty; and each port's
-/// baud, except RC input's, which ArduPilot sets itself (`AET-WO-4400b` F3).
+/// baud, from its `n_BAUD` in var_info, except RC input's, which ArduPilot
+/// sets itself (`AET-WO-4400b` F3).
 fn serial_ports(
     t: &SolvedTopology,
     h: &Preprocessed,
     serial: &[SerialEntry],
+    params: &[SerialParam],
     out: &mut Out,
 ) -> Result<(), Refusal> {
     let order = serial_order(t);
@@ -645,27 +619,30 @@ fn serial_ports(
         if matches!(p.role, SerialRole::RcCrsf | SerialRole::RcSbus) {
             continue;
         }
-        let declared = u64::from(p.framing.baud);
-        let runs: Vec<u64> = match (defined_number(h, &format!("DEFAULT_SERIAL{n}_BAUD"))?, n) {
-            (None, 0) => vec![SERIAL0_DEFAULT_BAUD],
-            (None, _) => Vec::new(),
-            // SERIAL0 opens at the define (`AP_SerialManager.cpp:419`), then
-            // the GCS reopens it at its parameter, `define / 1000`
-            // (`AP_SerialManager.cpp:172`), mapped (`GCS_Common.cpp:221`,
-            // `AP_SerialManager.h:151-153`): both run (adversarial A7).
-            (Some(v), 0) => vec![v, map_baudrate(v / 1000)],
-            // SERIALn at its parameter's mapped value.
-            (Some(v), _) => vec![map_baudrate(v)],
+        // A port var_info does not compile is named by `serial_settings`.
+        let Some(param) = params.iter().find(|q| usize::from(q.port) == n) else {
+            continue;
         };
-        if runs.is_empty() || runs.iter().any(|b| *b != declared) {
-            let got = if runs.is_empty() {
-                "not stated (ArduPilot's per-port default)".to_owned()
-            } else {
-                runs.iter()
-                    .map(|b| format!("{b} baud"))
-                    .collect::<Vec<_>>()
-                    .join(", then ")
-            };
+        let declared = u64::from(p.framing.baud);
+        let mut runs = Vec::new();
+        if n == 0 {
+            // SERIAL0 first opens at the define itself, a literal in the code
+            // (`AP_SerialManager.cpp:419`), which var_info cannot hold: its
+            // `0_BAUD` is the define / 1000 in C integer division (`:172`),
+            // so 115999 and 115200 share one row (adversarial A7). This is
+            // the one serial fact still read from `hwdef.h` (FEEDBACK D1).
+            runs.push(defined_number(h, "DEFAULT_SERIAL0_BAUD")?.unwrap_or(SERIAL0_DEFAULT_BAUD));
+        }
+        // Every port then runs at its parameter, mapped
+        // (`AP_SerialManager.h:151-153`; SERIAL0 reopened by the GCS,
+        // `GCS_Common.cpp:221`).
+        runs.push(map_baudrate(param.baud));
+        if runs.iter().any(|b| *b != declared) {
+            let got = runs
+                .iter()
+                .map(|b| format!("{b} baud"))
+                .collect::<Vec<_>>()
+                .join(", then ");
             out.push(
                 "WrongSerialBaud",
                 &at,
@@ -679,10 +656,7 @@ fn serial_ports(
 }
 
 /// ArduPilot's `enum SerialProtocol` at the tag (`AP_SerialManager.h:37-91`),
-/// every name with its value: a `DEFAULT_SERIALn_PROTOCOL` may name any.
-// belt-and-suspenders: `aethelgard-hwdef` keeps its own `protocol()` to
-// choose a define; this table judges what compiles, and the judge shares no
-// code with the generator (`RUL-20`), so the two copies are deliberate.
+/// every name with its value, to name a decoded protocol in a finding.
 const SERIAL_PROTOCOLS: [(&str, i64); 51] = [
     ("SerialProtocol_None", -1),
     ("SerialProtocol_Console", 0),
@@ -739,19 +713,19 @@ const SERIAL_PROTOCOLS: [(&str, i64); 51] = [
 
 const MAVLINK2: i64 = 2;
 const GPS: i64 = 5;
+/// `SerialProtocol_GPS2`, which ArduPilot finds as a GPS port
+/// (`protocol_match`, `AP_SerialManager.cpp:786-790`).
+const GPS2: i64 = 6;
 const RCIN: i64 = 23;
 
-/// Each SERIALn's protocol when `hwdef.h` does not define
-/// `DEFAULT_SERIALn_PROTOCOL`, n = 1 to 9: the tag's `#ifndef` defaults
-/// (`AP_SerialManager.cpp:47-152`): MAVLink 2 on 1 and 2 (`:48`, `:61`), GPS
-/// on 3 and 4 (`:74`, `:87`), none on 5 to 9 (`:100`, `:113`, `:126`, `:139`,
-/// `:152`). Its parameter table stops at SERIAL9
-/// (`AP_SerialManager.cpp:379-395`).
-const DEFAULT_PROTOCOLS: [i64; 9] = [MAVLINK2, MAVLINK2, GPS, GPS, -1, -1, -1, -1, -1];
+/// `GPS_MAX_RECEIVERS` (`AP_GPS_config.h:16`): `AP_GPS::init` binds the
+/// first GPS port to receiver 1 and the second to receiver 2, and no
+/// receiver is left for a third (`AP_GPS.cpp:345-349`).
+const GPS_MAX_RECEIVERS: usize = 2;
 
 /// `SERIALn_OPTIONS` bits (`AP_HAL/UARTDriver.h:90-102`).
-const RXINV: u64 = 1 << 0;
-const TXINV: u64 = 1 << 1;
+const RXINV: i64 = 1 << 0;
+const TXINV: i64 = 1 << 1;
 
 fn protocol_name(v: i64) -> String {
     SERIAL_PROTOCOLS
@@ -760,56 +734,45 @@ fn protocol_name(v: i64) -> String {
         .map_or_else(|| v.to_string(), |(n, _)| format!("{n} ({v})"))
 }
 
-/// What a `DEFAULT_SERIALn_PROTOCOL` value compiles to: a C integer constant,
-/// or a name of the enum. A name that is also a macro would stand in for the
-/// enumerator, and anything else is a form this reader does not know: both
-/// refused (`INV-06`).
-fn protocol_value(h: &Preprocessed, define: &str, v: &str) -> Result<i64, Refusal> {
-    if is_name(v) {
-        if h.value(v)?.is_some() {
-            return malformed(
-                v,
-                "is defined as a macro, where ArduPilot's SerialProtocol enumerator stands",
-            );
-        }
-        if let Some((_, p)) = SERIAL_PROTOCOLS.iter().find(|(n, _)| *n == v) {
-            return Ok(*p);
-        }
-    } else if let Some(p) = number(v).and_then(|n| i64::try_from(n).ok()) {
-        return Ok(p);
-    }
-    malformed(
-        define,
-        format!(
-            "is neither a C integer constant nor one of ArduPilot's SerialProtocol names: `{v}`"
-        ),
-    )
-}
-
-/// Each port's protocol and options as ArduPilot compiles them from
-/// `hwdef.h`, against the topology's role and declared inversion:
-/// - **SERIAL0:** its define is never read: the parameter's default is a
-///   literal MAVLink 2 (`AP_SerialManager.cpp:180`), whatever
-///   `DEFAULT_SERIAL0_PROTOCOL` says, so the port there must be the console
-///   or a MAVLink port. It has no options parameter, so a port there
-///   declared inverted runs not inverted.
-/// - **SERIAL1–9 protocol:** the define, else the tag's default for that n
-///   ([`DEFAULT_PROTOCOLS`]), each row compiled only where
-///   `HAL_HAVE_SERIALn_PARAMS` is (`:183` … `:379`). Expected by role, exactly:
-///   MAVLink 1 and 2 are different wires, so `protocol_match`'s
-///   equivalences (`:773-793`) do not apply.
-/// - **SERIAL1–6 and 9 options:** the define, else 0. SERIAL7 and 8 read a
-///   literal 0 (`:357`, `:376`), whatever the define says. A port that is
-///   not RC input sets RXINV and TXINV exactly when it declares `inverted`
-///   (both lines, `ir/src/serial.rs:82`), and no other bit. On RC input,
-///   RXINV is AP_RCProtocol's (`AP_RCProtocol.cpp:326-336`) and is not
-///   judged; every other bit must be clear.
+/// Each port's protocol and options as `var_info` compiles them, against the
+/// topology's role and declared inversion (the defaults, the `#ifndef`s, the
+/// SERIAL7/8 literal options and `HAL_HAVE_SERIALn_PARAMS` are all folded
+/// in by the compiler):
+/// - **A port var_info does not compile** has no parameters at all
+///   (`MissingSerialParameters`): its `HAL_HAVE_SERIALn_PARAMS` is not 1,
+///   or it is past SERIAL9, where the table stops (`:379-397`).
+/// - **Protocol:** `n_PROTOCOL`, expected by role, exactly: MAVLink 1 and 2
+///   are different wires, so `protocol_match`'s equivalences (`:773-793`)
+///   do not apply. On SERIAL0 it is a literal MAVLink 2 (`:180`), so the
+///   port there must be the console or a MAVLink port (`AET-WO-4404` D4).
+/// - **Options:** `n_OPTIONS`. A port that is not RC input sets RXINV and
+///   TXINV exactly when it declares `inverted` (both lines,
+///   `ir/src/serial.rs:82`), and no other bit. On RC input, RXINV is
+///   AP_RCProtocol's (`AP_RCProtocol.cpp:326-336`) and is not judged; every
+///   other bit must be clear. SERIAL0 has no options row (`:165-181`), so a
+///   port there declared inverted runs not inverted.
 /// - **One RC input at most:** a second compiled RCIN port is dropped
 ///   (`AP_SerialManager.cpp:536-541`), even where the topology asks for it.
-fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Refusal> {
-    let mut rcin: Option<String> = None;
-    for (n, (label, p, ..)) in serial_order(t).into_iter().enumerate() {
+/// - **Two GPS ports at most:** a third compiled GPS (or GPS2) port is never
+///   bound ([`GPS_MAX_RECEIVERS`]).
+///
+/// The last two count every compiled port, declared or not, in n order, as
+/// ArduPilot's own search does (`find_protocol_instance`, `:600-612`).
+fn serial_settings(t: &SolvedTopology, params: &[SerialParam], out: &mut Out) {
+    let order = serial_order(t);
+    let net_of = |n: usize| order.get(n).map(|(l, ..)| *l);
+    for (n, (label, p, ..)) in order.iter().enumerate() {
         let at = format!("SERIAL{n}");
+        let Some(param) = params.iter().find(|q| usize::from(q.port) == n) else {
+            out.push(
+                "MissingSerialParameters",
+                &at,
+                Some(label),
+                format!("SERIAL{n}'s parameters in var_info"),
+                format!("none: var_info compiles no SERIAL{n} row (AP_SerialManager.cpp:164-400)"),
+            );
+            continue;
+        };
         // belt-and-suspenders: the generator's `protocol()` maps a role to
         // the define it writes; this match is the judge's own (`RUL-20`).
         let want = match p.role {
@@ -817,70 +780,7 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
             SerialRole::Gps => GPS,
             SerialRole::RcCrsf | SerialRole::RcSbus => RCIN,
         };
-        let declared = |bits: u64| {
-            if bits == 0 {
-                "none".to_owned()
-            } else {
-                format!("{bits:#x}")
-            }
-        };
-        if n == 0 {
-            // Not read, but known: whatever port stands first runs MAVLink 2
-            // (adversarial D1: a topology with no console puts another role
-            // here).
-            if want != MAVLINK2 {
-                out.push(
-                    "WrongSerialProtocol",
-                    &at,
-                    Some(label),
-                    format!("{}, for a {} port", protocol_name(want), p.role.name()),
-                    format!(
-                        "{}: SERIAL0's literal (AP_SerialManager.cpp:180)",
-                        protocol_name(MAVLINK2)
-                    ),
-                );
-            }
-            if p.framing.inverted {
-                out.push(
-                    "WrongSerialOptions",
-                    &at,
-                    Some(label),
-                    "RXINV and TXINV (declared inverted)".into(),
-                    "none: SERIAL0 has no options parameter (AP_SerialManager.cpp:165-181)".into(),
-                );
-            }
-            continue;
-        }
-        let Some(default) = DEFAULT_PROTOCOLS.get(n - 1) else {
-            out.push(
-                "MissingSerialParameters",
-                &at,
-                Some(label),
-                format!("SERIAL{n}_PROTOCOL and _OPTIONS"),
-                "none: ArduPilot's parameter table stops at SERIAL9 (AP_SerialManager.cpp:379-395)"
-                    .into(),
-            );
-            continue;
-        };
-        // The script writes 1 for each SERIAL_ORDER entry
-        // (`chibios_hwdef.py:1700-1709`); any other value drops the port's
-        // parameters, and with them both defaults read here.
-        let params = format!("HAL_HAVE_SERIAL{n}_PARAMS");
-        if let Some(v) = h.value(&params)?
-            && v != "1"
-        {
-            return malformed(
-                &params,
-                format!(
-                    "is `{v}`, not the `1` ArduPilot's script writes for a listed port (chibios_hwdef.py:1700-1709); any other value may drop SERIAL{n}'s parameters"
-                ),
-            );
-        }
-        let define = format!("DEFAULT_SERIAL{n}_PROTOCOL");
-        let runs = match h.value(&define)? {
-            Some(v) => protocol_value(h, &define, &v)?,
-            None => *default,
-        };
+        let runs = i64::from(param.protocol);
         if runs != want {
             out.push(
                 "WrongSerialProtocol",
@@ -890,22 +790,26 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
                 protocol_name(runs),
             );
         }
-        if runs == RCIN {
-            match &rcin {
-                Some(first) => out.push(
-                    "RcInputTwice",
+        let declared = |bits: i64| {
+            if bits == 0 {
+                "none".to_owned()
+            } else {
+                format!("{bits:#x}")
+            }
+        };
+        let Some(options) = param.options.map(i64::from) else {
+            if p.framing.inverted {
+                out.push(
+                    "WrongSerialOptions",
                     &at,
                     Some(label),
-                    format!("one RCIN port, {first} (AP_SerialManager.cpp:536-541)"),
-                    protocol_name(RCIN),
-                ),
-                None => rcin = Some(at.clone()),
+                    "RXINV and TXINV (declared inverted)".into(),
+                    format!(
+                        "none: SERIAL{n} has no options parameter (AP_SerialManager.cpp:165-181)"
+                    ),
+                );
             }
-        }
-        let options = if matches!(n, 7 | 8) {
-            0
-        } else {
-            defined_number(h, &format!("DEFAULT_SERIAL{n}_OPTIONS"))?.unwrap_or(0)
+            continue;
         };
         let (wrong, expected) = if want == RCIN {
             (
@@ -926,7 +830,38 @@ fn serial_settings(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Resul
             );
         }
     }
-    Ok(())
+    let (mut rcin, mut gps) = (Vec::new(), Vec::new());
+    for q in params {
+        let (n, runs) = (usize::from(q.port), i64::from(q.protocol));
+        let at = format!("SERIAL{n}");
+        if runs == RCIN {
+            if let Some(first) = rcin.first() {
+                out.push(
+                    "RcInputTwice",
+                    &at,
+                    net_of(n),
+                    format!("one RCIN port, {first} (AP_SerialManager.cpp:536-541)"),
+                    protocol_name(RCIN),
+                );
+            }
+            rcin.push(at);
+        } else if runs == GPS || runs == GPS2 {
+            if gps.len() >= GPS_MAX_RECEIVERS {
+                out.push(
+                    "GpsPortUnbound",
+                    &at,
+                    net_of(n),
+                    format!(
+                        "at most {GPS_MAX_RECEIVERS} GPS ports, {} (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349)",
+                        gps.join(" and ")
+                    ),
+                    protocol_name(runs),
+                );
+            } else {
+                gps.push(at);
+            }
+        }
+    }
 }
 
 /// The barometer probes the list compiles, in order, against the topology's

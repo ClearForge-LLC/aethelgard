@@ -1,14 +1,18 @@
 //! Tier 1: the identity judge (`AET-WO-4400b2`) on the reference topology and
 //! a `hwdef.h` holding ArduPilot's device tables as it writes them, with the
-//! ELF's serial table given as decoded entries. Every mismatch is named; the
-//! work order's §5 cases are each here.
+//! ELF's serial table given as decoded entries and its serial parameters
+//! (`var_info`, `AET-WO-4405`) as rows. Every mismatch is named; the work
+//! order's §5 cases are each here.
 
 mod common;
 
 use aethelgard_ir::SolvedTopology;
-use aethelgard_pincheck::elf::SerialEntry;
+use aethelgard_pincheck::elf::{self, SerialEntry, SerialParam};
 use aethelgard_pincheck::{Refusal, header, identity};
-use common::{Elf, IDENTITY, INVENSENSEV3_PROBE, SD1, sd_address, serial_bytes, topology};
+use common::{
+    Elf, IDENTITY, INVENSENSEV3_PROBE, Port, SD1, SERIAL0_ONLY, VarRow, group_end, sd_address,
+    serial_bytes, topology, var_info, var_row,
+};
 use serde_json::{Value, json};
 
 /// The IMU probe ArduPilot writes for `IMU Invensensev3 SPI:icm42688
@@ -26,7 +30,8 @@ const EMPTY: SerialEntry = SerialEntry {
 };
 
 /// The findings as `kind at [expected | decoded]`, or the refusal's kind,
-/// the ELF holding `serial` and Invensensev3's probe.
+/// the ELF holding `serial`, SERIAL0's parameters alone, and Invensensev3's
+/// probe.
 fn judge(t: &SolvedTopology, text: &str, serial: &[SerialEntry]) -> Result<Vec<String>, Refusal> {
     judge_elf(t, text, serial, &[INVENSENSEV3_PROBE])
 }
@@ -38,9 +43,21 @@ fn judge_elf(
     serial: &[SerialEntry],
     functions: &[&str],
 ) -> Result<Vec<String>, Refusal> {
+    judge_with(t, text, serial, var_info(&SERIAL0_ONLY), functions)
+}
+
+/// [`judge_elf`], the ELF's `var_info` holding `rows`.
+fn judge_with(
+    t: &SolvedTopology,
+    text: &str,
+    serial: &[SerialEntry],
+    rows: Vec<VarRow>,
+    functions: &[&str],
+) -> Result<Vec<String>, Refusal> {
     let parts = aethelgard_ir::parts::table().unwrap();
     let pre = header::preprocess(text)?;
     let elf = Elf {
+        var_info: Some(rows),
         serial: Some(serial.iter().map(serial_bytes).collect()),
         objects: serial
             .iter()
@@ -320,19 +337,41 @@ fn the_serial_order_and_bauds_are_judged() {
         kinds(&judge(&t, IDENTITY, &[moved]).unwrap()),
         ["WrongSerialPort"]
     );
-    let text = format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD 921600\n");
+    // SERIAL0 opens at its define, read from hwdef.h (FEEDBACK D1), then
+    // runs at `0_BAUD`, the define / 1000 as var_info holds it, mapped
+    // (adversarial A7).
+    let console = |define: &str, row: i32| {
+        judge_with(
+            &t,
+            &format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD {define}\n"),
+            &[usart1],
+            var_info(&[(2, row, None)]),
+            &[INVENSENSEV3_PROBE],
+        )
+        .unwrap()
+    };
     assert_eq!(
-        judge(&t, &text, &[usart1]).unwrap(),
+        console("921600", 921),
         ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud, then 921600 baud]"]
     );
-    // SERIAL0 opens at its define, then the GCS reopens it at the define /
-    // 1000 mapped (adversarial A7): 14400 runs at 14000 after start-up.
+    // 115999 / 1000 is 115, which var_info cannot tell from 115200's: only
+    // the define names the boot rate.
+    assert_eq!(
+        console("115999", 115),
+        ["WrongSerialBaud SERIAL0 [115200 baud | 115999 baud, then 115200 baud]"]
+    );
     let mut v: Value = serde_json::to_value(&t).unwrap();
     v["serial_ports"]["CONSOLE"]["framing"]["baud"] = json!(14400);
     let slow: SolvedTopology = serde_json::from_value(v).unwrap();
-    let text = format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD 14400\n");
     assert_eq!(
-        judge(&slow, &text, &[usart1]).unwrap(),
+        judge_with(
+            &slow,
+            &format!("{IDENTITY}#define DEFAULT_SERIAL0_BAUD 14400\n"),
+            &[usart1],
+            var_info(&[(2, 14, None)]),
+            &[INVENSENSEV3_PROBE],
+        )
+        .unwrap(),
         ["WrongSerialBaud SERIAL0 [14400 baud | 14400 baud, then 14000 baud]"]
     );
     // The entry's driver pointer is not `SD1` (adversarial A11).
@@ -637,6 +676,7 @@ fn an_object_named_like_the_probe_is_not_the_driver() {
     let pre = header::preprocess(&text).unwrap();
     let elf = Elf {
         serial: Some(vec![serial_bytes(&EMPTY)]),
+        var_info: Some(var_info(&SERIAL0_ONLY)),
         objects: vec![(INVENSENSEV3_PROBE.to_owned(), 0x0800_2000)],
         ..Elf::default()
     };
@@ -691,13 +731,12 @@ fn the_sitl_probe_define_is_named() {
 
 /// `AET-WO-4404`: a topology with one port per `(role, inverted)`, in
 /// order, the first the console; port `i` on U(S)ART `i + 1`, its TX and RX
-/// on port C onwards; with the ELF's serial table to match, and a `hwdef.h`
-/// holding each non-RC port's baud (115200, SERIAL0's default) and nothing
-/// else of the serial ports.
-fn with_ports(ports: &[(&str, bool)]) -> (SolvedTopology, Vec<SerialEntry>, String) {
+/// on port C onwards; with the ELF's serial table to match. Since
+/// `AET-WO-4405` the protocols, options and bauds come from `var_info`
+/// ([`compiled`]); the `hwdef.h` holds nothing of the serial ports.
+fn with_ports(ports: &[(&str, bool)]) -> (SolvedTopology, Vec<SerialEntry>) {
     let mut v: Value = serde_json::to_value(topology()).unwrap();
     let mut entries = Vec::new();
-    let mut text = IDENTITY.to_owned();
     for (i, (role, inverted)) in ports.iter().enumerate() {
         let instance = u8::try_from(i + 1).unwrap();
         let peripheral = format!("USART{instance}");
@@ -727,14 +766,33 @@ fn with_ports(ports: &[(&str, bool)]) -> (SolvedTopology, Vec<SerialEntry>, Stri
             empty: false,
             driver_is_instance: true,
         });
-        if i > 0 && !role.starts_with("rc_") {
-            text.push_str(&format!("#define DEFAULT_SERIAL{i}_BAUD 115200\n"));
-        }
     }
-    (serde_json::from_value(v).unwrap(), entries, text)
+    (serde_json::from_value(v).unwrap(), entries)
 }
 
-/// fc-base's ports (FEEDBACK §2.3): the console, GPS, CRSF, and GPS.
+/// The `var_info` a right build of `ports` compiles: SERIAL0 MAVLink 2 at
+/// `115200/1000` with no options row; each later port its role's protocol
+/// (MAVLink 2, GPS 5, RCIN 23), 115200 (RC input: the tag's default `57`,
+/// which ArduPilot's RC input replaces), and RXINV with TXINV exactly when an
+/// inverted port is not RC input.
+fn compiled(ports: &[(&str, bool)]) -> Vec<Port> {
+    ports
+        .iter()
+        .enumerate()
+        .map(|(n, (role, inverted))| {
+            let rc = role.starts_with("rc_");
+            match (n, *role) {
+                (0, _) => (2, 115, None),
+                (_, "gps") => (5, 115_200, Some(if *inverted { 3 } else { 0 })),
+                _ if rc => (23, 57, Some(0)),
+                _ => (2, 115_200, Some(if *inverted { 3 } else { 0 })),
+            }
+        })
+        .collect()
+}
+
+/// fc-base's ports (`AET-WO-4404` FEEDBACK §2.3): the console, GPS, CRSF,
+/// and GPS.
 const FC_BASE: [(&str, bool); 4] = [
     ("console", false),
     ("gps", false),
@@ -743,7 +801,8 @@ const FC_BASE: [(&str, bool); 4] = [
 ];
 
 /// fc-base's serial defines as ArduPilot writes them to `hwdef.h`
-/// (measured, FEEDBACK §2.3).
+/// (measured, `AET-WO-4404` FEEDBACK §2.3): what today's ELF reading no
+/// longer looks at.
 const FC_BASE_DEFINES: &str = "\
 #define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_GPS
 #define DEFAULT_SERIAL1_OPTIONS 0
@@ -756,197 +815,183 @@ const FC_BASE_DEFINES: &str = "\
 #define HAL_HAVE_SERIAL3_PARAMS 1
 ";
 
-/// The serial findings for `ports` with `defines` added to the header.
-fn serial(ports: &[(&str, bool)], defines: &str) -> Result<Vec<String>, Refusal> {
-    let (t, entries, text) = with_ports(ports);
-    judge(&t, &format!("{text}{defines}"), &entries)
+/// The serial findings for `ports`, the ELF's `var_info` holding `params`
+/// and the `hwdef.h` holding `defines`.
+fn serial(ports: &[(&str, bool)], params: &[Port], defines: &str) -> Result<Vec<String>, Refusal> {
+    let (t, entries) = with_ports(ports);
+    judge_with(
+        &t,
+        &format!("{IDENTITY}{defines}"),
+        &entries,
+        var_info(params),
+        &[INVENSENSEV3_PROBE],
+    )
 }
 
-/// fc-base passes; each §1.1 (c) mutation is named, `adv-proto-swap` twice
-/// (FEEDBACK §2.3, measured on the built boards).
+/// `params` with port `n` replaced.
+fn with(params: &[Port], n: usize, port: Port) -> Vec<Port> {
+    let mut p = params.to_vec();
+    p[n] = port;
+    p
+}
+
+/// fc-base passes; each `4404` §1.1 (c) mutation is named from `var_info`
+/// as the spike decoded it (`spike/4405`), while `hwdef.h` holds fc-base's
+/// right defines; and the same mutations in `hwdef.h`, with `var_info`
+/// right, pass: the ELF's value is the one judged.
 #[test]
-fn each_serial_port_s_protocol_and_options_are_judged() {
+fn each_serial_port_s_protocol_and_options_are_judged_from_the_elf() {
+    let base = compiled(&FC_BASE);
+    let judged = |params: &[Port]| serial(&FC_BASE, params, FC_BASE_DEFINES).unwrap();
+    assert_eq!(judged(&base), Vec::<String>::new());
+    let swap = with(&with(&base, 1, (23, 115_200, Some(0))), 2, (5, 57, Some(0)));
     assert_eq!(
-        serial(&FC_BASE, FC_BASE_DEFINES).unwrap(),
-        Vec::<String>::new()
-    );
-    let swap = FC_BASE_DEFINES
-        .replace(
-            "SERIAL1_PROTOCOL SerialProtocol_GPS",
-            "SERIAL1_PROTOCOL SerialProtocol_RCIN",
-        )
-        .replace(
-            "SERIAL2_PROTOCOL SerialProtocol_RCIN",
-            "SERIAL2_PROTOCOL SerialProtocol_GPS",
-        );
-    assert_eq!(
-        serial(&FC_BASE, &swap).unwrap(),
+        judged(&swap),
         [
             "WrongSerialProtocol SERIAL1 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_RCIN (23)]",
             "WrongSerialProtocol SERIAL2 [SerialProtocol_RCIN (23), for a rc_crsf port | SerialProtocol_GPS (5)]"
         ]
     );
-    for (options, shown) in [("8", "0x8"), ("3", "0x3")] {
-        let text =
-            FC_BASE_DEFINES.replace("SERIAL1_OPTIONS 0", &format!("SERIAL1_OPTIONS {options}"));
+    for (options, shown) in [(8, "0x8"), (3, "0x3")] {
         assert_eq!(
-            serial(&FC_BASE, &text).unwrap(),
+            judged(&with(&base, 1, (5, 115_200, Some(options)))),
             [format!("WrongSerialOptions SERIAL1 [none | {shown}]")]
         );
     }
-    // A deleted define runs the tag's default for its n: MAVLink 2 on
-    // SERIAL1; GPS on SERIAL3, where a MAVLink port stands.
-    let text = FC_BASE_DEFINES.replace("#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_GPS\n", "");
+    // adv-proto-del1: the define deleted, SERIAL1 runs its default, MAVLink 2.
     assert_eq!(
-        kinds(&serial(&FC_BASE, &text).unwrap()),
-        ["WrongSerialProtocol"]
+        judged(&with(&base, 1, (2, 115_200, Some(0)))),
+        [
+            "WrongSerialProtocol SERIAL1 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_MAVLink2 (2)]"
+        ]
     );
+    // fc-mav3 and adv-proto-del3: a MAVLink port at SERIAL3, then its define
+    // deleted, so it runs SERIAL3's default, GPS.
     let mav3 = [FC_BASE[0], FC_BASE[1], FC_BASE[2], ("mavlink", false)];
-    let text = FC_BASE_DEFINES.replace(
-        "SERIAL3_PROTOCOL SerialProtocol_GPS",
-        "SERIAL3_PROTOCOL SerialProtocol_MAVLink2",
-    );
-    assert_eq!(serial(&mav3, &text).unwrap(), Vec::<String>::new());
-    let text = FC_BASE_DEFINES.replace("#define DEFAULT_SERIAL3_PROTOCOL SerialProtocol_GPS\n", "");
+    let mav3_rows = compiled(&mav3);
+    assert_eq!(serial(&mav3, &mav3_rows, "").unwrap(), Vec::<String>::new());
     assert_eq!(
-        serial(&mav3, &text).unwrap(),
+        serial(&mav3, &with(&mav3_rows, 3, (5, 115_200, Some(0))), "").unwrap(),
         [
             "WrongSerialProtocol SERIAL3 [SerialProtocol_MAVLink2 (2), for a mavlink port | SerialProtocol_GPS (5)]"
         ]
     );
-}
-
-/// A protocol as GCC reads it: an enumerator by name, or a C integer
-/// constant in any radix; a name the enum lacks, a qualified name, a
-/// negative, a macro standing in for the enumerator, or an `#undef` are
-/// refused by name; a define under `#if 0` is not compiled.
-#[test]
-fn each_serial_protocol_form_reads_as_the_compiler_reads_it() {
-    let one = |v: &str| {
-        serial(
-            &FC_BASE,
-            &FC_BASE_DEFINES.replace(
+    // The mutations in hwdef.h alone: var_info says what compiled, and passes.
+    for defines in [
+        FC_BASE_DEFINES
+            .replace(
                 "SERIAL1_PROTOCOL SerialProtocol_GPS",
-                &format!("SERIAL1_PROTOCOL {v}"),
+                "SERIAL1_PROTOCOL SerialProtocol_RCIN",
+            )
+            .replace(
+                "SERIAL2_PROTOCOL SerialProtocol_RCIN",
+                "SERIAL2_PROTOCOL SerialProtocol_GPS",
             ),
-        )
-    };
-    for v in ["SerialProtocol_GPS", "5", "05", "0x5", "5U", " 5 "] {
-        assert_eq!(one(v).unwrap(), Vec::<String>::new(), "{v}");
-    }
-    for v in [
-        "6",
-        "SerialProtocol_GPS2",
-        "SerialProtocol_MAVLink",
-        "SerialProtocol_None",
-        "1",
+        FC_BASE_DEFINES.replace("SERIAL1_OPTIONS 0", "SERIAL1_OPTIONS 8"),
+        FC_BASE_DEFINES.replace("#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_GPS\n", ""),
     ] {
-        assert_eq!(kinds(&one(v).unwrap()), ["WrongSerialProtocol"], "{v}");
+        assert_eq!(
+            serial(&FC_BASE, &base, &defines).unwrap(),
+            Vec::<String>::new(),
+            "{defines}"
+        );
     }
-    for v in [
-        "SerialProtocol_Nope",
-        "AP_SerialManager::SerialProtocol_GPS",
-        "-1",
-        "(5)",
-        "09",
-        "GPS_PROTO",
+}
+
+/// Each `hwdef.h` form `AET-WO-4404` refused, to keep its reading of the
+/// serial defines honest, no longer reaches the judge: the ELF says what the
+/// compiler did, and the verdict follows it (FEEDBACK §3). A protocol
+/// spelled any way, a macro standing in for the enumerator, a parameter
+/// guard other than 1, a malformed options or baud value: fc-base's
+/// `var_info` passes beside each, and a mutated one fails beside each.
+#[test]
+fn the_header_s_serial_defines_no_longer_reach_the_judge() {
+    let base = compiled(&FC_BASE);
+    let wrong = with(&base, 1, (23, 115_200, Some(0)));
+    for define in [
+        "#define DEFAULT_SERIAL1_PROTOCOL_X 0\n",
+        "#define SerialProtocol_GPS 23\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL SerialProtocol_Nope\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL AP_SerialManager::SerialProtocol_GPS\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL -1\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL (5)\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL 09\n",
+        "#define DEFAULT_SERIAL5_PROTOCOL GPS_PROTO\n",
+        "#define HAL_HAVE_SERIAL5_PARAMS 0\n",
+        "#define HAL_HAVE_SERIAL5_PARAMS (1)\n",
+        "#define DEFAULT_SERIAL6_OPTIONS 8u8\n",
+        "#define DEFAULT_SERIAL1_BAUD fast\n",
     ] {
-        match one(v) {
-            Err(Refusal::Header { name, .. }) => {
-                assert_eq!(name, "DEFAULT_SERIAL1_PROTOCOL", "{v}")
-            }
-            other => panic!("{v}: {other:?}"),
-        }
+        let defines = format!("{FC_BASE_DEFINES}{define}");
+        assert_eq!(
+            serial(&FC_BASE, &base, &defines).unwrap(),
+            Vec::<String>::new(),
+            "{define}"
+        );
+        assert_eq!(
+            kinds(&serial(&FC_BASE, &wrong, &defines).unwrap()),
+            ["WrongSerialProtocol", "RcInputTwice"],
+            "{define}"
+        );
     }
-    let defines = format!("{FC_BASE_DEFINES}#define SerialProtocol_GPS 23\n");
-    match serial(&FC_BASE, &defines) {
-        Err(Refusal::Header { name, .. }) => assert_eq!(name, "SerialProtocol_GPS"),
-        other => panic!("{other:?}"),
-    }
-    let undef = format!("{FC_BASE_DEFINES}#undef DEFAULT_SERIAL1_PROTOCOL\n");
-    assert!(matches!(
-        serial(&FC_BASE, &undef),
-        Err(Refusal::Header { .. })
-    ));
-    let dead = FC_BASE_DEFINES.replace(
-        "#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_GPS\n",
-        "#if 0\n#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_GPS\n#endif\n",
-    );
+}
+
+/// A declared port `var_info` does not compile is named, whatever stops it
+/// (`HAL_HAVE_SERIALn_PARAMS`, or n past 9, where the table ends): its
+/// protocol, options and baud are then not judged.
+#[test]
+fn a_declared_port_var_info_does_not_compile_is_named() {
+    let mut rows = var_info(&compiled(&FC_BASE));
+    rows.retain(|r| !r.name.starts_with("2_"));
+    let (t, entries) = with_ports(&FC_BASE);
     assert_eq!(
-        kinds(&serial(&FC_BASE, &dead).unwrap()),
-        ["WrongSerialProtocol"]
+        judge_with(&t, IDENTITY, &entries, rows, &[INVENSENSEV3_PROBE]).unwrap(),
+        [
+            "MissingSerialParameters SERIAL2 [SERIAL2's parameters in var_info | none: var_info compiles no SERIAL2 row (AP_SerialManager.cpp:164-400)]"
+        ]
+    );
+    // Eleven ports: the ELF's tables hold ten at most (`elf.rs`).
+    let mut ports = vec![("console", false)];
+    ports.extend([("mavlink", false); 10]);
+    let (t, mut entries) = with_ports(&ports);
+    entries.truncate(10);
+    let found = judge_with(
+        &t,
+        IDENTITY,
+        &entries,
+        var_info(&compiled(&ports[..10])),
+        &[INVENSENSEV3_PROBE],
+    )
+    .unwrap();
+    assert_eq!(
+        kinds(&found),
+        ["MissingSerialPort", "MissingSerialParameters"],
+        "{found:?}"
+    );
+    assert!(
+        found[1].starts_with("MissingSerialParameters SERIAL10 "),
+        "{found:?}"
     );
 }
 
-/// An absent define runs the tag's `#ifndef` default for its n
-/// (`AP_SerialManager.cpp:47-152`): MAVLink 2 on 1 and 2, GPS on 3 and 4,
-/// none on 5 to 9. A port past SERIAL9 has no parameters at all.
+/// SERIAL7 and 8 compile a literal 0 for their options
+/// (`AP_SerialManager.cpp:357`, `:376`), so a define there does nothing: the
+/// eight-port board with `DEFAULT_SERIAL7_OPTIONS 8` (`eight-opt7`) passes,
+/// because `var_info` says 0. A `7_OPTIONS` of 8 in `var_info` is named, as
+/// `eight-opt6`'s 6_OPTIONS 8 is; SERIAL9's is judged too.
 #[test]
-fn an_absent_protocol_runs_the_default_for_its_n() {
-    let at = |found: Vec<String>| -> Vec<String> {
-        found
-            .iter()
-            .map(|f| f.split(' ').take(2).collect::<Vec<_>>().join(" "))
-            .collect()
-    };
-    let mut ports = vec![("console", false)];
-    ports.extend([("gps", false); 9]);
-    assert_eq!(
-        at(serial(&ports, "").unwrap()),
-        [
-            "SERIAL1", "SERIAL2", "SERIAL5", "SERIAL6", "SERIAL7", "SERIAL8", "SERIAL9"
-        ]
-        .map(|n| format!("WrongSerialProtocol {n}"))
-    );
+fn serial7_options_are_judged_as_var_info_holds_them() {
     let mut ports = vec![("console", false)];
     ports.extend([("mavlink", false); 9]);
-    assert_eq!(
-        at(serial(&ports, "").unwrap()),
-        [
-            "SERIAL3", "SERIAL4", "SERIAL5", "SERIAL6", "SERIAL7", "SERIAL8", "SERIAL9"
-        ]
-        .map(|n| format!("WrongSerialProtocol {n}"))
-    );
-    let found = serial(&ports, "").unwrap();
-    assert!(found.contains(&"WrongSerialProtocol SERIAL5 [SerialProtocol_MAVLink2 (2), for a mavlink port | SerialProtocol_None (-1)]".to_owned()), "{found:?}");
-    // The ELF's table holds ten entries at most (`elf.rs`), so the eleventh
-    // port is also missing from it.
-    ports.push(("mavlink", false));
-    let (t, mut entries, text) = with_ports(&ports);
-    entries.truncate(10);
-    let found = judge(&t, &text, &entries).unwrap();
-    assert!(kinds(&found).contains(&"MissingSerialPort"), "{found:?}");
-    assert_eq!(
-        found.last().unwrap(),
-        "MissingSerialParameters SERIAL10 [SERIAL10_PROTOCOL and _OPTIONS | none: ArduPilot's parameter table stops at SERIAL9 (AP_SerialManager.cpp:379-395)]"
-    );
-}
-
-/// SERIAL7 and 8 read a literal 0 for their options (`AP_SerialManager.cpp`
-/// `:357`, `:376`): a define there does nothing and is not even read.
-/// SERIAL9's is read.
-#[test]
-fn serial7_and_8_options_are_never_read() {
-    let mut ports = vec![("console", false)];
-    ports.extend([("gps", false); 9]);
-    let protocols: String = (1..=9)
-        .map(|n| format!("#define DEFAULT_SERIAL{n}_PROTOCOL SerialProtocol_GPS\n"))
-        .collect();
-    assert_eq!(serial(&ports, &protocols).unwrap(), Vec::<String>::new());
-    let ignored = format!(
-        "{protocols}#define DEFAULT_SERIAL7_OPTIONS 8\n#define DEFAULT_SERIAL8_OPTIONS (not a number)\n"
-    );
-    assert_eq!(serial(&ports, &ignored).unwrap(), Vec::<String>::new());
-    let read = format!("{protocols}#define DEFAULT_SERIAL9_OPTIONS 8\n");
-    assert_eq!(
-        serial(&ports, &read).unwrap(),
-        ["WrongSerialOptions SERIAL9 [none | 0x8]"]
-    );
-    let malformed = format!("{protocols}#define DEFAULT_SERIAL6_OPTIONS 8u8\n");
-    assert!(matches!(
-        serial(&ports, &malformed),
-        Err(Refusal::Header { .. })
-    ));
+    let rows = compiled(&ports);
+    let opt7 = "#define DEFAULT_SERIAL7_OPTIONS 8\n";
+    assert_eq!(serial(&ports, &rows, opt7).unwrap(), Vec::<String>::new());
+    for n in [6, 7, 9] {
+        assert_eq!(
+            serial(&ports, &with(&rows, n, (2, 115_200, Some(8))), "").unwrap(),
+            [format!("WrongSerialOptions SERIAL{n} [none | 0x8]")]
+        );
+    }
 }
 
 /// Every option bit that moves a pin or a wire, on a port that is not RC
@@ -958,44 +1003,38 @@ fn each_option_bit_is_judged() {
     let sbus = [("console", false), ("rc_sbus", true)];
     let gps = [("console", false), ("gps", false)];
     let inverted = [("console", false), ("gps", true)];
-    let with = |ports: &[(&str, bool)], protocol: &str, options: u32| {
-        serial(
-            ports,
-            &format!("#define DEFAULT_SERIAL1_PROTOCOL {protocol}\n#define DEFAULT_SERIAL1_OPTIONS {options}\n"),
-        )
-        .unwrap()
+    let at = |ports: &[(&str, bool)], protocol: i8, options: i32| {
+        let rows = with(&compiled(ports), 1, (protocol, 115_200, Some(options)));
+        serial(ports, &rows, "").unwrap()
     };
     for ports in [&crsf[..], &sbus[..]] {
-        assert_eq!(with(ports, "SerialProtocol_RCIN", 0), Vec::<String>::new());
-        assert_eq!(with(ports, "SerialProtocol_RCIN", 1), Vec::<String>::new());
-        for bit in [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] {
+        assert_eq!(at(ports, 23, 0), Vec::<String>::new());
+        assert_eq!(at(ports, 23, 1), Vec::<String>::new());
+        for bit in 1..=12 {
             assert_eq!(
-                kinds(&with(ports, "SerialProtocol_RCIN", 1 << bit)),
+                kinds(&at(ports, 23, 1 << bit)),
                 ["WrongSerialOptions"],
                 "{ports:?} bit {bit}"
             );
         }
     }
     assert_eq!(
-        with(&sbus, "SerialProtocol_RCIN", 2),
+        at(&sbus, 23, 2),
         [
             "WrongSerialOptions SERIAL1 [no bit but RXINV, which RC input sets (AP_RCProtocol.cpp:326-336) | 0x2]"
         ]
     );
     for bit in 0..=12 {
         assert_eq!(
-            kinds(&with(&gps, "SerialProtocol_GPS", 1 << bit)),
+            kinds(&at(&gps, 5, 1 << bit)),
             ["WrongSerialOptions"],
             "bit {bit}"
         );
     }
-    assert_eq!(
-        with(&inverted, "SerialProtocol_GPS", 3),
-        Vec::<String>::new()
-    );
+    assert_eq!(at(&inverted, 5, 3), Vec::<String>::new());
     for options in [0, 1, 2, 7] {
         assert_eq!(
-            kinds(&with(&inverted, "SerialProtocol_GPS", options)),
+            kinds(&at(&inverted, 5, options)),
             ["WrongSerialOptions"],
             "{options}"
         );
@@ -1003,35 +1042,96 @@ fn each_option_bit_is_judged() {
 }
 
 /// ArduPilot attaches one RC input port and drops the next
-/// (`AP_SerialManager.cpp:536-541`), even where the topology asks for both.
+/// (`AP_SerialManager.cpp:536-541`), even where the topology asks for both,
+/// and counts every compiled port, declared or not.
 #[test]
 fn a_second_rc_input_port_is_named() {
     let two = [("console", false), ("rc_crsf", false), ("rc_sbus", true)];
-    let defines = "#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN\n#define DEFAULT_SERIAL2_PROTOCOL 23\n";
     assert_eq!(
-        serial(&two, defines).unwrap(),
+        serial(&two, &compiled(&two), "").unwrap(),
         [
             "RcInputTwice SERIAL2 [one RCIN port, SERIAL1 (AP_SerialManager.cpp:536-541) | SerialProtocol_RCIN (23)]"
         ]
     );
-    // By define: a GPS port compiled as RC input beside the CRSF port.
-    let swap = FC_BASE_DEFINES.replace(
-        "SERIAL1_PROTOCOL SerialProtocol_GPS",
-        "SERIAL1_PROTOCOL SerialProtocol_RCIN",
-    );
+    // A GPS port compiled as RC input beside the CRSF port.
+    let swap = with(&compiled(&FC_BASE), 1, (23, 115_200, Some(0)));
     assert_eq!(
-        kinds(&serial(&FC_BASE, &swap).unwrap()),
+        kinds(&serial(&FC_BASE, &swap, "").unwrap()),
         ["WrongSerialProtocol", "RcInputTwice"]
+    );
+    // An undeclared compiled port takes RC input too.
+    let one = [("console", false), ("rc_crsf", false)];
+    let mut rows = compiled(&one);
+    rows.push((23, 57, Some(0)));
+    assert_eq!(
+        serial(&one, &rows, "").unwrap(),
+        [
+            "RcInputTwice SERIAL2 [one RCIN port, SERIAL1 (AP_SerialManager.cpp:536-541) | SerialProtocol_RCIN (23)]"
+        ]
     );
 }
 
-/// SERIAL0 has no options parameter, so a console declared inverted runs
-/// not inverted; its protocol is never read (`AP_SerialManager.cpp:180`).
+/// `GPS_MAX_RECEIVERS` is 2 (`AP_GPS_config.h:16`): `AP_GPS::init` binds the
+/// first two GPS ports (`AP_GPS.cpp:345-349`), so a third, and every one
+/// after, is named. The eight-port board's five GPS ports (`4404` A-D2)
+/// leave SERIAL4, 5 and 6 unbound. A GPS2 port is found as GPS
+/// (`protocol_match`, `AP_SerialManager.cpp:786-790`), and an undeclared
+/// compiled GPS port takes a receiver too.
 #[test]
-fn the_console_s_protocol_is_not_read_and_its_inversion_is_named() {
-    let found = serial(&[("console", true)], "").unwrap();
+fn a_third_gps_port_is_named() {
+    let two = [("console", false), ("gps", false), ("gps", false)];
+    assert_eq!(
+        serial(&two, &compiled(&two), "").unwrap(),
+        Vec::<String>::new()
+    );
+    let eight = [
+        ("console", false),
+        ("gps", false),
+        ("rc_crsf", false),
+        ("gps", false),
+        ("gps", false),
+        ("gps", false),
+        ("gps", false),
+        ("mavlink", false),
+    ];
+    let found = serial(&eight, &compiled(&eight), "").unwrap();
     assert_eq!(
         found,
+        [4, 5, 6].map(|n| format!(
+            "GpsPortUnbound SERIAL{n} [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
+        ))
+    );
+    let three = [
+        ("console", false),
+        ("gps", false),
+        ("gps", false),
+        ("mavlink", false),
+    ];
+    let gps2 = with(&compiled(&three), 3, (6, 115_200, Some(0)));
+    assert_eq!(
+        kinds(&serial(&three, &gps2, "").unwrap()),
+        ["WrongSerialProtocol", "GpsPortUnbound"]
+    );
+    let mut undeclared = compiled(&two);
+    undeclared.push((5, 230, Some(0)));
+    assert_eq!(
+        serial(&two, &undeclared, "").unwrap(),
+        [
+            "GpsPortUnbound SERIAL3 [at most 2 GPS ports, SERIAL1 and SERIAL2 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
+        ]
+    );
+}
+
+/// SERIAL0's protocol is read from `var_info`, where the tag compiles a
+/// literal MAVLink 2 (`AP_SerialManager.cpp:180`); a define for it does
+/// nothing. SERIAL0 has no options row, so a console declared inverted runs
+/// not inverted. With no console, the first port stands at SERIAL0 and runs
+/// MAVLink 2 whatever its role (`AET-WO-4404` D4).
+#[test]
+fn the_console_s_protocol_is_read_and_its_inversion_is_named() {
+    let console = [("console", false)];
+    assert_eq!(
+        serial(&[("console", true)], &compiled(&console), "").unwrap(),
         [
             "WrongSerialOptions SERIAL0 [RXINV and TXINV (declared inverted) | none: SERIAL0 has no options parameter (AP_SerialManager.cpp:165-181)]"
         ]
@@ -1039,44 +1139,291 @@ fn the_console_s_protocol_is_not_read_and_its_inversion_is_named() {
     let ignored =
         "#define DEFAULT_SERIAL0_PROTOCOL SerialProtocol_GPS\n#define DEFAULT_SERIAL0_OPTIONS 3\n";
     assert_eq!(
-        serial(&[("console", false)], ignored).unwrap(),
+        serial(&console, &compiled(&console), ignored).unwrap(),
         Vec::<String>::new()
     );
-    // Adversarial D1: with no console, the first port stands at SERIAL0 and
-    // runs MAVLink 2 whatever its role; a MAVLink port there passes.
     assert_eq!(
-        serial(
-            &[("gps", false), ("rc_crsf", false)],
-            "#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN\n"
-        )
-        .unwrap(),
+        serial(&console, &[(5, 115, None)], "").unwrap(),
         [
-            "WrongSerialProtocol SERIAL0 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_MAVLink2 (2): SERIAL0's literal (AP_SerialManager.cpp:180)]"
+            "WrongSerialProtocol SERIAL0 [SerialProtocol_MAVLink2 (2), for a console port | SerialProtocol_GPS (5)]"
         ]
     );
+    let no_console = [("gps", false), ("rc_crsf", false)];
     assert_eq!(
-        serial(&[("mavlink", false)], ignored).unwrap(),
+        serial(&no_console, &compiled(&no_console), "").unwrap(),
+        [
+            "WrongSerialProtocol SERIAL0 [SerialProtocol_GPS (5), for a gps port | SerialProtocol_MAVLink2 (2)]"
+        ]
+    );
+    let mavlink = [("mavlink", false)];
+    assert_eq!(
+        serial(&mavlink, &compiled(&mavlink), "").unwrap(),
         Vec::<String>::new()
     );
+    let sbus = [("rc_sbus", true)];
     assert_eq!(
-        kinds(&serial(&[("rc_sbus", true)], "").unwrap()),
+        kinds(&serial(&sbus, &compiled(&sbus), "").unwrap()),
         ["WrongSerialProtocol", "WrongSerialOptions"]
     );
 }
 
-/// A port's parameters compile only where `HAL_HAVE_SERIALn_PARAMS` does
-/// (`AP_SerialManager.cpp:183` … `:379`): any value but 1, or a second
-/// definition, is refused by name.
+/// Each port's baud is its `n_BAUD` mapped (`map_baudrate`,
+/// `AP_SerialManager.cpp:737-770`), never the stored value: SERIAL0's `115`
+/// is 115200, and a port with no baud define runs its `#ifndef` default,
+/// `57` (57600). A `DEFAULT_SERIALn_BAUD` in `hwdef.h` is not read for
+/// n ≥ 1. RC input's baud is ArduPilot's own (`AET-WO-4400b` F3).
 #[test]
-fn a_port_whose_parameters_are_not_compiled_is_refused() {
-    let off = FC_BASE_DEFINES.replace("HAL_HAVE_SERIAL2_PARAMS 1", "HAL_HAVE_SERIAL2_PARAMS 0");
-    match serial(&FC_BASE, &off) {
-        Err(Refusal::Header { name, .. }) => assert_eq!(name, "HAL_HAVE_SERIAL2_PARAMS"),
-        other => panic!("{other:?}"),
+fn each_baud_is_the_parameter_mapped() {
+    let ports = [("console", false), ("mavlink", false), ("rc_crsf", false)];
+    let rows = compiled(&ports);
+    assert_eq!(serial(&ports, &rows, "").unwrap(), Vec::<String>::new());
+    for (stored, runs) in [
+        (57, 57_600),
+        (0, 57_600),
+        (-1, 57_600),
+        (9600, 9600),
+        (2, 2400),
+    ] {
+        assert_eq!(
+            serial(&ports, &with(&rows, 1, (2, stored, Some(0))), "").unwrap(),
+            [format!(
+                "WrongSerialBaud SERIAL1 [115200 baud | {runs} baud]"
+            )],
+            "{stored}"
+        );
     }
-    let twice = format!("{FC_BASE_DEFINES}#define HAL_HAVE_SERIAL1_PARAMS 0\n");
-    match serial(&FC_BASE, &twice) {
-        Err(Refusal::Header { name, .. }) => assert_eq!(name, "HAL_HAVE_SERIAL1_PARAMS"),
-        other => panic!("{other:?}"),
+    for stored in [115, 115_200] {
+        assert_eq!(
+            serial(
+                &ports,
+                &with(&rows, 1, (2, stored, Some(0))),
+                "#define DEFAULT_SERIAL1_BAUD 9600\n"
+            )
+            .unwrap(),
+            Vec::<String>::new(),
+            "{stored}"
+        );
+    }
+    assert_eq!(
+        serial(&ports, &with(&rows, 2, (23, 9, Some(0))), "").unwrap(),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        serial(&ports, &with(&rows, 0, (2, 115_200, None)), "").unwrap(),
+        Vec::<String>::new(),
+        "a stored 115200 also maps to 115200"
+    );
+    assert_eq!(
+        serial(&ports, &with(&rows, 0, (2, 57, None)), "").unwrap(),
+        ["WrongSerialBaud SERIAL0 [115200 baud | 115200 baud, then 57600 baud]"]
+    );
+}
+
+/// `serial_params` reads fc-base's table as the spike decoded it.
+#[test]
+fn var_info_reads_as_the_spike_decoded_it() {
+    let rows = var_info(&[
+        (2, 57, None),
+        (5, 115_200, Some(0)),
+        (23, 57, Some(0)),
+        (5, 115_200, Some(0)),
+    ]);
+    let params = elf::serial_params(
+        &Elf {
+            var_info: Some(rows),
+            ..Elf::default()
+        }
+        .bytes(),
+    )
+    .unwrap();
+    let p = |port, protocol, baud, options| SerialParam {
+        port,
+        protocol,
+        baud,
+        options,
+    };
+    assert_eq!(
+        params,
+        [
+            p(0, 2, 57, None),
+            p(1, 5, 115_200, Some(0)),
+            p(2, 23, 57, Some(0)),
+            p(3, 5, 115_200, Some(0))
+        ]
+    );
+    assert_eq!(elf::map_baudrate(params[0].baud), 57_600);
+}
+
+/// Every malformed `var_info` is refused by name (`INV-06`), never read
+/// loosely: no symbol, a partial entry, no `AP_GROUPEND`, anything after it
+/// or an `AP_GROUPEND` that is not exactly one, a name outside flash or too
+/// long, a row named twice or not known, flags (a default that is not a
+/// float), a type other than its member's (a nested group among them), a
+/// default its type does not hold exactly, and a port missing a row.
+#[test]
+fn every_malformed_var_info_is_refused_by_name() {
+    let good = var_info(&compiled(&FC_BASE));
+    let kind = |rows: Vec<VarRow>| {
+        elf::serial_params(
+            &Elf {
+                var_info: Some(rows),
+                ..Elf::default()
+            }
+            .bytes(),
+        )
+        .map(|_| "read")
+        .unwrap_or_else(|e| e.kind())
+    };
+    let message = |rows: Vec<VarRow>| {
+        elf::serial_params(
+            &Elf {
+                var_info: Some(rows),
+                ..Elf::default()
+            }
+            .bytes(),
+        )
+        .unwrap_err()
+        .to_string()
+    };
+    let edit = |f: &dyn Fn(&mut Vec<VarRow>)| {
+        let mut rows = good.clone();
+        f(&mut rows);
+        rows
+    };
+    let named =
+        |rows: &mut Vec<VarRow>, name: &str| rows.iter().position(|r| r.name == name).unwrap();
+    assert_eq!(kind(good.clone()), "read");
+    assert_eq!(
+        elf::serial_params(&Elf::default().bytes())
+            .unwrap_err()
+            .kind(),
+        "SymbolMissing"
+    );
+    let rows = good.len() as u32;
+    let partial = Elf {
+        var_info: Some(good.clone()),
+        var_info_size: Some(16 * rows - 8),
+        ..Elf::default()
+    };
+    assert_eq!(
+        elf::serial_params(&partial.bytes()).unwrap_err().kind(),
+        "SymbolSize"
+    );
+    assert_eq!(
+        kind(edit(&|r| {
+            r.pop();
+        })),
+        "VarInfoUnterminated"
+    );
+    // ArduPilot stops at AP_GROUPEND: a row after it is not part of the
+    // table, and this reader refuses the table rather than read on.
+    assert_eq!(
+        kind(edit(&|r| r.push(var_row("4_PROTOCOL", 1, 5.0)))),
+        "MalformedVarInfo"
+    );
+    let early = edit(&|r| {
+        let at = named(r, "1_OPTIONS");
+        r.insert(at, group_end());
+    });
+    assert_eq!(kind(early), "MalformedVarInfo");
+    for bad_end in [
+        VarRow {
+            idx: 0,
+            ..group_end()
+        },
+        VarRow {
+            name: "x".into(),
+            ..group_end()
+        },
+        VarRow {
+            offset: 4,
+            ..group_end()
+        },
+        VarRow {
+            value: 1,
+            ..group_end()
+        },
+        VarRow {
+            flags: 1,
+            ..group_end()
+        },
+    ] {
+        assert_eq!(
+            kind(edit(&|r| *r.last_mut().unwrap() = bad_end.clone())),
+            "MalformedVarInfo",
+            "{bad_end:?}"
+        );
+    }
+    assert_eq!(
+        kind(edit(&|r| r[0].name_at = Some(0x2000_0000))),
+        "VarInfoNameOutside"
+    );
+    assert_eq!(
+        kind(edit(&|r| r[0].name = "0_BAUD_AND_SEVENTEEN".into())),
+        "VarInfoNameOutside"
+    );
+    assert_eq!(
+        kind(edit(&|r| {
+            let at = named(r, "1_PROTOCOL");
+            r.insert(at, var_row("1_PROTOCOL", 1, 5.0));
+        })),
+        "VarInfoRowTwice"
+    );
+    for unknown in [
+        "1_PROTOKOL",
+        "0_OPTIONS",
+        "10_PROTOCOL",
+        "1_protocol",
+        "_PASS3",
+        "",
+    ] {
+        let rows = edit(&|r| {
+            let at = named(r, "_PASS1");
+            r.insert(at, var_row(unknown, 3, 0.0));
+        });
+        assert_eq!(kind(rows), "UnknownVarInfoRow", "{unknown}");
+    }
+    // AP_PARAM_FLAG_DEFAULT_POINTER: the union is an offset, not a float.
+    assert_eq!(
+        kind(edit(&|r| {
+            let at = named(r, "1_BAUD");
+            r[at].flags = 1 << 7;
+        })),
+        "MalformedVarInfo"
+    );
+    for wrong_type in [2, 4, 6] {
+        let rows = edit(&|r| {
+            let at = named(r, "1_BAUD");
+            r[at].kind = wrong_type;
+        });
+        assert_eq!(kind(rows), "MalformedVarInfo", "type {wrong_type}");
+    }
+    assert!(
+        message(edit(&|r| {
+            let at = named(r, "1_PROTOCOL");
+            r[at].kind = 6;
+        }))
+        .contains("`1_PROTOCOL`) has type 6, not 1")
+    );
+    for (name, value) in [
+        ("1_PROTOCOL", 5.5),
+        ("1_PROTOCOL", 128.0),
+        ("1_PROTOCOL", f32::NAN),
+        ("1_BAUD", 3.0e9),
+        ("1_OPTIONS", f32::INFINITY),
+        ("0_BAUD", -0.5),
+    ] {
+        let rows = edit(&|r| {
+            let at = named(r, name);
+            r[at].value = value.to_bits();
+        });
+        assert_eq!(kind(rows), "MalformedVarInfo", "{name} {value}");
+    }
+    for dropped in ["1_BAUD", "2_OPTIONS", "0_PROTOCOL", "3_PROTOCOL"] {
+        let rows = edit(&|r| {
+            let at = named(r, dropped);
+            r.remove(at);
+        });
+        assert_eq!(kind(rows), "VarInfoPartialPort", "{dropped}");
     }
 }
