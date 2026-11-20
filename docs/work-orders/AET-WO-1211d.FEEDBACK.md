@@ -181,7 +181,7 @@ A fresh Opus reviewer attacked `99ada513`, then `1a7bcf29` (evidence `~/.cache/a
 ## 8. Gates, fence, reduction pass
 
 - **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean.
-- **`cargo test --workspace`** at `HEAD` (`main` `adb8f61a` merged, in-tree target, as CI builds it): TESTCOUNT.
+- **`cargo test --workspace`** at `HEAD` (`main` `adb8f61a` merged, in-tree target, as CI builds it): **2,579 passed, 0 failed** (153 test binaries; `fbaaf3b7`, after which only docs and spike files changed).
   - The run before it (at `7b8d2c5d`) failed one test: `solved_devices::the_eda_reader_is_exactly_the_schematic` (`RUL-16`: `schematic.rs` and `support.rs` are eda's only readers of declared devices and connectors). The arm now takes the pin devices and the connector nets from `schematic.rs`, as the power tree does (`fbaaf3b7`).
 - **The READY point, all at `fbaaf3b7`:**
   - the null sweep against `main` `adb8f61a`: identical, 259 files;
