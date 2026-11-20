@@ -583,3 +583,99 @@ fn a_solved_pin_is_drawn_by_its_package_position() {
     let text = fs::read_to_string(r["schematic"]["path"].as_str().unwrap()).unwrap();
     assert!(text.contains("(label \"SPI_MISO\""), "no SPI_MISO label");
 }
+
+/// The twin's 1.8 V stand-in (`AET-WO-4210` D1), which declares
+/// `board.drawn: false` (`AET-WO-1210`).
+fn stand_in() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/imu-baro-1v8.json")
+}
+
+/// `AET-WO-1210` §1.4, §1.5: the declared stand-in passes `validate`, and
+/// `emit`, `extract`, `verify --fab-out` and `verify --against-fab` each
+/// refuse it by one name, `DrawsNoBoard`, before reading anything else (the
+/// board and scenario paths here do not exist) and writing nothing.
+#[test]
+fn a_declared_stand_in_validates_and_every_drawing_step_refuses_it_by_name() {
+    let spec = stand_in();
+    let spec = spec.to_str().unwrap();
+    let v = json_line(&run(&["validate", "--file", spec], None), 0);
+    assert_eq!(v["ok"], true, "{v}");
+
+    let d = Dir::new("stand-in");
+    let out = d.0.join("o");
+    let o = out.to_str().unwrap();
+    let missing = d.0.join("missing.json");
+    let m = missing.to_str().unwrap();
+    for (command, args) in [
+        ("emit", vec!["emit", "--file", spec, "--out", o]),
+        ("extract", vec!["extract", "--board", m, "--spec", spec]),
+        (
+            "verify --fab-out",
+            vec!["verify", "--spec", spec, "--scenarios", m, "--fab-out", o],
+        ),
+        (
+            "verify --against-fab",
+            vec![
+                "verify",
+                "--spec",
+                spec,
+                "--scenarios",
+                m,
+                "--against-fab",
+                o,
+            ],
+        ),
+    ] {
+        let v = json_line(&run(&args, None), 2);
+        assert_eq!(v["error"]["kind"], "DrawsNoBoard", "{command}: {v}");
+        assert_eq!(v["error"]["id"], "imu-baro-1v8", "{command}");
+        assert_eq!(v["error"]["path"], "board.drawn", "{command}");
+        assert_eq!(
+            v["error"]["message"],
+            format!(
+                "`imu-baro-1v8` declares `board.drawn: false`, a twin stand-in no board is drawn from, so `{command}` refuses it"
+            )
+        );
+        assert!(!out.exists(), "{command}: nothing is written");
+    }
+}
+
+/// `AET-WO-1210` §1.5: the stand-in without its declaration is a drawn
+/// board, and `validate` refuses it before any board, by rule 1 (its two
+/// ICM-20948s declare no pin capacitance; `extract`'s refusal on `main`) and,
+/// with those declared, by rule 3 (its ICP-10111 has a row and no emitter
+/// arm). Beside rule 3's early refusal, `emit`'s own late one stands as the
+/// second line, as it was on `main`.
+#[test]
+fn the_stand_in_undeclared_is_refused_by_validate_before_any_board() {
+    let d = Dir::new("undeclared");
+    let mut v: Value = serde_json::from_slice(&fs::read(stand_in()).unwrap()).unwrap();
+    v["board"].as_object_mut().unwrap().remove("drawn").unwrap();
+    let path = write_spec(&d, &v);
+    let p = path.to_str().unwrap();
+    let r = json_line(&run(&["validate", "--file", p], None), 2);
+    assert_eq!(r["error"]["kind"], "UnboundedPinCapacitance", "{r}");
+    assert_eq!(r["error"]["id"], "U5");
+    assert_eq!(r["error"]["path"], "spi_devices[0].pin_capacitance");
+
+    for i in 0..2 {
+        v["spi_devices"][i]["pin_capacitance"] = json!({ "declared": {
+            "femtofarads": 10_000,
+            "condition": "AET-WO-1210 test",
+            "source": "the parts table's typical pin capacitance"
+        }});
+    }
+    let path = write_spec(&d, &v);
+    let p = path.to_str().unwrap();
+    let r = json_line(&run(&["validate", "--file", p], None), 2);
+    assert_eq!(r["error"]["kind"], "PartNotDrawable", "{r}");
+    assert_eq!(r["error"]["id"], "U6");
+    assert_eq!(r["error"]["path"], "i2c_devices[1].part");
+    assert_eq!(
+        r["error"]["message"],
+        "`U6` is a `ICP10111`: row present, no emitter arm; the emitter draws: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P"
+    );
+    let r = json_line(&emit(&path, &d.0.join("o")), 2);
+    assert_eq!(r["error"]["kind"], "UnknownPart", "{r}");
+    assert_eq!(r["error"]["id"], "U6");
+}

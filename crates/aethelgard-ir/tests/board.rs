@@ -479,7 +479,7 @@ fn a_malformed_outline_bound_is_a_shape_error() {
 /// board.
 #[test]
 fn a_version_14_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 19);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 20);
     for bound in [None, Some(json!({"width": 100_000, "height": 100_000}))] {
         let e = refused(reference(), |v| {
             v["schema_version"] = json!(14);
@@ -492,10 +492,85 @@ fn a_version_14_file_is_refused_by_its_version() {
                 e,
                 IrValidationError::UnsupportedSchemaVersion {
                     version: 14,
-                    expected: 19
+                    expected: 20
                 }
             ),
             "{e}"
         );
     }
+}
+
+/// `AET-WO-1210` §1.1: `board.drawn` is optional. Absent, or `true`, is a
+/// drawn board, and `true` is not written back; `false` declares a twin
+/// stand-in and is written back; anything else, `null` included, is a shape
+/// error, as `mcu.reset_switch` refuses it.
+#[test]
+fn drawn_is_optional_and_only_false_is_written_back() {
+    let spec: Specification = serde_json::from_value(reference()).unwrap();
+    assert!(spec.board.drawn);
+    assert!(
+        serde_json::to_value(&spec).unwrap()["board"]
+            .get("drawn")
+            .is_none()
+    );
+    for (value, drawn) in [(true, true), (false, false)] {
+        let mut v = reference();
+        v["board"]["drawn"] = json!(value);
+        verdict(&v).unwrap();
+        let spec: Specification = serde_json::from_value(v).unwrap();
+        assert_eq!(spec.board.drawn, drawn);
+        let back = serde_json::to_value(&spec).unwrap()["board"]
+            .get("drawn")
+            .cloned();
+        assert_eq!(back, (!drawn).then_some(json!(false)), "{value}");
+    }
+    for bad in [Value::Null, json!(0), json!("false")] {
+        let mut v = reference();
+        v["board"]["drawn"] = bad.clone();
+        assert!(serde_json::from_value::<Specification>(v).is_err(), "{bad}");
+    }
+}
+
+/// The reference with its flash (`U4`, on `FLASH`) replaced by an
+/// ICM-42688-P, whose row cites no maximum pin capacitance (`TDK` prints a
+/// typical only), declaring none.
+fn imu_undeclared() -> Value {
+    let mut v = reference();
+    v["accept_lifecycle"] = json!([]);
+    v["spi_devices"][0]["part"] = json!("ICM42688P");
+    assert_eq!(v["spi_devices"][0]["pin_capacitance"], Value::Null);
+    v
+}
+
+/// `AET-WO-1210` §1.3, rule 1 (`AET-WO-1209` §1.1): on a drawn board, a
+/// device on an SPI line `extract` bounds whose row cites no maximum and
+/// which declares none is refused by `validate`, by `extract`'s kind, naming
+/// the device on the bus's SCK as `extract` does. On `main` the same board
+/// passed `validate`, `emit` and every step before `extract` (FEEDBACK §2).
+/// A declaration, a stand-in's `board.drawn: false`, or a part with a cited
+/// maximum (the reference's flash) each passes.
+#[test]
+fn a_drawn_boards_spi_device_with_no_pin_bound_is_refused_by_name() {
+    let e = verdict(&imu_undeclared()).expect_err("refused");
+    assert_eq!(e.kind(), "UnboundedPinCapacitance");
+    assert_eq!(e.id(), Some("U4"));
+    assert_eq!(e.path(), Some("spi_devices[0].pin_capacitance"));
+    assert_eq!(
+        e.to_string(),
+        "the design puts U4 (ICM42688P) on `SPI_SCK` of SPI bus `FLASH`, a line the MCU drives, and the parts table cites no maximum for its pin capacitance, nor does `spi_devices[0].pin_capacitance` declare one"
+    );
+
+    let mut declared = imu_undeclared();
+    declared["spi_devices"][0]["pin_capacitance"] = json!({ "declared": {
+        "femtofarads": 10_000,
+        "condition": "at most TDK's typical C_I",
+        "source": "TDK InvenSense DS-000347 v1.9, 3.3.2 Table 4, p. 14"
+    }});
+    verdict(&declared).unwrap();
+
+    let mut stand_in = imu_undeclared();
+    stand_in["board"]["drawn"] = json!(false);
+    verdict(&stand_in).unwrap();
+
+    verdict(&reference()).unwrap();
 }

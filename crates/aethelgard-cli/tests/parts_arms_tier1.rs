@@ -30,8 +30,36 @@ const ROWS_WITHOUT_ARM: [&str; 1] = ["ICP10111"];
 /// address the row's straps offer, a bus clocked no faster than the part, its
 /// lifecycle accepted, and the board at 1.8 V (brown-out reset off, so the
 /// MCU's floor admits it) where the row's supply or I/O range leaves out
-/// 3.3 V ± 5 %. Returns it with the device's reference.
+/// 3.3 V ± 5 %. The device declares its pin capacitance at the row's
+/// typical value where the row cites no maximum (`AET-WO-1210`: a drawn
+/// board's SPI device needs one or the other). Returns it with the device's
+/// reference.
 fn minimal(row: &Part) -> (Specification, &'static str) {
+    let (mut v, reference) = fitted(row);
+    if let (Bus::Spi { .. }, None, Some(ff)) = (
+        &row.bus,
+        row.pin_capacitance_femtofarads,
+        row.pin_capacitance_typical_femtofarads,
+    ) {
+        v["spi_devices"][0]["pin_capacitance"] = json!({ "declared": {
+            "femtofarads": ff,
+            "condition": "AET-WO-1210 test: the row's typical value",
+            "source": "the parts table's typical pin capacitance"
+        }});
+    }
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    if let Err(e) = spec.validate() {
+        panic!(
+            "{}: its minimal specification is refused by validate, before any arm: {e}",
+            row.part
+        );
+    }
+    (spec, reference)
+}
+
+/// [`minimal`]'s board before its declaration and before `validate`: the
+/// device's `pin_capacitance` is `null`.
+fn fitted(row: &Part) -> (Value, &'static str) {
     let bytes = std::fs::read(common::example("sentinel-01-minimal.json")).unwrap();
     let mut v: Value = serde_json::from_slice(&bytes).unwrap();
     v["acknowledge_unwitnessed"] = json!([]);
@@ -76,14 +104,12 @@ fn minimal(row: &Part) -> (Specification, &'static str) {
         v["voltage_domains"][0]["nominal_millivolts"] = json!(1800);
         v["mcu"]["bor_level"] = json!(0);
     }
-    let spec: Specification = serde_json::from_value(v).unwrap();
-    if let Err(e) = spec.validate() {
-        panic!(
-            "{}: its minimal specification is refused by validate, before any arm: {e}",
-            row.part
-        );
-    }
-    (spec, reference)
+    v["spi_devices"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .for_each(|d| d["pin_capacitance"] = Value::Null);
+    (v, reference)
 }
 
 #[test]
@@ -150,4 +176,67 @@ fn every_row_draws_by_its_arm_or_is_refused_and_every_arm_has_a_row() {
             }
         }
     }
+}
+
+/// `AET-WO-1210` §1.3, the coverage test (`AET-WO-1209` §1.1): for every row
+/// of the parts table, on a drawn board with the device declaring nothing,
+/// `validate`'s rule 1 refuses exactly when `extract`'s own precondition
+/// does (`extract::lines`, `UnboundedPinCapacitance`, the same device on the
+/// same line), and the CLI's rule 3 (`drawable_parts`, read from
+/// `KNOWN_PARTS`) exactly when `emit`'s draw does (`UnknownPart`). The topology
+/// is solved from the same board declared `board.drawn: false`, which neither
+/// rule holds, so `extract` is reached on a board `validate` refuses.
+#[test]
+fn validate_refuses_a_drawn_board_exactly_where_extract_and_emit_would() {
+    let arms: Vec<&str> = KNOWN_PARTS.split(", ").collect();
+    let (mut early, mut late) = (Vec::new(), Vec::new());
+    for row in parts::table().unwrap().parts() {
+        let part = row.part.as_str();
+        let (v, reference) = fitted(row);
+        let spec: Specification = serde_json::from_value(v.clone()).unwrap();
+        let mut stand_in = v;
+        stand_in["board"]["drawn"] = json!(false);
+        let stand_in: Specification = serde_json::from_value(stand_in).unwrap();
+        let pins = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let solved = aethelgard_ir::solve(&stand_in, &pins, &"0".repeat(64))
+            .unwrap_or_else(|e| panic!("{part}: the stand-in does not solve: {e}"));
+
+        let rule_1 = match spec.validate() {
+            Ok(()) => None,
+            Err(e) if e.kind() == "UnboundedPinCapacitance" => Some(e.to_string()),
+            Err(e) => panic!("{part}: refused by validate otherwise: {e}"),
+        };
+        let extract = match aethelgard_eda::extract::lines(&spec, &solved, &pins) {
+            Err(r) if r.kind == "UnboundedPinCapacitance" => Some(r.message),
+            _ => None,
+        };
+        assert_eq!(
+            rule_1.is_some(),
+            extract.is_some(),
+            "{part}: validate {rule_1:?}, extract {extract:?}"
+        );
+        if let (Some(v), Some(x)) = (&rule_1, &extract) {
+            let named = format!("{reference} ({part}) on `SPI_SCK`");
+            assert!(
+                v.contains(&named) && x.contains(&named),
+                "{part}: {v} | {x}"
+            );
+            early.push(part);
+        }
+
+        let rule_3 = spec.drawable_parts(&arms).err();
+        let emit = Drawing::of(&spec, &solved, &pins).err();
+        match (&rule_3, &emit) {
+            (None, None) => {}
+            (Some(e), Some(EmitError::UnknownPart { reference: r, .. })) => {
+                assert_eq!(e.kind(), "PartNotDrawable", "{part}");
+                assert_eq!((e.id(), r.as_str()), (Some(reference), reference), "{part}");
+                late.push(part);
+            }
+            _ => panic!("{part}: drawable_parts {rule_3:?}, the emitter {emit:?}"),
+        }
+    }
+    // Neither side is vacuous on today's table.
+    assert_eq!(early, ["ICM20948", "ICM42688P"]);
+    assert_eq!(late, ["ICP10111"]);
 }

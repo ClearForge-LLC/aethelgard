@@ -1189,6 +1189,16 @@ pub fn verify(
         Ok(s) => s,
         Err((r, code)) => return crate::emit(&r, code),
     };
+    // No fabrication package, written or compared, for a board never drawn
+    // (`AET-WO-1210` §1.4).
+    let fab_flag = match fab_mode {
+        Some(FabMode::Write(_)) => Some("verify --fab-out"),
+        Some(FabMode::Compare(_)) => Some("verify --against-fab"),
+        None => None,
+    };
+    if let Some(Err(r)) = fab_flag.map(|c| crate::draws_a_board(&spec, c)) {
+        return crate::emit(&r, EXIT_INVALID_SPEC);
+    }
     let (topology, table) = match crate::solve_spec(&spec, &spec_sha256) {
         Ok(s) => s,
         Err(code) => return code,

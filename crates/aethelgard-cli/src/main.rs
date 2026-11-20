@@ -2424,6 +2424,7 @@ fn bytes(write: &[u8]) -> String {
 
 fn validate(file: Option<&Path>) -> ExitCode {
     match read_spec(file).and_then(|(spec, sha256)| {
+        drawable(&spec).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         acknowledgements_current(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         drawing_holds(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         Ok((spec, sha256))
@@ -2440,6 +2441,35 @@ fn validate(file: Option<&Path>) -> ExitCode {
         ),
         Err((refusal, code)) => emit(&refusal, code),
     }
+}
+
+/// `AET-WO-1210` (`AET-WO-1209` §1.3, rule 3): on a drawn board, every
+/// device's part is one the emitter has an arm for, read from the emitter's
+/// own set (`aethelgard_eda::schematic::KNOWN_PARTS`, held to the arms by
+/// `AET-WO-1316`'s tests), so `emit`'s `UnknownPart` is refused before any
+/// board. A specification that declares `board.drawn: false` is not held.
+fn drawable(spec: &Specification) -> Result<(), Refusal> {
+    let arms: Vec<&str> = aethelgard_eda::schematic::KNOWN_PARTS.split(", ").collect();
+    spec.drawable_parts(&arms)
+        .map_err(|e| Refusal::new(e.kind(), e.id(), e.to_string()).at(e.path()))
+}
+
+/// `AET-WO-1210` §1.4: a specification that declares `board.drawn: false`
+/// draws no board, so `command` (`emit`, `extract`, or `verify` with a fab
+/// flag) refuses it by name before it solves, draws or reads anything.
+pub(crate) fn draws_a_board(spec: &Specification, command: &str) -> Result<(), Refusal> {
+    if spec.board.drawn {
+        return Ok(());
+    }
+    Err(Refusal::new(
+        "DrawsNoBoard",
+        Some(&spec.project_name),
+        format!(
+            "`{}` declares `board.drawn: false`, a twin stand-in no board is drawn from, so `{command}` refuses it",
+            spec.project_name
+        ),
+    )
+    .at(Some("board.drawn")))
 }
 
 /// The checks that judge the drawn design, [`outline_holds`] then
@@ -2727,7 +2757,14 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         notes: Vec<String>,
     }
 
-    let (spec, topology, table) = match solved(file) {
+    let (spec, sha256) = match read_spec(Some(file)) {
+        Ok(s) => s,
+        Err((refusal, code)) => return emit(&refusal, code),
+    };
+    if let Err(r) = draws_a_board(&spec, "emit") {
+        return emit(&r, EXIT_INVALID_SPEC);
+    }
+    let (topology, table) = match solve_spec(&spec, &sha256) {
         Ok(solved) => solved,
         Err(code) => return code,
     };

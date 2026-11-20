@@ -2537,6 +2537,7 @@ fn a_device_whose_io_range_excludes_its_bus_domain_is_refused() {
     spec.voltage_domains[0].nominal_millivolts = 1_800;
     spec.spi_buses[0].speed_hz = 7_000_000;
     spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+    spec.board.drawn = false; // the twin's stand-ins (`AET-WO-1210`)
     spec.validate().unwrap();
     // The BME280 separates VDDIO (1.2 to 3.6 V): at 1.2 V its supply refuses
     // it first, at its own minimum the I/O range alone would not.
@@ -2641,6 +2642,8 @@ fn stand_ins() -> Specification {
     spec.spi_buses[0].speed_hz = 7_000_000;
     // The flash is gone, so its acknowledgement would stand for no part.
     spec.accept_lifecycle.clear();
+    // The twin's stand-ins, never drawn (`AET-WO-1210`).
+    spec.board.drawn = false;
     spec
 }
 
@@ -3638,7 +3641,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 19
+                expected: 20
             }
         ),
         "{e}"
