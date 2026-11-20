@@ -109,6 +109,7 @@ point, moves it by the measured shift. Each count is reduced by the shift divide
 | `a2_3_…` 94 ms | spin 3,150,000 | 3,029,967 | as above | as above |
 | `f2_a_late_dshot_anchor_fails_by_name` | settle 2,000,000 | 1,879,973 | 3,600,810 ns, boot-word shift (sentinel-02-shaped) | 30 ns a spin |
 | `m2_a_dma_start_of_cen_fails_closed_by_name` | spin 3,230,000 | 3,109,973 | as above | as above |
+| `the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back` | ≥ 40 rises | ≥ 38 rises | 3,600,910 ns, boot-word shift (motors-pwm; `CEN` measured at 3,623,550 ns in CI on `cf54238f`) | 2.499 ms a period: (100 ms − 3.60 ms) / 2.499 ms = 38.58 |
 
 **Each keeps its cause, asserted:**
 - **flood, f2 and m2:** the boot word is written, so the planted event ran inside the run.

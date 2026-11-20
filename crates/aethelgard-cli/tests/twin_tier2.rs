@@ -2062,6 +2062,11 @@ fn motors(v: &Value) -> &Vec<Value> {
 /// reads its solved value, and the static check holds (measured, FEEDBACK).
 /// `AET-WO-4400g`: TIM1 at the solved 64 MHz, so 2,499 ticks are 2.499 ms
 /// exactly and 100 ms holds 40 rises (`spike/4400f/out/pwm/pwm-a`).
+/// Since `AET-WO-4241` the board's unmodelled TMP117 is read before the
+/// outputs start, and its TXIS wait in the twin moves `CEN` 3 600 910 ns
+/// later (this board's measured shift, `spike/4241/out/rejudge`): the run
+/// after it holds (100 000 000 - 3 600 910) / 2 499 000 = 38.58 periods, so
+/// at least 38 rises (the architect's D3: re-pinned from the stated shift).
 #[test]
 fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
     let (platform, spec, elf) = motor_board("motors-pwm", "pwm", |_| {}, |_| {});
@@ -2075,7 +2080,7 @@ fn the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back() {
             (&t["period_ns"], &t["high_ns"]),
             (&2_499_000.into(), &1_000_000.into())
         );
-        assert!(t["rises"].as_u64().unwrap() >= 40, "{m}");
+        assert!(t["rises"].as_u64().unwrap() >= 38, "{m}");
         assert!(t["span_ns"].as_u64().unwrap() < 10, "{m}");
         assert!(t["off_grid"].as_u64().unwrap() > 0, "{m}");
         assert_eq!(t["batched"], 0);
