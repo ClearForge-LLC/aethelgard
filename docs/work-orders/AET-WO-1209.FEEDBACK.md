@@ -128,6 +128,8 @@ Diff-sized, run through a fresh subagent and checked against the source.
 
 A trial merge of 4202's PR head (`ba3e52e1`, before it landed) had measured the same.
 
+**Then `main` at `cb489f2a` (1911) was merged as `92cf9004`.** It changed `ci/` and docs only, not `crates/`, `boards/` or `examples/`. Its inventory guard, `bash ci/route.sh check ci/docs-tests.tsv`, passes on the merged tree [measured]. CI on that merge is the run of record (the architect's note of 02:20Z).
+
 ## B6. New observations
 
 - **F4:** A3 and A4's rail check, a load's part having a pin on its load's rail. It belongs with the architect's re-pointing row.
