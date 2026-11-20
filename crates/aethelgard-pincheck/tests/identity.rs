@@ -10,8 +10,8 @@ use aethelgard_ir::SolvedTopology;
 use aethelgard_pincheck::elf::{self, SerialEntry, SerialParam};
 use aethelgard_pincheck::{Refusal, header, identity};
 use common::{
-    Elf, IDENTITY, INVENSENSEV3_PROBE, Port, SD1, SERIAL0_ONLY, VarRow, group_end, sd_address,
-    serial_bytes, topology, var_info, var_row,
+    Elf, IDENTITY, INVENSENSEV3_PROBE, Port, SD1, SERIAL0_ONLY, VarRow, gps_var_info, group_end,
+    sd_address, serial_bytes, topology, var_info, var_row,
 };
 use serde_json::{Value, json};
 
@@ -46,7 +46,8 @@ fn judge_elf(
     judge_with(t, text, serial, var_info(&SERIAL0_ONLY), functions)
 }
 
-/// [`judge_elf`], the ELF's `var_info` holding `rows`.
+/// [`judge_elf`], the ELF's `var_info` holding `rows`, and its
+/// `AP_GPS::var_info` two receivers, as every measured board's.
 fn judge_with(
     t: &SolvedTopology,
     text: &str,
@@ -54,10 +55,24 @@ fn judge_with(
     rows: Vec<VarRow>,
     functions: &[&str],
 ) -> Result<Vec<String>, Refusal> {
+    judge_gps(t, text, serial, rows, Some(gps_var_info(2)), functions)
+}
+
+/// [`judge_with`], the ELF's `AP_GPS::var_info` holding `gps` (`None`: no
+/// such symbol).
+fn judge_gps(
+    t: &SolvedTopology,
+    text: &str,
+    serial: &[SerialEntry],
+    rows: Vec<VarRow>,
+    gps: Option<Vec<VarRow>>,
+    functions: &[&str],
+) -> Result<Vec<String>, Refusal> {
     let parts = aethelgard_ir::parts::table().unwrap();
     let pre = header::preprocess(text)?;
     let elf = Elf {
         var_info: Some(rows),
+        gps,
         serial: Some(serial.iter().map(serial_bytes).collect()),
         objects: serial
             .iter()
@@ -680,6 +695,7 @@ fn an_object_named_like_the_probe_is_not_the_driver() {
     let elf = Elf {
         serial: Some(vec![serial_bytes(&EMPTY)]),
         var_info: Some(var_info(&SERIAL0_ONLY)),
+        gps: Some(gps_var_info(2)),
         objects: vec![(INVENSENSEV3_PROBE.to_owned(), 0x0800_2000)],
         ..Elf::default()
     };
@@ -1101,7 +1117,7 @@ fn a_third_gps_port_is_named() {
     assert_eq!(
         found,
         [4, 5, 6].map(|n| format!(
-            "GpsPortUnbound SERIAL{n} [at most 2 GPS ports, SERIAL1 and SERIAL3 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
+            "GpsPortUnbound SERIAL{n} [at most 2 GPS ports, SERIAL1 and SERIAL3 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
         ))
     );
     let three = [
@@ -1120,9 +1136,146 @@ fn a_third_gps_port_is_named() {
     assert_eq!(
         serial(&two, &undeclared, "").unwrap(),
         [
-            "GpsPortUnbound SERIAL3 [at most 2 GPS ports, SERIAL1 and SERIAL2 (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
+            "GpsPortUnbound SERIAL3 [at most 2 GPS ports, SERIAL1 and SERIAL2 (AP_GPS::var_info compiles 2 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
         ]
     );
+}
+
+/// The GPS ports `ports` would leave unbound, the ELF compiling `params`
+/// and an `AP_GPS::var_info` of `gps`.
+fn serial_gps(ports: &[(&str, bool)], params: &[Port], gps: Option<Vec<VarRow>>) -> Vec<String> {
+    let (t, entries) = with_ports(ports);
+    judge_gps(
+        &t,
+        IDENTITY,
+        &entries,
+        var_info(params),
+        gps,
+        &[INVENSENSEV3_PROBE],
+    )
+    .unwrap()
+}
+
+/// The cap is read, not assumed (`AET-WO-4406` §1.3): it is the number of
+/// receiver rows `AP_GPS::var_info` compiles. `advgps1`'s one receiver
+/// (`4405` A4, `GPS_MAX_RECEIVERS 1`, measured in `spike/4406` §2.2) leaves
+/// fc-base's second GPS port unbound, which two receivers bind; three would
+/// bind the eight-port board's SERIAL4, which two do not.
+#[test]
+fn the_gps_cap_is_read_from_ap_gps_var_info() {
+    let unbound = |cap: u8, bound: &str, n: u8| {
+        let s = if cap == 1 { "" } else { "s" };
+        format!(
+            "GpsPortUnbound SERIAL{n} [at most {cap} GPS port{s}, {bound} (AP_GPS::var_info compiles {cap} receiver{s}; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"
+        )
+    };
+    let fc_base = compiled(&FC_BASE);
+    assert_eq!(
+        serial_gps(&FC_BASE, &fc_base, Some(gps_var_info(2))),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        serial_gps(&FC_BASE, &fc_base, Some(gps_var_info(1))),
+        [unbound(1, "SERIAL1", 3)]
+    );
+    assert_eq!(
+        serial_gps(&FC_BASE, &fc_base, Some(gps_var_info(0))),
+        [unbound(0, "none", 1), unbound(0, "none", 3)]
+    );
+    let eight = [
+        ("console", false),
+        ("gps", false),
+        ("rc_crsf", false),
+        ("gps", false),
+        ("gps", false),
+        ("gps", false),
+        ("gps", false),
+        ("mavlink", false),
+    ];
+    let mut three = gps_var_info(2);
+    three.insert(three.len() - 1, common::gps_receiver("3_", 34));
+    assert_eq!(
+        serial_gps(&eight, &compiled(&eight), Some(three)),
+        [5, 6].map(|n| unbound(3, "SERIAL1 and SERIAL3 and SERIAL4", n))
+    );
+}
+
+/// With AP_GPS compiled out (no `AP_GPS::var_info`), each port the topology
+/// declares a GPS has no consumer and is named (`GpsNotCompiled`); with no
+/// GPS port declared nothing is, even where a compiled port's protocol is
+/// GPS. At this tag such a Copter does not build (`spike/4406`
+/// `out/advnogps-build-errors.txt`), so this is the reader's rule, not a
+/// measured board.
+#[test]
+fn a_declared_gps_port_with_no_ap_gps_is_named() {
+    assert_eq!(
+        serial_gps(&FC_BASE, &compiled(&FC_BASE), None),
+        [1, 3].map(|n| format!(
+            "GpsNotCompiled SERIAL{n} [AP_GPS, to bind this GPS port | none: the ELF has no AP_GPS::var_info]"
+        ))
+    );
+    let mavlink = [("console", false), ("mavlink", false)];
+    let mut stray = compiled(&mavlink);
+    stray.push((5, 230, Some(0)));
+    assert_eq!(serial_gps(&mavlink, &stray, None), Vec::<String>::new());
+}
+
+/// `AP_GPS::var_info` is read as `serial_params` reads `var_info`, and a
+/// group row that is not the next receiver's, or carries other flags, is
+/// refused by name: the count would not be the receivers.
+#[test]
+fn every_malformed_gps_var_info_is_refused_by_name() {
+    let kind = |rows: Vec<VarRow>| {
+        elf::gps_receivers(
+            &Elf {
+                gps: Some(rows),
+                ..Elf::default()
+            }
+            .bytes(),
+        )
+        .map(|n| format!("{n:?}"))
+        .unwrap_or_else(|e| e.kind().to_owned())
+    };
+    let edit = |f: &dyn Fn(&mut Vec<VarRow>)| {
+        let mut rows = gps_var_info(2);
+        f(&mut rows);
+        rows
+    };
+    assert_eq!(kind(gps_var_info(2)), "Some(2)");
+    assert_eq!(kind(gps_var_info(1)), "Some(1)");
+    assert_eq!(elf::gps_receivers(&Elf::default().bytes()), Ok(None));
+    let end = |r: &mut Vec<VarRow>| r.len() - 1;
+    for (why, rows) in [
+        (
+            "no 1_",
+            edit(&|r| {
+                r.remove(12);
+            }),
+        ),
+        ("2_ named 3_", edit(&|r| r[13].name = "3_".into())),
+        ("1_ twice", edit(&|r| r[13].name = "1_".into())),
+        ("a group not a receiver", edit(&|r| r[0].kind = 6)),
+        ("flags 0", edit(&|r| r[12].flags = 0)),
+        ("AP_PARAM_FLAG_POINTER", edit(&|r| r[13].flags = 2)),
+    ] {
+        assert_eq!(kind(rows), "MalformedGpsVarInfo", "{why}");
+    }
+    assert_eq!(
+        kind(edit(&|r| {
+            let at = end(r);
+            r.remove(at);
+        })),
+        "VarInfoUnterminated"
+    );
+    assert_eq!(
+        kind(edit(&|r| {
+            let at = end(r);
+            r[at].idx = 0;
+        })),
+        "MalformedVarInfo"
+    );
+    // A scalar row named like a receiver is not one.
+    assert_eq!(kind(edit(&|r| r[0].name = "3_".into())), "Some(2)");
 }
 
 /// SERIAL0's protocol is read from `var_info`, where the tag compiles a
@@ -1452,6 +1605,32 @@ fn every_malformed_var_info_is_refused_by_name() {
         });
         assert_eq!(kind(rows), "MalformedVarInfo", "{name} {value}");
     }
+    // ArduPilot applies a default by offset (`AP_Param.cpp:1490-1497`): a
+    // row whose name and offset disagree is refused (`AET-WO-4405` A5, its
+    // offset swap of 1_PROTOCOL and 2_PROTOCOL; `AET-WO-4406` §1.4), and the
+    // pass-through rows' offsets are not judged.
+    let swapped = edit(&|r| {
+        let (one, two) = (named(r, "1_PROTOCOL"), named(r, "2_PROTOCOL"));
+        let o = r[one].offset;
+        r[one].offset = r[two].offset;
+        r[two].offset = o;
+    });
+    assert_eq!(kind(swapped.clone()), "VarInfoRowOffset");
+    assert!(message(swapped).contains("(`1_PROTOCOL`) sets the member at offset 56, not 32"),);
+    for (name, delta) in [("0_BAUD", 8), ("0_PROTOCOL", 1), ("3_OPTIONS", 24)] {
+        let rows = edit(&|r| {
+            let at = named(r, name);
+            r[at].offset += delta;
+        });
+        assert_eq!(kind(rows), "VarInfoRowOffset", "{name} +{delta}");
+    }
+    assert_eq!(
+        kind(edit(&|r| {
+            let at = named(r, "_PASS2");
+            r[at].offset = 1234;
+        })),
+        "read"
+    );
     for dropped in ["1_BAUD", "2_OPTIONS", "0_PROTOCOL", "3_PROTOCOL"] {
         let rows = edit(&|r| {
             let at = named(r, dropped);
