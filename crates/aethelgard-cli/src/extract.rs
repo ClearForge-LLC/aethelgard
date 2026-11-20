@@ -178,6 +178,9 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(s) => s,
         Err((r, code)) => return crate::emit(&r, code),
     };
+    if let Err(r) = crate::draws_a_board(&spec, "extract") {
+        return crate::emit(&r, EXIT_INVALID_SPEC);
+    }
     let (topology, table) = match crate::solve_spec(&spec, &spec_sha256) {
         Ok(t) => t,
         Err(code) => return code,
