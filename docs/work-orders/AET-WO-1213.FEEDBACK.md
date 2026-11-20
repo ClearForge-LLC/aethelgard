@@ -1,6 +1,6 @@
 # AET-WO-1213 FEEDBACK — `validate` refuses a console baud that ArduPilot cannot open at boot as declared
 
-Builder: Claude (Opus 5.5), a fresh `1213` session, 2026-11-20, from ~17:40 UTC. Worktree `~/aethelgard-1213`, branch `wo/aet-1213-console-baud` from `origin/main` `c1012a2d`. The work order is read from `~/.cache/aet-1213-wo.md`, the architect's copy of the docs branch's `docs/work-orders/AET-WO-1213.md`; this branch does not commit it.
+Builder: Claude (Opus 5.5), a fresh `1213` session, 2026-11-20, from ~17:40 UTC. Worktree `~/aethelgard-1213`, branch `wo/aet-1213-console-baud` from `origin/main` `c1012a2d`. The work order is read from `~/.cache/aet-1213-wo.md`, the architect's copy; it is byte-identical to `docs/work-orders/AET-WO-1213.md` as `main` `69c77c96` (#296) holds it, merged in here.
 
 Labels: **measured** (run here), **read** (read at source, file:line), **inferred** (reasoned, not run).
 
@@ -27,9 +27,11 @@ The predictions are committed before any run: `spike/1213/PREDICTIONS.md`, `0e02
 - **Prediction 3, a finding against the work order's text (F1 below):** the WO's examples, 100000 and 250000, both round-trip. `100` is a listed code (`:750`), and 250 is kbaud (`:769`). The refused examples are bauds that really fail: 76800 → 76000, 111000 → 111100, 115000 → 115200, 3000000 → 3000, 2001000 → 2001, 999 → 57600.
 
 **The real binary agrees** [measured, `~/.cache/aet-1213/accept.tsv`]. `aethelgard validate` from `main` (`c1012a2d`, built from `git archive`) and from this branch ran over all 45 tracked files whose top level holds a `serial_ports` list. Each pair printed the same bytes and exited the same way:
-- 29 pass;
+- 28 pass;
 - `examples/invalid-zero-domain.json` is `ZeroNominalVoltage` on both;
-- 15 stale spike specifications are refused on both by schema version or schema. The measurement puts their consoles at 115200.
+- 16 stale spike specifications are refused on both by schema: 14 by `UnsupportedSchemaVersion` and 2 by `SchemaViolation`. Fifteen hold a console, each at 115200 by the measurement; `spike/3306/spec/bme-bmp.json` declares no serial port.
+
+§6a repeats this against `main` `25203c58` after the merge: 47 files, every pair identical.
 
 **Specifications built in Rust tests:** two pre-existing tests built a console at a baud no `BRR` reaches, to test `SerialBaudOutOfRange`. Both flipped to `ConsoleBaudNotRoundTrip` [measured]:
 - `ir/tests/serial.rs::a_baud_no_brr_reaches_is_refused_by_name` (900 and 4,200,000);
@@ -76,7 +78,7 @@ Each now builds that port as `mavlink`, so it still tests what it tested, and it
 
 ## 5. Mutants (§1.3), one per guard this work order adds
 
-The harness is `~/.cache/aet-1213/mut/mut.py`, the results `results.txt`; it ran on `c830681e`, before the reduction pass and the merge, neither of which touches a guard. Source is restored by rewriting the original bytes [measured]. Suites: `ir --test serial`, and `cli --test silicon_rules --test reserved_references_tier1`. **5 of 5 killed.**
+The harness is `~/.cache/aet-1213/mut/mut.py`, the results `results.txt`; it ran on `c830681e`, and again on the merged head before the last push (`results-final.txt`), with the same result. Source is restored by rewriting the original bytes [measured]. Suites: `ir --test serial`, and `cli --test silicon_rules --test reserved_references_tier1`. **5 of 5 killed.**
 
 | Mutant | Killed by |
 |---|---|
@@ -105,6 +107,13 @@ The harness is `~/.cache/aet-1213/mut/mut.py`, the results `results.txt`; it ran
 - **Merged** as `a6c8a0d4`. One conflict, in the IR README's step table: `main` changed row 13b, and this branch changed 13c. Each side's row was kept.
 - **Nothing to renumber.** This branch commits no specification or fixture, and its tests build specifications at `SPECIFICATION_SCHEMA_VERSION`.
 - **The measurement again** (`spike/1213/measure-merged.out`): 36 console ports, the two new ones being `1211a`'s IR fixtures `d1-drv8876` and `d2-drv8833`, both at 115200. **None is refused** [measured].
+- **The binary against the new `main`** [measured, `~/.cache/aet-1213/accept-25203c58.tsv`]: `validate` built from `25203c58` (by `git archive`) and from the merged branch ran over all 47 tracked files whose top level holds a `serial_ports` list. **Every pair printed the same bytes and exited the same way.**
+  - 29 pass;
+  - 1 `ZeroNominalVoltage`;
+  - 1 `PartLimitUndeclared` (`d2`, below);
+  - 16 spike files are refused by schema, as in §1.
+- **The pin:** the repository's ArduPilot image is `Copter-4.7.2`, commit `fb773567` (`container/ARDUPILOT-SOURCES.md:13`), the tag of the file the rule cites (§0) [read].
+- **CI-only jobs:** the `ardupilot` seeds (`container/ardupilot-pinout.sh:57-72`) edit hand-written ArduPilot boards, never a topology's baud. Every topology they judge is committed, and every one passes [read].
 - **The binary on those two:** `d1` passes. `d2` is refused, but by `PartLimitUndeclared`, `1211a`'s own designed refusal: `pin_devices.rs::d2_is_refused_part_limit_undeclared_and_only_that` asserts it is the fixture's only refusal, and that test passes here.
 
 ## 7. Findings and questions for the architect
