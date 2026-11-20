@@ -77,6 +77,11 @@ fn the_reference_drives_sck_and_mosi_at_01_and_names_every_other_line() {
         "declared (net_constraints), not bounded here: run extract, or verify's extract gate, on the routed board"
     );
     assert_eq!(v["judged"], 2);
+    // `AET-WO-2306`: something judged, so nothing more is said.
+    assert!(
+        v.get("nothing_in_scope").is_none() && v.get("nothing_in_scope_reason").is_none(),
+        "{v}"
+    );
     let lines = by_net(&v);
     let speed = |net: &str| lines.iter().find(|l| l.0 == net).unwrap().1.clone();
     assert_eq!(speed("SPI_SCK"), "01");
@@ -219,6 +224,33 @@ fn a_rate_no_selectable_speed_serves_is_refused() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// `check speeds`' reason for a pass that judged no line (`AET-WO-2306`).
+const NOTHING_IN_SCOPE: &str = "no declared speed: no SPI bus's SCK or MOSI, the only lines driven at a peripheral's rate; every listed line is out of scope and held only to the slowest speed";
+
+/// `AET-WO-2306` §1.5: `AET-WO-4600`'s motor driver judges no line either:
+/// each motor output and serial line is out of scope at the slowest speed.
+#[test]
+fn the_motor_driver_judges_no_line_and_says_so() {
+    let (code, v) =
+        speeds(&root().join("crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(
+        (v["judged"].as_u64(), v["nothing_in_scope"].as_bool()),
+        (Some(0), Some(true)),
+        "{v}"
+    );
+    assert_eq!(v["nothing_in_scope_reason"], NOTHING_IN_SCOPE, "{v}");
+    let lines = v["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 6, "{v}");
+    assert!(
+        lines
+            .iter()
+            .all(|l| l["ospeedr"] == "00" && l.get("out_of_scope").is_some()),
+        "{v}"
+    );
+}
+
 /// Adversarial 4: a specification with no SPI bus judges nothing, and says so.
 #[test]
 fn a_specification_with_no_spi_bus_judges_nothing_and_says_so() {
@@ -246,7 +278,11 @@ fn a_specification_with_no_spi_bus_judges_nothing_and_says_so() {
     fs::write(&path, spec.to_string()).unwrap();
     let (code, v) = speeds(&path);
     assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
     assert_eq!(v["judged"], 0, "{v}");
+    // `AET-WO-2306` §1.2: the pass with nothing judged says so, and why.
+    assert_eq!(v["nothing_in_scope"], true, "{v}");
+    assert_eq!(v["nothing_in_scope_reason"], NOTHING_IN_SCOPE, "{v}");
     assert!(
         v["lines"]
             .as_array()
