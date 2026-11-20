@@ -110,6 +110,8 @@ point, moves it by the measured shift. Each count is reduced by the shift divide
 | `f2_a_late_dshot_anchor_fails_by_name` | settle 2,000,000 | 1,879,973 | 3,600,810 ns, boot-word shift (sentinel-02-shaped) | 30 ns a spin |
 | `m2_a_dma_start_of_cen_fails_closed_by_name` | spin 3,230,000 | 3,109,973 | as above | as above |
 | `the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back` | ≥ 40 rises | ≥ 38 rises | 3,600,910 ns, boot-word shift (motors-pwm; `CEN` measured at 3,623,550 ns in CI on `cf54238f`) | 2.499 ms a period: (100 ms − 3.60 ms) / 2.499 ms = 38.58 |
+| `campaign_tier2::the_two_reference_droops_…` | boot word 26,620 ns, bound 126,620, probe at 1,358,320 | 3,627,610, 3,727,610, 4,959,310 | +3,600,990 ns, boot word 2662 → 362761 instructions (sentinel-01-minimal); 2305's own record gives the same difference | each instant + the shift |
+| `campaign_tier2::renodes_reset_recipe_is_pinned_step_by_step` (b) | read 100,000 ns after the release | 3,700,990 ns | +3,600,990 ns (sentinel-01-minimal) | 100 µs after the boot word, as before |
 
 **Each keeps its cause, asserted:**
 - **flood, f2 and m2:** the boot word is written, so the planted event ran inside the run.

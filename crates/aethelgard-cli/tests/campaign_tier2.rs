@@ -690,6 +690,11 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     // word (26,620 ns since `AET-WO-4240v`'s VOS2 bring-up, measured in
     // `spike/2305`; 25,700 before it) and one quantum, and the probe is the
     // release, its nudge and the bound: 1,231,690 + 10 + 126,620.
+    // `AET-WO-4241`: the unmodelled TMP117's identity read, before the boot
+    // word, moves it by the reference's measured shift, 3,600,990 ns
+    // (`spike/4241/out/rejudge`, 2662 -> 362761 instructions): the boot word
+    // is 3,627,610, the bound 3,727,610, and the probe 1,231,690 + 10 +
+    // 3,727,610 = 4,959,310 (the architect's D3: re-pinned from the shift).
     let bound: Vec<&Record> = bor3
         .iter()
         .filter(|r| matches!(r, Record::RecoveryBound { .. }))
@@ -697,14 +702,14 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(
         bound,
         [&Record::RecoveryBound {
-            boot_word_ns: Some(26_620),
+            boot_word_ns: Some(3_627_610),
             margin_ns: 100_000,
-            bound_ns: Some(126_620),
+            bound_ns: Some(3_727_610),
         }],
         "the bor3 droop archives its recovery bound once"
     );
     assert_eq!(
-        *at_ns, 1_358_320,
+        *at_ns, 4_959_310,
         "the firmware is observed at the predicted time after the release"
     );
     assert_eq!(
@@ -931,6 +936,9 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
     );
 
     // b. The recipe, held 1 ms, released, nudged by 10 ns: the firmware boots.
+    // Read 100 us after its boot word, which the unmodelled TMP117's read
+    // moved 3,600,990 ns later (`AET-WO-4241`, the reference's measured
+    // shift): 100,000 + 3,600,990.
     let mut r = Renode::booted();
     r.add(recipe())
         .add([
@@ -938,7 +946,7 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
             "cpu IsHalted false".to_owned(),
             run_for(10),
         ])
-        .add([run_for(100_000)])
+        .add([run_for(3_700_990)])
         .read(&[READ_BOOT, READ_STATUS, READ_VALUE]);
     let b = r.run("b-recipe");
     assert_eq!(
