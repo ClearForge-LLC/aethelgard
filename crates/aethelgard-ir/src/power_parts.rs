@@ -307,6 +307,18 @@ pub struct Capacitor {
     /// The maker's typical DC-bias curve, where one is held: a screen,
     /// never a bound (`AET-WO-4300d3` §1.3, the amendment on PR #158).
     pub dc_bias: Option<DcBiasCurve>,
+    /// The capacitance tolerance, either side, where the row states one
+    /// (`AET-WO-4240c` A2); `None` on a row that does not.
+    pub tolerance: Option<Tolerance>,
+}
+
+/// A capacitance tolerance, either side of the rated value, cited.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Tolerance {
+    /// Per mille of the rated value: ±1 % is 10.
+    Permille(Limit),
+    /// Femtofarads: ±0.25 pF is 250.
+    Femtofarads(Limit),
 }
 
 /// A maker's DC-bias curve: the capacitance change at each voltage, read
@@ -948,6 +960,19 @@ struct RawCapacitor {
     /// Required as a key: `null` where no maker curve is held.
     #[serde(deserialize_with = "Option::deserialize")]
     dc_bias: Option<RawCurve>,
+    /// The capacitance tolerance, where the row states one (`AET-WO-4240c`
+    /// A2): an optional key, absent on the rows read before it.
+    #[serde(default)]
+    tolerance: Option<RawTolerance>,
+}
+
+/// A capacitance tolerance as the maker states it: a share of the value, or
+/// an absolute figure (a small C0G part's "±0.25 pF").
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+enum RawTolerance {
+    Permille(RawLimit),
+    Femtofarads(RawLimit),
 }
 
 #[derive(Deserialize)]
@@ -1872,11 +1897,21 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 Some(curve) => Some(r.curve(curve, volts.value)?),
                 None => None,
             };
+            let tolerance = match c.tolerance {
+                None => None,
+                Some(RawTolerance::Permille(l)) => Some(Tolerance::Permille(
+                    r.positive(l, "kind.capacitor.tolerance.permille")?,
+                )),
+                Some(RawTolerance::Femtofarads(l)) => Some(Tolerance::Femtofarads(
+                    r.positive(l, "kind.capacitor.tolerance.femtofarads")?,
+                )),
+            };
             Kind::Capacitor(Capacitor {
                 rated_picofarads: rated,
                 rated_millivolts: volts,
                 dielectric: c.dielectric,
                 dc_bias,
+                tolerance,
             })
         }
         RawKind::BulkCapacitor(c) => {

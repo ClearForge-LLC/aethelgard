@@ -1,0 +1,22 @@
+#!/bin/bash
+# AET-WO-4240c image runner (from 4400g's kit/img.sh): ~/bin/capped-run (MEM default 8G, swap 0,
+# TasksMax 8192, read back inside the scope), podman --rm --network none, one container at a time
+# (flock), nice -n 10. Usage: img.sh tools|ardupilot <command...>
+# Mounts: REPO (default this worktree) at /repo, ~/.cache/aet-4240c at /cache, 4400e's cargo cache.
+set -u
+CACHE=$HOME/.cache/aet-4240c
+REPO=${REPO:-$HOME/aethelgard-4240c}
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+case $1 in
+  tools) IMAGE=$(cat "$REPO/container/IMAGE");;
+  ardupilot) IMAGE=$(head -1 "$REPO/container/ARDUPILOT-IMAGE");;
+  *) echo "img.sh tools|ardupilot <cmd...>" >&2; exit 64;;
+esac
+shift
+if [ -z "${NOLOCK:-}" ]; then exec 9>"$CACHE/container.lock"
+flock 9; fi
+echo "$(date -Is) image=$IMAGE repo=$REPO mem=${MEM:-8G} cmd: $*" >> "$CACHE/caps.log"
+exec nice -n 10 ~/bin/capped-run --mem "${MEM:-8G}" --tasks 8192 -- --rm --network none \
+  -v "$REPO":/repo -v "$CACHE":/cache -v "$HOME/.cache/aet-4400e/cargo-home":/cargo-home -w /repo \
+  -e CARGO_HOME=/cargo-home -e CARGO_NET_OFFLINE=true -e CARGO_TARGET_DIR=${TDIR:-/cache/target} \
+  "$IMAGE" "$@" 2> >(tee -a "$CACHE/caps.log" >&2)
