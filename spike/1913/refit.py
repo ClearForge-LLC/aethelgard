@@ -1,80 +1,97 @@
-# AET-WO-1912 §1 steps 2-3: the new rows, from the five runs' samples and the throwaway's alone pass.
-# Usage: python3 -I refit.py REPO REV RUNSDIR ALONE_TSV THROWAWAY_RUN RUN...
-#   writes REPO/ci/test-weights.tsv and REPO/ci/colocate.tsv rows in place (values only; new rows in sorted place),
-#   prints the decision table (markdown) on stdout.
-# Rule (REFIT RULE 1-3, 5; WO §1): a row is changed only where it sits more than 25 % under its worst trustworthy sample.
-#   test, not colocated: trustworthy = an alone time (the throwaway's alone pass, or a `solo` sample of the five runs);
-#     raised to the worst of them, 3 decimals; a test with no row gets one at 0.5 s or more.
-#   colocated block: its worst libtest `finished in` over the five runs and the throwaway's normal pass, rounded up.
+# AET-WO-1913 §1 step 3: set every twin_tier2 and board_tier2 row to its alone time, and raise the two blocks to their worst.
+# Usage: python3 -I refit.py REPO REV ALONE_TSV RUNSDIR THROWAWAY_RUN RUN... [--floor BINARY=SECONDS ...]
+#   ALONE_TSV is alone_times.py's output for THROWAWAY_RUN (shard, binary, name, seconds, cpu).
+#   Writes REPO/ci/test-weights.tsv and REPO/ci/colocate.tsv values in place; prints the decision table (markdown).
+# Rules (WO §1 step 3; REFIT RULE 1, 3, 5):
+#   a twin_tier2 or board_tier2 test: the worse of its alone samples (each name ran alone on two shards), 3 decimals,
+#     lowered or raised; never from a shared-process run (both take their lock per call).
+#   four_layer_fab_tier2, verify_47k_tier2: their worst `finished in` over the runs, the throwaway's normal pass, its
+#     whole-binary alone pass and any --floor (a sample measured earlier and cited by the WO), rounded up; never lowered.
 import importlib.util, math, os, re, sys
-
-repo, rev, d, alone_tsv, throwaways, runs = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split(','), sys.argv[6:]
-throwaway = throwaways[-1]  # the run whose alone pass is ALONE_TSV
+args = [a for a in sys.argv[1:] if not a.startswith('--floor')]
+floors = {}
+for i, a in enumerate(sys.argv):
+    if a == '--floor': b, s = sys.argv[i + 1].split('='); floors[b] = float(s)
+args = [a for a in args if '=' not in a]
+repo, rev, alone_tsv, d, throwaway, runs = args[0], args[1], args[2], args[3], args[4], args[5:]
 spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
-coloc = table.rows(repo, rev, 'colocate.tsv', 1); weights = table.rows(repo, rev, 'test-weights.tsv', 2)
+BINS = ('tests/twin_tier2.rs', 'tests/board_tier2.rs')
+BLOCKS = ('tests/four_layer_fab_tier2.rs', 'tests/verify_47k_tier2.rs')
+weights = table.rows(repo, rev, 'test-weights.tsv', 2); coloc = table.rows(repo, rev, 'colocate.tsv', 1)
 
-solo, cand, blocks = {}, {}, {}
-for run in runs + throwaways:
-    for f in os.listdir(f'{d}/{run}'):
-        m = re.match(r'shard-(\d+)\.log$', f)
-        if not m: continue
-        _, _, bins = table.shard(f'{d}/{run}/{f}')
-        for b in bins:
-            if (b['binary'],) in coloc: blocks.setdefault(b['binary'], []).append((b['fin'], run, int(m.group(1)))); continue
-            if run in throwaways: continue  # the throwaway's normal pass: blocks only; its tests are weighed by the alone pass
-            for n, s, how in b['tests']:
-                (solo if how == 'solo' else cand).setdefault((b['binary'], n), []).append((s, run, int(m.group(1))))
+def jobs_of(run):
+    j = {}
+    for l in open(f'{d}/{run}/jobs.tsv'):
+        p = l.split('\t'); m = re.match(r'tools-shard \((\d+)\)', p[1])
+        if m: j[m.group(1)] = p[0]
+    return j
+TJ = jobs_of(throwaway)
 alone = {}
 for l in open(alone_tsv):
     k, b, n, s, cpu = l.rstrip('\n').split('\t')
-    alone.setdefault((b, n), []).append((float(s), throwaway, int(k)))
+    if n.startswith('@'): alone.setdefault((n[1:],), []).append((float(s), f'{throwaway} shard {k} job {TJ[k]} alone', cpu))
+    elif b in BINS: alone.setdefault((b, n), []).append((float(s), f'{throwaway} shard {k} job {TJ[k]}', cpu))
+for run in runs + [throwaway]:
+    for f in os.listdir(f'{d}/{run}'):
+        m = re.match(r'shard-(\d+)\.log$', f)
+        if not m: continue
+        for b in table.shard(f'{d}/{run}/{f}')[2]:
+            if b['binary'] in BLOCKS: alone.setdefault((b['binary'],), []).append((b['fin'], f'{run} shard {m.group(1)} job {jobs_of(run)[m.group(1)]}', ''))
 
-def fmt(x): return f'{x:.3f}'
-new_w, out = {}, []
-for key in sorted(alone):  # the named list: every lagging or candidate test, each measured alone
-    row = weights.get(key)
-    trusted = alone.get(key, []) + solo.get(key, [])
-    worst = max(trusted)
-    c = max(cand.get(key, [(0, '', 0)]))[0]
-    if row is None:
-        if worst[0] < 0.5: continue
-        verdict = 'new row'
-    elif row < 0.75 * worst[0]: verdict = 'raised'
-    else:
-        if key in alone and c and row < 0.75 * c: out.append((key, row, row, worst, c, 'kept: the alone time holds; the in-shard candidate was a lock wait or a bound'))
-        continue
-    new_w[key] = worst[0]
-    out.append((key, row, worst[0], worst, c, verdict))
+new_w, new_c, out, missing = {}, {}, [], []
+for key, row in sorted(weights.items()):
+    if key[0] not in BINS: continue
+    ss = alone.get(key, [])
+    if len(ss) < 2: missing.append(f'{key[1]}: {len(ss)} alone sample(s)')
+    if not ss: continue
+    worst = max(ss)
+    new = round(worst[0], 3)
+    new_w[key] = new
+    how = 'lowered' if new < row else 'raised' if new > row else 'same'
+    out.append((key, row, ss, new, how))
+# The architect's widening (bus, 2026-11-20 18:09Z): any other row more than 25 % off its alone time may be set to it.
+# Its alone time here is a `solo` sample (the only test of its binary in a shard: the binary's `finished in`) over the five
+# runs and the throwaway's normal pass; set to the worst of them, lowered or raised. A row with no solo sample is not moved.
+solo = {}
+for run in runs + [throwaway]:
+    jobs = jobs_of(run)
+    for f in os.listdir(f'{d}/{run}'):
+        m = re.match(r'shard-(\d+)\.log$', f)
+        if not m: continue
+        for b in table.shard(f'{d}/{run}/{f}')[2]:
+            for n, s, how in b['tests']:
+                if how == 'solo': solo.setdefault((b['binary'], n), []).append((s, f'{run} shard {m.group(1)} job {jobs[m.group(1)]}', 'solo'))
+for key, row in sorted(weights.items()):
+    if key[0] in BINS or key not in solo: continue
+    worst = max(solo[key])
+    if abs(row - worst[0]) <= 0.25 * worst[0]: continue
+    new = round(worst[0], 3); new_w[key] = new
+    out.append((key, row, solo[key], new, 'lowered' if new < row else 'raised'))
+for b in BLOCKS:
+    ss = alone.get((b,), [])
+    if b in floors: ss.append((floors[b], 'cited by the WO (AET-WO-1912)', ''))
+    new = max(math.ceil(max(ss)[0]), int(coloc[(b,)]))
+    new_c[b] = new
+    out.append(((b, '(block)'), coloc[(b,)], ss, new, 'raised' if new > coloc[(b,)] else 'kept'))
 
-new_c = {}
-for b, ss in sorted(blocks.items()):
-    w = max(ss); r = coloc[(b,)]
-    if r < 0.75 * w[0]: new_c[b] = math.ceil(w[0]); out.append(((b, '(block)'), r, math.ceil(w[0]), w, 0, 'raised'))
+def fmt(x): return f'{x:.3f}'.rstrip('0').rstrip('.') if '.' in f'{x:.3f}' else str(x)
+for f, upd, cols in (('test-weights.tsv', new_w, 2), ('colocate.tsv', new_c, 1)):
+    p = f'{repo}/ci/{f}'; lines = open(p).read().split('\n')
+    for i, l in enumerate(lines):
+        if l.startswith('#') or not l.strip(): continue
+        parts = l.split('\t'); key = tuple(parts[:cols]) if cols == 2 else parts[0]
+        if key in upd: lines[i] = '\t'.join(parts[:cols] + [fmt(upd[key]) if cols == 2 else str(upd[key])])
+    open(p, 'w').write('\n'.join(lines))
 
-print('| binary | test | row before | row after | from (s, run, shard) | worst lock/ub candidate | verdict |')
-print('|---|---|---|---|---|---|---|')
-for (b, n), r, a, w, c, v in out:
-    print(f'| {b} | {n} | {r if r is not None else "-"} | {a if isinstance(a, int) else fmt(a)} | {w[0]:.2f} ({w[1]}, {w[2]}) | {f"{c:.2f}" if c else "-"} | {v} |')
-
-# write in place
-p = f'{repo}/ci/test-weights.tsv'
-lines = open(p).read().splitlines()
-done = set()
-for i, l in enumerate(lines):
-    if l.startswith('#') or not l.strip(): continue
-    b, n, _ = l.split('\t')
-    if (b, n) in new_w: lines[i] = f'{b}\t{n}\t{fmt(new_w[(b, n)])}'; done.add((b, n))
-for key in sorted(k for k in new_w if k not in done):
-    idx = [i for i, l in enumerate(lines) if not l.startswith('#') and l.strip() and tuple(l.split('\t')[:2]) < key]
-    at = (idx[-1] + 1) if idx else len(lines)
-    lines.insert(at, f'{key[0]}\t{key[1]}\t{fmt(new_w[key])}')
-open(p, 'w').write('\n'.join(lines) + '\n')
-p = f'{repo}/ci/colocate.tsv'
-lines = open(p).read().splitlines()
-for i, l in enumerate(lines):
-    if l.startswith('#') or not l.strip(): continue
-    b, _ = l.split('\t')
-    if b in new_c: lines[i] = f'{b}\t{new_c[b]}'
-open(p, 'w').write('\n'.join(lines) + '\n')
-print(f'\n{len(new_w)} test rows written ({len(new_w) - len(done)} new), {len(new_c)} blocks raised', file=sys.stderr)
+print('| binary | test | row before | alone samples (s, run/shard, CPU) | row after | change |')
+print('|---|---|---|---|---|---|')
+for key, row, ss, new, how in out:
+    sm = '; '.join(f'{s:.2f} ({w}{", " + c if c else ""})' for s, w, c in sorted(ss, reverse=True))
+    print(f'| {key[0].split("/")[-1]} | {key[1]} | {fmt(row)} | {sm} | {fmt(new) if isinstance(new, float) else new} | {how} |')
+tw = [(r, n) for k, r, _, n, _ in out if k[0] in BINS]
+for b in BINS:
+    xs = [(r, n) for k, r, _, n, _ in out if k[0] == b]
+    print(f'\n{b}: {len(xs)} rows, {sum(r for r, _ in xs):.1f} s before, {sum(n for _, n in xs):.1f} s after; '
+          f'{sum(1 for k, r, _, n, h in out if k[0] == b and h == "lowered")} lowered, {sum(1 for k, r, _, n, h in out if k[0] == b and h == "raised")} raised')
+for m in missing: print(f'MISSING {m}', file=sys.stderr)

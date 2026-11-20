@@ -14,7 +14,7 @@ tests/attribute_seeded.rs	526
 # AET-WO-3303 D1: every package verify now runs the seeded set (four scenarios); against_fab_tier2 and verify_47k_tier2
 # re-weighed as their Furnace wall time in the pinned image (530 s, 179 s) times 1.7, the CI-to-Furnace ratio of one verify: estimates until the refit rule's measurement.
 # verify_47k_tier2: one verify (47k, --fab-out).
-tests/verify_47k_tier2.rs	220
+tests/verify_47k_tier2.rs	278
 # campaign_tier2: first() (one campaign of 2k2 and 47k) once instead of once per shard.
 tests/campaign_tier2.rs	83
 # AET-WO-4300b refit: the four blocks re-weighed at their worst in-process wall time (libtest's `finished in`) over runs 43752525127 and 43763615224: attribute_seeded 872.87 s, against_fab_tier2 869.15 s, verify_47k_tier2 278.56 s, campaign_tier2 45.34 s, rounded up.
@@ -31,7 +31,7 @@ tests/power_board_tier1.rs	331
 # outline_tier1 (D2): 535.9 s times 0.84 = 450.
 tests/outline_tier1.rs	251
 # four_layer_fab_tier2 (D3): one --fab-out verify and two --against-fab, at the worst measured 530 s each = 1590.
-tests/four_layer_fab_tier2.rs	625
+tests/four_layer_fab_tier2.rs	741
 # AET-WO-1910 refit after the build (REFIT RULE 3 and 5): every block above at its libtest `finished in` on run 44461834066 (head bc31f19c),
 # rounded up: attribute_seeded 893.39, verify_47k_tier2 447.93, campaign_tier2 36.42, power_board_tier1 223.26, outline_tier1 407.37,
 # four_layer_fab_tier2 1370.63. The estimates above are superseded; the rows keep the lines that say what each block is.
@@ -51,3 +51,4 @@ tests/via_ring_tier1.rs	61
 # AET-WO-1912 (REFIT RULE 3 and 5): the three blocks more than 25 % under their worst libtest `finished in` over the five green main runs 44747545277, 44747464266,
 # 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39 in
 # two modes, its cause not measured, AET-WO-1912 FEEDBACK F2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
+# AET-WO-1913 (REFIT RULE 3 and 5; WO §1 step 3): four_layer_fab_tier2 and verify_47k_tier2 raised to their worst `finished in` over the five green main runs above, the throwaway run 44787324803 (its normal pass and each binary run whole alone) and AET-WO-1912's measured 740.63 and 277.29, rounded up: 741 and 278. The other blocks are within 25 % of their worst and keep their rows.
