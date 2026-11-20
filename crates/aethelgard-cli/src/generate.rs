@@ -36,8 +36,11 @@ pub enum GenerateError {
     Twin(TwinError),
     /// The specification declares `mcu.core_supply.mode` `bypass` ([`generable`]).
     CoreSupplyNotGenerated,
-    /// The specification declares `mcu.hse` ([`generable`]).
-    HseNotGenerated,
+    /// The specification declares `mcu.hse` and solves to a tree other than
+    /// H1 ([`generable`]), named.
+    HseNotGenerated {
+        tree: String,
+    },
 }
 
 /// The declarations this engine validates and solves but does not generate,
@@ -52,16 +55,38 @@ pub enum GenerateError {
 /// Bypass mode is selected", RM0433 Rev 9 §6.8.6, p. 310), which the
 /// generated bring-up does not set.
 ///
-/// `HseNotGenerated` (`AET-WO-4240a` §1.7, `4240` D10): a board whose
-/// `mcu.hse` is declared solves to the HSE tree (`clock.hse`), whose
-/// bring-up, `RCC` words, Kani clause and twin rule are `AET-WO-4240b`'s; the
-/// generator today writes only the reset tree.
+/// `HseNotGenerated` (`AET-WO-4240a` §1.7, lifted for H1 by `AET-WO-4240b`
+/// §1.7): a board whose `mcu.hse` is declared solves to the HSE tree
+/// (`clock.hse`). The generator writes H1's bring-up: `source` PLL1,
+/// `sysclk_hz` 64 MHz and every prescaler 1 (`d1cpre`, `hpre`, `d1ppre`,
+/// `d2ppre1`, `d2ppre2`, `d3ppre`), `timpre` off, at VOS Scale 2. Any other
+/// HSE tree is refused, the refusal naming it.
 pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
     if topology.core_supply == aethelgard_ir::vos::CoreSupplyMode::Bypass {
         return Err(GenerateError::CoreSupplyNotGenerated);
     }
-    if topology.clock.hse.is_some() {
-        return Err(GenerateError::HseNotGenerated);
+    let c = &topology.clock;
+    let h1 = c.source == "PLL1"
+        && c.sysclk_hz == 64_000_000
+        && [c.d1cpre, c.hpre, c.d1ppre, c.d2ppre1, c.d2ppre2, c.d3ppre] == [1; 6]
+        && !c.timpre
+        && c.vos == aethelgard_ir::vos::Vos::Scale2;
+    if c.hse.is_some() && !h1 {
+        return Err(GenerateError::HseNotGenerated {
+            tree: format!(
+                "source {}, sysclk_hz {}, d1cpre {}, hpre {}, d1ppre {}, d2ppre1 {}, d2ppre2 {}, d3ppre {}, timpre {}, vos {}",
+                c.source,
+                c.sysclk_hz,
+                c.d1cpre,
+                c.hpre,
+                c.d1ppre,
+                c.d2ppre1,
+                c.d2ppre2,
+                c.d3ppre,
+                c.timpre,
+                c.vos
+            ),
+        });
     }
     Ok(())
 }
@@ -75,8 +100,9 @@ impl std::fmt::Display for GenerateError {
             Self::CoreSupplyNotGenerated => f.write_str(
                 "mcu.core_supply.mode is `bypass`: the core is supplied from an external VCORE, which no board this engine emits draws, and its voltage scale is that supply's, which the generated bring-up does not set (AET-WO-4240v D-1); validate and solve accept it, generate, emit and simulate do not",
             ),
-            Self::HseNotGenerated => f.write_str(
-                "mcu.hse is declared: the board solves to the HSE clock tree, whose bring-up the generator does not write until AET-WO-4240b; validate and solve accept it, generate, emit and simulate do not",
+            Self::HseNotGenerated { tree } => write!(
+                f,
+                "mcu.hse is declared and the board solves to the HSE tree {tree}, which is not H1 (PLL1 at 64 MHz, every prescaler 1, timpre off, VOS Scale 2), the only HSE tree the generator writes (AET-WO-4240b); validate and solve accept it, generate, emit and simulate do not"
             ),
         }
     }
@@ -89,7 +115,7 @@ impl GenerateError {
             Self::Board(e) => e.kind(),
             Self::Twin(e) => e.kind(),
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
-            Self::HseNotGenerated => "HseNotGenerated",
+            Self::HseNotGenerated { .. } => "HseNotGenerated",
         }
     }
 
@@ -99,7 +125,7 @@ impl GenerateError {
             Self::Board(_)
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
-            | Self::HseNotGenerated => None,
+            | Self::HseNotGenerated { .. } => None,
         }
     }
 
@@ -116,7 +142,7 @@ impl GenerateError {
             Self::Board(_)
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
-            | Self::HseNotGenerated => false,
+            | Self::HseNotGenerated { .. } => false,
         }
     }
 }
@@ -159,4 +185,43 @@ pub fn tree(
     }
     files.insert(format!("{BOARD_DIR}/{project}.repl"), platform);
     Ok(files)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hse(fixture: &str) -> SolvedTopology {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures")
+            .join(format!("{fixture}.json"));
+        let spec: Specification = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap()
+    }
+
+    /// `AET-WO-4240b` §1.7: both HSE fixtures solve to H1 and are generable;
+    /// any other HSE tree is refused as `HseNotGenerated`, naming the tree.
+    #[test]
+    fn only_h1_is_generable_among_hse_trees() {
+        for fixture in ["hse-crystal-16", "hse-external-8"] {
+            let t = hse(fixture);
+            assert!(t.clock.hse.is_some(), "{fixture}");
+            assert!(generable(&t).is_ok(), "{fixture}");
+        }
+        let mut t = hse("hse-crystal-16");
+        t.clock.sysclk_hz = 200_000_000;
+        t.clock.d2ppre1 = 2;
+        let err = generable(&t).unwrap_err();
+        assert_eq!(err.kind(), "HseNotGenerated");
+        assert!(
+            err.to_string().contains(
+                "the HSE tree source PLL1, sysclk_hz 200000000, d1cpre 1, hpre 1, d1ppre 1, d2ppre1 2, d2ppre2 1, d3ppre 1, timpre false, vos scale2, which is not H1"
+            ),
+            "{err}"
+        );
+        // A null board with the same off-H1 fields is not this refusal's.
+        t.clock.hse = None;
+        assert!(generable(&t).is_ok());
+    }
 }
