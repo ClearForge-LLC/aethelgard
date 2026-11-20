@@ -1,5 +1,5 @@
 {
-  "what": "AET-WO-1211 (a): the two parts rows the fixtures bind to, in the proposed parts-table shape (FEEDBACK §2.1). Not a parts table: nothing reads this file. Every value cites the held maker's document by page; `typical` marks a value printed in the TYP column only, which the engine names as typical and never as a bound (RUL-19).",
+  "what": "AET-WO-1211 (a): the two parts rows the fixtures bind to, in the proposed parts-table shape (FEEDBACK \u00a72.1). Not a parts table: nothing reads this file. Every value cites the held maker's document by page; `typical` marks a value printed in the TYP column only, which the engine names as typical and never as a bound (RUL-19).",
   "rows": [
     {
       "part": "DRV8876PWPR",
@@ -7,63 +7,315 @@
       "identity": null,
       "lifecycle": null,
       "source": "TI SLVSDS7B (Aug 2019, rev Nov 2019), sha256 f96a70b19f582ba2999bc22e0c15adc69385374a9590bf77e2ab0bdf887f6f3e",
-      "package": {"name": "HTSSOP-16 PWP with thermal pad", "page": 3},
-      "pins": {
-        "EN/IN1": {"number": 1, "kind": "logic_input", "pull": {"down_ohms_typical": 100000}, "page": 3},
-        "PH/IN2": {"number": 2, "kind": "logic_input", "pull": {"down_ohms_typical": 100000}, "page": 3},
-        "nSLEEP": {"number": 3, "kind": "logic_input", "pull": {"down_ohms_typical": 100000}, "page": 3},
-        "nFAULT": {"number": 4, "kind": "open_drain_output", "vol_max_mv": 300, "at_ma": 5, "iod_max_ma": 5, "pull_up_max_mv": 5500, "page": "3, 4, 6"},
-        "VREF": {"number": 5, "kind": "strap_analog", "range_mv": [0, 3600], "page": 4},
-        "IPROPI": {"number": 6, "kind": "current_output", "ua_per_a_typical": 1000, "output_max_ma": 3, "page": "4, 6, 12"},
-        "IMODE": {"number": 7, "kind": "strap_quad", "page": 13},
-        "OUT1": {"number": 8, "kind": "bridge_output", "page": 3},
-        "PGND": {"number": 9, "kind": "ground", "page": 3},
-        "OUT2": {"number": 10, "kind": "bridge_output", "page": 3},
-        "VM": {"number": 11, "kind": "supply", "range_mv": [4500, 37000], "page": 4},
-        "VCP": {"number": 12, "kind": "passive", "page": 3},
-        "CPH": {"number": 13, "kind": "passive", "page": 3},
-        "CPL": {"number": 14, "kind": "passive", "page": 3},
-        "GND": {"number": 15, "kind": "ground", "page": 3},
-        "PMODE": {"number": 16, "kind": "strap_tri", "page": "5, 10"},
-        "PAD": {"number": null, "kind": "ground", "page": 3}
+      "package": {
+        "name": "HTSSOP-16 PWP with thermal pad",
+        "page": 3
       },
-      "logic_levels": {"vil_max_mv": 700, "vil_max_mv_condition": "VVM < 5 V (800 at VVM >= 5 V)", "vih_min_mv": 1500, "vin_max_mv": 5500, "page": "4, 5"},
-      "timing": {"t_wake_max_us": 1000, "t_sleep_max_us": 1000, "input_pwm_max_hz": 100000, "page": "4, 5"},
+      "pins": {
+        "EN/IN1": {
+          "number": 1,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 100000
+          },
+          "page": 3
+        },
+        "PH/IN2": {
+          "number": 2,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 100000
+          },
+          "page": 3
+        },
+        "nSLEEP": {
+          "number": 3,
+          "kind": "enable_input",
+          "active": "high",
+          "pull": {
+            "down_ohms_typical": 100000
+          },
+          "page": "3, 5"
+        },
+        "nFAULT": {
+          "number": 4,
+          "kind": "open_drain_output",
+          "vol_max_mv": 300,
+          "at_ma": 5,
+          "iod_max_ma": 5,
+          "pull_up_max_mv": 5500,
+          "page": "3, 4, 6"
+        },
+        "VREF": {
+          "number": 5,
+          "kind": "strap_analog",
+          "range_mv": [
+            0,
+            3600
+          ],
+          "page": 4
+        },
+        "IPROPI": {
+          "number": 6,
+          "kind": "current_output",
+          "ua_per_a_typical": 1000,
+          "output_max_ma": 3,
+          "page": "4, 6, 12",
+          "error_band": [
+            {
+              "load_ma": [
+                0,
+                150
+              ],
+              "absolute_ma": 7.5
+            },
+            {
+              "load_ma": [
+                150,
+                500
+              ],
+              "percent": 5
+            },
+            {
+              "load_ma": [
+                500,
+                2000
+              ],
+              "percent": 4,
+              "condition": "PWP, TJ -40 to 125 C"
+            },
+            {
+              "load_ma": [
+                500,
+                2000
+              ],
+              "percent": 5,
+              "condition": "PWP, TJ 125 to 150 C"
+            },
+            {
+              "page": 6,
+              "note": "AERR, combined offset and gain error (p. 13); conditions 5.5 V <= VVM <= 37 V"
+            }
+          ]
+        },
+        "IMODE": {
+          "number": 7,
+          "kind": "strap_quad",
+          "page": 13
+        },
+        "OUT1": {
+          "number": 8,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "PGND": {
+          "number": 9,
+          "kind": "ground",
+          "page": 3
+        },
+        "OUT2": {
+          "number": 10,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "VM": {
+          "number": 11,
+          "kind": "supply",
+          "range_mv": [
+            4500,
+            37000
+          ],
+          "page": 4
+        },
+        "VCP": {
+          "number": 12,
+          "kind": "passive",
+          "page": 3
+        },
+        "CPH": {
+          "number": 13,
+          "kind": "passive",
+          "page": 3
+        },
+        "CPL": {
+          "number": 14,
+          "kind": "passive",
+          "page": 3
+        },
+        "GND": {
+          "number": 15,
+          "kind": "ground",
+          "page": 3
+        },
+        "PMODE": {
+          "number": 16,
+          "kind": "strap_tri",
+          "page": "5, 10"
+        },
+        "PAD": {
+          "number": null,
+          "kind": "ground",
+          "page": 3
+        }
+      },
+      "logic_levels": {
+        "vil_max_mv": 700,
+        "vil_max_mv_condition": "VVM < 5 V (800 at VVM >= 5 V)",
+        "vih_min_mv": 1500,
+        "vin_max_mv": 5500,
+        "page": "4, 5"
+      },
+      "timing": {
+        "t_wake_max_us": 1000,
+        "t_sleep_max_us": 1000,
+        "input_pwm_max_hz": 100000,
+        "page": "4, 5"
+      },
       "passives": [
-        {"between": ["VM", "GND"], "farads": "1e-7", "page": 3},
-        {"between": ["VCP", "VM"], "farads": "1e-7", "volts_min": 16, "page": 3},
-        {"between": ["CPH", "CPL"], "farads": "2.2e-8", "volts": "VM-rated", "page": 3}
+        {
+          "between": [
+            "VM",
+            "GND"
+          ],
+          "farads": "1e-7",
+          "page": 3
+        },
+        {
+          "between": [
+            "VCP",
+            "VM"
+          ],
+          "farads": "1e-7",
+          "volts_min": 16,
+          "page": 3
+        },
+        {
+          "between": [
+            "CPH",
+            "CPL"
+          ],
+          "farads": "2.2e-8",
+          "volts": "VM-rated",
+          "page": 3
+        }
       ],
       "modes": {
         "strap": "PMODE",
         "ph_en": {
           "strap_level": "low",
-          "inputs": ["EN/IN1", "PH/IN2"],
+          "inputs": [
+            "EN/IN1",
+            "PH/IN2"
+          ],
           "states": [
-            {"nSLEEP": 0, "EN/IN1": "x", "PH/IN2": "x", "OUT1": "Z", "OUT2": "Z", "name": "sleep", "drives": false},
-            {"nSLEEP": 1, "EN/IN1": 0, "PH/IN2": "x", "OUT1": "L", "OUT2": "L", "name": "brake", "drives": false},
-            {"nSLEEP": 1, "EN/IN1": 1, "PH/IN2": 0, "OUT1": "L", "OUT2": "H", "name": "reverse", "drives": true},
-            {"nSLEEP": 1, "EN/IN1": 1, "PH/IN2": 1, "OUT1": "H", "OUT2": "L", "name": "forward", "drives": true}
+            {
+              "nSLEEP": 0,
+              "EN/IN1": "x",
+              "PH/IN2": "x",
+              "OUT1": "Z",
+              "OUT2": "Z",
+              "name": "sleep",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 0,
+              "PH/IN2": "x",
+              "OUT1": "L",
+              "OUT2": "L",
+              "name": "brake",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 1,
+              "PH/IN2": 0,
+              "OUT1": "L",
+              "OUT2": "H",
+              "name": "reverse",
+              "drives": true
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 1,
+              "PH/IN2": 1,
+              "OUT1": "H",
+              "OUT2": "L",
+              "name": "forward",
+              "drives": true
+            }
           ],
           "forbidden": [],
           "page": "11 (Table 3)"
         },
         "in_in": {
           "strap_level": "high",
-          "inputs": ["EN/IN1", "PH/IN2"],
+          "inputs": [
+            "EN/IN1",
+            "PH/IN2"
+          ],
           "states": [
-            {"nSLEEP": 0, "EN/IN1": "x", "PH/IN2": "x", "OUT1": "Z", "OUT2": "Z", "name": "sleep", "drives": false},
-            {"nSLEEP": 1, "EN/IN1": 0, "PH/IN2": 0, "OUT1": "Z", "OUT2": "Z", "name": "coast", "drives": false},
-            {"nSLEEP": 1, "EN/IN1": 0, "PH/IN2": 1, "OUT1": "L", "OUT2": "H", "name": "reverse", "drives": true},
-            {"nSLEEP": 1, "EN/IN1": 1, "PH/IN2": 0, "OUT1": "H", "OUT2": "L", "name": "forward", "drives": true},
-            {"nSLEEP": 1, "EN/IN1": 1, "PH/IN2": 1, "OUT1": "L", "OUT2": "L", "name": "brake", "drives": false}
+            {
+              "nSLEEP": 0,
+              "EN/IN1": "x",
+              "PH/IN2": "x",
+              "OUT1": "Z",
+              "OUT2": "Z",
+              "name": "sleep",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 0,
+              "PH/IN2": 0,
+              "OUT1": "Z",
+              "OUT2": "Z",
+              "name": "coast",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 0,
+              "PH/IN2": 1,
+              "OUT1": "L",
+              "OUT2": "H",
+              "name": "reverse",
+              "drives": true
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 1,
+              "PH/IN2": 0,
+              "OUT1": "H",
+              "OUT2": "L",
+              "name": "forward",
+              "drives": true
+            },
+            {
+              "nSLEEP": 1,
+              "EN/IN1": 1,
+              "PH/IN2": 1,
+              "OUT1": "L",
+              "OUT2": "L",
+              "name": "brake",
+              "drives": false
+            }
           ],
           "forbidden": [],
           "page": "11 (Table 4)"
         }
       },
-      "dead_time": {"internal": true, "page": 11},
-      "fault_pin_meaning": {"IMODE=GND": "overcurrent only", "IMODE=20k": "current chopping and overcurrent", "IMODE=62k": "current chopping and overcurrent", "IMODE=Hi-Z": "overcurrent only", "page": "13 (Table 6)"}
+      "dead_time": {
+        "internal": true,
+        "page": 11
+      },
+      "fault_pin_meaning": {
+        "IMODE=GND": "overcurrent only",
+        "IMODE=20k": "current chopping and overcurrent",
+        "IMODE=62k": "current chopping and overcurrent",
+        "IMODE=Hi-Z": "overcurrent only",
+        "page": "13 (Table 6)"
+      }
     },
     {
       "part": "DRV8833PWPR",
@@ -71,50 +323,231 @@
       "identity": null,
       "lifecycle": null,
       "source": "TI SLVSAR1E (Jan 2011, rev Jul 2015), sha256 3e400e333f08f1b93ec99a2d52a6af2a864e88462cc892282208548d9e9f0de4",
-      "package": {"name": "HTSSOP-16 PWP with PowerPAD", "page": 3},
-      "pins": {
-        "nSLEEP": {"number": 1, "kind": "logic_input", "pull": {"down_ohms_typical": 500000}, "vih_min_mv": 2500, "vil_max_mv": 500, "page": "3, 6"},
-        "AOUT1": {"number": 2, "kind": "bridge_output", "page": 3},
-        "AISEN": {"number": 3, "kind": "sense_return", "page": "4, 10"},
-        "AOUT2": {"number": 4, "kind": "bridge_output", "page": 3},
-        "BOUT2": {"number": 5, "kind": "bridge_output", "page": 3},
-        "BISEN": {"number": 6, "kind": "sense_return", "page": "4, 10"},
-        "BOUT1": {"number": 7, "kind": "bridge_output", "page": 3},
-        "nFAULT": {"number": 8, "kind": "open_drain_output", "vol_max_mv": 500, "at_ma": 5, "page": "4, 6"},
-        "BIN1": {"number": 9, "kind": "logic_input", "pull": {"down_ohms_typical": 150000}, "page": "3, 6"},
-        "BIN2": {"number": 10, "kind": "logic_input", "pull": {"down_ohms_typical": 150000}, "page": "3, 6"},
-        "VCP": {"number": 11, "kind": "passive", "page": 3},
-        "VM": {"number": 12, "kind": "supply", "range_mv": [2700, 10800], "page": 5},
-        "GND": {"number": 13, "kind": "ground", "page": 3},
-        "VINT": {"number": 14, "kind": "passive", "page": 3},
-        "AIN2": {"number": 15, "kind": "logic_input", "pull": {"down_ohms_typical": 150000}, "page": "3, 6"},
-        "AIN1": {"number": 16, "kind": "logic_input", "pull": {"down_ohms_typical": 150000}, "page": "3, 6"},
-        "PPAD": {"number": null, "kind": "ground", "page": 3}
+      "package": {
+        "name": "HTSSOP-16 PWP with PowerPAD",
+        "page": 3
       },
-      "logic_levels": {"vil_max_mv": 700, "vih_min_mv": 2000, "page": 6},
-      "timing": {"t_wake_max_us": 1000, "t_sleep_max_us": null, "input_pwm_max_hz": null, "page": "6, 7", "not_found": ["t_sleep (no tSLEEP in SLVSAR1E)", "maximum input PWM frequency"]},
+      "pins": {
+        "nSLEEP": {
+          "number": 1,
+          "kind": "enable_input",
+          "active": "high",
+          "pull": {
+            "down_ohms_typical": 500000
+          },
+          "vih_min_mv": 2500,
+          "vil_max_mv": 500,
+          "page": "3, 6"
+        },
+        "AOUT1": {
+          "number": 2,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "AISEN": {
+          "number": 3,
+          "kind": "sense_return",
+          "page": "4, 10"
+        },
+        "AOUT2": {
+          "number": 4,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "BOUT2": {
+          "number": 5,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "BISEN": {
+          "number": 6,
+          "kind": "sense_return",
+          "page": "4, 10"
+        },
+        "BOUT1": {
+          "number": 7,
+          "kind": "bridge_output",
+          "page": 3
+        },
+        "nFAULT": {
+          "number": 8,
+          "kind": "open_drain_output",
+          "vol_max_mv": 500,
+          "at_ma": 5,
+          "page": "4, 6"
+        },
+        "BIN1": {
+          "number": 9,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 150000
+          },
+          "page": "3, 6"
+        },
+        "BIN2": {
+          "number": 10,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 150000
+          },
+          "page": "3, 6"
+        },
+        "VCP": {
+          "number": 11,
+          "kind": "passive",
+          "page": 3
+        },
+        "VM": {
+          "number": 12,
+          "kind": "supply",
+          "range_mv": [
+            2700,
+            10800
+          ],
+          "page": 5
+        },
+        "GND": {
+          "number": 13,
+          "kind": "ground",
+          "page": 3
+        },
+        "VINT": {
+          "number": 14,
+          "kind": "passive",
+          "page": 3
+        },
+        "AIN2": {
+          "number": 15,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 150000
+          },
+          "page": "3, 6"
+        },
+        "AIN1": {
+          "number": 16,
+          "kind": "logic_input",
+          "pull": {
+            "down_ohms_typical": 150000
+          },
+          "page": "3, 6"
+        },
+        "PPAD": {
+          "number": null,
+          "kind": "ground",
+          "page": 3
+        }
+      },
+      "logic_levels": {
+        "vil_max_mv": 700,
+        "vih_min_mv": 2000,
+        "page": 6
+      },
+      "timing": {
+        "t_wake_max_us": 1000,
+        "t_sleep_max_us": null,
+        "input_pwm_max_hz": null,
+        "page": "6, 7",
+        "not_found": [
+          "t_sleep (no tSLEEP in SLVSAR1E)",
+          "maximum input PWM frequency"
+        ]
+      },
       "passives": [
-        {"between": ["VCP", "VM"], "farads": "1e-8", "volts_min": 16, "page": 3},
-        {"between": ["VM", "GND"], "farads": "1e-5", "minimum": true, "page": 3},
-        {"between": ["VINT", "GND"], "farads": "2.2e-6", "volts_min": 6.3, "page": 3}
+        {
+          "between": [
+            "VCP",
+            "VM"
+          ],
+          "farads": "1e-8",
+          "volts_min": 16,
+          "page": 3
+        },
+        {
+          "between": [
+            "VM",
+            "GND"
+          ],
+          "farads": "1e-5",
+          "minimum": true,
+          "page": 3
+        },
+        {
+          "between": [
+            "VINT",
+            "GND"
+          ],
+          "farads": "2.2e-6",
+          "volts_min": 6.3,
+          "page": 3
+        }
       ],
       "modes": {
         "strap": null,
         "in_in": {
-          "inputs_a": ["AIN1", "AIN2"],
-          "inputs_b": ["BIN1", "BIN2"],
+          "inputs_a": [
+            "AIN1",
+            "AIN2"
+          ],
+          "inputs_b": [
+            "BIN1",
+            "BIN2"
+          ],
           "states": [
-            {"nSLEEP": 0, "xIN1": "x", "xIN2": "x", "xOUT1": "Z", "xOUT2": "Z", "name": "sleep", "drives": false},
-            {"nSLEEP": 1, "xIN1": 0, "xIN2": 0, "xOUT1": "Z", "xOUT2": "Z", "name": "coast", "drives": false},
-            {"nSLEEP": 1, "xIN1": 0, "xIN2": 1, "xOUT1": "L", "xOUT2": "H", "name": "reverse", "drives": true},
-            {"nSLEEP": 1, "xIN1": 1, "xIN2": 0, "xOUT1": "H", "xOUT2": "L", "name": "forward", "drives": true},
-            {"nSLEEP": 1, "xIN1": 1, "xIN2": 1, "xOUT1": "L", "xOUT2": "L", "name": "brake", "drives": false}
+            {
+              "nSLEEP": 0,
+              "xIN1": "x",
+              "xIN2": "x",
+              "xOUT1": "Z",
+              "xOUT2": "Z",
+              "name": "sleep",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "xIN1": 0,
+              "xIN2": 0,
+              "xOUT1": "Z",
+              "xOUT2": "Z",
+              "name": "coast",
+              "drives": false
+            },
+            {
+              "nSLEEP": 1,
+              "xIN1": 0,
+              "xIN2": 1,
+              "xOUT1": "L",
+              "xOUT2": "H",
+              "name": "reverse",
+              "drives": true
+            },
+            {
+              "nSLEEP": 1,
+              "xIN1": 1,
+              "xIN2": 0,
+              "xOUT1": "H",
+              "xOUT2": "L",
+              "name": "forward",
+              "drives": true
+            },
+            {
+              "nSLEEP": 1,
+              "xIN1": 1,
+              "xIN2": 1,
+              "xOUT1": "L",
+              "xOUT2": "L",
+              "name": "brake",
+              "drives": false
+            }
           ],
           "forbidden": [],
           "page": "9 (Table 1, Table 2); sleep row p. 3, p. 11"
         }
       },
-      "dead_time": {"internal": true, "page": "6, 12"}
+      "dead_time": {
+        "internal": true,
+        "page": "6, 12"
+      }
     }
   ]
 }

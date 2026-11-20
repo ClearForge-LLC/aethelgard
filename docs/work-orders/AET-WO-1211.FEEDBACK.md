@@ -5,12 +5,12 @@
 
 **The answer, in five lines:**
 - The proposal fits today's engine. With `idle` = `pulse_min_us` and `resolution_ps` = 1,000,000 stated on every PWM output, no solved word moves on any committed file (§3). A byte change to the specification moves only its hash lines; the ELF and every emitted board file stay byte-identical (measured).
-- **Rule (e) as worded is wrong for both parts.** Both inputs high is **brake** on the DRV8833 and on the DRV8876 in IN/IN mode. It is the slow-decay state their PWM tables use (SLVSAR1E Table 1/2 p. 9; SLVSDS7B Table 4 p. 11). In PH/EN mode, both high is **forward**. Neither part has a forbidden input state, since both make their own dead time. I propose (D3) that the hazard 4600 F2 found becomes "an idle must be a non-driving row of the part's truth table", with the truth table as row data.
+- **Rule (e) as worded is wrong for both parts.** Both inputs high is **brake** on the DRV8833 and on the DRV8876 in IN/IN mode. It is the slow-decay state their PWM tables use (SLVSAR1E Table 1/2 p. 9; SLVSDS7B Table 4 p. 11). In PH/EN mode, both high is **forward**. Neither part has a forbidden input state, since both make their own dead time. I propose (Q3) that the hazard 4600 F2 found becomes "an idle must be a non-driving row of the part's truth table", with the truth table as row data.
 - **The twin reaches GPIO and ADC, with holes.**
   - A script can drive an input low (nFAULT) and set an ADC channel's voltage.
   - Renode does not model `PUPDR`, `OTYPER`, `MOE`, `CCxE` gating in forced modes, the timer output before the first update event, ADC2, or the ADC's power-up.
   - The twin's motor judge calls a static idle `unwitnessed`.
-- The parts row must carry pins, levels, pulls and truth tables, because `validate` cannot read eda's per-part arms (D6).
+- The parts row must carry pins, levels, pulls and truth tables, because `validate` cannot read eda's per-part arms (Q6).
 - Four build work orders follow (§5).
 
 ## 0. How it was made
@@ -19,7 +19,7 @@
   - TI DRV8876 **SLVSDS7B** (Aug 2019, rev Nov 2019, 48 pp), sha256 `f96a70b1…6f3e`.
   - TI DRV8833 **SLVSAR1E** (Jan 2011, rev Jul 2015, 30 pp), `3e400e33…0de4`. Both were fetched from ti.com by plain curl. A first fetch set a browser User-Agent; it was discarded, and the plain fetch is byte-identical.
   - ST **RM0433 Rev 9** `672a9433…b6a0` and **DS12117 Rev 10** `607b9ead…c032`: Scotty's st.com copies (roadmap, 2301 D10), hardlinked.
-  - Every table value cited below was read on a rendered page (PyMuPDF, `~/.cache/aet-1211/pages/`), not from extracted text. Printed page numbers equal PDF page indices in all four documents.
+  - Every table value cited below was read on a rendered page (PyMuPDF, `~/.cache/aet-1211/pages/`), not from extracted text. Three tables were first read from text and were rendered and checked before the push: SLVSDS7B Table 6 (p. 13), RM0433 Table 337 (p. 1608) and DS12117 Table 50 (p. 139). Prose is cited from text. Printed page numbers equal PDF page indices in all four documents.
 - **Renode source:** `renode-infrastructure` `cd4b002a`, the tarball `container/Dockerfile` fetches, sha256 `83e6af97…6fa8`. The image's rebuilt `Infrastructure.dll` adds three NVIC commits, which touch only `src/Emulator/Cores/Arm-M/NVIC.cs` (`container/renode-nvic/*.patch`). No line quoted below is affected.
 - **Runs:** one container at a time, in the pinned tools image `e5fc7ddb…` under `~/bin/capped-run` (8G, swap 0, read back), `--network none`, `nice -n 10`.
   - `spike/1211/twin/run.sh`: six hand-written Renode scripts on the stock platform. Output: `twin/twin.log`, Renode `1.17.0+20260907gitf1dd1b4af.aet1605`.
@@ -73,7 +73,7 @@ One rule holds throughout: **every new field is required, and no default substit
 | `analog` | (c) | |
 | `bridges` | (e) | |
 
-**The parts row** (`fixtures/parts-rows.json`) gains `bus: "none"`, `identity: null`, and per pin a `kind` (`logic_input`, `open_drain_output`, `current_output`, `strap_*`, `bridge_output`, `supply`, `ground`, `passive`, `sense_return`), its internal pull with value, its levels, and the part's timing (`t_wake`, `t_sleep`, input PWM maximum) and truth tables per strapped mode.
+**The parts row** (`fixtures/parts-rows.json`) gains `bus: "none"`, `identity: null`, and per pin a `kind` (`logic_input`, `enable_input`, `open_drain_output`, `current_output`, `strap_*`, `bridge_output`, `supply`, `ground`, `passive`, `sense_return`), its internal pull with value, its levels, and the part's timing (`t_wake`, `t_sleep`, input PWM maximum) and truth tables per strapped mode.
 - **Why it must be row data, not an eda arm:** `validate` judges a signal against the device pin it binds to. Those facts live today only in `aethelgard-eda/src/schematic.rs` arms (L1405–1559) and `names.rs`, which `validate` cannot read (`INV-01`). This settles half of 4600 D4: **pins, kinds, levels, pulls, timing and truth tables are row data.** Symbols, footprints and the passive placement stay the eda work order's question (§5, 1211d).
 - **What it costs:** today a row cannot lack a bus (`ir/src/parts.rs:151`, `enum Bus { I2c, Spi }`; `bus` and `identity` are required in `Part`). The parts schema bumps 10 → 11.
 
@@ -93,7 +93,7 @@ Per signal:
 
 | field | values | meaning, refusals |
 |---|---|---|
-| `device_pin` | a row pin name | `UnknownDevicePin`. `SignalKindMismatch`: an output bound to a pin whose `kind` is not `logic_input`, or an input bound to one that is not `*_output` |
+| `device_pin` | a row pin name | `UnknownDevicePin`. `SignalKindMismatch`: an output bound to a pin whose `kind` is not `logic_input` or `enable_input`, or an input bound to one that is not `*_output` |
 | `net` | net name | the existing net guards (GND, debug nets, the reference namespace) |
 | `pin` | MCU pin or `null` | the solver's `UnknownPin`, `ReservedPin`, `PinClaimedTwice` (`solve.rs:1139–1166`) |
 | `direction` | `output` / `input` | — |
@@ -105,7 +105,8 @@ Solved: `topology.gpio` becomes `{net: {pin, direction, initial | pull}}`, not `
 
 ### 2.3 (c) ADC inputs
 
-`pin_devices[].analog[]` = `{device_pin, net, pin, transfer, full_scale, adc_resolution_bits}`:
+`pin_devices[].analog[]` = `{device_pin, net, pin, channel, transfer, full_scale, adc_resolution_bits}`:
+- `channel`: `null` for the solver to choose, or `{peripheral, input}` by hand (`{"peripheral": "ADC3", "input": "INP5"}`), as `pin` is. Refused when not on the pin: `AdcChannelNotOnPin`.
 - `transfer` is one of:
   - `{"current_output": {"resistor": {reference, part, ohms}}}`. The row's `ua_per_a_typical` gives V = I_load × A × R.
   - `{"divider": {top, bottom, reservoir}}`. This is `power.sense`'s shape (`power.rs:324`), so the battery sense becomes the same kind of input.
@@ -113,14 +114,14 @@ Solved: `topology.gpio` becomes `{net: {pin, direction, initial | pull}}`, not `
 - `adc_resolution_bits`: as `power.sense` declares it today.
 
 Refusals:
-- `AdcFullScaleExceeded` (the analogue of `SenseFullScaleExceeded`, `power.rs:2121`): the transfer at full scale against VREF+ = the MCU domain.
+- `AdcFullScaleExceeded` (the analogue of `SenseFullScaleExceeded`, `power.rs:2121`): the transfer at full scale against VREF+ = the MCU domain, **at the worst edge of the row's error band**, not at the typical. SLVSDS7B gives A_IPROPI as typical only but bounds its error by range (AERR, p. 6): ±4 % for 0.5–2 A (PWP, TJ < 125 °C), ±5 % at 125–150 °C. The row carries these bands (`parts-rows.json`). D1 at 2 A: 3.0 V × 1.05 = 3.15 V ≤ 3.3 V.
 - `AdcSourceImpedance`: R against RAIN at the chosen sampling time.
 - `AdcOutputCurrentExceeded`: I_load × A above the row's `output_max_ma` (DRV8876 IIPROPI 3 mA, p. 4).
 - `NoAdcPin`, as today.
 
 **Solved:** a map `adc_inputs: {net: {pin, peripheral, channel}}`. Today's `SolvedSense` stores the candidate `channels` and **chooses no ADC peripheral** (`solve.rs:449–480`); the solver must now choose one. Since Renode has no ADC2 (§4, A6), the lean is that **the solver prefers an ADC1 or ADC3 channel and refuses an ADC2-only pin as `AdcUnmodelled`** unless the specification pins it by hand. On LQFP144 that is PF13/PF14 (ADC2_INP2, INN2/INP6, DS12117 pp. 65–72).
 
-Also: today's rule takes the lowest package position, and on LQFP144 that is **PF3, an ADC3-only pin**. A battery sense on an H753 board therefore lands on ADC3 today, and nothing chooses that consciously.
+Also: today's rule takes the lowest package position. **Measured:** `solve` on `crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json` puts `VBAT_SENSE` on **PF3, `ADC3_INP5` only**. A battery sense on an H753 board lands on ADC3 today, and nothing chooses that consciously.
 
 **`power.sense` (choice):** keep it where it is and solve it into the same map (lean), or move it into `pin_devices` as a divider device. The lean keeps the battery's place in the power tree, which `power.rs`'s checks read.
 
@@ -137,6 +138,8 @@ Both go **inside `pwm`**, so a DShot output (`pwm: null`) takes neither. DShot's
 - PSC = kernel × ps / 1e12 − 1.
 - ARR = round_half_up(1e12 / (rate × ps)) − 1.
 - CCR at idle: `pulse_us` × 1e6 / ps; `low` → 0; `high` → ARR + 1.
+
+**`high` breaks one clause of today's `solve_timing`:** `ccr + 1 >= ticks` refuses any CCR ≥ ARR (`motor.rs:661`). The clause stays for commanded pulses and is lifted for the idle word alone.
 
 **Low and high are realised in PWM mode 1, not in forced modes.**
 - RM0433 Rev 9 p. 1558: "If the compare value in TIMx_CCRx is greater than the auto-reload value … OCxREF is held at '1'. If the compare value is 0 then OCxRef is held at '0'."
@@ -163,7 +166,7 @@ Both go **inside `pwm`**, so a DShot output (`pwm: null`) takes neither. DShot's
 **Choice: a property of two outputs, or a kind the device owns?**
 - **Lean: the device owns it.** `pin_devices[].bridges[]` = `{id, mode, inputs: {device_pin: motor_output_label}, outputs: {device_pin: net}}`.
   - **Why:** D1's only Hi-Z state is `nSLEEP` low (SLVSDS7B Table 3). Its idle therefore spans a GPIO and two outputs, and only the device sees all three.
-  - `mode` must match the strap (`BridgeModeStrapMismatch`: PMODE `GND` is `ph_en`, DVDD is `in_in`, Hi-Z is independent half-bridges, which no bridge declares). It must also be a mode the row has.
+  - `mode` must match the strap (`BridgeModeStrapMismatch`: PMODE logic low is `ph_en`, logic high (VTIH ≥ 1.5 V, SLVSDS7B p. 5) is `in_in`, Hi-Z is independent half-bridges, which no bridge declares). It must also be a mode the row has.
 - **The other shape:** `pwm.bridge: {"pair": "<label>"}` on each of the two outputs. It duplicates the pair across two entries and cannot reach nSLEEP.
 
 **Choice: the rule, measured against the datasheets.**
@@ -183,7 +186,8 @@ Both parts make their own dead time (SLVSDS7B p. 11; SLVSAR1E p. 6 fn. 1 and p. 
   - It fits a **discrete half-bridge leg** (high-side and low-side gate inputs of one leg), where both high is shoot-through. Neither part here is one.
 - **Option 2 (lean): the truth table is row data.**
   - Each strapped mode lists its states, with `drives` and a `forbidden` set (`parts-rows.json`). Both parts' `forbidden` sets are empty; a gate-driver row would fill its own.
-  - **`BridgeIdleDrives`:** the idle tuple (`nSLEEP`'s `initial`, each input's `idle`) must be a row whose `drives` is false. This is the hazard 4600 F2 found: an IN/IN pair idling at 2 % chops brake from boot, and a PH/EN pair at 2 % drives. **Both fixtures pass** (D1: sleep, then brake; D2: sleep, then coast). The 4600 driver as committed (`HB_IN1`/`HB_IN2` at `pulse_min_us` 1) would be refused, once declared as a bridge.
+  - **`BridgeIdlePulsed`:** a bridge input's idle must be a `level`. A `pulse_us` idle makes the pair visit two rows every period: an IN/IN pair at 1 µs passes brake (1 1) and then coast (0 0), which are both non-driving. So a row test alone would pass the very hazard 4600 F2 found, where an IN/IN pair chops brake from boot and a PH/EN pair at 2 % drives. The 4600 driver as committed (`HB_IN1`/`HB_IN2`, idle = `pulse_min_us` 1 once migrated) is refused here, once declared as a bridge.
+  - **`BridgeIdleDrives`:** the static idle tuple (`nSLEEP`'s `initial`, each input's `level`) must be a row whose `drives` is false. **Both fixtures pass.** Both declare `nSLEEP` `initial: low`, so each idles in sleep. With `initial: high`, D1 would idle in brake (EN 0) and D2 in coast (00), which are both non-driving.
   - **`BridgeForbiddenState`:** any reachable state in the forbidden set.
   - **The rule judges idle only.** The generated board crate has no run-time drive: `Tim{n}::start_outputs` returns `Running`, which has no method (`svd-hal board.rs:2636`, `3309–3330`). **It judges nothing at run time** until a drive API exists. Designing one is out of scope here.
 - **D1's PH on a timer (choice).** As the work order writes D1, `DRV_PH` is a timer channel that only ever holds 0 % or 100 %. The alternative is a GPIO output (`signals[]`, `initial: low`), which frees a channel and makes PH's static nature explicit. Lean: allow both. The bridge's `inputs` may name either a motor output or a signal; the truth-table rule reads levels either way.
@@ -193,6 +197,7 @@ Both parts make their own dead time (SLVSDS7B p. 11; SLVSAR1E p. 6 fn. 1 and p. 
 RM0433 Rev 9 p. 541: `MODER` resets to analog on every port except A (`0xABFF FFFF`) and B (`0xFFFF FEBF`). Analog mode disconnects the output buffer and the pulls (p. 539). From reset until the firmware's first write, a driver's inputs are held only by the part and the board, not by the specification's initial levels.
 - **Rule:** a `logic_input` pin bound to a signal or a motor output must have a row pull (DRV8876 100 kΩ, DRV8833 150 kΩ / 500 kΩ) or a `straps` entry, else `UnheldDuringReset`.
 - **The pulled level must be a non-driving state.** Both parts pull every input down, giving sleep. **Both fixtures pass.**
+- **The enable pin.** `nSLEEP` is a row pin of kind `enable_input` (active high, with `t_wake`). Its `initial` is the level the bring-up leaves it at. No separate wake field exists: `initial: high` is the declaration that the bring-up wakes the part.
 - **RM0433 states no "write ODR before MODER" guarantee** (searched; only "the value written to ODR is output on the pin when configured as output", p. 534). The generator already orders BSRR before MODER (`board.rs:2788–2799`), and Kani holds it (`board.rs:4991–5005`). The rule cites the general statement, not a guarantee that does not exist.
 
 ### 2.7 What each projection does
@@ -200,12 +205,13 @@ RM0433 Rev 9 p. 541: `MODER` resets to analog on every port except A (`0xABFF FF
 **(a) device**
 - **validate:** §2.1's refusals.
 - **solver:** places nothing for the device itself. Its signals are (b)/(c).
-- **generator:** a wake step. Bridge inputs reach their idle, then `CEN`, then `nSLEEP` high, then a `t_wake` wait from the row (DRV8876 and DRV8833 tWAKE 1 ms max, SLVSDS7B p. 5, SLVSAR1E p. 7). The bring-up's one wait today is `settle(spins)` (`firmware.rs:373`, `601–613`); a bounded wait for the row's `t_wake` is new. Motors start at `firmware.rs:993`, so the wake step goes after it and before `BOOT_MAGIC` (`firmware.rs:1000`).
-- **Kani:** the schedule harness gains the order "inputs at idle and `CEN` before `nSLEEP` high". Today's harness takes pins-before-timer from the typestate (`board.rs:5755–5765`).
+- **generator:** an `enable_input` signal is written after its bridge's inputs are at idle (`CEN`). Only when its `initial` is the enabling level does a `t_wake` wait from the row follow (DRV8876 and DRV8833 tWAKE 1 ms max, SLVSDS7B p. 5, SLVSAR1E p. 7). Both fixtures declare `low`, so neither wakes at bring-up. The bring-up's one wait today is `settle(spins)` (`firmware.rs:373`, `601–613`); a bounded wait for the row's `t_wake` is new. Motors start at `firmware.rs:993`, so the step goes after it and before `BOOT_MAGIC` (`firmware.rs:1000`).
+- **Kani:** the schedule harness gains the order "inputs at idle and `CEN` before an enable input's write". Today's harness takes pins-before-timer from the typestate (`board.rs:5755–5765`).
 - **twin:** no Renode model of either part exists. The twin witnesses the MCU side only and names the device `device_unmodelled`, as for an I2C part with no model.
 - **ledger:** no device registers.
 - **eda:** an arm or row data per part (§5, 1211d). No `Driver_Motor` symbol is vendored: `eda/src/library.rs`'s pinned list (`PINS`, L19) names none, and `kicad-lib` holds no DRV88xx.
-- **verify:** an `erc`/`drc` run on the drawn device. Coverage gains a target only through (b), (c) and (e).
+- **verify:** an `erc`/`drc` run on the drawn device. Coverage gains a target only through (b), (c) and (e), **and through the motor rail.** A part's supply (`VMOTOR`) is a voltage domain, and coverage makes every domain a `Rail` target (`verify.rs:1130–1157`). No power tree renders a droop on it, so it stays unmet, which blocks `--fab-out` (`campaign_faults_every_bus_and_rail`, `verify.rs:204`). Measured: today's `validate` accepts a second, sourceless domain. That is `1211c`'s, or 4600 F7's power-input kind. The motor connector's current rating is not a field and is unjudged (4600 §2).
+- **validate, connectors:** a connector may name only a declared signal, a domain or `GND` (`ConnectorNetUnknown`, measured on a today-schema variant). A bridge's `outputs` nets must join that set.
 - **hwdef:** refuses by name for a board with no ArduPilot (4600 D1).
 - **pinout:** judges nothing on the device.
 - **speeds:** judges nothing.
@@ -267,7 +273,7 @@ RM0433 Rev 9 p. 541: `MODER` resets to analog on every port except A (`0xABFF FF
 - **ledger:** `PSC`, `ARR` and `CCR` stay rule rows (`TIM_RULE`), with the rule reading `idle` and `resolution_ps`.
 - **eda:** none.
 - **verify:** `check_silicon`'s `silicon_findings` (`verify.rs:1620`) judges the declared idle.
-- **hwdef:** `MOT_PWM_*` stays not emitted (4600 F14).
+- **hwdef:** `MOT_PWM_*` stays not emitted (4600 F14). Its motor line hard-codes `PULLDOWN` (hwdef `lib.rs:495–507`), so it must follow the idle as the pull rule does (§2.4).
 - **pinout:** `implied_pupd` follows the idle (§2.4).
 - **speeds:** unchanged.
 
@@ -292,7 +298,7 @@ RM0433 Rev 9 p. 541: `MODER` resets to analog on every port except A (`0xABFF FF
 |---|---|---|---|---|---|
 | committed specifications (schema 19) | 29 | 24: 8 PWM in 2 files (`driver-judges-nothing`, `motors-pwm`), 16 DShot in 4 | `schema_version` on all 29; `pwm.idle` + `pwm.resolution_ps` on the 8 PWM | 8 PWM against `solve`'s output | **0** |
 | solved topologies (schema 12) | 2 (`hwdef/tests/fixtures/serial-dshot-9600.topology.json`, `svd-hal/tests/ui/motors-pwm/topology.json`) | 8: 4 PWM, 4 DShot | the solved version on both; the copied `pwm` fields on the 4 PWM | 4 PWM against the committed words | **0** |
-| specifications built in Rust | `ir/tests/motor.rs` (`pwm()` L58, `PwmTiming` L423), `ir/tests/validate.rs`, `ir/src/motor.rs` tests (L795), `cli/src/renode.rs` L4060: 15 `pulse_min_us` sites in 4 files | — | the same two fields | not run | — |
+| specifications built in Rust | `ir/tests/motor.rs` (`pwm()` L58, `PwmTiming` L423), `ir/tests/validate.rs`, `ir/src/motor.rs` tests (L795), `cli/src/renode.rs` L4060: 7 `pulse_min_us` sites outside `motor.rs`'s own definition, solver and judge (15 in 4 files counting those) | — | the same two fields | not run | — |
 
 - **DShot outputs are untouched by construction.** No field reaches them (`pwm` is `null`), so they are not "compared"; `today` would equal `today`.
 - **Prediction P1a ("no solved word moves"): holds** on all 12 PWM outputs. PSC 63 (64 MHz / 1 MHz − 1) and ARR are unchanged. CCR = `pulse_min_us` = `idle.pulse_us`.
@@ -315,6 +321,17 @@ RM0433 Rev 9 p. 541: `MODER` resets to analog on every port except A (`0xABFF FF
   - `fab/sentinel-01-bench/package/{FAB-NOTES.md, MANIFEST.json}` (eda `fab.rs:521`, cli `fab.rs:712`);
   - `hwdef/tests/fixtures/{sentinel-01,sentinel-02,serial-dshot-9600}.*`;
   - `svd-hal/tests/ui/{motors-pwm,serial-four}/*`.
+- **Moved by the solved-version bump, not by a specification hash:** the inline v12 solved-topology literals in `twin`, `cli/src/renode.rs` and `cli/src/analog.rs`.
+- **Not mapped:** the sha256 literals in `chaos/tests/golden.rs` and `svd-hal/tests/{serial_ports,order_2203}.rs`. The reader did not trace which input each hashes; `1211a` must.
+
+**One output, migrated** (`crates/aethelgard-cli/tests/fixtures/motors-pwm.json`, `MOTOR1`):
+
+```json
+"pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}
+"pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000, "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}
+```
+
+Both give PSC 63, ARR 2499 and CCR 1000 (`measure.json`).
 - **Version literals to edit:** five `assert_eq!(…, 19)` (`ir/tests/{motor,bench,serial,board,orientation}.rs`) and `ir/tests/readme_versions.rs`'s README pin.
 - **Not measured:** the version bump itself, and a topology carrying the new fields, since no engine reads them. The design's claim, that the generator reads only the solved words, which do not move, rests on `timer_writes` (`board.rs:3272–3290`) reading `TimerPlan`'s PSC, ARR and CCR alone.
 
@@ -384,9 +401,11 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
      - `idle` and `resolution_ps` on the 8 PWM outputs;
      - the two solved topologies and the 4 Rust builders;
      - the version literals.
-   - **Fence:** `crates/aethelgard-ir`, the fixtures and examples, `hwdef`/`pincheck` refusal arms, and the **`boards/sentinel-01*` hash lines by the generator plus a re-dispatched package**, as `4240a`'s fence ruling had it.
+   - **Fence:** `crates/aethelgard-ir`, the fixtures and examples, and the **`boards/sentinel-01*` hash lines by the generator plus a re-dispatched package**, as `4240a`'s fence ruling had it.
+   - **It also reaches every reader of `topology.gpio`'s new shape:** `svd-hal`, `twin`, `cli`, `eda`, `hwdef` and `pincheck`. Each gets a named refusal for a pin device until its work order lands (`PinDeviceNotGenerated`, `PinDeviceNotSimulated`, `PinDeviceNotDrawn`, `GpioNotEmitted`), on `HseNotGenerated`'s precedent (`4240a`).
+   - **Against `1210`** (specification 21): `validate` refuses a part with no emitter arm on a specification that draws a board. Until `1211d` lands, a pin device is declared only on a specification that draws none. `1211a`'s fixtures must declare that, or `1211d` lands first.
 2. **`1211b`, generator, Kani and ledger** (after `1211a`).
-   - **Generator:** idle CCR (0, ARR + 1, pulse); PSC from the resolution; GPIO outputs at their declared level and inputs with their pull; the ADC enable sequence; the wake step (inputs at idle, `CEN`, `nSLEEP` high, `t_wake`).
+   - **Generator:** idle CCR (0, ARR + 1, pulse); PSC from the resolution; GPIO outputs at their declared level and inputs with their pull; the ADC enable sequence; enable inputs written after their bridge's `CEN`, with `t_wake` when they wake the part.
    - **Kani:** the oracles from the specification.
    - **`motor_output_pupd`:** follows the idle.
    - **Ledger:** the classes in §2.7. Without them, the first ADC write is refused before any gate runs.
@@ -397,7 +416,11 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
    - Coverage targets for inputs, ADC inputs and bridges.
    - Per-item gates (2306).
    - The fidelity notes of §4 recorded as ledger reasons.
+   - The motor rail's coverage (§2.7 (a)).
+   - It takes the next scenario version (today `SCENARIO_VERSIONS` = 1–4, `chaos/src/campaign.rs:32`) and the next trace version (today 17, `chaos/src/event.rs:52`).
 4. **`1211d`, eda: an arm per part** (after `1211a`, beside `1211b`). Two parts, one work order: the symbols and footprints authored under `crates/aethelgard-kicad-lib` (none vendored), the passives and straps from the rows, and the bridge outputs to connectors. Whether arms become row data (4600 D4) is the architect's call before it is written.
+
+`1211b`, `1211c` and `1211d` take no specification version.
 
 ## 6. Predictions beside results
 
@@ -422,7 +445,7 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
 
 ## 7. Stops, and what could not be cited
 
-**STOP:** the work order always stops at §2 for the schema ruling. Decisions D1–D10 are below.
+**STOP:** the work order always stops at §2 for the schema ruling. Decisions Q1–Q10 are below (Q, so they do not collide with fixtures D1 and D2).
 
 **NOT FOUND in a held maker's document.** Each is named, and none is filled from a distributor's copy.
 - DRV8833 maximum input PWM frequency. D2's 20 kHz is declared and not judged.
@@ -435,16 +458,16 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
 
 ## 8. Decisions for the ruling
 
-- **D1 · GPIO and ADC on the device or the MCU?** **Lean: the device** (§2.2 shape A), following `cs` and the row semantics. Shape B is a top-level MCU list.
-- **D2 · Bridge: owned by the device or a property of two outputs?** **Lean: the device** (§2.5), because D1's idle spans nSLEEP.
-- **D3 · The bridge rule.** The work order's "never driven high together" forbids brake on both parts, slow-decay drive on the DRV8833, and forward in PH/EN (§2.5 table). **Lean: the truth table as row data. An idle must be a non-driving row (`BridgeIdleDrives`); forbidden states are row data (empty for both parts); it judges idle only and nothing at run time.** Keep option 1 for a future discrete half-bridge-leg part.
-- **D4 · `idle`.** Inside `pwm`, required on every PWM output (8 committed). **`pulse_us: 0`:** accept (the work order) or refuse as `IdleSpelledTwice` (**lean**, one spelling per state).
-- **D5 · `resolution`.** **`resolution_ps`**, required on every PWM output. 1,000,000 restates today, and no word moves. It joins the timer key. `4240b` must re-judge it at its clock.
-- **D6 · Row data.** **Lean: pins, kinds, levels, pulls, timing and truth tables in the parts row** (parts schema 11), because `validate` must read them. Symbols, footprints and passives go to 4600 D4's question for `1211d`.
-- **D7 · D1's PH on a timer or a GPIO.** **Lean: allow both** inputs in a bridge.
-- **D8 · ADC peripheral choice.** **Lean: the solver chooses ADC1 or ADC3 and refuses an ADC2-only pin as `AdcUnmodelled`** unless it is pinned. `power.sense` is solved into the same map and stays in the power tree. Note that today's rule lands a sense on PF3 (ADC3-only) unchosen.
-- **D9 · The pad before `start_outputs`.** **Lean: `motor_output_pupd` follows the idle** (down for low and pulse, up for high).
-- **D10 · Twin fidelity.** Renode holds idle high low for one period (H2), shows no pre-`CEN` level (O1), and ignores `MOE`/`CCxE` in forced modes (T4–T6). **Lean: judge static idle after one period, and record the window as an acknowledged `silicon-only` reason; do not patch Renode.**
+- **Q1 · GPIO and ADC on the device or the MCU?** **Lean: the device** (§2.2 shape A), following `cs` and the row semantics. Shape B is a top-level MCU list.
+- **Q2 · Bridge: owned by the device or a property of two outputs?** **Lean: the device** (§2.5), because D1's idle spans nSLEEP.
+- **Q3 · The bridge rule.** The work order's "never driven high together" forbids brake on both parts, slow-decay drive on the DRV8833, and forward in PH/EN (§2.5 table). **Lean: the truth table as row data. A bridge input idles at a `level`, never a pulse (`BridgeIdlePulsed`), and the static idle tuple must be a non-driving row (`BridgeIdleDrives`); forbidden states are row data (empty for both parts); it judges idle only and nothing at run time.** Keep option 1 for a future discrete half-bridge-leg part.
+- **Q4 · `idle`.** Inside `pwm`, required on every PWM output (8 committed). **`pulse_us: 0`:** accept (the work order) or refuse as `IdleSpelledTwice` (**lean**, one spelling per state).
+- **Q5 · `resolution`.** **`resolution_ps`**, required on every PWM output. 1,000,000 restates today, and no word moves. It joins the timer key. `4240b` must re-judge it at its clock.
+- **Q6 · Row data.** **Lean: pins, kinds, levels, pulls, timing and truth tables in the parts row** (parts schema 11), because `validate` must read them. Symbols, footprints and passives go to 4600 D4's question for `1211d`.
+- **Q7 · D1's PH on a timer or a GPIO.** **Lean: allow both** inputs in a bridge.
+- **Q8 · ADC peripheral choice.** **Lean: the solver chooses ADC1 or ADC3 and refuses an ADC2-only pin as `AdcUnmodelled`** unless it is pinned. `power.sense` is solved into the same map and stays in the power tree. Note that today's rule lands a sense on PF3 (ADC3-only) unchosen.
+- **Q9 · The pad before `start_outputs`.** **Lean: `motor_output_pupd` follows the idle** (down for low and pulse, up for high).
+- **Q10 · Twin fidelity.** Renode holds idle high low for one period (H2), shows no pre-`CEN` level (O1), and ignores `MOE`/`CCxE` in forced modes (T4–T6). **Lean: judge static idle after one period, and record the window as an acknowledged `silicon-only` reason; do not patch Renode.**
 
 ## 9. Gates, fence, reduction pass
 
