@@ -1558,11 +1558,6 @@ fn ready(
     ))
 }
 
-/// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
-/// firmware needs the quantum after it to echo them, all inside the board's
-/// window, `MAX_VIRTUAL_NS`, named by `window`. The frames'
-/// later bytes, paced a character apart (adversarial pass 4, ADV4-2), are
-/// the wire budget's ([`serial_wire_fits`]), which holds them all.
 /// `RecoveryBoundPastRun` (`AET-WO-2305` §1.2, ruled 2026-11-20): every
 /// release's probe, at the release, its nudge and the recovery bound, must
 /// lie inside the boot and before the next reset is asserted, or the droop
@@ -1601,6 +1596,11 @@ fn recovery_fits(
     Ok(())
 }
 
+/// `SerialInjectionPastWindow`: the frames go in at `injection_ns`, and the
+/// firmware needs the quantum after it to echo them, all inside the board's
+/// window, `MAX_VIRTUAL_NS`, named by `window`. The frames'
+/// later bytes, paced a character apart (adversarial pass 4, ADV4-2), are
+/// the wire budget's ([`serial_wire_fits`]), which holds them all.
 fn serial_fits(injection_ns: u64) -> Result<(), run::Stop> {
     let (window, window_ns) = (
         aethelgard_twin::boot::WINDOW,
@@ -2997,6 +2997,38 @@ mod tests {
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    /// `AET-WO-2305` §1.2: every release's probe lies inside the boot and
+    /// before the next reset's assertion, or the droop is refused by name
+    /// once the bound is known.
+    #[test]
+    fn a_probe_past_the_boot_or_into_the_next_reset_is_refused_by_name() {
+        use aethelgard_chaos::power::Reset;
+        let r = |asserted_ns, released_ns| Reset {
+            asserted_ns,
+            released_ns,
+            cause: vec!["VBOR3".to_owned()],
+        };
+        let one = [r(1_018_330, Some(1_231_690))];
+        assert!(recovery_fits(&one, 125_700, 100_000_000).is_ok());
+        // Exactly at the end fits; one ns past does not.
+        let at_end = 100_000_000 - 1_231_690 - 10;
+        assert!(recovery_fits(&one, at_end, 100_000_000).is_ok());
+        let e = recovery_fits(&one, at_end + 1, 100_000_000).unwrap_err();
+        assert_eq!(e.kind, "RecoveryBoundPastRun");
+        assert!(e.message.ends_with("the boot's end"), "{}", e.message);
+        // A second reset asserted before the first release's probe.
+        let two = [r(1_018_330, Some(1_231_690)), r(1_300_000, Some(1_500_000))];
+        let e = recovery_fits(&two, 125_700, 100_000_000).unwrap_err();
+        assert!(
+            e.message.ends_with("where the next reset is asserted"),
+            "{}",
+            e.message
+        );
+        // A release that never comes, and an instant past u64, both named.
+        assert!(recovery_fits(&[r(1, None)], u64::MAX, 100_000_000).is_ok());
+        assert!(recovery_fits(&one, u64::MAX, 100_000_000).is_err());
     }
 
     /// `AET-WO-3301` §1.4 in tier 1: the committed board is the generated

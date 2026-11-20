@@ -48,51 +48,110 @@ Every figure is labelled **measured**, **read at source** or **inferred**. The p
   - That is the boot word less 30 ns × spins.
 - **The time base is a constant per board,** and one undisturbed run fixes it. §7's third condition does not fire.
 
-## The stop (§7 condition 2) and the fork it raises
+## §1.2 The bound: the stop, its ruling, and what was built
 
-**Measured or read at source:**
-- **The campaign makes no baseline run.** `cli` `campaign.rs` `run_one` boots each scenario alone, and the runs share nothing. A campaign need not hold a no-fault scenario at all.
-- **No record holds a boot word's instant.** Kind 10 holds the word, not its time. Kind 19's `at_ns` is the probe's instant.
-- **Replay pins the constant.** `chaos` `campaign.rs` `check_run` requires each probe at release + `RECOVERY_BOUND_NS`, and `droop_end_ns` adds that constant to the span check before any run.
+**The stop (§7 condition 2), measured and read at source:**
+- **The campaign makes no baseline run.** `cli` `campaign.rs` `run_one` boots each scenario alone, and the runs share nothing.
+- **No record held a boot word's instant.**
+- **Replay pinned the constant.**
 
-**So a derived bound needs all four:**
-- a boot the judge makes;
-- a value the archive does not hold today;
-- a trace version (17, after `3305`'s 16);
-- a replay rule.
+I reported this at 04:50:44Z. **Ruled in at 05:10Z**, with the fence widened to:
+- the baseline boot inside the droop's own `simulate`;
+- one new record, and trace 17;
+- the replay rule;
+- one quantum of margin;
+- `scenarios/sentinel-03/droop-bor3.json`.
 
-§1.2 allows "a run the judge makes and archives"; §7 stops on "a change to what the campaign archives". I reported this on the bus (2026-11-20T04:50:44Z) with a proposal, and I am holding §1.2 for the ruling.
+**Built:**
+- **Where the undisturbed boot comes from: a run the judge makes and archives.**
+  - When a droop's schedule releases a reset, `simulate` first runs the same prepared boot with no reset (`main.rs`, `plan_with`). It has the same firmware copy, booted platform, models, cold writes, levels, stimuli and other overrides, and runs through the same bridge. Its serial capture goes to a directory of its own.
+  - It reads that boot's boot-word hook, whose instant is exact (count × 10 ns from 0), in `renode::undisturbed_boot_word_ns`.
+  - A unit test holds the two command lines equal outside the droop's schedule (`the_undisturbed_boot_is_the_droops_own_without_its_resets`).
+- **What the archive records: kind 32, `RecoveryBound`.**
+  - Fields: the undisturbed boot word's instant, the margin (100,000 ns) and the bound, their sum. The instant and bound are absent when the undisturbed boot wrote no boot word, or its log could not be read whole.
+  - Rank 6, beside the rail, once exactly when the droop releases a reset.
+  - Trace 17. The golden is re-pinned, and setting the version byte back to 16 gives `7eccc893…5d31` again.
+- **The bound:** `power::recovery_bound` = the instant + `RECOVERY_MARGIN_NS`. The doc comment states the measurement: a spread of 0 over 9 boards and 12 release phases.
+- **The probe:** `power::probe_ns` = release + nudge + bound.
+- **Replay:** `check_droop_records` checks the bound = the instant + the margin (in `Record::check`, which also pins the margin) and places each probe there, inside the run.
+  - With no bound there is no observation, and every release is `brownout_unrecovered`.
+  - The span check lost its constant (`droop_end_ns`). After the measurement, `simulate` refuses `RecoveryBoundPastRun` when a probe would lie past the boot's end or past the next reset's assertion (`recovery_fits`).
+- **No boot word means no bound:** each release is then `brownout_unrecovered`, "no recovery bound for the release at … ns: the same boot, run first with no reset, wrote no boot word that could be read".
 
-**Proposal, if ruled in:**
-- **The baseline boot:** inside the droop scenario's own `simulate`, the same prepared boot with no resets: the same firmware copy, booted platform, models, stimuli and other overrides. Then the droop boot.
-- **Archive and replay:** one new record with the undisturbed boot word's instant, the margin and the bound. Kind 19 probes at release + nudge + bound. Replay checks bound = instant + margin and each probe's place.
-- **Failures by name:**
-  - a baseline with no boot word is `brownout_unrecovered`, naming the missing bound (`INV-06`);
-  - the span check moves after the measurement and refuses by name.
-- **The margin:** one quantum (100 µs) is recommended. That is the twin's one timing freedom: peripherals synchronise with the core at quantum edges. The measured spread is 0. The alternative is T/8.
+## §1.5 The re-judge (measured; `spike/2305/PREDICTIONS-2.md` committed first, `fa99c081`)
 
-## Built so far (holds under either ruling)
+The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the same firmware (`out/measure-branch.jsonl`, `out/measure-main-416a6dd3.jsonl`, `out/compare-main-branch.txt`). **Every predicted value was met exactly.**
 
-- **§1.3 The witness (`chaos` `power::witness_recovers`, used by the CLI judge and by replay):**
+| Run | Bound (ns) | Probe (ns) | Witness lines | main 416a6dd3 | branch |
+|---|---|---|---|---|---|
+| S-01 minimal `droop-bor3` | 125,700 | 1,357,400 | 2 | pass | pass |
+| S-01 minimal `droop-tolerated` | — | — | — | pass | pass |
+| S-01 bench `droop-bor3` | 128,130 | 1,359,830 | 2 | pass | pass |
+| `dshot600-droop` | 121,750 | 453,450 | 2 | pass | pass |
+| `four-layer-droop` | — | — | — | pass | pass |
+| `spi-only-droop-bor3` | 115,240 | 1,346,900 | 8 | pass | pass |
+| S-03 `droop-tolerated` | — | — | — | pass | pass |
+| **S-03 `droop-bor3` (new)** | 39,227,180 | 40,871,280 | 3 | fail, `brownout_unrecovered` | **pass: recovers** |
+| **S-02-shaped `s02-droop`** | 39,172,410 | 39,505,090 | 2 | fail, same | **pass: recovers** |
+| **logger `droop-bor3`** | 19,622,270 | 20,854,130 | 3 (U20: identity, configure, data) | fail, same | **pass: recovers** |
+| **ext-bmp581 `droop-bor3`** | 19,623,760 | 20,855,540 | 2 | fail, same | **pass: recovers** |
+
+**Every byte that moved, record by record (`compare.py`):**
+- **Runs with no release** (every undisturbed boot, both `droop-tolerated`, `four-layer-droop`): no record differs. Their state hashes move because the trace version is in the header the chain starts from.
+- **Each releasing Sentinel-01-shaped droop:** kind 32 is added, and kind 19 moves from release + 100 µs to release + nudge + bound. Its readings and witness lines are unchanged. **No Sentinel-01 verdict, count or reading moved.**
+- **The four waiting runs:**
+  - kind 32 is added;
+  - kind 19 moves, its boot word read as `0x2100b007` (was `0x0`);
+  - its witness holds the device's later steps where it has them;
+  - kind 14 loses `brownout_unrecovered`.
+- **So the Sentinel-01 bench package's `MANIFEST.json` moves** (the verdict's trace hashes). It joins the queue after 4240v. It is not hand-edited.
+
+## §1.3, §1.4 The witness and coverage
+
+- **§1.3 The witness (`chaos` `power::witness_recovers`, one rule for the CLI judge and for replay):** accepted as proposed.
   - The lines from the release must begin with the first device's identity lines.
   - Every later line must continue that device's own later steps, in the script's order, each step whole.
-  - **A repeated identity read fails:** that is a boot that started over, not a recovery. I narrowed "extra lines after it are allowed" to the device's own later steps so a reset loop cannot pass (adversarial pass).
+  - **A repeated identity read fails:** that is a boot that started over (a reset loop), not a recovery.
   - A wrong identity value still fails `brownout_unrecovered`, by its word and by its line.
-  - An archive written before this build still replays: an exact one-step witness is the rule's first case.
+  - An archive written before this build would still replay by this rule: an exact one-step witness is its first case.
 - **§1.4 Coverage (`cli` `verify.rs` `uncrossed`):**
   - On the MCU's supply, at the specification's `mcu.bor_level` > 0, a droop below the band whose loaded floor stays at or above that level's falling threshold covers nothing.
   - Its row names the crossing it lacks, for example: ``rail `VDD_3V3` (`x` crosses none: at BOR level 3 a droop must cross VBOR3's falling level, 2610 mV; its loaded floor is 2850 mV)``.
   - The level is the board's, not the droop's field, so no scenario declares its way past it.
-  - It covers nothing for the whole scenario, as an eased override does today, so it fails closed.
+  - It covers nothing for the whole scenario, as an eased override does, so it fails closed.
   - The L697 loaded-floor test moved from Sentinel-01 (level 3) to `four-layer` (level 0), where the band alone decides.
-- **Mutants, unit level (measured, each restored by its inverse edit):**
-  - an exact one-step witness: killed;
-  - a wrong identity value passing: killed;
-  - a non-crossing droop covering: killed.
-  - The tier-2 forms the WO names (a constant bound on a waiting board; the exact witness on the logger) wait on §1.2.
+  - **Sentinel-03:** its `droop-tolerated` no longer covers `VDD_3V3`. The new `droop-bor3` (ruled) does, and it recovers (§1.5), so Sentinel-03's coverage is whole again and its `verify --fab-out` refuses at the ledger's 280 rows, as before.
+
+## §2 Mutants (measured; each applied as a text edit and restored by its inverse, never by `git checkout`)
+
+| Mutant | Where | Killed by |
+|---|---|---|
+| A constant bound: `recovery_bound` returns 100 µs whatever the undisturbed boot took | `chaos` `power.rs` | tier 2: `bor_recovery::the_bmp581_extension_recovers_after_its_settle` and `the_sentinel_02_shape_recovers_after_its_imus_settle` (the campaign misses its expectation) |
+| An exact one-step witness | `chaos` `power::witness_recovers` | tier 2: `bor_recovery::the_logger_recovers_with_its_first_devices_later_steps_witnessed`; unit: `analog::tests::a_probe_recovers_by_its_reads_and_its_first_devices_own_lines` |
+| A wrong identity passes (only the boot word is compared) | `cli` `analog::holds` | unit: `a_probe_recovers_by_its_reads_and_its_first_devices_own_lines` |
+| Coverage counts a droop that crosses no BOR threshold | `cli` `verify.rs` `stress` | unit: `verify::tests::a_droop_covers_the_mcu_rail_only_by_crossing_its_bor_level` |
+
+## §5 Adversarial pass (full)
+
+- **A board that never recovers but passes.**
+  - *An identity line from before the droop:* the witness window opens at the release's sentinel. `probes_in` takes only the lines after it (`a_probe_is_read_only_between_its_own_whole_line_markers`: lines before the release give an empty witness, which `witness_recovers` never passes). The judge also re-arms the record words at each assertion.
+  - *A boot word from a reset loop:* a loop that re-reads its first device before the probe repeats the identity lines, and `witness_recovers` refuses a repeated step (unit tests in `power.rs` and `analog.rs`).
+  - **Residual, named:** a firmware that writes its boot word and then hangs, or that resets more slowly than one bound, can pass a probe. For the last boot the boot judge's end-of-run checks still apply (`pc` on a self-loop, thread mode); for an earlier release in a multi-reset schedule they do not. No committed droop renders more than one reset.
+- **A bound so wide it passes anything.**
+  - The margin is one quantum, pinned in `Record::check` (an archive with another margin is refused) and in a unit test.
+  - Measured spread: 0 ns over 9 boards and 12 release phases. A recovered boot more than 100 µs slower than its own undisturbed boot fails.
+  - **Residual, named (F3):** the bound is relative. A firmware whose undisturbed boot is itself slow (up to the run's 100 ms, less the release) gets a bound as long. `RecoveryBoundPastRun` refuses a probe past the run.
+- **A baseline boot under a different firmware or scenario.**
+  - The undisturbed boot is built by the same closure (`plan_with`) from the same `Ready` and booted platform, with only the resets, the bound and the capture directory changed.
+  - A unit test holds its commands equal to the droop's outside the schedule (`the_undisturbed_boot_is_the_droops_own_without_its_resets`).
+  - The run's header names the one firmware. Kind 32 does not repeat its hash: it is that run's, by construction.
+- **A probe inside the next reset, or past the boot:** refused before the boot by `RecoveryBoundPastRun` (`main.rs` `recovery_fits`; unit test `a_probe_past_the_boot_or_into_the_next_reset_is_refused_by_name`: exactly at the end fits, 1 ns past is refused, a second reset before the probe is refused, an overflow is refused), and by replay ("a release's probe lies past the run").
 
 ## Findings
 
-- **F1 · §1.4 leaves Sentinel-03's MCU rail unmet** (measured, by the rule; asked on the bus). Its one droop, `droop-tolerated`, is at BOR level 3 with a loaded floor of 2.95 V, so it crosses nothing. A crossing droop for Sentinel-03 is a new scenario file, outside this fence, and it recovers only under a derived bound (a 39.1 ms boot).
+- **F1 · §1.4 left Sentinel-03's MCU rail unmet** (measured, by the rule; ruled 05:10Z: add `scenarios/sentinel-03/droop-bor3.json`).
+  - Its one droop then, `droop-tolerated`, is at BOR level 3 with a loaded floor of 2.95 V, so it crosses nothing.
+  - Until the new droop landed, `battery_sag_tier1` measured `CampaignCoverageShort` naming the crossing it lacks.
+  - With `droop-bor3` (2.4 V, hold 600 µs, its expectation written before any run), the rail is covered by a droop that crosses VBOR3. It recovers at 40,871,280 ns under its 39,227,180 ns bound, and the test's assertion stands as before (the ledger's 280 rows).
 - **F2 · The predictions' misses** (above): BOR level 0 renders no reset at 3.1 V; `spi-only`'s first check is SPI; the logger's first check is U20, not U10. The judge's first check is the image's first, and each board's differs.
 - **F3 · Close to `INV-07`** (inferred). A bound read from the generated firmware's own undisturbed boot is computed from the artifact under test. It judges that a droop leaves the bring-up as it was, not that the bring-up is fast enough. What caps it is the margin and the boot judge's own checks on the undisturbed boot. No declared requirement bounds a bring-up's length today.
