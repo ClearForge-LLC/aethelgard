@@ -189,3 +189,25 @@ A first run printed every mutant as surviving with no test named. That was the h
 - **The version:** `4240a` takes 20 and merges first, so this branch renumbers to 21 after it lands: the script, the `boards/` sha lines and `BENCH-EXT-BMP581.md` L9 again, in one commit. Then the package dispatch comes after `4241`.
 - **Gates on `4f0f6d1c`** (the merged tree, `gates-2.log`): fmt and clippy exit 0. `cargo test --workspace`: 144 suites, 2,406 passed, 1 failed, the package binding (§3).
 - **CI on the first push** (run 44722197295, head `d807fee4`): every job but the package's passed. `gates` and tools shard 2 failed only `bench_board_tier1`'s binding, and `bench-package` derived the package with every gate passing, the board `401b9e1e…` unchanged, and only `FAB-NOTES.md` and `MANIFEST.json` differing from the committed package [measured from the job logs].
+
+## 9. Specification 21, after `4240a` (the 14:18Z note)
+
+- **`main` at `14bb1e5b` merged** (`ac24eac1`): `4240a` (specification 20, `mcu.hse`, solved 13), `2305`, `4405`, `3306` and `1318`.
+  - Conflicts were in the version prose (`ir/src/lib.rs`, the IR and CLI READMEs) and in hash goldens (`solve_cli`, `order_2203`, four topology fixtures). Each golden was taken from `main`, then moved by the renumber alone.
+  - The prose keeps `4240a`'s version 20 and adds this branch's as version 21, "renumbered from 20 by the same rule, merging after `4240a`".
+- **The renumber** (`16be2d38`), by `main`'s own `spike/4240a/kit/renumber.py 20 21 13 13` over the merged tree:
+  - 29 specifications' version lines, `2305`'s `logger-4600.json` and `2306`'s `driver-judges-nothing.json` included, and 8 test files' pins;
+  - the constant by hand; the IR README's heading, example and step 1; the IR's unsupported-version list, which now refuses 20 and 22.
+- **Every sha line and digest re-taken,** each moved by the specification's sha256 alone [measured]:
+  - the `boards/sentinel-01*/` sha lines (16 lines, nothing else);
+  - the `hwdef` and `svd-hal` goldens (9 files);
+  - `BENCH-EXT-BMP581.md` L9 (`ecd44d36…6ee4`, specification 21);
+  - the CLI README prefix (`23c31aa0…`);
+  - `solve_cli`: with `9d6b2309…3eba` and `6b82460e…c011` put back, `main`'s `a431ad59…0292` and `db746468…69c9`;
+  - `order_2203`: with `ccc80f11…e8b2` put back, `main`'s three digests; the boot image did not move.
+- **The inventory, for the two new specifications:** `logger-4600.json` is `generate`d in `twin_tier2`'s recovery tests, and `driver-judges-nothing.json` is `emit`ted in `extract_tier1`. Both are drawn, so neither is declared.
+- **Measured at 21:**
+  - **Corpus:** 55 files on `main`'s binary (`14bb1e5b`, its tree) and this branch's (its tree): 28 pass on both, and the other 27 are refused alike; the only change is that 15 old-version files say "not 21" for "not 20" (`corpus-main21.txt`, `corpus-branch21.txt`).
+  - **`emit` of all 29 specifications:** 24 boards byte-identical; 4 refusals identical; `imu-baro-1v8` `DrawsNoBoard` for `main`'s `UnknownPart` (`emits21.txt`).
+- **The package:** not committed, as ruled. It waits for `4241`'s run and the architect's dispatch.
+- **Gates on `16be2d38`** (`gates-3.log`): fmt and clippy exit 0. `cargo test --workspace`: 145 suites, 2,441 passed, 1 failed, `bench_board_tier1`'s package binding. `hwdef_tier1` and `extract_tier1` pass.
