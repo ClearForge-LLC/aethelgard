@@ -1,0 +1,14 @@
+# parts-level removal of U2 from u2-turn-forward
+remove U2,C37: result fit 85.200 79.700 
+remove U2,C37,R5: result OutlineUnreachable 103.500 67.100 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 103.500 x 67.100 mm, over by 3.500 x 0.000 mm
+# order transplant (with-U2 order less U2,C37,R5) onto the reduced parts
+result fit 96.300 67.850 
+# knock-outs: with U2 | without (U2,C37,R5 removed)
+no-k: result fit 97.550 69.100  | result fit 96.050 67.850 
+no-m: result OutlineUnreachable 102.000 64.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 102.000 x 64.850 mm, over by 2.000 x 0.000 mm | result OutlineUnreachable 101.750 64.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 101.750 x 64.850 mm, over by 1.750 x 0.000 mm
+no-s: result OutlineUnreachable 107.800 78.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.800 x 78.850 mm, over by 7.800 x 0.000 mm | result OutlineUnreachable 107.750 76.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.750 x 76.850 mm, over by 7.750 x 0.000 mm
+no-km: result fit 98.050 67.350  | result fit 98.050 64.850 
+no-ks: result OutlineUnreachable 109.050 78.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 109.050 x 78.850 mm, over by 9.050 x 0.000 mm | result OutlineUnreachable 107.550 77.600 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.550 x 77.600 mm, over by 7.550 x 0.000 mm
+no-ms: result OutlineUnreachable 108.000 74.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 108.000 x 74.850 mm, over by 8.000 x 0.000 mm | result OutlineUnreachable 107.750 74.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.750 x 74.850 mm, over by 7.750 x 0.000 mm
+no-kms: result OutlineUnreachable 107.800 77.350 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.800 x 77.350 mm, over by 7.800 x 0.000 mm | result OutlineUnreachable 107.800 74.850 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 107.800 x 74.850 mm, over by 7.800 x 0.000 mm
+# reduced order with only the C14-C17 / C24-C27 block swapped back: result OutlineUnreachable 102.300 67.200 board.max_outline_um is 100.000 x 100.000 mm; the placer's best outline is 102.300 x 67.200 mm, over by 2.300 x 0.000 mm

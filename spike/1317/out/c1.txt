@@ -1,0 +1,5 @@
+# C1: anchored (as built) | unanchored (owner None, UNANCHOR=C1) | anchored with C1 out of U10's reserve (NORESERVE=C1)
+base | result fit 95.800 67.600  | result fit 86.700 80.950  | result fit 95.800 67.600 
+u2-base | result fit 96.500 69.350  | result fit 86.700 81.700  | result fit 96.500 69.350 
+size-2 | result OutlineUnreachable 102.000 71.100 | result fit 89.450 83.200  | result OutlineUnreachable 102.000 71.100
+u2-size-2 | result OutlineUnreachable 100.500 70.350 | result fit 89.200 82.700  | result OutlineUnreachable 100.500 70.350
