@@ -673,8 +673,8 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
 
 /// `lines` as `device`'s transactions (`AET-WO-3306`), each its range of
 /// lines: a `Write` line opens one and the `Read` lines after it are its, as
-/// the model logs a transfer; a `Read` with no `Write` before it opens one
-/// of its own. `None` if any line is not a `Write` or `Read` of the device
+/// the model logs a transfer; a `Read` first in the lines opens one of its
+/// own, and a `Read` later is the transaction's before it (adversarial F2). `None` if any line is not a `Write` or `Read` of the device
 /// (a warning, an error, another device's).
 fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<usize>>> {
     let mut starts = Vec::new();
@@ -690,6 +690,10 @@ fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<us
     starts.push(lines.len());
     Some(starts.windows(2).map(|w| w[0]..w[1]).collect())
 }
+
+/// A device's model path, whole script, whole log, and the witness each
+/// line of the log went to ([`Run::whole_log`]).
+type WholeLog<'a> = (&'a str, Vec<String>, Vec<String>, Vec<usize>);
 
 /// A transaction's shape (`AET-WO-3306`): its write, as [`witness_bytes`]
 /// gives it, and the bytes its reads return in all.
@@ -1015,8 +1019,7 @@ impl<'a> Run<'a> {
             lines.iter().find_map(|l| witness_bytes(l, device, what))
         };
         let reg_want = logged(expected, "Write")?;
-        let write_value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
-        if reg_want != (write_value, write.len()) || *read_width > 4 {
+        if Some(reg_want) != step_shape(write, *read_width).0 || *read_width > 4 {
             return None;
         }
         // A configure step reads nothing back; the others' read is the part's
@@ -1080,31 +1083,10 @@ impl<'a> Run<'a> {
     /// of that holds: a missing or wrong transaction is left to each
     /// witness's own fields, and an unreadable witness says nothing.
     fn surplus(&self, reference: &str) -> (usize, Vec<(usize, Vec<String>)>) {
-        let mut script = Vec::new();
-        let mut log = Vec::new();
-        let mut at = Vec::new();
-        let mut device = None;
-        for (i, r) in self.records.iter().enumerate() {
-            if let Record::I2cWitness {
-                reference: x,
-                device: d,
-                expected,
-                observed,
-                ..
-            } = r
-                && x == reference
-            {
-                let Some(observed) = observed else {
-                    return (0, Vec::new());
-                };
-                device = Some(d.as_str());
-                script.extend(expected.iter().cloned());
-                log.extend(observed.iter().cloned());
-                at.extend(observed.iter().map(|_| i));
-            }
-        }
-        let Some((want, got)) =
-            device.and_then(|d| transactions(&script, d).zip(transactions(&log, d)))
+        let Some((device, script, log, at)) = self.whole_log(reference) else {
+            return (0, Vec::new());
+        };
+        let (Some(want), Some(got)) = (transactions(&script, device), transactions(&log, device))
         else {
             return (0, Vec::new());
         };
@@ -1125,6 +1107,32 @@ impl<'a> Run<'a> {
             return (0, Vec::new());
         }
         (held, extra)
+    }
+
+    /// Device `reference`'s model path, its witnesses' expected lines and
+    /// observed lines, each in record order (its whole script and log), and
+    /// the index of the witness each observed line went to; `None` with no
+    /// witness, or one unreadable.
+    fn whole_log(&self, reference: &str) -> Option<WholeLog<'a>> {
+        let (mut device, mut script, mut log, mut at) = (None, Vec::new(), Vec::new(), Vec::new());
+        for (i, r) in self.records.iter().enumerate() {
+            if let Record::I2cWitness {
+                reference: x,
+                device: d,
+                expected,
+                observed,
+                ..
+            } = r
+                && x == reference
+            {
+                let observed = observed.as_ref()?;
+                device = Some(d.as_str());
+                script.extend(expected.iter().cloned());
+                log.extend(observed.iter().cloned());
+                at.extend(observed.iter().map(|_| i));
+            }
+        }
+        Some((device?, script, log, at))
     }
 
     /// The fields that witness `record` of a device at `address`, on bus
@@ -1230,35 +1238,19 @@ impl<'a> Run<'a> {
         else {
             return Some(false);
         };
-        let witness = self.records.iter().find_map(|r| match r {
+        let absent = self.records.iter().find_map(|r| match r {
             Record::I2cWitness {
                 reference: x,
                 step: s,
-                device,
                 absent,
                 ..
-            } if x == reference && s == step => Some((device, absent)),
+            } if x == reference && s == step => Some(absent),
             _ => None,
-        });
-        let (device, absent) = witness?;
+        })?;
         if status.as_deref() != Some("ok") || absent.iter().any(|a| a != address) {
             return Some(false);
         }
-        let mut script = Vec::new();
-        let mut log = Vec::new();
-        for r in self.records {
-            if let Record::I2cWitness {
-                reference: x,
-                expected,
-                observed,
-                ..
-            } = r
-                && x == reference
-            {
-                script.extend(expected.iter().cloned());
-                log.extend(observed.as_ref()?.iter().cloned());
-            }
-        }
+        let (device, script, log, _) = self.whole_log(reference)?;
         let own = step_shape(write, *width);
         let count = |lines: &[String]| -> Option<usize> {
             Some(
