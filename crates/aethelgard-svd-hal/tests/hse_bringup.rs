@@ -352,3 +352,69 @@ fn the_nmi_holds_every_motor_low() {
     assert!(control["firmware/src/main.rs"].contains("    Reset, fault, fault, fault,"));
     assert!(!control["src/board.rs"].contains("css_hold"));
 }
+
+/// The ledger (`AET-WO-4240b`): a row for every field the bring-up writes
+/// (each register whole, so every field of it) or polls, `FLASH_ACR` written
+/// rather than at reset, no select written, and no id twice.
+#[test]
+fn the_ledger_lists_every_field_the_bring_up_writes_or_polls() {
+    use FieldAccess::{Reset, Written};
+    use aethelgard_svd_hal::board::{FieldAccess, register_fields};
+    for (name, bypass) in [("hse-crystal-16", 0), ("hse-external-8", 1)] {
+        let (solved, table) = fixture(name);
+        let h = solved.clock.hse.as_ref().unwrap();
+        let rows = register_fields(&solved, &table).unwrap();
+        if std::env::var_os("AETHELGARD_PRINT_ROWS").is_some() {
+            for r in &rows {
+                println!("{name}\t{}\t{:?}\t{:?}", r.id(), r.access, r.value);
+            }
+        }
+        let get = |id: &str, access: FieldAccess| {
+            let found: Vec<_> = rows
+                .iter()
+                .filter(|r| r.id() == id && r.access == access)
+                .collect();
+            assert_eq!(found.len(), 1, "{name}: {id} {access:?}");
+            found[0].value
+        };
+        for (id, value) in [
+            ("RCC.CR.HSEON", 1),
+            ("RCC.CR.HSEBYP", bypass),
+            ("RCC.CR.CSSHSEON", 1),
+            ("RCC.CR.PLL1ON", 1),
+            ("RCC.CR.HSION", 1),
+            // The header's value names `PLLSRC_CSI` (bit 0) and `PLLSRC_HSE` (bit 1)
+            // are its fields: the smaller overlap is kept (`fields_of`).
+            ("RCC.PLLCKSELR.PLLSRC_HSE", (h.pllckselr >> 1) & 1),
+            ("RCC.PLLCKSELR.DIVM1", (h.pllckselr >> 4) & 0x3F),
+            ("RCC.PLLCFGR.PLL1RGE", (h.pllcfgr >> 2) & 0b11),
+            ("RCC.PLLCFGR.DIVP1EN", (h.pllcfgr >> 16) & 1),
+            ("RCC.PLL1DIVR.N1", h.pll1divr & 0x1FF),
+            ("RCC.CFGR.SW", 0b011),
+            ("FLASH.ACR.LATENCY", h.flash_acr & 0xF),
+            ("FLASH.ACR.WRHIGHFREQ", (h.flash_acr >> 4) & 0b11),
+        ] {
+            assert_eq!(get(id, Written), Some(value), "{name}: {id}");
+        }
+        for id in ["RCC.CR.HSERDY", "RCC.CR.PLL1RDY"] {
+            assert_eq!(get(id, Reset), Some(1), "{name}: {id} polled");
+        }
+        assert_eq!(get("RCC.CFGR.SWS", Reset), Some(0), "{name}: read at reset");
+        assert!(
+            !rows
+                .iter()
+                .any(|r| r.register == "FLASH.ACR" && r.access == Reset),
+            "{name}: FLASH_ACR is written, not at reset"
+        );
+        assert!(
+            !rows.iter().any(|r| r.access == Written
+                && (r.register == "RCC.D2CCIP1R" || r.register == "RCC.D3CCIPR")),
+            "{name}: a select written"
+        );
+        let mut ids: Vec<(String, FieldAccess)> = rows.iter().map(|r| (r.id(), r.access)).collect();
+        let n = ids.len();
+        ids.sort();
+        ids.dedup();
+        assert_eq!(ids.len(), n, "{name}: an id twice");
+    }
+}
