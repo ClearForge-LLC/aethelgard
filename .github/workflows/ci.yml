@@ -474,8 +474,8 @@ jobs:
       # twin_tier2.rs, bor_recovery::the_logger_recovers_with_its_first_
       # devices_later_steps_witnessed, the_bmp581_extension_recovers_after_
       # its_settle and the_sentinel_02_shape_recovers_after_its_imus_settle
-      # (8.2 s, 9.6 s, 13.6 s in the image on Furnace: under 60 s, no
-      # weight row).
+      # (8.2 s, 9.6 s, 13.6 s in the image on Furnace; twin_tier2 is
+      # lock-serialised, so each has a weight row).
       TIER2_MIN: "197"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
