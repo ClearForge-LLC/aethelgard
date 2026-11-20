@@ -243,6 +243,7 @@ fn no_driven_input_sits_on_a_reset_pull_up() {
         ("PB1", 3, &[], &["ADC1_INP5"]),
         ("PA15", 61, &[], &[]),
         ("PB4", 62, &[("TIM3_CH1", 2)], &[]),
+        ("PC7", 63, &[("TIM3_CH2", 2)], &[]),
     ]);
     let s = solved(&d1(), &t).unwrap();
     // SERVO1, no driver input, takes PB4's TIM3 channel; nSLEEP passes
