@@ -9,7 +9,9 @@
 - No §7 condition fired:
   - the scanner finds **one** string hit in non-test code, the known one;
   - the `#[cfg(test)]` skip needs no parser dependency (§2.3).
-- **Decision needed (F1):** the fix changes the six SPI enable rows' citation text in every `verify` verdict. That moves the verdict line, so it moves `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256`, and CI's `bench-package` (`verify --against-fab`) is predicted to fail until the package is rewritten. The package is outside this order's fence (§6).
+- **F1, ruled (architect, bus 02:20Z):** the fix changes the six SPI enable rows' citation text in every `verify` verdict, so it moves `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256`.
+  - CI measured it: `bench-package` reported only "MANIFEST.json differs from the derived file".
+  - The fence is widened to that package, for a byte-for-byte commit of the CI-written package (`write=true`) only (§6).
 
 ## 1. A board name, from the repository (§1.1)
 
@@ -136,31 +138,38 @@ A fresh subagent was given the code, not my conclusions, and probed it in its ow
   - Nothing else committed holds the text: a grep of the tree outside `spike/` finds it only in `ledger.rs`.
   - `verify_2k2_tier2`'s manifest check is self-consistent (a fresh run against its own package), and `bench_board_tier1` passes.
 
-  **The package is outside my fence.** The order's literal "nothing else moves" cannot hold for a citation that is emitted. Proposed: the usual CI-written package (`ci.yml` `write=true` on this branch), committed byte for byte, with the fence widened to `fab/sentinel-01-bench/package/`. **2304b (#254) also rewrites that MANIFEST**, so whichever merges second takes a fresh package.
+  **The package was outside my fence.** The order's literal "nothing else moves" cannot hold for a citation that is emitted.
+  - **Measured:** CI on #262 (`dfa24a08`, run 44650687231) was green on every job but `bench-package`. That job's one difference was `against_differs: MANIFEST.json differs from the derived file`; every fab precondition was met and no check failed.
+  - **Ruled** (architect, 02:20Z): the fence is widened to `fab/sentinel-01-bench/package/`, for committing the package byte for byte only.
+  - **The merge order** put this after 2304b and 3305, which each moved the same MANIFEST. The package commit is the CI `write=true` artifact on the final merge (`main` `416a6dd3`), unchanged.
 
 ## 7. The count, for roadmap §6 (§1.5)
 
 Roadmap §6 says "Measured 2026-11-15: outside tests and comments, no crate names Sentinel." Measured from this test, with "a name" being `sentinel` + number:
 
-| | before the fix | after |
-|---|---|---|
-| files selected | 107 (98 + 8 + 1), 3 of them test-only modules | 107 |
-| lines read | 113,594 | 113,596 (+2 doc lines) |
-| hits in code (forbidden) | **1** (`cli/src/ledger.rs:388`) | **0** |
-| hits in comments | 1 | 1 |
-| hits in doc comments | 6 | 7 |
-| hits in `#[cfg(test)]` items | 33 | 33 |
-| hits in `#[cfg(test)]` module files | 1 | 1 |
+| | before the fix (`main` 52a2d62e) | after (52a2d62e) | after, on `main` 416a6dd3 (the final merge) |
+|---|---|---|---|
+| files selected | 107 (98 + 8 + 1), 3 of them test-only modules | 107 | 109 (99 + 9 + 1), 3 test-only modules |
+| lines read | 113,594 | 113,596 (+2 doc lines) | 116,552 |
+| hits in code (forbidden) | **1** (`cli/src/ledger.rs:388`) | **0** | **0** |
+| hits in comments | 1 | 1 | 1 |
+| hits in doc comments | 6 | 7 | 9 |
+| hits in `#[cfg(test)]` items | 33 | 33 | 37 |
+| hits in `#[cfg(test)]` module files | 1 | 1 | 1 |
 
-**Allowed comment hits, by crate (after):**
-- `aethelgard-cli`: doc `ledger.rs:388` (`sentinel-01`, the moved citation).
+The last column is what roadmap §6 should be re-measured against. It moved after this order's base only through what `main` merged in. Two of those changes added Sentinel-03 doc comments (`cli/src/campaign.rs:598`, `cli/src/verify.rs:702`); the rest added test hits (2304b's `chaos/src/battery.rs:183`, and Sentinel-03 tests in `verify.rs`).
+
+**Allowed comment hits, by crate (final):**
+- `aethelgard-cli`:
+  - doc `ledger.rs:388` (`sentinel-01`, the moved citation);
+  - docs `campaign.rs:598` and `verify.rs:702` (`sentinel-03`, from `main`).
 - `aethelgard-eda`:
   - comment `pcb.rs:672` (`sentinel-02`);
   - docs `pcb.rs:897` and `route.rs:137` (`sentinel-03`), `stack.rs:514` (`sentinel-01`, doc of a test fn).
 - `aethelgard-ir`: docs `connectors.rs:66` and `ds009.rs:12` (`sentinel-02`).
 - `aethelgard-svd-hal`: doc `board/firmware.rs:140` (`sentinel-01`, the doc example).
 
-Test-only hits by crate: cli 27, ir 3, svd-hal 2, pincheck 1, twin 1 (`tests.rs`). bridge and models: none.
+Test-only hits by crate, final: cli 30, ir 3, svd-hal 2, chaos 1, pincheck 1, twin 1 (`tests.rs`). bridge and models: none. (At 52a2d62e: cli 27, ir 3, svd-hal 2, pincheck 1, twin 1.)
 
 **This agrees with 4600's 62.** 4600's "sentinel" grep less its 18 plain-sense uses and 2 manifests is 42, the same as this test's 1 + 1 + 6 + 33 + 1. The full list, with each hit's class, prints with `cargo test -p aethelgard-cli --test board_names -- --nocapture`.
 
@@ -172,7 +181,7 @@ So after this order the §6 sentence is true as measured by a test, with two qua
 
 | # | Finding | Where | Kind | Proposed | Needs a ruling |
 |---|---|---|---|---|---|
-| F1 | The fix moves every verdict's SPI enable rows' text, so the committed bench package's `verdict_sha256` and CI's `bench-package` comparison move (predicted; CI on this PR measures it) | `fab/sentinel-01-bench/package/MANIFEST.json`, `.github/workflows/ci.yml` `bench-package` | decision | widen the fence to the package; dispatch `write=true`; commit the CI-written package | **yes** |
+| F1 | The fix moves every verdict's SPI enable rows' text, so the committed bench package's `verdict_sha256` and CI's `bench-package` comparison move (measured, run 44650687231) | `fab/sentinel-01-bench/package/MANIFEST.json`, `.github/workflows/ci.yml` `bench-package` | decision | widen the fence to the package; dispatch `write=true`; commit the CI-written package | **ruled** (02:20Z): as proposed |
 | F2 | The selection is `.rs` under three arms. Not scanned: `crates/*/examples/*.rs`, `bridge/build.rs`, the C# models `models/renode/*.cs`, and data files code includes. None names a board today | `board_names.rs` `ARMS` | note | a later order widens the arms to examples and build scripts, and reads `.cs` and included data as text with no comment rule | no |
 | F3 | A name built at run time or by `concat!` (§5) passes. Review is the only check | — | note | none; a token test cannot see it | no |
 | F4 | A new board family is caught only once it has a directory under `boards/` or a stem under `examples/`. Sentinel-03 is caught only because it shares Sentinel's family | `names()` | note | none | no |
@@ -183,8 +192,11 @@ So after this order the §6 sentence is true as measured by a test, with two qua
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean on the final head.
   - My first final-gate script piped clippy through `tail`, so a lint failure from the adversarial commit did not set the exit code (two collapsible `if`s).
   - Re-run with its exit status read directly, then fixed in the reduction commit.
-- `cargo test --workspace`: 138 binaries, 2,306 passed, 0 failed, on `ba211de8` (capped at 32G). After the reduction (test file only), `board_names` passed and clippy was clean; the full run is repeated on the head that is pushed (§10).
-- **No tier-2 test added:** `TIER2_MIN` does not move. No weight row: the new binary runs in 0.16 s.
+- `cargo test --workspace`, capped at 32G:
+  - 138 binaries, 2,306 passed, 0 failed on `ba211de8` and on `4ecfddd9`;
+  - 142 binaries, 2,349 passed, 0 failed on `f06be8e7` (after 1209);
+  - on the final merge `69a59578` (`main` 416a6dd3): **142 binaries, 2,353 passed, 0 failed**. fmt, clippy and 1911's `ci/route.sh check ci/docs-tests.tsv` are clean there too.
+- **No tier-2 test added:** `TIER2_MIN` stays at `main`'s 194. No weight row: the new binary runs in 0.16 s. No `ci/docs-tests.tsv` row: the inventory guard finds no docs-only path in it.
 - **Reduction pass (diff):** −13 net (the lexer's `b"…"`, `c"…"` and `b'…'` branches duplicated the string and char branches; a byte char before a comment and a byte string are planted) · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 0 findings below.
 
 ## 10. State
@@ -194,6 +206,7 @@ So after this order the §6 sentence is true as measured by a test, with two qua
   - `d7157542` the fix;
   - `ba211de8` adversarial;
   - `a1d4ae24` reduction;
-  - then this FEEDBACK.
-- `main` had not moved at the last fetch.
+  - `4ecfddd9` FEEDBACK.
+- `main` merged at `dfa24a08` (4202), then at `0fb050d6`, `fd23a256` and `f06be8e7` (1911, 2304b with 1314b, 1209), then at `69a59578` (`416a6dd3`, 3305). Every merge was clean.
+- After this FEEDBACK update the package commit follows: the CI `write=true` artifact, byte for byte (F1).
 - Evidence: `~/.cache/aet-1103/`, including the runs, the table dumps and diff, `mut/final/`, `adv/` and `gates-*.txt`.
