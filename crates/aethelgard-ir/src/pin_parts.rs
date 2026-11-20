@@ -24,7 +24,9 @@ pub enum PinKind {
     /// A logic input the MCU may drive.
     LogicInput,
     /// A logic input that enables the part, asserted at `active`.
-    EnableInput { active: Level },
+    EnableInput {
+        active: Level,
+    },
     /// An open-drain output: its `VOL` at a sink current, and the largest
     /// sink current and pull-up voltage the part allows, when stated.
     OpenDrainOutput {
@@ -43,9 +45,13 @@ pub enum PinKind {
     /// A strap with discrete levels.
     Strap(StrapLevels),
     /// A strap read as a voltage, inside `range_mv`.
-    StrapAnalog { range_mv: (u32, u32) },
+    StrapAnalog {
+        range_mv: (u32, u32),
+    },
     BridgeOutput,
-    Supply { range_mv: (u32, u32) },
+    Supply {
+        range_mv: (u32, u32),
+    },
     Ground,
     /// A pin for a passive part only (a charge pump, a regulator's
     /// capacitor): `1211d`'s.
@@ -402,7 +408,10 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
             }
             for o in &c.outputs {
                 if !matches!(kind_of(o), Some(PinKind::BridgeOutput)) {
-                    return Err(format!("mode `{}`: `{o}` is not a bridge_output pin", m.name));
+                    return Err(format!(
+                        "mode `{}`: `{o}` is not a bridge_output pin",
+                        m.name
+                    ));
                 }
             }
             channels.push(BridgeChannel {
@@ -444,8 +453,15 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
                 name: s.name,
             });
         }
-        if let Some(f) = m.forbidden.iter().find(|f| !states.iter().any(|s| &s.name == *f)) {
-            return Err(format!("mode `{}`: forbidden state `{f}` is not a row", m.name));
+        if let Some(f) = m
+            .forbidden
+            .iter()
+            .find(|f| !states.iter().any(|s| &s.name == *f))
+        {
+            return Err(format!(
+                "mode `{}`: forbidden state `{f}` is not a row",
+                m.name
+            ));
         }
         modes.push(Mode {
             name: m.name,
@@ -507,7 +523,12 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
     let (allowed, required): (&[&str], &[&str]) = match p.kind.as_str() {
         "logic_input" => (&["pull_down_ohms_typical"], &[]),
         "enable_input" => (
-            &["active", "pull_down_ohms_typical", "vil_max_mv", "vih_min_mv"],
+            &[
+                "active",
+                "pull_down_ohms_typical",
+                "vil_max_mv",
+                "vih_min_mv",
+            ],
             &["active"],
         ),
         "open_drain_output" => (

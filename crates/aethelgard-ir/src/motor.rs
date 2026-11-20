@@ -134,11 +134,16 @@ impl<'de> Deserialize<'de> for Idle {
                     "level" => Idle::Level(map.next_value()?),
                     "pulse_us" => Idle::PulseUs(map.next_value()?),
                     other => {
-                        return Err(serde::de::Error::unknown_variant(other, &["level", "pulse_us"]));
+                        return Err(serde::de::Error::unknown_variant(
+                            other,
+                            &["level", "pulse_us"],
+                        ));
                     }
                 };
                 if map.next_key::<String>()?.is_some() {
-                    return Err(serde::de::Error::custom("an Idle object holds exactly one key"));
+                    return Err(serde::de::Error::custom(
+                        "an Idle object holds exactly one key",
+                    ));
                 }
                 Ok(idle)
             }
@@ -819,7 +824,10 @@ pub fn solve_timing(
     let (psc, ticks, ccr) = match (protocol.bit_rate(), pwm) {
         (Some(bit_rate), _) => {
             let ticks = half_up(u128::from(kernel_hz), u128::from(bit_rate));
-            let ccr = half_up(ticks * u128::from(DSHOT_ZERO_TICKS), u128::from(DSHOT_BIT_TICKS));
+            let ccr = half_up(
+                ticks * u128::from(DSHOT_ZERO_TICKS),
+                u128::from(DSHOT_BIT_TICKS),
+            );
             if !(3..=0x1_0000).contains(&ticks) || ccr == 0 || ccr + 1 >= ticks {
                 return Err(TimingError::RateOutOfRange);
             }
@@ -828,7 +836,10 @@ pub fn solve_timing(
         (None, Some(p)) => {
             let res = u128::from(p.resolution_ps);
             let cycles = u128::from(kernel_hz) * res;
-            if res == 0 || !cycles.is_multiple_of(PS_PER_S) || !(1..=0x1_0000).contains(&(cycles / PS_PER_S)) {
+            if res == 0
+                || !cycles.is_multiple_of(PS_PER_S)
+                || !(1..=0x1_0000).contains(&(cycles / PS_PER_S))
+            {
                 return Err(TimingError::ResolutionNotDerivable);
             }
             let ticks = half_up(PS_PER_S, u128::from(p.rate_hz.max(1)) * res);
@@ -837,7 +848,11 @@ pub fn solve_timing(
             }
             let on_tick = |us: u32, e: TimingError| {
                 let ps = u128::from(us) * 1_000_000;
-                if ps.is_multiple_of(res) { Ok(ps / res) } else { Err(e) }
+                if ps.is_multiple_of(res) {
+                    Ok(ps / res)
+                } else {
+                    Err(e)
+                }
             };
             let min = on_tick(p.pulse_min_us, TimingError::PulseNotOnTick)?;
             let max = on_tick(p.pulse_max_us, TimingError::PulseNotOnTick)?;

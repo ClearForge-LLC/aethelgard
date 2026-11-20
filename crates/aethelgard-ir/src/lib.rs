@@ -2649,6 +2649,7 @@ impl IrValidationError {
     /// `i2c_buses[0].sda.net`.
     pub fn path(&self) -> Option<&str> {
         match self {
+            Self::PinDevice(r) => Some(&r.path),
             Self::InvalidIdentifier { path, .. }
             | Self::LayerTable { path, .. }
             | Self::LayerRole { path, .. }

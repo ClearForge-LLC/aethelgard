@@ -35,8 +35,7 @@ use crate::{IrValidationError, Specification, VoltageDomain};
 /// 0.4 V, `VOH` at least `VDD - 0.4 V`.
 pub const MCU_VOL_MAX_MV: u32 = 400;
 pub const MCU_VOH_DROP_MV: u32 = 400;
-pub const MCU_IO_LEVELS: &str =
-    "DS12117 Rev 10 Table 50 p. 139 (rev Y) = Table 147 p. 243 (rev V): VOL <= 0.4 V, VOH >= VDD - 0.4 V at 8 mA";
+pub const MCU_IO_LEVELS: &str = "DS12117 Rev 10 Table 50 p. 139 (rev Y) = Table 147 p. 243 (rev V): VOL <= 0.4 V, VOH >= VDD - 0.4 V at 8 mA";
 /// The MCU's weak pull-up, at least (DS12117 Rev 10 Table 49 rev Y p. 137 =
 /// Table 146 rev V p. 241: `RPU` 30 to 50 kΩ).
 pub const MCU_RPU_MIN_OHMS: u32 = 30_000;
@@ -449,9 +448,18 @@ enum Binding<'s> {
     Motor(&'s crate::MotorOutput),
 }
 
-/// Step 24 (`AET-WO-1211a`): each pin device, in document order.
+/// Step 24 (`AET-WO-1211a`): each pin device, in document order, against the
+/// embedded parts table.
 pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
-    let table = crate::parts::table()?;
+    validate_against(spec, crate::parts::table()?)
+}
+
+/// Step 24 against `table`: a row the embedded table does not hold (a
+/// forbidden state, an input with no pull) is judged by the same code.
+pub fn validate_against(
+    spec: &Specification,
+    table: &crate::parts::PartsTable,
+) -> Result<(), IrValidationError> {
     let mut motor_inputs: BTreeMap<&str, String> = BTreeMap::new();
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         let path = format!("pin_devices[{i}]");
@@ -489,7 +497,11 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
 
 /// A bus device whose part is a busless row (`PartWithoutBus`), checked
 /// where a bus device's part is looked up.
-pub(crate) fn part_without_bus(reference: &str, part: &str, path: &str) -> Option<IrValidationError> {
+pub(crate) fn part_without_bus(
+    reference: &str,
+    part: &str,
+    path: &str,
+) -> Option<IrValidationError> {
     let table = crate::parts::table().ok()?;
     table.pin_part(part).map(|_| {
         refuse(
@@ -510,8 +522,18 @@ struct Device<'s> {
 }
 
 impl<'s> Device<'s> {
-    fn err(&self, kind: PinKindOfRefusal, at: &str, message: impl Into<String>) -> IrValidationError {
-        refuse(kind, &self.d.reference, format!("{}{at}", self.path), message)
+    fn err(
+        &self,
+        kind: PinKindOfRefusal,
+        at: &str,
+        message: impl Into<String>,
+    ) -> IrValidationError {
+        refuse(
+            kind,
+            &self.d.reference,
+            format!("{}{at}", self.path),
+            message,
+        )
     }
 
     fn domain(&self, id: &str, at: &str) -> Result<&'s VoltageDomain, IrValidationError> {
@@ -519,7 +541,13 @@ impl<'s> Device<'s> {
             .voltage_domains
             .iter()
             .find(|v| v.id == id)
-            .ok_or_else(|| self.err(K::UnknownDomain, at, format!("`{id}` is not a declared voltage domain")))
+            .ok_or_else(|| {
+                self.err(
+                    K::UnknownDomain,
+                    at,
+                    format!("`{id}` is not a declared voltage domain"),
+                )
+            })
     }
 
     fn mcu_domain(&self) -> Result<&'s VoltageDomain, IrValidationError> {
@@ -560,7 +588,10 @@ impl<'s> Device<'s> {
         )
     }
 
-    fn check(mut self, motor_inputs: &mut BTreeMap<&'s str, String>) -> Result<(), IrValidationError> {
+    fn check(
+        mut self,
+        motor_inputs: &mut BTreeMap<&'s str, String>,
+    ) -> Result<(), IrValidationError> {
         self.supplies()?;
         let strap_levels = self.straps()?;
         self.signals()?;
@@ -591,7 +622,12 @@ impl<'s> Device<'s> {
             let at = format!(".supplies.{pin}");
             let p = self.pin(pin, &at)?;
             let PinKind::Supply { range_mv } = p.kind else {
-                return Err(self.kind_mismatch(pin, &p.kind, "only a supply pin takes a domain", &at));
+                return Err(self.kind_mismatch(
+                    pin,
+                    &p.kind,
+                    "only a supply pin takes a domain",
+                    &at,
+                ));
             };
             let v = self.domain(domain, &at)?;
             let (lo, hi) = (crate::minimum_millivolts(v), crate::maximum_millivolts(v));
@@ -627,10 +663,25 @@ impl<'s> Device<'s> {
         for (pin, strap) in &d.straps {
             let at = format!(".straps.{pin}");
             let p = self.pin(pin, &at)?;
-            let invalid = |why: String| self.err(K::StrapLevelInvalid, &at, format!("{why} ({}, {})", self.row.document, p.page));
+            let invalid = |why: String| {
+                self.err(
+                    K::StrapLevelInvalid,
+                    &at,
+                    format!("{why} ({}, {})", self.row.document, p.page),
+                )
+            };
             let level = match (&p.kind, strap) {
-                (PinKind::Strap(_) | PinKind::StrapAnalog { .. }, Strap::Tie(to)) if to == crate::GND => {
+                (PinKind::Strap(_) | PinKind::StrapAnalog { .. }, Strap::Tie(to))
+                    if to == crate::GND =>
+                {
                     Some(Level::Low)
+                }
+                // A current-sense return tied to ground: no current control.
+                (PinKind::SenseReturn, Strap::Tie(to)) if to == crate::GND => None,
+                (PinKind::SenseReturn, _) => {
+                    return Err(invalid(format!(
+                        "`{pin}` is a current-sense return: only a tie to `GND` (no current control) is judged; a sense resistor is not modelled"
+                    )));
                 }
                 (PinKind::Strap(s), Strap::Tie(to)) => {
                     let v = self.domain(to, &at)?;
@@ -660,7 +711,11 @@ impl<'s> Device<'s> {
                 (PinKind::Strap(s), Strap::Resistor(r)) => {
                     let e = resistor_error_ppm(self, r, &at)?;
                     let (lo, hi) = band(r.ohms, e);
-                    if !s.resistors.iter().any(|(min, max)| lo >= i128::from(*min) && hi <= i128::from(*max)) {
+                    if !s
+                        .resistors
+                        .iter()
+                        .any(|(min, max)| lo >= i128::from(*min) && hi <= i128::from(*max))
+                    {
                         return Err(invalid(format!(
                             "`{}` is {} ohms within {lo} to {hi} at its worst, inside none of `{pin}`'s resistor levels {:?}",
                             r.reference, r.ohms, s.resistors
@@ -669,18 +724,27 @@ impl<'s> Device<'s> {
                     None
                 }
                 (PinKind::StrapAnalog { .. }, Strap::Resistor(_)) => {
-                    return Err(invalid(format!("`{pin}` is read as a voltage; a resistor alone sets none")));
+                    return Err(invalid(format!(
+                        "`{pin}` is read as a voltage; a resistor alone sets none"
+                    )));
                 }
                 (kind, _) => {
-                    return Err(self.kind_mismatch(pin, kind, "only a strap pin takes a strap", &at));
+                    return Err(self.kind_mismatch(
+                        pin,
+                        kind,
+                        "only a strap pin takes a strap",
+                        &at,
+                    ));
                 }
             };
             self.bind(pin, Binding::Strap, &at)?;
             levels.insert(pin.as_str(), level);
         }
         for (name, p) in &self.row.pins {
-            if matches!(p.kind, PinKind::Strap(_) | PinKind::StrapAnalog { .. })
-                && !d.straps.contains_key(name)
+            if matches!(
+                p.kind,
+                PinKind::Strap(_) | PinKind::StrapAnalog { .. } | PinKind::SenseReturn
+            ) && !d.straps.contains_key(name)
             {
                 return Err(self.err(
                     K::StrapUndeclared,
@@ -703,7 +767,9 @@ impl<'s> Device<'s> {
             match s.direction {
                 Direction::Output => {
                     if s.initial.is_none() || s.active.is_some() || s.pull.is_some() {
-                        return Err(shape("an output states `initial` and neither `active` nor `pull`"));
+                        return Err(shape(
+                            "an output states `initial` and neither `active` nor `pull`",
+                        ));
                     }
                     if !matches!(p.kind, PinKind::LogicInput | PinKind::EnableInput { .. }) {
                         return Err(self.kind_mismatch(
@@ -717,9 +783,17 @@ impl<'s> Device<'s> {
                 }
                 Direction::Input => {
                     if s.initial.is_some() || s.active.is_none() || s.pull.is_none() {
-                        return Err(shape("an input states `active` and `pull` and no `initial`"));
+                        return Err(shape(
+                            "an input states `active` and `pull` and no `initial`",
+                        ));
                     }
-                    let PinKind::OpenDrainOutput { at_ma, iod_max_ma, pull_up_max_mv, .. } = p.kind else {
+                    let PinKind::OpenDrainOutput {
+                        at_ma,
+                        iod_max_ma,
+                        pull_up_max_mv,
+                        ..
+                    } = p.kind
+                    else {
                         return Err(self.kind_mismatch(
                             &s.device_pin,
                             &p.kind,
@@ -732,7 +806,14 @@ impl<'s> Device<'s> {
                     match (&pull.mcu, &pull.resistor) {
                         (Some(McuPull::Up), None) => {
                             // RPU at least 30 kΩ to the MCU's supply.
-                            self.pulled(&at, mcu_hi, i128::from(MCU_RPU_MIN_OHMS), sink_ma, pull_up_max_mv, &s.device_pin)?;
+                            self.pulled(
+                                &at,
+                                mcu_hi,
+                                i128::from(MCU_RPU_MIN_OHMS),
+                                sink_ma,
+                                pull_up_max_mv,
+                                &s.device_pin,
+                            )?;
                         }
                         (Some(McuPull::Down | McuPull::None), None) => {
                             return Err(self.err(
@@ -746,15 +827,28 @@ impl<'s> Device<'s> {
                         }
                         (None, Some(r)) => {
                             let v = self.domain(&r.to, &format!("{at}.pull.resistor.to"))?;
-                            let e = resistor_error_ppm(self, &crate::power::Resistor {
-                                reference: r.reference.clone(),
-                                part: r.part.clone(),
-                                ohms: r.ohms,
-                            }, &format!("{at}.pull.resistor"))?;
+                            let e = resistor_error_ppm(
+                                self,
+                                &crate::power::Resistor {
+                                    reference: r.reference.clone(),
+                                    part: r.part.clone(),
+                                    ohms: r.ohms,
+                                },
+                                &format!("{at}.pull.resistor"),
+                            )?;
                             let (r_lo, _) = band(r.ohms, e);
-                            self.pulled(&at, crate::maximum_millivolts(v), r_lo, sink_ma, pull_up_max_mv, &s.device_pin)?;
+                            self.pulled(
+                                &at,
+                                crate::maximum_millivolts(v),
+                                r_lo,
+                                sink_ma,
+                                pull_up_max_mv,
+                                &s.device_pin,
+                            )?;
                         }
-                        _ => return Err(shape("`pull` states exactly one of `mcu` and `resistor`")),
+                        _ => {
+                            return Err(shape("`pull` states exactly one of `mcu` and `resistor`"));
+                        }
                     }
                 }
             }
@@ -767,9 +861,17 @@ impl<'s> Device<'s> {
     /// pin's `VIH`, its `VOL` the pin's `VIL`, and its supply's high edge is
     /// inside the pin's input range; and the pin is held from reset to the
     /// first write (`1211` §2.6).
-    fn drive_levels(&self, pin: &str, mcu: &VoltageDomain, at: &str) -> Result<(), IrValidationError> {
+    fn drive_levels(
+        &self,
+        pin: &str,
+        mcu: &VoltageDomain,
+        at: &str,
+    ) -> Result<(), IrValidationError> {
         let l = self.row.levels(pin);
-        let (lo, hi) = (crate::minimum_millivolts(mcu), crate::maximum_millivolts(mcu));
+        let (lo, hi) = (
+            crate::minimum_millivolts(mcu),
+            crate::maximum_millivolts(mcu),
+        );
         let voh = lo.saturating_sub(MCU_VOH_DROP_MV);
         if voh < l.vih_min_mv || MCU_VOL_MAX_MV > l.vil_max_mv || hi > self.row.vin_max_mv {
             return Err(self.err(
@@ -828,18 +930,35 @@ impl<'s> Device<'s> {
         for (k, a) in d.analog.iter().enumerate() {
             let at = format!(".analog[{k}]");
             let p = self.pin(&a.device_pin, &format!("{at}.device_pin"))?;
-            let PinKind::CurrentOutput { ua_per_a_typical, output_max_ua, error_band } = &p.kind else {
-                return Err(self.kind_mismatch(&a.device_pin, &p.kind, "an ADC input reads a current_output pin", &at));
+            let PinKind::CurrentOutput {
+                ua_per_a_typical,
+                output_max_ua,
+                error_band,
+            } = &p.kind
+            else {
+                return Err(self.kind_mismatch(
+                    &a.device_pin,
+                    &p.kind,
+                    "an ADC input reads a current_output pin",
+                    &at,
+                ));
             };
             let Transfer::CurrentOutput(c) = &a.transfer;
             let FullScale::Milliamps(fs_ma) = a.full_scale;
             if fs_ma == 0 || c.resistor.ohms == 0 {
-                return Err(self.err(K::SignalShape, &at, "a full scale or resistor of 0 declares nothing"));
+                return Err(self.err(
+                    K::SignalShape,
+                    &at,
+                    "a full scale or resistor of 0 declares nothing",
+                ));
             }
             // The worst error band that covers the full scale (`RUL-19`: the
             // typical gain with its stated error, never the typical alone).
             let mut worst_ua: Option<i128> = None;
-            for b in error_band.iter().filter(|b| (b.load_ma.0..=b.load_ma.1).contains(&fs_ma)) {
+            for b in error_band
+                .iter()
+                .filter(|b| (b.load_ma.0..=b.load_ma.1).contains(&fs_ma))
+            {
                 let ua = i128::from(fs_ma) * 1000;
                 let with = match (b.percent, b.absolute_ua) {
                     (Some(pc), _) => ua * (100 + i128::from(pc)) / 100,
@@ -870,7 +989,11 @@ impl<'s> Device<'s> {
                     ),
                 ));
             }
-            let e = resistor_error_ppm(self, &c.resistor, &format!("{at}.transfer.current_output.resistor"))?;
+            let e = resistor_error_ppm(
+                self,
+                &c.resistor,
+                &format!("{at}.transfer.current_output.resistor"),
+            )?;
             let (_, r_hi) = band(c.resistor.ohms, e);
             let full_uv = out_ua * r_hi;
             if full_uv > i128::from(vref_min) * 1000 {
@@ -885,16 +1008,31 @@ impl<'s> Device<'s> {
             }
             // RAIN at the declared resolution, or the reservoir AN2834 needs.
             let Some(row) = pp.get(&self.spec.mcu.part) else {
-                return Err(self.err(K::PassivePartUnknown, ".mcu", format!("`{}` has no power-parts row", self.spec.mcu.part)));
+                return Err(self.err(
+                    K::PassivePartUnknown,
+                    ".mcu",
+                    format!("`{}` has no power-parts row", self.spec.mcu.part),
+                ));
             };
             let crate::power_parts::Kind::Mcu(m) = &row.kind else {
-                return Err(self.err(K::PassivePartUnknown, ".mcu", "the MCU's row is not an mcu row"));
+                return Err(self.err(
+                    K::PassivePartUnknown,
+                    ".mcu",
+                    "the MCU's row is not an mcu row",
+                ));
             };
-            let Some((_, rain)) = m.rain_max_ohms.iter().find(|(b, _)| *b == a.adc_resolution_bits) else {
+            let Some((_, rain)) = m
+                .rain_max_ohms
+                .iter()
+                .find(|(b, _)| *b == a.adc_resolution_bits)
+            else {
                 return Err(self.err(
                     K::AdcSourceImpedance,
                     &format!("{at}.adc_resolution_bits"),
-                    format!("the MCU's row states no RAIN for {} bits", a.adc_resolution_bits),
+                    format!(
+                        "the MCU's row states no RAIN for {} bits",
+                        a.adc_resolution_bits
+                    ),
                 ));
             };
             if r_hi > i128::from(rain.value) {
@@ -914,7 +1052,10 @@ impl<'s> Device<'s> {
                         return Err(self.err(
                             K::PassivePartUnknown,
                             &format!("{at}.transfer.current_output.reservoir"),
-                            format!("`{}` is not a capacitor row of the power parts table", res.part),
+                            format!(
+                                "`{}` is not a capacitor row of the power parts table",
+                                res.part
+                            ),
                         ));
                     }
                 };
@@ -956,7 +1097,12 @@ impl<'s> Device<'s> {
                         "`{}` has no mode `{}`; its modes: {}",
                         self.row.part,
                         b.mode,
-                        self.row.modes.iter().map(|m| m.name.as_str()).collect::<Vec<_>>().join(", ")
+                        self.row
+                            .modes
+                            .iter()
+                            .map(|m| m.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ),
                 ));
             };
@@ -977,7 +1123,8 @@ impl<'s> Device<'s> {
                     ));
                 }
             }
-            let keys = |m: &BTreeMap<String, String>| m.keys().cloned().collect::<BTreeSet<String>>();
+            let keys =
+                |m: &BTreeMap<String, String>| m.keys().cloned().collect::<BTreeSet<String>>();
             let Some(channel) = mode.channels.iter().find(|c| {
                 keys(&b.inputs) == c.inputs.iter().cloned().collect()
                     && keys(&b.outputs) == c.outputs.iter().cloned().collect()
@@ -1004,7 +1151,9 @@ impl<'s> Device<'s> {
                 let at_in = format!("{at}.inputs.{pin}");
                 let motor = self.spec.motor_outputs.iter().find(|m| &m.label == label);
                 let level = if let Some(m) = motor {
-                    if let Some(first) = motor_inputs.insert(m.label.as_str(), format!("{}{at_in}", self.path)) {
+                    if let Some(first) =
+                        motor_inputs.insert(m.label.as_str(), format!("{}{at_in}", self.path))
+                    {
                         return Err(self.err(
                             K::BridgeInputShared,
                             &at_in,
@@ -1033,7 +1182,9 @@ impl<'s> Device<'s> {
                     level
                 } else {
                     match self.bound.get(pin.as_str()) {
-                        Some(Binding::Signal(s)) if &s.net == label && s.direction == Direction::Output => {
+                        Some(Binding::Signal(s))
+                            if &s.net == label && s.direction == Direction::Output =>
+                        {
                             s.initial.expect("an output states initial")
                         }
                         _ => {
@@ -1049,7 +1200,11 @@ impl<'s> Device<'s> {
                 };
                 idle[n] = level;
             }
-            let enable_pin = self.row.enable.as_deref().expect("a part with modes names its enable");
+            let enable_pin = self
+                .row
+                .enable
+                .as_deref()
+                .expect("a part with modes names its enable");
             let enable = match self.bound.get(enable_pin) {
                 Some(Binding::Signal(s)) if s.direction == Direction::Output => {
                     s.initial.expect("an output states initial")
@@ -1104,13 +1259,23 @@ impl<'s> Device<'s> {
             inputs[1].name()
         );
         let Some(state) = mode.state(enable, inputs) else {
-            return Err(self.err(kind, at, format!("the bridge {what} at ({tuple}), which is no row of `{}` mode `{}` ({}, {})", self.row.part, mode.name, self.row.document, mode.page)));
+            return Err(self.err(
+                kind,
+                at,
+                format!(
+                    "the bridge {what} at ({tuple}), which is no row of `{}` mode `{}` ({}, {})",
+                    self.row.part, mode.name, self.row.document, mode.page
+                ),
+            ));
         };
         if mode.forbidden.contains(&state.name) {
             return Err(self.err(
                 K::BridgeForbiddenState,
                 at,
-                format!("the bridge {what} in `{}`, a forbidden state of `{}` ({})", state.name, self.row.part, mode.page),
+                format!(
+                    "the bridge {what} in `{}`, a forbidden state of `{}` ({})",
+                    state.name, self.row.part, mode.page
+                ),
             ));
         }
         if state.drives {
@@ -1134,7 +1299,10 @@ impl<'s> Device<'s> {
             return Err(self.err(
                 K::PartLimitDeclaredTwice,
                 ".part_limits.input_pwm_max_hz",
-                format!("`{}` states it ({} Hz, {}): declare it once", self.row.part, row.value, row.page),
+                format!(
+                    "`{}` states it ({} Hz, {}): declare it once",
+                    self.row.part, row.value, row.page
+                ),
             ));
         }
         for (pin, how) in &self.bound {
@@ -1158,7 +1326,10 @@ impl<'s> Device<'s> {
                 return Err(self.err(
                     K::InputRateAbovePart,
                     "",
-                    format!("`{}` drives `{pin}` at {rate} Hz, above `{}`'s {max} Hz", m.label, self.row.part),
+                    format!(
+                        "`{}` drives `{pin}` at {rate} Hz, above `{}`'s {max} Hz",
+                        m.label, self.row.part
+                    ),
                 ));
             }
         }
@@ -1174,7 +1345,10 @@ fn ceil(a: i128, b: i128) -> i128 {
 /// `ohms` at `±ppm`: (lowest, highest), whole ohms, outward.
 fn band(ohms: u32, ppm: i128) -> (i128, i128) {
     let r = i128::from(ohms);
-    (r * (1_000_000 - ppm) / 1_000_000, ceil(r * (1_000_000 + ppm), 1_000_000))
+    (
+        r * (1_000_000 - ppm) / 1_000_000,
+        ceil(r * (1_000_000 + ppm), 1_000_000),
+    )
 }
 
 /// A resistor's worst error over the device's temperature: its row's
@@ -1211,7 +1385,10 @@ fn resistor_error_ppm(
         _ => Err(dev.err(
             K::PassivePartUnknown,
             at,
-            format!("`{}` is not a resistor row of the power parts table", r.part),
+            format!(
+                "`{}` is not a resistor row of the power parts table",
+                r.part
+            ),
         )),
     }
 }
@@ -1304,7 +1481,10 @@ pub(crate) fn place<'t>(
             let claimant = format!("pin_devices[{i}].signals[{k}]");
             let pin = match &s.pin {
                 Some(p) => {
-                    let p = key(p).ok_or_else(|| crate::SolveError::UnknownPin { claimant: claimant.clone(), pin: p.clone() })?;
+                    let p = key(p).ok_or_else(|| crate::SolveError::UnknownPin {
+                        claimant: claimant.clone(),
+                        pin: p.clone(),
+                    })?;
                     hand_free(p, &claimant, reserved, used)?;
                     p
                 }
@@ -1313,7 +1493,9 @@ pub(crate) fn place<'t>(
                     .keys()
                     .map(String::as_str)
                     .find(|p| !reserved.contains(p) && !used.contains_key(p))
-                    .ok_or_else(|| crate::SolveError::NoFreePin { claimant: claimant.clone() })?,
+                    .ok_or_else(|| crate::SolveError::NoFreePin {
+                        claimant: claimant.clone(),
+                    })?,
             };
             used.insert(pin, claimant);
             gpio.insert(
@@ -1330,17 +1512,22 @@ pub(crate) fn place<'t>(
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         for (k, a) in d.analog.iter().enumerate() {
             let claimant = format!("pin_devices[{i}].analog[{k}]");
-            let wanted = a.channel.as_ref().map(|c| format!("{}_{}", c.peripheral, c.input));
+            let wanted = a
+                .channel
+                .as_ref()
+                .map(|c| format!("{}_{}", c.peripheral, c.input));
             let fits = |pin: &crate::Pin| match &wanted {
                 Some(w) => pin.adc_channels.contains(w),
                 None => !pin.adc_channels.is_empty(),
             };
             let (name, pin) = match &a.pin {
                 Some(p) => {
-                    let (name, pin) = table
-                        .pins
-                        .get_key_value(p.as_str())
-                        .ok_or_else(|| crate::SolveError::UnknownPin { claimant: claimant.clone(), pin: p.clone() })?;
+                    let (name, pin) = table.pins.get_key_value(p.as_str()).ok_or_else(|| {
+                        crate::SolveError::UnknownPin {
+                            claimant: claimant.clone(),
+                            pin: p.clone(),
+                        }
+                    })?;
                     hand_free(name, &claimant, reserved, used)?;
                     if !fits(pin) {
                         return Err(crate::SolveError::AdcChannelNotOnPin {
@@ -1360,11 +1547,17 @@ pub(crate) fn place<'t>(
                     let mut free: Vec<(&str, &crate::Pin)> = table
                         .pins
                         .iter()
-                        .filter(|(n, p)| fits(p) && !reserved.contains(&n.as_str()) && !used.contains_key(n.as_str()))
+                        .filter(|(n, p)| {
+                            fits(p)
+                                && !reserved.contains(&n.as_str())
+                                && !used.contains_key(n.as_str())
+                        })
                         .map(|(n, p)| (n.as_str(), p))
                         .collect();
                     free.sort_by_key(|(_, p)| p.position);
-                    let modelled = |p: &crate::Pin| choose_channel(&p.adc_channels, wanted.is_some()).is_some();
+                    let modelled = |p: &crate::Pin| {
+                        choose_channel(&p.adc_channels, wanted.is_some()).is_some()
+                    };
                     match free.iter().find(|(_, p)| modelled(p)) {
                         Some(&(n, p)) => (n, p),
                         None if !free.is_empty() => {
@@ -1379,9 +1572,11 @@ pub(crate) fn place<'t>(
             };
             let (peripheral, channel) = match &a.channel {
                 Some(c) => (c.peripheral.clone(), c.input.clone()),
-                None => choose_channel(&pin.adc_channels, a.pin.is_some()).ok_or_else(|| crate::SolveError::AdcUnmodelled {
-                    net: a.net.clone(),
-                    pins: vec![name.to_owned()],
+                None => choose_channel(&pin.adc_channels, a.pin.is_some()).ok_or_else(|| {
+                    crate::SolveError::AdcUnmodelled {
+                        net: a.net.clone(),
+                        pins: vec![name.to_owned()],
+                    }
                 })?,
             };
             used.insert(name, claimant);
@@ -1435,7 +1630,11 @@ pub(crate) fn in_in_motor_pairs(spec: &Specification) -> Vec<(String, String, St
             let labels: Vec<&String> = b.inputs.values().collect();
             let motor = |l: &String| spec.motor_outputs.iter().any(|m| &m.label == l);
             if labels.len() == 2 && labels.iter().all(|l| motor(l)) {
-                out.push((format!("pin_devices[{i}].bridges[{k}]"), labels[0].clone(), labels[1].clone()));
+                out.push((
+                    format!("pin_devices[{i}].bridges[{k}]"),
+                    labels[0].clone(),
+                    labels[1].clone(),
+                ));
             }
         }
     }

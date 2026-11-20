@@ -265,8 +265,9 @@ impl SolveError {
             | Self::PinSpeed { net, .. } => Some(net),
             Self::BridgeSplitAcrossTimers { bridge, .. } => Some(bridge),
             Self::NoTimerChannel { output, .. } => Some(output),
-            Self::TimerRateConflict { timer, .. }
-            | Self::TimerResolutionConflict { timer, .. } => Some(timer),
+            Self::TimerRateConflict { timer, .. } | Self::TimerResolutionConflict { timer, .. } => {
+                Some(timer)
+            }
             Self::SerialPinsSplit { port, .. }
             | Self::NoSerialPeripheral { port, .. }
             | Self::SerialClock { port, .. } => Some(port),
@@ -563,7 +564,9 @@ fn solve_inner(
             // pinned, so an ADC2-only pin is never its.
             let modelled = free
                 .iter()
-                .find(|(_, pin)| crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some())
+                .find(|(_, pin)| {
+                    crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some()
+                })
                 .copied();
             let Some((name, pin)) = modelled else {
                 if free.is_empty() {
@@ -1502,7 +1505,10 @@ impl<'s, 't> Model<'s, 't> {
                 path,
                 protocol: m.protocol,
                 pwm: m.pwm.as_ref(),
-                key: (m.protocol, m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps))),
+                key: (
+                    m.protocol,
+                    m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps)),
+                ),
             });
         }
         let mut serial = Vec::new();
@@ -1552,17 +1558,16 @@ impl<'s, 't> Model<'s, 't> {
         // name; the device's signals and ADC inputs are placed after it.
         let mut device_hands = Vec::new();
         for (i, d) in spec.declared_pin_devices().iter().enumerate() {
-            let held = d
-                .signals
-                .iter()
-                .enumerate()
-                .map(|(k, s)| (&s.net, &s.pin, format!("pin_devices[{i}].signals[{k}]")))
-                .chain(
-                    d.analog
-                        .iter()
-                        .enumerate()
-                        .map(|(k, a)| (&a.net, &a.pin, format!("pin_devices[{i}].analog[{k}]"))),
-                );
+            let held =
+                d.signals
+                    .iter()
+                    .enumerate()
+                    .map(|(k, s)| (&s.net, &s.pin, format!("pin_devices[{i}].signals[{k}]")))
+                    .chain(
+                        d.analog.iter().enumerate().map(|(k, a)| {
+                            (&a.net, &a.pin, format!("pin_devices[{i}].analog[{k}]"))
+                        }),
+                    );
             for (net, pin, path) in held {
                 let signal = Signal {
                     net: net.clone(),

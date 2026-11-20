@@ -1600,9 +1600,14 @@ pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
         let raw: crate::pin_parts::RawPinPart =
             serde_json::from_str(text.get()).map_err(|e| named(e.to_string()))?;
         let p = crate::pin_parts::pin_part(raw).map_err(named)?;
-        let clash = parts.iter().map(|q| &q.part).chain(pin_parts.iter().map(|q| &q.part));
+        let clash = parts
+            .iter()
+            .map(|q| &q.part)
+            .chain(pin_parts.iter().map(|q| &q.part));
         if clash.into_iter().any(|q| q.eq_ignore_ascii_case(&p.part)) {
-            return Err(named("the part is in the table twice, in some case".to_owned()));
+            return Err(named(
+                "the part is in the table twice, in some case".to_owned(),
+            ));
         }
         pin_parts.push(p);
     }

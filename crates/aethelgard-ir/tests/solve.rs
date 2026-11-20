@@ -239,7 +239,13 @@ fn basic_solves_in_the_fixed_order_and_validates() {
     // cs last: the first free unreserved pin in key order.
     assert_eq!(
         t.gpio,
-        BTreeMap::from([("U1_CS".into(), aethelgard_ir::pin_devices::SolvedGpio::output("PA0", aethelgard_ir::motor::Level::High))])
+        BTreeMap::from([(
+            "U1_CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA0",
+                aethelgard_ir::motor::Level::High
+            )
+        )])
     );
 }
 
