@@ -27,11 +27,13 @@ pub enum PinKind {
     EnableInput {
         active: Level,
     },
-    /// An open-drain output: its `VOL` at a sink current, and the largest
-    /// sink current and pull-up voltage the part allows, when stated.
+    /// An open-drain output: its `VOL` at the current the sheet tests it at
+    /// (`vol_test_current_ma`, a test condition, not a rating), and the
+    /// largest sink current (`IOD`) and pull-up voltage the part allows, when
+    /// stated.
     OpenDrainOutput {
         vol_max_mv: u32,
-        at_ma: u32,
+        vol_test_current_ma: u32,
         iod_max_ma: Option<u32>,
         pull_up_max_mv: Option<u32>,
     },
@@ -289,7 +291,7 @@ struct RawPin {
     #[serde(default)]
     vol_max_mv: Option<u32>,
     #[serde(default)]
-    at_ma: Option<u32>,
+    vol_test_current_ma: Option<u32>,
     #[serde(default)]
     iod_max_ma: Option<u32>,
     #[serde(default)]
@@ -533,7 +535,7 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
         ("vil_max_mv", p.vil_max_mv.is_some()),
         ("vih_min_mv", p.vih_min_mv.is_some()),
         ("vol_max_mv", p.vol_max_mv.is_some()),
-        ("at_ma", p.at_ma.is_some()),
+        ("vol_test_current_ma", p.vol_test_current_ma.is_some()),
         ("iod_max_ma", p.iod_max_ma.is_some()),
         ("pull_up_max_mv", p.pull_up_max_mv.is_some()),
         ("ua_per_a_typical", p.ua_per_a_typical.is_some()),
@@ -561,8 +563,13 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
             &["active"],
         ),
         "open_drain_output" => (
-            &["vol_max_mv", "at_ma", "iod_max_ma", "pull_up_max_mv"],
-            &["vol_max_mv", "at_ma"],
+            &[
+                "vol_max_mv",
+                "vol_test_current_ma",
+                "iod_max_ma",
+                "pull_up_max_mv",
+            ],
+            &["vol_max_mv", "vol_test_current_ma"],
         ),
         "current_output" => (CURRENT_OUTPUT_FIELDS, CURRENT_OUTPUT_FIELDS),
         "strap" => (&["high_min_mv", "resistors"], &["resistors"]),
@@ -590,7 +597,7 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
         },
         "open_drain_output" => PinKind::OpenDrainOutput {
             vol_max_mv: p.vol_max_mv.expect("required"),
-            at_ma: p.at_ma.expect("required"),
+            vol_test_current_ma: p.vol_test_current_ma.expect("required"),
             iod_max_ma: p.iod_max_ma,
             pull_up_max_mv: p.pull_up_max_mv,
         },

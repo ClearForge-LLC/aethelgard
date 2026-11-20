@@ -774,3 +774,17 @@ fn the_idle_word_and_the_tick_are_judged_in_the_topology() {
     coarse.pwm.as_mut().unwrap().resolution_ps = 2_000_000;
     assert!(!aethelgard_ir::motor::check_silicon(&t.clock, timer, &coarse).holds);
 }
+
+/// Ruled F6 (PR #292): with no rated IOD, a pull-up is held to the current
+/// the sheet guarantees VOL at, and the refusal says so.
+#[test]
+fn a_pull_up_past_the_vol_test_current_is_named_as_such() {
+    let mut v = d2_declared();
+    device(&mut v)["temperature_celsius"] =
+        json!({"min": -20, "max": 85, "source": "a declaration for this test"});
+    device(&mut v)["signals"][1]["pull"] = json!({"resistor": {"reference": "R9",
+        "part": "CRCW0603_F_K", "ohms": 600, "to": "VDD_3V3"}, "source": "a declaration for this test"});
+    let e = refused(&v);
+    assert_eq!(e.kind(), "PullOverDrive", "{e}");
+    assert!(e.to_string().contains("not a rated IOD"), "{e}");
+}

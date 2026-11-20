@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "3d884c9f6948b09537080a65a650757fa927cafd0fba0d64a573b9ed848d4d00";
+const PARTS_SHA256: &str = "8d2df0a2dcfe521251f3766dec59483058cebc75f36f2883ef2e19fb9dafeed2";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()

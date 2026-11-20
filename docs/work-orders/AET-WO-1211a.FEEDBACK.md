@@ -34,12 +34,12 @@
 
 ## 3. Decisions made inside the ruling, for the architect
 
-- **F1 · D1 changed from the spike's file.** As written it is refused twice by rules this work order builds: 2 A × 1000 µA/A × 1.05 (AERR's worst band) through R2 at CRCW0603_F_K's worst is above VREF+'s minimum, VDD_3V3's 3135 mV low edge (`AdcFullScaleExceeded`; the spike judged 3.15 V against the 3.3 V nominal), and at 16 bits R2 = 1500 Ω is above rev V's RAIN of 170 Ω (`AdcSourceImpedance`). Committed D1: 1.9 A, 12 bits, a 100 nF reservoir C1 (sentinel-03's part). Both refusals are kept as a test on the spike's values.
-- **F2 · Two slots the proposal did not name:** `part_limits` (the ruled "declare it with a citation"; D2 + a declared limit validates, so `PartLimitUndeclared` is shown to be D2's only refusal) and `temperature_celsius` (a device's resistors are judged over a temperature; `null` when `power` declares the board's; D1 has no power tree).
-- **F3 · `generate` and hwdef refuse an idle `high` by name** (`IdleHighNotGenerated`, `IdleHighNotEmitted`): `silicon::idle_pupd` follows the idle (Q9) and `implied_pupd` reads it, but the generator's own motor pull is a pull-down until 1211b.
+- **F1 · D1 changed from the spike's file. RULED: accepted (17:02Z), both values and their measurements kept here.** As written it is refused twice by rules this work order builds: 2 A × 1000 µA/A × 1.05 (AERR's worst band) through R2 at CRCW0603_F_K's worst is above VREF+'s minimum, VDD_3V3's 3135 mV low edge (`AdcFullScaleExceeded`; the spike judged 3.15 V against the 3.3 V nominal), and at 16 bits R2 = 1500 Ω is above rev V's RAIN of 170 Ω (`AdcSourceImpedance`). Committed D1: 1.9 A, 12 bits, a 100 nF reservoir C1 (sentinel-03's part). Both refusals are kept as a test on the spike's values.
+- **F2 · RULED: accepted.** Two slots the proposal did not name: `part_limits` (the ruled "declare it with a citation"; D2 + a declared limit validates, so `PartLimitUndeclared` is shown to be D2's only refusal) and `temperature_celsius` (a device's resistors are judged over a temperature; `null` when `power` declares the board's; D1 has no power tree).
+- **F3 · RULED: accepted.** `generate` and hwdef refuse an idle `high` by name (`IdleHighNotGenerated`, `IdleHighNotEmitted`): `silicon::idle_pupd` follows the idle (Q9) and `implied_pupd` reads it, but the generator's own motor pull is a pull-down until 1211b.
 - **F4 · ADC inputs are placed before signals** (both after every existing pin): a signal placed by key order took the only ADC pin left (measured in a test).
-- **F5 · Every channel input of a bridge part must be a declared bridge's** (`BridgeUndeclared`), and **a driven input never sits on a pin the MCU pulls up from reset** (`UnheldDuringReset` at solve; PA13, PA15, PB4, RM0433 Rev 9 p. 542); both from the adversarial pass.
-- **F6 · DRV8833 nFAULT has no stated IOD maximum.** A pull's current is held to IOD where stated, else to the current VOL is guaranteed at (5 mA, SLVSAR1E p. 6). The reviewer calls this a substitution; it errs safe. **Rule:** keep, or refuse `PartLimitUndeclared` (which refuses D2 for a second reason).
+- **F5 · RULED: accepted.** Every channel input of a bridge part must be a declared bridge's (`BridgeUndeclared`), and **a driven input never sits on a pin the MCU pulls up from reset** (`UnheldDuringReset` at solve; PA13, PA15, PB4, RM0433 Rev 9 p. 542); both from the adversarial pass.
+- **F6 · DRV8833 nFAULT has no stated IOD maximum.** A pull's current is held to IOD where stated, else to the current VOL is guaranteed at (5 mA, SLVSAR1E p. 6). **RULED (architect, 17:02Z): keep the 5 mA, named honestly.** The row field is `vol_test_current_ma` (a test condition, not a rating), its page says so, and `PullOverDrive` says "a test condition, not a rated IOD (none is stated)" (test `a_pull_up_past_the_vol_test_current_is_named_as_such`).
 - **F7 · Existing refusal messages:** a 1 µs tick and DShot keep their `MotorTiming` messages byte for byte; the new kinds are `PwmRefusal`'s (`IdleSpelledTwice`, `ResolutionNotDerivable`, `PulseNotOnTick`, `IdleNotOnTick`, `IdleExceedsPeriod`).
 
 ## 4. Mutants (§1.7)
@@ -83,7 +83,7 @@ Weaknesses recorded, not changed: W7 (ARR + 1 at 16 bits, unreachable at 64 MHz;
 
 ## 7. Findings, not fixed here
 
-- **BENCH-EXT-BMP581.md L9** names `examples/sentinel-01-ext-bmp581.json`'s sha at specification 20/21; it moves with the bump and is outside this fence (1210 had a widening for it).
+- **BENCH-EXT-BMP581.md L9** moved with the bump (the fence widened to that line, 17:02Z): the ext-bmp581 specification's sha and "specification 22".
 - `acknowledgements_current` (cli `main.rs`) does not special-case a pin device as it does a bypass or HSE board; such a spec with acknowledgements is judged through `ledger::build`'s refusal.
 - A specification with an idle `low` and no pin device generates (CCR 0); the twin's motor witness calls a static output `unwitnessed` (1211 §4) — 1211c's.
 

@@ -1015,8 +1015,8 @@
           "number": 8,
           "kind": "open_drain_output",
           "vol_max_mv": 500,
-          "at_ma": 5,
-          "page": "p. 3; VOL max 0.5 V at IO 5 mA, p. 6 (no IOD maximum is stated)"
+          "vol_test_current_ma": 5,
+          "page": "p. 3; VOL max 0.5 V at IO 5 mA, p. 6: 5 mA is the VOL test current, and no IOD maximum is stated (ruled F6, PR #292)"
         },
         "BIN1": {
           "number": 9,
@@ -1219,7 +1219,7 @@
           "number": 4,
           "kind": "open_drain_output",
           "vol_max_mv": 300,
-          "at_ma": 5,
+          "vol_test_current_ma": 5,
           "iod_max_ma": 5,
           "pull_up_max_mv": 5500,
           "page": "p. 3; IOD max 5 mA and VOD max 5.5 V, p. 4; VOL max 0.3 V at IOD 5 mA, p. 6"

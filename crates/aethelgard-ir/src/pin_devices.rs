@@ -916,7 +916,7 @@ impl<'s> Device<'s> {
                         ));
                     }
                     let PinKind::OpenDrainOutput {
-                        at_ma,
+                        vol_test_current_ma,
                         iod_max_ma,
                         pull_up_max_mv,
                         ..
@@ -930,7 +930,17 @@ impl<'s> Device<'s> {
                         ));
                     };
                     let pull = s.pull.as_ref().expect("checked");
-                    let sink_ma = iod_max_ma.unwrap_or(at_ma);
+                    // A rated IOD where the row states one; else the current
+                    // the sheet guarantees VOL at, a test condition and not a
+                    // rated IOD (ruled F6, PR #292; SLVSAR1E p. 6 for the
+                    // DRV8833, whose sheet states no IOD).
+                    let (sink_ma, sink_is) = match iod_max_ma {
+                        Some(iod) => (iod, "its rated IOD"),
+                        None => (
+                            vol_test_current_ma,
+                            "the current its VOL is guaranteed at, a test condition, not a rated IOD (none is stated)",
+                        ),
+                    };
                     match (&pull.mcu, &pull.resistor) {
                         (Some(McuPull::Up), None) => {
                             // RPU at least 30 kΩ to the MCU's supply.
@@ -938,7 +948,7 @@ impl<'s> Device<'s> {
                                 &at,
                                 mcu_hi,
                                 i128::from(MCU_RPU_MIN_OHMS),
-                                sink_ma,
+                                (sink_ma, sink_is),
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
@@ -969,7 +979,7 @@ impl<'s> Device<'s> {
                                 &at,
                                 crate::maximum_millivolts(v),
                                 r_lo,
-                                sink_ma,
+                                (sink_ma, sink_is),
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
@@ -1031,7 +1041,7 @@ impl<'s> Device<'s> {
         at: &str,
         v_max: u32,
         r_min: i128,
-        sink_ma: u32,
+        (sink_ma, sink_is): (u32, &str),
         pull_up_max_mv: Option<u32>,
         pin: &str,
     ) -> Result<(), IrValidationError> {
@@ -1041,7 +1051,7 @@ impl<'s> Device<'s> {
                 K::PullOverDrive,
                 &format!("{at}.pull"),
                 format!(
-                    "the pull-up draws up to {ua} uA at {v_max} mV through at least {r_min} ohms; `{pin}` sinks {sink_ma} mA{} ({})",
+                    "the pull-up draws up to {ua} uA at {v_max} mV through at least {r_min} ohms; `{pin}` sinks {sink_ma} mA, {sink_is}{} ({})",
                     pull_up_max_mv.map_or(String::new(), |m| format!(" and takes at most {m} mV")),
                     self.row.document
                 ),
