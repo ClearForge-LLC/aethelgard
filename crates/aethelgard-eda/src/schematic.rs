@@ -177,10 +177,10 @@ pub enum EmitError {
         "mcu.hse is an external clock: no declared connector pin or test point can carry it to PH0 (OSC_IN), so its net would end nowhere; emit refuses it until one can (AET-WO-4240c Q4)"
     )]
     HseSourceNotDrawn,
-    /// `AET-WO-4240c` A2: no C0G 0402 row within `4240` §9's tolerance is
-    /// rated a declared load capacitor's value.
+    /// `AET-WO-4240c` A2: no C0G 0402 row with a stated tolerance is rated
+    /// a declared load capacitor's value.
     #[error(
-        "mcu.hse.crystal.load_caps_femtofarads names {femtofarads} fF, and no C0G 0402 capacitor row of the power parts table, at ±1 % or ±0.25 pF or better, is rated that value"
+        "mcu.hse.crystal.load_caps_femtofarads names {femtofarads} fF, and no C0G 0402 capacitor row of the power parts table with a stated tolerance is rated that value"
     )]
     LoadCapacitorNoPart { femtofarads: u64 },
     #[error("{0}")]

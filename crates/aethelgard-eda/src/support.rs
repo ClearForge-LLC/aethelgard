@@ -804,7 +804,7 @@ const CRYSTAL_GROUNDS: [&str; 2] = ["2", "4"];
 /// two nets and its two ground pads on `GND`; on each net exactly one
 /// capacitor, to `GND`, of the declared value (`CL1` on `OSC_IN`, `CL2` on
 /// `OSC_OUT`), named by a C0G part of the power parts table rated that value
-/// and stated within ±1 % or ±0.25 pF; and no other pin on either net, the
+/// with a stated tolerance; and no other pin on either net, the
 /// MCU's included. With no crystal declared, no crystal may be drawn.
 fn crystal(
     spec: &Specification,
@@ -965,9 +965,9 @@ fn crystal(
                 format!("{c} on `{net}` is `{value}`, and {name} is declared {ff} fF"),
             );
         }
-        // The named row: C0G, rated exactly the declared value, and within
-        // `4240` §9's family, ±1 % or ±0.25 pF (adversarial F2: the token
-        // alone could name a row of another value).
+        // The named row: C0G, rated exactly the declared value, with a
+        // stated tolerance (adversarial F2: the token alone could name a row
+        // of another value; no width is required, ruled 17:45Z).
         let row = value
             .split_once(' ')
             .and_then(|(_, part)| table.get(part))
@@ -993,17 +993,10 @@ fn crystal(
                 ),
             );
         }
-        let close = match &k.tolerance {
-            Some(power_parts::Tolerance::Permille(l)) => l.value <= 10,
-            Some(power_parts::Tolerance::Femtofarads(l)) => l.value <= 250,
-            None => false,
-        };
-        if !close {
+        if k.tolerance.is_none() {
             fail(
                 "hse_load_capacitor_tolerance",
-                format!(
-                    "{c} on `{net}` names a part whose tolerance is not stated within 1 % or 0.25 pF"
-                ),
+                format!("{c} on `{net}` names a part whose tolerance its row does not state"),
             );
         }
     }

@@ -85,6 +85,12 @@
       "sha256": "0b08caae0ba2d0e2d42edadbffd6ac89f27b1d8f7d49cc463ab777f100e5dafd",
       "pending": null
     },
+    "KEMET_C1003_C0G": {
+      "title": "KEMET C1003_C0G, Surface Mount Multilayer Ceramic Chip Capacitors, C0G Dielectric, 10 - 250 VDC (Commercial Grade)",
+      "revision": "2/20/2025",
+      "sha256": "a719330f74989db446772300b3c689d26e0a98ade80e5438efe2c8d76600a802",
+      "pending": null
+    },
     "MURATA_GRM32ER61C226KE20": {
       "title": "Murata reference sheet GRM32ER61C226KE20",
       "revision": "Jun.26, 2026",
@@ -1822,6 +1828,50 @@
           },
           "dielectric": "X7R",
           "dc_bias": null
+        }
+      }
+    },
+    {
+      "part": "C0402C180J5GACTU",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "KEMET_C1003_C0G",
+          "section": "p. 4 Electrical Parameters/Characteristics, Operating Temperature Range -55 C to +125 C; p. 1 Benefits"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 18,
+            "at": {
+              "document": "KEMET_C1003_C0G",
+              "section": "p. 1 Ordering Information, Capacitance Code 180 (two significant digits and number of zeros); p. 5 Table 1A, 18 pF, Cap Code 180, C0402C"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "KEMET_C1003_C0G",
+              "section": "p. 1 Ordering Information, Rated Voltage code 5 = 50 VDC; p. 5 Table 1A, 18 pF, C0402C 50 V column (BB)"
+            }
+          },
+          "dielectric": "C0G",
+          "dc_bias": null,
+          "tolerance": {
+            "permille": {
+              "value": 50,
+              "at": {
+                "document": "KEMET_C1003_C0G",
+                "section": "p. 1 Ordering Information, Capacitance Tolerance code J = +-5%; p. 5 Table 1A, 18 pF offered at F, G, J, K, M"
+              }
+            }
+          }
         }
       }
     },

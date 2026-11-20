@@ -29,7 +29,7 @@ use std::collections::BTreeMap;
 
 use aethelgard_ir::PinTable;
 use aethelgard_ir::clock::Hse;
-use aethelgard_ir::power_parts::{self, Dielectric, Kind, PowerPartsTable, Row, Tolerance};
+use aethelgard_ir::power_parts::{self, Dielectric, Kind, PowerPartsTable, Row};
 
 use super::{Builder, Conn, EmitError, Part};
 
@@ -101,13 +101,15 @@ pub(super) fn tie(
     }))
 }
 
-/// The footprint of every load capacitor: 0402, `4240` §9's family.
+/// The footprint of every load capacitor: 0402, `4240` §9's package.
 const LOAD_FOOTPRINT: &str = "Capacitor_SMD:C_0402_1005Metric";
 
 /// The load capacitor for a declared `ff`: the first row of the power parts
 /// table, by part number, that is C0G, 0402, rated exactly `ff`, with a
-/// stated tolerance of at most ±1 % or ±0.25 pF (`4240` §9's family,
-/// `AET-WO-4240c` A2), or the refusal by name.
+/// stated tolerance (`AET-WO-4240c` A2), or the refusal by name. No width is
+/// required of the tolerance: `4240` §9's ±1 % or ±0.25 pF has no held
+/// pullability source behind it (ruled 17:45Z), and the load is reported,
+/// not judged.
 fn load_capacitor(table: &'static PowerPartsTable, ff: u64) -> Result<&'static Row, EmitError> {
     table
         .rows()
@@ -116,14 +118,9 @@ fn load_capacitor(table: &'static PowerPartsTable, ff: u64) -> Result<&'static R
             let Kind::Capacitor(k) = &r.kind else {
                 return false;
             };
-            let close = match &k.tolerance {
-                Some(Tolerance::Permille(l)) => l.value <= 10,
-                Some(Tolerance::Femtofarads(l)) => l.value <= 250,
-                None => false,
-            };
             k.dielectric == Dielectric::C0g
                 && r.footprint == LOAD_FOOTPRINT
-                && close
+                && k.tolerance.is_some()
                 && u64::try_from(k.rated_picofarads.value)
                     .ok()
                     .and_then(|pf| pf.checked_mul(1000))
@@ -227,7 +224,7 @@ mod tests {
     }
 
     #[test]
-    fn the_load_capacitor_is_c0g_0402_and_within_the_family() {
+    fn the_load_capacitor_is_c0g_0402_with_a_stated_tolerance() {
         let decoys = [
             ("A-X7R", "X7R", LOAD_FOOTPRINT, tol("permille", 10)),
             ("B-NO-TOLERANCE", "C0G", LOAD_FOOTPRINT, None),
@@ -237,8 +234,6 @@ mod tests {
                 "Capacitor_SMD:C_0603_1608Metric",
                 tol("permille", 10),
             ),
-            ("D-FIVE-PERCENT", "C0G", LOAD_FOOTPRINT, tol("permille", 50)),
-            ("E-HALF-PF", "C0G", LOAD_FOOTPRINT, tol("femtofarads", 500)),
         ];
         assert!(matches!(
             load_capacitor(table(&decoys), 33_000),
@@ -247,17 +242,17 @@ mod tests {
             })
         ));
         let mut rows = decoys.to_vec();
-        rows.push(("G-ONE-PERCENT", "C0G", LOAD_FOOTPRINT, tol("permille", 10)));
         rows.push((
-            "F-QUARTER-PF",
+            "E-QUARTER-PF",
             "C0G",
             LOAD_FOOTPRINT,
             tol("femtofarads", 250),
         ));
-        // The first by part number.
+        rows.push(("D-FIVE-PERCENT", "C0G", LOAD_FOOTPRINT, tol("permille", 50)));
+        // The first by part number, whatever its tolerance's width.
         assert_eq!(
             load_capacitor(table(&rows), 33_000).unwrap().part,
-            "F-QUARTER-PF"
+            "D-FIVE-PERCENT"
         );
     }
 }
