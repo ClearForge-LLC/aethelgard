@@ -1,0 +1,223 @@
+--- a/crates/aethelgard-eda/src/pcb.rs
++++ b/crates/aethelgard-eda/src/pcb.rs
+@@ -461,6 +461,32 @@
+     Ok(out)
+ }
+ 
++/// AET-WO-1317 spike: trace and knock-out knobs (scratch copy only).
++pub mod knob {
++    use std::cell::{Cell, RefCell};
++    thread_local! {
++        pub static TRACE: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
++        pub static NO_K: Cell<bool> = const { Cell::new(false) };
++        pub static NO_M: Cell<bool> = const { Cell::new(false) };
++        pub static NO_S: Cell<bool> = const { Cell::new(false) };
++        pub static ORDER: RefCell<Option<Vec<String>>> = const { RefCell::new(None) };
++        pub static SALT: Cell<u64> = const { Cell::new(0) };
++        pub static ROUNDS: Cell<Option<usize>> = const { Cell::new(None) };
++    }
++    pub fn tr(f: impl FnOnce() -> String) {
++        TRACE.with(|t| {
++            if let Some(v) = t.borrow_mut().as_mut() {
++                v.push(f());
++            }
++        });
++    }
++}
++use knob::tr;
++
++fn rs(r: Rect) -> String {
++    format!("[{},{},{},{}]", r.x0, r.y0, r.x1, r.y1)
++}
++
+ /// One footprint on the board.
+ #[derive(Clone, Debug)]
+ pub struct Placed {
+@@ -473,7 +499,7 @@
+     pub keep: Rect,
+ }
+ 
+-struct Item<'a> {
++pub(crate) struct Item<'a> {
+     part: &'a Part,
+     fp: Sx,
+     /// The footprint's turn: an IMU's from its seat (`AET-WO-4400d`), else 0.
+@@ -576,8 +602,25 @@
+ ) -> Result<(Vec<Placed>, Edges), EmitError> {
+     // Under a declared bound only, every choice that reference order makes
+     // below is the canonical rank's instead (`AET-WO-1313c`, (k)).
+-    let rank = bounded.then(|| canonical_rank(items));
++    let no_k = knob::NO_K.with(std::cell::Cell::get);
++    let rank = (bounded && !no_k).then(|| canonical_rank(items));
+     let rank = rank.as_deref();
++    // with (k) knocked out, compaction still needs a group order: reference order
++    let ref_rank = (bounded && no_k).then(|| {
++        let o = placing_order(items, None);
++        let mut r = vec![usize::MAX; items.len()];
++        for (k, &i) in o.iter().enumerate() {
++            r[i] = k;
++        }
++        let mut next = o.len();
++        for x in r.iter_mut() {
++            if *x == usize::MAX {
++                *x = next;
++                next += 1;
++            }
++        }
++        r
++    });
+     let order = placing_order(items, rank);
+     // An anchored part goes straight after its IC, in drawing order, before
+     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
+@@ -611,7 +654,23 @@
+             "a part is anchored to an IC that is not drawn".into(),
+         ));
+     }
+-    let order = grouped;
++    let mut order = grouped;
++    if let Some(want) = knob::ORDER.with(|o| o.borrow().clone()) {
++        let pos = |r: &str| items.iter().position(|it| it.part.reference == r);
++        let o: Vec<usize> = want.iter().filter_map(|r| pos(r)).collect();
++        assert_eq!(o.len(), order.len(), "ORDER override covers every placed part");
++        order = o;
++    }
++    tr(|| {
++        format!(
++            "order {}",
++            order
++                .iter()
++                .map(|&i| items[i].part.reference.as_str())
++                .collect::<Vec<_>>()
++                .join(" ")
++        )
++    });
+     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
+     // What compaction needs of each placed part: the IC it went beside, and
+     // the gap it kept from the parts placed before it.
+@@ -635,6 +694,7 @@
+                 keep: g.keep.shift(ORIGIN),
+             });
+             approach = approaches(item, g.courtyard.shift(ORIGIN), pairs);
++            tr(|| format!("step 0 {} mcu origin={:?} keep={}", item.part.reference, ORIGIN, rs(g.keep.shift(ORIGIN))));
+             rule[i] = Rule {
+                 reserve: None,
+                 ic: true,
+@@ -694,10 +754,12 @@
+             .chain(approach.iter().map(|&r| (r, 0)))
+             .collect();
+         if let Some(a) = item.part.owner.as_ref().and_then(|o| o.anchor.as_ref()) {
+-            placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
++            let p = place_anchored(item, &items[anchor], at, a, &taken)?;
++            tr(|| format!("step {step} {} anchored={} origin={:?} rot={} keep={}", item.part.reference, items[anchor].part.reference, p.origin, p.rotation, rs(p.keep)));
++            placed[i] = Some(p);
+             continue;
+         }
+-        let target = if bounded {
++        let target = if bounded && !knob::NO_M.with(std::cell::Cell::get) {
+             centroid_target(item, &items[anchor], at)
+         } else {
+             item.shared(&items[anchor])
+@@ -712,6 +774,7 @@
+         });
+         let origin = spot(g, target, &taken)
+             .ok_or_else(|| internal(&item.part.reference, "no free spot within a metre"))?;
++        tr(|| format!("step {step} {} beside={} target={:?} origin={:?} keep={}", item.part.reference, items[anchor].part.reference, target, origin, rs(g.keep.shift(origin))));
+         placed[i] = Some(Placed {
+             reference: item.part.reference.clone(),
+             origin,
+@@ -720,8 +783,18 @@
+             keep: g.keep.shift(origin),
+         });
+     }
+-    if let Some(rank) = rank {
+-        compact(items, &mut placed, &anchor_of, &rule, &approach, rank)?;
++    let core = |placed: &[Option<Placed>]| placed.iter().flatten().map(|p| p.keep).reduce(Rect::union);
++    tr(|| format!("core-before {}", core(&placed).map(rs).unwrap_or_default()));
++    if !knob::NO_S.with(std::cell::Cell::get) {
++        if let Some(rank) = rank.or(ref_rank.as_deref()) {
++            compact(items, &mut placed, &anchor_of, &rule, &approach, rank)?;
++        }
++    }
++    tr(|| format!("core-after {}", core(&placed).map(rs).unwrap_or_default()));
++    for (i, p) in placed.iter().enumerate() {
++        if let Some(p) = p {
++            tr(|| format!("compacted {} origin={:?} keep={}", items[i].part.reference, p.origin, rs(p.keep)));
++        }
+     }
+     let plan = if bounded {
+         BOUNDED_PLAN
+@@ -729,6 +802,12 @@
+         EdgePlan::Bottom { gap: IC_GAP_NM }
+     };
+     let edges = place_connectors(items, &mut placed, plan, rank)?;
++    for (i, p) in placed.iter().enumerate() {
++        if let (Some(p), true) = (p, schematic::is_connector(items[i].part)) {
++            tr(|| format!("connector {} origin={:?} rot={} keep={}", items[i].part.reference, p.origin, p.rotation, rs(p.keep)));
++        }
++    }
++    tr(|| format!("edges {edges:?}"));
+     let placed = placed
+         .into_iter()
+         .collect::<Option<Vec<_>>>()
+@@ -928,8 +1007,10 @@
+     let base: Vec<u64> = items
+         .iter()
+         .map(|it| {
++            let salt = knob::SALT.with(std::cell::Cell::get);
++            let b = if salt == 0 { FNV_BASIS } else { fnv(FNV_BASIS, &salt.to_le_bytes()) };
+             fnv(
+-                fnv(FNV_BASIS, it.part.lib_id.as_bytes()),
++                fnv(b, it.part.lib_id.as_bytes()),
+                 it.part.footprint.as_bytes(),
+             )
+         })
+@@ -942,7 +1023,7 @@
+         })
+         .collect();
+     let mut colour = base.clone();
+-    for _ in 0..COLOUR_ROUNDS {
++    for _ in 0..knob::ROUNDS.with(std::cell::Cell::get).unwrap_or(COLOUR_ROUNDS) {
+         // A net's colour: its pads' colours and pad numbers, as a multiset.
+         let mut net_colour: BTreeMap<&str, u64> = BTreeMap::new();
+         for (name, pads) in &nets {
+@@ -1231,6 +1312,7 @@
+                 }
+             }
+             if let Some(d) = d {
++                tr(|| format!("move {} {:?}", items[members[0]].part.reference, d));
+                 for &m in members {
+                     if let Some(p) = placed[m].as_mut() {
+                         mv(p, d);
+@@ -1749,7 +1831,7 @@
+ use aethelgard_ir::names::reference_key;
+ 
+ /// Each part's footprint, pads and geometry.
+-fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
++pub(crate) fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
+     let mut keys = BTreeMap::new();
+     for part in parts {
+         if let Some(other) = keys.insert(reference_key(&part.reference), &part.reference) {
+@@ -1944,7 +2026,7 @@
+ /// origin and its rotation. Every other part is placed by [`place`] first.
+ pub type Move = (String, (i64, i64), u16);
+ 
+-fn layout_of(
++pub(crate) fn layout_of(
+     items: &[Item<'_>],
+     moves: &[Move],
+     pairs: &[[String; 2]],
+@@ -2005,6 +2087,7 @@
+     if let Some(e) = edges.right {
+         outline.x1 = e;
+     }
++    tr(|| format!("outline {}", rs(outline)));
+     if let Some(b) = bound {
+         // belt-and-suspenders: under either edge plan every keep-out box is
+         // inside the outline by construction (the core within its margin, each
+--- a/crates/aethelgard-eda/src/lib.rs
++++ b/crates/aethelgard-eda/src/lib.rs
+@@ -30,3 +30,4 @@
+ pub mod strict;
+ pub mod supply;
+ pub mod support;
++pub mod spike1317;
