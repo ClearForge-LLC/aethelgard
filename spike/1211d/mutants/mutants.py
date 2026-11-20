@@ -15,7 +15,7 @@ MUTANTS = [
     ("W2 nFAULT's pull-up missing (declared resistors not drawn)", ARM,
      "    for (r, one, two) in resistors {", "    for (r, one, two) in resistors.into_iter().filter(|_| false) {", DRAWN),
     ("W3 a bridge output to no connector (the check removed)", ARM,
-     "            if !ended.contains(&net.as_str()) {", "            if false && !ended.contains(&net.as_str()) {", DRAWN),
+     "            if !on_connectors.contains(net) {", "            if false && !on_connectors.contains(net) {", DRAWN),
     ("G1 CVM2 skipped instead of refused", ARM,
      "        let Some(value) = r.value else {\n            return Err(EmitError::PassiveValueUnstated {",
      "        let Some(value) = r.value else {\n            continue;\n            #[allow(unreachable_code)]\n            return Err(EmitError::PassiveValueUnstated {", DRAWN),

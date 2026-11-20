@@ -24,11 +24,11 @@
 //! `>` the VM domain's maximum where it asks for "VM-rated"). No gate judges a rating
 //! (ruled 18:18Z: a finding, folded into `4600` D4's proposal).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
+use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::pin_devices::{PinDevice, SignalPull, Strap, Transfer};
 use aethelgard_ir::pin_parts::{PinKind, PinPart};
-use aethelgard_ir::{SolvedTopology, Specification};
 
 use super::{Builder, Conn, EmitError, Part};
 
@@ -214,12 +214,14 @@ fn volts(mv: u64) -> String {
     format!("{whole}.{digits}V")
 }
 
-/// The specification's references a pin device brings: the device's, then
-/// its declared passives' (a pull, a strap resistor, an analog output's
-/// resistor and reservoir), claimed before any emitter-numbered one.
-pub(super) fn references(spec: &Specification) -> Vec<&String> {
+/// The references the pin devices bring: each device's, then its declared
+/// passives' (a pull, a strap resistor, an analog output's resistor and
+/// reservoir), claimed before any emitter-numbered one. `devices` is the
+/// specification's, which `schematic` reads for this module (`RUL-16`:
+/// `eda`'s one reader of declared devices, as for the power tree).
+pub(super) fn references(devices: &[PinDevice]) -> Vec<&String> {
     let mut out = Vec::new();
-    for d in spec.declared_pin_devices() {
+    for d in devices {
         out.push(&d.reference);
         for s in d.straps.values() {
             if let Strap::Resistor(r) = s {
@@ -245,17 +247,20 @@ pub(super) fn references(spec: &Specification) -> Vec<&String> {
     out
 }
 
-/// Draws each declared pin device, in document order. `mcu` is the MCU's
-/// reference, by whose ADC pins an analog output's reservoir sits.
+/// Draws each of `devices` (the specification's, read by `schematic`), in
+/// document order. `on_connectors` is every net a declared connector pin
+/// carries, where a bridge output must end; `mcu` is the MCU's reference, by
+/// whose ADC pins an analog output's reservoir sits.
 pub(super) fn draw(
     b: &mut Builder<'_>,
+    devices: &[PinDevice],
+    on_connectors: &BTreeSet<String>,
     solved: &SolvedTopology,
     table: &aethelgard_ir::PinTable,
     mcu: &str,
 ) -> Result<(), EmitError> {
-    let spec = b.spec;
     let parts = aethelgard_ir::parts::table().map_err(EmitError::InvalidSpecification)?;
-    for d in spec.declared_pin_devices() {
+    for d in devices {
         // belt-and-suspenders: `design` refuses a part with no arm first
         // (`PinDeviceNotDrawn`), and `validate` a part with no row.
         let arm =
@@ -268,7 +273,13 @@ pub(super) fn draw(
         let row = parts
             .pin_part(&d.part)
             .ok_or_else(|| not_drawable(d, "no parts row"))?;
-        device(b, d, arm, row, solved, table, mcu)?;
+        let around = Around {
+            solved,
+            table,
+            mcu,
+            on_connectors,
+        };
+        device(b, d, arm, row, &around)?;
     }
     Ok(())
 }
@@ -283,15 +294,27 @@ fn number(d: &PinDevice, arm: &Arm, row: &PinPart, name: &str) -> Result<String,
         .map_or_else(|| arm.pad.to_owned(), |n| n.to_string()))
 }
 
+/// What a device is drawn against, beside its row and declaration.
+struct Around<'a> {
+    solved: &'a SolvedTopology,
+    table: &'a aethelgard_ir::PinTable,
+    mcu: &'a str,
+    on_connectors: &'a BTreeSet<String>,
+}
+
 fn device(
     b: &mut Builder<'_>,
     d: &PinDevice,
     arm: &Arm,
     row: &PinPart,
-    solved: &SolvedTopology,
-    table: &aethelgard_ir::PinTable,
-    mcu: &str,
+    around: &Around<'_>,
 ) -> Result<(), EmitError> {
+    let Around {
+        solved,
+        table,
+        mcu,
+        on_connectors,
+    } = *around;
     let spec = b.spec;
     let gnd = b.ground();
     let mut conns: BTreeMap<String, Conn> = BTreeMap::new();
@@ -383,11 +406,6 @@ fn device(
             .to_string();
         analog.push((c, Conn::Net(a.net.clone()), position));
     }
-    let ended: Vec<&str> = spec
-        .declared_connectors()
-        .iter()
-        .flat_map(|c| c.pins.iter().filter_map(|p| p.net.as_deref()))
-        .collect();
     for bridge in &d.bridges {
         for (pin, net) in &bridge.inputs {
             put(
@@ -408,7 +426,7 @@ fn device(
                     ),
                 ));
             }
-            if !ended.contains(&net.as_str()) {
+            if !on_connectors.contains(net) {
                 return Err(EmitError::BridgeOutputNotOnConnector {
                     reference: d.reference.clone(),
                     pin: pin.clone(),

@@ -1396,7 +1396,7 @@ pub(crate) fn design(
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
         .chain(spec.declared_test_points().iter().map(|t| &t.reference))
-        .chain(pin_device::references(spec))
+        .chain(pin_device::references(spec.declared_pin_devices()))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -1744,7 +1744,21 @@ pub(crate) fn design(
             &ended,
         )?;
     }
-    pin_device::draw(&mut b, solved, table, &mcu_ref)?;
+    // Every net a declared connector pin carries: where a bridge output must
+    // end (`AET-WO-1211d`).
+    let on_connectors: BTreeSet<String> = spec
+        .declared_connectors()
+        .iter()
+        .flat_map(|c| c.pins.iter().filter_map(|p| p.net.clone()))
+        .collect();
+    pin_device::draw(
+        &mut b,
+        spec.declared_pin_devices(),
+        &on_connectors,
+        solved,
+        table,
+        &mcu_ref,
+    )?;
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
     Ok((b.parts, b.rails))
