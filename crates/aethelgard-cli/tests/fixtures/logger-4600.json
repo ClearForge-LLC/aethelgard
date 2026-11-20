@@ -1,5 +1,5 @@
 {
-  "schema_version": 18,
+  "schema_version": 19,
   "project_name": "field-logger",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -9,6 +9,10 @@
     "supply_source": {
       "connector": "J3",
       "pin": "1"
+    },
+    "core_supply": {
+      "mode": "ldo",
+      "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
     }
   },
   "voltage_domains": [

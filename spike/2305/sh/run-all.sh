@@ -10,5 +10,5 @@ bash $R four-layer crates/aethelgard-cli/tests/fixtures/four-layer.json $S/four-
 bash $R spi-only crates/aethelgard-cli/tests/fixtures/spi-only.json $S/spi-only-undisturbed.json crates/aethelgard-cli/tests/fixtures/spi-only-droop-bor3.json
 bash $R s03 crates/aethelgard-cli/tests/fixtures/sentinel-03.json $S/s03-undisturbed.json scenarios/sentinel-03/droop-tolerated.json scenarios/sentinel-03/droop-bor3.json
 bash $R s02 crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json $S/s02-undisturbed.json $S/s02-droop.json
-bash $R logger spike/2305/boards/logger.json $S/logger-undisturbed.json $S/logger-droop-bor3.json
+bash $R logger crates/aethelgard-cli/tests/fixtures/logger-4600.json $S/logger-undisturbed.json $S/logger-droop-bor3.json
 bash $R ext-bmp581 examples/sentinel-01-ext-bmp581.json $S/ext-bmp581-undisturbed.json $S/ext-bmp581-droop-bor3.json

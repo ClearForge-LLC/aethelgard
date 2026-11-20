@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "logger-undisturbed",
-  "base": "../boards/logger.json",
+  "base": "../../../crates/aethelgard-cli/tests/fixtures/logger-4600.json",
   "expect": "pass",
   "expect_findings": [],
   "overrides": []
