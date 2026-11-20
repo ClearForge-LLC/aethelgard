@@ -39,6 +39,37 @@
 |---|---|---|---|---|---|---|---|---|---|
 | 1 (44629224488) | `d87febc8` | 29.8 | 29.8 | 258 | 87–234 | 671–1352 | 48 | 227 | 190 (floor 190) |
 | 2 (44633982718) | `b9572ce0` (reduction pass) | 38.9 | 38.9 | 318 | 87–278 | 654–1451 | 203 | 242 | 190 (floor 190) |
+| 3 (44639808584) | `ebb95553` (`main` 62e1bafb merged) | 30.0 | 30.8 | 310 | 92–238 | 653–1333 | 3 | 229 | 190 (floor 190) |
+
+- **The three counted runs** (the refit's plan, before 3303b's merge): `tools` green at 29.8, 38.9 and 30.0 min, against 36.1–38.7 at 8 shards before this order.
+  - Run 2 queued 203 s on a loaded account.
+  - Runner-minutes: 227–242, against 244–260 before.
+  - Every job was green, with tier 2 at 190/190 each time.
+
+## `main` merged after 3303b (52a2d62e): the floor moved
+
+- **3303b merged ahead of this order** (architect, bus, 2026-11-20 00:10 UTC). Its schedule-harness split cut the timerless schedule proof out of every Sentinel-01 verify.
+  - It re-measured, after the split, the rows that proof inflated:
+    - `four_layer_fab_tier2` 1,371 → 582 s;
+    - `attribute_seeded` 1,086 → 479;
+    - `verify_47k_tier2` 448 → 228;
+    - the four `verify_2k2`/`against_fab` verifies from about 1,100–1,200 to 428–461;
+    - three `board_tier2` proofs.
+- **The merge keeps 3303b's value for every row it re-measured**, because my refit's runs predate the split. My refit stands for every other row. `hot_plug_tier1`'s row, added by both, is at the worse of the two (63.0; 3303b had 60.5).
+- **The plan on the merged tree,** listed in the pinned image (2,507 names, 2,514 occurrences; P1 silent, guard ok), from `ci/shard.sh assign` on the merged weights:
+
+| shards | slowest planned | mean |
+|---|---|---|
+| 8 | 1,225 | 1,225 |
+| 10 | 980 | 980 |
+| **12** | **816** | **816** |
+| 14 | 700 | 700 |
+| 16 | 612 | 612 |
+
+- **What this changes:**
+  - No block now exceeds the mean, so 12 is balanced under §6's 10 % rule as written.
+  - The floor that made 16 buy nothing at the §1.3 stop (`four_layer_fab_tier2`'s block) is gone. At 16 the plan would save about 200 s of test time per run, for four more jobs a run.
+  - `ci/SHARDS` stays 12 as ruled. REFIT RULE 4 says to change the count only from a new measurement of the same kind; that measurement is the architect's call (§5, F8).
 
 ## Reduction pass (diff, a fresh subagent's proposals, `~/.cache/aet-1911/reduction`)
 
@@ -278,6 +309,8 @@ Reduction pass (diff): −51 net · 5 duplicates removed · 6 dead paths removed
 - **F5: the old per-shard build compiled in its plan step.** Its `--all-targets --no-run` did not build the cli examples that `cargo test`'s default selection builds, so every shard's plan step compiled them (0.5 s), unnoticed. The shared build builds exactly what the shards run.
 - **F6: `bench-package` is now the longest job at 12 and 16 shards** (28.5–37.9 min). It is not a required check, but it sets "all done".
 - **F7: `four_layer_fab_tier2`'s block is the floor for any shard count.** Splitting it would undo `1910` D3's shared `--fab-out` package: each shard holding one of its tests would pay the shared verify itself, as `ci/colocate.tsv` records for `against_fab_tier2` (about 575 s more machine time). That is a separate work order if wanted.
+
+- **F8: after 3303b, the shard count's premise moved.** The plan is now balanced at every count, and the measured knee at 12 came from a block that no longer exists. If wanted, re-measure lone 12 against 16 on the merged tree, by REFIT RULE 4.
 
 ## 6. Decisions needed
 
