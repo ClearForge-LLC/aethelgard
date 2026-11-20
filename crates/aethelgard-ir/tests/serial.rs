@@ -1061,7 +1061,10 @@ fn a_port_s_tx_and_rx_never_share_a_pin() {
 #[test]
 fn a_baud_no_brr_reaches_is_refused_by_name() {
     for baud in [900, 4_200_000] {
+        // A `mavlink` port: on the console both bauds are refused first, at
+        // step 13c (`ConsoleBaudNotRoundTrip`, `AET-WO-1213`).
         let mut p = port("C", None, None, None);
+        p["role"] = json!("mavlink");
         p["framing"]["baud"] = json!(baud);
         assert_eq!(
             solve_refused(spec_json(vec![p])),
@@ -1694,4 +1697,72 @@ fn check_brr_holds_the_solver_s_brr_on_every_fixture_s_port() {
             ("SBUS", 100_000, 640),
         ]
     );
+}
+
+/// `AET-WO-1213`: a console's baud `b` is one ArduPilot's `SERIAL0_BAUD`
+/// maps back to, `map_baudrate(b / 1000) == b` (`AP_SerialManager.cpp:172`,
+/// `:419`, `:737-770` at `Copter-4.7.2`). Each committed board's 115200
+/// and 9600 passes, and so do 100000 and 250000, the work order's examples:
+/// 100 is a listed code and 250 is kbaud. A baud that maps elsewhere is
+/// refused by name, the mapped rate in the error; any other role is not
+/// SERIAL0 and is not held to it.
+#[test]
+fn a_console_baud_serial0_cannot_hold_is_refused_by_name() {
+    let at = |baud: u32, role: &str| {
+        let mut p = port("CONSOLE", None, None, None);
+        p["framing"]["baud"] = json!(baud);
+        p["role"] = json!(role);
+        spec(vec![p]).validate()
+    };
+    for baud in [115_200, 9600, 57_600, 100_000, 250_000, 2_000_000] {
+        assert_eq!(at(baud, "console"), Ok(()), "{baud}");
+    }
+    for (baud, mapped) in [
+        (76_800, 76_000),
+        (111_000, 111_100),
+        (115_000, 115_200),
+        (3_000_000, 3000),
+        (999, 57_600),
+        (2_001_000, 2001),
+    ] {
+        let e = at(baud, "console").expect_err("refused");
+        assert_eq!(
+            e,
+            IrValidationError::ConsoleBaudNotRoundTrip {
+                id: "CONSOLE".into(),
+                baud,
+                mapped
+            },
+            "{baud}"
+        );
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("ConsoleBaudNotRoundTrip", Some("CONSOLE"))
+        );
+        // `1_BAUD` to `9_BAUD` hold their define as it stands.
+        assert_eq!(at(baud, "mavlink"), Ok(()), "{baud} on mavlink");
+        assert_eq!(at(baud, "gps"), Ok(()), "{baud} on gps");
+    }
+    // The rule comes after the framing's shape: a zero baud is still that.
+    assert_eq!(at(0, "console").unwrap_err().kind(), "SerialFramingShape");
+}
+
+/// The same rule in `SolvedTopology::validate`, as each 13c rule is: a
+/// console moved to 76800 with its solved values recomputed is a mismatch.
+#[test]
+fn the_topology_refuses_a_console_baud_serial0_cannot_hold() {
+    use aethelgard_ir::serial::{actual_millibaud, error_ppm};
+    let mut t = topology();
+    let at = |t: &mut SolvedTopology, baud: u32| {
+        let p = t.serial_ports.get_mut("CONSOLE").unwrap();
+        p.framing.baud = baud;
+        p.brr = solve_brr(p.kernel_hz, baud).unwrap();
+        p.actual_millibaud = actual_millibaud(p.kernel_hz, p.brr);
+        p.error_ppm = error_ppm(p.kernel_hz, p.brr, baud);
+    };
+    at(&mut t, 250_000);
+    assert_eq!(t.validate(), Ok(()));
+    at(&mut t, 76_800);
+    let e = t.validate().expect_err("refused");
+    assert_eq!((e.kind(), e.id()), ("SerialPortMismatch", Some("CONSOLE")));
 }

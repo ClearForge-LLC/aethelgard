@@ -109,3 +109,29 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
         solved.len()
     );
 }
+
+/// `AET-WO-1213`: `aethelgard_ir::serial::map_baudrate`, the specification's
+/// copy, and `aethelgard_pincheck::elf::map_baudrate`, the judge's, agree on
+/// every input (`RUL-20`'s pair). Both take ArduPilot's `int32_t`; the
+/// IR's returns its `uint32_t`, `pincheck`'s a `u64`. The sweep covers every
+/// listed code, 0 and the negatives (57), 1 to 2000 (kbaud), the 2000/2001
+/// edge, every `b / 1000` of a `u32` baud, and the `int32_t` extremes; and
+/// the console rule, `console_mapped`, is `pincheck`'s map of `b / 1000`
+/// against `b` over every baud to 5,000,000 and the `u32` extremes.
+#[test]
+fn the_ir_s_map_baudrate_is_pincheck_s() {
+    use aethelgard_ir::serial::{console_mapped, map_baudrate};
+    use aethelgard_pincheck::elf::map_baudrate as judge;
+    let codes = [
+        1, 2, 4, 9, 19, 38, 57, 100, 111, 115, 230, 256, 460, 500, 921, 1500, 2000,
+    ];
+    let edges = [i32::MIN, i32::MIN + 1, -1, 0, 2001, i32::MAX - 1, i32::MAX];
+    for rate in codes.into_iter().chain(edges).chain(-1000..=4_300_000) {
+        assert_eq!(u64::from(map_baudrate(rate)), judge(rate), "{rate}");
+    }
+    for baud in (0..=5_000_000).chain([u32::MAX - 1, u32::MAX]) {
+        let mapped = judge(i32::try_from(baud / 1000).unwrap());
+        let expect = (mapped != u64::from(baud)).then_some(mapped);
+        assert_eq!(console_mapped(baud).map(u64::from), expect, "{baud}");
+    }
+}

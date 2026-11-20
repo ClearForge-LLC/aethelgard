@@ -85,6 +85,12 @@
       "sha256": "0b08caae0ba2d0e2d42edadbffd6ac89f27b1d8f7d49cc463ab777f100e5dafd",
       "pending": null
     },
+    "KEMET_C1003_C0G": {
+      "title": "KEMET C1003_C0G, Surface Mount Multilayer Ceramic Chip Capacitors, C0G Dielectric, 10 - 250 VDC (Commercial Grade)",
+      "revision": "2/20/2025",
+      "sha256": "a719330f74989db446772300b3c689d26e0a98ade80e5438efe2c8d76600a802",
+      "pending": null
+    },
     "MURATA_GRM32ER61C226KE20": {
       "title": "Murata reference sheet GRM32ER61C226KE20",
       "revision": "Jun.26, 2026",
@@ -150,7 +156,7 @@
     {
       "part": "ABM8AIG-16.000MHZ-12-2Z-T3",
       "lifecycle": "unread",
-      "symbol": "Crystal:Crystal_GND24",
+      "symbol": "Device:Crystal_GND24",
       "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
       "pins": {},
       "temperature_celsius": {
@@ -1119,11 +1125,17 @@
               ],
               "SWCLK": [
                 "109"
+              ],
+              "OSC_IN": [
+                "23"
+              ],
+              "OSC_OUT": [
+                "24"
               ]
             },
             "pins_at": {
               "document": "ST_PIN_DATA_H753ZI",
-              "section": "each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; PA13 is JTMS-SWDIO and PA14 JTCK-SWCLK in its signals)"
+              "section": "each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; PA13 is JTMS-SWDIO and PA14 JTCK-SWCLK in its signals; PH0-OSC_IN is position 23 and PH1-OSC_OUT position 24, drawn only beside a declared crystal)"
             },
             "supply": "VDD",
             "grounds": [
@@ -1816,6 +1828,50 @@
           },
           "dielectric": "X7R",
           "dc_bias": null
+        }
+      }
+    },
+    {
+      "part": "C0402C180J5GACTU",
+      "lifecycle": "unread",
+      "symbol": "Device:C",
+      "footprint": "Capacitor_SMD:C_0402_1005Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 125,
+        "at": {
+          "document": "KEMET_C1003_C0G",
+          "section": "p. 4 Electrical Parameters/Characteristics, Operating Temperature Range -55 C to +125 C; p. 1 Benefits"
+        }
+      },
+      "kind": {
+        "capacitor": {
+          "rated_picofarads": {
+            "value": 18,
+            "at": {
+              "document": "KEMET_C1003_C0G",
+              "section": "p. 1 Ordering Information, Capacitance Code 180 (two significant digits and number of zeros); p. 5 Table 1A, 18 pF, Cap Code 180, C0402C"
+            }
+          },
+          "rated_millivolts": {
+            "value": 50000,
+            "at": {
+              "document": "KEMET_C1003_C0G",
+              "section": "p. 1 Ordering Information, Rated Voltage code 5 = 50 VDC; p. 5 Table 1A, 18 pF, C0402C 50 V column (BB)"
+            }
+          },
+          "dielectric": "C0G",
+          "dc_bias": null,
+          "tolerance": {
+            "permille": {
+              "value": 50,
+              "at": {
+                "document": "KEMET_C1003_C0G",
+                "section": "p. 1 Ordering Information, Capacitance Tolerance code J = +-5%; p. 5 Table 1A, 18 pF offered at F, G, J, K, M"
+              }
+            }
+          }
         }
       }
     },
