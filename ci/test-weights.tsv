@@ -59,6 +59,7 @@
 # AET-WO-2305: twin_tier2's three bor_recovery:: tests (a lock-serialised binary, so each carries a row): Furnace estimates, each its libtest --report-time in the pinned image on Furnace (9.571, 8.191, 13.618 s) times 2.8, the factor 2304b's estimates used; refit when a run measures them.
 # AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7, 8 shards): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348); kept beside AET-WO-1911's 12-shard refit, which ran before these tests existed.
 # AET-WO-3305: twin_tier2's a_fault_on_a_bus_with_two_devices_is_not_masked_... is a Furnace estimate (AET-WO-2302's rule: its worst libtest `finished in` in the pinned image, 6.99 s, times 1.2, rounded up), until the refit rule measures it. On run 44654820709 (bfad4c96, before 1911) its two campaigns held the Renode lock 5.08 and 5.01 s, and its `ok` came 5.0 s after the previous completion.
+# AET-WO-3306: twin_tier2's a_step_sent_to_another_devices_address_that_answers_is_the_softwares is a Furnace estimate (AET-WO-2302's rule: its worst libtest `finished in` alone in the pinned image over three runs, 3.17 s, times 1.2, rounded up), until the refit rule measures it.
 # AET-WO-2306: board_tier2's verify_names_what_judged_nothing_on_the_motor_driver is a Furnace estimate, not a run: 73.14 s in the pinned image on Furnace (libtest `finished in`, one verify of the motor driver with its droop), times 2.8 (AET-WO-1310's factor), 204.792; replace it at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
@@ -360,6 +361,7 @@ tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.100
 tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	4.600
 tests/twin_tier2.rs	a_device_named_for_a_renode_instance_or_keyword_breaks_the_load	2.100
 tests/twin_tier2.rs	a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software	8.400
+tests/twin_tier2.rs	a_step_sent_to_another_devices_address_that_answers_is_the_softwares	3.900
 tests/twin_tier2.rs	a_firmware_parked_in_its_fault_handler_fails_naming_vectactive	6.000
 tests/twin_tier2.rs	a_firmware_that_rewrites_its_loop_in_flash_is_not_parked	9.900
 tests/twin_tier2.rs	a_firmware_that_skips_the_read_or_its_record_cannot_pass	3.100

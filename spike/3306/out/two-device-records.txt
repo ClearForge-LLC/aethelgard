@@ -1,0 +1,25 @@
+== runs/camp/two-0x77/archive/c5d5315e65847138c3b9c45eb79e6374/
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60", "[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]), absent: [] }
+DEVICE U2 empty expected=["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"] observed=[] extra=[]
+DEVICE U5 surplus expected=["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"] observed=["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60", "[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"] extra=["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]
+== runs/camp/bmp-0x47/archive/1ea53c13fb4c0f09effd561e54e5b597/
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(0), status: Some("ok") }
+[27] kind 12: I2cCheck { reference: "U5", address: 71, step: "identity", write: [1], width: 1, expected: 80, mask: 255, observed: Some(80), status: Some("ok") }
+[28] kind 12: I2cCheck { reference: "U5", address: 71, step: "configure", write: [54, 64, 129], width: 0, expected: 0, mask: 0, observed: Some(0), status: Some("ok") }
+[29] kind 12: I2cCheck { reference: "U5", address: 71, step: "data", write: [29], width: 6, expected: 423687010, mask: 281474976710655, observed: Some(423687010), status: Some("ok") }
+[30] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [] }
+[31] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: read 0x01 -> 0x50"], observed: Some(["[WARNING] i2c1.u5: access to unmodelled register 0x50"]), absent: [] }
+[32] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "configure", expected: ["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"], observed: Some(["[NOISY] i2c1.u5: read 0x50 -> 0x00"]), absent: [] }
+[33] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "data", expected: ["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"], observed: Some(["[NOISY] i2c1.u5: read 0x01 -> 0x50", "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81", "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"]), absent: [] }
+DEVICE U2 empty expected=["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"] observed=[] extra=[]
+DEVICE U5 other expected=["[NOISY] i2c1.u5: read 0x01 -> 0x50", "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81", "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"] observed=["[WARNING] i2c1.u5: access to unmodelled register 0x50", "[NOISY] i2c1.u5: read 0x50 -> 0x00", "[NOISY] i2c1.u5: read 0x01 -> 0x50", "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81", "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"] extra=[]
+== runs/camp/two-0x75/archive/4b80d837a1e063a46a6f77982ad91e7b/
+[26] kind 12: I2cCheck { reference: "U2", address: 118, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(0), status: Some("timeout_txis") }
+[27] kind 12: I2cCheck { reference: "U5", address: 119, step: "identity", write: [208], width: 1, expected: 96, mask: 255, observed: Some(96), status: Some("ok") }
+[28] kind 13: I2cWitness { peripheral: "I2C1", reference: "U2", device: "i2c1.u2", step: "identity", expected: ["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"], observed: Some([]), absent: [117] }
+[29] kind 13: I2cWitness { peripheral: "I2C1", reference: "U5", device: "i2c1.u5", step: "identity", expected: ["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"], observed: Some(["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"]), absent: [] }
+DEVICE U2 empty expected=["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"] observed=[] extra=[]
+DEVICE U5 equal expected=["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"] observed=["[NOISY] i2c1.u5: Write D0", "[NOISY] i2c1.u5: Read 60"] extra=[]
