@@ -387,7 +387,12 @@ jobs:
       # two tests D4 removed (campaign_tier1.rs: a_one_byte_change_to_the_trace_is_
       # a_hash_mismatch, an_extra_file_in_the_run_directory_is_refused) are tier 1,
       # outside the count.
-      TIER2_MIN: "190"
+      # 191 (AET-WO-4202; recomputed at its merge of main 52a2d62e, which
+      # held 190): one tier-2
+      # test, campaign_tier2.rs a_reset_on_an_instant_renode_would_run_short_
+      # boots_where_the_judge_places_it (RunFor's truncation, under 60 s, no
+      # weight row).
+      TIER2_MIN: "191"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
