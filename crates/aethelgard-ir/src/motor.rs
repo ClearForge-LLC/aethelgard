@@ -63,15 +63,54 @@ pub const DSHOT_BIT_TICKS: u64 = 8;
 /// The high ticks of a DShot `0` bit, of [`DSHOT_BIT_TICKS`].
 pub const DSHOT_ZERO_TICKS: u64 = 3;
 
-/// A PWM output's declared timing: its rate, and the pulse range an ESC
-/// reads, in microseconds. The firmware starts the output at the range's
-/// minimum, its idle pulse (`AET-WO-4300a` §1.3).
+/// A PWM output's declared timing: its rate, the pulse range its commands
+/// take, in microseconds, what it carries from `CEN` until the first command
+/// (`idle`), and its timer tick (`resolution_ps`). `idle` and
+/// `resolution_ps` are required on every PWM output from specification 22,
+/// with no default (`AET-WO-1211a`, `1211` Q4 and Q5 as ruled): the range
+/// bounds commands only, and `{"pulse_us": pulse_min_us}` with
+/// `resolution_ps` 1,000,000 restates what the firmware wrote before.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct PwmTiming {
     pub rate_hz: u32,
     pub pulse_min_us: u32,
     pub pulse_max_us: u32,
+    pub idle: Idle,
+    /// Picoseconds per timer tick: exact only at the kernel clock it is
+    /// judged at (`ResolutionNotDerivable`), so a change of clock re-judges
+    /// it (`1211` Q5, carried to `AET-WO-4240b`). Whole nanoseconds cannot
+    /// state the 64 MHz kernel's own tick, 15,625 ps.
+    pub resolution_ps: u64,
+}
+
+/// A logic level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Level {
+    Low,
+    High,
+}
+
+impl Level {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+        }
+    }
+}
+
+/// What a PWM output carries from `CEN` until its first command
+/// (`AET-WO-1211` §2.4): a held level, realised in PWM mode 1 by `CCR` 0
+/// (low) or `ARR + 1` (high) (RM0433 Rev 9 p. 1558), or a pulse of
+/// `pulse_us`, above 0 (`IdleSpelledTwice`: CCR 0 has one spelling,
+/// `{"level": "low"}`). Exactly one key.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
+pub enum Idle {
+    Level(Level),
+    PulseUs(u32),
 }
 
 /// One declared motor output. Every key is required (`INV-06`): `pin` is
@@ -639,21 +678,101 @@ crate::object_only!(
 /// Why the solver could not derive a timer's values for an output.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TimingError {
-    /// The kernel clock is not a whole number of MHz, so no prescaler gives
-    /// a 1 µs tick.
-    NoMicrosecondTick,
-    /// The period does not fit a 16-bit `ARR` at the tick.
+    /// `kernel × resolution_ps / 1e12` is not a whole number of kernel
+    /// cycles from 1 to 65,536, so no prescaler gives the declared tick.
+    ResolutionNotDerivable,
+    /// The period is not 3 to 65,536 ticks, or the shortest commanded pulse
+    /// is not at least 1 tick and 2 ticks short of the period.
     RateOutOfRange,
     /// The pulse range's maximum does not fit inside the period.
     PulseExceedsPeriod,
+    /// `pulse_min_us` or `pulse_max_us` is not a whole number of ticks.
+    PulseNotOnTick,
+    /// The idle pulse is not a whole number of ticks.
+    IdleNotOnTick,
+    /// The idle pulse is longer than the period.
+    IdleExceedsPeriod,
 }
+
+/// A PWM output's idle or tick refused (`AET-WO-1211a`, `1211` §2.4), each
+/// its own kind ([`PwmRefusal::kind`]), naming the output.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum PwmRefusal {
+    #[error(
+        "motor output `{output}`: idle `{{\"pulse_us\": 0}}` is CCR 0, which has one spelling, `{{\"level\": \"low\"}}` (`1211` Q4)"
+    )]
+    IdleSpelledTwice { output: String },
+    #[error(
+        "motor output `{output}`: resolution_ps {resolution_ps} is not a whole number of cycles from 1 to 65,536 of its {kernel_hz} Hz timer clock, so no prescaler gives it"
+    )]
+    ResolutionNotDerivable {
+        output: String,
+        resolution_ps: u64,
+        kernel_hz: u64,
+    },
+    #[error(
+        "motor output `{output}`: its pulse range, {min_us} to {max_us} us, is not a whole number of its {resolution_ps} ps ticks"
+    )]
+    PulseNotOnTick {
+        output: String,
+        min_us: u32,
+        max_us: u32,
+        resolution_ps: u64,
+    },
+    #[error(
+        "motor output `{output}`: its idle pulse, {pulse_us} us, is not a whole number of its {resolution_ps} ps ticks"
+    )]
+    IdleNotOnTick {
+        output: String,
+        pulse_us: u32,
+        resolution_ps: u64,
+    },
+    #[error(
+        "motor output `{output}`: its idle pulse, {pulse_us} us, is longer than its period at {rate_hz} Hz"
+    )]
+    IdleExceedsPeriod {
+        output: String,
+        pulse_us: u32,
+        rate_hz: u32,
+    },
+}
+
+impl PwmRefusal {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::IdleSpelledTwice { .. } => "IdleSpelledTwice",
+            Self::ResolutionNotDerivable { .. } => "ResolutionNotDerivable",
+            Self::PulseNotOnTick { .. } => "PulseNotOnTick",
+            Self::IdleNotOnTick { .. } => "IdleNotOnTick",
+            Self::IdleExceedsPeriod { .. } => "IdleExceedsPeriod",
+        }
+    }
+
+    /// The output it names.
+    pub fn output(&self) -> &str {
+        match self {
+            Self::IdleSpelledTwice { output }
+            | Self::ResolutionNotDerivable { output, .. }
+            | Self::PulseNotOnTick { output, .. }
+            | Self::IdleNotOnTick { output, .. }
+            | Self::IdleExceedsPeriod { output, .. } => output,
+        }
+    }
+}
+
+/// The picoseconds in one second.
+const PS_PER_S: u128 = 1_000_000_000_000;
 
 /// `PSC`, `ARR` and `CCR` for one output on a kernel clock of `kernel_hz`.
 ///
-/// - **PWM:** a 1 µs tick (`PSC = kernel / 1 MHz − 1`), the period the
-///   nearest whole tick count to `1 s / rate` (half up), so `ARR` is that
-///   less 1 (silicon counts `ARR + 1`), and `CCR` the idle pulse, the range's
-///   minimum, in ticks.
+/// - **PWM:** the declared tick (`PSC = kernel × resolution_ps / 1e12 − 1`,
+///   exact or refused), the period the nearest whole tick count to
+///   `1 s / rate` (half up), so `ARR` is that less 1 (silicon counts
+///   `ARR + 1`), and `CCR` the idle word: 0 for `low`, `ARR + 1` for `high`
+///   (RM0433 Rev 9 p. 1558: a compare value above the auto-reload value
+///   holds `OCxREF` at 1), or the idle pulse in ticks. The commanded range
+///   keeps its rule (at least 1 tick, and 2 ticks short of the period), and
+///   the idle word alone is free of it (`AET-WO-1211` §2.4).
 /// - **DShot:** `PSC` 0, the bit the nearest whole tick count to
 ///   `kernel / bit rate`, and a `0` bit's high time the nearest whole count
 ///   to 3/8 of it.
@@ -662,29 +781,55 @@ pub fn solve_timing(
     pwm: Option<&PwmTiming>,
     kernel_hz: u64,
 ) -> Result<(u32, u32, u32), TimingError> {
-    let half_up = |num: u64, den: u64| (2 * num + den) / (2 * den);
+    let half_up = |num: u128, den: u128| (2 * num + den) / (2 * den);
     let (psc, ticks, ccr) = match (protocol.bit_rate(), pwm) {
         (Some(bit_rate), _) => {
-            let ticks = half_up(kernel_hz, u64::from(bit_rate));
-            let ccr = half_up(ticks * DSHOT_ZERO_TICKS, DSHOT_BIT_TICKS);
+            let ticks = half_up(u128::from(kernel_hz), u128::from(bit_rate));
+            let ccr = half_up(ticks * u128::from(DSHOT_ZERO_TICKS), u128::from(DSHOT_BIT_TICKS));
+            if !(3..=0x1_0000).contains(&ticks) || ccr == 0 || ccr + 1 >= ticks {
+                return Err(TimingError::RateOutOfRange);
+            }
             (0, ticks, ccr)
         }
         (None, Some(p)) => {
-            if !kernel_hz.is_multiple_of(1_000_000) || kernel_hz == 0 {
-                return Err(TimingError::NoMicrosecondTick);
+            let res = u128::from(p.resolution_ps);
+            let cycles = u128::from(kernel_hz) * res;
+            if res == 0 || !cycles.is_multiple_of(PS_PER_S) || !(1..=0x1_0000).contains(&(cycles / PS_PER_S)) {
+                return Err(TimingError::ResolutionNotDerivable);
             }
-            let ticks = half_up(1_000_000, u64::from(p.rate_hz.max(1)));
-            if u64::from(p.pulse_max_us) >= ticks {
+            let ticks = half_up(PS_PER_S, u128::from(p.rate_hz.max(1)) * res);
+            if !(3..=0x1_0000).contains(&ticks) {
+                return Err(TimingError::RateOutOfRange);
+            }
+            let on_tick = |us: u32, e: TimingError| {
+                let ps = u128::from(us) * 1_000_000;
+                if ps.is_multiple_of(res) { Ok(ps / res) } else { Err(e) }
+            };
+            let min = on_tick(p.pulse_min_us, TimingError::PulseNotOnTick)?;
+            let max = on_tick(p.pulse_max_us, TimingError::PulseNotOnTick)?;
+            if max >= ticks {
                 return Err(TimingError::PulseExceedsPeriod);
             }
-            (kernel_hz / 1_000_000 - 1, ticks, u64::from(p.pulse_min_us))
+            // The commanded range keeps today's clause; the idle word is free of it.
+            if min == 0 || min + 1 >= ticks {
+                return Err(TimingError::RateOutOfRange);
+            }
+            let ccr = match p.idle {
+                Idle::Level(Level::Low) => 0,
+                Idle::Level(Level::High) => ticks,
+                Idle::PulseUs(us) => {
+                    let t = on_tick(us, TimingError::IdleNotOnTick)?;
+                    if t > ticks {
+                        return Err(TimingError::IdleExceedsPeriod);
+                    }
+                    t
+                }
+            };
+            (cycles / PS_PER_S - 1, ticks, ccr)
         }
         (None, None) => return Err(TimingError::RateOutOfRange),
     };
-    if !(3..=0x1_0000).contains(&ticks) || psc > 0xFFFF || ccr == 0 || ccr + 1 >= ticks {
-        return Err(TimingError::RateOutOfRange);
-    }
-    let narrow = |v: u64| u32::try_from(v).expect("at most 0xFFFF");
+    let narrow = |v: u128| u32::try_from(v).expect("at most 0x10000");
     Ok((narrow(psc), narrow(ticks - 1), narrow(ccr)))
 }
 
@@ -710,16 +855,16 @@ pub struct SiliconTiming {
     pub high_fastest_ps: u64,
     /// The declared period: `1 s / rate` for PWM, `1 s / bit rate` for DShot.
     pub nominal_period_ps: u64,
-    /// The declared high time: the idle pulse for PWM, 3/8 of a bit for
-    /// DShot's `0`.
+    /// The declared high time: the idle for PWM (0 for `low`, the period
+    /// for `high`, else the idle pulse), 3/8 of a bit for DShot's `0`.
     pub nominal_high_ps: u64,
     /// Every rule held, at the nominal clock only: the worst-case figures
     /// above do not enter `holds`. No source this repository holds gives a
     /// DShot or PWM receiver's timing tolerance, so whether a flight
     /// controller accepts these figures at HSI's extremes is the
     /// architect's question (`AET-WO-4230` §1.8), not a judgement made here. The rules: the period within half a tick of the
-    /// nominal; for PWM the high time exactly the idle pulse and the range's
-    /// maximum strictly inside the period; for DShot the high time within
+    /// nominal; for PWM the tick exactly `resolution_ps`, the high time exactly the
+    /// declared idle and the range's maximum strictly inside the period; for DShot the high time within
     /// half a tick of 3/8 of the nominal bit.
     pub holds: bool,
 }
@@ -771,14 +916,25 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
                 let rate = u128::from(p.rate_hz);
                 let period_ok =
                     rate > 0 && (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
-                // The idle pulse exactly: CCR·(PSC+1)/kernel = pulse_min µs.
-                let high_ok = ccr * psc1 * 1_000_000 == u128::from(p.pulse_min_us) * kernel;
+                // The declared tick exactly: (PSC+1)/kernel = resolution_ps.
+                let tick_ok = psc1 * PS_PER_S == u128::from(p.resolution_ps) * kernel;
+                // The declared idle exactly (`AET-WO-1211a`, `1211` §2.4): CCR 0
+                // for low, ARR + 1 for high (RM0433 Rev 9 p. 1558), else
+                // CCR·(PSC+1)/kernel = the idle pulse.
+                let (high_ok, nominal_high) = match p.idle {
+                    Idle::Level(Level::Low) => (ccr == 0, 0),
+                    Idle::Level(Level::High) => (ccr == arr1, PS_PER_S / rate.max(1)),
+                    Idle::PulseUs(us) => (
+                        ccr * psc1 * 1_000_000 == u128::from(us) * kernel,
+                        u128::from(us) * 1_000_000,
+                    ),
+                };
                 // The longest pulse fits: pulse_max µs < (ARR+1)(PSC+1)/kernel.
                 let max_ok = u128::from(p.pulse_max_us) * kernel < arr1 * psc1 * 1_000_000;
                 (
-                    period_ok && high_ok && max_ok,
-                    u64::try_from(1_000_000_000_000 / rate.max(1)).unwrap_or(u64::MAX),
-                    u64::from(p.pulse_min_us) * 1_000_000,
+                    period_ok && tick_ok && high_ok && max_ok,
+                    u64::try_from(PS_PER_S / rate.max(1)).unwrap_or(u64::MAX),
+                    u64::try_from(nominal_high).unwrap_or(u64::MAX),
                 )
             }
             (None, None) => (false, 0, 0),

@@ -21,6 +21,7 @@ pub mod motor;
 pub mod names;
 pub mod orientation;
 pub mod parts;
+pub mod pin_parts;
 pub mod power;
 pub mod power_parts;
 pub mod serial;
@@ -2160,6 +2161,10 @@ pub enum IrValidationError {
         output: String,
         reason: &'static str,
     },
+    /// Step 13b and step 21 (`AET-WO-1211a`): a PWM output's idle or tick;
+    /// the kind is the inner refusal's.
+    #[error("{0}")]
+    Pwm(motor::PwmRefusal),
     /// Step 21: as [`IrValidationError::MotorTiming`]. Every USART and UART
     /// has one kernel clock on the reset clock.
     #[error(
@@ -2362,6 +2367,7 @@ impl IrValidationError {
             Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
             Self::PinCapacitanceBelowTypical { .. } => "PinCapacitanceBelowTypical",
             Self::MotorTiming { .. } => "MotorTiming",
+            Self::Pwm(r) => r.kind(),
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
         }
@@ -2382,6 +2388,7 @@ impl IrValidationError {
             | Self::MissingSpiConstraint { bus, .. } => vec![bus.clone()],
             Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
             Self::MotorTiming { output, .. } => vec![output.clone()],
+            Self::Pwm(r) => vec![r.output().to_owned()],
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 vec![port.clone()]
             }
@@ -2546,6 +2553,7 @@ impl IrValidationError {
             | Self::PinCapacitanceBelowI2cCi { id, .. }
             | Self::PinCapacitanceBelowTypical { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
+            Self::Pwm(r) => Some(r.output()),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
             }
@@ -3847,6 +3855,9 @@ fn motor_shape(m: &MotorOutput) -> Result<(), IrValidationError> {
         (MotorProtocol::Pwm, Some(p)) => {
             if p.rate_hz == 0 {
                 return Err(E::ZeroMotorRate { id: id() });
+            }
+            if p.idle == motor::Idle::PulseUs(0) {
+                return Err(E::Pwm(motor::PwmRefusal::IdleSpelledTwice { output: id() }));
             }
             if p.pulse_min_us == 0 || p.pulse_min_us >= p.pulse_max_us {
                 return Err(E::PulseRange {

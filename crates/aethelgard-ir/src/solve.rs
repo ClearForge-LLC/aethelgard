@@ -105,6 +105,14 @@ pub enum SolveError {
         second: String,
     },
     #[error(
+        "motor outputs `{first}` and `{second}` can only be on timer `{timer}`, and their resolution_ps differs: the outputs of one timer share its tick"
+    )]
+    TimerResolutionConflict {
+        timer: String,
+        first: String,
+        second: String,
+    },
+    #[error(
         "{} cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)",
         quoted(.claimants)
     )]
@@ -192,6 +200,7 @@ impl SolveError {
             Self::NoAdcPin { .. } => "NoAdcPin",
             Self::NoTimerChannel { .. } => "NoTimerChannel",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
+            Self::TimerResolutionConflict { .. } => "TimerResolutionConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
             Self::SerialPinsSplit { .. } => "SerialPinsSplit",
             Self::NoSerialPeripheral { .. } => "NoSerialPeripheral",
@@ -226,7 +235,8 @@ impl SolveError {
             | Self::NoI2cTiming { bus, .. } => Some(bus),
             Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => Some(net),
             Self::NoTimerChannel { output, .. } => Some(output),
-            Self::TimerRateConflict { timer, .. } => Some(timer),
+            Self::TimerRateConflict { timer, .. }
+            | Self::TimerResolutionConflict { timer, .. } => Some(timer),
             Self::SerialPinsSplit { port, .. }
             | Self::NoSerialPeripheral { port, .. }
             | Self::SerialClock { port, .. } => Some(port),
@@ -259,7 +269,10 @@ impl SolveError {
             Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } => vec![output.clone()],
-            Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
+            Self::TimerRateConflict { first, second, .. }
+            | Self::TimerResolutionConflict { first, second, .. } => {
+                vec![first.clone(), second.clone()]
+            }
             Self::MotorsInfeasible { claimants } | Self::SerialPortsInfeasible { claimants } => {
                 claimants.clone()
             }
@@ -980,22 +993,60 @@ pub(crate) fn motor_timing(
     spec.motor_outputs
         .iter()
         .map(|m| {
-            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| IrValidationError::MotorTiming {
-                output: m.label.clone(),
-                reason: match e {
-                    TimingError::NoMicrosecondTick => {
-                        "the timer clock is not a whole number of MHz, so no prescaler gives a 1 us tick"
+            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| {
+                let output = m.label.clone();
+                let p = m.pwm.as_ref();
+                let res = p.map_or(0, |p| p.resolution_ps);
+                let tick = |reason| IrValidationError::MotorTiming {
+                    output: output.clone(),
+                    reason,
+                };
+                let pwm = |r| IrValidationError::Pwm(r);
+                match (e, p) {
+                    (TimingError::RateOutOfRange, _) => tick(
+                        "its period is not 3 to 65,536 ticks, or its shortest pulse is not at least 1 tick and 2 ticks short of the period",
+                    ),
+                    (TimingError::PulseExceedsPeriod, _) => tick(
+                        "its longest pulse does not fit inside the period the rate rounds to at its tick",
+                    ),
+                    (TimingError::ResolutionNotDerivable, _) => {
+                        pwm(motor::PwmRefusal::ResolutionNotDerivable {
+                            output,
+                            resolution_ps: res,
+                            kernel_hz: k1,
+                        })
                     }
-                    TimingError::RateOutOfRange => {
-                        "its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)"
+                    (TimingError::PulseNotOnTick, Some(p)) => pwm(motor::PwmRefusal::PulseNotOnTick {
+                        output,
+                        min_us: p.pulse_min_us,
+                        max_us: p.pulse_max_us,
+                        resolution_ps: res,
+                    }),
+                    (TimingError::IdleNotOnTick, Some(p)) => pwm(motor::PwmRefusal::IdleNotOnTick {
+                        output,
+                        pulse_us: idle_us(p),
+                        resolution_ps: res,
+                    }),
+                    (TimingError::IdleExceedsPeriod, Some(p)) => {
+                        pwm(motor::PwmRefusal::IdleExceedsPeriod {
+                            output,
+                            pulse_us: idle_us(p),
+                            rate_hz: p.rate_hz,
+                        })
                     }
-                    TimingError::PulseExceedsPeriod => {
-                        "its longest pulse does not fit inside the period the rate rounds to at a 1 us tick"
-                    }
-                },
+                    (_, None) => unreachable!("only a PWM output's timing names a tick"),
+                }
             })
         })
         .collect()
+}
+
+/// A pulse idle's length; 0 for a level, which no tick refusal names.
+fn idle_us(p: &motor::PwmTiming) -> u32 {
+    match p.idle {
+        motor::Idle::PulseUs(us) => us,
+        motor::Idle::Level(_) => 0,
+    }
 }
 
 /// Each I2C line's analog facts, copied from the specification (`AET-WO-2200`
@@ -1195,7 +1246,9 @@ struct Motor<'s, 't> {
     hand: Option<&'t str>,
     protocol: MotorProtocol,
     pwm: Option<&'s PwmTiming>,
-    key: (MotorProtocol, Option<u32>),
+    /// The timer-share key: outputs of one timer share its protocol, rate
+    /// and tick (`AET-WO-1211a`: `resolution_ps` joins it).
+    key: (MotorProtocol, Option<(u32, u64)>),
 }
 
 /// A timer channel on a pin: `(timer, channel, pin, af)`.
@@ -1346,7 +1399,7 @@ impl<'s, 't> Model<'s, 't> {
                 path,
                 protocol: m.protocol,
                 pwm: m.pwm.as_ref(),
-                key: (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz)),
+                key: (m.protocol, m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps))),
             });
         }
         let mut serial = Vec::new();
@@ -1561,6 +1614,14 @@ impl<'s, 't> Model<'s, 't> {
             for (b, second) in self.motors.iter().enumerate().skip(a + 1) {
                 if first.key != second.key && timers[a].len() == 1 && timers[a] == timers[b] {
                     let timer = timers[a].iter().next().expect("one timer");
+                    let rate = |k: &(MotorProtocol, Option<(u32, u64)>)| (k.0, k.1.map(|p| p.0));
+                    if rate(&first.key) == rate(&second.key) {
+                        return Err(SolveError::TimerResolutionConflict {
+                            timer: format!("TIM{timer}"),
+                            first: first.label.to_owned(),
+                            second: second.label.to_owned(),
+                        });
+                    }
                     return Err(SolveError::TimerRateConflict {
                         timer: format!("TIM{timer}"),
                         first: first.label.to_owned(),
@@ -1784,7 +1845,7 @@ struct Search<'m, 's, 't> {
     motor_chosen: Vec<Option<Channel<'t>>>,
     /// The timer channels taken, and each timer's shared key and outputs.
     channels_used: BTreeSet<(u32, u32)>,
-    timer_keys: BTreeMap<u32, ((MotorProtocol, Option<u32>), usize)>,
+    timer_keys: BTreeMap<u32, ((MotorProtocol, Option<(u32, u64)>), usize)>,
     /// The serial ports placed once every motor output is, in order.
     serial_active: Vec<usize>,
     /// Per serial port, its placement once placed.
