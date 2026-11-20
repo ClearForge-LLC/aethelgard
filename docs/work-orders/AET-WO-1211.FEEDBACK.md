@@ -1,7 +1,7 @@
 # AET-WO-1211 — FEEDBACK: a driver IC as a specification (design spike, STOPPED at §2 for the schema ruling)
 
 **Branch:** `wo/aet-1211-driver-ic-spike` from `main` `472d2d84`. **Builder:** Claude (Opus 5.5 orchestrating; four Sonnet readers, each report spot-checked at source before use). Written 2026-11-20.
-**Status: STOPPED for the schema ruling (§7).** Nothing is built: no crate, specification, `boards/`, `fab/`, workflow or `ci/` file changed. Everything is in `spike/1211/` and this file.
+**Status: STOPPED for the schema ruling (§7); RULED 2026-11-20T14:42Z, every lean taken (§8).** Nothing is built: no crate, specification, `boards/`, `fab/`, workflow or `ci/` file changed. Everything is in `spike/1211/` and this file.
 
 **The answer, in five lines:**
 - The proposal fits today's engine. With `idle` = `pulse_min_us` and `resolution_ps` = 1,000,000 stated on every PWM output, no solved word moves on any committed file (§3). A byte change to the specification moves only its hash lines; the ELF and every emitted board file stay byte-identical (measured).
@@ -29,7 +29,7 @@
 
 ## 1. The two fixtures (§1.2)
 
-`spike/1211/fixtures/make.py` writes both fixtures from the committed 4600 driver (`crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json`). It keeps that driver's MCU, board, console port and SWD connector unchanged and drops its acknowledgements, since a board's acknowledgements are learned from `verify`'s ledger and no ledger exists for an unbuilt schema. Every number carries its page in the script. `fixtures/parts-rows.json` holds the two parts rows they bind to (§2.1). `schema_version` is the string `"next-after-4240b"` on purpose: §5 does not pick a number.
+`spike/1211/fixtures/make.py` writes both fixtures from the committed 4600 driver (`crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json`). It keeps that driver's MCU, board, console port and SWD connector unchanged and drops its acknowledgements, since a board's acknowledgements are learned from `verify`'s ledger and no ledger exists for an unbuilt schema. Every number carries its page in the script. `fixtures/parts-rows.json` holds the two parts rows they bind to (§2.1). `schema_version` is the string `"22-or-23"` on purpose. As ruled, `1211a` takes 22, or 23 if `4240b` adds `startup_max_us` first (§5). **As ruled (§7), D2 is refused `PartLimitUndeclared` as written:** SLVSAR1E states no maximum input PWM frequency, so D2 has none to declare.
 
 **D1, `fixtures/d1-drv8876.json` (DRV8876PWPR, PH/EN mode).**
 - **Inputs:** `DRV_EN` and `DRV_PH` are channels of one timer, at 20 kHz, `resolution_ps` 15,625 (one 64 MHz kernel tick), idle `low`. EN = 0 is brake for any PH (Table 3 p. 11, row 2).
@@ -148,7 +148,7 @@ Both go **inside `pwm`**, so a DShot output (`pwm: null`) takes neither. DShot's
 
 **Choices.**
 - **Is `idle` required on every PWM output?** Yes (`INV-06`). Every committed specification must state it: **8 PWM outputs in 2 files**, and the 4 solved outputs of `svd-hal/tests/ui/motors-pwm/topology.json` (§3).
-- **`pulse_us: 0` and `level: low` both give CCR 0.**
+- **`pulse_us: 0` and `level: low` both give CCR 0.** *Ruled (Q4): `pulse_us: 0` is refused as `IdleSpelledTwice`.*
   - Option 1, accept both: the work order's wording.
   - Option 2 (lean): refuse `pulse_us` 0 as `IdleSpelledTwice`, naming `level: low`. One state then has one spelling in every verdict.
 - **Does `resolution_ps` replace whole-µs ticks for every PWM output?** Yes: it is required on every one, and 1,000,000 restates today's tick. **No solved word moves** (§3).
@@ -169,7 +169,7 @@ Both go **inside `pwm`**, so a DShot output (`pwm: null`) takes neither. DShot's
   - `mode` must match the strap (`BridgeModeStrapMismatch`: PMODE logic low is `ph_en`, logic high (VTIH ≥ 1.5 V, SLVSDS7B p. 5) is `in_in`, Hi-Z is independent half-bridges, which no bridge declares). It must also be a mode the row has.
 - **The other shape:** `pwm.bridge: {"pair": "<label>"}` on each of the two outputs. It duplicates the pair across two entries and cannot reach nSLEEP.
 
-**Choice: the rule, measured against the datasheets.**
+**Choice: the rule, measured against the datasheets.** *Ruled (Q3): option 2. **The work order's "never driven high together" is withdrawn as wrong for both parts**, on the table below.*
 
 | inputs | DRV8833 (SLVSAR1E Table 1 p. 9) | DRV8876 IN/IN (SLVSDS7B Table 4 p. 11) | DRV8876 PH/EN (Table 3 p. 11) |
 |---|---|---|---|
@@ -392,7 +392,7 @@ The stock platform is `platforms/cpus/stm32h753.repl` → `stm32h7.repl`, pinned
 
 ## 5. The split (§1.6)
 
-Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickoff for this work order says "`1210` holds 21, and `4240b` may take the next". The schema work order below therefore takes **the next free specification version after `4240b`'s**, and the solved version after `4240a`'s 13. This spike picks no number.
+Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickoff for this work order says "`1210` holds 21, and `4240b` may take the next". **Ruled:** `1211a` takes the next free version after `1210`'s 21. That is **22**, or **23** if `4240b` adds `startup_max_us` first. The architect writes `1211a` from this section. The schema work order below therefore takes **the next free specification version after `4240b`'s**, and the solved version after `4240a`'s 13. This spike picks no number.
 
 1. **`1211a`, IR and schema** (strong tier).
    - **Scope:** `pin_devices` with `signals`, `analog` and `bridges`; the parts rows (parts schema 11) for DRV8876PWPR and DRV8833PWPR; `pwm.idle` and `pwm.resolution_ps`; every refusal in §2; the solver (directional `gpio`, `adc_inputs` with a peripheral, the timer key); `check_silicon` judging idle. It also needs `hwdef` and `pincheck` to refuse the new nets by name (`GpioNotEmitted`; the direction read) rather than fail.
@@ -401,6 +401,7 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
      - `idle` and `resolution_ps` on the 8 PWM outputs;
      - the two solved topologies and the 4 Rust builders;
      - the version literals.
+   - **Note (Q5, ruled):** `resolution_ps` is exact only at the clock it is judged at. `4240b` re-judges every declared resolution when it moves the clock.
    - **Fence:** `crates/aethelgard-ir`, the fixtures and examples, and the **`boards/sentinel-01*` hash lines by the generator plus a re-dispatched package**, as `4240a`'s fence ruling had it.
    - **It also reaches every reader of `topology.gpio`'s new shape:** `svd-hal`, `twin`, `cli`, `eda`, `hwdef` and `pincheck`. Each gets a named refusal for a pin device until its work order lands (`PinDeviceNotGenerated`, `PinDeviceNotSimulated`, `PinDeviceNotDrawn`, `GpioNotEmitted`), on `HseNotGenerated`'s precedent (`4240a`).
    - **Against `1210`** (specification 21): `validate` refuses a part with no emitter arm on a specification that draws a board. Until `1211d` lands, a pin device is declared only on a specification that draws none. `1211a`'s fixtures must declare that, or `1211d` lands first.
@@ -445,29 +446,49 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
 
 ## 7. Stops, and what could not be cited
 
-**STOP:** the work order always stops at §2 for the schema ruling. Decisions Q1–Q10 are below (Q, so they do not collide with fixtures D1 and D2).
+**STOP:** the work order always stops at §2 for the schema ruling. Decisions Q1–Q10 are below (Q, so they do not collide with fixtures D1 and D2). **Ruled 2026-11-20T14:42Z** (§8).
 
 **NOT FOUND in a held maker's document.** Each is named, and none is filled from a distributor's copy.
-- DRV8833 maximum input PWM frequency. D2's 20 kHz is declared and not judged.
-- A recommended nFAULT pull-up value, on both parts (DRV8876 only an example, p. 19).
-- DRV8833 tSLEEP and minimum nSLEEP pulse; DRV8876 minimum nSLEEP reset pulse and minimum input pulse width.
-- A_IPROPI min/max (typical only).
-- An RM0433 "ODR before MODER" guarantee.
-- Which silicon revision (Y or V) the H753 carries, so DS12117's two ADC tables (Table 76 p. 166 rev Y; Tables 173/174 pp. 272, 276 rev V) both stand. The RAIN rule must take the narrower one or be declared.
+
+**The ruling** (§8): a row field with no held maker's source is not entered. Where a check needs such a value, the specification declares it with a citation (`RUL-14`), or `validate` refuses by name. Each value is listed below with the check that would need it.
+
+| value not found | the check that would need it | as ruled |
+|---|---|---|
+| DRV8833 maximum input PWM frequency | `InputRateAbovePart`: each bridge input's `rate_hz` against the part's maximum | not entered in the row. A specification declares it with a citation, or `validate` refuses `PartLimitUndeclared {part, input_pwm_max_hz}`. **D2 as written has no citable value, so it is refused by name.** That is the honest result for a part whose maker states no limit. D1's DRV8876 has one (100 kHz, p. 4) |
+| A recommended nFAULT pull-up value (both parts; DRV8876 gives only Figure 18's example, p. 19) | none. The specification declares the pull itself (Q1): D1 a 10 kΩ resistor, D2 the MCU's RPU. `PullOverDrive` needs only the row's IOD | not entered. No check needs it |
+| DRV8833 tSLEEP and minimum nSLEEP-low pulse; DRV8876 minimum nSLEEP reset pulse | a check on a sleep-then-wake sequence (re-latching straps, clearing a latched fault). No generator step sleeps after a wake today (§2.7 (a)) | not entered. Declared or refused when a step that needs it lands |
+| DRV8876 minimum input pulse width | the commanded range's `pulse_min_us` against the part's minimum. No run-time drive exists today (§2.5) | not entered. Declared or refused when a drive API lands |
+| A_IPROPI min/max (typical only) | `AdcFullScaleExceeded`. It is judged at the AERR band's worst edge, which **is** found (p. 6, in `parts-rows.json`), so no min/max is needed | not entered |
+| An RM0433 "ODR before MODER" guarantee | Kani's BSRR-before-MODER clause (`board.rs:4991–5005`), which cites the general statement (p. 534) | not needed |
+| Which silicon revision (Y or V) the H753 carries, so DS12117's two ADC tables (Table 76 p. 166 rev Y; Tables 173/174 pp. 272, 276 rev V) both stand | `AdcSourceImpedance` (RAIN against sampling time) | the rule takes the narrower table, or the specification declares the revision with a citation |
+
+**Finding, not fixed here (Q8):** today's sense rule lands `power.sense` on PF3, an ADC3-only pin (measured, §2.3). `1211a` solves `power.sense` into the ADC map with the ADC1/ADC3 choice.
 - **An internal contradiction:** SLVSAR1E Table 3 (p. 11) reports no nFAULT on UVLO, while §7.3.5.3 says nFAULT is driven low. Treat it as unspecified.
 
-## 8. Decisions for the ruling
+## 8. Decisions, as ruled
+
+The architect ruled every lean on 2026-11-20 at 14:42Z (`~/.cache/aet-bus/1211.md`), with the notes under each Q. The split in §5 is accepted as written.
 
 - **Q1 · GPIO and ADC on the device or the MCU?** **Lean: the device** (§2.2 shape A), following `cs` and the row semantics. Shape B is a top-level MCU list.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. GPIO and ADC signals sit on the device (shape A).
 - **Q2 · Bridge: owned by the device or a property of two outputs?** **Lean: the device** (§2.5), because D1's idle spans nSLEEP.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. The bridge is owned by the device.
 - **Q3 · The bridge rule.** The work order's "never driven high together" forbids brake on both parts, slow-decay drive on the DRV8833, and forward in PH/EN (§2.5 table). **Lean: the truth table as row data. A bridge input idles at a `level`, never a pulse (`BridgeIdlePulsed`), and the static idle tuple must be a non-driving row (`BridgeIdleDrives`); forbidden states are row data (empty for both parts); it judges idle only and nothing at run time.** Keep option 1 for a future discrete half-bridge-leg part.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. The truth table is row data. A bridge input idles at a `level`, never a pulse (`BridgeIdlePulsed`). The static idle tuple must be a non-driving row (`BridgeIdleDrives`). Forbidden states are row data, empty for both parts. The rule judges the idle state only. **The work order's "never driven high together" is withdrawn as wrong for both parts** (§2.5's table).
 - **Q4 · `idle`.** Inside `pwm`, required on every PWM output (8 committed). **`pulse_us: 0`:** accept (the work order) or refuse as `IdleSpelledTwice` (**lean**, one spelling per state).
+  - **RULED** (architect, bus 2026-11-20T14:42Z): `idle` sits inside `pwm` and is required on every PWM output, with no default (`INV-06`). **`pulse_us: 0` is refused as `IdleSpelledTwice`:** one spelling per state, so `{"level": "low"}` is the only way to say CCR 0.
 - **Q5 · `resolution`.** **`resolution_ps`**, required on every PWM output. 1,000,000 restates today, and no word moves. It joins the timer key. `4240b` must re-judge it at its clock.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. `resolution_ps` is required on every PWM output, and 1,000,000 restates today. It joins the timer key. `4240b` re-judges it at its clock, carried as a §5 note for `1211a`.
 - **Q6 · Row data.** **Lean: pins, kinds, levels, pulls, timing and truth tables in the parts row** (parts schema 11), because `validate` must read them. Symbols, footprints and passives go to 4600 D4's question for `1211d`.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. Pins, kinds, levels, pulls, timing and truth tables go in the parts row (parts schema 11). Symbols, footprints and passives go to `1211d` with 4600 D4's question.
 - **Q7 · D1's PH on a timer or a GPIO.** **Lean: allow both** inputs in a bridge.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): a bridge input may be a timer channel or a GPIO.
 - **Q8 · ADC peripheral choice.** **Lean: the solver chooses ADC1 or ADC3 and refuses an ADC2-only pin as `AdcUnmodelled`** unless it is pinned. `power.sense` is solved into the same map and stays in the power tree. Note that today's rule lands a sense on PF3 (ADC3-only) unchosen.
+  - **RULED** (architect, bus 2026-11-20T14:42Z): the solver chooses ADC1 or ADC3. An ADC2-only pin is refused as `AdcUnmodelled` unless the specification pins it, and a pinned one is judged `silicon-only` (Q10's reason). `power.sense` is solved into the same map. **Today's PF3 landing (ADC3-only) is a finding, not a fix here** (§7).
 - **Q9 · The pad before `start_outputs`.** **Lean: `motor_output_pupd` follows the idle** (down for low and pulse, up for high).
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. `motor_output_pupd` follows the idle: down for low and pulse, up for high.
 - **Q10 · Twin fidelity.** Renode holds idle high low for one period (H2), shows no pre-`CEN` level (O1), and ignores `MOE`/`CCxE` in forced modes (T4–T6). **Lean: judge static idle after one period, and record the window as an acknowledged `silicon-only` reason; do not patch Renode.**
+  - **RULED** (architect, bus 2026-11-20T14:42Z): as the lean. Static idle is judged after one period, and the window is recorded as an acknowledged `silicon-only` reason. Renode is not patched.
 
 ## 9. Gates, fence, reduction pass
 

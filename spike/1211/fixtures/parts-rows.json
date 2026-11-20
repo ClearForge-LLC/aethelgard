@@ -1,5 +1,5 @@
 {
-  "what": "AET-WO-1211 (a): the two parts rows the fixtures bind to, in the proposed parts-table shape (FEEDBACK \u00a72.1). Not a parts table: nothing reads this file. Every value cites the held maker's document by page; `typical` marks a value printed in the TYP column only, which the engine names as typical and never as a bound (RUL-19).",
+  "what": "AET-WO-1211 (a): the two parts rows the fixtures bind to, in the proposed parts-table shape (FEEDBACK \u00a72.1). Not a parts table: nothing reads this file. Every value cites the held maker's document by page; `typical` marks a value printed in the TYP column only, which the engine names as typical and never as a bound (RUL-19). A field with no held maker's source is not entered (the ruling of 2026-11-20T14:42Z): no null stands in for it.",
   "rows": [
     {
       "part": "DRV8876PWPR",
@@ -445,12 +445,10 @@
       },
       "timing": {
         "t_wake_max_us": 1000,
-        "t_sleep_max_us": null,
-        "input_pwm_max_hz": null,
         "page": "6, 7",
-        "not_found": [
-          "t_sleep (no tSLEEP in SLVSAR1E)",
-          "maximum input PWM frequency"
+        "not_entered": [
+          "t_sleep: no tSLEEP in SLVSAR1E",
+          "maximum input PWM frequency: none in SLVSAR1E; a specification declares one with a citation or validate refuses PartLimitUndeclared (ruled Q-NOT-FOUND, FEEDBACK \u00a77)"
         ]
       },
       "passives": [

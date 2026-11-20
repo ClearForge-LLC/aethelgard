@@ -1,5 +1,5 @@
 {
-  "schema_version": "next-after-4240b",
+  "schema_version": "22-or-23",
   "project_name": "drv8833-in-in",
   "mcu": {
     "part": "STM32H753ZITx",

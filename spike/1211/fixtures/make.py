@@ -18,8 +18,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 BASE = HERE.parents[2] / "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json"
-# Not a number on purpose: the version is the next free one after 4240b's (FEEDBACK §5).
-VERSION = "next-after-4240b"
+# Not a number on purpose: ruled, 1211a takes the next free version after 1210's 21, which is 22,
+# or 23 if 4240b adds startup_max_us first (FEEDBACK §5).
+VERSION = "22-or-23"
 
 
 def pwm(rate_hz, lo, hi, idle, resolution_ps):
@@ -121,7 +122,9 @@ def d2():
     # (protocol, rate, resolution) and would otherwise put all four on one. PA8/PA9 = TIM1_CH1/CH2 and
     # PC6/PC7 = TIM3_CH1/CH2: today's `solve` accepts exactly these pins (pins-check.json, FEEDBACK §1).
     # Idle low on both inputs: 00 is coast/fast decay (SLVSAR1E Table 1, p. 9).
-    # SLVSAR1E gives no maximum input PWM frequency (NOT FOUND, FEEDBACK §7): 20 kHz is declared, not judged.
+    # SLVSAR1E gives no maximum input PWM frequency (NOT FOUND, FEEDBACK §7). Ruled: the row enters none, and with
+    # no citable value to declare, `validate` refuses this fixture by name (PartLimitUndeclared). That is kept on
+    # purpose as the record of what the ruling does to a part whose maker states no limit.
     low = {"level": "low"}
     d["motor_outputs"] = [
         output("A_IN1", "PA8", pwm(20000, 1, 49, low, TICK_64MHZ_PS)),
