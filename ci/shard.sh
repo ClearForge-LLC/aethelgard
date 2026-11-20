@@ -11,6 +11,15 @@
 # Job steps (run from the repository root, inside the image; the cargo commands are the job's own):
 #   shard.sh plan OUT       list every test, assign them to the shards (ci/SHARDS), run the guard
 #   shard.sh run OUT K      run shard K's tests, then check the passes against the assignment
+# AET-WO-1911 §1.2, build once and test many (the cargo commands stay the shards' own; only where the build happens moves):
+#   shard.sh build          the `tools-build` job, in the image with the network: every test binary the shards run
+#   shard.sh pack DIR       on the runner: target/ (less incremental/) as DIR/target.tar.zst, and DIR/stamp binding it to
+#                           this checkout's tree, container/IMAGE and the archive's sha256
+#   shard.sh unpack DIR     on a shard's runner: refuse unless DIR/stamp names this checkout's tree, container/IMAGE and
+#                           the archive's sha256; date every checked-out file and directory 2000-01-01 so cargo reads the
+#                           build as fresh; extract. With every mtime the same, cargo cannot see content: the stamp's tree
+#                           is the stale-binary guard.
+#   plan and run refuse any `Compiling` line cargo prints before a test binary runs (compiled_in LOG): a shard compiles nothing.
 # Pure functions over files, each refusing with a message and a nonzero exit (INV-06):
 #   parse SUITE LOG                a `cargo test -- --list` log -> entries on stdout
 #   assign N WEIGHTS ENTRIES OUTDIR [BASE0 [COLOCATE [LOCKED]]]
@@ -46,8 +55,15 @@ DEFAULT_WEIGHT=0.05
 #     test from a shared-process run: tests that take a lock (board_tier2) read as their queue time.
 #  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
-#  4. ci/SHARDS stays 8 (Scotty, 2026-11-14). Rebalance with the block whole (ci/colocate.tsv), and
-#     check the plan with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds.
+#  4. ci/SHARDS is 12 (AET-WO-1911 §1.3, measured at 8, 12 and 16 shards, lone and three pull requests at once; ruled D1 by
+#     the architect on the builders' bus, 2026-11-19 22:10 UTC, for PR #242; it replaces Scotty's 2026-11-14 "stays 8"). When
+#     measured, before AET-WO-3303b's schedule split, the slowest shard from 11 up was one indivisible block (four_layer_fab_tier2,
+#     about 1,400 s), so 16 bought no wall time over 12 (31.6 min lone against 31.4). After the split that block is 582 s and the
+#     plan is balanced at every count (1911 FEEDBACK, F8), so whether 16 now pays is unmeasured. Each shard costs a job against the
+#     account's ceiling (consistent with 60 concurrent jobs; GitHub does not report it). Change the count only from a new
+#     measurement of the same kind. Rebalance with each block whole (ci/colocate.tsv), and check the plan
+#     with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds: a shard planned above the mean only because one
+#     indivisible block alone exceeds the mean is the floor, not an imbalance.
 #  5. (AET-WO-4300b, architect's ruling on PR #152, comment 6903399822, Q10.) A CPU-heavy test (Kani, verify,
 #     board_tier2, the colocated blocks, twin_tier2's timing test) is weighed at its WORST IN-SHARD time over the
 #     measured normal runs, not its alone time: cargo runs test binaries one after another and a binary's tests in
@@ -56,10 +72,7 @@ DEFAULT_WEIGHT=0.05
 #     CPU-heavy test is its `ok` timestamp less its binary's `Running` line (an upper bound).
 #     The clause: plan every shard's test step at or under 1006 s, and the head's final run green with every shard
 #     under 20 min; if one shard is over while the plan holds, ONE re-run of the same head decides; a shard over on
-#     both runs is real and needs a refit. MEASURED (runs 43771580225, 43774296207): the in-shard weights total about
-#     8,368 s against 8 x 1,006 = 8,048 s, so NO 8-shard plan fits the 1,006 s line (assign plans 1,046 s per shard).
-#     INTERIM ruling (architect, 2026-11-16 01:20 UTC): keep 8 shards with these weights (about 1,046 s planned) and
-#     judge by the measurement clause alone; ci/SHARDS 9 (planned 930-947 s) is put to Scotty, not set here.
+#     both runs is real and needs a refit.
 
 die() { echo "shard: $*" >&2; exit 1; }
 readable() { [ -r "$1" ] || die "cannot read $1"; }
@@ -295,29 +308,82 @@ aggregate() {
 
 FEATURES=(--locked --offline --features aethelgard-cli/with-tools)
 BRIDGE=(--manifest-path bridge/Cargo.toml --locked --offline)
+# The archive's epoch (AET-WO-1911): every checked-out path's mtime on a shard, older than any build.
+EPOCH=946684800
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # The binaries whose tests serialise on one lock (ONE_AT_A_TIME, RENODE_TURN): every test of one carries a weight row (AET-WO-1910 D6).
 LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.rs tests/twin_tier2.rs'
-# Fixed work shard 0 does besides tests (bridge fmt + clippy), in seconds, measured on CI: the two steps took 25 s.
-BASE0=${SHARD0_FIXED_SECONDS:-25}
+# Fixed work shard 0 does besides tests (the in-image cargo fmt and clippy), in seconds, measured on CI: 30-37 s over the four
+# 12-shard runs of AET-WO-1911 (44585686986, 44605214137, 44605212605, 44605218028), weighed at the worst.
+BASE0=${SHARD0_FIXED_SECONDS:-37}
+
+# compiled_in LOG: the `Compiling` lines cargo printed before the first test binary ran (a tool a test runs may print
+# its own later); none on a shard.
+compiled_in() {
+  readable "$1"
+  awk '{ gsub(/\033\[[0-9;]*[A-Za-z]/, "") } /^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
+    && return 0
+  die "$1: this shard compiled; it must run the tools-build job's binaries (a stale or partial archive?)"
+}
+
+# The build the shards share: what `plan` and `run` invoke, so each finds every unit fresh.
+build_all() {
+  local net=${1:-}
+  cargo test --workspace --locked $net --features aethelgard-cli/with-tools --no-run
+  cargo build --manifest-path bridge/Cargo.toml --locked $net
+  cargo test --manifest-path bridge/Cargo.toml --locked $net --no-run
+}
+
+stamp() {
+  # A checkout with any change or untracked file is not the tree its hash names (adversarial C4).
+  [ -z "$(git status --porcelain --untracked-files=all)" ] || die "the checkout is not clean: $(git status --porcelain --untracked-files=all | head -3 | tr '\n' ' ')"
+  printf 'tree=%s\nimage=%s\n' "$(git rev-parse 'HEAD^{tree}')" "$(tr -d '[:space:]' <"$here/../container/IMAGE")"
+}
+
+pack() {
+  local dir=$1
+  mkdir -p "$dir"
+  [ -d target/debug ] || die "no target/debug to pack"
+  tar -cf - --exclude=target/debug/incremental --exclude=target/ci-shard target | zstd -q -T0 -3 -o "$dir/target.tar.zst" \
+    || die "packing target/ failed"
+  { stamp; printf 'sha256=%s\n' "$(sha256sum "$dir/target.tar.zst" | cut -d' ' -f1)"; } >"$dir/stamp"
+  cat "$dir/stamp"; ls -l "$dir/target.tar.zst"
+}
+
+unpack() {
+  local dir=$1 want got sum
+  readable "$dir/stamp"; readable "$dir/target.tar.zst"
+  [ ! -e target ] || die "target/ exists before the archive is unpacked"
+  want=$(grep -v '^sha256=' "$dir/stamp"); got=$(stamp)
+  [ "$want" = "$got" ] || die "the archive was built from another tree or image: archive [$(tr '\n' ' ' <<<"$want")], this checkout [$(tr '\n' ' ' <<<"$got")]"
+  sum=$(sha256sum "$dir/target.tar.zst" | cut -d' ' -f1)
+  [ "sha256=$sum" = "$(grep '^sha256=' "$dir/stamp")" ] || die "the archive's sha256 $sum is not its stamp's"
+  find . -path ./.git -prune -o -print0 | xargs -0 touch -h -d "@$EPOCH"
+  zstd -q -dc "$dir/target.tar.zst" | tar -xf - || die "unpacking the archive failed"
+  echo "unpacked: $(tr '\n' ' ' <"$dir/stamp")"
+}
 
 plan() {
   local out=$1 n
   n=$(tr -d '[:space:]' <"$here/SHARDS")
   case $n in '' | *[!0-9]* | 0) die "ci/SHARDS must hold a positive integer" ;; esac
+  # The shared build, found fresh (AET-WO-1911 §1.2): the commands it ran, offline, compile nothing.
+  build_all --offline >"$out/fresh.log" 2>&1 || { cat "$out/fresh.log"; die "the shared build is not usable offline"; }
+  compiled_in "$out/fresh.log"
   # stderr carries the `Running` lines the parser needs; both streams, in order.
   cargo test --workspace "${FEATURES[@]}" -- --list >"$out/list-ws.log" 2>&1 \
     || { cat "$out/list-ws.log"; die "the workspace test list failed"; }
   cargo test "${BRIDGE[@]}" -- --list >"$out/list-bridge.log" 2>&1 \
     || { cat "$out/list-bridge.log"; die "the bridge test list failed"; }
+  compiled_in "$out/list-ws.log"; compiled_in "$out/list-bridge.log"
   { parse ws "$out/list-ws.log"; parse bridge "$out/list-bridge.log"; } >"$out/entries.tsv"
   assign "$n" "$here/test-weights.tsv" "$out/entries.tsv" "$out" "$BASE0" "$here/colocate.tsv" "$LOCKED"
   guard "$n" "$out/entries.tsv" "$out"
 }
 
 run() {
-  local out=$1 k=$2 shard="$1/shard-$2.tsv" ws br status=0
+  local out=$1 k=$2 shard="$1/shard-$2.tsv" ws br status=0 log
   readable "$shard"
   cp "$shard" "$out/shard.tsv"
   rm -f "$out/test-ws.log" "$out/test-bridge.log" "$out/result.txt"
@@ -336,15 +402,18 @@ run() {
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
+  for log in "$out/test-ws.log" "$out/test-bridge.log"; do [ ! -e "$log" ] || compiled_in "$log"; done
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
 
-cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run ...}
+cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run|build|pack|unpack ...}
 shift
 case $cmd in
   parse | assign | guard | names | result | aggregate | tally | heavy_unweighted) "$cmd" "$@" ;;
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
+  build) build_all ;;
+  pack | unpack | compiled_in) "$cmd" "$@" ;;
   *) echo "usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run" >&2; exit 2 ;;
 esac
