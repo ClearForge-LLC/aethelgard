@@ -45,7 +45,7 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "26b203a32394ac9ad86d7f8a3ad13c7ac45a0efc07a605d1b77e661f1c016d47",
+  "verdict_sha256": "19b9cb05cc3a197e2ba1e8f2c46c9d0373d89f30ca91cca6f405dae82155b856",
   "files": {
     "FAB-NOTES.md": "99ef3bc6aa42444c047cc6b56bd226a50974877c355788c2ecada2dd3129a2ef",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
@@ -62,6 +62,6 @@
     "sentinel-01-bench-pos.csv": "185a6db011b3757aa74897c1c618bc197273b4cf06a8cb4b87c06f2166414c19",
     "sentinel-01-bench.bom.csv": "a0ff99dd7d61429f63d2f199cf3444d70c6cbc1b3a09771f3fa07621bc11747f",
     "sentinel-01-bench.drl": "099e9665d894813e1308cf755ab1afffdcd7b257a3e1a66ce2f4775be87ce2c8",
-    "sentinel-01-bench.elf": "e4e24372ef2d4bb4cd2e8a3d79b616a1bedefec285d88aa92ef3e5ce1d496f11"
+    "sentinel-01-bench.elf": "f3e871bb4a16678a77ac1b81bf2f9b53e463b3c9aee435dd45010a1fde7452c4"
   }
 }

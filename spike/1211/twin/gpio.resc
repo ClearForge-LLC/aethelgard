@@ -1,0 +1,37 @@
+include @/repo/spike/1211/twin/common.resc
+echo "G0 GPIOA_MODER at reset (silicon RM0433 reset 0xABFFFFFF)"
+sysbus ReadDoubleWord 0x58020000
+echo "G0 GPIOC_MODER at reset (silicon 0xFFFFFFFF)"
+sysbus ReadDoubleWord 0x58020800
+# RCC_AHB4ENR: GPIOA..GPIOK clocks on.
+sysbus WriteDoubleWord 0x580244E0 0x000007FF
+echo "G1 PC0: BSRR set before MODER=output; IDR then ODR (MODER still reset)"
+sysbus WriteDoubleWord 0x58020818 0x00000001
+sysbus ReadDoubleWord 0x58020810
+sysbus ReadDoubleWord 0x58020814
+sysbus WriteDoubleWord 0x58020800 0x00000001
+echo "G1 PC0 after MODER=output: IDR"
+sysbus ReadDoubleWord 0x58020810
+echo "G2 PC1 input, PUPDR pull-up (01), nothing drives it: PUPDR then IDR"
+sysbus WriteDoubleWord 0x5802080C 0x00000004
+sysbus ReadDoubleWord 0x5802080C
+sysbus ReadDoubleWord 0x58020810
+echo "G3 PC2 input driven by the script: OnGPIO 2 true, IDR; OnGPIO 2 false, IDR"
+gpioPortC OnGPIO 2 true
+sysbus ReadDoubleWord 0x58020810
+gpioPortC OnGPIO 2 false
+sysbus ReadDoubleWord 0x58020810
+echo "G4 PC3 output, ODR bit 3 set, then the script drives it low: ODR, IDR"
+sysbus WriteDoubleWord 0x58020800 0x00000041
+sysbus WriteDoubleWord 0x58020818 0x00000008
+sysbus ReadDoubleWord 0x58020814
+gpioPortC OnGPIO 3 false
+sysbus ReadDoubleWord 0x58020814
+sysbus ReadDoubleWord 0x58020810
+echo "G5 OTYPER: write 0x0004 (PC2 open drain), read back"
+sysbus WriteDoubleWord 0x58020804 0x00000004
+sysbus ReadDoubleWord 0x58020804
+echo "G6 virtual time runs: 1 ms, then PC0..PC3 IDR"
+emulation RunFor "0.001"
+sysbus ReadDoubleWord 0x58020810
+echo "GPIO-END"

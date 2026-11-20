@@ -1,0 +1,20 @@
+include @/repo/spike/1211/twin/common.resc
+# RCC_AHB4ENR ADC3EN (bit 24) with the GPIO ports; RCC_AHB1ENR ADC12EN (bit 5).
+sysbus WriteDoubleWord 0x580244E0 0x010007FF
+sysbus WriteDoubleWord 0x580244D8 0x00000020
+echo "A5 ADC3 (stock adc3 at 0x58026000): PF3 = ADC3_INP5 (DS12117 p65); set 0.825 V, enable, PCSEL 5, SQ1 5, ADSTART, DR"
+adc3 SetVoltage 825000 5
+sysbus WriteDoubleWord 0x58026008 0x10000000
+sysbus WriteDoubleWord 0x58026008 0x10000001
+sysbus WriteDoubleWord 0x5802601C 0x00000020
+sysbus WriteDoubleWord 0x58026030 0x00000140
+sysbus WriteDoubleWord 0x58026008 0x10000005
+emulation RunFor "0.001"
+sysbus ReadDoubleWord 0x58026000
+sysbus ReadDoubleWord 0x58026040
+echo "A6 ADC2 (RM0433: ADC2 at 0x40022100, inside adcM1S2's window): write ADC2_CR 0x10000000, read ADC2_CR, ADC2_ISR, ADC1_CR"
+sysbus WriteDoubleWord 0x40022108 0x10000000
+sysbus ReadDoubleWord 0x40022108
+sysbus ReadDoubleWord 0x40022100
+sysbus ReadDoubleWord 0x40022008
+echo "ADC23-END"

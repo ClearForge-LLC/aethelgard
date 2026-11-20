@@ -211,15 +211,21 @@ fn digests() -> Vec<(&'static str, String)> {
 /// text, `main.rs` and the two platforms are `f443af76…2c3a`,
 /// `b57442b4…e5e9` and `455de730…7a7c` exactly, the digests before
 /// (measured); the boot image did not move.
-/// Moved by `AET-WO-1210` (specification 21, renumbered after `4240a`):
-/// with the version-20 document's sha256 (`ccc80f11…e8b2`) put back for the
-/// new (`3dc38592…f2d1`) in each text, `main.rs` and the two platforms are
-/// `3a09d043…ad50`, `bb101271…ebdb` and `26e266be…4fca` exactly, the digests
-/// before (measured); the boot image did not move.
+/// Then moved again by `AET-WO-4241` (the architect's D3), on purpose: `main.rs`
+/// gains U3's identity read (the TMP117, which the twin has no model for)
+/// after every modelled read and before the boot word, and the boot image
+/// gains U3's record, placed after every check's; the two platforms did not
+/// move (measured).
+/// Moved by `AET-WO-1210` (specification 21, renumbered after `4240a`), on
+/// top of `4241`'s move: with the version-20 document's sha256
+/// (`ccc80f11…e8b2`) put back for the new (`3dc38592…f2d1`) in each text,
+/// `main.rs` and the two platforms are `a95a1bb6…f918`, `bb101271…ebdb` and
+/// `26e266be…4fca` exactly, the digests before (measured); the boot image
+/// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "7417bff312f947c6b9b32c1542d4318ee131065ea6eebfe8afa932d486bdacc2",
+        "9e852499d8dcbe28a4a68d3a732a7f5916c3c96d2bf747cb274e479b42c88a06",
     ),
     (
         "platform",
@@ -231,7 +237,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "45865bbd466aa31db6b8cd4a7d97fa1273992d69ac8823189347e4190d5dc0de",
+        "221f6b5975901f30fb5dd12e0ccdad3ad7fc4d8626745923b33e356fb2976d70",
     ),
 ];
 

@@ -35,7 +35,7 @@ const PWR_POLLS: u32 = 1000000;
 // The boot word, the brown-out word, then one record per identity read: the
 // status, then the value (`aethelgard_twin::boot`, `RECORD_OFFSET`). One array,
 // so the first word is the boot word whatever the linker orders.
-static mut AETHELGARD_BOOT: [u32; 6] = [0; 6];
+static mut AETHELGARD_BOOT: [u32; 8] = [0; 8];
 
 /// What a record holds when the read finished: the judge's constants,
 /// `aethelgard_twin::boot::STATUS_*`.
@@ -227,6 +227,19 @@ extern "C" fn main() -> ! {
         Err(SpiError::Length) => (RECORD_UNSET, RECORD_UNSET),
     };
     record(1, status, value);
+    let mut buf2 = [0u8; 2];
+    let (status, value) = match i2c1.transfer(&mut r, 0x48, &[0x0f], &mut buf2) {
+        Ok(_) => (
+            STATUS_OK,
+            buf2.iter().fold(0u32, |v, &b| (v << 8) | u32::from(b)),
+        ),
+        Err(I2cError::Txis) => (STATUS_TXIS, 0),
+        Err(I2cError::Tc) => (STATUS_TC, 0),
+        Err(I2cError::Rxne) => (STATUS_RXNE, 0),
+        Err(I2cError::Stop) => (STATUS_STOP, 0),
+        Err(I2cError::Length) => (RECORD_UNSET, RECORD_UNSET),
+    };
+    record(2, status, value);
     // SAFETY: a word only this line writes, in RAM the linker script placed.
     unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_MAGIC) };
     for _ in 0..FRAME_LEN {

@@ -1716,7 +1716,71 @@ pub fn build(topology: &SolvedTopology, table: &PinTable) -> Result<Ledger, Ledg
 pub fn twin_limits(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
     let mut rows = wait_rows(topology)?;
     rows.extend(model_rows(topology));
+    rows.extend(identity_rows(topology)?);
     Ok(rows)
+}
+
+/// Each identity read the firmware makes of a device the twin has no model
+/// for (`AET-WO-4241`): `IDENTITY`, `silicon-only`. The firmware reads it
+/// because the specification declares the device; no model answers it, so
+/// every boot names it `identity_not_witnessable`, neither a pass nor a
+/// failure, and only the bench reads the part's value. The device is
+/// unmodelled exactly when the judge says so ([`aethelgard_twin::model::kind`]),
+/// from the parts table, never from the firmware (`INV-07`).
+fn identity_rows(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
+    let parts = aethelgard_ir::parts::table().map_err(|e| LedgerError::Fields(e.to_string()))?;
+    let devices = topology
+        .i2c_devices_in_order()
+        .into_iter()
+        .map(|(r, d)| {
+            (
+                r,
+                &d.part,
+                format!("{} at I2C address {:#04x}", d.peripheral, d.address),
+            )
+        })
+        .chain(
+            topology
+                .spi_devices_in_order()
+                .into_iter()
+                .map(|(r, d)| (r, &d.part, format!("on {}", d.peripheral))),
+        );
+    let mut out = Vec::new();
+    for (reference, part, wire) in devices {
+        let unmodelled = aethelgard_twin::model::kind(part)
+            .map_err(|e| LedgerError::Fields(e.to_string()))?
+            .is_none();
+        let Some(id) = parts.get(part).filter(|_| unmodelled).map(|p| &p.identity) else {
+            continue;
+        };
+        let wrote: Vec<String> = id.write.iter().map(|b| format!("{b:#04x}")).collect();
+        out.push(LedgerRow {
+            id: format!("IDENTITY.{reference}"),
+            family: "IDENTITY".into(),
+            register: String::new(),
+            field: reference.to_owned(),
+            pos: 0,
+            width: id.width,
+            access: "none",
+            value: Some(id.value),
+            class: Class::SiliconOnly,
+            judge: format!(
+                "not witnessable in the twin (AET-WO-4241): Renode {} has no {part} model, so no device answers the read; every boot names it identity_not_witnessable, never a pass and never a failure",
+                aethelgard_twin::platform::RENODE_VERSION
+            ),
+            note: format!(
+                "{reference} ({part}) {wire}: the firmware writes {} and reads {} byte(s), which the part table says hold {:#x} under mask {:#x}; only the bench reads it. The read comes after every modelled step, so no modelled record's place moves; in the twin it waits out the firmware's bounded wait, which silicon does not, so the boot word and every later instant are later in the twin (each boot's verdict measures it: boot.not_witnessable)",
+                wrote.join(" "),
+                id.width,
+                id.value,
+                id.mask
+            ),
+            acknowledged: None,
+            reason: None,
+            address: None,
+        });
+    }
+    Ok(out)
 }
 
 /// `AET-WO-4230` R5: each motor-output pin's `PUPDR` field is the

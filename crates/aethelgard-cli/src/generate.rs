@@ -143,8 +143,9 @@ pub fn tree(
         .then(|| aethelgard_eda::schematic::emit(spec, topology, table))
         .transpose()
         .map_err(GenerateError::Emit)?;
-    // The devices are the topology's; the firmware reads the ones the twin can
-    // answer for, and the platform declares the same ones (`AET-WO-2202`).
+    // The devices are the topology's; the firmware reads every one's identity,
+    // and a scripted part's further steps only where the twin can answer
+    // them, as the platform declares (`AET-WO-2202`, `AET-WO-4241`).
     let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
     let board =
         aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
