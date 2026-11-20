@@ -9,8 +9,8 @@
 //! every clock itself from a [`SolvedClock`]'s fields, in exact integers
 //! (`u128`, no floating point). The kernel clocks at reset are
 //! [`crate::silicon`]'s reading of the selects, and the fastest frequency is
-//! its HSI deviation ([`silicon::fast_hz`]): that module is the other
-//! independent rule, never the solver.
+//! the clock source's ([`SolvedClock::budget`], [`crate::clock`]), never the
+//! solver's.
 //!
 //! **The supply words.** [`cr3_supply_bits`] and [`D3CR_VOS_SCALE2`] are
 //! written here from RM0433, so the Kani oracle, the twin's `PwrRule` and
@@ -450,7 +450,7 @@ const TABLE_17: [(Vos, &[FlashRow]); 4] = [
 /// within: the table states the delay programming needs, and this firmware
 /// never programs the flash (inferred, `AET-WO-4240v` FEEDBACK).
 pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
-    let hclk_fastest_hz = silicon::fast_hz(hclk(clock).unwrap_or(0));
+    let hclk_fastest_hz = clock.budget().fastest_hz(hclk(clock).unwrap_or(0));
     let latency = FLASH_ACR_RESET & 0xF;
     let wrhighfreq = (FLASH_ACR_RESET >> 4) & 0b11;
     let needed = TABLE_17
@@ -500,7 +500,26 @@ impl Verdict {
 /// its fastest.
 pub fn judge_generated(t: &SolvedTopology) -> Verdict {
     let (clocks, unread) = generated_clocks(t);
-    let clocks = judge(t.clock.vos, &clocks, hsi_fastest);
+    // The SPI kernels are `per_ck`/`hsi_ker_ck`, the HSI whatever the system
+    // clock (`AET-WO-4240a` D-9), so they are judged at the HSI's fastest;
+    // every other clock at the tree's source's (adversarial A5).
+    let budget = t.clock.budget();
+    let spi = |c: &Clock| matches!(c.family, Family::Spi123 | Family::Spi45 | Family::Spi6);
+    let clocks: Vec<Judged> = clocks
+        .iter()
+        .map(|c| {
+            let b = if spi(c) {
+                crate::clock::Budget::HSI
+            } else {
+                budget
+            };
+            judge(t.clock.vos, std::slice::from_ref(c), |hz| {
+                Some(b.fastest_hz(hz))
+            })
+            .pop()
+            .expect("one clock judged")
+        })
+        .collect();
     let conditions = judged_a_bus(&clocks)
         .then_some(BUS_LIMITS_REV_V)
         .into_iter()

@@ -60,7 +60,98 @@ pub struct Elf {
     pub functions: Vec<String>,
     /// More `STT_OBJECT`s by name and address (an `SD<n>` beyond `SD1`).
     pub objects: Vec<(String, u32)>,
+    /// `AP_SerialManager::var_info` (`AET-WO-4405`): its rows, after the
+    /// serial table in the same section, each name a string after them;
+    /// `None` leaves the symbol out.
+    pub var_info: Option<Vec<VarRow>>,
+    /// The `var_info` symbol's size, if not 16 bytes per row.
+    pub var_info_size: Option<u32>,
+    /// Bytes after the `var_info` names, the last flashed (no NUL added).
+    pub tail: Vec<u8>,
+    /// A fifth section, writable `PROGBITS` at [`RAM`] that no `PT_LOAD`
+    /// flashes, holding these bytes (a `var_info` name in RAM).
+    pub ram: Option<Vec<u8>>,
 }
+
+/// Where [`Elf::ram`]'s section runs.
+pub const RAM: u32 = 0x2400_0000;
+
+/// One synthetic `AP_Param::GroupInfo` (`AP_Param.h:206-218`).
+#[derive(Clone, Debug)]
+pub struct VarRow {
+    pub name: String,
+    pub offset: u32,
+    /// The union's bits: a float default.
+    pub value: u32,
+    pub flags: u16,
+    pub idx: u8,
+    pub kind: u8,
+    /// Where the name pointer points, if not at the row's own string.
+    pub name_at: Option<u32>,
+}
+
+/// A row as `AP_GROUPINFO` writes it: no flags, `default` a float.
+pub fn var_row(name: &str, kind: u8, default: f32) -> VarRow {
+    VarRow {
+        name: name.to_owned(),
+        offset: 0,
+        value: default.to_bits(),
+        flags: 0,
+        idx: 0,
+        kind,
+        name_at: None,
+    }
+}
+
+/// `AP_GROUPEND` (`AP_Param.h:170`).
+pub fn group_end() -> VarRow {
+    VarRow {
+        idx: 0xff,
+        ..var_row("", 0, 0.0)
+    }
+}
+
+/// One port's `(protocol, baud, options)` as `var_info` holds them, the baud
+/// before `map_baudrate`; options `None` for SERIAL0.
+pub type Port = (i8, i32, Option<i32>);
+
+/// `var_info` as the tag's source orders it (`AP_SerialManager.cpp:164-400`)
+/// for `ports`, SERIAL0 first: `0_BAUD`, `0_PROTOCOL`; `n_PROTOCOL`, `n_BAUD`
+/// for 1 to 6; `n_OPTIONS` for 1 to 6; the three pass-through rows; then
+/// `n_PROTOCOL`, `n_BAUD`, `n_OPTIONS` for 7 to 9; and `AP_GROUPEND`.
+pub fn var_info(ports: &[Port]) -> Vec<VarRow> {
+    let (int8, int32) = (1, 3);
+    let mut rows = Vec::new();
+    let options =
+        |n: usize, o: Option<i32>| var_row(&format!("{n}_OPTIONS"), int32, o.unwrap() as f32);
+    for (n, &(protocol, baud, _)) in ports.iter().enumerate().take(7) {
+        if n == 0 {
+            rows.push(var_row("0_BAUD", int32, baud as f32));
+            rows.push(var_row("0_PROTOCOL", int8, f32::from(protocol)));
+        } else {
+            rows.push(var_row(&format!("{n}_PROTOCOL"), int8, f32::from(protocol)));
+            rows.push(var_row(&format!("{n}_BAUD"), int32, baud as f32));
+        }
+    }
+    for (n, &(.., o)) in ports.iter().enumerate().take(7).skip(1) {
+        rows.push(options(n, o));
+    }
+    rows.push(var_row("_PASS1", int8, 0.0));
+    rows.push(var_row("_PASS2", int8, -1.0));
+    rows.push(var_row("_PASSTIMO", int8, 15.0));
+    for (n, &(protocol, baud, o)) in ports.iter().enumerate().skip(7) {
+        rows.push(var_row(&format!("{n}_PROTOCOL"), int8, f32::from(protocol)));
+        rows.push(var_row(&format!("{n}_BAUD"), int32, baud as f32));
+        rows.push(options(n, o));
+    }
+    rows.push(group_end());
+    rows
+}
+
+/// `var_info` with SERIAL0 alone, MAVLink 2 at `115200/1000`: sentinel-01's,
+/// measured (`spike/4405`). [`Elf::default`] holds no `var_info`, so the
+/// GPIO tests' section is the GPIO image alone.
+pub const SERIAL0_ONLY: [Port; 1] = [(2, 115, None)];
 
 /// Step G's registers as the `4400` spike decoded them by hand (FEEDBACK §5):
 /// GPIOA `MODER` `0x0000A801` (PA0 output, PA5–PA7 alternate) on AF5; PB6 and
@@ -117,6 +208,10 @@ impl Default for Elf {
             serial: None,
             functions: Vec::new(),
             objects: Vec::new(),
+            var_info: None,
+            var_info_size: None,
+            tail: Vec::new(),
+            ram: None,
         }
     }
 }
@@ -159,6 +254,27 @@ impl Elf {
                 data.extend_from_slice(e);
             }
         }
+        let var_at = ADDR + data.len() as u32;
+        if let Some(rows) = &self.var_info {
+            let names_at = var_at + 16 * rows.len() as u32;
+            let (mut entries, mut names) = (Vec::new(), Vec::new());
+            for r in rows {
+                put32(
+                    &mut entries,
+                    r.name_at.unwrap_or(names_at + names.len() as u32),
+                );
+                put32(&mut entries, r.offset);
+                put32(&mut entries, r.value);
+                put16(&mut entries, r.flags);
+                entries.push(r.idx);
+                entries.push(r.kind);
+                names.extend_from_slice(r.name.as_bytes());
+                names.push(0);
+            }
+            data.extend(entries);
+            data.extend(names);
+        }
+        data.extend_from_slice(&self.tail);
         let mut syms = Vec::new();
         symbol(&mut syms, 0, 0, 0, 0, 0);
         if let Some(entries) = &self.serial {
@@ -203,12 +319,22 @@ impl Elf {
             strtab.extend(std::iter::repeat_n(b'g', len as usize));
             strtab.push(0);
         }
+        // Last, so the names before it keep their offsets.
+        if let Some(rows) = &self.var_info {
+            let size = self.var_info_size.unwrap_or(16 * rows.len() as u32);
+            symbol(&mut syms, strtab.len() as u32, var_at, size, 1, 1);
+            strtab.extend_from_slice(aethelgard_pincheck::elf::VAR_INFO_SYMBOL);
+            strtab.push(0);
+        }
         if self.unterminated {
             strtab.pop();
         }
         let symtab_off = DATA_OFF + data.len();
         let strtab_off = symtab_off + syms.len();
-        let shoff = strtab_off + strtab.len();
+        let ram = self.ram.clone().unwrap_or_default();
+        let ram_off = strtab_off + strtab.len();
+        let shoff = ram_off + ram.len();
+        let shnum: u16 = if self.ram.is_some() { 5 } else { 4 };
 
         let mut b = Vec::new();
         b.extend_from_slice(b"\x7fELF");
@@ -220,18 +346,19 @@ impl Elf {
         put32(&mut b, ADDR); // entry
         // The program headers go after the section headers, so a second one
         // moves no other offset; the PHDR bytes at EHDR stay zero.
-        let phoff = shoff + 4 * 40;
+        let phoff = shoff + usize::from(shnum) * 40;
         let phnum: u16 = if self.overlay { 2 } else { 1 };
         put32(&mut b, phoff as u32);
         put32(&mut b, shoff as u32);
         put32(&mut b, 0x0500_0400);
-        for v in [EHDR as u16, PHDR as u16, phnum, 40, 4, 0] {
+        for v in [EHDR as u16, PHDR as u16, phnum, 40, shnum, 0] {
             put16(&mut b, v);
         }
         b.extend_from_slice(&[0; PHDR]);
         b.extend_from_slice(&data);
         b.extend_from_slice(&syms);
         b.extend_from_slice(&strtab);
+        b.extend_from_slice(&ram);
         section(&mut b, [0, 0, 0, 0, 0, 0, 0, 0]);
         let rodata = self.section_offset.unwrap_or(DATA_OFF as u32);
         let flags = if self.writable { 3 } else { 2 };
@@ -244,6 +371,12 @@ impl Elf {
             &mut b,
             [0, 3, 0, 0, strtab_off as u32, strtab.len() as u32, 0, 0],
         );
+        if self.ram.is_some() {
+            section(
+                &mut b,
+                [0, 1, 3, RAM, ram_off as u32, ram.len() as u32, 0, 0],
+            );
+        }
         // One PT_LOAD: the data, run at ADDR and flashed at `paddr`.
         let len = data.len() as u32;
         let paddr = self.paddr.unwrap_or(ADDR);

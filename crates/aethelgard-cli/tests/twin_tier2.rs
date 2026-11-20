@@ -1269,6 +1269,103 @@ fn a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_
     );
 }
 
+/// `AET-WO-3306` (F-COLLIDE): U2's identity read sent to 0x77, where U5, a
+/// second BME280, answers. U2's model logs nothing; U5's logs U2's write and
+/// read beside its own. `attribute` judges U5's whole log against its
+/// script, so the run is the software's by both witnesses (it was I4 on
+/// `main`, `AET-WO-3305` §5), and `propose`'s generator report names the
+/// extra transaction at 0x77 and U2's step as sent there. Attributed twice
+/// from the archive alone, it is the same bytes (`INV-04`).
+#[test]
+fn a_step_sent_to_another_devices_address_that_answers_is_the_softwares() {
+    let (_, board) = two_bme();
+    let collide = mutant_of(board, "two-3306-collide", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "i2c1.transfer(&mut r, 0x77, &[0xd0], &mut buf0)",
+        );
+    });
+    let scenario = "crates/aethelgard-cli/tests/fixtures/two-bme-collide.json";
+    let (_, code, lines) = run_campaign("two-3306-collide", &[scenario], &collide);
+    assert_eq!(code, Some(0), "{lines:?}");
+    assert_eq!(lines[0]["matched"], true, "{lines:?}");
+    let run = lines[0]["run"].as_str().unwrap().to_owned();
+    let (code, a) = aethelgard(&["attribute", "--archive", &run]);
+    assert_eq!(code, Some(0), "{a}");
+    assert_eq!(
+        (a["domain"].as_str(), a["rule"].as_str()),
+        (Some("software"), Some("S1")),
+        "{a}"
+    );
+    let witnesses: Vec<&Value> = a["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == 13)
+        .collect();
+    assert_eq!(witnesses.len(), 2, "U2's and U5's witnesses: {a}");
+    assert_eq!(a["masked"], serde_json::json!([]), "{a}");
+    assert_eq!(
+        a["subjects"],
+        serde_json::json!(["bus:SENSORS", "device:U2", "device:U5"]),
+        "{a}"
+    );
+    assert_eq!(aethelgard(&["attribute", "--archive", &run]).1, a);
+    let out = std::env::temp_dir().join(format!("aet-3306-t2-{}-propose", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    let (code, p) = aethelgard(&[
+        "propose",
+        "--archive",
+        &run,
+        "--scenario",
+        root().join(scenario).to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code,
+        Some(6),
+        "a software attribution gives a generator report: {p}"
+    );
+    let report: Value =
+        serde_json::from_slice(&fs::read(out.join("generator-report.json")).unwrap()).unwrap();
+    let named: Vec<(&str, &str, &str, &str)> = report["expectations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["index"] == witnesses[1]["index"])
+        .map(|e| {
+            (
+                e["what"].as_str().unwrap(),
+                e["address"].as_str().unwrap(),
+                e["solved"].as_str().unwrap(),
+                e["observed"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            (
+                "i2c1.u5.transactions",
+                "0x00000077",
+                "0x00000001",
+                "0x00000002"
+            ),
+            (
+                "i2c1.u2.identity.address",
+                "0x00000076",
+                "0x00000076",
+                "0x00000077"
+            ),
+        ],
+        "U5's witness names the extra transaction at 0x77 and U2's step as sent there: {report}"
+    );
+    fs::remove_dir_all(&out).unwrap();
+}
+
 #[test]
 fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
     // AET-WO-2301 F9, AET-WO-2204 D3: `systick-before`, as a firmware edit:
@@ -4555,7 +4652,7 @@ mod battery_sag {
 
     use crate::common::verify::root;
 
-    fn aethelgard(args: &[&std::ffi::OsStr]) -> (Option<i32>, String) {
+    pub(super) fn aethelgard(args: &[&std::ffi::OsStr]) -> (Option<i32>, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
             .args(args)
             .current_dir(root())
@@ -4571,11 +4668,11 @@ mod battery_sag {
         (out.status.code(), stdout)
     }
 
-    fn os(s: &str) -> &std::ffi::OsStr {
+    pub(super) fn os(s: &str) -> &std::ffi::OsStr {
         std::ffi::OsStr::new(s)
     }
 
-    fn scratch(label: &str) -> PathBuf {
+    pub(super) fn scratch(label: &str) -> PathBuf {
         let d = Path::new(env!("CARGO_TARGET_TMPDIR"))
             .join(format!("aet-2304b-{}-{label}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
@@ -4584,7 +4681,7 @@ mod battery_sag {
     }
 
     /// `generate` then `build` on `spec`: the ELF.
-    fn firmware(spec: &str, label: &str) -> PathBuf {
+    pub(super) fn firmware(spec: &str, label: &str) -> PathBuf {
         let dir = scratch(label);
         let (code, out) = aethelgard(&[
             os("generate"),
@@ -4732,6 +4829,125 @@ mod battery_sag {
             &lines,
             &archive,
             "p02-b",
+        );
+    }
+}
+
+/// `AET-WO-2305` §2, tier 2: each board whose first scripted device waits
+/// before its boot word recovers from a BOR droop within the bound its own
+/// undisturbed boot sets, in the tools image with the real bridge, ngspice
+/// and Renode (measured in `spike/2305`: `4600`'s logger 19,522,270 ns, the
+/// BMP581 extension 19,523,760 ns, the Sentinel-02 shape 39,072,410 ns, each
+/// failed at the fixed 100 µs). Each run matches its expectation (one reset,
+/// none unrecovered), archives kind 32 with a bound past 10 ms (the boot the
+/// twin ran, not a constant), probes once at the release, its nudge and the
+/// bound, and replays. On the logger the first device's witness at the
+/// probe holds its later steps too, so a one-step witness fails it.
+mod bor_recovery {
+    use std::path::Path;
+
+    use serde_json::Value;
+
+    use super::battery_sag::{aethelgard, firmware, os, scratch};
+
+    fn recovers(spec: &str, scenario: &str, label: &str) -> Vec<aethelgard_chaos::record::Record> {
+        let elf = firmware(spec, label);
+        let archive = scratch(&format!("{label}-a")).join("archive");
+        let (code, out) = aethelgard(&[
+            os("campaign"),
+            os("--scenarios"),
+            os(scenario),
+            os("--firmware"),
+            elf.as_os_str(),
+            os("--archive"),
+            archive.as_os_str(),
+        ]);
+        assert_eq!(code, Some(0), "{out}");
+        let line: Value = serde_json::from_str(out.lines().next().unwrap()).unwrap();
+        assert_eq!(
+            (&line["verdict"], &line["matched"]),
+            (&Value::from("pass"), &Value::from(true)),
+            "{line}"
+        );
+        let run = line["run"].as_str().unwrap();
+        let (code, out) = aethelgard(&[os("replay"), os("--archive"), os(run)]);
+        assert_eq!(code, Some(0), "{out}");
+        let records = aethelgard_chaos::replay_dir(Path::new(run))
+            .unwrap()
+            .state
+            .records;
+        use aethelgard_chaos::power::{NUDGE_NS, RECOVERY_MARGIN_NS};
+        use aethelgard_chaos::record::Record;
+        let bound = records.iter().find_map(|r| match r {
+            Record::RecoveryBound {
+                boot_word_ns,
+                margin_ns,
+                bound_ns,
+            } => Some((*boot_word_ns, *margin_ns, *bound_ns)),
+            _ => None,
+        });
+        let Some((Some(instant), RECOVERY_MARGIN_NS, Some(b))) = bound else {
+            panic!("no recovery bound: {bound:?}");
+        };
+        assert!(
+            instant > 10_000_000 && b == instant + RECOVERY_MARGIN_NS,
+            "{bound:?}"
+        );
+        let release = records.iter().find_map(|r| match r {
+            Record::ResetRendered {
+                at_ns,
+                released: true,
+                ..
+            } => Some(*at_ns),
+            _ => None,
+        });
+        let probes: Vec<u64> = records
+            .iter()
+            .filter_map(|r| match r {
+                Record::FirmwareObserved { at_ns, .. } => Some(*at_ns),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(probes, [release.unwrap() + NUDGE_NS + b]);
+        records
+    }
+
+    #[test]
+    fn the_logger_recovers_with_its_first_devices_later_steps_witnessed() {
+        let records = recovers(
+            "crates/aethelgard-cli/tests/fixtures/logger-4600.json",
+            "crates/aethelgard-cli/tests/fixtures/bor-recovery/logger-droop-bor3.json",
+            "bor-logger",
+        );
+        use aethelgard_chaos::record::Record;
+        let identity = records.iter().find_map(|r| match r {
+            Record::I2cWitness { expected, .. } => Some(expected.len()),
+            _ => None,
+        });
+        let seen = records.iter().find_map(|r| match r {
+            Record::FirmwareObserved {
+                witness: Some(w), ..
+            } => Some(w.len()),
+            _ => None,
+        });
+        assert!(seen > identity, "{seen:?} {identity:?}");
+    }
+
+    #[test]
+    fn the_bmp581_extension_recovers_after_its_settle() {
+        recovers(
+            "examples/sentinel-01-ext-bmp581.json",
+            "crates/aethelgard-cli/tests/fixtures/bor-recovery/ext-bmp581-droop-bor3.json",
+            "bor-ext",
+        );
+    }
+
+    #[test]
+    fn the_sentinel_02_shape_recovers_after_its_imus_settle() {
+        recovers(
+            "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json",
+            "crates/aethelgard-cli/tests/fixtures/bor-recovery/s02-shaped-droop.json",
+            "bor-s02",
         );
     }
 }

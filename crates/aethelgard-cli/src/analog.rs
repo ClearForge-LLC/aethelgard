@@ -650,19 +650,53 @@ fn recovered_words(
     (words, witness)
 }
 
-/// Whether a witness shows exactly the model's lines; no witness (no
-/// identity read) is vacuous, and an unknown format never shows them.
-fn witnessed(w: Option<&crate::verdict::WitnessReport>) -> bool {
-    w.is_none_or(|w| !w.expected.is_empty() && w.observed.as_ref() == Some(&w.expected))
+/// Whether a probe's witness shows the first device brought up again
+/// ([`power::witness_recovers`], `AET-WO-2305` §1.3): its identity read's
+/// lines, then only that device's later steps, in the image's order. No
+/// witness (no identity read) is vacuous; lines not read whole, or a step
+/// with no known format first, never show it.
+fn witnessed(
+    image: &aethelgard_twin::boot::Image,
+    w: Option<&crate::verdict::WitnessReport>,
+) -> bool {
+    let Some(w) = w else { return true };
+    let checks = &image.identity.checks;
+    let script: Vec<&[String]> = checks
+        .iter()
+        .filter(|c| checks.first().is_some_and(|f| f.device == c.device))
+        .map(|c| c.witness.as_deref().unwrap_or_default())
+        .collect();
+    w.observed
+        .as_deref()
+        .is_some_and(|o| power::witness_recovers(&script, o))
+}
+
+/// Whether a probe's reads show the firmware recovered: the boot word and
+/// the first identity record's status and value each read as expected, and
+/// its witness shows that device brought up again ([`witnessed`]). A wrong
+/// identity fails twice over, by its value and by its line (`AET-WO-2305`
+/// §1.3): still `brownout_unrecovered`, by name.
+fn holds(
+    image: &aethelgard_twin::boot::Image,
+    words: [&crate::verdict::Word; 3],
+    witness: Option<&crate::verdict::WitnessReport>,
+) -> bool {
+    words
+        .iter()
+        .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
+        && witnessed(image, witness)
 }
 
 /// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
 /// rail, ngspice's crossings, the rendered resets, each release's probe;
 /// `brownout_reset` (info) per reset, `brownout_unrecovered` per reset the
 /// firmware did not recover from within the bound (or never released, or
-/// whose probe a killed boot never read), and `rail_below_tolerance` (info)
-/// when the rail left the domain's tolerance. `probes` is `None` when the
-/// boot was killed at a bound.
+/// whose probe a killed boot never read, or with no bound to probe at), and
+/// `rail_below_tolerance` (info) when the rail left the domain's tolerance.
+/// `probes` is `None` when the boot was killed at a bound. `undisturbed` is
+/// the undisturbed boot's boot word instant (`AET-WO-2305` §1.2): `None`
+/// when no reset was released, so none was run; `Some(None)` when it wrote
+/// no boot word, so there is no bound.
 pub fn droop_report(
     rail: &Rail,
     solved: &Solved,
@@ -670,8 +704,12 @@ pub fn droop_report(
     probes: Option<&[crate::renode::Probe]>,
     image: &aethelgard_twin::boot::Image,
     boot_word: u32,
+    undisturbed: Option<Option<u64>>,
 ) -> (crate::verdict::DroopReport, Vec<Finding>) {
-    use crate::verdict::{CrossingReport, DroopReport, ObservedReport, RailReport, ResetReport};
+    use crate::verdict::{
+        CrossingReport, DroopReport, ObservedReport, RailReport, RecoveryBoundReport, ResetReport,
+    };
+    let bound = undisturbed.flatten().and_then(power::recovery_bound);
     let d = &rail.droop;
     let mut findings = Vec::new();
     let mut reports = Vec::new();
@@ -717,7 +755,15 @@ pub fn droop_report(
     let mut observed = Vec::new();
     let releases: Vec<u64> = resets.iter().filter_map(|r| r.released_ns).collect();
     for (k, at) in releases.iter().enumerate() {
-        let probe_at = at + power::RECOVERY_BOUND_NS;
+        let Some(probe_at) = bound.and_then(|b| power::probe_ns(*at, b)) else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!(
+                    "no recovery bound for the release at {at} ns: the same boot, run first with no reset, wrote no boot word that could be read, so recovery cannot be judged"
+                ),
+            ));
+            continue;
+        };
         let Some(probe) = probes.map(|p| p.get(k)) else {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
@@ -726,16 +772,13 @@ pub fn droop_report(
             continue;
         };
         let ([boot, status, value], witness) = recovered_words(image, boot_word, probe);
-        let ok = [&boot, &status, &value]
-            .iter()
-            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
-            && witnessed(witness.as_ref());
-        if !ok {
+        if !holds(image, [&boot, &status, &value], witness.as_ref()) {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
                 format!(
-                    "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, witness {}",
-                    power::RECOVERY_BOUND_NS,
+                    "{} ns after the boot that the release at {at} ns started (the undisturbed boot's {} ns and one quantum) the firmware had not recovered: boot word {}, status {}, value {}, witness {}",
+                    probe_at - at - power::NUDGE_NS,
+                    undisturbed.flatten().unwrap_or_default(),
                     boot.observed.as_deref().unwrap_or("unread"),
                     status.observed.as_deref().unwrap_or("unread"),
                     value.observed.as_deref().unwrap_or("unread"),
@@ -774,6 +817,13 @@ pub fn droop_report(
         ));
     }
     let report = DroopReport {
+        recovery_bound: undisturbed.map(|instant| RecoveryBoundReport {
+            kind: "twin.recovery_bound",
+            source: "renode",
+            undisturbed_boot_word_ns: instant,
+            margin_ns: power::RECOVERY_MARGIN_NS,
+            bound_ns: bound,
+        }),
         rail: RailReport {
             kind: "analog.rail_declared",
             source: "scenario",
@@ -1033,6 +1083,60 @@ mod tests {
         );
     }
 
+    /// `AET-WO-2305` §1.3, on Sentinel-03's image (its first identity read is
+    /// U7's, a BMP581 with a configuration and a data read): a probe after
+    /// the bring-up recovers with the device's later lines; a wrong identity,
+    /// a repeated identity read (a boot that started over) or a stray line
+    /// does not, nor does an unset boot word.
+    #[test]
+    fn a_probe_recovers_by_its_reads_and_its_first_devices_own_lines() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            fs::read(root.join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let checks = &image.identity.checks;
+        let first = &checks[0];
+        let script: Vec<String> = checks
+            .iter()
+            .filter(|c| c.device == first.device)
+            .flat_map(|c| c.witness.clone().unwrap())
+            .collect();
+        assert!(
+            script.len() > first.witness.as_ref().unwrap().len(),
+            "U7 has later steps"
+        );
+        let boot_word = aethelgard_twin::boot::boot_word().unwrap();
+        let identity = u32::try_from(first.expected).unwrap();
+        let judge = |boot: u32, value: u32, lines: Vec<String>| {
+            let probe = crate::renode::Probe {
+                at_ns: 0,
+                boot_word: boot,
+                record: Some((aethelgard_twin::boot::STATUS_OK, value)),
+                witness: Some(lines),
+            };
+            let ([b, s, v], w) = recovered_words(&image, boot_word, Some(&probe));
+            holds(&image, [&b, &s, &v], w.as_ref())
+        };
+        let magic = aethelgard_twin::boot::BOOT_MAGIC;
+        assert!(judge(magic, identity, script.clone()));
+        assert!(judge(magic, identity, first.witness.clone().unwrap()));
+        // A wrong identity: its value, and its line as the model would log it.
+        assert!(!judge(magic, identity ^ 1, script.clone()));
+        let mut wrong = script.clone();
+        wrong[0] = format!("{}?", wrong[0]);
+        assert!(!judge(magic, identity, wrong));
+        let mut again = script.clone();
+        again.extend(first.witness.clone().unwrap());
+        assert!(!judge(magic, identity, again));
+        let mut stray = script.clone();
+        stray.insert(1, format!("{} stray", first.level.1));
+        assert!(!judge(magic, identity, stray));
+        assert!(!judge(0, identity, script));
+    }
+
     /// A stale or impostor bridge is refused before any of its answer is read.
     #[test]
     fn a_bridge_that_does_not_name_this_trees_sources_first_is_refused() {
@@ -1120,7 +1224,7 @@ mod tests {
 
     fn decks() -> Vec<Deck> {
         let topology: SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":12,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
+            r#"{"schema_version":13,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         analog::decks(&topology).unwrap()

@@ -34,23 +34,36 @@ pub enum GenerateError {
     Emit(EmitError),
     Board(BoardError),
     Twin(TwinError),
-    /// The specification declares `mcu.core_supply.mode` `bypass` ([`core_supply_generated`]).
+    /// The specification declares `mcu.core_supply.mode` `bypass` ([`generable`]).
     CoreSupplyNotGenerated,
+    /// The specification declares `mcu.hse` ([`generable`]).
+    HseNotGenerated,
 }
 
+/// The declarations this engine validates and solves but does not generate,
+/// each refused by name by `generate`, `emit` and `simulate` (and so by
+/// `verify` and `campaign`, which pass through them).
+///
 /// `CoreSupplyNotGenerated` (`AET-WO-4240v` D-1): `generate`, `emit` and
 /// `simulate` refuse a board whose core supply is declared `bypass`. It is a
 /// true declaration (`validate` and `solve` accept it), but no board this
 /// engine emits draws an external VCORE, and under bypass the voltage scale
 /// is the external supply's (`VOSRDY` "forced by hardware to 1 when the
 /// Bypass mode is selected", RM0433 Rev 9 §6.8.6, p. 310), which the
-/// generated bring-up does not set. The precedent is `AET-WO-4240` D10's
-/// `HseNotGenerated`.
-pub fn core_supply_generated(topology: &SolvedTopology) -> Result<(), GenerateError> {
-    match topology.core_supply {
-        aethelgard_ir::vos::CoreSupplyMode::Ldo => Ok(()),
-        aethelgard_ir::vos::CoreSupplyMode::Bypass => Err(GenerateError::CoreSupplyNotGenerated),
+/// generated bring-up does not set.
+///
+/// `HseNotGenerated` (`AET-WO-4240a` §1.7, `4240` D10): a board whose
+/// `mcu.hse` is declared solves to the HSE tree (`clock.hse`), whose
+/// bring-up, `RCC` words, Kani clause and twin rule are `AET-WO-4240b`'s; the
+/// generator today writes only the reset tree.
+pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
+    if topology.core_supply == aethelgard_ir::vos::CoreSupplyMode::Bypass {
+        return Err(GenerateError::CoreSupplyNotGenerated);
     }
+    if topology.clock.hse.is_some() {
+        return Err(GenerateError::HseNotGenerated);
+    }
+    Ok(())
 }
 
 impl std::fmt::Display for GenerateError {
@@ -61,6 +74,9 @@ impl std::fmt::Display for GenerateError {
             Self::Twin(e) => e.fmt(f),
             Self::CoreSupplyNotGenerated => f.write_str(
                 "mcu.core_supply.mode is `bypass`: the core is supplied from an external VCORE, which no board this engine emits draws, and its voltage scale is that supply's, which the generated bring-up does not set (AET-WO-4240v D-1); validate and solve accept it, generate, emit and simulate do not",
+            ),
+            Self::HseNotGenerated => f.write_str(
+                "mcu.hse is declared: the board solves to the HSE clock tree, whose bring-up the generator does not write until AET-WO-4240b; validate and solve accept it, generate, emit and simulate do not",
             ),
         }
     }
@@ -73,13 +89,17 @@ impl GenerateError {
             Self::Board(e) => e.kind(),
             Self::Twin(e) => e.kind(),
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
+            Self::HseNotGenerated => "HseNotGenerated",
         }
     }
 
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::Emit(e) => e.id(),
-            Self::Board(_) | Self::Twin(_) | Self::CoreSupplyNotGenerated => None,
+            Self::Board(_)
+            | Self::Twin(_)
+            | Self::CoreSupplyNotGenerated
+            | Self::HseNotGenerated => None,
         }
     }
 
@@ -93,7 +113,10 @@ impl GenerateError {
             Self::Emit(e) => matches!(e, EmitError::Library(_)),
             Self::Board(BoardError::Register(e)) => register(e),
             Self::Twin(TwinError::Register(e)) => register(e),
-            Self::Board(_) | Self::Twin(_) | Self::CoreSupplyNotGenerated => false,
+            Self::Board(_)
+            | Self::Twin(_)
+            | Self::CoreSupplyNotGenerated
+            | Self::HseNotGenerated => false,
         }
     }
 }
@@ -112,7 +135,7 @@ pub fn tree(
     topology: &SolvedTopology,
     table: &PinTable,
 ) -> Result<BTreeMap<String, String>, GenerateError> {
-    core_supply_generated(topology)?;
+    generable(topology)?;
     let project = &spec.project_name;
     let emission = spec
         .board

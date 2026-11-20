@@ -206,12 +206,11 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`ffd83362…`) in each text, `main.rs` and the two platforms are
 /// `427baa54…7b38`, `81a4ecac…fb2d` and `7b36e730…d61b` exactly, the digests
 /// before the merge (measured); the boot image did not move.
-/// Moved by `AET-WO-1210` (specification 20, which adds no key this
-/// document's devices or platform read): with the version-19 document's
-/// sha256 (`ffd83362…3aa5`) put back for the new (`ccc80f11…e8b2`) in each
-/// text, `main.rs` and the two platforms are `f443af76…2c3a`, `b57442b4…e5e9`
-/// and `455de730…7a7c` exactly, the digests before (measured); the boot image
-/// did not move.
+/// Re-taken for specification 20 (`AET-WO-4240a`, version line only): with
+/// the document's version-19 sha256 put back for its version-20 one in each
+/// text, `main.rs` and the two platforms are `f443af76…2c3a`,
+/// `b57442b4…e5e9` and `455de730…7a7c` exactly, the digests before
+/// (measured); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",

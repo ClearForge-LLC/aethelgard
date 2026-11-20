@@ -472,7 +472,16 @@ jobs:
       # devices_is_not_masked_and_a_wrong_address_still_is_software.
       # 195 (AET-WO-2306, on main 416a6dd3; CI counted 195 on bc96bc3f): one
       # tier-2 test, board_tier2.rs verify_names_what_judged_nothing_on_the_motor_driver.
-      TIER2_MIN: "195"
+      # 198 (AET-WO-2305; recomputed at its merge of main d0c4cfe0, which
+      # held 195): three tier-2 tests in twin_tier2.rs,
+      # bor_recovery::the_logger_recovers_with_its_first_devices_later_steps_witnessed,
+      # the_bmp581_extension_recovers_after_its_settle and
+      # the_sentinel_02_shape_recovers_after_its_imus_settle (8.2 s, 9.6 s,
+      # 13.6 s in the image on Furnace; twin_tier2 is lock-serialised, so
+      # each has a weight row). AET-WO-3306 adds one (199):
+      # twin_tier2's a_step_sent_to_another_devices_address_that_answers_is_the_softwares
+      # (3.2 s in the image on Furnace; a weight row).
+      TIER2_MIN: "199"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
       # only when the route job succeeded, said docs, and the build and every shard were skipped.

@@ -355,8 +355,10 @@ pub struct Attribution {
 /// observed under the same mask, and whether attribution counts it as
 /// evidence. `register` is named as the ST header names it (`RCC.APB1LENR`,
 /// `GPIOB.AFRL`), `boot_word`, or a witness's `i2c1.u2.address`, `.Write`
-/// or `.Read`. The values are 64-bit, so a read of up to 8 bytes shows
-/// whole (`AET-WO-4210` F-B5).
+/// or `.Read`; for a transaction its device's script does not hold
+/// (`AET-WO-3306`), `i2c1.u5.transactions` and the step it was,
+/// `i2c1.u2.identity.address`. The values are 64-bit, so a read of up to 8
+/// bytes shows whole (`AET-WO-4210` F-B5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub register: String,
@@ -669,6 +671,50 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     })
 }
 
+/// `lines` as `device`'s transactions (`AET-WO-3306`), each its range of
+/// lines: a `Write` line opens one and the `Read` lines after it are its, as
+/// the model logs a transfer; a `Read` first in the lines opens one of its
+/// own, and a `Read` later is the transaction's before it (adversarial F2). `None` if any line is not a `Write` or `Read` of the device
+/// (a warning, an error, another device's).
+fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<usize>>> {
+    let mut starts = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        if witness_bytes(l, device, "Write").is_some() {
+            starts.push(i);
+        } else if witness_bytes(l, device, "Read").is_none() {
+            return None;
+        } else if i == 0 {
+            starts.push(i);
+        }
+    }
+    starts.push(lines.len());
+    Some(starts.windows(2).map(|w| w[0]..w[1]).collect())
+}
+
+/// A device's model path, whole script, whole log, and the witness each
+/// line of the log went to ([`Run::whole_log`]).
+type WholeLog<'a> = (&'a str, Vec<String>, Vec<String>, Vec<usize>);
+
+/// A transaction's shape (`AET-WO-3306`): its write, as [`witness_bytes`]
+/// gives it, and the bytes its reads return in all.
+fn shape(lines: &[String], device: &str) -> (Option<(u64, usize)>, usize) {
+    let write = lines
+        .first()
+        .and_then(|l| witness_bytes(l, device, "Write"));
+    let read = lines
+        .iter()
+        .filter_map(|l| witness_bytes(l, device, "Read"))
+        .map(|(_, n)| n)
+        .sum();
+    (write, read)
+}
+
+/// A step's write and read width as a transaction's [`shape`].
+fn step_shape(write: &[u8], width: u8) -> (Option<(u64, usize)>, usize) {
+    let value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
+    (Some((value, write.len())), usize::from(width))
+}
+
 /// A step's read as its check records it (`AET-WO-4210`), as the judge holds
 /// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
 /// bit of it lies above the read's `width` bytes (so a configuration's is 0),
@@ -929,6 +975,9 @@ impl<'a> Run<'a> {
     /// address other than the device's, during this step (`absent` is the
     /// step's own since trace 16, `AET-WO-3305`), is evidence. A faulted bus
     /// finds none at the device's own, which is not, nor at another step's.
+    /// A transfer to another device's address that answers leaves no such
+    /// line, but that device logs a transaction its script does not hold:
+    /// its own witness is evidence ([`Self::surplus`], `AET-WO-3306`).
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)
             .is_some_and(|f| f.iter().any(|f| f.wrong))
@@ -970,8 +1019,7 @@ impl<'a> Run<'a> {
             lines.iter().find_map(|l| witness_bytes(l, device, what))
         };
         let reg_want = logged(expected, "Write")?;
-        let write_value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
-        if reg_want != (write_value, write.len()) || *read_width > 4 {
+        if Some(reg_want) != step_shape(write, *read_width).0 || *read_width > 4 {
             return None;
         }
         // A configure step reads nothing back; the others' read is the part's
@@ -1019,7 +1067,200 @@ impl<'a> Run<'a> {
         if let Some(want) = value_want {
             fields.push(at("Read", width_mask(want.1), want.0, read));
         }
+        fields.extend(self.surplus_fields(b, record, *address));
         Some(fields)
+    }
+
+    /// The transactions device `reference`'s witnesses observed that its
+    /// script does not hold (`AET-WO-3306`), each as the index of the
+    /// witness its first line went to and its lines. A device's witnesses,
+    /// in record order, hold its whole log: each step takes as many lines as
+    /// it expects and the last the rest (`renode.rs` `attribute`). Their
+    /// lines are judged whole: every one a `Write` or `Read` of the device,
+    /// and its script's transactions, each whole, in order among the
+    /// observed ones. What is left over is a transaction the firmware sent
+    /// to this device's address that none of its steps is. Empty unless all
+    /// of that holds: a missing or wrong transaction is left to each
+    /// witness's own fields, and an unreadable witness says nothing.
+    fn surplus(&self, reference: &str) -> (usize, Vec<(usize, Vec<String>)>) {
+        let Some((device, script, log, at)) = self.whole_log(reference) else {
+            return (0, Vec::new());
+        };
+        let (Some(want), Some(got)) = (transactions(&script, device), transactions(&log, device))
+        else {
+            return (0, Vec::new());
+        };
+        // Each scripted transaction is the earliest observed one equal to it.
+        let mut held = 0;
+        let mut extra = Vec::new();
+        for t in got {
+            if want
+                .get(held)
+                .is_some_and(|w| script[w.clone()] == log[t.clone()])
+            {
+                held += 1;
+            } else {
+                extra.push((at[t.start], log[t].to_vec()));
+            }
+        }
+        if held < want.len() {
+            return (0, Vec::new());
+        }
+        (held, extra)
+    }
+
+    /// Device `reference`'s model path, its witnesses' expected lines and
+    /// observed lines, each in record order (its whole script and log), and
+    /// the index of the witness each observed line went to; `None` with no
+    /// witness, or one unreadable.
+    fn whole_log(&self, reference: &str) -> Option<WholeLog<'a>> {
+        let (mut device, mut script, mut log, mut at) = (None, Vec::new(), Vec::new(), Vec::new());
+        for (i, r) in self.records.iter().enumerate() {
+            if let Record::I2cWitness {
+                reference: x,
+                device: d,
+                expected,
+                observed,
+                ..
+            } = r
+                && x == reference
+            {
+                let observed = observed.as_ref()?;
+                device = Some(d.as_str());
+                script.extend(expected.iter().cloned());
+                log.extend(observed.iter().cloned());
+                at.extend(observed.iter().map(|_| i));
+            }
+        }
+        Some((device?, script, log, at))
+    }
+
+    /// The fields that witness `record` of a device at `address`, on bus
+    /// `b`, shows for the transactions its device's script does not hold
+    /// that start in it ([`Self::surplus`]): the device's transaction count
+    /// against its script's, at the address the firmware sent them to; and
+    /// for each, when exactly one other device on the bus has a step of its
+    /// shape (its write, and its read's width) that went elsewhere
+    /// ([`Self::sent_elsewhere`]), that step's address field, as the firmware
+    /// sent it. Two such steps, none, or one that cannot be told, and only
+    /// the address is named.
+    fn surplus_fields(&self, b: usize, record: &Record, address: u8) -> Vec<Field> {
+        let Record::I2cWitness {
+            reference, device, ..
+        } = record
+        else {
+            return Vec::new();
+        };
+        let (scripted, extra) = self.surplus(reference);
+        let here: Vec<&Vec<String>> = extra
+            .iter()
+            .filter(|(at, _)| std::ptr::eq(&self.records[*at], record))
+            .map(|(_, t)| t)
+            .collect();
+        if here.is_empty() {
+            return Vec::new();
+        }
+        let mut fields = vec![Field {
+            register: format!("{device}.transactions"),
+            address: u32::from(address),
+            mask: u64::MAX,
+            solved: scripted as u64,
+            observed: Some((scripted + extra.len()) as u64),
+            wrong: true,
+        }];
+        for t in here {
+            let extra = shape(t, device);
+            // Each step of this shape on the bus: `Some` if it went elsewhere,
+            // `None` if that cannot be told. This device's own never went
+            // elsewhere: its log holds every scripted transaction and this one.
+            let owners: Vec<Option<(&str, &str, u8)>> = self
+                .records
+                .iter()
+                .filter_map(|r| match r {
+                    Record::I2cCheck {
+                        reference: x,
+                        address: a,
+                        step,
+                        write: w,
+                        width: n,
+                        ..
+                    } if self.buses[b].devices.iter().any(|(d, _)| d == x)
+                        && step_shape(w, *n) == extra =>
+                    {
+                        match self.sent_elsewhere(r) {
+                            Some(true) => Some(Some((x.as_str(), step.as_str(), *a))),
+                            Some(false) => None,
+                            None => Some(None),
+                        }
+                    }
+                    _ => None,
+                })
+                .collect();
+            if let [Some((owner, step, solved))] = owners[..] {
+                let owner_device = self.records.iter().find_map(|r| match r {
+                    Record::I2cWitness {
+                        reference: x,
+                        device: d,
+                        ..
+                    } if x == owner => Some(d.as_str()),
+                    _ => None,
+                });
+                fields.push(Field {
+                    register: format!("{}.{step}.address", owner_device.unwrap_or(owner)),
+                    address: u32::from(solved),
+                    mask: 0x7F,
+                    solved: u64::from(solved),
+                    observed: Some(u64::from(address)),
+                    wrong: true,
+                });
+            }
+        }
+        fields
+    }
+
+    /// Whether check `check`'s transfer went to another device's address
+    /// that answered (`AET-WO-3306` adversarial F1): its record claims `ok`,
+    /// so something answered; its step found no device at an address not its
+    /// own; and its device's whole log holds fewer transactions of its shape
+    /// (its write, and its read's width) than its script does. `None` when
+    /// that cannot be told: no witness of the step, or one unreadable, or a
+    /// line that is not a `Write` or `Read`.
+    fn sent_elsewhere(&self, check: &Record) -> Option<bool> {
+        let Record::I2cCheck {
+            reference,
+            address,
+            step,
+            write,
+            width,
+            status,
+            ..
+        } = check
+        else {
+            return Some(false);
+        };
+        let absent = self.records.iter().find_map(|r| match r {
+            Record::I2cWitness {
+                reference: x,
+                step: s,
+                absent,
+                ..
+            } if x == reference && s == step => Some(absent),
+            _ => None,
+        })?;
+        if status.as_deref() != Some("ok") || absent.iter().any(|a| a != address) {
+            return Some(false);
+        }
+        let (device, script, log, _) = self.whole_log(reference)?;
+        let own = step_shape(write, *width);
+        let count = |lines: &[String]| -> Option<usize> {
+            Some(
+                transactions(lines, device)?
+                    .into_iter()
+                    .filter(|t| shape(&lines[t.clone()], device) == own)
+                    .count(),
+            )
+        };
+        Some(count(&log)? < count(&script)?)
     }
 
     /// The fields of `reading` the bus owns that are wrong.

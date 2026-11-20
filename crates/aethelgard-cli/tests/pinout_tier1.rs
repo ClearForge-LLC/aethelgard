@@ -31,10 +31,12 @@ fn run(
 ) -> (i32, String) {
     // With hwdef.h the identity judge runs (`AET-WO-4400b2`), and it reads
     // the ELF's serial table: the reference topology has no serial port, so
-    // one empty entry, as ArduPilot writes `{}`.
+    // one empty entry, as ArduPilot writes `{}`; and its serial parameters
+    // (`AET-WO-4405`), SERIAL0's alone.
     let mut elf = elf.clone();
     if header.is_some() && elf.serial.is_none() {
         elf.serial = Some(vec![[0; 44]]);
+        elf.var_info = Some(common::var_info(&common::SERIAL0_ONLY));
     }
     fs::write(d.join("fw.elf"), elf.bytes()).unwrap();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
