@@ -11,7 +11,7 @@ Each statement is labelled:
 
 ## 0. Status
 
-- **`main` merged:** `52a2d62e` (3303b) cleanly, then `03d89554` (4202), then `3341dc6b` (1911, 2304b, 1314b), then `ff31328d` (documents only: `docs/roadmap.md` and a bench note; `readme_status`, the one test that reads the roadmap, passes on the merged tree).
+- **`main` merged:** `52a2d62e` (3303b) cleanly, then `03d89554` (4202), then `3341dc6b` (1911, 2304b, 1314b), then `ff31328d` (documents only: `docs/roadmap.md` and a bench note; `readme_status`, the one test that reads the roadmap, passes on the merged tree), then `2fda6e13` (1209: `validate`'s load references, no conflict, no tier-2 test; host gates re-run, §Gates).
   - 4202's conflicts: its exact `RunFor` in the pinned monitor-script tests (§4.5), each keeping the step hook, and one `TIER2_MIN` line.
   - 2304b's: the trace number (16 on top of its 15, both docs kept) and the golden. 2304b changed the version byte alone, so this order's hashes at 16 stand (the golden test passes).
   - 1911's: `ci/test-weights.tsv`, resolved as its refit plus this order's one row.
@@ -188,7 +188,8 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 ## 10. Owed and fence edges
 
 - **Done at `3341dc6b`:** `main` merged after 2304b, §6 re-run, Sentinel-03's held-low through `verify` (§9 D2), trace 16 kept.
-- **Owed:** the bench package's `write=true` dispatch (the architect's).
+- **The bench package, committed:** the architect's `write=true` dispatch, run 44671600152 on `3c35ff9e`, wrote it. Its artifact is committed byte for byte. Only `MANIFEST.json` moved, and only `verdict_sha256` (`88801b43…` → `ccf46917…`). Every other file is identical.
+- **Owed:** nothing.
 - **Fence edges, said on the bus:**
   - `anchor.rs`'s `Hook::Step`: every `AETHELGARD-` line must parse, or the run is refused;
   - `verdict.rs`: one doc line;
@@ -201,7 +202,7 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`, with and without `with-tools`: clean (host).
-- `ci/gates.sh run` (the `gates` job's set, host, target inside the repository as CI has it): **green** at `6d61a87b`, at the 3303b merge, at the 4202 merge `84279860` (132 result lines each), and at the 2304b/1911 merge `556affbe` (134), all ok.
+- `ci/gates.sh run` (the `gates` job's set, host, target inside the repository as CI has it): **green** at `6d61a87b`, at the 3303b merge, at the 4202 merge `84279860` (132 result lines each), at the 2304b/1911 merge `556affbe` (134), and at the 1209 merge `4f15cd17` with the package committed (136), all ok.
   - A first run with the target outside the repository failed `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`, a test-scratch layout artefact: it passes with the target inside the repository (measured).
   - The first run also caught three pinned monitor-script tests, moved in §4.5.
 - Tier 2 in the pinned image: the new two-bme test passes (T0, and again after each merge of `main`; 6–7 s, under the 60 s weight-row threshold), and the seeded set passes (11 of 11).
@@ -218,4 +219,4 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 - **Traces:** the version byte 15 → 16 on every archive (14 → 16 before 2304b). Content moved in three runs (§6).
 - **Golden:** trace `bcd082c2…8383` → `7eccc893…5d31`; state `ada1b631…d8f7` → `f4c133fa…c693`.
 - **Monitor scripts:** every board with an I2C step check gains one hook per I2C step.
-- **The bench package:** may report AWAITING-PACKAGE (inferred, §9).
+- **The bench package:** `MANIFEST.json`'s `verdict_sha256` alone (`88801b43…` → `ccf46917…`), as CI wrote it (§10).
