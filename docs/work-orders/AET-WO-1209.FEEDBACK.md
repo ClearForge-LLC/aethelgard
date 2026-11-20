@@ -21,7 +21,7 @@ Labels: **measured** (run here), **read** (read at source, file:line), **inferre
 
 **`TIER2_MIN` stays at 190.** This branch adds no tier-2 test: its new binaries are `load_references` and `load_references_tier1`, neither of them a `*_tier2` binary, per the architect's ruling of 00:10Z.
 
-**4202 has not landed.** At 22:50Z it has no PR. The ruled re-merge, and the 48-file re-measure that follows it, wait for it (B5).
+**4202 landed later and is merged (B5).**
 
 ## B0. What is built, and what is not
 
@@ -116,12 +116,17 @@ Diff-sized, run through a fresh subagent and checked against the source.
 
 **The work order's literal §2 is not met, by ruling.** It names three refusals and the pin-capacitance coverage test. D1 (ii) and D2 defer rules 1 and 3, and with them the coverage test, so this branch delivers rule 2 alone, to full acceptance.
 
-## B5. Pending
+## B5. The merge after 4202 (done)
 
-- **Merge `main` after 4202 lands, then re-measure.**
-  - Re-measure the 48-file list, the corpus probes, and the committed `R6`/`R7` loads against `drawn`.
-  - 4202 renames Sentinel-03's `R7`/`R8` to `R6`/`R7`. The CLI's exact set will then judge the renamed loads.
-  - Not done: no 4202 PR exists at the time of writing.
+`main` at `03d89554` (4202, #257) is merged as `2e7720f3`. It was clean: `supply_tier1.rs` auto-merged and keeps 714 [measured].
+
+- fmt and clippy are clean.
+- The 14 suites both branches touch pass, 384 tests, 0 failed. These are CLI `supply`, `outline`, `campaign`, `via_ring`, `boot`, `hot_plug`, `power_board`, `solve_cli`, `validate_cli` and `load_references_tier1`, and ir `load_references`, `power`, `validate` and `sense_pin`.
+- The 48 committed specifications give 26 pass and 22 refused, none by either load kind.
+- Sentinel-03, with 4202's load rows `R6`/`R7` (U2 gone), passes the CLI's exact drawn set.
+- **`TIER2_MIN` stays at 191,** 4202's value, since this branch adds 0 tier-2 tests.
+
+A trial merge of 4202's PR head (`ba3e52e1`, before it landed) had measured the same.
 
 ## B6. New observations
 
