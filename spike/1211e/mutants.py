@@ -56,7 +56,7 @@ M = [
  ("P.5 a pin not canonical", PP, "if !canonical || ", "if "),
  ("P.6 a structure of no held family", PP, "|| !families.iter().any(|f| f.family == family)", ""),
  ("P.7 page 0", PP, "|| p.page == 0 {", "{"),
- ("P.8 no pins", PP, "if pins.is_empty() {", "if false {"),
+ ("P.8 no pins", PP, "if pins.is_empty() {\n        return Err(\"`kind.mcu.io.pins` is empty\"", "if false {\n        return Err(\"`kind.mcu.io.pins` is empty\""),
  ("P.9 a trip on the wrong pins", PR, "if let Some(t) = &raw.trip", "if let Some(t) = raw.trip.as_ref().filter(|_| false)"),
  ("P.10 a bulk_unstated on no supply", PR, "if let Some(b) = &raw.bulk_unstated", "if let Some(b) = raw.bulk_unstated.as_ref().filter(|_| false)"),
 ]
