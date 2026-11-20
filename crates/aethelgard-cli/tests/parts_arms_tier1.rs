@@ -25,10 +25,6 @@ use serde_json::{Value, json};
 /// the twin's stand-in, whose arm is `AET-WO-4600` D4's own row.
 const ROWS_WITHOUT_ARM: [&str; 1] = ["ICP10111"];
 
-fn arms() -> Vec<&'static str> {
-    KNOWN_PARTS.split(", ").collect()
-}
-
 /// Sentinel-01's minimal board with `row` its one device, as `U2` on the I2C
 /// bus or `U4` on the SPI bus, fitted so `validate` passes it: the first
 /// address the row's straps offer, a bus clocked no faster than the part, its
@@ -94,7 +90,7 @@ fn minimal(row: &Part) -> (Specification, &'static str) {
 fn every_row_draws_by_its_arm_or_is_refused_and_every_arm_has_a_row() {
     let table = parts::table().unwrap();
     let rows: Vec<&str> = table.parts().iter().map(|p| p.part.as_str()).collect();
-    let arms = arms();
+    let arms: Vec<&str> = KNOWN_PARTS.split(", ").collect();
     for arm in &arms {
         assert!(
             rows.contains(arm),

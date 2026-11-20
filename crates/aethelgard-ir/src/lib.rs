@@ -3742,8 +3742,6 @@ pub(crate) fn references_distinct<'r>(
     Ok(())
 }
 
-/// A device's part entry, or `None` for a part the table does not hold; the
-/// bare `W25Q64JV` is refused (`AET-WO-4300c` F11).
 /// The parts table's rows, in its order, as [`IrValidationError::PartWithoutRow`]
 /// names them. That refusal is built only from a table that loaded, so the
 /// second arm prints the load's error rather than an empty list.
@@ -3757,6 +3755,8 @@ fn table_parts() -> String {
     }
 }
 
+/// A device's part entry, or `None` for a part the table does not hold; the
+/// bare `W25Q64JV` is refused (`AET-WO-4300c` F11).
 fn part_entry<'t>(
     table: &'t parts::PartsTable,
     reference: &str,

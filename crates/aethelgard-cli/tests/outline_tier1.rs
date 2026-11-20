@@ -127,7 +127,10 @@ fn a_bound_the_placer_cannot_reach_is_refused_by_name_never_a_partial_board() {
     // 60 x 60 mm holds the keep-out boxes' sum, but not the placement.
     let v = with_bound(60, 60);
     let (spec, solved, table) = solved(&v);
-    schematic::bound_holds(&spec, &solved, &table).unwrap();
+    schematic::Drawing::of(&spec, &solved, &table)
+        .unwrap()
+        .bound_holds()
+        .unwrap();
     match schematic::emit(&spec, &solved, &table) {
         Err(e @ EmitError::OutlineUnreachable { .. }) => {
             assert_eq!(e.kind(), "OutlineUnreachable");

@@ -1,6 +1,6 @@
 # AET-WO-1316 FEEDBACK — the parts table and the emitter's arms agree by test, and the drawn design is read once
 
-Builder: Claude (Opus 5.5), a fresh `1316` session, 2026-11-20, from ~06:50 UTC. Worktree `~/aethelgard-1316`, branch `wo/aet-1316-parts-arms` from `origin/main` `ff7fd53d`. The work order is read from `~/.cache/aet-1316-wo.md`, the architect's copy of the docs branch's `docs/work-orders/AET-WO-1316.md`. This branch does not commit it.
+Builder: Claude (Opus 5.5), a fresh `1316` session, 2026-11-20, from ~06:50 UTC. Worktree `~/aethelgard-1316`, branch `wo/aet-1316-parts-arms` from `origin/main` `ff7fd53d`. The work order is `docs/work-orders/AET-WO-1316.md` as merged to `main` in `48a78b22`, identical to the copy built to (`~/.cache/aet-1316-wo.md`) [measured: `diff`].
 
 Labels: **measured** (run here), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1316/`.
 
