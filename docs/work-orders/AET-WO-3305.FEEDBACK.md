@@ -189,7 +189,8 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 - `ci/gates.sh run` (the `gates` job's set, host, target inside the repository as CI has it): **green** at `6d61a87b`, at the 3303b merge, and at the 4202 merge `84279860` (132 result lines each, all ok).
   - A first run with the target outside the repository failed `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`, a test-scratch layout artefact: it passes with the target inside the repository (measured).
   - The first run also caught three pinned monitor-script tests, moved in §4.5.
-- Tier 2 in the pinned image: the new two-bme test passes (T0, and again after each merge of `main`), and the seeded set passes (11 of 11).
+- Tier 2 in the pinned image: the new two-bme test passes (T0, and again after each merge of `main`; 6–7 s, under the 60 s weight-row threshold), and the seeded set passes (11 of 11).
+- After the 4202 merge, the tier-2 tests on the boards 4202 moved were run on the branch in the image. Those boards carry TMP117 and BMP581 on one I2C bus, so `absent_by_step` reaches them. The tests: `twin_tier2`'s `the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed`, `the_fixture_s_campaign_archives_each_configuration_and_replays` and `the_sentinel_02_shaped_board_is_witnessed_whole`; 4202's `campaign_tier2` `a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it`; and `models_tier2` (12). All passed (measured).
 - Reduction pass (diff): nothing to remove in a crate. 0 duplicates: the bus name is derived once (`absent_by_step`'s `controller`), and the whole-run fill is replaced, not kept beside. 0 dead paths, 0 protected kept, 0 findings below. In the spike, earlier: −3 files (scenario copies), and the stop record is condensed into §1–§3 here.
 
 ## What moved
@@ -197,4 +198,4 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 - **Traces:** the version byte 14 → 16 on every archive. Content moved in two runs only (§6).
 - **Golden:** trace `bcd082c2…8383` → `7eccc893…5d31`; state `ada1b631…d8f7` → `f4c133fa…c693`.
 - **Monitor scripts:** every board with an I2C step check gains one hook per I2C step.
-- **The bench package:** AWAITING-PACKAGE (§9).
+- **The bench package:** may report AWAITING-PACKAGE (inferred, §9).
