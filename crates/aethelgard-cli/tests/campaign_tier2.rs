@@ -687,9 +687,9 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         unreachable!()
     };
     // `AET-WO-2305` §1.2: the bound is the same boot's undisturbed boot
-    // word (25,700 ns, measured in `spike/2305`) and one quantum, and the
-    // probe is the release, its nudge and the bound: 1,231,690 + 10 +
-    // 125,700.
+    // word (26,620 ns since `AET-WO-4240v`'s VOS2 bring-up, measured in
+    // `spike/2305`; 25,700 before it) and one quantum, and the probe is the
+    // release, its nudge and the bound: 1,231,690 + 10 + 126,620.
     let bound: Vec<&Record> = bor3
         .iter()
         .filter(|r| matches!(r, Record::RecoveryBound { .. }))
@@ -697,14 +697,14 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(
         bound,
         [&Record::RecoveryBound {
-            boot_word_ns: Some(25_700),
+            boot_word_ns: Some(26_620),
             margin_ns: 100_000,
-            bound_ns: Some(125_700),
+            bound_ns: Some(126_620),
         }],
         "the bor3 droop archives its recovery bound once"
     );
     assert_eq!(
-        *at_ns, 1_357_400,
+        *at_ns, 1_358_320,
         "the firmware is observed at the predicted time after the release"
     );
     assert_eq!(
