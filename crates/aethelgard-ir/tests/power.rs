@@ -27,6 +27,12 @@ fn full() -> Value {
 fn base() -> Value {
     let mut v = full();
     v["power"]["crossings"] = json!([]);
+    // The translator's and its CS pull-up's loads go with the crossing
+    // (`AET-WO-1209` D4): a load naming a part the board lacks is refused.
+    v["power"]["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U13" && l["reference"] != "R40");
     // The IMU's acknowledgement goes with it: one stands only for a part the
     // board uses (`AET-WO-4210` D-B6). The flash's stays (`AET-WO-4211`).
     v["accept_lifecycle"]
@@ -307,12 +313,13 @@ fn the_tree_checks_to_its_hand_computed_bounds() {
             d("VDD_1V8").load_milliamps
         ],
         // VDD_3V3: the MCU's 658 mA, U12's 20 mA and 1 mA (40 uA rounded
-        // up), and the fixture's 37 mA of other sinks (`AET-WO-1303b`)
-        [2000, 716, 20]
+        // up), and the fixture's 35 mA of other sinks (`AET-WO-1303b`): its
+        // 37 less the removed crossing's U13 and R40 (`AET-WO-1209` D4)
+        [2000, 714, 20]
     );
     assert_eq!(
         (p.input_steady_milliamps, p.input_fault_milliamps),
-        (2716, 10_100)
+        (2714, 10_100)
     );
     let pad = |p: &(String, String)| (p.0.clone(), p.1.clone());
     assert_eq!(pad(&d("VDD_5V").source), ("R10".to_owned(), "1".to_owned()));

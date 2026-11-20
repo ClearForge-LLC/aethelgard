@@ -264,8 +264,9 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     assert_eq!(s["source"], json!({"reference": "L2", "pad": "2"}));
     assert_eq!(s["return"], json!({"reference": "U11", "pad": "1"}));
     // the MCU's 658 mA from its part row, the 1.8 V LDO's input and the
-    // fixture's other sinks, each cited, derived or declared
-    assert_eq!(s["load_milliamps"], 716);
+    // fixture's other sinks, each cited, derived or declared (the removed
+    // crossing's U13 and R40 no longer among them, `AET-WO-1209` D4)
+    assert_eq!(s["load_milliamps"], 714);
     let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
     assert_eq!((vdd.len(), vss.len()), (16, 11), "{s}");
     for p in vdd.iter().chain(&vss) {
@@ -281,7 +282,7 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .unwrap()
     };
     let drop = s["drop_bound_microvolts"].as_u64().unwrap();
-    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 716).div_ceil(1000));
+    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 714).div_ceil(1000));
     assert!(drop <= 165_000, "{drop}");
     assert!(s.get("note").is_none(), "{s}");
     let conditions: Vec<&str> = s["conditions"]
