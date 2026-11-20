@@ -1,0 +1,13 @@
+2026-11-19T20:36:25+00:00 tree 13fef3aca9a17e9c438f892b7e282e95fb4e741e
+2026-11-19T20:36:25+00:00 after logger-spi-only-cap generate free -g available=45
+2026-11-19T20:42:13+00:00 after logger-spi-only-cap prove:every_valid_sequence_spi1 free -g available=39
+2026-11-19T20:43:44+00:00 after logger-spi-only-cap prove:every_valid_sequence_spi2 free -g available=40
+2026-11-19T20:45:29+00:00 after logger-spi-only-cap prove:spi1_transfer_is_bounded_and_ordered free -g available=40
+2026-11-19T20:45:53+00:00 after logger-spi-only-cap prove:spi1_transfer_refuses_too_many_frames free -g available=39
+2026-11-19T20:51:35+00:00 after logger-spi-only-cap prove:spi2_transfer_is_bounded_and_ordered free -g available=42
+2026-11-19T20:51:53+00:00 after logger-spi-only-cap prove:spi2_transfer_refuses_too_many_frames free -g available=40
+2026-11-19T20:54:31+00:00 after logger-spi-only-cap prove:reset_clock_is_ok_exactly_at_reset free -g available=41
+2026-11-19T20:54:34+00:00 after logger-spi-only-cap prove:usart1_start_writes_the_solved_values free -g available=42
+2026-11-19T21:02:38+00:00 after logger-spi-only-cap prove:flash_option_status_is_one_read free -g available=37
+2026-11-19T21:22:11+00:00 after logger-spi-only-cap prove:every_valid_sequence(absent) free -g available=40
+2026-11-19T21:22:12+00:00 after logger-spi-only-cap verify free -g available=40
