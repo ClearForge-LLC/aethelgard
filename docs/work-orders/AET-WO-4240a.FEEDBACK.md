@@ -73,6 +73,12 @@ The predictions are `spike/4240a/PREDICTIONS.md`, committed at `d94a5782` before
 | A (`06a0ccd1`) | 27/27 identical | 5/5 identical | — | none |
 | B (`57a3a5c2`) | 27/27 identical | 5/5 identical | 54/54 identical, exit codes identical | top-level `schema_version`, `specification_sha256` |
 
+### §2.1a Re-baselined after merging `main` `7ebca78c` (2306, 1209c)
+
+- **Why:** `2306` added `crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json` at specification 19, and CI caught it refusing (run 44722960169, shard 9). It was renumbered by `kit/renumber.py`, its version line only.
+- **The corpus is now 28 specifications and 5 topologies.** Against a fresh baseline of `7ebca78c`, built apart, the harness and the CLI give 0 differences under the same mask (33 files; 56 CLI outputs) [measured].
+- **The merged tree's local gates:** fmt and clippy 0; 2,364 passed, and the same 2 known failures (§9).
+
 ### §2.2 Emitted bytes (`kit/gen-sweep.sh`)
 
 - **`generate`** (the board crate and the KiCad emission) was run on all 27 specifications with `main`'s CLI and the branch's: 22 generate on both, 5 refuse on both.
@@ -245,7 +251,7 @@ A fresh subagent proposed the cuts, reading only; the builder ruled on each and 
 - **Local, at `a5a19433`** [measured, `~/.cache/aet-4240a/final.log`]:
   - `cargo fmt --all -- --check`: 0;
   - `cargo clippy --workspace --all-targets -- -D warnings`: 0;
-  - the `gates` job's 110 test targets (`ci/gates.sh targets`, run `--no-fail-fast`) and the doctests: **2,356 passed, 2 failed, both known.**
+  - the `gates` job's 110 test targets (`ci/gates.sh targets`, run `--no-fail-fast`) and the doctests: **2,356 passed, 2 failed, both known** (and after merging `7ebca78c`: 2,364 passed, the same 2).
     - `bench_board_tier1` refuses the committed bench package, made from specification 19, until the architect's write=true dispatch replaces it (F7, ruled).
     - `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named` fails only with the target directory outside the repository (F6).
 - **Tier 2** runs in CI. No tier-2 test was added, so `TIER2_MIN` stays 194.
