@@ -53,6 +53,7 @@ use crate::fab;
 use crate::input::hex;
 use crate::run;
 use crate::tree::{self, Difference};
+use crate::verdict::Scope;
 use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
 
 /// `RUL-19` (1), in the verdict itself.
@@ -81,6 +82,10 @@ struct Report {
     elf_sha256: Option<String>,
     rise_times: &'static str,
     gates: Vec<Gate>,
+    /// Every gate whose scope held nothing, by name, and each campaign run
+    /// whose droop observations witnessed no device, as `campaign:<scenario>`
+    /// (`AET-WO-2306`): a reader sees them without reading every line.
+    judged_nothing: Vec<String>,
     /// The support gate's record (`AET-WO-4300g`): each role, strap and
     /// condition as `check support` judged them; absent when it did not run.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -358,6 +363,9 @@ struct Gate {
     scenario: Option<String>,
     /// `pass`, `fail`, or `not_run` when a gate before it failed so it could not run.
     verdict: &'static str,
+    /// What the gate judged (`AET-WO-2306`); absent when it did not run.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    scope: Option<Scope>,
     exit_code: Option<i32>,
     tool_version: Option<String>,
     /// Whether the gate's tools ran under the separate uid (`AET-WO-1601`
@@ -392,6 +400,10 @@ struct Run {
     /// What the run's verdict does not claim (`AET-WO-2304b` §1.7, §1.11).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     conditions: Vec<String>,
+    /// A droop's observations' witness scope, as its campaign line states it
+    /// (`AET-WO-2306`).
+    #[serde(skip_serializing_if = "Value::is_null")]
+    observation_witness: Value,
 }
 
 #[derive(Serialize)]
@@ -529,6 +541,46 @@ fn gate(name: &str, args: Vec<OsString>) -> Result<Ran, ExitCode> {
 
 const EXIT_INTERNAL_I32: i32 = EXIT_INTERNAL as i32;
 
+/// Why a gate whose line counts nothing judged nothing, when the line does
+/// not say (`AET-WO-2306`).
+const NOTHING_LISTED: &str = "the gate's verdict line lists no item it judged";
+
+/// What a gate judged, from its own verdict line (`AET-WO-2306`, units
+/// accepted by the architect 2026-11-20). The rule: `judged` counts the
+/// items that each carry a verdict on the gate's own line, and a gate whose
+/// input is judged whole counts 1. So: the line's `judged` where it counts
+/// (`extract`: lines + supply domains), with its reason; `support`'s roles
+/// plus its straps; and 1 for `erc`, `drc`, `build`, `simulate`, each
+/// `prove` harness and each `attribute` run. The campaign's is its runs.
+fn scope_of(name: &str, v: &Value) -> Scope {
+    let len = |p: &str| v.pointer(p).and_then(Value::as_array).map_or(0, Vec::len) as u64;
+    let judged = match (v["judged"].as_u64(), name) {
+        (Some(n), _) => n,
+        (None, "support") => len("/support/roles") + len("/support/straps"),
+        (None, _) => 1,
+    };
+    Scope::of(
+        judged,
+        v["nothing_in_scope_reason"]
+            .as_str()
+            .unwrap_or(NOTHING_LISTED),
+    )
+}
+
+/// The gates and campaign runs that judged nothing, in the verdict's order
+/// (`AET-WO-2306`). Only `prove` and `attribute` repeat, and each judges 1.
+fn judged_nothing(gates: &[Gate], runs: &[Run]) -> Vec<String> {
+    let gates = gates
+        .iter()
+        .filter(|g| g.scope.as_ref().and_then(|s| s.nothing_in_scope) == Some(true))
+        .map(|g| g.gate.to_owned());
+    let runs = runs
+        .iter()
+        .filter(|r| r.observation_witness["nothing_in_scope"] == true)
+        .map(|r| format!("campaign:{}", r.scenario));
+    gates.chain(runs).collect()
+}
+
 /// A gate's report for the verdict, from its one verdict line.
 fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
     let v = ran.last();
@@ -541,6 +593,7 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         } else {
             "fail"
         },
+        scope: Some(scope_of(name, v)),
         exit_code: Some(ran.code),
         tool_version: v["tool"]["version"].as_str().map(str::to_owned),
         uid_boundary: Some(v["sandbox"]["uid_boundary"] == true),
@@ -565,6 +618,7 @@ fn not_run(name: &'static str) -> Gate {
         harness: None,
         scenario: None,
         verdict: "not_run",
+        scope: None,
         exit_code: None,
         tool_version: None,
         uid_boundary: None,
@@ -1304,6 +1358,7 @@ pub fn verify(
         elf_sha256: None,
         rise_times: RISE_TIMES,
         gates: Vec::new(),
+        judged_nothing: Vec::new(),
         support: None,
         campaign: None,
         findings: silicon_findings(&silicon),
@@ -1491,6 +1546,10 @@ pub fn verify(
     ) {
         return code;
     }
+    report.judged_nothing = judged_nothing(
+        &report.gates,
+        report.campaign.as_deref().unwrap_or_default(),
+    );
     report.ok = passes(&report.findings, &report.gates);
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
@@ -1894,6 +1953,7 @@ fn run_gates(
             run_id: id,
             state_sequence_hash: text("state_sequence_hash"),
             battery_sag: line["battery_sag"].clone(),
+            observation_witness: line["observation_witness"].clone(),
             conditions: line["conditions"]
                 .as_array()
                 .into_iter()
@@ -1903,6 +1963,7 @@ fn run_gates(
         });
     }
     let mut g = gate_report("campaign", None, &ran);
+    g.scope = Some(Scope::of(out.len() as u64, NOTHING_LISTED));
     g.uid_boundary = Some(every_run_separated(runs));
     g.uid_boundary_unmet = runs
         .iter()
@@ -2291,7 +2352,70 @@ mod tests {
             state_sequence_hash: String::new(),
             battery_sag: Value::Null,
             conditions: Vec::new(),
+            observation_witness: Value::Null,
         }
+    }
+
+    /// `AET-WO-2306` §1.2, §1.3: each gate's entry carries what its own line
+    /// says it judged (the line's `judged` and reason, `support`'s roles and
+    /// straps, else 1 for one input judged whole); `judged_nothing` names
+    /// exactly the gates with nothing in scope, in order, and each run whose
+    /// droop witnessed no device; a gate that did not run carries no scope.
+    #[test]
+    fn judged_nothing_names_exactly_the_gates_and_runs_that_judged_nothing() {
+        let ran = |line: Value| Ran {
+            code: 0,
+            lines: vec![line],
+        };
+        let extract = gate_report(
+            "extract",
+            None,
+            &ran(
+                json!({"verdict": "pass", "judged": 0, "nothing_in_scope": true,
+                        "nothing_in_scope_reason": "no bounded line"}),
+            ),
+        );
+        let support = gate_report(
+            "support",
+            None,
+            &ran(json!({"verdict": "pass", "support": {"roles": [1, 2, 3], "straps": [4]}})),
+        );
+        let erc = gate_report("erc", None, &ran(json!({"verdict": "pass"})));
+        let empty_support = gate_report("support", None, &ran(json!({"verdict": "pass"})));
+        let scope = |g: &Gate| serde_json::to_value(g.scope.as_ref()).unwrap();
+        assert_eq!(
+            scope(&extract),
+            json!({"judged": 0, "nothing_in_scope": true, "nothing_in_scope_reason": "no bounded line"})
+        );
+        assert_eq!(scope(&support), json!({"judged": 4}));
+        assert_eq!(scope(&erc), json!({"judged": 1}));
+        assert_eq!(
+            scope(&empty_support),
+            json!({"judged": 0, "nothing_in_scope": true, "nothing_in_scope_reason": NOTHING_LISTED})
+        );
+        assert!(not_run("simulate").scope.is_none());
+        let v = serde_json::to_value(&extract).unwrap();
+        assert_eq!(v["nothing_in_scope"], true, "flattened into the entry: {v}");
+        assert!(
+            serde_json::to_value(not_run("simulate"))
+                .unwrap()
+                .get("judged")
+                .is_none()
+        );
+
+        let mut droop = failed(json!([]));
+        droop.scenario = "droop-bor3".into();
+        droop.observation_witness = json!({"judged": 0, "nothing_in_scope": true});
+        let mut witnessed = failed(json!([]));
+        witnessed.observation_witness = json!({"judged": 1});
+        assert_eq!(
+            judged_nothing(
+                &[erc, extract, support, not_run("campaign")],
+                &[failed(json!([])), witnessed, droop]
+            ),
+            vec!["extract".to_owned(), "campaign:droop-bor3".to_owned()]
+        );
+        assert!(judged_nothing(&[empty_support], &[]) == vec!["support".to_owned()]);
     }
 
     const S1: &str = "examples/sentinel-01-minimal.json";

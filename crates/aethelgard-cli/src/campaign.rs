@@ -909,6 +909,34 @@ struct ScenarioLine {
     /// What the verdict does not claim; absent when nothing.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     conditions: Vec<String>,
+    /// A droop's observations (`AET-WO-2306`): the releases whose recovery
+    /// was judged against a device's witness, and `nothing_in_scope` when
+    /// the boot reads no device; absent when the droop released nothing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    observation_witness: Option<crate::verdict::Scope>,
+}
+
+/// Why a droop's observations judged no device (`AET-WO-2306`).
+pub(crate) const NO_WITNESSED_DEVICE: &str = "no witnessed device: the boot reads no device's identity, so each recovery is judged by the boot word alone";
+
+/// The witness scope of a run's droop observations, from the records replay
+/// judges: each release has one observation, judged against the first
+/// identity read's device's steps (`first_script`: the first I2C witness
+/// record's device, else the first SPI one's; `AET-WO-2305` §1.3), and with
+/// neither there is no device to witness. A release whose probe a killed
+/// boot never read, or that has no recovery bound (`AET-WO-2305` §1.2), is
+/// in scope too: it is judged, as `brownout_unrecovered`. `None` when no reset was released, so
+/// nothing was observed.
+fn observation_witness(records: &[Record]) -> Option<crate::verdict::Scope> {
+    let releases = records
+        .iter()
+        .filter(|r| matches!(r, Record::ResetRendered { released: true, .. }))
+        .count() as u64;
+    let device = records
+        .iter()
+        .any(|r| matches!(r, Record::I2cWitness { .. } | Record::SpiWitness { .. }));
+    (releases > 0)
+        .then(|| crate::verdict::Scope::of(if device { releases } else { 0 }, NO_WITNESSED_DEVICE))
 }
 
 #[derive(Serialize)]
@@ -1128,6 +1156,7 @@ fn run_one(
         tools: header_tools(&verdict.tools, p.sag.as_ref().map_or(&[][..], |s| &s.tools))
             .map_err(internal)?,
     };
+    let observation_witness = observation_witness(&records);
     let dir = archive.join(hex(p.run_id));
     let archived = (|| {
         let mut writer = TraceWriter::create(&dir, &header)?;
@@ -1168,6 +1197,7 @@ fn run_one(
             uid_boundary_unmet,
             battery_sag,
             conditions: p.conditions,
+            observation_witness,
         },
         ok,
     ))
@@ -2071,9 +2101,57 @@ pub fn attribute(dir: &Path) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::{
-        HeldLow, Record, Scenario, Specification, apply, archived_lines, picoseconds, solved_buses,
-        subject,
+        HeldLow, NO_WITNESSED_DEVICE, Record, Scenario, Specification, apply, archived_lines,
+        observation_witness, picoseconds, solved_buses, subject,
     };
+
+    /// `AET-WO-2306` §1.4: a droop's observations count the releases judged
+    /// against a device's witness; with no I2C or SPI witness record (no
+    /// identity read on the boot) the count is 0 and says so; with no
+    /// release there is no observation and no field.
+    #[test]
+    fn a_droop_observation_with_no_device_witness_says_so() {
+        let reset = |released| Record::ResetRendered {
+            at_ns: 1,
+            released,
+            cause: vec!["BOR".into()],
+            rendering: "r".into(),
+        };
+        let i2c = Record::I2cWitness {
+            peripheral: "I2C1".into(),
+            reference: "U2".into(),
+            device: "i2c1.u2".into(),
+            step: "identity".into(),
+            expected: vec!["line".into()],
+            observed: None,
+            absent: vec![],
+        };
+        let spi = Record::SpiWitness {
+            peripheral: "SPI1".into(),
+            reference: "U4".into(),
+            device: "spi1.spi1mux.u4".into(),
+            step: "identity".into(),
+            expected: vec![],
+            observed: None,
+            unrouted: vec![],
+        };
+        let released = [reset(false), reset(true), reset(false), reset(true)];
+        assert_eq!(observation_witness(&[reset(false)]), None);
+        assert_eq!(observation_witness(std::slice::from_ref(&i2c)), None);
+        for device in [i2c, spi] {
+            let mut records = released.to_vec();
+            records.push(device);
+            let s = observation_witness(&records).unwrap();
+            assert_eq!((s.judged, s.nothing_in_scope), (2, None), "{s:?}");
+            assert_eq!(s.nothing_in_scope_reason, None);
+        }
+        let s = observation_witness(&released).unwrap();
+        assert_eq!((s.judged, s.nothing_in_scope), (0, Some(true)), "{s:?}");
+        assert_eq!(
+            s.nothing_in_scope_reason.as_deref(),
+            Some(NO_WITNESSED_DEVICE)
+        );
+    }
 
     /// A serial port's records are about the port, by label, as a motor
     /// output's are about the output (`AET-WO-4300b` merged with `3303` D1).
