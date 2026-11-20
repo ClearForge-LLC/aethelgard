@@ -105,7 +105,10 @@ Results:
 
   Log: `~/.cache/aet-2306/mut/mutant.log`.
 - **The bench package:** `MANIFEST.json`'s `verdict_sha256` moves, because the verdict gains keys. It is not hand-edited: it is committed byte for byte from the architect's `write=true` dispatch (§6).
-- **The gates:** GATES_RESULT
+  - **Reproduced locally**, on the merged tree, in the pinned image: CI's `bench-package` `verify --against-fab` exits 1 (186 s, 6.4 GB scope peak), and its one difference is "MANIFEST.json differs from the derived file".
+  - On that verdict `judged_nothing` is `[]`, and `droop-bor3`'s `observation_witness` is `{"judged": 1}`.
+  - On the merged tree the driver's tier-2 test passes again, in 94.6 s.
+- **The gates,** on the tree with `main` 416a6dd3 merged, on Furnace in a capped scope, each exit read directly: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0, and again with `--features aethelgard-cli/with-tools` 0; `cargo test --workspace --no-fail-fast` 0, 2,354 passed, 0 failed, 0 ignored. CI is reported on the bus and in the PR.
 
 ## 3. How verdict consumers treat the new keys (§1.2)
 
@@ -113,7 +116,7 @@ Results:
   - `--against-fab` compares the package byte for byte, and `MANIFEST.json` names the verdict line's sha256. So the committed bench package differs in `MANIFEST.json` alone until it is re-committed from the dispatch. That is the bench-package job's expected red before the dispatch.
   - `against_fab_tier2` writes its own package and compares that, so it does not move.
 - **Byte identity:** two runs still print the same bytes. The keys are functions of the gates' own lines, and the campaign's of the archived records, never of a path or a time. Asserted by the existing two-run tests.
-- **Goldens:** no committed golden holds a whole `extract`, `speeds`, `campaign` or `verify` line. The full workspace suite passes unchanged apart from the tests above (GATES_RESULT).
+- **Goldens:** no committed golden holds a whole `extract`, `speeds`, `campaign` or `verify` line. The full workspace suite passes, 2,354 tests, with only the tests above changed.
 - **No archived record changes:** replay, `attribute`, every trace and every `state_sequence_hash` are unchanged.
 - **MCP:** `verify`, `extract` and `check_speeds` pass the line through. The tool snapshot (`tests/mcp-tools.json`) holds input schemas only, and is unchanged.
 - **FAB-NOTES** reads no gate key and does not move: `extract`'s conditions, `support`'s record and the campaign's conditions are unchanged.
@@ -159,7 +162,7 @@ Results:
   With 2305, which changes the droop recovery rule on the same observation (trace 17), whichever lands second merges. These fields stay CLI-derived and move no archived record.
 - **D1 · How `judged_nothing` names an observation (ruled: accepted).** It reads `campaign:<scenario>` beside the gate names, so one list shows everything that judged nothing.
 - **D2 · `check speeds` is not a gate `verify` runs.** The P4 clause (roadmap §5) lists "`check speeds` passes" separately. Its own line now says `nothing_in_scope`, but `verify`'s `judged_nothing` cannot list it. Adding `speeds` as a `verify` gate changes `verify`, which is outside this WO. Recommend it to a later WO if the P4 board's verdict should carry it.
-- **D3 · `TIER2_MIN`.** One tier-2 test is added (`board_tier2`'s driver test). `TIER2_MIN` is in `.github/workflows/ci.yml`, outside this fence, so it is not raised; the floor still holds. Raise it by one when merging, if wanted. Its weight row is in `ci/test-weights.tsv`: a Furnace estimate, 73.14 s × 2.8 = 204.8 s, since every test of the lock-serialised `board_tier2` needs one.
+- **D3 · `TIER2_MIN`.** One tier-2 test is added (`board_tier2`'s driver test). `TIER2_MIN` is in `.github/workflows/ci.yml`, outside this fence, so it is not raised. It is 194 on `main` 416a6dd3, merged here, and the floor still holds. With this test the count is 195 when nothing else lands first: raise it by one when merging, if wanted. Its weight row is in `ci/test-weights.tsv`: a Furnace estimate, 73.14 s × 2.8 = 204.8 s, since every test of the lock-serialised `board_tier2` needs one.
 - **D4 · The CLI README** (`crates/aethelgard-cli/README.md`, outside the fence) does not yet name `judged`, `nothing_in_scope` or `judged_nothing`. Suggested sentence for `verify`'s verdict: "Each gate's entry carries `judged`, the items it judged, and when that is 0, `nothing_in_scope: true` and its reason; `judged_nothing` lists every gate, and each droop run as `campaign:<scenario>`, that judged nothing."
 - **D5 · Backlog A4:** `check erc` counts sheets.
 
