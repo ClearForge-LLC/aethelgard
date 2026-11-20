@@ -109,8 +109,10 @@ Predictions committed first (`2e254213`), then results (`f9fb4708`, `spike/4406/
   - The rest: the guard not called by `read`; no table read as cap 0; `GpsNotCompiled` dropped; the offset; a receiver's flags; its name; group rows not told from scalars; an absent table read; the magic; `max_length`; the length bound; the ROMFS name bound; a zero-size ROMFS; an absent ROMFS read.
   - Ruled D-c: dropping the ROMFS-script signature (W21); dropping `SCR_ENABLE` (W22); any `scripts/` file taken as Lua (W23); `ENABLE`'s type and flags not held (W24); a second `ENABLE` row ignored (W25).
   - W1's first literal did not compile and was rerun.
-- GATES
+- **Gates** at `3d45cd37` (all code, `main` `824c3ff3` merged): `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0; `cargo test --workspace` **2445 passed, 0 failed** (`~/.cache/aet-4406/gates-3d45cd37.log`). An earlier run at `94507715`, before the ruling: 2443/0.
 
 ## 7. Status
 
-STATUS
+- Built to the work order and the 14:42Z rulings (D-a, D-b accepted; D-c built; persistent parameters and IOMCU as FEEDBACK rows D4, D5).
+- No stop fired. One PR, left unmerged; the architect merges.
+- CI on the PR, the ardupilot-image `pinout` job included, decides READY.
