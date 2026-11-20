@@ -141,4 +141,5 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
   - Nothing else: no generator, IR, specification, `container/`, workflow or `ci/` change.
 - **CI green on `4e92c5b4`**, the code before the boot-rate read was retired (runs 44714820375, 44714820705 with `pinout`, 44714820532). A READY commit on that head (`3f2fce30`) was superseded: it still read SERIAL0's boot rate from `hwdef.h`.
 - **CI green on `20110f1c`** (every serial fact from the ELF, before `main` `7ebca78c`): `ci` 44722064755, `ardupilot-image` 44722064762 (`pinout` passed), `engine-image` 44722064890.
-- **CI on the final merge:** pending; the READY commit records it.
+- **CI green on `4caf4d25`**, the final code (`main` `7ebca78c` merged): `ci` run 44727876872 (gates, tools shards, bench-package), `ardupilot-image` run 44727876713 (the four hand boards, the generated boards, **`pinout`**, `foreign`, `pinned`), `engine-image` run 44727876763. `TIER2_MIN` is unchanged.
+- **Status: READY.** No serial fact is read from `hwdef.h`. This commit adds only this CI record and this line, and it is the last push. One PR (#277), left unmerged; the architect merges. The title and body are in `~/.cache/aet-4405/pr-title-body.md`.
