@@ -78,6 +78,10 @@ The predictions are `spike/4240a/PREDICTIONS.md`, committed at `d94a5782` before
 - **Why:** `2306` added `crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json` at specification 19, and CI caught it refusing (run 44722960169, shard 9). It was renumbered by `kit/renumber.py`, its version line only.
 - **The corpus is now 28 specifications and 5 topologies.** Against a fresh baseline of `7ebca78c`, built apart, the harness and the CLI give 0 differences under the same mask (33 files; 56 CLI outputs) [measured].
 - **The merged tree's local gates:** fmt and clippy 0; 2,364 passed, and the same 2 known failures (§9).
+- **Merged again, `main` `a75fffcc` (2305).** `logger-4600.json` was renumbered the same way.
+  - The corpus is 29 specifications and 5 topologies; against a fresh baseline of `a75fffcc`, 0 differences under the mask, and the CLI's rows are identical [measured].
+  - `boards/sentinel-01*` regenerated with no change, and `BENCH-EXT-BMP581.md` L9 is current.
+  - Local gates: fmt and clippy 0; 2,370 passed (`hwdef_tier1` 7/7, `extract_tier1` 15/15), and the same 2 known failures.
 
 ### §2.2 Emitted bytes (`kit/gen-sweep.sh`)
 
