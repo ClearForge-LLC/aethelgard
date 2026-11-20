@@ -106,11 +106,45 @@ impl Level {
 /// (low) or `ARR + 1` (high) (RM0433 Rev 9 p. 1558), or a pulse of
 /// `pulse_us`, above 0 (`IdleSpelledTwice`: CCR 0 has one spelling,
 /// `{"level": "low"}`). Exactly one key.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", deny_unknown_fields)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Idle {
     Level(Level),
     PulseUs(u32),
+}
+
+/// Exactly one key, `level` or `pulse_us`: an empty object is refused as the
+/// missing key, never read as a default, and a second key or an unknown one
+/// is refused (`INV-06`), as [`Esc`] is.
+impl<'de> Deserialize<'de> for Idle {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct IdleVisitor;
+        impl<'de> Visitor<'de> for IdleVisitor {
+            type Value = Idle;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an Idle object with one key, `level` or `pulse_us`")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Idle, A::Error> {
+                let Some(key) = map.next_key::<String>()? else {
+                    return Err(serde::de::Error::custom(
+                        "missing field `level` / missing field `pulse_us`: an idle holds exactly one of them",
+                    ));
+                };
+                let idle = match key.as_str() {
+                    "level" => Idle::Level(map.next_value()?),
+                    "pulse_us" => Idle::PulseUs(map.next_value()?),
+                    other => {
+                        return Err(serde::de::Error::unknown_variant(other, &["level", "pulse_us"]));
+                    }
+                };
+                if map.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom("an Idle object holds exactly one key"));
+                }
+                Ok(idle)
+            }
+        }
+        deserializer.deserialize_map(IdleVisitor)
+    }
 }
 
 /// One declared motor output. Every key is required (`INV-06`): `pin` is
