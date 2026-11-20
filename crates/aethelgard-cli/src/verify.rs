@@ -2553,6 +2553,43 @@ mod tests {
         .unwrap()
     }
 
+    /// `AET-WO-1314b` §1.3: the extract gate's line in the verdict, when the
+    /// gate fails a bound on a specification routed with no ladder, carries
+    /// the finding's `cause` as `extract` printed it; a finding with none
+    /// gains none.
+    #[test]
+    fn the_extract_gate_line_carries_the_ladder_cause_when_it_fails() {
+        let finding = |cause: Option<&str>| {
+            let mut f = json!({
+                "kind": "capacitance_over_declared_bound",
+                "severity": "error",
+                "message": "`LOG_SCK`: bound 37508 fF (trace 15793, vias 12152, pads 1563, pins 8000) exceeds the declared 30000 fF",
+            });
+            if let Some(c) = cause {
+                f["cause"] = c.into();
+            }
+            f
+        };
+        let line = |f: Value| {
+            let g = gate_report(
+                "extract",
+                None,
+                &Ran {
+                    code: 1,
+                    lines: vec![json!({"verdict": "fail", "findings": [f]})],
+                },
+            );
+            assert_eq!(g.verdict, "fail");
+            serde_json::to_value(&g).unwrap()
+        };
+        let cause = aethelgard_eda::extract::LADDER_NOT_RUN;
+        let v = line(finding(Some(cause)));
+        assert_eq!(v["findings"][0]["cause"], cause, "{v}");
+        assert!(cause.contains("`board.stackup.fab_tolerances`"));
+        let v = line(finding(None));
+        assert!(v["findings"][0].get("cause").is_none(), "{v}");
+    }
+
     /// `uid_boundary` is the gate's own `sandbox.uid_boundary`, and true only
     /// when that is the JSON `true`; a gate that did not run has none; the
     /// campaign's is true only when every run's is (`AET-WO-1601` §1.2).

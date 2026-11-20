@@ -93,6 +93,12 @@ struct Finding {
     kind: &'static str,
     severity: &'static str,
     message: String,
+    /// Why the line was routed with no regard to its bound
+    /// (`AET-WO-1314b`): on a `capacitance_over_declared_bound` finding
+    /// only, and only where the specification routes with no capacitance
+    /// ladder; absent otherwise, so no other finding moves.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cause: Option<&'static str>,
 }
 
 /// One line of the verdict: the bound with its terms, and the judgement.
@@ -188,8 +194,14 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(l) => l,
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
     };
-    let stack = match aethelgard_eda::stack::Stack::of(&spec) {
-        Ok(s) => s,
+    // the board as declared, and whether `emit` routed this specification by
+    // the capacitance ladder: from the specification alone, as `emit`'s
+    // placement decides it (`aethelgard_eda::schematic::ladder_runs`); a
+    // partial tolerance block is refused by either, by the same name
+    let declared = aethelgard_eda::stack::Stack::of(&spec)
+        .and_then(|stack| Ok((stack, aethelgard_eda::schematic::ladder_runs(&spec)?)));
+    let (stack, laddered) = match declared {
+        Ok(d) => d,
         Err(path) => {
             let s = crate::undeclared(path);
             return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
@@ -320,6 +332,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                     .map_or_else(String::new, |d| format!(", declared pins {d}")),
                 l["declared_femtofarads"]
             ),
+            cause: (!laddered).then_some(bound::LADDER_NOT_RUN),
         })
         .collect();
     for g in &gates {
@@ -333,6 +346,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                             "`{}` {side} pin {}.{pin}: {kind}: {message}",
                             g.domain, g.mcu
                         ),
+                        cause: None,
                     });
                 }
             }
@@ -349,6 +363,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                 kind: "supply_drop_unbounded",
                 severity: "error",
                 message: format!("`{}`: no drop bound", g.domain),
+                cause: None,
             });
         }
         if let Some(d) = g.drop_bound_microvolts
@@ -361,6 +376,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
                     "`{}`: VDD + VSS drop bound {} uV at {} mA exceeds the declared {} mV",
                     g.domain, d, g.load_milliamps, g.limit_millivolts
                 ),
+                cause: None,
             });
         }
     }
