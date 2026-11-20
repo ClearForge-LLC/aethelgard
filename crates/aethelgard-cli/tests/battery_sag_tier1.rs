@@ -45,11 +45,13 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 }
 
 /// §2: Sentinel-03's scenarios cover every row before any gate:
-/// `VDD_3V3` (a survived droop), `VDD_5V` (its consumers' absence),
-/// `battery` (a tolerated sag), CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and
-/// IMU; `EXT` has no device. Coverage is judged first, so the next
-/// precondition is what refuses: the ledger's 280 unacknowledged rows
-/// (measured on `ee835bde`), a §7 stop outside this work order's fence.
+/// `VDD_3V3` (a survived droop that crosses BOR 3, `droop-bor3`, since
+/// `AET-WO-2305` §1.4 no longer counts `droop-tolerated`, which crosses
+/// none), `VDD_5V` (its consumers' absence), `battery` (a tolerated sag),
+/// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
+/// Coverage is judged first, so the next precondition is what refuses: the
+/// ledger's 280 unacknowledged rows (measured on `ee835bde`), a §7 stop
+/// outside this work order's fence.
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger() {
     let (code, v) = verify_fab_out(

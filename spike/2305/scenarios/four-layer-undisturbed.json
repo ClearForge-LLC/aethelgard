@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "four-layer-undisturbed",
+  "base": "../../../crates/aethelgard-cli/tests/fixtures/four-layer.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}

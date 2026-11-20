@@ -82,9 +82,57 @@ pub const RESOLUTION_NS: u64 = 10;
 /// F5, measured), so every release is followed by a `RunFor` this long.
 pub const NUDGE_NS: u64 = 10;
 
-/// The firmware must have rewritten its boot word and completed its I2C read
-/// this long after a release (`AET-WO-2301` §2.3). Measured: 20 µs.
-pub const RECOVERY_BOUND_NS: u64 = 100_000;
+/// The slack the recovery bound allows past the boot the twin ran
+/// undisturbed (`AET-WO-2305` §1.2, ruled 2026-11-20): one quantum, Renode's
+/// `SetGlobalQuantum`, at whose edges the peripherals synchronise with the
+/// core, which is the twin's one freedom in timing. Measured: on nine boards
+/// the recovered boot word lands at the undisturbed boot's instant to the
+/// instruction, and moving the release through a quantum (six phases, on
+/// Sentinel-01 and on `4600`'s logger) moved it by 0 ns.
+pub const RECOVERY_MARGIN_NS: u64 = 100_000;
+
+/// The recovery bound (`AET-WO-2305` §1.2): the firmware must have rewritten
+/// its boot word, and the first device answered its identity read, within
+/// this long of the boot's start after a release, where `boot_word_ns` is the
+/// instant the same prepared boot, with no reset, wrote its boot word
+/// (counted from 0). It replaced a fixed 100 µs (`AET-WO-2301` §2.3), which
+/// every board that waits on a sensor before its boot word failed. `None`
+/// when it would overflow.
+pub fn recovery_bound(boot_word_ns: u64) -> Option<u64> {
+    boot_word_ns.checked_add(RECOVERY_MARGIN_NS)
+}
+
+/// The instant a release's probe reads the machine: the boot's start (the
+/// release and its nudge) plus the bound.
+pub fn probe_ns(release_ns: u64, bound_ns: u64) -> Option<u64> {
+    release_ns.checked_add(NUDGE_NS)?.checked_add(bound_ns)
+}
+
+/// Whether a probe's witness shows the first device brought up again
+/// (`AET-WO-2305` §1.3): the lines from the release begin with that
+/// device's first step's whole lines (its identity read), and every line
+/// after them continues the same device's own later steps, in the script's
+/// order, each step whole. Nothing else may follow: a second identity read
+/// is a boot that started over (a reset loop), not a recovery. `steps` is
+/// the device's steps' expected lines in script order, the identity read
+/// first. No step, or a first step with no known lines, never shows it.
+/// The judge and replay both judge by this, so the rule lives here alone.
+pub fn witness_recovers(steps: &[&[String]], observed: &[String]) -> bool {
+    if steps.first().is_none_or(|s| s.is_empty()) {
+        return false;
+    }
+    let mut rest = observed;
+    for (k, step) in steps.iter().enumerate() {
+        if k > 0 && rest.is_empty() {
+            break;
+        }
+        match rest.strip_prefix(*step) {
+            Some(r) if !step.is_empty() => rest = r,
+            _ => return false,
+        }
+    }
+    rest.is_empty()
+}
 
 /// How a reset is rendered, as kind 18 records it: Renode 1.17.0 models no
 /// BOR, PVD or reset cause (`AET-WO-2301` P1, F6), so these monitor commands
@@ -374,6 +422,45 @@ mod tests {
             schedule(3, &[c("VBOR3_falling", 2_600_000, 1, true)]).unwrap_err(),
             "a crossing's level is not the table's typical value"
         );
+    }
+
+    /// `AET-WO-2305` §1.2, ruled: the margin is one quantum, no wider, and
+    /// the bound and the probe are the instant plus it, and the release,
+    /// the nudge and the bound; an overflow is no bound.
+    #[test]
+    fn the_recovery_bound_is_the_undisturbed_boot_plus_one_quantum() {
+        assert_eq!(RECOVERY_MARGIN_NS, 100_000);
+        assert_eq!(recovery_bound(19_522_270), Some(19_622_270));
+        assert_eq!(probe_ns(1_231_850, 19_622_270), Some(20_854_130));
+        assert_eq!(recovery_bound(u64::MAX), None);
+        assert_eq!(probe_ns(u64::MAX - 5, 0), None);
+    }
+
+    /// `AET-WO-2305` §1.3: the identity read's lines first, then only the
+    /// same device's later steps, in order and whole.
+    #[test]
+    fn a_witness_recovers_by_its_identity_then_its_own_later_steps() {
+        let l = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<String>>();
+        let (id, cfg, data) = (l(&["id"]), l(&["cfg"]), l(&["d1", "d2"]));
+        let steps: [&[String]; 3] = [&id, &cfg, &data];
+        assert!(witness_recovers(&steps, &l(&["id"])));
+        assert!(witness_recovers(&steps, &l(&["id", "cfg"])));
+        assert!(witness_recovers(&steps, &l(&["id", "cfg", "d1", "d2"])));
+        // A step cut short, a step out of order, a stray line, a repeat.
+        assert!(!witness_recovers(&steps, &l(&["id", "cfg", "d1"])));
+        assert!(!witness_recovers(&steps, &l(&["id", "d1", "d2"])));
+        assert!(!witness_recovers(&steps, &l(&["id", "x"])));
+        assert!(!witness_recovers(&steps, &l(&["x", "id"])));
+        assert!(!witness_recovers(
+            &steps,
+            &l(&["id", "cfg", "d1", "d2", "id"])
+        ));
+        // A wrong identity, or nothing, never shows it.
+        assert!(!witness_recovers(&steps, &l(&["id?"])));
+        assert!(!witness_recovers(&steps, &[]));
+        assert!(!witness_recovers(&[], &l(&["id"])));
+        let unknown: [&[String]; 1] = [&[]];
+        assert!(!witness_recovers(&unknown, &[]));
     }
 
     #[test]
