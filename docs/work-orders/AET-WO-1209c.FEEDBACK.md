@@ -26,7 +26,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | **The refusal, by name** | `ir/tests/load_references.rs` [measured]. `a_load_naming_a_regulator_is_refused_naming_its_input_row`: `U12` on `VDD_3V3` and on `VDD_1V8` (the `1209b` `adv/s02-U12-*` copies: the fixture plus one 1 mA load at index 13), each refused, with the full error value and message; `U10`, fed from the battery, on `VDD_5V`. `a_load_naming_the_mcu_is_refused_naming_its_table_row`: `U1`, and the fixture with its I2C device renamed `U1`, where the MCU becomes `U2`: `U1` passes and `U2` is refused. The binary on the `1209b` copies: `{"kind":"LoadNamesCountedPart","id":"U12","path":"power.loads[13].reference","message":"power.loads[13].reference on \`VDD_1V8\` names \`U12\`, whose current is already counted by regulator \`U12\`'s input on \`VDD_3V3\`"}`, exit 2; `main`'s binary exits 0 on both (`adv/u12.txt`). |
 | **Order (§1.2)** | `a_regulator_s_own_parts_pass_and_no_part_is_judged_first`: a no-part entry before a regulator's gives `LoadNamesNoPart`, and the reverse gives `LoadNamesCountedPart`. Fork D2. |
 | **Mutants (§1.3)** | Both killed [measured: `mut/m1.*`, `mut/m2.*`; tree restored from `mut/names.rs.orig`, `cmp`]. **M1, regulators only** (`if *r == mcu` → `if false`): fails `a_load_naming_the_mcu_is_refused_naming_its_table_row` (and, before the reduction pass, form (ii) of `each_form_of_a_part_the_board_has_passes`). **M2, the MCU only** (`.find(\|g\| g.reference == *r)` → `.find(\|_\| false)`): fails `a_load_naming_a_regulator_is_refused_naming_its_input_row` and `a_regulator_s_own_parts_pass_and_no_part_is_judged_first`. |
-| **Nothing committed newly refused (§1.4, §7)** | Before building, no committed specification names the MCU or a regulator in `power.loads`: 5 files carry referenced loads, 26 references, 0 hits (`dump.txt`; the MCU check `1209b` left open is confirmed). `validate` over the 52 committed JSON files carrying `voltage_domains`: byte-identical between `main`'s binary (`a82b42b5`) and this branch's, 26 pass and 26 refused (`corpus-main.txt`, `corpus-branch.txt`, `cmp`). The 93 renamed and sized variants the tests build (`order_only` seeds 0–40 and `sized` 1, 2, 4, 6, 8 for Sentinel-03 and `sentinel-02-power`, plus `power_tree()`; `1209b`'s lesson: `board_tier2` prints a refusal and passes) all pass on both binaries, identically (`variants-main.txt`, `variants-branch.txt`). |
+| **Nothing committed newly refused (§1.4, §7)** | Before building, no committed specification names the MCU or a regulator in `power.loads`: 5 files carry referenced loads, 26 references, 0 hits (`dump.txt`; the MCU check `1209b` left open is confirmed). `validate` over the 52 committed JSON files carrying `voltage_domains`: byte-identical between `main`'s binary (`a82b42b5`) and this branch's, 26 pass and 26 refused (`corpus-main.txt`, `corpus-branch.txt`, `cmp`). Re-measured after merging `943f7112` (§6). The 93 renamed and sized variants the tests build (`order_only` seeds 0–40 and `sized` 1, 2, 4, 6, 8 for Sentinel-03 and `sentinel-02-power`, plus `power_tree()`; `1209b`'s lesson: `board_tier2` prints a refusal and passes) all pass on both binaries, identically (`variants-main.txt`, `variants-branch.txt`). |
 | **No emitted byte moves** | `emit` of `sentinel-01`, `sentinel-01-ext-bmp581`, `sentinel-02-bench`, `sentinel-02-power` and Sentinel-03 on both binaries: 15 files, sha256 identical, and identical to `1209b`'s `emit-main.sha` (`emit-main.sha`, `emit-branch.sha`). |
 | **`TIER2_MIN`** | Unchanged. The new tests are in the existing tier-1 binary `load_references`; no test binary is added. |
 | **Gates** | §6. |
@@ -63,8 +63,25 @@ Both asserted that a load naming the MCU passes. The work order now refuses it, 
   - `emitter_numbered(r, "")` never matches a `U`.
 - The rule compares against the same `mcu_reference` value, so it moves with the numbering.
   - The test with a device renamed `U1` shows it: the MCU becomes `U2`; `U2` is refused and `U1` passes.
-  - The sweep shows it too: `U2`–`U20` keep their `main` kinds on both boards.
+  - The sweep shows it too: every `U<n>` from `U2` to `U20` other than the regulators' keeps its `main` kind on both boards.
 - The domain does not matter: the MCU and each regulator are refused on every rail named (`U12` on both its rails, `U10` on `VDD_5V`).
+
+**A3. No specification is made unsatisfiable against the supply gate.** `extract`'s supply gate (`eda/src/supply.rs:1449-1483`, `SupplySinkUncounted`) requires a load naming each part on a judged domain. It exempts the MCU (`MCU_` symbols), the regulator whose `output` is the domain, and each child regulator, whose `input` it is [read].
+
+- **The worry:** this rule refuses a regulator named on any domain. A regulator with a pin on a third rail would be one the gate demands and the rule forbids.
+- **That rail cannot be reached** [read]:
+  - A control's `wire` may not name a rail (`ir/src/power.rs:2912`, "a tie to a rail is a strap").
+  - A regulator's straps tie a pin to its own input or leave it open (`Strap::Input`, `Strap::Open`; `vcca`/`vccb` are the crossing's).
+  - So a regulator's pins reach only its input and output rails, and the gate exempts it on both. `U12`, the one regulator on two domains [`1209b` measured], is the example.
+- The two sets agree. Nothing here changes the gate (outside the fence).
+
+**A4. No test builds a load the rule now refuses, outside `load_references`** [measured, grep].
+
+- The search covered every test source and helper under `crates/*/tests`, tier 2 included.
+- No load names `U1` or a regulator reference. The hits are regulator declarations, a supply-return pad and an I2C device.
+- `outline_tier1`'s removal cases drop a device's own loads with it.
+- The renamed and sized variants are the 93 checked in §2.
+- CI's tools job runs tier 2. Its log was checked for `LoadNamesCountedPart` (§6).
 
 ## 5. Findings
 
@@ -79,12 +96,29 @@ Both asserted that a load naming the MCU passes. The work order now refuses it, 
 
 ## 6. Gates, the reduction pass, and CI
 
-- **`cargo test --workspace`:** 2,362 passed, 0 failed, 0 ignored [measured: `test-workspace.log`, in a capped user scope, 32 GiB, swap 0]. That run preceded the reduction pass below, which changed `ir/tests/load_references.rs` only. On the final tree, `load_references` passes 5 of 5 [measured: `mut/base-after.log`].
-- **`cargo fmt --all -- --check`** and **`cargo clippy --workspace --all-targets -- -D warnings`:** exit 0 on the final tree [measured: `clippy-final.log`].
+- **`main` merged twice.**
+  - First `bb1bcb8c`, docs only: the roadmap; this work order, identical to the copy built to; `4405`'s.
+  - Then `943f7112` (`4240v`, #259: spec 19, `mcu.core_supply`), clean, with no file of this diff touched by both.
+  - Then `d70a99e5`, docs and `fab/sentinel-01-bench/BENCH.md` only, with no code: the measures below stand.
+- **Evidence re-measured after the second merge** [measured: `~/.cache/aet-1209c/r2/`]. `main`'s binary was rebuilt at `943f7112` in a throwaway worktree, since removed.
+  - **Corpus:** 52 files, byte-identical (26 pass, 26 refused).
+  - **The dump:** 0 loads naming the MCU or a regulator.
+  - **The `U12` copies,** rebuilt from the spec-19 fixture: refused on the branch, passing on `main`.
+  - **Variants:** all 93 pass on both binaries, identically.
+  - **`emit`:** 15 files, sha256 identical.
+  - **The sweep:** the same 7 differences, and 311 unchanged.
+  - Every number in §2 and §4 holds on the merged tree.
+- **`cargo test --workspace`:**
+  - **Before the reduction pass:** 2,362 passed, 0 failed, 0 ignored [measured: `test-workspace.log`, in a capped user scope, 32 GiB, swap 0].
+  - **On the merged final tree:** 2,396 passed, 0 failed, 0 ignored [measured: `r2/test-workspace.log`, capped as above].
+- **`cargo fmt --all -- --check`** and **`cargo clippy --workspace --all-targets -- -D warnings`:** exit 0 on the merged final tree [measured: `r2/clippy.log`].
 - **Reduction pass (diff): −13 lines net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 0 findings below.** Run inline by the builder, not by a fresh subagent: the diff is about 45 source lines.
   - **`with_load_on` restated `with_load`** with a domain. `with_load` now calls it.
   - **Form (ii) repeated the MCU test's first assertion.** It is now a one-line pointer.
   - **Proof:** after both, `load_references` passes and both mutants are still killed [measured: `mut/m1-after.log` fails the MCU test, `mut/m2-after.log` fails both regulator tests].
   - **Considered, not cut:** the path `format!` is written once per arm of the two refusals, as `1209` wrote it. A shared closure is not fewer lines.
-- **`main` merged:** `bb1bcb8c`, docs only (the roadmap; this work order, identical to the copy built to; `4405`'s).
-- **CI:** see the PR. This file's READY commit names the run.
+- **CI on `22906799`** (the build plus the first merge) **is green** [measured]:
+  - **Runs:** `ci` 44709444009 (17 of 17 jobs pass, `bench-package` among them), `engine-image` 44709443873, `ardupilot-image` 44709443686.
+  - **`tools`:** 2,587 tests passed; tier-2 194 against a floor of 194, so `TIER2_MIN` does not move.
+  - **The new kind in the log:** `LoadNamesCountedPart` appears 0 times in the whole `ci` log, so no tier-2 test prints the new refusal.
+- **This READY commit** carries the second merge and this file. CI on it is the run the merge waits on.
