@@ -2066,3 +2066,269 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
     });
     assert_eq!(attributed(&r).rule, Rule::I4);
 }
+
+/// One more device's identity step (register 0xD0, a read of `width` bytes)
+/// on `bus`, whose read timed out with nothing logged.
+fn lacking(r: &mut Vec<Record>, peripheral: &str, reference: &str, address: u8, width: u8) {
+    insert_after_last(
+        r,
+        is_check,
+        Record::I2cCheck {
+            reference: reference.into(),
+            address,
+            step: "identity".into(),
+            write: vec![0xD0],
+            width,
+            expected: 0x60,
+            mask: 0xFF,
+            observed: Some(0),
+            status: Some("timeout_txis".into()),
+        },
+    );
+    insert_after_last(
+        r,
+        is_witness,
+        witness_with(peripheral, reference, &OK, Some(&[])),
+    );
+}
+
+/// §5, the shared step shape: the step named is one on the same bus whose
+/// read has the extra transaction's width. A device on another bus, or with
+/// a longer read of the same register, lacking its own transaction, is not
+/// a second candidate.
+#[test]
+fn the_step_named_is_on_the_same_bus_with_the_extra_reads_width() {
+    let named = |r: &[Record]| -> Vec<String> {
+        fields_of(r, witness_index(r, "U5"))
+            .into_iter()
+            .filter(|f| f.4 && f.0.ends_with(".address"))
+            .map(|f| f.0)
+            .collect()
+    };
+    let collide = |r: &mut Vec<Record>| {
+        observe(r, "U2", &[]);
+        observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+    };
+    // U6 on SENSORS reads two bytes of 0xD0 and logged nothing.
+    let r = two_bme(&[], |r| {
+        collide(r);
+        lacking(r, "I2C1", "U6", 0x75, 2);
+        let i = find(r, |x| matches!(x, Record::I2cBusSolved { .. }));
+        r[i] = solved(
+            "SENSORS",
+            "I2C1",
+            ["I2C_SCL", "I2C_SDA"],
+            ["PB6", "PB7"],
+            &[("U2", 0x76), ("U3", 0x48), ("U5", 0x77), ("U6", 0x75)],
+        );
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_timeout", 1), ("i2c_transaction_unwitnessed", 2)]),
+        );
+    });
+    assert_eq!(named(&r), ["i2c1.u2.identity.address"]);
+    // U9, a BME280 at 0x76 on AUX, logged nothing for its identity read.
+    let r = two_bme(&[], |r| {
+        collide(r);
+        let at = find(r, |x| matches!(x, Record::I2cBusSolved { .. }));
+        r.insert(
+            at,
+            solved(
+                "AUX",
+                "I2C2",
+                ["A_SCL", "A_SDA"],
+                ["PF1", "PF0"],
+                &[("U9", 0x76)],
+            ),
+        );
+        let i = find(r, |x| matches!(x, Record::RiseComputed { .. }));
+        r.insert(i, rise("AUX", "A_SCL", 186_402));
+        r.insert(i + 1, rise("AUX", "A_SDA", 186_402));
+        lacking(r, "I2C2", "U9", 0x76, 1);
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_timeout", 1), ("i2c_transaction_unwitnessed", 2)]),
+        );
+    });
+    assert_eq!(named(&r), ["i2c1.u2.identity.address"]);
+}
+
+/// A device with two steps: each step's witness takes as many lines as it
+/// expects and the last the rest, so U2's extra read, logged before U5's own
+/// data read, lands in U5's data witness. The surplus is shown there, on the
+/// witness its first line went to, and U5's identity witness, which holds
+/// its own read, shows nothing.
+#[test]
+fn the_surplus_is_shown_on_the_witness_its_first_line_went_to() {
+    let r = two_bme(&[], |r| {
+        insert_after_last(
+            r,
+            is_check,
+            Record::I2cCheck {
+                reference: "U5".into(),
+                address: 0x77,
+                step: "data".into(),
+                write: vec![0xF7],
+                width: 2,
+                expected: 0x1234,
+                mask: 0xFFFF,
+                observed: Some(0x1234),
+                status: Some("ok".into()),
+            },
+        );
+        let mut w = witness_with(
+            "I2C1",
+            "U5",
+            &["Write F7", "Read 12 34"],
+            Some(&["Write D0", "Read 60", "Write F7", "Read 12 34"]),
+        );
+        if let Record::I2cWitness { step, .. } = &mut w {
+            *step = "data".into();
+        }
+        insert_after_last(r, is_witness, w);
+        observe(r, "U2", &[]);
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 2)]),
+        );
+    });
+    let identity = witness_index(&r, "U5");
+    let data = r
+        .iter()
+        .rposition(|x| matches!(x, Record::I2cWitness { step, .. } if step == "data"))
+        .unwrap();
+    assert!(
+        fields_of(&r, identity).iter().all(|f| !f.4),
+        "U5's identity read is its own"
+    );
+    let shown: Vec<String> = fields_of(&r, data)
+        .into_iter()
+        .filter(|f| f.4)
+        .map(|f| f.0)
+        .collect();
+    assert_eq!(
+        shown,
+        [
+            "i2c1.u5.Write",
+            "i2c1.u5.Read",
+            "i2c1.u5.transactions",
+            "i2c1.u2.identity.address"
+        ]
+    );
+    assert_eq!(attributed(&r).rule, Rule::S1);
+}
+
+/// `AET-WO-3306` F1 (ruled 12:22Z: a §7.1 row, not this order's): U2's
+/// identity read sent to 0x47, where U5, a BMP581, answers. These are the
+/// records measured on `spike/3306/spec/bme-bmp.json` (`spike/3306/out`).
+/// The run stays I4 because no BMP581 witness is evidence: our model logs
+/// `read 0xRR -> 0xVV` and `write 0xRR <- …`, a format `witness_fields`
+/// does not read, and U5's log also holds a warning, a wrong transaction
+/// rather than an extra one. The row that teaches attribution the BMP581's
+/// format flips this test.
+#[test]
+fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
+    let mut r = two_bme(&[], |_| {});
+    let i = find(&r, |x| matches!(x, Record::I2cBusSolved { .. }));
+    r[i] = solved(
+        "SENSORS",
+        "I2C1",
+        ["I2C_SCL", "I2C_SDA"],
+        ["PB6", "PB7"],
+        &[("U2", 0x76), ("U3", 0x48), ("U5", 0x47)],
+    );
+    r.retain(|x| {
+        !matches!(x, Record::I2cCheck { reference, .. } | Record::I2cWitness { reference, .. } if reference == "U5")
+    });
+    replace(&mut r, is_check, check("ok", 0));
+    observe(&mut r, "U2", &[]);
+    let line = |l: &str| format!("[NOISY] i2c1.u5: {l}");
+    for (step, write, width, expected, mask, script, observed) in [
+        (
+            "identity",
+            vec![0x01],
+            1,
+            0x50,
+            0xFF,
+            vec![line("read 0x01 -> 0x50")],
+            vec!["[WARNING] i2c1.u5: access to unmodelled register 0x50".to_owned()],
+        ),
+        (
+            "configure",
+            vec![0x36, 0x40, 0x81],
+            0,
+            0,
+            0,
+            vec![line("write 0x36 <- 0x40 0x81")],
+            vec![line("read 0x50 -> 0x00")],
+        ),
+        (
+            "data",
+            vec![0x1D],
+            6,
+            423_687_010,
+            0xFFFF_FFFF_FFFF,
+            vec![line("read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62")],
+            vec![
+                line("read 0x01 -> 0x50"),
+                line("write 0x36 <- 0x40 0x81"),
+                line("read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"),
+            ],
+        ),
+    ] {
+        insert_after_last(
+            &mut r,
+            is_check,
+            Record::I2cCheck {
+                reference: "U5".into(),
+                address: 0x47,
+                step: step.into(),
+                write,
+                width,
+                expected,
+                mask,
+                observed: Some(expected),
+                status: Some("ok".into()),
+            },
+        );
+        insert_after_last(
+            &mut r,
+            is_witness,
+            Record::I2cWitness {
+                peripheral: "I2C1".into(),
+                reference: "U5".into(),
+                device: "i2c1.u5".into(),
+                step: step.into(),
+                expected: script,
+                observed: Some(observed),
+                absent: Vec::new(),
+            },
+        );
+    }
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[
+            ("i2c_identity_mismatch", 1),
+            ("i2c_transaction_unwitnessed", 4),
+        ]),
+    );
+    let a = attributed(&r);
+    assert_eq!(
+        (a.domain, a.rule),
+        (Domain::Indeterminate, Rule::I4),
+        "{a:?}"
+    );
+    assert_eq!(kinds(&a.evidence), [7, 7], "{a:?}");
+    for (i, x) in r.iter().enumerate() {
+        if matches!(x, Record::I2cWitness { reference, .. } if reference == "U5") {
+            assert!(
+                fields_of(&r, i).is_empty(),
+                "a BMP581 witness is no evidence either way: its lines are not `Write`/`Read`"
+            );
+        }
+    }
+}
