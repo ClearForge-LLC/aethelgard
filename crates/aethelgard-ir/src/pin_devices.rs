@@ -13,6 +13,14 @@
 //! one too (`UnheldDuringReset`, `1211` §2.6). Nothing is judged at run time:
 //! no drive API exists.
 //!
+//! `AET-WO-1211e` adds three rules. An input's pull is judged on the MCU's
+//! side as well as the part's (A1, `PullAboveMcuTolerance`,
+//! `McuPinStructureUnheld`), against the pin's structure in the MCU row's
+//! `io`. A row's `trip` refuses a reference on `GND` and a trip below the
+//! declared full scale (A2, `TripReferenceGrounded`, `TripBelowFullScale`).
+//! A row's `bulk_unstated` makes `bulk` required, and every other row refuses
+//! one (`BulkUndeclared`, `BulkNotAllowed`, `BulkUnderRated`).
+//!
 //! The solver places each signal like an SPI chip select and each ADC input
 //! on an ADC1 or ADC3 channel ([`place`]); every other crate refuses a
 //! topology that carries a pin device, by name, until its work order lands.
@@ -43,6 +51,11 @@ pub const MCU_IO_LEVELS: &str = "DS12117 Rev 10 Table 50 p. 139 (rev Y) = Table 
 /// own pull-down, so no driven input of a pin device may sit on one
 /// (`UnheldDuringReset`, adversarial pass D1).
 pub const MCU_RESET_PULL_UPS: [&str; 3] = ["PA13", "PA15", "PB4"];
+/// The pin whose `PUPDR` resets to a pull-down (the same page: PA14). With
+/// [`MCU_RESET_PULL_UPS`], every pin holding an internal pull from reset to
+/// the first write, which above 4 V must be off (DS12117 Rev 10 Table 10
+/// note 4, p. 104 = Table 108 note 4, p. 208; `AET-WO-1211e` A1).
+pub const MCU_RESET_PULL_DOWNS: [&str; 1] = ["PA14"];
 
 /// The MCU's weak pull-up, at least (DS12117 Rev 10 Table 49 rev Y p. 137 =
 /// Table 146 rev V p. 241: `RPU` 30 to 50 kΩ).
@@ -70,6 +83,11 @@ pub struct PinDevice {
     /// §7 as ruled); one the row states is refused here
     /// (`PartLimitDeclaredTwice`).
     pub part_limits: PartLimits,
+    /// The bulk capacitor on the supply whose bulk the row leaves unstated
+    /// (`AET-WO-1211e`): required there (`BulkUndeclared`), refused on a row
+    /// that states its own (`BulkNotAllowed`); `null` declares none.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub bulk: Option<Bulk>,
     /// The range the device's resistors are judged over: `null` when the
     /// specification's `power.conditions` declares the board temperature,
     /// else required (`TemperatureUndeclared`, `TemperatureDeclaredTwice`).
@@ -212,6 +230,17 @@ pub struct PartLimits {
     pub input_pwm_max_hz: Option<SourcedValue>,
 }
 
+/// A declared bulk capacitor: a capacitor row of the power parts table rated
+/// above its supply's maximum, and why that value (`source`; nothing
+/// supplies one).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Bulk {
+    pub reference: String,
+    pub part: String,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SourcedValue {
@@ -281,6 +310,7 @@ crate::object_only!(
     CurrentOutput,
     Bridge,
     PartLimits,
+    Bulk,
     SourcedValue,
     SolvedGpio,
     SolvedAdcInput,
@@ -328,6 +358,13 @@ pub enum PinKindOfRefusal {
     PinDeviceUndeclared,
     BridgeUndeclared,
     SenseAdcMismatch,
+    PullAboveMcuTolerance,
+    McuPinStructureUnheld,
+    TripReferenceGrounded,
+    TripBelowFullScale,
+    BulkUndeclared,
+    BulkNotAllowed,
+    BulkUnderRated,
 }
 
 impl PinKindOfRefusal {
@@ -370,6 +407,13 @@ impl PinKindOfRefusal {
             K::PinDeviceUndeclared => "PinDeviceUndeclared",
             K::BridgeUndeclared => "BridgeUndeclared",
             K::SenseAdcMismatch => "SenseAdcMismatch",
+            K::PullAboveMcuTolerance => "PullAboveMcuTolerance",
+            K::McuPinStructureUnheld => "McuPinStructureUnheld",
+            K::TripReferenceGrounded => "TripReferenceGrounded",
+            K::TripBelowFullScale => "TripBelowFullScale",
+            K::BulkUndeclared => "BulkUndeclared",
+            K::BulkNotAllowed => "BulkNotAllowed",
+            K::BulkUnderRated => "BulkUnderRated",
         }
     }
 }
@@ -443,6 +487,9 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
             if let Some(r) = &c.reservoir {
                 out.push(r.reference.as_str());
             }
+        }
+        if let Some(b) = &d.bulk {
+            out.push(b.reference.as_str());
         }
     }
     out
@@ -528,6 +575,13 @@ pub(crate) fn identifiers(spec: &Specification) -> Result<(), IrValidationError>
                 &l.source,
                 &format!("{at}.part_limits.input_pwm_max_hz.source"),
             )?;
+        }
+        if let Some(b) = &d.bulk {
+            identifier(IdentifierKind::Reference, &b.reference, || {
+                format!("{at}.bulk.reference")
+            })?;
+            plain(&b.part, || format!("{at}.bulk.part"))?;
+            crate::board::source(&b.source, &format!("{at}.bulk.source"))?;
         }
         if let Some(t) = &d.temperature_celsius {
             crate::board::source(&t.source, &format!("{at}.temperature_celsius.source"))?;
@@ -707,6 +761,7 @@ impl<'s> Device<'s> {
         let strap_levels = self.straps()?;
         self.signals()?;
         self.analog()?;
+        self.trip()?;
         let bridged = self.bridges(&strap_levels, motor_inputs)?;
         // Every input pin of a channel of the part's modes is a declared
         // bridge's: an input pair driven outside a bridge would have its
@@ -741,7 +796,8 @@ impl<'s> Device<'s> {
                 ));
             }
         }
-        self.limits()
+        self.limits()?;
+        self.bulk()
     }
 
     fn supplies(&mut self) -> Result<(), IrValidationError> {
@@ -952,6 +1008,7 @@ impl<'s> Device<'s> {
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
+                            self.pull_tolerated(s, mcu_hi, &at)?;
                         }
                         (Some(McuPull::Down | McuPull::None), None) => {
                             return Err(self.err(
@@ -983,6 +1040,7 @@ impl<'s> Device<'s> {
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
+                            self.pull_tolerated(s, crate::maximum_millivolts(v), &at)?;
                         }
                         _ => {
                             return Err(shape("`pull` states exactly one of `mcu` and `resistor`"));
@@ -1067,94 +1125,9 @@ impl<'s> Device<'s> {
         let vref_min = crate::minimum_millivolts(mcu);
         for (k, a) in d.analog.iter().enumerate() {
             let at = format!(".analog[{k}]");
-            let p = self.pin(&a.device_pin, &format!("{at}.device_pin"))?;
-            let PinKind::CurrentOutput {
-                ua_per_a_typical,
-                output_max_ua,
-                error_band,
-                band_supply,
-            } = &p.kind
-            else {
-                return Err(self.kind_mismatch(
-                    &a.device_pin,
-                    &p.kind,
-                    "an ADC input reads a current_output pin",
-                    &at,
-                ));
-            };
             let Transfer::CurrentOutput(c) = &a.transfer;
             let FullScale::Milliamps(fs_ma) = a.full_scale;
-            if fs_ma == 0 || c.resistor.ohms == 0 {
-                return Err(self.err(
-                    K::SignalShape,
-                    &at,
-                    "a full scale or resistor of 0 declares nothing",
-                ));
-            }
-            // The bands hold only while the supply they are stated for is in
-            // range: outside it no error is stated (SLVSDS7B p. 6, VVM >= 5.5 V).
-            let (supply_pin, (lo_mv, hi_mv)) = band_supply;
-            let in_band = match d.supplies.get(supply_pin) {
-                Some(id) => {
-                    let v = self.domain(id, &format!(".supplies.{supply_pin}"))?;
-                    crate::minimum_millivolts(v) >= *lo_mv && crate::maximum_millivolts(v) <= *hi_mv
-                }
-                None => false,
-            };
-            if !in_band {
-                return Err(self.err(
-                    K::PartLimitUndeclared,
-                    &format!("{at}.device_pin"),
-                    format!(
-                        "`{}`'s error bands are stated for `{supply_pin}` from {lo_mv} to {hi_mv} mV ({}, {}); its domain spans past that, where no error is stated",
-                        a.device_pin, self.row.document, p.page
-                    ),
-                ));
-            }
-            // The worst error band that covers the full scale (`RUL-19`: the
-            // typical gain with its stated error, never the typical alone).
-            let mut worst_ua: Option<i128> = None;
-            for b in error_band
-                .iter()
-                .filter(|b| (b.load_ma.0..=b.load_ma.1).contains(&fs_ma))
-            {
-                let ua = i128::from(fs_ma) * 1000;
-                let with = match (b.percent, b.absolute_ua) {
-                    (Some(pc), _) => ua * (100 + i128::from(pc)) / 100,
-                    (None, Some(abs)) => ua + i128::from(abs),
-                    (None, None) => ua,
-                };
-                worst_ua = Some(worst_ua.map_or(with, |w| w.max(with)));
-            }
-            let Some(load_ua) = worst_ua else {
-                return Err(self.err(
-                    K::PartLimitUndeclared,
-                    &format!("{at}.full_scale"),
-                    format!(
-                        "{fs_ma} mA is in none of `{}`'s error bands ({}, {}): its error there is not stated",
-                        a.device_pin, self.row.document, p.page
-                    ),
-                ));
-            };
-            // I_out = I_load × A, µA.
-            let out_ua = ceil(load_ua * i128::from(*ua_per_a_typical), 1_000_000);
-            if out_ua > i128::from(*output_max_ua) {
-                return Err(self.err(
-                    K::AdcOutputCurrentExceeded,
-                    &format!("{at}.full_scale"),
-                    format!(
-                        "at {fs_ma} mA with its error, `{}` sources up to {out_ua} uA, above its {output_max_ua} uA ({}, {})",
-                        a.device_pin, self.row.document, p.page
-                    ),
-                ));
-            }
-            let e = resistor_error_ppm(
-                self,
-                &c.resistor,
-                &format!("{at}.transfer.current_output.resistor"),
-            )?;
-            let (_, r_hi) = band(c.resistor.ohms, e);
-            let full_uv = out_ua * r_hi;
+            let (full_uv, r_hi) = self.full_scale_uv(a, &at)?;
             if full_uv > i128::from(vref_min) * 1000 {
                 return Err(self.err(
                     K::AdcFullScaleExceeded,
@@ -1165,21 +1138,8 @@ impl<'s> Device<'s> {
                     ),
                 ));
             }
+            let m = self.mcu_row()?;
             // RAIN at the declared resolution, or the reservoir AN2834 needs.
-            let Some(row) = pp.get(&self.spec.mcu.part) else {
-                return Err(self.err(
-                    K::PassivePartUnknown,
-                    ".mcu",
-                    format!("`{}` has no power-parts row", self.spec.mcu.part),
-                ));
-            };
-            let crate::power_parts::Kind::Mcu(m) = &row.kind else {
-                return Err(self.err(
-                    K::PassivePartUnknown,
-                    ".mcu",
-                    "the MCU's row is not an mcu row",
-                ));
-            };
             let Some((_, rain)) = m
                 .rain_max_ohms
                 .iter()
@@ -1238,6 +1198,277 @@ impl<'s> Device<'s> {
             self.bind(&a.device_pin, Binding::Analog, &at)?;
         }
         Ok(())
+    }
+
+    /// The MCU's power-parts row.
+    fn mcu_row(&self) -> Result<&'static crate::power_parts::Mcu, IrValidationError> {
+        let pp = crate::power_parts::table()?;
+        let Some(row) = pp.get(&self.spec.mcu.part) else {
+            return Err(self.err(
+                K::PassivePartUnknown,
+                ".mcu",
+                format!("`{}` has no power-parts row", self.spec.mcu.part),
+            ));
+        };
+        let crate::power_parts::Kind::Mcu(m) = &row.kind else {
+            return Err(self.err(
+                K::PassivePartUnknown,
+                ".mcu",
+                "the MCU's row is not an mcu row",
+            ));
+        };
+        Ok(m)
+    }
+
+    /// An ADC input's voltage at its full scale, µV, at the error band's
+    /// worst edge and the resistor's highest, and that resistance: its kind,
+    /// its band's supply in range, a band covering the full scale, and the
+    /// output current within the part's.
+    fn full_scale_uv(&self, a: &AnalogInput, at: &str) -> Result<(i128, i128), IrValidationError> {
+        let d = self.d;
+        let p = self.pin(&a.device_pin, &format!("{at}.device_pin"))?;
+        let PinKind::CurrentOutput {
+            ua_per_a_typical,
+            output_max_ua,
+            error_band,
+            band_supply,
+        } = &p.kind
+        else {
+            return Err(self.kind_mismatch(
+                &a.device_pin,
+                &p.kind,
+                "an ADC input reads a current_output pin",
+                at,
+            ));
+        };
+        let Transfer::CurrentOutput(c) = &a.transfer;
+        let FullScale::Milliamps(fs_ma) = a.full_scale;
+        if fs_ma == 0 || c.resistor.ohms == 0 {
+            return Err(self.err(
+                K::SignalShape,
+                at,
+                "a full scale or resistor of 0 declares nothing",
+            ));
+        }
+        // The bands hold only while the supply they are stated for is in
+        // range: outside it no error is stated (SLVSDS7B p. 6, VVM >= 5.5 V).
+        let (supply_pin, (lo_mv, hi_mv)) = band_supply;
+        let in_band = match d.supplies.get(supply_pin) {
+            Some(id) => {
+                let v = self.domain(id, &format!(".supplies.{supply_pin}"))?;
+                crate::minimum_millivolts(v) >= *lo_mv && crate::maximum_millivolts(v) <= *hi_mv
+            }
+            None => false,
+        };
+        if !in_band {
+            return Err(self.err(
+                K::PartLimitUndeclared,
+                &format!("{at}.device_pin"),
+                format!(
+                    "`{}`'s error bands are stated for `{supply_pin}` from {lo_mv} to {hi_mv} mV ({}, {}); its domain spans past that, where no error is stated",
+                    a.device_pin, self.row.document, p.page
+                ),
+            ));
+        }
+        // The worst error band that covers the full scale (`RUL-19`: the
+        // typical gain with its stated error, never the typical alone).
+        let mut worst_ua: Option<i128> = None;
+        for b in error_band
+            .iter()
+            .filter(|b| (b.load_ma.0..=b.load_ma.1).contains(&fs_ma))
+        {
+            let ua = i128::from(fs_ma) * 1000;
+            let with = match (b.percent, b.absolute_ua) {
+                (Some(pc), _) => ua * (100 + i128::from(pc)) / 100,
+                (None, Some(abs)) => ua + i128::from(abs),
+                (None, None) => ua,
+            };
+            worst_ua = Some(worst_ua.map_or(with, |w| w.max(with)));
+        }
+        let Some(load_ua) = worst_ua else {
+            return Err(self.err(
+                K::PartLimitUndeclared,
+                &format!("{at}.full_scale"),
+                format!(
+                    "{fs_ma} mA is in none of `{}`'s error bands ({}, {}): its error there is not stated",
+                    a.device_pin, self.row.document, p.page
+                ),
+            ));
+        };
+        // I_out = I_load × A, µA.
+        let out_ua = ceil(load_ua * i128::from(*ua_per_a_typical), 1_000_000);
+        if out_ua > i128::from(*output_max_ua) {
+            return Err(self.err(
+                K::AdcOutputCurrentExceeded,
+                &format!("{at}.full_scale"),
+                format!(
+                    "at {fs_ma} mA with its error, `{}` sources up to {out_ua} uA, above its {output_max_ua} uA ({}, {})",
+                    a.device_pin, self.row.document, p.page
+                ),
+            ));
+        }
+        let e = resistor_error_ppm(
+            self,
+            &c.resistor,
+            &format!("{at}.transfer.current_output.resistor"),
+        )?;
+        let (_, r_hi) = band(c.resistor.ohms, e);
+        Ok((out_ua * r_hi, r_hi))
+    }
+
+    /// A1 (`AET-WO-1211e`): a pull of up to `v_max` mV on `s`'s MCU pin is
+    /// within what the pin tolerates (DS12117 Rev 10 Table 10 p. 103 = Table
+    /// 108 p. 207), its supply taken at the MCU domain's minimum, where
+    /// `Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0 V, 6 V)` is least (the
+    /// emitter ties all four to `mcu.supply`). At or below the least input
+    /// any held structure tolerates, nothing is looked up; above it, an
+    /// unpinned signal may land anywhere and is refused, a pin holding an
+    /// internal pull from reset is refused (note 4), and a hand pin is judged
+    /// by its held structure or refused for having none.
+    fn pull_tolerated(
+        &self,
+        s: &GpioSignal,
+        v_max: u32,
+        at: &str,
+    ) -> Result<(), IrValidationError> {
+        let io = &self.mcu_row()?.io;
+        let pp = crate::power_parts::table()?;
+        let mcu = self.mcu_domain()?;
+        let vdd = i64::from(crate::minimum_millivolts(mcu));
+        let v = i64::from(v_max);
+        let floor = io.floor(vdd);
+        if v <= floor {
+            return Ok(());
+        }
+        let over = |why: String| self.err(K::PullAboveMcuTolerance, &format!("{at}.pull"), why);
+        let Some(pin) = s.pin.as_deref() else {
+            return Err(over(format!(
+                "the pull holds `{}` at up to {v} mV, above {floor} mV, the least any MCU pin tolerates with `{}` at its minimum of {vdd} mV (DS12117 Rev 10 Table 10 p. 103): the solver may place it on such a pin; pin it by hand on one whose structure tolerates {v} mV",
+                s.net, mcu.id
+            )));
+        };
+        if MCU_RESET_PULL_UPS.contains(&pin) || MCU_RESET_PULL_DOWNS.contains(&pin) {
+            return Err(over(format!(
+                "the pull holds `{pin}` at up to {v} mV; `{pin}` holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542), and above 4 V the internal pulls must be disabled (DS12117 Rev 10 Table 10 note 4, p. 104)"
+            )));
+        }
+        let Some((structure, cite, limit, family)) = io.tolerated(pin, vdd) else {
+            return Err(self.err(
+                K::McuPinStructureUnheld,
+                &format!("{at}.pin"),
+                format!(
+                    "`{pin}` has no held I/O structure (DS12117 Rev 10 Table 8 holds the LQFP144's I/O pins), and the pull holds it at up to {v} mV, above the {floor} mV every held structure tolerates: no structure is assumed"
+                ),
+            ));
+        };
+        if v > limit {
+            return Err(over(format!(
+                "the pull holds `{pin}` at up to {v} mV; `{pin}` is {structure} ({}), which tolerates {limit} mV with `{}` at its minimum of {vdd} mV ({})",
+                pp.cite(cite),
+                mcu.id,
+                pp.cite(&family.max_mv.at)
+            )));
+        }
+        Ok(())
+    }
+
+    /// A2 (`AET-WO-1211e`): a part whose row states a reference-set trip
+    /// (the DRV8876's VREF against IPROPI) chops at no current with its
+    /// reference on `GND`, and below its declared full scale when the sense
+    /// voltage at that full scale (the error band's worst edge, the
+    /// resistor's highest) exceeds the reference domain's minimum.
+    fn trip(&self) -> Result<(), IrValidationError> {
+        let Some(t) = &self.row.trip else {
+            return Ok(());
+        };
+        let at = format!(".straps.{}", t.reference);
+        // `straps` refused a reference left undeclared or held by a resistor.
+        let Some(Strap::Tie(to)) = self.d.straps.get(&t.reference) else {
+            unreachable!("straps() admits only a tie on a strap_analog pin");
+        };
+        if to == crate::GND {
+            return Err(self.err(
+                K::TripReferenceGrounded,
+                &at,
+                format!(
+                    "`{}` is tied to `GND`: the trip current ITRIP x A = V{} / R is 0, so the outputs chop at no current ({}, {})",
+                    t.reference, t.reference, self.row.document, t.page
+                ),
+            ));
+        }
+        let v = self.domain(to, &at)?;
+        let ref_min = crate::minimum_millivolts(v);
+        for (k, a) in self.d.analog.iter().enumerate() {
+            if a.device_pin != t.sense {
+                continue;
+            }
+            let (full_uv, r_hi) = self.full_scale_uv(a, &format!(".analog[{k}]"))?;
+            if full_uv > i128::from(ref_min) * 1000 {
+                let FullScale::Milliamps(fs_ma) = a.full_scale;
+                return Err(self.err(
+                    K::TripBelowFullScale,
+                    &at,
+                    format!(
+                        "at its declared full scale of {fs_ma} mA, `{}` reaches up to {full_uv} uV across at most {r_hi} ohms, above `{to}`'s minimum of {ref_min} mV on `{}`: the outputs chop below the full scale ({}, {})",
+                        t.sense, t.reference, self.row.document, t.page
+                    ),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// The bulk capacitor (`AET-WO-1211e`): declared exactly where the row
+    /// leaves its supply's bulk unstated, a capacitor row rated above that
+    /// supply's domain's maximum.
+    fn bulk(&self) -> Result<(), IrValidationError> {
+        match (&self.row.bulk_unstated, &self.d.bulk) {
+            (None, None) => Ok(()),
+            (None, Some(b)) => Err(self.err(
+                K::BulkNotAllowed,
+                ".bulk",
+                format!(
+                    "`{}` states its own supply capacitance ({}): `{}` would be a second, uncited value",
+                    self.row.part, self.row.document, b.reference
+                ),
+            )),
+            (Some(u), None) => Err(self.err(
+                K::BulkUndeclared,
+                ".bulk",
+                format!(
+                    "`{}` gives `{}`'s bulk capacitor no value ({}, {}): declare `bulk`, a capacitor row rated above the domain's maximum, with the source of its value",
+                    self.row.part, u.supply, self.row.document, u.page
+                ),
+            )),
+            (Some(u), Some(b)) => {
+                let pp = crate::power_parts::table()?;
+                let Some(crate::power_parts::Kind::Capacitor(cap)) = pp.get(&b.part).map(|r| &r.kind)
+                else {
+                    return Err(self.err(
+                        K::PassivePartUnknown,
+                        ".bulk.part",
+                        format!("`{}` is not a capacitor row of the power parts table", b.part),
+                    ));
+                };
+                // `supplies` refused a supply pin naming no domain.
+                let id = &self.d.supplies[&u.supply];
+                let hi = crate::maximum_millivolts(self.domain(id, &format!(".supplies.{}", u.supply))?);
+                if cap.rated_millivolts.value <= i64::from(hi) {
+                    return Err(self.err(
+                        K::BulkUnderRated,
+                        ".bulk.part",
+                        format!(
+                            "`{}` is rated {} mV ({}), not above `{id}`'s maximum of {hi} mV on `{}`",
+                            b.part,
+                            cap.rated_millivolts.value,
+                            pp.cite(&cap.rated_millivolts.at),
+                            u.supply
+                        ),
+                    ));
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Each bridge; the input pins they take.

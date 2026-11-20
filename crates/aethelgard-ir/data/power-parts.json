@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -1421,6 +1421,494 @@
               "document": "AP_SPIDEVICE",
               "section": "lines 259-276: the bus clock / 2 halved at most 7 times to the first rate at or below the speed asked, so the slowest is the kernel / 256"
             }
+          },
+          "io": {
+            "pins": {
+              "PA0": {
+                "structure": "FT_a",
+                "page": 68
+              },
+              "PA1": {
+                "structure": "FT_ha",
+                "page": 68
+              },
+              "PA2": {
+                "structure": "FT_a",
+                "page": 68
+              },
+              "PA3": {
+                "structure": "FT_ha",
+                "page": 69
+              },
+              "PA4": {
+                "structure": "TT_a",
+                "page": 69
+              },
+              "PA5": {
+                "structure": "TT_ha",
+                "page": 69
+              },
+              "PA6": {
+                "structure": "FT_a",
+                "page": 69
+              },
+              "PA7": {
+                "structure": "TT_a",
+                "page": 70
+              },
+              "PA8": {
+                "structure": "FT_fha",
+                "page": 80
+              },
+              "PA9": {
+                "structure": "FT_u",
+                "page": 80
+              },
+              "PA10": {
+                "structure": "FT_u",
+                "page": 80
+              },
+              "PA11": {
+                "structure": "FT_u",
+                "page": 80
+              },
+              "PA12": {
+                "structure": "FT_u",
+                "page": 80
+              },
+              "PA13": {
+                "structure": "FT",
+                "page": 80
+              },
+              "PA14": {
+                "structure": "FT",
+                "page": 81
+              },
+              "PA15": {
+                "structure": "FT",
+                "page": 82
+              },
+              "PB0": {
+                "structure": "FT_a",
+                "page": 70
+              },
+              "PB1": {
+                "structure": "TT_a",
+                "page": 70
+              },
+              "PB2": {
+                "structure": "FT_ha",
+                "page": 71
+              },
+              "PB3": {
+                "structure": "FT",
+                "page": 85
+              },
+              "PB4": {
+                "structure": "FT",
+                "page": 85
+              },
+              "PB5": {
+                "structure": "FT",
+                "page": 86
+              },
+              "PB6": {
+                "structure": "FT_f",
+                "page": 86
+              },
+              "PB7": {
+                "structure": "FT_fa",
+                "page": 86
+              },
+              "PB8": {
+                "structure": "FT_fh",
+                "page": 86
+              },
+              "PB9": {
+                "structure": "FT_fh",
+                "page": 87
+              },
+              "PB10": {
+                "structure": "FT_f",
+                "page": 73
+              },
+              "PB11": {
+                "structure": "FT_f",
+                "page": 73
+              },
+              "PB12": {
+                "structure": "FT_u",
+                "page": 74
+              },
+              "PB13": {
+                "structure": "FT_u",
+                "page": 75
+              },
+              "PB14": {
+                "structure": "FT_u",
+                "page": 75
+              },
+              "PB15": {
+                "structure": "FT_u",
+                "page": 75
+              },
+              "PC0": {
+                "structure": "FT_a",
+                "page": 67
+              },
+              "PC1": {
+                "structure": "FT_ha",
+                "page": 67
+              },
+              "PC2": {
+                "structure": "TT_a",
+                "page": 67
+              },
+              "PC3": {
+                "structure": "TT_a",
+                "page": 67
+              },
+              "PC4": {
+                "structure": "TT_a",
+                "page": 70
+              },
+              "PC5": {
+                "structure": "TT_a",
+                "page": 70
+              },
+              "PC6": {
+                "structure": "FT_h",
+                "page": 79
+              },
+              "PC7": {
+                "structure": "FT_h",
+                "page": 79
+              },
+              "PC8": {
+                "structure": "FT_h",
+                "page": 79
+              },
+              "PC9": {
+                "structure": "FT_fh",
+                "page": 79
+              },
+              "PC10": {
+                "structure": "FT_ha",
+                "page": 82
+              },
+              "PC11": {
+                "structure": "FT_h",
+                "page": 82
+              },
+              "PC12": {
+                "structure": "FT_h",
+                "page": 82
+              },
+              "PC13": {
+                "structure": "FT",
+                "page": 64
+              },
+              "PC14": {
+                "structure": "FT",
+                "page": 65
+              },
+              "PC15": {
+                "structure": "FT",
+                "page": 65
+              },
+              "PD0": {
+                "structure": "FT_h",
+                "page": 82
+              },
+              "PD1": {
+                "structure": "FT_h",
+                "page": 82
+              },
+              "PD2": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD3": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD4": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD5": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD6": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD7": {
+                "structure": "FT_h",
+                "page": 83
+              },
+              "PD8": {
+                "structure": "FT_h",
+                "page": 75
+              },
+              "PD9": {
+                "structure": "FT_h",
+                "page": 75
+              },
+              "PD10": {
+                "structure": "FT_h",
+                "page": 76
+              },
+              "PD11": {
+                "structure": "FT_h",
+                "page": 76
+              },
+              "PD12": {
+                "structure": "FT_fh",
+                "page": 76
+              },
+              "PD13": {
+                "structure": "FT_fh",
+                "page": 76
+              },
+              "PD14": {
+                "structure": "FT_h",
+                "page": 76
+              },
+              "PD15": {
+                "structure": "FT_h",
+                "page": 76
+              },
+              "PE0": {
+                "structure": "FT_h",
+                "page": 87
+              },
+              "PE1": {
+                "structure": "FT_h",
+                "page": 87
+              },
+              "PE2": {
+                "structure": "FT_h",
+                "page": 64
+              },
+              "PE3": {
+                "structure": "FT_h",
+                "page": 64
+              },
+              "PE4": {
+                "structure": "FT_h",
+                "page": 64
+              },
+              "PE5": {
+                "structure": "FT_h",
+                "page": 64
+              },
+              "PE6": {
+                "structure": "FT_h",
+                "page": 64
+              },
+              "PE7": {
+                "structure": "TT_ha",
+                "page": 72
+              },
+              "PE8": {
+                "structure": "TT_ha",
+                "page": 72
+              },
+              "PE9": {
+                "structure": "TT_ha",
+                "page": 72
+              },
+              "PE10": {
+                "structure": "FT_ha",
+                "page": 72
+              },
+              "PE11": {
+                "structure": "FT_ha",
+                "page": 72
+              },
+              "PE12": {
+                "structure": "FT_h",
+                "page": 72
+              },
+              "PE13": {
+                "structure": "FT_h",
+                "page": 72
+              },
+              "PE14": {
+                "structure": "FT_h",
+                "page": 73
+              },
+              "PE15": {
+                "structure": "FT_h",
+                "page": 73
+              },
+              "PF0": {
+                "structure": "FT_f",
+                "page": 65
+              },
+              "PF1": {
+                "structure": "FT_f",
+                "page": 65
+              },
+              "PF2": {
+                "structure": "FT",
+                "page": 65
+              },
+              "PF3": {
+                "structure": "FT_ha",
+                "page": 65
+              },
+              "PF4": {
+                "structure": "FT_ha",
+                "page": 65
+              },
+              "PF5": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF6": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF7": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF8": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF9": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF10": {
+                "structure": "FT_ha",
+                "page": 66
+              },
+              "PF11": {
+                "structure": "FT_a",
+                "page": 71
+              },
+              "PF12": {
+                "structure": "FT_ha",
+                "page": 71
+              },
+              "PF13": {
+                "structure": "FT_ha",
+                "page": 71
+              },
+              "PF14": {
+                "structure": "FT_fha",
+                "page": 71
+              },
+              "PF15": {
+                "structure": "FT_fh",
+                "page": 71
+              },
+              "PG0": {
+                "structure": "FT_h",
+                "page": 71
+              },
+              "PG1": {
+                "structure": "TT_h",
+                "page": 71
+              },
+              "PG2": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG3": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG4": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG5": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG6": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG7": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG8": {
+                "structure": "FT_h",
+                "page": 78
+              },
+              "PG9": {
+                "structure": "FT_h",
+                "page": 84
+              },
+              "PG10": {
+                "structure": "FT_h",
+                "page": 84
+              },
+              "PG11": {
+                "structure": "FT_h",
+                "page": 84
+              },
+              "PG12": {
+                "structure": "FT_h",
+                "page": 84
+              },
+              "PG13": {
+                "structure": "FT_h",
+                "page": 84
+              },
+              "PG14": {
+                "structure": "FT_h",
+                "page": 85
+              },
+              "PG15": {
+                "structure": "FT_h",
+                "page": 85
+              },
+              "PH0": {
+                "structure": "FT",
+                "page": 66
+              },
+              "PH1": {
+                "structure": "FT",
+                "page": 66
+              }
+            },
+            "pins_at": {
+              "document": "DS12117",
+              "section": "Table 8 (pin/ball definition), the I/O structure column; legend Table 7, p. 63"
+            },
+            "families": [
+              {
+                "family": "FT",
+                "above_supply_millivolts": 4000,
+                "max_millivolts": {
+                  "value": 6000,
+                  "at": {
+                    "document": "DS12117",
+                    "section": "p. 103, Table 10 (rev Y) = p. 207, Table 108 (rev V), VIN on FT_xxx pins: Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0, 6 V); notes p. 104 = p. 208 3 (its structure's supplies), 4 (above 4 V no internal pull), 5"
+                  }
+                }
+              },
+              {
+                "family": "TT",
+                "above_supply_millivolts": null,
+                "max_millivolts": {
+                  "value": 4000,
+                  "at": {
+                    "document": "DS12117",
+                    "section": "p. 103, Table 10 (rev Y) = p. 207, Table 108 (rev V), VIN on TT_xx pins: 4.0 V"
+                  }
+                }
+              }
+            ]
           }
         }
       }

@@ -426,6 +426,7 @@
       "part_limits": {
         "input_pwm_max_hz": null
       },
+      "bulk": null,
       "temperature_celsius": null
     }
   ]

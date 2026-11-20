@@ -389,6 +389,11 @@
       "part_limits": {
         "input_pwm_max_hz": null
       },
+      "bulk": {
+        "reference": "C2",
+        "part": "GCM32EC71H106KA03",
+        "source": "D1 fixture stand-in, not a design: SLVSDS7B 9.1 p. 31 leaves CVM2 to system testing"
+      },
       "temperature_celsius": {
         "min": -20,
         "max": 85,
