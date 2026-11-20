@@ -1,6 +1,6 @@
 # AET-WO-1318 FEEDBACK — one way to read the drawing, true weights, a true README
 
-## Status: READY — built; CI green on 48519439 (run 44728879123); `main` a75fffcc (2305) merged in after it
+## Status: READY — built; CI green on 48519439 (run 44728879123) and on 078543e4 (run 44734895126, the merged head: green, but shard 8 ran 20.6 min on `supply_tier1`, F6); `outline_tier1` raised to 251 from that run; this commit's run is the one the REFIT RULE's clause reads
 
 Builder: Claude (Opus 5.5), a fresh `1318` session, 2026-11-20, from ~10:55 UTC. Worktree `~/aethelgard-1318`, branch `wo/aet-1318-eda-housekeeping` from `origin/main` `fff49a49`, with `main` `7ebca78c` (docs only) and then `a75fffcc` (`2305`, which adds `twin_tier2` rows and raises `TIER2_MIN` to 198) merged in. Neither merge touched a fenced line. The work order built to is `docs/work-orders/AET-WO-1318.md` on `main`; it is identical to the kickoff copy (`diff`, measured).
 
@@ -27,7 +27,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 - **Rule:** `ci/shard.sh`'s REFIT RULE, rule 5 (L67–75), with rule 3 for a colocated block (L56–57) [read]:
   - `board_tier2` is lock-serialised (`LOCKED`). A test there is weighed at its worst in-shard time: its `ok` timestamp less the previous lock-holder's, or less the binary's `Running` line when it completed first (an upper bound).
   - `outline_tier1` is a block in `ci/colocate.tsv`. It is weighed at its worst libtest `finished in`, rounded up.
-- **Runs:** the five green `main` push runs after `1317` merged [measured: `gh run view --job ID --log`, parsed by `kit/measure.py`; logs in `logs/`]:
+- **Runs:** the five green `main` push runs after `1317` merged, and this PR's two runs [measured: `gh run view --job ID --log`, parsed by `kit/measure.py`; logs in `logs/`]:
 
 | Run (head) | `each_size_sample_…` s | `outline_tier1` block `finished in` s |
 |---|---|---|
@@ -35,11 +35,13 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | 44711555077 (`943f7112`) | 116.67 | 203.26 |
 | 44712465606 (`d70a99e5`) | **156.94** (first in binary: `ok` − `Running`) | 195.92 |
 | 44722695274 (`d0c4cfe0`) | 98.98 | 163.88 |
-| 44724070629 (`fff49a49`) | 119.30 | **237.61** |
+| 44724070629 (`fff49a49`) | 119.30 | 237.61 |
+| 44728879123 (this PR, `48519439`) | 105.74 | 202.47 |
+| 44734895126 (this PR, `078543e4`, `2305` merged) | 144.42 | **250.19** |
 
 - **Rows set:**
   - `tests/board_tier2.rs each_size_sample_passes_every_gate_or_is_refused_by_name`: 1.500 → **156.940**.
-  - `tests/outline_tier1.rs` (colocate): 152 → **238**.
+  - `tests/outline_tier1.rs` (colocate): 152 → **251**. It was first set at 238 from the five `main` runs. The merged head's run then measured 250.19, past it, so the row was raised to the worst over all seven runs, as the rule reads.
   - Each carries a provenance comment naming the runs. No other row and no shard count moved [measured: `git diff origin/main -- ci`, 2 rows].
   - The `test-weights.tsv` comment sits under `1313c`'s estimate line, not at the header's end, because `4240a` and `4405` delete that file's last header line. Appending there would conflict.
 
@@ -49,7 +51,8 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - Entries are the host's `cargo test --workspace --features aethelgard-cli/with-tools -- --list`, through `shard.sh parse`.
   - The bridge's 36 entries come from the CI logs, because the bridge does not link on the host (no `libngspice.so.0`).
   - `shard.sh assign 12 … 37 colocate "$LOCKED"` with `main`'s rows prints **exactly** CI's plan for `fff49a49` (`diff` empty against run 44724070629's `planned` lines).
-- **With the new rows** (`plan/local-after.txt`): every shard is planned at **697 s**, under the clause's 1,006 s.
+- **With the new rows** (`plan/local-after.txt`, at 238 on the pre-`2305` list): every shard is planned at **697 s**, under the clause's 1,006 s.
+- **On the merged tree** (`2305` in): the local plan with the 238 row reproduces CI's 078543e4 plan exactly (`plan/ci-plan-078543e4.txt`). With 251, every shard is planned at **706 s** (`plan/local-final.txt`), and the guard printed `guard ok: 2629 test names, 2636 listed occurrences, 12 shards`. P2 is empty on both PR runs' 24 shard logs, and `test-shard.sh` passes.
   - The guard printed `guard ok: 2620 test names, 2627 listed occurrences, 12 shards`.
   - **P1** (a row naming no listed test) is inside `assign` and passed.
 - **P2** (`heavy_unweighted`, a test with no row past 60 s): empty with the new rows on all 60 shard logs of the five runs [measured].
@@ -82,6 +85,10 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - The slowest shard was 6, at 848 s, holding neither. Every job finished under 16.0 min. The spread (slowest less fastest run step) was 418 s, against 460 s before on 44724070629.
   - The tools aggregate: `tools_total_passed=2627 names=2620`, `tier2_tests_passed=195 floor=195`.
   - `main`'s `2305` (merged after this run) adds rows of its own, so the final head's plan differs by those rows only.
+- **On the merged head 078543e4 (run 44734895126, green; plan 704–705 s):**
+  - `each_size_sample` took 144.42 s in shard 7, which ran 645 s. `outline_tier1` finished in 250.19 s in shard 10 (744 s): over its 238 row, hence 251.
+  - **Shard 8 ran 1,087 s, a 20.6 min job,** holding neither unit. Its `supply_tier1` block finished in 738.58 s against a 302 s row (F6).
+  - Every other job finished at or under 15.9 min. The tools aggregate: `tools_total_passed=2636 names=2629`, `tier2_tests_passed=198 floor=198`.
 - **On run 44706411946, shard 8's job took 20.1 min** (GitHub's `startedAt` to `completedAt`). That is past the REFIT RULE's 20-minute trigger, on `main` (F1).
 
 ## 3. The README (§1.3)
@@ -122,11 +129,12 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - Projected at each test's worst measured time, the shard holding it comes to:
     - `main`'s rows (1.5 / 152): 832 s for the `each_size` shard, 763 s for the `outline_tier1` shard;
     - rows set at the lowest of the five runs (98.98 / 164): 744 s and 760 s;
-    - this branch's rows: 697 s and 697 s.
+    - this branch's rows: at plan, 697 s and 697 s (706 on the merged tree).
   - **The residual is whole-runner variance, not these rows.**
     - Across the 50 shard runs that held neither unit, the worst run step was 1.32 × its plan (44722695274 shard 10, 892 s of 677).
     - Job overhead (log span less the run step) had a median of 139 s, p90 205 s and max 296 s over the 60.
-    - A 697 s plan at 1.32 × is 918 s: 17.6 min with the median overhead, 18.7 min with p90, and **20.2 min with both worsts together**.
+    - A 706 s plan at 1.32 × is 932 s: 17.8 min with the median overhead, 18.9 min with p90, and **20.5 min with both worsts together**.
+  - **That happened** on the merged head's shard 8 (20.6 min). The cause was a row outside this fence: `supply_tier1`, 738.58 s against 302 (F6).
   - That last case is the REFIT RULE's "one re-run of the same head decides". It is not a fault of the two rows, and it is outside this fence.
 
 ## 6. Gates, the reduction pass, and CI
@@ -137,7 +145,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | `cargo clippy --workspace --all-targets -- -D warnings` | clean; also clean with `--features aethelgard-cli/with-tools` |
 | `cargo test --workspace` (host) | **2,401 passed, 0 failed, 0 ignored** |
 | Pass set against `main` `7ebca78c` | **identical**: 2,401 names each, `diff` empty (`passset.diff`); `main` built in its own worktree with its target inside the tree |
-| CI | green on `48519439` (run 44728879123: gates, bench-package, 12 shards, tools); the final head's run follows this commit |
+| CI | green on `48519439` (run 44728879123) and on `078543e4` (run 44734895126; shard 8 at 20.6 min, F6); this commit's run is the final head's |
 | Gates on the merged tree (`a75fffcc` in) | fmt clean; clippy clean with and without `with-tools`; `cargo test --workspace` **2,407 passed, 0 failed, 0 ignored** (`2305` adds 6) |
 
 - **Reduction pass (diff):** −10 lines net in code (crates/ less the README: +24 / −34; the README +5 / −4) · 2 duplicate readers removed · 0 dead paths left · 1 protected kept (`pcb.rs`'s `belt-and-suspenders:` outline check, untouched) · 0 findings below.
@@ -148,10 +156,11 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 
 | # | Finding | Proposed |
 |---|---|---|
-| F1 | **The REFIT RULE's 20-minute trigger fired on `main`.** Shard 8 of run 44706411946 (`bb1bcb8c`) took 20.1 min, start to end. It held `each_size_sample` at its 1.5 s row. That is the lag this WO fixes; the run was green. | The architect's call whether this PR's run counts as the refit's answer, or a wider refit is due. |
+| F1 | **The REFIT RULE's 20-minute trigger fired on `main`.** Shard 8 of run 44706411946 (`bb1bcb8c`) took 20.1 min, start to end. It held two lagging units: `each_size_sample` (113 s against its 1.5 s row, fixed here) and the `supply_tier1` block (604 s against its 302 s row, F6, outside this fence). Of the 324 s over plan, `supply_tier1` is the larger part. The run was green. | The architect's call whether this PR's run counts as the refit's answer, or a wider refit is due. |
 | F2 | **`board_tier2::a_missing_clock_enable_fails` ran 62.42 s** (ok less the previous completion) in shard 8 of 44712465606, against a 6.3 s row. On the four other runs it was 6.0–7.0 s: one outlier, perhaps a lock wait. | Outside this fence; for the next refit to judge. |
 | F3 | **The `1316` F5 row on `docs/roadmap.md` §7.1** ("`schematic::anchored` and `bound_holds` survive…", L982) is done by this PR. `docs/roadmap.md` is protected. | The architect strikes it. |
 | F4 | **The bulk-capacitor test now does one `design()` fewer.** Its 63 s row (`1911`) may sit slightly high [inferred; not measured]. | Harmless; the next refit. |
+| F6 | **`supply_tier1`'s colocate row (302 s, AET-WO-1911's second refit) is under its block time on all seven runs**: 604.23, 385.06, 485.32, 309.46, 444.28, 468.62 and 738.58 s [measured, `finished in`]. It drove the 20.1 min shard on `main` (F1) and the 20.6 min shard on this PR's merged head. AET-WO-1910 had it at 795.25. This WO's fence is two rows, so it is not changed. | **Decision needed:** refit `supply_tier1` (rule 3: about 739 s), here by a widened fence or in its own WO. Or rule this PR's final run under the clause's one re-run if a shard runs over again. |
 | F5 | **The bridge does not link on Furnace's host** (`rust-lld: unable to find library -l:libngspice.so.0`). Reproducing the plan locally therefore needs the bridge's list from the image or from CI logs, as done here. | Note only. |
 
 ## 8. Neighbours
