@@ -20,8 +20,8 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 - **Forms covered.** Every form a reference can take reaches the rule: a declared reference, the MCU's `U<n>`, the reset switch's `SW<n>`, and an emitter-numbered `R<n>`/`C<n>`. This is because `LoadNamesUndrawnPart` has already required each to be a drawn part.
   - A load with no reference is out of scope, as before.
   - No reference form names an off-board part, and no drawn part has zero connected pins in the two powered designs [measured: `parts.txt`; every test point has one net]. So §1.2's case does not arise today.
-  - **What the code does if it ever does:** a drawn part with no connected pin is refused as `LoadPartOffRail`, with an empty net list. It is not skipped. §1.2 calls the case out of scope; refusing is the `INV-06` reading, because a load whose part touches nothing has no rail to be on. **D2** below asks for a ruling.
-- **Documentation:** `crates/aethelgard-cli/README.md`'s exit-code row names `LoadPartOffRail` beside `LoadNamesUndrawnPart`, as `1209` documented its kinds. *Fence note:* the work order's fence lists `cli/src`, not the crate README. The README is the CLI's documented exit-code contract (`main.rs:3`, `validate_cli.rs:1`), so one clause is added and flagged here.
+  - **What the code does if it ever does:** a drawn part with no connected pin is refused as `LoadPartOffRail`, with an empty net list. It is not skipped. §1.2 calls the case out of scope; refusing is the `INV-06` reading, because a load whose part touches nothing has no rail to be on. **D2**, ruled accepted 06:05Z: refused, not skipped.
+- **Documentation:** `crates/aethelgard-cli/README.md`'s exit-code row names `LoadPartOffRail` beside `LoadNamesUndrawnPart`, as `1209` documented its kinds. *Fence note (F3, ruled 06:05Z: the fence is widened to this one clause):* the work order's fence listed `cli/src`, not the crate README. The README is the CLI's documented exit-code contract (`main.rs:3`, `validate_cli.rs:1`), so one clause is added and flagged here.
 
 ## 2. Acceptance (§2)
 
@@ -34,7 +34,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | **Gates** | See §6. |
 | **`TIER2_MIN`** | Unchanged at 194. No tier-2 test is added; the new tests sit in the existing tier-1 binary `load_references_tier1`, so `ci/docs-tests.tsv` needs no row [measured: `bash ci/route.sh check ci/docs-tests.tsv`: inventory ok]. |
 
-## 3. One expectation moved (D1)
+## 3. One expectation moved (D1, ruled accepted 06:05Z)
 
 `1209`'s `a_load_naming_a_resistor_the_emitter_does_not_draw_is_refused` added a load naming `SW1` on `VDD_3V3` (with `mcu.reset_switch`) and asserted exit 0.
 
@@ -42,7 +42,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 - No committed specification carries such a load. The test builds it.
 - **The assertion now reads:** `SW1` is drawn, so it is not refused as `LoadNamesUndrawnPart`, but it is refused as `LoadPartOffRail`. The `U1` load still passes on its own.
 - `1209`'s point, that the CLI never refuses an emitted name as undrawn, still holds.
-- **The consequence, for ruling (D1):** `1209`'s ruled reset-switch form (iii) now passes the IR's step 20a but can never pass the CLI's `validate` on any domain. A load's domain is a declared voltage domain, never `GND` (`ir/src/power.rs` `known`), and `NRST` is not a domain. I read that as correct, since a pushbutton to ground draws nothing from a rail. The alternative, keeping the form's loads valid, would need the switch exempted from this rule.
+- **The consequence (D1, ruled accepted 06:05Z):** `1209`'s reset-switch form (iii) now passes only the IR's check (step 20a, `LoadNamesNoPart`), never the CLI's rail check (`LoadPartOffRail`). A load's domain is a declared voltage domain, never `GND` (`ir/src/power.rs` `known`), and `NRST` is not a domain. A reset switch cannot carry a rail load, so `1209`'s test load on it was a test artifact. The architect ruled the moved assertion right.
 
 ## 4. Adversarial pass, targeted (§5)
 
@@ -74,12 +74,12 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 
 | # | Finding | Kind |
 |---|---|---|
-| D1 | The reset switch's `SW<n>` (`1209`'s form (iii)) can never pass the CLI's rail check (§3). Accept, or exempt the switch? | decision needed |
-| D2 | A drawn part with no connected pin is refused (empty net list), not skipped (§1). Accept, or skip? No current form reaches it. | decision needed |
-| F1 | A load naming a regulator passes on its input and on its output rail (`U12` on `VDD_3V3` or `VDD_1V8`) [measured], though a regulator's current is counted by its part row [read]. A rule "a `power.loads` reference names no regulator" would close it. Nothing committed names one [measured: `dump.txt`]. | §7.1 row, the architect's |
+| D1 | The reset switch's `SW<n>` (`1209`'s form (iii)) passes only the IR's check, never the CLI's rail check (§3). | **ruled 06:05Z: accepted**, no exemption |
+| D2 | A drawn part with no connected pin is refused (empty net list), not skipped (§1). No current form reaches it. | **ruled 06:05Z: accepted** |
+| F1 | A load naming a regulator passes on its input and on its output rail (`U12` on `VDD_3V3` or `VDD_1V8`) [measured], though a regulator's current is counted by its part row [read]. A rule "a `power.loads` reference names no regulator" would close it. Nothing committed names one [measured: `dump.txt`]. | **ruled 06:05Z:** a §7.1 row, the architect writes it |
 | F2 | `R7` (a load named by its emitted number, on a part that is still on the rail) stays unseen, as the work order says. This rule is the partial catch only. | §7.1 row (existing) |
-| F3 | The crate README is outside the literal fence; one clause names the new kind (§1). | fence note |
-| F4 | `schematic::drawn`, `anchored` and `drawn_nets` each re-run `design()` for one view of the same parts. `drawn` now has one caller, a test (`hot_plug_tier1.rs`). One read-only view of the drawn parts would serve all three. Outside this fence (eda beyond one accessor). | reduction finding |
+| F3 | The crate README was outside the literal fence; one clause names the new kind (§1). | **ruled 06:05Z:** fence widened to that one clause |
+| F4 | `schematic::drawn`, `anchored` and `drawn_nets` each re-run `design()` for one view of the same parts. `drawn` now has one caller, a test (`hot_plug_tier1.rs`). One read-only view of the drawn parts would serve all three. Outside this fence (eda beyond one accessor). | **ruled 06:05Z:** a reduction row for the next eda order. Left here: sharing one `design()` call would change `drawn` and `anchored` and their callers, outside this fence |
 
 ## 6. Gates, the reduction pass, and CI
 
@@ -97,3 +97,4 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - `bench-package` passes against the committed package;
   - `tools`: 2,576 tests passed, tier-2 194 against a floor of 194.
 - `main` is still `c9c5f85c`, merged. This READY commit changes this file only.
+- **The architect's rulings of 06:05Z** (D1 and D2 accepted, F1 a §7.1 row, F3 the fence widened to the README clause, F4 left for the next eda order) are applied in the final READY commit. It changes this file only, and no code moves. CI on it is the run the merge waits on.
