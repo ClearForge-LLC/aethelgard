@@ -99,7 +99,7 @@ The solved fixtures were re-derived by `solve` (`hwdef` ×3: only the spec sha25
   - its APB2 timer list is its own;
   - the kernel selects at reset and the HSI's fastest come from `silicon` (`spi_kernel_hz`, `usart_kernel_hz`, `fast_hz`), the other independent rule.
 - **The limits,** every cell re-read from the page images (`reads/pg/ds-210.png`, `rm-355.png`, `rm-356.png`) and tested cell by cell (`each_family_holds_exactly_to_its_maximum_at_every_scale`). They agree with the WO's table, and LPUART1 is 125/100/75/50 at VOS0–3 (Table 60, p. 356). Footnote 5 ("TJMax = 105 °C") is on VOS0's `fHCLK` and `fPCLK`. Footnote 6 ("Maximum APB clock frequency when at least one peripheral is enabled") is on VOS3's `fPCLK` only.
-- **Revisions.** Rev Y's operating conditions (DS12117 Rev 10 Table 13, p. 105) have no frequency rows. Every verdict that judges a bus clock carries `bus_limits_rev_v`.
+- **Revisions.** Rev Y's operating conditions (DS12117 Rev 10 Table 13, p. 105) have no frequency rows. So the rule's verdict (`vos::Verdict`) carries `bus_limits_rev_v` whenever it judges a bus clock, and so does the foreign judge's report. A generated run's `simulate` verdict does not show it: there the rule is a refusal at `validate` and `check_silicon`, not a verdict field (reduction pass R3).
 - **At its fastest** (#240 S14): 64 MHz judges as 64,958,976 Hz. The S14 mutant is killed: 74 MHz at VOS2 is refused, because its fastest is 75,108,816 Hz.
 - **`FLASH_ACR` at reset** [D-7]: `LATENCY` 7 and `WRHIGHFREQ` `11` against Table 17 (p. 160, read from the image) at VOS2 with the AXI clock's fastest, 64.96 MHz: the ]55; 110] MHz row needs 1 WS and `01`. It holds: p. 160 calls the default 7 WS "a safety margin". `WRHIGHFREQ` `11` appears in no row; a longer programming delay than the row's is judged within, which is inferred (this firmware never programs the flash). The refusal is named `FlashWaitStatesBelowTable`.
 - **Refusals:**
@@ -367,6 +367,15 @@ Format: finding · where · type · recommendation · decision-needed.
   - No generated verdict moves: VOS2's margin is 10 MHz.
   - A foreign clock with a nominal in (98,518,383; 98,523,720] Hz against a 100 MHz limit would be judged within.
   - Adversarial A7.
+- **F7 · the reduction pass's proposals not applied · see §6 · decision-needed (no):**
+  - P1 (`judge`'s `Option` fastest, about −16 lines): it would remove the "unknown fastest is not judged" path, which the foreign judge drains before `judge`.
+  - P6 (`CoreSupplyMode::name` and `PwrRule.supply`, about −12): changes a finding's message.
+  - P7 (two `CoreSupplyNotGenerated` refusals, `svd-hal`'s and the CLI's, about −22): a cross-crate merge with care over precedence.
+  - P8 (the twin's enable-register filter written three times, about −2).
+  - R1 (`FlashWaitStatesBelowTable` cannot fire; F4).
+  - R2 (`LIMITS` cells are `Option`, though every cell is cited: the WO's "uncited judges nothing" mechanism).
+  - R4 (one emitted Kani assert implied by the next; it moves pinned bytes).
+  - Each is safe to take in a later slice; none is a defect.
 - **F6 · notes, no action asked:**
   - the foreign VOS verdict judges PLL1's integer decode (`pll1_fraction_not_read` is in the same report's conditions; A8);
   - the twin's `PWR` offsets come from `svd-hal`'s header parser, as the RCC rule's do; the words are the IR's (A9);
@@ -404,3 +413,22 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
 - no older solved file is defaulted;
 - the foreign path gets no `PWR` rule, log or override, and the vendored Renode tree is byte-identical to `main`;
 - no fabrication file can move from this diff's code.
+
+## §6 Gates
+
+- **`cargo fmt --all -- --check`:** 0.
+- **`cargo clippy --workspace --all-targets --features aethelgard-cli/with-tools -- -D warnings`:** 0. The bridge's clippy is 0 too. Both ran in the pinned image at `2d9ab149`; the IR, `svd-hal` and twin were re-run on the host after the reduction.
+- **`cargo test --workspace --all-targets` (tier 1)** in the image, with the target inside the repository, as CI runs it, at `2d9ab149`: **2,332 passed and 1 failed.**
+  - The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: the committed bench package is `main`'s, until the dispatch's artifact is committed (§2.2).
+  - After `main` `52a2d62e` (`3303b`) merged and the boards were re-blessed, `svd-hal` and the IR passed on the host. The final run is §7.
+- **Tier 2:** none run locally beyond §2's sweep. **No tier-2 test was added**, so `TIER2_MIN` is unchanged (the architect's 00:10Z rule).
+- **`ci/test-weights.tsv`:** no row added. No new test exceeds 60 s: the PWR harness proves in about 1 s.
+- **Reduction pass (diff), by a fresh subagent proposing and the builder applying:** −18 net (about −27 of code and tests, and +9 of four `belt-and-suspenders:` labels on the deliberate `PWR` copies) · 6 duplicates removed:
+  - one `hclk` formula for three copies;
+  - one bus-clock read for two;
+  - one bus-condition test for two;
+  - `Vos::column` by the declaration order;
+  - one ArduPilot register fixture for two;
+  - one boot-word assertion for two.
+
+  Also: 2 dead paths removed (`FlashJudged.vos`, unused `Serialize` derives) · 4 protected kept, now labelled (`PwrFacts`, `VOS_SCALE2_CODE`, `ORACLE_PWR_*`, the ledger's `FLASH_ACR` reset) · 7 findings, F7.
