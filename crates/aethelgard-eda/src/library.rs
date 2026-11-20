@@ -16,7 +16,7 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 56] = [
+const PINS: [(&str, &str); 58] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         "03187d2ed4dca904a6c0379cff9fe3a9fd0e1139b59fb9669db42160ca40cc3f",
@@ -36,6 +36,10 @@ const PINS: [(&str, &str); 56] = [
     (
         "footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod",
         "07c4d13ce29915abf8fa0a76cc167ada9eeb5515e5e00edf1b18d3dcbcb6bbfd",
+    ),
+    (
+        "footprints/Crystal.pretty/Crystal_SMD_3225-4Pin_3.2x2.5mm.kicad_mod",
+        "7648bca15399a8bd7856b5da6a1d2bc3a87049dc63958f8e8a3ab7409941a8e4",
     ),
     (
         "footprints/Inductor_SMD.pretty/L_Vishay_IHLP-5050.kicad_mod",
@@ -124,6 +128,10 @@ const PINS: [(&str, &str); 56] = [
     (
         "symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
         "e0371fff515df9a22bc5e6d82a2164943da1d389e2ccf0d220ff03d7d77cc87a",
+    ),
+    (
+        "symbols/Device.kicad_symdir/Crystal_GND24.kicad_sym",
+        "84b419f45f564b391ab81579eb3c84f301ffad816f7488f98a13129a16073b3b",
     ),
     (
         "symbols/Device.kicad_symdir/L.kicad_sym",
@@ -392,6 +400,14 @@ fn flatten(lib: &str, name: &str, depth: usize) -> Result<Sx, LibraryError> {
     Ok(Sx::List(out))
 }
 
+/// Whether a symbol's `(property …)` is a private one: a library note
+/// (`(property private "KLC_S3.3" …)` in `Device:Crystal_GND24`) that stays
+/// in the library symbol and is drawn on no instance or footprint
+/// (`AET-WO-4240c`; checked by ERC and the DRC gate's schematic parity).
+pub fn private(property: &Sx) -> bool {
+    matches!(property.items().get(1), Some(Sx::Atom(a)) if a == "private")
+}
+
 /// `lib:name`, flattened and renamed as a schematic's `lib_symbols` embeds
 /// it, without `ki_fp_filters`.
 pub fn symbol(lib_id: &str) -> Result<Sx, LibraryError> {
@@ -609,7 +625,9 @@ mod tests {
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
         assert_eq!(sym.matches("(lib ").count(), 16);
-        assert_eq!(fp.matches("(lib ").count(), 15);
+        // `AET-WO-4240c`: the crystal's footprint library.
+        assert!(fp.contains("(uri \"/s/lib/footprints/Crystal.pretty\")"));
+        assert_eq!(fp.matches("(lib ").count(), 16);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

@@ -552,6 +552,8 @@ struct Router<'a> {
     banned: BTreeSet<usize>,
     /// Whether searches may not change layer: a pair's breakouts (§1.3).
     no_vias: bool,
+    /// By net: laid with no via (`AET-WO-4240c`, an oscillator net).
+    via_free: Vec<bool>,
     /// Each net's price for a via (`AET-WO-1314`).
     via_cost: Vec<u32>,
     /// Fixed copper on every layer, with its net: through-hole pads and
@@ -1066,6 +1068,7 @@ impl<'a> Router<'a> {
             banned: BTreeSet::new(),
             no_vias: false,
             via_cost: vec![VIA_COST; count],
+            via_free: vec![false; count],
             cuts,
             anchors,
             fixed: vec![false; count],
@@ -1307,7 +1310,8 @@ impl<'a> Router<'a> {
                 self.via_open(node, net) && self.open(other, node, net),
                 self.hard_via_open(node, net),
             );
-            if let Some(extra) = via_price.filter(|_| !self.no_vias && !self.banned.contains(&node))
+            if let Some(extra) = via_price
+                .filter(|_| !self.no_vias && !self.via_free[net] && !self.banned.contains(&node))
             {
                 let tc = c
                     + self.via_cost[net]
@@ -2164,7 +2168,17 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
             .collect();
         // the rung's: a bounded net right after the stitched ones
         let first = rung.bounded_first && board.stack.bounded.iter().any(|b| b == name);
-        (!is_stitched(name), !first, list.len(), at, name.clone())
+        // An oscillator net beside a crystal (`AET-WO-4240c` §1.6) right
+        // after the stitched ones; on a board with none, every net ties here.
+        let oscillator = board.stack.oscillator.iter().any(|o| o == name);
+        (
+            !is_stitched(name),
+            !oscillator,
+            !first,
+            list.len(),
+            at,
+            name.clone(),
+        )
     });
     let pads: Vec<Vec<PadRef>> = nets.iter().map(|n| pads[n].clone()).collect();
     let order: Vec<usize> = (0..nets.len())
@@ -2175,11 +2189,20 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
         .collect();
     let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
     let arrays = arrays(board).map_err(|why| fail("", why))?;
+    let index = |name: &str| nets.iter().position(|n| n == name);
     let mut r = Router::new(board, grid, nets.clone(), &arrays);
     for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
         if board.stack.bounded.iter().any(|b| b == net) {
             *cost = rung.bounded_via_cost;
         }
+    }
+    // An oscillator net is laid on F.Cu with no via, however often it is
+    // routed again (`AET-WO-4240c` §1.6).
+    for (free, net) in r.via_free.iter_mut().zip(&nets) {
+        *free = board.stack.oscillator.iter().any(|o| o == net);
+    }
+    if let Some(o) = board.stack.oscillator.iter().find(|o| index(o).is_none()) {
+        return Err(fail(o, "an oscillator net has no pad on the board".into()));
     }
     if let Some((reference, pads)) = r.exhausted.clone() {
         return Err(Unroutable {
@@ -2194,7 +2217,6 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
     // Each declared pair first, whole, on the bare board (`AET-WO-1308`):
     // its copper is fixed, and its nets leave the queue. A board with no
     // pair is routed as before.
-    let index = |name: &str| nets.iter().position(|n| n == name);
     let mut paired = BTreeSet::new();
     for pair in &board.stack.pairs {
         let (Some(p), Some(n)) = (index(&pair.nets[0]), index(&pair.nets[1])) else {
@@ -5305,6 +5327,7 @@ mod tests {
             width_nm: 0,
             classes: vec![],
             pairs: vec![],
+            oscillator: vec![],
             joins: vec![],
             thermal: vec![],
             imus: vec![],
