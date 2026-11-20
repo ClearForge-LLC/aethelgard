@@ -250,6 +250,23 @@ fn outputs_at_two_rates_take_two_timers() {
     );
 }
 
+/// `AET-WO-1211a`: `resolution_ps` joins the timer-share key; one rate at
+/// two ticks cannot share TIM1's counter.
+#[test]
+fn a_resolution_conflict_on_one_timer_is_refused_by_name() {
+    let mut fine = pwm("M2", Some("PA9"), 400);
+    fine["pwm"]["resolution_ps"] = json!(500_000);
+    let s = spec(vec![pwm("M1", Some("PA8"), 400), fine]);
+    assert_eq!(
+        solve(&s, &table(), HASH).unwrap_err(),
+        SolveError::TimerResolutionConflict {
+            timer: "TIM1".into(),
+            first: "M1".into(),
+            second: "M2".into()
+        }
+    );
+}
+
 #[test]
 fn adversarial_3_a_rate_conflict_on_one_timer_is_refused_by_name() {
     // PA8 and PA9 offer only TIM1: two rates cannot share its counter.

@@ -75,6 +75,8 @@ fn generable_refuses_a_motor_output_that_idles_high() {
         .find(|(_, m)| m.pwm.is_some())
         .map(|(net, m)| {
             m.pwm.as_mut().unwrap().idle = Idle::Level(Level::High);
+            // An idle high's CCR is ARR + 1, as `solve` writes it.
+            m.ccr = m.arr + 1;
             net.clone()
         })
         .unwrap();

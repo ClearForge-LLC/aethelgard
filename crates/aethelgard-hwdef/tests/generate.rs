@@ -263,6 +263,9 @@ fn a_topology_with_sense_pins_is_refused() {
         "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
         "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 0, "channels": ["ADC1_INP10"]}}
     });
+    // The sense is also its ADC input (`AET-WO-1211a`).
+    v["adc_inputs"] =
+        json!({"VBAT_SENSE": {"pin": "PC0", "peripheral": "ADC1", "channel": "INP10"}});
     let t: SolvedTopology = serde_json::from_value(v).unwrap();
     t.validate().unwrap();
     assert_eq!(
@@ -510,6 +513,8 @@ fn a_motor_output_that_idles_high_is_refused_as_not_emitted() {
     let net = net.clone();
     m.pwm.as_mut().unwrap().idle =
         aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::High);
+    // An idle high's CCR is ARR + 1, as `solve` writes it.
+    m.ccr = m.arr + 1;
     t.validate().unwrap();
     let err = generate(&t).unwrap_err();
     assert_eq!(err, Refusal::IdleHighNotEmitted { net: net.clone() });
