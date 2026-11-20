@@ -69,6 +69,10 @@ struct Required {
     cite: &'static str,
 }
 
+/// A required passive with its two connections and the pads it is
+/// anchored by (its own, the device's).
+type Placed<'a> = (&'a Required, Conn, Conn, Vec<(String, String)>);
+
 /// One part's arm: what the row does not hold.
 struct Arm {
     part: &'static str,
@@ -457,7 +461,7 @@ fn device(
             .cloned()
             .ok_or_else(|| not_drawable(d, format!("`{name}` is not drawn")))
     };
-    let ends: Vec<(&Required, Conn, Conn, Vec<(String, String)>)> = {
+    let ends: Vec<Placed<'_>> = {
         let mut out = Vec::new();
         for r in arm.passives {
             let mut pads = Vec::new();
