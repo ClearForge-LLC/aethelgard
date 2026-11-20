@@ -36,6 +36,7 @@ use aethelgard_ir::{
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
+mod adc;
 mod firmware;
 mod ledger;
 
@@ -136,6 +137,34 @@ pub enum BoardError {
         "the core supply is declared `bypass`: no board this engine emits draws an external VCORE, and under bypass the voltage scale is the external supply's, VOSRDY forced to 1 by hardware (RM0433 Rev 9 §6.8.6, p. 310; AET-WO-4240v D-1)"
     )]
     CoreSupplyNotGenerated,
+    /// `AET-WO-1211b`: an ADC input on a peripheral or channel this
+    /// generator does not bring up (ADC2 is never solved unpinned, `1211` Q8).
+    #[error(
+        "ADC input `{net}` is on {peripheral}: the generator brings up ADC1 and ADC3 inputs INP0-INP19 only (AET-WO-1211b)"
+    )]
+    AdcNotGenerated { net: String, peripheral: String },
+    /// `AET-WO-1211b` S1: the solved topology carries no resolution for a
+    /// device ADC input, and none is substituted (`INV-06`).
+    #[error(
+        "ADC input `{net}`: the solved topology carries no declared resolution, and the generator substitutes none (AET-WO-1211b S1, INV-06)"
+    )]
+    AdcResolutionNotSolved { net: String },
+    /// `AET-WO-1211b`: no `ADC_CFGR.RES` code means `bits` on both silicon
+    /// revisions (RM0433 Rev 9 p. 1013: 8 bits is `100` on Y, `111` on V).
+    #[error(
+        "ADC input `{net}` declares {bits} bits, which no ADC_CFGR.RES code means on both silicon revisions Y and V (RM0433 Rev 9 p. 1013); the revision is not known"
+    )]
+    AdcResolutionNotCommon { net: String, bits: u8 },
+    /// `AET-WO-1211b`: one ADC converts at one resolution (`ADC_CFGR.RES`).
+    #[error(
+        "the inputs of {peripheral} declare different resolutions; one ADC converts at one (ADC_CFGR.RES)"
+    )]
+    AdcResolutionsDiffer { peripheral: String },
+    /// `AET-WO-1211b`: the bring-up's sequence is `SQ1`-`SQ4` (`ADC_SQR1`).
+    #[error(
+        "{peripheral} has {inputs} inputs; the bring-up converts at most four, the sequence ADC_SQR1 holds"
+    )]
+    AdcSequenceTooLong { peripheral: String, inputs: usize },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -171,6 +200,11 @@ impl BoardError {
             Self::SiliconRuleFails { .. } => "SiliconRuleFails",
             Self::VosRuleFails { .. } => "VosRuleFails",
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
+            Self::AdcNotGenerated { .. } => "AdcNotGenerated",
+            Self::AdcResolutionNotSolved { .. } => "AdcResolutionNotSolved",
+            Self::AdcResolutionNotCommon { .. } => "AdcResolutionNotCommon",
+            Self::AdcResolutionsDiffer { .. } => "AdcResolutionsDiffer",
+            Self::AdcSequenceTooLong { .. } => "AdcSequenceTooLong",
             Self::Register(e) => e.kind(),
         }
     }
@@ -1273,6 +1307,10 @@ struct Plan {
     /// a DShot output's solved word (its zero-bit duty, judged by
     /// `motor::check_silicon`).
     oracle_ccr: BTreeMap<(u32, u32), u32>,
+    /// Each ADC a pin device's input is solved onto (`AET-WO-1211b`), its
+    /// inputs and resolution. Empty without one, so every other board's text
+    /// is unchanged.
+    adcs: BTreeMap<String, adc::AdcPlan>,
 }
 
 impl Plan {
@@ -1293,7 +1331,10 @@ impl Plan {
     /// USARTs' `BRR`, and its I2C and SPI peripherals' kernel clocks were
     /// solved for it (`AET-WO-4230` D6).
     fn needs_clock(&self) -> bool {
-        !self.timers.is_empty() || !self.serials.is_empty() || !self.peripherals.is_empty()
+        !self.timers.is_empty()
+            || !self.serials.is_empty()
+            || !self.peripherals.is_empty()
+            || !self.adcs.is_empty()
     }
 }
 
@@ -1688,6 +1729,7 @@ impl Plan {
             core_supply: solved.core_supply,
             oracle_pupd,
             oracle_ccr,
+            adcs: adc::of(solved)?,
             oracle_levels: solved
                 .gpio
                 .values()
@@ -2027,6 +2069,8 @@ struct Facts {
     /// then `usart` is `None`.
     serials: BTreeMap<String, SerialFacts>,
     usart: Option<UsartFacts>,
+    /// Each planned ADC's facts (`AET-WO-1211b`).
+    adcs: BTreeMap<String, adc::AdcFacts>,
     /// `None` unless the board has a timer or a serial port.
     clock: Option<ClockFacts>,
     /// The kernel-clock select writes, empty without an SPI peripheral.
@@ -2462,6 +2506,11 @@ impl Facts {
             }
             usart = Some(usart_facts(f)?);
         }
+        let adcs = plan
+            .adcs
+            .keys()
+            .map(|name| Ok((name.clone(), adc::facts(f, &rcc, name)?)))
+            .collect::<Result<BTreeMap<_, _>, BoardError>>()?;
         let clock = if plan.needs_clock() {
             Some(clock_facts(plan, f, &rcc)?)
         } else {
@@ -2487,6 +2536,7 @@ impl Facts {
             tim,
             serials,
             usart,
+            adcs,
             clock,
         })
     }
@@ -2652,6 +2702,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for name in plan.serials.keys() {
         let _ = writeln!(w, "    {},", type_name(name));
     }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "    {},\n    {},",
+            adc::block(name),
+            adc::common_block(name)
+        );
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -2740,6 +2798,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "            Block::{} => {:#010x},",
             type_name(name),
             sf.base
+        );
+    }
+    for (name, af) in &facts.adcs {
+        let _ = writeln!(
+            w,
+            "            Block::{} => {:#010x},\n            Block::{} => {:#010x},",
+            adc::block(name),
+            af.base,
+            adc::common_block(name),
+            af.common_base
         );
     }
     let _ = writeln!(
@@ -3242,6 +3310,12 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             emit_usart(w, name, sp, plan, u);
         }
     }
+    if !plan.adcs.is_empty() {
+        adc::emit_shared(w);
+        for (name, p) in &plan.adcs {
+            adc::emit(w, name, p, &facts.adcs[name], &|pin| pin.to_owned());
+        }
+    }
     // RCC.
     let _ = writeln!(
         w,
@@ -3289,6 +3363,15 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 name.to_ascii_lowercase(),
                 type_name(name),
                 &sf.gate,
+                None,
+                false,
+            )
+        }))
+        .chain(facts.adcs.iter().map(|(name, af)| {
+            (
+                name.to_ascii_lowercase(),
+                adc::block(name),
+                &af.gate,
                 None,
                 false,
             )
@@ -3398,6 +3481,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             type_name(name)
         );
     }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "    pub {}: {}<Gated>,",
+            name.to_ascii_lowercase(),
+            adc::block(name)
+        );
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -3441,6 +3532,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "            {}: {} {{ _state: PhantomData }},",
             name.to_ascii_lowercase(),
             type_name(name)
+        );
+    }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "            {}: {} {{ _state: PhantomData }},",
+            name.to_ascii_lowercase(),
+            adc::block(name)
         );
     }
     let _ = writeln!(w, "        }})\n    }}\n}}");
@@ -4843,6 +4942,19 @@ fn emit_schedule(
                 type_name(name)
             );
         }
+        // An ADC's blocks (`AET-WO-1211b`): its bring-up is proved on its own
+        // spy (`adcN_bring_up_is_in_order_and_bounded`).
+        for name in plan.adcs.keys() {
+            for b in [adc::block(name), adc::common_block(name)] {
+                let _ = writeln!(
+                    w,
+                    "            Block::{b} => {{\n                \
+                         kani::assert(false, \"{name} was accessed through the harness image\");\n                \
+                         &mut self.rcc\n            \
+                     }}"
+                );
+            }
+        }
     }
     let _ = writeln!(
         w,
@@ -4864,6 +4976,14 @@ fn emit_schedule(
         let _ = writeln!(w, "            Block::Flash => {{}}");
         for name in plan.serials.keys() {
             let _ = writeln!(w, "            Block::{} => {{}}", type_name(name));
+        }
+        for name in plan.adcs.keys() {
+            let _ = writeln!(
+                w,
+                "            Block::{} => {{}}\n            Block::{} => {{}}",
+                adc::block(name),
+                adc::common_block(name)
+            );
         }
     }
     for (variant, _, _, gate) in &blocks {
@@ -6243,6 +6363,21 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         for (name, sp) in &plan.serials {
             emit_usart_proof(w, name, sp, plan, facts, u);
         }
+    }
+    // Each ADC's bring-up on its own spy (`AET-WO-1211b`), from its analog
+    // pins, its clock and the reset clock's token.
+    for (name, p) in &plan.adcs {
+        let pins: Vec<&String> = p.inputs.iter().map(|i| &i.pin).collect();
+        let f = name.to_ascii_lowercase();
+        let setup = format!(
+            "    let mut img = Image {{\n{}    \
+             let clock = rcc.reset_clock(&mut img, &scale2);\n    \
+             kani::assume(clock.is_ok());\n    \
+             let clock = clock.unwrap();\n    \
+             let {f} = rcc.enable_{f}(&mut img, board.{f});\n",
+            harness_setup(plan, &pins)
+        );
+        adc::emit_proof(w, name, p, &facts.adcs[name], &setup);
     }
 }
 
@@ -8466,6 +8601,7 @@ mod tests {
             "U9".into(),
             SolvedPinDevice {
                 part: "WAKE_SWITCH".into(),
+                bridges: Default::default(),
             },
         );
         s.gpio.insert(

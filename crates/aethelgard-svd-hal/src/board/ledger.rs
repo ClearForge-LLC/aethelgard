@@ -213,7 +213,8 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
         .map(|p| &p.gate)
         .chain(facts.peripherals.values().map(|p| &p.gate))
         .chain(facts.timers.values().map(|t| &t.gate))
-        .chain(facts.serials.values().map(|s| &s.gate));
+        .chain(facts.serials.values().map(|s| &s.gate))
+        .chain(facts.adcs.values().map(|a| &a.gate));
     for g in gates {
         let prefix = format!("RCC_{}", g.register);
         let bit = 1u32 << g.bit;
@@ -465,6 +466,58 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             );
         }
     }
+    // Each ADC's bring-up (`AET-WO-1211b`): its whole words in order, the
+    // `ISR` clear of `ADRDY`, then `ADEN` and `ADSTART`, each a
+    // read-modify-write of the command bits alone (RM0433 Rev 9 pp. 931-932).
+    for (name, p) in &plan.adcs {
+        let a = &facts.adcs[name];
+        let common = format!("{name}_COMMON").replace("ADC1_", "ADC12_");
+        for (on_common, offset, value, _) in super::adc::writes(p, a) {
+            let reg = if on_common {
+                "CCR"
+            } else if offset == a.cr {
+                "CR"
+            } else if offset == a.cfgr {
+                "CFGR"
+            } else if offset == a.pcsel {
+                "PCSEL"
+            } else if offset == a.smpr[0] {
+                "SMPR1"
+            } else if offset == a.smpr[1] {
+                "SMPR2"
+            } else {
+                "SQR1"
+            };
+            let instance = if on_common {
+                common.as_str()
+            } else {
+                name.as_str()
+            };
+            add(
+                "ADC",
+                instance,
+                reg,
+                &format!("ADC_{reg}"),
+                offset,
+                whole(value),
+            );
+        }
+        let q = &a.pos;
+        add("ADC", name, "ISR", "ADC_ISR", a.isr, whole(1 << q.adrdy));
+        for bit in [q.aden, q.adstart] {
+            add(
+                "ADC",
+                name,
+                "CR",
+                "ADC_CR",
+                a.cr,
+                Write::Changed {
+                    mask: q.command(),
+                    value: 1 << bit,
+                },
+            );
+        }
+    }
     // Each timer's start, every register whole.
     if let Some(tf) = &facts.tim {
         for (n, t) in &plan.timers {
@@ -691,10 +744,13 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
             }
         }
     }
-    // I2C4 and SPI6 sit on APB4, in D3 (RM0433 Rev 9 Table 8, p. 133).
+    // I2C4 and SPI6 sit on APB4, in D3 (RM0433 Rev 9 Table 8, p. 133); ADC1
+    // on AHB1, in D2, and ADC3 on AHB4, in D3 (Table 8, pp. 134, 132;
+    // `AET-WO-1211b`).
     let d2 = plan.peripherals.keys().any(|n| n != "I2C4" && n != "SPI6")
         || !plan.timers.is_empty()
-        || !plan.serials.is_empty();
+        || !plan.serials.is_empty()
+        || plan.adcs.contains_key("ADC1");
     if d2 {
         let (pos, width) = f.field("RCC_CR_D2CKRDY")?;
         out.push(FieldUse {

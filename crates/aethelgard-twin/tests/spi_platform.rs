@@ -414,6 +414,7 @@ fn a_topology_with_a_pin_device_is_refused_as_not_simulated() {
         "U9".to_owned(),
         SolvedPinDevice {
             part: "WAKE_SWITCH".to_owned(),
+            bridges: Default::default(),
         },
     );
     t.gpio.insert(

@@ -74,6 +74,12 @@ pub const BOOT_ACTVOSRDY_TIMEOUT: u32 = 0x2100_B0F2;
 /// What the firmware writes to the boot word when `PWR_D3CR.VOSRDY` does not
 /// read 1 within [`PWR_POLLS`] reads.
 pub const BOOT_VOSRDY_TIMEOUT: u32 = 0x2100_B0F3;
+/// What the firmware writes to the boot word when an ADC's bring-up stops
+/// at a bound (`AET-WO-1211b`): `ADC_CR.ADCAL`, `ADC_ISR.ADRDY` or a
+/// conversion's `ADC_ISR.EOC`. No twin judge reads them until `AET-WO-1211c`.
+pub const BOOT_ADC_CALIBRATION_TIMEOUT: u32 = 0x2100_B0A1;
+pub const BOOT_ADC_READY_TIMEOUT: u32 = 0x2100_B0A2;
+pub const BOOT_ADC_CONVERSION_TIMEOUT: u32 = 0x2100_B0A3;
 
 /// The most reads of `PWR_CSR1` the `ACTVOSRDY` wait makes, and of `PWR_D3CR`
 /// the `VOSRDY` wait. No maximum is stated in DS12117 Rev 10 for either bit,
@@ -529,6 +535,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     if spi_reads {
         imports.push("SpiError".to_owned());
     }
+    if !plan.adcs.is_empty() {
+        imports.push("AdcFault".to_owned());
+        imports.push("ADC_POLLS".to_owned());
+    }
     imports.push("mmio::Mmio".to_owned());
     let (first, stride) = (RECORD_OFFSET / 4, RECORD_BYTES / 4);
     // Every record two words, as every identity read is: the layout and the
@@ -773,6 +783,9 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     for name in plan.serials.keys() {
         let _ = writeln!(s, "        {},", name.to_ascii_lowercase());
     }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(s, "        {},", name.to_ascii_lowercase());
+    }
     s.push_str(
         "    }) = Board::take()\n    \
          else {\n        \
@@ -856,12 +869,16 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         let f = name.to_ascii_lowercase();
         let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
     }
+    for name in plan.adcs.keys() {
+        let f = name.to_ascii_lowercase();
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+    }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);
         // An output no bus takes as a chip select, and a pin device's input,
         // is configured and unused (`AET-WO-1211b`).
         let (bind, port) = (
-            if (p.role == Role::Output && !plan.is_select(pin)) || p.role.mode_only() {
+            if (p.role == Role::Output && !plan.is_select(pin)) || p.role == Role::Input {
                 "_"
             } else {
                 ""
@@ -1008,6 +1025,36 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     if wait_at == reads.len() {
         settle_line(&mut s);
+    }
+    // Each ADC (`AET-WO-1211b`), after the identity reads and before the motor
+    // outputs start: enabled, calibrated and converted once; a wait that
+    // expires writes its own boot word and parks.
+    for (name, p) in &plan.adcs {
+        let f = name.to_ascii_lowercase();
+        let pins: Vec<String> = p.inputs.iter().map(|i| pin_field(&i.pin)).collect();
+        let _ = write!(
+            s,
+            "    let _{f} = match {f}.bring_up(&mut r, &clock, {pins}, &ADC_POLLS) {{\n        \
+             Ok(values) => values,\n        \
+             Err(fault) => {{\n            \
+             let word = match fault {{\n                \
+             AdcFault::CalibrationTimeout => {cal:#010x},\n                \
+             AdcFault::ReadyTimeout => {ready:#010x},\n                \
+             AdcFault::ConversionTimeout => {conv:#010x},\n            \
+             }};\n            \
+             // SAFETY: the boot word, in RAM the linker script placed; the fixed point\n            \
+             // below, which writes it otherwise, is never reached.\n            \
+             unsafe {{ {boot_ptr}.write_volatile(word) }};\n            \
+             loop {{\n                \
+             core::hint::spin_loop();\n            \
+             }}\n        \
+             }}\n    \
+             }};\n",
+            pins = pins.join(", "),
+            cal = BOOT_ADC_CALIBRATION_TIMEOUT,
+            ready = BOOT_ADC_READY_TIMEOUT,
+            conv = BOOT_ADC_CONVERSION_TIMEOUT,
+        );
     }
     // The motor outputs (`AET-WO-4300a` §1.3), after the identity reads: each
     // timer starts, in ascending number, and is never touched again.

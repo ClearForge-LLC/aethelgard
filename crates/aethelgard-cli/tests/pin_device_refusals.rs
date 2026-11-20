@@ -33,6 +33,7 @@ fn with_pin_device() -> (Specification, SolvedTopology, aethelgard_ir::PinTable)
         "U9".into(),
         SolvedPinDevice {
             part: "WAKE_SWITCH".into(),
+            bridges: Default::default(),
         },
     );
     t.gpio.insert(

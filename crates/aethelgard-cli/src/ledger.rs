@@ -350,7 +350,7 @@ const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own ex
 /// every timer of `aethelgard_ir::motor::TIMERS`), its register, the line of
 /// its flag in `STM32H7_RCC.cs`, and the measurement that shows the
 /// platform registers its peripheral with the RCC, if one is held.
-const GATES: [(&str, &str, u32, Option<&str>); 41] = [
+const GATES: [(&str, &str, u32, Option<&str>); 43] = [
     ("GPIOAEN", "AHB4ENR", 792, Some(GATE_REF)),
     ("GPIOBEN", "AHB4ENR", 795, Some(GATE_REF)),
     ("GPIOCEN", "AHB4ENR", 798, None),
@@ -392,6 +392,9 @@ const GATES: [(&str, &str, u32, Option<&str>); 41] = [
     ("SPI5EN", "APB2ENR", 983, Some(GATE_SPI)),
     ("SPI6EN", "APB4ENR", 1014, Some(GATE_SPI)),
     ("I2C4EN", "APB4ENR", 1018, None),
+    // `AET-WO-1211b`: ADC1 (ADC12EN) and ADC3.
+    ("ADC12EN", "AHB1ENR", 736, None),
+    ("ADC3EN", "AHB4ENR", 834, None),
 ];
 const GATE_REF: &str = "AET-WO-3302 bench sheet B2's Renode column (AHB4ENR 0x3, APB1LENR 0x00200000, APB2ENR 0x1000, read back after the reference's boot; USART1EN by AET-WO-4300b FEEDBACK P2.1's image): the bit reads back only for a peripheral the platform registers";
 const GATE_PORTS: &str =
@@ -1426,6 +1429,69 @@ fn table() -> Vec<Entry> {
             "",
             "written 0; no measurement or held source line shows the model's handling",
         ));
+    }
+
+    // ---- ADC (`AET-WO-1211b`; `1211` §2.7 (c)): a pin device's ADC input's
+    // bring-up. `simulate` refuses a pin device until `AET-WO-1211c`, so the
+    // twin witnesses none of these fields: each is silicon-only, held only by
+    // the board crate's proof (`adcN_bring_up_is_in_order_and_bounded`, whose
+    // words are the oracle's, consistency) and the bench. `AET-WO-1211c`
+    // re-classes PCSEL and SQR1 once the twin runs them (`1211` §2.7 (c)).
+    let adc_judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the board crate's proof holds each word to its oracle, which is consistency, and only the bench reads the silicon";
+    for (register, fields) in [
+        (
+            "CR",
+            &[
+                "ADCAL",
+                "ADCALDIF",
+                "ADCALLIN",
+                "ADDIS",
+                "ADEN",
+                "ADSTART",
+                "ADSTP",
+                "ADVREGEN",
+                "BOOST",
+                "DEEPPWD",
+                "JADSTART",
+                "JADSTP",
+                "LINCALRDYW#",
+            ][..],
+        ),
+        (
+            "CFGR",
+            &[
+                "AUTDLY", "AWD1CH", "AWD1EN", "AWD1SGL", "CONT", "DISCEN", "DISCNUM", "DMNGT",
+                "EXTEN", "EXTSEL", "JAUTO", "JAWD1EN", "JDISCEN", "JQDIS", "JQM", "OVRMOD", "RES",
+            ][..],
+        ),
+        (
+            "ISR",
+            &[
+                "ADRDY", "AWD#", "EOC", "EOS", "EOSMP", "JEOC", "JEOS", "JQOVF", "LDORDY", "OVR",
+            ][..],
+        ),
+        ("PCSEL", &["PCSEL"][..]),
+        ("SMPR#", &["SMP#"][..]),
+        ("SQR#", &["L", "SQ#"][..]),
+        (
+            "CCR",
+            &[
+                "CKMODE", "DAMDF", "DELAY", "DUAL", "PRESC", "TSEN", "VBATEN", "VREFEN",
+            ][..],
+        ),
+    ] {
+        for field in fields {
+            t.push(e(
+                "ADC",
+                register,
+                field,
+                W,
+                Si,
+                adc_judge,
+                "",
+                "written by the ADC bring-up (RM0433 Rev 9 ch. 25; spike/1211b/adc-contract.md): ADEN and ADSTART read-modify-write with the other command bits 0, every other word whole",
+            ));
+        }
     }
     t
 }
