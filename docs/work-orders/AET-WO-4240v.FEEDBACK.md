@@ -327,6 +327,13 @@ The svd-hal slice measured Sentinel-01's `every_valid_sequence` before and after
 - **The override on generated platforms only: accepted.**
 - **The poll bound is an engine choice: accepted.** Its doc comment names the DS12117 tables and pages that state no maximum.
 
+**Ruled on #259** (architect, 01:10Z):
+- **The `PWR_CR3` reserved-bit rows: correct to add** (bit 6 is written as read, under an independent rule).
+- **F1 accepted for this order.** The residue is stated; the `ACTVOS` check needs a cited encoding, so it goes to `4240a`'s or `4240b`'s scope, where the architect writes it.
+- **F2 accepted for `4240b`.**
+- **§1.10:** the architect places it in `BENCH.md` in a docs/fab follow-up; it stays here.
+- **`main` merged** twice more before READY: `52a2d62e` (`3303b`, boards re-blessed on the split) and `03d89554` (`4202`, Sentinel-02's solved fixtures re-derived). `TIER2_MIN` stays at `main`'s 191: this PR adds no tier-2 test.
+
 **Mine, each stated where it is built:**
 - **The rule's home** is a new module, `aethelgard-ir` `vos.rs` (§1.3).
 - **No solved stand-in under any version** (§1.1). One test's expectation was inverted to match.
