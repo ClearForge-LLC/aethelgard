@@ -194,19 +194,14 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Ok(l) => l,
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
     };
-    let stack = match aethelgard_eda::stack::Stack::of(&spec) {
-        Ok(s) => s,
-        Err(path) => {
-            let s = crate::undeclared(path);
-            return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
-        }
-    };
-    // Whether `emit` routed this specification by the capacitance ladder,
-    // from the specification alone, as `emit`'s placement decides it
-    // (`aethelgard_eda::schematic::ladder_runs`): a partial tolerance block
-    // was refused by `Stack::of` above, and is refused here the same way.
-    let laddered = match aethelgard_eda::schematic::ladder_runs(&spec) {
-        Ok(l) => l,
+    // the board as declared, and whether `emit` routed this specification by
+    // the capacitance ladder: from the specification alone, as `emit`'s
+    // placement decides it (`aethelgard_eda::schematic::ladder_runs`); a
+    // partial tolerance block is refused by either, by the same name
+    let declared = aethelgard_eda::stack::Stack::of(&spec)
+        .and_then(|stack| Ok((stack, aethelgard_eda::schematic::ladder_runs(&spec)?)));
+    let (stack, laddered) = match declared {
+        Ok(d) => d,
         Err(path) => {
             let s = crate::undeclared(path);
             return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
