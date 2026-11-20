@@ -122,8 +122,8 @@ use sha2::{Digest, Sha256};
 /// reference's output hashes to `a431ad59…0292`, and with the stress
 /// fixture's old sha256 (`6b82460e…c011`) its to `db746468…69c9`, the old
 /// digests, exactly (measured).
-const REFERENCE_DIGEST: &str = "80c0d86081e1ed5175eec4ab7c60be1ba2bf96ac9df3d32ce0d31c78ce95f6ea";
-const STRESS_DIGEST: &str = "ba45044517d5761c9fc266e3820d452071efa235c8f26df6cebd30ecf0fb4024";
+const REFERENCE_DIGEST: &str = "be5e5cdb30652abfa13d3553ea5c6316c2e4cc429cf96271792058a72e5ad38a";
+const STRESS_DIGEST: &str = "a35c14cf8691157cd43e2868f9788b53ec7735f9c7bc94c2556f1aaed680f460";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
