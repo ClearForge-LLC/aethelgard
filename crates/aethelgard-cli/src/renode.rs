@@ -797,7 +797,11 @@ impl BootPlan<'_> {
     /// no bound.
     fn probe_count(&self) -> usize {
         match self.recovery_bound_ns {
-            Some(_) => self.resets.iter().filter(|r| r.released_ns.is_some()).count(),
+            Some(_) => self
+                .resets
+                .iter()
+                .filter(|r| r.released_ns.is_some())
+                .count(),
             None => 0,
         }
     }
@@ -3611,7 +3615,10 @@ pub fn undisturbed_boot_word_ns(out: &Output) -> Result<Option<u64>, Stop> {
     let untrusted = |what: String| {
         Stop::tool_error(
             TOOL,
-            format!("the undisturbed boot: {what}{}", said::suffix(&text, Style::Renode)),
+            format!(
+                "the undisturbed boot: {what}{}",
+                said::suffix(&text, Style::Renode)
+            ),
         )
     };
     if code != 0 {

@@ -926,7 +926,12 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     // `check_droop_records` (`AET-WO-2305` §1.2).
     let declared = records
         .iter()
-        .filter(|r| matches!(r, Record::RailDeclared { .. } | Record::BatterySagDeclared { .. }))
+        .filter(|r| {
+            matches!(
+                r,
+                Record::RailDeclared { .. } | Record::BatterySagDeclared { .. }
+            )
+        })
         .count();
     if count_rank(1) > 1 || declared > 1 {
         return Err(
@@ -1583,7 +1588,11 @@ fn check_droop_records(
     let bound = match (releases.is_empty(), bounds.as_slice()) {
         (true, []) => None,
         (false, [b]) => *b,
-        _ => return Err("a droop's recovery bound is not archived once exactly when it releases a reset"),
+        _ => {
+            return Err(
+                "a droop's recovery bound is not archived once exactly when it releases a reset",
+            );
+        }
     };
     let probes: Vec<u64> = match bound {
         Some(b) => releases

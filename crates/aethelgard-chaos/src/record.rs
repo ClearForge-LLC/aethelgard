@@ -2622,7 +2622,9 @@ impl Record {
                 if *margin_ns != crate::power::RECOVERY_MARGIN_NS {
                     Err("a recovery bound's margin is not the ruled one quantum")
                 } else if *bound_ns != boot_word_ns.and_then(crate::power::recovery_bound) {
-                    Err("a recovery bound is not its undisturbed boot word's instant plus the margin")
+                    Err(
+                        "a recovery bound is not its undisturbed boot word's instant plus the margin",
+                    )
                 } else {
                     Ok(())
                 }

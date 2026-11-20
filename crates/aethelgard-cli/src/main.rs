@@ -1577,7 +1577,9 @@ fn recovery_fits(
         let Some(release) = r.released_ns else {
             continue;
         };
-        let next = resets.get(k + 1).map_or(virtual_ns, |n| n.asserted_ns.min(virtual_ns));
+        let next = resets
+            .get(k + 1)
+            .map_or(virtual_ns, |n| n.asserted_ns.min(virtual_ns));
         match aethelgard_chaos::power::probe_ns(release, bound_ns) {
             Some(probe) if probe <= next => {}
             probe => {
@@ -1586,7 +1588,11 @@ fn recovery_fits(
                     format!(
                         "the release at {release} ns is probed at {} ns (its boot's start and the recovery bound, {bound_ns} ns: the undisturbed boot word and one quantum), past {next} ns, {}",
                         probe.map_or_else(|| "an instant past u64".to_owned(), |p| p.to_string()),
-                        if next < virtual_ns { "where the next reset is asserted" } else { "the boot's end" }
+                        if next < virtual_ns {
+                            "where the next reset is asserted"
+                        } else {
+                            "the boot's end"
+                        }
                     ),
                 ));
             }
@@ -1910,7 +1916,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // reset, through the same bridge, and its boot word's instant plus one
     // quantum bounds each recovery. Its own capture directory, so the
     // droop's boot opens its files new.
-    let undisturbed = match plan_with(&[], None, ready.as_ref().and_then(|r| r.capture_undisturbed.as_deref())) {
+    let undisturbed = match plan_with(
+        &[],
+        None,
+        ready
+            .as_ref()
+            .and_then(|r| r.capture_undisturbed.as_deref()),
+    ) {
         Some(base) if resets.iter().any(|r| r.released_ns.is_some()) => {
             let commands = base.commands();
             let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
@@ -1919,11 +1931,17 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         }
         _ => None,
     };
-    let recovery_bound_ns = undisturbed.flatten().and_then(aethelgard_chaos::power::recovery_bound);
+    let recovery_bound_ns = undisturbed
+        .flatten()
+        .and_then(aethelgard_chaos::power::recovery_bound);
     if let (Some(bound), Some(r)) = (recovery_bound_ns, &ready) {
         recovery_fits(resets, bound, r.virtual_ns)?;
     }
-    let plan = plan_with(resets, recovery_bound_ns, ready.as_ref().and_then(|r| r.capture.as_deref()));
+    let plan = plan_with(
+        resets,
+        recovery_bound_ns,
+        ready.as_ref().and_then(|r| r.capture.as_deref()),
+    );
     // A rendered release moves the injection (`AET-WO-4300b`): when even
     // its earliest instant, one quantum after the last boot's start, and the
     // ports' wire time from it pass `MAX_VIRTUAL_NS`, no boot word can save
