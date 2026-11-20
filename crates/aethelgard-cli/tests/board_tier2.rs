@@ -1797,3 +1797,91 @@ fn each_size_sample_passes_every_gate_or_is_refused_by_name() {
     }
     fs::remove_dir_all(&base).unwrap();
 }
+
+/// `AET-WO-2306` §1.5: `verify` on `AET-WO-4600`'s motor driver (no I2C bus,
+/// no SPI bus, no supply drop limit, so no identity read on the boot) with
+/// its droop past BOR level 3. It passes, as before, and now says what judged
+/// nothing: `extract`'s entry has `judged: 0` and `nothing_in_scope` with
+/// `extract`'s reason; the droop's run has `observation_witness` with no
+/// witnessed device; `judged_nothing` lists exactly those two. Every other
+/// gate judged at least one item and says nothing more.
+#[test]
+fn verify_names_what_judged_nothing_on_the_motor_driver() {
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let base = common::verify::scratch("2306-driver");
+    fs::copy(
+        root().join("crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json"),
+        base.join("spec.json"),
+    )
+    .unwrap();
+    // `AET-WO-4600`'s `scenarios/driver/droop-bor3.json`, its `base` beside it.
+    let droop = serde_json::json!({
+        "schema_version": 3,
+        "name": "droop-bor3",
+        "base": "spec.json",
+        "expect": "pass",
+        "expect_findings": [],
+        "expect_counts": {"brownout_reset": 1, "brownout_unrecovered": 0, "rail_below_tolerance": 1},
+        "overrides": [{"droop": {
+            "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1_000_000,
+            "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
+            "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+        }}],
+    });
+    fs::write(base.join("droop.json"), serde_json::to_vec(&droop).unwrap()).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["verify", "--spec", "spec.json", "--scenarios", "droop.json"])
+        .current_dir(&base)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let (code, stdout) = (out.status.code(), String::from_utf8(out.stdout).unwrap());
+    let v = one(&stdout);
+    let _ = fs::remove_dir_all(&base);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["verdict"], "pass",
+        "a pass with nothing in scope stays a pass: {v}"
+    );
+    let gates = v["gates"].as_array().unwrap();
+    for g in gates {
+        assert_eq!(g["verdict"], "pass", "{g}");
+        if g["gate"] == "extract" {
+            assert_eq!(g["judged"], 0, "{g}");
+            assert_eq!(g["nothing_in_scope"], true, "{g}");
+            assert_eq!(
+                g["nothing_in_scope_reason"],
+                "no bounded line: the specification declares no I2C bus, no SPI bus and no supply domain with a drop limit",
+                "{g}"
+            );
+        } else {
+            assert!(g["judged"].as_u64() >= Some(1), "{g}");
+            assert!(g.get("nothing_in_scope").is_none(), "{g}");
+        }
+    }
+    assert_eq!(
+        gates.iter().find(|g| g["gate"] == "campaign").unwrap()["judged"],
+        1,
+        "{v}"
+    );
+    let run = &v["campaign"][0];
+    assert_eq!(
+        (run["scenario"].as_str(), run["verdict"].as_str()),
+        (Some("droop-bor3"), Some("pass")),
+        "{run}"
+    );
+    assert_eq!(
+        run["observation_witness"],
+        serde_json::json!({
+            "judged": 0,
+            "nothing_in_scope": true,
+            "nothing_in_scope_reason": "no witnessed device: the boot reads no device's identity, so each recovery is judged by the boot word alone"
+        }),
+        "{run}"
+    );
+    assert_eq!(
+        v["judged_nothing"],
+        serde_json::json!(["extract", "campaign:droop-bor3"]),
+        "{v}"
+    );
+}
