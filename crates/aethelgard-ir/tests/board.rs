@@ -547,8 +547,8 @@ fn imu_undeclared() -> Value {
 /// which declares none is refused by `validate`, by `extract`'s kind, naming
 /// the device on the bus's SCK as `extract` does. On `main` the same board
 /// passed `validate`, `emit` and every step before `extract` (FEEDBACK §2).
-/// A declaration, a stand-in's `board.drawn: false`, or a part with a cited
-/// maximum (the reference's flash) each passes.
+/// A declaration, or a stand-in's `board.drawn: false`, passes; a part with
+/// a cited maximum passes in the coverage test (`parts_arms_tier1`).
 #[test]
 fn a_drawn_boards_spi_device_with_no_pin_bound_is_refused_by_name() {
     let e = verdict(&imu_undeclared()).expect_err("refused");
@@ -571,6 +571,4 @@ fn a_drawn_boards_spi_device_with_no_pin_bound_is_refused_by_name() {
     let mut stand_in = imu_undeclared();
     stand_in["board"]["drawn"] = json!(false);
     verdict(&stand_in).unwrap();
-
-    verdict(&reference()).unwrap();
 }
