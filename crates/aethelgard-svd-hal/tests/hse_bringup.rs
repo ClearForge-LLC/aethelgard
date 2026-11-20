@@ -353,6 +353,25 @@ fn the_nmi_holds_every_motor_low() {
     assert!(!control["src/board.rs"].contains("css_hold"));
 }
 
+/// The trybuild `valid_hse_bringup` case includes this generated `board.rs`
+/// by path; it must be exactly what the generator writes for the 16 MHz
+/// crystal fixture. `AETHELGARD_BLESS=1` rewrites it.
+#[test]
+fn the_ui_hse_board_is_the_generated_one() {
+    let path: PathBuf =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/hse-crystal/board.rs");
+    let text = generated("hse-crystal-16")["src/board.rs"].clone();
+    if std::env::var_os("AETHELGARD_BLESS").is_some() {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, &text).unwrap();
+    }
+    assert!(
+        fs::read_to_string(&path).unwrap() == text,
+        "{} differs",
+        path.display()
+    );
+}
+
 /// The ledger (`AET-WO-4240b`): a row for every field the bring-up writes
 /// (each register whole, so every field of it) or polls, `FLASH_ACR` written
 /// rather than at reset, no select written, and no id twice.
