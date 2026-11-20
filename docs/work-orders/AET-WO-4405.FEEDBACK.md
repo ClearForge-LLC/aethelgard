@@ -126,11 +126,11 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
 
 ## 7. Gates, CI and status
 
-- **Gates** at `cd1fafbe` (`main` `943f7112`, `4240v`, merged; capped scope):
+- **Gates** at `a84d59a1` (every serial fact from the ELF; `main` `d70a99e5` merged; capped scope):
   - `cargo fmt --all -- --check`: clean;
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
-  - `cargo test --workspace`: **2,396 passed, 0 failed**. An earlier run at `0409ad4f` gave 2,360 passed, 0 failed.
-- **The final binary on the real boards** [measured]. It reads `4240v`'s topology schema, so every topology was re-solved first: the CI three and Sentinel-01 from their committed specs, and `4404`'s three at specification 19 with Serial-Four's `core_supply`. Every regenerated `hwdef.dat` has `4404`'s lines exactly.
+  - `cargo test --workspace`: **2,396 passed, 0 failed**. Earlier runs: `cd1fafbe`, 2,396 passed, 0 failed; `0409ad4f`, 2,360 passed, 0 failed.
+- **The final binary on the real boards** [measured], re-run at `6d8dea95` after the boot-rate read was retired, with identical results. It reads `4240v`'s topology schema, so every topology was re-solved first: the CI three and Sentinel-01 from their committed specs, and `4404`'s three at specification 19 with Serial-Four's `core_supply`. Every regenerated `hwdef.dat` has `4404`'s lines exactly.
   - `container/ardupilot-pinout.sh`, unchanged, on the seven CI boards: exit 0, no `::error` (`spike/4405/out/pinout-final.log`).
   - The thirteen `4404` boards: each verdict is identical to the earlier branch run (`out/judge-final.txt`).
   - The crossed headers: as §3 (`out/cross-final.txt`).
@@ -139,5 +139,5 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
   - the two crate READMEs (`aethelgard-pincheck`, and the `check pinout` paragraph and exit-3 list in `aethelgard-cli`'s). The work order's rules make their old "read from `hwdef.h`" sentence false, so they were brought true;
   - `spike/4405/` holds Python decode and prediction scripts, as `spike/1303` does. No ELF or `hwdef.h` byte is committed.
   - Nothing else: no generator, IR, specification, `container/`, workflow or `ci/` change.
-- **CI green on `4e92c5b4`** (the final code, `main` `d70a99e5` merged): `ci` run 44714820375 (gates, tools shards, bench-package), `ardupilot-image` run 44714820705 (the four hand boards, the generated boards, **`pinout`**, `foreign`, `pinned`), and `engine-image` run 44714820532. `TIER2_MIN` is unchanged.
-- **Status: READY.** This commit adds only this line and the CI record above, and it is the last push. One PR (#277), left unmerged; the architect merges. The title and body are in `~/.cache/aet-4405/pr-title-body.md`.
+- **CI green on `4e92c5b4`**, the code before the boot-rate read was retired (runs 44714820375, 44714820705 with `pinout`, 44714820532). A READY commit on that head (`3f2fce30`) was superseded: it still read SERIAL0's boot rate from `hwdef.h`.
+- **CI on the final code:** pending; the READY commit records it.
