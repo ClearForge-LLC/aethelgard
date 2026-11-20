@@ -73,6 +73,14 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | F2 | `R7` (a load named by its emitted number, on a part that is still on the rail) stays unseen, as the work order says. This rule is the partial catch only. | §7.1 row (existing) |
 | F3 | The crate README is outside the literal fence; one clause names the new kind (§1). | fence note |
 
-## 6. Gates and CI
+## 6. Gates, the reduction pass, and CI
 
-To be completed on the final tree.
+- **`main` merged:** `c9c5f85c` (docs only: the roadmap, and this work order, identical to the copy built to) as `7c41b6e6`. Clean [measured: `git diff --stat 416a6dd3 c9c5f85c`].
+- **`cargo test --workspace`:** 2,351 passed, 0 failed, 0 ignored [measured: `test-workspace.log`, run in a capped scope]. That run began before the reduction pass below and the README clause. After both, these passed on the final tree: `load_references_tier1`, `validate_cli`, `readme_status`, `hot_plug_tier1`, `outline_tier1`, and `aethelgard-eda`'s unit tests (177 tests; with the five CLI suites, 216).
+- **`cargo fmt --all -- --check`** and **`cargo clippy --workspace --all-targets -- -D warnings`:** exit 0 on the final tree.
+- **The corpus and `emit`, re-measured with the final binary:** byte-identical to `main` (`corpus-final.txt`, `emit-final.sha`).
+- **The reduction pass:** `drawn_nets` merged entries for a reference drawn twice. `design()` claims each reference once (`Taken`), and `Part` has no unit, so it is now a plain `collect` like `drawn`. Both mutants were re-run after it and are still killed [measured: `mut/m1-after.log`, `mut/m2-after.log`]. Nothing else in the diff is removable:
+  - the one accessor is the fence's;
+  - the two arms of one `match` share one map;
+  - the three tests hold the work order's cases and §5's measured answer.
+- **CI** is the run of record; its result is in the PR.
