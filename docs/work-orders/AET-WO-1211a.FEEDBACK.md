@@ -22,6 +22,7 @@
 |---|---|---|---|---|---|---|
 | spec 20, `main` `824c3ff3` | 29 | equal | equal | **0 moved** | identical | 8 files × 1 sha line in the 2 migrated files |
 | spec 22, `main` `8df353ee` | 29 | equal | equal | **0 moved** | identical | 8 files × 1 sha line in each of the 24 generated trees |
+| spec 22 at READY, `main` `c1012a2d` (1210 merged) | 29 | equal | equal | **0 moved** | identical | 8 files × 1 sha line in each of the 25 generated trees |
 
 - The whitelist (M2): `schema_version` and `specification_sha256`; `gpio` as `{pin, direction: output, initial: high}`; `adc_inputs` (empty, or each `power.sense` net on its pin with ADC1/ADC3); the copied `pwm`'s two keys. Nothing else differs on any file.
 - The 8 files: `firmware/.cargo/config.toml`, `firmware/Cargo.toml`, `firmware/link.x`, `firmware/src/main.rs`, `<project>.repl`, `src/board.rs`, `src/lib.rs`, `src/proofs.rs` — 1211's list.
