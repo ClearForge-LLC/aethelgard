@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "ext-bmp581-undisturbed",
+  "base": "../../../examples/sentinel-01-ext-bmp581.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}
