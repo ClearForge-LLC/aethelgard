@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """AET-WO-1211d mutants: one per guard this work order adds, each applied alone to a scratch copy of
 HEAD, then the named test target run. A test failure kills the mutant. Usage:
-mutants.py <worktree> <scratch dir> <result.json>"""
+mutants.py <worktree> <scratch dir> <result.json> [mutant prefix, to rerun one]"""
 import json, subprocess, sys, os, shutil
 
 ARM = "crates/aethelgard-eda/src/schematic_pin_device.rs"
@@ -34,7 +34,7 @@ MUTANTS = [
      "                .filter(|(net, _)| analog.contains(net))", "                .filter(|_| false)", DRAWN),
     ("G7 a row pin left floating (the completeness refusal removed)", ARM,
      "            _ => {\n                return Err(not_drawable(\n                    d,\n                    format!(\n                        \"its {} pin `{name}` is declared nowhere, and would float\",",
-     "            _ => {\n                conns.insert(n, Conn::NoConnect);\n                #[allow(unreachable_code)]\n                return Err(not_drawable(\n                    d,\n                    format!(\n                        \"its {} pin `{name}` is declared nowhere, and would float\",", DRAWN),
+     "            _ => {\n                conns.insert(n, Conn::NoConnect);\n                continue;\n                #[allow(unreachable_code)]\n                return Err(not_drawable(\n                    d,\n                    format!(\n                        \"its {} pin `{name}` is declared nowhere, and would float\",", DRAWN),
 ]
 
 def main():
@@ -44,7 +44,10 @@ def main():
     subprocess.run(f"git -C {repo} archive HEAD | tar -x -C {scratch}", shell=True, check=True)
     env = dict(os.environ, CARGO_TARGET_DIR=os.path.expanduser("~/.cache/aet-1211d/target-mut"))
     results = []
+    only = sys.argv[4] if len(sys.argv) > 4 else ""
     for name, path, old, new, (pkg, test) in MUTANTS:
+        if not name.startswith(only):
+            continue
         p = os.path.join(scratch, path)
         orig = open(p).read()
         assert orig.count(old) == 1, f"{name}: the guard moved"
@@ -59,6 +62,9 @@ def main():
         results.append({"mutant": name, "target": f"{pkg} --test {test}", "killed": killed,
                         "compiled": compiled, "failing": failing})
         print(("KILLED  " if killed else ("NOCOMP  " if not compiled else "SURVIVED")), name, failing, flush=True)
+    if only:
+        old = [r for r in json.load(open(out)) if not r["mutant"].startswith(only)]
+        results = sorted(old + results, key=lambda r: [m[0] for m in MUTANTS].index(r["mutant"]))
     json.dump(results, open(out, "w"), indent=1)
 
 main()
