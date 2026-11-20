@@ -649,3 +649,58 @@ fn a_pin_with_no_stored_speed_is_refused() {
         ("NoPinSpeed", Some("SPI_SCK"))
     );
 }
+
+/// `AET-WO-1211a`: a pin device is a gpio fact the check cannot judge; it is
+/// refused by the device's reference and part, never read as a chip select.
+#[test]
+fn a_pin_device_is_refused_as_not_judged() {
+    use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
+    let mut t = topology();
+    t.pin_devices.insert(
+        "U9".into(),
+        SolvedPinDevice {
+            part: "WAKE_SWITCH".into(),
+        },
+    );
+    t.gpio.insert(
+        "WAKE".into(),
+        SolvedGpio {
+            pin: "PB5".into(),
+            direction: Direction::Input,
+            initial: None,
+            pull: Some(McuPull::Up),
+        },
+    );
+    t.pin_speeds.insert("WAKE".into(), 0);
+    t.validate().unwrap();
+    let config = elf::read(&Elf::default().bytes()).unwrap();
+    let err = judge(&t, &lqfp_like(), &config, None, &allow()).unwrap_err();
+    assert_eq!(
+        (err.kind(), err.id().as_deref()),
+        ("GpioNotJudged", Some("U9"))
+    );
+    assert!(err.to_string().contains("WAKE_SWITCH"), "{err}");
+}
+
+/// `AET-WO-1211a`: a gpio entry that is not a chip select is refused by its
+/// net, whatever the topology says about pin devices.
+#[test]
+fn an_input_gpio_entry_is_refused_as_not_judged() {
+    use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio};
+    let mut t = topology();
+    t.gpio.insert(
+        "WAKE".into(),
+        SolvedGpio {
+            pin: "PB5".into(),
+            direction: Direction::Input,
+            initial: None,
+            pull: Some(McuPull::Up),
+        },
+    );
+    let config = elf::read(&Elf::default().bytes()).unwrap();
+    let err = judge(&t, &lqfp_like(), &config, None, &allow()).unwrap_err();
+    assert_eq!(
+        (err.kind(), err.id().as_deref()),
+        ("GpioNotJudged", Some("WAKE"))
+    );
+}

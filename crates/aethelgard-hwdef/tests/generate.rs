@@ -263,6 +263,9 @@ fn a_topology_with_sense_pins_is_refused() {
         "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
         "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 0, "channels": ["ADC1_INP10"]}}
     });
+    // The sense is also its ADC input (`AET-WO-1211a`).
+    v["adc_inputs"] =
+        json!({"VBAT_SENSE": {"pin": "PC0", "peripheral": "ADC1", "channel": "INP10"}});
     let t: SolvedTopology = serde_json::from_value(v).unwrap();
     t.validate().unwrap();
     assert_eq!(
@@ -470,4 +473,53 @@ fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
             cited: 0
         }
     ));
+}
+
+/// `AET-WO-1211a`: ArduPilot's hwdef has no `GPIO(n)` line this generator
+/// writes for a pin device's pins, so a topology with one is refused by the
+/// device's reference and part.
+#[test]
+fn a_topology_with_a_pin_device_is_refused_as_not_emitted() {
+    let mut v = sentinel_01();
+    v["pin_devices"] = json!({"U9": {"part": "WAKE_SWITCH"}});
+    v["gpio"]["WAKE"] = json!({"pin": "PB5", "direction": "input", "pull": "up"});
+    v["pin_speeds"]["WAKE"] = json!(0);
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    t.validate().unwrap();
+    let err = generate(&t).unwrap_err();
+    assert_eq!(
+        err,
+        Refusal::GpioNotEmitted {
+            reference: "U9".into(),
+            part: "WAKE_SWITCH".into()
+        }
+    );
+    assert_eq!((err.kind(), err.id()), ("GpioNotEmitted", Some("U9")));
+}
+
+/// `AET-WO-1211a`: the motor line is `PULLDOWN`, which a motor output that
+/// idles high contradicts, so it is refused by the net's name.
+#[test]
+fn a_motor_output_that_idles_high_is_refused_as_not_emitted() {
+    let mut t: SolvedTopology = serde_json::from_str(include_str!(
+        "../../aethelgard-svd-hal/tests/ui/motors-pwm/topology.json"
+    ))
+    .unwrap();
+    let (net, m) = t
+        .motor_outputs
+        .iter_mut()
+        .find(|(_, m)| m.pwm.is_some())
+        .unwrap();
+    let net = net.clone();
+    m.pwm.as_mut().unwrap().idle =
+        aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::High);
+    // An idle high's CCR is ARR + 1, as `solve` writes it.
+    m.ccr = m.arr + 1;
+    t.validate().unwrap();
+    let err = generate(&t).unwrap_err();
+    assert_eq!(err, Refusal::IdleHighNotEmitted { net: net.clone() });
+    assert_eq!(
+        (err.kind(), err.id()),
+        ("IdleHighNotEmitted", Some(net.as_str()))
+    );
 }

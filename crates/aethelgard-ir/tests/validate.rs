@@ -191,7 +191,8 @@ fn refuses_unsupported_schema_version() {
         18,
         19,
         20,
-        22,
+        21,
+        23,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -915,7 +916,8 @@ fn full_document() -> serde_json::Value {
     ]);
     v["motor_outputs"] = json!([
         {"label": "M1", "pin": null, "protocol": "pwm",
-         "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null},
+         "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
+                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null},
         {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null,
          "esc": {"none": {"source": "a bench header with no power pin"}}}
     ]);
@@ -1184,7 +1186,16 @@ fn solved() -> SolvedTopology {
             }),
         ]
         .into(),
-        gpio: [("FLASH_CS".to_owned(), "PA0".to_owned())].into(),
+        gpio: [(
+            "FLASH_CS".to_owned(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA0",
+                aethelgard_ir::motor::Level::High,
+            ),
+        )]
+        .into(),
+        adc_inputs: Default::default(),
+        pin_devices: Default::default(),
         i2c_ceilings: [("SENSORS".to_owned(), 400_000)].into(),
         i2c_speeds: [("SENSORS".to_owned(), 400_000)].into(),
         analog_lines: [
@@ -1316,8 +1327,10 @@ fn solved_refuses_version_and_hash() {
     // an SPI device's `orientation` (`AET-WO-4400d`), 10 the file before
     // `foreign_clock` (`AET-WO-4400g`), 11 the file before `core_supply`
     // and the clock's `vos` (`AET-WO-4240v`), 12 the file before the
-    // clock's `hse` (`AET-WO-4240a`), 14 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] {
+    // clock's `hse` (`AET-WO-4240a`), 13 the file before `gpio`'s direction,
+    // `adc_inputs` and a PWM output's `idle` (`AET-WO-1211a`), 15 one this
+    // build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -1466,16 +1479,31 @@ fn a_solved_field_in_a_specification_and_the_reverse_are_refused() {
 #[test]
 fn solved_refuses_gpio_non_identifiers_with_paths() {
     let err = solved_refusal(|t| {
-        t.gpio.insert("CS 2".into(), "PA1".into());
+        t.gpio.insert(
+            "CS 2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA1",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_invalid_identifier(err, "gpio.CS 2");
     let err = solved_refusal(|t| {
-        t.gpio.insert("FLASH_CS".into(), "".into());
+        t.gpio.insert(
+            "FLASH_CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output("", aethelgard_ir::motor::Level::High),
+        );
     });
     assert_invalid_identifier(err, "gpio.FLASH_CS.pin");
     // assignments are checked before gpio
     let err = solved_refusal(|t| {
-        t.gpio.insert("CS 2".into(), "PA1".into());
+        t.gpio.insert(
+            "CS 2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA1",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         t.assignments.get_mut("I2C_SDA").unwrap().pin = "".into();
     });
     assert_invalid_identifier(err, "assignments.I2C_SDA.pin");
@@ -1484,12 +1512,24 @@ fn solved_refuses_gpio_non_identifiers_with_paths() {
 #[test]
 fn solved_refuses_a_net_in_both_maps() {
     let err = solved_refusal(|t| {
-        t.gpio.insert("I2C_SDA".into(), "PA1".into());
+        t.gpio.insert(
+            "I2C_SDA".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA1",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_refusal(err, "NetAssignedTwice", Some("I2C_SDA"));
     // before a duplicate pin
     let err = solved_refusal(|t| {
-        t.gpio.insert("I2C_SDA".into(), "PB8".into());
+        t.gpio.insert(
+            "I2C_SDA".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PB8",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_refusal(err, "NetAssignedTwice", Some("I2C_SDA"));
 }
@@ -1497,11 +1537,23 @@ fn solved_refuses_a_net_in_both_maps() {
 #[test]
 fn solved_refuses_a_pin_used_twice_across_or_within_gpio() {
     let err = solved_refusal(|t| {
-        t.gpio.insert("FLASH_CS".into(), "PB9".into());
+        t.gpio.insert(
+            "FLASH_CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PB9",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_refusal(err, "DuplicatePin", Some("PB9"));
     let err = solved_refusal(|t| {
-        t.gpio.insert("OTHER_CS".into(), "PA0".into());
+        t.gpio.insert(
+            "OTHER_CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA0",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_refusal(err, "DuplicatePin", Some("PA0"));
 }
@@ -1650,7 +1702,13 @@ fn solved_refuses_a_ceiling_key_that_is_not_an_identifier() {
     // gpio is checked before the ceilings
     let err = solved_refusal(|t| {
         t.i2c_ceilings.insert("BUS 2".into(), 400_000);
-        t.gpio.insert("CS 2".into(), "PA1".into());
+        t.gpio.insert(
+            "CS 2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA1",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_invalid_identifier(err, "gpio.CS 2");
 }
@@ -1682,7 +1740,13 @@ fn an_invalid_ceiling_is_refused_after_alternate_functions_and_before_duplicates
     assert_eq!(err.kind(), "AlternateFunctionOutOfRange");
     let err = solved_refusal(|t| {
         t.i2c_ceilings.insert("SENSORS".into(), 1);
-        t.gpio.insert("FLASH_CS".into(), "PB9".into());
+        t.gpio.insert(
+            "FLASH_CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PB9",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
     });
     assert_eq!(err.kind(), "InvalidCeiling");
 }
@@ -3647,7 +3711,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 21
+                expected: 22
             }
         ),
         "{e}"

@@ -114,6 +114,12 @@ pub enum TwinError {
     },
     #[error("a model of our own is not pinned (AET-WO-4220 D6): {why}")]
     ModelUnpinned { why: String },
+    /// `AET-WO-1211a`: the twin models no pin device (its GPIO input, its
+    /// ADC input) until a work order builds it.
+    #[error(
+        "`{reference}` ({part}) is a pin device; the twin models none of its pins (AET-WO-1211a)"
+    )]
+    PinDeviceNotSimulated { reference: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -138,8 +144,23 @@ impl TwinError {
             Self::UnknownAbsentDevice { .. } => "UnknownAbsentDevice",
             Self::NoTimerRoute { .. } => "NoTimerRoute",
             Self::InvertedRoute { .. } => "InvertedRoute",
+            Self::PinDeviceNotSimulated { .. } => "PinDeviceNotSimulated",
             Self::Register(e) => e.kind(),
         }
+    }
+}
+
+/// Refuses a topology with a pin device (`AET-WO-1211a`). Every gpio entry
+/// the twin reads after this is a chip select.
+pub(crate) fn refuse_pin_devices(
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Result<(), TwinError> {
+    match topology.pin_devices.iter().next() {
+        Some((reference, d)) => Err(TwinError::PinDeviceNotSimulated {
+            reference: reference.clone(),
+            part: d.part.clone(),
+        }),
+        None => Ok(()),
     }
 }
 
