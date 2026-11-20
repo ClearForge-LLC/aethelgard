@@ -13,6 +13,14 @@ Labels: **measured** (run here), **read** (read at source, file:line), **inferre
 
 **Base:** `origin/main` `35d23eae` (3403 merged), merged into the branch as `9ea52f61`. 3403 changed no Rust, so `main`'s baseline binary, built at `96517013`, judges the same rules [measured: `git diff --stat 96517013 35d23eae -- crates boards` is empty].
 
+**Later merge of `main` at `52a2d62e` (3303b), merge commit `43bea0f3`:** clean; only `crates/aethelgard-cli/README.md` auto-merged among this branch's files [measured]. On the merged tree:
+
+- fmt and clippy are clean;
+- the 12 rule and helper suites pass: 315 tests, 0 failed;
+- the 48 committed specifications give 26 pass and 22 refused, none of them by either load kind.
+
+**`TIER2_MIN` stays at 190.** This branch adds no tier-2 test: its new binaries are `load_references` and `load_references_tier1`, neither of them a `*_tier2` binary, per the architect's ruling of 00:10Z.
+
 **4202 has not landed.** At 22:50Z it has no PR. The ruled re-merge, and the 48-file re-measure that follows it, wait for it (B5).
 
 ## B0. What is built, and what is not
