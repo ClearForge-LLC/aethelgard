@@ -202,6 +202,15 @@ fn a_second_device_gets_its_own_select_and_is_read_after_the_flash() {
     assert!(u5 < once(main, "record(6, 1, status, value);"));
     assert!(wake < once(main, "record(8, 1, status, value);"));
     assert!(data < once(main, "record(10, 2, status, value);"));
-    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 13] = [0; 13];"));
+    // Then U3's identity, the TMP117's, which the twin has no model for:
+    // after every modelled step, before the boot word, so no record above
+    // moved for it (`AET-WO-4241`, the architect's D3).
+    let u3 = once(
+        main,
+        "    let mut buf5 = [0u8; 2];\n    \
+         let (status, value) = match i2c1.transfer(&mut r, 0x48, &[0x0f], &mut buf5) {",
+    );
+    assert!(data < u3 && u3 < once(main, "record(13, 1, status, value);"));
+    assert!(main.contains("static mut AETHELGARD_BOOT: [u32; 15] = [0; 15];"));
     assert!(main.contains("Spi1Selects { pa0, pa1 }"));
 }

@@ -659,6 +659,9 @@ fn what_the_generator_cannot_write_is_refused() {
 /// purpose (the supply and VOS Scale 2 first, `Pwr`, `Scale2` taken by
 /// `reset_clock`, the PWR proofs): `main.rs`, `board.rs` and `proofs.rs` were
 /// `ff451c44…8d2e`, `59f194d1…c792` and `f34b4e0d…c837`; nothing else moved.
+/// Re-taken at `AET-WO-4241` (the architect's D3): `main.rs` alone moves, by
+/// U3's (the TMP117's) identity read after every modelled read and before
+/// the boot word; it was `d26fab5b…d7fe`.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -686,7 +689,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "d26fab5b6ceabcc7e3b6ea3da3507bdf35dfa3f574b6693cb22cff7086f1d7fe",
+        "5dad6e44a99379200c8e4bb8cf8bf6b60fce0dbd305035bc0581e299b4c6c2f9",
     ),
     (
         "src/board.rs",

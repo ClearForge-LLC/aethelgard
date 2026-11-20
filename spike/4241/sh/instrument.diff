@@ -1,0 +1,129 @@
+diff -ru main-src/crates/aethelgard-cli/src/renode.rs inst-src/crates/aethelgard-cli/src/renode.rs
+--- main-src/crates/aethelgard-cli/src/renode.rs	2026-11-20 09:38:36.000000000 +0000
++++ inst-src/crates/aethelgard-cli/src/renode.rs	2026-11-20 09:46:03.716824558 +0000
+@@ -607,6 +607,10 @@
+                 ));
+             }
+         }
++        for k in 0..48u32 {
++            let at = self.boot_word + 4 * k;
++            reads.push((format!("sysbus ReadDoubleWord {at:#010x}"), Read::Raw(at)));
++        }
+         reads
+     }
+ 
+@@ -670,6 +674,13 @@
+                 aethelgard_twin::boot::RECORD_UNSET
+             ),
+         ];
++        for k in 2..48u32 {
++            c.push(format!(
++                "sysbus WriteDoubleWord {:#010x} {:#010x}",
++                self.boot_word + 4 * k,
++                aethelgard_twin::boot::RECORD_UNSET
++            ));
++        }
+         for check in &self.image.identity.checks {
+             for at in record_words(check) {
+                 c.push(format!(
+@@ -858,6 +869,8 @@
+     /// Check `.0`'s record: word 0 is the status, then the value's words,
+     /// most significant first.
+     Record(usize, usize),
++    /// AET-WO-4241 spike: one RAM word after the boot word.
++    Raw(u32),
+ }
+ 
+ /// A boot's findings, the listing, and what the reads gave.
+@@ -2198,6 +2211,7 @@
+     // transfer, exactly as the twin lists it, is skipped; nothing else is
+     // (`AET-WO-4200` D2).
+     let (seen, unrouted) = attribute(checks, &last_boot);
++    for l in &last_boot { eprintln!("RAWLOG {l}"); }
+     let witnesses: Vec<Option<Vec<String>>> = seen
+         .into_iter()
+         .map(|w| (out.dropped_log_lines == 0).then_some(w))
+@@ -2250,6 +2264,7 @@
+             Read::BrownOut => observed.brown_out = word()?,
+             Read::Loop(i, k) => observed.loops[i][usize::from(k)] = word()?,
+             Read::Register(i) => observed.registers[i] = word()?,
++            Read::Raw(at) => eprintln!("RAWWORD {at:#010x} {:#010x}", word()?),
+             Read::Record(i, 0) => observed.records[i].0 = word()?,
+             Read::Record(i, _) => {
+                 let r = &mut observed.records[i].1;
+diff -ru main-src/crates/aethelgard-svd-hal/src/board/firmware.rs inst-src/crates/aethelgard-svd-hal/src/board/firmware.rs
+--- main-src/crates/aethelgard-svd-hal/src/board/firmware.rs	2026-11-20 09:38:36.000000000 +0000
++++ inst-src/crates/aethelgard-svd-hal/src/board/firmware.rs	2026-11-20 09:45:22.000000000 +0000
+@@ -393,10 +393,13 @@
+ /// Q-E: the devices power up together, so one wait between the two halves
+ /// serves them all), each half with the I2C devices in the specification's
+ /// order, then the SPI devices in theirs, each device's script in order
+-/// (`aethelgard_ir::parts::Part::steps`); for each device that `answers`
+-/// accepts (the twin has a model for it; this crate cannot
+-/// depend on the twin) and whose part is in the table. A device on a
+-/// peripheral the board does not have as a bus of its kind is refused.
++/// (`aethelgard_ir::parts::Part::steps`), for each device whose part is in
++/// the table. Every device's identity step is read, modelled or not
++/// (`AET-WO-4241`): the specification decides what the firmware does, never
++/// the twin's model set (`INV-07`). A configuration or data step only for a
++/// device that `answers` accepts (the twin has a model for it; this crate
++/// cannot depend on the twin). A device on a peripheral the board does not
++/// have as a bus of its kind is refused.
+ fn reads(
+     plan: &Plan,
+     solved: &SolvedTopology,
+@@ -404,10 +407,9 @@
+ ) -> Result<Vec<Read>, BoardError> {
+     let steps = |part: &str| aethelgard_ir::parts::steps(part).map_err(BoardError::InvalidTopology);
+     let mut out = Vec::new();
++    // Every step of a modelled part; only the identity of any other.
++    let kept = |part: &str, kind: StepKind| kind == StepKind::Identity || answers(part);
+     for (reference, d) in solved.i2c_devices_in_order() {
+-        if !answers(&d.part) {
+-            continue;
+-        }
+         if plan.peripherals.get(&d.peripheral).map(|p| p.kind) != Some(Kind::I2c) {
+             return Err(BoardError::DeviceNotOnABus {
+                 reference: reference.to_owned(),
+@@ -417,7 +419,7 @@
+         let Some(steps) = steps(&d.part)? else {
+             continue;
+         };
+-        for step in steps {
++        for step in steps.into_iter().filter(|s| kept(&d.part, s.kind)) {
+             out.push(Read {
+                 bus: d.peripheral.to_ascii_lowercase(),
+                 target: Target::I2c { address: d.address },
+@@ -429,9 +431,6 @@
+         }
+     }
+     for (reference, d) in solved.spi_devices_in_order() {
+-        if !answers(&d.part) {
+-            continue;
+-        }
+         let Some(steps) = steps(&d.part)? else {
+             continue;
+         };
+@@ -444,7 +443,7 @@
+                 reference: reference.to_owned(),
+                 peripheral: d.peripheral.clone(),
+             })?;
+-        for step in steps {
++        for step in steps.into_iter().filter(|s| kept(&d.part, s.kind)) {
+             out.push(Read {
+                 bus: d.peripheral.to_ascii_lowercase(),
+                 target: Target::Spi {
+diff -ru main-src/crates/aethelgard-twin/src/model.rs inst-src/crates/aethelgard-twin/src/model.rs
+--- main-src/crates/aethelgard-twin/src/model.rs	2026-11-20 09:38:36.000000000 +0000
++++ inst-src/crates/aethelgard-twin/src/model.rs	2026-11-20 09:46:03.714664010 +0000
+@@ -545,6 +545,10 @@
+ 
+ /// The model for `part`, or `None` when the twin cannot model it.
+ pub fn kind(part: &str) -> Result<Option<Model>, TwinError> {
++    // AET-WO-4241 spike lever: treat the listed parts as unmodelled.
++    if std::env::var("AET4241_UNMODEL").is_ok_and(|v| v.split(',').any(|p| p == part)) {
++        return Ok(None);
++    }
+     let table = parts::table().map_err(TwinError::InvalidTopology)?;
+     let Some(name) = table.get(part).and_then(|p| p.renode.as_deref()) else {
+         return Ok(None);

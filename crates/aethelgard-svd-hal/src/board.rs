@@ -430,10 +430,11 @@ pub fn generate(
 /// [`generate`], and the reference firmware also reads the identity of each of
 /// the topology's I2C devices (`SolvedTopology::i2c_devices`, `AET-WO-2203`),
 /// then of each of its SPI devices (`SolvedTopology::spi_devices`,
-/// `AET-WO-4200`), whose part has an identity and for which `answers` says the
-/// twin has a model (`AET-WO-2202`). This crate cannot depend on the twin, so
-/// the caller passes whether `aethelgard_twin::model::model(part)` is
-/// `Ok(Some(_))`.
+/// `AET-WO-4200`), whose part has an identity, modelled or not
+/// (`AET-WO-4241`); a scripted part's configuration and data steps only where
+/// `answers` says the twin has a model (`AET-WO-2202`). This crate cannot
+/// depend on the twin, so the caller passes whether
+/// `aethelgard_twin::model::model(part)` is `Ok(Some(_))`.
 pub fn generate_with(
     crate_name: &str,
     solved: &SolvedTopology,
@@ -7677,12 +7678,15 @@ mod tests {
         assert!(proofs.contains("Spi1Device::U4 => (Block::GpioA, 0x00010000, 0x00000001),"));
         assert!(proofs.contains("Spi1Device::U_4 => (Block::GpioA, 0x00020000, 0x00000002),"));
         assert!(proofs.contains("let devices = [Spi1Device::U4, Spi1Device::U_4];"));
-        // The firmware hands both over in `init`, each bound after its `into_output`.
+        // The firmware hands both over in `init`, each bound after its
+        // `into_output`; it then reads both devices' identities, the twin's
+        // model set aside (`generate`: `answers` is false; `AET-WO-4241`).
         let main = &files["firmware/src/main.rs"];
         assert!(main.contains("let pa1 = gpioa.pa1.into_output(&mut r);"));
         assert!(main.contains(
-            "let _spi1 = spi1.init(&mut r, &clock, pa5, pa7, pa6, Spi1Selects { pa0, pa1 });"
+            "let mut spi1 = spi1.init(&mut r, &clock, pa5, pa7, pa6, Spi1Selects { pa0, pa1 });"
         ));
+        assert_eq!(main.matches("spi1.transfer(").count(), 2);
     }
 
     #[test]

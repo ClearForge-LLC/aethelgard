@@ -211,10 +211,15 @@ fn digests() -> Vec<(&'static str, String)> {
 /// text, `main.rs` and the two platforms are `f443af76…2c3a`,
 /// `b57442b4…e5e9` and `455de730…7a7c` exactly, the digests before
 /// (measured); the boot image did not move.
+/// Then moved again by `AET-WO-4241` (the architect's D3), on purpose: `main.rs`
+/// gains U3's identity read (the TMP117, which the twin has no model for)
+/// after every modelled read and before the boot word, and the boot image
+/// gains U3's record, placed after every check's; the two platforms did not
+/// move (measured).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "3a09d0430c44c1478cf53bdd68b51166f68ec3b1c84bc8969cfb5d1eef60ad50",
+        "a95a1bb6d934584cc62bea46c3d8cf6a1e0c79565b69884486351dae9d77f918",
     ),
     (
         "platform",
@@ -226,7 +231,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "45865bbd466aa31db6b8cd4a7d97fa1273992d69ac8823189347e4190d5dc0de",
+        "221f6b5975901f30fb5dd12e0ccdad3ad7fc4d8626745923b33e356fb2976d70",
     ),
 ];
 

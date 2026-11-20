@@ -509,6 +509,27 @@ impl BootPlan<'_> {
                 .filter(|(_, s)| matches!(s.wire, aethelgard_twin::boot::Wire::I2c { .. }))
                 .map(|(k, s)| crate::anchor::step_hook(k, s.status_at)),
         );
+        // Each unmodelled device's identity read (`AET-WO-4241`): on I2C the
+        // address its controller finds nothing at is its own step's, and on
+        // either bus its status write ends its read, so the twin's cost of it
+        // is measured from where the unmodelled reads begin (D3).
+        let identity = &self.image.identity;
+        let i2c_checks = |k: usize| {
+            matches!(
+                identity.checks.get(k).map(|c| &c.wire),
+                Some(aethelgard_twin::boot::Wire::I2c { .. })
+            )
+        };
+        c.extend(
+            cost_anchor(self.image)
+                .filter(|&(k, _)| !i2c_checks(k))
+                .map(|(k, at)| crate::anchor::step_hook(k, at)),
+        );
+        c.extend(
+            unwitnessable(identity).map(|(j, _, n)| {
+                crate::anchor::step_hook(unmodelled_hook(identity, j), n.status_at)
+            }),
+        );
         c
     }
 
@@ -612,6 +633,17 @@ impl BootPlan<'_> {
                 ));
             }
         }
+        for (j, _, n) in unwitnessable(&self.image.identity) {
+            for (word, at) in words_at(n.status_at, n.value_at, n.width)
+                .into_iter()
+                .enumerate()
+            {
+                reads.push((
+                    format!("sysbus ReadDoubleWord {at:#010x}"),
+                    Read::Unwitnessable(j, word),
+                ));
+            }
+        }
         reads
     }
 
@@ -675,13 +707,20 @@ impl BootPlan<'_> {
                 aethelgard_twin::boot::RECORD_UNSET
             ),
         ];
-        for check in &self.image.identity.checks {
-            for at in record_words(check) {
-                c.push(format!(
-                    "sysbus WriteDoubleWord {at:#010x} {:#010x}",
-                    aethelgard_twin::boot::RECORD_UNSET
-                ));
-            }
+        let unmodelled = unwitnessable(&self.image.identity)
+            .flat_map(|(_, _, n)| words_at(n.status_at, n.value_at, n.width));
+        for at in self
+            .image
+            .identity
+            .checks
+            .iter()
+            .flat_map(record_words)
+            .chain(unmodelled)
+        {
+            c.push(format!(
+                "sysbus WriteDoubleWord {at:#010x} {:#010x}",
+                aethelgard_twin::boot::RECORD_UNSET
+            ));
         }
         c
     }
@@ -886,6 +925,8 @@ enum Read {
     /// Check `.0`'s record: word 0 is the status, then the value's words,
     /// most significant first.
     Record(usize, usize),
+    /// Unmodelled device `.0`'s identity record (`AET-WO-4241`), as `Record`.
+    Unwitnessable(usize, usize),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -939,6 +980,10 @@ pub struct Observed {
     /// attribution's evidence, never a witness (`AET-WO-4200` D4). Empty for
     /// an I2C check.
     pub unrouted: Vec<Vec<String>>,
+    /// For each unmodelled device (`IdentityPlan::unmodelled`), what its
+    /// identity read left (`AET-WO-4241`); default for one the firmware does
+    /// not read.
+    pub unmodelled: Vec<Unwitnessed>,
     /// The instant of the boot word's write the hook observed in the boot
     /// the judge reads (`AET-WO-2302`): the serial frames' anchor.
     pub boot_word_ns: Option<u64>,
@@ -952,13 +997,105 @@ pub struct Observed {
     pub injections: Vec<PortInjection>,
 }
 
+/// What an unmodelled device's identity read left (`AET-WO-4241`): its
+/// record's status and value, and the addresses its controller found no
+/// device at during its step ([`absent_by_step`]). Never judged against the
+/// part: no model answers it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Unwitnessed {
+    pub record: (u32, u64),
+    pub absent: Vec<u8>,
+    /// The instructions from the status write before it to its own
+    /// ([`unmodelled_costs`]): the twin's cost of a read no model answers;
+    /// `None` when either was not written exactly once.
+    pub cost: Option<u64>,
+}
+
+impl Unwitnessed {
+    /// [`Unwitnessed::cost`] in nanoseconds, at the twin's fixed MIPS.
+    pub fn cost_ns(&self) -> Option<u64> {
+        self.cost.map(|n| n * 1_000 / aethelgard_twin::boot::MIPS)
+    }
+}
+
+/// Each unmodelled read's cost in the twin (`AET-WO-4241`, the architect's
+/// D3), in the order of `plan.unmodelled`: the instructions from the status
+/// write that ends the step before it ([`cost_anchor`], or the unmodelled
+/// read before it) to its own. A word written other than exactly once has no
+/// one instant, so it and every read after it is `None`, never guessed.
+fn unmodelled_costs(image: &aethelgard_twin::boot::Image, hooks: &[Seen]) -> Vec<Option<u64>> {
+    let identity = &image.identity;
+    let once = |index: usize| {
+        let mut writes = hooks.iter().filter_map(|(_, h, _)| match h {
+            crate::anchor::Hook::Step { check, count, .. } if *check == index => Some(*count),
+            _ => None,
+        });
+        writes.next().filter(|_| writes.next().is_none())
+    };
+    let mut costs = vec![None; identity.unmodelled.len()];
+    let mut before = cost_anchor(image).and_then(|(k, _)| once(k));
+    for (j, _, _) in unwitnessable(identity) {
+        let at = once(unmodelled_hook(identity, j));
+        costs[j] = before.zip(at).and_then(|(b, a)| a.checked_sub(b));
+        before = at.filter(|_| costs[j].is_some());
+    }
+    costs
+}
+
 /// The words of a check's record in RAM, in the order the judge reads them:
 /// the status, then the value's [`aethelgard_twin::boot::value_words`].
 fn record_words(c: &aethelgard_twin::boot::StepCheck) -> Vec<u32> {
-    let words = aethelgard_twin::boot::value_words(c.width);
-    std::iter::once(c.status_at)
-        .chain((0..words).map(|w| c.value_at + 4 * w))
+    words_at(c.status_at, c.value_at, c.width)
+}
+
+/// A record's words: the status at `status_at`, then the value's
+/// [`aethelgard_twin::boot::value_words`] from `value_at`.
+fn words_at(status_at: u32, value_at: u32, width: u8) -> Vec<u32> {
+    let words = aethelgard_twin::boot::value_words(width);
+    std::iter::once(status_at)
+        .chain((0..words).map(|w| value_at + 4 * w))
         .collect()
+}
+
+/// Each unmodelled device's identity read the firmware makes
+/// (`AET-WO-4241`): its index in the plan's `unmodelled`, the device, and
+/// its record.
+fn unwitnessable(
+    plan: &aethelgard_twin::boot::IdentityPlan,
+) -> impl Iterator<
+    Item = (
+        usize,
+        &aethelgard_twin::boot::Unmodelled,
+        &aethelgard_twin::boot::NotWitnessable,
+    ),
+> {
+    plan.unmodelled
+        .iter()
+        .enumerate()
+        .filter_map(|(j, u)| u.identity.as_ref().map(|n| (j, u, n)))
+}
+
+/// The index an unmodelled device's status hook logs ([`crate::anchor::step_hook`]):
+/// after every check's, so it never names a check (`AET-WO-4241`).
+fn unmodelled_hook(plan: &aethelgard_twin::boot::IdentityPlan, j: usize) -> usize {
+    plan.checks.len() + j
+}
+
+/// Where the unmodelled reads begin, as a hook's index and the word it
+/// watches (`AET-WO-4241`, the architect's D3): the last check's status word,
+/// whose write ends the last modelled step, or with no check the brown-out
+/// word, written once before any read; its index then after every other.
+/// `None` without an unmodelled read.
+fn cost_anchor(image: &aethelgard_twin::boot::Image) -> Option<(usize, u32)> {
+    let identity = &image.identity;
+    unwitnessable(identity).next()?;
+    Some(match identity.checks.last() {
+        Some(c) => (identity.checks.len() - 1, c.status_at),
+        None => (
+            identity.checks.len() + identity.unmodelled.len(),
+            image.brown_out.word_at,
+        ),
+    })
 }
 
 /// The multiplexer an SPI check's device sits behind: `spi1.spi1mux`.
@@ -1033,8 +1170,13 @@ fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(
 ///
 /// A line attributed to the wrong step only ever differs from what that step
 /// expects: attribution never passes a witness.
-fn attribute(
-    checks: &[aethelgard_twin::boot::StepCheck],
+///
+/// `others` is each unmodelled SPI device's multiplexer and address
+/// (`AET-WO-4241`): its chip-select window is its own read's, so a
+/// multiplexer line inside it is no check's.
+fn attribute<'a>(
+    checks: &'a [aethelgard_twin::boot::StepCheck],
+    others: &[(&'a str, u8)],
     log: &[&str],
 ) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
     let mut seen = vec![Vec::new(); checks.len()];
@@ -1144,6 +1286,12 @@ fn attribute(
                 }
             }
         }
+    }
+    for &(mux, address) in others {
+        every_window
+            .entry(mux)
+            .or_default()
+            .extend(windows(log, mux, address));
     }
     // A multiplexer line inside no device's window is the controller's: it
     // goes to every device's identity step, as `4200` D4 collected it.
@@ -1916,36 +2064,49 @@ fn absent_address(line: &str, bus: &str) -> Option<u8> {
 /// never moves no address off its step, it only keeps the old masking.
 /// Empty for an SPI check. Attribution only, never a witness.
 ///
+/// An unmodelled device's identity read is a step on its controller too
+/// (`AET-WO-4241`): `others` gives each one's controller and the index its
+/// status hook logs, and the second list is its addresses, in that order. Its
+/// own address is one no model answers, so without it that line would be
+/// a modelled step's.
+///
 /// [`Hook::Step`]: crate::anchor::Hook::Step
 fn absent_by_step(
     checks: &[aethelgard_twin::boot::StepCheck],
+    others: &[(&str, usize)],
     log: &[&str],
     hooks: &[Seen],
-) -> Vec<Vec<u8>> {
+) -> (Vec<Vec<u8>>, Vec<Vec<u8>>) {
     fn controller(c: &aethelgard_twin::boot::StepCheck) -> Option<&str> {
         matches!(c.wire, aethelgard_twin::boot::Wire::I2c { .. })
             .then(|| c.device.split('.').next().unwrap_or_default())
     }
-    // Each check's status writes, by their positions in the log.
-    let mut writes: Vec<Vec<usize>> = vec![Vec::new(); checks.len()];
+    // Every I2C step, by the index its status hook logs: each check's, then
+    // each unmodelled read's.
+    let steps: Vec<(&str, usize)> = checks
+        .iter()
+        .enumerate()
+        .filter_map(|(k, c)| controller(c).map(|bus| (bus, k)))
+        .chain(others.iter().copied())
+        .collect();
+    // Each step's status writes, by their positions in the log.
+    let mut writes: Vec<Vec<usize>> = vec![Vec::new(); steps.len()];
     for (i, h, _) in hooks {
         if let crate::anchor::Hook::Step { check, .. } = h
-            && let Some(w) = writes.get_mut(*check)
+            && let Some(s) = steps.iter().position(|&(_, k)| k == *check)
         {
-            w.push(*i);
+            writes[s].push(*i);
         }
     }
-    let mut absent = vec![Vec::new(); checks.len()];
+    let mut absent = vec![Vec::new(); steps.len()];
     for (i, line) in log.iter().enumerate() {
-        let Some((bus, address)) = checks.iter().find_map(|c| {
-            let bus = controller(c)?;
-            absent_address(line, bus).map(|a| (bus, a))
-        }) else {
+        let Some((bus, address)) = steps
+            .iter()
+            .find_map(|&(bus, _)| absent_address(line, bus).map(|a| (bus, a)))
+        else {
             continue;
         };
-        let mine: Vec<usize> = (0..checks.len())
-            .filter(|&j| controller(&checks[j]) == Some(bus))
-            .collect();
+        let mine: Vec<usize> = (0..steps.len()).filter(|&j| steps[j].0 == bus).collect();
         // The check whose one status write first follows the line.
         let owner = mine
             .iter()
@@ -1961,7 +2122,17 @@ fn absent_by_step(
             None => mine.iter().for_each(|&j| absent[j].push(address)),
         }
     }
-    absent
+    // Back to the checks, every one of them (an SPI check's is empty), then
+    // the unmodelled reads.
+    let mut of_checks = vec![Vec::new(); checks.len()];
+    let mut of_others = Vec::with_capacity(others.len());
+    for (k, a) in steps.iter().map(|&(_, k)| k).zip(absent) {
+        match of_checks.get_mut(k) {
+            Some(c) => *c = a,
+            None => of_others.push(a),
+        }
+    }
+    (of_checks, of_others)
 }
 
 /// A bare hexadecimal value, the whole line: `0x2100B007`. Anything else on
@@ -2226,7 +2397,44 @@ pub fn judge_boot(
     // (`AET-WO-2204` D2, ruled). A line the model writes that is not a
     // transfer, exactly as the twin lists it, is skipped; nothing else is
     // (`AET-WO-4200` D2).
-    let (seen, unrouted) = attribute(checks, &last_boot);
+    // Each unmodelled device's identity read is a step of its own on its
+    // bus (`AET-WO-4241`): an SPI one's window, an I2C one's status hook.
+    let identity = &plan.image.identity;
+    let spi_others: Vec<(&str, u8)> = unwitnessable(identity)
+        .filter_map(|(_, u, n)| match u.wire {
+            aethelgard_twin::boot::Wire::Spi { address, .. } => {
+                Some((n.device.rsplit_once('.').map_or("", |(m, _)| m), address))
+            }
+            aethelgard_twin::boot::Wire::I2c { .. } => None,
+        })
+        .collect();
+    let i2c_others: Vec<(usize, (&str, usize))> = unwitnessable(identity)
+        .filter(|(_, u, _)| matches!(u.wire, aethelgard_twin::boot::Wire::I2c { .. }))
+        .map(|(j, _, n)| {
+            let bus = n.device.split('.').next().unwrap_or_default();
+            (j, (bus, unmodelled_hook(identity, j)))
+        })
+        .collect();
+    let others: Vec<(&str, usize)> = i2c_others.iter().map(|&(_, o)| o).collect();
+    let (seen, unrouted) = attribute(checks, &spi_others, &last_boot);
+    let (absent, absent_others) = hooks.as_deref().map_or_else(
+        || {
+            (
+                vec![Vec::new(); checks.len()],
+                vec![Vec::new(); others.len()],
+            )
+        },
+        |h| absent_by_step(checks, &others, &last_boot, h),
+    );
+    let mut unmodelled = vec![Unwitnessed::default(); identity.unmodelled.len()];
+    for (&(j, _), a) in i2c_others.iter().zip(absent_others) {
+        unmodelled[j].absent = a;
+    }
+    if let Some(h) = hooks.as_deref() {
+        for (u, cost) in unmodelled.iter_mut().zip(unmodelled_costs(plan.image, h)) {
+            u.cost = cost;
+        }
+    }
     let witnesses: Vec<Option<Vec<String>>> = seen
         .into_iter()
         .map(|w| (out.dropped_log_lines == 0).then_some(w))
@@ -2244,11 +2452,9 @@ pub fn judge_boot(
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
         witnesses,
-        absent: hooks.as_deref().map_or_else(
-            || vec![Vec::new(); checks.len()],
-            |h| absent_by_step(checks, &last_boot, h),
-        ),
+        absent,
         unrouted,
+        unmodelled,
         serial: Vec::new(),
         // Past the filter's budget an edge may have been dropped, so no
         // output's edges can be read whole (`AET-WO-2204` D2's rule).
@@ -2282,6 +2488,11 @@ pub fn judge_boot(
             Read::Record(i, 0) => observed.records[i].0 = word()?,
             Read::Record(i, _) => {
                 let r = &mut observed.records[i].1;
+                *r = (*r << 32) | u64::from(word()?);
+            }
+            Read::Unwitnessable(j, 0) => observed.unmodelled[j].record.0 = word()?,
+            Read::Unwitnessable(j, _) => {
+                let r = &mut observed.unmodelled[j].record.1;
                 *r = (*r << 32) | u64::from(word()?);
             }
         }
@@ -2637,17 +2848,14 @@ pub fn judge_boot(
             }
         }
     }
-    for d in &plan.image.identity.unmodelled {
-        findings.push(Finding::info(
-            "device_unmodelled",
-            format!(
-                "{} ({}) {} has no Renode {} model, so its identity was not read",
-                d.reference,
-                d.part,
-                d.wire.describe(&d.peripheral),
-                aethelgard_twin::platform::RENODE_VERSION
-            ),
-        ));
+    for (u, seen) in plan
+        .image
+        .identity
+        .unmodelled
+        .iter()
+        .zip(&observed.unmodelled)
+    {
+        findings.push(unmodelled_finding(u, seen, booted));
     }
     Ok((
         findings,
@@ -3596,6 +3804,94 @@ fn timeouts_without_the_boot_word(
         .collect()
 }
 
+/// The kind every unmodelled device's identity read is named by
+/// (`AET-WO-4241`): severity `info`, never a pass and never a failure.
+pub const NOT_WITNESSABLE: &str = "identity_not_witnessable";
+
+/// What a boot says of a device the twin has no model for (`AET-WO-4241`).
+/// The device is unmodelled by the plan (`aethelgard_twin::model::kind`, the
+/// parts table), never by what its record holds: an unmodelled read leaves
+/// what a failed modelled one does (`timeout_txis` and the controller's
+/// `Unknown slave` on I2C, the multiplexer's dummy bytes on SPI; FEEDBACK
+/// §1), so the record judges nothing of the part.
+/// - A read the firmware made, with a status its bus writes: `info`,
+///   [`NOT_WITNESSABLE`], what the record holds named as information only.
+/// - A record holding no such status once the firmware reached its fixed
+///   point: the twin witnessed that the read was not made, a firmware defect
+///   and not a judgement of the part (D2): `<bus>_record_invalid`, as for a
+///   modelled record.
+/// - Before the fixed point the record is not read, as no record is.
+/// - A part with no row in the table, which no firmware reads:
+///   `device_unmodelled`, as before.
+fn unmodelled_finding(
+    u: &aethelgard_twin::boot::Unmodelled,
+    seen: &Unwitnessed,
+    booted: bool,
+) -> Finding {
+    let renode = aethelgard_twin::platform::RENODE_VERSION;
+    let who = format!(
+        "{} ({}) {}",
+        u.reference,
+        u.part,
+        u.wire.describe(&u.peripheral)
+    );
+    let Some(n) = &u.identity else {
+        return Finding::info(
+            "device_unmodelled",
+            format!("{who} has no Renode {renode} model, and its part no row the firmware reads"),
+        );
+    };
+    let why = format!(
+        "its identity read is not witnessable in the twin: Renode {renode} has no {} model, so no device answers it and its record judges nothing of the part, whose table value is {:#x} under mask {:#x}; only the bench reads it",
+        u.part, n.expected, n.mask
+    );
+    let (status, value) = seen.record;
+    if !booted {
+        return Finding::info(
+            NOT_WITNESSABLE,
+            format!(
+                "{who}: {why} (the firmware did not reach its fixed point, so the record is not read)"
+            ),
+        );
+    }
+    let bus = match u.wire {
+        aethelgard_twin::boot::Wire::I2c { .. } => "i2c",
+        aethelgard_twin::boot::Wire::Spi { .. } => "spi",
+    };
+    match u.wire.status(status) {
+        Some(_) => {
+            let status = status_name(&u.wire, status);
+            let absent: Vec<String> = seen.absent.iter().map(|a| format!("{a:#04x}")).collect();
+            let absent = if absent.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "; its controller found no device at {} during it",
+                    absent.join(", ")
+                )
+            };
+            // The twin's own cost (the architect's D3): silicon answers.
+            let cost = seen.cost.zip(seen.cost_ns()).map_or_else(String::new, |(n, ns)| {
+                format!(
+                    "; it took {n} instructions ({ns} ns) of the twin's virtual time, a wait silicon, which answers, never makes, so every later instant is that much later in the twin"
+                )
+            });
+            Finding::info(
+                NOT_WITNESSABLE,
+                format!(
+                    "{who}: {why}. The firmware made the read: the record reads {status}, value {value:#x}{absent}{cost}"
+                ),
+            )
+        }
+        None => Finding::plain(
+            &format!("{bus}_record_invalid"),
+            format!(
+                "{who}: the firmware did not make its identity read: the record reads status {status:#010x} and value {value:#010x}, which no completed or timed-out transfer writes ({why})"
+            ),
+        ),
+    }
+}
+
 /// The finding for one identity record, or none when the read passed. The
 /// expectation is the check's, which comes from the part table, never from
 /// the firmware (`INV-07`).
@@ -3799,20 +4095,19 @@ pub fn build(version_stdout: &[u8]) -> Option<String> {
     ok.then(|| build.to_owned())
 }
 
-/// How a record's status reads in the verdict.
-pub fn status_name(c: &aethelgard_twin::boot::StepCheck, status: u32) -> &'static str {
-    use aethelgard_twin::boot::Outcome;
-    // The check's own judgement names it, so a status counts only on its own
-    // bus (`AET-WO-4200`): an I2C record holding `RXP`'s word is invalid.
-    match c.judge(status, c.expected) {
-        Outcome::Pass | Outcome::Mismatch => "ok",
-        Outcome::Timeout("TXIS") => "timeout_txis",
-        Outcome::Timeout("TC") => "timeout_tc",
-        Outcome::Timeout("RXNE") => "timeout_rxne",
-        Outcome::Timeout("STOPF") => "timeout_stopf",
-        Outcome::Timeout("RXP") => "timeout_rxp",
-        Outcome::Timeout("EOT") => "timeout_eot",
-        Outcome::Timeout(_) | Outcome::Invalid => "invalid",
+/// How a record's status reads in the verdict, a check's or an unmodelled
+/// read's (`AET-WO-4241`): a status counts only on its own bus
+/// (`AET-WO-4200`), so an I2C record holding `RXP`'s word is invalid.
+pub fn status_name(wire: &aethelgard_twin::boot::Wire, status: u32) -> &'static str {
+    match wire.status(status) {
+        Some(None) => "ok",
+        Some(Some("TXIS")) => "timeout_txis",
+        Some(Some("TC")) => "timeout_tc",
+        Some(Some("RXNE")) => "timeout_rxne",
+        Some(Some("STOPF")) => "timeout_stopf",
+        Some(Some("RXP")) => "timeout_rxp",
+        Some(Some("EOT")) => "timeout_eot",
+        Some(Some(_)) | None => "invalid",
     }
 }
 
@@ -4261,8 +4556,9 @@ mod tests {
         .map(|u| format!("sysbus.{u} CreateFileBackend @/w/capture/{u}.bin true; "))
         .collect();
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
-        // `AET-WO-3305`: then the one I2C step's status hook.
-        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
+        // `AET-WO-3305`: then the one I2C step's status hook, and the
+        // unmodelled TMP117's (`AET-WO-4241`).
+        let step = steps_of(&image);
         assert!(
             c.contains(&format!(
                 "logLevel -1 sysbus.i2c1.u2; logLevel -1 sysbus.spi1.spi1mux; sysbus LogPeripheralAccess sysbus.usart1 true; sysbus LogPeripheralAccess sysbus.gpioPortA true; sysbus LogPeripheralAccess sysbus.rcc true; {others}sysbus.usart1 CreateFileBackend @/w/capture/usart1.bin true; {hook}; {step}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
@@ -4335,12 +4631,13 @@ mod tests {
         assert_eq!((p.injection_ns(), p.last_start()), (None, None));
         assert!(!p.commands().contains("AddWatchpointHook"));
         // A board without a port: no capture, no injection; the boot word's
-        // hook only logs, beside its one I2C step's (`AET-WO-3305`).
+        // hook only logs, beside its one I2C step's (`AET-WO-3305`) and the
+        // unmodelled TMP117's (`AET-WO-4241`).
         let p = plan(&image, &[]);
         assert_eq!(p.injection_ns(), None);
         let c = p.commands();
-        assert_eq!(c.matches("AddWatchpointHook").count(), 2);
-        assert_eq!(c.matches("AETHELGARD-STEP").count(), 1);
+        assert_eq!(c.matches("AddWatchpointHook").count(), 4);
+        assert_eq!(c.matches("AETHELGARD-STEP").count(), 3);
         assert!(!c.contains("WriteChar") && !c.contains("ScheduleAction"));
     }
 
@@ -4366,7 +4663,7 @@ mod tests {
         let c = p.commands();
         let bw = crate::anchor::boot_word_hook(0x2000_0000, &p.port_hooks());
         let echo = crate::anchor::echo_hook(0, &p.port_hooks(), 0x2000_0000).unwrap();
-        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
+        let step = steps_of(&image);
         assert!(
             c.contains(&format!(
                 "{bw}; {echo}; {step}; emulation RunFor \"0.1000000005\""
@@ -5214,8 +5511,10 @@ mod tests {
                     Read::BrownOut => 0x0406_AAF0,
                     Read::Register(i) if image.registers[i].name == "TIM2.CR1" => u64::from(cr1),
                     Read::Register(i) => u64::from(image.registers[i].value),
-                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
-                    Read::Record(_, _) => 0x60,
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5359,8 +5658,10 @@ mod tests {
                     Read::Loop(_, _) => 0xE7FD,
                     Read::BrownOut => 0x0406_AAF0,
                     Read::Register(i) => u64::from(image.registers[i].value),
-                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
-                    Read::Record(_, _) => 0x60,
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5480,8 +5781,10 @@ mod tests {
                     Read::Loop(_, _) => 0xE7FD,
                     Read::BrownOut => 0x0406_AAF0,
                     Read::Register(i) => u64::from(image.registers[i].value),
-                    Read::Record(_, 0) => u64::from(aethelgard_twin::boot::STATUS_OK),
-                    Read::Record(_, _) => 0x60,
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -6082,8 +6385,9 @@ mod tests {
         // `AET-WO-2204` D4: no level is ever changed; the device's log is set
         // to `Noisy` once, before the run (D1).
         let hook = crate::anchor::boot_word_hook(0x2000_0000, &[]);
-        // `AET-WO-3305`: the I2C step's status hook beside the boot word's.
-        let step = crate::anchor::step_hook(0, image.identity.checks[0].status_at);
+        // `AET-WO-3305`: the I2C step's status hook beside the boot word's,
+        // and the unmodelled TMP117's (`AET-WO-4241`).
+        let step = steps_of(&image);
         assert!(static_.contains(&format!(
             "cpu VectorTableOffset 0x08000000; logLevel -1 sysbus.i2c1.u2; {hook}; {step}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""
         )));
@@ -6129,6 +6433,18 @@ mod tests {
             rec(image.brown_out.word_at),
             rec(check.status_at),
             rec(check.value_at),
+            // The unmodelled TMP117's record, which only its read may set
+            // (`AET-WO-4241`).
+            rec(image.identity.unmodelled[0]
+                .identity
+                .as_ref()
+                .unwrap()
+                .status_at),
+            rec(image.identity.unmodelled[0]
+                .identity
+                .as_ref()
+                .unwrap()
+                .value_at),
             "emulation RunFor \"0.0002135505\"".to_owned(),
             hook.clone(),
             step.clone(),
@@ -6483,6 +6799,254 @@ mod tests {
         }
     }
 
+    /// An unmodelled TMP117 at 0x48 on I2C1, or behind PA0 on SPI1, with its
+    /// identity record (`AET-WO-4241`).
+    fn tmp117(spi: bool) -> aethelgard_twin::boot::Unmodelled {
+        let (wire, peripheral, device) = if spi {
+            let w = aethelgard_twin::boot::Wire::Spi {
+                address: 0,
+                select: "PA0".into(),
+            };
+            (w, "SPI1", "spi1.spi1mux.u3")
+        } else {
+            (
+                aethelgard_twin::boot::Wire::I2c { address: 0x48 },
+                "I2C1",
+                "i2c1.u3",
+            )
+        };
+        aethelgard_twin::boot::Unmodelled {
+            reference: "U3".into(),
+            part: "TMP117".into(),
+            peripheral: peripheral.into(),
+            wire,
+            identity: Some(aethelgard_twin::boot::NotWitnessable {
+                write: vec![0x0F],
+                width: 2,
+                expected: 0x0117,
+                mask: 0xFFFF,
+                status_at: 0x2000_0010,
+                value_at: 0x2000_0014,
+                device: device.into(),
+            }),
+        }
+    }
+
+    /// `AET-WO-4241` §1.3: an unmodelled device's identity read is named
+    /// `identity_not_witnessable`, `info`, whatever its record holds of a
+    /// read the firmware made: never a pass (no finding at all), never a
+    /// failure. A record the firmware never wrote, once it reached its fixed
+    /// point, is the firmware's defect (D2); a part with no row is
+    /// `device_unmodelled`, as before.
+    #[test]
+    fn an_unmodelled_read_is_named_not_witnessable_never_passed_or_failed() {
+        use aethelgard_twin::boot::{
+            RECORD_UNSET, STATUS_EOT, STATUS_OK, STATUS_RXNE, STATUS_RXP, STATUS_TXIS,
+        };
+        let seen = |status: u32, value: u64, absent: Vec<u8>| Unwitnessed {
+            record: (status, value),
+            absent,
+            cost: Some(360_095),
+        };
+        let i2c = tmp117(false);
+        // Measured (FEEDBACK §1): the read leaves `timeout_txis`, 0, and the
+        // controller's line for 0x48, which attribution gives it.
+        for (status, value, name) in [
+            (STATUS_TXIS, 0, "timeout_txis"),
+            (STATUS_RXNE, 0, "timeout_rxne"),
+            // A value that is the part's own still judges nothing.
+            (STATUS_OK, 0x0117, "ok"),
+            (STATUS_OK, 0x0000, "ok"),
+        ] {
+            let f = unmodelled_finding(&i2c, &seen(status, value, vec![0x48]), true);
+            assert_eq!(
+                (f.kind.as_str(), f.severity.as_str()),
+                (NOT_WITNESSABLE, "info"),
+                "{status:#x}"
+            );
+            let m = &f.message;
+            assert!(m.starts_with("U3 (TMP117) at I2C address 0x48: its identity read is not witnessable in the twin"), "{m}");
+            assert!(m.contains(&format!("the record reads {name}, value {value:#x}; its controller found no device at 0x48")), "{m}");
+        }
+        // SPI: the multiplexer's dummy bytes, measured; an I2C wait's word is
+        // none an SPI read writes.
+        let spi = tmp117(true);
+        for status in [STATUS_OK, STATUS_RXP, STATUS_EOT] {
+            let f = unmodelled_finding(&spi, &seen(status, 0xFF_FFFF, vec![]), true);
+            assert_eq!(
+                (f.kind.as_str(), f.severity.as_str()),
+                (NOT_WITNESSABLE, "info")
+            );
+            assert!(
+                f.message.contains("U3 (TMP117) on SPI1, chip select PA0: "),
+                "{}",
+                f.message
+            );
+        }
+        // Not made (D2): the judge's fill, or a word no read on that bus writes.
+        for (u, status, kind) in [
+            (&i2c, RECORD_UNSET, "i2c_record_invalid"),
+            (&i2c, STATUS_RXP, "i2c_record_invalid"),
+            (&spi, STATUS_TXIS, "spi_record_invalid"),
+        ] {
+            let f = unmodelled_finding(u, &seen(status, u64::from(RECORD_UNSET), vec![]), true);
+            assert_eq!((f.kind.as_str(), f.severity.as_str()), (kind, "error"));
+            assert!(
+                f.message.contains("did not make its identity read"),
+                "{}",
+                f.message
+            );
+        }
+        // Before the fixed point no record is read: named, not judged.
+        let f = unmodelled_finding(&i2c, &seen(RECORD_UNSET, 0, vec![]), false);
+        assert_eq!(
+            (f.kind.as_str(), f.severity.as_str()),
+            (NOT_WITNESSABLE, "info")
+        );
+        assert!(
+            f.message.ends_with(
+                "(the firmware did not reach its fixed point, so the record is not read)"
+            )
+        );
+        // A part with no row: no read, no record.
+        let mut none = tmp117(false);
+        none.identity = None;
+        let f = unmodelled_finding(&none, &Unwitnessed::default(), true);
+        assert_eq!(
+            (f.kind.as_str(), f.severity.as_str()),
+            ("device_unmodelled", "info")
+        );
+    }
+
+    /// `AET-WO-4241` §1.1, measured on C1 (`spike/4241/out/raw/C1-new.log`):
+    /// the unmodelled read's `Unknown slave at address 72.` goes to its own
+    /// step, by its status hook, so U2's evidence is unmoved; without the
+    /// hook it would be every I2C step's.
+    #[test]
+    fn an_unmodelled_read_s_absent_address_is_its_own_step_s() {
+        use aethelgard_ir::parts::StepKind::Identity;
+        let i2c = |address| aethelgard_twin::boot::Wire::I2c { address };
+        let checks = [
+            step(i2c(0x76), "i2c1.u2", Identity, &[]),
+            step(
+                aethelgard_twin::boot::Wire::Spi {
+                    address: 0,
+                    select: "PA0".into(),
+                },
+                "spi1.spi1mux.u4",
+                Identity,
+                &[],
+            ),
+        ];
+        // U3's hook logs index 2, after both checks'.
+        let others = [("i2c1", 2)];
+        let log = [
+            "[00:00:00.000000000] [WARNING] sysbus: AETHELGARD-STEP 0 22020000 2127",
+            "[00:00:00.000021330] [WARNING] i2c1: Unknown slave at address 72.",
+            "[00:00:00.003600000] [WARNING] sysbus: AETHELGARD-STEP 2 22020001 362444",
+        ];
+        let (hooks, _) = hooks_of(&log, 0).unwrap();
+        let (of_checks, of_others) = absent_by_step(&checks, &others, &log, &hooks);
+        assert_eq!(
+            of_checks,
+            [Vec::<u8>::new(), vec![]],
+            "U2's step is unmoved"
+        );
+        assert_eq!(of_others, [vec![72]]);
+        // Today's judge, with no step for U3: the line is U2's (C1, measured).
+        let (of_checks, _) = absent_by_step(&checks, &[], &log, &hooks);
+        assert_eq!(of_checks, [vec![72], vec![]]);
+        // U3's status written twice: the boundary is not the generated
+        // firmware's, so the line goes to every step on the controller, U3's
+        // among them, as `3305`'s rule says.
+        let twice = [log[0], log[1], log[2], log[2]];
+        let (hooks, _) = hooks_of(&twice, 0).unwrap();
+        let (of_checks, of_others) = absent_by_step(&checks, &others, &twice, &hooks);
+        assert_eq!(
+            (of_checks[0].clone(), of_others),
+            (vec![72], vec![vec![72]])
+        );
+    }
+
+    /// `AET-WO-4241` adversarial pass: a multiplexer line inside an
+    /// unmodelled device's chip-select window (the dummy-byte warning the
+    /// read draws, measured on C6) is that read's, never the controller's,
+    /// so a modelled device on the same multiplexer keeps its evidence.
+    #[test]
+    fn a_line_in_an_unmodelled_device_s_window_is_no_check_s() {
+        use aethelgard_ir::parts::StepKind::Identity;
+        let spi = |address| aethelgard_twin::boot::Wire::Spi {
+            address,
+            select: "PA0".into(),
+        };
+        let checks = [step(spi(0), "spi1.spi1mux.u4", Identity, &[])];
+        let log = [
+            "[00:00:00.000100000] [NOISY] spi1.spi1mux: GPIO #1 set to False",
+            "[00:00:00.000100000] [WARNING] spi1.spi1mux: Tried to transmit byte 0x9F to device 0x1, but it's not connected - ignoring transfer and returning a dummy byte",
+            "[00:00:00.000100000] [NOISY] spi1.spi1mux: GPIO #1 set to True",
+        ];
+        let (_, unrouted) = attribute(&checks, &[("spi1.spi1mux", 1)], &log);
+        assert_eq!(unrouted, [Vec::<String>::new()]);
+        // Without the unmodelled device's window it was the controller's,
+        // and U4's identity step took it.
+        let (_, unrouted) = attribute(&checks, &[], &log);
+        assert_eq!(unrouted[0].len(), 1);
+    }
+
+    /// `AET-WO-4241`, the architect's D3: an unmodelled read's cost in the twin
+    /// is measured from the status write that ends the last modelled step to
+    /// its own; a word written other than exactly once gives no cost, for it
+    /// or any read after it, never a guess.
+    #[test]
+    fn an_unmodelled_read_s_cost_runs_from_the_last_modelled_status_write() {
+        let image = image();
+        // U2 is the one check and on I2C: its own hook is the anchor (index
+        // 0); U3's logs index 1. C1's measured counts (`spike/4241`).
+        let line = |k: usize, v: &str, n: u64| {
+            format!(
+                "[00:00:00.{:09}] [WARNING] sysbus: AETHELGARD-STEP {k} {v} {n}",
+                n * 10
+            )
+        };
+        let costs = |log: &[String]| {
+            let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+            let (hooks, _) = hooks_of(&lines, 0).unwrap();
+            unmodelled_costs(&image, &hooks)
+        };
+        let ok = [line(0, "22020000", 2127), line(1, "22020001", 362_222)];
+        assert_eq!(costs(&ok), [Some(360_095)]);
+        // The anchor written twice, or never: no one instant to measure from.
+        assert_eq!(
+            costs(&[ok[0].clone(), ok[0].clone(), ok[1].clone()]),
+            [None]
+        );
+        assert_eq!(costs(&[ok[1].clone()]), [None]);
+        // Its own word written twice.
+        assert_eq!(
+            costs(&[ok[0].clone(), ok[1].clone(), ok[1].clone()]),
+            [None]
+        );
+    }
+
+    /// An image's step hooks, as `boot_hooks` adds them, for a reference with
+    /// U2 on I2C, maybe U4 on SPI, and the unmodelled TMP117: U2's; the last
+    /// check's, where the unmodelled reads begin, when it is not U2's
+    /// already; then the TMP117's, after every check's index
+    /// (`AET-WO-4241`).
+    fn steps_of(image: &aethelgard_twin::boot::Image) -> String {
+        let checks = &image.identity.checks;
+        let u3 = image.identity.unmodelled[0].identity.as_ref().unwrap();
+        let mut hooks = vec![crate::anchor::step_hook(0, checks[0].status_at)];
+        if checks.len() > 1 {
+            hooks.push(crate::anchor::step_hook(
+                checks.len() - 1,
+                checks[checks.len() - 1].status_at,
+            ));
+        }
+        hooks.push(crate::anchor::step_hook(checks.len(), u3.status_at));
+        hooks.join("; ")
+    }
+
     /// `AET-WO-3305`: each address found absent goes to the I2C step whose
     /// status write first follows it. The logs are the measured two-bme runs
     /// (`spike/3305`), whole lines with their stamps: held-low SDA, where
@@ -6494,7 +7058,7 @@ mod tests {
             slept, None,
             "every measured hook line is placed at its stamp"
         );
-        absent_by_step(checks, log, &hooks)
+        absent_by_step(checks, &[], log, &hooks).0
     }
 
     fn two_bme() -> Vec<aethelgard_twin::boot::StepCheck> {
@@ -6589,7 +7153,10 @@ mod tests {
             both(vec![117])
         );
         // No status write read at all: every line to every step.
-        assert_eq!(absent_by_step(&two_bme(), &[u2], &[]), both(vec![117]));
+        assert_eq!(
+            absent_by_step(&two_bme(), &[], &[u2], &[]).0,
+            both(vec![117])
+        );
         // Another controller's line is none of these steps'.
         let other = "[00:00:00.000000000] [WARNING] i2c2: Unknown slave at address 118.";
         assert_eq!(absent_of(&two_bme(), &[other, late0, step1]), both(vec![]));
@@ -6614,7 +7181,7 @@ mod tests {
 
     /// The findings of `checks` against `log`, every record `ok`.
     fn step_findings(checks: &[aethelgard_twin::boot::StepCheck], log: &[&str]) -> Vec<Finding> {
-        let (seen, unrouted) = attribute(checks, log);
+        let (seen, unrouted) = attribute(checks, &[], log);
         let observed = Observed {
             boot_word: 0,
             instructions: 0,
@@ -6632,6 +7199,7 @@ mod tests {
             motors: Vec::new(),
             serial: Vec::new(),
             unrouted,
+            unmodelled: Vec::new(),
             boot_word_ns: None,
             register_expected: Vec::new(),
             timers: Vec::new(),

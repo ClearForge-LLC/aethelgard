@@ -411,7 +411,7 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     assert_eq!(
         image.identity.checks.len(),
         2,
-        "U3 has no model, so no read; U2, then U4 on SPI"
+        "U3 has no model, so no check; U2, then U4 on SPI"
     );
     let c = &image.identity.checks[0];
     assert_eq!(
@@ -428,7 +428,9 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
         ),
         ("U4", &[0x9F][..], 3, 0xEF_4017)
     );
-    // After the boot word and the brown-out word (`AET-WO-4230` D10).
+    // After the boot word and the brown-out word (`AET-WO-4230` D10), and
+    // U2's record: unmoved by U3's, which comes after every check's
+    // (`AET-WO-4241`, the architect's D3).
     assert_eq!((f.status_at, f.value_at), (word + 16, word + 20));
     assert_eq!(f.judge(boot::STATUS_RXP, 0), boot::Outcome::Timeout("RXP"));
     // B0's EOT wait: an SPI read's status, never an I2C one's.
@@ -439,7 +441,21 @@ fn the_judge_expects_the_part_table_s_values_in_records_after_the_boot_word() {
     assert_eq!((c.width, c.expected), (1, 0x60));
     assert_eq!((c.status_at, c.value_at), (word + 8, word + 12));
     assert_eq!(image.identity.unmodelled.len(), 1);
-    assert_eq!(image.identity.unmodelled[0].reference, "U3");
+    let u = &image.identity.unmodelled[0];
+    assert_eq!(u.reference, "U3");
+    let n = u.identity.as_ref().expect("the TMP117 has a row");
+    assert_eq!(
+        (n.write.as_slice(), n.width, n.expected, n.mask),
+        (&[0x0F][..], 2, 0x0117, 0xFFFF),
+        "the table's identity: Device_ID, register 0x0F"
+    );
+    assert_eq!((n.status_at, n.value_at), (word + 24, word + 28));
+    assert_eq!(n.device, "i2c1.u3", "the path a model would take");
+    // Its status reads as an I2C read's, never as an SPI one's.
+    assert_eq!(u.wire.status(boot::STATUS_TXIS), Some(Some("TXIS")));
+    assert_eq!(u.wire.status(boot::STATUS_OK), Some(None));
+    assert_eq!(u.wire.status(boot::STATUS_RXP), None);
+    assert_eq!(u.wire.status(boot::RECORD_UNSET), None);
 
     use boot::Outcome::*;
     assert_eq!(c.judge(boot::STATUS_OK, 0x60), Pass);
@@ -490,6 +506,46 @@ fn a_part_name_that_is_not_exactly_a_table_s_is_unmodelled_not_skipped() {
     let plan = boot::identity(&with_devices(&devices)).unwrap();
     assert!(plan.checks.is_empty());
     assert_eq!(plan.unmodelled.len(), devices.len());
+    // Only the exact table name has an identity read (`AET-WO-4241`): a
+    // near-miss has no row, so no firmware reads it and no record is placed.
+    let read: Vec<&str> = plan
+        .unmodelled
+        .iter()
+        .filter(|u| u.identity.is_some())
+        .map(|u| u.part.as_str())
+        .collect();
+    assert_eq!(read, ["TMP117"]);
+}
+
+#[test]
+fn an_unmodelled_identity_record_comes_after_every_check_s() {
+    // `AET-WO-4241`, the architect's D3: the firmware reads every unmodelled
+    // identity after every modelled step, its data reads included, so no
+    // check's record moves for it; the unmodelled records follow in the
+    // specification's order.
+    let word = boot::boot_word().unwrap();
+    let devices = [
+        ("U3", "TMP117", 0x48),
+        ("U7", "BMP581", 0x46),
+        ("U8", "TMP117", 0x49),
+    ];
+    let plan = boot::identity(&with_devices(&devices)).unwrap();
+    let alone = boot::identity(&with_devices(&devices[1..2])).unwrap();
+    assert_eq!(
+        plan.checks, alone.checks,
+        "U7's records are where they are without U3 and U8"
+    );
+    let labels: Vec<&str> = plan.checks.iter().map(|c| c.label).collect();
+    assert_eq!(labels, ["identity", "configure", "data"]);
+    let last = plan.checks.last().unwrap();
+    let after = last.value_at + 4 * boot::value_words(last.width);
+    let placed: Vec<(&str, u32)> = plan
+        .unmodelled
+        .iter()
+        .map(|u| (u.reference.as_str(), u.identity.as_ref().unwrap().status_at))
+        .collect();
+    assert_eq!(placed, [("U3", after), ("U8", after + 8)]);
+    assert!(after > word + boot::RECORD_OFFSET);
 }
 
 #[test]

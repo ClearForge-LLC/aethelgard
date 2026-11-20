@@ -258,12 +258,13 @@ pub fn judge(
     crate::refuse_unjudged_gpio(t)?;
     let serial = elf::serial_table(elf_bytes)?;
     let params = elf::serial_params(elf_bytes)?;
+    let receivers = elf::gps_receivers(elf_bytes)?;
     let mut out = Out(Vec::new());
     spi(t, parts, header, &mut out)?;
     motors(t, header, &mut out)?;
     i2c_clock(t, header, &mut out)?;
     serial_ports(t, &serial, &params, &mut out);
-    serial_settings(t, &params, &mut out);
+    serial_settings(t, &params, receivers, &mut out);
     baros(t, parts, header, &mut out)?;
     imus(t, parts, header, elf_bytes, &mut out)?;
     Ok(out.0)
@@ -652,13 +653,6 @@ const GPS: i64 = 5;
 const GPS2: i64 = 6;
 const RCIN: i64 = 23;
 
-/// `GPS_MAX_RECEIVERS` (`AP_GPS_config.h:16`): `AP_GPS::init` can give the
-/// first GPS port to receiver 1 and the second to receiver 2, and no
-/// receiver is left for a third (`AP_GPS.cpp:345-349`). At compiled defaults
-/// only receiver 1 takes one: `GPS2_TYPE` is 0 (`AP_GPS_Params.cpp:31`,
-/// `AP_GPS.cpp:328`), FEEDBACK D2.
-const GPS_MAX_RECEIVERS: usize = 2;
-
 /// `SERIALn_OPTIONS` bits (`AP_HAL/UARTDriver.h:90-102`).
 const RXINV: i64 = 1 << 0;
 const TXINV: i64 = 1 << 1;
@@ -689,12 +683,27 @@ fn protocol_name(v: i64) -> String {
 ///   port there declared inverted runs not inverted.
 /// - **One RC input at most:** a second compiled RCIN port is dropped
 ///   (`AP_SerialManager.cpp:536-541`), even where the topology asks for it.
-/// - **Two GPS ports at most:** a third compiled GPS (or GPS2) port can
-///   never be bound ([`GPS_MAX_RECEIVERS`]).
+/// - **One GPS port per receiver at most:** `AP_GPS::init` gives the first
+///   GPS port to receiver 1, the next to receiver 2, and so on
+///   (`AP_GPS.cpp:345-349`), so a compiled GPS (or GPS2) port past
+///   `receivers`, the count `AP_GPS::var_info` compiles
+///   ([`elf::gps_receivers`], `GPS_MAX_RECEIVERS`), can never be bound
+///   (`GpsPortUnbound`). At compiled defaults only receiver 1 takes one:
+///   `GPS2_TYPE` is 0 (`AP_GPS_Params.cpp:31`, `AP_GPS.cpp:328`),
+///   `AET-WO-4405` D2.
+/// - **No AP_GPS at all** (`receivers` `None`): each port the topology
+///   declares a GPS has no consumer (`GpsNotCompiled`), and the count is
+///   not made.
 ///
-/// The last two count every compiled port, declared or not, in n order, as
-/// ArduPilot's own search does (`find_protocol_instance`, `:600-612`).
-fn serial_settings(t: &SolvedTopology, params: &[SerialParam], out: &mut Out) {
+/// The last two counts take every compiled port, declared or not, in n
+/// order, as ArduPilot's own search does (`find_protocol_instance`,
+/// `:600-612`).
+fn serial_settings(
+    t: &SolvedTopology,
+    params: &[SerialParam],
+    receivers: Option<u8>,
+    out: &mut Out,
+) {
     let order = serial_order(t);
     let net_of = |n: usize| order.get(n).map(|(l, ..)| *l);
     for (n, (label, p, ..)) in order.iter().enumerate() {
@@ -781,20 +790,38 @@ fn serial_settings(t: &SolvedTopology, params: &[SerialParam], out: &mut Out) {
                 );
             }
             rcin.push(at);
-        } else if runs == GPS || runs == GPS2 {
-            if gps.len() >= GPS_MAX_RECEIVERS {
+        } else if let Some(cap) = receivers.filter(|_| runs == GPS || runs == GPS2) {
+            if gps.len() >= usize::from(cap) {
+                let s = if cap == 1 { "" } else { "s" };
                 out.push(
                     "GpsPortUnbound",
                     &at,
                     net_of(n),
                     format!(
-                        "at most {GPS_MAX_RECEIVERS} GPS ports, {} (GPS_MAX_RECEIVERS, AP_GPS_config.h:16; AP_GPS.cpp:345-349)",
-                        gps.join(" and ")
+                        "at most {cap} GPS port{s}, {} (AP_GPS::var_info compiles {cap} receiver{s}; AP_GPS.cpp:345-349)",
+                        if gps.is_empty() {
+                            "none".to_owned()
+                        } else {
+                            gps.join(" and ")
+                        }
                     ),
                     protocol_name(runs),
                 );
             } else {
                 gps.push(at);
+            }
+        }
+    }
+    if receivers.is_none() {
+        for (n, (label, p, ..)) in order.iter().enumerate() {
+            if p.role == SerialRole::Gps {
+                out.push(
+                    "GpsNotCompiled",
+                    &format!("SERIAL{n}"),
+                    Some(label),
+                    "AP_GPS, to bind this GPS port".into(),
+                    "none: the ELF has no AP_GPS::var_info".into(),
+                );
             }
         }
     }
