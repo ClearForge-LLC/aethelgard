@@ -46,8 +46,8 @@ for c in sorted(os.listdir(M)):
         log = rd(f'{d}/boot.log').splitlines()
         uk = [l for l in log if 'Unknown slave' in l]
         tr = [l for l in log if 'Tried to transmit' in l or 'not connected' in l]
-        bw = [l for l in log if 'AETHELGARD-BOOTWORD' in l]
-        st = [l for l in log if 'AETHELGARD-STEP' in l]
+        ours = lambda tag: [l[1:20] + ' ' + l.split('AETHELGARD-', 1)[1] for l in log if '] [WARNING] sysbus: AETHELGARD-' + tag in l]
+        bw, st = ours('BOOTWORD'), ours('STEP')
         print(f'- boot log lines {len(log)}; `Unknown slave`: {uk}')
         if tr: print(f'- multiplexer unrouted ({len(tr)}): {tr[:4]}{" …" if len(tr) > 4 else ""}')
         print(f'- BOOTWORD: {bw}')
