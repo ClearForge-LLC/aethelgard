@@ -242,5 +242,165 @@ Nine rows (`svd-hal` `register_fields`, `cli` `ledger.rs`); the reference ledger
 | the new ELF itself | `0x0000_0042`, locked | our write is ignored; `LDOEN` 1, `BYPASS` 0 read back; boot `0x2100_B007` (generator) |
 | ArduPilot (`PWR->CR3` = `LDOEN \| USB33DEN`, `stm32h7_mcuconf.h` L92) | `0x0100_0002`, `USB33RDY` as the USB supply gives | boot `0x2100_B007`: `LDOEN` 1, `BYPASS` 0 (inferred: that the ChibiOS write is whole and lands; ChibiOS's `hal_lld.c` was not read at a pinned source) |
 | a firmware that selected bypass | `BYPASS` 1 | `SUPPLY_NOT_DECLARED`, word 0 = `0x2100_B0F1`, no `D3CR` write. **Not predicted for the bench:** no such firmware is known to be on it |
+| a firmware that wrote an illegal pair (`LDOEN` = `BYPASS`) | locked with the default kept: `LDOEN` 1, `BYPASS` 0 (p. 308) | the read-back passes (it judges `LDOEN`/`BYPASS`), and `ACTVOSRDY` stays low ("will go on indicating invalid voltage levels", p. 308): `ACTVOSRDY_TIMEOUT`, word `0x2100_B0F2`, **which may not land** (it is written in Run*, p. 262). Read `PWR_CSR1` directly: `ACTVOSRDY` 0 names this case. Not predicted for the bench (adversarial pass A4) |
 
 Which firmware is on the board when the row runs is Scotty's to record. The row can fail: a `D3CR` of `0x6000` after the boot, or any word 0 other than `0x2100_B007`.
+
+### §1.10 Sentinel-01's B2 row, re-predicted (D-6: `3403` merged first)
+
+`fab/sentinel-01-bench/BENCH.md` is `3403`'s, so these rows are written here for the architect to place. They replace B2's "The supply state" paragraph, which says **not predicted** for the ordered ELF, for a board flashed with the package ELF that the dispatch writes (§2). Sentinel-01's silicon revision is not declared (F-REV), so `CR3` is predicted for both revisions. Addresses and the `probe-rs` form are as in BENCH.md B2.
+
+| Read | When | Predicted | Class |
+|---|---|---|---|
+| `PWR_CR3` `0x5802480C` | power cycle (J3 removed), attach under reset | rev V `0x0000_0046`; rev Y `0x0000_0006` | rule (p. 307) |
+| `PWR_D3CR` `0x58024818` | the same | `0x0000_6000` (`VOS` `01`, `VOSRDY` 1) | rule (p. 310; Table 49's `VOSRDY` 0 is RM0433's own unresolved ambiguity) |
+| `PWR_CSR1` `0x58024804` | the same | not predicted (`ACTVOSRDY` before the supply is programmed: F-VOS's own question) | — |
+| `PWR_CR3` | after the boot (word 0 `0x2100_B007`) | rev V `0x0000_0042`; rev Y `0x0000_0002` | generator; `SCUEN` reading as written is inferred |
+| `PWR_CSR1` under `0x0000_E000` | after the boot | `0x0000_A000` | rule for `ACTVOSRDY`; `ACTVOS` `10` inferred (no encoding in RM0433) |
+| `PWR_D3CR` | after the boot | `0x0000_A000` | rule |
+
+The package's own bench-row sheet (`ledger::bench_rows`, pinned in `ledger_tier1`) also gains three rows: `PWR.CSR1` (`ACTVOSRDY`, mask `0x2000`, expect `0x2000`) and `FLASH.ACR` (`LATENCY`, mask `0xF`, expect `7`; `WRHIGHFREQ`, mask `0x30`, expect `0x30`).
+
+## §2 Measured
+
+All runs used the pinned tools image (`container/IMAGE`, Renode `1.17.0+20260907gitf1dd1b4af.aet1605`), each container under `~/bin/capped-run` with swap 0 and the scope read back. The kit is in `~/.cache/aet-4240v/kit`, outside the branch. The baseline is unmodified `main` `3f989435`, from a separate worktree.
+
+### §2.1 Every committed specification, before and after (`kit/sweep.sh`, `kit/compare.py`)
+
+For each of the 26 specifications, the sweep runs `validate`, `solve`, `generate`, `build` and `simulate --for 10ms`, then ArduPilot's foreign run.
+
+- **No step's exit changed and no verdict flipped:** each verdict, and its failing finding kinds, is the baseline's (`DIFFS 0`).
+- **No solved word moved.** Each `solve` output is byte for byte `main`'s once masked for three things: the specification sha256 and `schema_version`, the clock's `"vos":"scale2"` and `"core_supply":"ldo"`, and `sentinel-02-own`'s `foreign_clock.vos`. The pinned solve digests show the same, by the old digests reproduced (`solve_cli.rs`).
+- **Every generated firmware boots at VOS2 with the rule and `PwrRule` passing.**
+  - No verdict carries `pwr_access`, and each carries the PWR residual.
+  - Four boards reach their boot word outside 10 ms, at the baseline too: `sentinel-02-shaped`, `sentinel-03`, `sentinel-02-power` and `sentinel-02-bench`. At `--for 100ms` each passes, with word 0 `0x2100b007` and no failing finding (`PwrRule` judges only once the boot word is set).
+- **ArduPilot's foreign run passes as on `main`.**
+  - Its 8 device witnesses are identical to the nanosecond.
+  - The verdict differs only in the specification sha256 and the clock report's new `vos`. It names `vos_limit_at_boundary` for `fCPU` (405,993,600 Hz against 400 MHz), `fHCLK`, `fPCLK1`–`3` and both timer kernels at VOS1, plus `bus_limits_rev_v`.
+  - Not judged: `fPCLK4: D3PPRE is not read`.
+- **Forced to Scale 3**, the reset tree is refused by the rule by name: `VosLimitExceeded`, `fPCLK1`, 64,958,976 Hz against 50 MHz, with the rule naming ten clocks (`ir/tests/vos.rs`).
+
+**The ELFs** (sha256 first and last 8 hex digits). Every one moved, as §0.1 predicted:
+
+| Specification | Before | After |
+|---|---|---|
+| `examples/sentinel-01.json` (the bench package's ELF) | `008a2a59…58ba3c8e` | `e4e24372…1d496f11` |
+| `examples/sentinel-01-minimal.json`, `sentinel-01-bench.json` | `430e48ab…3bb58de8` | `2bb1be79…f87ec4fd` |
+| **`examples/sentinel-02-bench.json`** (`3304`'s bench ELF, D-5) | `375fd31a28f4442b796110f0df82d31a9e133ce4a12f2a982fbb923cfe369c02` | `3f7b0507bf933c68a5bb42954e23c56968757b238377ec2abea12b2083b38dc5` |
+| `sentinel-03.json` | `5756a2e0…7b38ca51` | `9f3d5dd8…79071ccc` |
+| `motors-pwm.json` | `5c20887b…afac2ef6` | `8f94854f…42b0a7a0` |
+| `serial-four.json` | `33b33c82…d34ca39e` | `ae9e2545…8d3bff0f` |
+| the other 14 that build | each moved | (`~/.cache/aet-4240v/{baseline,after}/rows.tsv`) |
+
+`examples/sentinel-01-ext-bmp581.json` arrived with `3403`'s merge after the sweep, so its ELF (`3403`'s `a60306c9…`) moves too, unmeasured here.
+
+### §2.2 The bench package, written locally as CI's `bench-package` job writes it
+
+The command is `verify --spec examples/sentinel-01.json --scenarios` with the five scenarios, then `--fab-out`, run under `kit/step.sh` at 16 GiB.
+
+- **Exit 0, verdict pass, 1,403 s.** Scope `memory.peak` was 15,106,875,392 B (14.07 GiB) of 16 GiB: **879‰.** That is under the 900‰ watch line and the §7 stop.
+- **Of the 17 files, 14 are byte-identical to the committed package.** Every Gerber, the drill, both BOMs, the CPL and the positions are identical. Only `sentinel-01-bench.elf`, `MANIFEST.json` and `FAB-NOTES.md` moved, as §0.1 predicted.
+- `FAB-NOTES.md` moved by the three new acknowledgement lines and the specification sha256. `fab.rs`'s byte-identity test proves that nothing else in it moved.
+- **The committed package comes only from the architect's dispatch** (§6).
+
+### §2.3 Kani
+
+The svd-hal slice measured Sentinel-01's `every_valid_sequence` before and after (§1.5): +26 % in time, summed RSS 13.3 GiB.
+
+## §3 Decisions and deviations
+
+**Ruled on the bus** (architect, 20:40Z, on my 20:09Z note):
+- **The Nucleo's supply from MB1364: accepted, not a stop.**
+  - **Note, the WO against the kickoff:** WO §7 makes UM2407's silence a stop and says MB1364 is not held. The kickoff, written later, names MB1364 as the source. I read MB1364 and asked; the ruling accepts it.
+  - **Cited as:** ST's board design package `mb1364_bdp.zip` (sha256 `5be5f2362f95f5408b25b0f433b19ed331d13b441f270678f1db387a5470661d`), revisions MB1364-C01 and MB1364-E01, sheet `MCU_144_POWER.SchDoc`; and `mb1364-bom.zip` (sha256 `bc54a0c625530d69ba40a146f84a014399df1af451b8dbf34603cbcd907e010c`), `MB1364-H753ZI-C01_BOM.xlsx` and `-E01_BOM.xlsx`. Both hashes are from `~/.cache/aet-ds/st-2026-11-19/SHA256SUMS`.
+  - **Read as:** the Altium sources were parsed as OLE plus a netlist, and the `VCAP` net was spot-checked by hand in both revisions' netlists, along with the BOM's fit column.
+  - The specification's `source` carries the names, the revisions and an 8-digit sha256 prefix of each, within the 200-byte bound.
+- **D-SCUEN: accepted.** `SCUEN` 0, `LDOEN` 1, `BYPASS` 0, every other bit as read; the read-back judges `LDOEN` and `BYPASS`.
+  - **Corroboration, read at source in the pinned ArduPilot image:** ChibiOS at `d103983f`, `os/hal/ports/STM32/STM32H7xx/hal_lld.c` (sha256 `33372d9f…0635b`), L106: `PWR->CR3 = STM32_PWR_CR3 & 0x000000FFU;`. `STM32_PWR_CR3` is `PWR_CR3_LDOEN | PWR_CR3_USB33DEN` (`stm32h7_mcuconf.h` L92). So ChibiOS writes `SCUEN` 0 with `LDOEN` 1.
+  - It differs from this bring-up in two ways: it writes bits 7:3 as 0, not as read (on rev V it clears reserved bit 6), and its `ACTVOSRDY` wait is unbounded (L107–108, "CHTODO timeout handling").
+  - No copy of ST's HAL (`HAL_PWREx_ConfigSupply`) is held in either image or on Furnace. The ruling stands on RM0433.
+- **The override on generated platforms only: accepted.**
+- **The poll bound is an engine choice: accepted.** Its doc comment names the DS12117 tables and pages that state no maximum.
+
+**Mine, each stated where it is built:**
+- **The rule's home** is a new module, `aethelgard-ir` `vos.rs` (§1.3).
+- **No solved stand-in under any version** (§1.1). One test's expectation was inverted to match.
+- **`check_silicon` is stricter than `validate`** (§1.4).
+- **Kani's `PWR` prelude, and the `D3CR` whole-word clause** (§1.5).
+- **The override departs from stock:**
+  - `USB33RDY` reads 0;
+  - Renode's `machine Reset` re-initializes `CR3`, so the warm-reset lock is not modelled (§1.6, measured);
+  - later `CR3` writes are ignored whole, though p. 308 says "No limitation applies to the upper bytes". No generated firmware writes `CR3` twice, and the twin judges a second write a finding, so this does not show.
+- **`PwrRule`'s added "never written"**, and "after RCC" meaning after an enable-register write (§1.6).
+- **A `bypass` board's acknowledgements are left unjudged by `validate`** (adversarial A1).
+  - Nothing can be generated or verified from a `bypass` board, so no ledger and no package can rest on them.
+  - `generate`, `emit`, `simulate` and `verify` refuse it as `CoreSupplyNotGenerated` before any ledger is read. `simulate --foreign` is refused too, though a foreign run is given no generated sequence: one gate, at `ready()`.
+- **The acknowledgements are inserted first** in each list, ahead of `FLASH.OPTSR_CUR`. So `validate_cli`'s no-ledger case now names `PWR.CSR1`, and the stale entry's index moved from 27 to 30.
+- **pincheck's fixture was migrated by schema** (§1.2).
+- **Embedded test topologies** (`cli` `analog.rs`, `campaign.rs`; twin `tests.rs`, `spi_platform.rs`; `renode.rs`) were moved to the new schema. Where a committed specification solves to one, it was re-solved. Where none does (they are older variants, whose sha256 matches no committed specification), only the two new keys and the version were added. That is the precedent of #238 (`ee835bde`), which moved them by version only.
+
+## §4 Findings
+
+Format: finding · where · type · recommendation · decision-needed.
+
+- **F1 · the `VOSRDY` wait can be met by the 1 it reads before the write · `svd-hal` `pwr_api` (`D3CR` write, then the poll) · silicon timing, unseen by every gate · decision-needed (yes).**
+  - `VOSRDY` reads 1 after reset (RM0433 p. 310), and RM0433 states no latency for it to fall after a `VOS` write. Figure 31 (p. 281, VOS1→VOS0) draws both ready bits falling a visible interval after the trigger; that is a drawing, not a specification.
+  - So `Scale2` may come back while VCORE still rises.
+  - **Why no gate sees it:** Kani's reads are nondeterministic, the twin's bit is always 1, and the bench reads the steady state.
+  - **Consequence:** transient. The clocks are the reset tree's throughout, which ran at VOS3 from reset until then.
+  - **Options:**
+    - (a) also require `PWR_CSR1.ACTVOS` = `10` with `ACTVOSRDY` before `Scale2`. ACTVOS "reflect[s] the last VOS value applied to the voltage regulator" (RM0433 p. 306), but **RM0433 gives no encoding for `ACTVOS`**, so under F-CITE strict the `10` is uncited;
+    - (b) keep the residue, now stated in `firmware.rs`'s module documentation.
+  - Recommended: (b) in this slice, (a) when a held ST source gives the encoding. Adversarial A2.
+- **F2 · the token gates no clock enable · generated `board.rs` (`enable_*`, `Flash::option_status`) · the WO's §1.4 list is init/start/kernel-select/USART · recommend (decision-needed: yes).**
+  - DS12117 p. 210 footnote 6 makes "at least one peripheral enabled" the very condition of the 50 MHz VOS3 limit, and `rcc.enable_i2c1(..)` before `pwr.scale2` compiles today.
+  - `main`'s order is right, and the twin names an enable write before the `PWR` writes (`pwr_access`, tier 2).
+  - But Kani's schedule takes the prelude first by construction, and no ui case covers an enable.
+  - Recommendation: in `4240b`, which rewrites the bring-up anyway, have every `enable_*` take `&Scale2`. Adversarial A3.
+- **F3 · the oracle clause cannot kill "CR3 written twice" · Kani · WO §2 names "the Kani clause" for both mutants · decision-needed (no).** A second identical write leaves the same final state. The PWR harness kills it.
+- **F4 · `FLASH_ACR` at reset can never be refused · `vos::flash_at_reset` · the judgement is complete but unreachable · no action.**
+  - `LATENCY` 7 covers every Table 17 row (at most 4 WS), and `WRHIGHFREQ` `11` covers every listed delay.
+  - "Past the table" needs an AXI clock above `fHCLK`'s own limit, which refuses first.
+  - The S14 form is now tested.
+- **F5 · `HSI_FAST_PPM` 14,984 is not reproduced by summing Table 36/133's terms · `silicon.rs` L44, inherited from `4230` · now load-bearing for S14 · decision-needed (no; the derivation is `4230`'s).**
+  - The terms give +14,987.5 ppm summed, and +15,038.8 ppm multiplicatively.
+  - No generated verdict moves: VOS2's margin is 10 MHz.
+  - A foreign clock with a nominal in (98,518,383; 98,523,720] Hz against a 100 MHz limit would be judged within.
+  - Adversarial A7.
+- **F6 · notes, no action asked:**
+  - the foreign VOS verdict judges PLL1's integer decode (`pll1_fraction_not_read` is in the same report's conditions; A8);
+  - the twin's `PWR` offsets come from `svd-hal`'s header parser, as the RCC rule's do; the words are the IR's (A9);
+  - the ledger rows' values are the generator's words, as every earlier row's are (A10);
+  - `mode: null` is serde's "expected value" with no field named (A11);
+  - `PWR.D3CR.VOSRDY@reset` is not a bench row (§1.7);
+  - the parts table's VCAP rows cite `DS12117` without a revision (§1.2).
+
+## §5 Adversarial pass (full)
+
+A fresh Opus agent read RM0433 and DS12117 from the page images and the header, without this FEEDBACK or any "reads" file. It attacked a detached copy of `b841bfcb`, with no containers. **No blocker.**
+
+| Id | Severity | Outcome |
+|---|---|---|
+| A1 | important | **fixed** (`2d9ab149`): `validate` refused a true `bypass` declaration on any board with acknowledgements, while `solve` accepted it; D-1 broken. `generate_tier1`'s test now validates it with and without them |
+| A2 | important | **residue stated**, F1 |
+| A3 | minor | F2, for `4240b` |
+| A4 | minor | the warm reset after an illegal pair gives `ACTVOSRDY_TIMEOUT`, whose word may not land: **added to B-2** (§1.9) |
+| A5 | minor | **fixed**: the flash judged at nominal survived every test. `flash_wait_states_are_judged_at_the_fastest_axi_clock` (54.5 MHz at VOS2: nominal row 0 WS, fastest row 1 WS) kills it |
+| A6 | minor | **fixed**: masking the twin's other-bits comparison to the low byte survived. The PwrRule test now writes after ArduPilot's `0x0100_0002` and clears `USB33DEN`, which is named |
+| A7–A11 | notes | F5, F6. Footnote 5's attribution corrected in `vos.rs` |
+
+**Found sound** (the agent's evidence; recorded so the next reader need not re-attack):
+- every limit cell against the pages, no column shifted;
+- Table 17 and Table 57;
+- rev Y's Table 13 has no frequency rows;
+- the PWR bits and offsets, and Scale 0 = ODEN, never a `D3CR` code;
+- the S14 mutants on the clocks are killed;
+- `validate` refuses VOS3 by clock name;
+- the generator emits no word from the rule, and cannot reach the override;
+- `pwr.scale2` is first in every generated `main`: 9 fixtures plus both boards, and a no-clock plan;
+- `Scale2` is neither forgeable nor reusable;
+- the warm-reset cases against p. 308;
+- every hostile declaration is refused by name;
+- no older solved file is defaulted;
+- the foreign path gets no `PWR` rule, log or override, and the vendored Renode tree is byte-identical to `main`;
+- no fabrication file can move from this diff's code.
