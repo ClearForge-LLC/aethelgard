@@ -1,8 +1,8 @@
 # AET-WO-1913 FEEDBACK — CI's fourth refit: the lock-serialised rows set to their alone times
 
-## Status: BUILT — rows set (§2); the PR's run on the merged tree is §3.
+## Status: READY. Every shard is under 20 minutes on the last run before READY, 44798881940 (head `e5faabd8`, `main` `adb8f61a` merged): worst 16.2 min, **spread 5.1 min**, under the 6-minute target. Tier-2 is 200 / 200 and `TIER2_MIN` is unchanged. The READY head also merges `349c75f5` (docs only), and its own run is reported on the bus. One decision for the architect: D1 (§6).
 
-Builder: Claude (Opus 5.5), a fresh `1913` session, 2026-11-20. Worktree `~/aethelgard-1913`, branch `wo/aet-1913-refit-lower` from `origin/main` `c1012a2d`.
+Builder: Claude (Opus 5.5), a fresh `1913` session, 2026-11-20. Worktree `~/aethelgard-1913`, branch `wo/aet-1913-refit-lower` from `origin/main` `c1012a2d`, with `main` `25203c58`/`69c77c96` (`1211a`, docs) `ba14df2c`/`adb8f61a` (`4240c`, `1213`) and `349c75f5` (docs) merged in. No merge touched `ci/`.
 
 Labels: **measured** (from CI's own logs or runs), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1913/`; the scripts are in `spike/1913/` (`alone.py`, `alone_times.py`, `refit.py` adapted from `spike/1912/`, `locked.py` new); they read `spike/1912/table.py`, and runs are fetched with `spike/1912/fetch.sh`.
 
@@ -483,3 +483,92 @@ The worse sample is listed first. The two blocks' rows are their worst `finished
 | support_tier1.rs | one_capacitor_serves_one_pin | 3.1 | 1.22 (44764528379 shard 1 job 136389208543, solo); 1.14 (44768742667 shard 1 job 136403197203, solo) | 1.22 | lowered |
 | four_layer_fab_tier2.rs | (block) | 625 | 740.63 (cited by the WO (AET-WO-1912)); 732.88 (44775091139 shard 2 job 136425978348); 695.49 (44787324803 shard 2 job 136468155837); 629.96 (44764528379 shard 1 job 136389208543); 629.56 (44768742667 shard 1 job 136403197203); 573.58 (44774672284 shard 2 job 136424625484); 542.50 (44774205804 shard 2 job 136422874310); 479.73 (44787324803 shard 0 job 136468155823 alone, Intel(R) Xeon(R) 6975P-C) | 741 | raised |
 | verify_47k_tier2.rs | (block) | 220 | 277.29 (cited by the WO (AET-WO-1912)); 270.78 (44774672284 shard 11 job 136424625516); 268.97 (44774205804 shard 11 job 136422874675); 251.46 (44764528379 shard 11 job 136389208453); 244.40 (44768742667 shard 11 job 136403197292); 241.62 (44787324803 shard 7 job 136468155867 alone, AMD EPYC 9V74 80-Core Processor); 188.42 (44775091139 shard 11 job 136425978726); 187.22 (44787324803 shard 11 job 136468155848) | 278 | raised |
+
+## 3. The PR's runs (§1 step 4, §2)
+
+Read with `spike/1912/fetch.sh` and `spike/1912/table.py` [measured]. The spread is reported two ways: job minutes, the REFIT RULE's measure, and run-step seconds, which weights move and overhead does not.
+
+| run | head | result | tier-2 | max shard (job min) | min | **spread (job min)** | run-step max / min s | run-step spread | planned per shard |
+|---|---|---|---|---|---|---|---|---|---|
+| 44794507671 | `fb5ba007` (rows, `1211a` merged) | green | 200 / 200 | 17.1 (shard 2; overhead 328 s) | 11.4 | **5.7** | 881 / 505 | 6.3 min | 816 s |
+| **44798881940** | **`e5faabd8`** (the last run before READY: `1213` and `4240c` merged, re-planned) | **green** | **200 / 200** | **16.2** (shards 7 and 10) | **11.2** | **5.1** | 859 / 525 | 5.6 min | 816 s |
+
+Before, on the five `main` runs (§1): spread 6.6, 7.0, 15.5, 8.1 and 5.3 min; max shard 17.3, 18.0, 27.6, 17.8, 18.3.
+
+### Run 44794507671, per shard
+
+| shard | job | job min | run step s | overhead s | planned s (its head) | rows at REV, s | binaries over their rows by 60 s or more: finished in / rows | under by 60 s or more |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 136494777031 | 15.4 | 577 | 348 | 816 | 779 |  | outline_tier1.rs 188/251 |
+| 1 | 136494777268 | 14.5 | 770 | 100 | 816 | 816 |  |  |
+| 2 | 136494777339 | 17.1 | 695 | 328 | 816 | 816 |  | supply_tier1.rs 638/721 |
+| 3 | 136494777039 | 14.1 | 741 | 102 | 816 | 816 |  |  |
+| 4 | 136494776982 | 11.4 | 505 | 179 | 816 | 816 |  | verify_2k2_tier2.rs 340/537 |
+| 5 | 136494777142 | 13.3 | 647 | 151 | 816 | 816 |  | attribute_seeded.rs 425/526 |
+| 6 | 136494777134 | 14.9 | 791 | 101 | 816 | 816 |  |  |
+| 7 | 136494777646 | 12.7 | 631 | 130 | 816 | 816 |  | verify_2k2_tier2.rs 394/458 |
+| 8 | 136494777124 | 16.8 | 881 | 128 | 816 | 816 | against_fab_tier2.rs 532/447 |  |
+| 9 | 136494777044 | 14.9 | 609 | 284 | 816 | 816 |  | power_board_tier1.rs 252/331 |
+| 10 | 136494777257 | 12.0 | 590 | 130 | 816 | 816 |  | verify_47k_tier2.rs 192/278 |
+| 11 | 136494777149 | 16.3 | 842 | 135 | 816 | 816 |  |  |
+
+### Run 44798881940 (the last run before READY), per shard
+
+| shard | job | job min | run step s | overhead s | planned s (its head) | rows at REV, s | binaries over their rows by 60 s or more: finished in / rows | under by 60 s or more |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 136508596716 | 13.5 | 625 | 186 | 816 | 779 |  |  |
+| 1 | 136508596814 | 14.4 | 736 | 128 | 816 | 816 |  | four_layer_fab_tier2.rs 680/741 |
+| 2 | 136508596650 | 14.0 | 677 | 164 | 816 | 816 |  | supply_tier1.rs 613/721 |
+| 3 | 136508596768 | 14.0 | 721 | 118 | 816 | 816 |  |  |
+| 4 | 136508596658 | 11.2 | 525 | 144 | 816 | 816 |  | verify_2k2_tier2.rs 361/537 |
+| 5 | 136508596690 | 15.8 | 845 | 102 | 816 | 816 |  |  |
+| 6 | 136508596702 | 14.4 | 699 | 165 | 816 | 816 |  | twin_tier2.rs 502/568 |
+| 7 | 136508596623 | 16.2 | 859 | 115 | 816 | 816 | verify_2k2_tier2.rs 547/458 |  |
+| 8 | 136508596603 | 11.8 | 566 | 142 | 816 | 816 |  | against_fab_tier2.rs 348/447 |
+| 9 | 136508596697 | 14.3 | 752 | 106 | 816 | 816 |  |  |
+| 10 | 136508596787 | 16.2 | 815 | 156 | 816 | 816 |  |  |
+| 11 | 136508596761 | 14.6 | 732 | 144 | 816 | 816 |  |  |
+
+Back-test on it (`locked.py`): `twin_tier2` 1,488 s of rows against 1,352 s run (most under-weighed −13 s, shard 5); `board_tier2` 1,195 against 1,094 (−34 s, shard 10). Over all eight runs: `twin_tier2` mean absolute error 21 s a shard (47 before), `board_tier2` 16 s (19 before).
+
+## 4. The adversarial pass, targeted (WO §5)
+
+**The attack:** a row lowered from an alone run that, colocated, waits on a lock and over-runs its shard.
+
+- **A1, the back-test** [measured]: `spike/1913/locked.py` over every (run, shard) that ran `twin_tier2` or `board_tier2`, in the five `main` runs, the throwaway's normal pass and the PR's two runs (182 samples).
+  - The new rows sit under the measured `finished in` by at most 89 s (`twin_tier2`, 44787324803 shard 10, EPYC 7763), against a shard plan of 816 s.
+  - On the PR's run 44794507671 the worst is −51 s (`twin_tier2`, shard 11). That shard ran 842 s of tests, 26 s over its plan, and its job took 16.3 min.
+  - On run 44798881940 the worst is −34 s (`board_tier2`, shard 10, job 16.2 min). `board_tier2`'s worst anywhere is −41 s. **No shard over-ran 20 minutes.**
+- **A2, the sampling bias** [measured, then computed; the alone pass logged each runner's CPU]: 18 lowered rows took both alone samples on Xeon 6975P-C or EPYC 9V45, the models that read fastest in this pass; their rows sum to 357.9 s. Over 14 tests with one sample on each, the slowest model (EPYC 7763) ran 1.52× the fast one at the median, 1.88× at worst.
+  - The largest is `battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats`, 288.767 → 214.68 (samples 208.42 and 214.68). On a slow runner it may take about 320 s, about 110 s over its row.
+  - It was in shard 11 of run 44794507671, whose `twin_tier2` ran 51 s over its rows. That this test was the cause is inferred: normal runs do not log their CPU.
+  - Not fixed here: the WO sets a row to its alone time. A third sample on the slowest model, or a per-model factor, is a refit-rule change (§6, F1).
+- **A3, the lowered row's queue** [read]: `twin_tier2`'s `on_a_bus_with_two_devices_each_read_is_witnessed` fell furthest, 216.4 → 12.8 (samples 12.80, 11.37). Its in-shard `ok` less `Running` reached 474 s.
+  - That bound is queue: its own work is one `generate` (`two_bme()`, a per-process `OnceLock`) and its Renode calls.
+  - The binary-level back-test above carries it: no shard holding it was under-weighed by more than the figures in A1.
+- **Mutation:** this order adds and changes no guard (weights, a spike, FEEDBACK), so there is nothing to mutate. The throwaway's `ci/shard.sh` change was reverted; it is byte-equal to `main`'s.
+
+## 5. Gates
+
+On `fb5ba007` (the rows with `1211a` merged), in a capped scope (16G, swap 0) [measured]:
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- `bash ci/test-shard.sh`: pass.
+- `cargo test --workspace`: 2,545 passed, 0 failed.
+
+Since then, the reduction commit (`e1393137`) deleted three byte-identical copies of `spike/1912` scripts and a stray `.pyc`, repointed `spike/1913/*.py` at `spike/1912/table.py`, and edited FEEDBACK; it touches no Rust. The merge of `main` brings `1213` and `4240c`, whose own PRs passed these gates. CI ran every gate on the merged head (§3). `TIER2_MIN` is unchanged.
+
+## 6. Findings and decisions
+
+- **F1, backlog (the REFIT RULE):** two alone samples can land on the two fastest CPU models, and GitHub's runners span about 1.5× (A2). A rule that takes one alone sample on the slowest model seen, or scales by a measured per-model factor, would close A2. Not this order's fence (`ci/shard.sh`'s rule text).
+- **F2, the rows still sit high, by design:** after the refit, `twin_tier2`'s rows are 12 % over what it ran and `board_tier2`'s 11 % (§2's back-test). An alone time pays work that overlaps in a shard: a test's own `generate`, compile and Kani run while another test holds the lock. Weighing a lock-serialised binary from in-shard lock times would track that better, but the REFIT RULE forbids it (step 2). Recorded, not changed.
+- **F3 and D1, the remaining spread is `verify_2k2_tier2`'s two rows** [measured]. Both PR runs ran a wider spread in run steps than in jobs (6.3 against 5.7 min, then 5.6 against 5.1), so overhead narrowed the spread here rather than set it.
+  - **The fastest shard both times was shard 4:** 11.4 and 11.2 min, with run steps of 505 and 525 s against a plan of 816. It held `verify_2k2_tier2`'s `verify_binds_the_reference_and_two_runs_print_the_same_bytes`, its only heavy test, which ran 340 and 361 s against its 537.17 row.
+  - **On run 44798881940 the slowest run step was shard 7** (859 s), holding the other `verify_2k2_tier2` test, `verify_fab_out_writes_the_package_its_verdict_names_at_any_path`, at 547 against 458.
+  - Both rows sit within 25 % of their worst `solo` samples over the five runs and the throwaway (537.17 is 8 % over 495.21; 457.8 is 17 % under 550.51), so the widening does not move them. Each is one verify with a wide spread of its own across runners: 323–495 s and 343–551 s over those six runs, 340–361 s and 394–547 s on the PR's two. The shape is the same as `supply_tier1`'s modes.
+  - **D1 (decision):** leave them, or set `verify_binds_…` to its worst `solo` sample (537.17 → 495.21) as a further widening. That would take 42 s off a shard's plan, inside the noise of one verify. I recommend leaving them.
+  - Overhead (the job less its run step: checkout, image pull, the shared build's unpack) ranged 96–804 s on the five `main` runs and 100–348 s on the PR's runs; weights cannot move it.
+- **F4, `supply_tier1` stays at its worst mode** (721 s, WO §1 step 3). It ran 460–651 s on the five runs, then 696 (the throwaway), 638 and 613 s on the PR's runs. It is not the remaining spread: on run 44794507671 shard 2, which held it, was the slowest job by 0.3 min from 328 s of overhead; on run 44798881940 shard 2 ran 14.0 min, mid-pack.
+- **F5, rows outside the WO's set** (the architect's widening, 18:09Z): 28 rows moved (§2). `verify_2k2_tier2`'s `verify_binds_…` stays at 537.17, 8 % above its worst `solo` sample. Three small rows with no `solo` sample were not moved (`models_tier2`'s `ardupilot_s_probe_and_init_pass_against_our_models` 13.7 against an upper bound of 9.00; two rows of 2.0 and 1.0 s).
+- **F7, backlog (`lib.rs`'s `supply::` rows):** in §1 the `unittests src/lib.rs` rows sum to 132 s against 38–50 s run in the shard that held them. Its tests overlap in one process, so a per-test row counts the overlap once per test. Weighing it as a colocated block (`ci/colocate.tsv`) is a REFIT RULE 3 question for a later refit; it was not changed here (no `solo` sample, and no row is more than 25 % off one).
+- **F6, process:** the first `git revert` of the throwaway was refused silently (a dirty tree, with `-q` and a `tail`); it was caught at the next diff and redone (`9c28088f`). Lesson: never pipe a revert or merge through `tail`, and check `git log -1` after.
