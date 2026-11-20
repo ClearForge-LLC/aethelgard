@@ -253,7 +253,8 @@ fn a_declared_hse_validates_and_solves_and_is_never_generated() {
     spec["mcu"].as_object_mut().unwrap().remove("hse_hz");
     spec["mcu"]["hse"] = serde_json::json!({"crystal": {"part": "ABM8AIG-16.000MHZ-12-2Z-T3",
         "load_caps_femtofarads": [18000, 18000], "pull_ppm": 30,
-        "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}});
+        "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
+        "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}});
     let hse = dir.join("hse.json");
     fs::write(&hse, spec.to_string()).unwrap();
     let (code, v) = run(&["validate", "--file", s(&hse)], true);

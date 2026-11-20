@@ -112,6 +112,10 @@ impl SpiSelect {
         match (self, kernel) {
             (Self::Spi123, SpiKernel::PerCk) => Some(0b100),
             (Self::Spi45 | Self::Spi6, SpiKernel::HsiKerCk) => Some(0b011),
+            // The reset codes (pp. 414, 418): `pll1_q_ck`, and the APB clock.
+            (Self::Spi123, SpiKernel::Pll1Q) | (Self::Spi45 | Self::Spi6, SpiKernel::Pclk) => {
+                Some(0b000)
+            }
             _ => None,
         }
     }
@@ -142,6 +146,55 @@ pub fn kernel_at_reset(select: SpiSelect, code: u32) -> Option<u64> {
 pub fn spi_kernel_hz(peripheral: &str, kernel: SpiKernel) -> Option<u64> {
     let select = SpiSelect::of(peripheral)?;
     kernel_at_reset(select, select.code(kernel)?)
+}
+
+/// The kernel clock `peripheral` has on `clock` (`AET-WO-4240b` Q3): the
+/// HSI-derived kernels as [`spi_kernel_hz`] (`hsi_ker_ck` runs whatever `SW`
+/// selects); `pll1_q_ck` decoded here from the HSE tree's own words (`DIVQ1EN`
+/// set, `hse_hz` / `DIVM1` × `DIVN1` / `DIVQ1`, exactly; RM0433 Rev 9
+/// §8.7.11–§8.7.13, pp. 399–404); the APB clock as `rcc_pclk2` for SPI4/5 and
+/// `rcc_pclk4` for SPI6 (Figure 49, p. 351). `None` for a kernel the clock
+/// does not give: `pll1_q_ck` with no HSE tree, or a division that is not
+/// exact.
+pub fn spi_kernel_on(peripheral: &str, kernel: SpiKernel, clock: &SolvedClock) -> Option<u64> {
+    let select = SpiSelect::of(peripheral)?;
+    select.code(kernel)?;
+    match kernel {
+        SpiKernel::PerCk | SpiKernel::HsiKerCk => spi_kernel_hz(peripheral, kernel),
+        SpiKernel::Pll1Q => {
+            let h = clock.hse.as_ref()?;
+            let bits = |w: u32, at: u32, n: u32| (w >> at) & ((1 << n) - 1);
+            if bits(h.pllcfgr, 17, 1) == 0 {
+                return None;
+            }
+            let m = u64::from(bits(h.pllckselr, 4, 6));
+            let n = u64::from(bits(h.pll1divr, 0, 9)) + 1;
+            let q = u64::from(bits(h.pll1divr, 16, 7)) + 1;
+            let num = u64::from(clock.hse_hz) * n;
+            let den = m * q;
+            (den != 0 && num.is_multiple_of(den)).then(|| num / den)
+        }
+        SpiKernel::Pclk => {
+            let hclk = u64::from(clock.sysclk_hz).checked_div(u64::from(clock.d1cpre))?;
+            let hclk = hclk.checked_div(u64::from(clock.hpre))?;
+            let ppre = if select == SpiSelect::Spi6 {
+                clock.d3ppre
+            } else {
+                clock.d2ppre2
+            };
+            hclk.checked_div(u64::from(ppre))
+        }
+    }
+}
+
+/// The budget a kernel runs within: the HSI's for the HSI-derived kernels,
+/// the clock's own (the HSE's, `AET-WO-4240a`) for `pll1_q_ck` and the APB
+/// clock.
+pub fn spi_kernel_budget(kernel: SpiKernel, clock: &SolvedClock) -> Budget {
+    match kernel {
+        SpiKernel::PerCk | SpiKernel::HsiKerCk => Budget::HSI,
+        SpiKernel::Pll1Q | SpiKernel::Pclk => clock.budget(),
+    }
 }
 
 // ---------------------------------------------------------------- SPI
@@ -176,10 +229,10 @@ pub struct SpiFinding {
 /// Rev 9 §50.11.3, p. 2218). Checked by multiplication, never by a shift
 /// loop: `fast ≤ declared · 2^(MBR+1)` and, for `MBR` > 0,
 /// `fast > declared · 2^MBR`.
-pub fn check_spi(peripheral: &str, c: &SolvedSpiController) -> SpiFinding {
-    let kernel = spi_kernel_hz(peripheral, c.kernel);
+pub fn check_spi(peripheral: &str, c: &SolvedSpiController, clock: &SolvedClock) -> SpiFinding {
+    let kernel = spi_kernel_on(peripheral, c.kernel, clock);
     let kernel_hz = kernel.unwrap_or(0);
-    let fast = fast_hz(kernel_hz);
+    let fast = spi_kernel_budget(c.kernel, clock).fastest_hz(kernel_hz);
     let kernel_ok = kernel == Some(c.kernel_hz);
     let declared = u128::from(c.declared_hz);
     let mbr_ok = c.mbr <= 7 && {
@@ -871,56 +924,102 @@ mod tests {
             (253_746, 7),
         ] {
             let c = spi(SpiKernel::PerCk, declared, mbr);
-            let f = check_spi("SPI1", &c);
+            let f = check_spi("SPI1", &c, &SolvedClock::reset());
             assert!(f.holds, "{declared} {mbr}: {f:?}");
             for wrong in [mbr.wrapping_sub(1), mbr + 1] {
                 if wrong <= 7 {
                     assert!(
-                        !check_spi("SPI1", &spi(SpiKernel::PerCk, declared, wrong)).mbr_ok,
+                        !check_spi(
+                            "SPI1",
+                            &spi(SpiKernel::PerCk, declared, wrong),
+                            &SolvedClock::reset()
+                        )
+                        .mbr_ok,
                         "{declared} {wrong}"
                     );
                 }
             }
         }
         // 20 MHz: MBR 1, 16 MHz nominal, 16,239,744 Hz at the fastest.
-        let f = check_spi("SPI1", &spi(SpiKernel::PerCk, 20_000_000, 1));
+        let f = check_spi(
+            "SPI1",
+            &spi(SpiKernel::PerCk, 20_000_000, 1),
+            &SolvedClock::reset(),
+        );
         assert_eq!((f.achieved_hz, f.achieved_max_hz), (16_000_000, 16_239_744));
         // 7 MHz: MBR 3, 4 MHz.
         assert_eq!(
-            check_spi("SPI1", &spi(SpiKernel::PerCk, 7_000_000, 3)).achieved_hz,
+            check_spi(
+                "SPI1",
+                &spi(SpiKernel::PerCk, 7_000_000, 3),
+                &SolvedClock::reset()
+            )
+            .achieved_hz,
             4_000_000
         );
         // Below 253,746 Hz no MBR reaches: 250 kHz and 253,745 Hz fail at 7.
-        assert!(!check_spi("SPI1", &spi(SpiKernel::PerCk, 253_745, 7)).holds);
-        assert!(!check_spi("SPI1", &spi(SpiKernel::PerCk, 250_000, 7)).holds);
+        assert!(
+            !check_spi(
+                "SPI1",
+                &spi(SpiKernel::PerCk, 253_745, 7),
+                &SolvedClock::reset()
+            )
+            .holds
+        );
+        assert!(
+            !check_spi(
+                "SPI1",
+                &spi(SpiKernel::PerCk, 250_000, 7),
+                &SolvedClock::reset()
+            )
+            .holds
+        );
         // MBR past 3 bits.
-        assert!(!check_spi("SPI1", &spi(SpiKernel::PerCk, 1, 8)).holds);
+        assert!(!check_spi("SPI1", &spi(SpiKernel::PerCk, 1, 8), &SolvedClock::reset()).holds);
     }
 
     #[test]
     fn the_kernel_and_achieved_rates_are_held() {
         let good = spi(SpiKernel::PerCk, 20_000_000, 1);
-        assert!(check_spi("SPI1", &good).holds);
+        assert!(check_spi("SPI1", &good, &SolvedClock::reset()).holds);
         // The wrong kernel for the field.
-        let f = check_spi("SPI1", &spi(SpiKernel::HsiKerCk, 20_000_000, 1));
+        let f = check_spi(
+            "SPI1",
+            &spi(SpiKernel::HsiKerCk, 20_000_000, 1),
+            &SolvedClock::reset(),
+        );
         assert!(!f.kernel_ok && !f.holds);
-        assert!(check_spi("SPI4", &spi(SpiKernel::HsiKerCk, 20_000_000, 1)).holds);
-        assert!(!check_spi("SPI4", &spi(SpiKernel::PerCk, 20_000_000, 1)).holds);
+        assert!(
+            check_spi(
+                "SPI4",
+                &spi(SpiKernel::HsiKerCk, 20_000_000, 1),
+                &SolvedClock::reset()
+            )
+            .holds
+        );
+        assert!(
+            !check_spi(
+                "SPI4",
+                &spi(SpiKernel::PerCk, 20_000_000, 1),
+                &SolvedClock::reset()
+            )
+            .holds
+        );
         let off_by_one = SolvedSpiController {
             achieved_hz: 16_000_001,
             ..good.clone()
         };
-        assert!(!check_spi("SPI1", &off_by_one).achieved_ok);
+        assert!(!check_spi("SPI1", &off_by_one, &SolvedClock::reset()).achieved_ok);
         let nominal_as_max = SolvedSpiController {
             achieved_max_hz: 16_000_000,
             ..good.clone()
         };
-        assert!(!check_spi("SPI1", &nominal_as_max).achieved_ok);
+        assert!(!check_spi("SPI1", &nominal_as_max, &SolvedClock::reset()).achieved_ok);
         let wrong_hz = SolvedSpiController {
             kernel_hz: 32_000_000,
             ..good
         };
-        assert!(!check_spi("SPI1", &wrong_hz).kernel_ok);
+        assert!(!check_spi("SPI1", &wrong_hz, &SolvedClock::reset()).kernel_ok);
     }
 
     #[test]

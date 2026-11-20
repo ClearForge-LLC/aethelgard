@@ -259,7 +259,7 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
         });
     }
     for (peripheral, c) in &solved.spi_controllers {
-        let f = silicon::check_spi(peripheral, c);
+        let f = silicon::check_spi(peripheral, c, &solved.clock);
         if !f.holds {
             let failed: Vec<&str> = [
                 ("kernel_ok", f.kernel_ok),
@@ -3460,6 +3460,8 @@ fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
             let kernel = match c.kernel {
                 SpiKernel::PerCk => "`per_ck` (HSI at `CKPERSEL`'s reset)",
                 SpiKernel::HsiKerCk => "`hsi_ker_ck`",
+                SpiKernel::Pll1Q => "`pll1_q_ck`",
+                SpiKernel::Pclk => "the APB clock",
             };
             format!("    /// - `{name}`: {kernel}, {} Hz.", c.kernel_hz)
         })

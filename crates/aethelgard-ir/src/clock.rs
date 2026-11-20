@@ -108,6 +108,10 @@ pub struct HseCrystal {
     /// The service life, hours: at most the span the row's aging is stated
     /// for (`4300d` D-B4's 8,000 h is the precedent).
     pub life_hours: u32,
+    /// The bring-up's `HSERDY` bound, µs ([`Startup`]).
+    pub startup_max_us: u32,
+    /// Where `startup_max_us` comes from ([`Startup`]).
+    pub startup_source: String,
 }
 
 /// An external clock into `OSC_IN`: its frequency as an exact fraction
@@ -125,6 +129,40 @@ pub struct HseExternal {
     /// text's form only, as it does `core_supply.source`; whether it names a
     /// document is the reviewer's to judge (adversarial A8).
     pub source: String,
+    /// The bring-up's `HSERDY` bound, µs ([`Startup`]).
+    pub startup_max_us: u32,
+    /// Where `startup_max_us` comes from ([`Startup`]).
+    pub startup_source: String,
+}
+
+/// The HSE's start-up bound (`AET-WO-4240b` §1.1, Q1 ruled 2026-11-20): how
+/// long the generated bring-up waits for `RCC_CR.HSERDY` before it halts by
+/// name (`HSE_NOT_READY`). Declared on both modes, never defaulted: DS12117
+/// Rev 10 Table 33 gives `tSU(HSE)` as 2 ms **typical** with no maximum, and
+/// "it can vary significantly with the crystal manufacturer" (Note 4), and no
+/// held crystal or oscillator sheet states one. So the figure is declared
+/// with its source (F-CITE strict in form, as `external.source`; whether it
+/// names a document is the reviewer's to judge). A 0 is refused
+/// (`HseDeclarationZero`). Too short a bound halts a good board; too long
+/// only delays the halt of a dead one.
+pub trait Startup {
+    fn startup_max_us(&self) -> u32;
+    fn startup_source(&self) -> &str;
+}
+
+impl Startup for Hse {
+    fn startup_max_us(&self) -> u32 {
+        match self {
+            Self::Crystal(c) => c.startup_max_us,
+            Self::External(e) => e.startup_max_us,
+        }
+    }
+    fn startup_source(&self) -> &str {
+        match self {
+            Self::Crystal(c) => &c.startup_source,
+            Self::External(e) => &e.startup_source,
+        }
+    }
 }
 
 /// A temperature range, °C, both ends included.
@@ -152,6 +190,11 @@ pub struct SolvedHse {
     pub pllcfgr: u32,
     /// `RCC_PLL1DIVR` (§8.7.13, offset 0x030).
     pub pll1divr: u32,
+    /// `FLASH_ACR` as the bring-up writes it before the switch (`AET-WO-4240b`
+    /// Q6, ruled): `LATENCY` and `WRHIGHFREQ` of RM0433 Rev 9 Table 17's least
+    /// VOS Scale 2 row that holds at `hclk`'s fastest, from the solver's own
+    /// copy of the rows; `aethelgard_ir::vos::flash_at_reset` judges it.
+    pub flash_acr: u32,
 }
 
 impl SolvedHse {
@@ -383,6 +426,12 @@ pub fn gm_crit(row: &power_parts::Crystal) -> GmCrit {
 /// - an external clock: the declared ppm alone, its frequency inside
 ///   DS12117's external-clock range.
 pub fn declared_budget(hse: &Hse) -> Result<Budget, IrValidationError> {
+    if hse.startup_max_us() == 0 {
+        return Err(refuse(HseRefusal::HseDeclarationZero {
+            field: "startup_max_us",
+        }));
+    }
+    crate::board::source(hse.startup_source(), "mcu.hse.startup_source")?;
     match hse {
         Hse::Crystal(c) => {
             let table = power_parts::table()?;

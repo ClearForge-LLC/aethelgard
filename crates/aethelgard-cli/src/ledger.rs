@@ -1966,7 +1966,7 @@ pub fn silicon(topology: &SolvedTopology) -> Silicon {
     let spi: Vec<SpiFinding> = topology
         .spi_controllers
         .iter()
-        .map(|(p, c)| silicon::check_spi(p, c))
+        .map(|(p, c)| silicon::check_spi(p, c, &topology.clock))
         .collect();
     let i2c: Vec<I2cFinding> = topology
         .i2c_timings

@@ -454,9 +454,11 @@ fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
         "timpre": false, "vos": "scale2",
         "hse": {"declared": {"crystal": {"part": "ABM8AIG-16.000MHZ-12-2Z-T3",
             "load_caps_femtofarads": [18000, 18000], "pull_ppm": 30,
-            "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}},
+            "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
+            "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}},
             "fast_ppm": 102, "slow_ppm": 102,
-            "pllckselr": 0x52, "pllcfgr": 0x0003_0004, "pll1divr": 0x0103_064F}});
+            "pllckselr": 0x52, "pllcfgr": 0x0003_0004, "pll1divr": 0x0103_064F,
+            "flash_acr": 0x11}});
     v["i2c_timings"]["I2C1"]["timingr"] =
         json!({"Fast400k": 0x10C7_123B, "FastPlus1M": 0x00A2_0E2D, "Standard100k": 0x50D3_2A3F});
     let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();

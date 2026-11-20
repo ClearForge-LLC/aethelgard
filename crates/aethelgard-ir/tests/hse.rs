@@ -54,14 +54,15 @@ fn table() -> PinTable {
 
 fn crystal(edit: impl FnOnce(&mut Value)) -> Value {
     let mut c = json!({"part": PART, "load_caps_femtofarads": [18000, 18000], "pull_ppm": 30,
-        "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000});
+        "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
+        "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"});
     edit(&mut c);
     json!({ "crystal": c })
 }
 
 fn external(num: u64, den: u64, ppm: u32) -> Value {
     json!({"external": {"hz_num": num, "hz_den": den, "ppm": ppm,
-        "source": "a declared bench oscillator (test)"}})
+        "source": "a declared bench oscillator (test)", "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}})
 }
 
 /// A board with an I2C bus and one CRSF port at `baud`, and `hse`.
@@ -300,7 +301,7 @@ fn a_budget_that_would_undercount_is_refused_by_name() {
     );
     assert_eq!(
         refused(spec_json(
-            json!({"external": {"hz_num": 8_000_000, "hz_den": 1, "ppm": 50, "source": ""}}),
+            json!({"external": {"hz_num": 8_000_000, "hz_den": 1, "ppm": 50, "source": "", "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}),
             420_000
         ))
         .kind(),
@@ -424,6 +425,115 @@ fn the_judge_refuses_each_tree_by_name() {
     assert_eq!(t.validate().map_err(|e| e.kind()), Err("UnsupportedClock"));
 }
 
+/// `AET-WO-4240b` Q1 (ruled): the start-up bound is declared on both modes,
+/// with its source; a 0, a missing field, or a source that is not 1–200
+/// printable ASCII bytes is refused.
+#[test]
+fn the_startup_bound_is_declared_and_never_zero() {
+    let c = |e: fn(&mut Value)| spec_json(crystal(e), 420_000);
+    assert_eq!(
+        hse_kind(c(|c| c["startup_max_us"] = json!(0))),
+        "HseDeclarationZero"
+    );
+    let mut x = external(8_000_000, 1, 50);
+    x["external"]["startup_max_us"] = json!(0);
+    assert_eq!(hse_kind(spec_json(x, 420_000)), "HseDeclarationZero");
+    assert!(matches!(
+        parse(c(|c| c["startup_source"] = json!(""))).validate(),
+        Err(e) if !matches!(e, IrValidationError::Hse(_))
+    ));
+    for key in ["startup_max_us", "startup_source"] {
+        let mut v = c(|_| {});
+        v["mcu"]["hse"]["crystal"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(serde_json::from_value::<Specification>(v).is_err(), "{key}");
+    }
+    let t = solved(c(|_| {}));
+    let h = t.clock.hse.as_ref().unwrap();
+    use clock::Startup as _;
+    assert_eq!(h.declared.startup_max_us(), 20_000);
+}
+
+/// `AET-WO-4240b` Q6 (ruled): the solver writes Table 17's VOS2 row for
+/// `hclk` 64 MHz at the crystal's fastest, `LATENCY` 1 and `WRHIGHFREQ` `01`
+/// (RM0433 Rev 9 p. 160, ]55; 110] MHz), written by hand here; the rule
+/// judges the written word, a word below the row and a reserved bit by name,
+/// and the copy check sees an edited word.
+#[test]
+fn flash_acr_is_table_17_s_vos2_row_and_judged() {
+    let t = solved(spec_json(crystal(|_| {}), 420_000));
+    assert_eq!(t.clock.hse.as_ref().unwrap().flash_acr, 0x0000_0011);
+    let x = solved(spec_json(external(8_000_000, 1, 50), 420_000));
+    assert_eq!(x.clock.hse.as_ref().unwrap().flash_acr, 0x0000_0011);
+    let v = aethelgard_ir::vos::flash_at_reset(&t.clock);
+    assert_eq!(
+        (v.latency, v.wrhighfreq, v.needed, v.holds),
+        (1, 0b01, Some((1, 0b01)), true)
+    );
+    assert_eq!(
+        judged(|h| h.flash_acr = 0x10),
+        Err("FlashWaitStatesBelowTable")
+    );
+    assert_eq!(
+        judged(|h| h.flash_acr = 0x01),
+        Err("FlashWaitStatesBelowTable")
+    );
+    assert_eq!(
+        judged(|h| h.flash_acr = 0x51),
+        Err("FlashWaitStatesBelowTable")
+    );
+    // A word above the row holds the rule, but is not the solver's.
+    assert_eq!(judged(|h| h.flash_acr = 0x37), Err("HseCopyNotSolved"));
+}
+
+/// `AET-WO-4240b` Q3 (ruled; `4240` D6): on an HSE tree the SPI kernels are
+/// the reset selects', `pll1_q_ck` (SPI1–3) and the APB clock (SPI4–6), each
+/// 64 MHz here and judged at the crystal's budget; the HSI-derived kernels
+/// keep the HSI's.
+#[test]
+fn the_spi_kernels_of_an_hse_tree_are_the_reset_selects() {
+    use aethelgard_ir::SpiKernel;
+    let t = solved(spec_json(crystal(|_| {}), 420_000));
+    for (p, k) in [
+        ("SPI1", SpiKernel::Pll1Q),
+        ("SPI4", SpiKernel::Pclk),
+        ("SPI6", SpiKernel::Pclk),
+    ] {
+        assert_eq!(
+            silicon::spi_kernel_on(p, k, &t.clock),
+            Some(64_000_000),
+            "{p}"
+        );
+        assert_eq!(
+            silicon::spi_kernel_budget(k, &t.clock),
+            Budget {
+                fast_ppm: 102,
+                slow_ppm: 102
+            }
+        );
+        assert_eq!(silicon::SpiSelect::of(p).unwrap().code(k), Some(0));
+    }
+    assert_eq!(
+        silicon::spi_kernel_on("SPI1", SpiKernel::Pclk, &t.clock),
+        None
+    );
+    assert_eq!(
+        silicon::spi_kernel_on("SPI4", SpiKernel::Pll1Q, &t.clock),
+        None
+    );
+    let reset = aethelgard_ir::SolvedClock::reset();
+    assert_eq!(
+        silicon::spi_kernel_on("SPI1", SpiKernel::Pll1Q, &reset),
+        None
+    );
+    assert_eq!(
+        silicon::spi_kernel_budget(SpiKernel::PerCk, &t.clock),
+        Budget::HSI
+    );
+}
+
 /// `AET-WO-4240a` F3 (`4240b` §1.3): a topology's copied declaration. Words
 /// the judge holds (3.2 MHz × 120 = 384 MHz, ÷ 6 = 64 MHz exactly, `pll1_q`
 /// 64 MHz) but which are not the solver's choice for the declaration the
@@ -460,7 +570,7 @@ fn the_vos_limits_take_the_hse_s_fastest() {
     let mut t = solved(spec_json(external(8_000_000, 1, 50), 420_000));
     let h = t.clock.hse.as_mut().unwrap();
     h.declared = serde_json::from_value(json!({"external": {"hz_num": 8_000_000, "hz_den": 1,
-        "ppm": 200_000, "source": "a declared bench oscillator (test)"}}))
+        "ppm": 200_000, "source": "a declared bench oscillator (test)", "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}))
     .unwrap();
     (h.fast_ppm, h.slow_ppm) = (200_000, 200_000);
     assert_eq!(t.validate().map_err(|e| e.kind()), Err("VosLimitExceeded"));

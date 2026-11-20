@@ -74,7 +74,7 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
         };
         assert_eq!(t.bor_level, spec.mcu.bor_level, "{name}");
         for (p, c) in &t.spi_controllers {
-            let f = silicon::check_spi(p, c);
+            let f = silicon::check_spi(p, c, &t.clock);
             assert!(f.holds, "{name} {p}: {f:#?}");
             assert!(f.achieved_max_hz <= u64::from(f.declared_hz), "{name} {p}");
             let w = silicon::spi_words(&t.spi_controllers, p).expect("words");

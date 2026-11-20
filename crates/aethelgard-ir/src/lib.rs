@@ -601,16 +601,20 @@ pub struct SolvedTopology {
     pub foreign_clock: Option<motor::SolvedForeignClock>,
 }
 
-/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
-/// for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20; `per_ck`
-/// is `hsi_ker_ck` at `CKPERSEL`'s reset `00`, §8.7.19), `hsi_ker_ck` for
-/// SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6 (`RCC_D3CCIPR.SPI6SEL` =
-/// `011`, §8.7.22).
+/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): on a
+/// board with no HSE, `per_ck` for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`,
+/// RM0433 Rev 9 §8.7.20; `per_ck` is `hsi_ker_ck` at `CKPERSEL`'s reset `00`,
+/// §8.7.19), `hsi_ker_ck` for SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6
+/// (`RCC_D3CCIPR.SPI6SEL` = `011`, §8.7.22). On an HSE board every select is
+/// left at its reset `000` (`4240` D6, ruled; `AET-WO-4240b` Q3): `pll1_q_ck`
+/// for SPI1–3, the APB clock for SPI4–6 (`rcc_pclk2`, `rcc_pclk4` for SPI6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpiKernel {
     PerCk,
     HsiKerCk,
+    Pll1Q,
+    Pclk,
 }
 
 /// One SPI controller as solved (`AET-WO-4230` §1.2, contract D2 and
@@ -4222,7 +4226,9 @@ impl SolvedTopology {
                     })
                     .map(|(_, l)| l.rate_hz)
                     .min();
-                if let Some(c) = declared.and_then(|d| solve::spi_controller(p, p, d).ok()) {
+                if let Some(c) =
+                    declared.and_then(|d| solve::spi_controller(p, p, d, &self.clock).ok())
+                {
                     spi.insert(p.to_owned(), c);
                 }
             } else if p.starts_with("I2C")
