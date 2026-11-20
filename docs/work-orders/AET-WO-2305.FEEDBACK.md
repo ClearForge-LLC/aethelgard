@@ -165,7 +165,9 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - `board_tier2`'s `every_admitted_identifier_character_survives_every_output`;
   - `verify_47k_tier2` and `four_layer_fab_tier2`.
   - All pass. The rest of tier 2 is CI's.
-- **`TIER2_MIN` 194 → 197:** the three `bor_recovery` tests. They are under 60 s, so they get no weight row (`4202`'s precedent), and `ci/` is unchanged.
+- **CI on 771f6e6c (run 44688610112):** green except `bench-package`. tools-build, all 12 tools-shards and `tools` pass (`tier2_tests_passed=197`, floor 197), with gates, route, cli, foreign and the images. `bench-package` fails on `MANIFEST.json` only (`against_differs`); it waits on the architect's `write=true` dispatch.
+- **The first CI run (ff894e30) failed every tools shard at `plan`:** `twin_tier2` is lock-serialised, so every test in it needs a weight row. The three rows were added (Furnace × 2.8), and `ci/shard.sh plan` passed in the image before the push.
+- **`TIER2_MIN` 194 → 197:** the three `bor_recovery` tests. Each carries a weight row, as every test of a lock-serialised binary must (see above).
 - **Reduction pass (diff), by a fresh reviewer:** nothing to remove · 0 duplicates removed · 0 dead paths removed · 1 kept by ruling · 2 findings below.
   - **Kept by ruling:** kind 32's `margin_ns` and `bound_ns` are determined by its instant, since `Record::check` forces both. The ruling of 05:10Z names all three for the archive. Dropping them would save about 25 lines and two fields; that is the architect's call.
   - **R1:** `recovery_bound` and `probe_ns` use checked arithmetic (`Option`) for a sum that cannot reach `u64` inside a 0.1 s run. Saturating adds would drop three error paths (about 15 lines). Kept, to match `power::schedule`'s checked style.
