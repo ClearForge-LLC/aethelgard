@@ -163,13 +163,28 @@ pub struct StopReport {
     pub cr1_after: Option<String>,
 }
 
-/// A droop's records, as `campaign` archives them (kinds 16 to 19).
+/// A droop's records, as `campaign` archives them (kinds 16 to 19, and 32).
 #[derive(Serialize)]
 pub struct DroopReport {
     pub rail: RailReport,
+    /// Kind 32, when the droop releases a reset (`AET-WO-2305` §1.2).
+    pub recovery_bound: Option<RecoveryBoundReport>,
     pub crossings: Vec<CrossingReport>,
     pub resets: Vec<ResetReport>,
     pub observed: Vec<ObservedReport>,
+}
+
+/// `twin.recovery_bound` (`AET-WO-2305` §1.2): the instant the same boot,
+/// run first with no reset, wrote its boot word (`null` when it wrote
+/// none, or its log could not be read whole); the margin, one quantum; and
+/// the bound, their sum, against which each release is probed.
+#[derive(Serialize)]
+pub struct RecoveryBoundReport {
+    pub kind: &'static str,
+    pub source: &'static str,
+    pub undisturbed_boot_word_ns: Option<u64>,
+    pub margin_ns: u64,
+    pub bound_ns: Option<u64>,
 }
 
 /// `analog.rail_declared`: every value the rail was computed from.
@@ -217,7 +232,7 @@ pub struct ResetReport {
     pub rendering: &'static str,
 }
 
-/// `firmware.observed` at the recovery bound after a release.
+/// `firmware.observed` at the recovery bound after a release's boot starts.
 #[derive(Serialize)]
 pub struct ObservedReport {
     pub kind: &'static str,

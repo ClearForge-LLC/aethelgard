@@ -341,6 +341,11 @@ pub struct BootPlan<'a> {
     /// The resets a declared droop renders, in time order; empty for every
     /// other boot (`AET-WO-2301`).
     pub resets: &'a [power::Reset],
+    /// The droop's recovery bound, from the same boot run first with no
+    /// reset (`AET-WO-2305` §1.2, kind 32): each release is probed at it
+    /// ([`power::probe_ns`]). `None` for every other boot, and for a droop
+    /// whose undisturbed boot wrote no boot word, which reads no probe.
+    pub recovery_bound_ns: Option<u64>,
     /// Each serial port's expectations (`AET-WO-4300b`), in the
     /// specification's order; empty for a board without one, whose commands
     /// are then exactly what they were before.
@@ -819,14 +824,37 @@ impl BootPlan<'_> {
             c.push(format!("echo \"{RELEASE}{k}\""));
             // The nudge (F5): the release takes effect at its end.
             at(&mut c, release + power::NUDGE_NS);
-            at(&mut c, release + power::RECOVERY_BOUND_NS);
-            // No level is changed anywhere (`AET-WO-2204` D4).
-            c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
-            c.extend(self.probe_reads());
-            c.push(format!("echo \"{PROBE_END}{k}\""));
+            // No level is changed anywhere (`AET-WO-2204` D4). With no
+            // bound, nothing is probed (`AET-WO-2305` §1.2).
+            if let Some(probe) = self.probe_at(release) {
+                at(&mut c, probe);
+                c.push(format!("echo \"{PROBE_BEGIN}{k}\""));
+                c.extend(self.probe_reads());
+                c.push(format!("echo \"{PROBE_END}{k}\""));
+            }
         }
         at(&mut c, self.virtual_ns);
         c
+    }
+
+    /// Where a release's probe reads the machine: the release, its nudge and
+    /// the recovery bound (`AET-WO-2305` §1.2); `None` with no bound.
+    pub fn probe_at(&self, release_ns: u64) -> Option<u64> {
+        self.recovery_bound_ns
+            .and_then(|b| power::probe_ns(release_ns, b))
+    }
+
+    /// The number of probes the boot reads: one per release, or none with
+    /// no bound.
+    fn probe_count(&self) -> usize {
+        match self.recovery_bound_ns {
+            Some(_) => self
+                .resets
+                .iter()
+                .filter(|r| r.released_ns.is_some())
+                .count(),
+            None => 0,
+        }
     }
 
     /// The monitor commands: a fixed seed, the platform, the firmware, the
@@ -2270,8 +2298,9 @@ pub fn judge_boot(
         .filter(|r| r.released_ns.is_some())
         .count();
     let releases = sentinels(&lines[..begin], RELEASE, released).map_err(untrusted)?;
-    let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, released).map_err(untrusted)?;
-    let probe_ends = sentinels(&lines[..begin], PROBE_END, released).map_err(untrusted)?;
+    let probed = plan.probe_count();
+    let probe_begins = sentinels(&lines[..begin], PROBE_BEGIN, probed).map_err(untrusted)?;
+    let probe_ends = sentinels(&lines[..begin], PROBE_END, probed).map_err(untrusted)?;
     let in_probe = |i: usize| {
         probe_begins
             .iter()
@@ -3927,6 +3956,53 @@ pub struct Probe {
     pub witness: Option<Vec<String>>,
 }
 
+/// The instant the undisturbed boot wrote its boot word (`AET-WO-2305`
+/// §1.2): the droop's own prepared boot, run first with no reset, its hook's
+/// count from 0, which is exact (count × 10 ns at the twin's MIPS). `None`
+/// when that boot was killed at a bound, when its log could not be read
+/// whole, or when it wrote none: no bound then, which the judge names. An
+/// output that cannot be trusted is a `Stop`, as for any boot.
+pub fn undisturbed_boot_word_ns(out: &Output) -> Result<Option<u64>, Stop> {
+    let code = match out.ended {
+        crate::run::Ended::Bounded(_) => return Ok(None),
+        _ => out.code(TOOL)?,
+    };
+    let text = out.text();
+    let untrusted = |what: String| {
+        Stop::tool_error(
+            TOOL,
+            format!(
+                "the undisturbed boot: {what}{}",
+                said::suffix(&text, Style::Renode)
+            ),
+        )
+    };
+    if code != 0 {
+        return Err(untrusted(format!("renode exited {code}")));
+    }
+    let lines = clean_lines(&text);
+    let begins: Vec<usize> = (0..lines.len()).filter(|&i| lines[i] == BEGIN).collect();
+    let &[begin] = begins.as_slice() else {
+        return Err(untrusted(format!(
+            "renode printed {} begin markers, not one",
+            begins.len()
+        )));
+    };
+    if out.dropped_log_lines > 0 {
+        return Ok(None);
+    }
+    let (hooks, _) = hooks_of(&lines[..begin], 0).map_err(untrusted)?;
+    Ok(hooks.iter().find_map(|(_, h, ns)| match h {
+        crate::anchor::Hook::BootWord { value, before, .. }
+            if *value == aethelgard_twin::boot::BOOT_MAGIC
+                && *before != aethelgard_twin::boot::BOOT_MAGIC =>
+        {
+            Some(*ns)
+        }
+        _ => None,
+    }))
+}
+
 /// Each release's probe, read between its own whole-line sentinels: exactly
 /// one pair per release and none other, and between them exactly the
 /// probe's reads, each a bare value (`value`), and whole log lines the
@@ -3942,10 +4018,13 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
     };
     let lines = clean_lines(text);
     let releases: Vec<u64> = plan.resets.iter().filter_map(|r| r.released_ns).collect();
-    let n = releases.len();
-    let released = sentinels(&lines, RELEASE, n).map_err(untrusted)?;
+    let released = sentinels(&lines, RELEASE, releases.len()).map_err(untrusted)?;
+    let n = plan.probe_count();
     let begins = sentinels(&lines, PROBE_BEGIN, n).map_err(untrusted)?;
     let ends = sentinels(&lines, PROBE_END, n).map_err(untrusted)?;
+    let Some(bound) = plan.recovery_bound_ns else {
+        return Ok(Vec::new());
+    };
     let reads = plan.probe_reads();
     let check = plan.image.identity.checks.first();
     let mut out = Vec::new();
@@ -3990,7 +4069,8 @@ fn probes_in(text: &str, dropped: bool, plan: &BootPlan<'_>) -> Result<Vec<Probe
                 .collect()
         });
         out.push(Probe {
-            at_ns: release + power::RECOVERY_BOUND_NS,
+            at_ns: power::probe_ns(*release, bound)
+                .ok_or_else(|| untrusted(format!("probe {k}: its instant overflows")))?,
             boot_word: words[0],
             record: check.map(|_| (words[1], words[2])),
             witness,
@@ -4145,6 +4225,10 @@ mod tests {
             motors: &[],
             instances: &INSTANCES,
             resets,
+            // Each probe at release + 100 µs, as these tests were written:
+            // they judge the probe's reading, not the bound's derivation
+            // (`AET-WO-2305` §1.2, tested in `aethelgard-chaos`).
+            recovery_bound_ns: Some(100_000 - power::NUDGE_NS),
             serial: &[],
             capture: None,
             pwr: None,
@@ -6460,6 +6544,50 @@ mod tests {
         assert!(early.contains("but it is stamped 20854009 ns"), "{early}");
         let (_, slept) = line(exact + 1).unwrap();
         assert!(slept.is_some());
+    }
+
+    /// `AET-WO-2305` §1.2, §5 (a baseline under another firmware or
+    /// scenario): the undisturbed boot is the droop's own prepared boot
+    /// with its resets taken out. Everything before the schedule is the same
+    /// command for command (the firmware, the platform, the models, the
+    /// cold writes, the levels, the stimuli), and so are the reads after
+    /// it; with no bound the droop composes no probe.
+    #[test]
+    fn the_undisturbed_boot_is_the_droops_own_without_its_resets() {
+        let image = image();
+        let resets = bor3();
+        let droop = plan(&image, &resets);
+        let mut undisturbed = plan(&image, &[]);
+        undisturbed.recovery_bound_ns = None;
+        let (d, u) = (droop.commands(), undisturbed.commands());
+        let hook = crate::anchor::boot_word_hook(0x2000_0000, &[]);
+        let before_d = d.split("emulation RunFor").next().unwrap();
+        let before_u = u.split(&format!("{hook}; ")).next().unwrap();
+        assert_eq!(before_d, before_u);
+        assert!(
+            before_d.contains("sysbus LoadELF @/w/firmware.elf"),
+            "{before_d}"
+        );
+        let after = |c: &str| {
+            c.split("echo \"AETHELGARD-BOOT-BEGIN\"")
+                .nth(1)
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(after(&d), after(&u));
+        assert!(!u.contains("machine Reset") && !u.contains("AETHELGARD-PROBE"));
+        let mut unbounded = plan(&image, &resets);
+        unbounded.recovery_bound_ns = None;
+        let c = unbounded.commands();
+        assert!(
+            c.contains("AETHELGARD-RELEASE-0") && !c.contains("AETHELGARD-PROBE"),
+            "{c}"
+        );
+        assert!(
+            probes_in("AETHELGARD-RELEASE-0\n", false, &unbounded)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

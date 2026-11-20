@@ -408,9 +408,10 @@ fn a_floor_between_the_falling_band_and_the_rising_band_is_refused() {
 fn a_droop_whose_effects_run_past_the_span_is_refused() {
     let d = reference();
     // 1,000,000 + 20,000 + 200,000 + 20,000 + 10 τ (2,000) + tRSTTEMPO
-    // (377,000) + nudge (10) + recovery bound (100,000) + two grid steps (20).
+    // (377,000) + nudge (10) + two grid steps (20); the recovery bound is
+    // checked once the boot has measured it (`AET-WO-2305` §1.2).
     let end = droop_end_ns(&d, DECOUPLING_PF);
-    assert_eq!(end, 1_719_030);
+    assert_eq!(end, 1_619_030);
     assert_eq!(check(&d, NOMINAL_MV, DECOUPLING_PF, end), Ok(()));
     let m = refusal(&d, NOMINAL_MV, DECOUPLING_PF, end - 1);
     assert!(m.contains("past the boot's"), "{m}");
@@ -451,8 +452,23 @@ fn reading(address: u32, mask: u32, expected: u32, observed: Option<u32>) -> Rea
     }
 }
 
+/// Sentinel-01's undisturbed boot word, measured (`AET-WO-2305` §1.1), its
+/// bound with the one-quantum margin, and the reference release's probe:
+/// 1,227,980 + the 10 ns nudge + 125,700.
+const BOOT_WORD_NS: u64 = 25_700;
+const BOUND_NS: u64 = BOOT_WORD_NS + power::RECOVERY_MARGIN_NS;
+const PROBE_NS: u64 = 1_227_980 + power::NUDGE_NS + BOUND_NS;
+
+fn bound() -> Record {
+    Record::RecoveryBound {
+        boot_word_ns: Some(BOOT_WORD_NS),
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: Some(BOUND_NS),
+    }
+}
+
 fn recovered() -> Record {
-    observation(1_327_980, 0x22020000)
+    observation(PROBE_NS, 0x22020000)
 }
 
 fn observation(at_ns: u64, status: u32) -> Record {
@@ -546,9 +562,15 @@ fn every_new_record_kind_round_trips_and_checks() {
         Record::ExpectedCounts {
             counts: vec![("a".into(), 0), ("b".into(), u64::MAX)],
         },
+        bound(),
+        Record::RecoveryBound {
+            boot_word_ns: None,
+            margin_ns: power::RECOVERY_MARGIN_NS,
+            bound_ns: None,
+        },
     ];
     let kinds: Vec<u64> = records.iter().map(Record::kind).collect();
-    assert_eq!(kinds, [16, 17, 17, 18, 18, 19, 19, 19, 19, 20]);
+    assert_eq!(kinds, [16, 17, 17, 18, 18, 19, 19, 19, 19, 20, 32, 32]);
     for r in &records {
         assert_eq!(r.check(), Ok(()), "{r:?}");
         assert_eq!(Record::from_fields(r.kind(), &r.fields()).as_ref(), Some(r));
@@ -618,7 +640,7 @@ fn the_new_records_are_stamped_with_their_own_time_or_zero() {
         1_014_422
     );
     assert_eq!(reset(1_014_430, false).timestamp(end), 1_014_430);
-    assert_eq!(recovered().timestamp(end), 1_327_980);
+    assert_eq!(recovered().timestamp(end), PROBE_NS);
     assert!(!recovered().before_boot());
 }
 
@@ -790,6 +812,7 @@ fn run() -> Vec<Record> {
         },
     );
     v.extend([
+        bound(),
         crossing("VBOR3_rising", 2_700_000, 1_012_422_222, true),
         crossing("VBOR3_falling", 2_610_000, 1_014_422_222, true),
         reset(1_014_430, false),
@@ -910,6 +933,7 @@ fn a_run_with_no_droop_and_no_droop_records_is_accepted_with_no_droop_findings()
                 | Record::ResetRendered { .. }
                 | Record::FirmwareObserved { .. }
                 | Record::ExpectedCounts { .. }
+                | Record::RecoveryBound { .. }
         )
     });
     let Record::Scenario { overrides, .. } = &mut r[0] else {
@@ -1141,7 +1165,7 @@ fn a_release_with_no_observation_is_refused() {
 fn a_second_observation_of_one_release_is_refused() {
     let mut r = run();
     let k = index(&r, is_observation);
-    r.insert(k, observation(1_327_980, 0x22020000));
+    r.insert(k, observation(PROBE_NS, 0x22020000));
     assert_eq!(refused(&r), MSG_OBS);
 }
 
@@ -1199,7 +1223,7 @@ fn an_unobserved_reading_is_not_a_recovery() {
 fn an_unrecovered_observation_with_its_error_finding_is_accepted_and_fails_the_run() {
     let mut r = run();
     let k = k_obs(&r);
-    r[k] = observation(1_327_980, 0x22020001);
+    r[k] = observation(PROBE_NS, 0x22020001);
     let Record::Scenario {
         expect_pass,
         expect_findings,
@@ -1238,7 +1262,7 @@ fn k_obs(r: &[Record]) -> usize {
 fn an_unrecovered_finding_at_info_is_refused() {
     let mut r = run();
     let k = k_obs(&r);
-    r[k] = observation(1_327_980, 0x22020001);
+    r[k] = observation(PROBE_NS, 0x22020001);
     set_verdict(
         &mut r,
         &[
@@ -1347,8 +1371,15 @@ fn a_droop_record_outside_its_rank_is_refused() {
     assert_eq!(refused(&r), MSG_ORDER);
     let mut r = run();
     let rail = r.remove(3);
-    r.insert(4, rail);
+    let first = index(&r, |x| matches!(x, Record::RailCrossing { .. }));
+    r.insert(first + 1, rail);
     assert_eq!(refused(&r), MSG_ORDER, "the rail after a crossing");
+    // Kind 32 is decided before the boot, with the rail (`AET-WO-2305`).
+    let mut r = run();
+    let b = r.remove(index(&r, |x| matches!(x, Record::RecoveryBound { .. })));
+    let first = index(&r, |x| matches!(x, Record::RailCrossing { .. }));
+    r.insert(first + 1, b);
+    assert_eq!(refused(&r), MSG_ORDER, "the bound after a crossing");
 }
 
 #[test]

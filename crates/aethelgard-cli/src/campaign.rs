@@ -921,10 +921,11 @@ pub(crate) const NO_WITNESSED_DEVICE: &str = "no witnessed device: the boot read
 
 /// The witness scope of a run's droop observations, from the records replay
 /// judges: each release has one observation, judged against the first
-/// identity read's witness (`first_witness`: the first I2C witness record,
-/// else the first SPI one), and with neither there is no device to witness.
-/// A release whose probe a killed boot never read is in scope too: it is
-/// judged, as `brownout_unrecovered`. `None` when no reset was released, so
+/// identity read's device's steps (`first_script`: the first I2C witness
+/// record's device, else the first SPI one's; `AET-WO-2305` §1.3), and with
+/// neither there is no device to witness. A release whose probe a killed
+/// boot never read, or that has no recovery bound (`AET-WO-2305` §1.2), is
+/// in scope too: it is judged, as `brownout_unrecovered`. `None` when no reset was released, so
 /// nothing was observed.
 fn observation_witness(records: &[Record]) -> Option<crate::verdict::Scope> {
     let releases = records
@@ -1471,6 +1472,13 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
         tolerance_permille: r.tolerance_permille,
         decoupling_picofarads: r.decoupling_picofarads,
     }];
+    // Kind 32 beside the rail, decided before the droop's boot
+    // (`AET-WO-2305` §1.2).
+    out.extend(d.recovery_bound.as_ref().map(|b| Record::RecoveryBound {
+        boot_word_ns: b.undisturbed_boot_word_ns,
+        margin_ns: b.margin_ns,
+        bound_ns: b.bound_ns,
+    }));
     let mut timed: Vec<((u64, u8), Record)> = Vec::new();
     for c in &d.crossings {
         timed.push((
@@ -2020,7 +2028,8 @@ fn subject(r: &Record) -> String {
         Record::SpiBusSolved { peripheral, .. } => format!("controller:{peripheral}"),
         Record::BootObserved { .. }
         | Record::ResetRendered { .. }
-        | Record::FirmwareObserved { .. } => "boot".to_owned(),
+        | Record::FirmwareObserved { .. }
+        | Record::RecoveryBound { .. } => "boot".to_owned(),
         other => format!("kind:{}", other.kind()),
     }
 }
