@@ -82,9 +82,31 @@ pub const RESOLUTION_NS: u64 = 10;
 /// F5, measured), so every release is followed by a `RunFor` this long.
 pub const NUDGE_NS: u64 = 10;
 
-/// The firmware must have rewritten its boot word and completed its I2C read
-/// this long after a release (`AET-WO-2301` §2.3). Measured: 20 µs.
-pub const RECOVERY_BOUND_NS: u64 = 100_000;
+/// The slack the recovery bound allows past the boot the twin ran
+/// undisturbed (`AET-WO-2305` §1.2, ruled 2026-11-20): one quantum, Renode's
+/// `SetGlobalQuantum`, at whose edges the peripherals synchronise with the
+/// core, which is the twin's one freedom in timing. Measured: on nine boards
+/// the recovered boot word lands at the undisturbed boot's instant to the
+/// instruction, and moving the release through a quantum (six phases, on
+/// Sentinel-01 and on `4600`'s logger) moved it by 0 ns.
+pub const RECOVERY_MARGIN_NS: u64 = 100_000;
+
+/// The recovery bound (`AET-WO-2305` §1.2): the firmware must have rewritten
+/// its boot word, and the first device answered its identity read, within
+/// this long of the boot's start after a release, where `boot_word_ns` is the
+/// instant the same prepared boot, with no reset, wrote its boot word
+/// (counted from 0). It replaced a fixed 100 µs (`AET-WO-2301` §2.3), which
+/// every board that waits on a sensor before its boot word failed. `None`
+/// when it would overflow.
+pub fn recovery_bound(boot_word_ns: u64) -> Option<u64> {
+    boot_word_ns.checked_add(RECOVERY_MARGIN_NS)
+}
+
+/// The instant a release's probe reads the machine: the boot's start (the
+/// release and its nudge) plus the bound.
+pub fn probe_ns(release_ns: u64, bound_ns: u64) -> Option<u64> {
+    release_ns.checked_add(NUDGE_NS)?.checked_add(bound_ns)
+}
 
 /// Whether a probe's witness shows the first device brought up again
 /// (`AET-WO-2305` §1.3): the lines from the release begin with that
