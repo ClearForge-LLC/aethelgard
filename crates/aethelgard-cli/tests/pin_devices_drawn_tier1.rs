@@ -102,10 +102,10 @@ const D2_PINS: [(&str, &str); 17] = [
 ];
 
 /// SLVSAR1E p. 3 and §10.1 p. 15: the three capacitors, each between its two
-/// nets, with the value and rating the page states (VM's rating is the VM
+/// nets, with the value and rating the page states (VM's: above the VM
 /// domain's maximum, 6 V + 5 %).
 const D2_CAPS: [([&str; 2], &str); 3] = [
-    (["GND", "VMOTOR"], "10u 6.3V"),
+    (["GND", "VMOTOR"], "10u >6.3V"),
     (["U2_VCP", "VMOTOR"], "10n 16V X7R"),
     (["GND", "U2_VINT"], "2u2 6.3V"),
 ];
@@ -165,6 +165,24 @@ fn d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration() {
         sheet.contains("(property \"Value\" \"U2_VINT\""),
         "U2_VINT is not drawn as a rail"
     );
+}
+
+/// Adversarial pass #3: a bridge output declared on `GND`, which a connector
+/// pin also carries, validates; the emitter refuses to short a motor
+/// terminal to a rail.
+#[test]
+fn a_bridge_output_on_a_rail_is_refused() {
+    let mut v = d2_drawn();
+    v["pin_devices"][0]["bridges"][0]["outputs"]["AOUT1"] = json!("GND");
+    v["connectors"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|c| c["reference"] == "J5")
+        .unwrap()["pins"][0]["net"] = Value::Null;
+    let e = drawing_err(&v);
+    assert_eq!((e.kind(), e.id()), ("PinDeviceNotDrawable", Some("U2")));
+    assert!(e.to_string().contains("`AOUT1` names `GND`"), "{e}");
 }
 
 /// Each bridge output reaches the declared connector pin carrying its net

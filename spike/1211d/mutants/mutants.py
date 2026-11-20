@@ -35,6 +35,9 @@ MUTANTS = [
     ("G7 a row pin left floating (the completeness refusal removed)", ARM,
      "            _ => {\n                return Err(not_drawable(\n                    d,\n                    format!(\n                        \"its {} pin `{name}` is declared nowhere, and would float\",",
      "            _ => {\n                conns.insert(n, Conn::NoConnect);\n                continue;\n                #[allow(unreachable_code)]\n                return Err(not_drawable(\n                    d,\n                    format!(\n                        \"its {} pin `{name}` is declared nowhere, and would float\",", DRAWN),
+    ("G8 a bridge output on a rail drawn (adversarial #3's guard removed)", ARM,
+     "            if net == aethelgard_ir::GND || spec.voltage_domains.iter().any(|v| &v.id == net) {",
+     "            if false && net == aethelgard_ir::GND {", DRAWN),
 ]
 
 def main():

@@ -20,8 +20,8 @@
 //! (`BridgeOutputNotOnConnector`).
 //!
 //! Capacitor ratings: the emitter's passives carry a value and a footprint
-//! only, so each value names the rating the datasheet asks for (`16V`, or the
-//! VM domain's maximum where it asks for "VM-rated"). No gate judges a rating
+//! only, so each value names the rating the datasheet asks for (`16V`, or
+//! `>` the VM domain's maximum where it asks for "VM-rated"). No gate judges a rating
 //! (ruled 18:18Z: a finding, folded into `4600` D4's proposal).
 
 use std::collections::BTreeMap;
@@ -48,7 +48,9 @@ enum End {
 enum Rating {
     /// A stated rating, as the datasheet writes it (`16V`).
     Volts(&'static str),
-    /// "VM-rated": the VM domain's maximum, from the specification.
+    /// "VM-rated": above the VM domain's maximum, from the specification,
+    /// written `>12.6V`, a minimum and not a part's rating (SLVSAR1E §9.1
+    /// p. 14: "higher than the operating voltage").
     Vm,
 }
 
@@ -395,6 +397,17 @@ fn device(
             )?;
         }
         for (pin, net) in &bridge.outputs {
+            // A motor terminal is a net of its own: on `GND` or a domain it
+            // would short the bridge to a rail (`validate` refuses a domain's
+            // name; `GND` reached the drawing, adversarial pass #3).
+            if net == aethelgard_ir::GND || spec.voltage_domains.iter().any(|v| &v.id == net) {
+                return Err(not_drawable(
+                    d,
+                    format!(
+                        "its bridge output `{pin}` names `{net}`, a rail: a motor terminal is a net of its own"
+                    ),
+                ));
+            }
             if !ended.contains(&net.as_str()) {
                 return Err(EmitError::BridgeOutputNotOnConnector {
                     reference: d.reference.clone(),
@@ -527,7 +540,10 @@ fn device(
         };
         let rating = match r.rating {
             Rating::Volts(v) => v.to_owned(),
-            Rating::Vm => volts(vm.ok_or_else(|| not_drawable(d, "its VM names no domain"))?),
+            Rating::Vm => format!(
+                ">{}",
+                volts(vm.ok_or_else(|| not_drawable(d, "its VM names no domain"))?)
+            ),
         };
         let text = match r.dielectric {
             Some(x) => format!("{value} {rating} {x}"),
