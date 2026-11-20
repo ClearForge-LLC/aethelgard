@@ -165,6 +165,26 @@ pub enum BoardError {
         "{peripheral} has {inputs} inputs; the bring-up converts at most four, the sequence ADC_SQR1 holds"
     )]
     AdcSequenceTooLong { peripheral: String, inputs: usize },
+    /// `AET-WO-1211b` (`1211` §2.5, Q3): a bridge's static idle, as the
+    /// generator would leave it, is no non-driving row of its part's mode
+    /// (`aethelgard_ir::pin_parts`), or cannot be read as one.
+    #[error("bridge `{bridge}` of `{reference}`: {detail}")]
+    BridgeIdleNotSafe {
+        reference: String,
+        bridge: String,
+        detail: String,
+    },
+    /// `AET-WO-1211b`: a bridge whose enable must follow inputs that sit in
+    /// two of the schedule proof's parts (two timers, or a timer and a GPIO),
+    /// whose order no one part could prove.
+    #[error(
+        "bridge `{bridge}` of `{reference}`: its inputs sit on more than one timer, or on a timer and a GPIO, so no one proof part holds its enable's order"
+    )]
+    BridgeAcrossParts { reference: String, bridge: String },
+    /// `AET-WO-1211b` (`INV-06`): the bring-up wakes a part whose row states
+    /// no `t_wake`.
+    #[error("`{reference}` ({part}) is woken at bring-up, and its row states no t_wake to wait")]
+    WakeTimeUnstated { reference: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -205,6 +225,9 @@ impl BoardError {
             Self::AdcResolutionNotCommon { .. } => "AdcResolutionNotCommon",
             Self::AdcResolutionsDiffer { .. } => "AdcResolutionsDiffer",
             Self::AdcSequenceTooLong { .. } => "AdcSequenceTooLong",
+            Self::BridgeIdleNotSafe { .. } => "BridgeIdleNotSafe",
+            Self::BridgeAcrossParts { .. } => "BridgeAcrossParts",
+            Self::WakeTimeUnstated { .. } => "WakeTimeUnstated",
             Self::Register(e) => e.kind(),
         }
     }
@@ -1311,6 +1334,169 @@ struct Plan {
     /// inputs and resolution. Empty without one, so every other board's text
     /// is unchanged.
     adcs: BTreeMap<String, adc::AdcPlan>,
+    /// Each pin device's bridge with an enable (`AET-WO-1211b`): the enable
+    /// is configured after every input is at its idle, and woken only after.
+    bridges: Vec<BridgePlan>,
+}
+
+/// One bridge's enable and what it must follow (`AET-WO-1211b`; `1211`
+/// §2.7 (a)).
+#[derive(Debug, Clone)]
+struct BridgePlan {
+    reference: String,
+    id: String,
+    /// The timer its timer-channel inputs are on (at most one, else
+    /// `BridgeAcrossParts`), whose `CEN` the enable follows.
+    timer: Option<u32>,
+    /// The pins of its GPIO-output inputs.
+    gpio_inputs: Vec<String>,
+    /// The enable's pin.
+    enable: String,
+    /// The part's `t_wake`, µs, when the enable's declared level wakes it.
+    wake_us: Option<u32>,
+}
+
+/// What an enable pin's configure must follow, over every bridge it enables:
+/// the timer (at most one) and the GPIO inputs, and the longest wake.
+#[derive(Debug, Clone, Default)]
+struct EnableAfter {
+    timer: Option<u32>,
+    gpio_inputs: Vec<String>,
+    wake_us: Option<u32>,
+}
+
+impl Plan {
+    /// What `pin` must follow, if it is some bridge's enable.
+    fn enable_after(&self, pin: &str) -> Option<EnableAfter> {
+        let mut out: Option<EnableAfter> = None;
+        for b in self.bridges.iter().filter(|b| b.enable == pin) {
+            let e = out.get_or_insert_with(EnableAfter::default);
+            e.timer = e.timer.or(b.timer);
+            e.gpio_inputs.extend(b.gpio_inputs.iter().cloned());
+            e.wake_us = e.wake_us.max(b.wake_us);
+        }
+        out
+    }
+}
+
+/// The bridges of `solved` with an enable, each judged at its idle against
+/// its part's row (`aethelgard_ir::pin_parts`, the datasheet's truth table,
+/// looked up by part and mode; `AET-WO-1211b` S1). The tuple is read from the
+/// topology's declared levels, never from the plan's words: an input on a
+/// timer at its PWM idle level (CCR 0 holds OCxREF low, ARR + 1 high, RM0433
+/// Rev 9 p. 1558), an input on a GPIO at its initial level, and the enable at
+/// its initial level. A tuple that is no row, or a driving row, is refused.
+fn bridge_plans(solved: &SolvedTopology) -> Result<Vec<BridgePlan>, BoardError> {
+    let mut out = Vec::new();
+    for (reference, d) in &solved.pin_devices {
+        for (id, b) in &d.bridges {
+            let refuse = |detail: String| BoardError::BridgeIdleNotSafe {
+                reference: reference.clone(),
+                bridge: id.clone(),
+                detail,
+            };
+            let Some(e) = &b.enable else { continue };
+            let row = aethelgard_ir::parts::table()
+                .map_err(BoardError::InvalidTopology)?
+                .pin_part(&d.part)
+                .ok_or_else(|| refuse(format!("`{}` has no busless row", d.part)))?;
+            let mode = row
+                .mode(&b.mode)
+                .ok_or_else(|| refuse(format!("`{}` has no mode `{}`", d.part, b.mode)))?;
+            let mut timers = BTreeSet::new();
+            let mut gpio_inputs = Vec::new();
+            let mut levels = [Level::Low; 2];
+            if b.inputs.len() != 2 {
+                return Err(refuse("a bridge has two inputs".into()));
+            }
+            for (k, net) in b.inputs.iter().enumerate() {
+                if let Some(m) = solved.motor_outputs.get(net) {
+                    levels[k] = match m.pwm.as_ref().map(|p| p.idle) {
+                        Some(motor::Idle::Level(l)) => l,
+                        _ => return Err(refuse(format!("input `{net}` does not idle at a level"))),
+                    };
+                    let (n, _) = solved
+                        .assignments
+                        .get(net)
+                        .and_then(|a| motor::timer_channel(&a.signal))
+                        .ok_or_else(|| refuse(format!("input `{net}` has no timer channel")))?;
+                    timers.insert(n);
+                } else if let Some(g) = solved.gpio.get(net) {
+                    levels[k] = g
+                        .initial
+                        .ok_or_else(|| refuse(format!("input `{net}` is not an output")))?;
+                    gpio_inputs.push(g.pin.clone());
+                } else {
+                    return Err(refuse(format!(
+                        "input `{net}` is neither a motor output nor a GPIO"
+                    )));
+                }
+            }
+            let g = solved
+                .gpio
+                .get(&e.net)
+                .filter(|g| g.direction == Direction::Output)
+                .ok_or_else(|| refuse(format!("enable `{}` is not a GPIO output", e.net)))?;
+            let initial = g
+                .initial
+                .ok_or_else(|| refuse(format!("enable `{}` states no initial level", e.net)))?;
+            let state = mode.state(initial, levels).ok_or_else(|| {
+                refuse(format!(
+                    "its idle (enable {}, inputs {} {}) is no row of `{}` mode `{}` ({}, {})",
+                    initial.name(),
+                    levels[0].name(),
+                    levels[1].name(),
+                    d.part,
+                    b.mode,
+                    row.document,
+                    mode.page
+                ))
+            })?;
+            if state.drives || mode.forbidden.contains(&state.name) {
+                return Err(refuse(format!(
+                    "its idle is `{}` of `{}` mode `{}`, a driving or forbidden row ({}, {})",
+                    state.name, d.part, b.mode, row.document, mode.page
+                )));
+            }
+            if timers.len() > 1 || (!timers.is_empty() && !gpio_inputs.is_empty()) {
+                return Err(BoardError::BridgeAcrossParts {
+                    reference: reference.clone(),
+                    bridge: id.clone(),
+                });
+            }
+            let wake_us = if initial == e.active {
+                Some(row.t_wake_max_us.as_ref().map(|t| t.value).ok_or_else(|| {
+                    BoardError::WakeTimeUnstated {
+                        reference: reference.clone(),
+                        part: d.part.clone(),
+                    }
+                })?)
+            } else {
+                None
+            };
+            out.push(BridgePlan {
+                reference: reference.clone(),
+                id: id.clone(),
+                timer: timers.first().copied(),
+                gpio_inputs,
+                enable: g.pin.clone(),
+                wake_us,
+            });
+        }
+    }
+    // An enable shared by bridges follows all of them: still one part.
+    for b in &out {
+        let shared: Vec<&BridgePlan> = out.iter().filter(|o| o.enable == b.enable).collect();
+        let timers: BTreeSet<u32> = shared.iter().filter_map(|o| o.timer).collect();
+        let gpio = shared.iter().any(|o| !o.gpio_inputs.is_empty());
+        if timers.len() > 1 || (!timers.is_empty() && gpio) {
+            return Err(BoardError::BridgeAcrossParts {
+                reference: b.reference.clone(),
+                bridge: b.id.clone(),
+            });
+        }
+    }
+    Ok(out)
 }
 
 impl Plan {
@@ -1730,6 +1916,7 @@ impl Plan {
             oracle_pupd,
             oracle_ccr,
             adcs: adc::of(solved)?,
+            bridges: bridge_plans(solved)?,
             oracle_levels: solved
                 .gpio
                 .values()
@@ -3000,6 +3187,25 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             (None, Role::Analog) => "an ADC input, analog".to_owned(),
             (None, _) => "a GPIO output".to_owned(),
         };
+        // A bridge's enable (`AET-WO-1211b`): configured only once its bridge's
+        // inputs sit at their idle, each a parameter it cannot exist without.
+        let (after, after_doc) = match plan.enable_after(pin) {
+            Some(e) => {
+                let mut params = String::new();
+                if let Some(n) = e.timer {
+                    let _ = write!(params, ", _cen: &Tim{n}<Running>");
+                }
+                for g in &e.gpio_inputs {
+                    let _ = write!(params, ", _{}: &{g}<Output>", pin_field(g));
+                }
+                (
+                    params,
+                    "\n    /// A bridge's enable: only after its inputs are at their idle, a timer's\n    \
+                     /// after its `CEN` (`AET-WO-1211b`; `1211` §2.7 (a)).",
+                )
+            }
+            None => (String::new(), ""),
+        };
         let _ = writeln!(
             w,
             "/// `{pin}`, net `{net}`: {what}.\n\
@@ -3007,8 +3213,8 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                  _mode: PhantomData<M>,\n\
              }}\n\
              \n\
-             impl {pin}<Unconfigured> {{\n    \
-                 pub fn {method}<R: Registers>(self, r: &mut R) -> {pin}<{state}> {{",
+             impl {pin}<Unconfigured> {{{after_doc}\n    \
+                 pub fn {method}<R: Registers>(self, r: &mut R{after}) -> {pin}<{state}> {{",
             net = p.net,
             method = method(p),
             state = pin_state(p),
@@ -4023,6 +4229,36 @@ fn oracle_pupdr(plan: &Plan, port: char) -> u32 {
         })
 }
 
+/// The image's condition before any write to a bridge's enable
+/// (`AET-WO-1211b`; `1211` §2.7 (a)): its timer's `CR1.CEN` set (the inputs
+/// hold their idle words from there, RM0433 Rev 9 p. 1558), and each GPIO
+/// input already an output. From the header's positions, never from the
+/// typestate the enable's method takes; `None` for any other pin.
+fn oracle_enable_ready(plan: &Plan, facts: &Facts, pin: &str) -> Option<String> {
+    let e = plan.enable_after(pin)?;
+    let g = &facts.gpio;
+    let mut terms = Vec::new();
+    if let (Some(n), Some(tf)) = (e.timer, &facts.tim) {
+        terms.push(format!(
+            "self.tim{n}[{}] & {:#010x} != 0",
+            tf.cr1 / 4,
+            1u32 << tf.cen
+        ));
+    }
+    for input in &e.gpio_inputs {
+        let pf = &facts.pins[input];
+        let p = &plan.pins[input];
+        terms.push(format!(
+            "self.{}[{}] & {:#010x} == {:#010x}",
+            port_field(p.port),
+            g.moder / 4,
+            oracle_mask(g.widths[0], pf.moder),
+            MODE_OUTPUT << pf.moder
+        ));
+    }
+    Some(terms.join(" && "))
+}
+
 /// The `BSRR` bit the oracle expects a GPIO output's configure to leave
 /// (`AET-WO-1211b`): its declared level's, the set bit for `high` and the
 /// reset bit for `low` (RM0433 Rev 9 §11.4.7), read from the oracle's own
@@ -4277,7 +4513,15 @@ fn parts(plan: &Plan) -> Vec<Scope> {
         out.push(part);
     }
     for (n, t) in &plan.timers {
-        let pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
+        let mut pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
+        // A bridge's enable on this timer's channels, whose order this part
+        // proves (`AET-WO-1211b`).
+        pins.extend(
+            plan.bridges
+                .iter()
+                .filter(|b| b.timer == Some(*n))
+                .map(|b| b.enable.clone()),
+        );
         owned.extend(pins.iter().cloned());
         let mut part = Scope::unit(plan, format!("tim{n}"), pins);
         part.timers.insert(*n);
@@ -5285,10 +5529,25 @@ fn emit_schedule(
             pupdr = g.pupdr,
             pull = oracle_pupdr(plan, *port),
         );
+        // A bridge's enable is written only after its inputs' idle
+        // (`AET-WO-1211b`).
+        let mut enable_rules = String::new();
+        for (pin, _) in &own {
+            if let Some(cond) = oracle_enable_ready(plan, facts, pin) {
+                let pf = &facts.pins[*pin];
+                let _ = write!(
+                    enable_rules,
+                    "\n            if value & {bits:#010x} != 0 {{\n                \
+                         kani::assert({cond}, \"{pin}, a bridge's enable, written before its inputs sat at their idle\");\n            \
+                     }}",
+                    bits = (1u32 << pf.bs) | (1u32 << pf.br),
+                );
+            }
+        }
         let _ = writeln!(
             w,
             "        if block == Block::{t} && offset == {bsrr:#04x} {{\n            \
-                 kani::assert({rule}, \"{t} BSRR write touches a pin {owner}\");\n            \
+                 kani::assert({rule}, \"{t} BSRR write touches a pin {owner}\");{enable_rules}\n            \
                  // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).\n            \
                  {level}\n        \
              }}\n        \
@@ -5332,6 +5591,8 @@ fn emit_schedule(
                     g.bsrr / 4,
                     oracle_level_bit(plan, pf, pin)
                 ));
+                // A bridge's enable: after its inputs' idle (`AET-WO-1211b`).
+                ready.extend(oracle_enable_ready(plan, facts, pin));
             } else if p.role.mode_only() {
                 // A GPIO input or an analog pin: no alternate function.
             } else {
@@ -5819,6 +6080,11 @@ fn emit_schedule(
             w,
             "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
         );
+        // A bridge's timer keeps its `Running` token for the enable
+        // (`AET-WO-1211b`).
+        if plan.bridges.iter().any(|b| b.timer == Some(*n)) {
+            let _ = writeln!(w, "    let mut tim{n}_running = None;");
+        }
     }
     let rely_step = if part.is_some() {
         "\n        img.rely();"
@@ -5893,15 +6159,34 @@ fn emit_schedule(
     for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
         debug_assert_eq!(acts[a], Action::Pin(pin.clone()));
         let f = pin_field(pin);
+        // A bridge's enable waits for its inputs' idle, and takes them
+        // (`AET-WO-1211b`).
+        let (ready, args) = match plan.enable_after(pin) {
+            Some(e) => {
+                let mut ready = String::new();
+                let mut args = String::new();
+                if let Some(n) = e.timer {
+                    let _ = write!(ready, " && tim{n}_running.is_some()");
+                    let _ = write!(args, ", tim{n}_running.as_ref().unwrap()");
+                }
+                for g in &e.gpio_inputs {
+                    let gf = pin_field(g);
+                    let _ = write!(ready, " && {gf}_done.is_some()");
+                    let _ = write!(args, ", {gf}_done.as_ref().unwrap()");
+                }
+                (ready, args)
+            }
+            None => (String::new(), String::new()),
+        };
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());"
+                 kani::assume({f}.is_some(){ready});"
         );
         running(w, a);
         let _ = writeln!(
             w,
-            "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img);",
+            "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img{args});",
             m = method(p),
             mutable = if plan.is_select(pin) { "mut " } else { "" },
         );
@@ -6126,16 +6411,26 @@ fn emit_schedule(
             ready = ready.concat(),
         );
         running(w, a);
+        let keep = if plan.bridges.iter().any(|b| b.timer == Some(*n)) {
+            format!("tim{n}_running = Some(running);\n                ")
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             w,
-            "                let _running = tim{n}_clocked\n                    \
+            "                let {bind} = tim{n}_clocked\n                    \
                      .take()\n                    \
                      .unwrap()\n                    \
                      .start_outputs(&mut img, clock.as_ref().unwrap(){args});\n                \
-                 kani::cover!(true, \"TIM{n} started\");\n                \
+                 {keep}kani::cover!(true, \"TIM{n} started\");\n                \
                  tim{n}_done = true;\n            \
              }}",
             args = args.concat(),
+            bind = if keep.is_empty() {
+                "_running"
+            } else {
+                "running"
+            },
         );
         a += 1;
     }
