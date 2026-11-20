@@ -32,27 +32,19 @@ use std::collections::BTreeMap;
 
 use serde::Serialize;
 
+use crate::clock::Budget;
 use crate::{SolvedClock, SolvedI2cTiming, SolvedSpiController, SpiKernel};
 
-// belt-and-suspenders: `solve.rs` holds its own copy of these bounds, so an
-// error in one copy is a disagreement the rule finds, not a shared blind spot
-// (contract D1, amendment 1, `RUL-20`).
-/// HSI's worst-case deviations, ppm (DS12117 Rev 10 Table 36 rev Y = Table
-/// 133 rev V, rendered; the PM's sum, contract "Measured facts"). This
-/// module's own copy.
-const HSI_FAST_PPM: u64 = 14_984;
-const HSI_SLOW_PPM: u64 = 25_894;
-
-/// The fastest a kernel clock of `nominal_hz` can run: rounded up.
+/// The fastest a kernel clock of `nominal_hz` can run on the HSI, rounded up
+/// ([`Budget::HSI`]): every SPI kernel this engine selects is `hsi_ker_ck`.
 pub fn fast_hz(nominal_hz: u64) -> u64 {
-    let n = u128::from(nominal_hz) * u128::from(1_000_000 + HSI_FAST_PPM);
-    u64::try_from(n.div_ceil(1_000_000)).unwrap_or(u64::MAX)
+    Budget::HSI.fastest_hz(nominal_hz)
 }
 
-/// The slowest a kernel clock of `nominal_hz` can run: rounded down.
+/// The slowest a kernel clock of `nominal_hz` can run on the HSI, rounded
+/// down.
 pub fn slow_hz(nominal_hz: u64) -> u64 {
-    let n = u128::from(nominal_hz) * u128::from(1_000_000 - HSI_SLOW_PPM);
-    u64::try_from(n / 1_000_000).unwrap_or(u64::MAX)
+    Budget::HSI.slowest_hz(nominal_hz)
 }
 
 // ---------------------------------------------------------------- reset clock
@@ -563,9 +555,26 @@ pub fn i2c_limits(mode: &str) -> Option<&'static I2cLimits> {
 
 /// The rule for one `TIMINGR` word (`AET-WO-4230` §1.4, contract D3 and
 /// amendment 1): for `mode` on a nominal kernel clock `kernel_hz`, judged
-/// between [`fast_hz`] and [`slow_hz`] of it. `None` for an unknown mode.
+/// between [`fast_hz`] and [`slow_hz`] of it, the HSI's. `None` for an
+/// unknown mode.
 pub fn check_timingr(kernel_hz: u64, mode: &str, timingr: u32) -> Option<TimingFinding> {
-    judge_timingr(fast_hz(kernel_hz), slow_hz(kernel_hz), mode, timingr)
+    check_timingr_on(Budget::HSI, kernel_hz, mode, timingr)
+}
+
+/// [`check_timingr`] with the kernel clock's source deviating by `budget`
+/// (`AET-WO-4240a` §1.4).
+pub fn check_timingr_on(
+    budget: Budget,
+    kernel_hz: u64,
+    mode: &str,
+    timingr: u32,
+) -> Option<TimingFinding> {
+    judge_timingr(
+        budget.fastest_hz(kernel_hz),
+        budget.slowest_hz(kernel_hz),
+        mode,
+        timingr,
+    )
 }
 
 /// [`check_timingr`] with the kernel bounds given: a test can judge RM0433's
@@ -632,8 +641,16 @@ pub struct I2cFinding {
 }
 
 /// The rule for one I2C controller: its kernel clock, its `CR1` and every
-/// `TIMINGR` word.
+/// `TIMINGR` word, on the HSI. A caller holding the topology judges it on its
+/// own clock with [`check_i2c_on`]; the generator, which builds the HSI's
+/// tree only until `AET-WO-4240b`, calls this.
 pub fn check_i2c(peripheral: &str, t: &SolvedI2cTiming) -> I2cFinding {
+    check_i2c_on(Budget::HSI, peripheral, t)
+}
+
+/// [`check_i2c`] with the kernel clock's source deviating by `budget`
+/// (`AET-WO-4240a` §1.4): [`SolvedClock::budget`] of the topology's clock.
+pub fn check_i2c_on(budget: Budget, peripheral: &str, t: &SolvedI2cTiming) -> I2cFinding {
     let kernel_ok = i2c_kernel_hz(peripheral) == Some(t.kernel_hz);
     let cr1_ok = t.cr1 == i2c_cr1();
     let modes_ok = t.timingr.len() == I2C_LIMITS.len()
@@ -641,7 +658,7 @@ pub fn check_i2c(peripheral: &str, t: &SolvedI2cTiming) -> I2cFinding {
     let timingr: Vec<TimingFinding> = t
         .timingr
         .iter()
-        .filter_map(|(mode, word)| check_timingr(t.kernel_hz, mode, *word))
+        .filter_map(|(mode, word)| check_timingr_on(budget, t.kernel_hz, mode, *word))
         .collect();
     let words_ok = timingr.len() == t.timingr.len() && timingr.iter().all(|f| f.holds);
     I2cFinding {
