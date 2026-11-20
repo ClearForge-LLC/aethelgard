@@ -91,7 +91,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// 18 by the same rule, merging after `2304b`), the board's supply
 /// configuration with its source, and a declared foreign clock's `vos`;
 /// nothing supplies either for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 19;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";

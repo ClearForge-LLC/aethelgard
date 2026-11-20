@@ -189,7 +189,8 @@ fn refuses_unsupported_schema_version() {
         16,
         17,
         18,
-        20,
+        19,
+        21,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
