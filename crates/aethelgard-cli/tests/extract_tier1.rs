@@ -900,3 +900,110 @@ fn a_board_without_test_points_states_no_probe() {
         "{reference}"
     );
 }
+
+/// Sentinel-03's `fab_tolerances` block (cited, JLCPCB), the one the
+/// capacitance ladder needs (`AET-WO-1314`).
+const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+
+/// The reference with Sentinel-03's `fab_tolerances` copied in.
+fn with_tolerances(v: &mut Value) {
+    let s03: Value = serde_json::from_str(&fs::read_to_string(root().join(S03)).unwrap()).unwrap();
+    v["board"]["stackup"]["fab_tolerances"] = s03["board"]["stackup"]["fab_tolerances"].clone();
+}
+
+/// The one `capacitance_over_declared_bound` finding of `v`, which must
+/// have exactly one finding.
+fn over(v: &Value) -> &Value {
+    let findings = v["findings"].as_array().unwrap();
+    assert_eq!(findings.len(), 1, "{v}");
+    assert_eq!(
+        findings[0]["kind"], "capacitance_over_declared_bound",
+        "{v}"
+    );
+    &findings[0]
+}
+
+/// `AET-WO-1314b` §1.4: the reference declares no `fab_tolerances`, so it is
+/// routed once, with no ladder; a bound that routing misses names the field
+/// that would turn the ladder on, beside the message, which is unchanged.
+#[test]
+fn a_bound_missed_with_no_ladder_names_the_field_that_runs_it() {
+    let spec = spec_with("unruled", |v| {
+        for c in v["net_constraints"].as_array_mut().unwrap() {
+            if c["net_name"] == "SPI_SCK" {
+                c["max_capacitance_femtofarads"] = 16_497.into();
+            }
+        }
+    });
+    let (code, v) = extract("unruled", reference(), spec.to_str().unwrap());
+    fs::remove_file(&spec).unwrap();
+    assert_eq!(code, 1, "{v}");
+    let f = over(&v);
+    assert_eq!(
+        f["message"],
+        "`SPI_SCK`: bound 16498 fF (trace 3897, vias 3038, pads 1563, pins 8000) exceeds the declared 16497 fF",
+        "{v}"
+    );
+    assert_eq!(
+        f["cause"],
+        "the router's capacitance ladder runs only when `board.stackup.fab_tolerances` is declared, and this specification declares none, so its lines were routed once with no regard to their bounds",
+        "{v}"
+    );
+    // a passing reference states no cause anywhere
+    let (code, v) = extract("unruled-pass", reference(), SPEC);
+    assert_eq!(code, 0, "{v}");
+    assert!(!v.to_string().contains("\"cause\""), "{v}");
+}
+
+/// `AET-WO-1314b` §1.4 and §5 (1): the same reference with `fab_tolerances`
+/// declared is routed by the ladder, so no finding states the cause, whether
+/// the board passes or a bound tightened below the ladder's own figure fails.
+#[test]
+fn a_bound_missed_where_the_ladder_ran_states_no_cause() {
+    let spec = spec_with("ruled", with_tolerances);
+    let dir = scratch("ruled-board");
+    let (code, e) = run(&[
+        "emit",
+        "--file",
+        spec.to_str().unwrap(),
+        "--out",
+        dir.to_str().unwrap(),
+    ]);
+    assert_eq!(code, 0, "{e}");
+    assert!(
+        e["capacitance_ladder"]["rung"].is_u64(),
+        "the ladder ran: {e}"
+    );
+    let board = fs::read_to_string(e["board"]["path"].as_str().unwrap()).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+    let (code, v) = extract("ruled-pass", &board, spec.to_str().unwrap());
+    fs::remove_file(&spec).unwrap();
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(v["findings"], Value::Array(vec![]), "{v}");
+    let sck = v["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|l| l["net"] == "SPI_SCK")
+        .unwrap()["c_bound_femtofarads"]
+        .as_u64()
+        .unwrap();
+    // one femtofarad under the ladder's board's own figure: it fails
+    let spec = spec_with("ruled-under", |v| {
+        with_tolerances(v);
+        for c in v["net_constraints"].as_array_mut().unwrap() {
+            if c["net_name"] == "SPI_SCK" {
+                c["max_capacitance_femtofarads"] = (sck - 1).into();
+            }
+        }
+    });
+    let (code, v) = extract("ruled-under", &board, spec.to_str().unwrap());
+    fs::remove_file(&spec).unwrap();
+    assert_eq!(code, 1, "{v}");
+    let f = over(&v);
+    assert!(
+        f["message"].as_str().unwrap().starts_with("`SPI_SCK`: "),
+        "{v}"
+    );
+    assert!(f.get("cause").is_none(), "{v}");
+}

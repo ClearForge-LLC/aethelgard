@@ -854,6 +854,15 @@ struct Placed {
     outline: crate::pcb::Rect,
 }
 
+/// Whether [`emit`] routes `spec` by the capacitance ladder (`AET-WO-1314b`):
+/// read from the specification alone, as [`place`] decides it (`ruled` is
+/// [`crate::stack::RingRule::of`]`(spec)` being `Some`), never from a board.
+/// Refused with the field a declared `fab_tolerances` block lacks, as
+/// [`place`] refuses it.
+pub fn ladder_runs(spec: &Specification) -> Result<bool, &'static str> {
+    Ok(crate::stack::RingRule::of(spec)?.is_some())
+}
+
 /// Validates, designs and places, refusing by name as [`emit`] does: the
 /// specification, the via ring rule's inputs and classes
 /// (`FabToleranceUndeclared`, `ViaRingUnheld`), the declared outline
@@ -1113,8 +1122,12 @@ pub fn bound_holds(
 /// The decoupling capacitance the emitter places on each rail, in pF, keyed
 /// by domain: every part `design` marks as decoupling an IC, summed by the
 /// rail it connects (`AET-WO-2301`, ruled D7: a droop's rail is computed with
-/// the decoupling the board will carry, not a restated value). A value the
-/// emitter writes that this cannot read is an error, never a guess.
+/// the decoupling the board will carry, not a restated value), and every
+/// regulator output capacitor it draws, at the capacitance IR's static
+/// checks credit it, never parsed from its value string (`AET-WO-2304b` F3,
+/// `aethelgard_ir::power::output_capacitance`). A value the emitter writes
+/// that this cannot read is an error, never a guess; so is a declared output
+/// capacitor the board does not carry on its domain.
 pub fn decoupling_picofarads(
     spec: &Specification,
     solved: &SolvedTopology,
@@ -1122,10 +1135,29 @@ pub fn decoupling_picofarads(
 ) -> Result<BTreeMap<String, u64>, EmitError> {
     let (parts, _) = design(spec, solved, table)?;
     let mut out: BTreeMap<String, u64> = BTreeMap::new();
-    for p in parts
-        .iter()
-        .filter(|p| p.owner.as_ref().is_some_and(|o| o.decouples))
-    {
+    let outputs =
+        aethelgard_ir::power::output_capacitance(spec).map_err(EmitError::InvalidSpecification)?;
+    for (reference, c) in &outputs {
+        let drawn = parts.iter().any(|p| {
+            p.reference == *reference
+                && p.conns
+                    .values()
+                    .any(|n| matches!(n, Conn::Rail(r) if *r == c.domain))
+        });
+        if !drawn {
+            return Err(EmitError::Internal(format!(
+                "{reference}, an output capacitor of `{}`, is not drawn on that rail",
+                c.domain
+            )));
+        }
+        let sum = out.entry(c.domain.clone()).or_default();
+        *sum = sum.checked_add(c.picofarads).ok_or_else(|| {
+            EmitError::Internal(format!("rail `{}`'s decoupling overflows", c.domain))
+        })?;
+    }
+    for p in parts.iter().filter(|p| {
+        p.owner.as_ref().is_some_and(|o| o.decouples) && !outputs.contains_key(&p.reference)
+    }) {
         let pf = picofarads(&p.value).ok_or_else(|| {
             EmitError::Internal(format!(
                 "{}'s value `{}` is not a capacitance this reads",

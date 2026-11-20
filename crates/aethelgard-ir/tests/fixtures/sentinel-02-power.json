@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -350,7 +350,8 @@
       "cell_max_millivolts": {
         "value": 4350,
         "source": "LiHV full charge (AET-WO-4300d spike P1.2)"
-      }
+      },
+      "series_milliohms": {"value": 1, "source": "J1 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"}
     },
     "regulators": [
       {

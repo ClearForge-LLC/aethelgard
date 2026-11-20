@@ -75,8 +75,9 @@ pub struct PwmTiming {
 }
 
 /// One declared motor output. Every key is required (`INV-06`): `pin` is
-/// `null` for the solver to choose, and `pwm` is `null` exactly when the
-/// protocol is DShot.
+/// `null` for the solver to choose, `pwm` is `null` exactly when the
+/// protocol is DShot, and `esc` is `null` when the output's ESC is
+/// undeclared (specification 18, `AET-WO-2304b` §1.2).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct MotorOutput {
@@ -87,6 +88,56 @@ pub struct MotorOutput {
     pub protocol: MotorProtocol,
     #[serde(deserialize_with = "Option::deserialize")]
     pub pwm: Option<PwmTiming>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub esc: Option<Esc>,
+}
+
+/// What an output's ESC is (`AET-WO-2304` D2, `2304b` §1.2): today only
+/// `none`, an output that drives no ESC fed through the board, with its
+/// source. `AET-WO-4500` adds a part beside it. A battery sag on a board
+/// whose output declares neither halts by name (`EscUndeclared`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum Esc {
+    #[serde(rename = "none")]
+    NoEsc(NoEsc),
+}
+
+/// Exactly one key, a variant's name: an empty object is refused as the
+/// missing `none` (the one variant today), never read as a default, and a
+/// second key or an unknown one is refused (`INV-06`).
+impl<'de> Deserialize<'de> for Esc {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct EscVisitor;
+        impl<'de> Visitor<'de> for EscVisitor {
+            type Value = Esc;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("an Esc object with one key, `none`")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Esc, A::Error> {
+                let Some(key) = map.next_key::<String>()? else {
+                    return Err(serde::de::Error::missing_field("none"));
+                };
+                let esc = match key.as_str() {
+                    "none" => Esc::NoEsc(map.next_value()?),
+                    other => return Err(serde::de::Error::unknown_variant(other, &["none"])),
+                };
+                if map.next_key::<String>()?.is_some() {
+                    return Err(serde::de::Error::custom(
+                        "an Esc object holds exactly one key",
+                    ));
+                }
+                Ok(esc)
+            }
+        }
+        deserializer.deserialize_map(EscVisitor)
+    }
+}
+
+/// An output with no ESC on the board's path, and why that is so.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct NoEsc {
+    pub source: String,
 }
 
 /// The clock tree the generated firmware runs on, as a solved fact
@@ -522,6 +573,7 @@ pub struct SolvedMotorOutput {
 crate::object_only!(
     PwmTiming,
     MotorOutput,
+    NoEsc,
     SolvedClock,
     SolvedMotorOutput,
     ForeignClock,
