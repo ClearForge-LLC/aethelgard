@@ -92,7 +92,12 @@ Run twice: before the reduction pass, and after it changed `ledger_tier1`.
 
 ## 6. Gates
 
-GATES-FINAL
+On the merged head `94394f68` (this branch with `main` `349c75f5` merged in; the merge brought docs only, including this work order, byte-identical to `~/.cache/aet-2307-wo.md`) [measured, log `~/.cache/aet-2307/gates-merged.log`]:
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- `cargo test --workspace`: **2564 passed, 0 failed, 0 ignored**, 151 test binaries. Every refusal test of the workspace is among them.
+- The tests must run with the in-repo `target/`. With `CARGO_TARGET_DIR` outside the repository, `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` fails as `BaseOutsideRoot`, because its scratch sits under the target directory. That is environmental, and CI uses the in-repo target.
 
 - **Reduction pass (diff):** −12 lines net in tests · 1 duplicate removed (my `every_pair_unwritten` grouping re-derived what `every_row_acknowledged` in the same file already does; the test now sorts and empties that helper's output) · 0 dead paths · 0 protected kept · 1 finding (F4). Done inline: the production diff is about 50 lines. Mutants re-run after it, all killed.
 
