@@ -216,10 +216,14 @@ fn digests() -> Vec<(&'static str, String)> {
 /// after every modelled read and before the boot word, and the boot image
 /// gains U3's record, placed after every check's; the two platforms did not
 /// move (measured).
+/// Then moved by `AET-WO-4240b`: at its base (`2411fa02`, specification 22,
+/// version line only) `main.rs` is `424d86d2…d26d`; `4240v` F2 then passes the
+/// `Scale2` token to every clock enable, and `main.rs` moves by those calls
+/// alone (measured); the platforms and the boot image do not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "a95a1bb6d934584cc62bea46c3d8cf6a1e0c79565b69884486351dae9d77f918",
+        "a6265034cb65aeda040b2abaa65bb64896327b9476be6cc1886d37a0f4891076",
     ),
     (
         "platform",

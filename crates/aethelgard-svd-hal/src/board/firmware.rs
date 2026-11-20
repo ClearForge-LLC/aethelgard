@@ -805,7 +805,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          }}\n        \
          }}\n    \
          }};\n",
-        bind = if plan.needs_clock() {
+        bind = if plan.needs_clock() || !plan.ports.is_empty() {
             "scale2"
         } else {
             "_scale2"
@@ -837,7 +837,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         let f = port_field(*port);
         let _ = writeln!(
             s,
-            "    let {f} = rcc.enable_{f}(&mut r, {f}).split(&mut r);"
+            "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2).split(&mut r);"
         );
     }
     for name in plan.peripherals.keys() {
@@ -847,14 +847,17 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         } else {
             ""
         };
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}{k});");
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2{k});");
     }
     for n in plan.timers.keys() {
-        let _ = writeln!(s, "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n});");
+        let _ = writeln!(
+            s,
+            "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n}, scale2);"
+        );
     }
     for name in plan.serials.keys() {
         let f = name.to_ascii_lowercase();
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2);");
     }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);

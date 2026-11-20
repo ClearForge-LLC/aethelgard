@@ -2640,8 +2640,10 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     }
     w.push_str(
         "/// The core at VOS Scale 2 on the declared supply configuration (`AET-WO-4240v`\n\
-         /// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] takes it, so\n\
-         /// no clock-tree read, kernel selection or peripheral start precedes it.\n\
+         /// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] and every clock\n\
+         /// enable take it, so no clock-tree read, kernel selection, clock enable or\n\
+         /// peripheral start precedes it (`AET-WO-4240v` F2).\n\
+         #[derive(Clone, Copy)]\n\
          pub struct Scale2 {\n    \
              _private: (),\n\
          }\n\
@@ -3138,7 +3140,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "    /// `RCC_{reg}` bit {bit}. Then the register read back, so the write is not\n\
              {doc}\n    \
              {kernels_doc}\
-             pub fn enable_{field}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>{kernels}) -> {t}<Clocked> {{\n        \
+             pub fn enable_{field}<R: Registers>(&mut self, r: &mut R, _gated: {t}<Gated>, _scale2: Scale2{kernels}) -> {t}<Clocked> {{\n        \
                  r.modify(TOKEN, Block::Rcc, {off:#05x}, |v| v | {mask:#010x});\n        \
                  let _ = r.read(TOKEN, Block::Rcc, {off:#05x});{read}\n        \
                  {t} {{ _state: PhantomData }}\n    \
@@ -5417,7 +5419,7 @@ fn emit_schedule(
          let scale2 = board.pwr.scale2(&mut img, 1);\n    \
          kani::assume(scale2.is_ok());\n    \
          let {bind} = scale2.unwrap();",
-        bind = if acts.contains(&Action::ResetClock) {
+        bind = if !acts.is_empty() {
             "scale2"
         } else {
             "_scale2"
@@ -5500,7 +5502,7 @@ fn emit_schedule(
         running(w, a);
         let _ = writeln!(
             w,
-            "                let {bind} = rcc.enable_{f}(&mut img, {f}.take().unwrap()).split(&mut img);",
+            "                let {bind} = rcc.enable_{f}(&mut img, {f}.take().unwrap(), scale2).split(&mut img);",
             bind = if pins.is_empty() { "_pins" } else { "pins" },
         );
         for p in &pins {
@@ -5529,7 +5531,7 @@ fn emit_schedule(
         running(w, a);
         let _ = writeln!(
             w,
-            "                {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap(){kernels}));\n            \
+            "                {f}_clocked = Some(rcc.enable_{f}(&mut img, {f}.take().unwrap(), scale2{kernels}));\n            \
              }}"
         );
         a += 1;
@@ -5744,7 +5746,7 @@ fn emit_schedule(
         running(w, a);
         let _ = writeln!(
             w,
-            "                tim{n}_clocked = Some(rcc.enable_tim{n}(&mut img, tim{n}.take().unwrap()));\n            \
+            "                tim{n}_clocked = Some(rcc.enable_tim{n}(&mut img, tim{n}.take().unwrap(), scale2));\n            \
              }}"
         );
         a += 1;
@@ -5989,7 +5991,7 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
                  let clock = rcc.reset_clock(&mut img, &scale2);\n    \
                  kani::assume(clock.is_ok());\n    \
                  let clock = clock.unwrap();\n    \
-                 let tim = rcc.enable_tim{n}(&mut img, board.tim{n});\n    \
+                 let tim = rcc.enable_tim{n}(&mut img, board.tim{n}, scale2);\n    \
                  let mut spy = Tim{n}Spy {{ writes: [(Block::Rcc, 0, 0); {count}], n: 0 }};\n    \
                  let _running = tim.start_outputs(&mut spy, &clock, {args});\n    \
                  kani::assert(spy.n == {count}, \"TIM{n}'s start did not make exactly {count} writes\");\n\
@@ -6027,7 +6029,7 @@ fn harness_setup(plan: &Plan, pins: &[&String]) -> String {
         let f = port_field(*port);
         let _ = writeln!(
             setup,
-            "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split(&mut img);"
+            "    let {f} = rcc.enable_{f}(&mut img, board.{f}, scale2).split(&mut img);"
         );
     }
     for pin in pins {
@@ -6094,7 +6096,7 @@ fn emit_usart_proof(
         let pf = port_field(*port);
         let _ = writeln!(
             body,
-            "    let {pf} = rcc.enable_{pf}(&mut spy, board.{pf}).split(&mut spy);"
+            "    let {pf} = rcc.enable_{pf}(&mut spy, board.{pf}, scale2).split(&mut spy);"
         );
     }
     for pin in pins {
@@ -6111,7 +6113,7 @@ fn emit_usart_proof(
         "    let clock = rcc.reset_clock(&mut spy, &scale2);\n    \
          kani::assume(clock.is_ok());\n    \
          let clock = clock.unwrap();\n    \
-         let usart = rcc.enable_{f}(&mut spy, board.{f});\n    \
+         let usart = rcc.enable_{f}(&mut spy, board.{f}, scale2);\n    \
          let _port = usart.configure(&mut spy, &clock, {tx}, {rx});\n    \
          kani::assert(spy.n == {count}, \"{name}'s bring-up did not write it exactly {count} times\");",
         tx = pin_field(&sp.tx),
@@ -6480,7 +6482,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             let f = port_field(*port);
             let _ = writeln!(
                 setup,
-                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split(&mut img);"
+                "    let {f} = rcc.enable_{f}(&mut img, board.{f}, scale2).split(&mut img);"
             );
         }
         for pin in pins.iter().chain(&select_pins) {
@@ -6502,7 +6504,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             setup,
             "    let kernels = rcc.select_spi_kernels(&mut img, &clock);\n    \
              let mut bus = rcc\n        \
-                 .enable_{m}(&mut img, board.{m}, &kernels)\n        \
+                 .enable_{m}(&mut img, board.{m}, scale2, &kernels)\n        \
                  .init(&mut img, &clock, {args}, {t}Selects {{ {fields} }});\n    \
              let devices = [{variants}];\n    \
              let pick: usize = kani::any();\n    \
@@ -6768,7 +6770,7 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
             let f = port_field(*port);
             let _ = writeln!(
                 w,
-                "    let {f} = rcc.enable_{f}(&mut img, board.{f}).split(&mut img);"
+                "    let {f} = rcc.enable_{f}(&mut img, board.{f}, scale2).split(&mut img);"
             );
         }
         for pin in p.pins.values() {
@@ -6783,7 +6785,7 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
         let _ = writeln!(
             w,
             "    let mut bus = rcc\n        \
-                 .enable_{m}(&mut img, board.{m})\n        \
+                 .enable_{m}(&mut img, board.{m}, scale2)\n        \
                  .init::<{m}_speed::{mode}, _>(&mut img, &clock, {args});\n    \
              let mut spy = {t}Spy {{ stage: 0, isr_reads: 0, bytes_written: 0 }};\n    \
              let (wl, rl): (usize, usize) = (kani::any(), kani::any());\n    \
@@ -8234,8 +8236,8 @@ mod tests {
         assert_eq!(BTreeSet::from(words).len(), 4);
     }
 
-    /// A plan that reads no clock still runs the sequence first, and binds the
-    /// token it never uses (`AET-WO-4240v` §1.4: every firmware).
+    /// A plan that reads no clock still runs the sequence first (`AET-WO-4240v`
+    /// §1.4: every firmware), and its port enables take the token (`4240v` F2).
     #[test]
     fn a_board_without_a_clock_still_runs_the_sequence_first() {
         let s = gpio_only();
@@ -8244,7 +8246,7 @@ mod tests {
         let files = generate("b", &s, &table()).unwrap();
         let main = &files["firmware/src/main.rs"];
         let seq = main
-            .find("    let _scale2 = match pwr.scale2(&mut r, PWR_POLLS) {\n")
+            .find("    let scale2 = match pwr.scale2(&mut r, PWR_POLLS) {\n")
             .unwrap_or_else(|| panic!("{main}"));
         assert!(seq < main.find("flash.option_status(").unwrap());
         assert!(seq < main.find("rcc.enable_").unwrap());
@@ -8255,7 +8257,7 @@ mod tests {
         // Its proofs: the PWR harness, and the schedule's first step on the image.
         let proofs = &files["src/proofs.rs"];
         assert!(proofs.contains("fn pwr_scale2_is_once_in_order_and_bounded()"));
-        assert!(proofs.contains("    let _scale2 = scale2.unwrap();\n"));
+        assert!(proofs.contains("    let scale2 = scale2.unwrap();\n"));
         assert!(!proofs.contains("fn scale2_token("));
     }
 

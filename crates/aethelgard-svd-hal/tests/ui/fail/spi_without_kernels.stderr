@@ -1,15 +1,15 @@
-error[E0061]: this method takes 3 arguments but 2 arguments were supplied
+error[E0061]: this method takes 4 arguments but 3 arguments were supplied
   --> tests/ui/fail/spi_without_kernels.rs:13:20
    |
-13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1);
-   |                    ^^^^^^^^^^^-------------------- argument #3 of type `&SpiKernels` is missing
+13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, scale2);
+   |                    ^^^^^^^^^^^---------------------------- argument #4 of type `&SpiKernels` is missing
    |
 note: method defined here
   --> $WORKSPACE/boards/sentinel-01/src/board.rs
    |
-   |     pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _kernels: &SpiKernels) -> Spi1<Clocked> {
+   |     pub fn enable_spi1<R: Registers>(&mut self, r: &mut R, _gated: Spi1<Gated>, _scale2: Scale2, _kernels: &SpiKernels) -> Spi1<Clo...
    |            ^^^^^^^^^^^
 help: provide the argument
    |
-13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, /* &SpiKernels */);
-   |                                                  +++++++++++++++++++
+13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, scale2, /* &SpiKernels */);
+   |                                                          +++++++++++++++++++
