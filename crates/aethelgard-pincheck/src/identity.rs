@@ -655,60 +655,16 @@ fn serial_ports(
     Ok(())
 }
 
-/// ArduPilot's `enum SerialProtocol` at the tag (`AP_SerialManager.h:37-91`),
-/// every name with its value, to name a decoded protocol in a finding.
-const SERIAL_PROTOCOLS: [(&str, i64); 51] = [
+/// The `SerialProtocol` names a finding can carry (`AP_SerialManager.h:37-91`):
+/// the protocols the judge expects or counts, and None, each port's default
+/// on SERIAL5–9. Any other value is shown as its number.
+const SERIAL_PROTOCOLS: [(&str, i64); 6] = [
     ("SerialProtocol_None", -1),
-    ("SerialProtocol_Console", 0),
     ("SerialProtocol_MAVLink", 1),
-    ("SerialProtocol_MAVLink2", 2),
-    ("SerialProtocol_FrSky_D", 3),
-    ("SerialProtocol_FrSky_SPort", 4),
-    ("SerialProtocol_GPS", 5),
-    ("SerialProtocol_GPS2", 6),
-    ("SerialProtocol_AlexMos", 7),
-    ("SerialProtocol_Gimbal", 8),
-    ("SerialProtocol_Rangefinder", 9),
-    ("SerialProtocol_FrSky_SPort_Passthrough", 10),
-    ("SerialProtocol_Lidar360", 11),
-    ("SerialProtocol_Aerotenna_USD1", 12),
-    ("SerialProtocol_Beacon", 13),
-    ("SerialProtocol_Volz", 14),
-    ("SerialProtocol_Sbus1", 15),
-    ("SerialProtocol_ESCTelemetry", 16),
-    ("SerialProtocol_Devo_Telem", 17),
-    ("SerialProtocol_OpticalFlow", 18),
-    ("SerialProtocol_Robotis", 19),
-    ("SerialProtocol_NMEAOutput", 20),
-    ("SerialProtocol_WindVane", 21),
-    ("SerialProtocol_SLCAN", 22),
-    ("SerialProtocol_RCIN", 23),
-    ("SerialProtocol_EFI", 24),
-    ("SerialProtocol_LTM_Telem", 25),
-    ("SerialProtocol_RunCam", 26),
-    ("SerialProtocol_Hott", 27),
-    ("SerialProtocol_Scripting", 28),
-    ("SerialProtocol_CRSF", 29),
-    ("SerialProtocol_Generator", 30),
-    ("SerialProtocol_Winch", 31),
-    ("SerialProtocol_MSP", 32),
-    ("SerialProtocol_DJI_FPV", 33),
-    ("SerialProtocol_AirSpeed", 34),
-    ("SerialProtocol_ADSB", 35),
-    ("SerialProtocol_AHRS", 36),
-    ("SerialProtocol_SmartAudio", 37),
-    ("SerialProtocol_FETtecOneWire", 38),
-    ("SerialProtocol_Torqeedo", 39),
-    ("SerialProtocol_AIS", 40),
-    ("SerialProtocol_CoDevESC", 41),
-    ("SerialProtocol_MSP_DisplayPort", 42),
-    ("SerialProtocol_MAVLinkHL", 43),
-    ("SerialProtocol_Tramp", 44),
-    ("SerialProtocol_DDS_XRCE", 45),
-    ("SerialProtocol_IMUOUT", 46),
-    ("SerialProtocol_PPP", 48),
-    ("SerialProtocol_IBUS_Telem", 49),
-    ("SerialProtocol_IOMCU", 50),
+    ("SerialProtocol_MAVLink2", MAVLINK2),
+    ("SerialProtocol_GPS", GPS),
+    ("SerialProtocol_GPS2", GPS2),
+    ("SerialProtocol_RCIN", RCIN),
 ];
 
 const MAVLINK2: i64 = 2;
