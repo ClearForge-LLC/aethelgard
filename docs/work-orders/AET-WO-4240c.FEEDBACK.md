@@ -205,11 +205,12 @@ A fresh subagent proposed the cuts, reading only; the builder ruled on each and 
   - `cargo test --workspace --no-fail-fast`: **2,469 passed, 1 failed**. The failure is `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named`, which fails only with the target directory outside the repository (§7 F6). Run with `CARGO_TARGET_DIR` inside the repository, as CI runs it, it passes.
 - **Mutants:** 18; 16 killed, 2 equivalent (§6) [`~/.cache/aet-4240c/mutants-4.log`].
 - **Tier 2:** no tier-2 test was added, so `TIER2_MIN` does not move. The crystal fixture's KiCad checks were run in the tools image by hand (§2.2) because the CLI's `emit` refuses it until `4240b`.
-- **CI:** on the PR; its run ids are in §10 at READY.
+- **Local again after merging `main` `25203c58`** (`~/.cache/aet-4240c/gates-test-5.log`): fmt and clippy 0; **2,556 passed, 1 failed**, the same `fab_tier1` artefact.
+- **CI on `0846b617`** (PR #295): green, 33 checks passed and 3 skipped. Runs: `ci` 44790633389, `ardupilot-image` 44790633466, `engine-image` 44790633611.
 - Reduction pass (diff): −122 net · 4 duplicates removed · 1 dead path removed · 2 protected kept · 0 findings (§8).
 
 ## §10 State at READY
 
-- Head: the READY commit. `main` `25203c58` (1210, 1912, the work order, 1211a) is merged in. The one conflict, `EmitError`'s new variants beside 1211a's `PinDeviceNotDrawn`, keeps all three. The null corpus was re-baselined against it: emit 72 files and `extract` 24 boards identical; 31 specifications (24 emit, 7 refuse on both).
+- **READY.** Head: this READY commit, FEEDBACK only, on CI-green `0846b617`. `main` `25203c58` (1210, 1912, the work order, 1211a) is merged in. The one conflict, `EmitError`'s new variants beside 1211a's `PinDeviceNotDrawn`, keeps all three. The null corpus was re-baselined against it: emit 72 files and `extract` 24 boards identical; 31 specifications (24 emit, 7 refuse on both).
 - `4240b` (generator, twin, the CLI's `HseNotGenerated` lift) is not on `main` yet. Merge order: whichever lands second takes the other. `4240b`'s `mcu.hse` gains `startup_max_us`/`startup_source` (specification 22), so `hse_eda_tier1`'s fixture builder takes those fields then.
 - The architect merges; the builder never does.
