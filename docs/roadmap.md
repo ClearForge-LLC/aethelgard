@@ -467,8 +467,13 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
     - Its `--fab-out` stops at the 280 unacknowledged rows, as ruled.
   - **`AET-WO-1314b` merged** (#265, `3341dc6`): `extract` names `fab_tolerances` as the `cause` of a missed bound when no ladder ran. No committed board or passing `extract` line moved.
   - **`AET-WO-1209` merged** (#253, `2fda6e1`): a `power.loads` reference must name a part the board has. The IR's `validate` refuses `LoadNamesNoPart`, and the CLI's `validate` refuses `LoadNamesUndrawnPart` against the emitter's drawn set. Rules 1 and 3 are deferred to a "draws no board" declaration.
+  - **`AET-WO-3305` merged** (#256, `416a6dd`): the twin hooks each I2C step's status word and gives each "Unknown slave" line to its own step (trace 16). A fault on a two-device bus is detected by its named mechanism, and the wrong-address evidence still fires. Of 44 runs, 41 are byte-identical; the 3 that moved are explained. `TIER2_MIN` 194. F-COLLIDE stays a §7.1 row.
   - **`AET-WO-2305`** (written 2026-11-20; a build with one measured stop): a brown-out's recovery is judged by the boot the twin ran, not by a fixed 100 µs instant, and a non-crossing droop no longer covers the MCU rail. Before `4500`'s droop.
   - **`AET-WO-2306`** (written 2026-11-20; a build): a gate that judged nothing says so (`nothing_in_scope`, `judged_nothing`), for P4's second-board clause.
+  - **`AET-WO-2305` stopped and was ruled** (2026-11-20). Measured: the twin's settle is 1.9488 × declared on every board, the release phase spread is 0, and the undisturbed boot equals the recovered one to the instruction.
+    - Ruled in: a baseline boot inside the droop scenario's own simulate, one new archived record, trace 17, and a margin of one quantum (100 µs).
+    - Sentinel-03 gains a BOR-crossing droop scenario, so its MCU rail's coverage is honest.
+  - **`AET-WO-1209b`** (written 2026-11-20; a build): the CLI's `validate` refuses a power load whose drawn part has no pin on the load's rail (`LoadPartOffRail`). This catches the R8-to-BOOT0 case; R7's re-pointing stays the stable-reference row.
   - **`AET-WO-1910` merged** (#233, `47ec18f`): CI's second reduction pass. `gates` went from 38–66 min to 14–18 min, and the suite dropped 19 % over three counted runs. Every guarded failure is kept, with eight shards. The planner now refuses a stale weight row and a heavy unweighted test.
   - **`AET-WO-1911`** running: docs-only routing, one shared build, and the shard count measured.
   - **`AET-WO-4240` stopped and was ruled** (#240, merged as the record; comment 7014986899):
