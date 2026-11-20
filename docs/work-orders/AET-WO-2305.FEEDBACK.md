@@ -105,6 +105,11 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - its witness holds the device's later steps where it has them;
   - kind 14 loses `brownout_unrecovered`.
 - **So the Sentinel-01 bench package's `MANIFEST.json` moves** (the verdict's trace hashes). It joins the queue after 4240v. It is not hand-edited.
+- **Measured, CI's bench-package step run locally** (`verify --against-fab fab/sentinel-01-bench/package`, the pinned image, 16 GiB, 139 s, peak 3.34 GB):
+  - every gate passes;
+  - all five bench scenarios match (`droop-bor3`: pass);
+  - every fab precondition is met;
+  - the one difference is `"MANIFEST.json differs from the derived file"`. **No other file of the package moves.**
 
 ## §1.3, §1.4 The witness and coverage
 
