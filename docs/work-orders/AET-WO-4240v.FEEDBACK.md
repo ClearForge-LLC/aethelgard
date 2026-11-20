@@ -453,5 +453,6 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
 - **After the reserved-bit rows** (`6102b12b`), all of `twin_tier2` in the image: **87 of 87 passed.** Its completeness check reads 75 CPU writes rebuilt, 301 rows, 0 uncovered, 0 unknown.
 - **CI on #259:**
   - `9988b6f1`: every job passed but the package-bound three (`gates`' bench test, its tools shard, `bench-package`) and `twin_tier2`'s completeness test, fixed in `6102b12b` (§1.7);
-  - `6102b12b`: see the READY commit's run.
+  - `d4b4fe12` (`main` `03d89554` merged): every job passed but the package-bound three and `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes`. That test pinned eight `prove` gates, and the PWR harness is the ninth. It is now pinned by name, and passed locally in the image (263 s; weight row 434.3 s unchanged);
+  - the head after it: see the READY commit's run.
 - **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER

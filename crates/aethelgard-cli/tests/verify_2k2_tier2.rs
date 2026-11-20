@@ -162,7 +162,9 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             // `AET-WO-4300b` the console's: the reset clock check and
             // USART1's bring-up, generated for a board with a serial port;
             // since `AET-WO-4230` the brown-out word's one flash read; since
-            // `AET-WO-3303b` the scheduler in two parts, I2C1's and SPI1's.
+            // `AET-WO-3303b` the scheduler in two parts, I2C1's and SPI1's;
+            // since `AET-WO-4240v` the supply and VOS Scale 2 sequence.
+            ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
@@ -198,6 +200,7 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             "proofs::reset_clock_is_ok_exactly_at_reset",
             "proofs::usart1_start_writes_the_solved_values",
             "proofs::flash_option_status_is_one_read",
+            "proofs::pwr_scale2_is_once_in_order_and_bounded",
         ],
         "every harness of the generated crate is a prove gate"
     );
