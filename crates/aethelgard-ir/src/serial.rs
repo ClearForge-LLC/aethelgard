@@ -578,13 +578,11 @@ fn negotiated_error(
         )
 }
 
-/// The file the console rule cites: ArduPilot's
-/// `libraries/AP_SerialManager/AP_SerialManager.cpp` at `Copter-4.7.2`, the
-/// tag every ArduPilot image this repository pins carries (`RUL-21`).
-pub const SERIAL_MANAGER_SOURCE: &str = "ArduPilot libraries/AP_SerialManager/AP_SerialManager.cpp at Copter-4.7.2 (sha256 fe7cfce0…256d9b)";
-
-/// `AP_SerialManager::map_baudrate` ([`SERIAL_MANAGER_SOURCE`] `:737-770`): a
-/// `SERIALn_BAUD` parameter's value as the baud ArduPilot opens the port at.
+/// `AP_SerialManager::map_baudrate` (ArduPilot
+/// `libraries/AP_SerialManager/AP_SerialManager.cpp:737-770` at
+/// `Copter-4.7.2`, the tag this repository's ArduPilot image carries,
+/// `RUL-21`; sha256 `fe7cfce0…256d9b`): a `SERIALn_BAUD` parameter's value as
+/// the baud ArduPilot opens the port at.
 /// Transcribed line by line, with ArduPilot's own types (`int32_t` in,
 /// `uint32_t` out).
 // belt-and-suspenders: `aethelgard-hwdef` holds a copy to choose a define and
