@@ -1472,7 +1472,7 @@ fn ready(
         }
         _ => {}
     }
-    if let Err(err) = aethelgard_cli::generate::generable(&boot.topology) {
+    if let Err(err) = aethelgard_cli::generate::simulable(&boot.topology) {
         return Err(run::Stop {
             code: EXIT_INVALID_SPEC,
             kind: err.kind(),

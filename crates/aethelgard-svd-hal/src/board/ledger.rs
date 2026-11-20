@@ -268,14 +268,18 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             mask: field_mask(width, pos),
             value: value << pos,
         };
-        add(
-            "GPIO",
-            &inst,
-            "OSPEEDR",
-            "GPIO_OSPEEDR",
-            gp.ospeedr,
-            changed(sw, pf.ospeedr, ospeed),
-        );
+        // A GPIO input and an analog pin write their mode alone
+        // (`AET-WO-1211b`).
+        if !p.role.mode_only() {
+            add(
+                "GPIO",
+                &inst,
+                "OSPEEDR",
+                "GPIO_OSPEEDR",
+                gp.ospeedr,
+                changed(sw, pf.ospeedr, ospeed),
+            );
+        }
         if p.role == Role::Output {
             add(
                 "GPIO",
@@ -283,9 +287,9 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
                 "BSRR",
                 "GPIO_BSRR",
                 gp.bsrr,
-                whole(1u32 << pf.bs),
+                whole(p.level_bit(pf)),
             );
-        } else {
+        } else if !p.role.mode_only() {
             let (name, prefix) = if pf.afr_index == 0 {
                 ("AFRL", "GPIO_AFRL")
             } else {

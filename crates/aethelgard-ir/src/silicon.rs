@@ -791,8 +791,8 @@ pub fn motor_output_pupd() -> u32 {
 /// (`AET-WO-1211a`, `1211` Q9 as ruled): pull-up for `{"level": "high"}`,
 /// else [`motor_output_pupd`]'s pull-down (a low or pulsed idle, and DShot,
 /// whose `pwm` is `null`), so the pad before `start_outputs` never fights
-/// the idle. The generator writes [`motor_output_pupd`] alone until
-/// `AET-WO-1211b`, and `generate` refuses a `high` idle by name until then.
+/// the idle. The generator's own copy is `aethelgard-svd-hal`'s `motor_pull`
+/// (`AET-WO-1211b`).
 pub fn idle_pupd(idle: Option<&crate::motor::Idle>) -> u32 {
     match idle {
         Some(crate::motor::Idle::Level(crate::motor::Level::High)) => PUPDR_PULL_UP,
@@ -802,15 +802,22 @@ pub fn idle_pupd(idle: Option<&crate::motor::Idle>) -> u32 {
 
 /// The `PUPDR` field the solved topology implies for the pin of `net`
 /// (`AET-WO-4400b` D3): on a motor output the pull its idle implies
-/// ([`idle_pupd`], `AET-WO-1211a`), and no internal pull on every other pin. The
-/// specification declares no internal pull, and an I2C line's pull-up is
-/// external (`analog_lines[..].pull_up_ohms`). A pull a board needs is a
-/// declared fact, never a generator's default. The pinout check reads this;
-/// no generator calls it (`RUL-20`).
+/// ([`idle_pupd`], `AET-WO-1211a`); on a pin device's GPIO input its declared
+/// MCU pull (`AET-WO-1211b`); and no internal pull on every other pin. An
+/// I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`). A pull a
+/// board needs is a declared fact, never a generator's default. The pinout
+/// check and the board crate's proof oracle read this; no generator calls it
+/// (`RUL-20`).
 pub fn implied_pupd(t: &crate::SolvedTopology, net: &str) -> u32 {
-    match t.motor_outputs.get(net) {
-        Some(m) => idle_pupd(m.pwm.as_ref().map(|p| &p.idle)),
-        None => 0,
+    use crate::pin_devices::{Direction, McuPull};
+    match (t.motor_outputs.get(net), t.gpio.get(net)) {
+        (Some(m), _) => idle_pupd(m.pwm.as_ref().map(|p| &p.idle)),
+        (None, Some(g)) if g.direction == Direction::Input => match g.pull {
+            Some(McuPull::Up) => PUPDR_PULL_UP,
+            Some(McuPull::Down) => PUPDR_PULL_DOWN,
+            Some(McuPull::None) | None => 0,
+        },
+        _ => 0,
     }
 }
 

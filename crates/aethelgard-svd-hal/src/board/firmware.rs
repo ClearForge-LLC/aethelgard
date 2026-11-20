@@ -858,9 +858,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     for (pin, p) in &plan.pins {
         let f = pin_field(pin);
-        // An output no bus takes as a chip select is configured and unused.
+        // An output no bus takes as a chip select, and a pin device's input,
+        // is configured and unused (`AET-WO-1211b`).
         let (bind, port) = (
-            if p.role == Role::Output && !plan.is_select(pin) {
+            if (p.role == Role::Output && !plan.is_select(pin)) || p.role.mode_only() {
                 "_"
             } else {
                 ""

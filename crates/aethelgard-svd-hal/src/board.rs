@@ -30,6 +30,8 @@ use aethelgard_ir::vos::{self, CoreSupplyMode};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
     SolvedTopology, SpiKernel,
+    pin_devices::{Direction, McuPull},
+    motor::Level,
 };
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
@@ -134,12 +136,6 @@ pub enum BoardError {
         "the core supply is declared `bypass`: no board this engine emits draws an external VCORE, and under bypass the voltage scale is the external supply's, VOSRDY forced to 1 by hardware (RM0433 Rev 9 §6.8.6, p. 310; AET-WO-4240v D-1)"
     )]
     CoreSupplyNotGenerated,
-    /// `AET-WO-1211a`: the board emits no pin of a pin device (a GPIO input,
-    /// a wake line, an ADC input) until a work order builds it.
-    #[error(
-        "`{reference}` ({part}) is a pin device: this engine emits no board that drives or reads its pins (AET-WO-1211a)"
-    )]
-    PinDeviceNotGenerated { reference: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -175,7 +171,6 @@ impl BoardError {
             Self::SiliconRuleFails { .. } => "SiliconRuleFails",
             Self::VosRuleFails { .. } => "VosRuleFails",
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
-            Self::PinDeviceNotGenerated { .. } => "PinDeviceNotGenerated",
             Self::Register(e) => e.kind(),
         }
     }
@@ -859,11 +854,18 @@ enum Role {
     TimCh4,
     UsartTx,
     UsartRx,
+    /// A pin device's GPIO input (`AET-WO-1211b`): `MODER` `00`, its declared
+    /// pull.
+    Input,
+    /// A solved ADC input's pin (`AET-WO-1211b`): `MODER` `11`, no pull.
+    Analog,
 }
 
 /// MODER values (RM0433 §11.4.1).
+const MODE_INPUT: u32 = 0b00;
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
+const MODE_ANALOG: u32 = 0b11;
 
 /// `PUPDR` `10`, pull-down (RM0433 Rev 9 §11.4.4, p. 542), on every motor
 /// output: from reset until `start_outputs` the pin is first analog, then an
@@ -872,6 +874,32 @@ const MODE_AF: u32 = 0b10;
 /// `AET-WO-4230`). The generator's own copy; the oracle takes the rule's,
 /// `aethelgard_ir::silicon::motor_output_pupd`.
 const MOTOR_PULL: u32 = 0b10;
+
+/// `PUPDR` `01`, pull-up (RM0433 Rev 9 §11.4.4, p. 542), on a motor output
+/// whose declared idle is `{"level": "high"}` (`AET-WO-1211b`; `1211` Q9 as
+/// ruled: the pad's pull follows the idle, so it never fights it before
+/// `start_outputs`). The generator's own copy; the oracle takes the rule's,
+/// `aethelgard_ir::silicon::implied_pupd`.
+const MOTOR_PULL_HIGH: u32 = 0b01;
+
+/// The generator's `PUPDR` field for a motor output: [`MOTOR_PULL_HIGH`] for
+/// an idle `high`, else [`MOTOR_PULL`] (a low or pulsed idle, and DShot).
+fn motor_pull(m: &aethelgard_ir::SolvedMotorOutput) -> u32 {
+    match m.pwm.as_ref().map(|p| p.idle) {
+        Some(motor::Idle::Level(motor::Level::High)) => MOTOR_PULL_HIGH,
+        _ => MOTOR_PULL,
+    }
+}
+
+/// The generator's `PUPDR` field for a GPIO input's declared MCU pull
+/// (RM0433 Rev 9 §11.4.4, p. 542: `01` up, `10` down, `00` none).
+fn input_pull(pull: Option<McuPull>) -> u32 {
+    match pull {
+        Some(McuPull::Up) => 0b01,
+        Some(McuPull::Down) => 0b10,
+        Some(McuPull::None) | None => 0b00,
+    }
+}
 
 /// A port's `PUPDR` at reset (RM0433 Rev 9 §11.4.4, p. 542): `0x6400_0000`
 /// in port A (PA13 pull-up, PA14 pull-down, PA15 pull-up) and `0x0000_0100`
@@ -905,6 +933,8 @@ impl Role {
             Self::TimCh4 => "CH4",
             Self::UsartTx => "TX",
             Self::UsartRx => "RX",
+            Self::Input => "IN",
+            Self::Analog => "ANALOG",
         }
     }
 
@@ -933,6 +963,8 @@ impl Role {
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, MOTOR_PULL),
             Self::UsartTx | Self::UsartRx => (MODE_AF, 0, 0b00),
             Self::Output => (MODE_OUTPUT, 0, 0b00),
+            Self::Input => (MODE_INPUT, 0, 0b00),
+            Self::Analog => (MODE_ANALOG, 0, 0b00),
         }
     }
 
@@ -948,7 +980,15 @@ impl Role {
             Self::Output => Some(SOFTWARE_DRIVEN),
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => Some(MOTOR_OUTPUT),
             Self::UsartTx | Self::UsartRx => Some(SERIAL_LINE),
+            Self::Input => Some(GPIO_INPUT),
+            Self::Analog => Some(ANALOG_INPUT),
         }
+    }
+
+    /// A pin the firmware configures by `MODER` alone, with no alternate
+    /// function and no output level: a GPIO input or an analog pin.
+    fn mode_only(self) -> bool {
+        matches!(self, Self::Input | Self::Analog)
     }
 }
 
@@ -963,6 +1003,12 @@ pub const MOTOR_OUTPUT: &str = "motor output (a timer channel): it leaves the bo
 /// its declared baud and leaves the board at a connector, so the speed check
 /// (`AET-WO-4300c` D4) has no load for it, and it takes the slowest speed.
 pub const SERIAL_LINE: &str = "serial line (a USART TX or RX): peripheral-driven at its declared baud; it leaves the board, so the check has no off-board load for it";
+/// A pin device's GPIO input and a solved ADC input's pin (`AET-WO-1211b`;
+/// `1211` §2.7 (b), (c): the speed check judges nothing on either, and says
+/// so). Neither `OSPEEDR` is written: the MCU drives neither pin.
+pub const GPIO_INPUT: &str =
+    "GPIO input (a pin device's signal): the MCU drives nothing on it, so no edge rate applies";
+pub const ANALOG_INPUT: &str = "analog input (an ADC channel, MODER 11): the output buffer is disconnected (RM0433 Rev 9 p. 539), so no edge rate applies";
 
 /// What the output speed check found for one generated pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1089,13 +1135,29 @@ struct PinPlan {
     /// `OSPEEDR`, from the output speed check.
     speed: u32,
     check: SpeedCheck,
+    /// `PUPDR`: the role's pull ([`Role::policy`]), except a motor output's,
+    /// which follows its idle ([`motor_pull`]), and a GPIO input's, its
+    /// declared pull ([`input_pull`]) (`AET-WO-1211b`).
+    pull: u32,
+    /// A GPIO output's declared initial level, which its `BSRR` write sets
+    /// before `MODER` (`AET-WO-1211b`); `None` for every other role.
+    initial: Option<Level>,
 }
 
 impl PinPlan {
     /// (mode, output type, speed, pull).
     fn policy(&self) -> (u32, u32, u32, u32) {
-        let (mode, otype, pupd) = self.role.policy();
-        (mode, otype, self.speed, pupd)
+        let (mode, otype, _) = self.role.policy();
+        (mode, otype, self.speed, self.pull)
+    }
+
+    /// The `BSRR` bit a GPIO output's configure writes: its set bit for an
+    /// initial `high`, its reset bit for `low` (RM0433 Rev 9 §11.4.7).
+    fn level_bit(&self, pf: &PinFacts) -> u32 {
+        match self.initial {
+            Some(Level::Low) => 1u32 << pf.br,
+            _ => 1u32 << pf.bs,
+        }
     }
 }
 
@@ -1200,6 +1262,12 @@ struct Plan {
     /// `solve`; `AET-WO-4240v` D-1): `Ldo`, since [`Plan::new`] refuses
     /// `Bypass`.
     core_supply: CoreSupplyMode,
+    /// The proof oracle's own reading of the topology (`INV-07`,
+    /// `AET-WO-1211b`), apart from the pin plans: each solved pin's `PUPDR`
+    /// field by the rule (`aethelgard_ir::silicon::implied_pupd`), and each
+    /// GPIO output's declared level, as `solved.gpio` states it.
+    oracle_pupd: BTreeMap<String, u32>,
+    oracle_levels: BTreeMap<String, Level>,
 }
 
 impl Plan {
@@ -1320,14 +1388,6 @@ impl Plan {
         if solved.core_supply == CoreSupplyMode::Bypass {
             return Err(BoardError::CoreSupplyNotGenerated);
         }
-        // Every gpio entry read below is a chip select only because a
-        // topology with a pin device is refused here (`AET-WO-1211a`).
-        if let Some((reference, d)) = solved.pin_devices.iter().next() {
-            return Err(BoardError::PinDeviceNotGenerated {
-                reference: reference.clone(),
-                part: d.part.clone(),
-            });
-        }
         let speeds_table = speeds::table().map_err(BoardError::SpeedTable)?;
         if speeds_table.mcu != table.part {
             return Err(BoardError::SpeedTableMismatch {
@@ -1340,6 +1400,7 @@ impl Plan {
             .values()
             .map(|a| &a.pin)
             .chain(solved.gpio.values().map(|g| &g.pin))
+            .chain(solved.adc_inputs.values().map(|a| &a.pin))
             .find(|p| RESERVED_PINS.contains(&p.as_str()));
         if let Some(pin) = reserved {
             return Err(BoardError::ReservedPin { pin: pin.clone() });
@@ -1373,7 +1434,8 @@ impl Plan {
             // the TX or RX net of the one port on it, on its own signal.
             let serial = serial_nets.get(net.as_str()).copied();
             // The pin's role, and its peripheral's kind unless it is a timer's
-            // or a USART's.
+            // or a USART's; a motor output's pull follows its idle.
+            let mut pull = None;
             let (role, kind) = if let Some((peripheral, role)) = serial {
                 let s = serials
                     .get_mut(peripheral)
@@ -1406,6 +1468,7 @@ impl Plan {
                 if t.channels.insert(k, (a.pin.clone(), m.ccr)).is_some() {
                     return Err(mismatch());
                 }
+                pull = Some(motor_pull(m));
                 (role, None)
             } else {
                 let kind = peripheral_kind(&a.peripheral)?;
@@ -1434,6 +1497,8 @@ impl Plan {
                 net: net.clone(),
                 speed,
                 check,
+                pull: pull.unwrap_or(role.policy().2),
+                initial: None,
             };
             pins.insert(a.pin.clone(), plan);
             if let Some(kind) = kind {
@@ -1446,22 +1511,38 @@ impl Plan {
                     .push(a.pin.clone());
             }
         }
-        for (net, g) in &solved.gpio {
-            let pin = &g.pin;
+        // The GPIO signals (`AET-WO-1211b`): an output at its declared level
+        // (a chip select's is `high`), an input with its declared pull; and
+        // each pin device's ADC input's pin, analog. `SolvedTopology::validate`
+        // gives every output an `initial` and every input a `pull`. A
+        // `power.sense` input is solved into `adc_inputs` too (`AET-WO-1211a`)
+        // but no firmware has read it, and none does here: generating it would
+        // move every sensed board's bytes, which this work order forbids.
+        let gpio = solved.gpio.iter().map(|(net, g)| {
+            let (role, pull) = match g.direction {
+                Direction::Output => (Role::Output, 0b00),
+                Direction::Input => (Role::Input, input_pull(g.pull)),
+            };
+            (net, &g.pin, role, pull, g.initial)
+        });
+        let analog = device_adc_inputs(solved).map(|(net, a)| (net, &a.pin, Role::Analog, 0b00, None));
+        for (net, pin, role, pull, initial) in gpio.chain(analog) {
             let (port, index) = split_pin(pin)?;
             if !table.pins.contains_key(pin) {
                 return Err(BoardError::UnknownPin { pin: pin.clone() });
             }
-            let (speed, check) = choose_speed(speeds_table, solved, pin, net, Role::Output)?;
+            let (speed, check) = choose_speed(speeds_table, solved, pin, net, role)?;
             let plan = PinPlan {
                 port,
                 index,
-                role: Role::Output,
+                role,
                 af: 0,
                 peripheral: None,
                 net: net.clone(),
                 speed,
                 check,
+                pull,
+                initial,
             };
             pins.insert(pin.clone(), plan);
         }
@@ -1546,6 +1627,10 @@ impl Plan {
             }
         }
         let ports = pins.values().map(|p| p.port).collect();
+        let oracle_pupd = pins
+            .iter()
+            .map(|(pin, p)| (pin.clone(), silicon::implied_pupd(solved, &p.net)))
+            .collect();
         Ok(Plan {
             crate_name: crate_name.into(),
             specification_sha256: solved.specification_sha256.clone(),
@@ -1577,8 +1662,30 @@ impl Plan {
             i2c,
             core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
             core_supply: solved.core_supply,
+            oracle_pupd,
+            oracle_levels: solved
+                .gpio
+                .values()
+                .filter_map(|g| Some((g.pin.clone(), g.initial?)))
+                .collect(),
         })
     }
+}
+
+/// The ADC inputs the generator brings up (`AET-WO-1211b`): every solved ADC
+/// input but a `power.sense` net's.
+fn device_adc_inputs(
+    solved: &SolvedTopology,
+) -> impl Iterator<Item = (&String, &aethelgard_ir::pin_devices::SolvedAdcInput)> {
+    let sense: BTreeSet<&String> = solved
+        .power
+        .iter()
+        .flat_map(|p| p.sense.keys())
+        .collect();
+    solved
+        .adc_inputs
+        .iter()
+        .filter(move |(net, _)| !sense.contains(net))
 }
 
 fn peripheral_kind(name: &str) -> Result<Kind, BoardError> {
@@ -2388,12 +2495,18 @@ fn method(p: &PinPlan) -> String {
             periph.to_ascii_lowercase(),
             p.role.signal().to_ascii_lowercase()
         ),
-        None => "into_output".to_owned(),
+        None => match p.role {
+            Role::Input => "into_input".to_owned(),
+            Role::Analog => "into_analog".to_owned(),
+            _ => "into_output".to_owned(),
+        },
     }
 }
 fn pin_state(p: &PinPlan) -> String {
     match p.role {
         Role::Output => "Output".to_owned(),
+        Role::Input => "Input".to_owned(),
+        Role::Analog => "Analog".to_owned(),
         _ => format!("AlternateFunction<{}>", p.af),
     }
 }
@@ -2654,6 +2767,26 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              \n",
         );
     }
+    // A pin device's inputs and the ADC inputs' pins (`AET-WO-1211b`), only
+    // where the topology has one, so every other board's text is unchanged.
+    for (role, text) in [
+        (
+            Role::Input,
+            "/// A GPIO input (`AET-WO-1211b`): `MODER` `00`, its declared pull.\n\
+             pub struct Input;\n\
+             \n",
+        ),
+        (
+            Role::Analog,
+            "/// An ADC input's pin (`AET-WO-1211b`): `MODER` `11`, no pull.\n\
+             pub struct Analog;\n\
+             \n",
+        ),
+    ] {
+        if plan.pins.values().any(|p| p.role == role) {
+            w.push_str(text);
+        }
+    }
     w.push_str(
         "/// The core at VOS Scale 2 on the declared supply configuration (`AET-WO-4240v`\n\
          /// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] takes it, so\n\
@@ -2772,9 +2905,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let (mode, _, ospeed, _) = p.policy();
         let [mw, _, sw, _, aw] = g.widths;
         let block = port_type(p.port);
-        let what = match &p.peripheral {
-            Some(periph) => format!("`{periph}_{}` on AF{}", p.role.signal(), p.af),
-            None => "a GPIO output".to_owned(),
+        let what = match (&p.peripheral, p.role) {
+            (Some(periph), _) => format!("`{periph}_{}` on AF{}", p.role.signal(), p.af),
+            (None, Role::Input) => "a GPIO input".to_owned(),
+            (None, Role::Analog) => "an ADC input, analog".to_owned(),
+            (None, _) => "a GPIO output".to_owned(),
         };
         let _ = writeln!(
             w,
@@ -2802,15 +2937,22 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 "        r.modify(TOKEN, Block::{block}, {reg:#04x}, |v| {body});"
             );
         };
-        field(w, g.ospeedr, pf.ospeedr, sw, ospeed);
+        // A GPIO input and an analog pin take their mode alone: the MCU drives
+        // neither, and the port's `PUPDR` holds an input's pull (`AET-WO-1211b`).
+        if !p.role.mode_only() {
+            field(w, g.ospeedr, pf.ospeedr, sw, ospeed);
+        }
         if p.role == Role::Output {
+            // Its declared level before `MODER` (`AET-WO-1211b`; RM0433 Rev 9
+            // p. 534: the value written to ODR is output once the pin is an
+            // output).
             let _ = writeln!(
                 w,
                 "        r.write(TOKEN, Block::{block}, {:#04x}, {:#010x});",
                 g.bsrr,
-                1u32 << pf.bs
+                p.level_bit(pf)
             );
-        } else {
+        } else if !p.role.mode_only() {
             field(w, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
         }
         field(w, g.moder, pf.moder, mw, mode);
@@ -3729,10 +3871,11 @@ fn port_pupdr(plan: &Plan, facts: &Facts, port: char) -> u32 {
 
 /// The oracle's whole `PUPDR` of `port` (`AET-WO-4230` R5), from neither
 /// [`Role::policy`] nor [`port_pupdr`]: `PUPDRn` is bits `2n+1:2n` (RM0433
-/// Rev 9 §11.4.4, p. 542). A pin of a timer, a motor output, takes the
-/// independent rule's pull (`aethelgard_ir::silicon::motor_output_pupd`, the
-/// architect's ruling on Q-G); every other solved pin none, `00`; every other
-/// pin of the port its reset value.
+/// Rev 9 §11.4.4, p. 542). Each solved pin takes the rule's pull
+/// (`aethelgard_ir::silicon::implied_pupd`): a motor output's follows its
+/// idle (the architect's ruling on Q-G; `1211` Q9), a GPIO input's is its
+/// declared pull (`AET-WO-1211b`), every other solved pin none, `00`; every
+/// other pin of the port its reset value.
 ///
 /// belt-and-suspenders: the reset words restate [`pupdr_reset`]'s on purpose,
 /// read again from the page; the oracle must not take what the crate under
@@ -3744,20 +3887,27 @@ fn oracle_pupdr(plan: &Plan, port: char) -> u32 {
         _ => 0,
     };
     plan.pins
-        .values()
-        .filter(|p| p.port == port)
-        .fold(reset, |word, p| {
-            let motor = p
-                .peripheral
-                .as_deref()
-                .is_some_and(|n| n.starts_with("TIM"));
-            let pull = if motor {
-                silicon::motor_output_pupd()
-            } else {
-                0
-            };
+        .iter()
+        .filter(|(_, p)| p.port == port)
+        .fold(reset, |word, (pin, p)| {
+            let pull = plan.oracle_pupd[pin];
             (word & !(0b11 << (2 * p.index))) | (pull << (2 * p.index))
         })
+}
+
+/// The `BSRR` bit the oracle expects a GPIO output's configure to leave
+/// (`AET-WO-1211b`): its declared level's, the set bit for `high` and the
+/// reset bit for `low` (RM0433 Rev 9 §11.4.7), read from the oracle's own
+/// copy of `solved.gpio`.
+///
+/// belt-and-suspenders: this restates [`PinPlan::level_bit`] on purpose; the
+/// oracle must not take what the crate under proof writes (`INV-07`).
+fn oracle_level_bit(plan: &Plan, pf: &PinFacts, pin: &str) -> u32 {
+    match plan.oracle_levels.get(pin) {
+        Some(Level::Low) => 1u32 << pf.br,
+        Some(Level::High) => 1u32 << pf.bs,
+        None => 0,
+    }
 }
 
 /// A field's mask, as the oracle computes it.
@@ -4038,10 +4188,13 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
             let pf = &facts.pins[pin];
             let t = port_type(p.port);
             add(t.clone(), g.moder, oracle_mask(mw, pf.moder));
-            add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
-            if p.role == Role::Output {
+            if p.role.mode_only() {
+                // A GPIO input or an analog pin: its mode alone.
+            } else if p.role == Role::Output {
+                add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
                 level(&mut add, pin);
             } else {
+                add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
                 add(t, g.afr[pf.afr_index as usize], oracle_mask(aw, pf.afr));
             }
         }
@@ -4980,31 +5133,34 @@ fn emit_schedule(
             let (mode, _, ospeed, _) = p.policy();
             let mmask = oracle_mask(mw, pf.moder);
             let ot = 1u32 << p.index;
-            let mut ready = vec![
-                format!(
-                    "self.{field}[{}] & {ot:#010x} == {:#010x}",
-                    g.otyper / 4,
-                    oracle_otyper(plan, *port) & ot
-                ),
-                format!(
+            let mut ready = vec![format!(
+                "self.{field}[{}] & {ot:#010x} == {:#010x}",
+                g.otyper / 4,
+                oracle_otyper(plan, *port) & ot
+            )];
+            if !p.role.mode_only() {
+                ready.push(format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.ospeedr / 4,
                     oracle_mask(sw, pf.ospeedr),
                     ospeed << pf.ospeedr
-                ),
-                format!(
-                    "self.{field}[{}] & {:#010x} == {:#010x}",
-                    g.pupdr / 4,
-                    oracle_mask(pw, pf.pupdr),
-                    oracle_pupdr(plan, *port) & oracle_mask(pw, pf.pupdr)
-                ),
-            ];
+                ));
+            }
+            ready.push(format!(
+                "self.{field}[{}] & {:#010x} == {:#010x}",
+                g.pupdr / 4,
+                oracle_mask(pw, pf.pupdr),
+                oracle_pupdr(plan, *port) & oracle_mask(pw, pf.pupdr)
+            ));
             if p.role == Role::Output {
+                // The declared level's word, the oracle's own (`AET-WO-1211b`).
                 ready.push(format!(
                     "self.{field}[{}] == {:#010x}",
                     g.bsrr / 4,
-                    1u32 << pf.bs
+                    oracle_level_bit(plan, pf, pin)
                 ));
+            } else if p.role.mode_only() {
+                // A GPIO input or an analog pin: no alternate function.
             } else {
                 let afr = g.afr[pf.afr_index as usize] / 4;
                 ready.push(format!(
@@ -5128,8 +5284,10 @@ fn emit_schedule(
             let (mode, _, ospeed, _) = p.policy();
             let fields = |acc: &mut BTreeMap<u32, (u32, u32)>| {
                 expect_field(acc, g.moder, pf.moder, mw, mode);
-                expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
-                if p.role != Role::Output {
+                if !p.role.mode_only() {
+                    expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
+                }
+                if p.role != Role::Output && !p.role.mode_only() {
                     expect_field(acc, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
                 }
             };
@@ -5195,6 +5353,17 @@ fn emit_schedule(
                     let _ = writeln!(
                         w,
                         "    kani::assert(after.{field}[{i}] & {bit:#010x} != 0, \"{pin}, a chip select, is not high once its bus started\");"
+                    );
+                } else if scope.pins.contains(*pin) {
+                    // A pin device's output (`AET-WO-1211b`): at its declared
+                    // level, the oracle's own copy of `solved.gpio`.
+                    let want = match plan.oracle_levels.get(*pin) {
+                        Some(Level::High) => bit,
+                        _ => 0,
+                    };
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(after.{field}[{i}] & {bit:#010x} == {want:#010x}, \"{pin} is not at its declared initial level\");"
                     );
                 }
             }
@@ -5561,9 +5730,12 @@ fn emit_schedule(
             w,
             "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img);",
             m = method(p),
-            mutable = if p.role == Role::Output { "mut " } else { "" },
+            mutable = if plan.is_select(pin) { "mut " } else { "" },
         );
-        if p.role == Role::Output {
+        // A chip select is driven both ways before its bus takes it; a pin
+        // device's output is left at its declared level, which the final
+        // state holds (`AET-WO-1211b`).
+        if plan.is_select(pin) {
             let pf = &facts.pins[pin];
             let port = port_field(p.port);
             let _ = writeln!(
@@ -5818,7 +5990,7 @@ fn emit_schedule(
     }
     // A chip select is configured before its bus starts, which takes it.
     for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
-        if p.role == Role::Output && !plan.is_select(pin) {
+        if (p.role == Role::Output && !plan.is_select(pin)) || p.role == Role::Input {
             let f = pin_field(pin);
             let _ = writeln!(
                 w,
