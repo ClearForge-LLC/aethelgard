@@ -484,4 +484,7 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
   - It is committed byte for byte: the 17 files equal the artifact's sha256 for sha256.
   - **Against `main`'s package, 14 of 17 are byte-identical:** every Gerber, the drill, both BOMs, the CPL and the positions. Only `sentinel-01-bench.elf` (`e4e24372ef2d4bb4cd2e8a3d79b616a1bedefec285d88aa92ef3e5ce1d496f11`, the same as the locally written package's, §2.2), `MANIFEST.json` and `FAB-NOTES.md` move, as §0.1 predicted.
   - `bench_board_tier1` passes against it.
-- **READY.** This commit is the last push. Only the architect merges.
+- **READY** at `5e130b9d`. Its CI run, 44699881278, passed every job but `tools-shard (7)`, which hung in `download-artifact` before any test ran; the architect cancelled the run.
+  - At the architect's call (09:05Z), `main` `bb1bcb8c` (`1317`, `1316`) was merged clean, with no `fab/` change.
+  - fmt 0 and clippy 0, and `bench_board_tier1` passes in the image.
+  - The head after that merge is the last push. Only the architect merges.
