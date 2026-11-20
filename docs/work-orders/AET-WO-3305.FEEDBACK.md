@@ -11,6 +11,7 @@ Each statement is labelled:
 
 ## 0. Status
 
+- **`main` merged:** `52a2d62e` (3303b), clean, then `03d89554` (4202). 4202's conflicts were its exact `RunFor` in the pinned monitor-script tests (§4.5) and one `TIER2_MIN` line; each test keeps the step hook. §6, the tier-2 test and `verify` were re-run on top of each merge (measured). On both, the same 29 runs are byte-identical apart from the version byte and the same 2 predicted runs move (§6). At `03d89554` the firmware is reused from the `52a2d62e` build: 4202 changed no generator. The tier-2 test passes. `verify` is refused on `main` (campaign gate: `attribute masks [{index:28,kind:13},{index:29,kind:13}] on the faulted bus`) and passes on the branch (103 s, 7.60 GB peak under 16G). `TIER2_MIN` is 192: this order's one tier-2 test on top of `main`'s 191 (4202's), recomputed at the merge as ruled at 00:10Z.
 - **History.** The work order stopped at §1.3 under §7's first condition (record pushed at `93f9a1b2`, §1 to §3 below). D1 (A) was ruled at 23:10Z with the fence widened, and is now built.
 - **The bus fault is detected.** A two-device bus fault counts as detected by its named mechanism: two-bme's held-low SDA is E1 with nothing masked. `verify` passes the campaign gate on the branch and refuses it on `main` (measured, §5).
 - **The wrong address is still caught.** U2's read sent to 0x75 is S1 on two-bme, and the one-device seeded set is unchanged (§5, §6).
@@ -63,7 +64,7 @@ Each statement is labelled:
 1. **The hook** (`renode.rs` `boot_hooks`; `anchor.rs` `Hook::Step`, its parse arm and `step_hook`).
    - Each I2C step check's status word gets a `DoubleWord` write hook that logs `AETHELGARD-STEP <check> <value> <count>`.
    - It is added with the boot word's hook: once, before the boot the judge reads, at the last release under a droop.
-   - Every line goes through `hooks_of`, so it is parsed strictly and placed at its stamp.
+   - Every line goes through `hooks_of`, so it is parsed strictly and placed at its stamp. Malformed STEP lines (a missing or extra field, a leading zero, `0x`, a sign, a non-number, a value past 32 bits) are refused, as the other shapes are (`anchor.rs` `every_line_is_read_whole_and_strictly`, ruled 00:10Z).
    - **Probe (measured, `spike/3305/build/raw/`):**
      - one STEP line per I2C check, each after its own step's `Unknown slave` line and before the next step's;
      - no STEP line from the judge's `RECORD_UNSET` fill;
@@ -115,7 +116,8 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
   - **Branch:** 29 of 31 byte-identical apart from the version byte. Two moved, both as predicted:
     - **two-bme held-low SDA:** kind 13 `[118,119]` twice became `[118]` and `[119]`. The attribution moves from masked `[28,13]`, `[29,13]` to none. This is the masked result the work order exists for.
     - **ext-bmp581 held-low SDA:** U5's three steps each carried `[71, 71, 71]` on `main` and carry `[71]` on the branch (12 bytes). The attribution is unchanged: E1, nothing masked before or after, since every address was the device's own.
-- **The seeded set at tier 2** (`attribute_seeded`, pinned exact evidence indices, in the image): SEEDED-RESULT.
+- **After each merge of `main`** (`52a2d62e`, then `03d89554`; `main`'s CLI rebuilt from a `git archive` of each): the same 29 byte-identical and the same 2 moves, measured each time.
+- **The seeded set at tier 2** (`attribute_seeded`, pinned exact evidence indices, in the image, at `e6847099`): **11 passed**, 640 s. That covers the three one-device wrong-address cases (`wrong-address-2k2`, the two traps) with their exact evidence and masks.
 
 ## 7. Mutants (one per guard this build adds; each restored, the tree clean after)
 
@@ -166,13 +168,13 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
   - What the case needs is a different change: judge a witness's whole `observed` against `expected`, not only its first write and read (`lib.rs:987-989`). U5's witness carries U2's transaction as two extra lines.
   - That is an `evolve` rule change whose effect on every committed attribution must be measured, which is outside this fence.
 - **For the architect:**
-  - `TIER2_MIN` in `.github/workflows/ci.yml:390` is 190; the new tier-2 test makes 191. Workflows are outside this fence (said on the bus).
-  - **AWAITING-PACKAGE:** `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256` moves with each run's state hash, which the version byte moves. `bench_board_tier1` stays red until the architect's `write=true` dispatch re-derives it; I commit the artifact byte for byte. PACKAGE-STATE.
+  - `TIER2_MIN`: 192, this order's one tier-2 test on top of `main`'s 191. That one line is inside the fence by the 00:10Z ruling.
+  - **The bench package.** `fab/sentinel-01-bench/package/MANIFEST.json` pins `verdict_sha256`. The verdict carries each campaign run's state hash, which the version byte moves (inferred), so CI's `bench-package` job may report AWAITING-PACKAGE. The tier-1 `bench_board_tier1` passed in the gates set. CI decides it: if the job reports a move, it waits on the architect's `write=true` dispatch, never a hand edit.
   - **The trace number:** if this merges before `2304b`, `2304b` takes 17, and the "15 is `2304b`'s" doc lines are renumbered by whichever merges second.
 
 ## 10. Owed and fence edges
 
-- **Merge `main` after `4202` (#257) and `2304b` (#254) land,** and re-run §6. After `2304b`, also re-run Sentinel-03's held-low through `verify` (D2's board).
+- **Merge `main` after `2304b` (#254) lands** (4202 is merged, at `03d89554`), and re-run §6. Then re-run Sentinel-03's held-low through `verify` (D2's board), and renumber the trace if `2304b` merges first.
 - **Fence edges, said on the bus:**
   - `anchor.rs`'s `Hook::Step`: every `AETHELGARD-` line must parse, or the run is refused;
   - `verdict.rs`: one doc line;
@@ -184,9 +186,11 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
 
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`, with and without `with-tools`: clean (host).
-- `ci/gates.sh run` (the `gates` job's set, host): GATES-RESULT.
-- Tier 2 in the pinned image: the new two-bme test passes (T0), and the seeded set is SEEDED-RESULT.
-- Reduction pass (diff): REDUCTION.
+- `ci/gates.sh run` (the `gates` job's set, host, target inside the repository as CI has it): **green** at `6d61a87b`, at the 3303b merge, and at the 4202 merge `84279860` (132 result lines each, all ok).
+  - A first run with the target outside the repository failed `fab_tier1`'s `a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`, a test-scratch layout artefact: it passes with the target inside the repository (measured).
+  - The first run also caught three pinned monitor-script tests, moved in §4.5.
+- Tier 2 in the pinned image: the new two-bme test passes (T0, and again after each merge of `main`), and the seeded set passes (11 of 11).
+- Reduction pass (diff): nothing to remove in a crate. 0 duplicates: the bus name is derived once (`absent_by_step`'s `controller`), and the whole-run fill is replaced, not kept beside. 0 dead paths, 0 protected kept, 0 findings below. In the spike, earlier: −3 files (scenario copies), and the stop record is condensed into §1–§3 here.
 
 ## What moved
 
