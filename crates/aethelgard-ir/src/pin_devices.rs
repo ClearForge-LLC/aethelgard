@@ -36,6 +36,14 @@ use crate::{IrValidationError, Specification, VoltageDomain};
 pub const MCU_VOL_MAX_MV: u32 = 400;
 pub const MCU_VOH_DROP_MV: u32 = 400;
 pub const MCU_IO_LEVELS: &str = "DS12117 Rev 10 Table 50 p. 139 (rev Y) = Table 147 p. 243 (rev V): VOL <= 0.4 V, VOH >= VDD - 0.4 V at 8 mA";
+/// The pins whose `PUPDR` resets to a pull-up (RM0433 Rev 9 §11.4.4,
+/// p. 542: `0x6400_0000` in port A, PA13 and PA15 pulled up and PA14 down;
+/// `0x0000_0100` in port B, PB4 pulled up; p. 534, the JTAG pins). From reset
+/// to the first write such a pin holds a driver's input against the part's
+/// own pull-down, so no driven input of a pin device may sit on one
+/// (`UnheldDuringReset`, adversarial pass D1).
+pub const MCU_RESET_PULL_UPS: [&str; 3] = ["PA13", "PA15", "PB4"];
+
 /// The MCU's weak pull-up, at least (DS12117 Rev 10 Table 49 rev Y p. 137 =
 /// Table 146 rev V p. 241: `RPU` 30 to 50 kΩ).
 pub const MCU_RPU_MIN_OHMS: u32 = 30_000;
@@ -318,6 +326,8 @@ pub enum PinKindOfRefusal {
     BridgeForbiddenState,
     InputRateAbovePart,
     PinDeviceUndeclared,
+    BridgeUndeclared,
+    SenseAdcMismatch,
 }
 
 impl PinKindOfRefusal {
@@ -358,6 +368,8 @@ impl PinKindOfRefusal {
             K::BridgeForbiddenState => "BridgeForbiddenState",
             K::InputRateAbovePart => "InputRateAbovePart",
             K::PinDeviceUndeclared => "PinDeviceUndeclared",
+            K::BridgeUndeclared => "BridgeUndeclared",
+            K::SenseAdcMismatch => "SenseAdcMismatch",
         }
     }
 }
@@ -548,6 +560,17 @@ pub fn validate_against(
     spec: &Specification,
     table: &crate::parts::PartsTable,
 ) -> Result<(), IrValidationError> {
+    // A pin device's net is no battery sense's (step 16 judges the sense
+    // nets against every other signal but these).
+    let sense: BTreeSet<String> = spec
+        .power
+        .iter()
+        .flat_map(|p| &p.sense)
+        .map(|s| s.net.to_lowercase())
+        .collect();
+    if let Some(net) = nets(spec).find(|n| sense.contains(&n.to_lowercase())) {
+        return Err(IrValidationError::DuplicateNetName { id: net.clone() });
+    }
     let mut motor_inputs: BTreeMap<&str, String> = BTreeMap::new();
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         let path = format!("pin_devices[{i}]");
@@ -684,7 +707,24 @@ impl<'s> Device<'s> {
         let strap_levels = self.straps()?;
         self.signals()?;
         self.analog()?;
-        self.bridges(&strap_levels, motor_inputs)?;
+        let bridged = self.bridges(&strap_levels, motor_inputs)?;
+        // Every input pin of a channel of the part's modes is a declared
+        // bridge's: an input pair driven outside a bridge would have its
+        // idle judged by nothing.
+        for m in &self.row.modes {
+            for c in &m.channels {
+                if let Some(pin) = c.inputs.iter().find(|i| !bridged.contains(i.as_str())) {
+                    return Err(self.err(
+                        K::BridgeUndeclared,
+                        ".bridges",
+                        format!(
+                            "`{}`'s `{pin}` is an input of a bridge channel ({}), and no declared bridge takes it: its idle would be judged by nothing",
+                            self.row.part, m.page
+                        ),
+                    ));
+                }
+            }
+        }
         // Every input of the row that the MCU or a strap could hold is bound.
         for (name, p) in &self.row.pins {
             if matches!(p.kind, PinKind::LogicInput | PinKind::EnableInput { .. })
@@ -1022,6 +1062,7 @@ impl<'s> Device<'s> {
                 ua_per_a_typical,
                 output_max_ua,
                 error_band,
+                band_supply,
             } = &p.kind
             else {
                 return Err(self.kind_mismatch(
@@ -1038,6 +1079,26 @@ impl<'s> Device<'s> {
                     K::SignalShape,
                     &at,
                     "a full scale or resistor of 0 declares nothing",
+                ));
+            }
+            // The bands hold only while the supply they are stated for is in
+            // range: outside it no error is stated (SLVSDS7B p. 6, VVM >= 5.5 V).
+            let (supply_pin, (lo_mv, hi_mv)) = band_supply;
+            let in_band = match d.supplies.get(supply_pin) {
+                Some(id) => {
+                    let v = self.domain(id, &format!(".supplies.{supply_pin}"))?;
+                    crate::minimum_millivolts(v) >= *lo_mv && crate::maximum_millivolts(v) <= *hi_mv
+                }
+                None => false,
+            };
+            if !in_band {
+                return Err(self.err(
+                    K::PartLimitUndeclared,
+                    &format!("{at}.device_pin"),
+                    format!(
+                        "`{}`'s error bands are stated for `{supply_pin}` from {lo_mv} to {hi_mv} mV ({}, {}); its domain spans past that, where no error is stated",
+                        a.device_pin, self.row.document, p.page
+                    ),
                 ));
             }
             // The worst error band that covers the full scale (`RUL-19`: the
@@ -1169,12 +1230,14 @@ impl<'s> Device<'s> {
         Ok(())
     }
 
+    /// Each bridge; the input pins they take.
     fn bridges(
         &mut self,
         straps: &BTreeMap<&'s str, Option<Level>>,
         motor_inputs: &mut BTreeMap<&'s str, String>,
-    ) -> Result<(), IrValidationError> {
+    ) -> Result<BTreeSet<&'s str>, IrValidationError> {
         let d = self.d;
+        let mut bridged = BTreeSet::new();
         for (k, b) in d.bridges.iter().enumerate() {
             let at = format!(".bridges[{k}]");
             let Some(mode) = self.row.mode(&b.mode) else {
@@ -1232,6 +1295,7 @@ impl<'s> Device<'s> {
             for out in &channel.outputs {
                 self.bind(out, Binding::BridgeOutput, &format!("{at}.outputs.{out}"))?;
             }
+            bridged.extend(channel.inputs.iter().map(String::as_str));
             // Each input's idle level, in the channel's order.
             let mut idle = [Level::Low; 2];
             for (n, pin) in channel.inputs.iter().enumerate() {
@@ -1327,7 +1391,7 @@ impl<'s> Device<'s> {
                 "sits from reset to the first write",
             )?;
         }
-        Ok(())
+        Ok(bridged)
     }
 
     fn judge_state(
@@ -1509,6 +1573,20 @@ pub(crate) fn validate_solved(t: &crate::SolvedTopology) -> Result<(), IrValidat
             ));
         }
     }
+    // Each battery sense is the ADC input on its own pin.
+    for (net, s) in t.power.iter().flat_map(|p| &p.sense) {
+        if t.adc_inputs.get(net).is_none_or(|a| a.pin != s.pin) {
+            return Err(refuse(
+                K::SenseAdcMismatch,
+                net,
+                format!("adc_inputs.{net}"),
+                format!(
+                    "`power.sense.{net}` is on `{}`; `adc_inputs` does not hold it there",
+                    s.pin
+                ),
+            ));
+        }
+    }
     if t.pin_devices.is_empty() {
         let sense: BTreeSet<&String> = t.power.iter().flat_map(|p| p.sense.keys()).collect();
         if let Some(net) = t.adc_inputs.keys().find(|n| !sense.contains(n)) {
@@ -1612,8 +1690,12 @@ pub(crate) fn place<'t>(
                         .map(|(n, p)| (n.as_str(), p))
                         .collect();
                     free.sort_by_key(|(_, p)| p.position);
-                    let modelled = |p: &crate::Pin| {
-                        choose_channel(&p.adc_channels, wanted.is_some()).is_some()
+                    // A named channel is taken as named, but an ADC2 one only
+                    // on a pinned pin (`1211` Q8: "unless the specification
+                    // pins it").
+                    let modelled = |p: &crate::Pin| match &wanted {
+                        Some(w) => !w.starts_with("ADC2_"),
+                        None => choose_channel(&p.adc_channels, false).is_some(),
                     };
                     match free.iter().find(|(_, p)| modelled(p)) {
                         Some(&(n, p)) => (n, p),
@@ -1663,7 +1745,11 @@ pub(crate) fn place<'t>(
                     .pins
                     .keys()
                     .map(String::as_str)
-                    .find(|p| !reserved.contains(p) && !used.contains_key(p))
+                    .find(|p| {
+                        !reserved.contains(p)
+                            && !used.contains_key(p)
+                            && !(s.direction == Direction::Output && MCU_RESET_PULL_UPS.contains(p))
+                    })
                     .ok_or_else(|| crate::SolveError::NoFreePin {
                         claimant: claimant.clone(),
                     })?,
@@ -1703,6 +1789,38 @@ fn hand_free(
             first: first.clone(),
             second: claimant.to_owned(),
         });
+    }
+    Ok(())
+}
+
+/// Each driven input of a pin device (an output signal, or a motor output on
+/// a bridge input) off the MCU's reset pull-ups ([`MCU_RESET_PULL_UPS`]):
+/// the part's pull-down must hold it from reset (`1211` §2.6). An unpinned
+/// output signal never lands on one; a hand pin or a motor output's
+/// channel may, and is refused by name.
+pub(crate) fn reset_held(
+    spec: &Specification,
+    t: &crate::SolvedTopology,
+) -> Result<(), crate::SolveError> {
+    for d in spec.declared_pin_devices() {
+        let signals = d
+            .signals
+            .iter()
+            .filter(|s| s.direction == Direction::Output)
+            .map(|s| (&s.net, &t.gpio[&s.net].pin));
+        let motors = d
+            .bridges
+            .iter()
+            .flat_map(|b| b.inputs.values())
+            .filter_map(|l| t.assignments.get(l).map(|a| (l, &a.pin)));
+        for (net, pin) in signals.chain(motors) {
+            if MCU_RESET_PULL_UPS.contains(&pin.as_str()) {
+                return Err(crate::SolveError::UnheldDuringReset {
+                    net: net.clone(),
+                    pin: pin.clone(),
+                });
+            }
+        }
     }
     Ok(())
 }

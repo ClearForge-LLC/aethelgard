@@ -276,22 +276,10 @@ fn a_device_pin_bound_twice_is_refused() {
 
 #[test]
 fn an_input_of_the_part_left_unbound_is_refused() {
-    // D2 without its second bridge leaves BIN1 and BIN2 to their pulls.
-    let mut v = d2_declared();
-    device(&mut v)["bridges"].as_array_mut().unwrap().pop();
-    // Its outputs' nets go with it, off the connector that carried them.
-    for c in v["connectors"].as_array_mut().unwrap() {
-        for p in c["pins"].as_array_mut().unwrap() {
-            if p["net"].as_str().is_some_and(|n| n.starts_with("MB_")) {
-                p["net"] = Value::Null;
-            }
-        }
-    }
-    let labels = ["B_IN1", "B_IN2"];
-    v["motor_outputs"]
-        .as_array_mut()
-        .unwrap()
-        .retain(|m| !labels.contains(&m["label"].as_str().unwrap()));
+    // D1 without its nSLEEP signal: the bridge's idle reads an enable no
+    // signal drives.
+    let mut v = d1();
+    device(&mut v)["signals"].as_array_mut().unwrap().remove(0);
     assert_kind(&v, "DevicePinUnbound");
 }
 
@@ -667,4 +655,76 @@ fn a_device_s_identifiers_are_step_2_s() {
     let mut v = d1();
     device(&mut v)["temperature_celsius"]["source"] = json!(" padded ");
     assert_kind(&v, "InvalidSource");
+}
+
+/// Adversarial pass D2: an input pair driven outside a declared bridge has
+/// no idle judgement, so every channel input of the part's modes is a
+/// bridge's.
+#[test]
+fn a_channel_input_outside_a_bridge_is_refused() {
+    let mut v = d1();
+    device(&mut v)["bridges"] = json!([]);
+    for c in v["connectors"].as_array_mut().unwrap() {
+        for p in c["pins"].as_array_mut().unwrap() {
+            if p["net"].as_str().is_some_and(|n| n.starts_with("M1_")) {
+                p["net"] = Value::Null;
+            }
+        }
+    }
+    v["motor_outputs"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|m| m["label"] == "SERVO1");
+    for (pin, net) in [("EN/IN1", "G_EN"), ("PH/IN2", "G_PH")] {
+        device(&mut v)["signals"].as_array_mut().unwrap().push(json!(
+            {"device_pin": pin, "net": net, "pin": null, "direction": "output", "initial": "high"}
+        ));
+    }
+    assert_kind(&v, "BridgeUndeclared");
+}
+
+/// Adversarial pass D4: SLVSDS7B states AERR only for 5.5 V <= VVM <= 37 V
+/// (p. 6); on a 5 V motor supply no error is stated.
+#[test]
+fn an_error_band_outside_its_supply_condition_is_undeclared() {
+    let mut v = d1();
+    assert_eq!(v["voltage_domains"][1]["id"], "VMOTOR");
+    v["voltage_domains"][1]["nominal_millivolts"] = json!(5000);
+    let e = refused(&v);
+    assert_eq!(e.kind(), "PartLimitUndeclared", "{e}");
+    assert!(e.to_string().contains("5500"), "{e}");
+}
+
+/// Adversarial pass D3: a pin device's net is no battery sense's.
+#[test]
+fn a_device_net_named_as_a_sense_is_refused() {
+    let power: Value =
+        serde_json::from_str(include_str!("fixtures/sentinel-02-power.json")).unwrap();
+    let sense = power["power"]["sense"][0]["net"].clone();
+    let mut v = d1();
+    device(&mut v)["analog"][0]["net"] = sense.clone();
+    v["power"] = power["power"].clone();
+    device(&mut v)["temperature_celsius"] = Value::Null;
+    let e = aethelgard_ir::pin_devices::validate_against(
+        &spec(&v),
+        aethelgard_ir::parts::table().unwrap(),
+    )
+    .unwrap_err();
+    assert_eq!(
+        e,
+        IrValidationError::DuplicateNetName {
+            id: sense.as_str().unwrap().into()
+        }
+    );
+}
+
+/// Adversarial pass D5: an idle pulse of the whole period is `high`'s CCR,
+/// a second spelling; one tick short of it validates and solves (CCR = ARR).
+#[test]
+fn an_idle_pulse_of_the_whole_period_is_spelled_twice() {
+    let mut v = d1();
+    motor(&mut v, "SERVO1")["pwm"]["idle"] = json!({"pulse_us": 20_000});
+    assert_kind(&v, "IdleSpelledTwice");
+    motor(&mut v, "SERVO1")["pwm"]["idle"] = json!({"pulse_us": 19_999});
+    spec(&v).validate().unwrap();
 }

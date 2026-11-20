@@ -41,6 +41,10 @@ pub enum PinKind {
         ua_per_a_typical: u32,
         output_max_ua: u32,
         error_band: Vec<ErrorBand>,
+        /// The supply pin, and its range in mV, the error bands are stated
+        /// for (SLVSDS7B p. 6: 5.5 V <= VVM <= 37 V): outside it no error is
+        /// stated (`PartLimitUndeclared`).
+        band_supply: (String, (u32, u32)),
     },
     /// A strap with discrete levels.
     Strap(StrapLevels),
@@ -297,6 +301,10 @@ struct RawPin {
     #[serde(default)]
     error_band: Option<Vec<RawBand>>,
     #[serde(default)]
+    error_band_supply_pin: Option<String>,
+    #[serde(default)]
+    error_band_supply_mv: Option<(u32, u32)>,
+    #[serde(default)]
     range_mv: Option<(u32, u32)>,
     #[serde(default)]
     high_min_mv: Option<u32>,
@@ -375,6 +383,16 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
         pins.insert(name, pin);
     }
     let kind_of = |pin: &str| pins.get(pin).map(|p| &p.kind);
+    for (name, p) in &pins {
+        if let PinKind::CurrentOutput { band_supply, .. } = &p.kind
+            && !matches!(kind_of(&band_supply.0), Some(PinKind::Supply { .. }))
+        {
+            return Err(format!(
+                "pin `{name}`: `error_band_supply_pin` `{}` is not a supply pin",
+                band_supply.0
+            ));
+        }
+    }
     if let Some(e) = &raw.enable
         && !matches!(kind_of(e), Some(PinKind::EnableInput { .. }))
     {
@@ -498,6 +516,15 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
     })
 }
 
+/// Every field of a current output, each required.
+const CURRENT_OUTPUT_FIELDS: &[&str] = &[
+    "ua_per_a_typical",
+    "output_max_ua",
+    "error_band",
+    "error_band_supply_pin",
+    "error_band_supply_mv",
+];
+
 /// A pin's fields, exactly those its kind takes.
 fn row_pin(p: RawPin) -> Result<RowPin, String> {
     let given: Vec<&str> = [
@@ -512,6 +539,8 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
         ("ua_per_a_typical", p.ua_per_a_typical.is_some()),
         ("output_max_ua", p.output_max_ua.is_some()),
         ("error_band", p.error_band.is_some()),
+        ("error_band_supply_pin", p.error_band_supply_pin.is_some()),
+        ("error_band_supply_mv", p.error_band_supply_mv.is_some()),
         ("range_mv", p.range_mv.is_some()),
         ("high_min_mv", p.high_min_mv.is_some()),
         ("resistors", p.resistors.is_some()),
@@ -535,10 +564,7 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
             &["vol_max_mv", "at_ma", "iod_max_ma", "pull_up_max_mv"],
             &["vol_max_mv", "at_ma"],
         ),
-        "current_output" => (
-            &["ua_per_a_typical", "output_max_ua", "error_band"],
-            &["ua_per_a_typical", "output_max_ua", "error_band"],
-        ),
+        "current_output" => (CURRENT_OUTPUT_FIELDS, CURRENT_OUTPUT_FIELDS),
         "strap" => (&["high_min_mv", "resistors"], &["resistors"]),
         "strap_analog" | "supply" => (&["range_mv"], &["range_mv"]),
         "bridge_output" | "ground" | "passive" | "sense_return" => (&[], &[]),
@@ -591,6 +617,10 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
                 ua_per_a_typical: p.ua_per_a_typical.expect("required"),
                 output_max_ua: p.output_max_ua.expect("required"),
                 error_band,
+                band_supply: (
+                    p.error_band_supply_pin.expect("required"),
+                    range(p.error_band_supply_mv.expect("required"))?,
+                ),
             }
         }
         "strap" => {

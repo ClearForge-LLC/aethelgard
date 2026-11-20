@@ -1403,7 +1403,8 @@ fn ccr_shaped(m: &SolvedMotorOutput) -> bool {
     match m.pwm.as_ref().map(|p| p.idle) {
         Some(motor::Idle::Level(motor::Level::Low)) => m.ccr == 0,
         Some(motor::Idle::Level(motor::Level::High)) => m.ccr == m.arr + 1,
-        _ => m.ccr != 0 && m.ccr < m.arr,
+        Some(motor::Idle::PulseUs(_)) => m.ccr != 0 && m.ccr <= m.arr,
+        None => m.ccr != 0 && m.ccr < m.arr,
     }
 }
 
@@ -3967,7 +3968,12 @@ fn motor_shape(m: &MotorOutput) -> Result<(), IrValidationError> {
                 return Err(E::ZeroMotorRate { id: id() });
             }
             if p.idle == motor::Idle::PulseUs(0) {
-                return Err(E::Pwm(motor::PwmRefusal::IdleSpelledTwice { output: id() }));
+                return Err(E::Pwm(motor::PwmRefusal::IdleSpelledTwice {
+                    output: id(),
+                    pulse_us: 0,
+                    ccr: "0",
+                    level: "low",
+                }));
             }
             if p.pulse_min_us == 0 || p.pulse_min_us >= p.pulse_max_us {
                 return Err(E::PulseRange {

@@ -227,3 +227,37 @@ fn an_adc_channel_name_is_checked_like_a_signal() {
         .insert("ADC1 INP3".into());
     assert!(t.validate().is_err());
 }
+
+/// `AET-WO-1211a`: the sense is also the ADC input on its own pin, with an
+/// ADC1 or ADC3 channel; a topology whose two disagree is refused.
+#[test]
+fn the_sense_is_its_adc_input_and_a_disagreeing_topology_is_refused() {
+    let t = table(&[("PB1", 3, &[], &["ADC1_INP5", "ADC2_INP5"])]);
+    let s = solved(&base(), &t).unwrap();
+    let a = &s.adc_inputs["VBAT_SENSE"];
+    assert_eq!(
+        (a.pin.as_str(), a.peripheral.as_str(), a.channel.as_str()),
+        ("PB1", "ADC1", "INP5")
+    );
+    let mut bad = s.clone();
+    bad.adc_inputs.get_mut("VBAT_SENSE").unwrap().pin = "PC5".into();
+    assert_eq!(bad.validate().unwrap_err().kind(), "SenseAdcMismatch");
+    let mut bad = s.clone();
+    bad.adc_inputs.clear();
+    assert_eq!(bad.validate().unwrap_err().kind(), "SenseAdcMismatch");
+}
+
+/// A pin with an ADC2 input alone is passed; with only those free, the
+/// sense is `AdcUnmodelled` (`1211` Q8).
+#[test]
+fn the_sense_skips_an_adc2_only_pin_and_is_unmodelled_with_only_those() {
+    let t = table(&[
+        ("PB2", 3, &[], &["ADC2_INP2"]),
+        ("PC0", 40, &[], &["ADC3_INP10"]),
+    ]);
+    let s = solved(&base(), &t).unwrap();
+    assert_eq!(s.power.as_ref().unwrap().sense["VBAT_SENSE"].pin, "PC0");
+    let t = table(&[("PB2", 3, &[], &["ADC2_INP2"])]);
+    // `PA6`, the only other ADC pin, is the flash's MISO.
+    assert_eq!(solved(&base(), &t).unwrap_err().kind(), "AdcUnmodelled");
+}

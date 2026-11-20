@@ -102,6 +102,13 @@ pub enum SolveError {
         quoted(.pins)
     )]
     AdcUnmodelled { net: String, pins: Vec<String> },
+    /// `AET-WO-1211a`, `1211` §2.6: a pin device's driven input on a pin the
+    /// MCU pulls up from reset (PA13, PA15, PB4), against the part's own
+    /// pull-down until the first write.
+    #[error(
+        "`{net}` drives a pin device's input from `{pin}`, which the MCU pulls up from reset to the first write (RM0433 Rev 9 p. 542): the part's pull-down cannot hold it; pin it elsewhere"
+    )]
+    UnheldDuringReset { net: String, pin: String },
     /// `AET-WO-1211a`, `1211` §2.7 (e): an IN/IN bridge's two motor outputs
     /// on two timers, so no one counter times both.
     #[error(
@@ -224,6 +231,7 @@ impl SolveError {
             Self::AdcChannelNotOnPin { .. } => "AdcChannelNotOnPin",
             Self::AdcUnmodelled { .. } => "AdcUnmodelled",
             Self::BridgeSplitAcrossTimers { .. } => "BridgeSplitAcrossTimers",
+            Self::UnheldDuringReset { .. } => "UnheldDuringReset",
             Self::NoTimerChannel { .. } => "NoTimerChannel",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
             Self::TimerResolutionConflict { .. } => "TimerResolutionConflict",
@@ -264,6 +272,7 @@ impl SolveError {
             | Self::AdcUnmodelled { net, .. }
             | Self::PinSpeed { net, .. } => Some(net),
             Self::BridgeSplitAcrossTimers { bridge, .. } => Some(bridge),
+            Self::UnheldDuringReset { net, .. } => Some(net),
             Self::NoTimerChannel { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } | Self::TimerResolutionConflict { timer, .. } => {
                 Some(timer)
@@ -304,6 +313,7 @@ impl SolveError {
             Self::BridgeSplitAcrossTimers { first, second, .. } => {
                 vec![first.clone(), second.clone()]
             }
+            Self::UnheldDuringReset { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } => vec![output.clone()],
             Self::TimerRateConflict { first, second, .. }
@@ -609,6 +619,7 @@ fn solve_inner(
         &mut out.gpio,
         &mut out.adc_inputs,
     )?;
+    crate::pin_devices::reset_held(spec, &out)?;
     // An IN/IN bridge's two motor outputs share one timer (`1211` §2.7 (e)).
     for (bridge, first, second) in crate::pin_devices::in_in_motor_pairs(spec) {
         let timer = |l: &str| out.assignments[l].peripheral.clone();
@@ -1131,6 +1142,14 @@ pub(crate) fn motor_timing(
                         pulse_us: idle_us(p),
                         resolution_ps: res,
                     }),
+                    (TimingError::IdleSpelledTwice, Some(p)) => {
+                        pwm(motor::PwmRefusal::IdleSpelledTwice {
+                            output,
+                            pulse_us: idle_us(p),
+                            ccr: "ARR + 1",
+                            level: "high",
+                        })
+                    }
                     (TimingError::IdleExceedsPeriod, Some(p)) => {
                         pwm(motor::PwmRefusal::IdleExceedsPeriod {
                             output,

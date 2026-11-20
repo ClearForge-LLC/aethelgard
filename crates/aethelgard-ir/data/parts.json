@@ -1238,6 +1238,11 @@
           "kind": "current_output",
           "ua_per_a_typical": 1000,
           "output_max_ua": 3000,
+          "error_band_supply_pin": "VM",
+          "error_band_supply_mv": [
+            5500,
+            37000
+          ],
           "error_band": [
             {
               "load_ma": [
@@ -1272,7 +1277,7 @@
               "condition": "AERR, 0.5 A <= IOUT <= 2 A, PWP, 125 C <= TJ <= 150 C, p. 6"
             }
           ],
-          "page": "p. 3; A_IPROPI typ 1000 uA/A (typical only), p. 6; IIPROPI max 3 mA, p. 4"
+          "page": "p. 3; A_IPROPI typ 1000 uA/A (typical only), AERR stated for 5.5 V <= VVM <= 37 V only, p. 6; IIPROPI max 3 mA, p. 4"
         },
         "IMODE": {
           "number": 7,

@@ -369,11 +369,13 @@ fn the_topology_refuses_a_motor_output_that_disagrees_with_its_assignment() {
         }),
         Err("MotorOutputMismatch")
     );
+    // A pulse idle's CCR may reach ARR (one tick short of the period,
+    // `AET-WO-1211a`): the shape holds, and only the silicon check judges it.
     assert_eq!(
         kind(&|t| {
             t.motor_outputs.get_mut("M2").unwrap().ccr = 2499;
         }),
-        Err("MotorOutputMismatch")
+        Ok(())
     );
     assert_eq!(
         kind(&|t| {

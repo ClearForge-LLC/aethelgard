@@ -735,6 +735,9 @@ pub enum TimingError {
     IdleNotOnTick,
     /// The idle pulse is longer than the period.
     IdleExceedsPeriod,
+    /// The idle pulse is the whole period: CCR `ARR + 1`, the spelling of
+    /// `{"level": "high"}`.
+    IdleSpelledTwice,
 }
 
 /// A PWM output's idle or tick refused (`AET-WO-1211a`, `1211` §2.4), each
@@ -742,9 +745,14 @@ pub enum TimingError {
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum PwmRefusal {
     #[error(
-        "motor output `{output}`: idle `{{\"pulse_us\": 0}}` is CCR 0, which has one spelling, `{{\"level\": \"low\"}}` (`1211` Q4)"
+        "motor output `{output}`: idle `{{\"pulse_us\": {pulse_us}}}` is CCR {ccr}, which has one spelling, `{{\"level\": \"{level}\"}}` (`1211` Q4)"
     )]
-    IdleSpelledTwice { output: String },
+    IdleSpelledTwice {
+        output: String,
+        pulse_us: u32,
+        ccr: &'static str,
+        level: &'static str,
+    },
     #[error(
         "motor output `{output}`: resolution_ps {resolution_ps} is not a whole number of cycles from 1 to 65,536 of its {kernel_hz} Hz timer clock, so no prescaler gives it"
     )]
@@ -794,7 +802,7 @@ impl PwmRefusal {
     /// The output it names.
     pub fn output(&self) -> &str {
         match self {
-            Self::IdleSpelledTwice { output }
+            Self::IdleSpelledTwice { output, .. }
             | Self::ResolutionNotDerivable { output, .. }
             | Self::PulseNotOnTick { output, .. }
             | Self::IdleNotOnTick { output, .. }
@@ -869,11 +877,18 @@ pub fn solve_timing(
             }
             let ccr = match p.idle {
                 Idle::Level(Level::Low) => 0,
+                // `ARR + 1` must fit a 16-bit `CCR` (TIM1, TIM3, TIM4, TIM8, …).
+                Idle::Level(Level::High) if ticks > 0xFFFF => {
+                    return Err(TimingError::RateOutOfRange);
+                }
                 Idle::Level(Level::High) => ticks,
                 Idle::PulseUs(us) => {
                     let t = on_tick(us, TimingError::IdleNotOnTick)?;
                     if t > ticks {
                         return Err(TimingError::IdleExceedsPeriod);
+                    }
+                    if t == ticks {
+                        return Err(TimingError::IdleSpelledTwice);
                     }
                     t
                 }
