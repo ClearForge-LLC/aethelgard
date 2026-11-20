@@ -746,8 +746,6 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             ),
         ),
     }
-    // 7. The crystal beside a declared one (`AET-WO-4240c` §1.3).
-    crystal(spec, s, netlist, mcu, &mut fail)?;
     // 6. The declared supply source.
     let supply_source = match &spec.mcu.supply_source {
         None => None,
@@ -766,6 +764,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             }
         }
     };
+    // 7. The crystal beside a declared one (`AET-WO-4240c` §1.3).
+    crystal(spec, s, netlist, mcu, &mut fail)?;
     let mut conditions: Vec<String> = s
         .capacitors
         .iter()

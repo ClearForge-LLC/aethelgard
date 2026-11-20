@@ -368,17 +368,10 @@ impl Stack {
                     width_nm: nm(p.width_um),
                 })
                 .collect(),
-            oscillator: match &spec.mcu.hse {
-                Some(aethelgard_ir::clock::Hse::Crystal(_)) => {
-                    aethelgard_ir::names::oscillator_nets(&aethelgard_ir::names::mcu_reference(
-                        spec,
-                    ))
-                    .iter()
-                    .map(|n| board_net(spec, n))
-                    .collect()
-                }
-                _ => Vec::new(),
-            },
+            oscillator: aethelgard_ir::names::oscillator_nets(spec)
+                .iter()
+                .map(|n| board_net(spec, n))
+                .collect(),
             // The power tree's (`AET-WO-4300d2` §1.5, `1309` D1): the
             // power-in connector's declared join, and each buck's array from
             // its row's rule.

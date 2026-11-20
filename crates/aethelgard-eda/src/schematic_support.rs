@@ -30,7 +30,7 @@ use super::{Builder, Conn, EmitError};
 
 /// The row's oscillator groups (`AET-WO-4240c`): `PH0-OSC_IN`, then
 /// `PH1-OSC_OUT`, by package position.
-pub(crate) const OSCILLATOR: [&str; 2] = ["OSC_IN", "OSC_OUT"];
+const OSCILLATOR: [&str; 2] = ["OSC_IN", "OSC_OUT"];
 
 /// The support network of `part`'s row, as the gate looks it up.
 pub(super) fn row(part: &str) -> Result<&'static Support, EmitError> {
@@ -78,8 +78,6 @@ pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Co
     }
     let mut conns = BTreeMap::new();
     for (group, pins) in &s.pins {
-        // The oscillator pins are the HSE group's (`AET-WO-4240c`, `hse`),
-        // tied beside a declared crystal and otherwise left unconnected.
         if OSCILLATOR.contains(&group.as_str()) {
             continue;
         }

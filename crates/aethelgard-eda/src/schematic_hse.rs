@@ -33,22 +33,6 @@ use aethelgard_ir::power_parts::{self, Dielectric, Kind, PowerPartsTable, Row, T
 
 use super::{Builder, Conn, EmitError, Part};
 
-/// The crystal's pads, as the footprint numbers them: `(pad, role)`.
-pub(crate) const CRYSTAL_PADS: [(&str, Role); 4] = [
-    ("1", Role::In),
-    ("2", Role::Ground),
-    ("3", Role::Out),
-    ("4", Role::Ground),
-];
-
-/// What a crystal pad is tied to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Role {
-    In,
-    Out,
-    Ground,
-}
-
 /// `pin`'s package position in `table`, as the symbol numbers it.
 fn position(table: &PinTable, pin: &str) -> Result<String, EmitError> {
     table
@@ -62,7 +46,6 @@ fn position(table: &PinTable, pin: &str) -> Result<String, EmitError> {
 /// before its part is pushed), and returns the group to draw once the MCU is.
 pub(super) fn tie(
     b: &mut Builder<'_>,
-    mcu: &str,
     table: &PinTable,
     conns: &mut BTreeMap<String, Conn>,
 ) -> Result<Option<Group>, EmitError> {
@@ -83,7 +66,10 @@ pub(super) fn tie(
             )));
         }
     };
-    let [osc_in, osc_out] = aethelgard_ir::names::oscillator_nets(mcu);
+    let [osc_in, osc_out]: [String; 2] =
+        aethelgard_ir::names::oscillator_nets(b.spec)
+            .try_into()
+            .map_err(|_| EmitError::Internal("a crystal with no oscillator nets".into()))?;
     let osc_in = b.own_net(osc_in)?;
     let osc_out = b.own_net(osc_out)?;
     let pin_in = position(table, "PH0")?;
@@ -102,8 +88,14 @@ pub(super) fn tie(
         symbol: row.symbol.as_str(),
         footprint: row.footprint.as_str(),
         caps: [
-            load_capacitor(ptable, c.load_caps_femtofarads[0])?,
-            load_capacitor(ptable, c.load_caps_femtofarads[1])?,
+            (
+                load_capacitor(ptable, c.load_caps_femtofarads[0])?,
+                c.load_caps_femtofarads[0],
+            ),
+            (
+                load_capacitor(ptable, c.load_caps_femtofarads[1])?,
+                c.load_caps_femtofarads[1],
+            ),
         ],
         pins: [(pin_in, osc_in), (pin_out, osc_out)],
     }))
@@ -145,7 +137,8 @@ pub(super) struct Group {
     part: &'static str,
     symbol: &'static str,
     footprint: &'static str,
-    caps: [&'static Row; 2],
+    /// Each load capacitor's row and its declared value, fF.
+    caps: [(&'static Row, u64); 2],
     /// `(MCU pin, net)` for OSC_IN, then OSC_OUT.
     pins: [(String, String); 2],
 }
@@ -155,17 +148,13 @@ impl Group {
         let gnd = b.ground();
         let [(pin_in, osc_in), (pin_out, osc_out)] = self.pins;
         let reference = b.reference('Y')?;
-        let conns = CRYSTAL_PADS
-            .iter()
-            .map(|&(pad, role)| {
-                let to = match role {
-                    Role::In => Conn::Net(osc_in.clone()),
-                    Role::Out => Conn::Net(osc_out.clone()),
-                    Role::Ground => gnd.clone(),
-                };
-                (pad.to_owned(), to)
-            })
-            .collect();
+        // The footprint's pads: 1 and 3 the crystal, 2 and 4 ground.
+        let conns = BTreeMap::from([
+            ("1".to_owned(), Conn::Net(osc_in.clone())),
+            ("2".to_owned(), gnd.clone()),
+            ("3".to_owned(), Conn::Net(osc_out.clone())),
+            ("4".to_owned(), gnd.clone()),
+        ]);
         b.parts.push(Part {
             lib_id: self.symbol,
             reference,
@@ -183,23 +172,15 @@ impl Group {
             None,
             false,
         );
-        for (row, net, pin) in [
+        for ((row, ff), net, pin) in [
             (self.caps[0], osc_in, pin_in),
             (self.caps[1], osc_out, pin_out),
         ] {
-            let Kind::Capacitor(k) = &row.kind else {
-                return Err(EmitError::Internal(format!(
-                    "`{}` is not a capacitor",
-                    row.part
-                )));
-            };
-            let pf = u64::try_from(k.rated_picofarads.value)
-                .map_err(|_| EmitError::Internal("a negative capacitance".into()))?;
             let reference = b.reference('C')?;
             b.parts.push(Part {
                 lib_id: row.symbol.as_str(),
                 reference,
-                value: format!("{} {}", super::power::farads(pf), row.part),
+                value: format!("{} {}", super::power::farads(ff / 1000), row.part),
                 footprint: row.footprint.clone(),
                 conns: BTreeMap::from([("1".into(), Conn::Net(net)), ("2".into(), gnd.clone())]),
                 note: None,

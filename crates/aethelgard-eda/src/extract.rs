@@ -919,7 +919,7 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
 
 /// A board as `read` accepted it: the board and copper as `route` reads
 /// them, and each footprint's library id and `Value`, by reference.
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ReadBoard {
     pub board: Board,
     pub routed: Routed,
@@ -1029,10 +1029,7 @@ enum Load {
     /// clipped to it is outside the bound, as a part body is ([`CONDITIONS`]).
     TestPad,
     /// A part on an oscillator net beside a crystal (`AET-WO-4240c` §1.4):
-    /// copper only. The crystal's `C0` is its own and the load capacitor is
-    /// `CL1` or `CL2` itself, so neither is counted; the MCU's OSC pin has no
-    /// stated maximum (DS12117 `CIO`, 5 pF typical), so none is added here
-    /// and [`OSC_PIN_CONDITION`] says so.
+    /// copper only, for the reasons [`OSC_PIN_CONDITION`] states.
     Oscillator,
 }
 
@@ -1303,13 +1300,13 @@ pub fn oscillator_lines(
     solved: &SolvedTopology,
     table: &PinTable,
 ) -> Result<Vec<Line>, Refused> {
-    let Some(aethelgard_ir::clock::Hse::Crystal(_)) = &spec.mcu.hse else {
+    let nets = aethelgard_ir::names::oscillator_nets(spec);
+    if nets.is_empty() {
         return Ok(Vec::new());
-    };
+    }
     let (parts, _) = crate::schematic::design(spec, solved, table).map_err(|e| invalid(&e))?;
-    let mcu = aethelgard_ir::names::mcu_reference(spec);
     let mut out = Vec::new();
-    for net in aethelgard_ir::names::oscillator_nets(&mcu) {
+    for net in nets {
         let on = board_net(&net);
         let mut roles = BTreeMap::new();
         for part in &parts {
@@ -1338,9 +1335,9 @@ pub fn oscillator_lines(
     Ok(out)
 }
 
-/// DS12117 Rev 10's `CIO`, "I/O pin capacitance", 5 pF **typical** (Table 49
-/// p. 137, rev Y; Table 146 p. 241, rev V): reported beside each oscillator
-/// net, labelled typical, and never added to a bound (`RUL-19`).
+/// DS12117 Rev 10's `CIO`, 5 pF **typical** ([`OSC_PIN_CONDITION`]):
+/// reported beside each oscillator net, labelled typical, and never added to
+/// a bound (`RUL-19`).
 pub const OSC_PIN_CIO_TYPICAL_FEMTOFARADS: u64 = 5_000;
 
 /// One oscillator net beside a declared crystal, as `extract` reports it

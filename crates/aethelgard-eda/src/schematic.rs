@@ -27,7 +27,7 @@ use crate::sexpr::{self, Sx, mm};
 // The power tree's drawing, a child of this module beside it in `src/`
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_hse.rs"]
-pub mod hse;
+mod hse;
 #[path = "schematic_power.rs"]
 mod power;
 #[path = "schematic_support.rs"]
@@ -1347,7 +1347,7 @@ pub(crate) fn design(
     let mut conns = support::draw(&mut b, &mcu_ref)?;
     // The oscillator pins beside a crystal (`AET-WO-4240c`); nothing for a
     // specification that declares no HSE.
-    let hse = hse::tie(&mut b, &mcu_ref, table, &mut conns)?;
+    let hse = hse::tie(&mut b, table, &mut conns)?;
     let solved_pins = solved
         .assignments
         .iter()

@@ -18,6 +18,10 @@ use aethelgard_eda::{route, strict, support};
 use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 use serde_json::{Value, json};
 
+#[path = "common/netlist.rs"]
+mod netlist;
+use netlist::{Pads, netlist_text, pads_of};
+
 const REFERENCE: &str = "examples/sentinel-01-minimal.json";
 const CRYSTAL: &str = "ABM8AIG-16.000MHZ-12-2Z-T3";
 const OSC_IN: &str = "/U1_OSC_IN";
@@ -406,62 +410,6 @@ fn no_committed_specification_without_a_crystal_draws_one() {
 }
 
 // ---- the support gate's step 7 ----
-
-/// Each footprint's value and each pad's net, from the board text.
-type Pads = (BTreeMap<String, String>, BTreeMap<(String, String), String>);
-
-fn pads_of(board: &str) -> Pads {
-    let tree = strict::board(board).unwrap();
-    let mut values = BTreeMap::new();
-    let mut nets = BTreeMap::new();
-    for fp in tree.root().all("footprint") {
-        let reference = fp.field("Reference").unwrap().unwrap().to_owned();
-        values.insert(
-            reference.clone(),
-            fp.field("Value").unwrap().unwrap().to_owned(),
-        );
-        for pad in fp.all("pad") {
-            let Some(net) = pad.one("net").unwrap().and_then(|n| n.last()) else {
-                continue;
-            };
-            nets.insert(
-                (reference.clone(), pad.arg(1).unwrap().to_owned()),
-                net.to_owned(),
-            );
-        }
-    }
-    (values, nets)
-}
-
-/// A netlist in KiCad 10.0.7's `kicadsexpr` shape, each part's symbol as the
-/// emitter draws it (`check support` reads KiCad's own export: the tier-2
-/// run is in `spike/4240c/RESULTS.md`).
-fn netlist_text((values, nets): &Pads) -> String {
-    let mut by_net: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
-    for ((r, p), n) in nets {
-        by_net.entry(n).or_default().push((r, p));
-    }
-    let mut s = String::from("(export (version \"E\") (components\n");
-    for (r, v) in values {
-        let lib = match r.chars().next() {
-            Some('C') => " (libsource (lib \"Device\") (part \"C\"))",
-            Some('R') => " (libsource (lib \"Device\") (part \"R\"))",
-            Some('Y') => " (libsource (lib \"Device\") (part \"Crystal_GND24\"))",
-            _ => "",
-        };
-        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib})\n"));
-    }
-    s.push_str(")\n(nets\n");
-    for (i, (n, nodes)) in by_net.iter().enumerate() {
-        s.push_str(&format!("(net (code \"{}\") (name \"{n}\")", i + 1));
-        for (r, p) in nodes {
-            s.push_str(&format!(" (node (ref \"{r}\") (pin \"{p}\"))"));
-        }
-        s.push_str(")\n");
-    }
-    s.push_str("))\n");
-    s
-}
 
 /// The support gate's findings on `pads`, all of them.
 fn findings(spec: &Specification, pads: &Pads) -> Vec<&'static str> {

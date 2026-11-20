@@ -136,9 +136,14 @@ pub fn mcu_reference(spec: &Specification) -> String {
 }
 
 /// The two oscillator nets the emitter draws beside a declared crystal
-/// (`AET-WO-4240c`): `<mcu>_OSC_IN` on `PH0`, then `<mcu>_OSC_OUT` on `PH1`.
-pub fn oscillator_nets(mcu: &str) -> [String; 2] {
-    [format!("{mcu}_OSC_IN"), format!("{mcu}_OSC_OUT")]
+/// (`AET-WO-4240c`): `<mcu>_OSC_IN` on `PH0`, then `<mcu>_OSC_OUT` on `PH1`;
+/// none for a specification that declares no crystal.
+pub fn oscillator_nets(spec: &Specification) -> Vec<String> {
+    let Some(crate::clock::Hse::Crystal(_)) = &spec.mcu.hse else {
+        return Vec::new();
+    };
+    let mcu = mcu_reference(spec);
+    vec![format!("{mcu}_OSC_IN"), format!("{mcu}_OSC_OUT")]
 }
 
 /// Every net the schematic emitter names for itself, for `spec`: `GND`, the
@@ -169,9 +174,7 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         let mcu = mcu_reference(spec);
         out.extend((1..=m.support.group("VCAP").len()).map(|n| format!("{mcu}_VCAP{n}")));
     }
-    if let Some(crate::clock::Hse::Crystal(_)) = &spec.mcu.hse {
-        out.extend(oscillator_nets(&mcu_reference(spec)));
-    }
+    out.extend(oscillator_nets(spec));
     let devices = spec
         .declared_i2c_devices()
         .iter()
