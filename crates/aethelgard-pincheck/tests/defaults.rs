@@ -9,7 +9,8 @@ mod common;
 
 use aethelgard_pincheck::elf::{self, LOAD_DEFAULTS_FILE, LOAD_EMBEDDED_PARAM_DEFAULTS};
 use common::{
-    ADVAPJ_PARAM_DEFAULTS, Elf, RELOAD_DEFAULTS_FILE, ROMFS_DEFAULTS, ROMFS_HWDEF, RomfsFile,
+    ADVAPJ_PARAM_DEFAULTS, Elf, RELOAD_DEFAULTS_FILE, ROMFS_ADVLUA, ROMFS_DEFAULTS, ROMFS_HWDEF,
+    RomfsFile, VarRow, scripting_var_info,
 };
 
 fn function(name: &[u8]) -> String {
@@ -17,11 +18,12 @@ fn function(name: &[u8]) -> String {
 }
 
 /// A board as every measured one is: `reload_defaults_file` linked, ROMFS
-/// holding `hwdef.dat`.
+/// holding `hwdef.dat`, scripting compiled in with `SCR_ENABLE` 0.
 fn board() -> Elf {
     Elf {
         functions: vec![RELOAD_DEFAULTS_FILE.to_owned()],
         romfs: Some(vec![ROMFS_HWDEF]),
+        scripting: Some(scripting_var_info(0.0)),
         ..Elf::default()
     }
 }
@@ -48,6 +50,8 @@ const EMBEDDED: &str = "AP_Param::load_embedded_param_defaults is linked";
 const DATA: &str =
     "AP_Param::param_defaults_data holds 67 bytes of defaults (AP_Param.cpp:1618-1622)";
 const ROMFS: &str = "ROMFS lists defaults.parm, which ChibiOS loads at boot as @ROMFS/defaults.parm (AP_HAL_ChibiOS/Util.h:43-45, AP_Param.cpp:1647-1666)";
+const LUA: &str = "ROMFS lists scripts/adv.lua, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550)";
+const SCR_ENABLE: &str = "AP_Scripting::var_info's ENABLE (SCR_ENABLE) defaults to 1";
 
 /// Every measured board's shape passes: `reload_defaults_file` is linked in
 /// every build and is not a signature, and a ROMFS of `hwdef.dat` lists no
@@ -199,5 +203,88 @@ fn every_malformed_read_is_refused_by_name() {
     assert_eq!(
         elf::defaults_signatures(b"not an elf").unwrap_err().kind(),
         "Truncated"
+    );
+}
+
+/// `advlua` (adversarial A1, ruled D-c): `SCRIPTING_ENABLE_DEFAULT 1` and a
+/// ROMFS script, as measured. It is refused, naming both Lua signatures; and
+/// each alone is refused. A file under `scripts` that is not `.lua` is not a
+/// script ArduPilot runs (`boards.py:669-672`), and AP_Scripting compiled
+/// out (no `AP_Scripting::var_info`, `advnoromfs`) is no signature.
+#[test]
+fn advlua_is_refused_naming_both_lua_signatures() {
+    let advlua = Elf {
+        romfs: Some(vec![ROMFS_HWDEF, ROMFS_ADVLUA]),
+        scripting: Some(scripting_var_info(1.0)),
+        ..board()
+    };
+    assert_eq!(signatures(&advlua), Ok(vec![LUA.into(), SCR_ENABLE.into()]));
+    let refusal = elf::read(&advlua.bytes()).unwrap_err();
+    assert_eq!(refusal.kind(), "ParamDefaultsOverride");
+    let script = Elf {
+        romfs: Some(vec![ROMFS_HWDEF, ROMFS_ADVLUA]),
+        ..board()
+    };
+    let enabled = Elf {
+        scripting: Some(scripting_var_info(1.0)),
+        ..board()
+    };
+    assert_eq!(signatures(&script), Ok(vec![LUA.into()]));
+    assert_eq!(signatures(&enabled), Ok(vec![SCR_ENABLE.into()]));
+    for elf in [script, enabled] {
+        assert_eq!(
+            elf::read(&elf.bytes()).unwrap_err().kind(),
+            "ParamDefaultsOverride"
+        );
+    }
+    let readme = Elf {
+        romfs: Some(vec![RomfsFile {
+            name: "scripts/README.md",
+            ..ROMFS_ADVLUA
+        }]),
+        ..board()
+    };
+    assert_eq!(signatures(&readme), Ok(vec![]));
+    let compiled_out = Elf {
+        scripting: None,
+        ..board()
+    };
+    assert_eq!(signatures(&compiled_out), Ok(vec![]));
+}
+
+/// `AP_Scripting::var_info` is read as the other tables are, and its
+/// `ENABLE` row must be one `AP_Int8` flagged `AP_PARAM_FLAG_ENABLE` alone:
+/// anything else is refused by name, never read as off.
+#[test]
+fn a_malformed_scripting_table_is_refused_by_name() {
+    let kind = |f: &dyn Fn(&mut Vec<VarRow>)| {
+        let mut rows = scripting_var_info(0.0);
+        f(&mut rows);
+        signatures(&Elf {
+            scripting: Some(rows),
+            ..board()
+        })
+    };
+    for (why, edit) in [
+        (
+            "no ENABLE",
+            &(|r: &mut Vec<VarRow>| r[0].name = "ENABLED".into()) as &dyn Fn(&mut Vec<VarRow>),
+        ),
+        ("ENABLE twice", &|r: &mut Vec<VarRow>| {
+            r[1].name = "ENABLE".into()
+        }),
+        ("an AP_Int32", &|r: &mut Vec<VarRow>| r[0].kind = 3),
+        ("a default pointer", &|r: &mut Vec<VarRow>| {
+            r[0].flags = 4 | 1 << 7
+        }),
+        ("no enable flag", &|r: &mut Vec<VarRow>| r[0].flags = 0),
+    ] {
+        assert_eq!(kind(edit), Err("MalformedScriptingVarInfo"), "{why}");
+    }
+    assert_eq!(
+        kind(&|r| {
+            r.pop();
+        }),
+        Err("VarInfoUnterminated")
     );
 }

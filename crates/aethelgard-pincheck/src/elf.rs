@@ -853,6 +853,13 @@ pub const ROMFS_FILES: &[u8] = b"_ZN8AP_ROMFS5filesE";
 const PARAM_DEFAULTS_MAGIC: [u8; 16] = *b"PARMDEF\0\x55\x37\xf4\xa0\x38\x5d\x48\x5b";
 const PARAM_DEFAULTS_HEADER: u32 = 20;
 
+/// ArduPilot's scripting parameter table, `AP_Scripting::var_info`
+/// (`AP_Scripting.cpp:65-170`), whose `ENABLE` row is `SCR_ENABLE`
+/// (`AP_GROUPINFO_FLAGS(..., SCRIPTING_ENABLE_DEFAULT, AP_PARAM_FLAG_ENABLE)`,
+/// `:72`; `AP_Param.h:88`).
+pub const SCRIPTING_VAR_INFO: &[u8] = b"_ZN12AP_Scripting8var_infoE";
+const AP_PARAM_FLAG_ENABLE: u16 = 1 << 2;
+
 /// `AP_ROMFS::embedded_file` on ARM32 (`AP_ROMFS.h:30-36`): `filename` (a
 /// pointer), `compressed_size`, `decompressed_size`, `crc`, `contents`.
 const ROMFS_ENTRY_LEN: u32 = 20;
@@ -868,6 +875,9 @@ const ROMFS_DEFAULTS: &str = "defaults.parm";
 /// Every way the ELF can apply parameter defaults at boot over what
 /// `var_info` compiles, one line each (each line below cites its source;
 /// when each is linked, `spike/4406` §1.1), empty when it can apply none.
+/// Lua is two of them, ruled on the work order's PR (D-c): a script in
+/// ROMFS, and scripting compiled on by default, which runs a script from
+/// the SD card as well.
 ///
 /// `AP_Param::reload_defaults_file` is defined in every build and is not a
 /// signature. A symbol that is absent is not read: a board without ROMFS
@@ -938,7 +948,39 @@ pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
                 found.push(format!(
                     "ROMFS lists {ROMFS_DEFAULTS}, which ChibiOS loads at boot as @ROMFS/{ROMFS_DEFAULTS} (AP_HAL_ChibiOS/Util.h:43-45, AP_Param.cpp:1647-1666)"
                 ));
+            } else if name.starts_with("scripts") && name.ends_with(".lua") {
+                found.push(format!(
+                    "ROMFS lists {name}, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550)"
+                ));
             }
+        }
+    }
+    if !named(SCRIPTING_VAR_INFO)?.is_empty() {
+        let rows = group_rows(bytes, SCRIPTING_VAR_INFO, "AP_Scripting::var_info")?;
+        let enable: Vec<_> = rows.iter().filter(|r| r.name == "ENABLE").collect();
+        let [r] = enable.as_slice() else {
+            return refuse(
+                "MalformedScriptingVarInfo",
+                format!(
+                    "AP_Scripting::var_info holds {} ENABLE rows, not one (AP_Scripting.cpp:72)",
+                    enable.len()
+                ),
+            );
+        };
+        if r.kind != AP_PARAM_INT8 || r.flags != AP_PARAM_FLAG_ENABLE {
+            return refuse(
+                "MalformedScriptingVarInfo",
+                format!(
+                    "AP_Scripting::var_info entry {} (`ENABLE`) has type {} and flags {:#06x}, not AP_Int8 flagged AP_PARAM_FLAG_ENABLE alone, so its default is not a float this reader can state (AP_Scripting.cpp:72, AP_Param.h:88)",
+                    r.i, r.kind, r.flags
+                ),
+            );
+        }
+        let enabled = f32::from_bits(r.bits);
+        if enabled != 0.0 {
+            found.push(format!(
+                "AP_Scripting::var_info's ENABLE (SCR_ENABLE) defaults to {enabled}: Lua scripts, from ROMFS or the SD card, run at boot and can set parameters (AP_Scripting.cpp:55-72, :220; lua_scripts.cpp:548-550)"
+            ));
         }
     }
     Ok(found)

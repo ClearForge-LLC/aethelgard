@@ -2,18 +2,20 @@
 # judge.sh MAIN BRANCH: check pinout on every measured ELF with each binary
 # (AET-WO-4406 §2 acceptance): one line per board and binary, then the CI
 # script on the CI set. ELFs in ~/.cache/aet-4406/elves (out/SHA256SUMS);
-# topologies: the 4404 boards' from ~/.cache/aet-4405/tops (spec 19, as
-# 4405 ran them), the CI boards' solved from this tree by MAIN.
+# topologies: the 4404 boards' re-solved at spec 20 (solved 13) by MAIN into
+# ~/.cache/aet-4406/tops from 4405's spec-19 files (only schema_version
+# bumped; equal to 4405's but for the specification hash), the CI boards'
+# solved from this tree by MAIN.
 set -uo pipefail
 main=$1 branch=$2
-K=$HOME/.cache/aet-4406 E=$K/elves T=$HOME/.cache/aet-4405/tops
+K=$HOME/.cache/aet-4406 E=$K/elves T=$HOME/.cache/aet-4406/tops
 top() {
   case $1 in
-    fc-mav3|adv-proto-del3) echo "$T/fc-mav3.top19" ;;
-    eight*) echo "$T/eight.top19" ;;
+    fc-mav3|adv-proto-del3) echo "$T/fc-mav3.top20" ;;
+    eight*) echo "$T/eight.top20" ;;
     sentinel-01|sentinel-02|serial-dshot-9600|sentinel-02-noimu) echo "$K/ci/$1/topology.json" ;;
     step-g|seed-*) echo "$K/ci/topology.json" ;;
-    *) echo "$T/fc-base.top19" ;;
+    *) echo "$T/fc-base.top20" ;;
   esac
 }
 one() { # BIN NAME ELF [--hwdef-h H] [--allow A]: the verdict on one line
@@ -41,9 +43,11 @@ for d in "$E"/*/; do
   if [ "$m" = "$b" ]; then echo "SAME $n $b"; else echo "MOVED $n"; echo "  main   $m"; echo "  branch $b"; fi
   echo "  elf-only branch $(cut -c1-220 <<< "$bo")"
 done
-n=advnoromfs d=$K/advb/out/advnoromfs
-echo "EXTRA $n main   $(one "$main" "$n" "$d/arducopter.elf" --hwdef-h "$d/hwdef.h")"
-echo "EXTRA $n branch $(one "$branch" "$n" "$d/arducopter.elf" --hwdef-h "$d/hwdef.h")"
+for n in advnoromfs advlua; do
+  d=$K/advb/out/$n
+  echo "EXTRA $n main   $(one "$main" "$n" "$d/arducopter.elf" --hwdef-h "$d/hwdef.h")"
+  echo "EXTRA $n branch $(one "$branch" "$n" "$d/arducopter.elf" --hwdef-h "$d/hwdef.h")"
+done
 # 4405 A5: fc-base with 1_PROTOCOL's and 2_PROTOCOL's offsets swapped.
 d=$E/fc-base
 echo "EXTRA swap main   $(one "$main" fc-base "$HOME/.cache/aet-4405/adv/swap.elf" --hwdef-h "$d/hwdef.h")"

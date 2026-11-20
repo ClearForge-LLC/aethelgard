@@ -31,6 +31,12 @@ M = [
     ("W18 a ROMFS name unbounded", E, "                ROMFS_NAME_MAX,", "                usize::MAX - 1,"),
     ("W19 a zero-size ROMFS read as empty", E, "(size == 0 || size % ROMFS_ENTRY_LEN != 0)", "(size % ROMFS_ENTRY_LEN != 0)"),
     ("W20 an absent ROMFS read", E, "    if !named(ROMFS_FILES)?.is_empty() {", "    if true {"),
+    # Ruled D-c on the PR: the two Lua signatures.
+    ("W21 drop a ROMFS Lua script", E, '} else if name.starts_with("scripts") && name.ends_with(".lua") {', "} else if false {"),
+    ("W22 drop SCR_ENABLE's default", E, "        if enabled != 0.0 {", "        if enabled != 0.0 && false {"),
+    ("W23 any scripts file taken as Lua", E, 'name.starts_with("scripts") && name.ends_with(".lua")', 'name.starts_with("scripts")'),
+    ("W24 ENABLE's type and flags not held", E, "if r.kind != AP_PARAM_INT8 || r.flags != AP_PARAM_FLAG_ENABLE {", "if false {"),
+    ("W25 a second ENABLE row ignored", E, "let [r] = enable.as_slice() else {", "let [r, ..] = enable.as_slice() else {"),
 ]
 only = sys.argv[1:]
 env = dict(os.environ, PATH=os.path.expanduser("~/.cargo/bin") + ":" + os.environ["PATH"])

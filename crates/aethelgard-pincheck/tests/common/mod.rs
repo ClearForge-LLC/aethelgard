@@ -80,6 +80,8 @@ pub struct Elf {
     /// `AP_ROMFS::files`, after those, each name a string after them;
     /// `None` leaves the symbol out.
     pub romfs: Option<Vec<RomfsFile>>,
+    /// `AP_Scripting::var_info`, after those; `None` leaves the symbol out.
+    pub scripting: Option<Vec<VarRow>>,
 }
 
 /// One `AP_ROMFS::embedded_file` (`AP_ROMFS.h:30-36`), its contents pointer
@@ -108,6 +110,45 @@ pub const ROMFS_DEFAULTS: RomfsFile = RomfsFile {
     decompressed: 57,
     crc: 0x75a0_8073,
 };
+
+/// `advlua`'s script (`AET-WO-4406` adversarial A1), as its ROMFS lists it.
+pub const ROMFS_ADVLUA: RomfsFile = RomfsFile {
+    name: "scripts/adv.lua",
+    compressed: 166,
+    decompressed: 230,
+    crc: 0x9b4b_0abf,
+};
+
+/// `AP_Scripting::var_info` as `fc-base` compiles it (`spike/4406`), its
+/// `ENABLE` row (`SCR_ENABLE`, flagged `AP_PARAM_FLAG_ENABLE`) defaulting to
+/// `enable`: 0 on every measured board, 1 on `advlua`.
+pub fn scripting_var_info(enable: f32) -> Vec<VarRow> {
+    let row = |name: &str, offset, kind, default: f32, idx| VarRow {
+        offset,
+        idx,
+        ..var_row(name, kind, default)
+    };
+    vec![
+        VarRow {
+            flags: 4,
+            ..row("ENABLE", 136, 1, enable, 1)
+        },
+        row("VM_I_COUNT", 140, 3, 10_000.0, 2),
+        row("HEAP_SIZE", 144, 3, 204_800.0, 3),
+        row("DEBUG_OPTS", 148, 1, 0.0, 4),
+        row("USER1", 0, 4, 0.0, 5),
+        row("USER2", 4, 4, 0.0, 6),
+        row("USER3", 8, 4, 0.0, 7),
+        row("USER4", 12, 4, 0.0, 8),
+        row("USER5", 16, 4, 0.0, 10),
+        row("USER6", 20, 4, 0.0, 11),
+        row("DIR_DISABLE", 150, 2, 0.0, 9),
+        row("LD_CHECKSUM", 152, 3, -1.0, 12),
+        row("RUN_CHECKSUM", 156, 3, -1.0, 13),
+        row("THD_PRIORITY", 160, 1, 0.0, 14),
+        group_end(),
+    ]
+}
 
 /// `AP_Param::param_defaults_data` cut from `advapj` (`4405` A1, route 2;
 /// ELF sha256 `f9c26e75…`, `spike/4406/out/SHA256SUMS`): 1044 bytes,
@@ -318,6 +359,7 @@ impl Default for Elf {
             gps: None,
             param_defaults: None,
             romfs: None,
+            scripting: None,
         }
     }
 }
@@ -410,6 +452,10 @@ impl Elf {
             data.extend(entries);
             data.extend(names);
         }
+        let scripting_at = ADDR + data.len() as u32;
+        if let Some(rows) = &self.scripting {
+            data.extend(group_info(scripting_at, rows));
+        }
         let var_at = ADDR + data.len() as u32;
         if let Some(rows) = &self.var_info {
             data.extend(group_info(var_at, rows));
@@ -483,6 +529,13 @@ impl Elf {
                 aethelgard_pincheck::elf::ROMFS_FILES,
                 romfs_at,
                 20 * files.len() as u32,
+            );
+        }
+        if let Some(rows) = &self.scripting {
+            object(
+                aethelgard_pincheck::elf::SCRIPTING_VAR_INFO,
+                scripting_at,
+                16 * rows.len() as u32,
             );
         }
         // Last, so the names before it keep their offsets.

@@ -4,7 +4,7 @@ MOVED advapj
   elf-only branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: AP_Param::load_embedded_param_defaults is linked: defaults em
 MOVED advgps1
   main   exit 0 [] 
-  branch exit 1 ["identity GpsPortUnbound SERIAL3 [at most 1 GPS ports, SERIAL1 (AP_GPS::var_info compiles 1 receivers; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
+  branch exit 1 ["identity GpsPortUnbound SERIAL3 [at most 1 GPS port, SERIAL1 (AP_GPS::var_info compiles 1 receiver; AP_GPS.cpp:345-349) | SerialProtocol_GPS (5)]"] 
   elf-only branch exit 0 [] 
 SAME adv-numforms exit 0 [] 
   elf-only branch exit 0 [] 
@@ -60,6 +60,8 @@ SAME step-g exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward Wrong
   elf-only branch exit 1 ["forward WrongPull PA0 [PUPDR 00 | PUPDR 01]","forward WrongPull PA10 [PUPDR 00 | PUPDR 01]","forward WrongPull PA9 [PUPDR 00 | PUPDR 01]","forward WrongSpeed PA0 [OSPEEDR 00 | OSPEEDR 10]","forward WrongSpeed PA
 EXTRA advnoromfs main   exit 0 [] 
 EXTRA advnoromfs branch exit 0 [] 
+EXTRA advlua main   exit 0 [] 
+EXTRA advlua branch exit 3 [] {"kind":"ParamDefaultsOverride","id":null,"message":"the ELF can apply parameter defaults at boot over the ones it compiles, which this check reads: ROMFS lists scripts/adv.lua, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550); AP_Scripting::var_info's ENABLE (SCR_ENABLE) defaults to 1: Lua scripts, from ROMFS or the SD card, run at boot and can set parameters (AP_Scripting.cpp:55-72, :220; lua_scripts.cpp:548-550)"}
 EXTRA swap main   exit 0 [] 
 EXTRA swap branch exit 3 [] {"kind":"VarInfoRowOffset","id":null,"message":"var_info entry 2 (`1_PROTOCOL`) sets the member at offset 56, not 32 (24n + 0 BAUD, 4 OPTIONS, 8 PROTOCOL, as measured on every board): ArduPilot applies the default there, whatever the name says (AP_Param.cpp:1490-1497)"}
 CI-SCRIPT aethelgard-main exit 0 errors 0
