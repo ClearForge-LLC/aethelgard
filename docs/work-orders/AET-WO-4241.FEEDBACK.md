@@ -1,4 +1,4 @@
-# AET-WO-4241 — FEEDBACK (AWAITING-PACKAGE: built to the rulings of 10:05Z, 11:10Z and 12:06Z; CI green but `bench-package`, which moves by the architect's dispatch)
+# AET-WO-4241 — FEEDBACK (READY: built to the rulings of 10:05Z, 11:10Z and 12:06Z; the bench package from the architect's write=true dispatch, byte for byte)
 
 **Branch and inputs.**
 - Branch `wo/aet-4241-read-every-identity`, from `main` at `d70a99e5`.
@@ -13,26 +13,24 @@ Each statement is labelled:
 
 ## 0. Status
 
-**AWAITING-PACKAGE** (the `3402`/`1604` flow). Built, re-judged, and CI green but the package. The head merges
-`main` `14bb1e5b` (2306, 1209c, 2305, 4405, 1318, 3306, 4240a with specification 20, and docs). 4240a's one
-conflict was `order_2203`'s `main.rs` digest, which both sides moved: the spec-20 version line and the TMP117 read.
-It was re-measured by tooling on the merged tree as `a95a1bb6…f918`. The platforms equal `main`'s, and the boot image
-equals this branch's. Next, in order:
-- the architect's `write=true` dispatch, after 4240a;
-- the artifact committed byte for byte into `fab/sentinel-01-bench/package/`;
-- `bench-package` green;
-- then READY, as the last push.
+**READY.** The head merges `main` `824c3ff3` (2306, 1209c, 2305, 4405, 1318, 3306, 4240a with specification 20,
+and docs).
 
-The files I expect to move:
-- `sentinel-01-bench.elf`, which gains the TMP117 read;
-- `MANIFEST.json`'s ELF hash and its `verdict_sha256`. The verdict hash moves because `twin_limits` gained
-  `IDENTITY.U3`, and the campaign's state hashes moved.
+4240a's one conflict was `order_2203`'s `main.rs` digest, which both sides moved: the spec-20 version line and the
+TMP117 read. It was re-measured by tooling on the merged tree as `a95a1bb6…f918`. The platforms equal `main`'s,
+and the boot image equals this branch's.
 
-Any other file moving is a stop, not a commit.
+**The bench package.** It comes from the architect's `write=true` dispatch, run 44755445770 on `a014d335`, and is
+committed byte for byte in `6d6cfa16`. It moved exactly as predicted:
+- `sentinel-01-bench.elf`: `e4e24372…6f11` → `f3e871bb…52c4`, which gains the TMP117 identity read;
+- `MANIFEST.json`: its ELF hash, and `verdict_sha256` `26b203a3…6d47` → `19b9cb05…b856`;
+- every other package file is byte-identical.
 
-- **CI:** run 44735397769 on `aa852fbf` passes all 32 checks but `bench-package`. That one fails only because the
-  committed package is `main`'s ELF, which moves by the architect's `write=true` dispatch (queued after 4240a).
-  The tier-2 aggregate passes at `TIER2_MIN` 199.
+- **CI:** the architect's dispatch, run 44755445770 on `a014d335` (`main` `824c3ff3` merged), is green in every
+  job: `gates`, `bench-package` (which wrote the package committed above), `tools-build`, all 12 `tools-shard`s,
+  and the `tools` aggregate at `TIER2_MIN` 200.
+  - Before it, run 44735397769 on `aa852fbf` passed all 32 checks but `bench-package`, which then waited for the
+    dispatch. Its tier-2 aggregate passed at `TIER2_MIN` 199.
 - **Host gates** on the merged tree are green: fmt, clippy `-D warnings`, `cargo test --workspace`.
 - **D5 confirmed:** with 2305 merged, the re-judge on `main` `a75fffcc` has all 48 campaign runs unchanged (the
   three droops included) and every boot verdict unchanged. The 17 modelled instants that move are all within
@@ -397,8 +395,8 @@ All 13 are killed (12 guards, and two forms of the WO's pass mutant):
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `cargo test --workspace`: green on the merged tree (rc 0).
-- **Tier 2 (CI run 44735397769):** every shard and the aggregate pass at `TIER2_MIN` 199. `bench-package` waits
-  for the dispatch.
+- **Tier 2 (CI run 44755445770, the dispatch on `a014d335`):** every shard and the aggregate pass at `TIER2_MIN`
+  200, and `bench-package` is green.
 - **Re-pinned tests:** verified first in the tools image, with a forced rebuild.
   - Lesson: `rsync -a` keeps old mtimes, so cargo may reuse a stale test binary. Touch the sources after the sync.
 - Reduction pass (diff): −8 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 6
