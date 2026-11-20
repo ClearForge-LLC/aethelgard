@@ -1,0 +1,9 @@
+logger-i2c-only	generate	0	1003	41181184	17179869184
+logger-i2c-only	prove:every_valid_sequence	0	156864	4926500864	17179869184
+logger-i2c-only	prove:i2c1_transfer_is_bounded_and_ordered	0	9053	701599744	17179869184
+logger-i2c-only	prove:i2c2_transfer_is_bounded_and_ordered	0	12070	877051904	17179869184
+logger-i2c-only	prove:reset_clock_is_ok_exactly_at_reset	0	2010	91840512	17179869184
+logger-i2c-only	prove:usart1_start_writes_the_solved_values	0	8043	809332736	17179869184
+logger-i2c-only	prove:flash_option_status_is_one_read	0	1006	86265856	17179869184
+logger-i2c-only	generate	0	1005	42119168	17179869184
+logger-i2c-only	verify	0	150781	4706791424	17179869184
