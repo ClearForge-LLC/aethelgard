@@ -17,7 +17,7 @@ Labels: **[measured]** by a run named beside it; **[read]** at the source named 
   - Soft growth is everywhere: about 73 % of removals widen or heighten the outline by more than 1 mm.
 - **The fix, (a) [measured, §4].**
   - Under a declared bound, a placement that misses the bound is placed again with the canonical rank reseeded, seeds 1 to 8 in turn, and the first that fits is kept.
-  - A board that fits the first time is the board returned, so no committed board moves. That covers 41 specifications through `generate`, Sentinel-01 and the bench package among them, and the five passing `outline_tier1` cases.
+  - A board that fits the first time is the board returned, so no committed board moves. That covers 41 specifications through `generate`, Sentinel-01 among them, the bench package (by `bench_board_tier1`'s committed-package test and CI's bench-package job), and the five passing `outline_tier1` cases.
   - The forward turn fits (95.05 × 67.85 mm). Size samples 2 and 6 fit; 8 is still refused.
   - Hard cases fall:
     - parts level: 14/485 to 5/485, every one C4's, an MCU support capacitor no specification can remove;
@@ -66,7 +66,7 @@ Parts are matched by reference: the parts-level removal renames nothing.
 |---|---|---|
 | Placing order | … U4 U5 **U2** U7 U3 **C14–C17 C24–C27** R51 R50 … | … U4 U5 U7 U3 **C24–C27 C14–C17** R50 R51 …; the bench parts reordered too |
 | Steps U1 … U5 (0–40) | — | identical, origin for origin |
-| First difference | U7 at (85.75, 87.50) | U7 at (85.75, 93.25), the spot U2 took; then U3 takes U7's, and 44 of 90 steps differ |
+| First difference | U7 at (85.75, 87.50) | U7 at (85.75, 93.25), within 0.15 mm of where U2 was (85.65, 93.10); U3 at (85.75, 88.25), 0.75 mm from where U7 was; 44 of 90 steps differ |
 | Core before compaction | 80.325 × 74.780, right edge 154.475 | 80.242 × 72.780, right edge 154.475 |
 | The right-edge group | U11 with L2, C22, C23, R20, R21 (L2's keep-out at 154.475 in both) | same |
 | U11's compaction moves | 46 down, then 46 left | 46 down, then **17 left**: blocked by U5's group (U5, C43, C44 at x ≤ 134.25 in U11's band) |
@@ -133,7 +133,9 @@ The committed fixture, `outline_tier1`'s four turns and size samples 1, 2, 6 and
 - **Hard:** the full board fits and the reduced one does not.
 - **Soft:** the reduced outline is wider or taller by more than 1.000 mm.
 
-`main`'s placer is in the first three result columns; the reseeded placer (8 seeds) in the last two.
+`main`'s placer is in the first three result columns. The last two are the reseeded placer as the harness builds it, with 8 seeds (`out/fb-R-salt_1-8.tsv`, `out/fb-S-salt_1-8.tsv`).
+
+The harness's seed knob hashes the seed in exactly as the built `canonical_rank` does, retries on `OutlineUnreachable` only, and keeps the first fit. It reports seed 0's figures on a refusal; the built code reports the least-over. Where both were run they agree: the forward turn at 95.05 × 67.85, size 2 at 89.20 × 83.20, size 6 at 98.15 × 87.45. On the built code, the S column's 0/224 is the slice test `removing_one_…`, passing (§4.4).
 
 | Variant | Full board, `main` | R: fit / hard / soft | S: fit / hard / soft | R, reseeded: hard | S, reseeded: hard |
 |---|---|---|---|---|---|
@@ -158,7 +160,7 @@ The committed fixture, `outline_tier1`'s four turns and size samples 1, 2, 6 and
   - (m) out: the full board fits in 1 variant, hard 2, soft 701.
   - (s) out: the full board fits in none, soft 611.
   - Reference order is far steadier (soft 638 → 143), because removing a part shifts no other part's rank. But references are what `1313c` took out, and the hard cases persist.
-- **Seeds, measured before freezing at 8** (`spike/1317/out/fb-*`):
+- **Seeds, measured in the harness before freezing at 8** (`out/fb-R-salt_1-{4,8,16}.tsv`, `out/fb-R-rounds_0-2_rounds_4-8.tsv`; S at 16 seeds `out/fb-S-salt_1-16.tsv`, also 0):
   - 4 seeds: 19/776 hard. More boards fit whole, so more removals can be hard.
   - 8 seeds: 9/776.
   - 16 seeds: 9/776.
@@ -187,8 +189,9 @@ The committed fixture, `outline_tier1`'s four turns and size samples 1, 2, 6 and
 
 `aethelgard generate` writes into one fixed scratch path for each of 41 specifications: every `examples/*.json`, every top-level test fixture, and the Sentinel-03 variants. Every file it writes and every verdict are hashed, `main`'s release binary against the branch's (`out/baseline-main/`):
 
-- **Identical:** every file of every specification that generated on `main`. That includes Sentinel-01 (`examples/sentinel-01.json`, whose project is `sentinel-01-bench`, the bench package's board), Sentinel-03, its right, left and aft turns, size 1, and both with-U2 variants.
-- **Moved:** only the three that `main` refused, which now generate: the forward turn, size 2 and size 6. Size 8's refusal now names its least-over attempt.
+- **Identical:** every file of every specification that generated on `main`. That includes Sentinel-01 (`examples/sentinel-01.json`, whose project is `sentinel-01-bench`, the bench package's board; the package itself is held by `bench_board_tier1`'s committed-package test, in the 2,357, and by CI's bench-package job), Sentinel-03, its right, left and aft turns, size 1, and both with-U2 variants.
+- **Moved:** only the three that `main` refused, which now generate: the forward turn, size 2 and size 6, 14 files each. Size 8's refusal now names its least-over attempt.
+- Re-run with a release binary built at 0818621c, after the reduction pass (`out/baseline-head/`): identical to the pre-reduction branch, file for file and verdict for verdict.
 
 ### 4.3 The re-judged cases [measured]
 
@@ -264,7 +267,7 @@ Each is one replacement in the final `pcb.rs`, judged by `outline_tier1` whole (
 4. **Compaction's bound (`1313d`) reached on a case that fitted before.**
    - No case that fitted before runs anything new: seed 0 is the first attempt.
    - Every reseeded attempt runs the same `compact`, with its own bound checked as it moves.
-   - No `CompactionUnbounded` appeared in any sweep: 873 × 3 R runs, the reseeded runs, 3,808 pairs on the branch [measured, the class columns].
+   - No `CompactionUnbounded` appeared in any sweep: 873 × 3 R runs, the reseeded runs, and both pairs runs (the full files' class column: fit, `OutlineUnreachable` and `validate` refusals only) [measured].
 
 ## 6. Findings
 
@@ -280,8 +283,12 @@ Each is one replacement in the final `pcb.rs`, judged by `outline_tier1` whole (
   - `outline_tier1`'s size test now emits sizes 2 and 6 with the eight-rung ladder: 23 s alone on the host. The forward turn also emits.
   - In tier 2, `board_tier2::each_size_sample_…` now runs every gate on sizes 2 and 6. Its weight row is 1.5 s, from when all three were refused.
   - `ci/test-weights.tsv` and `ci/colocate.tsv` (`outline_tier1` 152 s) are outside this fence unless the plan's guard asks. CI_PLACEHOLDER
-- **F6. The tie rule in the least-over choice is untested** (mutant M4 survives, §4.5).
 - **F5. A board refused under a bound now costs nine placements before the refusal** (the 60 × 60 test, size 8): about 0.3 s in release.
+- **F6. The tie rule in the least-over choice is untested** (mutant M4 survives, §4.5).
+- **F7. `crates/aethelgard-eda/README.md` is stale on two points, outside this fence.**
+  - Its "Under a declared bound" list does not mention the retry.
+  - "one the placer cannot reach is refused with the outline it reached" is now the least-over of nine attempts.
+  - A proposed bullet: "a placement that misses the bound is placed again with the canonical rank reseeded, seeds 1 to 8, the first that fits kept; a board that fits the first time is unchanged (`AET-WO-1317`)". Plus "with the least-over outline of its attempts" in place of "with the outline it reached". The architect's to apply or to widen the fence for.
 
 ## 7. Reduction pass
 
@@ -301,4 +308,14 @@ Reduction pass (diff): −1 line net in code · 1 duplicate removed (spike data)
 
 ## 8. Gates
 
-GATES_PLACEHOLDER
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check` | clean, on 0818621c |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean, on 0818621c |
+| `cargo test --workspace` (host) | **2,357 passed, 0 failed, 0 ignored**, on 0818621c (main 48a78b22 merged); the same on e4109699, before the reduction |
+| tier 2 in the image | §4.3: the Sentinel-03 fixture, sizes 2/6/8, and the forward turn through every gate |
+| mutants | §4.5: 4 of 5 killed; M4 survives (F6) |
+| `TIER2_MIN` | unchanged: this work order adds no tier-2 test |
+| CI | CI_RUN_PLACEHOLDER |
+
+Reduction pass (diff): −1 line net in code · 1 duplicate removed · 1 dead path removed · 0 protected kept · 0 findings below (§7).
