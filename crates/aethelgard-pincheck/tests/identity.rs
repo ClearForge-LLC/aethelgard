@@ -337,9 +337,8 @@ fn the_serial_order_and_bauds_are_judged() {
         kinds(&judge(&t, IDENTITY, &[moved]).unwrap()),
         ["WrongSerialPort"]
     );
-    // SERIAL0 opens at its define, read from hwdef.h (FEEDBACK D1), then
-    // runs at `0_BAUD`, the define / 1000 as var_info holds it, mapped
-    // (adversarial A7).
+    // SERIAL0 runs at `0_BAUD`, the define / 1000 as var_info holds it,
+    // mapped; the define itself in hwdef.h is not read (FEEDBACK D1).
     let console = |define: &str, row: i32| {
         judge_with(
             &t,
@@ -352,14 +351,18 @@ fn the_serial_order_and_bauds_are_judged() {
     };
     assert_eq!(
         console("921600", 921),
-        ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud, then 921600 baud]"]
+        ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud]"]
     );
-    // 115999 / 1000 is 115, which var_info cannot tell from 115200's: only
-    // the define names the boot rate.
+    // The row is judged, whatever the header says: a header of 921600 beside
+    // a row of 115 passes, a header of 115200 beside a row of 921 does not.
+    assert_eq!(console("921600", 115), Vec::<String>::new());
     assert_eq!(
-        console("115999", 115),
-        ["WrongSerialBaud SERIAL0 [115200 baud | 115999 baud, then 115200 baud]"]
+        console("115200", 921),
+        ["WrongSerialBaud SERIAL0 [115200 baud | 921600 baud]"]
     );
+    // The residual (D1): 115999 / 1000 is 115, the row of 115200, so the
+    // boot open at 115999 (`AP_SerialManager.cpp:419`) is not seen.
+    assert_eq!(console("115999", 115), Vec::<String>::new());
     let mut v: Value = serde_json::to_value(&t).unwrap();
     v["serial_ports"]["CONSOLE"]["framing"]["baud"] = json!(14400);
     let slow: SolvedTopology = serde_json::from_value(v).unwrap();
@@ -372,7 +375,7 @@ fn the_serial_order_and_bauds_are_judged() {
             &[INVENSENSEV3_PROBE],
         )
         .unwrap(),
-        ["WrongSerialBaud SERIAL0 [14400 baud | 14400 baud, then 14000 baud]"]
+        ["WrongSerialBaud SERIAL0 [14400 baud | 14000 baud]"]
     );
     // The entry's driver pointer is not `SD1` (adversarial A11).
     let other_driver = SerialEntry {
@@ -1170,8 +1173,8 @@ fn the_console_s_protocol_is_read_and_its_inversion_is_named() {
 /// Each port's baud is its `n_BAUD` mapped (`map_baudrate`,
 /// `AP_SerialManager.cpp:737-770`), never the stored value: SERIAL0's `115`
 /// is 115200, and a port with no baud define runs its `#ifndef` default,
-/// `57` (57600). A `DEFAULT_SERIALn_BAUD` in `hwdef.h` is not read for
-/// n ≥ 1. RC input's baud is ArduPilot's own (`AET-WO-4400b` F3).
+/// `57` (57600). No `DEFAULT_SERIALn_BAUD` in `hwdef.h` is read. RC
+/// input's baud is ArduPilot's own (`AET-WO-4400b` F3).
 #[test]
 fn each_baud_is_the_parameter_mapped() {
     let ports = [("console", false), ("mavlink", false), ("rc_crsf", false)];
@@ -1215,7 +1218,7 @@ fn each_baud_is_the_parameter_mapped() {
     );
     assert_eq!(
         serial(&ports, &with(&rows, 0, (2, 57, None)), "").unwrap(),
-        ["WrongSerialBaud SERIAL0 [115200 baud | 115200 baud, then 57600 baud]"]
+        ["WrongSerialBaud SERIAL0 [115200 baud | 57600 baud]"]
     );
 }
 

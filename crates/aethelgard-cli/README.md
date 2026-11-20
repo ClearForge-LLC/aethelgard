@@ -528,7 +528,7 @@ The pinout check of `aethelgard-pincheck` (`AET-WO-4400a`). It judges what a lin
 
 Every input is read whole under the 16 MiB cap. The verdict carries each input's sha256, `ok`, `decodes` (`elf and hwdef.h agree`, or `elf only`), `identity` (`judged`, or `not judged: no hwdef.h`; `AET-WO-4400b2`), `configured` (each configured pin with `named_by`, a topology net, `allow-list` or null), and `findings`. Each finding is named by `check` (`forward`, `reverse` or `package`), `kind` (`NotAlternate`, `WrongAlternateFunction`, `NotOutput`, `WrongOutputType`, `WrongSpeed`, `WrongPull`, `UnnamedPin`, `AllowedPinDiffers` or `NotInPackage`; and, with `hwdef.h`, the identity judge's kinds under `check` `identity`, listed in `aethelgard-pincheck`'s README, `AET-WO-4400b2`), `pin`, `net` (or null), `expected` and `decoded`.
 
-The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes, and SERIAL0's boot rate) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1). Each serial port's protocol, options and baud are read from the ELF's `var_info` (`AET-WO-4405`).
+The `hwdef.h` facts the identity judge reads (SPI devices, PWM groups, I2C clock, barometer and IMU probes) are bound to the firmware only by coming from the same build directory as the ELF: a hand-paired ELF and `hwdef.h` is not cross-checked (`AET-WO-4400b2` D1). Each serial port's protocol, options and baud are read from the ELF's `var_info` (`AET-WO-4405`).
 
 | Exit | When |
 |---|---|

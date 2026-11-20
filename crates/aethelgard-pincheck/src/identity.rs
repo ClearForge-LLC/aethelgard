@@ -37,10 +37,6 @@ const GPIO_BASE: u32 = 0x5802_0000;
 const GPIO_STEP: u32 = 0x400;
 const PORTS: &str = "ABCDEFGHIJK";
 
-/// SERIAL0's baud when `DEFAULT_SERIAL0_BAUD` is not defined:
-/// `AP_SERIALMANAGER_CONSOLE_BAUD`, 115200 (`AP_SerialManager_config.h:78-81`).
-const SERIAL0_DEFAULT_BAUD: u64 = 115_200;
-
 /// The I2C clock when `HAL_I2C_MAX_CLOCK` is not defined (`I2CDevice.cpp:53-54`).
 const I2C_DEFAULT_CLOCK: u64 = 100_000;
 
@@ -265,7 +261,7 @@ pub fn judge(
     spi(t, parts, header, &mut out)?;
     motors(t, header, &mut out)?;
     i2c_clock(t, header, &mut out)?;
-    serial_ports(t, header, &serial, &params, &mut out)?;
+    serial_ports(t, &serial, &params, &mut out);
     serial_settings(t, &params, &mut out);
     baros(t, parts, header, &mut out)?;
     imus(t, parts, header, elf_bytes, &mut out)?;
@@ -563,13 +559,7 @@ fn serial_order(
 /// `SDn` and its number) and pins, every later entry empty; and each port's
 /// baud, from its `n_BAUD` in var_info, except RC input's, which ArduPilot
 /// sets itself (`AET-WO-4400b` F3).
-fn serial_ports(
-    t: &SolvedTopology,
-    h: &Preprocessed,
-    serial: &[SerialEntry],
-    params: &[SerialParam],
-    out: &mut Out,
-) -> Result<(), Refusal> {
+fn serial_ports(t: &SolvedTopology, serial: &[SerialEntry], params: &[SerialParam], out: &mut Out) {
     let order = serial_order(t);
     for n in 0..order.len().max(serial.len()) {
         let at = format!("SERIAL{n}");
@@ -623,36 +613,23 @@ fn serial_ports(
         let Some(param) = params.iter().find(|q| usize::from(q.port) == n) else {
             continue;
         };
+        // Each port runs at its parameter, mapped (`AP_SerialManager.h:151-153`;
+        // SERIAL0 reopened by the GCS, `GCS_Common.cpp:221`). SERIAL0's
+        // first open, at `DEFAULT_SERIAL0_BAUD` itself (`:419`), is not
+        // judged: var_info holds it only as the define / 1000 (`:172`), and
+        // it is no longer read from `hwdef.h` (FEEDBACK D1).
         let declared = u64::from(p.framing.baud);
-        let mut runs = Vec::new();
-        if n == 0 {
-            // SERIAL0 first opens at the define itself, a literal in the code
-            // (`AP_SerialManager.cpp:419`), which var_info cannot hold: its
-            // `0_BAUD` is the define / 1000 in C integer division (`:172`),
-            // so 115999 and 115200 share one row (adversarial A7). This is
-            // the one serial fact still read from `hwdef.h` (FEEDBACK D1).
-            runs.push(defined_number(h, "DEFAULT_SERIAL0_BAUD")?.unwrap_or(SERIAL0_DEFAULT_BAUD));
-        }
-        // Every port then runs at its parameter, mapped
-        // (`AP_SerialManager.h:151-153`; SERIAL0 reopened by the GCS,
-        // `GCS_Common.cpp:221`).
-        runs.push(map_baudrate(param.baud));
-        if runs.iter().any(|b| *b != declared) {
-            let got = runs
-                .iter()
-                .map(|b| format!("{b} baud"))
-                .collect::<Vec<_>>()
-                .join(", then ");
+        let runs = map_baudrate(param.baud);
+        if runs != declared {
             out.push(
                 "WrongSerialBaud",
                 &at,
                 Some(label),
                 format!("{declared} baud"),
-                got,
+                format!("{runs} baud"),
             );
         }
     }
-    Ok(())
 }
 
 /// The `SerialProtocol` names a finding can carry (`AP_SerialManager.h:37-91`):

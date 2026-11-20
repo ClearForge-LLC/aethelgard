@@ -7,7 +7,7 @@ R = "/home/forge/aethelgard-4405"
 E = "crates/aethelgard-pincheck/src/elf.rs"
 I = "crates/aethelgard-pincheck/src/identity.rs"
 M = [
- ("M1 baud float taken as the baud", I, "runs.push(map_baudrate(param.baud));", "runs.push(u64::try_from(param.baud).unwrap_or(0));"),
+ ("M1 baud float taken as the baud", I, "let runs = map_baudrate(param.baud);", "let runs = u64::try_from(param.baud).unwrap_or(0);"),
  ("M2 read past AP_GROUPEND", E, "if i + 1 != entries.len() || !name.is_empty()", "if !name.is_empty()"),
  ("M3 GPS cap dropped", I, "if gps.len() >= GPS_MAX_RECEIVERS {", "if gps.len() >= usize::MAX {"),
  ("M4 GPS2 not counted", I, "runs == GPS || runs == GPS2", "runs == GPS"),
@@ -24,7 +24,6 @@ M = [
  ("M14 name length unbounded", E, ".take(NAME_MAX + 1)", ""),
  ("M16 the name's end not required flashed", E, "    loaded_offset(bytes, addr, len as u32 + 1)?;\n", ""),
  ("M18 missing declared port not named", I, '            out.push(\n                "MissingSerialParameters",', '            if false { out.push(\n                "MissingSerialParameters",'),
- ("M19 SERIAL0 boot rate not read", I, '            runs.push(defined_number(h, "DEFAULT_SERIAL0_BAUD")?.unwrap_or(SERIAL0_DEFAULT_BAUD));\n', '            let _ = SERIAL0_DEFAULT_BAUD;\n'),
  ("M20 RCIN twice dropped", I, "            if let Some(first) = rcin.first() {", "            if let Some(first) = rcin.first().filter(|_| false) {"),
 ]
 only = sys.argv[1:] 
