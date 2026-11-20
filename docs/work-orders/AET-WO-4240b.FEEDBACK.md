@@ -78,6 +78,25 @@
 
   Renode's RDY bits read their ON bit at once.
 
+### §2.4 The hwdef fixtures at specification 23 (the architect's 18:26Z note)
+
+CI's `ardupilot-image` job runs `solve` then `generate hwdef --topology` and `cmp`s the result against `crates/aethelgard-hwdef/tests/fixtures/`. Re-taken the same way at `3c800118`. Each file was checked by putting the old sha back in the regenerated file and comparing it with the committed one byte for byte:
+
+| File | Moved | Old → new specification sha256 |
+|---|---|---|
+| `sentinel-01.topology.json`, `.hwdef.dat` | the sha line only | `db17a0f8…` → `5e840088…` |
+| `sentinel-02.topology.json`, `.hwdef.dat` | the sha line only | `bd02ba36…` → `79147f4b…` |
+| `serial-dshot-9600.topology.json`, `.hwdef.dat` | the sha line only | `b38c2406…` → `75fe0fca…` |
+
+```
+- # From the SolvedTopology of specification sha256 bd02ba361872948ecf1222f328ed85a2a4347a3d3bcfbacab19e7176c72b60bf and the parts tables alone (RUL-16). Do not edit: regenerate.
++ # From the SolvedTopology of specification sha256 79147f4b9f046ebb48f818a624d8c128ace114f5e3c6820225dc117aec621417 and the parts tables alone (RUL-16). Do not edit: regenerate.
+```
+
+`sentinel-02-noimu` is `sentinel-02`'s file with its `IMU` line dropped, so it follows. A grep of the tree, outside `spike/` and `docs/`, for every pre-renumber specification sha (each committed specification at `main` `25203c58`, and the HSE fixtures at 22) finds:
+- `fab/sentinel-01-bench/BENCH-EXT-BMP581.md` L9: its sha and "specification 22" re-taken (`ac54b806…` → `ceccebff…`, 23);
+- the bench package's `FAB-NOTES.md` and `MANIFEST.json`, which the write=true dispatch replaces.
+
 ## §3 What was built
 
 - **IR:**
