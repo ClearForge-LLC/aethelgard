@@ -1,0 +1,51 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p3902611-i180045620.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
+   Compiling thiserror v2.0.21
+   Compiling thiserror-impl v2.0.21
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.66s
+test each_size_sample_passes_every_gate_or_is_refused_by_name ... ANSWER 3301: validate exit=Some(0) wall_s=0.12
+ANSWER 3301: generate exit=Some(0) wall_s=7.80
+ANSWER 3301: emit exit=Some(0) wall_s=9.50
+ANSWER 3301: check exit=Some(0) wall_s=0.95
+ANSWER 3301: check exit=Some(0) wall_s=1.57
+ANSWER 3301: check exit=Some(0) wall_s=1.66
+ANSWER 3301: check exit=Some(0) wall_s=0.57
+ANSWER 3301: extract exit=Some(0) wall_s=0.13
+ANSWER 1313c-size 2 passes outline 89.20 x 83.20 mm, least extract slack 9.4 pF
+ANSWER 3301: validate exit=Some(0) wall_s=0.10
+ANSWER 3301: generate exit=Some(0) wall_s=15.69
+ANSWER 3301: emit exit=Some(0) wall_s=12.32
+ANSWER 3301: check exit=Some(0) wall_s=0.51
+ANSWER 3301: check exit=Some(0) wall_s=0.98
+ANSWER 3301: check exit=Some(0) wall_s=1.23
+ANSWER 3301: check exit=Some(0) wall_s=0.47
+ANSWER 3301: extract exit=Some(0) wall_s=0.10
+ANSWER 1313c-size 6 passes outline 98.15 x 87.45 mm, least extract slack 7.9 pF
+ANSWER 3301: validate exit=Some(0) wall_s=0.11
+ANSWER 3301: generate exit=Some(2) wall_s=0.38
+ANSWER 3301: emit exit=Some(2) wall_s=0.38
+ANSWER 1313c-size 8 refused OutlineUnreachable
+test the_sentinel_03_fixture_passes_every_gate_inside_its_bound ... ANSWER 3301: validate exit=Some(0) wall_s=0.12
+ANSWER 3301: generate exit=Some(0) wall_s=5.12
+ANSWER 3301: emit exit=Some(0) wall_s=5.34
+ANSWER 3301: check exit=Some(0) wall_s=0.85
+ANSWER 3301: check exit=Some(0) wall_s=1.73
+ANSWER 3301: check exit=Some(0) wall_s=1.26
+ANSWER 3301: check exit=Some(0) wall_s=0.79
+ANSWER 3301: extract exit=Some(0) wall_s=0.10
+ANSWER 1313c-fixture outline 95.80 x 67.60 mm, least extract slack 8.5 pF
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 69.88s
+validate: {"ok":true,"project_name":"sentinel-03","voltage_domains":2,"net_constraints":8,"lifecycle":["LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog e
+generate: {"ok":true,"project_name":"sentinel-03","specification_sha256":"9aaaf275725f96588b48b6d465d273044b60a4df1b3a39db78addc181b1e2fe9","topology_sha256":"0c56787b70ec6d6d8153e96add38704069b6e0c6ba899908411
+emit: {"ok":true,"project_name":"sentinel-03","specification_sha256":"9aaaf275725f96588b48b6d465d273044b60a4df1b3a39db78addc181b1e2fe9","schematic":{"path":"/tmp/fwd/emitted/sentinel-03.kicad_sch","sha256":"4f1326064448939fdefd19653436edf41a8408985ce2ce54758ac2daed2b512a"},"bill_of_materials":{"path":"/tm
+4
+ (gr_rect (start 56.95 58.85) (end 152 126.7) 
+erc: {"ok":true,"verdict":"pass","check":"erc","input":{"path":"/tmp/fwd/emitted/sentinel-03.kicad_sch","sha256":"4f1326064448939fdefd19653436edf41a8408985ce2ce54758ac2daed2b512a"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"user_namespace"},"included_severities":["error","warning"],"findings":[]}
+erc exit 0
+aethelgard: cannot write report to stdout: Broken pipe (os error 32)
+drc: {"ok":true,"verdict":"pass","check":"drc","input":{"path":"/tmp/fwd/emitted/sentinel-03.kicad_pcb","sha256":"1ad0541fdf063340d0f771a2c950b7c7bcc8e724656bbbcf3d5881e55d6c93c7"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"user_namespace"},"included_severitie
+aethelgard: cannot write report to stdout: Broken pipe (os error 32)
+drc+parity: {"ok":true,"verdict":"pass","check":"drc","input":{"path":"/tmp/fwd/emitted/sentinel-03.kicad_pcb","sha256":"1ad0541fdf063340d0f771a2c950b7c7bcc8e724656bbbcf3d5881e55d6c93c7"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"user_namespace"},"included_severitie
+aethelgard: cannot write report to stdout: Broken pipe (os error 32)
+support: {"ok":true,"verdict":"pass","check":"support","input":{"path":"/tmp/fwd/emitted/sentinel-03.kicad_sch","sha256":"4f1326064448939fdefd19653436edf41a8408985ce2ce54758ac2daed2b512a"},"tool":{"name":"kicad-cli","version":"10.0.7","exit_code":0},"sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"user_namespace"},"specification_
+extract: pass [] 10.467
+exit 0

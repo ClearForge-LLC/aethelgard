@@ -199,7 +199,20 @@ The committed fixture, `outline_tier1`'s four turns and size samples 1, 2, 6 and
 | size 6 | refused 114.350 × 73.600 | **98.15 × 87.45**, seed 2 | the same |
 | size 8 | refused 118.500 × 79.450 | refused, best 102.150 × 88.200 | the same, its figures pinned |
 
-TIER2_GATES_PLACEHOLDER
+**Every gate, in the pinned tools image** [measured, `capped-run` at 16 GiB, swap 0 and 8192 pids read back; `out/tier2.log`]:
+
+- `board_tier2::the_sentinel_03_fixture_passes_every_gate_inside_its_bound`: pass, 95.80 × 67.60 mm, least extract slack 8.5 pF (unchanged).
+- `board_tier2::each_size_sample_passes_every_gate_or_is_refused_by_name`:
+  - size 2 **passes every gate**, 89.20 × 83.20 mm, slack 9.4 pF;
+  - size 6 **passes every gate**, 98.15 × 87.45 mm, slack 7.9 pF;
+  - size 8 refused, `OutlineUnreachable`.
+
+  Generate and emit for sizes 2 and 6 took 7.8–15.7 s each in the image.
+- **The forward turn**, through every step `bounded_gates` runs (`harness/fwd-gates.sh`), all passing:
+  - `validate`, `generate` and `emit`;
+  - 4 copper layers;
+  - ERC, DRC by the specification's rules with and without parity, and `check support`, each with 0 findings;
+  - `extract`, least slack 10.5 pF.
 
 ### 4.4 Tests
 
