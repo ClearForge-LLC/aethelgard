@@ -79,10 +79,13 @@ fn a_load_naming_a_resistor_the_emitter_does_not_draw_is_refused() {
     assert_eq!(code, Some(0), "{v}");
     // The emitter's own `U<n>` and `SW<n>` are drawn: a load naming the MCU,
     // or the reset switch when one is asked for, is never refused as undrawn.
-    // The MCU is on `VDD_3V3`; the switch is on `NRST` and `GND` only, so a
-    // load naming it on a rail is refused as off it (`AET-WO-1209b`).
+    // The MCU's current is its table row's, so the IR's step 20a refuses a
+    // load naming it as counted (`AET-WO-1209c`). The switch is on `NRST`
+    // and `GND` only, so a load naming it on a rail is refused as off it
+    // (`AET-WO-1209b`).
     let (code, v) = validate(&with_load(full.clone(), "U1"));
-    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "LoadNamesCountedPart", "{v}");
     let mut v = full.clone();
     v["mcu"]["reset_switch"] = json!(true);
     let (code, v) = validate(&with_load(v, "SW1"));
