@@ -1462,11 +1462,13 @@ pub(crate) fn choose_channel(channels: &BTreeSet<String>, hand: bool) -> Option<
         .or_else(|| if hand { pick("ADC2") } else { None })
 }
 
-/// Places every pin device's signals, then its ADC inputs, after every other
-/// pin is owned, so no pin solved before moves: each signal on its hand pin
-/// or the first free unreserved pin in key order (as a chip select), each
-/// ADC input on its hand pin or the free unreserved pin of lowest package
-/// position with an ADC1 or ADC3 channel (`1211` Q8).
+/// Places every pin device's ADC inputs, then its signals, after every other
+/// pin is owned, so no pin solved before moves: each ADC input on its hand
+/// pin or the free unreserved pin of lowest package position with an ADC1 or
+/// ADC3 channel (`1211` Q8), then each signal on its hand pin or the first
+/// free unreserved pin in key order (as a chip select). The ADC inputs go
+/// first because they are the narrower: a signal placed first by key order
+/// can take the only ADC pin left (measured in `pin_devices_solve.rs`).
 pub(crate) fn place<'t>(
     spec: &Specification,
     table: &'t crate::PinTable,
@@ -1476,39 +1478,6 @@ pub(crate) fn place<'t>(
     adc: &mut BTreeMap<String, SolvedAdcInput>,
 ) -> Result<(), crate::SolveError> {
     let key = |pin: &str| table.pins.get_key_value(pin).map(|(k, _)| k.as_str());
-    for (i, d) in spec.declared_pin_devices().iter().enumerate() {
-        for (k, s) in d.signals.iter().enumerate() {
-            let claimant = format!("pin_devices[{i}].signals[{k}]");
-            let pin = match &s.pin {
-                Some(p) => {
-                    let p = key(p).ok_or_else(|| crate::SolveError::UnknownPin {
-                        claimant: claimant.clone(),
-                        pin: p.clone(),
-                    })?;
-                    hand_free(p, &claimant, reserved, used)?;
-                    p
-                }
-                None => table
-                    .pins
-                    .keys()
-                    .map(String::as_str)
-                    .find(|p| !reserved.contains(p) && !used.contains_key(p))
-                    .ok_or_else(|| crate::SolveError::NoFreePin {
-                        claimant: claimant.clone(),
-                    })?,
-            };
-            used.insert(pin, claimant);
-            gpio.insert(
-                s.net.clone(),
-                SolvedGpio {
-                    pin: pin.to_owned(),
-                    direction: s.direction,
-                    initial: s.initial,
-                    pull: s.pull.as_ref().map(|p| p.mcu.unwrap_or(McuPull::None)),
-                },
-            );
-        }
-    }
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         for (k, a) in d.analog.iter().enumerate() {
             let claimant = format!("pin_devices[{i}].analog[{k}]");
@@ -1586,6 +1555,39 @@ pub(crate) fn place<'t>(
                     pin: name.to_owned(),
                     peripheral,
                     channel,
+                },
+            );
+        }
+    }
+    for (i, d) in spec.declared_pin_devices().iter().enumerate() {
+        for (k, s) in d.signals.iter().enumerate() {
+            let claimant = format!("pin_devices[{i}].signals[{k}]");
+            let pin = match &s.pin {
+                Some(p) => {
+                    let p = key(p).ok_or_else(|| crate::SolveError::UnknownPin {
+                        claimant: claimant.clone(),
+                        pin: p.clone(),
+                    })?;
+                    hand_free(p, &claimant, reserved, used)?;
+                    p
+                }
+                None => table
+                    .pins
+                    .keys()
+                    .map(String::as_str)
+                    .find(|p| !reserved.contains(p) && !used.contains_key(p))
+                    .ok_or_else(|| crate::SolveError::NoFreePin {
+                        claimant: claimant.clone(),
+                    })?,
+            };
+            used.insert(pin, claimant);
+            gpio.insert(
+                s.net.clone(),
+                SolvedGpio {
+                    pin: pin.to_owned(),
+                    direction: s.direction,
+                    initial: s.initial,
+                    pull: s.pull.as_ref().map(|p| p.mcu.unwrap_or(McuPull::None)),
                 },
             );
         }

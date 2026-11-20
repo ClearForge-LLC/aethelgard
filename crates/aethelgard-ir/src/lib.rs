@@ -4513,7 +4513,8 @@ impl SolvedTopology {
         }
         let mut seen = BTreeSet::new();
         let mut channels = BTreeSet::new();
-        let mut timers: BTreeMap<u32, (MotorProtocol, Option<(u32, u64)>, u32, u32)> = BTreeMap::new();
+        let mut timers: BTreeMap<u32, (MotorProtocol, Option<(u32, u64)>, u32, u32)> =
+            BTreeMap::new();
         for (net, m) in &self.motor_outputs {
             let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
             let Some((timer, channel)) = motor::timer_channel(&a.signal) else {

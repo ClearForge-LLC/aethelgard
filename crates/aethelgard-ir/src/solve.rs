@@ -599,7 +599,7 @@ fn solve_inner(
         }
     }
     out.adc_inputs = sense_inputs;
-    // Each pin device's signals, then its ADC inputs, after every pin above
+    // Each pin device's ADC inputs, then its signals, after every pin above
     // is owned, so none of theirs moves (`AET-WO-1211a`).
     crate::pin_devices::place(
         spec,
