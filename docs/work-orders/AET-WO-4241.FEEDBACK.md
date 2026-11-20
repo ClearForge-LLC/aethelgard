@@ -14,7 +14,7 @@ Each statement is labelled:
 ## 0. Status
 
 **AWAITING-PACKAGE** (the `3402`/`1604` flow). Built, re-judged, and CI green but the package. The head merges
-`main` `dc618bd8` (2306, 1209c, 2305, 4405 and docs). Next, in order:
+`main` `472d2d84` (2306, 1209c, 2305, 4405, 1318, 3306 and docs). Next, in order:
 - the architect's `write=true` dispatch, after 4240a;
 - the artifact committed byte for byte into `fab/sentinel-01-bench/package/`;
 - `bench-package` green;
@@ -66,7 +66,8 @@ The history follows.
       its record removed. It hooks U2's and U4's status words, and requires each written once and within 32
       instructions, and the boot word later by U3's wait.
     - It has a weight row in `ci/test-weights.tsv` (45 s, an estimate until the refit rule measures it), and
-      `TIER2_MIN` rises by 1: 195 → 196 at `main` `d0c4cfe0`, then 199 at `a75fffcc` (2305's 198 + 1).
+      `TIER2_MIN` rises by 1 at each merge: 195 → 196 at `main` `d0c4cfe0`, 199 at `a75fffcc` (2305's 198 + 1),
+      and 200 at `472d2d84` (3306's 199 + 1).
   - **D5, confirmed:** after 2305 lands, merge `main`, re-run the re-judge, and confirm the three droops pass.
 - **CI on `f48cadd7`, every failure root-caused (the architect's 11:12Z note):**
   - **Shards 3 and 4**, `against_fab_tier2`, and **shard 0**, `board_tier2::every_admitted_identifier_character…`:
@@ -384,7 +385,7 @@ All 13 are killed (12 guards, and two forms of the WO's pass mutant):
     (`spi_init_takes_every_select_and_drives_it_high`, whose firmware now reads both devices).
   - No IR, specification or `BENCH.md` file changed.
   - Two `ci/`/workflow lines did change, each as the WO allows.
-    - `.github/workflows/ci.yml`: `TIER2_MIN` is 199, `main`'s 198 plus this order's one tier-2 test, the D4
+    - `.github/workflows/ci.yml`: `TIER2_MIN` is 200, `main`'s 199 plus this order's one tier-2 test, the D4
       bound, as the WO's acceptance asks.
     - `ci/test-weights.tsv`: one weight row for that test, as P1/P2 require.
 
