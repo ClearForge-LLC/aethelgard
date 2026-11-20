@@ -16,11 +16,23 @@ use crate::{
 
 /// Never assigned, and refused as a hand pin: the SWD debug port (`PA13`
 /// SWDIO, `PA14` SWCLK), so the board can be programmed, and the LSE pins
-/// (`PC14`/`PC15`), so it keeps its 32 kHz crystal. The HSE pins (`PH0`,
-/// `PH1`) are not reserved: they would be only beside a crystal, which no
-/// specification can declare yet (`mcu.hse_hz` must be 0, `4400` D1;
-/// `AET-WO-4300a` §1.1).
+/// (`PC14`/`PC15`), so it keeps its 32 kHz crystal. The HSE pins are
+/// reserved beside them only when `mcu.hse` declares one ([`reserved_pins`]).
 pub const RESERVED_PINS: [&str; 4] = ["PA13", "PA14", "PC14", "PC15"];
+
+/// The pins `solve` never assigns and refuses as a hand pin
+/// (`AET-WO-4240a` §1.6): [`RESERVED_PINS`], and `PH0` (`OSC_IN`) and
+/// `PH1` (`OSC_OUT`) beside a crystal, or `PH0` alone beside an external
+/// clock, whose `OSC_OUT` is free (RM0433 Rev 9 §8.5.2, Figure 46, p. 339).
+pub fn reserved_pins(hse: Option<&crate::clock::Hse>) -> Vec<&'static str> {
+    let mut pins = RESERVED_PINS.to_vec();
+    match hse {
+        None => {}
+        Some(crate::clock::Hse::Crystal(_)) => pins.extend(["PH0", "PH1"]),
+        Some(crate::clock::Hse::External(_)) => pins.push("PH0"),
+    }
+    pins
+}
 
 /// The values [`solve`] may try, across the whole solve including the
 /// minimal-set searches, before refusing with [`SolveError::BudgetExceeded`].
@@ -295,6 +307,7 @@ fn solve_inner(
     forced: bool,
 ) -> Result<SolvedTopology, SolveError> {
     spec.validate().map_err(SolveError::InvalidSpecification)?;
+    let reserved = reserved_pins(spec.mcu.hse.as_ref());
     let mut out = SolvedTopology {
         schema_version: crate::SOLVED_SCHEMA_VERSION,
         specification_sha256: specification_sha256.to_owned(),
@@ -306,7 +319,7 @@ fn solve_inner(
         i2c_devices: BTreeMap::new(),
         spi_devices: BTreeMap::new(),
         spi_lines: BTreeMap::new(),
-        clock: SolvedClock::reset(),
+        clock: solved_clock(&spec.mcu).map_err(SolveError::InvalidSpecification)?,
         motor_outputs: BTreeMap::new(),
         power: None,
         serial_ports: BTreeMap::new(),
@@ -420,7 +433,7 @@ fn solve_inner(
             .map(|b| b.speed_hz)
             .min()
             .expect("this bus is on it");
-        let c = spi_controller(&bus.id, &out.clock, p, declared)?;
+        let c = spi_controller(&bus.id, p, declared)?;
         out.spi_controllers.insert(p.clone(), c);
     }
     for bus in &spec.i2c_buses {
@@ -440,7 +453,7 @@ fn solve_inner(
                     .pins
                     .keys()
                     .map(String::as_str)
-                    .find(|p| !RESERVED_PINS.contains(p) && !search.used.contains_key(p));
+                    .find(|p| !reserved.contains(p) && !search.used.contains_key(p));
                 let Some(pin) = free else {
                     return Err(SolveError::NoFreePin {
                         claimant: cs.path.clone(),
@@ -469,7 +482,7 @@ fn solve_inner(
             .pins
             .iter()
             .filter(|(name, pin)| {
-                !pin.adc_channels.is_empty() && !RESERVED_PINS.contains(&name.as_str())
+                !pin.adc_channels.is_empty() && !reserved.contains(&name.as_str())
             })
             .map(|(name, pin)| (name.as_str(), pin))
             .collect();
@@ -650,24 +663,132 @@ fn port_on(
     Ok(port)
 }
 
+/// The clock the firmware runs on (`AET-WO-4240a`): the reset clock when
+/// `mcu.hse` is `null`; otherwise H1 (`4240` D1, ruled on #240), PLL1 from
+/// the HSE to `sys_ck` 64 MHz with every prescaler 1 at VOS Scale 2, its
+/// words chosen by [`h1_words`] and its budget [`crate::clock::declared_budget`]'s.
+/// Every kernel the reset tree runs at 64 MHz runs at 64 MHz here, from the
+/// HSE. Refused by name: the declaration's own refusals, and a source no
+/// setting reaches 64 MHz from (`HseTreeUnreachable`). `validate` calls it,
+/// as it calls the timing checks, and [`crate::clock::judge_tree`] judges
+/// what it returns.
+pub fn solved_clock(mcu: &crate::Mcu) -> Result<SolvedClock, IrValidationError> {
+    use crate::clock::{HseRefusal, SolvedHse, declared_budget, source_hz};
+    let Some(hse) = &mcu.hse else {
+        return Ok(SolvedClock::reset());
+    };
+    let budget = declared_budget(hse)?;
+    let (num, den) = source_hz(hse)?;
+    let unreachable = || {
+        IrValidationError::Hse(HseRefusal::HseTreeUnreachable {
+            hz_num: num,
+            hz_den: den,
+        })
+    };
+    let [pllckselr, pllcfgr, pll1divr] = h1_words(num, den).ok_or_else(unreachable)?;
+    // A reachable source is a whole number of Hz: its reference is.
+    let hse_hz = u32::try_from(num / den).map_err(|_| unreachable())?;
+    Ok(SolvedClock {
+        source: "PLL1".into(),
+        sysclk_hz: H1_SYS_HZ as u32,
+        hse_hz,
+        hse: Some(SolvedHse {
+            declared: hse.clone(),
+            fast_ppm: budget.fast_ppm,
+            slow_ppm: budget.slow_ppm,
+            pllckselr,
+            pllcfgr,
+            pll1divr,
+        }),
+        ..SolvedClock::reset()
+    })
+}
+
+/// H1's `sys_ck` (`4240` D1): 64 MHz, so every kernel runs where the reset
+/// tree's does.
+const H1_SYS_HZ: u64 = 64_000_000;
+
+/// The solver's choice of PLL1 words for H1 from a source of `num`/`den` Hz
+/// (`AET-WO-4240a` §1.6; predictions P6), `[PLLCKSELR, PLLCFGR, PLL1DIVR]`:
+/// - `DIVM1` the least, 1 to 63, whose reference is a whole number of Hz
+///   strictly inside one `PLL1RGE` range (1–2, 2–4, 4–8, 8–16 MHz; `4240`
+///   F-RGE, and Renode divides in integers, `4240` §6);
+/// - `PLL1VCOSEL` medium (150–420 MHz) for a reference under 2 MHz, else
+///   wide (192–836 MHz, the stricter silicon revision);
+/// - `DIVP1` the least even divisor, 2 to 128, whose VCO, 64 MHz × `DIVP1`,
+///   is in that range and a whole `DIVN1` (4 to 512) times the reference;
+/// - `DIVQ1` = `DIVP1`, so `pll1_q_ck` is 64 MHz for `4240b`'s SPI select;
+///   `DIVR1` at its reset 1 with `DIVR1EN` 0 (RM0433 Rev 9 p. 403: 0 is "not
+///   allowed"); `DIVM2` = `DIVM3` = 0 and every PLL2/PLL3 enable cleared.
+///
+/// RM0433 Rev 9 §8.7.11–§8.7.13, pp. 399–404. `None` when no setting
+/// exists. This is the solver's; the judge shares none of it (`RUL-20`).
+pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
+    const RANGES: [(u64, u64); 4] = [
+        (1_000_000, 2_000_000),
+        (2_000_000, 4_000_000),
+        (4_000_000, 8_000_000),
+        (8_000_000, 16_000_000),
+    ];
+    for m in 1..=63u64 {
+        let d = den.checked_mul(m)?;
+        if num % d != 0 {
+            continue;
+        }
+        let reference = num / d;
+        let Some(rge) = RANGES
+            .iter()
+            .position(|&(lo, hi)| lo < reference && reference < hi)
+        else {
+            continue;
+        };
+        let medium = rge == 0;
+        let (lo, hi) = if medium {
+            (150_000_000, 420_000_000)
+        } else {
+            (192_000_000, 836_000_000)
+        };
+        for p in (2..=128u64).step_by(2) {
+            let vco = H1_SYS_HZ * p;
+            if vco < lo || vco > hi || vco % reference != 0 {
+                continue;
+            }
+            let n = vco / reference;
+            if !(4..=512).contains(&n) {
+                continue;
+            }
+            let w = |v: u64| u32::try_from(v).ok();
+            let (m, n, p, rge) = (w(m)?, w(n)?, w(p)?, w(rge as u64)?);
+            return Some([
+                0b10 | m << 4,
+                1 << 17 | 1 << 16 | rge << 2 | u32::from(medium) << 1,
+                1 << 24 | (p - 1) << 16 | (p - 1) << 9 | (n - 1),
+            ]);
+        }
+    }
+    None
+}
+
+/// `hsi_ker_ck` at `HSIDIV`'s reset `00` (RM0433 Rev 9 §8.7.2): 64 MHz.
+const HSI_KER_HZ: u64 = 64_000_000;
+
 /// `hz` at the HSI's fastest, rounded up: an SPI kernel is `hsi_ker_ck`
 /// whatever the system clock ([`spi_kernel`]).
 pub(crate) fn hsi_fastest(hz: u64) -> u64 {
     PpmBudget::HSI.fastest_hz(hz)
 }
 
-/// The kernel clock the firmware gives SPI `peripheral` on `clock`: SPI1–3
+/// The kernel clock the firmware gives SPI `peripheral`: SPI1–3
 /// `per_ck` (`SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20, p. 414), which is
 /// `hsi_ker_ck` at `CKPERSEL`'s reset `00` (§8.7.19, p. 412); SPI4/5
 /// `hsi_ker_ck` (`SPI45SEL` = `011`, p. 414); SPI6 `hsi_ker_ck` (`SPI6SEL` =
 /// `011`, §8.7.22, p. 418). `hsi_ker_ck` is HSI after `HSIDIV` (Figure 45,
-/// p. 338), which is `sys_ck` when `clock` runs from HSI. `None` when
-/// `clock` does not run from HSI or `peripheral` is not SPI1–SPI6.
-pub(crate) fn spi_kernel(clock: &SolvedClock, peripheral: &str) -> Option<(SpiKernel, u64)> {
-    if clock.source != "HSI" {
-        return None;
-    }
-    let hsi = u64::from(clock.sysclk_hz);
+/// p. 338): 64 MHz at `HSIDIV`'s reset, whatever `SW` selects, since the
+/// bring-up never stops the HSI. An HSE board keeps them until `4240b`
+/// moves every select to its reset value (`4240` D6). `None` when
+/// `peripheral` is not SPI1–SPI6.
+pub(crate) fn spi_kernel(peripheral: &str) -> Option<(SpiKernel, u64)> {
+    let hsi = HSI_KER_HZ;
     match peripheral {
         "SPI1" | "SPI2" | "SPI3" => Some((SpiKernel::PerCk, hsi)),
         "SPI4" | "SPI5" | "SPI6" => Some((SpiKernel::HsiKerCk, hsi)),
@@ -687,12 +808,11 @@ pub(crate) fn solve_mbr(kernel_hz: u64, declared_hz: u32) -> Option<u8> {
 /// name.
 pub(crate) fn spi_controller(
     bus: &str,
-    clock: &SolvedClock,
     peripheral: &str,
     declared_hz: u32,
 ) -> Result<SolvedSpiController, SolveError> {
     let (kernel, kernel_hz) =
-        spi_kernel(clock, peripheral).ok_or_else(|| SolveError::SpiKernelClockUnavailable {
+        spi_kernel(peripheral).ok_or_else(|| SolveError::SpiKernelClockUnavailable {
             bus: bus.to_owned(),
             peripheral: peripheral.to_owned(),
         })?;
@@ -1155,6 +1275,7 @@ impl<'s, 't> Model<'s, 't> {
     /// README's order: hand pins (unknown, reserved, claimed twice), hand
     /// peripherals (unknown, claimed twice), then each bus alone.
     fn new(spec: &'s Specification, table: &'t PinTable) -> Result<Self, SolveError> {
+        let reserved = reserved_pins(spec.mcu.hse.as_ref());
         let mut claimed: BTreeMap<&'t str, String> = BTreeMap::new();
         let mut hand = |signal: &Signal, path: &str| -> Result<Option<&'t str>, SolveError> {
             let Some(written) = signal.pin.as_deref() else {
@@ -1168,7 +1289,7 @@ impl<'s, 't> Model<'s, 't> {
                 });
             };
             let key = key.as_str();
-            if RESERVED_PINS.contains(&key) {
+            if reserved.contains(&key) {
                 return Err(SolveError::ReservedPin {
                     pin: key.to_owned(),
                     claimant,
@@ -1268,7 +1389,7 @@ impl<'s, 't> Model<'s, 't> {
         let mut channels: Vec<Channel<'t>> = table
             .pins
             .iter()
-            .filter(|(pin, _)| !RESERVED_PINS.contains(&pin.as_str()))
+            .filter(|(pin, _)| !reserved.contains(&pin.as_str()))
             .flat_map(|(pin, p)| {
                 p.alternate_functions.iter().filter_map(move |(name, af)| {
                     motor::timer_channel(name).map(|(n, k)| (n, k, pin.as_str(), *af))
@@ -1306,7 +1427,7 @@ impl<'s, 't> Model<'s, 't> {
                     let pins = table
                         .pins
                         .iter()
-                        .filter(|(pin, _)| !RESERVED_PINS.contains(&pin.as_str()))
+                        .filter(|(pin, _)| !reserved.contains(&pin.as_str()))
                         .filter_map(|(pin, p)| {
                             p.alternate_functions
                                 .get(&wanted)
@@ -2255,7 +2376,7 @@ mod differential {
             mcu: Mcu {
                 part: "T".into(),
                 supply: "D".into(),
-                hse_hz: 0,
+                hse: None,
                 bor_level: 0,
                 core_supply: crate::CoreSupply {
                     mode: crate::vos::CoreSupplyMode::Ldo,
@@ -2324,27 +2445,21 @@ mod differential {
     }
 
     /// `AET-WO-4230`: the kernel-clock refusal cannot be reached from a
-    /// specification today (the clock is always the reset clock and every
-    /// SPI instance is SPI1–SPI6), so it is tested through the function that
-    /// decides it.
+    /// specification (every SPI instance is SPI1–SPI6), so it is tested
+    /// through the function that decides it. `hsi_ker_ck` runs whatever the
+    /// system clock (`AET-WO-4240a`), so an HSE tree's SPI kernel is the
+    /// reset tree's.
     #[test]
     fn an_spi_controller_with_no_kernel_clock_is_refused_by_name() {
-        let reset = SolvedClock::reset();
-        let hse = SolvedClock {
-            source: "HSE".into(),
-            ..SolvedClock::reset()
-        };
-        for (clock, p) in [(&hse, "SPI1"), (&hse, "SPI4"), (&reset, "SPI7")] {
-            let err = spi_controller("B", clock, p, 20_000_000).unwrap_err();
-            assert_eq!(err.kind(), "SpiKernelClockUnavailable", "{err}");
-            assert_eq!(err.claimants(), ["B"]);
-        }
-        let c = spi_controller("B", &reset, "SPI6", 20_000_000).unwrap();
-        assert_eq!((c.kernel, c.mbr), (SpiKernel::HsiKerCk, 1));
+        let err = spi_controller("B", "SPI7", 20_000_000).unwrap_err();
+        assert_eq!(err.kind(), "SpiKernelClockUnavailable", "{err}");
+        assert_eq!(err.claimants(), ["B"]);
+        let c = spi_controller("B", "SPI6", 20_000_000).unwrap();
         assert_eq!(
-            spi_kernel(&reset, "SPI2"),
-            Some((SpiKernel::PerCk, 64_000_000))
+            (c.kernel, c.kernel_hz, c.mbr),
+            (SpiKernel::HsiKerCk, 64_000_000, 1)
         );
+        assert_eq!(spi_kernel("SPI2"), Some((SpiKernel::PerCk, 64_000_000)));
     }
 
     #[test]
@@ -2362,9 +2477,15 @@ mod differential {
             synthesize_timingr(PpmBudget::HSI, 64_000_000, "FastPlus1M"),
             Some(0x00B2_0E2D)
         );
-        assert_eq!(synthesize_timingr(PpmBudget::HSI, 64_000_000, "HighSpeed3M4"), None);
+        assert_eq!(
+            synthesize_timingr(PpmBudget::HSI, 64_000_000, "HighSpeed3M4"),
+            None
+        );
         // Below DS12117 Table 93's 17 MHz at HSI's slowest, no Fm+ word.
-        assert_eq!(synthesize_timingr(PpmBudget::HSI, 17_000_000, "FastPlus1M"), None);
+        assert_eq!(
+            synthesize_timingr(PpmBudget::HSI, 17_000_000, "FastPlus1M"),
+            None
+        );
         let reset = SolvedClock::reset();
         for p in ["I2C1", "I2C2", "I2C3", "I2C4"] {
             assert_eq!(i2c_kernel_hz(&reset, p), Some(64_000_000));

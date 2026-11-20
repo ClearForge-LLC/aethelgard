@@ -147,14 +147,16 @@ pub struct NoEsc {
 /// §8.7.2), selected (`RCC_CFGR` reset 0, `SW` = `SWS` = HSI, `TIMPRE` 0,
 /// §8.7.7), every domain prescaler at its reset value 1 (`RCC_D1CFGR`,
 /// `RCC_D2CFGR` and `RCC_D3CFGR` reset 0, "not divided", §8.7.8–§8.7.10).
-/// `hse_hz` is the specification's `mcu.hse_hz`, which is 0 (no crystal).
+/// `hse_hz` is the HSE's frequency in whole Hz, 0 when `mcu.hse` is `null`
+/// (an HSE tree is reachable only from a whole-Hz source, `AET-WO-4240a`).
 /// `vos` is the core's voltage scale (`AET-WO-4240v`): the generated
 /// firmware raises it from the reset `scale3` to `scale2` before any
 /// peripheral runs, and [`crate::vos`] judges every clock at it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedClock {
-    /// `HSI`, the only source this engine builds.
+    /// `HSI`, or `PLL1` from a declared HSE (`AET-WO-4240a`; generated from
+    /// `4240b`).
     pub source: String,
     pub sysclk_hz: u32,
     pub hse_hz: u32,
@@ -169,6 +171,16 @@ pub struct SolvedClock {
     pub timpre: bool,
     /// `PWR_D3CR.VOS`, the core's voltage scale.
     pub vos: crate::vos::Vos,
+    /// The HSE tree (`AET-WO-4240a`): PLL1 from the declared HSE to 64 MHz,
+    /// every prescaler 1, its words and its budget. Absent when the
+    /// specification declares none, and not written back then, so a `null`
+    /// board's topology is the one it was; an explicit `null` is refused.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hse: Option<crate::clock::SolvedHse>,
 }
 
 impl SolvedClock {
@@ -190,13 +202,17 @@ impl SolvedClock {
             d3ppre: 1,
             timpre: false,
             vos: crate::vos::Vos::Scale2,
+            hse: None,
         }
     }
 
     /// The deviation of the source every clock of this tree derives from
-    /// (`AET-WO-4240a` §1.4): the HSI's, [`crate::clock::Budget::HSI`].
+    /// (`AET-WO-4240a` §1.4): the HSE's when one is declared, else the HSI's,
+    /// [`crate::clock::Budget::HSI`].
     pub fn budget(&self) -> crate::clock::Budget {
-        crate::clock::Budget::HSI
+        self.hse
+            .as_ref()
+            .map_or(crate::clock::Budget::HSI, crate::clock::SolvedHse::budget)
     }
 
     /// `rcc_hclk1`: `sys_ck` / `D1CPRE` / `HPRE` (RM0433 Rev 9 Figure 49).
@@ -251,8 +267,8 @@ impl SolvedClock {
     /// foreign run's end (`AET-WO-4400g` §1.2), decoded field by field by
     /// RM0433 Rev 9 ([`RccRegisters::OFFSETS`] cites each register). Only
     /// what a timer's kernel clock depends on is decoded: `D3PPRE` is not
-    /// read and `d3ppre` is left 1. `hse_hz` is the specification's
-    /// `mcu.hse_hz`.
+    /// read and `d3ppre` is left 1. `hse_hz` is the HSE's frequency in whole
+    /// Hz, 0 for none ([`SolvedClock::hse_hz`]).
     ///
     /// Refused by name: a reserved or unclocked selection, a divider RM0433
     /// calls not allowed or a wrong configuration, an HSE with no crystal
@@ -330,6 +346,7 @@ impl SolvedClock {
             // Not read: the specification declares it
             // (`mcu.foreign_clock.vos`, `AET-WO-4240v` D-4).
             vos,
+            hse: None,
         })
     }
 }
@@ -463,7 +480,7 @@ pub enum RccDecodeError {
     )]
     Reserved { field: &'static str, value: u32 },
     #[error(
-        "HSE clocks the system or PLL1, and the specification declares no crystal (`mcu.hse_hz` 0)"
+        "HSE clocks the system or PLL1, and the specification declares no HSE (`mcu.hse` null)"
     )]
     HseUndeclared,
     #[error(

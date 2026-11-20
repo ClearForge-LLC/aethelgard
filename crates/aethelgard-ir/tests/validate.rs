@@ -37,7 +37,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -189,7 +189,8 @@ fn refuses_unsupported_schema_version() {
         16,
         17,
         18,
-        20,
+        19,
+        21,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -857,6 +858,11 @@ fn full_document() -> serde_json::Value {
     use serde_json::{Value, json};
     let mut v: Value = serde_json::from_str(include_str!("fixtures/sentinel-02-power.json"))
         .expect("the power fixture");
+    // The fixture keeps version 19's `hse_hz: 0`, which reads as `null`; the
+    // walk below removes keys of the current spelling (`AET-WO-4240a`).
+    let mcu = v["mcu"].as_object_mut().unwrap();
+    assert_eq!(mcu.remove("hse_hz"), Some(json!(0)));
+    mcu.insert("hse".into(), Value::Null);
     // Without the 1.8 V IMU and the crossing to it, which wait for `K6`
     // (the sensor table has no output delay for it yet): `power.crossings`
     // is the one empty list, named in `EMPTY_LISTS`. Its lifecycle
@@ -1308,9 +1314,9 @@ fn solved_refuses_version_and_hash() {
     // file before `mcu` and `pin_speeds` (`AET-WO-4400b`), 9 the file before
     // an SPI device's `orientation` (`AET-WO-4400d`), 10 the file before
     // `foreign_clock` (`AET-WO-4400g`), 11 the file before `core_supply`
-    // and the clock's `vos` (`AET-WO-4240v`), 13 one this build does not
-    // know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13] {
+    // and the clock's `vos` (`AET-WO-4240v`), 12 the file before the
+    // clock's `hse` (`AET-WO-4240a`), 14 one this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3637,7 +3643,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 19
+                expected: 20
             }
         ),
         "{e}"

@@ -13,6 +13,7 @@
 pub mod bench;
 pub mod board;
 pub mod classes;
+pub mod clock;
 pub mod connectors;
 pub mod ds009;
 pub mod electrical;
@@ -27,12 +28,11 @@ pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
-pub mod clock;
 pub mod vos;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
 pub use serial::{Framing, Parity, PeerDeviationSource, SerialPort, SerialRole, SolvedSerialPort};
-pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, solve, solve_with_limit};
+pub use solve::{NODE_LIMIT, RESERVED_PINS, SolveError, reserved_pins, solve, solve_with_limit};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -92,7 +92,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// 18 by the same rule, merging after `2304b`), the board's supply
 /// configuration with its source, and a declared foreign clock's `vos`;
 /// nothing supplies either for an older file.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 19;
+/// Version 20 replaces `mcu.hse_hz` with `mcu.hse` (`AET-WO-4240a`, `4240`
+/// D4 ruled on #240): `null`, a crystal (`{"crystal": {part,
+/// load_caps_femtofarads, pull_ppm, temperature_celsius, life_hours}}`) or an
+/// external clock (`{"external": {hz_num, hz_den, ppm, source}}`). The key
+/// is required; `hse_hz: 0`, the only value version 19 admitted, still reads
+/// as `null`, so a committed specification moved by its version line alone.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -290,11 +296,9 @@ pub fn lifecycle_banner<'a>(
         .collect()
 }
 
-/// The microcontroller: a part name, the domain that supplies it, its
-/// external crystal's frequency in Hz, `0` for none (`4400` D1): a crystal
-/// needs a crystal part with its load capacitors, which no table holds yet,
-/// so `validate` refuses any other value by name (`CrystalNotSupported`); and
-/// the brown-out level its option bytes select (`AET-WO-4300d` D4: the
+/// The microcontroller: a part name, the domain that supplies it, its HSE
+/// (`mcu.hse`, `AET-WO-4240a`: a crystal or an external clock, or `null` for
+/// none; [`clock::Hse`]), and the brown-out level its option bytes select (`AET-WO-4300d` D4: the
 /// scenario and the supply floor both read it; the option-byte write is out
 /// of scope).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -302,7 +306,11 @@ pub fn lifecycle_banner<'a>(
 pub struct Mcu {
     pub part: String,
     pub supply: String,
-    pub hse_hz: u32,
+    /// Required as a key, `null` for none. A version-19 file's `hse_hz: 0`
+    /// reads as `null` (the only value it ever admitted); `hse_hz` with any
+    /// other value, or beside `hse`, is refused at parsing.
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub hse: Option<clock::Hse>,
     /// `0` (RM0433's factory default) to `3`.
     pub bor_level: u8,
     /// The core supply configuration the board is built for (`AET-WO-4240v`
@@ -493,8 +501,10 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `pin_speeds` (`AET-WO-4400b` D2), version 10 an SPI device's
 /// `orientation` (`AET-WO-4400d`), version 11 `foreign_clock`
 /// (`AET-WO-4400g`), version 12 `core_supply` and the clock's `vos`
-/// (`AET-WO-4240v`); an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 12;
+/// (`AET-WO-4240v`), version 13 the clock's `hse` (`AET-WO-4240a`: absent
+/// for `mcu.hse` `null`, so such a topology differs only in its version);
+/// an older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 13;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -911,7 +921,6 @@ object_only!(
     Specification,
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
-    Mcu,
     CoreSupply,
     SupplySource,
     VoltageDomain,
@@ -936,6 +945,53 @@ object_only!(
     Pad,
     Consumer
 );
+
+impl Serialize for Mcu {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        Mcu::serialize(self, serializer)
+    }
+}
+
+/// An object only, as [`object_only`]'s. `hse_hz`, the version-19 key `hse`
+/// replaced (`AET-WO-4240a` §1.2), reads as `"hse": null` when it is 0, so a
+/// committed specification moves by its version line alone; any other value
+/// was always refused, and is refused here, as is a key given twice.
+impl<'de> Deserialize<'de> for Mcu {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct McuVisitor;
+        impl<'de> Visitor<'de> for McuVisitor {
+            type Value = Mcu;
+            fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("a Mcu object")
+            }
+            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Mcu, A::Error> {
+                use serde::de::Error;
+                let mut fields = serde_json::Map::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    let value: serde_json::Value = map.next_value()?;
+                    let (key, value) = if key == "hse_hz" {
+                        if value.as_u64() != Some(0) {
+                            return Err(A::Error::custom(format!(
+                                "mcu.hse_hz is {value}: a crystal frequency was always refused there; declare `mcu.hse`"
+                            )));
+                        }
+                        ("hse".to_owned(), serde_json::Value::Null)
+                    } else {
+                        (key, value)
+                    };
+                    if fields.contains_key(&key) {
+                        return Err(A::Error::custom(format!(
+                            "duplicate field `{key}` (`hse_hz` is the version-19 spelling of `hse`)"
+                        )));
+                    }
+                    fields.insert(key, value);
+                }
+                Mcu::deserialize(serde_json::Value::Object(fields)).map_err(A::Error::custom)
+            }
+        }
+        deserializer.deserialize_map(McuVisitor)
+    }
+}
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
 /// may be absent, so that a version-1 file (which has none) reaches
@@ -1631,10 +1687,10 @@ pub enum IrValidationError {
         capacitance_femtofarads: u64,
         limit_femtofarads: u64,
     },
-    #[error(
-        "mcu.hse_hz is {hse_hz}: a crystal needs a crystal part with its load capacitors placed and routed, and the parts table holds none (`4400` D1, backlog); declare 0 to run from HSI"
-    )]
-    CrystalNotSupported { hse_hz: u32 },
+    /// An HSE declaration or its solved tree refused (`AET-WO-4240a`); its
+    /// kind is the inner refusal's.
+    #[error("{0}")]
+    Hse(clock::HseRefusal),
     #[error(
         "motor output `{id}`: `pwm` must be an object when the protocol is `pwm`, and null when it is DShot"
     )]
@@ -2192,7 +2248,7 @@ impl IrValidationError {
             Self::BusTooFast { .. } => "BusTooFast",
             Self::PullUpBelowSinkFloor { .. } => "PullUpBelowSinkFloor",
             Self::BusCapacitanceOverLimit { .. } => "BusCapacitanceOverLimit",
-            Self::CrystalNotSupported { .. } => "CrystalNotSupported",
+            Self::Hse(r) => r.kind(),
             Self::MotorTimingShape { .. } => "MotorTimingShape",
             Self::ZeroMotorRate { .. } => "ZeroMotorRate",
             Self::PulseRange { .. } => "PulseRange",
@@ -2403,9 +2459,7 @@ impl IrValidationError {
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }
             | Self::I2cTimingMismatch { id } => Some(id),
-            Self::CrystalNotSupported { .. }
-            | Self::UnsupportedClock
-            | Self::FlashWaitStatesBelowTable { .. } => None,
+            Self::Hse(_) | Self::UnsupportedClock | Self::FlashWaitStatesBelowTable { .. } => None,
             Self::VosLimitExceeded { clock, .. } => Some(clock),
             Self::ForeignClockZero { .. }
             | Self::ForeignClockUsarts { .. }
@@ -2915,7 +2969,7 @@ impl Specification {
                 }
             }
         }
-        let clock = SolvedClock::reset();
+        let clock = solve::solved_clock(&self.mcu)?;
         solve::motor_timing(self, &clock)?;
         for (index, port) in self.serial_ports.iter().enumerate() {
             solve::serial_timing(&port.label, index, &clock, port)?;
@@ -3294,12 +3348,9 @@ impl Specification {
         }
         // 2
         self.identifiers()?;
-        // 2a: no crystal part exists, so only HSI can be declared (`4400` D1).
-        if self.mcu.hse_hz != 0 {
-            return Err(E::CrystalNotSupported {
-                hse_hz: self.mcu.hse_hz,
-            });
-        }
+        // 2a: the HSE (`AET-WO-4240a`): its declaration, its tree, and the
+        // judge on the tree the solver would choose.
+        clock::judge_tree(&solve::solved_clock(&self.mcu)?)?;
         // 2b
         if self.mcu.bor_level > MAX_BOR_LEVEL {
             return Err(E::BorLevelOutOfRange {
@@ -4125,9 +4176,7 @@ impl SolvedTopology {
                     })
                     .map(|(_, l)| l.rate_hz)
                     .min();
-                if let Some(c) =
-                    declared.and_then(|d| solve::spi_controller(p, &self.clock, p, d).ok())
-                {
+                if let Some(c) = declared.and_then(|d| solve::spi_controller(p, p, d).ok()) {
                     spi.insert(p.to_owned(), c);
                 }
             } else if p.starts_with("I2C")
@@ -4269,9 +4318,12 @@ impl SolvedTopology {
         // A kernel the rule cannot read is refused by name by the
         // controller checks that follow (`SpiControllerMismatch`, the
         // silicon rule), never passed: `check_silicon` holds the verdict.
-        if self.clock != SolvedClock::reset() {
+        // The tree is the reset one, or an HSE tree the clock rule holds
+        // (`AET-WO-4240a` §1.5).
+        if self.clock.hse.is_none() && self.clock != SolvedClock::reset() {
             return Err(E::UnsupportedClock);
         }
+        clock::judge_tree(&self.clock)?;
         let mismatch = |id: &str| E::MotorOutputMismatch { id: id.to_owned() };
         for (net, a) in &self.assignments {
             let timer = a.peripheral.starts_with("TIM");

@@ -31,8 +31,9 @@ use crate::IrValidationError;
 pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 
 /// The `schema_version` the parser reads. Version 4 gave the MCU row
-/// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 4;
+/// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6). Version 5
+/// added the `crystal` kind (`AET-WO-4240a` §1.3).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 5;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -359,6 +360,36 @@ pub struct Inductor {
     pub dcr_max_milliohms: Limit,
 }
 
+/// A quartz crystal for the HSE (`AET-WO-4240a` §1.3): the figures the ppm
+/// budget ([`crate::clock`]) and DS12117's `Gm_crit_max` rule read. The
+/// row's `temperature_celsius` is the range its stability holds over.
+/// Each figure is the datasheet's bound for the ordered part, its option
+/// codes included; a typical-only figure is not a field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Crystal {
+    /// The nominal frequency, Hz.
+    pub frequency_hz: Limit,
+    /// The load capacitance the frequency is specified at, fF.
+    pub load_femtofarads: Limit,
+    /// The frequency tolerance at +25 °C, ppm.
+    pub tolerance_ppm: Ranged,
+    /// The frequency stability over the row's operating temperature, ppm,
+    /// referred to +25 °C.
+    pub stability_ppm: Ranged,
+    /// The aging over `aging_hours`, ppm.
+    pub aging_ppm: Ranged,
+    /// The span the aging figure is stated for, hours: a declared service
+    /// life beyond it has no cited aging term (`AET-WO-4240a` §5).
+    pub aging_hours: Limit,
+    /// The equivalent series resistance at this frequency, at most, mΩ.
+    pub esr_max_milliohms: Limit,
+    /// The shunt capacitance, at most, fF.
+    pub c0_max_femtofarads: Limit,
+    /// The drive level, at most, µW: a bench measurement on the first board
+    /// judges it (AN2867 §3.5; not computable from datasheets, `4240` §3).
+    pub drive_level_max_microwatts: Limit,
+}
+
 /// The MCU's supply facts: its range, its declared load, and its brown-out
 /// thresholds' falling maxima.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -541,6 +572,7 @@ pub enum Kind {
     Mcu(Box<Mcu>),
     BulkCapacitor(BulkCapacitor),
     Tvs(Tvs),
+    Crystal(Crystal),
 }
 
 impl Kind {
@@ -555,6 +587,7 @@ impl Kind {
             Kind::Mcu(_) => "mcu",
             Kind::BulkCapacitor(_) => "bulk_capacitor",
             Kind::Tvs(_) => "tvs",
+            Kind::Crystal(_) => "crystal",
         }
     }
 }
@@ -792,6 +825,7 @@ enum RawKind {
     Mcu(Box<RawMcu>),
     BulkCapacitor(RawBulk),
     Tvs(RawTvs),
+    Crystal(RawCrystal),
 }
 
 #[derive(Deserialize)]
@@ -947,6 +981,20 @@ struct RawTvs {
     standoff_millivolts: RawLimit,
     clamp_max_millivolts: RawLimit,
     clamp_condition: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawCrystal {
+    frequency_hz: RawLimit,
+    load_femtofarads: RawLimit,
+    tolerance_ppm: RawRanged,
+    stability_ppm: RawRanged,
+    aging_ppm: RawRanged,
+    aging_hours: RawLimit,
+    esr_max_milliohms: RawLimit,
+    c0_max_femtofarads: RawLimit,
+    drive_level_max_microwatts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1617,7 +1665,8 @@ fn pin_roles(kind: &Kind) -> &'static [&'static str] {
         | Kind::Inductor(_)
         | Kind::Mcu(_)
         | Kind::BulkCapacitor(_)
-        | Kind::Tvs(_) => &[],
+        | Kind::Tvs(_)
+        | Kind::Crystal(_) => &[],
     }
 }
 
@@ -1840,6 +1889,35 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 esr_max_milliohms: r
                     .positive(c.esr_max_milliohms, "kind.bulk_capacitor.esr_max_milliohms")?,
                 esr_condition: c.esr_condition,
+            })
+        }
+        RawKind::Crystal(c) => {
+            // A deviation is symmetric about zero in every held sheet, and
+            // the budget adds each side's magnitude: a range that does not
+            // straddle zero is a typing error.
+            let deviation = |r: &mut Reader<'_>, raw: RawRanged, field: &str| {
+                let d = r.ranged(raw, field)?;
+                if d.range.min > 0 || d.range.max < 0 {
+                    return Err(format!("`{field}` does not straddle zero"));
+                }
+                Ok(d)
+            };
+            Kind::Crystal(Crystal {
+                frequency_hz: r.positive(c.frequency_hz, "kind.crystal.frequency_hz")?,
+                load_femtofarads: r
+                    .positive(c.load_femtofarads, "kind.crystal.load_femtofarads")?,
+                tolerance_ppm: deviation(r, c.tolerance_ppm, "kind.crystal.tolerance_ppm")?,
+                stability_ppm: deviation(r, c.stability_ppm, "kind.crystal.stability_ppm")?,
+                aging_ppm: deviation(r, c.aging_ppm, "kind.crystal.aging_ppm")?,
+                aging_hours: r.positive(c.aging_hours, "kind.crystal.aging_hours")?,
+                esr_max_milliohms: r
+                    .positive(c.esr_max_milliohms, "kind.crystal.esr_max_milliohms")?,
+                c0_max_femtofarads: r
+                    .positive(c.c0_max_femtofarads, "kind.crystal.c0_max_femtofarads")?,
+                drive_level_max_microwatts: r.positive(
+                    c.drive_level_max_microwatts,
+                    "kind.crystal.drive_level_max_microwatts",
+                )?,
             })
         }
         RawKind::Tvs(t) => {
