@@ -647,3 +647,24 @@ fn the_4600_driver_s_pair_as_a_bridge_is_refused_pulsed() {
     }
     spec(&v).validate().unwrap();
 }
+
+#[test]
+fn a_device_s_identifiers_are_step_2_s() {
+    for (path, value) in [
+        ("/pin_devices/0/reference", json!("U 2")),
+        ("/pin_devices/0/signals/0/net", json!("DRV NSLEEP")),
+        (
+            "/pin_devices/0/analog/0/transfer/current_output/resistor/reference",
+            json!("R/2"),
+        ),
+        ("/pin_devices/0/bridges/0/outputs/OUT1", json!("M1 OUT1")),
+    ] {
+        let mut v = d1();
+        *v.pointer_mut(path).unwrap() = value;
+        let e = refused(&v);
+        assert_eq!(e.kind(), "InvalidIdentifier", "{path}: {e}");
+    }
+    let mut v = d1();
+    device(&mut v)["temperature_celsius"]["source"] = json!(" padded ");
+    assert_kind(&v, "InvalidSource");
+}

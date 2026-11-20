@@ -436,6 +436,94 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
     out
 }
 
+/// Step 2 for each pin device, after the connectors: its reference, its
+/// part, each domain, net, hand pin, ADC channel, passive and source, in
+/// document order. A device pin's name is the row's (`EN/IN1` holds a `/`)
+/// and is judged against the row in step 24 (`UnknownDevicePin`), never as
+/// an identifier.
+pub(crate) fn identifiers(spec: &Specification) -> Result<(), IrValidationError> {
+    use crate::{IdentifierKind, identifier, optional_identifier, plain};
+    let passive = |r: &crate::power::Resistor, at: &str| {
+        identifier(IdentifierKind::Reference, &r.reference, || {
+            format!("{at}.reference")
+        })?;
+        plain(&r.part, || format!("{at}.part"))
+    };
+    for (i, d) in spec.declared_pin_devices().iter().enumerate() {
+        let at = format!("pin_devices[{i}]");
+        identifier(IdentifierKind::Reference, &d.reference, || {
+            format!("{at}.reference")
+        })?;
+        plain(&d.part, || format!("{at}.part"))?;
+        for (pin, domain) in &d.supplies {
+            plain(domain, || format!("{at}.supplies.{pin}"))?;
+        }
+        for (pin, strap) in &d.straps {
+            match strap {
+                Strap::Tie(to) => plain(to, || format!("{at}.straps.{pin}.tie"))?,
+                Strap::Resistor(r) => passive(r, &format!("{at}.straps.{pin}.resistor"))?,
+            }
+        }
+        for (k, s) in d.signals.iter().enumerate() {
+            let at = format!("{at}.signals[{k}]");
+            plain(&s.net, || format!("{at}.net"))?;
+            optional_identifier(&s.pin, || format!("{at}.pin"))?;
+            if let Some(p) = &s.pull {
+                if let Some(r) = &p.resistor {
+                    identifier(IdentifierKind::Reference, &r.reference, || {
+                        format!("{at}.pull.resistor.reference")
+                    })?;
+                    plain(&r.part, || format!("{at}.pull.resistor.part"))?;
+                    plain(&r.to, || format!("{at}.pull.resistor.to"))?;
+                }
+                crate::board::source(&p.source, &format!("{at}.pull.source"))?;
+            }
+        }
+        for (k, a) in d.analog.iter().enumerate() {
+            let at = format!("{at}.analog[{k}]");
+            plain(&a.net, || format!("{at}.net"))?;
+            optional_identifier(&a.pin, || format!("{at}.pin"))?;
+            if let Some(c) = &a.channel {
+                plain(&c.peripheral, || format!("{at}.channel.peripheral"))?;
+                plain(&c.input, || format!("{at}.channel.input"))?;
+            }
+            let Transfer::CurrentOutput(c) = &a.transfer;
+            passive(
+                &c.resistor,
+                &format!("{at}.transfer.current_output.resistor"),
+            )?;
+            if let Some(r) = &c.reservoir {
+                let at = format!("{at}.transfer.current_output.reservoir");
+                identifier(IdentifierKind::Reference, &r.reference, || {
+                    format!("{at}.reference")
+                })?;
+                plain(&r.part, || format!("{at}.part"))?;
+            }
+        }
+        for (k, b) in d.bridges.iter().enumerate() {
+            let at = format!("{at}.bridges[{k}]");
+            plain(&b.id, || format!("{at}.id"))?;
+            plain(&b.mode, || format!("{at}.mode"))?;
+            for (pin, label) in &b.inputs {
+                plain(label, || format!("{at}.inputs.{pin}"))?;
+            }
+            for (pin, net) in &b.outputs {
+                plain(net, || format!("{at}.outputs.{pin}"))?;
+            }
+        }
+        if let Some(l) = &d.part_limits.input_pwm_max_hz {
+            crate::board::source(
+                &l.source,
+                &format!("{at}.part_limits.input_pwm_max_hz.source"),
+            )?;
+        }
+        if let Some(t) = &d.temperature_celsius {
+            crate::board::source(&t.source, &format!("{at}.temperature_celsius.source"))?;
+        }
+    }
+    Ok(())
+}
+
 /// What binds a device pin.
 #[derive(Clone, Copy)]
 enum Binding<'s> {

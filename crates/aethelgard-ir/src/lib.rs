@@ -2914,7 +2914,7 @@ pub fn is_observer_name(name: &str) -> bool {
         && number.parse::<u32>().is_ok_and(|n| n <= 15)
 }
 
-fn identifier(
+pub(crate) fn identifier(
     kind: IdentifierKind,
     value: &str,
     path: impl FnOnce() -> String,
@@ -2927,7 +2927,7 @@ pub(crate) fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), Ir
     identifier(IdentifierKind::Plain, value, path)
 }
 
-fn optional_identifier(
+pub(crate) fn optional_identifier(
     value: &Option<String>,
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
@@ -3944,6 +3944,7 @@ impl Specification {
             signal_identifiers(&p.rx, &format!("{at}.rx"))?;
         }
         connectors::identifiers(self)?;
+        pin_devices::identifiers(self)?;
         for (i, t) in self.test_points.iter().enumerate() {
             plain(&t.net, || format!("test_points[{i}].net"))?;
             identifier(IdentifierKind::Reference, &t.reference, || {
