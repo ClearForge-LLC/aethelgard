@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
-  --> tests/ui/fail/spi_kernels_without_reset_clock.rs:12:51
+  --> tests/ui/fail/spi_kernels_without_reset_clock.rs:13:51
    |
-12 |     let _kernels = rcc.select_spi_kernels(&mut r, &unchecked);
+13 |     let _kernels = rcc.select_spi_kernels(&mut r, &unchecked);
    |                        ------------------         ^^^^^^^^^^ expected `&ResetClock`, found `&Result<ResetClock, NotResetClock>`
    |                        |
    |                        arguments to this method are incorrect

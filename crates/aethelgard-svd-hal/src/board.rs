@@ -26,6 +26,7 @@ use aethelgard_ir::motor;
 use aethelgard_ir::serial::{self, Parity};
 use aethelgard_ir::silicon;
 use aethelgard_ir::speeds::{self, OutputSpeeds};
+use aethelgard_ir::vos::{self, CoreSupplyMode};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
     SolvedTopology, SpiKernel,
@@ -36,7 +37,10 @@ use crate::cmsis::{self, RegisterError, RegisterFacts};
 mod firmware;
 mod ledger;
 
-pub use firmware::{ECHO_POLLS, FRAME_LEN, PATTERN_TAIL};
+pub use firmware::{
+    BOOT_ACTVOSRDY_TIMEOUT, BOOT_SUPPLY_NOT_DECLARED, BOOT_VOSRDY_TIMEOUT, ECHO_POLLS, FRAME_LEN,
+    PATTERN_TAIL, PWR_POLLS,
+};
 pub use ledger::{FieldAccess, FieldUse, register_fields};
 
 /// One variant per refusal (`INV-06`).
@@ -122,6 +126,14 @@ pub enum BoardError {
         "`{peripheral}`'s solved values fail the independent silicon rule (aethelgard_ir::silicon, AET-WO-4230): {finding}"
     )]
     SiliconRuleFails { peripheral: String, finding: String },
+    #[error(
+        "`{clock}` fails the voltage-scaling rule (aethelgard_ir::vos::judge_generated, AET-WO-4240v §1.3): {finding}"
+    )]
+    VosRuleFails { clock: String, finding: String },
+    #[error(
+        "the core supply is declared `bypass`: no board this engine emits draws an external VCORE, and under bypass the voltage scale is the external supply's, VOSRDY forced to 1 by hardware (RM0433 Rev 9 §6.8.6, p. 310; AET-WO-4240v D-1)"
+    )]
+    CoreSupplyNotGenerated,
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -155,6 +167,8 @@ impl BoardError {
             Self::FootprintOverlap { .. } => "FootprintOverlap",
             Self::UnscheduledAction { .. } => "UnscheduledAction",
             Self::SiliconRuleFails { .. } => "SiliconRuleFails",
+            Self::VosRuleFails { .. } => "VosRuleFails",
+            Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
             Self::Register(e) => e.kind(),
         }
     }
@@ -204,7 +218,46 @@ fn hsi_slowest(hz: u64) -> u64 {
 /// is never emitted. [`generate`] runs it first; `SolvedTopology::validate`
 /// also holds the topology to what `solve` derives, so through [`generate`]
 /// this refuses only a solver the rule disagrees with.
+///
+/// First, the voltage-scaling rule (`AET-WO-4240v` §1.3,
+/// `aethelgard_ir::vos::judge_generated`): every bus and enabled kernel clock
+/// at its fastest within its maximum at the topology's `vos`, every kernel
+/// read, and `FLASH_ACR` at reset within RM0433 Table 17. A verdict that does
+/// not hold is refused by the clock's name, so a refused tree is never
+/// generated. `SolvedTopology::validate` refuses most such trees first.
 pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
+    let rule = vos::judge_generated(solved);
+    if !rule.holds() {
+        if let Some(c) = rule.clocks.iter().find(|c| c.holds != Some(true)) {
+            return Err(BoardError::VosRuleFails {
+                clock: c.clock.clone(),
+                finding: format!(
+                    "{} Hz at its fastest against {} at VOS {} ({})",
+                    c.fastest_hz
+                        .map_or_else(|| "unknown".to_owned(), |hz| hz.to_string()),
+                    c.limit_hz.map_or_else(
+                        || "no cited maximum".to_owned(),
+                        |hz| format!("a maximum of {hz} Hz")
+                    ),
+                    rule.vos,
+                    c.cite.unwrap_or("uncited"),
+                ),
+            });
+        }
+        if let Some(kernel) = rule.unread.first() {
+            return Err(BoardError::VosRuleFails {
+                clock: kernel.clone(),
+                finding: "its kernel select is one the rule cannot read".to_owned(),
+            });
+        }
+        return Err(BoardError::VosRuleFails {
+            clock: "FLASH_ACR".to_owned(),
+            finding: format!(
+                "LATENCY and WRHIGHFREQ at reset are below RM0433 Rev 9 Table 17's row for VOS {} at an AXI clock of {} Hz at its fastest",
+                rule.vos, rule.flash.hclk_fastest_hz
+            ),
+        });
+    }
     for (peripheral, c) in &solved.spi_controllers {
         let f = silicon::check_spi(peripheral, c);
         if !f.holds {
@@ -1135,6 +1188,10 @@ struct Plan {
     /// The core clock the topology was solved for, Hz: `sysclk_hz` over
     /// `D1CPRE` (the oracle's, for the erratum delay's sizing).
     core_hz: u64,
+    /// The declared supply configuration (`mcu.core_supply.mode`, copied by
+    /// `solve`; `AET-WO-4240v` D-1): `Ldo`, since [`Plan::new`] refuses
+    /// `Bypass`.
+    core_supply: CoreSupplyMode,
 }
 
 impl Plan {
@@ -1250,6 +1307,11 @@ impl Plan {
             });
         }
         solved.validate().map_err(BoardError::InvalidTopology)?;
+        // `bypass` is a true declaration the engine does not build
+        // (`AET-WO-4240v` D-1): no emitted board draws an external VCORE.
+        if solved.core_supply == CoreSupplyMode::Bypass {
+            return Err(BoardError::CoreSupplyNotGenerated);
+        }
         let speeds_table = speeds::table().map_err(BoardError::SpeedTable)?;
         if speeds_table.mcu != table.part {
             return Err(BoardError::SpeedTableMismatch {
@@ -1497,6 +1559,7 @@ impl Plan {
             spi,
             i2c,
             core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
+            core_supply: solved.core_supply,
         })
     }
 }
@@ -1824,6 +1887,7 @@ struct Facts {
     /// The kernel-clock select writes, empty without an SPI peripheral.
     kernel_selects: Vec<SelectWrite>,
     flash: FlashFacts,
+    pwr: PwrFacts,
 }
 
 /// The flash controller's register block (`FLASH_R_BASE`, not the memory at
@@ -1836,6 +1900,89 @@ struct FlashFacts {
     base: u32,
     optsr_cur: u32,
     bor_lev: (u32, u32),
+}
+
+// belt-and-suspenders: the generator's own PWR words, from the header and the
+// declaration; `aethelgard_ir::vos` holds the rule's, which the oracle, the
+// twin and the ledger read, so a wrong word is a disagreement (`INV-07`);
+// `the_generators_pwr_words_are_the_rules` checks that they agree.
+/// The power controller's registers the bring-up touches (`AET-WO-4240v`
+/// §1.4), every place and position from ST's header: `PWR_BASE`,
+/// `PWR_TypeDef`'s `CSR1`, `CR3` and `D3CR`, and the `PWR_CR3_SCUEN`,
+/// `LDOEN`, `BYPASS`, `PWR_CSR1_ACTVOSRDY`, `PWR_D3CR_VOS` and `VOSRDY`
+/// fields. The power controller has no clock gate in RCC: the header has no
+/// `RCC_*ENR_PWREN`.
+#[derive(Debug, Clone)]
+struct PwrFacts {
+    base: u32,
+    words: u32,
+    csr1: u32,
+    cr3: u32,
+    d3cr: u32,
+    scuen: u32,
+    ldoen: u32,
+    bypass: u32,
+    actvosrdy: u32,
+    vos: (u32, u32),
+    vosrdy: u32,
+}
+
+// belt-and-suspenders: `aethelgard_ir::vos::D3CR_VOS_SCALE2` is the rule's copy.
+/// `PWR_D3CR.VOS`'s code for Scale 2, `10` (RM0433 Rev 9 §6.8.6, p. 310:
+/// "00: Reserved (Scale 3 selected) 01: Scale 3 (default) 10: Scale 2 11:
+/// Scale 1"). The generator's own copy; the header gives only the field's
+/// place.
+const VOS_SCALE2_CODE: u32 = 0b10;
+
+impl PwrFacts {
+    fn new(f: &RegisterFacts) -> Result<Self, BoardError> {
+        let l = f.layout("PWR")?;
+        Ok(Self {
+            base: f.base("PWR")?,
+            words: l.size / 4,
+            csr1: l.offset("CSR1", 0)?,
+            cr3: l.offset("CR3", 0)?,
+            d3cr: l.offset("D3CR", 0)?,
+            scuen: f.position("PWR_CR3_SCUEN_Pos")?,
+            ldoen: f.position("PWR_CR3_LDOEN_Pos")?,
+            bypass: f.position("PWR_CR3_BYPASS_Pos")?,
+            actvosrdy: f.position("PWR_CSR1_ACTVOSRDY_Pos")?,
+            vos: f.field("PWR_D3CR_VOS")?,
+            vosrdy: f.position("PWR_D3CR_VOSRDY_Pos")?,
+        })
+    }
+
+    /// `SCUEN`, `LDOEN` and `BYPASS`: the bits the `PWR_CR3` write sets.
+    fn supply_mask(&self) -> u32 {
+        (1 << self.scuen) | (1 << self.ldoen) | (1 << self.bypass)
+    }
+
+    /// `LDOEN` and `BYPASS`, the supply configuration RM0433 Rev 9 Table 34
+    /// (p. 261) names: the read-back compares these two. What `SCUEN` reads
+    /// after the single write is not stated (§6.8.4, p. 308).
+    fn config_mask(&self) -> u32 {
+        (1 << self.ldoen) | (1 << self.bypass)
+    }
+
+    /// The supply bits `mode` writes under [`Self::supply_mask`]: its row of
+    /// RM0433 Rev 9 Table 34 (p. 261), "LDO supply" `LDOEN` 1 and `BYPASS` 0,
+    /// "LDO Bypass" `LDOEN` 0 and `BYPASS` 1; and `SCUEN` 0, "Supply
+    /// configuration update locked" (§6.8.4, p. 308), the state the single
+    /// write leaves. No other pair is written: an illegal one locks `PWR_CR3`
+    /// until a power cycle (p. 308).
+    fn supply_bits(&self, mode: CoreSupplyMode) -> u32 {
+        match mode {
+            CoreSupplyMode::Ldo => 1 << self.ldoen,
+            CoreSupplyMode::Bypass => 1 << self.bypass,
+        }
+    }
+
+    /// `PWR_D3CR` as the bring-up writes it, whole: `VOS` = `10`, every
+    /// reserved bit 0, its reset value (reset `0x0000 4000`, RM0433 Rev 9
+    /// §6.8.6, p. 310), and `VOSRDY`, which is read-only, 0.
+    fn d3cr_scale2(&self) -> u32 {
+        VOS_SCALE2_CODE << self.vos.0
+    }
 }
 
 fn tim_facts(f: &RegisterFacts) -> Result<TimFacts, BoardError> {
@@ -2184,6 +2331,7 @@ impl Facts {
         Ok(Facts {
             kernel_selects: kernel_selects(plan, f, &rcc)?,
             flash,
+            pwr: PwrFacts::new(f)?,
             rcc_base: f.base("RCC")?,
             rcc_words: rcc.size / 4,
             gpio,
@@ -2339,7 +2487,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          \n\
          /// The register blocks this board touches.\n\
          #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
-         pub enum Block {{\n    Rcc,\n    Flash,"
+         pub enum Block {{\n    Rcc,\n    Flash,\n    Pwr,"
     );
     for port in &plan.ports {
         let _ = writeln!(w, "    {},", port_type(*port));
@@ -2410,9 +2558,11 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              const fn base(block: Block) -> usize {{\n        \
                  match block {{\n            \
                      Block::Rcc => {rcc:#010x},\n            \
-                     Block::Flash => {flash:#010x},",
+                     Block::Flash => {flash:#010x},\n            \
+                     Block::Pwr => {pwr:#010x},",
         rcc = facts.rcc_base,
         flash = facts.flash.base,
+        pwr = facts.pwr.base,
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -2487,12 +2637,34 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              \n",
         );
     }
+    w.push_str(
+        "/// The core at VOS Scale 2 on the declared supply configuration (`AET-WO-4240v`\n\
+         /// §1.4). Only [`Pwr::scale2`] makes one, once: [`Rcc::reset_clock`] takes it, so\n\
+         /// no clock-tree read, kernel selection or peripheral start precedes it.\n\
+         pub struct Scale2 {\n    \
+             _private: (),\n\
+         }\n\
+         \n\
+         /// Why [`Pwr::scale2`] stopped, each by its own name.\n\
+         #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+         pub enum PwrFault {\n    \
+             /// `PWR_CR3` read back `LDOEN` and `BYPASS` other than declared: another\n    \
+             /// writer set them since power-on, and only a power cycle clears them.\n    \
+             SupplyNotDeclared,\n    \
+             /// `PWR_CSR1.ACTVOSRDY` did not read 1 within the bound.\n    \
+             ActvosrdyTimeout,\n    \
+             /// `PWR_D3CR.VOSRDY` did not read 1 within the bound.\n    \
+             VosrdyTimeout,\n\
+         }\n\
+         \n",
+    );
     if plan.needs_clock() {
         let solved_for = "/// The clock tree is the reset clock this board's values were solved for: HSI\n\
              /// at 64 MHz, every prescaler 1, `TIMPRE` 0, and every kernel clock selection at\n\
-             /// its reset value. Only [`Rcc::reset_clock`] makes one: read it first, before any\n\
-             /// write, and never again, since Renode 1.17.0 stores no selection and a later\n\
-             /// read would see 0 where silicon sees what the bring-up selected.\n";
+             /// its reset value; the core is at VOS Scale 2 ([`Scale2`]). Only\n\
+             /// [`Rcc::reset_clock`] makes one: read it first, before any write, and never\n\
+             /// again, since Renode 1.17.0 stores no selection and a later read would see 0\n\
+             /// where silicon sees what the bring-up selected.\n";
         let _ = writeln!(
             w,
             "{solved_for}\
@@ -3008,12 +3180,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              }}\n\
          }}\n\
          \n\
+         {pwr}\
+         \n\
          /// Everything on the board, once per program.\n\
          pub struct Board {{\n    \
              pub rcc: Rcc,\n    \
-             pub flash: Flash,",
+             pub flash: Flash,\n    \
+             pub pwr: Pwr,",
         hi = bor_pos + bor_width - 1,
         optsr = facts.flash.optsr_cur,
+        pwr = pwr_api(plan, &facts.pwr),
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -3057,7 +3233,8 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                  }}\n        \
                  Some(Board {{\n            \
                      rcc: Rcc {{ _private: () }},\n            \
-                     flash: Flash {{ _private: () }},"
+                     flash: Flash {{ _private: () }},\n            \
+                     pwr: Pwr {{ _private: () }},"
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -3187,7 +3364,8 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
          /// (RM0433 Rev 9 §8.7.2, §8.7.7–8.7.10, §8.7.19–8.7.22). Reads the {count} registers\n    \
          /// and writes nothing.\n\
          {named}\n    \
-         pub fn reset_clock<R: Registers>(&self, r: &mut R) -> Result<ResetClock, NotResetClock> {{\n\
+         /// Only with a [`Scale2`]: the core is at VOS Scale 2 before the clock tree is read.\n    \
+         pub fn reset_clock<R: Registers>(&self, r: &mut R, _scale2: &Scale2) -> Result<ResetClock, NotResetClock> {{\n\
          {reads}\n        \
              if {tests} {{\n            \
                  Ok(ResetClock {{ _private: () }})\n        \
@@ -3200,6 +3378,74 @@ fn emit_reset_clock(w: &mut String, clock: &ClockFacts) {
         tests = tests.join(" && "),
         count = count_word(clock.len()),
     );
+}
+
+/// [`Board`]'s `Pwr` and its one method, `scale2` (`AET-WO-4240v` §1.4): the
+/// supply configuration, then VOS Scale 2, each wait bounded. Every place and
+/// position is the header's ([`PwrFacts`]), and every word the generator's
+/// own ([`PwrFacts::supply_bits`], [`PwrFacts::d3cr_scale2`]), never
+/// `aethelgard_ir::vos`'s, which the oracle holds it to (`INV-07`).
+fn pwr_api(plan: &Plan, p: &PwrFacts) -> String {
+    let bits = p.supply_bits(plan.core_supply);
+    let config = p.config_mask();
+    let mode = match plan.core_supply {
+        CoreSupplyMode::Ldo => "LDO supply: `LDOEN` 1, `BYPASS` 0",
+        CoreSupplyMode::Bypass => "LDO Bypass: `LDOEN` 0, `BYPASS` 1",
+    };
+    format!(
+        "/// The power controller: the supply configuration and the core's voltage scale,\n\
+         /// once (`AET-WO-4240v` §1.4).\n\
+         pub struct Pwr {{\n    \
+             _private: (),\n\
+         }}\n\
+         \n\
+         /// Reads `PWR` at `offset` at most `polls` times, until a read has a bit of `mask`.\n\
+         fn pwr_ready<R: Registers>(r: &mut R, offset: usize, mask: u32, polls: u32) -> bool {{\n    \
+             for _ in 0..polls {{\n        \
+                 if r.read(TOKEN, Block::Pwr, offset) & mask != 0 {{\n            \
+                     return true;\n        \
+                 }}\n    \
+             }}\n    \
+             false\n\
+         }}\n\
+         \n\
+         impl Pwr {{\n    \
+             /// The core at VOS Scale 2, in RM0433 Rev 9's order (§6.4.1, p. 262; §6.8.4,\n    \
+             /// p. 308; §6.8.6, p. 310), every wait at most `polls` reads:\n    \
+             /// 1. `PWR_CR3` read, then written as read but for the supply bits, the\n    \
+             ///    declared configuration's ({mode}) and `SCUEN` 0:\n    \
+             ///    every other bit is reserved, \"must be kept at reset value\". Then it is read\n    \
+             ///    back: `LDOEN` and `BYPASS` other than declared are\n    \
+             ///    [`PwrFault::SupplyNotDeclared`], since the register is written once after\n    \
+             ///    power-on, so another writer locked it, and nothing more is written. Equal,\n    \
+             ///    it goes on, whichever write set them.\n    \
+             /// 2. `PWR_CSR1.ACTVOSRDY` awaited ([`PwrFault::ActvosrdyTimeout`]).\n    \
+             /// 3. `PWR_D3CR` written whole, `VOS` `10` (Scale 2), every other bit 0.\n    \
+             /// 4. `PWR_D3CR.VOSRDY` awaited ([`PwrFault::VosrdyTimeout`]).\n    \
+             pub fn scale2<R: Registers>(self, r: &mut R, polls: u32) -> Result<Scale2, PwrFault> {{\n        \
+                 r.modify(TOKEN, Block::Pwr, {cr3:#04x}, |v| (v & !{mask:#010x}) | {bits:#010x});\n        \
+                 if r.read(TOKEN, Block::Pwr, {cr3:#04x}) & {config:#010x} != {declared:#010x} {{\n            \
+                     return Err(PwrFault::SupplyNotDeclared);\n        \
+                 }}\n        \
+                 if !pwr_ready(r, {csr1:#04x}, {actvosrdy:#010x}, polls) {{\n            \
+                     return Err(PwrFault::ActvosrdyTimeout);\n        \
+                 }}\n        \
+                 r.write(TOKEN, Block::Pwr, {d3cr:#04x}, {scale2:#010x});\n        \
+                 if !pwr_ready(r, {d3cr:#04x}, {vosrdy:#010x}, polls) {{\n            \
+                     return Err(PwrFault::VosrdyTimeout);\n        \
+                 }}\n        \
+                 Ok(Scale2 {{ _private: () }})\n    \
+             }}\n\
+         }}\n",
+        cr3 = p.cr3,
+        csr1 = p.csr1,
+        d3cr = p.d3cr,
+        mask = p.supply_mask(),
+        declared = bits & config,
+        actvosrdy = 1u32 << p.actvosrdy,
+        scale2 = p.d3cr_scale2(),
+        vosrdy = 1u32 << p.vosrdy,
+    )
 }
 
 /// [`Rcc`]'s `select_spi_kernels`: each select register the plan's SPI
@@ -3559,7 +3805,7 @@ fn oracle_selects(plan: &Plan) -> BTreeMap<u32, u32> {
 /// The harness image's fields, in its order: RCC, the ports, the I2C and SPI
 /// peripherals, then the timers. A USART's block is never in it.
 fn image_fields(plan: &Plan) -> Vec<String> {
-    let mut blocks: Vec<String> = vec!["rcc".into()];
+    let mut blocks: Vec<String> = vec!["rcc".into(), "pwr".into()];
     blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
     blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
     blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
@@ -3920,6 +4166,7 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
     emit_spi_transfer_proofs(w, plan, facts);
     emit_timer_proofs(w, plan, facts);
     emit_flash_proof(w);
+    emit_pwr_proof(w, plan);
     Ok(s)
 }
 
@@ -3977,6 +4224,253 @@ fn emit_flash_proof(w: &mut String) {
     );
 }
 
+// belt-and-suspenders: the oracle's offsets, written from RM0433; the code's
+// come from the header, so an error in either is a failed proof (`INV-07`).
+/// `PWR_CSR1`'s, `PWR_CR3`'s and `PWR_D3CR`'s offsets in the power
+/// controller's block: "Address offset: 0x004", "0x00C" and "0x018" (RM0433
+/// Rev 9 §6.8.2 p. 305, §6.8.4 p. 307, §6.8.6 p. 310). The oracle's own
+/// copies; the code's come from the header's `PWR_TypeDef`.
+const ORACLE_PWR_CSR1: u32 = 0x004;
+const ORACLE_PWR_CR3: u32 = 0x00C;
+const ORACLE_PWR_D3CR: u32 = 0x018;
+/// `PWR_CSR1.ACTVOSRDY` and `PWR_D3CR.VOSRDY`, each bit 13, read-only (RM0433
+/// Rev 9 §6.8.2 p. 306, §6.8.6 p. 310). The oracle's own copy.
+const ORACLE_PWR_READY: u32 = 1 << 13;
+
+/// The final-state oracle's PWR clause (`AET-WO-4240v` §1.5): PWR is before
+/// plus exactly the declared supply and VOS Scale 2. `CR3` is the word as it
+/// was with its three supply bits the rule's; `D3CR` is the rule's whole word
+/// (`VOSRDY` aside, which is read-only); every other word is unchanged. The
+/// words are `aethelgard_ir::vos`'s, never the generator's
+/// ([`PwrFacts::supply_bits`]), and the offsets the oracle's own.
+fn emit_pwr_clause(w: &mut String, plan: &Plan, words: u32) {
+    let cr3 = ORACLE_PWR_CR3 / 4;
+    let d3cr = ORACLE_PWR_D3CR / 4;
+    let _ = writeln!(
+        w,
+        "    // PWR is before plus exactly the declared supply and VOS Scale 2\n    \
+         // (aethelgard_ir::vos::cr3_supply_bits, D3CR_VOS_SCALE2).\n    \
+         kani::assert(\n        \
+             after.pwr[{cr3}] == (before.pwr[{cr3}] & !{mask:#010x}) | {bits:#010x},\n        \
+             \"PWR is not before plus exactly the declared supply and VOS Scale 2: CR3's supply bits are not the rule's, or another bit moved\",\n    \
+         );\n    \
+         kani::assert(\n        \
+             after.pwr[{d3cr}] & {vos:#010x} == {scale2:#010x},\n        \
+             \"PWR is not before plus exactly the declared supply and VOS Scale 2: D3CR.VOS is not 10\",\n    \
+         );\n    \
+         kani::assert(\n        \
+             after.pwr[{d3cr}] & !{ready:#010x} == {scale2:#010x},\n        \
+             \"PWR is not before plus exactly the declared supply and VOS Scale 2: D3CR is not the rule's whole word\",\n    \
+         );",
+        mask = vos::CR3_SUPPLY_MASK,
+        bits = vos::cr3_supply_bits(plan.core_supply),
+        vos = vos::D3CR_VOS_MASK,
+        scale2 = vos::D3CR_VOS_SCALE2,
+        ready = ORACLE_PWR_READY,
+    );
+    for i in (0..words).filter(|i| *i != cr3 && *i != d3cr) {
+        let _ = writeln!(
+            w,
+            "    kani::assert(after.pwr[{i}] == before.pwr[{i}], \"PWR is not before plus exactly the declared supply and VOS Scale 2: word {i} changed\");"
+        );
+    }
+}
+
+/// The proof of the bring-up's first step (`AET-WO-4240v` §1.5),
+/// `pwr_scale2_is_once_in_order_and_bounded`: on a spy whose every read is
+/// any word, at a bound of two polls, `Pwr::scale2` writes exactly `CR3`, then
+/// `D3CR`, with the rule's words; reads `CR3` once before its write and once
+/// after; polls `CSR1` only after `CR3` read back as declared and `D3CR` only
+/// after its write, each at most the bound and never after the bit read 1;
+/// writes nothing after a fault; touches no block but PWR; and returns
+/// `Scale2` exactly when `CR3` read back as declared and both bits read 1, and
+/// each fault by its own name. Every expected word is `aethelgard_ir::vos`'s.
+///
+/// With a reset-clock read on the board, also the stub the targeted harnesses
+/// take their token from: it answers `CR3` as written and every other read
+/// with all ones, so `scale2` returns `Ok` on its one path.
+fn emit_pwr_proof(w: &mut String, plan: &Plan) {
+    let bits = vos::cr3_supply_bits(plan.core_supply);
+    let declared = bits & vos::CR3_SUPPLY_CONFIG_MASK;
+    let _ = writeln!(
+        w,
+        "\n\
+         /// PWR as `Pwr::scale2` may touch it: every read any word, the order held at\n\
+         /// each access. `step`: 0 before the `CR3` read, 1 after it, 2 after the `CR3`\n\
+         /// write, 3 after the read-back, 4 after the `D3CR` write.\n\
+         struct PwrSpy {{\n    \
+             step: u8,\n    \
+             cr3: u32,\n    \
+             readback: u32,\n    \
+             csr1_reads: u32,\n    \
+             actvosrdy: bool,\n    \
+             d3cr_reads: u32,\n    \
+             vosrdy: bool,\n    \
+             writes: u32,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for PwrSpy {{}}\n\
+         \n\
+         impl Registers for PwrSpy {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 kani::assert(block == Block::Pwr, \"scale2 touched a block other than PWR\");\n        \
+                 let v: u32 = kani::any();\n        \
+                 if offset == {cr3:#05x} {{\n            \
+                     kani::assert(self.step == 0 || self.step == 2, \"CR3 read other than once before its write and once after\");\n            \
+                     if self.step == 0 {{\n                \
+                         self.cr3 = v;\n                \
+                         self.step = 1;\n            \
+                     }} else {{\n                \
+                         self.readback = v;\n                \
+                         self.step = 3;\n            \
+                     }}\n        \
+                 }} else if offset == {csr1:#05x} {{\n            \
+                     kani::assert(\n                \
+                         self.step == 3 && self.readback & {config:#010x} == {declared:#010x},\n                \
+                         \"CSR1 polled before CR3 read back as declared (aethelgard_ir::vos::cr3_supply_bits)\",\n            \
+                     );\n            \
+                     kani::assert(!self.actvosrdy, \"CSR1 polled after ACTVOSRDY read 1\");\n            \
+                     self.csr1_reads += 1;\n            \
+                     self.actvosrdy = v & {ready:#010x} != 0;\n        \
+                 }} else if offset == {d3cr:#05x} {{\n            \
+                     kani::assert(self.step == 4, \"D3CR read before its write\");\n            \
+                     kani::assert(!self.vosrdy, \"D3CR polled after VOSRDY read 1\");\n            \
+                     self.d3cr_reads += 1;\n            \
+                     self.vosrdy = v & {ready:#010x} != 0;\n        \
+                 }} else {{\n            \
+                     kani::assert(false, \"scale2 read a PWR register other than CSR1, CR3 and D3CR\");\n        \
+                 }}\n        \
+                 v\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 kani::assert(block == Block::Pwr, \"scale2 touched a block other than PWR\");\n        \
+                 self.writes += 1;\n        \
+                 if offset == {cr3:#05x} {{\n            \
+                     kani::assert(self.step == 1, \"CR3 written other than once, after its read\");\n            \
+                     kani::assert(\n                \
+                         value == (self.cr3 & !{mask:#010x}) | {bits:#010x},\n                \
+                         \"CR3 is not the word as read with the rule's supply bits (aethelgard_ir::vos::cr3_supply_bits)\",\n            \
+                     );\n            \
+                     self.step = 2;\n        \
+                 }} else if offset == {d3cr:#05x} {{\n            \
+                     kani::assert(\n                \
+                         self.step == 3 && self.readback & {config:#010x} == {declared:#010x} && self.actvosrdy,\n                \
+                         \"D3CR written other than once, after CR3 read back as declared and ACTVOSRDY read 1\",\n            \
+                     );\n            \
+                     kani::assert(value == {scale2:#010x}, \"D3CR is not the rule's word (aethelgard_ir::vos::D3CR_VOS_SCALE2)\");\n            \
+                     self.step = 4;\n        \
+                 }} else {{\n            \
+                     kani::assert(false, \"scale2 wrote a PWR register other than CR3 and D3CR\");\n        \
+                 }}\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"scale2 made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"scale2 made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// `Pwr::scale2` at a bound of two polls, on any words: `CR3` then `D3CR`\n\
+         /// written, once each, in order, with the rule's words; nothing after a fault;\n\
+         /// each outcome by its own name, `Scale2` only when `CR3` read back as declared\n\
+         /// and `ACTVOSRDY` and `VOSRDY` each read 1 within the bound.\n\
+         #[kani::proof]\n\
+         #[kani::unwind(3)]\n\
+         fn pwr_scale2_is_once_in_order_and_bounded() {{\n    \
+             let mut spy = PwrSpy {{\n        \
+                 step: 0,\n        \
+                 cr3: 0,\n        \
+                 readback: 0,\n        \
+                 csr1_reads: 0,\n        \
+                 actvosrdy: false,\n        \
+                 d3cr_reads: 0,\n        \
+                 vosrdy: false,\n        \
+                 writes: 0,\n    \
+             }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let result = board.pwr.scale2(&mut spy, 2);\n    \
+             let declared = spy.step >= 3 && spy.readback & {config:#010x} == {declared:#010x};\n    \
+             kani::assert(spy.csr1_reads <= 2 && spy.d3cr_reads <= 2, \"a wait read past its bound\");\n    \
+             match result {{\n        \
+                 Ok(_) => {{\n            \
+                     kani::assert(\n                \
+                         spy.step == 4 && spy.writes == 2 && declared && spy.actvosrdy && spy.vosrdy,\n                \
+                         \"Scale2 without CR3 read back as declared and both bits read 1 after both writes\",\n            \
+                     );\n            \
+                     kani::cover!(true, \"Scale 2 reached\");\n        \
+                 }}\n        \
+                 Err(PwrFault::SupplyNotDeclared) => {{\n            \
+                     kani::assert(\n                \
+                         spy.step == 3 && spy.writes == 1 && !declared,\n                \
+                         \"SupplyNotDeclared other than on a CR3 read back undeclared, right after its one write\",\n            \
+                     );\n            \
+                     kani::cover!(true, \"the supply is not the declared one\");\n        \
+                 }}\n        \
+                 Err(PwrFault::ActvosrdyTimeout) => {{\n            \
+                     kani::assert(\n                \
+                         spy.step == 3 && spy.writes == 1 && declared && !spy.actvosrdy && spy.csr1_reads == 2,\n                \
+                         \"ActvosrdyTimeout other than after the bound's reads of CSR1, each 0\",\n            \
+                     );\n            \
+                     kani::cover!(true, \"ACTVOSRDY times out\");\n        \
+                 }}\n        \
+                 Err(PwrFault::VosrdyTimeout) => {{\n            \
+                     kani::assert(\n                \
+                         spy.step == 4 && spy.writes == 2 && spy.actvosrdy && !spy.vosrdy && spy.d3cr_reads == 2,\n                \
+                         \"VosrdyTimeout other than after the bound's reads of D3CR, each 0\",\n            \
+                     );\n            \
+                     kani::cover!(true, \"VOSRDY times out\");\n        \
+                 }}\n    \
+             }}\n\
+         }}",
+        cr3 = ORACLE_PWR_CR3,
+        csr1 = ORACLE_PWR_CSR1,
+        d3cr = ORACLE_PWR_D3CR,
+        ready = ORACLE_PWR_READY,
+        mask = vos::CR3_SUPPLY_MASK,
+        config = vos::CR3_SUPPLY_CONFIG_MASK,
+        scale2 = vos::D3CR_VOS_SCALE2,
+    );
+    if plan.needs_clock() {
+        let _ = writeln!(
+            w,
+            "\n\
+             /// PWR always ready: `CR3` reads as last written, every other read all ones.\n\
+             struct PwrReady {{\n    \
+                 cr3: u32,\n\
+             }}\n\
+             \n\
+             impl sealed::Sealed for PwrReady {{}}\n\
+             \n\
+             impl Registers for PwrReady {{\n    \
+                 fn read(&mut self, _: sealed::Token, _: Block, offset: usize) -> u32 {{\n        \
+                     if offset == {cr3:#05x} {{ self.cr3 }} else {{ !0 }}\n    \
+                 }}\n    \
+                 fn write(&mut self, _: sealed::Token, _: Block, offset: usize, value: u32) {{\n        \
+                     if offset == {cr3:#05x} {{\n            \
+                         self.cr3 = value;\n        \
+                     }}\n    \
+                 }}\n    \
+                 fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                     0\n    \
+                 }}\n    \
+                 fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{}}\n\
+             }}\n\
+             \n\
+             /// The token the targeted harnesses read the reset clock with: `scale2` on\n\
+             /// [`PwrReady`], which returns `Ok` (`pwr_scale2_is_once_in_order_and_bounded`\n\
+             /// proves the sequence itself).\n\
+             fn scale2_token(pwr: Pwr) -> Scale2 {{\n    \
+                 let token = pwr.scale2(&mut PwrReady {{ cr3: 0 }}, 1);\n    \
+                 kani::assert(token.is_ok(), \"scale2 refused a ready PWR\");\n    \
+                 token.unwrap()\n\
+             }}",
+            cr3 = ORACLE_PWR_CR3,
+        );
+    }
+}
+
 /// The whole-schedule harness for `scope`: its register image and the
 /// image's write-time rules, its final-state oracle, and its scheduler. For a
 /// part, also the rely–guarantee that makes the parts' conjunction the whole
@@ -4001,8 +4495,10 @@ fn emit_schedule(
     let ty = scope.type_suffix();
     let sfx = scope.suffix();
     // Blocks: (Block variant, image field, words, gate).
-    let mut blocks: Vec<(String, String, u32, Option<&Gate>)> =
-        vec![("Rcc".into(), "rcc".into(), facts.rcc_words, None)];
+    let mut blocks: Vec<(String, String, u32, Option<&Gate>)> = vec![
+        ("Rcc".into(), "rcc".into(), facts.rcc_words, None),
+        ("Pwr".into(), "pwr".into(), facts.pwr.words, None),
+    ];
     for port in &scope.ports {
         blocks.push((
             port_type(*port),
@@ -4036,7 +4532,7 @@ fn emit_schedule(
         ));
     }
     // A part's image holds only its own blocks; any other is outside it.
-    let partial = blocks.len() < 1 + plan.ports.len() + plan.peripherals.len() + plan.timers.len();
+    let partial = blocks.len() < 2 + plan.ports.len() + plan.peripherals.len() + plan.timers.len();
     let acts = scope.actions(plan);
     let actions = acts.len();
     let unwind = blocks
@@ -4138,7 +4634,8 @@ fn emit_schedule(
          /// A gated block may not be read or written.\n    \
          fn clocked(&self, block: Block) {{\n        \
              match block {{\n            \
-                 Block::Rcc => {{}}"
+                 Block::Rcc => {{}}\n            \
+                 Block::Pwr => {{}}"
     );
     if !partial {
         let _ = writeln!(w, "            Block::Flash => {{}}");
@@ -4282,7 +4779,26 @@ fn emit_schedule(
         "        *self.slot(block, offset)\n    \
          }}\n    \
          fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
-             self.clocked(block);"
+             self.clocked(block);\n        \
+             // PWR (RM0433 Rev 9 §6.8): only `CR3` and `D3CR` are written, and\n        \
+             // `D3CR.VOSRDY` is read-only, so a write leaves it as it was.\n        \
+             let value = if block == Block::Pwr {{\n            \
+                 kani::assert(\n                \
+                     offset == {cr3:#05x} || offset == {d3cr:#05x},\n                \
+                     \"a PWR register other than CR3 and D3CR was written\",\n            \
+                 );\n            \
+                 if offset == {d3cr:#05x} {{\n                \
+                     (value & !{ready:#010x}) | (self.pwr[{d}] & {ready:#010x})\n            \
+                 }} else {{\n                \
+                     value\n            \
+                 }}\n        \
+             }} else {{\n            \
+                 value\n        \
+             }};",
+        cr3 = ORACLE_PWR_CR3,
+        d3cr = ORACLE_PWR_D3CR,
+        d = ORACLE_PWR_D3CR / 4,
+        ready = ORACLE_PWR_READY,
     );
     for (name, pf) in facts
         .peripherals
@@ -4510,17 +5026,22 @@ fn emit_schedule(
             .iter()
             .map(|p| format!("(Block::{}, {:#04x})", port_type(*p), g.bsrr))
             .collect();
+        // PWR is written only by the bring-up's first step, before the
+        // schedule (no action owns it, so no rely covers it), and the final
+        // check fixes every PWR word exactly.
         let _ = writeln!(
             w,
-            "        let changed = if matches!((block, offset), {}) {{\n            \
-                 value\n        \
-             }} else {{\n            \
-                 *self.slot(block, offset) ^ value\n        \
-             }};\n        \
-             kani::assert(\n            \
-                 changed & !self.footprint(block, offset) == 0,\n            \
-                 \"a write changed a bit outside the running action's footprint\",\n        \
-             );",
+            "        if block != Block::Pwr {{\n            \
+                 let changed = if matches!((block, offset), {}) {{\n                \
+                     value\n            \
+                 }} else {{\n                \
+                     *self.slot(block, offset) ^ value\n            \
+                 }};\n            \
+                 kani::assert(\n                \
+                     changed & !self.footprint(block, offset) == 0,\n                \
+                     \"a write changed a bit outside the running action's footprint\",\n            \
+                 );\n        \
+             }}",
             bsrr.join(" | ")
         );
     }
@@ -4572,6 +5093,7 @@ fn emit_schedule(
         "fn check_final{sfx}(before: &Image{ty}, after: &Image{ty}{}) {{",
         timingr_params.concat()
     );
+    emit_pwr_clause(w, plan, facts.pwr.words);
     for port in &scope.ports {
         let field = port_field(*port);
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
@@ -4885,7 +5407,18 @@ fn emit_schedule(
         "    }};\n    \
          let before = img;\n    \
          let board = Board::take().unwrap();\n    \
-         let mut rcc = board.rcc;"
+         let mut rcc = board.rcc;\n    \
+         // The bring-up's first step, as `main` takes it (`AET-WO-4240v` §1.4): it\n    \
+         // touches only PWR (`pwr_scale2_is_once_in_order_and_bounded`), and no\n    \
+         // action touches PWR, so it commutes with every action.\n    \
+         let scale2 = board.pwr.scale2(&mut img, 1);\n    \
+         kani::assume(scale2.is_ok());\n    \
+         let {bind} = scale2.unwrap();",
+        bind = if acts.contains(&Action::ResetClock) {
+            "scale2"
+        } else {
+            "_scale2"
+        },
     );
     for port in &scope.ports {
         let _ = writeln!(
@@ -5174,7 +5707,7 @@ fn emit_schedule(
         running(w, a);
         let _ = writeln!(
             w,
-            "                let read = rcc.reset_clock(&mut img);\n                \
+            "                let read = rcc.reset_clock(&mut img, &scale2);\n                \
                  kani::assume(read.is_ok());\n                \
                  clock = read.ok();\n                \
                  kani::cover!(true, \"the reset clock was read\");\n            \
@@ -5371,7 +5904,8 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              let ({words}) = ({anys});\n    \
              let mut spy = ClockSpy {{ {inits}, reads: [false; {n_reads}] }};\n    \
              let board = Board::take().unwrap();\n    \
-             let result = board.rcc.reset_clock(&mut spy);\n    \
+             let scale2 = scale2_token(board.pwr);\n    \
+             let result = board.rcc.reset_clock(&mut spy, &scale2);\n    \
              let reset = {reset};\n    \
              kani::assert(result.is_ok() == reset, \"reset_clock is not Ok exactly at the reset clock\");\n    \
              kani::assert({all_read}, \"reset_clock did not read every register it checks\");\n    \
@@ -5449,7 +5983,7 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              fn tim{n}_start_writes_the_solved_values() {{\n    \
                  let mut img = Image {{\n\
              {setup}    \
-                 let clock = rcc.reset_clock(&mut img);\n    \
+                 let clock = rcc.reset_clock(&mut img, &scale2);\n    \
                  kani::assume(clock.is_ok());\n    \
                  let clock = clock.unwrap();\n    \
                  let tim = rcc.enable_tim{n}(&mut img, board.tim{n});\n    \
@@ -5483,7 +6017,8 @@ fn harness_setup(plan: &Plan, pins: &[&String]) -> String {
         setup,
         "    }};\n    \
          let board = Board::take().unwrap();\n    \
-         let mut rcc = board.rcc;"
+         let mut rcc = board.rcc;\n    \
+         let scale2 = scale2_token(board.pwr);"
     );
     for port in &ports {
         let f = port_field(*port);
@@ -5549,7 +6084,8 @@ fn emit_usart_proof(
          let before = img;\n    \
          let mut spy = {t}Bringup {{ img, writes: [(0, 0); {count}], n: 0 }};\n    \
          let board = Board::take().unwrap();\n    \
-         let mut rcc = board.rcc;"
+         let mut rcc = board.rcc;\n    \
+         let scale2 = scale2_token(board.pwr);"
     );
     for port in &ports {
         let pf = port_field(*port);
@@ -5569,7 +6105,7 @@ fn emit_usart_proof(
     }
     let _ = writeln!(
         body,
-        "    let clock = rcc.reset_clock(&mut spy);\n    \
+        "    let clock = rcc.reset_clock(&mut spy, &scale2);\n    \
          kani::assume(clock.is_ok());\n    \
          let clock = clock.unwrap();\n    \
          let usart = rcc.enable_{f}(&mut spy, board.{f});\n    \
@@ -5932,7 +6468,8 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
             "    }};\n    \
              let board = Board::take().unwrap();\n    \
              let mut rcc = board.rcc;\n    \
-             let clock = rcc.reset_clock(&mut img);\n    \
+             let scale2 = scale2_token(board.pwr);\n    \
+             let clock = rcc.reset_clock(&mut img, &scale2);\n    \
              kani::assume(clock.is_ok());\n    \
              let clock = clock.unwrap();"
         );
@@ -6219,7 +6756,8 @@ fn emit_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts, speeds: &Spe
             "    }};\n    \
              let board = Board::take().unwrap();\n    \
              let mut rcc = board.rcc;\n    \
-             let clock = rcc.reset_clock(&mut img);\n    \
+             let scale2 = scale2_token(board.pwr);\n    \
+             let clock = rcc.reset_clock(&mut img, &scale2);\n    \
              kani::assume(clock.is_ok());\n    \
              let clock = clock.unwrap();"
         );
@@ -6332,6 +6870,7 @@ mod tests {
                 },
             )]),
             bor_level: 0,
+            core_supply: aethelgard_ir::vos::CoreSupplyMode::Ldo,
             mcu: "STM32H753ZITx".into(),
             pin_speeds: BTreeMap::from([("CS".into(), 0), ("SCL".into(), 0), ("SDA".into(), 0)]),
             foreign_clock: None,
@@ -6887,13 +7426,13 @@ mod tests {
         // A board with only an I2C bus reads the reset clock too, first, and
         // its crate makes the token (`AET-WO-4230` D6).
         let clock = main
-            .find("    let Ok(clock) = rcc.reset_clock(&mut r) else {\n")
+            .find("    let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n")
             .unwrap();
         assert!(clock < main.find("rcc.enable_").unwrap());
         assert!(files["src/board.rs"].contains("pub struct ResetClock {"));
         assert!(main.contains("let _pa0 = gpioa.pa0.into_output(&mut r);"));
         assert!(main.contains("let pb6 = gpiob.pb6.into_i2c1_scl(&mut r);"));
-        assert!(main.contains("use b::{Board, i2c1_speed, mmio::Mmio};"));
+        assert!(main.contains("use b::{Board, PwrFault, i2c1_speed, mmio::Mmio};"));
         let mut s = solved();
         set_ceiling(&mut s, "BUS", 1_000_000);
         let files = generate("b", &s, &table()).unwrap();
@@ -7524,5 +8063,254 @@ mod tests {
                 );
             }
         }
+    }
+
+    // ---- AET-WO-4240v §1.4: the supply configuration and VOS Scale 2.
+
+    /// A board with one GPIO output and nothing else: its plan reads no clock
+    /// (`needs_clock()` false), so it has no `ResetClock`.
+    fn gpio_only() -> SolvedTopology {
+        let mut s = solved();
+        s.assignments.clear();
+        s.i2c_ceilings.clear();
+        s.i2c_speeds.clear();
+        s.analog_lines.clear();
+        s.i2c_timings.clear();
+        s.pin_speeds = BTreeMap::from([("CS".into(), 0)]);
+        s
+    }
+
+    /// The generator's own words (from the header and the declaration) are the
+    /// rule's (`aethelgard_ir::vos`), which the oracle and the twin hold the
+    /// firmware to; and the header's places are RM0433's (§6.8.2, §6.8.4,
+    /// §6.8.6: `CSR1` 0x004, `CR3` 0x00C, `D3CR` 0x018, both ready bits 13).
+    #[test]
+    fn the_generators_pwr_words_are_the_rules() {
+        let p = PwrFacts::new(&cmsis::register_facts().unwrap()).unwrap();
+        assert_eq!(p.base, 0x5802_4800);
+        assert_eq!(
+            (p.csr1, p.cr3, p.d3cr),
+            (ORACLE_PWR_CSR1, ORACLE_PWR_CR3, ORACLE_PWR_D3CR)
+        );
+        assert_eq!(1 << p.actvosrdy, ORACLE_PWR_READY);
+        assert_eq!(1 << p.vosrdy, ORACLE_PWR_READY);
+        assert_eq!(p.supply_mask(), vos::CR3_SUPPLY_MASK);
+        assert_eq!(p.config_mask(), vos::CR3_SUPPLY_CONFIG_MASK);
+        for mode in [CoreSupplyMode::Ldo, CoreSupplyMode::Bypass] {
+            assert_eq!(p.supply_bits(mode), vos::cr3_supply_bits(mode), "{mode:?}");
+        }
+        assert_eq!(p.d3cr_scale2(), vos::D3CR_VOS_SCALE2);
+        assert_eq!(((1u32 << p.vos.1) - 1) << p.vos.0, vos::D3CR_VOS_MASK);
+    }
+
+    /// The sequence's text: `CR3` read-modify-written once with the LDO bits,
+    /// read back under `LDOEN` and `BYPASS`, `ACTVOSRDY` awaited, `D3CR`
+    /// written whole once, `VOSRDY` awaited, in that order; `scale2` consumes
+    /// the one `Pwr`, and `reset_clock` takes its token.
+    #[test]
+    fn scale2_writes_cr3_then_d3cr_once_each_in_order() {
+        let files = generate("b", &solved(), &table()).unwrap();
+        let board = &files["src/board.rs"];
+        let at = |s: &str| {
+            assert_eq!(board.matches(s).count(), 1, "{s}");
+            board.find(s).unwrap()
+        };
+        let order = [
+            at(
+                "pub fn scale2<R: Registers>(self, r: &mut R, polls: u32) -> Result<Scale2, PwrFault> {",
+            ),
+            at("r.modify(TOKEN, Block::Pwr, 0x0c, |v| (v & !0x00000007) | 0x00000002);"),
+            at(
+                "if r.read(TOKEN, Block::Pwr, 0x0c) & 0x00000003 != 0x00000002 {\n            return Err(PwrFault::SupplyNotDeclared);",
+            ),
+            at(
+                "if !pwr_ready(r, 0x04, 0x00002000, polls) {\n            return Err(PwrFault::ActvosrdyTimeout);",
+            ),
+            at("r.write(TOKEN, Block::Pwr, 0x18, 0x00008000);"),
+            at(
+                "if !pwr_ready(r, 0x18, 0x00002000, polls) {\n            return Err(PwrFault::VosrdyTimeout);",
+            ),
+        ];
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        assert_eq!(board.matches("Block::Pwr").count(), 5);
+        assert!(board.contains("            Block::Pwr => 0x58024800,"));
+        assert!(
+            board.contains("pub fn reset_clock<R: Registers>(&self, r: &mut R, _scale2: &Scale2)")
+        );
+        assert_eq!(board.matches("Scale2 { _private: () }").count(), 1);
+        assert!(board.contains("    pub pwr: Pwr,\n"));
+    }
+
+    /// `bypass` validates and solves, and `generate` and the ledger refuse it
+    /// by name (`AET-WO-4240v` D-1).
+    #[test]
+    fn a_bypass_supply_is_refused_as_not_generated() {
+        let mut s = solved();
+        s.core_supply = CoreSupplyMode::Bypass;
+        s.validate().unwrap();
+        let e = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(e.kind(), "CoreSupplyNotGenerated");
+        assert_eq!(
+            register_fields(&s, &table()).unwrap_err().kind(),
+            "CoreSupplyNotGenerated"
+        );
+        assert!(generate("b", &solved(), &table()).is_ok());
+    }
+
+    /// `check_silicon` runs the voltage-scaling rule first and refuses a tree
+    /// it does not hold by the clock's name: the reset tree at VOS3 runs
+    /// `rcc_pclk1` and every APB at 64,958,976 Hz at its fastest, over 50 MHz
+    /// (DS12117 Rev 10 Table 111). `validate` refuses it first, so the check
+    /// is called on its own.
+    #[test]
+    fn check_silicon_refuses_a_tree_the_vos_rule_does_not_hold() {
+        check_silicon(&solved()).unwrap();
+        let mut s = solved();
+        s.clock.vos = aethelgard_ir::vos::Vos::Scale3;
+        let e = check_silicon(&s).unwrap_err();
+        assert_eq!(e.kind(), "VosRuleFails");
+        let BoardError::VosRuleFails { clock, finding } = &e else {
+            unreachable!()
+        };
+        let failing: Vec<String> = vos::judge_generated(&s)
+            .clocks
+            .into_iter()
+            .filter(|c| c.holds == Some(false))
+            .map(|c| c.clock)
+            .collect();
+        assert!(failing.contains(clock), "{clock} not in {failing:?}");
+        assert!(finding.contains("64958976 Hz"), "{finding}");
+        assert!(finding.contains("50000000 Hz"), "{finding}");
+    }
+
+    /// `main`: the sequence is the first hardware access, before the reset
+    /// clock, the brown-out word and any enable; a fault writes its own boot
+    /// word, once, and parks; the fixed point writes `BOOT_MAGIC`.
+    #[test]
+    fn main_runs_the_supply_and_scale2_first_and_a_fault_writes_only_its_word() {
+        let files = generate("b", &solved(), &table()).unwrap();
+        let main = &files["firmware/src/main.rs"];
+        let at = |s: &str| main.find(s).unwrap_or_else(|| panic!("{s}\n{main}"));
+        let order = [
+            at("    }) = Board::take()\n"),
+            at("    let scale2 = match pwr.scale2(&mut r, PWR_POLLS) {\n"),
+            at("    let Ok(clock) = rcc.reset_clock(&mut r, &scale2) else {\n"),
+            at("    let optsr = flash.option_status(&mut r);\n"),
+            at("rcc.enable_"),
+            at(".write_volatile(BOOT_MAGIC)"),
+        ];
+        assert!(order.windows(2).all(|w| w[0] < w[1]), "{order:?}");
+        let fault = &main[at("        Err(fault) => {\n")..at("    let Ok(clock)")];
+        for (name, word) in [
+            ("SupplyNotDeclared", "BOOT_SUPPLY_NOT_DECLARED"),
+            ("ActvosrdyTimeout", "BOOT_ACTVOSRDY_TIMEOUT"),
+            ("VosrdyTimeout", "BOOT_VOSRDY_TIMEOUT"),
+        ] {
+            assert!(
+                fault.contains(&format!("PwrFault::{name} => {word},")),
+                "{name}"
+            );
+        }
+        assert_eq!(fault.matches("write_volatile").count(), 1);
+        assert!(fault.contains(".write_volatile(word)"));
+        assert!(fault.contains("loop {"));
+        assert!(!fault.contains("r."), "a register access after a fault");
+        // The three words' `const` lines: `tests/board.rs`
+        // (`the_firmware_follows_the_judges_pwr_boot_words`).
+        assert!(main.contains(&format!("const PWR_POLLS: u32 = {PWR_POLLS};")));
+        // Three distinct words, none the magic.
+        let words = [
+            BOOT_SUPPLY_NOT_DECLARED,
+            BOOT_ACTVOSRDY_TIMEOUT,
+            BOOT_VOSRDY_TIMEOUT,
+            firmware::BOOT_MAGIC,
+        ];
+        assert_eq!(BTreeSet::from(words).len(), 4);
+    }
+
+    /// A plan that reads no clock still runs the sequence first, and binds the
+    /// token it never uses (`AET-WO-4240v` §1.4: every firmware).
+    #[test]
+    fn a_board_without_a_clock_still_runs_the_sequence_first() {
+        let s = gpio_only();
+        let plan = Plan::new("b", &s, &table()).unwrap();
+        assert!(!plan.needs_clock());
+        let files = generate("b", &s, &table()).unwrap();
+        let main = &files["firmware/src/main.rs"];
+        let seq = main
+            .find("    let _scale2 = match pwr.scale2(&mut r, PWR_POLLS) {\n")
+            .unwrap_or_else(|| panic!("{main}"));
+        assert!(seq < main.find("flash.option_status(").unwrap());
+        assert!(seq < main.find("rcc.enable_").unwrap());
+        assert!(!main.contains("reset_clock"));
+        let board = &files["src/board.rs"];
+        assert!(board.contains("pub fn scale2<R: Registers>"));
+        assert!(!board.contains("pub struct ResetClock"));
+        // Its proofs: the PWR harness, and the schedule's first step on the image.
+        let proofs = &files["src/proofs.rs"];
+        assert!(proofs.contains("fn pwr_scale2_is_once_in_order_and_bounded()"));
+        assert!(proofs.contains("    let _scale2 = scale2.unwrap();\n"));
+        assert!(!proofs.contains("fn scale2_token("));
+    }
+
+    /// The oracle's PWR clause and the new harness carry `aethelgard_ir::vos`'s
+    /// words; every schedule (whole and part) takes the first step and checks
+    /// the clause; the targeted harnesses take their token from the stub.
+    #[test]
+    fn the_oracle_holds_pwr_to_the_rules_words() {
+        let files = generate("b", &solved(), &table()).unwrap();
+        let proofs = &files["src/proofs.rs"];
+        assert!(proofs.contains("after.pwr[3] == (before.pwr[3] & !0x00000007) | 0x00000002,"));
+        assert!(proofs.contains("after.pwr[6] & 0x0000c000 == 0x00008000,"));
+        assert!(proofs.contains("after.pwr[6] & !0x00002000 == 0x00008000,"));
+        for i in [0, 1, 2, 4, 5, 7, 8, 9, 10] {
+            assert!(
+                proofs.contains(&format!("kani::assert(after.pwr[{i}] == before.pwr[{i}], ")),
+                "{i}"
+            );
+        }
+        assert!(proofs.contains(
+            "    let scale2 = board.pwr.scale2(&mut img, 1);\n    kani::assume(scale2.is_ok());\n"
+        ));
+        assert!(proofs.contains("let read = rcc.reset_clock(&mut img, &scale2);"));
+        assert!(proofs.contains("let result = board.rcc.reset_clock(&mut spy, &scale2);"));
+        assert!(
+            proofs.contains("#[kani::unwind(3)]\nfn pwr_scale2_is_once_in_order_and_bounded() {")
+        );
+        assert!(proofs.contains("let result = board.pwr.scale2(&mut spy, 2);"));
+        for cover in [
+            "Scale 2 reached",
+            "the supply is not the declared one",
+            "ACTVOSRDY times out",
+            "VOSRDY times out",
+        ] {
+            assert!(
+                proofs.contains(&format!("kani::cover!(true, \"{cover}\");")),
+                "{cover}"
+            );
+        }
+        // A motor board: every part takes the first step and checks the clause.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/ui/motors-pwm/topology.json");
+        let motors: SolvedTopology = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let proofs = &generate("b", &motors, &table()).unwrap()["src/proofs.rs"];
+        let parts = proofs.matches("fn every_valid_sequence_").count();
+        assert!(parts > 1);
+        assert_eq!(
+            proofs
+                .matches("let scale2 = board.pwr.scale2(&mut img, 1);")
+                .count(),
+            parts
+        );
+        assert_eq!(
+            proofs
+                .matches("PWR is not before plus exactly the declared supply and VOS Scale 2: CR3")
+                .count(),
+            parts
+        );
+        assert_eq!(
+            proofs.matches("        if block != Block::Pwr {\n").count(),
+            parts
+        );
     }
 }

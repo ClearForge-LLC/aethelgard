@@ -40,6 +40,7 @@ pub fn spec_json() -> serde_json::Value {
         "apb1_timers_hz": hz("the reset clock (RM0433 Rev 9 Table 57)"),
         "apb2_timers_hz": hz("the reset clock (RM0433 Rev 9 Table 57)"),
         "usarts": usarts,
+        "vos": {"value": "scale2", "source": "the generated firmware's VOS Scale 2 (AET-WO-4240v)"},
     });
     v
 }

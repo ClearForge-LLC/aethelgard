@@ -1,7 +1,7 @@
 error[E0061]: this method takes 3 arguments but 2 arguments were supplied
-  --> tests/ui/fail/spi_without_kernels.rs:12:20
+  --> tests/ui/fail/spi_without_kernels.rs:13:20
    |
-12 |     let _spi = rcc.enable_spi1(&mut r, board.spi1);
+13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1);
    |                    ^^^^^^^^^^^-------------------- argument #3 of type `&SpiKernels` is missing
    |
 note: method defined here
@@ -11,5 +11,5 @@ note: method defined here
    |            ^^^^^^^^^^^
 help: provide the argument
    |
-12 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, /* &SpiKernels */);
+13 |     let _spi = rcc.enable_spi1(&mut r, board.spi1, /* &SpiKernels */);
    |                                                  +++++++++++++++++++

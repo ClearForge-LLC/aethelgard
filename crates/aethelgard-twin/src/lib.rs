@@ -21,6 +21,13 @@
 //! parsers for its capture and Renode's access log; [`boot`] adds each
 //! USART's stored
 //! registers to the expected image.
+//!
+//! `AET-WO-4240v`: [`platform`] replaces the stock PWR stub's script on a
+//! generated platform ([`platform::pwr_override`], from RM0433), [`serial`]
+//! holds the generated bring-up's PWR writes to the declared supply and VOS
+//! Scale 2 ([`serial::judge_pwr`]) and states what the twin cannot show of
+//! them ([`serial::PWR_RESIDUAL`]), and [`boot`] names the three PWR boot
+//! words.
 
 #![forbid(unsafe_code)]
 

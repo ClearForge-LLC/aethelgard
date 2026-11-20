@@ -327,6 +327,15 @@ pub struct ClockReport {
     pub stock: Vec<&'static str>,
     /// What the check rests on, each a named sentence.
     pub conditions: Vec<String>,
+    /// The declared voltage scale (`mcu.foreign_clock.vos`).
+    #[serde(skip)]
+    pub declared_vos: aethelgard_ir::vos::Vos,
+    /// The voltage-scaling rule at the run's end (`AET-WO-4240v` D-4): each
+    /// clock the decode reaches judged at the declared scale at its fastest;
+    /// one over its maximum is a named condition in `conditions`
+    /// (`vos_limit_at_boundary`), never a failure. `null` until the
+    /// registers decode.
+    pub vos: Option<aethelgard_ir::vos::ForeignVerdict>,
 }
 
 /// One RCC register as read back.
@@ -400,6 +409,8 @@ impl ClockReport {
                 PLL1_FRACTION_UNREAD.to_owned(),
                 STOCK_UNDECLARED.to_owned(),
             ],
+            declared_vos: c.vos,
+            vos: None,
         }
     }
 
@@ -420,9 +431,11 @@ impl ClockReport {
                 value: format!("{v:#010x}"),
             })
             .collect();
+        let registers = RccRegisters::from_values(values);
         let decoded = match aethelgard_ir::SolvedClock::from_rcc(
-            &RccRegisters::from_values(values),
+            &registers,
             hse_hz,
+            self.declared_vos,
         ) {
             Ok(c) => c,
             Err(e) => {
@@ -434,6 +447,14 @@ impl ClockReport {
                 )];
             }
         };
+        let usarts = self
+            .declared_only
+            .iter()
+            .map(|d| (d.instance.clone(), d.declared_hz))
+            .collect();
+        let vos = aethelgard_ir::vos::judge_foreign(&registers, &decoded, &usarts);
+        self.conditions.extend(vos.conditions.iter().cloned());
+        self.vos = Some(vos);
         let mut out = Vec::new();
         for (check, apb) in self.checked.iter_mut().zip([Apb::Apb1, Apb::Apb2]) {
             let hz = decoded.timer_kernel_hz(apb);
@@ -1685,6 +1706,7 @@ mod tests {
                 .iter()
                 .map(|p| ((*p).to_owned(), 72_000_000))
                 .collect(),
+            vos: aethelgard_ir::vos::Vos::Scale1,
         };
         let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
         assert!(r.check(regs, 0).is_empty());
