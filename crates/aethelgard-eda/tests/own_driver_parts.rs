@@ -1,4 +1,5 @@
-//! `AET-WO-1211d`: our own symbol and footprint for the TI DRV8876PWP
+//! `AET-WO-1211d`: our own symbol for the TI DRV8833PWP (below), and our own
+//! symbol and footprint for the TI DRV8876PWP
 //! (PWP0016A PowerPAD HTSSOP-16), held to citation tables written from TI
 //! SLVSDS7B (August 2019, revised November 2019), apart from the files (a
 //! table derived from a file would only check the file against itself,
@@ -281,4 +282,78 @@ fn the_symbol_names_its_own_footprint() {
     let sym = library::symbol(SYMBOL).unwrap();
     assert_eq!(sym.property("Footprint"), Some(FOOTPRINT));
     assert_eq!(sym.property("Value"), Some("DRV8876PWP"));
+}
+
+/// One DRV8833 pin: number, name, TI's I/O column (`—` where it states
+/// none) and the symbol's KiCad electrical type.
+type TiPin = (&'static str, &'static str, &'static str, &'static str);
+
+/// TI SLVSAR1E (January 2011, revised July 2015), Pin Functions, pp. 3–4,
+/// the HTSSOP column; the PowerPAD is pin 17 ("must be connected to
+/// ground"). `I` is `input`, `O` `output` (each drives a motor winding, never
+/// a rail), `OD` `open_collector` and `IO` `bidirectional`, except AISEN and
+/// BISEN, which are `passive` (ruled Q3, 2026-11-20): each is its bridge's
+/// ground return, and p. 10 says "If current control is not needed, the
+/// xISEN pins should be connected directly to ground", which ERC refuses for
+/// a `bidirectional` pin on a flagged rail. Where TI states no type (`—`:
+/// VM, VINT, GND, the PowerPAD) the supply pins are `power_in`, as KiCad's
+/// own `Driver_Motor:DRV8833PWP` has them, and the pad is `passive`.
+const DRV8833_PINS: [TiPin; 17] = [
+    ("1", "~{SLEEP}", "I", "input"),
+    ("2", "AOUT1", "O", "output"),
+    ("3", "AISEN", "IO", "passive"),
+    ("4", "AOUT2", "O", "output"),
+    ("5", "BOUT2", "O", "output"),
+    ("6", "BISEN", "IO", "passive"),
+    ("7", "BOUT1", "O", "output"),
+    ("8", "~{FAULT}", "OD", "open_collector"),
+    ("9", "BIN1", "I", "input"),
+    ("10", "BIN2", "I", "input"),
+    ("11", "VCP", "IO", "bidirectional"),
+    ("12", "VM", "—", "power_in"),
+    ("13", "GND", "—", "power_in"),
+    ("14", "VINT", "—", "power_in"),
+    ("15", "AIN2", "I", "input"),
+    ("16", "AIN1", "I", "input"),
+    ("17", "GND", "—", "passive"),
+];
+
+const DRV8833_SYMBOL: &str = "Aethelgard_Driver:DRV8833PWP";
+
+#[test]
+fn the_drv8833_symbol_s_pins_are_its_pin_functions_table() {
+    let want: Vec<ReadPin> = DRV8833_PINS
+        .iter()
+        .map(|&(n, name, _, kind)| (n.to_owned(), name.to_owned(), kind.to_owned()))
+        .collect();
+    assert_eq!(pins(DRV8833_SYMBOL), want);
+}
+
+/// Exactly AISEN and BISEN depart from TI's stated type (ruled Q3).
+#[test]
+fn only_aisen_and_bisen_depart_from_ti_s_types() {
+    let natural = |ti: &str| match ti {
+        "I" => Some("input"),
+        "O" => Some("output"),
+        "OD" => Some("open_collector"),
+        "IO" => Some("bidirectional"),
+        _ => None,
+    };
+    let departed: Vec<&str> = DRV8833_PINS
+        .iter()
+        .filter(|&&(_, _, ti, kind)| natural(ti).is_some_and(|k| k != kind))
+        .map(|&(_, name, _, _)| name)
+        .collect();
+    assert_eq!(departed, ["AISEN", "BISEN"]);
+}
+
+/// Its footprint is KiCad's vendored PWP0016C, without thermal vias.
+#[test]
+fn the_drv8833_symbol_names_the_vendored_pwp0016c_footprint() {
+    assert_eq!(
+        library::symbol(DRV8833_SYMBOL)
+            .unwrap()
+            .property("Footprint"),
+        Some("Package_SO:HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm")
+    );
 }

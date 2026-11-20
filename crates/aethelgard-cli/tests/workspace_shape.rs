@@ -438,7 +438,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
         // `AET-WO-1211d`: the two motor drivers.
         "data/kicad-10.0.7/footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod",
-        "data/kicad-10.0.7/symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym",
+        "data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym",
         "data/aethelgard/footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
         "data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8876PWP.kicad_sym",
     ];

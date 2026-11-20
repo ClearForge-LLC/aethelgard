@@ -9,7 +9,7 @@
 		(in_pos_files yes)
 		(duplicate_pin_numbers_are_jumpers no)
 		(property "Reference" "U"
-			(at -3.81 16.51 0)
+			(at -12.7 13.97 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -19,7 +19,7 @@
 			)
 		)
 		(property "Value" "DRV8833PWP"
-			(at -3.81 13.97 0)
+			(at 12.7 13.97 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(effects
@@ -28,20 +28,8 @@
 				)
 			)
 		)
-		(property "Footprint" "Package_SO:HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm_ThermalVias"
-			(at 5.08 -15.24 0)
-			(show_name no)
-			(do_not_autoplace no)
-			(hide yes)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left)
-			)
-		)
-		(property "Datasheet" "http://www.ti.com/lit/ds/symlink/drv8833.pdf"
-			(at 5.08 -17.78 0)
+		(property "Footprint" "Package_SO:HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm"
+			(at 0 -17.78 0)
 			(show_name no)
 			(do_not_autoplace no)
 			(hide yes)
@@ -49,10 +37,9 @@
 				(font
 					(size 1.27 1.27)
 				)
-				(justify left)
 			)
 		)
-		(property "Description" "Dual H-Bridge Motor Driver, HTSSOP-16"
+		(property "Datasheet" "https://www.ti.com/lit/ds/symlink/drv8833.pdf"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -63,7 +50,7 @@
 				)
 			)
 		)
-		(property "ki_keywords" "H-bridge motor driver"
+		(property "Description" "Dual H-bridge motor driver, 2.7-10.8 V, HTSSOP-16 PowerPAD (PWP0016C); pins TI SLVSAR1E Pin Functions, pp. 3-4. AISEN and BISEN are passive, not TI's IO: they are each bridge's ground return, and p. 10 says \"If current control is not needed, the xISEN pins should be connected directly to ground\" (AET-WO-1211d Q3, MIT OR Apache-2.0)"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -74,7 +61,7 @@
 				)
 			)
 		)
-		(property "ki_fp_filters" "HTSSOP*1EP*4.4x5mm*P0.65mm*EP3.4x5mm*"
+		(property "ki_keywords" "TI DRV8833 dual H-bridge motor driver PowerPAD"
 			(at 0 0 0)
 			(show_name no)
 			(do_not_autoplace no)
@@ -87,8 +74,8 @@
 		)
 		(symbol "DRV8833PWP_0_1"
 			(rectangle
-				(start -10.16 12.7)
-				(end 10.16 -12.7)
+				(start -12.7 12.7)
+				(end 12.7 -12.7)
 				(stroke
 					(width 0.254)
 					(type default)
@@ -100,7 +87,7 @@
 		)
 		(symbol "DRV8833PWP_1_1"
 			(pin input line
-				(at -12.7 10.16 0)
+				(at -15.24 2.54 0)
 				(length 2.54)
 				(name "~{SLEEP}"
 					(effects
@@ -117,8 +104,8 @@
 					)
 				)
 			)
-			(pin power_out line
-				(at 12.7 -2.54 180)
+			(pin output line
+				(at 15.24 7.62 180)
 				(length 2.54)
 				(name "AOUT1"
 					(effects
@@ -135,8 +122,8 @@
 					)
 				)
 			)
-			(pin bidirectional line
-				(at -12.7 5.08 0)
+			(pin passive line
+				(at 15.24 -5.08 180)
 				(length 2.54)
 				(name "AISEN"
 					(effects
@@ -153,8 +140,8 @@
 					)
 				)
 			)
-			(pin power_out line
-				(at 12.7 -5.08 180)
+			(pin output line
+				(at 15.24 5.08 180)
 				(length 2.54)
 				(name "AOUT2"
 					(effects
@@ -171,8 +158,8 @@
 					)
 				)
 			)
-			(pin power_out line
-				(at 12.7 -10.16 180)
+			(pin output line
+				(at 15.24 0 180)
 				(length 2.54)
 				(name "BOUT2"
 					(effects
@@ -189,8 +176,8 @@
 					)
 				)
 			)
-			(pin bidirectional line
-				(at -12.7 2.54 0)
+			(pin passive line
+				(at 15.24 -7.62 180)
 				(length 2.54)
 				(name "BISEN"
 					(effects
@@ -207,8 +194,8 @@
 					)
 				)
 			)
-			(pin power_out line
-				(at 12.7 -7.62 180)
+			(pin output line
+				(at 15.24 2.54 180)
 				(length 2.54)
 				(name "BOUT1"
 					(effects
@@ -226,7 +213,7 @@
 				)
 			)
 			(pin open_collector line
-				(at 12.7 2.54 180)
+				(at -15.24 -10.16 0)
 				(length 2.54)
 				(name "~{FAULT}"
 					(effects
@@ -244,7 +231,7 @@
 				)
 			)
 			(pin input line
-				(at -12.7 -7.62 0)
+				(at -15.24 -2.54 0)
 				(length 2.54)
 				(name "BIN1"
 					(effects
@@ -262,7 +249,7 @@
 				)
 			)
 			(pin input line
-				(at -12.7 -10.16 0)
+				(at -15.24 -5.08 0)
 				(length 2.54)
 				(name "BIN2"
 					(effects
@@ -280,7 +267,7 @@
 				)
 			)
 			(pin bidirectional line
-				(at -12.7 7.62 0)
+				(at 2.54 15.24 270)
 				(length 2.54)
 				(name "VCP"
 					(effects
@@ -298,7 +285,7 @@
 				)
 			)
 			(pin power_in line
-				(at 7.62 15.24 270)
+				(at 0 15.24 270)
 				(length 2.54)
 				(name "VM"
 					(effects
@@ -334,7 +321,7 @@
 				)
 			)
 			(pin power_in line
-				(at 5.08 15.24 270)
+				(at -2.54 15.24 270)
 				(length 2.54)
 				(name "VINT"
 					(effects
@@ -352,7 +339,7 @@
 				)
 			)
 			(pin input line
-				(at -12.7 -5.08 0)
+				(at -15.24 5.08 0)
 				(length 2.54)
 				(name "AIN2"
 					(effects
@@ -370,7 +357,7 @@
 				)
 			)
 			(pin input line
-				(at -12.7 -2.54 0)
+				(at -15.24 7.62 0)
 				(length 2.54)
 				(name "AIN1"
 					(effects
@@ -388,9 +375,8 @@
 				)
 			)
 			(pin passive line
-				(at 0 -15.24 90)
+				(at 2.54 -15.24 90)
 				(length 2.54)
-				(hide yes)
 				(name "GND"
 					(effects
 						(font

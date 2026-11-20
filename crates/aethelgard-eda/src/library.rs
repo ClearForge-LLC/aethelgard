@@ -134,10 +134,6 @@ const PINS: [(&str, &str); 56] = [
         "db1dd3eb60dbcc9e239d107e2d123ee253aefdd841186076e9df39444d4e11c7",
     ),
     (
-        "symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym",
-        "cc34d1aa537bf1dcf77c4bda43873c96bdf6b97f0e518869b6ff90402aa3f2fc",
-    ),
-    (
         "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
         "d3be2fad2f944f89603c948bb9d1ea8014e874da669406029c11e878411f6a7f",
     ),
@@ -207,6 +203,10 @@ const PINS: [(&str, &str); 56] = [
         "56a4ce03c78f1409732c4d3783174b9865882608d6d0e1e4d218e15dc250ba82",
     ),
     (
+        "symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym",
+        "510be06771e3e06104817bba6966dce2e810a9f4c0d39b7e989d226d4c4c8f12",
+    ),
+    (
         "symbols/Aethelgard_Driver.kicad_symdir/DRV8876PWP.kicad_sym",
         "d0588348a5307e3130d908f7327a4752a21d97f2a3ab972484f7b471c3175338",
     ),
@@ -220,7 +220,7 @@ const PINS: [(&str, &str); 56] = [
     ),
     (
         "aethelgard/README.md",
-        "3c8db5bff30ec4c6c2554f117f21d598f3ed0cea8274e812e6e6b0284abeecba",
+        "c790404c70cd5cab4d8793a8a575425605fd261f5304e5d85072be10b00a7730",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
@@ -608,7 +608,7 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 17);
+        assert_eq!(sym.matches("(lib ").count(), 16);
         assert_eq!(fp.matches("(lib ").count(), 15);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }

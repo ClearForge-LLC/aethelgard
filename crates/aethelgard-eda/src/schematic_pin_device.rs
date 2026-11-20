@@ -137,12 +137,14 @@ const DRV8876: Arm = Arm {
     near: "SLVSDS7B §10.1 p. 32: \"The VM power supply and VCP, CPH, CPL charge pump capacitors should be placed as close to the device as possible\" (2.0 mm, an engine choice: no distance is stated)",
 };
 
-/// SLVSAR1E (DRV8833, Jan 2011 rev. Jul 2015). KiCad 10.0.7's own symbol,
-/// and its PWP0016C footprint without thermal vias (PWP0016C note 10, p. 27:
-/// "Vias are optional"), both vendored byte for byte.
+/// SLVSAR1E (DRV8833, Jan 2011 rev. Jul 2015). Our own symbol (ruled Q3:
+/// AISEN and BISEN `passive`, since p. 10 grounds them directly when current
+/// control is not needed), and KiCad 10.0.7's PWP0016C footprint without
+/// thermal vias (PWP0016C note 10, p. 27: "Vias are optional"), vendored
+/// byte for byte.
 const DRV8833: Arm = Arm {
     part: "DRV8833PWPR",
-    symbol: "Driver_Motor:DRV8833PWP",
+    symbol: "Aethelgard_Driver:DRV8833PWP",
     footprint: "Package_SO:HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm",
     pad: "17",
     passives: &[
@@ -403,7 +405,7 @@ fn device(
         }
     }
     // The pins only a passive of the arm's joins: each on its own net. A
-    // `power_in` pin there (KiCad's DRV8833 VINT, a regulator the part
+    // `power_in` pin there (the DRV8833's VINT, a regulator the part
     // drives itself) takes its net as a rail, so it carries a `PWR_FLAG`.
     for (name, p) in &row.pins {
         if p.kind == PinKind::Passive {
@@ -462,7 +464,13 @@ fn device(
                 match e {
                     End::Ground => Ok(gnd.clone()),
                     End::Pin(name) => {
-                        pads.push((own.to_owned(), number(d, arm, row, name)?));
+                        // Anchored by its first pin end only: CFLY anchored
+                        // to both CPH and CPL (adjacent pins, 0.65 mm apart)
+                        // left `U2_CPH` unroutable (measured on D1,
+                        // `spike/1211d/RESULTS.md`).
+                        if pads.is_empty() {
+                            pads.push((own.to_owned(), number(d, arm, row, name)?));
+                        }
                         at(name)
                     }
                 }

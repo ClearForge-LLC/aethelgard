@@ -180,12 +180,6 @@ pub const FILES: [(&str, &[u8]); 56] = [
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym"),
     ),
     (
-        "symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym",
-        include_bytes!(
-            "../data/kicad-10.0.7/symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym"
-        ),
-    ),
-    (
         "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym"
@@ -297,6 +291,12 @@ pub const FILES: [(&str, &[u8]); 56] = [
         "footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
         include_bytes!(
             "../data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym"
         ),
     ),
     (

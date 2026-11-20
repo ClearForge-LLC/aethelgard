@@ -133,7 +133,7 @@ fn d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration() {
     let (spec, solved, table) = solved(&d2_drawn());
     let d = Drawing::of(&spec, &solved, &table).unwrap();
     let u2 = d.pins("U2").unwrap();
-    assert_eq!(u2.symbol, "Driver_Motor:DRV8833PWP");
+    assert_eq!(u2.symbol, "Aethelgard_Driver:DRV8833PWP");
     assert_eq!(
         u2.footprint,
         "Package_SO:HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm"
