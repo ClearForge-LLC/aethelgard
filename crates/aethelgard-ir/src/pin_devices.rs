@@ -1359,6 +1359,9 @@ impl<'s> Device<'s> {
                 to.id, s.net, mcu.id
             )));
         };
+        // belt-and-suspenders: with the held rows note 3's threshold equals
+        // the floor (both VDD + 0.3 V), so `v > pulls_off` holds here; it is
+        // kept so the rule reads as note 3 states it.
         let pulls_off = vdd + io.pulls_off_above_supply.value;
         if v > pulls_off
             && (MCU_RESET_PULL_UPS.contains(&pin) || MCU_RESET_PULL_DOWNS.contains(&pin))

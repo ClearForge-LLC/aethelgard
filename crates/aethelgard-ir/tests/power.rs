@@ -2053,7 +2053,7 @@ fn each_output_capacitor_is_credited_by_ir_s_own_derivation() {
 }
 
 /// The MCU row's `io` (`AET-WO-1211e` A1): each family upper-case and once,
-/// a family's supply term above zero, each pin canonical with a structure of
+/// stating a term, each above zero, each pin canonical with a structure of
 /// a held family on a page, and at least one pin; each refused by name.
 #[test]
 fn a_malformed_io_row_is_refused() {
@@ -2061,8 +2061,11 @@ fn a_malformed_io_row_is_refused() {
         &mut row(t, "STM32H753ZITx")["kind"]["mcu"]["io"]
     }
     type Case = (&'static str, fn(&mut Value));
-    let cases: [Case; 7] = [
+    let cases: [Case; 8] = [
         ("named once", |io| io["families"][1]["family"] = json!("FT")),
+        ("states neither term", |io| {
+            io["families"][1]["above_supply_millivolts"] = Value::Null
+        }),
         ("named once", |io| io["families"][1]["family"] = json!("tt")),
         ("not above zero", |io| {
             io["families"][0]["above_supply_millivolts"] = json!(0)
