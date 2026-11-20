@@ -1442,6 +1442,13 @@ fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String>
         tolerance_permille: r.tolerance_permille,
         decoupling_picofarads: r.decoupling_picofarads,
     }];
+    // Kind 32 beside the rail, decided before the droop's boot
+    // (`AET-WO-2305` §1.2).
+    out.extend(d.recovery_bound.as_ref().map(|b| Record::RecoveryBound {
+        boot_word_ns: b.undisturbed_boot_word_ns,
+        margin_ns: b.margin_ns,
+        bound_ns: b.bound_ns,
+    }));
     let mut timed: Vec<((u64, u8), Record)> = Vec::new();
     for c in &d.crossings {
         timed.push((
@@ -1991,7 +1998,8 @@ fn subject(r: &Record) -> String {
         Record::SpiBusSolved { peripheral, .. } => format!("controller:{peripheral}"),
         Record::BootObserved { .. }
         | Record::ResetRendered { .. }
-        | Record::FirmwareObserved { .. } => "boot".to_owned(),
+        | Record::FirmwareObserved { .. }
+        | Record::RecoveryBound { .. } => "boot".to_owned(),
         other => format!("kind:{}", other.kind()),
     }
 }

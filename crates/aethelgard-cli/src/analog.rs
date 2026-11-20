@@ -691,9 +691,12 @@ fn holds(
 /// rail, ngspice's crossings, the rendered resets, each release's probe;
 /// `brownout_reset` (info) per reset, `brownout_unrecovered` per reset the
 /// firmware did not recover from within the bound (or never released, or
-/// whose probe a killed boot never read), and `rail_below_tolerance` (info)
-/// when the rail left the domain's tolerance. `probes` is `None` when the
-/// boot was killed at a bound.
+/// whose probe a killed boot never read, or with no bound to probe at), and
+/// `rail_below_tolerance` (info) when the rail left the domain's tolerance.
+/// `probes` is `None` when the boot was killed at a bound. `undisturbed` is
+/// the undisturbed boot's boot word instant (`AET-WO-2305` §1.2): `None`
+/// when no reset was released, so none was run; `Some(None)` when it wrote
+/// no boot word, so there is no bound.
 pub fn droop_report(
     rail: &Rail,
     solved: &Solved,
@@ -701,8 +704,12 @@ pub fn droop_report(
     probes: Option<&[crate::renode::Probe]>,
     image: &aethelgard_twin::boot::Image,
     boot_word: u32,
+    undisturbed: Option<Option<u64>>,
 ) -> (crate::verdict::DroopReport, Vec<Finding>) {
-    use crate::verdict::{CrossingReport, DroopReport, ObservedReport, RailReport, ResetReport};
+    use crate::verdict::{
+        CrossingReport, DroopReport, ObservedReport, RailReport, RecoveryBoundReport, ResetReport,
+    };
+    let bound = undisturbed.flatten().and_then(power::recovery_bound);
     let d = &rail.droop;
     let mut findings = Vec::new();
     let mut reports = Vec::new();
@@ -748,7 +755,15 @@ pub fn droop_report(
     let mut observed = Vec::new();
     let releases: Vec<u64> = resets.iter().filter_map(|r| r.released_ns).collect();
     for (k, at) in releases.iter().enumerate() {
-        let probe_at = at + power::RECOVERY_BOUND_NS;
+        let Some(probe_at) = bound.and_then(|b| power::probe_ns(*at, b)) else {
+            findings.push(Finding::plain(
+                campaign::UNRECOVERED_FINDING,
+                format!(
+                    "no recovery bound for the release at {at} ns: the same boot, run first with no reset, wrote no boot word that could be read, so recovery cannot be judged"
+                ),
+            ));
+            continue;
+        };
         let Some(probe) = probes.map(|p| p.get(k)) else {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
@@ -761,8 +776,9 @@ pub fn droop_report(
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
                 format!(
-                    "{} ns after the release at {at} ns the firmware had not recovered: boot word {}, status {}, value {}, witness {}",
-                    power::RECOVERY_BOUND_NS,
+                    "{} ns after the boot that the release at {at} ns started (the undisturbed boot's {} ns and one quantum) the firmware had not recovered: boot word {}, status {}, value {}, witness {}",
+                    probe_at - at - power::NUDGE_NS,
+                    undisturbed.flatten().unwrap_or_default(),
                     boot.observed.as_deref().unwrap_or("unread"),
                     status.observed.as_deref().unwrap_or("unread"),
                     value.observed.as_deref().unwrap_or("unread"),
@@ -801,6 +817,13 @@ pub fn droop_report(
         ));
     }
     let report = DroopReport {
+        recovery_bound: undisturbed.map(|instant| RecoveryBoundReport {
+            kind: "twin.recovery_bound",
+            source: "renode",
+            undisturbed_boot_word_ns: instant,
+            margin_ns: power::RECOVERY_MARGIN_NS,
+            bound_ns: bound,
+        }),
         rail: RailReport {
             kind: "analog.rail_declared",
             source: "scenario",
