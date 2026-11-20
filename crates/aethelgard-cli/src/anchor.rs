@@ -682,6 +682,14 @@ mod tests {
             }))
         );
         assert_eq!(
+            p("[WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093"),
+            Some(Some(Hook::Step {
+                check: 1,
+                value: 0x2202_0001,
+                count: 721_093
+            }))
+        );
+        assert_eq!(
             p("[WARNING] sysbus: AETHELGARD-STALE STOP 1 2167 168997"),
             Some(Some(Hook::Stale {
                 what: Stale::Stop { timer: 1 },
@@ -711,6 +719,14 @@ mod tests {
             "[WARNING] sysbus: AETHELGARD-STALE NOW 1 2 3",
             "[WARNING] sysbus: AETHELGARD-TDR 0 ba",
             "[WARNING] sysbus: AETHELGARD-ECHO 0 1 ba 13125",
+            // `AET-WO-3305`: a step line is read as strictly as the rest.
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001 721093 0",
+            "[WARNING] sysbus: AETHELGARD-STEP 01 22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 0x22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 22020001 -1",
+            "[WARNING] sysbus: AETHELGARD-STEP x 22020001 721093",
+            "[WARNING] sysbus: AETHELGARD-STEP 1 122020001 721093",
             "[WARNING] sysbus: AETHELGARD-",
         ] {
             assert_eq!(p(bad), Some(None), "{bad}");

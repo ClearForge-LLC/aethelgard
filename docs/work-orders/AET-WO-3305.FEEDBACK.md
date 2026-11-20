@@ -1,126 +1,196 @@
-# AET-WO-3305 — FEEDBACK (STOPPED at §1.3, under §7's first condition)
+# AET-WO-3305 — FEEDBACK (built to the architect's ruling of 23:10Z on D1–D3)
 
 **Branch and inputs.**
 - Branch `wo/aet-3305-witness-elsewhere`, from `main` at `35d23eae`.
-- The work order is read from `~/.cache/aet-3305-wo.md`, the architect's copy; the grounds are `2304b`'s F-MASK (#254).
-- **No crate, test, golden, scenario, specification, workflow, `ci/` or `container/` file changed.** The diff is this file and `spike/3305/`.
+- The work order is read from `~/.cache/aet-3305-wo.md`. The ruling is in `~/.cache/aet-bus/3305.md` (23:10Z). The grounds are `2304b`'s F-MASK (#254).
 
-Each statement is labelled **measured** (run on Furnace in the pinned tools image, `capped-run`, nice 10), **read at source** (file:line at `35d23eae`), or **inferred**.
+Each statement is labelled:
+- **measured:** run on Furnace in the pinned tools image, under `capped-run`, nice 10;
+- **read at source:** file:line;
+- **inferred.**
 
-## 0. Status: STOPPED at §1.3
+## 0. Status
 
-The archived record cannot tell this witness's own transfers from another step's.
-- Every I2C witness on a bus carries the same list: every address the controller found no device at during the whole last boot.
-- Nothing in the trace places an I2C transfer in a step: no per-step time, position or address.
-- "Elsewhere" as the work order defines it ("an address this witness's own step addressed") cannot be computed in `evolve` from what is recorded.
-- The fix was not built. §1 and §2 below are the record the stop asks for: the record's fields, the measurement, and the change I would need.
+- **History.** The work order stopped at §1.3 under §7's first condition (record pushed at `93f9a1b2`, §1 to §3 below). D1 (A) was ruled at 23:10Z with the fence widened, and is now built.
+- **The bus fault is detected.** A two-device bus fault counts as detected by its named mechanism: two-bme's held-low SDA is E1 with nothing masked. `verify` passes the campaign gate on the branch and refuses it on `main` (measured, §5).
+- **The wrong address is still caught.** U2's read sent to 0x75 is S1 on two-bme, and the one-device seeded set is unchanged (§5, §6).
+- **The reproduction holds.** 31 committed and fixture runs were compared with `main`. 29 are byte-identical apart from the version byte. The 2 that move were predicted in writing before the run, and each is explained (§6).
+- **D3 is a §7.1 row,** not built (§9).
 
-## 1. Read first (§1.1)
+## 1. Read first (§1.1, read at source at `35d23eae`)
 
-### 1.1 Where `absent` is filled, and over what window (read at source)
+- **The window `absent` is filled over.**
+  - Renode's controller logs `[WARNING] i2c1: Unknown slave at address N.` (`absent_address`, `crates/aethelgard-cli/src/renode.rs:1827-1840`).
+  - Every I2C check on a bus got the same list: the whole last boot's lines of its controller (`renode.rs:2119-2129`).
+  - kind 13 archived that list as is (`campaign.rs:1243-1257`).
+  - I2C witness lines go to steps by count, with no window (`renode.rs:960-967`, `:1043-1078`).
+- **What the record carried.**
+  - kind 13: `peripheral`, `reference`, `device`, `step`, `expected`, `observed`, `absent`. kind 12: the plan's `address`, `step`, `write`, `width`, `expected`, `mask`, `observed`, `status`.
+  - Both are stamped at the boot's end (`record.rs:1042-1049`).
+  - No I2C register access is archived (`renode.rs:519-531`).
+  - So the record could not tell this witness's transfers from another step's. That was the §7 stop.
 
-1. **Renode's line.** The controller logs `[WARNING] i2c1: Unknown slave at address N.` (N in decimal) for each transfer it starts to an address with no device behind it. `absent_address` reads it whole (`crates/aethelgard-cli/src/renode.rs:1827-1840`).
-2. **The window is the whole last boot, per bus, not per step.** `Observed.absent` (`renode.rs:2119-2129`) gives every I2C check the same list: the `Unknown slave` lines of its controller over the last boot. The field's own doc says "during the run" (`renode.rs:857-862`).
-3. **The archive** writes that list into each kind 13 (`campaign.rs:1243-1257`), at most `MAX_WITNESS_LINES` (16) entries (`chaos/src/record.rs:404-407`, `:769`).
-4. **The CLI's I2C witness attribution has no step window either.** A device's own lines go to its steps by count: each step takes as many lines as it expects, and the last step takes the rest (`renode.rs:960-967`, `:1043-1078`). On SPI there is a chip-select window (`:1003-1041`); on I2C there is none.
+## 2. Measured on `main` before the change (§1.2)
 
-### 1.2 Whether the record can tell this witness's transfers from others' (read at source, then measured)
+**Why not Sentinel-03.** It cannot run a campaign on `main` (`PowerNotSimulated`, measured). The fixture is the committed `crates/aethelgard-cli/tests/fixtures/two-bme.json`: two modelled BME280s on SENSORS (U2 at 0x76, U5 at 0x77), plus an unmodelled U3. The scripts are `spike/3305/sh/` and the replayable archives are `spike/3305/out/archives/`.
 
-**The record's fields:**
-- kind 13 `I2cWitness`: `peripheral`, `reference`, `device`, `step`, `expected`, `observed`, `absent: Vec<u8>` (`record.rs:396-407`);
-- kind 12 `I2cCheck`: `reference`, solved `address`, `step`, `write`, `width`, `expected`, `mask`, `observed`, `status` (`record.rs:380-390`);
-- kind 15 `I2cBusSolved`: the declared devices.
+| Run (`main`) | `attribute` | kind 13 `absent` (U2, U5) |
+|---|---|---|
+| baseline | N1 | `[]`, `[]` |
+| held-low SDA | E1, **masked `[28,13]`, `[29,13]`** | `[118,119]`, `[118,119]` |
+| U2 sent to 0x75 (`2204`'s patch shape; 0x77 is U5 here) | S1, U2's witness | `[117]`, `[117]` |
+| U2 sent to 0x77, where U5 answers (F-COLLIDE) | **I4** | `[]`, `[]` |
 
-**No per-step timing exists.** Both kinds are archived at the boot's end time, the same stamp for every record read at the end (`Record::timestamp`, `record.rs:1042-1049`).
+- **`verify` on `main` refuses the bus fault** (measured, §5): "attribute masks [28,13], [29,13] on the faulted bus: something else fails too".
+- **The healthy U5's address field was marked wrong too** in the 0x75 run. It was not cited only because S1 filters software evidence to the symptom's device (`evolve/src/lib.rs:1876-1877`).
+- **The raw log** (`spike/3305/out/raw/`, from a scratch build that printed the log; never in a crate) holds no line that names a step.
 
-**No I2C register access reaches the trace.** The logged peripherals are only the serial ports' USARTs, their GPIO ports and the RCC (`renode.rs:519-531`). `CR2` holds the address each transfer starts with, and no write to it is archived.
+## 3. The stop and its ruling
 
-**Measured** (`spike/3305/out/records.txt`, two-bme, §2): both kind 13s carry the same `absent` in both runs. Faulted: `[118, 119]` for U2 and for U5. Wrong address: `[117]` for U2 and for U5. Nothing in the kind 12, 13 or 15 records differs per witness.
+- **The stop** (`93f9a1b2`): evolve-only rules were all refused.
+  - (C), "no declared device owns it", was refused by §1.3.
+  - (D), "own address also absent", hides faults.
+  - The stop's adversarial subagent found no evolve-only rule that is "this step's transfers". Its best, aligning failed steps with `absent` entries, trusts the firmware under test.
+  - So (A) was recommended: a step boundary that the twin records.
+- **Ruled, 23:10Z.** D1 (A) is accepted.
+  - The fence covers the twin's I2C step hook and the per-witness attribution (`renode.rs`), the trace record with a bump, `evolve`, and tests and goldens.
+  - Trace: the next number after `2304b`'s 15, so 16.
+  - D2: the §7.1 row stands and this order owns it.
+  - D3: built if small, else a §7.1 row.
 
-**Order is not enough.** `absent` is in log order, but mapping its entries to steps trusts the firmware under test (§4, R4): a guess, which §1.3 forbids.
+## 4. The build
 
-## 2. Measured on `main` before any change (§1.2)
+1. **The hook** (`renode.rs` `boot_hooks`; `anchor.rs` `Hook::Step`, its parse arm and `step_hook`).
+   - Each I2C step check's status word gets a `DoubleWord` write hook that logs `AETHELGARD-STEP <check> <value> <count>`.
+   - It is added with the boot word's hook: once, before the boot the judge reads, at the last release under a droop.
+   - Every line goes through `hooks_of`, so it is parsed strictly and placed at its stamp.
+   - **Probe (measured, `spike/3305/build/raw/`):**
+     - one STEP line per I2C check, each after its own step's `Unknown slave` line and before the next step's;
+     - no STEP line from the judge's `RECORD_UNSET` fill;
+     - the BOOTWORD instruction counts are unchanged (721647 held-low, 361750 wrong-address).
+   - **The stamps change.** After the first hook fires, Renode's log stamps become instruction-precise rather than quantum-coarse (7.210940 ms against 7.200000). No committed trace moved for it (§6).
+2. **The attribution** (`renode.rs` `absent_by_step`).
+   - An `Unknown slave` line goes to the I2C check on its controller whose status write first follows it.
+   - The boundary is the firmware's, so it is trusted only as the generated firmware draws it: each I2C check on the controller writes its status exactly once, and a write follows the line. The generated `record()` writes each status once, as a word, after its transfer (read in the generated `main.rs`).
+   - Otherwise the line goes to every I2C check on the controller, which is `main`'s whole-run behaviour. A status written early, twice or never therefore never moves an address onto another device's step: adversarial F1–F3, §8.
+   - With no hook line readable (the filter dropped lines), every line goes to every step. The witness is then unreadable anyway.
+3. **The trace.**
+   - `TRACE_VERSION` 14 → 16, `event.rs`; the doc says 15 is `2304b`'s.
+   - kind 13's `absent` doc now says "this step", `record.rs`.
+   - The shape is unchanged (`Vec<u8>`). `envelope` accepts only the exact version (`event.rs:424`), so no older archive is read under the new meaning.
+4. **`evolve`: no logic change.** `elsewhere = absent.find(|a| a != address)` over a per-step list is the ruled rule exactly, so the "one-line fix" is the doc of `witness_wrong`. The fixture that fails on `main` therefore exercises the fill (tier 2), and "restore the old rule" is mutant T1.
+5. **Tests.**
+   - **Tier 1, `renode.rs`:** attribution over the measured probe lines (held-low and wrong address); every untrusted case (F1, F1b, F2, F3, no hook, another controller's line); a status write directly after its line; a write on another controller.
+   - **Tier 1, the pinned monitor scripts:** three tests (`a_serial_boot_…`, `a_later_port_…`, `a_droop_boot_…`) now carry the step hook. It is a move of the expected command text, not a weakening.
+   - **Tier 1, `verify.rs`:** `detection` refuses `main`'s measured attribution and accepts the branch's. It pins `detection` on the two measured inputs and passes on `main` too: the fix itself is shown by tier 2 and §5.
+   - **Tier 2, `twin_tier2.rs`** `a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software`, with two scenario fixtures (`two-bme-held-low-sda.json`, `two-bme-i2c-timeout.json`):
+     - held-low: E1, nothing masked, subjects as seeded, `absent` U2 `[118]` and U5 `[119]`;
+     - 0x75: S1 with U2's witness alone, U5 `[]`.
+   - **The existing wrong-address tests are unchanged:** `evolve` `a_transfer_the_controller_found_no_device_for_is_evidence_unless_it_is_the_devices_own`, and the seeded set's three wrong-address cases.
+   - **The golden trace** is re-pinned (`7eccc893…5d31`). Set back to 14 it is `4400g`'s `bcd082c2…8383`, which is asserted.
 
-- **Board.** Sentinel-03 at `main` cannot run a campaign. **Measured:** `PowerNotSimulated`: "the specification declares a power tree, which the twin does not model" (`2304b` adds that). So the fixture is the committed test specification `crates/aethelgard-cli/tests/fixtures/two-bme.json`: two modelled BME280s on SENSORS, U2 at 0x76 and U5 at 0x77, and an unmodelled U3 at 0x48. Its firmware reads each BME280 once, in order (identity steps; `spike/3305/out/records.txt`).
-- **Commands.** `spike/3305/sh/gen.sh` and `run.sh`: `main`'s CLI and bridge built in the image, `generate`, `build`, `campaign`, then `attribute`. `run.sh` and `collide.sh` write each scenario, as run, beside a copy of the fixture. The archives are committed (`spike/3305/out/archives/`, replayable). `spike/3305/dump` prints their I2C records.
+## 5. Measured after (`75d73745`'s code; the hardening changes no well-formed run)
 
-| Run | Firmware | Verdict (campaign) | `attribute` | Kind 13 `absent` (U2, U5) |
-|---|---|---|---|---|
-| baseline | reference | pass, matched | none N1 | `[]`, `[]` |
-| held-low-sda | reference | fail `i2c_line_held_low`, `i2c_timeout` ×2, matched | electrical E1, evidence `[5,9]`, **masked `[28,13]`, `[29,13]`** | `[118,119]`, `[118,119]` |
-| wrong-address (U2 → 0x75) | `2204`'s patch shape, U2's address replaced, but 0x75, not 0x77: 0x77 is U5 on this board (`out/wrong-address-mutant.diff`) | fail `i2c_timeout`, matched | software S1, evidence `[4,7]`, `[5,7]`, **`[28,13]`** | `[117]`, `[117]` |
+| two-bme run | `main` | branch |
+|---|---|---|
+| held-low SDA, `attribute` | E1, masked `[28,13]`, `[29,13]` | **E1, masked `[]`** |
+| held-low SDA, kind 13 | `[118,119]`, `[118,119]` | `[118]`, `[119]` |
+| 0x75, `attribute` | S1, U2's witness | S1, U2's witness |
+| 0x75, kind 13 | `[117]`, `[117]` | `[117]`, **`[]`** (U5 no longer marked wrong) |
+| 0x77 (collide), `attribute` | I4 | I4, kind 13s identical to `main`'s |
+| `verify --spec two-bme.json` with a baseline and held-low (16G) | **fail:** campaign gate refuses, "attribute masks … something else fails too"; 309 s, 7.37 GB peak | **pass:** campaign gate passes; 306 s, 8.07 GB peak |
 
-- **The bus fault would be refused by `detection`.** E1 with both witnesses masked is measured; `verify` was not run on this fixture. The refusal is read at source: E1 with a non-empty `masked` is refused at `verify.rs:990-1002`, and `2304b` measured that refusal on Sentinel-03 at `ba8fb43b` (#254 F-MASK): "attribute masks … on the faulted bus: something else fails too". This is F-MASK on a second board: each witness's `elsewhere` is the other device's address (`evolve/src/lib.rs:1006`).
-- **The wrong-address mutant is caught (measured on `main`).** S1 cites U2's witness.
-- **New finding (read at source and confirmed by the measured records).** The shared list also marks **U5's** address field wrong in the wrong-address run (`absent` `[117]`, U5 at 119). U5 read correctly. It is not cited only because S1 filters software evidence to the symptom's device (`lib.rs:1876-1877`). Under E1 (`software(b, None)`, `lib.rs:1873`), every witness on the bus is read this way. That is the same defect seen from the other side: any absent address on the bus becomes every witness's wrong address.
-- **The raw Renode log** (`spike/3305/out/raw/`) comes from a scratch build that printed the last boot's log (`sh/rawlog-instrument.diff`, never committed to a crate). What the log holds between transfers on a faulted bus:
-  - `Unknown slave at address 118.`, then the firmware's flag clear after the timeout (`i2c1: Unhandled write to offset 0x1C … 0x30 … NACKCF`), then `Unknown slave at address 119.`, then the flag clear again;
-  - no line names a step;
-  - the stamps are quantum-coarse (both `Unknown slave` lines sit at 0 and 3.6 ms), so time alone is too coarse to be a step boundary at this quantum: **inferred** from the stamps.
+The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and the held-low fixture; the script is `spike/3305/sh/verify.sh`.
 
-- **F-COLLIDE (measured, §5's first case on a healthy bus; outside this fence).** U2's read sent to 0x77, where U5 answers (`sh/collide.sh`, archive `out/archives/collide-0197d90b`, `out/attribute-collide.json`).
-  - **The twin's judge fails the boot:** `i2c_transaction_unwitnessed` ×2.
-  - **The records.** Both kind 13 `absent` lists are `[]`. U2's witness is empty while its record claims `ok` (silent, so wrong). U5's witness carries both transactions, four lines.
-  - **`attribute` names indeterminate I4, not software.** U5's symptom decides I4, because its fields compare only the first logged write and read (`lib.rs:987-989`), and any indeterminate rule wins the run (`lib.rs:2488-2489`).
-  - **No address rule touches this case,** old or new: no address went unanswered. This is an attribution gap of its own, for the architect (a witness carrying another step's lines is not judged wrong).
+## 6. Reproduction (§1.4)
 
-## 3. The stop (§7, first condition): the change I would need
+- **Predictions first:** `spike/3305/build/predictions.md`, written before the branch's run.
+- **Method:** `spike/3305/sh/diff.sh` and `cmp.py`.
+  - One firmware per group, built by `main`'s CLI (the generator is unchanged).
+  - Every committed scenario through `main`'s CLI and through the branch's, each with replay and attribute.
+  - Trace bytes compared with the version byte normalised.
+  - The groups: sentinel-01-minimal (16: its committed scenarios and the seeded set's unmutated ones), sentinel-01-bench (5), motors-dshot600 (2), motors-pwm (1), serial-four (3), and two fixture groups no committed scenario covers. The fixture groups are `sentinel-01-ext-bmp581` (its EXT BMP581 has three steps) and two-bme, each with a baseline and held-low SDA. Every group has at least one I2C step, so the hook is installed on every board.
+- **Results:**
+  - **Hook alone** (before the attribution; `cmp-hook`): 31 of 31 byte-identical, trace included. Neither the hook nor the finer stamps move anything, on motors, serial and droop boards alike.
+  - **Branch:** 29 of 31 byte-identical apart from the version byte. Two moved, both as predicted:
+    - **two-bme held-low SDA:** kind 13 `[118,119]` twice became `[118]` and `[119]`. The attribution moves from masked `[28,13]`, `[29,13]` to none. This is the masked result the work order exists for.
+    - **ext-bmp581 held-low SDA:** U5's three steps each carried `[71, 71, 71]` on `main` and carry `[71]` on the branch (12 bytes). The attribution is unchanged: E1, nothing masked before or after, since every address was the device's own.
+- **The seeded set at tier 2** (`attribute_seeded`, pinned exact evidence indices, in the image): SEEDED-RESULT.
 
-**What is missing:** a step boundary in the log, attributed by the twin before archiving, so that each kind 13 carries only its own step's absent addresses. Each candidate is listed with its fence, its effect on the trace, and what it hides.
+## 7. Mutants (one per guard this build adds; each restored, the tree clean after)
 
-- **(A) Recommended: hook each I2C step's record and attribute by position.**
-  - **Mechanism (proposed; not built or run here).** The twin hooks each I2C step check's status word in RAM. The boot word is already hooked this way (`anchor.rs:307-316`, `sysbus AddWatchpointHook 0x20000000`). Each check already knows its status word: `StepCheck.status_at`, the first record at boot word + `RECORD_OFFSET` (8, after the brown-out word), each record after the last (`twin/src/boot.rs:138-141`, `:638-649`). Each `Unknown slave` line goes to the step whose status write first follows it in the log. A line after the last write goes to the bus's last step, as the witness attribution's last step takes the rest (`renode.rs:1053-1057`).
-  - **The rule then.** `evolve`'s rule becomes the work order's exactly: `elsewhere` is any address in this witness's own list other than its device's.
-  - **Fence.** `cli` `renode.rs`/`anchor.rs` (the twin's judge), the record doc in `chaos`, `evolve`. Outside `3305`'s fence.
-  - **Trace.** kind 13's field shape is unchanged (`Vec<u8>`), but its meaning narrows from "during the run" to "during this step". **Recommend a trace version bump with it,** so an old archive is never read under the new meaning. This is the architect's call (`2304b` is moving the trace to 15).
-  - **What moves (inferred).** Every committed board on `main` has one I2C step: `boards/sentinel-01` and `-bench`, one `i2c1.transfer`, 0x76. A one-step bus's per-step list equals its whole-run list, so no committed board's kind 13 content moves; only the version byte, if bumped. The lists that would shrink are those of multi-step or multi-device faulted buses: Sentinel-03 (U7's three steps), `sentinel-01-ext-bmp581`, and this fixture. To be measured at build.
-  - **What it still cannot tell.** A firmware whose step writes its status before its transfer (out of order) puts that step's absent line on the next step. A wrong address that collides with another real device's leaves no `Unknown slave` line at all, so no address rule sees it, old or new (measured, F-COLLIDE below).
-- **(B) Not recommended: the flag clear as a delimiter.** `Unhandled write to offset 0x1C … NACKCF` is Renode warning about a bit it does not model. It would vanish when Renode models NACKCF. It delimits transfers, not steps. And the firmware under test writes it, so a firmware that skips it merges two steps.
-- **(C) Forbidden by §1.3, listed for the architect: `evolve`-only, "an absent address no declared device owns".** It separates the measured runs. It hides any wrong address that equals another declared device's address while that device is also absent, for example a device-absent or bus-wide fault plus a firmware fault.
-- **(D) `evolve`-only, "when the witness's own address is also absent, no other absent address counts".** It also separates the measured runs, but it is not "this step's transfers". It hides a firmware that addresses wrongly in any step of a device that also fails to answer somewhere on the run, such as a configure step to a wrong address after an identity step that met a faulted bus.
+- **Tier 1.** A subagent ran these at `575d33a3` in its own worktree; I spot-checked them.
+  - M1 (every line to the fallback), M2 (the whole-boot list per check), M3 (`max` for `min`), M4a (`e > i + 1`), M5 (a later write overwrites), M6 (fallback to the first check), M8 (the STEP parse arm), M9 (no address check in `evolve`), M10 (address field never wrong), M11 (`detection`'s masked refusal removed): **all killed**.
+  - M4b (`e >= i`) is equivalent: a hook line and an `Unknown slave` line are never the same line.
+  - M7 (any controller's write ends the step) **survived**. A two-controller test was added, and M7 is now killed (measured).
+- **After the hardening** (`75d73745`, host):
+  - H1 (any write count trusted), H2 (`all` → `any`), H4 (`max_by_key`), H5 (any controller), H6 (untrusted lines dropped), H7 (a trusted line to every step): **killed**.
+  - H3 (a write directly after the line excluded) survived, so the adjacent case was added, and H3 is now killed.
+- **Tier 2, in the image** (`spike/3305/sh/mut2.sh` shape, host-side edits):
+  - T1, the call site restored to the whole-boot list, which is `main`'s rule: **killed**. U2 and U5 got `[118,119]` each, exactly `main`'s measurement, so the fixture fails on `main`.
+  - T2, no step hook installed: **killed** (every line to every step).
+  - T0, unmutated: passes.
+  - The first T1/T2 run failed for the wrong reason (`BridgeUnavailable`: no bridge beside the mutant binary). It was not counted; it was re-run with the bridge.
 
-## 4. Adversarial pass (§5)
+## 8. Adversarial pass (full; a fresh Opus subagent at `575d33a3`, given the code and the work order, not my conclusions)
 
-**The setup.**
-- A fresh subagent on Opus got the three measured runs (`out/records.txt`) and the code, not this conclusion.
-- Its brief: find an `evolve`-only rule from the archived records that does not count run 2 (held-low-sda), still catches run 3 (wrong-address), reads no declared list, and is truly "this step's own transfers".
-- I spot-checked its claims at source; the one that did not hold is marked.
+- **F1 (medium, new, run):** a status written before the transfer moved the line to the other device's step, giving U2 I4 instead of `main`'s S1. **Fixed** by the trust rule (§4.2), with a test.
+- **F1b (derived):** a firmware that marks each record before its transfer would bring F-MASK back with no firmware defect. **Fixed** by the same rule: two writes each makes the bus untrusted, and both steps carry `[118,119]`, `main`'s outcome. Tested.
+- **F2 (low–medium, new, run):** a step that never writes its status sent its line to the next step. **Fixed**: untrusted. Tested.
+- **F3 (low):** the fallback named "the step under way", which was wrong for any step but the last. **Fixed**: a line no write follows goes to every step. Tested.
+- **F4 (pre-existing):** F-COLLIDE has no disposition yet. It is now §9 D3.
+- **F5 (low):** the hook watches `DoubleWord` writes only. A byte status write gives no STEP line, so the bus is untrusted and `main`'s behaviour applies: safe by the rule. A STEP index that is out of range or names an SPI check is ignored (the firmware cannot forge a log line).
+- **F6 (test quality):**
+  - The `verify.rs` test passes on `main` too. It pins `detection` on the two measured inputs and is said so in §4.5.
+  - The unit tests quoted STEP lines that were not committed; they are now in `spike/3305/build/raw/`.
+- **Held, per the subagent:**
+  - The line shift (M4a killed, M4b equivalent).
+  - Both line types index the same `last_boot`.
+  - Hook placement under resets.
+  - Strict parsing.
+  - No new `cpu_halted`: the sleep deficit only grows.
+  - The finer stamps, with the differential identical.
+  - The 16-line cap, now per step.
+  - The exact-version envelope.
+- **Residual, inferred:** a firmware that writes each step's status once, but before its transfer, still shifts lines by one step. Such a record claims a result before the transfer, which is the forged-record case the boot judge already fails as unwitnessed (`2204`).
 
-**Verdict: no rule meets the last condition.** What it confirmed:
-- A Renode campaign's trace holds only `Event::Record` (`campaign.rs:674-679`).
-- Kinds 12 and 13 carry the boot's end time.
-- Kind 12's `address` is the plan's, not what the firmware sent, so other steps' addresses are the declared list under another name.
-- `absent` is cut silently at 16 entries (`campaign.rs:1252-1253`).
+## 9. Rulings and decisions
 
-Its candidates, each tested against the brief, each with what it hides:
+- **D1:** built (§4).
+- **D2:** the §7.1 row is this order's.
+  - Before this build, any board with two modelled devices on one I2C bus had every bus fault refused by `detection`.
+  - After it, two-bme is detected.
+  - Sentinel-03 is not runnable on `main` until `2304b` lands. The re-run of its held-low after `2304b` and `4202` is owed (§10).
+- **D3, F-COLLIDE: a §7.1 row, not built.**
+  - With (A), collide's kind 13s are identical to `main`'s (measured, §5), so the per-step data gives `evolve` nothing for this case.
+  - What the case needs is a different change: judge a witness's whole `observed` against `expected`, not only its first write and read (`lib.rs:987-989`). U5's witness carries U2's transaction as two extra lines.
+  - That is an `evolve` rule change whose effect on every committed attribution must be measured, which is outside this fence.
+- **For the architect:**
+  - `TIER2_MIN` in `.github/workflows/ci.yml:390` is 190; the new tier-2 test makes 191. Workflows are outside this fence (said on the bus).
+  - **AWAITING-PACKAGE:** `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256` moves with each run's state hash, which the version byte moves. `bench_board_tier1` stays red until the architect's `write=true` dispatch re-derives it; I commit the artifact byte for byte. PACKAGE-STATE.
+  - **The trace number:** if this merges before `2304b`, `2304b` takes 17, and the "15 is `2304b`'s" doc lines are renumbered by whichever merges second.
 
-- **R4: align the `timeout_txis` steps, in kind-12 order, with `absent`'s entries.** It separates runs 2 and 3, and it does not misfire on U5. But it infers which step made which transfer from the behaviour of the firmware under test: table order, one START per failed step, and the status it reports. It hides:
-  - two steps' addresses swapped together with their order;
-  - a wrong address followed by a successful retry;
-  - two faults that cancel in the count.
+## 10. Owed and fence edges
 
-  With 18 failed steps and 16 entries kept, it fails the faulted bus too.
-- **R5: the device's own address absent fewer times than it has failed steps.** It cannot say which address the step sent, or which step it was. It fails once the 16-entry cut drops a late device's own address.
-- **R6: ignore `absent` on any bus with a `BusFault` (kind 9).** It hides every wrong address on a faulted bus (measured shape: `[117, 119]`, nothing flagged).
-- **R0 (today) and R2 (the declared list)** behave as §2 and §3 (C) say.
-
-**Its claim not adopted.** It said R0 misfires "with U5 left absent by override" on a healthy bus, citing `record.rs:509`. That line is SPI's kind 23. The only device-absent override is `spi_device_absent` (`chaos/src/campaign.rs:169`), so on I2C that case is not reachable from a scenario today (read at source).
-
-**Its last point bears on (A).** Filling `absent` per step by the position of a line among the device's own lines would still be count-based on I2C (`renode.rs:1053-1068`), and on a faulted bus no device logs anything. That is why (A) uses the firmware's step-record writes as the boundary and not the device's lines. The boundary still trusts the firmware to write each step's status after its transfer (§3 (A), "What it still cannot tell").
-
-## 5. Decisions for the architect
-
-- **D1 · the record change for F-MASK.** Recommend (A) with a trace version bump: a twin work order (the cli judge plus `evolve`). After it, this work order's fix is one line and the tests are as §1.4 writes them, with `spike/3305/out/archives/` as the fixture's before.
-- **D2 · until then.** After `4202`, Sentinel-03's SENSORS has one modelled device, so no committed board meets F-MASK. A future board with two modelled devices on one bus will have every I2C bus fault refused by `detection`. Recommend a §7.1 row naming that, as `2304b` D2 asks.
-- **D3 · F-COLLIDE.** A witness that carries another step's transaction (extra lines) is not judged wrong, so a wrong address that collides with a real device is attributed I4 and not software. Recommend an `evolve` work order: judge a witness's whole `observed` against `expected`, not its first write and read. Its effect on every committed attribution is to be measured there.
+- **Merge `main` after `4202` (#257) and `2304b` (#254) land,** and re-run §6. After `2304b`, also re-run Sentinel-03's held-low through `verify` (D2's board).
+- **Fence edges, said on the bus:**
+  - `anchor.rs`'s `Hook::Step`: every `AETHELGARD-` line must parse, or the run is refused;
+  - `verdict.rs`: one doc line;
+  - `verify.rs`: one unit test;
+  - two scenario fixtures in `cli/tests/fixtures`;
+  - `spike/3305/verify/two-bme-baseline.json`: a spike input.
 
 ## Gates
 
-- No workspace source changed. `spike/3305/dump` has its own `[workspace]` table and is not a member.
-- `cargo fmt --all -- --check`: clean (host, at this head).
-- `cargo clippy` and `cargo test`: not re-run on the host. The workspace is byte-identical to `main` `35d23eae`; CI runs both on the PR, and its result is reported on the PR and the bus.
-- Reduction pass (diff): −3 files (the scenario copies) · 1 duplicate removed (the scenario copies; the run scripts are the one source) · 0 dead paths · 0 protected kept · 0 findings below (no crate in the diff; the prose duplicate of §4's R4 cut to one line).
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`, with and without `with-tools`: clean (host).
+- `ci/gates.sh run` (the `gates` job's set, host): GATES-RESULT.
+- Tier 2 in the pinned image: the new two-bme test passes (T0), and the seeded set is SEEDED-RESULT.
+- Reduction pass (diff): REDUCTION.
 
 ## What moved
 
-Nothing committed. No trace or verdict was regenerated, because nothing that produces one changed.
+- **Traces:** the version byte 14 → 16 on every archive. Content moved in two runs only (§6).
+- **Golden:** trace `bcd082c2…8383` → `7eccc893…5d31`; state `ada1b631…d8f7` → `f4c133fa…c693`.
+- **Monitor scripts:** every board with an I2C step check gains one hook per I2C step.
+- **The bench package:** AWAITING-PACKAGE (§9).
