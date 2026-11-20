@@ -2,7 +2,7 @@
 
 ## Status: READY — built. Every shard under 20 minutes on the PR's run 44762196410 (worst 17.1 min). The spread was 7.2 minutes, over §2's 6: decision needed (D1).
 
-Builder: Claude (Opus 5.5), a fresh `1912` session, 2026-11-20, from ~13:45 UTC. Worktree `~/aethelgard-1912`, branch `wo/aet-1912-refit` from `origin/main` `472d2d84`, with `main` `a37b787f` (`4240a`, `1211`, docs) and `8fdc9422` (`4406`, `4241`) merged in. No merge touched a row of this order; `4241` added one `twin_tier2` row, which is its own.
+Builder: Claude (Opus 5.5), a fresh `1912` session, 2026-11-20, from ~13:45 UTC. Worktree `~/aethelgard-1912`, branch `wo/aet-1912-refit` from `origin/main` `472d2d84`, with `main` `a37b787f` (`4240a`, `1211`, docs) , `8fdc9422` (`4406`, `4241`) and `8df353ee` (docs, after the gates) merged in. No merge touched a row of this order; `4241` added one `twin_tier2` row, which is its own.
 
 Labels: **measured** (from CI's own logs or runs), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1912/`; the scripts are in `spike/1912/`.
 
