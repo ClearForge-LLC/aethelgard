@@ -91,4 +91,9 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
   - **The dead path:** `drawn_nets` merged entries for a reference drawn twice. `design()` claims each reference once (`Taken`), and `Part` has no unit, so it is now a plain `collect` like `drawn`. Rustfmt makes it one line longer.
   - **Proof:** both mutants were re-run after the change and are still killed [measured: `mut/m1-after.log`, `mut/m2-after.log`].
   - **Not removable:** the one accessor is the fence's; the two refusals share one map, so `validate` no longer calls `drawn`; the three tests hold the work order's cases and §5's measured answer.
-- **CI** is the run of record; its result is in the PR.
+- **CI on `2cb8edb2` is green** [measured]:
+  - runs: `ci` 44682553849, `ardupilot-image` 44682553669, `engine-image` 44682553737;
+  - 33 jobs pass, and 3 are skipped (`publish` ×2, `quickstart`), as on every PR;
+  - `bench-package` passes against the committed package;
+  - `tools`: 2,576 tests passed, tier-2 194 against a floor of 194.
+- `main` is still `c9c5f85c`, merged. This READY commit changes this file only.
