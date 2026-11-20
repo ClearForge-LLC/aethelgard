@@ -531,48 +531,25 @@ pub fn map_baudrate(rate: i32) -> u64 {
     }
 }
 
-/// The NUL-terminated string at `addr`, read from flash: it must lie in an
-/// allocated, read-only `PROGBITS` section and in the one `PT_LOAD` that
-/// flashes it, at the same file offset by both (as [`object`] holds a
-/// symbol), and end within [`NAME_MAX`] bytes.
-fn flash_str<'a>(bytes: &'a [u8], sections: &[Section], addr: u32) -> Result<&'a str, Refusal> {
-    let outside = || {
-        refuse(
-            "VarInfoNameOutside",
-            format!(
-                "a var_info name at {addr:#010x} is not a string of at most {NAME_MAX} bytes in flashed, read-only PROGBITS"
-            ),
-        )
-    };
-    let Some(s) = sections.iter().find(|s| {
-        s.kind == SHT_PROGBITS
-            && s.flags & SHF_ALLOC != 0
-            && s.flags & SHF_WRITE == 0
-            && addr >= s.addr
-            && u64::from(addr) < u64::from(s.addr) + u64::from(s.size)
-    }) else {
-        return outside();
-    };
-    let within = range(
-        bytes,
-        u64::from(s.offset),
-        s.size,
-        "a var_info name's section",
-    )?;
-    let tail = &within[(addr - s.addr) as usize..];
+/// The NUL-terminated string at `addr`, read where it is flashed: one
+/// `PT_LOAD`'s file image holds it, in place ([`loaded_offset`]: run where
+/// flashed, nothing flashed over it), and it ends within [`NAME_MAX`] bytes.
+fn flash_str(bytes: &[u8], addr: u32) -> Result<&str, Refusal> {
+    let at = usize::try_from(loaded_offset(bytes, addr, 1)?).unwrap_or(usize::MAX);
+    let tail = bytes.get(at..).unwrap_or_default();
     let Some(len) = tail.iter().take(NAME_MAX + 1).position(|b| *b == 0) else {
-        return outside();
-    };
-    let by_segment = loaded_offset(bytes, addr, len as u32 + 1)?;
-    if by_segment != u64::from(s.offset) + u64::from(addr - s.addr) {
         return refuse(
-            "SectionTableDisagrees",
-            format!(
-                "the var_info name at {addr:#010x} is at different file offsets by its section and its PT_LOAD"
-            ),
+            "VarInfoNameTooLong",
+            format!("the var_info name at {addr:#010x} has no NUL within {NAME_MAX} bytes"),
         );
-    }
-    std::str::from_utf8(&tail[..len]).or_else(|_| outside())
+    };
+    loaded_offset(bytes, addr, len as u32 + 1)?;
+    std::str::from_utf8(&tail[..len]).or_else(|_| {
+        refuse(
+            "MalformedVarInfo",
+            format!("the var_info name at {addr:#010x} is not UTF-8"),
+        )
+    })
 }
 
 /// What a row's name says it is: a port's protocol, baud or options, or one
@@ -616,7 +593,6 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
             format!("{size} bytes, not whole {GROUP_INFO_LEN}-byte AP_Param::GroupInfo entries")
         })
     })?;
-    let sections = sections(bytes)?;
     let entries = data.as_chunks::<GROUP_INFO_LEN>().0;
     let malformed = |i: usize, why: String| {
         refuse::<()>("MalformedVarInfo", format!("var_info entry {i} {why}"))
@@ -627,7 +603,7 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
     let mut ended = false;
     for (i, e) in entries.iter().enumerate() {
         let (name_at, flags, idx, kind) = (u32_at(e, 0), u16_at(e, 12), e[14], e[15]);
-        let name = flash_str(bytes, &sections, name_at)?;
+        let name = flash_str(bytes, name_at)?;
         if kind == AP_PARAM_NONE {
             if i + 1 != entries.len() || !name.is_empty() || e[4..14] != [0; 10] || idx != 0xff {
                 malformed(

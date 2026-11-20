@@ -1354,13 +1354,41 @@ fn every_malformed_var_info_is_refused_by_name() {
             "{bad_end:?}"
         );
     }
+    // A name read where it is flashed: nowhere in the image, in the symbol
+    // table's bytes (not loaded), or in RAM that no PT_LOAD flashes.
+    for at in [0x2000_0000, 0] {
+        assert_eq!(
+            kind(edit(&|r| r[0].name_at = Some(at))),
+            "SymbolNotLoaded",
+            "{at:#x}"
+        );
+    }
+    let in_ram = Elf {
+        var_info: Some(edit(&|r| r[0].name_at = Some(common::RAM))),
+        ram: Some(b"0_BAUD\0".to_vec()),
+        ..Elf::default()
+    };
     assert_eq!(
-        kind(edit(&|r| r[0].name_at = Some(0x2000_0000))),
-        "VarInfoNameOutside"
+        elf::serial_params(&in_ram.bytes()).unwrap_err().kind(),
+        "SymbolNotLoaded"
+    );
+    // A name whose NUL lies past the flashed image: the last bytes flashed
+    // are `_PASS`, with no NUL (the GPIO image, then the rows, their names,
+    // then the tail).
+    let names: usize = good.iter().map(|r| r.name.len() + 1).sum();
+    let tail_at = common::ADDR + 308 + 16 * good.len() as u32 + names as u32;
+    let off_the_end = Elf {
+        var_info: Some(edit(&|r| r[0].name_at = Some(tail_at))),
+        tail: b"_PASS".to_vec(),
+        ..Elf::default()
+    };
+    assert_eq!(
+        elf::serial_params(&off_the_end.bytes()).unwrap_err().kind(),
+        "SymbolNotLoaded"
     );
     assert_eq!(
         kind(edit(&|r| r[0].name = "0_BAUD_AND_SEVENTEEN".into())),
-        "VarInfoNameOutside"
+        "VarInfoNameTooLong"
     );
     assert_eq!(
         kind(edit(&|r| {

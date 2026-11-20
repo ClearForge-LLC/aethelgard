@@ -66,7 +66,15 @@ pub struct Elf {
     pub var_info: Option<Vec<VarRow>>,
     /// The `var_info` symbol's size, if not 16 bytes per row.
     pub var_info_size: Option<u32>,
+    /// Bytes after the `var_info` names, the last flashed (no NUL added).
+    pub tail: Vec<u8>,
+    /// A fifth section, writable `PROGBITS` at [`RAM`] that no `PT_LOAD`
+    /// flashes, holding these bytes (a `var_info` name in RAM).
+    pub ram: Option<Vec<u8>>,
 }
+
+/// Where [`Elf::ram`]'s section runs.
+pub const RAM: u32 = 0x2400_0000;
 
 /// One synthetic `AP_Param::GroupInfo` (`AP_Param.h:206-218`).
 #[derive(Clone, Debug)]
@@ -202,6 +210,8 @@ impl Default for Elf {
             objects: Vec::new(),
             var_info: None,
             var_info_size: None,
+            tail: Vec::new(),
+            ram: None,
         }
     }
 }
@@ -264,6 +274,7 @@ impl Elf {
             data.extend(entries);
             data.extend(names);
         }
+        data.extend_from_slice(&self.tail);
         let mut syms = Vec::new();
         symbol(&mut syms, 0, 0, 0, 0, 0);
         if let Some(entries) = &self.serial {
@@ -320,7 +331,10 @@ impl Elf {
         }
         let symtab_off = DATA_OFF + data.len();
         let strtab_off = symtab_off + syms.len();
-        let shoff = strtab_off + strtab.len();
+        let ram = self.ram.clone().unwrap_or_default();
+        let ram_off = strtab_off + strtab.len();
+        let shoff = ram_off + ram.len();
+        let shnum: u16 = if self.ram.is_some() { 5 } else { 4 };
 
         let mut b = Vec::new();
         b.extend_from_slice(b"\x7fELF");
@@ -332,18 +346,19 @@ impl Elf {
         put32(&mut b, ADDR); // entry
         // The program headers go after the section headers, so a second one
         // moves no other offset; the PHDR bytes at EHDR stay zero.
-        let phoff = shoff + 4 * 40;
+        let phoff = shoff + usize::from(shnum) * 40;
         let phnum: u16 = if self.overlay { 2 } else { 1 };
         put32(&mut b, phoff as u32);
         put32(&mut b, shoff as u32);
         put32(&mut b, 0x0500_0400);
-        for v in [EHDR as u16, PHDR as u16, phnum, 40, 4, 0] {
+        for v in [EHDR as u16, PHDR as u16, phnum, 40, shnum, 0] {
             put16(&mut b, v);
         }
         b.extend_from_slice(&[0; PHDR]);
         b.extend_from_slice(&data);
         b.extend_from_slice(&syms);
         b.extend_from_slice(&strtab);
+        b.extend_from_slice(&ram);
         section(&mut b, [0, 0, 0, 0, 0, 0, 0, 0]);
         let rodata = self.section_offset.unwrap_or(DATA_OFF as u32);
         let flags = if self.writable { 3 } else { 2 };
@@ -356,6 +371,12 @@ impl Elf {
             &mut b,
             [0, 3, 0, 0, strtab_off as u32, strtab.len() as u32, 0, 0],
         );
+        if self.ram.is_some() {
+            section(
+                &mut b,
+                [0, 1, 3, RAM, ram_off as u32, ram.len() as u32, 0, 0],
+            );
+        }
         // One PT_LOAD: the data, run at ADDR and flashed at `paddr`.
         let len = data.len() as u32;
         let paddr = self.paddr.unwrap_or(ADDR);
