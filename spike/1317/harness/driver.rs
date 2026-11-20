@@ -221,6 +221,10 @@ fn main() {
                 }
             }
         }
+        // dump <variant> <path>: the variant's specification
+        "dump" => {
+            std::fs::write(&args[2], serde_json::to_string_pretty(&variant(&args[1])).unwrap()).unwrap();
+        }
         _ => panic!("mode"),
     }
 }

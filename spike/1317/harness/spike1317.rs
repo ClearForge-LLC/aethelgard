@@ -128,6 +128,13 @@ pub fn run(
         }
     };
     parts.retain(|p| !remove.contains(&p.reference));
+    if let Ok(list) = std::env::var("UNANCHOR") {
+        for p in parts.iter_mut().filter(|p| list.split(',').any(|r| r == p.reference)) {
+            p.owner = None;
+        }
+    }
+    let noreserve: Vec<String> = std::env::var("NORESERVE").map(|l| l.split(',').map(String::from).collect()).unwrap_or_default();
+    knob::NORESERVE.with(|n| *n.borrow_mut() = noreserve);
     knob::NO_K.with(|c| c.set(knobs.no_k));
     knob::NO_M.with(|c| c.set(knobs.no_m));
     knob::NO_S.with(|c| c.set(knobs.no_s));
