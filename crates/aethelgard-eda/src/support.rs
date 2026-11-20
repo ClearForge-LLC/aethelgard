@@ -746,6 +746,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
             ),
         ),
     }
+    // 7. The crystal beside a declared one (`AET-WO-4240c` §1.3).
+    crystal(spec, s, netlist, mcu, &mut fail)?;
     // 6. The declared supply source.
     let supply_source = match &spec.mcu.supply_source {
         None => None,
@@ -787,6 +789,190 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
         conditions,
         findings,
     })
+}
+
+/// The crystal's pads by role, read from ABM8AIG "REVISED 06-13-19" p. 3
+/// (pads 2 and 4 are ground, the lid; 1 and 3 the crystal) and KiCad's
+/// `Crystal_GND24` ("GND on pins 2 and 4"): the gate's own copy, never the
+/// emitter's (`RUL-20`).
+const CRYSTAL_ENDS: [&str; 2] = ["1", "3"];
+const CRYSTAL_GROUNDS: [&str; 2] = ["2", "4"];
+
+/// Step 7 (`AET-WO-4240c` §1.3): beside a declared crystal, the MCU's
+/// `OSC_IN` and `OSC_OUT` pins (the row's groups) each on a net of its own;
+/// exactly one populated crystal of the declared part, its two ends on those
+/// two nets and its two ground pads on `GND`; on each net exactly one
+/// capacitor, to `GND`, of the declared value (`CL1` on `OSC_IN`, `CL2` on
+/// `OSC_OUT`), named by a C0G part of the power parts table; and no other
+/// part on either net. With no crystal declared, no crystal may be drawn.
+fn crystal(
+    spec: &Specification,
+    s: &Support,
+    netlist: &Netlist,
+    mcu: &str,
+    fail: &mut impl FnMut(&'static str, String),
+) -> Result<(), String> {
+    let table = power_parts::table().map_err(|e| e.to_string())?;
+    let gnd = aethelgard_ir::GND;
+    let is_crystal = |c: &Component| {
+        c.symbol.as_deref().is_some_and(|sym| {
+            table
+                .rows()
+                .iter()
+                .any(|r| matches!(r.kind, Kind::Crystal(_)) && r.symbol == sym)
+        })
+    };
+    let Some(aethelgard_ir::clock::Hse::Crystal(declared)) = &spec.mcu.hse else {
+        for (r, _) in netlist.components.iter().filter(|(_, c)| is_crystal(c)) {
+            fail(
+                "hse_crystal_undeclared",
+                format!("{r} is a crystal, and the specification declares none"),
+            );
+        }
+        return Ok(());
+    };
+    let row = match table.get(&declared.part) {
+        Some(r) if matches!(r.kind, Kind::Crystal(_)) => r,
+        _ => return Err(format!("`{}` is not a crystal row", declared.part)),
+    };
+    // The MCU's two oscillator pins, each on a net no other support pin,
+    // domain or `GND` shares.
+    let mut nets = Vec::new();
+    for group in ["OSC_IN", "OSC_OUT"] {
+        let [pin] = s.group(group) else {
+            return Err(format!("the MCU's row has no single `{group}` pin"));
+        };
+        let n = netlist.net(mcu, pin);
+        let shared = n.is_none_or(|n| {
+            n == gnd
+                || spec.voltage_domains.iter().any(|d| d.id == n)
+                || s
+                    .pins
+                    .values()
+                    .flatten()
+                    .any(|q| q != pin && netlist.net(mcu, q) == Some(n))
+        });
+        if shared {
+            fail(
+                "hse_pin_off_net",
+                format!("{mcu} {group} (pin {pin}) is on {}, not a net of its own", quoted(n)),
+            );
+            return Ok(());
+        }
+        nets.push(n.unwrap_or_default().to_owned());
+    }
+    let (osc_in, osc_out) = (nets[0].as_str(), nets[1].as_str());
+    // Exactly one crystal of the declared part.
+    let found: Vec<&String> = netlist
+        .components
+        .iter()
+        .filter(|(_, c)| !c.unpopulated && c.value == row.part && c.symbol.as_deref() == Some(row.symbol.as_str()))
+        .map(|(r, _)| r)
+        .collect();
+    let [y] = found.as_slice() else {
+        fail(
+            "hse_crystal_missing",
+            format!(
+                "the netlist holds {} populated `{}` drawn as `{}`, not one",
+                found.len(),
+                row.part,
+                row.symbol
+            ),
+        );
+        return Ok(());
+    };
+    let mut ends: Vec<Option<&str>> = CRYSTAL_ENDS.iter().map(|p| netlist.net(y, p)).collect();
+    ends.sort_unstable();
+    let mut want = vec![Some(osc_in), Some(osc_out)];
+    want.sort_unstable();
+    let other = netlist
+        .pins_of(y)
+        .any(|(p, _)| !CRYSTAL_ENDS.contains(&p) && !CRYSTAL_GROUNDS.contains(&p));
+    if ends != want || other {
+        fail(
+            "hse_crystal_off_net",
+            format!(
+                "crystal {y}'s pads 1 and 3 are on {} and {}, not on `{osc_in}` and `{osc_out}`, or it has another pin",
+                quoted(ends[0]),
+                quoted(ends[1])
+            ),
+        );
+    }
+    for p in CRYSTAL_GROUNDS {
+        let n = netlist.net(y, p);
+        if n != Some(gnd) {
+            fail(
+                "hse_crystal_ground_floating",
+                format!("crystal {y} pad {p} is on {}, not `{gnd}`", quoted(n)),
+            );
+        }
+    }
+    // One load capacitor per oscillator net, to `GND`, of the declared value
+    // and a C0G part; nothing else on either net.
+    for (net, ff, name) in [
+        (osc_in, declared.load_caps_femtofarads[0], "CL1"),
+        (osc_out, declared.load_caps_femtofarads[1], "CL2"),
+    ] {
+        let on: Vec<&String> = netlist
+            .nets
+            .iter()
+            .filter(|((r, _), n)| n.as_str() == net && r != mcu && r != *y)
+            .map(|((r, _), _)| r)
+            .collect();
+        let caps: Vec<&String> = on
+            .iter()
+            .copied()
+            .filter(|r| {
+                let c = &netlist.components[r.as_str()];
+                !c.unpopulated
+                    && c.symbol.as_deref() == Some(CAPACITOR)
+                    && {
+                        let mut pins: Vec<&str> = netlist.pins_of(r).map(|(_, n)| n).collect();
+                        pins.sort_unstable();
+                        pins == [gnd, net] || pins == [net, gnd]
+                    }
+            })
+            .collect();
+        if let Some(r) = on.iter().find(|r| !caps.contains(r)) {
+            fail(
+                "hse_net_extra_part",
+                format!("{r} is on `{net}`, which carries only the crystal and its load capacitor"),
+            );
+        }
+        let [c] = caps.as_slice() else {
+            fail(
+                "hse_load_capacitor_missing",
+                format!(
+                    "`{net}` has {} capacitors to `{gnd}`, not one ({name})",
+                    caps.len()
+                ),
+            );
+            continue;
+        };
+        let value = &netlist.components[c.as_str()].value;
+        if picofarads(value).and_then(|pf| pf.checked_mul(1000)) != i64::try_from(ff).ok() {
+            fail(
+                "hse_load_capacitor_value",
+                format!("{c} on `{net}` is `{value}`, and {name} is declared {ff} fF"),
+            );
+        }
+        let dielectric = value
+            .split_once(' ')
+            .and_then(|(_, part)| table.get(part))
+            .and_then(|r| match &r.kind {
+                Kind::Capacitor(k) => Some(k.dielectric),
+                _ => None,
+            });
+        if dielectric != Some(power_parts::Dielectric::C0g) {
+            fail(
+                "hse_load_capacitor_dielectric",
+                format!(
+                    "{c} on `{net}` is `{value}`, which names no C0G capacitor of the power parts table"
+                ),
+            );
+        }
+    }
+    Ok(())
 }
 
 /// Resistances as schematics write them (`330`, `10k`, `2k2`, `1M`), in

@@ -10,7 +10,12 @@
 //!   `Crystal_GND24` symbol ("GND on pins 2 and 4") and
 //!   `Crystal_SMD_3225-4Pin_3.2x2.5mm` footprint number them;
 //! - one load capacitor from each oscillator net to `GND`, of the declared
-//!   value (`load_caps_femtofarads`, `CL1` on `OSC_IN`, `CL2` on `OSC_OUT`).
+//!   value (`load_caps_femtofarads`, `CL1` on `OSC_IN`, `CL2` on `OSC_OUT`),
+//!   a C0G 0402 row of the power parts table picked by that value
+//!   ([`load_capacitor`]).
+//!
+//! An external clock is refused (`HseSourceNotDrawn`): no declared connector
+//! pin or test point carries it to PH0 yet (ruled Q4 (a)).
 //!
 //! Each part is anchored by the MCU pin it serves, so the placer puts it
 //! there. A specification that declares no HSE draws nothing here, and no
@@ -24,7 +29,7 @@ use std::collections::BTreeMap;
 
 use aethelgard_ir::PinTable;
 use aethelgard_ir::clock::Hse;
-use aethelgard_ir::power_parts::{self, Kind};
+use aethelgard_ir::power_parts::{self, Dielectric, Kind, PowerPartsTable, Row, Tolerance};
 
 use super::{Builder, Conn, EmitError, Part};
 
@@ -62,8 +67,10 @@ pub(super) fn tie(
     table: &PinTable,
     conns: &mut BTreeMap<String, Conn>,
 ) -> Result<Option<Group>, EmitError> {
-    let Some(Hse::Crystal(c)) = &b.spec.mcu.hse else {
-        return Ok(None);
+    let c = match &b.spec.mcu.hse {
+        None => return Ok(None),
+        Some(Hse::External(_)) => return Err(EmitError::HseSourceNotDrawn),
+        Some(Hse::Crystal(c)) => c,
     };
     let ptable = power_parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
     let row = match ptable.get(&c.part) {
@@ -84,7 +91,7 @@ pub(super) fn tie(
     let pin_out = position(table, "PH1")?;
     for (pin, net) in [(&pin_in, &osc_in), (&pin_out, &osc_out)] {
         // belt-and-suspenders: `solve` reserves PH0 and PH1 beside a crystal,
-        // and the MCU's row names neither.
+        // and the support group leaves the row's `OSC_IN` and `OSC_OUT` untied.
         if conns.insert(pin.clone(), Conn::Net(net.clone())).is_some() {
             return Err(EmitError::Internal(format!(
                 "the MCU's pin {pin} is already tied"
@@ -95,9 +102,43 @@ pub(super) fn tie(
         part: row.part.as_str(),
         symbol: row.symbol.as_str(),
         footprint: row.footprint.as_str(),
-        caps: c.load_caps_femtofarads,
+        caps: [
+            load_capacitor(ptable, c.load_caps_femtofarads[0])?,
+            load_capacitor(ptable, c.load_caps_femtofarads[1])?,
+        ],
         pins: [(pin_in, osc_in), (pin_out, osc_out)],
     }))
+}
+
+/// The footprint of every load capacitor: 0402, `4240` §9's family.
+const LOAD_FOOTPRINT: &str = "Capacitor_SMD:C_0402_1005Metric";
+
+/// The load capacitor for a declared `ff`: the first row of the power parts
+/// table, by part number, that is C0G, 0402, rated exactly `ff`, with a
+/// stated tolerance of at most ±1 % or ±0.25 pF (`4240` §9's family,
+/// `AET-WO-4240c` A2), or the refusal by name.
+fn load_capacitor(table: &'static PowerPartsTable, ff: u64) -> Result<&'static Row, EmitError> {
+    table
+        .rows()
+        .iter()
+        .find(|r| {
+            let Kind::Capacitor(k) = &r.kind else {
+                return false;
+            };
+            let close = match &k.tolerance {
+                Some(Tolerance::Permille(l)) => l.value <= 10,
+                Some(Tolerance::Femtofarads(l)) => l.value <= 250,
+                None => false,
+            };
+            k.dielectric == Dielectric::C0g
+                && r.footprint == LOAD_FOOTPRINT
+                && close
+                && u64::try_from(k.rated_picofarads.value)
+                    .ok()
+                    .and_then(|pf| pf.checked_mul(1000))
+                    == Some(ff)
+        })
+        .ok_or(EmitError::LoadCapacitorNoPart { femtofarads: ff })
 }
 
 /// The crystal and its capacitors, drawn once the MCU's part is pushed.
@@ -105,7 +146,7 @@ pub(super) struct Group {
     part: &'static str,
     symbol: &'static str,
     footprint: &'static str,
-    caps: [u64; 2],
+    caps: [&'static Row; 2],
     /// `(MCU pin, net)` for OSC_IN, then OSC_OUT.
     pins: [(String, String); 2],
 }
@@ -143,17 +184,27 @@ impl Group {
             None,
             false,
         );
-        for (ff, net, pin) in [
+        for (row, net, pin) in [
             (self.caps[0], osc_in, pin_in),
             (self.caps[1], osc_out, pin_out),
         ] {
-            if ff % 1000 != 0 {
-                return Err(EmitError::Internal(format!(
-                    "a load capacitor of {ff} fF is not a whole picofarad"
-                )));
-            }
-            let value = super::power::farads(ff / 1000);
-            b.passive('C', value, Conn::Net(net), gnd.clone())?;
+            let Kind::Capacitor(k) = &row.kind else {
+                return Err(EmitError::Internal(format!("`{}` is not a capacitor", row.part)));
+            };
+            let pf = u64::try_from(k.rated_picofarads.value)
+                .map_err(|_| EmitError::Internal("a negative capacitance".into()))?;
+            let reference = b.reference('C')?;
+            b.parts.push(Part {
+                lib_id: row.symbol.as_str(),
+                reference,
+                value: format!("{} {}", super::power::farads(pf), row.part),
+                footprint: row.footprint.clone(),
+                conns: BTreeMap::from([("1".into(), Conn::Net(net)), ("2".into(), gnd.clone())]),
+                note: None,
+                owner: None,
+                offboard: BTreeMap::new(),
+                seat: None,
+            });
             b.anchor_last(mcu, vec![("1".into(), pin)], None, false);
         }
         Ok(())
