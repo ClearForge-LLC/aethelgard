@@ -130,6 +130,14 @@ A trial merge of 4202's PR head (`ba3e52e1`, before it landed) had measured the 
 
 **Then `main` at `cb489f2a` (1911) was merged as `92cf9004`.** It changed `ci/` and docs only, not `crates/`, `boards/` or `examples/`. Its inventory guard, `bash ci/route.sh check ci/docs-tests.tsv`, passes on the merged tree [measured]. CI on that merge is the run of record (the architect's note of 02:20Z).
 
+**Then `main` at `3341dc6b` (2304b and 1314b) was merged as `83ebff22`** [measured]. It had one conflict, the CLI README's exit-2 row: `main`'s row is kept, with this branch's two load-kind sentences re-inserted where they stood. On the merged tree:
+
+- fmt and clippy are clean;
+- `cargo test --workspace`: 141 suites, 2,344 passed and 1 failed, the environment's `BaseOutsideRoot`;
+- the corpus is now 52 files. The 4 new ones are 1314b's spike files: two at schema 17, refused as `UnsupportedSchemaVersion`, and two `validate` outputs. Every earlier file keeps its verdict, and none is refused by either load kind.
+
+The helper fixes survived the merge, and 2304b added no new crossing removal. **`TIER2_MIN` stays at 193** (2304b's): this branch adds 0 tier-2 tests.
+
 ## B6. New observations
 
 - **F4:** A3 and A4's rail check, a load's part having a pin on its load's rail. It belongs with the architect's re-pointing row.
