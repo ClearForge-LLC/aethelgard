@@ -870,10 +870,10 @@ const ROMFS_DEFAULTS: &str = "defaults.parm";
 
 /// Every way the ELF can apply parameter defaults at boot over what
 /// `var_info` compiles, one line each, empty when it can apply none:
-/// - `AP_Param::load_defaults_file` is defined: linked only when
+/// - a symbol `AP_Param::load_defaults_file`: linked only when
 ///   `AP_PARAM_DEFAULTS_FILE_PARSING_ENABLED`, which `chibios_hwdef.py`
 ///   writes for a board with a defaults file (`:2509-2512`);
-/// - `AP_Param::load_embedded_param_defaults` is defined: linked when
+/// - a symbol `AP_Param::load_embedded_param_defaults`: linked when
 ///   `AP_PARAM_MAX_EMBEDDED_PARAM` is above 0, so `apj_tool` can write
 ///   defaults into the image after the build (`AP_Param.cpp:2602-2605`);
 /// - `AP_Param::param_defaults_data`'s `length` is not 0
@@ -897,10 +897,7 @@ pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
             "AP_Param::load_embedded_param_defaults is linked: defaults embedded in the image, which apj_tool can write after the build, are read at boot (AP_Param.cpp:1618-1622, :2602-2605)",
         ),
     ] {
-        if named(symbol)?
-            .iter()
-            .any(|&(.., shndx)| shndx != 0 && shndx < SHN_LORESERVE)
-        {
+        if !named(symbol)?.is_empty() {
             found.push(what.to_owned());
         }
     }
