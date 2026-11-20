@@ -385,7 +385,9 @@ const GATE_REF: &str = "AET-WO-3302 bench sheet B2's Renode column (AHB4ENR 0x3,
 const GATE_PORTS: &str =
     "AET-WO-4300b FEEDBACK P2.2 (four ports' images read back after the boot, measured)";
 const GATE_TIM: &str = "AET-WO-4300a FEEDBACK (the motor fixtures' register image, every enable register judged in full after the boot)";
-const GATE_SPI: &str = "the emitted platform registers each solved SPI it adds with `rcc RegistrationPeripheralAlias.SPIn` (aethelgard-twin platform, boards/sentinel-01/sentinel-01.repl)";
+/// Measured on `boards/sentinel-01/sentinel-01.repl` (L15, `SPI1`), the
+/// platform `aethelgard-twin` emits; the text names no board (`AET-WO-1103`).
+const GATE_SPI: &str = "the emitted platform registers each solved SPI it adds with `rcc RegistrationPeripheralAlias.SPIn` (aethelgard-twin platform, each solved SPI's block in the emitted .repl)";
 
 #[allow(clippy::too_many_arguments)]
 fn e(
