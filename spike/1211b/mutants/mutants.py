@@ -13,6 +13,7 @@ G = "crates/aethelgard-cli/src/generate.rs"
 S = "crates/aethelgard-ir/src/silicon.rs"
 T_HAL = ["-p", "aethelgard-svd-hal", "--lib", "--test", "motor_outputs"]
 T_CLI = ["-p", "aethelgard-cli", "--test", "pin_device_refusals", "--test", "ledger_tier1"]
+T_HAL2 = ["-p", "aethelgard-svd-hal", "--test", "pin_devices"]
 M = [
  ("WO2 the idle written after CEN", B,
   """    writes.push(("EGR", tf.egr, 1 << tf.ug));
@@ -43,6 +44,17 @@ M = [
  ("G10 a declared input's pull not judged", L, "                if row.value != Some(rule) {\n                    return Err(LedgerError::RuleDisagrees {\n                        id: row.id.clone(),\n                        value: row.value,\n                        rule,\n                        name: \"implied_pupd\",",
   "                if false {\n                    return Err(LedgerError::RuleDisagrees {\n                        id: row.id.clone(),\n                        value: row.value,\n                        rule,\n                        name: \"implied_pupd\",", T_CLI),
  ("G11 an idle-high pull judged as a pull-down", L, "        let (rule, name, judge) = if high {", "        let (rule, name, judge) = if false {", T_CLI),
+
+ # Stage 2: the bridge, the ADC and the ledger (after S1, ruled 2026-11-20T19:06Z).
+ ("WO3 a bridge's enable before its CEN (configured with the pins)", "crates/aethelgard-svd-hal/src/board/firmware.rs",
+  "        .filter(|(pin, _)| plan.enable_after(pin).is_none())", "        .filter(|(pin, _)| plan.enable_after(pin).is_none() || true)", T_HAL2),
+ ("WO3b the image's enable rule dropped", B, "    let e = plan.enable_after(pin)?;", "    let e = plan.enable_after(pin).filter(|_| false)?;", T_HAL2),
+ ("WO4 an unclassified ledger field (PCSEL)", L, "        (\"PCSEL\", &[\"PCSEL\"][..]),", "        (\"PCSEL\", &[\"PCSELX\"][..]),", T_CLI),
+ ("B1 a driving idle passed", B, "            if state.drives || mode.forbidden.contains(&state.name) {", "            if false && (state.drives || mode.forbidden.contains(&state.name)) {", T_HAL2),
+ ("B2 a waking enable not waited", B, "            let wake_us = if initial == e.active {", "            let wake_us = if false && initial == e.active {", T_HAL2),
+ ("A1 the 12-bit code of revision V alone", "crates/aethelgard-svd-hal/src/board/adc.rs", "        12 => Some(0b010),", "        12 => Some(0b110),", T_HAL2),
+ ("A2 the calibration bound at the stated minimum", "crates/aethelgard-svd-hal/src/board/adc.rs",
+  "pub(super) const CALIBRATION_POLLS: u32 = 2 * 165_010 * 8;", "pub(super) const CALIBRATION_POLLS: u32 = 165_010 * 8;", T_HAL2),
 ]
 out = []
 for (mid, f, old, new, tests) in M:

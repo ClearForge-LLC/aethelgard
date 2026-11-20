@@ -101,6 +101,16 @@ fn the_adc_takes_the_declared_resolution_or_is_refused_by_name() {
     );
     assert!(lib.contains("0x00000020); // PCSEL"));
     assert!(lib.contains("0x00000140); // SQR1"));
+    // The bounds as ruled (Q-B): twice DS12117's figures at 8 core cycles per
+    // ADC cycle, and tADCVREG_STUP's 10 us at HSI's fastest.
+    for bound in [
+        "regulator: 650,",
+        "calibration: 2640160,",
+        "ready: 13104,",
+        "conversion: 13108,",
+    ] {
+        assert!(lib.contains(bound), "{bound}");
+    }
     for (bits, kind) in [
         (Some(8), "AdcResolutionNotCommon"),
         (None, "AdcResolutionNotSolved"),

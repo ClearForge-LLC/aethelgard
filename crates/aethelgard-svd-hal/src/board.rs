@@ -4290,7 +4290,7 @@ fn oracle_idle_word(p: &motor::PwmTiming, arr: u32) -> Option<u32> {
         motor::Idle::Level(Level::High) => arr.checked_add(1),
         motor::Idle::PulseUs(us) => {
             let ps = u64::from(us) * 1_000_000;
-            let res = u64::from(p.resolution_ps);
+            let res = p.resolution_ps;
             (res != 0 && ps % res == 0)
                 .then(|| u32::try_from(ps / res).ok())
                 .flatten()
