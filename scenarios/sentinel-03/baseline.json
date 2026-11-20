@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "name": "baseline",
+  "base": "../../crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
+  "expect": "pass",
+  "expect_findings": [],
+  "overrides": []
+}

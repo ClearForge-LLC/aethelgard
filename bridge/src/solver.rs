@@ -46,6 +46,8 @@ pub struct Ngspice {
     loaded: bool,
     stepped: bool,
     inputs: Vec<Pwl>,
+    /// Breakpoints for a deck's own sources, in seconds (`--chain`).
+    breaks: Vec<f64>,
 }
 
 impl Ngspice {
@@ -67,7 +69,13 @@ impl Ngspice {
             loaded: false,
             stepped: false,
             inputs: Vec::new(),
+            breaks: Vec::new(),
         })
+    }
+
+    /// Breakpoints, in seconds, that the next step places besides its inputs'.
+    pub fn set_breakpoints(&mut self, times: &[f64]) {
+        self.breaks = times.to_vec();
     }
 
     /// One command; any nonzero return, `stderr` line or exit is an error.
@@ -147,6 +155,7 @@ impl CoSimulation for Ngspice {
     fn instantiate(&mut self, model: &[String]) -> Result<(), String> {
         host::clear_sources();
         self.inputs.clear();
+        self.breaks.clear();
         if std::mem::take(&mut self.loaded) {
             self.run("remcirc")?;
             self.run("destroy all")?;
@@ -177,7 +186,8 @@ impl CoSimulation for Ngspice {
         // A breakpoint at every vertex of every input, so no accepted step
         // crosses an edge (`AET-WO-2101` S1: without them the 30 % crossing
         // lands 2.1 ns late).
-        for t in self.inputs.iter().flat_map(Pwl::vertices) {
+        let own: Vec<f64> = self.inputs.iter().flat_map(Pwl::vertices).collect();
+        for t in own.into_iter().chain(self.breaks.clone()) {
             if t <= step && !ffi::set_breakpoint(t)? {
                 return Err(format!("ngspice refused a breakpoint at {t} s"));
             }

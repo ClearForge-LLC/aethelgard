@@ -187,7 +187,8 @@ fn refuses_unsupported_schema_version() {
         14,
         15,
         16,
-        18,
+        17,
+        19,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -906,8 +907,9 @@ fn full_document() -> serde_json::Value {
     ]);
     v["motor_outputs"] = json!([
         {"label": "M1", "pin": null, "protocol": "pwm",
-         "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}},
-        {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null}
+         "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null},
+        {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null,
+         "esc": {"none": {"source": "a bench header with no power pin"}}}
     ]);
     // `AET-WO-4300b`: a port left to the solver, and one with its peripheral
     // and pins named, parity, two stop bits and inversion.
@@ -3630,7 +3632,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 17
+                expected: 18
             }
         ),
         "{e}"

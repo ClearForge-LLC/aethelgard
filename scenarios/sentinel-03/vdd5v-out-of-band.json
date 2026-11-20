@@ -1,0 +1,23 @@
+{
+  "schema_version": 4,
+  "name": "vdd5v-out-of-band",
+  "base": "../../crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
+  "expect": "fail",
+  "expect_findings": [
+    "serial_echo_missing"
+  ],
+  "expect_counts": {
+    "serial_echo_missing": 2
+  },
+  "overrides": [
+    {
+      "rail_out_of_band": "VDD_5V"
+    },
+    {
+      "serial_rx_open": "CRSF"
+    },
+    {
+      "serial_rx_open": "MAVLINK"
+    }
+  ]
+}

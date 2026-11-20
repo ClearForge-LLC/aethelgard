@@ -1,0 +1,294 @@
+{
+  "schema_version": 17,
+  "project_name": "vibration-logger",
+  "mcu": {
+    "part": "STM32H753ZITx",
+    "supply": "VDD_3V3",
+    "hse_hz": 0,
+    "bor_level": 3,
+    "supply_source": {
+      "connector": "J3",
+      "pin": "1"
+    }
+  },
+  "voltage_domains": [
+    {
+      "id": "VDD_3V3",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
+    }
+  ],
+  "i2c_buses": [],
+  "spi_buses": [
+    {
+      "id": "VIB",
+      "peripheral": null,
+      "speed_hz": 10000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "VIB_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "VIB_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "VIB_MISO",
+        "pin": null
+      }
+    },
+    {
+      "id": "LOG",
+      "peripheral": null,
+      "speed_hz": 20000000,
+      "domain": "VDD_3V3",
+      "sck": {
+        "net": "LOG_SCK",
+        "pin": null
+      },
+      "mosi": {
+        "net": "LOG_MOSI",
+        "pin": null
+      },
+      "miso": {
+        "net": "LOG_MISO",
+        "pin": null
+      }
+    }
+  ],
+  "i2c_devices": [],
+  "spi_devices": [
+    {
+      "reference": "U40",
+      "part": "ICM42688P",
+      "supply": "VDD_3V3",
+      "bus": "VIB",
+      "cs": {
+        "net": "VIB_CS",
+        "pin": null
+      },
+      "pin_capacitance": {
+        "declared": {
+          "femtofarads": 10000,
+          "condition": "each of U40's pins on SCK and MOSI at most TDK's typical C_I of < 10 pF; the datasheet prints no maximum, so the bound holds only if the part's pins do not exceed that typical",
+          "source": "TDK InvenSense DS-000347 v1.9, 3.3.2 Table 4, p. 14: C_I < 10 pF for FSYNC, SCLK, SDI and CS in the TYP column, MIN and MAX empty (AET-WO-4220 D10)"
+        }
+      }
+    },
+    {
+      "reference": "U30",
+      "part": "W25Q64JVxIQ",
+      "supply": "VDD_3V3",
+      "bus": "LOG",
+      "cs": {
+        "net": "LOG_CS",
+        "pin": null
+      },
+      "pin_capacitance": null
+    }
+  ],
+  "connectors": [
+    {
+      "reference": "J1",
+      "part": "SM04B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "READOUT_TX",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": "READOUT_RX",
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    },
+    {
+      "reference": "J2",
+      "part": "SM06B-SRSS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "SWDIO",
+          "offboard": null
+        },
+        {
+          "pin": "5",
+          "net": "SWCLK",
+          "offboard": null
+        },
+        {
+          "pin": "6",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    },
+    {
+      "reference": "J3",
+      "part": "SM04B-GHS-TB",
+      "standard": null,
+      "pins": [
+        {
+          "pin": "1",
+          "net": "VDD_3V3",
+          "offboard": null
+        },
+        {
+          "pin": "2",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "3",
+          "net": null,
+          "offboard": null
+        },
+        {
+          "pin": "4",
+          "net": "GND",
+          "offboard": null
+        }
+      ]
+    }
+  ],
+  "net_constraints": [
+    {
+      "net_name": "VIB_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "VIB_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_SCK",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    },
+    {
+      "net_name": "LOG_MOSI",
+      "max_capacitance_femtofarads": 30000,
+      "max_rise_time_nanoseconds": 20,
+      "impedance_ohms": null
+    }
+  ],
+  "board": {
+    "copper_layers": 2,
+    "layers": [
+      {
+        "name": "F.Cu",
+        "role": "signal",
+        "net": null
+      },
+      {
+        "name": "B.Cu",
+        "role": "signal",
+        "net": null
+      }
+    ],
+    "stackup": {
+      "finished_thickness_um": {
+        "nominal": 1600,
+        "min": 340,
+        "max": 2000,
+        "source": "AET-WO-1305 conditions: 1.6 mm declared; 0.34 mm = 2 x 70 um + 0.2 mm; 2.0 mm = 1.6 mm + 25 %"
+      },
+      "dielectrics": [
+        {
+          "between": [
+            "F.Cu",
+            "B.Cu"
+          ],
+          "min_thickness_um": 200,
+          "source": "implied: the finished minimum 340 um less twice the copper maximum 70 um"
+        }
+      ],
+      "copper_max_um": {
+        "value": 70,
+        "source": "AET-WO-1305 condition: twice KiCad's default 35 um (2 oz)"
+      },
+      "relative_permittivity_max_permille": {
+        "value": 5400,
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+      }
+    },
+    "rules": {
+      "clearance_um": 200,
+      "track_width_um": 200,
+      "via_drill_um": 300,
+      "via_diameter_um": 600
+    }
+  },
+  "net_classes": [],
+  "diff_pairs": [],
+  "motor_outputs": [],
+  "power": null,
+  "accept_lifecycle": [
+    {
+      "part": "W25Q64JVxIQ",
+      "status": "nrnd",
+      "statement": "The logger's record flash, NRND by its maker (Winbond's catalog, Status-Industrial N, 2026-11-16) with longevity support listed; kept because it is the only SPI flash row (AET-WO-4600 spike)"
+    }
+  ],
+  "serial_ports": [
+    {
+      "label": "READOUT",
+      "peripheral": null,
+      "tx": {
+        "net": "READOUT_TX",
+        "pin": null
+      },
+      "rx": {
+        "net": "READOUT_RX",
+        "pin": null
+      },
+      "role": "console",
+      "framing": {
+        "baud": 115200,
+        "data_bits": 8,
+        "parity": "none",
+        "stop_bits": 1,
+        "inverted": false
+      },
+      "negotiated": null,
+      "peer_deviation_ppm": 5000,
+      "peer_deviation_source": "declared"
+    }
+  ],
+  "acknowledge_unwitnessed": []
+}

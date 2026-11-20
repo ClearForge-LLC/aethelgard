@@ -55,6 +55,7 @@
 # AET-WO-1911 second refit (REFIT RULE's spread clause fired on the merged tree: slowest minus fastest shard 6.7 and 6.3 min on runs 44644135555
 # and 44647140730, two in a row): every row re-weighed by rule 5 from those two runs alone, on the merged tree (main 52a2d62e and 8c42b437), the
 # same method as the first refit; 17 rows under 0.5 s dropped, 7 added. It supersedes the merged values above.
+# AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7, 8 shards): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348); kept beside AET-WO-1911's 12-shard refit, which ran before these tests existed.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.200
@@ -398,6 +399,8 @@ tests/twin_tier2.rs	an_aborted_machine_returns_inside_the_bound_as_cpu_aborted	3
 tests/twin_tier2.rs	an_echo_the_firmware_never_received_is_forged	4.000
 tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	13.600
 tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	0.100
+tests/twin_tier2.rs	battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats	288.767
+tests/twin_tier2.rs	battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats	88.251
 tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	4.100
 tests/twin_tier2.rs	f2_a_late_dshot_anchor_fails_by_name	9.000
 tests/twin_tier2.rs	h1a_a_pin_bit_banged_after_the_window_fails_by_name	13.100

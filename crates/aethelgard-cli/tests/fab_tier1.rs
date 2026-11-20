@@ -434,7 +434,10 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
     assert_eq!(code, Some(3), "{v}");
     assert_eq!(v["error"]["kind"], "CampaignCoverageShort", "{v}");
     let m = v["error"]["message"].as_str().unwrap();
-    assert!(m.contains("rail `VDD_5V` (not the MCU's supply"), "{m}");
+    assert!(
+        m.contains("rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"),
+        "{m}"
+    );
     // `EXT` has no device: named in the verdict's row, never blocking.
     assert!(!m.contains("EXT"), "{m}");
     assert!(
