@@ -2314,6 +2314,8 @@ mod tests {
                 "VDD33USB" => "VDD33_USB",
                 "SWDIO" => "PA13",
                 "SWCLK" => "PA14",
+                "OSC_IN" => "PH0",
+                "OSC_OUT" => "PH1",
                 g => g,
             };
             for n in numbers {

@@ -1119,11 +1119,17 @@
               ],
               "SWCLK": [
                 "109"
+              ],
+              "OSC_IN": [
+                "23"
+              ],
+              "OSC_OUT": [
+                "24"
               ]
             },
             "pins_at": {
               "document": "ST_PIN_DATA_H753ZI",
-              "section": "each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; PA13 is JTMS-SWDIO and PA14 JTCK-SWCLK in its signals)"
+              "section": "each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; PA13 is JTMS-SWDIO and PA14 JTCK-SWCLK in its signals; PH0-OSC_IN is position 23 and PH1-OSC_OUT position 24, drawn only beside a declared crystal)"
             },
             "supply": "VDD",
             "grounds": [

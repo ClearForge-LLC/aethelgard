@@ -14,7 +14,9 @@
 //! - `VCAP` pins each to its own net, `NRST` to [`NRST`], and the debug
 //!   pins to [`SWDIO`] and [`SWCLK`], which a declared connector carries.
 //! - `BOOT0`, when a connector pin or test point names it, to [`BOOT0`]
-//!   instead of its strap's group (`AET-WO-1312`).
+//!   instead of its strap's group (`AET-WO-1312`);
+//! - `OSC_IN` and `OSC_OUT` to nothing here: the HSE group ties them beside a
+//!   declared crystal (`AET-WO-4240c`), and they stay unconnected otherwise.
 //!
 //! The support gate (`crate::support`) re-reads the emitted netlist against
 //! the same row; it never reads this module's choices (`RUL-20`).
@@ -25,6 +27,10 @@ use aethelgard_ir::power_parts::{self, Kind, Support};
 use aethelgard_ir::{BOOT0, NRST, SWCLK, SWDIO};
 
 use super::{Builder, Conn, EmitError};
+
+/// The row's oscillator groups (`AET-WO-4240c`): `PH0-OSC_IN`, then
+/// `PH1-OSC_OUT`, by package position.
+pub(crate) const OSCILLATOR: [&str; 2] = ["OSC_IN", "OSC_OUT"];
 
 /// The support network of `part`'s row, as the gate looks it up.
 pub(super) fn row(part: &str) -> Result<&'static Support, EmitError> {
@@ -72,6 +78,11 @@ pub(super) fn draw(b: &mut Builder<'_>, mcu: &str) -> Result<BTreeMap<String, Co
     }
     let mut conns = BTreeMap::new();
     for (group, pins) in &s.pins {
+        // The oscillator pins are the HSE group's (`AET-WO-4240c`, `hse`),
+        // tied beside a declared crystal and otherwise left unconnected.
+        if OSCILLATOR.contains(&group.as_str()) {
+            continue;
+        }
         if group == "VCAP" {
             for (i, pin) in pins.iter().enumerate() {
                 let net = b.own_net(format!("{mcu}_VCAP{}", i + 1))?;
