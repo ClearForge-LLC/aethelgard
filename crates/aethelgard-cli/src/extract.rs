@@ -50,6 +50,11 @@ struct Report {
     /// when the specification declares none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pairs: Vec<Value>,
+    /// Each oscillator net beside a declared crystal (`AET-WO-4240c`):
+    /// reported, not judged against a value; absent when no crystal is
+    /// declared, so no other report moves.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    oscillator: Vec<Value>,
     findings: Vec<Finding>,
 }
 
@@ -137,6 +142,22 @@ fn line(b: LineBound, declared: u64) -> Value {
         v["declared_pins"] = b.declared_pins.into();
     }
     v
+}
+
+/// One oscillator net's object (`AET-WO-4240c` §1.4 (b), ruled 16:34Z): its
+/// copper bound from above, its length, vias and pads, the crystal's gap to
+/// the MCU, and DS12117's `CIO`, labelled typical and not added.
+fn oscillator_net(o: &aethelgard_eda::extract::Oscillator) -> Value {
+    let b = &o.line;
+    json!({
+        "net": b.net, "board_net": b.board_net,
+        "c_bound_femtofarads": b.c_bound_femtofarads,
+        "terms": {"trace": b.terms.trace, "vias": b.terms.vias, "pads": b.terms.pads},
+        "length_nm": b.length_nm, "segments": b.segments, "via_count": b.via_count,
+        "pad_count": b.pad_count,
+        "crystal": o.crystal, "crystal_gap_um": o.crystal_gap_um,
+        "mcu_pin_cio_typical_femtofarads": bound::OSC_PIN_CIO_TYPICAL_FEMTOFARADS,
+    })
 }
 
 /// The footprint `emit` draws a test point with (`AET-WO-1312`): a bare pad.
@@ -232,6 +253,18 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     let gates = match aethelgard_eda::supply::supplies(&spec, &topology, &table, &read) {
         Ok(g) => g,
         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
+    };
+    // The oscillator nets beside a declared crystal (`AET-WO-4240c` §1.4 (b),
+    // §1.6, ruled A7): reported, and a via on one is a finding; none for a
+    // specification that declares no crystal, whose report is unchanged.
+    let oscillator = match bound::oscillator(&spec, &topology, &table, &read) {
+        Ok(o) => o,
+        Err(r) => {
+            return crate::emit(
+                &Refusal::new(r.kind, r.id.as_deref(), r.message),
+                EXIT_UNREADABLE,
+            );
+        }
     };
     let mut out = Vec::new();
     let mut conditions = bound::conditions(&stack);
@@ -391,8 +424,25 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             });
         }
     }
+    for o in &oscillator {
+        if let Some(r) = o.refusal() {
+            findings.push(Finding {
+                kind: r.kind,
+                severity: "error",
+                message: r.message,
+                cause: None,
+            });
+        }
+    }
+    if !oscillator.is_empty() {
+        conditions.push(bound::OSC_PIN_CONDITION.to_owned());
+    }
+    let oscillator: Vec<Value> = oscillator.iter().map(oscillator_net).collect();
     let supplies: Vec<Value> = gates.iter().map(supply).collect();
-    let scope = Scope::of((out.len() + supplies.len()) as u64, NOTHING_IN_SCOPE);
+    let scope = Scope::of(
+        (out.len() + supplies.len() + oscillator.len()) as u64,
+        NOTHING_IN_SCOPE,
+    );
     let ok = findings.is_empty();
     let report = Report {
         ok,
@@ -411,6 +461,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         lines: out,
         supplies,
         pairs,
+        oscillator,
         findings,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })

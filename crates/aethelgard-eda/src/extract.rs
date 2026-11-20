@@ -919,6 +919,7 @@ fn footprint(fp: &Node<'_>) -> Result<(String, (String, String)), Refused> {
 
 /// A board as `read` accepted it: the board and copper as `route` reads
 /// them, and each footprint's library id and `Value`, by reference.
+#[derive(Clone)]
 pub struct ReadBoard {
     pub board: Board,
     pub routed: Routed,
@@ -1027,7 +1028,13 @@ enum Load {
     /// as every pad's is; no part sits on it, so it has no `Ci`. A probe
     /// clipped to it is outside the bound, as a part body is ([`CONDITIONS`]).
     TestPad,
+    /// A part on an oscillator net beside a crystal (`AET-WO-4240c` §1.4):
+    /// copper only, for the reasons [`OSC_PIN_CONDITION`] states.
+    Oscillator,
 }
+
+/// What an oscillator net's bound leaves out (`AET-WO-4240c` §1.4).
+pub const OSC_PIN_CONDITION: &str = "copper only: the MCU's OSC_IN and OSC_OUT pins are not counted, because DS12117 Rev 10 states their capacitance only as CIO 5 pF typical, with no minimum or maximum (Table 49 p. 137, rev Y; Table 146 p. 241, rev V); the crystal's C0 is its own and each load capacitor is CL1 or CL2 itself, so neither is counted; each net's bound holds its mutual capacitance to the other oscillator net, which sits across the crystal";
 
 /// A connector's declared off-board capacitance for each of `pads`, the pads
 /// it has on `net`.
@@ -1282,6 +1289,157 @@ pub fn lines(
     Ok(out)
 }
 
+/// The two oscillator nets beside a declared crystal (`AET-WO-4240c` §1.4),
+/// `OSC_IN` then `OSC_OUT`, each with every part the generator's design puts
+/// on it, all at [`Load::Oscillator`]; none for a specification that declares
+/// no crystal. [`bound`] takes them as it takes a bus line: the board must
+/// hold exactly the design's parts and pads on each, and its copper is
+/// bounded from above the same way.
+pub fn oscillator_lines(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<Vec<Line>, Refused> {
+    let nets = aethelgard_ir::names::oscillator_nets(spec);
+    if nets.is_empty() {
+        return Ok(Vec::new());
+    }
+    let (parts, _) = crate::schematic::design(spec, solved, table).map_err(|e| invalid(&e))?;
+    let mut out = Vec::new();
+    for net in nets {
+        let on = board_net(&net);
+        let mut roles = BTreeMap::new();
+        for part in &parts {
+            let pads = pads_on(part, &on)?;
+            if pads.is_empty() {
+                continue;
+            }
+            roles.insert(
+                part.reference.clone(),
+                Role {
+                    footprint: part.footprint.clone(),
+                    value: part.value.clone(),
+                    pads,
+                    load: Load::Oscillator,
+                    offboard: Vec::new(),
+                },
+            );
+        }
+        out.push(Line {
+            net,
+            bus: "HSE".to_owned(),
+            spi_signal: None,
+            parts: roles,
+        });
+    }
+    Ok(out)
+}
+
+/// DS12117 Rev 10's `CIO`, 5 pF **typical** ([`OSC_PIN_CONDITION`]):
+/// reported beside each oscillator net, labelled typical, and never added to
+/// a bound (`RUL-19`).
+pub const OSC_PIN_CIO_TYPICAL_FEMTOFARADS: u64 = 5_000;
+
+/// One oscillator net beside a declared crystal, as `extract` reports it
+/// (`AET-WO-4240c` §1.4 (b) and §1.6, ruled 16:34Z): its copper bound, and
+/// the gap from the crystal's pad on it to the MCU's, copper edge to copper
+/// edge. Reported, never judged against a distance: no held source states
+/// one (Q5).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Oscillator {
+    pub line: LineBound,
+    /// The crystal's reference on this net.
+    pub crystal: String,
+    /// µm, rounded up.
+    pub crystal_gap_um: u64,
+}
+
+impl Oscillator {
+    /// `OscillatorNetVia` when the net's copper holds a via: an oscillator net
+    /// is laid on one copper layer (`AET-WO-4240c` §1.6).
+    pub fn refusal(&self) -> Option<Refused> {
+        (self.line.via_count > 0).then(|| {
+            refused(
+                "OscillatorNetVia",
+                format!(
+                    "`{}` holds {} via(s): an oscillator net is laid on one copper layer, with no via",
+                    self.line.net, self.line.via_count
+                ),
+            )
+        })
+    }
+}
+
+/// Each of [`oscillator_lines`], bounded on `read` as [`bound`] bounds a bus
+/// line, with the crystal's gap to the MCU on it. Empty for a specification
+/// that declares no crystal.
+pub fn oscillator(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+    read: &ReadBoard,
+) -> Result<Vec<Oscillator>, Refused> {
+    let Some(aethelgard_ir::clock::Hse::Crystal(c)) = &spec.mcu.hse else {
+        return Ok(Vec::new());
+    };
+    let mcu = aethelgard_ir::names::mcu_reference(spec);
+    let bounds = bound(read, &oscillator_lines(spec, solved, table)?)?;
+    let mut out = Vec::new();
+    for line in bounds {
+        let on = |reference: &str| -> Vec<&route::Pad> {
+            read.board
+                .parts
+                .iter()
+                .filter(|p| p.reference == reference)
+                .flat_map(|p| &p.pads)
+                .filter(|p| p.net.as_deref() == Some(line.board_net.as_str()))
+                .collect()
+        };
+        // The crystal: the one part on the net whose value is the declared
+        // part (`bound` has held every part to the design's).
+        let crystals: Vec<&String> = read
+            .footprints
+            .iter()
+            .filter(|(r, (_, value))| value == &c.part && !on(r).is_empty())
+            .map(|(r, _)| r)
+            .collect();
+        let [crystal] = crystals.as_slice() else {
+            return Err(refused(
+                "PartMismatch",
+                format!(
+                    "`{}` carries {} crystals of `{}`, not one",
+                    line.net,
+                    crystals.len(),
+                    c.part
+                ),
+            ));
+        };
+        let gap = on(crystal)
+            .iter()
+            .flat_map(|a| {
+                on(&mcu)
+                    .into_iter()
+                    .map(move |b| crate::loops::gap_nm(a, b))
+            })
+            .min()
+            .ok_or_else(|| {
+                refused(
+                    "PartMismatch",
+                    format!("`{}` has no pad of {mcu} or of {crystal}", line.net),
+                )
+            })?;
+        out.push(Oscillator {
+            crystal: (*crystal).clone(),
+            crystal_gap_um: u64::try_from(
+                gap.div_euclid(1000) + i64::from(gap.rem_euclid(1000) != 0),
+            )
+            .map_err(|_| overflow(&line.net))?,
+            line,
+        });
+    }
+    Ok(out)
+}
+
 /// Every line of `lines`, bounded on a board `read` accepted. The parts on
 /// each line must be exactly the design's: each by reference, footprint and
 /// `Value`, each with exactly the design's pads on the line. Every pad's
@@ -1399,7 +1557,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                         .ok_or_else(|| overflow(net))?;
                 }
                 Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
-                Load::PullUp | Load::Connector | Load::TestPad => {}
+                Load::PullUp | Load::Connector | Load::TestPad | Load::Oscillator => {}
             }
         }
     }

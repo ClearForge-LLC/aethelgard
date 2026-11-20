@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 52] = [
+pub const FILES: [(&str, &[u8]); 54] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -41,6 +41,12 @@ pub const FILES: [(&str, &[u8]); 52] = [
         "footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Connector_AMASS.pretty/AMASS_XT30PW-M_1x02_P2.50mm_Horizontal.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Crystal.pretty/Crystal_SMD_3225-4Pin_3.2x2.5mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Crystal.pretty/Crystal_SMD_3225-4Pin_3.2x2.5mm.kicad_mod"
         ),
     ),
     (
@@ -164,6 +170,10 @@ pub const FILES: [(&str, &[u8]); 52] = [
     (
         "symbols/Device.kicad_symdir/C_Polarized.kicad_sym",
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/C_Polarized.kicad_sym"),
+    ),
+    (
+        "symbols/Device.kicad_symdir/Crystal_GND24.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/Crystal_GND24.kicad_sym"),
     ),
     (
         "symbols/Device.kicad_symdir/L.kicad_sym",

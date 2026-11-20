@@ -559,3 +559,45 @@ fn the_vos_rule_judges_spi_kernels_at_the_hsi_s_fastest() {
     assert_eq!(fastest("SPI1 kernel"), Some(64_958_976));
     assert_eq!(fastest("fPCLK1"), Some(64_006_528));
 }
+
+/// `AET-WO-4240c` A2: a capacitor row's `tolerance` is optional and cited,
+/// per mille of the rated value or in femtofarads; a zero, an unknown form
+/// or both forms at once are refused.
+#[test]
+fn a_capacitor_rows_tolerance_is_optional_and_cited() {
+    const CAP: &str = "GRM188R71C105KA12";
+    fn with(tolerance: Option<Value>) -> Result<Option<power_parts::Tolerance>, String> {
+        let mut t: Value = serde_json::from_str(power_parts::POWER_PARTS_JSON).unwrap();
+        let row = t["parts"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|r| r["part"] == CAP)
+            .unwrap();
+        if let Some(tol) = tolerance {
+            row["kind"]["capacitor"]["tolerance"] = tol;
+        }
+        let parsed = power_parts::parse_power_parts(&t.to_string()).map_err(|e| e.to_string())?;
+        match &parsed.get(CAP).unwrap().kind {
+            Kind::Capacitor(c) => Ok(c.tolerance.clone()),
+            _ => panic!("not a capacitor"),
+        }
+    }
+    let at = json!({"document": "MURATA_GRM188R71C105KA12", "section": "Rated Value table"});
+    assert_eq!(with(None), Ok(None));
+    assert!(matches!(
+        with(Some(json!({"permille": {"value": 100, "at": at}}))),
+        Ok(Some(power_parts::Tolerance::Permille(l))) if l.value == 100
+    ));
+    assert!(matches!(
+        with(Some(json!({"femtofarads": {"value": 250, "at": at}}))),
+        Ok(Some(power_parts::Tolerance::Femtofarads(l))) if l.value == 250
+    ));
+    for bad in [
+        json!({"permille": {"value": 0, "at": at}}),
+        json!({"percent": {"value": 1, "at": at}}),
+        json!({"permille": {"value": 10, "at": at}, "femtofarads": {"value": 250, "at": at}}),
+    ] {
+        assert!(with(Some(bad.clone())).is_err(), "{bad}");
+    }
+}
