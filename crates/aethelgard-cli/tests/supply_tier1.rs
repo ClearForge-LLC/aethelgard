@@ -127,6 +127,53 @@ fn pins(s: &Value, side: &str) -> Vec<Value> {
     s[side].as_array().unwrap().clone()
 }
 
+/// `AET-WO-4202` (ruled (a), 21:05Z): each resistor a `power.loads` row of
+/// Sentinel-03 names is the part its row describes, read from the emitted
+/// copper: one pad on `VDD_3V3`, the other on the net it pulls up. The
+/// emitter numbers straps and pull-ups in the order it draws them, so a part
+/// leaving renumbers every later one (U2's SDO strap was R5), and a row left
+/// on the old number counts another part; the supply gate refuses only a
+/// sink no row names, never a row on the wrong part.
+#[test]
+fn each_load_row_s_resistor_is_the_part_its_row_describes() {
+    // The rows' own descriptions: the I2C pull-ups (3.465 V / 2.2 kOhm, then
+    // / 10 kOhm), the flash's WP and HOLD pull-ups (its pins' leakage), and
+    // the 3.3 V regulator's feedback divider (3.465 V / (105 + 46.4) kOhm).
+    let described = [
+        ("R1", "/I2C_SDA"),
+        ("R2", "/I2C_SCL"),
+        ("R3", "/EXT_SDA"),
+        ("R4", "/EXT_SCL"),
+        ("R6", "/U4_WP"),
+        ("R7", "/U4_HOLD"),
+        ("R20", "/U11_FB"),
+    ];
+    let rows: Vec<String> = s03()["power"]["loads"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|l| l["reference"].as_str())
+        .filter(|r| r.starts_with('R'))
+        .map(str::to_owned)
+        .collect();
+    assert_eq!(rows, described.map(|(r, _)| r));
+    let text = fs::read_to_string(s03_board()).unwrap();
+    let tree = aethelgard_eda::strict::board(&text).unwrap();
+    for (reference, net) in described {
+        let fp = tree
+            .root()
+            .all("footprint")
+            .find(|fp| fp.field("Reference").unwrap() == Some(reference))
+            .unwrap_or_else(|| panic!("{reference} is on the board"));
+        let mut nets: Vec<&str> = fp
+            .all("pad")
+            .filter_map(|pad| pad.one("net").unwrap().and_then(|n| n.last()))
+            .collect();
+        nets.sort_unstable();
+        assert_eq!(nets, [net, "VDD_3V3"], "{reference}");
+    }
+}
+
 /// A specification with no drop limit is not judged: no `supplies` key,
 /// so its verdict's bytes are as before.
 #[test]
