@@ -200,16 +200,21 @@ The solved fixtures were re-derived by `solve` (`hwdef` ×3: only the spec sha25
 
 ### §1.7 The ledger
 
-Nine rows (`svd-hal` `register_fields`, `cli` `ledger.rs`); the reference ledger goes from 289 to 298 rows.
+Twelve rows (`svd-hal` `register_fields`, `cli` `ledger.rs`); the reference ledger goes from 289 to 301 rows.
 
 | Row | Access | Class |
 |---|---|---|
 | `PWR.CR3.SCUEN` = 0, `.LDOEN` = 1, `.BYPASS` = 0 | written (read-modify-write) | `independent-rule`; ignored by the stock model |
 | `PWR.D3CR.VOS` = 2 | written (whole word) | `independent-rule`; ignored by the stock model |
+| `PWR.CR3.RES[7:3]`, `RES[23:10]`, `RES[31:27]`, run-time | written back as read (a new row kind, `Write::KeptReserved`: the bits no header field names, derived from the header) | `independent-rule`: `PwrRule` and the Kani clause hold them to the value read |
 | `PWR.D3CR.VOSRDY` = 0 | written (whole word; the bit is read-only, but every field of a whole-word write has a row) | `independent-rule` |
 | `PWR.CSR1.ACTVOSRDY` = 1, `PWR.D3CR.VOSRDY` = 1 | polled (`@reset`, the `D2CKRDY` precedent) | `silicon-only` |
 | `FLASH.ACR.LATENCY` = 7, `.WRHIGHFREQ` = 3 | depended on at reset | `silicon-only` |
 
+- **Not predicted (§0.3 missed three rows); CI found it.** The PR's first CI run failed `twin_tier2::every_bit_the_reference_writes_is_covered_by_a_ledger_row`: the `CR3` read-modify-write writes reserved bit 6 back as read (rev V's 1), and no row covered it. The test's own instance map also lacked `pwr`.
+  - The fix adds to the ledger and leaves the test's arithmetic alone: the reserved runs now have rows, and the test learned the instance name.
+  - Nothing outside the ledger moved: no board, ELF, digest, acknowledgement, FAB-NOTES golden or bench-row sheet.
+  - **For the architect:** a reserved bit in the ledger is a new row kind. Overrule it before READY if the ledger should not carry reserved bits. Then the firmware would have to write them other than as read, against RM0433 p. 308, or the test would have to exempt them.
 - Each `silicon-only` register is acknowledged by name in every specification that acknowledges: `examples/sentinel-01.json`, `sentinel-01-minimal.json`, and the `four-layer`, `sentinel-01-bench` and `sentinel-03` fixtures.
 - The bench rows gain `PWR.CSR1` (`ACTVOSRDY`) and `FLASH.ACR` (`LATENCY`, `WRHIGHFREQ`). `PWR.D3CR.VOSRDY@reset` is not a bench row, because its written row is judged; B-2 reads `D3CR` whole.
 
@@ -421,7 +426,7 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
 - **`cargo test --workspace --all-targets` (tier 1)** in the image, with the target inside the repository, as CI runs it, at `2d9ab149`: **2,332 passed and 1 failed.**
   - The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: the committed bench package is `main`'s, until the dispatch's artifact is committed (§2.2).
   - After `main` `52a2d62e` (`3303b`) merged and the boards were re-blessed, `svd-hal` and the IR passed on the host. The final run is §7.
-- **Tier 2:** none run locally beyond §2's sweep. **No tier-2 test was added**, so `TIER2_MIN` is unchanged (the architect's 00:10Z rule).
+- **Tier 2:** none run locally before the first push, beyond §2's sweep, and CI found the ledger gap (§1.7). After the fix, all of `twin_tier2` ran in the image (§7). **No tier-2 test was added**, so `TIER2_MIN` is unchanged (the architect's 00:10Z rule).
 - **`ci/test-weights.tsv`:** no row added. No new test exceeds 60 s: the PWR harness proves in about 1 s.
 - **Reduction pass (diff), by a fresh subagent proposing and the builder applying:** −18 net (about −27 of code and tests, and +9 of four `belt-and-suspenders:` labels on the deliberate `PWR` copies) · 6 duplicates removed:
   - one `hclk` formula for three copies;
