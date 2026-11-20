@@ -5991,6 +5991,50 @@ mod tests {
         assert!(slept.is_some());
     }
 
+    /// `AET-WO-2305` §1.2, §5 (a baseline under another firmware or
+    /// scenario): the undisturbed boot is the droop's own prepared boot
+    /// with its resets taken out. Everything before the schedule is the same
+    /// command for command (the firmware, the platform, the models, the
+    /// cold writes, the levels, the stimuli), and so are the reads after
+    /// it; with no bound the droop composes no probe.
+    #[test]
+    fn the_undisturbed_boot_is_the_droops_own_without_its_resets() {
+        let image = image();
+        let resets = bor3();
+        let droop = plan(&image, &resets);
+        let mut undisturbed = plan(&image, &[]);
+        undisturbed.recovery_bound_ns = None;
+        let (d, u) = (droop.commands(), undisturbed.commands());
+        let hook = crate::anchor::boot_word_hook(0x2000_0000, &[]);
+        let before_d = d.split("emulation RunFor").next().unwrap();
+        let before_u = u.split(&format!("{hook}; ")).next().unwrap();
+        assert_eq!(before_d, before_u);
+        assert!(
+            before_d.contains("sysbus LoadELF @/w/firmware.elf"),
+            "{before_d}"
+        );
+        let after = |c: &str| {
+            c.split("echo \"AETHELGARD-BOOT-BEGIN\"")
+                .nth(1)
+                .unwrap()
+                .to_owned()
+        };
+        assert_eq!(after(&d), after(&u));
+        assert!(!u.contains("machine Reset") && !u.contains("AETHELGARD-PROBE"));
+        let mut unbounded = plan(&image, &resets);
+        unbounded.recovery_bound_ns = None;
+        let c = unbounded.commands();
+        assert!(
+            c.contains("AETHELGARD-RELEASE-0") && !c.contains("AETHELGARD-PROBE"),
+            "{c}"
+        );
+        assert!(
+            probes_in("AETHELGARD-RELEASE-0\n", false, &unbounded)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     #[test]
     fn a_probe_is_read_only_between_its_own_whole_line_markers() {
         let image = image();

@@ -424,6 +424,18 @@ mod tests {
         );
     }
 
+    /// `AET-WO-2305` §1.2, ruled: the margin is one quantum, no wider, and
+    /// the bound and the probe are the instant plus it, and the release,
+    /// the nudge and the bound; an overflow is no bound.
+    #[test]
+    fn the_recovery_bound_is_the_undisturbed_boot_plus_one_quantum() {
+        assert_eq!(RECOVERY_MARGIN_NS, 100_000);
+        assert_eq!(recovery_bound(19_522_270), Some(19_622_270));
+        assert_eq!(probe_ns(1_231_850, 19_622_270), Some(20_854_130));
+        assert_eq!(recovery_bound(u64::MAX), None);
+        assert_eq!(probe_ns(u64::MAX - 5, 0), None);
+    }
+
     /// `AET-WO-2305` §1.3: the identity read's lines first, then only the
     /// same device's later steps, in order and whole.
     #[test]

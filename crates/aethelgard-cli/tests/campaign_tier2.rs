@@ -587,8 +587,9 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
             Record::RailCrossing { .. }
                 | Record::ResetRendered { .. }
                 | Record::FirmwareObserved { .. }
+                | Record::RecoveryBound { .. }
         )),
-        "the tolerated droop has no rail crossing, reset or firmware observation: {tolerated:?}"
+        "the tolerated droop has no rail crossing, reset, recovery bound or firmware observation: {tolerated:?}"
     );
     let Some(Record::BootObserved {
         instructions_expected,
@@ -685,8 +686,25 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     else {
         unreachable!()
     };
+    // `AET-WO-2305` §1.2: the bound is the same boot's undisturbed boot
+    // word (25,700 ns, measured in `spike/2305`) and one quantum, and the
+    // probe is the release, its nudge and the bound: 1,231,690 + 10 +
+    // 125,700.
+    let bound: Vec<&Record> = bor3
+        .iter()
+        .filter(|r| matches!(r, Record::RecoveryBound { .. }))
+        .collect();
     assert_eq!(
-        *at_ns, 1_331_690,
+        bound,
+        [&Record::RecoveryBound {
+            boot_word_ns: Some(25_700),
+            margin_ns: 100_000,
+            bound_ns: Some(125_700),
+        }],
+        "the bor3 droop archives its recovery bound once"
+    );
+    assert_eq!(
+        *at_ns, 1_357_400,
         "the firmware is observed at the predicted time after the release"
     );
     assert_eq!(
