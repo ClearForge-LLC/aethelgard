@@ -215,7 +215,21 @@ TIER2_GATES_PLACEHOLDER
 - **`outline_tier1::a_reseeded_placement_is_deterministic_and_name_free`** (tier 1, 0.7 s): the forward turn, placed on seed 1, gives the same bytes twice, and the same name-free placement under 5 order-only renamings.
 - **`each_size_sample_…`** pins sizes 2 and 6 at their outlines, and size 8's least-over figures.
 
-MUTANTS_PLACEHOLDER
+### 4.5 Mutants [measured, `spike/1317/harness/mutants.sh`]
+
+Each is one replacement in the final `pcb.rs`, judged by `outline_tier1` whole (debug, host, 4 threads):
+
+| Mutant | Result | Failing tests |
+|---|---|---|
+| none (control) | 11/11 pass | — |
+| M1 `RESEEDS = 0` (the fix reverted: `main`'s behaviour) | **killed** | the slice, the reseed test, the turned IMU, the size samples |
+| M2 the seed ignored (every attempt is seed 0) | **killed** | the same four |
+| M3 the most-over attempt reported instead of the least | **killed** | the size samples (size 8's pinned figures) |
+| M4 ties in overrun go to the later seed | **survives** | — |
+| M5 a fit is not kept (the loop runs on past it) | **killed** | the same four as M1 |
+
+- **M4 survives** because no measured refusal has two attempts with exactly equal overruns. Size 8's nine attempts all differ, and so do the 60 × 60 test's.
+- The earlier-seed tie rule is a stated choice that keeps the refusal deterministic. It is not held by a test. Constructing a tie would need a hand-built design, so it is left as a finding (F6), not a test written to kill a mutant.
 
 ## 5. Adversarial pass (§5, full)
 
@@ -253,6 +267,7 @@ MUTANTS_PLACEHOLDER
   - `outline_tier1`'s size test now emits sizes 2 and 6 with the eight-rung ladder: 23 s alone on the host. The forward turn also emits.
   - In tier 2, `board_tier2::each_size_sample_…` now runs every gate on sizes 2 and 6. Its weight row is 1.5 s, from when all three were refused.
   - `ci/test-weights.tsv` and `ci/colocate.tsv` (`outline_tier1` 152 s) are outside this fence unless the plan's guard asks. CI_PLACEHOLDER
+- **F6. The tie rule in the least-over choice is untested** (mutant M4 survives, §4.5).
 - **F5. A board refused under a bound now costs nine placements before the refusal** (the 60 × 60 test, size 8): about 0.3 s in release.
 
 ## 7. Reduction pass
