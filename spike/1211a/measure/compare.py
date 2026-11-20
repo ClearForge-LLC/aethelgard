@@ -17,7 +17,7 @@ from topology_v14 import migrate  # noqa: E402  (the rule, written once)
 base, after = sys.argv[1], sys.argv[2]
 O = collections.OrderedDict
 HEX = re.compile(r"[0-9a-f]{64}")
-out = O(files=0, moved=[], hash_lines=O(), notes=[])
+out = O(files=0, moved=[], hash_lines=O())
 
 
 def load(p):
