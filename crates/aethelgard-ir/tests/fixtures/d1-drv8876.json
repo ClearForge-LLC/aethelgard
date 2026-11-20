@@ -224,7 +224,8 @@
       "track_width_um": 200,
       "via_drill_um": 300,
       "via_diameter_um": 600
-    }
+    },
+    "drawn": false
   },
   "net_classes": [],
   "diff_pairs": [],

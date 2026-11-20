@@ -14,6 +14,8 @@
   CRCW0603_F_K's worst error is above VREF+'s minimum, VDD_3V3's 3135 mV low edge
   (AdcFullScaleExceeded). The spike judged 3.15 V against the 3.3 V nominal. Both refusals are kept
   as tests (pin_devices.rs) on the spike's values.
+- each declares `board.drawn: false` (AET-WO-1210's spec 21): a pin device has no emitter arm until
+  1211d, so it is declared only on a specification that draws no board (PartNotDrawable otherwise);
 - D1 and D2 keep every other value, page and pin of the spike.
 Usage: python3 -I make.py REPO VERSION"""
 import collections, json, sys
@@ -40,12 +42,14 @@ dev["analog"][0] = a
 a["full_scale"] = O(milliamps=1900)
 a["adc_resolution_bits"] = 12
 a["transfer"]["current_output"]["reservoir"] = O(reference="C1", part="GCM188R71H104KA57")
+d1["board"]["drawn"] = False
 json.dump(d1, open(f"{out}/d1-drv8876.json", "w"), indent=2)
 open(f"{out}/d1-drv8876.json", "a").write("\n")
 
 d2 = load("d2-drv8833.json")
 d2["schema_version"] = version
 device(d2["pin_devices"][0], None)
+d2["board"]["drawn"] = False
 json.dump(d2, open(f"{out}/d2-drv8833.json", "w"), indent=2)
 open(f"{out}/d2-drv8833.json", "a").write("\n")
 print("d1, d2 at", version)

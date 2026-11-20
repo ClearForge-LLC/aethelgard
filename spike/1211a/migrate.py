@@ -28,7 +28,8 @@ for rel in files:
         p = m.get("pwm")
         if p is None:
             continue
-        assert "idle" not in p and "resolution_ps" not in p, rel
+        if "idle" in p or "resolution_ps" in p:
+            continue  # declared already (a merge kept it, or a 1211a fixture)
         p["idle"] = collections.OrderedDict(pulse_us=p["pulse_min_us"])
         p["resolution_ps"] = 1_000_000
         n += 1

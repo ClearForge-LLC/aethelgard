@@ -728,3 +728,16 @@ fn an_idle_pulse_of_the_whole_period_is_spelled_twice() {
     motor(&mut v, "SERVO1")["pwm"]["idle"] = json!({"pulse_us": 19_999});
     spec(&v).validate().unwrap();
 }
+
+/// `AET-WO-1210`'s rule 3: no emitter arm draws a pin device until
+/// `AET-WO-1211d`, so D1 and D2 declare `board.drawn: false`; on a drawn
+/// board the device is `PartNotDrawable`.
+#[test]
+fn a_pin_device_on_a_drawn_board_is_not_drawable() {
+    let arms = ["BME280"];
+    spec(&d1()).drawable_parts(&arms).unwrap();
+    let mut v = d1();
+    v["board"].as_object_mut().unwrap().remove("drawn");
+    let e = spec(&v).drawable_parts(&arms).unwrap_err();
+    assert_eq!((e.kind(), e.path()), ("PartNotDrawable", Some("pin_devices[0].part")));
+}

@@ -207,6 +207,7 @@
     }
   ],
   "board": {
+    "drawn": false,
     "copper_layers": 2,
     "layers": [
       {
