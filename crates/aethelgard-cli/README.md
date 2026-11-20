@@ -912,7 +912,7 @@ A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit cod
  "specification_sha256":"<64 hex>","topology_sha256":"<64 hex>","files":{"board/Cargo.lock":"<64 hex>",…},
  "against":"identical","elf_sha256":"<64 hex>","rise_times":"computed from declared values",
  "gates":[{"gate":"erc","verdict":"pass","exit_code":0,"tool_version":"10.0.7","uid_boundary":true,"input_sha256":"<64 hex>","findings":[]},…,
-          {"gate":"prove","harness":"proofs::every_valid_sequence","verdict":"pass",…,"harness_provenance":"generated","cover_count":9,"findings":[]},…],
+          {"gate":"prove","harness":"proofs::every_valid_sequence_i2c1","verdict":"pass",…,"harness_provenance":"generated","cover_count":6,"findings":[]},…],
  "campaign":[{"scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"run_id":"<32 hex>","state_sequence_hash":"<64 hex>"}],
  "findings":[]}
 ```

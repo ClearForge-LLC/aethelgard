@@ -1,0 +1,10 @@
+2026-11-19T20:02:10+00:00 before sentinel-01-bench prove:every_valid_sequence free -g available=39
+2026-11-19T20:22:35+00:00 before sentinel-01-bench prove:i2c1_transfer_is_bounded_and_ordered free -g available=35
+2026-11-19T20:23:20+00:00 before sentinel-01-bench prove:i2c2_transfer_is_bounded_and_ordered free -g available=38
+2026-11-19T20:23:34+00:00 before sentinel-01-bench prove:spi1_transfer_is_bounded_and_ordered free -g available=37
+2026-11-19T20:23:54+00:00 before sentinel-01-bench prove:spi1_transfer_refuses_too_many_frames free -g available=38
+2026-11-19T20:24:03+00:00 before sentinel-01-bench prove:reset_clock_is_ok_exactly_at_reset free -g available=38
+2026-11-19T20:24:06+00:00 before sentinel-01-bench prove:usart1_start_writes_the_solved_values free -g available=38
+2026-11-19T20:24:18+00:00 before sentinel-01-bench prove:flash_option_status_is_one_read free -g available=39
+2026-11-19T20:42:10+00:00 before sentinel-01-bench verify free -g available=39
+2026-11-19T21:02:30+00:00 before sentinel-01-bench verify free -g available=37

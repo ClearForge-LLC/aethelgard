@@ -1,0 +1,11 @@
+2026-11-19T20:27:32+00:00 before logger-spi-only-cap generate free -g available=41
+2026-11-19T20:27:34+00:00 before logger-spi-only-cap prove:every_valid_sequence free -g available=41
+2026-11-19T20:35:20+00:00 before logger-spi-only-cap prove:spi1_transfer_is_bounded_and_ordered free -g available=45
+2026-11-19T20:35:36+00:00 before logger-spi-only-cap prove:spi1_transfer_refuses_too_many_frames free -g available=46
+2026-11-19T20:35:42+00:00 before logger-spi-only-cap prove:spi2_transfer_is_bounded_and_ordered free -g available=46
+2026-11-19T20:35:58+00:00 before logger-spi-only-cap prove:spi2_transfer_refuses_too_many_frames free -g available=45
+2026-11-19T20:36:05+00:00 before logger-spi-only-cap prove:reset_clock_is_ok_exactly_at_reset free -g available=46
+2026-11-19T20:36:08+00:00 before logger-spi-only-cap prove:usart1_start_writes_the_solved_values free -g available=46
+2026-11-19T20:36:16+00:00 before logger-spi-only-cap prove:flash_option_status_is_one_read free -g available=46
+2026-11-19T20:54:24+00:00 before logger-spi-only-cap generate free -g available=41
+2026-11-19T20:54:32+00:00 before logger-spi-only-cap verify free -g available=41

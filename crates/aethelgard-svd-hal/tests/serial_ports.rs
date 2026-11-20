@@ -652,10 +652,13 @@ fn what_the_generator_cannot_write_is_refused() {
 /// `PUPDR` written whole by `split`). Re-taken at `AET-WO-4211`: the flash is
 /// `nrnd`, so each file with a header gains its one `LIFECYCLE NRND` line, and
 /// nothing else moves (`Cargo.lock` and `firmware/Cargo.lock` carry no header).
-/// Re-taken at `AET-WO-4240v`, which moves every board on purpose (the
-/// supply and VOS Scale 2 first, `Pwr`, `Scale2` taken by `reset_clock`, the
-/// PWR proofs): `main.rs`, `board.rs` and `proofs.rs` were `ff451c44…8d2e`,
-/// `59f194d1…c792` and `e693dcba…18df`; nothing else moved.
+/// Re-taken at `AET-WO-3303b` with `AETHELGARD_PRINT_DIGESTS=1`: the schedule is
+/// proved in parts on every board with two or more, so only `src/proofs.rs`
+/// moves.
+/// Re-taken at `AET-WO-4240v` (after `3303b`), which moves every board on
+/// purpose (the supply and VOS Scale 2 first, `Pwr`, `Scale2` taken by
+/// `reset_clock`, the PWR proofs): `main.rs`, `board.rs` and `proofs.rs` were
+/// `ff451c44…8d2e`, `59f194d1…c792` and `f34b4e0d…c837`; nothing else moved.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -695,7 +698,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "c0713a7ebeffb94819bcd1c3b770350267df3931f235e63235282e96dc135106",
+        "e82185075cc522dd538ce66e9b43e8f21629afa15c292079463e227c7ccc6608",
     ),
 ];
 

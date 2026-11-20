@@ -1171,7 +1171,27 @@ mod tier2 {
         }
     }
 
-    const HARNESS: &str = "proofs::every_valid_sequence";
+    /// The schedule harnesses of the board crate at `dir`: the whole one, or
+    /// its parts on a board with two or more (`AET-WO-3303b` §1.2).
+    fn schedule_harnesses(dir: &Path) -> Vec<String> {
+        let proofs = fs::read_to_string(dir.join("src/proofs.rs")).unwrap();
+        let names: Vec<String> = proofs
+            .lines()
+            .filter_map(|l| l.strip_prefix("fn every_valid_sequence"))
+            .map(|l| {
+                format!(
+                    "proofs::every_valid_sequence{}",
+                    l.split('(').next().unwrap()
+                )
+            })
+            .collect();
+        assert!(
+            !names.is_empty(),
+            "no schedule harness in {}",
+            dir.display()
+        );
+        names
+    }
 
     /// The re-gate runs, by the proposed specification's sha256: each distinct
     /// specification is judged once.
@@ -1329,24 +1349,24 @@ mod tier2 {
             drc["verdict"], "pass",
             "DRC with schematic parity passes the proposed specification's board"
         );
-        {
+        for harness in schedule_harnesses(&dir.join("gen/board")) {
             let _one = ONE_PROOF.lock().unwrap_or_else(|e| e.into_inner());
             let v = ok(&[
                 "prove",
                 "--crate",
                 "gen/board",
                 "--harness",
-                HARNESS,
+                &harness,
                 "--spec",
                 "proposed-spec.json",
             ]);
             assert_eq!(
                 v["verdict"], "pass",
-                "the proposed specification's board crate is proved"
+                "the proposed specification's board crate is proved: {harness}"
             );
             assert_eq!(
                 v["harness_provenance"], "generated",
-                "the proof ran the generated harness"
+                "the proof ran the generated harness: {harness}"
             );
         }
         // The firmware generated with the crate, built as the seeded set's is.
