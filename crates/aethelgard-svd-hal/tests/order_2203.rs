@@ -226,10 +226,13 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `BrownOut` gained `clock_acr` (the HSE bring-up's `FLASH_ACR`, `None` on
 /// this board); with `, clock_acr: None` taken out of its text it is
 /// `221f6b59…6d70` exactly (measured).
+/// `firmware/src/main.rs` moved in `AET-WO-4240b` by `4240v` F2 alone (ruled
+/// Q2): every `enable_*` call passes the `Scale2` token (`424d86d2…d26d`
+/// before); the ELF of every null board is unchanged (measured).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "424d86d2cc6a61aefe9fbc9a0e46ce334a5dd1ad08d8ca6749015d5647acd26d",
+        "a6265034cb65aeda040b2abaa65bb64896327b9476be6cc1886d37a0f4891076",
     ),
     (
         "platform",

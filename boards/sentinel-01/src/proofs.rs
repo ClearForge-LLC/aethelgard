@@ -617,14 +617,14 @@ fn every_valid_sequence_i2c1() {
             0 => {
                 kani::assume(gpiob.is_some());
                 img.running = 0;
-                let pins = rcc.enable_gpiob(&mut img, gpiob.take().unwrap()).split(&mut img);
+                let pins = rcc.enable_gpiob(&mut img, gpiob.take().unwrap(), scale2).split(&mut img);
                 pb6 = Some(pins.pb6);
                 pb7 = Some(pins.pb7);
             }
             1 => {
                 kani::assume(i2c1.is_some());
                 img.running = 1;
-                i2c1_clocked = Some(rcc.enable_i2c1(&mut img, i2c1.take().unwrap()));
+                i2c1_clocked = Some(rcc.enable_i2c1(&mut img, i2c1.take().unwrap(), scale2));
             }
             2 => {
                 kani::assume(pb6.is_some());
@@ -1073,7 +1073,7 @@ fn every_valid_sequence_spi1() {
             0 => {
                 kani::assume(gpioa.is_some());
                 img.running = 0;
-                let pins = rcc.enable_gpioa(&mut img, gpioa.take().unwrap()).split(&mut img);
+                let pins = rcc.enable_gpioa(&mut img, gpioa.take().unwrap(), scale2).split(&mut img);
                 pa0 = Some(pins.pa0);
                 pa5 = Some(pins.pa5);
                 pa6 = Some(pins.pa6);
@@ -1082,7 +1082,7 @@ fn every_valid_sequence_spi1() {
             1 => {
                 kani::assume(spi1.is_some() && kernels.is_some());
                 img.running = 1;
-                spi1_clocked = Some(rcc.enable_spi1(&mut img, spi1.take().unwrap(), kernels.as_ref().unwrap()));
+                spi1_clocked = Some(rcc.enable_spi1(&mut img, spi1.take().unwrap(), scale2, kernels.as_ref().unwrap()));
             }
             2 => {
                 kani::assume(pa0.is_some());
@@ -1231,11 +1231,11 @@ fn i2c1_transfer_is_bounded_and_ordered() {
     let clock = rcc.reset_clock(&mut img, &scale2);
     kani::assume(clock.is_ok());
     let clock = clock.unwrap();
-    let gpiob = rcc.enable_gpiob(&mut img, board.gpiob).split(&mut img);
+    let gpiob = rcc.enable_gpiob(&mut img, board.gpiob, scale2).split(&mut img);
     let pb6 = gpiob.pb6.into_i2c1_scl(&mut img);
     let pb7 = gpiob.pb7.into_i2c1_sda(&mut img);
     let mut bus = rcc
-        .enable_i2c1(&mut img, board.i2c1)
+        .enable_i2c1(&mut img, board.i2c1, scale2)
         .init::<i2c1_speed::Standard100k, _>(&mut img, &clock, pb6, pb7);
     let mut spy = I2c1Spy { stage: 0, isr_reads: 0, bytes_written: 0 };
     let (wl, rl): (usize, usize) = (kani::any(), kani::any());
@@ -1415,14 +1415,14 @@ fn spi1_transfer_is_bounded_and_ordered() {
     let clock = rcc.reset_clock(&mut img, &scale2);
     kani::assume(clock.is_ok());
     let clock = clock.unwrap();
-    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split(&mut img);
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa, scale2).split(&mut img);
     let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
     let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
     let pa0 = gpioa.pa0.into_output(&mut img);
     let kernels = rcc.select_spi_kernels(&mut img, &clock);
     let mut bus = rcc
-        .enable_spi1(&mut img, board.spi1, &kernels)
+        .enable_spi1(&mut img, board.spi1, scale2, &kernels)
         .init(&mut img, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let devices = [Spi1Device::U4];
     let pick: usize = kani::any();
@@ -1493,14 +1493,14 @@ fn spi1_transfer_refuses_too_many_frames() {
     let clock = rcc.reset_clock(&mut img, &scale2);
     kani::assume(clock.is_ok());
     let clock = clock.unwrap();
-    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa).split(&mut img);
+    let gpioa = rcc.enable_gpioa(&mut img, board.gpioa, scale2).split(&mut img);
     let pa5 = gpioa.pa5.into_spi1_sck(&mut img);
     let pa7 = gpioa.pa7.into_spi1_mosi(&mut img);
     let pa6 = gpioa.pa6.into_spi1_miso(&mut img);
     let pa0 = gpioa.pa0.into_output(&mut img);
     let kernels = rcc.select_spi_kernels(&mut img, &clock);
     let mut bus = rcc
-        .enable_spi1(&mut img, board.spi1, &kernels)
+        .enable_spi1(&mut img, board.spi1, scale2, &kernels)
         .init(&mut img, &clock, pa5, pa7, pa6, Spi1Selects { pa0 });
     let devices = [Spi1Device::U4];
     let pick: usize = kani::any();
@@ -1672,13 +1672,13 @@ fn usart1_start_writes_the_solved_values() {
     let board = Board::take().unwrap();
     let mut rcc = board.rcc;
     let scale2 = scale2_token(board.pwr);
-    let gpioa = rcc.enable_gpioa(&mut spy, board.gpioa).split(&mut spy);
+    let gpioa = rcc.enable_gpioa(&mut spy, board.gpioa, scale2).split(&mut spy);
     let pa9 = gpioa.pa9.into_usart1_tx(&mut spy);
     let pa10 = gpioa.pa10.into_usart1_rx(&mut spy);
     let clock = rcc.reset_clock(&mut spy, &scale2);
     kani::assume(clock.is_ok());
     let clock = clock.unwrap();
-    let usart = rcc.enable_usart1(&mut spy, board.usart1);
+    let usart = rcc.enable_usart1(&mut spy, board.usart1, scale2);
     let _port = usart.configure(&mut spy, &clock, pa9, pa10);
     kani::assert(spy.n == 4, "USART1's bring-up did not write it exactly 4 times");
     kani::assert(spy.writes[0] == (0x0c, 0x0000022c), "USART1 write 1 is not BRR = 0x0000022c");
