@@ -19,8 +19,8 @@ use sha2::{Digest, Sha256};
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
-    self, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN, SerialCapture,
-    SerialFraming, realized_ns, split_pin, step_index,
+    self, BatterySag, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN,
+    SerialCapture, SerialFraming, realized_ns, split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -29,7 +29,7 @@ use crate::replay::State;
 /// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
 /// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override. A
 /// file may use only what its version admits.
-pub const SCENARIO_VERSIONS: [u32; 3] = [1, 2, 3];
+pub const SCENARIO_VERSIONS: [u32; 4] = [1, 2, 3, 4];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
 pub const MAX_OVERRIDES: usize = 32;
@@ -169,6 +169,17 @@ struct RawOverride {
     spi_device_absent: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     serial_rx_open: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    battery_sag: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    rail_out_of_band: Option<serde_json::Value>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+struct RawBatterySag {
+    series_milliohms: u64,
+    start_ns: u64,
 }
 
 #[derive(Deserialize)]
@@ -246,7 +257,7 @@ macro_rules! object_only {
     )*};
 }
 
-object_only!(RawOverride, RawScenario, RawDroop);
+object_only!(RawOverride, RawScenario, RawDroop, RawBatterySag);
 
 /// One scenario file, parsed and checked.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -294,7 +305,39 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         droop,
         spi_device_absent,
         serial_rx_open,
+        battery_sag,
+        rail_out_of_band,
     } = raw;
+    let alone = |key: &str, others: bool| {
+        if others {
+            Err(schema(format!(
+                "a {key} override is exactly {{{key}: ...}}"
+            )))
+        } else {
+            Ok(())
+        }
+    };
+    let rest = |a: bool, b: bool| {
+        a || b
+            || bus.is_some()
+            || net.is_some()
+            || pull_up_ohms.is_some()
+            || max_capacitance_femtofarads.is_some()
+            || line_held_low.is_some()
+            || droop.is_some()
+            || spi_device_absent.is_some()
+            || serial_rx_open.is_some()
+    };
+    if let Some(b) = battery_sag {
+        alone("battery_sag", rest(false, rail_out_of_band.is_some()))?;
+        return battery_sag_from(b).map(Override::BatterySag);
+    }
+    if let Some(d) = rail_out_of_band {
+        alone("rail_out_of_band", rest(false, false))?;
+        return Ok(Override::RailOutOfBand {
+            domain: text(d, "rail_out_of_band")?,
+        });
+    }
     let others = bus.is_some()
         || net.is_some()
         || pull_up_ohms.is_some()
@@ -358,7 +401,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent} or {serial_rx_open}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent}, {serial_rx_open}, {battery_sag} or {rail_out_of_band}"
                 .to_owned(),
         )),
     }
@@ -414,6 +457,30 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
         source_milliohms: narrow(raw.source_milliohms),
         load_milliamps: narrow(raw.load_milliamps),
         bor_level: u8::try_from(raw.bor_level).expect("bounded above"),
+    })
+}
+
+fn battery_sag_from(v: serde_json::Value) -> Result<BatterySag, ScenarioError> {
+    let raw: RawBatterySag =
+        serde_json::from_value(v).map_err(|e| schema(format!("battery_sag: {e}")))?;
+    for (key, lo, hi, v) in [
+        (
+            "series_milliohms",
+            1,
+            crate::battery::SERIES_MILLIOHMS_MAX,
+            raw.series_milliohms,
+        ),
+        ("start_ns", 1, crate::battery::START_NS_MAX, raw.start_ns),
+    ] {
+        if !(lo..=hi).contains(&v) {
+            return Err(schema(format!(
+                "battery_sag `{key}` is not from {lo} to {hi}: {v}"
+            )));
+        }
+    }
+    Ok(BatterySag {
+        series_milliohms: u32::try_from(raw.series_milliohms).expect("bounded above"),
+        start_ns: raw.start_ns,
     })
 }
 
@@ -561,6 +628,9 @@ fn target(o: &Override) -> (u8, &str) {
         Override::Droop(_) => (4, ""),
         Override::SpiDeviceAbsent { reference } => (5, reference),
         Override::SerialRxOpen { port } => (6, port),
+        // One battery sag per scenario; refused as combined before this.
+        Override::BatterySag(_) => (7, ""),
+        Override::RailOutOfBand { domain } => (8, domain),
     }
 }
 
@@ -654,6 +724,36 @@ impl Scenario {
                 "an open serial RX line needs schema_version 3".to_owned(),
             ));
         }
+        let sags = overrides
+            .iter()
+            .filter(|o| matches!(o, Override::BatterySag(_)))
+            .count();
+        let v4_only = sags > 0
+            || overrides
+                .iter()
+                .any(|o| matches!(o, Override::RailOutOfBand { .. }));
+        if v4_only && raw.schema_version < 4 {
+            return Err(schema(
+                "a battery sag and a rail out of band need schema_version 4".to_owned(),
+            ));
+        }
+        // §1.6: two sags, or a sag with a droop, interact in ways the chain
+        // does not model.
+        let droops = overrides
+            .iter()
+            .filter(|o| matches!(o, Override::Droop(_)))
+            .count();
+        if sags > 1 || (sags == 1 && droops > 0) {
+            return Err(ScenarioError::new(
+                crate::battery::REFUSED,
+                Some(&raw.name),
+                "combined: more than one battery_sag, or a battery_sag with a droop, in one scenario; their interaction is not modelled".to_owned(),
+            ));
+        }
+        // §1.7: one rail out of band, rendered by its consumers' absences and
+        // nothing else (adversarial 1 and 3), so every clause judges it.
+        check_rail_out_of_band(&overrides)
+            .map_err(|m| ScenarioError::new(RAIL_REFUSED, Some(&raw.name), m.to_owned()))?;
         if expect_counts.len() > MAX_EXPECTED {
             return Err(schema(format!(
                 "a scenario expects at most {MAX_EXPECTED} counts"
@@ -684,6 +784,22 @@ impl Scenario {
             overrides,
             expect_counts,
             sha256: Sha256::digest(bytes).into(),
+        })
+    }
+
+    /// The scenario's battery sag, if it declares one.
+    pub fn battery_sag(&self) -> Option<&BatterySag> {
+        self.overrides.iter().find_map(|o| match o {
+            Override::BatterySag(b) => Some(b),
+            _ => None,
+        })
+    }
+
+    /// The rail the scenario holds out of its band, if it declares one.
+    pub fn rail_out_of_band(&self) -> Option<&str> {
+        self.overrides.iter().find_map(|o| match o {
+            Override::RailOutOfBand { domain } => Some(domain.as_str()),
+            _ => None,
         })
     }
 
@@ -765,7 +881,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             | Record::SerialPortSolved { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
-            Record::RailDeclared { .. } => 6,
+            Record::RailDeclared { .. } | Record::BatterySagDeclared { .. } => 6,
             Record::RailCrossing { .. }
             | Record::ResetRendered { .. }
             | Record::FirmwareObserved { .. } => 7,
@@ -803,7 +919,14 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         return Err("a run holds exactly one scenario, topology, boot and verdict");
     }
     if count_rank(1) > 1 || count_rank(6) > 1 {
-        return Err("a run holds at most one declared rail and one set of expected counts");
+        return Err(
+            "a run holds at most one declared rail or battery sag and one set of expected counts",
+        );
+    }
+    // The scenario's own shape before any join: a rail out of band names
+    // the consumers it renders (`AET-WO-2304b` §1.7).
+    if let Record::Scenario { overrides, .. } = &records[0] {
+        check_rail_out_of_band(overrides)?;
     }
     check_joins(records)?;
     let booted = records.iter().any(|r| {
@@ -1122,6 +1245,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             );
         }
     }
+    check_battery_sag_records(records, overrides)?;
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
         if any_severity(kind) != want {
@@ -1444,6 +1568,122 @@ fn check_droop_records(
         (UNRECOVERED_FINDING, unrecovered),
         (BELOW_TOLERANCE_FINDING, u64::from(floor < tolerance_floor)),
     ])
+}
+
+/// Kind 31 against its scenario (`AET-WO-2304b` §1.9), re-judged from its
+/// own fields with the same function the runner used
+/// ([`crate::battery::check_battery_sag`]): the sag and its declaration come
+/// together and agree; every refusal clause, the static operating point,
+/// the binding floor, and the deck's solved minimum, which must lie at or
+/// above every floor and within [`crate::battery::SOLVE_TOLERANCE_UV`] of
+/// the static point. A record any clause would have refused is refused.
+fn check_battery_sag_records(
+    records: &[Record],
+    overrides: &[Override],
+) -> Result<(), &'static str> {
+    let sag = overrides.iter().find_map(|o| match o {
+        Override::BatterySag(b) => Some(b),
+        _ => None,
+    });
+    let declared = records
+        .iter()
+        .find(|r| matches!(r, Record::BatterySagDeclared { .. }));
+    // §1.6 combined, judged again from the scenario's own record.
+    let sags = overrides
+        .iter()
+        .filter(|o| matches!(o, Override::BatterySag(_)))
+        .count();
+    if sags > 1 || (sags == 1 && overrides.iter().any(|o| matches!(o, Override::Droop(_)))) {
+        return Err("a battery sag is combined with another sag or a droop");
+    }
+    let (sag, declared) = match (sag, declared) {
+        (None, None) => return Ok(()),
+        (Some(s), Some(d)) => (s, d),
+        _ => return Err("a battery sag override and its declaration do not come together"),
+    };
+    let Record::BatterySagDeclared {
+        sag: declared_sag,
+        v_open_microvolts,
+        healthy_milliohms,
+        sinks,
+        capacitance_picofarads,
+        static_microvolts,
+        solved_minimum_microvolts,
+        binding,
+    } = declared
+    else {
+        unreachable!("matched above");
+    };
+    if declared_sag != sag {
+        return Err("the declared battery sag is not the scenario's");
+    }
+    let chain = crate::battery::SagChain {
+        v_open_microvolts: *v_open_microvolts,
+        healthy_milliohms: *healthy_milliohms,
+        sinks: sinks.clone(),
+        capacitance_picofarads: *capacitance_picofarads,
+    };
+    let at = crate::battery::check_battery_sag(sag, &chain, TWIN_MAX_VIRTUAL_NS)
+        .map_err(|_| "a battery sag's declaration is one its checks refuse")?;
+    if at != *static_microvolts {
+        return Err("a battery sag's static operating point is not the one its fields give");
+    }
+    if crate::battery::binding(sinks).map(|k| &k.name) != Some(binding) {
+        return Err("a battery sag's binding floor is not its highest");
+    }
+    let floor = sinks
+        .iter()
+        .map(record::SagSink::floor_microvolts)
+        .max()
+        .unwrap_or(0);
+    if *solved_minimum_microvolts < floor
+        || solved_minimum_microvolts.abs_diff(at) > crate::battery::SOLVE_TOLERANCE_UV
+    {
+        return Err(
+            "a battery sag's solved minimum is below a floor, or not its static operating point",
+        );
+    }
+    Ok(())
+}
+
+/// The refusal of a rail out of band (`AET-WO-2304b` §1.7), one kind with a
+/// message per clause.
+pub const RAIL_REFUSED: &str = "RailOutOfBandRefused";
+
+/// A rail out of band is rendered through the compositions the scenario
+/// lists beside it (`AET-WO-2304b` §1.7, K1): one rail, at least one
+/// consumer's absence, a `serial_rx_open` or a `spi_device_absent`, and
+/// nothing else faulted with it. Which consumers the specification gives is
+/// the runner's check; the records carry no specification (`RUL-16`). The
+/// parser and replay both apply it.
+pub fn check_rail_out_of_band(overrides: &[Override]) -> Result<(), &'static str> {
+    let rails = overrides
+        .iter()
+        .filter(|o| matches!(o, Override::RailOutOfBand { .. }))
+        .count();
+    if rails == 0 {
+        return Ok(());
+    }
+    if rails > 1 {
+        return Err(
+            "more than one rail out of band in one scenario: their interaction is not modelled",
+        );
+    }
+    let rendered = |o: &Override| {
+        matches!(
+            o,
+            Override::SerialRxOpen { .. } | Override::SpiDeviceAbsent { .. }
+        )
+    };
+    let only = overrides
+        .iter()
+        .all(|o| rendered(o) || matches!(o, Override::RailOutOfBand { .. }));
+    if !only || !overrides.iter().any(rendered) {
+        return Err(
+            "a rail out of band is not rendered by its consumers' absence alone, or by none",
+        );
+    }
+    Ok(())
 }
 
 /// The motor output findings the boot judge gives (`AET-WO-4300a`).
@@ -2890,10 +3130,15 @@ pub fn tools_of(records: &[Record]) -> Vec<&'static str> {
     }
     let any = |f: fn(&Record) -> bool| records.iter().any(f);
     let mut tools = vec![ENGINE];
-    if any(|r| line(r) || matches!(r, Record::RailDeclared { .. })) {
+    // Kind 31 carries the deck's solved minimum, so the bridge and ngspice
+    // both judged it (`AET-WO-2304b` §1.9).
+    fn sag(r: &Record) -> bool {
+        matches!(r, Record::BatterySagDeclared { .. })
+    }
+    if any(|r| line(r) || sag(r) || matches!(r, Record::RailDeclared { .. })) {
         tools.push(BRIDGE);
     }
-    if any(|r| line(r) || matches!(r, Record::RailCrossing { .. })) {
+    if any(|r| line(r) || sag(r) || matches!(r, Record::RailCrossing { .. })) {
         tools.push(NGSPICE);
     }
     tools.push(RENODE);

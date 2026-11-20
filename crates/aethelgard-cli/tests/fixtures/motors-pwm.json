@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -279,7 +279,8 @@
         "rate_hz": 400,
         "pulse_min_us": 1000,
         "pulse_max_us": 2000
-      }
+      },
+      "esc": null
     },
     {
       "label": "MOTOR2",
@@ -289,7 +290,8 @@
         "rate_hz": 400,
         "pulse_min_us": 1000,
         "pulse_max_us": 2000
-      }
+      },
+      "esc": null
     },
     {
       "label": "MOTOR3",
@@ -299,7 +301,8 @@
         "rate_hz": 400,
         "pulse_min_us": 1000,
         "pulse_max_us": 2000
-      }
+      },
+      "esc": null
     },
     {
       "label": "MOTOR4",
@@ -309,7 +312,8 @@
         "rate_hz": 400,
         "pulse_min_us": 1000,
         "pulse_max_us": 2000
-      }
+      },
+      "esc": null
     }
   ],
   "net_classes": [],

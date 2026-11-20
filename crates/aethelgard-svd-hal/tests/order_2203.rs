@@ -179,18 +179,22 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and the platform's clock block removed, `main.rs` and the two platforms
 /// are `126afcb9…8d60`, `6f7b2db1…dd35` and `fc22c2c0…ccfa` exactly
 /// (measured); the boot image did not move.
+/// Moved again by `AET-WO-2304b` (specification 18, which adds no key this
+/// document's devices or platform read): `main.rs` and the two platforms,
+/// which carry the specification's sha256; the boot image did not move
+/// (measured).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "5c770e1cf302929f14433a44c5f203f5fa36f36035615e9cf5dc9fc5d3604722",
+        "aa59544ec619451c74b3027b1e093f92e21d9b840594d9d360ad180b090fd7b1",
     ),
     (
         "platform",
-        "88ab17b6132d5c960d5c1f1696c9ef9ea31769a9f3f2a2a964d0ef7d42b2ce6d",
+        "701d03ebc4c3bdfe55792fb0ebe5dada13f465af8f6fbe09871aa414af245853",
     ),
     (
         "platform faulted",
-        "2a8151a84feb178c95edfd257af8d51fa3c1f7804df36276b82128ca74ddde84",
+        "35a1f8d60089db17f98f4d4e8f88dd7ec8ec0f144ac99b9ad4596b401da6b00f",
     ),
     (
         "boot image",

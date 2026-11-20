@@ -270,6 +270,12 @@ pub const SPI_CONDITION: &str = "on SCK and MOSI, each device pin at its part's 
 /// covers.
 pub const SPI_CONDITION_BESIDE_DECLARED: &str = "on SCK and MOSI, each device pin not counted at a declared value at its part's cited maximum pin capacitance (parts table); the MCU's own pin drives the line and is not counted (DS12117 Table 149's C is the external load)";
 
+/// The cause beside a line over its declared bound where the specification
+/// routes with no capacitance ladder (`AET-WO-1314b`, `4600` F18): stated
+/// exactly when [`crate::schematic::ladder_runs`] is false, so a board whose
+/// specification declares `fab_tolerances` never carries it.
+pub const LADDER_NOT_RUN: &str = "the router's capacitance ladder runs only when `board.stackup.fab_tolerances` is declared, and this specification declares none, so its lines were routed once with no regard to their bounds";
+
 /// What the bound assumes of each pin counted at a declared value
 /// (`AET-WO-4220b`, the `AET-WO-4220` D10 ruling), stated once per declaring
 /// device beside [`conditions`], as [`OFFBOARD`] is, so a board with no
