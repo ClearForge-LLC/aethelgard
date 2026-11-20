@@ -65,12 +65,12 @@
   "compiled": true,
   "failing": [
    "the_pin_devices_own_nets_are_listed",
-   "d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration",
+   "a_strap_missing_from_the_declaration_is_refused_never_floated",
    "d1_is_refused_for_cvm2_alone",
+   "an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused",
    "each_bridge_output_reaches_its_declared_connector",
    "a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail",
-   "an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused",
-   "a_strap_missing_from_the_declaration_is_refused_never_floated"
+   "d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration"
   ]
  },
  {
