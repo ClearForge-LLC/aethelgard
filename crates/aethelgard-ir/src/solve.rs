@@ -673,10 +673,18 @@ fn port_on(
 /// as it calls the timing checks, and [`crate::clock::judge_tree`] judges
 /// what it returns.
 pub fn solved_clock(mcu: &crate::Mcu) -> Result<SolvedClock, IrValidationError> {
+    match &mcu.hse {
+        None => Ok(SolvedClock::reset()),
+        Some(hse) => hse_clock(hse),
+    }
+}
+
+/// [`solved_clock`] for a declared HSE. `SolvedTopology::validate` re-solves a
+/// topology's own copy of the declaration with it (`AET-WO-4240a` F3), so a
+/// path that reads only a topology refuses a derived field edited away from
+/// its declaration (`HseCopyNotSolved`).
+pub(crate) fn hse_clock(hse: &crate::clock::Hse) -> Result<SolvedClock, IrValidationError> {
     use crate::clock::{HseRefusal, SolvedHse, declared_budget, source_hz};
-    let Some(hse) = &mcu.hse else {
-        return Ok(SolvedClock::reset());
-    };
     let budget = declared_budget(hse)?;
     let (num, den) = source_hz(hse)?;
     let unreachable = || {

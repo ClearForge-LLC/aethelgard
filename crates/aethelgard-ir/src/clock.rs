@@ -254,6 +254,12 @@ pub enum HseRefusal {
     PllWordsUndecodable { reason: String },
     #[error("the solved HSE clock disagrees with its own declaration or words: {reason}")]
     HseClockMismatch { reason: String },
+    /// `AET-WO-4240a` F3, built in `4240b`: a topology's `clock` is not what
+    /// the solver gives for the HSE declaration it carries.
+    #[error(
+        "the topology's clock is not the one its own HSE declaration solves to ({field} differs): a path that reads only a topology re-solves the copy and refuses an edited field"
+    )]
+    HseCopyNotSolved { field: &'static str },
 }
 
 impl HseRefusal {
@@ -274,6 +280,7 @@ impl HseRefusal {
             Self::PllOutputDisabled { .. } => "PllOutputDisabled",
             Self::PllWordsUndecodable { .. } => "PllWordsUndecodable",
             Self::HseClockMismatch { .. } => "HseClockMismatch",
+            Self::HseCopyNotSolved { .. } => "HseCopyNotSolved",
         }
     }
 }

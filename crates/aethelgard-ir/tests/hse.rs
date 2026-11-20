@@ -424,6 +424,34 @@ fn the_judge_refuses_each_tree_by_name() {
     assert_eq!(t.validate().map_err(|e| e.kind()), Err("UnsupportedClock"));
 }
 
+/// `AET-WO-4240a` F3 (`4240b` §1.3): a topology's copied declaration. Words
+/// the judge holds (3.2 MHz × 120 = 384 MHz, ÷ 6 = 64 MHz exactly, `pll1_q`
+/// 64 MHz) but which are not the solver's choice for the declaration the
+/// topology carries are refused by name, as are the budget's sides moved
+/// together with the declaration's pull while its other fields stay.
+#[test]
+fn a_topology_whose_clock_is_not_its_declaration_s_is_refused() {
+    let words =
+        |h: &mut aethelgard_ir::clock::SolvedHse| h.pll1divr = 1 << 24 | 5 << 16 | 5 << 9 | 119;
+    let mut t = solved(spec_json(crystal(|_| {}), 420_000));
+    words(t.clock.hse.as_mut().unwrap());
+    assert_eq!(clock::judge_tree(&t.clock).map(|_| ()), Ok(()));
+    assert_eq!(judged(words), Err("HseCopyNotSolved"));
+    // The declaration and the budget edited together, the words left: the
+    // budget follows the declaration, so only the re-solve could tell, and it
+    // agrees; this is the residue a topology alone cannot close.
+    assert_eq!(
+        judged(|h| {
+            let Hse::Crystal(c) = &mut h.declared else {
+                panic!()
+            };
+            c.pull_ppm = 1;
+            (h.fast_ppm, h.slow_ppm) = (73, 73);
+        }),
+        Ok(())
+    );
+}
+
 /// The VOS limits are judged at the HSE's own fastest (`AET-WO-4240a`
 /// §1.5): an external clock declared ±20 % runs `pclk` past Scale 2's 75
 /// MHz at its fastest, which the HSI's +1.5 % never does.

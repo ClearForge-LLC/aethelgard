@@ -4370,6 +4370,31 @@ impl SolvedTopology {
             return Err(E::UnsupportedClock);
         }
         clock::judge_tree(&self.clock)?;
+        // The copy (`AET-WO-4240a` F3, `4240b` §1.3): `generate` re-solves from
+        // the specification, and every path that reads only a topology
+        // (`generate hwdef --topology`, `check pinout`) comes through here. It
+        // re-solves the clock from the declaration the topology carries and
+        // requires the topology's every derived field to equal it. The judge
+        // above shares no word-choice code with the solver (`4240a` A6, ruled
+        // (a)); this is the solver's own check of its copy. What it cannot see:
+        // a declaration edited together with every field derived from it, which
+        // is another specification, bound only by `specification_sha256`.
+        if let Some(h) = &self.clock.hse {
+            let again = solve::hse_clock(&h.declared)?;
+            if again != self.clock {
+                let ours = again.hse.as_ref();
+                let field = if ours.map(clock::SolvedHse::budget) != Some(h.budget()) {
+                    "the budget"
+                } else if ours.map(|o| [o.pllckselr, o.pllcfgr, o.pll1divr])
+                    != Some([h.pllckselr, h.pllcfgr, h.pll1divr])
+                {
+                    "the PLL words"
+                } else {
+                    "a clock field"
+                };
+                return Err(E::Hse(clock::HseRefusal::HseCopyNotSolved { field }));
+            }
+        }
         let mismatch = |id: &str| E::MotorOutputMismatch { id: id.to_owned() };
         for (net, a) in &self.assignments {
             let timer = a.peripheral.starts_with("TIM");
