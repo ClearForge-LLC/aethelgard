@@ -87,7 +87,7 @@ fn every_solved_fixture_s_controllers_hold_under_the_independent_rules() {
             spi += 1;
         }
         for (p, timing) in &t.i2c_timings {
-            let f = silicon::check_i2c(p, timing);
+            let f = silicon::check_i2c_on(t.clock.budget(), p, timing);
             assert!(f.holds, "{name} {p}: {f:#?}");
             i2c += 1;
         }
