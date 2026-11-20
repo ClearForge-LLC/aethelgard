@@ -55,6 +55,7 @@
 
 - **The final tree at 12 shards:** `tools` green at 20.4 min. Most of the drop from the counted runs' 29.8–38.9 is `3303b`'s split; this order's like-for-like figure is the counted runs. Shard tests ran 340–734 s on the 816 s plan.
 - That run lists 2,514 tests and 2,507 names. `TIER2_MIN` is exact at 190: 3303b added no tier-2 test, and this order adds none.
+- **`main` 03d89554 (4202) merged:** `TIER2_MIN` is 191 on `main`, and this order adds no tier-2 test, so it stays 191. Planned in the pinned image on the merged tree: 2,511 names, 627 s per shard, P1 silent, guard ok.
 - **Second refit, because the REFIT RULE fired on the merged tree.** Slowest minus fastest shard was 6.7 and 6.3 min on runs 44644135555 and 44647140730, more than 6 minutes on two runs in a row.
   - Shard 3 was slowest both times, by 0.8 and 0.2 min over the next, so roadmap §6's 3-minute clause did not fire.
   - Every row and block was re-weighed by rule 5 from those two runs alone. The heaviest falls were `supply_tier1` 599 → 302, `outline_tier1` 392 → 152 and `attribute_seeded` 479 → 380; `four_layer_fab_tier2` rose 582 → 625. 17 rows under 0.5 s were dropped and 7 added.
@@ -84,7 +85,7 @@
 - **What this changes:**
   - No block now exceeds the mean, so 12 is balanced under §6's 10 % rule as written.
   - The floor that made 16 buy nothing at the §1.3 stop (`four_layer_fab_tier2`'s block) is gone. At 16 the plan would save about 200 s of test time per run, for four more jobs a run.
-  - `ci/SHARDS` stays 12 as ruled. REFIT RULE 4 says to change the count only from a new measurement of the same kind; that measurement is the architect's call (§5, F8).
+  - `ci/SHARDS` stays 12, ruled again on F8 (2026-11-20 01:10 UTC): 16 would buy about 200 s for 4 more jobs a run against a ceiling every builder shares, so it was not re-measured.
 
 ## Reduction pass (diff, a fresh subagent's proposals, `~/.cache/aet-1911/reduction`)
 
@@ -325,7 +326,10 @@ Reduction pass (diff): −51 net · 5 duplicates removed · 6 dead paths removed
 - **F6: `bench-package` is now the longest job at 12 and 16 shards** (28.5–37.9 min). It is not a required check, but it sets "all done".
 - **F7: `four_layer_fab_tier2`'s block is the floor for any shard count.** Splitting it would undo `1910` D3's shared `--fab-out` package: each shard holding one of its tests would pay the shared verify itself, as `ci/colocate.tsv` records for `against_fab_tier2` (about 575 s more machine time). That is a separate work order if wanted.
 
-- **F8: after 3303b, the shard count's premise moved.** The plan is now balanced at every count, and the measured knee at 12 came from a block that no longer exists. If wanted, re-measure lone 12 against 16 on the merged tree, by REFIT RULE 4.
+- **F8: after 3303b, the shard count's premise moved.** The plan is now balanced at every count, and the measured knee at 12 came from a block that no longer exists.
+  - **Ruled (architect, bus, 2026-11-20 01:10 UTC): `ci/SHARDS` stays 12, and 16 is not re-measured.**
+  - The 60-job ceiling is shared across every builder's PRs, and 16 shards would cost 4 more jobs a run for about 200 s of test time: 612 s planned against 816 at the time.
+  - A later refit can revisit it.
 
 ## 6. Decisions needed
 
