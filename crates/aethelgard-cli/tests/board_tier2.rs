@@ -1875,7 +1875,7 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         serde_json::json!({
             "judged": 0,
             "nothing_in_scope": true,
-            "nothing_in_scope_reason": "no witnessed device: the boot reads no device's identity, so each recovery is judged by the boot word alone"
+            "nothing_in_scope_reason": "no witnessed device: the boot reads no modelled device's identity (an unmodelled one's is not witnessable), so each recovery is judged by the boot word alone"
         }),
         "{run}"
     );

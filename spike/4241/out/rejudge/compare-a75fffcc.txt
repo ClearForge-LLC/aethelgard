@@ -1,0 +1,108 @@
+STOP sim dshot: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 2272->362363 (+3600910 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 1555)], [('22020000', 1575)])]
+STOP sim ext: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (4 hooked); boot word 1952471->2312559 (+3600880 ns); not_witnessable count=1 total_ns=3600920
+    main kinds []
+    branch kinds []
+    moved [0, 1, 2, 4]: [(0, [('22020000', 2353)], [('22020000', 2371)]), (1, [('22020000', 2538)], [('22020000', 2558)]), (2, [('22020000', 2727)], [('22020000', 2747)]), (4, [('22020000', 1952448)], [('22020000', 1952465)])]
+= sim imu: verdict None->None; other kinds equal=True; new rows 0->0; modelled STEP instants equal=True (0 hooked); boot word None->None (+None ns); not_witnessable count=None total_ns=None
+STOP sim min: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 2662->362761 (+3600990 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 2102)], [('22020000', 2127)])]
+= sim own: verdict None->None; other kinds equal=True; new rows 0->0; modelled STEP instants equal=True (0 hooked); boot word None->None (+None ns); not_witnessable count=None total_ns=None
+STOP sim pow: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 7800183->8160274 (+3600910 ns); not_witnessable count=1 total_ns=3600920
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 1605)], [('22020000', 1627)])]
+STOP sim pwm: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 2272->362363 (+3600910 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 1555)], [('22020000', 1575)])]
+STOP sim s01: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 2905->363004 (+3600990 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 2345)], [('22020000', 2370)])]
+STOP sim s03: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (3 hooked); boot word 3912839->4392948 (+4801090 ns); not_witnessable count=1 total_ns=4801180
+    main kinds []
+    branch kinds []
+    moved [0, 1, 7]: [(0, [('22020000', 6845)], [('22020000', 6849)]), (1, [('22020000', 7093)], [('22020000', 7101)]), (7, [('22020000', 3910887)], [('22020000', 3910899)])]
+STOP sim sd96: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 3166->363264 (+3600980 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 2449)], [('22020000', 2472)])]
+STOP sim serial: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (1 hooked); boot word 4800->364899 (+3600990 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0]: [(0, [('22020000', 4240)], [('22020000', 4265)])]
+STOP sim shaped: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (4 hooked); boot word 3907326->4267407 (+3600810 ns); not_witnessable count=1 total_ns=3601040
+    main kinds []
+    branch kinds []
+    moved [8]: [(8, [('22020000', 3905934)], [('22020000', 3905932)])]
+= sim spionly: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=True (0 hooked); boot word 1613->361658 (+3600450 ns); not_witnessable count=1 total_ns=3600410
+STOP sim two: verdict pass->pass; other kinds equal=True; new rows 1->1; modelled STEP instants equal=False (2 hooked); boot word 1938->362031 (+3600930 ns); not_witnessable count=1 total_ns=3600710
+    main kinds []
+    branch kinds []
+    moved [0, 1]: [(0, [('22020000', 1219)], [('22020000', 1229)]), (1, [('22020000', 1382)], [('22020000', 1402)])]
+= camp dshot/motors-dshot600-droop: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp dshot/motors-dshot600: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+MOVED camp dshot summary
+= camp ext/ext-baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp ext/ext-held-low-sda: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+MOVED camp ext summary
+MOVED camp imu summary
+= camp min/droop-bor3: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp min/droop-tolerated: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp min/pullup-2k2: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp min/pullup-47k: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/cap-220p-2k2: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/cap-390p-sda-2k2: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/held-low-scl: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/held-low-sda: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/pullup-100k: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/pullup-10k: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/pullup-3k3: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp min/pullup-3k9: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/pullup-4k7: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp min/serial-rx-dead: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp min/serial-rx-open-console: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp min/spi-absent-u4: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E2 -> electrical/E2)
+MOVED camp min summary
+= camp own summary
+= camp pow/baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp pow/battery-sag-tolerated: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp pow/vdd1v8-out-of-band: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E2 -> electrical/E2)
+MOVED camp pow summary
+= camp pwm/motors-pwm: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+MOVED camp pwm summary
+= camp s01/droop-bor3: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s01/pullup-2k2: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s01/pullup-3k3: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s01/serial-rx-open-console: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp s01/spi-absent-u4: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E2 -> electrical/E2)
+MOVED camp s01 summary
+= camp s03/baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s03/battery-sag-tolerated: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s03/droop-bor3: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s03/droop-tolerated: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp s03/held-low-sda: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+= camp s03/serial-rx-open-console: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp s03/serial-rx-open-crsf: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp s03/serial-rx-open-mavlink: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp s03/spi-absent-u4: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E2 -> electrical/E2)
+= camp s03/spi-absent-u5: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E2 -> electrical/E2)
+= camp s03/vdd5v-out-of-band: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+MOVED camp s03 summary
+= camp serial/serial-four-open-crsf: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp serial/serial-four-open-mavlink: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E3 -> electrical/E3)
+= camp serial/serial-four: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+MOVED camp serial summary
+= camp shaped/shaped-baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+MOVED camp shaped summary
+= camp spionly/spionly-baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+MOVED camp spionly summary
+= camp two/two-baseline: pass/True -> pass/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (none/N1 -> none/N1)
+= camp two/two-held-low-sda: fail/True -> fail/True; other kinds equal=True; new rows 0->0; line moved ['trace_bytes']; replay moved ['artifacts', 'trace_bytes']; attribute moved [] (electrical/E1 -> electrical/E1)
+MOVED camp two summary
+stops: 23

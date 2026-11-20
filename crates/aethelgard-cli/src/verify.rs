@@ -2418,6 +2418,36 @@ mod tests {
         assert!(judged_nothing(&[empty_support], &[]) == vec!["support".to_owned()]);
     }
 
+    /// `AET-WO-4241` §1.3 against `AET-WO-2306`'s fields: an unmodelled
+    /// device's read, named `identity_not_witnessable`, never counts toward
+    /// a gate's `judged`. The boot judges its input whole (1) however many
+    /// reads its line names not witnessable, a boot that names only those is
+    /// still 1 (the boot word, the registers, the PWR are judged), and its
+    /// info rows are no item of the line's own `judged`.
+    #[test]
+    fn a_not_witnessable_read_never_counts_toward_judged() {
+        let ran = |line: Value| Ran {
+            code: 0,
+            lines: vec![line],
+        };
+        let row = json!({"kind": "identity_not_witnessable", "severity": "info", "message": "U3"});
+        let read = json!({"reference": "U3", "status": "timeout_txis", "cost_ns": 3600710});
+        let scope = |line: Value| {
+            serde_json::to_value(gate_report("simulate", None, &ran(line)).scope).unwrap()
+        };
+        let modelled = json!({"verdict": "pass", "findings": [],
+            "boot": {"i2c": [{"reference": "U2"}], "spi": [{"reference": "U4"}]}});
+        let with_one = json!({"verdict": "pass", "findings": [row],
+            "boot": {"i2c": [{"reference": "U2"}], "spi": [{"reference": "U4"}],
+                     "not_witnessable": {"count": 1, "reads": [read], "total_ns": 3600710}}});
+        let only = json!({"verdict": "pass", "findings": [row, row, row],
+            "boot": {"i2c": [], "spi": [],
+                     "not_witnessable": {"count": 3, "reads": [read, read, read], "total_ns": 10802130}}});
+        for line in [modelled, with_one, only] {
+            assert_eq!(scope(line.clone()), json!({"judged": 1}), "{line}");
+        }
+    }
+
     const S1: &str = "examples/sentinel-01-minimal.json";
     const FOUR_LAYER: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
     const BASELINE: &str = "scenarios/sentinel-01/pullup-2k2.json";
