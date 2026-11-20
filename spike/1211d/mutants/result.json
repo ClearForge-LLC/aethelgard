@@ -97,5 +97,14 @@
   "failing": [
    "a_strap_missing_from_the_declaration_is_refused_never_floated"
   ]
+ },
+ {
+  "mutant": "G8 a bridge output on a rail drawn (adversarial #3's guard removed)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "a_bridge_output_on_a_rail_is_refused"
+  ]
  }
 ]
