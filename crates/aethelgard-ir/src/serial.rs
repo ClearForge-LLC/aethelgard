@@ -429,7 +429,7 @@ pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFra
     };
     let budget = clock.budget();
     let fast = off(1_000_000 + u128::from(budget.fast_ppm));
-    let slow = off(1_000_000 - u128::from(budget.slow_ppm));
+    let slow = off(1_000_000u128.saturating_sub(u128::from(budget.slow_ppm)));
     let (hsi_ppm, worse) = if fast > slow {
         (budget.fast_ppm, fast)
     } else {

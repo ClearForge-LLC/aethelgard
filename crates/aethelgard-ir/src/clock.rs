@@ -120,7 +120,9 @@ pub struct HseExternal {
     /// ppm per side, at least 1.
     pub ppm: u32,
     /// Where `ppm` was read: 1–200 bytes of printable ASCII, cited with a
-    /// document number and its revision (F-CITE strict).
+    /// document number and its revision (F-CITE strict). `validate` checks the
+    /// text's form only, as it does `core_supply.source`; whether it names a
+    /// document is the reviewer's to judge (adversarial A8).
     pub source: String,
 }
 
@@ -205,6 +207,17 @@ pub enum HseRefusal {
         max_nano_amps_per_volt: u64,
     },
     #[error(
+        "the HSE's budget is +{fast_ppm}/-{slow_ppm} ppm: a side of 1,000,000 ppm or more is no clock"
+    )]
+    HseBudgetUnbounded { fast_ppm: u64, slow_ppm: u64 },
+    #[error(
+        "mcu.hse.load_caps_femtofarads {caps:?}: {reason} (AN2867 Rev 10 §3.3, pp. 13–14, assumes CL1 = CL2 and the crystal seeing its CL)"
+    )]
+    HseLoadCapsUnfit {
+        caps: [u64; 2],
+        reason: &'static str,
+    },
+    #[error(
         "no PLL1 setting runs sys_ck at exactly 64 MHz from {hz_num}/{hz_den} Hz with a whole-Hz reference strictly inside a PLL1RGE range (`4240` H1, F-RGE)"
     )]
     HseTreeUnreachable { hz_num: u64, hz_den: u64 },
@@ -252,6 +265,8 @@ impl HseRefusal {
             Self::HseLifeBeyondAging { .. } => "HseLifeBeyondAging",
             Self::HseGmCritExceeded { .. } => "HseGmCritExceeded",
             Self::HseTreeUnreachable { .. } => "HseTreeUnreachable",
+            Self::HseBudgetUnbounded { .. } => "HseBudgetUnbounded",
+            Self::HseLoadCapsUnfit { .. } => "HseLoadCapsUnfit",
             Self::PllReferenceNotInsideRange { .. } => "PllReferenceNotInsideRange",
             Self::PllVcoSelectMismatch { .. } => "PllVcoSelectMismatch",
             Self::PllVcoOutOfRange { .. } => "PllVcoOutOfRange",
@@ -383,10 +398,7 @@ pub fn declared_budget(hse: &Hse) -> Result<Budget, IrValidationError> {
             }
             crate::board::source(&e.source, "mcu.hse.source")?;
             in_range(e.hz_num, e.hz_den, EXTERNAL_HZ)?;
-            Ok(Budget {
-                fast_ppm: e.ppm,
-                slow_ppm: e.ppm,
-            })
+            bounded(e.ppm.into(), e.ppm.into())
         }
     }
 }
@@ -429,6 +441,26 @@ pub fn crystal_budget(c: &HseCrystal, row: &power_parts::Row) -> Result<Budget, 
             part: c.part.clone(),
         }));
     };
+    // The capacitors in series, at most the row's CL: the stray capacitance
+    // (`4240c`'s, from `extract`) only adds to them, so a series value over CL
+    // already loads the crystal past the CL its frequency and `Gm_crit` are
+    // stated at (adversarial A3).
+    let [c1, c2] = c.load_caps_femtofarads;
+    let unfit = |reason| {
+        Err(refuse(HseRefusal::HseLoadCapsUnfit {
+            caps: c.load_caps_femtofarads,
+            reason,
+        }))
+    };
+    if c1 != c2 {
+        return unfit("CL1 and CL2 differ");
+    }
+    if u128::from(c1) * u128::from(c2)
+        > u128::try_from(crystal.load_femtofarads.value).unwrap_or(0)
+            * (u128::from(c1) + u128::from(c2))
+    {
+        return unfit("in series they exceed the crystal's CL, before any stray capacitance");
+    }
     let t = row.temperature_celsius.range;
     let (lo, hi) = (c.temperature_celsius.min, c.temperature_celsius.max);
     if lo > hi || i64::from(lo) < t.min || i64::from(hi) > t.max {
@@ -471,11 +503,21 @@ pub fn crystal_budget(c: &HseCrystal, row: &power_parts::Row) -> Result<Budget, 
         .sum::<u64>()
             + u64::from(c.pull_ppm)
     };
-    let ppm = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
-    Ok(Budget {
-        fast_ppm: ppm(side(|r| r.max)),
-        slow_ppm: ppm(side(|r| r.min)),
-    })
+    bounded(side(|r| r.max), side(|r| r.min))
+}
+
+/// A budget whose sides are each under 1,000,000 ppm (adversarial A1: a
+/// deviation of 100 % or more would wrap the checks' `10⁶ − ppm`).
+fn bounded(fast: u64, slow: u64) -> Result<Budget, IrValidationError> {
+    match (u32::try_from(fast), u32::try_from(slow)) {
+        (Ok(fast_ppm), Ok(slow_ppm)) if fast < 1_000_000 && slow < 1_000_000 => {
+            Ok(Budget { fast_ppm, slow_ppm })
+        }
+        _ => Err(refuse(HseRefusal::HseBudgetUnbounded {
+            fast_ppm: fast,
+            slow_ppm: slow,
+        })),
+    }
 }
 
 // ---------------------------------------------------------------- the judge
@@ -543,6 +585,29 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
     }
     if field(h.pllcfgr, 16, 1) == 0 {
         return Err(refuse(HseRefusal::PllOutputDisabled { field: "DIVP1EN" }));
+    }
+    // Every bit the judge does not read must be clear (adversarial A4):
+    // `PLLCKSELR` beyond `PLLSRC` and `DIVM1` (reserved, and PLL2/PLL3's
+    // prescalers, which H1 leaves 0, disabled); `PLLCFGR` beyond `PLL1FRACEN`,
+    // `PLL1VCOSEL`, `PLL1RGE`, `DIVP1EN` and `DIVQ1EN` (`DIVR1EN`, PLL2/PLL3's
+    // fields, reserved); `PLL1DIVR`'s reserved bits 23 and 31 (pp. 399–404).
+    for (register, word, read) in [
+        ("RCC_PLLCKSELR", h.pllckselr, 0x0000_03F3u32),
+        ("RCC_PLLCFGR", h.pllcfgr, 0x0003_000F),
+        ("RCC_PLL1DIVR", h.pll1divr, 0x7F7F_FFFF),
+    ] {
+        if word & !read != 0 {
+            return Err(undecodable(format!(
+                "{register} sets bits {:#010x} the judge does not read",
+                word & !read
+            )));
+        }
+    }
+    // §8.7.13, p. 403: DIVR1 `0000000` is "Not allowed".
+    if field(h.pll1divr, 24, 7) == 0 {
+        return Err(undecodable(
+            "RCC_PLL1DIVR.DIVR1 is 0, \"Not allowed\"".into(),
+        ));
     }
     let divm1 = u64::from(field(h.pllckselr, 4, 6));
     if divm1 == 0 {
@@ -632,6 +697,23 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
         let q = u128::from(field(h.pll1divr, 16, 7)) + 1;
         u64::try_from(vn / (rd * q)).unwrap_or(u64::MAX)
     });
+    // `pll1_q_ck` is SPI1–3's kernel at `SPI123SEL`'s reset (`4240` D6, from
+    // `4240b`): judged against that kernel's limit at VOS Scale 2, at the
+    // HSE's fastest (adversarial A4).
+    if let Some(q) = pll1_q_hz {
+        let fastest_hz = budget.fastest_hz(q);
+        let (limit, cite) = vos::limit_hz(vos::Family::Spi123, vos::Vos::Scale2)
+            .expect("Table 60 gives SPI1-3 a limit at Scale 2");
+        if fastest_hz > limit {
+            return Err(IrValidationError::VosLimitExceeded {
+                clock: "pll1_q_ck (SPI1-3's kernel at SPI123SEL's reset)".into(),
+                fastest_hz,
+                limit_hz: limit,
+                vos: vos::Vos::Scale2,
+                cite: cite.into(),
+            });
+        }
+    }
     let gm = match &h.declared {
         Hse::Crystal(c) => Some(gm_crit(crystal_row(&c.part)?)),
         Hse::External(_) => None,

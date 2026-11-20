@@ -952,10 +952,12 @@ impl Serialize for Mcu {
     }
 }
 
-/// An object only, as [`object_only`]'s. `hse_hz`, the version-19 key `hse`
-/// replaced (`AET-WO-4240a` §1.2), reads as `"hse": null` when it is 0, so a
-/// committed specification moves by its version line alone; any other value
-/// was always refused, and is refused here, as is a key given twice.
+/// An object only, as [`object_only`]'s, read through [`McuWire`]'s derive
+/// so a duplicate key anywhere under `mcu` is refused as before.
+/// `hse_hz`, the version-19 key `hse` replaced (`AET-WO-4240a` §1.2), reads
+/// as `"hse": null` when it is 0, so a committed specification moves by its
+/// version line alone; any other value was always refused, and is refused
+/// here, as is `hse_hz` beside `hse`, and neither.
 impl<'de> Deserialize<'de> for Mcu {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct McuVisitor;
@@ -964,33 +966,60 @@ impl<'de> Deserialize<'de> for Mcu {
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("a Mcu object")
             }
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Mcu, A::Error> {
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Mcu, A::Error> {
                 use serde::de::Error;
-                let mut fields = serde_json::Map::new();
-                while let Some(key) = map.next_key::<String>()? {
-                    let value: serde_json::Value = map.next_value()?;
-                    let (key, value) = if key == "hse_hz" {
-                        if value.as_u64() != Some(0) {
-                            return Err(A::Error::custom(format!(
-                                "mcu.hse_hz is {value}: a crystal frequency was always refused there; declare `mcu.hse`"
-                            )));
-                        }
-                        ("hse".to_owned(), serde_json::Value::Null)
-                    } else {
-                        (key, value)
-                    };
-                    if fields.contains_key(&key) {
+                let w = McuWire::deserialize(MapAccessDeserializer::new(map))?;
+                let hse = match (w.hse, w.hse_hz) {
+                    (Some(hse), None) => hse,
+                    (None, Some(0)) => None,
+                    (None, Some(n)) => {
                         return Err(A::Error::custom(format!(
-                            "duplicate field `{key}` (`hse_hz` is the version-19 spelling of `hse`)"
+                            "mcu.hse_hz is {n}: a crystal frequency was always refused there; declare `mcu.hse`"
                         )));
                     }
-                    fields.insert(key, value);
-                }
-                Mcu::deserialize(serde_json::Value::Object(fields)).map_err(A::Error::custom)
+                    (None, None) => return Err(A::Error::missing_field("hse")),
+                    (Some(_), Some(_)) => {
+                        return Err(A::Error::custom(
+                            "duplicate field `hse` (`hse_hz` is the version-19 spelling of `hse`)",
+                        ));
+                    }
+                };
+                Ok(Mcu {
+                    part: w.part,
+                    supply: w.supply,
+                    hse,
+                    bor_level: w.bor_level,
+                    core_supply: w.core_supply,
+                    supply_source: w.supply_source,
+                    reset_switch: w.reset_switch,
+                    foreign_clock: w.foreign_clock,
+                })
             }
         }
         deserializer.deserialize_map(McuVisitor)
     }
+}
+
+/// The wire form of [`Mcu`]: its fields with each one's own reading, and
+/// `hse` and the version-19 `hse_hz` both optional, so the conversion names
+/// what is missing or doubled.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct McuWire {
+    part: String,
+    supply: String,
+    #[serde(default, deserialize_with = "present")]
+    hse: Option<Option<clock::Hse>>,
+    #[serde(default)]
+    hse_hz: Option<u32>,
+    bor_level: u8,
+    core_supply: CoreSupply,
+    #[serde(deserialize_with = "Option::deserialize")]
+    supply_source: Option<SupplySource>,
+    #[serde(default)]
+    reset_switch: bool,
+    #[serde(default, deserialize_with = "board::present")]
+    foreign_clock: Option<motor::ForeignClock>,
 }
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`

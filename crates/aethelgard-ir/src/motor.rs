@@ -742,7 +742,7 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
     let period_ps = ps(arr1 * psc1);
     let high_ps = ps(ccr * psc1);
     let budget = clock.budget();
-    let slow = kernel * u128::from(1_000_000 - budget.slow_ppm) / 1_000_000;
+    let slow = kernel * u128::from(1_000_000u32.saturating_sub(budget.slow_ppm)) / 1_000_000;
     let fast = (kernel * u128::from(1_000_000 + budget.fast_ppm)).div_ceil(1_000_000);
     let ps_at = |cycles: u128, k: u128| {
         u64::try_from(cycles * 1_000_000_000_000 / k.max(1)).unwrap_or(u64::MAX)

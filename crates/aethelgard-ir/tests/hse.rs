@@ -455,3 +455,107 @@ fn the_hse_object_is_one_mode_and_nothing_else() {
         assert!(serde_json::from_value::<Hse>(bad.clone()).is_err(), "{bad}");
     }
 }
+
+/// Adversarial A1: a budget side of 100 % or more is refused by name, never
+/// a wrapped or panicking `10⁶ − ppm`.
+#[test]
+fn an_unbounded_budget_is_refused_not_a_panic() {
+    for ppm in [1_000_000u64, u64::from(u32::MAX)] {
+        assert_eq!(
+            hse_kind(spec_json(external(8_000_000, 1, ppm as u32), 420_000)),
+            "HseBudgetUnbounded"
+        );
+    }
+    let v = spec_json(crystal(|c| c["pull_ppm"] = json!(u32::MAX)), 420_000);
+    assert_eq!(hse_kind(v), "HseBudgetUnbounded");
+    // Just under: refused by the serial check, by name.
+    let v = refused(spec_json(external(8_000_000, 1, 999_999), 420_000));
+    assert_eq!(v.kind(), "SerialBaudTolerance");
+}
+
+/// Adversarial A2: a key given twice anywhere under `mcu` is refused at
+/// parsing, as on `main`.
+#[test]
+fn a_duplicate_key_under_mcu_is_refused() {
+    let text = spec_json(crystal(|_| {}), 420_000).to_string();
+    for (once, twice) in [
+        (r#""mode":"ldo""#, r#""mode":"ldo","mode":"bypass""#),
+        (r#""pull_ppm":30"#, r#""pull_ppm":30,"pull_ppm":1"#),
+        (
+            r#""supply_source":{"connector":"J91","pin":"1"}"#,
+            r#""supply_source":{"connector":"J91","pin":"1","pin":"3"}"#,
+        ),
+    ] {
+        assert_eq!(text.matches(once).count(), 1, "{once}");
+        let e = serde_json::from_str::<Specification>(&text.replace(once, twice)).unwrap_err();
+        assert!(e.to_string().contains("duplicate field"), "{twice}: {e}");
+    }
+}
+
+/// Adversarial A3: the load capacitors must be equal and, in series, at
+/// most the crystal's CL: stray capacitance only adds to them.
+#[test]
+fn load_caps_that_overload_the_crystal_are_refused() {
+    let caps = |c: Value| spec_json(crystal(move |v| v["load_caps_femtofarads"] = c), 420_000);
+    assert_eq!(
+        hse_kind(caps(json!([100_000, 100_000]))),
+        "HseLoadCapsUnfit"
+    );
+    assert_eq!(hse_kind(caps(json!([18_000, 15_000]))), "HseLoadCapsUnfit");
+    assert_eq!(hse_kind(caps(json!([24_002, 24_002]))), "HseLoadCapsUnfit");
+    // 24 pF and 24 pF are 12 pF in series: CL exactly, with no stray.
+    assert_eq!(parse(caps(json!([24_000, 24_000]))).validate(), Ok(()));
+}
+
+/// Adversarial A4: every bit the judge does not read is clear, `DIVR1` is
+/// not 0, and `pll1_q_ck` is held to SPI1–3's kernel limit at Scale 2.
+#[test]
+fn the_judge_reads_every_bit_of_the_three_words() {
+    assert_eq!(judged(|h| h.pllcfgr |= 1 << 18), Err("PllWordsUndecodable"));
+    assert_eq!(judged(|h| h.pllcfgr |= 1 << 25), Err("PllWordsUndecodable"));
+    assert_eq!(
+        judged(|h| h.pllckselr |= 1 << 2),
+        Err("PllWordsUndecodable")
+    );
+    assert_eq!(
+        judged(|h| h.pllckselr |= 4 << 12),
+        Err("PllWordsUndecodable")
+    );
+    assert_eq!(
+        judged(|h| h.pll1divr |= 1 << 31),
+        Err("PllWordsUndecodable")
+    );
+    assert_eq!(
+        judged(|h| h.pll1divr &= !(0x7F << 24)),
+        Err("PllWordsUndecodable")
+    );
+    // DIVQ1 ÷1: pll1_q_ck is the 256 MHz VCO, over Table 60's 150 MHz.
+    assert_eq!(
+        judged(|h| h.pll1divr = 1 << 24 | 3 << 9 | 79),
+        Err("VosLimitExceeded")
+    );
+}
+
+/// Adversarial A5: an SPI kernel is `hsi_ker_ck` on an HSE board too, so the
+/// VOS rule judges it at the HSI's fastest; the buses at the crystal's.
+#[test]
+fn the_vos_rule_judges_spi_kernels_at_the_hsi_s_fastest() {
+    let mut t = solved(spec_json(crystal(|_| {}), 420_000));
+    t.spi_controllers.insert(
+        "SPI1".into(),
+        serde_json::from_value(json!({"kernel": "per_ck", "kernel_hz": 64_000_000,
+            "declared_hz": 20_000_000, "mbr": 1, "achieved_hz": 16_000_000,
+            "achieved_max_hz": 16_239_744}))
+        .unwrap(),
+    );
+    let v = aethelgard_ir::vos::judge_generated(&t);
+    let fastest = |name: &str| {
+        v.clocks
+            .iter()
+            .find(|c| c.clock == name)
+            .unwrap()
+            .fastest_hz
+    };
+    assert_eq!(fastest("SPI1 kernel"), Some(64_958_976));
+    assert_eq!(fastest("fPCLK1"), Some(64_006_528));
+}
