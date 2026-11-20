@@ -652,6 +652,9 @@ fn what_the_generator_cannot_write_is_refused() {
 /// `PUPDR` written whole by `split`). Re-taken at `AET-WO-4211`: the flash is
 /// `nrnd`, so each file with a header gains its one `LIFECYCLE NRND` line, and
 /// nothing else moves (`Cargo.lock` and `firmware/Cargo.lock` carry no header).
+/// Re-taken at `AET-WO-3303b` with `AETHELGARD_PRINT_DIGESTS=1`: the schedule is
+/// proved in parts on every board with two or more, so only `src/proofs.rs`
+/// moves.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -691,7 +694,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "e693dcba3c9b246246b6351d1eb5e5dc30ec8515476d479d2ca3d6e90c1418df",
+        "f34b4e0d5f3af63020b4e92a2a78dd33a2fd1733d2832025e210f0a0e88bc837",
     ),
 ];
 
