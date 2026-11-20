@@ -327,6 +327,24 @@ fn gm_crit_refuses_the_8_mhz_cl_18_crystal() {
     // 2,021,295.0 nA/V with π exact (`4240` §3.1: 2.021 mA/V).
     assert_eq!(g.nano_amps_per_volt, 2_021_296);
     assert!(!g.holds);
+    // The refusal, on a row of that crystal.
+    let mut row = table.get(PART).unwrap().clone();
+    row.kind = Kind::Crystal(eight);
+    let c: Hse = serde_json::from_value(crystal(|_| {})).unwrap();
+    let Hse::Crystal(c) = c else {
+        panic!("a crystal")
+    };
+    assert_eq!(
+        clock::crystal_budget(&c, &row).unwrap_err().kind(),
+        "HseGmCritExceeded"
+    );
+    assert_eq!(
+        clock::crystal_budget(&c, table.get(PART).unwrap()),
+        Ok(Budget {
+            fast_ppm: 102,
+            slow_ppm: 102
+        })
+    );
     let omitted = power_parts::POWER_PARTS_JSON.replacen(
         "\"c0_max_femtofarads\": {\n            \"value\": 2000,",
         "\"c0_max_femtofarad\": {\n            \"value\": 2000,",
@@ -383,6 +401,16 @@ fn the_judge_refuses_each_tree_by_name() {
         Err("PllOutputDisabled")
     );
     assert_eq!(judged(|h| h.pllckselr &= !0b11), Err("PllWordsUndecodable"));
+    // PLLSRC HSI with words whose every check on the HSE's 16 MHz holds
+    // (3.2 MHz reference, ×60 = 192 MHz VCO) and which decode, on the HSI's
+    // 64 MHz, to exactly 64 MHz (768 MHz ÷ 12): only the source tells.
+    assert_eq!(
+        judged(|h| {
+            h.pllckselr = 5 << 4;
+            h.pll1divr = 1 << 24 | 11 << 16 | 11 << 9 | 59;
+        }),
+        Err("PllWordsUndecodable")
+    );
     assert_eq!(judged(|h| h.pllcfgr |= 1), Err("PllWordsUndecodable"));
     assert_eq!(judged(|h| h.fast_ppm = 72), Err("HseClockMismatch"));
     // DIVP1 ÷2: 128 MHz, which the clock does not state.

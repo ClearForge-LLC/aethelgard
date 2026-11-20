@@ -361,89 +361,25 @@ pub fn gm_crit(row: &power_parts::Crystal) -> GmCrit {
 /// - an external clock: the declared ppm alone, its frequency inside
 ///   DS12117's external-clock range.
 pub fn declared_budget(hse: &Hse) -> Result<Budget, IrValidationError> {
-    let zero = |field| Err(refuse(HseRefusal::HseDeclarationZero { field }));
-    let in_range = |num: u64, den: u64, (min_hz, max_hz, cite): (u64, u64, &'static str)| {
-        let (n, d) = (u128::from(num), u128::from(den));
-        if n < u128::from(min_hz) * d || n > u128::from(max_hz) * d {
-            return Err(refuse(HseRefusal::HseFrequencyOutOfRange {
-                hz_num: num,
-                hz_den: den,
-                min_hz,
-                max_hz,
-                cite,
-            }));
-        }
-        Ok(())
-    };
     match hse {
         Hse::Crystal(c) => {
-            if c.pull_ppm == 0 {
-                return zero("pull_ppm");
-            }
-            if c.life_hours == 0 {
-                return zero("life_hours");
-            }
-            if c.load_caps_femtofarads.contains(&0) {
-                return zero("load_caps_femtofarads");
-            }
-            let row = crystal_row(&c.part)?;
             let table = power_parts::table()?;
-            let t = table
-                .get(&c.part)
-                .map(|r| r.temperature_celsius.range)
-                .expect("crystal_row found it");
-            let (lo, hi) = (c.temperature_celsius.min, c.temperature_celsius.max);
-            if lo > hi || i64::from(lo) < t.min || i64::from(hi) > t.max {
-                return Err(refuse(HseRefusal::HseTemperatureOutsidePart {
+            let row = table.get(&c.part).ok_or_else(|| {
+                refuse(HseRefusal::HsePartNotCrystal {
                     part: c.part.clone(),
-                    min: lo,
-                    max: hi,
-                    part_min: t.min,
-                    part_max: t.max,
-                }));
-            }
-            if i64::from(c.life_hours) > row.aging_hours.value {
-                return Err(refuse(HseRefusal::HseLifeBeyondAging {
-                    part: c.part.clone(),
-                    life_hours: c.life_hours,
-                    aging_hours: row.aging_hours.value,
-                }));
-            }
-            in_range(
-                u64::try_from(row.frequency_hz.value).unwrap_or(0),
-                1,
-                CRYSTAL_HZ,
-            )?;
-            let g = gm_crit(row);
-            if !g.holds {
-                return Err(refuse(HseRefusal::HseGmCritExceeded {
-                    part: c.part.clone(),
-                    gm_crit_nano_amps_per_volt: g.nano_amps_per_volt,
-                    max_nano_amps_per_volt: g.max_nano_amps_per_volt,
-                }));
-            }
-            let side = |pick: fn(&power_parts::Range) -> i64| {
-                [&row.tolerance_ppm, &row.stability_ppm, &row.aging_ppm]
-                    .iter()
-                    .map(|r| pick(&r.range).unsigned_abs())
-                    .sum::<u64>()
-                    + u64::from(c.pull_ppm)
-            };
-            let ppm = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
-            Ok(Budget {
-                fast_ppm: ppm(side(|r| r.max)),
-                slow_ppm: ppm(side(|r| r.min)),
-            })
+                })
+            })?;
+            crystal_budget(c, row)
         }
         Hse::External(e) => {
-            if e.hz_num == 0 {
-                return zero("hz_num");
-            }
-            if e.hz_den == 0 {
-                return zero("hz_den");
-            }
-            if e.ppm == 0 {
-                return zero("ppm");
+            for (field, v) in [
+                ("hz_num", e.hz_num),
+                ("hz_den", e.hz_den),
+                ("ppm", e.ppm.into()),
+            ] {
+                if v == 0 {
+                    return Err(refuse(HseRefusal::HseDeclarationZero { field }));
+                }
             }
             crate::board::source(&e.source, "mcu.hse.source")?;
             in_range(e.hz_num, e.hz_den, EXTERNAL_HZ)?;
@@ -453,6 +389,93 @@ pub fn declared_budget(hse: &Hse) -> Result<Budget, IrValidationError> {
             })
         }
     }
+}
+
+/// A frequency of `num`/`den` Hz inside `(min, max, cite)`, both ends
+/// included.
+fn in_range(
+    num: u64,
+    den: u64,
+    (min_hz, max_hz, cite): (u64, u64, &'static str),
+) -> Result<(), IrValidationError> {
+    let (n, d) = (u128::from(num), u128::from(den));
+    if n < u128::from(min_hz) * d || n > u128::from(max_hz) * d {
+        return Err(refuse(HseRefusal::HseFrequencyOutOfRange {
+            hz_num: num,
+            hz_den: den,
+            min_hz,
+            max_hz,
+            cite,
+        }));
+    }
+    Ok(())
+}
+
+/// A crystal's budget on `row`, the power parts row its `part` names
+/// ([`declared_budget`] passes the embedded table's), each refusal by name.
+pub fn crystal_budget(c: &HseCrystal, row: &power_parts::Row) -> Result<Budget, IrValidationError> {
+    let zero = |field| Err(refuse(HseRefusal::HseDeclarationZero { field }));
+    if c.pull_ppm == 0 {
+        return zero("pull_ppm");
+    }
+    if c.life_hours == 0 {
+        return zero("life_hours");
+    }
+    if c.load_caps_femtofarads.contains(&0) {
+        return zero("load_caps_femtofarads");
+    }
+    let Kind::Crystal(crystal) = &row.kind else {
+        return Err(refuse(HseRefusal::HsePartNotCrystal {
+            part: c.part.clone(),
+        }));
+    };
+    let t = row.temperature_celsius.range;
+    let (lo, hi) = (c.temperature_celsius.min, c.temperature_celsius.max);
+    if lo > hi || i64::from(lo) < t.min || i64::from(hi) > t.max {
+        return Err(refuse(HseRefusal::HseTemperatureOutsidePart {
+            part: c.part.clone(),
+            min: lo,
+            max: hi,
+            part_min: t.min,
+            part_max: t.max,
+        }));
+    }
+    if i64::from(c.life_hours) > crystal.aging_hours.value {
+        return Err(refuse(HseRefusal::HseLifeBeyondAging {
+            part: c.part.clone(),
+            life_hours: c.life_hours,
+            aging_hours: crystal.aging_hours.value,
+        }));
+    }
+    in_range(
+        u64::try_from(crystal.frequency_hz.value).unwrap_or(0),
+        1,
+        CRYSTAL_HZ,
+    )?;
+    let g = gm_crit(crystal);
+    if !g.holds {
+        return Err(refuse(HseRefusal::HseGmCritExceeded {
+            part: c.part.clone(),
+            gm_crit_nano_amps_per_volt: g.nano_amps_per_volt,
+            max_nano_amps_per_volt: g.max_nano_amps_per_volt,
+        }));
+    }
+    let side = |pick: fn(&power_parts::Range) -> i64| {
+        [
+            &crystal.tolerance_ppm,
+            &crystal.stability_ppm,
+            &crystal.aging_ppm,
+        ]
+        .iter()
+        .map(|r| pick(&r.range).unsigned_abs())
+        .sum::<u64>()
+            + u64::from(c.pull_ppm)
+    };
+    let ppm = |v: u64| u32::try_from(v).unwrap_or(u32::MAX);
+    Ok(Budget {
+        fast_ppm: ppm(side(|r| r.max)),
+        slow_ppm: ppm(side(|r| r.min)),
+    })
 }
 
 // ---------------------------------------------------------------- the judge
