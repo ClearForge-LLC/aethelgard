@@ -282,7 +282,12 @@ Each is one replacement in the final `pcb.rs`, judged by `outline_tier1` whole (
 - **F4. Test time.**
   - `outline_tier1`'s size test now emits sizes 2 and 6 with the eight-rung ladder: 23 s alone on the host. The forward turn also emits.
   - In tier 2, `board_tier2::each_size_sample_…` now runs every gate on sizes 2 and 6. Its weight row is 1.5 s, from when all three were refused.
-  - `ci/test-weights.tsv` and `ci/colocate.tsv` (`outline_tier1` 152 s) are outside this fence unless the plan's guard asks. CI_PLACEHOLDER
+  - `ci/test-weights.tsv` and `ci/colocate.tsv` (`outline_tier1` 152 s) are outside this fence unless the plan's guard asks.
+  - Measured on CI run 44698959770 (head 0818621c):
+    - the `outline_tier1` block finished in 199.04 s (shard 9; row 152);
+    - `board_tier2::each_size_sample_…` took about 147 s in shard 8 (row 1.5);
+    - shard 8 was the slowest, at 18 min 56 s, against a planned 660 s.
+  - Every shard was under the 20-minute clause, so the REFIT RULE did not fire and no row was changed. At the next refit: `each_size_sample_…` about 150 s, and `outline_tier1` about 200.
 - **F5. A board refused under a bound now costs nine placements before the refusal** (the 60 × 60 test, size 8): about 0.3 s in release.
 - **F6. The tie rule in the least-over choice is untested** (mutant M4 survives, §4.5).
 - **F7. `crates/aethelgard-eda/README.md` is stale on two points, outside this fence.**
@@ -316,6 +321,6 @@ Reduction pass (diff): −1 line net in code · 1 duplicate removed (spike data)
 | tier 2 in the image | §4.3: the Sentinel-03 fixture, sizes 2/6/8, and the forward turn through every gate |
 | mutants | §4.5: 4 of 5 killed; M4 survives (F6) |
 | `TIER2_MIN` | unchanged: this work order adds no tier-2 test |
-| CI | CI_RUN_PLACEHOLDER |
+| CI | **green on 0818621c**: ci 44698959770 (route, gates, bench-package, tools-build, 12 tools-shards, tools: `tier2_tests_passed=194 floor=194`), engine-image 44698959993, ardupilot-image 44698960237. This READY commit changes FEEDBACK and `spike/` only; its own run is the confirming one |
 
 Reduction pass (diff): −1 line net in code · 1 duplicate removed · 1 dead path removed · 0 protected kept · 0 findings below (§7).
