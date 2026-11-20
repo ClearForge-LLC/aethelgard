@@ -57,7 +57,8 @@ fn table() -> PinTable {
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
     json!({"label": label, "pin": pin, "protocol": "pwm",
-           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null})
+           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000,
+                   "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000}, "esc": null})
 }
 
 fn dshot(label: &str, pin: Option<&str>) -> Value {
@@ -131,7 +132,8 @@ fn a_motor_output_s_timing_is_refused_by_name() {
     m["pwm"] = Value::Null;
     assert_eq!(refused(vec![m]).kind(), "MotorTimingShape");
     let mut m = dshot("M1", None);
-    m["pwm"] = json!({"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000});
+    m["pwm"] = json!({"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
+        "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000});
     assert_eq!(refused(vec![m]).kind(), "MotorTimingShape");
     assert_eq!(refused(vec![pwm("M1", None, 0)]).kind(), "ZeroMotorRate");
     let mut m = pwm("M1", None, 400);
@@ -438,7 +440,9 @@ fn the_solved_motor_output_round_trips_and_keeps_the_declared_timing() {
         Some(PwmTiming {
             rate_hz: 400,
             pulse_min_us: 1000,
-            pulse_max_us: 2000
+            pulse_max_us: 2000,
+            idle: aethelgard_ir::motor::Idle::PulseUs(1000),
+            resolution_ps: 1_000_000,
         })
     );
     let declared: Vec<MotorOutput> = spec(vec![pwm("M1", None, 400)]).motor_outputs;

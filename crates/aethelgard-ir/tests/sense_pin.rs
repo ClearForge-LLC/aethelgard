@@ -128,7 +128,7 @@ fn the_sense_is_never_a_pin_another_net_took() {
         .assignments
         .values()
         .map(|a| a.pin.as_str())
-        .chain(s.gpio.values().map(String::as_str))
+        .chain(s.gpio.values().map(|g| g.pin.as_str()))
         .collect();
     assert!(taken.contains("PA6") && taken.contains("PA0"), "{taken:?}");
     let sense = &s.power.as_ref().unwrap().sense["VBAT_SENSE"];

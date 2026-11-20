@@ -237,7 +237,10 @@ fn basic_solves_in_the_fixed_order_and_validates() {
     assert_eq!(pin_of(&t, "S_MOSI"), "PA7");
     assert_eq!(pin_of(&t, "S_MISO"), "PA6");
     // cs last: the first free unreserved pin in key order.
-    assert_eq!(t.gpio, BTreeMap::from([("U1_CS".into(), "PA0".into())]));
+    assert_eq!(
+        t.gpio,
+        BTreeMap::from([("U1_CS".into(), aethelgard_ir::pin_devices::SolvedGpio::output("PA0", aethelgard_ir::motor::Level::High))])
+    );
 }
 
 #[test]
@@ -261,7 +264,7 @@ fn no_reserved_pin_is_ever_assigned() {
         .assignments
         .values()
         .map(|a| a.pin.as_str())
-        .chain(t.gpio.values().map(String::as_str))
+        .chain(t.gpio.values().map(|g| g.pin.as_str()))
         .collect();
     for pin in RESERVED_PINS {
         assert!(!used.contains(&pin), "{pin} assigned: {used:?}");
@@ -339,7 +342,7 @@ fn hand_values_are_kept() {
     assert_eq!(pin_of(&t, "I_SDA"), "PB9");
     assert_eq!(t.assignments["S_SCK"].peripheral, "SPI3");
     assert_eq!(t.assignments["S_SCK"].alternate_function, 6);
-    assert_eq!(t.gpio["U1_CS"], "PA1");
+    assert_eq!(t.gpio["U1_CS"].pin, "PA1");
 }
 
 #[test]
@@ -348,7 +351,7 @@ fn a_hand_cs_pin_is_not_given_to_a_bus() {
     devs(&mut s).spi[0].cs.pin = Some("PB7".into());
     let t = ok(&s);
     assert_eq!(pin_of(&t, "I_SDA"), "PB9");
-    assert_eq!(t.gpio["U1_CS"], "PB7");
+    assert_eq!(t.gpio["U1_CS"].pin, "PB7");
 }
 
 #[test]

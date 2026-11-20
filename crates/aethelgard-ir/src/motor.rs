@@ -963,6 +963,8 @@ mod tests {
             rate_hz,
             pulse_min_us: lo,
             pulse_max_us: hi,
+            idle: Idle::PulseUs(lo),
+            resolution_ps: 1_000_000,
         }
     }
 
@@ -1059,7 +1061,7 @@ mod tests {
         );
         assert_eq!(
             solve_timing(MotorProtocol::Pwm, Some(&pwm(400, 1000, 2000)), 64_500_000),
-            Err(TimingError::NoMicrosecondTick)
+            Err(TimingError::ResolutionNotDerivable)
         );
     }
 

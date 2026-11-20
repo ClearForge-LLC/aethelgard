@@ -2589,6 +2589,7 @@ mod differential {
             motor_outputs: vec![],
             serial_ports: vec![],
             test_points: vec![],
+            pin_devices: vec![],
         }
     }
 
