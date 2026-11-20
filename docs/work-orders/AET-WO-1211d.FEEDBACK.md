@@ -180,4 +180,27 @@ A fresh Opus reviewer attacked `99ada513`, then `1a7bcf29` (evidence `~/.cache/a
 
 ## 8. Gates, fence, reduction pass
 
-(pending)
+- **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean.
+- **`cargo test --workspace`** at `HEAD` (`main` `adb8f61a` merged, in-tree target, as CI builds it): TESTCOUNT.
+  - The run before it (at `7b8d2c5d`) failed one test: `solved_devices::the_eda_reader_is_exactly_the_schematic` (`RUL-16`: `schematic.rs` and `support.rs` are eda's only readers of declared devices and connectors). The arm now takes the pin devices and the connector nets from `schematic.rs`, as the power tree does (`fbaaf3b7`).
+- **The READY point, all at `fbaaf3b7`:**
+  - the null sweep against `main` `adb8f61a`: identical, 259 files;
+  - D2's four judges in the image: pass, findings `[]`;
+  - D1-stub's ERC, DRC and support: pass;
+  - mutants: 11 of 12 killed.
+- **`TIER2_MIN`:** unchanged. No tier-2 test was added; the image runs are the spike's (`kit/`).
+- **Fence:**
+  - `crates/aethelgard-eda`;
+  - `crates/aethelgard-kicad-lib` (files, `FILES`, `PINS`, both READMEs);
+  - `crates/aethelgard-ir/src/names.rs`, `own_nets` only (ruled Q1);
+  - tests (`cli/tests`: the new tier-1 file plus `emit_tier1`, `parts_arms_tier1`, `strict_fence` and `workspace_shape`'s lists; `eda/tests/own_driver_parts.rs`);
+  - `spike/1211d/`;
+  - this file.
+  No IR schema, solver, generator, twin, workflow or `ci/` file changed, and no committed specification.
+  - The parts rows' symbol and footprint fields were not needed: the arm holds them (§4 proposes moving them into rows).
+- **Reduction pass (diff):** −1 net · 2 duplicates removed · 0 dead paths removed · 2 protected kept · 2 findings below.
+  - Removed: the battery sense's reservoir is now drawn by the one `reservoir` helper the pin device uses (a copy of capacitor + anchor); one pin-number lookup per passive pin, where there were two.
+  - Proof: the null sweep, D2's judges and the 12 mutants re-run after it: no change.
+  - Protected (labelled `belt-and-suspenders:`): the arm's `PinDeviceNotDrawn` for a part with no arm (`design` refuses it first); the duplicate-connection guard (`validate` binds each pin once).
+  - Findings: `KNOWN_PARTS` restates the arm table's two parts (a test holds them together; the CLI's `validate` needs the string); `spike/1211d/kit/img.sh` repeats 4240c's runner, as each spike's does.
+- **Scratch:** `~/.cache/aet-1211d` holds the held drawings, the base binaries, the sweeps, the adversarial kit (`adv/`) and the D4 harness (`d4harness/`, `d4out-*`). The targets are removed at merge.
