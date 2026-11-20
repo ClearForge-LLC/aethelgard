@@ -437,3 +437,14 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
   - one boot-word assertion for two.
 
   Also: 2 dead paths removed (`FlashJudged.vos`, unused `Serialize` derives) · 4 protected kept, now labelled (`PwrFacts`, `VOS_SCALE2_CODE`, `ORACLE_PWR_*`, the ledger's `FLASH_ACR` reset) · 7 findings, F7.
+
+## §7 State at READY
+
+- **Final local gates** in the pinned image, on the merged head before the reserved-bit rows:
+  - fmt 0 and clippy (with tools) 0;
+  - tier 1: 2,335 passed, 1 failed, the committed-package test (§6).
+- **After the reserved-bit rows** (`6102b12b`), all of `twin_tier2` in the image: **87 of 87 passed.** Its completeness check reads 75 CPU writes rebuilt, 301 rows, 0 uncovered, 0 unknown.
+- **CI on #259:**
+  - `9988b6f1`: every job passed but the package-bound three (`gates`' bench test, its tools shard, `bench-package`) and `twin_tier2`'s completeness test, fixed in `6102b12b` (§1.7);
+  - `6102b12b`: see the READY commit's run.
+- **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER
