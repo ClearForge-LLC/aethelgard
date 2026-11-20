@@ -111,6 +111,15 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - every fab precondition is met;
   - the one difference is `"MANIFEST.json differs from the derived file"`. **No other file of the package moves.**
 
+## §1.5 again, after `4240v` merged (main 943f7112; `PREDICTIONS-3.md` committed first, `ba2d0017`)
+
+The same two patched CLIs, main 943f7112 against the branch merged with it (`out/measure-main-943f7112.jsonl`, `out/measure-branch-after-4240v.jsonl`, `out/compare-main-943f7112-branch.txt`).
+- **Recovered still equals undisturbed** to the instruction, on every board. **Met.**
+- **Every verdict is unchanged from the first re-judge.** The four waiting runs fail on main and recover on the branch. Sentinel-01's records again differ only by kind 32 and kind 19's instant. **Met.**
+- **The boot words moved by +850 to +1,210 ns** (S-01 minimal +920, bench +920, dshot600 +970, four-layer +970, spi-only +890, S-03 +1,210, S-02 shape +850, logger +880, ext-bmp581 +950). This is the VOS2 bring-up `4240v` runs before the clock. **"One Δ on every board" missed**: the shift depends on the board, though it is inside the predicted 0.1–5 µs. The bound absorbs it, being read from each board's own undisturbed boot.
+- **Re-pinned:** `campaign_tier2`'s Sentinel-01 values: boot word 26,620 (was 25,700), bound 126,620, probe 1,358,320 (release 1,231,690 + 10 + 126,620).
+- **The logger fixture is at spec 19,** with `mcu.core_supply` as the reference's (the same MCU, its VCAP-decoupled LDO), and validates. The spike scenarios now use it, and the spike's spec-18 copy is removed.
+
 ## §1.3, §1.4 The witness and coverage
 
 - **§1.3 The witness (`chaos` `power::witness_recovers`, one rule for the CLI judge and for replay):** accepted as proposed.
