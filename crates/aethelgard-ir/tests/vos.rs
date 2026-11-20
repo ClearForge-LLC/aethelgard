@@ -222,6 +222,18 @@ fn an_unknown_fastest_is_not_judged() {
     assert_eq!(vos::judge(Vos::Scale2, &c, |_| None)[0].holds, None);
 }
 
+/// ArduPilot's RCC registers at the end of its run (`AET-WO-4400g` §2.1).
+fn ardupilot() -> aethelgard_ir::motor::RccRegisters {
+    aethelgard_ir::motor::RccRegisters::from_values([
+        0x3F00_3025,
+        0x801B,
+        0x48,
+        0x440,
+        0x40_8040,
+        0x0109_0231,
+    ])
+}
+
 /// D-4: ArduPilot's RCC registers at the end of its run (`AET-WO-4400g`
 /// §2.1, measured) at VOS1 (`STM32_VOS_SCALE1`, `stm32h7_mcuconf.h` L109):
 /// every bus clock and both timer kernels are at VOS1's maximum, so each is
@@ -229,14 +241,7 @@ fn an_unknown_fastest_is_not_judged() {
 /// refusal; the USARTs at 72 MHz hold; `fPCLK4` is not judged.
 #[test]
 fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
-    let regs = aethelgard_ir::motor::RccRegisters::from_values([
-        0x3F00_3025,
-        0x801B,
-        0x48,
-        0x440,
-        0x40_8040,
-        0x0109_0231,
-    ]);
+    let regs = ardupilot();
     let decoded = SolvedClock::from_rcc(&regs, 0, Vos::Scale1).unwrap();
     let usarts = aethelgard_ir::serial::PERIPHERALS
         .iter()
@@ -268,14 +273,7 @@ fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
 /// A tree not on the HSI judges nothing: no deviation is declared for it.
 #[test]
 fn a_foreign_tree_off_the_hsi_is_not_judged() {
-    let mut regs = aethelgard_ir::motor::RccRegisters::from_values([
-        0x3F00_3025,
-        0x801B,
-        0x48,
-        0x440,
-        0x40_8040,
-        0x0109_0231,
-    ]);
+    let mut regs = ardupilot();
     // `SW` and `SWS` CSI (RM0433 Rev 9 §8.7.7), `CSIRDY` set (§8.7.2).
     regs.cfgr = (regs.cfgr & !0b11_1111) | (0b001 << 3) | 0b001;
     regs.cr |= 1 << 8;

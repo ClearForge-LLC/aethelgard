@@ -39,31 +39,15 @@ pub enum Vos {
     Scale3,
 }
 
-impl Vos {
-    /// The column of a limit table: 0 for `scale0` to 3 for `scale3`.
-    fn column(self) -> usize {
-        match self {
-            Self::Scale0 => 0,
-            Self::Scale1 => 1,
-            Self::Scale2 => 2,
-            Self::Scale3 => 3,
-        }
-    }
-
+impl std::fmt::Display for Vos {
     /// The name, as the specification writes it.
-    pub fn name(self) -> &'static str {
-        match self {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
             Self::Scale0 => "scale0",
             Self::Scale1 => "scale1",
             Self::Scale2 => "scale2",
             Self::Scale3 => "scale3",
-        }
-    }
-}
-
-impl std::fmt::Display for Vos {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.name())
+        })
     }
 }
 
@@ -174,7 +158,7 @@ pub fn limit_hz(family: Family, vos: Vos) -> Option<(u64, &'static str)> {
     LIMITS
         .iter()
         .find(|(f, _, _)| *f == family)
-        .and_then(|(_, mhz, cite)| mhz[vos.column()].map(|m| (m * 1_000_000, *cite)))
+        .and_then(|(_, mhz, cite)| mhz[vos as usize].map(|m| (m * 1_000_000, *cite)))
 }
 
 /// One clock to judge: its name, its family and its nominal frequency.
@@ -227,15 +211,19 @@ fn div(n: u64, d: u32) -> Option<u64> {
     (d > 0).then(|| n / u64::from(d))
 }
 
+/// `rcc_hclk`: `sys_ck` / `D1CPRE` / `HPRE` (RM0433 Rev 9 Figure 49).
+fn hclk(clock: &SolvedClock) -> Option<u64> {
+    div(u64::from(clock.sysclk_hz), clock.d1cpre).and_then(|c| div(c, clock.hpre))
+}
+
 /// The bus clocks of `clock` (RM0433 Rev 9 Figure 49, p. 351; §8.7.8–8.7.10):
 /// `rcc_c_ck` is `sys_ck` / `D1CPRE`; `rcc_hclk` is that / `HPRE`;
 /// `rcc_pclk3` is `rcc_hclk` / `D1PPRE`, `rcc_pclk1` / `D2PPRE1`,
 /// `rcc_pclk2` / `D2PPRE2` and `rcc_pclk4` / `D3PPRE`. A divisor of 0 gives
 /// no clock, and the clock is left out.
 pub fn bus_clocks(clock: &SolvedClock) -> Vec<Clock> {
-    let sys = u64::from(clock.sysclk_hz);
-    let cpu = div(sys, clock.d1cpre);
-    let hclk = cpu.and_then(|c| div(c, clock.hpre));
+    let cpu = div(u64::from(clock.sysclk_hz), clock.d1cpre);
+    let hclk = hclk(clock);
     let mut out = Vec::new();
     let mut push = |name: &str, family: Family, hz: Option<u64>| {
         if let Some(nominal_hz) = hz {
@@ -283,7 +271,7 @@ fn on_apb2(timer: u32) -> bool {
 /// timer's `D2PPREx` divides by at most 2 (`TIMPRE` 0) or 4 (`TIMPRE` 1),
 /// else 2 or 4 times its `rcc_pclkx`. Computed here again, on purpose.
 pub fn timer_kernel(clock: &SolvedClock, timer: u32) -> Option<u64> {
-    let hclk = div(u64::from(clock.sysclk_hz), clock.d1cpre).and_then(|c| div(c, clock.hpre))?;
+    let hclk = hclk(clock)?;
     let ppre = if on_apb2(timer) {
         clock.d2ppre2
     } else {
@@ -316,6 +304,8 @@ pub fn usart_family(peripheral: &str) -> Option<Family> {
 /// passing.
 pub fn generated_clocks(t: &SolvedTopology) -> (Vec<Clock>, Vec<String>) {
     let mut clocks = bus_clocks(&t.clock);
+    let pclk = |name: &str| clocks.iter().find(|c| c.name == name).map(|c| c.nominal_hz);
+    let (pclk1, pclk4) = (pclk("fPCLK1"), pclk("fPCLK4"));
     let mut unread = Vec::new();
     let timers: std::collections::BTreeSet<u32> = t
         .assignments
@@ -349,12 +339,11 @@ pub fn generated_clocks(t: &SolvedTopology) -> (Vec<Clock>, Vec<String>) {
     }
     // I2C1–3 on `rcc_pclk1` at `I2C123SEL`'s reset `00`, I2C4 on
     // `rcc_pclk4` at `I2C4SEL`'s reset `00` (§8.7.21 p. 416, §8.7.22 p. 420).
-    let bus = bus_clocks(&t.clock);
-    let pclk = |name: &str| bus.iter().find(|c| c.name == name).map(|c| c.nominal_hz);
+
     for peripheral in t.i2c_timings.keys() {
         let (family, hz) = match peripheral.as_str() {
-            "I2C4" => (Family::I2c4, pclk("fPCLK4")),
-            _ => (Family::I2c123, pclk("fPCLK1")),
+            "I2C4" => (Family::I2c4, pclk4),
+            _ => (Family::I2c123, pclk1),
         };
         match hz {
             Some(hz) => clocks.push(Clock {
@@ -388,9 +377,8 @@ pub fn hsi_fastest(nominal_hz: u64) -> Option<u64> {
 
 /// `FLASH_ACR` at reset, judged against RM0433 Rev 9 Table 17 (p. 160) at
 /// the AXI clock's fastest (`AET-WO-4240v` D-7): nothing writes it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlashJudged {
-    pub vos: Vos,
     pub hclk_fastest_hz: u64,
     /// `LATENCY` and `WRHIGHFREQ` at reset (`FLASH_ACR` reset `0x0000 0037`,
     /// RM0433 Rev 9 §4.9.1, p. 201).
@@ -406,13 +394,12 @@ pub struct FlashJudged {
 /// bits 3:0 = 7, `WRHIGHFREQ[1:0]` bits 5:4 = `11`.
 const FLASH_ACR_RESET: u32 = 0x0000_0037;
 
-/// RM0433 Rev 9 Table 17 (p. 160), "FLASH recommended number of wait
-/// states and programming delay": per VOS, each row's upper `rcc_aclk`
-/// bound in Hz (the lower bound is the row before's, exclusive), with
-/// `LATENCY` and `WRHIGHFREQ`.
 /// One row: the upper `rcc_aclk` bound in Hz, `LATENCY` and `WRHIGHFREQ`.
 type FlashRow = (u64, u32, u32);
 
+/// RM0433 Rev 9 Table 17 (p. 160), "FLASH recommended number of wait
+/// states and programming delay": per VOS, each row's upper `rcc_aclk`
+/// bound in Hz (the lower bound is the row before's, exclusive).
 const TABLE_17: [(Vos, &[FlashRow]); 4] = [
     (
         Vos::Scale0,
@@ -463,10 +450,7 @@ const TABLE_17: [(Vos, &[FlashRow]); 4] = [
 /// within: the table states the delay programming needs, and this firmware
 /// never programs the flash (inferred, `AET-WO-4240v` FEEDBACK).
 pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
-    let hclk = div(u64::from(clock.sysclk_hz), clock.d1cpre)
-        .and_then(|c| div(c, clock.hpre))
-        .unwrap_or(0);
-    let hclk_fastest_hz = silicon::fast_hz(hclk);
+    let hclk_fastest_hz = silicon::fast_hz(hclk(clock).unwrap_or(0));
     let latency = FLASH_ACR_RESET & 0xF;
     let wrhighfreq = (FLASH_ACR_RESET >> 4) & 0b11;
     let needed = TABLE_17
@@ -475,7 +459,6 @@ pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
         .and_then(|(_, rows)| rows.iter().find(|(max, _, _)| hclk_fastest_hz <= *max))
         .map(|(_, ws, wr)| (*ws, *wr));
     FlashJudged {
-        vos: clock.vos,
         hclk_fastest_hz,
         latency,
         wrhighfreq,
@@ -484,8 +467,15 @@ pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
     }
 }
 
+/// Whether a bus clock (Table 111's rows, revision V only) was judged.
+fn judged_a_bus(clocks: &[Judged]) -> bool {
+    clocks
+        .iter()
+        .any(|c| matches!(c.family, Family::Cpu | Family::Hclk | Family::Pclk))
+}
+
 /// What the rule found for a generated topology.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Verdict {
     pub vos: Vos,
     pub clocks: Vec<Judged>,
@@ -511,14 +501,10 @@ impl Verdict {
 pub fn judge_generated(t: &SolvedTopology) -> Verdict {
     let (clocks, unread) = generated_clocks(t);
     let clocks = judge(t.clock.vos, &clocks, hsi_fastest);
-    let conditions = if clocks
-        .iter()
-        .any(|c| matches!(c.family, Family::Cpu | Family::Hclk | Family::Pclk))
-    {
-        vec![BUS_LIMITS_REV_V]
-    } else {
-        Vec::new()
-    };
+    let conditions = judged_a_bus(&clocks)
+        .then_some(BUS_LIMITS_REV_V)
+        .into_iter()
+        .collect();
     Verdict {
         vos: t.clock.vos,
         clocks,
@@ -609,10 +595,7 @@ pub fn judge_foreign(
             )
         })
         .collect();
-    if judged
-        .iter()
-        .any(|c| matches!(c.family, Family::Cpu | Family::Hclk | Family::Pclk))
-    {
+    if judged_a_bus(&judged) {
         conditions.push(BUS_LIMITS_REV_V.to_owned());
     }
     ForeignVerdict {

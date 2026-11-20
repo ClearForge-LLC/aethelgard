@@ -44,6 +44,8 @@ use super::{
 };
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
+// belt-and-suspenders: `aethelgard_ir::vos` holds the rule's copy of this reset
+// value, which judges it against Table 17; the ledger states it on its own.
 /// `FLASH_ACR`'s `LATENCY` and `WRHIGHFREQ` at reset: "Reset value: 0x0000
 /// 0037" (RM0433 Rev 9 §4.9.1, p. 201), bits 3:0 7 wait states and bits 5:4
 /// `11`. The ledger's own copy: the generator writes neither.

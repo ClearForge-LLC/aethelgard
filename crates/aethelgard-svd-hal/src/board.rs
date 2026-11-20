@@ -1902,6 +1902,10 @@ struct FlashFacts {
     bor_lev: (u32, u32),
 }
 
+// belt-and-suspenders: the generator's own PWR words, from the header and the
+// declaration; `aethelgard_ir::vos` holds the rule's, which the oracle, the
+// twin and the ledger read, so a wrong word is a disagreement (`INV-07`);
+// `the_generators_pwr_words_are_the_rules` checks that they agree.
 /// The power controller's registers the bring-up touches (`AET-WO-4240v`
 /// §1.4), every place and position from ST's header: `PWR_BASE`,
 /// `PWR_TypeDef`'s `CSR1`, `CR3` and `D3CR`, and the `PWR_CR3_SCUEN`,
@@ -1923,6 +1927,7 @@ struct PwrFacts {
     vosrdy: u32,
 }
 
+// belt-and-suspenders: `aethelgard_ir::vos::D3CR_VOS_SCALE2` is the rule's copy.
 /// `PWR_D3CR.VOS`'s code for Scale 2, `10` (RM0433 Rev 9 §6.8.6, p. 310:
 /// "00: Reserved (Scale 3 selected) 01: Scale 3 (default) 10: Scale 2 11:
 /// Scale 1"). The generator's own copy; the header gives only the field's
@@ -4219,6 +4224,8 @@ fn emit_flash_proof(w: &mut String) {
     );
 }
 
+// belt-and-suspenders: the oracle's offsets, written from RM0433; the code's
+// come from the header, so an error in either is a failed proof (`INV-07`).
 /// `PWR_CSR1`'s, `PWR_CR3`'s and `PWR_D3CR`'s offsets in the power
 /// controller's block: "Address offset: 0x004", "0x00C" and "0x018" (RM0433
 /// Rev 9 §6.8.2 p. 305, §6.8.4 p. 307, §6.8.6 p. 310). The oracle's own
@@ -8208,16 +8215,8 @@ mod tests {
         assert!(fault.contains(".write_volatile(word)"));
         assert!(fault.contains("loop {"));
         assert!(!fault.contains("r."), "a register access after a fault");
-        for (name, value) in [
-            ("BOOT_SUPPLY_NOT_DECLARED", BOOT_SUPPLY_NOT_DECLARED),
-            ("BOOT_ACTVOSRDY_TIMEOUT", BOOT_ACTVOSRDY_TIMEOUT),
-            ("BOOT_VOSRDY_TIMEOUT", BOOT_VOSRDY_TIMEOUT),
-        ] {
-            assert!(
-                main.contains(&format!("const {name}: u32 = {value:#010x};")),
-                "{name}"
-            );
-        }
+        // The three words' `const` lines: `tests/board.rs`
+        // (`the_firmware_follows_the_judges_pwr_boot_words`).
         assert!(main.contains(&format!("const PWR_POLLS: u32 = {PWR_POLLS};")));
         // Three distinct words, none the magic.
         let words = [
