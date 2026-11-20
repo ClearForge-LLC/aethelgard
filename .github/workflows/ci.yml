@@ -387,7 +387,10 @@ jobs:
       # two tests D4 removed (campaign_tier1.rs: a_one_byte_change_to_the_trace_is_
       # a_hash_mismatch, an_extra_file_in_the_run_directory_is_refused) are tier 1,
       # outside the count.
-      TIER2_MIN: "190"
+      # 191: plus 1 from AET-WO-3305 in twin_tier2.rs (a bus fault on the
+      # two-BME board is not masked, and a wrong address is still software),
+      # on top of main at 52a2d62e (3303b's 190).
+      TIER2_MIN: "191"
     steps:
       # A shard that was skipped or cancelled is not a pass.
       - name: every shard job succeeded
