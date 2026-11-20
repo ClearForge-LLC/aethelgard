@@ -2,7 +2,7 @@
 
 ## Status: READY — built; CI green on 48519439 (run 44728879123) and on 078543e4 (run 44734895126, the merged head: green, but shard 8 ran 20.6 min on `supply_tier1`, F6); `outline_tier1` raised to 251 from that run; this commit's run is the one the REFIT RULE's clause reads
 
-Builder: Claude (Opus 5.5), a fresh `1318` session, 2026-11-20, from ~10:55 UTC. Worktree `~/aethelgard-1318`, branch `wo/aet-1318-eda-housekeeping` from `origin/main` `fff49a49`, with `main` `7ebca78c` (docs only) and then `a75fffcc` (`2305`, which adds `twin_tier2` rows and raises `TIER2_MIN` to 198) merged in. Neither merge touched a fenced line. The work order built to is `docs/work-orders/AET-WO-1318.md` on `main`; it is identical to the kickoff copy (`diff`, measured).
+Builder: Claude (Opus 5.5), a fresh `1318` session, 2026-11-20, from ~10:55 UTC. Worktree `~/aethelgard-1318`, branch `wo/aet-1318-eda-housekeeping` from `origin/main` `fff49a49`, with `main` `7ebca78c` (docs only), `a75fffcc` (`2305`, which adds `twin_tier2` rows and raises `TIER2_MIN` to 198) and `dc618bd8` (`4405` and docs) merged in. No merge touched a fenced line. The work order built to is `docs/work-orders/AET-WO-1318.md` on `main`; it is identical to the kickoff copy (`diff`, measured).
 
 Labels: **measured** (run here), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1318/`.
 
@@ -147,6 +147,7 @@ Labels: **measured** (run here), **read** (read at source), **inferred** (reason
 | Pass set against `main` `7ebca78c` | **identical**: 2,401 names each, `diff` empty (`passset.diff`); `main` built in its own worktree with its target inside the tree |
 | CI | green on `48519439` (run 44728879123) and on `078543e4` (run 44734895126; shard 8 at 20.6 min, F6); this commit's run is the final head's |
 | Gates on the merged tree (`a75fffcc` in) | fmt clean; clippy clean with and without `with-tools`; `cargo test --workspace` **2,407 passed, 0 failed, 0 ignored** (`2305` adds 6) |
+| Gates on the final tree (`dc618bd8` in: `4405`, docs) | fmt clean; clippy clean with and without `with-tools`; `cargo test --workspace` **2,410 passed, 0 failed, 0 ignored**; plan 706 s per shard, `guard ok: 2632 test names, 2639 listed occurrences, 12 shards` (`plan/local-m2.txt`); `test-shard.sh` passes |
 
 - **Reduction pass (diff):** −10 lines net in code (crates/ less the README: +24 / −34; the README +5 / −4) · 2 duplicate readers removed · 0 dead paths left · 1 protected kept (`pcb.rs`'s `belt-and-suspenders:` outline check, untouched) · 0 findings below.
   - A fresh subagent asked the four questions over `git diff origin/main...HEAD -- crates ci` and found nothing to remove. It checked for stale mentions, unused imports, `Drawing` methods with no caller, and two draws of one input.
