@@ -314,6 +314,11 @@ pub(crate) fn check(spec: &Specification) -> Result<(), E> {
 /// (`aethelgard_eda::schematic::design`); the CLI's `validate` holds a load
 /// to that exact set. Neither catches an `R<n>` that names a different part
 /// once an earlier one leaves and the numbers move.
+///
+/// A reference that names a part, judged entry by entry after the above,
+/// must not name one whose current its own row already counts
+/// (`AET-WO-1209c`, [`crate::power::Load::reference`]): the MCU, counted by
+/// its table row, or a declared regulator, counted as its input's load.
 pub(crate) fn loads(spec: &Specification) -> Result<(), E> {
     let Some(power) = &spec.power else {
         return Ok(());
@@ -333,6 +338,23 @@ pub(crate) fn loads(spec: &Specification) -> Result<(), E> {
                 path: format!("power.loads[{i}].reference"),
                 domain: l.domain.clone(),
                 reference: r.clone(),
+            });
+        }
+        let counted_by = if *r == mcu {
+            Some("the MCU's table row".to_owned())
+        } else {
+            power
+                .regulators
+                .iter()
+                .find(|g| g.reference == *r)
+                .map(|g| format!("regulator `{r}`'s input on `{}`", g.input))
+        };
+        if let Some(counted_by) = counted_by {
+            return Err(E::LoadNamesCountedPart {
+                path: format!("power.loads[{i}].reference"),
+                domain: l.domain.clone(),
+                reference: r.clone(),
+                counted_by,
             });
         }
     }

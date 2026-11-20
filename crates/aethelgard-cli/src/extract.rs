@@ -13,11 +13,15 @@ use aethelgard_eda::extract::{self as bound, LineBound};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::verdict::InputReport;
+use crate::verdict::{InputReport, Scope};
 use crate::{EXIT_FAIL, EXIT_INVALID_SPEC, EXIT_UNREADABLE, Refusal};
 
 /// `RUL-19`, in the verdict itself.
 const CAPACITANCE: &str = "upper bound estimated from routed geometry";
+
+/// Why a board with no line and no supply domain judged nothing
+/// (`AET-WO-2306`).
+pub const NOTHING_IN_SCOPE: &str = "no bounded line: the specification declares no I2C bus, no SPI bus and no supply domain with a drop limit";
 
 #[derive(Serialize)]
 struct Report {
@@ -33,6 +37,10 @@ struct Report {
     lifecycle: Vec<String>,
     capacitance: &'static str,
     conditions: Vec<String>,
+    /// The lines and supply domains judged, each with its own verdict
+    /// (`AET-WO-2306`); a pair's conductors are lines, so not counted twice.
+    #[serde(flatten)]
+    scope: Scope,
     lines: Vec<Value>,
     /// Each domain with a drop limit, judged (`AET-WO-1303b`); absent when
     /// the specification limits none, so no other verdict moves.
@@ -381,6 +389,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         }
     }
     let supplies: Vec<Value> = gates.iter().map(supply).collect();
+    let scope = Scope::of((out.len() + supplies.len()) as u64, NOTHING_IN_SCOPE);
     let ok = findings.is_empty();
     let report = Report {
         ok,
@@ -395,6 +404,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         capacitance: CAPACITANCE,
         conditions,
+        scope,
         lines: out,
         supplies,
         pairs,
