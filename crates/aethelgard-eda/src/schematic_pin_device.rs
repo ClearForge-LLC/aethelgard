@@ -291,8 +291,9 @@ fn device(
     let mut conns: BTreeMap<String, Conn> = BTreeMap::new();
     let put = |pin: String, c: Conn, conns: &mut BTreeMap<String, Conn>| {
         // A GPIO bridge input is declared twice, as a signal and as the
-        // bridge's input, on one net (`AET-WO-1211` Q7); any other second
-        // connection is refused.
+        // bridge's input, on one net (`AET-WO-1211` Q7). belt-and-suspenders:
+        // `validate` binds each device pin to one net, so any other second
+        // connection is refused here, never drawn.
         match conns.insert(pin.clone(), c.clone()) {
             Some(old) if old != c => Err(not_drawable(
                 d,

@@ -157,6 +157,14 @@ fn d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration() {
         .filter(|(r, on)| r.starts_with('R') && on.contains("DRV_NFAULT"))
         .collect();
     assert!(pulls.is_empty(), "{pulls:?}");
+    // VINT, a `power_in` pin the part's own regulator drives, is drawn as a
+    // rail: a power symbol carries its name, beside a `PWR_FLAG`, or ERC
+    // refuses an undriven power input. A label net has no power symbol.
+    let sheet = schematic::emit(&spec, &solved, &table).unwrap().schematic;
+    assert!(
+        sheet.contains("(property \"Value\" \"U2_VINT\""),
+        "U2_VINT is not drawn as a rail"
+    );
 }
 
 /// Each bridge output reaches the declared connector pin carrying its net
