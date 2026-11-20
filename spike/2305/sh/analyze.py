@@ -46,12 +46,12 @@ def row(run, scenario, log_path):
     at_bw = dev_lines(start_line, bw_line) if bw_line is not None else None
     return {
         'scenario': scenario['scenario'], 'verdict': scenario['verdict'], 'matched': scenario['matched'],
-        'findings': sorted({f.get('kind') for f in scenario.get('findings', [])}),
+        'findings': sorted(set(scenario.get('findings', []))),
         'asserted_ns': asserts, 'released_ns': releases, 'boot_start_ns': start_ns,
         'boot_word_ns': bw, 'boot_word_since_start_ns': None if bw is None else bw - start_ns,
         'first_identity_line_stamp_ns': first_id,
         'first_identity_line_since_start_ns': None if first_id is None else first_id - start_ns,
-        'probe_at_ns': [p[1] for p in probes], 'probe_boot_word': [hex(p[3][2]) for p in probes],
+        'probe_at_ns': [p[1] for p in probes], 'probe_boot_word': [hex(p[3][3][0]) if p[3][3] else None for p in probes],
         'witness_at_probe': [len(p[6][0]) if p[6] else None for p in probes],
         'device_lines_to_probe': None if at_probe is None else len(at_probe),
         'device_lines_to_boot_word': None if at_bw is None else len(at_bw),
