@@ -134,6 +134,14 @@ CI's `ardupilot-image` job runs `solve` then `generate hwdef --topology` and `cm
 - **D-7, an HSE board's `FLASH.ACR` silicon-only acknowledgement is stale** (the board writes and judges the register) and is refused by name; `generate_tier1` shows both cases.
 - **D-8, ledger.** There is no separate polled `CFGR.SWS` row: `RCC.CFGR.SWS@reset` holds that id, and the CLI refuses duplicates. `SWS` is judged by the twin's clock rule and by Kani.
 
+- **D-9, the external fixture is a twin stand-in (`board.drawn: false`) since `4240c`.**
+  - `4240c` (ruled Q4 (a)) refuses `emit` for any external clock (`HseSourceNotDrawn`): no connector pin or test point can carry it to PH0 yet. So `generate`, which also writes `kicad/`, refused `hse-external-8` once `4240c` merged.
+  - With `board.drawn: false` (`1210`), `generate` writes its board crate and platform and no `kicad/`, which is the truth for an external-clock board today.
+  - It still generates, builds and simulates to `pass`: ELF `762c304d…`, unchanged.
+  - `4240c`'s two tests were brought to this work order's fixtures:
+    - its external and crystal declarations carry the ruled start-up fields;
+    - "no committed specification without a crystal draws one" skips the two HSE fixtures and counts them.
+
 ## §5 Adversarial pass (full)
 
 A fresh Opus subagent, given the code at `50f84cee` and the work order's §5 list but not my conclusions, tried every attack. Its probes, specs and logs are in `~/.cache/aet-4240b/adv/`. **No blocker.**

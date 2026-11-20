@@ -345,7 +345,8 @@ fn a_board_with_no_crystal_reports_no_oscillator() {
 fn an_external_clock_and_an_unstocked_load_value_are_refused_by_name() {
     let external = with_hse(
         json!({"external": {"hz_num": 8_000_000, "hz_den": 1, "ppm": 50,
-        "source": "a declared bench oscillator (test)"}}),
+        "source": "a declared bench oscillator (test)",
+        "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}),
     );
     let e = emitted(external).unwrap_err();
     assert_eq!((e.kind(), e.id()), ("HseSourceNotDrawn", Some("mcu.hse")));
@@ -365,7 +366,7 @@ fn no_committed_specification_without_a_crystal_draws_one() {
     // net named, none for the router to keep via-free, none reported, and
     // nothing of the crystal's in the design. The bytes themselves are
     // `spike/4240c/RESULTS.md`'s sweep (29 specifications, every file).
-    let mut checked = 0;
+    let (mut checked, mut hse) = (0, 0);
     for dir in ["examples", "crates/aethelgard-cli/tests/fixtures"] {
         let mut stack = vec![root().join(dir)];
         while let Some(d) = stack.pop() {
@@ -380,7 +381,13 @@ fn no_committed_specification_without_a_crystal_draws_one() {
                 else {
                     continue;
                 };
-                assert!(spec.mcu.hse.is_none(), "{}", path.display());
+                // `AET-WO-4240b`'s two HSE fixtures (`hse-crystal-16`,
+                // `hse-external-8`) are judged by their own tests; every
+                // other committed specification declares none.
+                if spec.mcu.hse.is_some() {
+                    hse += 1;
+                    continue;
+                }
                 let own = aethelgard_ir::names::own_nets(&spec).unwrap();
                 assert!(
                     !own.iter().any(|n| n.contains("_OSC_")),
@@ -408,6 +415,7 @@ fn no_committed_specification_without_a_crystal_draws_one() {
         }
     }
     assert!(checked >= 20, "{checked}");
+    assert_eq!(hse, 2, "only AET-WO-4240b's two HSE fixtures declare one");
 }
 
 // ---- the support gate's step 7 ----
