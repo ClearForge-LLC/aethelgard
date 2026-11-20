@@ -98,7 +98,7 @@ The adversarial reviewer re-ran the sweep against its own build of `main`: ident
 
 | row | what | evidence | owner |
 |---|---|---|---|
-| R1 | `pin_devices[].bulk {reference, part, source}`: a cited capacitor row rated above the VM domain's maximum. **D1 is drawable with it**, and G6 (§5) becomes testable | S1; `d1_is_refused_for_cvm2_alone` | 1211e |
+| R1 | `pin_devices[].bulk {reference, part, source}`: a cited capacitor row rated above the VM domain's maximum. **D1 is drawable with it**, and G6 (§5) becomes testable. The arm does not read `bulk` yet (1211e adds the key, bus 19:21Z): CVM2's `None` becomes the declared part when that lands, and `d1_is_refused_for_cvm2_alone` then becomes a drawn-D1 test | S1; `d1_is_refused_for_cvm2_alone` | 1211e |
 | R2 | the DRV8833's §9.1 system-level bulk (SLVSAR1E p. 14) is not judged: only the stated 10 µF VM capacitor is drawn (Q4). If R1's field lands, a DRV8833 may declare one too | Q4 | beside R1 |
 | R3 | **A1: a pull's domain maximum against the MCU pin's tolerated input**, whatever the part row states. The board that passes all four gates: `spike/1211d/adv/nfault_to_vmotor.json` (D2 drawn, nFAULT pulled by R9 10 kΩ to VMOTOR 6 V ± 5 % onto PA1). Its judges are in `adv/judge/nfault_to_vmotor/` | ERC, DRC, support and extract pass, findings `[]` | 1211e |
 | R4 | **A2: VREF on GND, or a VREF below the declared full scale with its band**, when IPROPI carries a resistor. The board that passes all four gates: `spike/1211d/adv/d1_vref_gnd.json` (D1, `VREF: {tie: GND}`, drawn with `kit/d1-stub.sh`). Its judges are in `adv/judge/d1_vref_gnd/`. `adv/d1_vref_low.json` (VREF on a 500 mV domain) validates and draws; it was not judged | ERC, DRC, support and extract pass, findings `[]` (with the stub) | 1211e |
