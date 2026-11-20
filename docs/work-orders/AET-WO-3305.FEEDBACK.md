@@ -181,6 +181,7 @@ The `verify` scenario files are `spike/3305/verify/two-bme-baseline.json` and th
   - `verify.rs`: one unit test;
   - two scenario fixtures in `cli/tests/fixtures`;
   - `spike/3305/verify/two-bme-baseline.json`: a spike input.
+  - `ci/test-weights.tsv`: one row and its provenance line for the new tier-2 test. twin_tier2 is lock-serialised, and `ci/shard.sh plan` refuses any of its tests without a row; CI's first run on `f71a7323` failed every tools shard on exactly that. The row is 8.4 s, a Furnace estimate by AET-WO-2302's rule, until the refit rule measures it. Said on the bus.
 
 ## Gates
 
