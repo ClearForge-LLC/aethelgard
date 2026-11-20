@@ -104,7 +104,7 @@ Results:
   - the reference's `extract` and `speeds` tests: the key they assert absent now appears as `false`.
 
   Log: `~/.cache/aet-2306/mut/mutant.log`. Re-run on the tree with `main` 943f7112 merged (the unit suite and tier 1 only): the same 8 fail (`mutant-48.log`, `mutant-48-bin.log`).
-- **The bench package:** `MANIFEST.json`'s `verdict_sha256` moves, because the verdict gains keys. It is not hand-edited: it is committed byte for byte from the architect's `write=true` dispatch (§6).
+- **The bench package:** `MANIFEST.json`'s `verdict_sha256` moves, because the verdict gains keys. It is not hand-edited: it is committed byte for byte from the architect's `write=true` dispatch, run 44717217149 on 24e43f3d (§6). Of the artifact's 17 files only `MANIFEST.json` differs from `main`'s, and only in `verdict_sha256` (4b762f26… → 42aa6346…).
   - **Reproduced locally**, on the merged tree, in the pinned image: CI's `bench-package` `verify --against-fab` exits 1 (186 s, 6.4 GB scope peak), and its one difference is "MANIFEST.json differs from the derived file".
   - On that verdict `judged_nothing` is `[]`, and `droop-bor3`'s `observation_witness` is `{"judged": 1}`.
   - On the merged tree the driver's tier-2 test passes again, in 94.6 s. With `main` 943f7112 merged (4240v, spec 19) it passes in 106.2 s, and Sentinel-01's `verify --fab-out` (`judged_nothing == []`) in 322.4 s, each under a 16G cap read back (peak 6.6 GB).
