@@ -95,7 +95,8 @@ pub struct HseCrystal {
     pub part: String,
     /// `CL1` and `CL2`, fF, declared by value (`4240a` §1.3 (a)): the
     /// capacitors' part is `4240c`'s, once `extract` bounds the stray
-    /// capacitance. No judgement reads them yet.
+    /// capacitance. Judged equal and, in series, at most the row's CL
+    /// ([`crystal_budget`]).
     pub load_caps_femtofarads: [u64; 2],
     /// The pulling from the load's departure from the crystal's `CL`, ppm
     /// per side: declared, because no held datasheet states pullability
@@ -331,7 +332,7 @@ pub struct GmCrit {
     /// `4 · ESR · (2πF)² · (C0 + CL)²` at the row's ESR and `C0` maxima, with
     /// π² rounded up ((355/113)² > π²), in nA/V, rounded up: an upper bound.
     pub nano_amps_per_volt: u64,
-    pub max_nano_amps_per_volt: u64,
+    /// At or under [`GM_CRIT_MAX_NANO_AMPS_PER_VOLT`].
     pub holds: bool,
     /// AN2867's oscillation margin, `Gm_crit_max` / `Gm_crit`, in hundredths,
     /// rounded down. **Uncited and judging nothing** (`AET-WO-4240a` §1.5):
@@ -359,7 +360,6 @@ pub fn gm_crit(row: &power_parts::Crystal) -> GmCrit {
     });
     GmCrit {
         nano_amps_per_volt: nano,
-        max_nano_amps_per_volt: GM_CRIT_MAX_NANO_AMPS_PER_VOLT,
         holds: nano <= GM_CRIT_MAX_NANO_AMPS_PER_VOLT,
         an2867_margin_hundredths_uncited: (GM_CRIT_MAX_NANO_AMPS_PER_VOLT * 100)
             .checked_div(nano)
@@ -489,7 +489,7 @@ pub fn crystal_budget(c: &HseCrystal, row: &power_parts::Row) -> Result<Budget, 
         return Err(refuse(HseRefusal::HseGmCritExceeded {
             part: c.part.clone(),
             gm_crit_nano_amps_per_volt: g.nano_amps_per_volt,
-            max_nano_amps_per_volt: g.max_nano_amps_per_volt,
+            max_nano_amps_per_volt: GM_CRIT_MAX_NANO_AMPS_PER_VOLT,
         }));
     }
     let side = |pick: fn(&power_parts::Range) -> i64| {
@@ -528,9 +528,8 @@ pub struct TreeVerdict {
     /// The PLL1 reference, `(num, den)` Hz, strictly inside `range_hz`.
     pub reference_hz: (u64, u64),
     pub range_hz: (u64, u64),
-    /// The VCO, `(num, den)` Hz, inside `vco_range_hz`.
+    /// The VCO, `(num, den)` Hz, inside its `PLL1VCOSEL` range.
     pub vco_hz: (u64, u64),
-    pub vco_range_hz: (u64, u64),
     pub pll1_p_hz: u64,
     /// `pll1_q_ck`, when `DIVQ1EN` is 1 (nothing selects it until `4240b`).
     pub pll1_q_hz: Option<u64>,
@@ -722,7 +721,6 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
         reference_hz: (num, ref_den),
         range_hz: (min_hz, max_hz),
         vco_hz: (u64::try_from(vn).unwrap_or(u64::MAX), ref_den),
-        vco_range_hz: (vmin, vmax),
         pll1_p_hz: u64::from(decoded.sysclk_hz),
         pll1_q_hz,
         gm_crit: gm,

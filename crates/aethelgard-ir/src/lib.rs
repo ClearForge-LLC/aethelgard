@@ -4209,7 +4209,7 @@ impl SolvedTopology {
                     spi.insert(p.to_owned(), c);
                 }
             } else if p.starts_with("I2C")
-                && let Some(t) = solve::i2c_timing(&self.clock, p)
+                && let Some(t) = solve::i2c_controller("", &self.clock, p).ok()
             {
                 i2c.insert(p.to_owned(), t);
             }

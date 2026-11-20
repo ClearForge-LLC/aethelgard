@@ -769,15 +769,6 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
     None
 }
 
-/// `hsi_ker_ck` at `HSIDIV`'s reset `00` (RM0433 Rev 9 §8.7.2): 64 MHz.
-const HSI_KER_HZ: u64 = 64_000_000;
-
-/// `hz` at the HSI's fastest, rounded up: an SPI kernel is `hsi_ker_ck`
-/// whatever the system clock ([`spi_kernel`]).
-pub(crate) fn hsi_fastest(hz: u64) -> u64 {
-    PpmBudget::HSI.fastest_hz(hz)
-}
-
 /// The kernel clock the firmware gives SPI `peripheral`: SPI1–3
 /// `per_ck` (`SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20, p. 414), which is
 /// `hsi_ker_ck` at `CKPERSEL`'s reset `00` (§8.7.19, p. 412); SPI4/5
@@ -788,7 +779,7 @@ pub(crate) fn hsi_fastest(hz: u64) -> u64 {
 /// moves every select to its reset value (`4240` D6). `None` when
 /// `peripheral` is not SPI1–SPI6.
 pub(crate) fn spi_kernel(peripheral: &str) -> Option<(SpiKernel, u64)> {
-    let hsi = HSI_KER_HZ;
+    let hsi = 64_000_000;
     match peripheral {
         "SPI1" | "SPI2" | "SPI3" => Some((SpiKernel::PerCk, hsi)),
         "SPI4" | "SPI5" | "SPI6" => Some((SpiKernel::HsiKerCk, hsi)),
@@ -800,7 +791,7 @@ pub(crate) fn spi_kernel(peripheral: &str) -> Option<(SpiKernel, u64)> {
 /// `2^(MBR+1)` at or below `declared_hz` (RM0433 Rev 9 §50.11.3, p. 2218,
 /// `000` ÷2 to `111` ÷256); `None` when even ÷256 is above it.
 pub(crate) fn solve_mbr(kernel_hz: u64, declared_hz: u32) -> Option<u8> {
-    let fast = hsi_fastest(kernel_hz);
+    let fast = PpmBudget::HSI.fastest_hz(kernel_hz);
     (0..=7u8).find(|mbr| fast >> (mbr + 1) <= u64::from(declared_hz))
 }
 
@@ -816,7 +807,7 @@ pub(crate) fn spi_controller(
             bus: bus.to_owned(),
             peripheral: peripheral.to_owned(),
         })?;
-    let fast = hsi_fastest(kernel_hz);
+    let fast = PpmBudget::HSI.fastest_hz(kernel_hz);
     let mbr =
         solve_mbr(kernel_hz, declared_hz).ok_or_else(|| SolveError::SpiSpeedBelowKernelRange {
             bus: bus.to_owned(),
@@ -941,12 +932,6 @@ pub(crate) fn synthesize_timingr(budget: PpmBudget, kernel_hz: u64, mode: &str) 
         }
     }
     None
-}
-
-/// I2C `peripheral`'s solved timing on `clock`; `None` if it has no kernel
-/// clock or a mode has no `TIMINGR`.
-pub(crate) fn i2c_timing(clock: &SolvedClock, peripheral: &str) -> Option<SolvedI2cTiming> {
-    i2c_controller("", clock, peripheral).ok()
 }
 
 /// I2C bus `bus`'s controller `peripheral` on `clock`: its kernel clock, `CR1`
@@ -2489,9 +2474,9 @@ mod differential {
         let reset = SolvedClock::reset();
         for p in ["I2C1", "I2C2", "I2C3", "I2C4"] {
             assert_eq!(i2c_kernel_hz(&reset, p), Some(64_000_000));
-            assert_eq!(i2c_timing(&reset, p).unwrap().timingr.len(), 3);
+            assert_eq!(i2c_controller("", &reset, p).unwrap().timingr.len(), 3);
         }
-        assert_eq!(i2c_timing(&reset, "I2C5"), None);
+        assert!(i2c_controller("", &reset, "I2C5").is_err());
     }
 
     /// `4240` F-PANIC: H0 at 8 MHz (`sys_ck` the HSE, every prescaler 1)
