@@ -169,6 +169,12 @@ pub enum EmitError {
     /// are `extract`'s.
     #[error("the capacitance ladder cannot judge the board: {}", .0.message)]
     LadderRefused(crate::extract::Refused),
+    /// `AET-WO-1211a`: the emitter draws no pin device (its pins, its
+    /// parts) until a work order builds it.
+    #[error(
+        "`{reference}` ({part}) is a pin device; the emitter draws nothing for it (AET-WO-1211a)"
+    )]
+    PinDeviceNotDrawn { reference: String, part: String },
     #[error("{0}")]
     Internal(String),
 }
@@ -200,6 +206,7 @@ impl EmitError {
             Self::ViaRingUnheld { .. } => "ViaRingUnheld",
             Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
             Self::LadderRefused(r) => r.kind,
+            Self::PinDeviceNotDrawn { .. } => "PinDeviceNotDrawn",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -212,7 +219,8 @@ impl EmitError {
             | Self::PowerNotDrawable { reference, .. }
             | Self::PadEscapeExhausted { reference, .. }
             | Self::CompactionUnbounded { reference, .. }
-            | Self::ImuRotationUnplaceable { reference, .. } => Some(reference),
+            | Self::ImuRotationUnplaceable { reference, .. }
+            | Self::PinDeviceNotDrawn { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
@@ -1276,6 +1284,14 @@ pub(crate) fn design(
             known: "STM32H753ZITx",
         });
     }
+    // Every gpio entry drawn below is a chip select only because a topology
+    // with a pin device is refused here (`AET-WO-1211a`).
+    if let Some((reference, d)) = solved.pin_devices.iter().next() {
+        return Err(EmitError::PinDeviceNotDrawn {
+            reference: reference.clone(),
+            part: d.part.clone(),
+        });
+    }
     let mut used = Taken::default();
     for r in spec
         .declared_i2c_devices()
@@ -1331,7 +1347,7 @@ pub(crate) fn design(
         .assignments
         .iter()
         .map(|(net, a)| (net, &a.pin))
-        .chain(solved.gpio.iter());
+        .chain(solved.gpio.iter().map(|(net, g)| (net, &g.pin)));
     for (net, pin) in solved_pins {
         let unknown = || EmitError::UnknownPin {
             net: net.clone(),

@@ -52,7 +52,7 @@ impl Specification {
     /// set (`aethelgard_eda::schematic::KNOWN_PARTS`, which `AET-WO-1316`
     /// holds to the arms by test); this crate cannot read it, since the
     /// emitter depends on this crate. Devices in the emitter's draw order:
-    /// I2C, then SPI, each in document order.
+    /// I2C, then SPI, then the pin devices, each in document order.
     pub fn drawable_parts(&self, arms: &[&str]) -> Result<(), E> {
         if !self.board.drawn {
             return Ok(());
@@ -65,6 +65,14 @@ impl Specification {
                     .iter()
                     .enumerate()
                     .map(|(i, d)| (format!("spi_devices[{i}].part"), &d.reference, &d.part)),
+            )
+            // A pin device (`AET-WO-1211a`): no emitter arm draws one until
+            // `AET-WO-1211d`, so it is declared on a board that draws none.
+            .chain(
+                self.declared_pin_devices()
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| (format!("pin_devices[{i}].part"), &d.reference, &d.part)),
             );
         for (path, reference, part) in devices {
             if !arms.contains(&part.as_str()) {

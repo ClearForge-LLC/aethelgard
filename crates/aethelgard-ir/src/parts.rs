@@ -66,8 +66,12 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// Version 9 added `axes`, an IMU's sensing axes by its pins, and
 /// `ardupilot.frame`, the frame an IMU driver passes its samples in
 /// (`AET-WO-4400d`, ruled on PR #207), each required as a key, `null` where
-/// it does not apply.
-pub const PARTS_SCHEMA_VERSION: u32 = 10;
+/// it does not apply. Version 10 added a part's `reads`
+/// (`AET-WO-4400e`). Version 11 adds `pin_parts`, the busless rows a
+/// specification's `pin_devices` bind (`AET-WO-1211a`, `1211` Q6):
+/// `bus: "none"` and `identity: null`, each pin's kind, pull and levels,
+/// and each strapped mode's truth table ([`crate::pin_parts`]).
+pub const PARTS_SCHEMA_VERSION: u32 = 11;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -622,6 +626,9 @@ impl Part {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PartsTable {
     parts: Vec<Part>,
+    /// The busless rows, sorted by part name (`AET-WO-1211a`). No bus
+    /// device finds one through [`PartsTable::get`].
+    pin_parts: Vec<crate::pin_parts::PinPart>,
 }
 
 impl PartsTable {
@@ -634,6 +641,15 @@ impl PartsTable {
             .binary_search_by(|p| p.part.as_str().cmp(part))
             .ok()
             .map(|i| &self.parts[i])
+    }
+
+    /// The busless row of `part` (`AET-WO-1211a`).
+    pub fn pin_part(&self, part: &str) -> Option<&crate::pin_parts::PinPart> {
+        self.pin_parts.iter().find(|p| p.part == part)
+    }
+
+    pub fn pin_parts(&self) -> &[crate::pin_parts::PinPart] {
+        &self.pin_parts
     }
 
     /// Every citation whose document is not held: (part, value group, URL).
@@ -658,6 +674,8 @@ struct RawTable {
     /// key given twice in an entry is refused, never collapsed (`AET-WO-4200`
     /// adversarial A2).
     parts: Vec<Box<serde_json::value::RawValue>>,
+    /// The busless rows (`AET-WO-1211a`), each parsed on its own as `parts`'s.
+    pin_parts: Vec<Box<serde_json::value::RawValue>>,
 }
 
 #[derive(Deserialize)]
@@ -1567,7 +1585,34 @@ pub fn parse_parts(json: &str) -> Result<PartsTable, IrValidationError> {
         parts.push(p);
     }
     parts.sort_by(|a, b| a.part.cmp(&b.part));
-    Ok(PartsTable { parts })
+    let mut pin_parts: Vec<crate::pin_parts::PinPart> = Vec::new();
+    for (i, text) in raw.pin_parts.iter().enumerate() {
+        let entry: serde_json::Value =
+            serde_json::from_str(text.get()).map_err(|e| refused(None, e.to_string()))?;
+        let name = entry
+            .get("part")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| refused(None, format!("pin_parts entry {i} has no string `part`")))?;
+        let named = |reason: String| refused(Some(&name), reason);
+        crate::check_identifier(crate::IdentifierKind::Plain, &name)
+            .map_err(|rule| named(format!("`part` is not an identifier: {rule}")))?;
+        let raw: crate::pin_parts::RawPinPart =
+            serde_json::from_str(text.get()).map_err(|e| named(e.to_string()))?;
+        let p = crate::pin_parts::pin_part(raw).map_err(named)?;
+        let clash = parts
+            .iter()
+            .map(|q| &q.part)
+            .chain(pin_parts.iter().map(|q| &q.part));
+        if clash.into_iter().any(|q| q.eq_ignore_ascii_case(&p.part)) {
+            return Err(named(
+                "the part is in the table twice, in some case".to_owned(),
+            ));
+        }
+        pin_parts.push(p);
+    }
+    pin_parts.sort_by(|a, b| a.part.cmp(&b.part));
+    Ok(PartsTable { parts, pin_parts })
 }
 
 static TABLE: LazyLock<Result<PartsTable, IrValidationError>> =

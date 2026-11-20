@@ -11,7 +11,7 @@ use aethelgard_twin::boot::{self, RECORD_BYTES, Wire};
 use aethelgard_twin::platform;
 
 /// The reference topology, as `src/tests.rs` has it.
-const REFERENCE: &str = r#"{"schema_version":13,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":"PA0"},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
+const REFERENCE: &str = r#"{"schema_version":14,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
 fn reference() -> SolvedTopology {
     serde_json::from_str(REFERENCE).unwrap()
@@ -39,7 +39,10 @@ fn with_imu() -> SolvedTopology {
     for line in t.spi_lines.values_mut() {
         line.rate_hz = 7_000_000;
     }
-    t.gpio.insert("IMU_CS".to_owned(), "PA1".to_owned());
+    t.gpio.insert(
+        "IMU_CS".to_owned(),
+        aethelgard_ir::pin_devices::SolvedGpio::output("PA1", aethelgard_ir::motor::Level::High),
+    );
     t.spi_devices
         .insert("U5".to_owned(), spi_device(1, "ICM20948", "IMU_CS"));
     t.derive_controllers();
@@ -398,4 +401,43 @@ fn an_i2c_model_on_spi_reaches_the_kept_guard_through_spi_wiring() {
         matches!(&e, TwinError::ModelOffItsBus { reference, part } if reference == "U6" && part == "BME280"),
         "{e:?}"
     );
+}
+
+/// `AET-WO-1211a`: the twin models no pin device, so the platform emitter and
+/// the boot judge refuse a topology with one, by the device's reference and
+/// part.
+#[test]
+fn a_topology_with_a_pin_device_is_refused_as_not_simulated() {
+    use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
+    let mut t = reference();
+    t.pin_devices.insert(
+        "U9".to_owned(),
+        SolvedPinDevice {
+            part: "WAKE_SWITCH".to_owned(),
+        },
+    );
+    t.gpio.insert(
+        "WAKE".to_owned(),
+        SolvedGpio {
+            pin: "PB5".to_owned(),
+            direction: Direction::Input,
+            initial: None,
+            pull: Some(McuPull::Up),
+        },
+    );
+    t.pin_speeds.insert("WAKE".to_owned(), 0);
+    t.validate().unwrap();
+    let errors = [
+        platform::emit(&t).unwrap_err(),
+        platform::emit_faulted(&t, &set(&[]), &set(&[])).unwrap_err(),
+        boot::expected(&t).map(|_| ()).unwrap_err(),
+    ];
+    for err in errors {
+        assert!(
+            matches!(&err, TwinError::PinDeviceNotSimulated { reference, part }
+                if reference == "U9" && part == "WAKE_SWITCH"),
+            "{err}"
+        );
+        assert_eq!(err.kind(), "PinDeviceNotSimulated");
+    }
 }
