@@ -3,18 +3,18 @@
 # For each `ALONE NAME` marker, every binary that then reports `1 passed` gives NAME's alone time, its libtest
 # `finished in` (one test, one thread, one invocation). Prints shard<TAB>binary<TAB>name<TAB>seconds<TAB>cpu,
 # and each shard's CPU model and colocated blocks' `finished in` from the normal pass on stderr.
-import re, sys, glob
-
-TS = re.compile(r'^[^\t]*\t[^\t]*\t\ufeff?\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z ?(.*)$')
+import glob, importlib.util, os, re, sys
+spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
+table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 d = sys.argv[1]
 for f in sorted(glob.glob(f'{d}/shard-*.log'), key=lambda p: int(p.rsplit('-', 1)[1][:-4])):
     k = int(f.rsplit('-', 1)[1][:-4])
     cpu, name, binary, seen = '', None, None, set()
     blocks = []
     for l in open(f, encoding='utf-8', errors='replace'):
-        m = TS.match(l.rstrip('\n'))
+        m = table.TS.match(l.rstrip('\n'))
         if not m: continue
-        s = m.group(1)
+        s = m.group(2)
         if 'model name' in s: cpu = s.split(':', 1)[1].strip()
         if s.startswith('ALONE '): name = s[6:].strip(); continue
         mb = re.match(r'\s*Running (.+?) \(', s)

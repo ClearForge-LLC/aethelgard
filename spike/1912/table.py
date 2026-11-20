@@ -12,7 +12,9 @@
 import re, sys, subprocess
 from datetime import datetime
 
-LOCKED = {'tests/board_tier2.rs', 'tests/against_fab_tier2.rs', 'tests/verify_2k2_tier2.rs', 'tests/twin_tier2.rs'}
+import os
+# The lock-serialised binaries: ci/shard.sh's own LOCKED list, read, not copied.
+LOCKED = set(re.search(r"^LOCKED='([^']*)'", open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'ci', 'shard.sh')).read(), re.M).group(1).split())
 TS = re.compile(r'^[^\t]*\t[^\t]*\t\ufeff?(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+)Z ?(.*)$')
 DEFAULT = 0.05
 def ts(s): return datetime.fromisoformat(s[:26])
@@ -37,7 +39,6 @@ def shard(path):
     for t, s in lines:
         m = re.match(r'shard (\d+): \d+ tests, planned (\d+) s', s)
         if m: planned[int(m.group(1))] = int(m.group(2))
-    cpu = next((s for t, s in lines if 'Model name' in s or 'model name' in s), '')
     bins, cur = [], None  # bins: dict(binary, tests=[(name, s, how)], passed, fin)
     for t, s in lines:
         if t < start: continue
@@ -58,7 +59,25 @@ def shard(path):
                     cur['tests'] = [(cur['tests'][0][0], cur['fin'], 'solo')]
                 bins.append(cur)
             cur = None
-    return (end - start).total_seconds(), planned, bins, cpu
+    return (end - start).total_seconds(), planned, bins
+
+def upper_bounds(d, runs):
+    """Each test's in-shard upper bound on every run, its `ok` less its binary's `Running` (normal passes only)."""
+    ub = {}
+    for run in runs:
+        for f in os.listdir(f'{d}/{run}'):
+            if not re.match(r'shard-\d+\.log$', f): continue
+            cur = None
+            for l in open(f'{d}/{run}/{f}', encoding='utf-8', errors='replace'):
+                m = TS.match(l.rstrip('\n'))
+                if not m: continue
+                t, s = ts(m.group(1)), m.group(2)
+                if s.startswith('ALONE ') or 'model name' in s: break
+                mb = re.match(r'\s*Running (.+?) \(', s)
+                if mb: cur, start = mb.group(1), t; continue
+                mt = re.match(r'test (\S+) \.\.\. ok', s)
+                if mt and cur: ub.setdefault((cur, mt.group(1)), []).append((t - start).total_seconds())
+    return ub
 
 def main():
     cand_out = None
@@ -75,12 +94,12 @@ def main():
             m = re.match(r'tools-shard \((\d+)\)', name)
             if m: jobs[int(m.group(1))] = (jid, (iso(b) - iso(a)).total_seconds())
         print(f'### run {run} (head {sha[:8]}, {concl.strip()})\n')
-        print('| shard | job | job min | run step s | overhead s | planned s (its head) | rows at REV, s | binaries over their rows by 60 s or more: finished in / rows |')
-        print('|---|---|---|---|---|---|---|---|')
+        print('| shard | job | job min | run step s | overhead s | planned s (its head) | rows at REV, s | binaries over their rows by 60 s or more: finished in / rows | under by 60 s or more |')
+        print('|---|---|---|---|---|---|---|---|---|')
         for k in sorted(jobs):
             jid, wall = jobs[k]
-            step, planned, bins, cpu = shard(f'{d}/{run}/shard-{k}.log')
-            total, over = 0.0, []
+            step, planned, bins = shard(f'{d}/{run}/shard-{k}.log')
+            total, over, under = 0.0, [], []
             for b in bins:
                 key = b['binary']
                 if (key,) in coloc:
@@ -92,7 +111,8 @@ def main():
                         samples.setdefault((key, n), []).append((s, how, run, k, jid))
                 total += r
                 if b['fin'] - r >= 60: over.append(f'{key.split("/")[-1]} {b["fin"]:.0f}/{r:.0f}')
-            print(f'| {k} | {jid} | {wall/60:.1f} | {step:.0f} | {wall-step:.0f} | {planned.get(k)} | {total:.0f} | {"; ".join(over)} |')
+                if r - b['fin'] >= 60: under.append(f'{key.split("/")[-1]} {b["fin"]:.0f}/{r:.0f}')
+            print(f'| {k} | {jid} | {wall/60:.1f} | {step:.0f} | {wall-step:.0f} | {planned.get(k)} | {total:.0f} | {"; ".join(over)} | {"; ".join(under)} |')
         print()
     print('### colocated blocks: every `finished in` against the row\n')
     print('| block | row | samples (s, run/shard) | worst | row / worst |')

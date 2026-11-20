@@ -19,7 +19,7 @@ for run in runs + throwaways:
     for f in os.listdir(f'{d}/{run}'):
         m = re.match(r'shard-(\d+)\.log$', f)
         if not m: continue
-        _, _, bins, _ = table.shard(f'{d}/{run}/{f}')
+        _, _, bins = table.shard(f'{d}/{run}/{f}')
         for b in bins:
             if (b['binary'],) in coloc: blocks.setdefault(b['binary'], []).append((b['fin'], run, int(m.group(1)))); continue
             if run in throwaways: continue  # the throwaway's normal pass: blocks only; its tests are weighed by the alone pass

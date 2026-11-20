@@ -49,5 +49,5 @@ tests/via_ring_tier1.rs	61
 # `finished in` over the five green main runs after 1317 and this PR's two runs, rounded up: 44706411946 157.13, 44711555077 203.26, 44712465606 195.92,
 # 44722695274 163.88, 44724070629 237.61, 44728879123 202.47, 44734895126 250.19 s. No other block changed.
 # AET-WO-1912 (REFIT RULE 3 and 5): the three blocks more than 25 % under their worst libtest `finished in` over the five green main runs 44747545277, 44747464266,
-# 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39,
-# bimodal across runner CPUs, FEEDBACK §2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
+# 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39 in
+# two modes, its cause not measured, AET-WO-1912 FEEDBACK F2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
