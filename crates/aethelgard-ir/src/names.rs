@@ -95,8 +95,8 @@ fn emitter_numbered(key: &str, mcu: &str) -> bool {
 }
 
 /// Every reference the specification declares, in the emitter's claim order:
-/// I2C devices, SPI devices, connectors, the power tree's, then the test
-/// points (`AET-WO-1312`).
+/// I2C devices, SPI devices, connectors, the power tree's, the test points
+/// (`AET-WO-1312`), then the pin devices' (`AET-WO-1211a`).
 pub(crate) fn references(spec: &Specification) -> Vec<&str> {
     spec.declared_i2c_devices()
         .iter()
@@ -122,6 +122,7 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
                 .iter()
                 .map(|t| t.reference.as_str()),
         )
+        .chain(crate::pin_devices::references(spec))
         .collect()
 }
 
