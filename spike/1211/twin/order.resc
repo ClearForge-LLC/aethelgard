@@ -1,0 +1,25 @@
+include @/repo/spike/1211/twin/common.resc
+sysbus WriteDoubleWord 0x580244E0 0x000007FF
+sysbus WriteDoubleWord 0x580244F0 0x00000001
+sysbus WriteDoubleWord 0x58020000 0x00020000
+sysbus WriteDoubleWord 0x58020024 0x00000001
+echo "O1 the generator's order (svd-hal board.rs L3272-3290), CCR1 = 25: PSC, ARR, CCR1, CCMR1, CCMR2, CCER, BDTR, EGR; IDR_A after each of CCER, BDTR, EGR"
+sysbus WriteDoubleWord 0x40010028 249
+sysbus WriteDoubleWord 0x4001002C 49
+sysbus WriteDoubleWord 0x40010034 25
+sysbus WriteDoubleWord 0x40010018 0x00000068
+sysbus WriteDoubleWord 0x4001001C 0x00000000
+sysbus WriteDoubleWord 0x40010020 0x00000001
+sysbus ReadDoubleWord 0x58020010
+sysbus WriteDoubleWord 0x40010044 0x00008000
+sysbus ReadDoubleWord 0x58020010
+sysbus WriteDoubleWord 0x40010014 0x00000001
+sysbus ReadDoubleWord 0x58020010
+echo "O2 CR1 = ARPE|CEN, then IDR_A at 3 instants 7 us apart"
+sysbus WriteDoubleWord 0x40010000 0x00000081
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000030"
+sysbus ReadDoubleWord 0x58020010
+echo "ORDER-END"
