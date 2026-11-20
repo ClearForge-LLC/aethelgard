@@ -2455,8 +2455,9 @@ fn drawable(spec: &Specification) -> Result<(), Refusal> {
 }
 
 /// `AET-WO-1210` §1.4: a specification that declares `board.drawn: false`
-/// draws no board, so `command` (`emit`, `extract`, or `verify` with a fab
-/// flag) refuses it by name before it solves, draws or reads anything.
+/// draws no board, so `command` (`emit`, `extract` or `verify`) refuses it by
+/// name before it solves, draws or reads anything. `generate` writes its
+/// firmware and twin artifacts and no `kicad/` (F1).
 pub(crate) fn draws_a_board(spec: &Specification, command: &str) -> Result<(), Refusal> {
     if spec.board.drawn {
         return Ok(());
@@ -2925,6 +2926,10 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
         /// The lifecycle banner (`AET-WO-4210` D1); absent when it is empty.
         #[serde(skip_serializing_if = "Vec::is_empty")]
         lifecycle: Vec<String>,
+        /// Why no `kicad/` is written, for a twin stand-in (`AET-WO-1210`
+        /// F1); absent for a drawn board.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        kicad: Option<&'static str>,
     }
 
     let (spec, topology, table) = match solved(file) {
@@ -2949,6 +2954,9 @@ fn generate_tree(file: &Path, out: &Path) -> ExitCode {
                 .map(|(path, text)| (path.clone(), tree::sha256(text.as_bytes())))
                 .collect(),
             lifecycle: topology.lifecycle_banner().unwrap_or_default(),
+            kicad: (!spec.board.drawn).then_some(
+                "not written: `board.drawn: false` declares a twin stand-in no board is drawn from",
+            ),
         },
         0,
     )

@@ -591,9 +591,10 @@ fn stand_in() -> PathBuf {
 }
 
 /// `AET-WO-1210` §1.4, §1.5: the declared stand-in passes `validate`, and
-/// `emit`, `extract`, `verify --fab-out` and `verify --against-fab` each
-/// refuse it by one name, `DrawsNoBoard`, before reading anything else (the
-/// board and scenario paths here do not exist) and writing nothing.
+/// `emit`, `extract`, `verify` (whose board gates have no board, F1),
+/// `verify --fab-out` and `verify --against-fab` each refuse it by one name,
+/// `DrawsNoBoard`, before reading anything else (the board and scenario
+/// paths here do not exist) and writing nothing.
 #[test]
 fn a_declared_stand_in_validates_and_every_drawing_step_refuses_it_by_name() {
     let spec = stand_in();
@@ -609,6 +610,7 @@ fn a_declared_stand_in_validates_and_every_drawing_step_refuses_it_by_name() {
     for (command, args) in [
         ("emit", vec!["emit", "--file", spec, "--out", o]),
         ("extract", vec!["extract", "--board", m, "--spec", spec]),
+        ("verify", vec!["verify", "--spec", spec]),
         (
             "verify --fab-out",
             vec!["verify", "--spec", spec, "--scenarios", m, "--fab-out", o],

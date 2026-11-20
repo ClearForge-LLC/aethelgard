@@ -188,6 +188,36 @@ fn generate_refuses_what_solve_refuses_and_writes_nothing() {
     assert!(!out.exists());
 }
 
+/// `AET-WO-1210` F1, ruled 2026-11-20: `generate` on a twin stand-in
+/// (`board.drawn: false`) writes its board crate, firmware and platform and
+/// no `kicad/`, and says why in one field; the 1.8 V stand-in's ICP-10111,
+/// which no arm draws, no longer stops it.
+#[test]
+fn generate_writes_no_kicad_for_a_twin_stand_in_and_says_why() {
+    let out = scratch("stand-in");
+    let stand_in = root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
+    let (code, v) = run(
+        &["generate", "--spec", s(&stand_in), "--out", s(&out)],
+        true,
+    );
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["kicad"],
+        "not written: `board.drawn: false` declares a twin stand-in no board is drawn from"
+    );
+    let files: Vec<&String> = v["files"].as_object().unwrap().keys().collect();
+    assert!(files.iter().all(|f| f.starts_with("board/")), "{files:?}");
+    for f in ["board/imu-baro-1v8.repl", "board/firmware/src/main.rs"] {
+        assert!(out.join(f).is_file(), "{f}");
+    }
+    assert!(!out.join("kicad").exists());
+    let (_, v) = run(
+        &["generate", "--spec", SPEC, "--out", s(&scratch("drawn"))],
+        true,
+    );
+    assert!(v.get("kicad").is_none(), "{v}");
+}
+
 /// `AET-WO-4240v` D-1: a core supplied in `bypass` is a true declaration
 /// `validate` and `solve` accept, and `generate`, `emit` and `simulate`
 /// refuse by name, exit 2, before any tool is looked for and writing

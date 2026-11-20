@@ -104,7 +104,9 @@ pub fn crate_name(project_name: &str) -> String {
 }
 
 /// Every file `aethelgard generate` writes for `spec`, solved as `topology`
-/// with `table`, keyed by its `/`-separated path under `--out`.
+/// with `table`, keyed by its `/`-separated path under `--out`. A twin
+/// stand-in (`board.drawn: false`) is not drawn: no `kicad/` (`AET-WO-1210`
+/// F1, ruled 2026-11-20).
 pub fn tree(
     spec: &Specification,
     topology: &SolvedTopology,
@@ -112,8 +114,12 @@ pub fn tree(
 ) -> Result<BTreeMap<String, String>, GenerateError> {
     core_supply_generated(topology)?;
     let project = &spec.project_name;
-    let emission =
-        aethelgard_eda::schematic::emit(spec, topology, table).map_err(GenerateError::Emit)?;
+    let emission = spec
+        .board
+        .drawn
+        .then(|| aethelgard_eda::schematic::emit(spec, topology, table))
+        .transpose()
+        .map_err(GenerateError::Emit)?;
     // The devices are the topology's; the firmware reads the ones the twin can
     // answer for, and the platform declares the same ones (`AET-WO-2202`).
     let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
@@ -123,12 +129,14 @@ pub fn tree(
     let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
 
     let mut files = BTreeMap::new();
-    for (suffix, text) in [
-        ("kicad_sch", emission.schematic),
-        ("bom.csv", emission.bom),
-        ("kicad_pcb", emission.board),
-    ] {
-        files.insert(format!("{KICAD_DIR}/{project}.{suffix}"), text);
+    if let Some(e) = emission {
+        for (suffix, text) in [
+            ("kicad_sch", e.schematic),
+            ("bom.csv", e.bom),
+            ("kicad_pcb", e.board),
+        ] {
+            files.insert(format!("{KICAD_DIR}/{project}.{suffix}"), text);
+        }
     }
     for (path, text) in board {
         files.insert(format!("{BOARD_DIR}/{path}"), text);
