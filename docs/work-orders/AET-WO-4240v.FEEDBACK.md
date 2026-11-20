@@ -480,4 +480,8 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
     - `twin_tier2` and `verify_2k2_tier2`: 92 of 92;
     - the §2.1 sweep against that `main`: no diff;
   - the pushed head and the dispatch's run: see the READY commit.
-- **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER
+- **The bench package:** from the architect's `bench-package` `write=true` dispatch on `075b4a56`. That is `ci` run 44696429933; its `bench-package` job passed, and its artifact is 14611296616.
+  - It is committed byte for byte: the 17 files equal the artifact's sha256 for sha256.
+  - **Against `main`'s package, 14 of 17 are byte-identical:** every Gerber, the drill, both BOMs, the CPL and the positions. Only `sentinel-01-bench.elf` (`e4e24372ef2d4bb4cd2e8a3d79b616a1bedefec285d88aa92ef3e5ce1d496f11`, the same as the locally written package's, §2.2), `MANIFEST.json` and `FAB-NOTES.md` move, as §0.1 predicted.
+  - `bench_board_tier1` passes against it.
+- **READY.** This commit is the last push. Only the architect merges.
