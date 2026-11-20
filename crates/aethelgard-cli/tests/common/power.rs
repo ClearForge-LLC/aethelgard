@@ -9,6 +9,12 @@ pub fn power_tree() -> Value {
         .join("../aethelgard-ir/tests/fixtures/sentinel-02-power.json");
     let mut v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     v["power"]["crossings"] = json!([]);
+    // The translator's and its CS pull-up's loads go with the crossing
+    // (`AET-WO-1209` D4): a load naming a part the board lacks is refused.
+    v["power"]["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U13" && l["reference"] != "R40");
     // The IMU's acknowledgement goes with it: one stands only for a part the
     // board uses (`AET-WO-4210` D-B6). The flash's stays (`AET-WO-4211`).
     v["accept_lifecycle"]

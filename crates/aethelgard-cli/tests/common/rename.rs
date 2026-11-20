@@ -60,6 +60,18 @@ fn rename_refs(v: &mut Value, keys: &[&str], map: &BTreeMap<String, String>) {
     }
 }
 
+/// Each `power.loads` reference `to` renames, renamed (`AET-WO-1209` D4).
+fn carry_loads(v: &mut Value, to: impl Fn(&str) -> Option<String>) {
+    let Some(power) = v.get_mut("power") else {
+        return;
+    };
+    for l in each(power, "loads") {
+        if let Some(r) = l["reference"].as_str().and_then(&to) {
+            l["reference"] = Value::String(r);
+        }
+    }
+}
+
 fn refs(v: &Value, keys: &[&str]) -> Vec<String> {
     keys.iter()
         .flat_map(|k| v[*k].as_array().into_iter().flatten())
@@ -87,6 +99,9 @@ pub fn order_only(spec: &Value, seed: u64) -> Value {
     }
     let tmap = permutation(&refs(&v, &["test_points"]), seed);
     rename_refs(&mut v, &["test_points"], &tmap);
+    // Each load names the part it named before (`AET-WO-1209` D4).
+    let all: BTreeMap<String, String> = map.into_iter().chain(jmap).chain(tmap).collect();
+    carry_loads(&mut v, |r| all.get(r).cloned());
     let mut nets: BTreeMap<String, String> = BTreeMap::new();
     let mut prefix = |n: &str| -> String {
         nets.entry(n.to_owned())
@@ -140,12 +155,17 @@ pub fn sized(spec: &Value, len: usize) -> Value {
         .chain(std::iter::repeat('x'))
         .take(len)
         .collect();
-    for key in ["i2c_devices", "spi_devices", "connectors", "test_points"] {
+    let keys = ["i2c_devices", "spi_devices", "connectors", "test_points"];
+    let renamed = refs(&v, &keys);
+    for key in keys {
         for x in each(&mut v, key) {
             let r = x["reference"].as_str().unwrap().to_owned();
             x["reference"] = Value::String(format!("{pre}_{r}"));
         }
     }
+    carry_loads(&mut v, |r| {
+        renamed.iter().any(|n| n == r).then(|| format!("{pre}_{r}"))
+    });
     if let Some(c) = v["mcu"]["supply_source"]["connector"].as_str() {
         let c = format!("{pre}_{c}");
         v["mcu"]["supply_source"]["connector"] = Value::String(c);

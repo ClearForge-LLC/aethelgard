@@ -306,6 +306,45 @@ pub(crate) fn check(spec: &Specification) -> Result<(), E> {
     Ok(())
 }
 
+/// Step 20a of `validate` (`AET-WO-1209` §1.2, D3 as ruled 2026-11-19): each
+/// `power.loads` reference names a part the board has, in document order:
+///
+/// 1. one the specification declares ([`references`]);
+/// 2. the MCU, numbered as the emitter numbers it ([`mcu_reference`]);
+/// 3. the reset switch ([`crate::bench::switch_reference`], which the
+///    emitter itself calls);
+/// 4. a resistor or capacitor the emitter numbers (`R<n>`, `C<n>`), by
+///    [`emitter_numbered`]'s pattern.
+///
+/// Which `R<n>` and `C<n>` the emitter draws is its draw order
+/// (`aethelgard_eda::schematic::design`); the CLI's `validate` holds a load
+/// to that exact set. Neither catches an `R<n>` that names a different part
+/// once an earlier one leaves and the numbers move.
+pub(crate) fn loads(spec: &Specification) -> Result<(), E> {
+    let Some(power) = &spec.power else {
+        return Ok(());
+    };
+    let declared = references(spec);
+    let mcu = mcu_reference(spec);
+    let switch = crate::bench::switch_reference(spec);
+    for (i, l) in power.loads.iter().enumerate() {
+        let Some(r) = &l.reference else { continue };
+        // `emitter_numbered` with no MCU matches `R<n>` and `C<n>` only.
+        let has = declared.contains(&r.as_str())
+            || *r == mcu
+            || switch.as_deref() == Some(r.as_str())
+            || emitter_numbered(r, "");
+        if !has {
+            return Err(E::LoadNamesNoPart {
+                path: format!("power.loads[{i}].reference"),
+                domain: l.domain.clone(),
+                reference: r.clone(),
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Windows' reserved device names (`AET-WO-1102` A7): a file whose stem is
 /// one of these, in any case, cannot be opened on Windows. `com0` and `lpt0`
 /// are on Microsoft's list too (`AET-WO-1207` §1.3, `1206` F7); its

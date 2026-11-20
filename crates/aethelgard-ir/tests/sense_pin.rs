@@ -41,6 +41,12 @@ fn base() -> Value {
     let mut v: Value =
         serde_json::from_str(include_str!("fixtures/sentinel-02-power.json")).unwrap();
     v["power"]["crossings"] = json!([]);
+    // The translator's and its CS pull-up's loads go with the crossing
+    // (`AET-WO-1209` D4): a load naming a part the board lacks is refused.
+    v["power"]["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U13" && l["reference"] != "R40");
     // U5 goes, so its acknowledgement would stand for no part (`4210`); the
     // flash's stays (`AET-WO-4211`).
     v["accept_lifecycle"]
