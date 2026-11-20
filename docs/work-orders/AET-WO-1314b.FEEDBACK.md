@@ -5,7 +5,9 @@ Labels:
 - **[read at source]**: from a file and line named beside it.
 - **[inferred]**: from reasoning, neither read nor run.
 
-## 0. Status: BUILT; CI pending on the PR (READY follows CI green)
+## 0. Status: READY
+
+CI is green on `90067e88` (main `cb489f2a`, AET-WO-1911's new CI, merged in): run 44658192021, every job passed, all 12 tools shards, tier-2 191 against `TIER2_MIN` 191 (unchanged). This commit changes this file only.
 
 - **The measurement (§1.1) [measured, `spike/1314b/`]:** with Sentinel-03's `fab_tolerances` block copied into `logger-spi-only-cap` and nothing else changed, **the ladder meets every bound.** It chose **rung 3** (a bounded net's via at 320, bounded nets *not* first). `LOG_SCK` is 26,886 fF against 30,000 fF (2 vias, 44.6 mm; margin 10.4 %), down from 37,508 fF (8 vias, 48.9 mm) routed once. `extract`, run on its own, agrees with the ladder's figure. No §7 condition fired.
 - **The cause (§1.2–1.3):** a `capacitance_over_declared_bound` finding carries a new optional field, `cause`, exactly when the specification declares no `fab_tolerances`. It names `board.stackup.fab_tolerances`. The message, kind, severity, exit code and every other finding are unchanged. `verify` copies the finding into its extract gate's line as it is.
@@ -177,7 +179,12 @@ Local, at the code head `a3d8001e`. Since then only this FEEDBACK, `spike/1314b/
 
 **CI and `TIER2_MIN`:**
 - `main` moved to `70ce5403`, a docs-only change (this work order, byte-identical to the copy I built from, and the roadmap). It is merged as `724da8e1`. No crate changed, so the gates above stand.
-- CI runs on the PR, and its result is recorded on the PR.
+- `main` moved again, to `cb489f2a` (AET-WO-1911: a shared `tools-build`, the docs-only route, the `ci/docs-tests.tsv` inventory guard). It is merged as `90067e88`, and it changed only `ci/`, the workflow and docs.
+  - Before pushing, I ran locally `bash ci/route.sh check ci/docs-tests.tsv` (inventory ok, 9 rows) and `bash ci/test-route.sh` (exit 0).
+- **CI on `90067e88`** (run 44658192021, 02:04–02:30 UTC): `ci`, `engine-image` and `ardupilot-image` all succeeded.
+  - `gates`, `route`, `tools-build`, `tools-shard` 0–11, `tools`, `bench-package` and the rest passed. `publish` ×2 and `quickstart` were skipped by their own conditions.
+  - The `tools` aggregate: `ANSWER tier2_tests_passed=191 floor=191`.
+  - The earlier run on `86dfa921` predates `cb489f2a`, so it is not counted.
 - `TIER2_MIN` is unchanged, because no tier-2 test was added.
 
 **Resources:**
