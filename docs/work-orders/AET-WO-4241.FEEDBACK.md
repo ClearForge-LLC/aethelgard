@@ -1,4 +1,4 @@
-# AET-WO-4241 — FEEDBACK (built to the architect's ruling of 10:05Z; STOPPED on D3's instants, and on droop flips that 2305 absorbs)
+# AET-WO-4241 — FEEDBACK (AWAITING-PACKAGE: built to the rulings of 10:05Z, 11:10Z and 12:06Z; CI green but `bench-package`, which moves by the architect's dispatch)
 
 **Branch and inputs.**
 - Branch `wo/aet-4241-read-every-identity`, from `main` at `d70a99e5`.
@@ -12,6 +12,32 @@ Each statement is labelled:
 - **inferred.**
 
 ## 0. Status
+
+**AWAITING-PACKAGE** (the `3402`/`1604` flow). Built, re-judged, and CI green but the package. The head merges
+`main` `dc618bd8` (2306, 1209c, 2305, 4405 and docs). Next, in order:
+- the architect's `write=true` dispatch, after 4240a;
+- the artifact committed byte for byte into `fab/sentinel-01-bench/package/`;
+- `bench-package` green;
+- then READY, as the last push.
+
+The files I expect to move:
+- `sentinel-01-bench.elf`, which gains the TMP117 read;
+- `MANIFEST.json`'s ELF hash and its `verdict_sha256`. The verdict hash moves because `twin_limits` gained
+  `IDENTITY.U3`, and the campaign's state hashes moved.
+
+Any other file moving is a stop, not a commit.
+
+- **CI:** run 44735397769 on `aa852fbf` passes all 32 checks but `bench-package`. That one fails only because the
+  committed package is `main`'s ELF, which moves by the architect's `write=true` dispatch (queued after 4240a).
+  The tier-2 aggregate passes at `TIER2_MIN` 199.
+- **Host gates** on the merged tree are green: fmt, clippy `-D warnings`, `cargo test --workspace`.
+- **D5 confirmed:** with 2305 merged, the re-judge on `main` `a75fffcc` has all 48 campaign runs unchanged (the
+  three droops included) and every boot verdict unchanged. The 17 modelled instants that move are all within
+  −2…+25 instructions, inside D4's bound of 32 (`out/rejudge/compare-a75fffcc.txt`).
+- **Moved pins:** every pinned instant that moved is in §0a, with its old value, new value, the measured shift and
+  the board. Each keeps its cause.
+
+The history follows.
 
 - **History.**
   - **First stop:** at §1.1 (record `dc85747f`, §1 to §2 below).
@@ -40,7 +66,7 @@ Each statement is labelled:
       its record removed. It hooks U2's and U4's status words, and requires each written once and within 32
       instructions, and the boot word later by U3's wait.
     - It has a weight row in `ci/test-weights.tsv` (45 s, an estimate until the refit rule measures it), and
-      `TIER2_MIN` rises 195 → 196.
+      `TIER2_MIN` rises by 1: 195 → 196 at `main` `d0c4cfe0`, then 199 at `a75fffcc` (2305's 198 + 1).
   - **D5, confirmed:** after 2305 lands, merge `main`, re-run the re-judge, and confirm the three droops pass.
 - **CI on `f48cadd7`, every failure root-caused (the architect's 11:12Z note):**
   - **Shards 3 and 4**, `against_fab_tier2`, and **shard 0**, `board_tier2::every_admitted_identifier_character…`:
@@ -146,7 +172,7 @@ reset is brittle to any change in boot length. Planting it relative to the boot 
 | one `TXIS` wait | 100k–300k instructions (1–3 ms) | **missed: 3.6 ms on the Sentinel-01 family** (C1's boot word 2,662 → 362,757 instructions; C2–C4 alike), **4.8 ms on Sentinel-03 and the `d3` fixture** (C5's TMP117 status written at 486,699; C10, about 480,100 a wait). The 20,000 spins cost what that board's code makes of them |
 | 16 waits (C8, C10) | C8: the boot word at 16–48 ms, inside 100 ms; C10 (batch 3): about 58 ms | inside, **both times missed**: C8 at 57.6 ms (5,764,965 instructions), C10 at 76.9 ms (7,699,763). By extrapolation, 21 to 28 unmodelled I2C reads, by board, would not fit in `MAX_VIRTUAL_NS` (inferred) |
 | old against new firmware, with a TMP117 | differ | **as predicted**: C1–C5 and C8, each `main.rs` and ELF |
-| the `4600` pair and the control (C9, batch 2) | old: with U3 equals without U3; new: they differ; C9 old = new; C9 `pass` with no `device_unmodelled` | **as predicted, all four**: old `2bb1be79…` both (`4600` F19 reproduced); new with U3 `406af077…`, without U3 `2bb1be79…`; C9 `pass`, findings `[]` |
+| the `4600` pair and the control (C9, batch 2) | old: with U3 equals without U3; new: they differ; C9 old = new; C9 `pass` with no `device_unmodelled` | **as predicted, all four**: old `2bb1be79…` both (`4600` F19 reproduced); new with U3 `406af077…`, without U3 `2bb1be79…`; C9 `pass`, findings `[]`; These were measured on the spike's interleaved selection. As built (D3: unmodelled reads last), the reference's ELF still differs with and without U3: D4's tier-2 test builds both and measures the boot word 2663 → 362759 instructions. |
 | today's judge, C1/C2 | U4 reads TMP117's slot: `spi_record_invalid`; U2 `absent` `[72]`; `fail` | **as predicted**: `spi_record_invalid` (status `0x22020001` on SPI); U2's `absent` `["0x48"]`; `fail` |
 | today's judge, C3 | as C1; U2, U5 `absent` `[72]` | **as predicted** |
 | today's judge, C4 | U5's records shift; U5 and U4 fail | **as predicted**: `i2c_timeout`, `i2c_configure_mismatch` and `i2c_data_mismatch` on U5, `spi_identity_mismatch` on U4 |
@@ -219,7 +245,7 @@ reset is brittle to any change in boot length. Planting it relative to the boot 
   - **`ledger_tier1`:** the `IDENTITY.U3` row.
   - **The tier-2 assertions** (`twin_tier2`, `campaign_tier2`): `identity_not_witnessable` and `not_witnessable`.
 
-## 4. Re-judge (§1.4, measured; `out/rejudge/`)
+## 4. Re-judge (§1.4, measured; `out/rejudge/`; as first measured at `d70a99e5`, before 2305; §0 gives the final run at `a75fffcc`)
 
 - **What ran:** `main`'s CLI against `main`'s firmware, and the branch's CLI against the branch's firmware.
   - Every committed scenario of every group ran through `campaign`, `replay` and `attribute`.
@@ -251,7 +277,7 @@ reset is brittle to any change in boot length. Planting it relative to the boot 
 | shaped | 3905934→3905932 |
 | spionly | (no I2C check hooked) |
 
-## 5. The second stop: rulings asked
+## 5. The second stop: rulings asked (at `d70a99e5`; ruled 11:10Z, §0)
 
 - **D4. D3's "no modelled record's instant may move. Test that."** It holds for every record's **place**, which is
   tested at tier 1 in the twin and the generator, and in every pinned layout. It does not hold for the **instants**,
@@ -276,7 +302,7 @@ reset is brittle to any change in boot length. Planting it relative to the boot 
 
 ## 6. Mutants (one per guard this build adds; each on a fresh tree at `3f886653`; `out/mutants.txt`)
 
-All 12 are killed:
+All 13 are killed (12 guards, and two forms of the WO's pass mutant):
 
 | mutant | what it does | killed by |
 |---|---|---|
@@ -340,25 +366,37 @@ All 12 are killed:
 
 ## 9. Owed and fence
 
-- **Owed after 2305 lands:**
-  - merge `main`;
-  - re-run the three droops and the re-judge;
-  - adopt 2305's hook additions: the STEP indices are checked against it, and its trial merge was clean;
-  - the package dispatch, third in the queue.
+- **Done after 2305 landed:**
+  - `main` merged;
+  - the re-judge re-run, with the three droops passing (§0);
+  - 2305's hooks and mine coexist, and its pinned droop instants are re-pinned (§0a).
 - **Done after 2306 landed:** `main` merged, and F5's sentence settled (§0).
+- **Owed:** the package from the dispatch, then READY (§0).
+- **Findings outside the fence, for the architect:** the following still describe the old outcome, `device_unmodelled`,
+  "so its identity was not read":
+  - `crates/aethelgard-cli/README.md` L356 and L439;
+  - `fab/sentinel-01-bench/BENCH.md` L378 ("`simulate`: `device_unmodelled`").
+  - What to replace them with: generated firmware now reports `identity_not_witnessable` (info), with
+    `boot.not_witnessable` (count, per-read cost, total) and the `twin_limits` row `IDENTITY.<ref>`.
+  - The foreign judge still names `device_unmodelled`.
 - **Fence:**
   - Everything is inside it but `generate_with`'s doc comment in `svd-hal/src/board.rs` and one unit test there
     (`spi_init_takes_every_select_and_drives_it_high`, whose firmware now reads both devices).
-  - No IR, specification, `BENCH.md`, workflow or `ci/` file changed.
-  - `TIER2_MIN` rises by this order's one tier-2 test, the D4 bound: 195 → 196 in `.github/workflows/ci.yml`, as
-  the WO's acceptance asks. It also has one weight row in `ci/test-weights.tsv`, as P1/P2 require.
+  - No IR, specification or `BENCH.md` file changed.
+  - Two `ci/`/workflow lines did change, each as the WO allows.
+    - `.github/workflows/ci.yml`: `TIER2_MIN` is 199, `main`'s 198 plus this order's one tier-2 test, the D4
+      bound, as the WO's acceptance asks.
+    - `ci/test-weights.tsv`: one weight row for that test, as P1/P2 require.
 
-## Gates (host, capped scope, at the pushed head)
+## Gates (host, capped scope, at the pushed head; CI run 44735397769 on `aa852fbf`)
 
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace`: green (`t1-3`, rc 0).
-- Tier 2 is CI's. The three droop tests in `campaign_tier2` are expected red until 2305 (§5).
+- `cargo test --workspace`: green on the merged tree (rc 0).
+- **Tier 2 (CI run 44735397769):** every shard and the aggregate pass at `TIER2_MIN` 199. `bench-package` waits
+  for the dispatch.
+- **Re-pinned tests:** verified first in the tools image, with a forced rebuild.
+  - Lesson: `rsync -a` keeps old mtimes, so cargo may reuse a stale test binary. Touch the sources after the sync.
 - Reduction pass (diff): −8 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 6
   findings below.
   - **Removed (re-tested; M1, M5, M10 and M12 still die at `434c861e`):**
