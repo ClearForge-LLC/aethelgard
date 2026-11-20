@@ -467,7 +467,10 @@ jobs:
       # twin_tier2.rs, battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats
       # and battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats
       # (the tree boards' campaigns, replayed and run twice).
-      TIER2_MIN: "193"
+      # 194 (AET-WO-3305; recomputed at its merge of main 3341dc6b, which
+      # held 193): one tier-2 test, twin_tier2.rs a_fault_on_a_bus_with_two_
+      # devices_is_not_masked_and_a_wrong_address_still_is_software.
+      TIER2_MIN: "194"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
       # only when the route job succeeded, said docs, and the build and every shard were skipped.
