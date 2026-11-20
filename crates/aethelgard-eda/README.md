@@ -34,13 +34,14 @@ Ground and unconnected nets are not counted, and ties go to the lower reference.
 
 A part anchored to an IC (a buck's input capacitor, CBOOT, an MCU support part) goes straight after that IC, in the emitter's draw sequence for it (`Anchor::seq`, `AET-WO-1313c` F1), never in the parts list's order.
 
-**Under a declared bound** (`board.max_outline_um`, `AET-WO-1313`, `AET-WO-1313c`), and only there, no name and no list position decides a placement:
+**Under a declared bound** (`board.max_outline_um`, `AET-WO-1313`, `AET-WO-1313c`, `AET-WO-1317`), and only there, no name and no list position decides a placement:
 - a canonical rank, from footprints, ownership, the draw sequence and the net graph (colour refinement), takes the place of reference order everywhere above; a reference breaks only a tie that remains between parts alike in all of those;
-- a part's target is the centroid of its anchor's pads on every net they share;
+- a part that is not anchored targets the centroid of its anchor's pads on every net they share (an anchored part is placed by the pads it serves, bound or not);
 - each IC's group (the IC and every non-IC part placed beside it) is then compacted toward the MCU, a 0.25 mm step at a time, sidestepping up to 10 mm, keeping the gaps above, every pair's approach strip and the parts' x-range;
-- the connectors go on the left and right edges, cable out, in the rank's order.
+- the connectors go on the left and right edges, cable out, in the rank's order;
+- a placement that misses the bound is placed again with the canonical rank reseeded, seeds 1 to 8 in turn, and the first that fits is kept; a placement that fits the first time is the one returned, so a board that fits is unchanged (`AET-WO-1317`).
 
-A bound the parts cannot fit is refused before placement (`OutlineTooSmall`); one the placer cannot reach is refused with the outline it reached (`OutlineUnreachable`); a compaction whose termination argument fails at run time, a move that does not lower its group's potential or more moves than the argument's bound, is refused at that move (`CompactionUnbounded`); and nothing is written. With no bound the board is unchanged, byte for byte.
+A bound the parts cannot fit is refused before placement (`OutlineTooSmall`); one the placer cannot reach is refused with the least-over outline of its nine attempts, by the larger overrun, then their sum, then the earlier seed (`OutlineUnreachable`); a compaction whose termination argument fails at run time, a move that does not lower its group's potential or more moves than the argument's bound, is refused at that move (`CompactionUnbounded`); and nothing is written. With no bound the board is unchanged, byte for byte.
 
 **The router** (`route::route`) is integer-only, and its copper is a function of the placed pads alone:
 - **Grid:** 0.125 mm, which divides the LQFP's 0.5 mm pitch, so every LQFP pad centre is a node. Moves are axis-aligned on F.Cu and B.Cu, with a via between; the search is A* over (layer, node, entering direction), with a cost per step (B.Cu three times F.Cu's), per bend and per via. Ties go to the lower state index.
