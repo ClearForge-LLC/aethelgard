@@ -25,12 +25,6 @@ use crate::{BOOT0, GND, IrValidationError as E, NRST, SWCLK, SWDIO, Specificatio
 /// starts with it (`aethelgard_eda::pcb`), and so does `validate`.
 pub const UNCONNECTED: &str = "unconnected-";
 
-/// The parts the schematic emitter has a vendored model for, as its
-/// `UnknownPart` refusal lists them. Each has a row in the parts table
-/// (`parts.json`), so `validate`'s refusal of a part with no row (step 14,
-/// `AET-WO-1206` §1.8) prints the emitter's message truthfully.
-pub const VENDORED_PARTS: &str = "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P";
-
 /// The nets the emitter names `<reference>_<suffix>` for a device of each
 /// part: a strap or a filter pin it draws a passive on (`BME280`'s and
 /// `BMP581`'s `SDO` strap, the flash's `WP` and `HOLD` straps, the
