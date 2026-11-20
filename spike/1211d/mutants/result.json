@@ -92,8 +92,10 @@
  {
   "mutant": "G7 a row pin left floating (the completeness refusal removed)",
   "target": "aethelgard-cli --test pin_devices_drawn_tier1",
-  "killed": false,
+  "killed": true,
   "compiled": true,
-  "failing": []
+  "failing": [
+   "a_strap_missing_from_the_declaration_is_refused_never_floated"
+  ]
  }
 ]
