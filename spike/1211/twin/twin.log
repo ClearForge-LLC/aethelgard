@@ -3,14 +3,15 @@ Renode v1.17.0
   build type: Release
   runtime: .NET 8.0.12
 === gpio ===
-[14:10:44.4943] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:12.7303] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/gpio.resc;  quit
-[14:10:44.5109] [INFO] Including script(s): /repo/spike/1211/twin/gpio.resc
-[14:10:44.5174] [INFO] System bus created.
-[14:10:45.0971] [INFO] Pseudorandom Number Generator was created with seed: 18575877
-[14:10:45.3414] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:12.8489] [INFO] Including script(s): /repo/spike/1211/twin/gpio.resc
+[14:19:12.8940] [INFO] System bus created.
+[14:19:15.0040] [INFO] Pseudorandom Number Generator was created with seed: 817252950
+[14:19:16.4763] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:16.4815] [INFO] Including script(s): /repo/spike/1211/twin/gpio.resc
 G0 GPIOA_MODER at reset (silicon RM0433 reset 0xABFFFFFF)
 0x00000000
 G0 GPIOC_MODER at reset (silicon 0xFFFFFFFF)
@@ -31,215 +32,202 @@ G4 PC3 output, ODR bit 3 set, then the script drives it low: ODR, IDR
 0x00000001
 0x00000001
 G5 OTYPER: write 0x0004 (PC2 open drain), read back
-[14:10:45.3869] [WARNING] gpioPortC: Unhandled write to offset 0x4. Unhandled bits: [2] when writing value 0x4. Tags: OT2 (0x1).
 0x00000000
 G6 virtual time runs: 1 ms, then PC0..PC3 IDR
-[14:10:45.4388] [INFO] machine-0: Machine started.
-[14:10:45.4516] [INFO] machine-0: Machine paused.
+[14:19:16.6339] [WARNING] gpioPortC: Unhandled write to offset 0x4. Unhandled bits: [2] when writing value 0x4. Tags: OT2 (0x1).
+[14:19:16.8419] [INFO] machine-0: Machine started.
 0x00000001
 GPIO-END
 Renode is quitting
-[14:10:45.4802] [INFO] machine-0: Disposed.
+[14:19:16.8790] [INFO] machine-0: Machine paused.
+[14:19:17.0183] [INFO] machine-0: Disposed.
 === gpio exit 0 ===
 === timer ===
-[14:10:46.2721] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:21.6978] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/timer.resc;  quit
-[14:10:46.2891] [INFO] Including script(s): /repo/spike/1211/twin/timer.resc
-[14:10:46.2955] [INFO] System bus created.
-[14:10:46.8817] [INFO] Pseudorandom Number Generator was created with seed: 1605422531
-[14:10:47.1356] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
-[14:10:47.1447] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
-[14:10:47.1454] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
+[14:19:21.7840] [INFO] Including script(s): /repo/spike/1211/twin/timer.resc
+[14:19:21.8269] [INFO] System bus created.
+[14:19:25.2276] [INFO] Pseudorandom Number Generator was created with seed: 2128823406
+[14:19:26.8547] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:26.8561] [INFO] Including script(s): /repo/spike/1211/twin/timer.resc
+[14:19:26.9168] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
+[14:19:26.9232] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
 T1 PA8 before CEN, PWM1 CCR1=0: IDR_A
 0x00000000
 T2 CCR1=0 running: IDR_A at 8 instants 7 us apart
-[14:10:47.2114] [INFO] machine-0: Machine started.
-[14:10:47.2228] [INFO] machine-0: Machine paused.
+[14:19:27.2264] [INFO] machine-0: Machine started.
 0x00000000
-[14:10:47.2239] [INFO] machine-0: Machine resumed.
-[14:10:47.2246] [INFO] machine-0: Machine paused.
-0x00000000
-[14:10:47.2255] [INFO] machine-0: Machine resumed.
-[14:10:47.2256] [INFO] machine-0: Machine paused.
-0x00000000
-[14:10:47.2263] [INFO] machine-0: Machine resumed.
-[14:10:47.2264] [INFO] machine-0: Machine paused.
-0x00000000
-[14:10:47.2271] [INFO] machine-0: Machine resumed.
-[14:10:47.2271] [INFO] machine-0: Machine paused.
-0x00000000
-[14:10:47.2279] [INFO] machine-0: Machine resumed.
-[14:10:47.2279] [INFO] machine-0: Machine paused.
-0x00000000
-[14:10:47.2286] [INFO] machine-0: Machine resumed.
-[14:10:47.2294] [INFO] machine-0: Machine paused.
+[14:19:27.2785] [INFO] machine-0: Machine paused.
+[14:19:27.3061] [INFO] machine-0: Machine resumed.
 0x00000000
 0x00000000
-[14:10:47.2302] [INFO] machine-0: Machine resumed.
-[14:10:47.2303] [INFO] machine-0: Machine paused.
-T3 CCR1=25 running: IDR_A at 8 instants 7 us apart
-[14:10:47.2332] [INFO] machine-0: Machine resumed.
-[14:10:47.2338] [INFO] machine-0: Machine paused.
-[14:10:47.2345] [INFO] machine-0: Machine resumed.
-[14:10:47.2345] [INFO] machine-0: Machine paused.
+[14:19:27.3140] [INFO] machine-0: Machine paused.
+[14:19:27.3152] [INFO] machine-0: Machine resumed.
+[14:19:27.3162] [INFO] machine-0: Machine paused.
+[14:19:27.3210] [INFO] machine-0: Machine resumed.
+0x00000000
+0x00000000
+[14:19:27.3302] [INFO] machine-0: Machine paused.
+[14:19:27.3314] [INFO] machine-0: Machine resumed.
+[14:19:27.3383] [INFO] machine-0: Machine paused.
+[14:19:27.3394] [INFO] machine-0: Machine resumed.
+0x00000000
+[14:19:27.3462] [INFO] machine-0: Machine paused.
+[14:19:27.3472] [INFO] machine-0: Machine resumed.
+0x00000000
+[14:19:27.3562] [INFO] machine-0: Machine paused.
+0x00000000
+T3 C[14:19:27.3675] [INFO] machine-0: Machine resumed.
+CR1=25 running: IDR_A at 8 instants 7 us apart
+[14:19:27.3677] [INFO] machine-0: Machine paused.
+[14:19:27.3963] [INFO] machine-0: Machine resumed.
+[14:19:27.4092] [INFO] machine-0: Machine paused.
+[14:19:27.4100] [INFO] machine-0: Machine resumed.
 0x00000100
-[14:10:47.2353] [INFO] machine-0: Machine resumed.
-[14:10:47.2354] [INFO] machine-0: Machine paused.
+[14:19:27.4212] [INFO] machine-0: Machine paused.
+[14:19:27.4225] [INFO] machine-0: Machine resumed.
 0x00000100
-[14:10:47.2362] [INFO] machine-0: Machine resumed.
-[14:10:47.2362] [INFO] machine-0: Machine paused.
+[14:19:27.4322] [INFO] machine-0: Machine paused.
+[14:19:27.4333] [INFO] machine-0: Machine resumed.
 0x00000000
-[14:10:47.2370] [INFO] machine-0: Machine resumed.
-[14:10:47.2370] [INFO] machine-0: Machine paused.
 0x00000000
-[14:10:47.2379] [INFO] machine-0: Machine resumed.
-[14:10:47.2380] [INFO] machine-0: Machine paused.
+[14:19:27.4395] [INFO] machine-0: Machine paused.
+[14:19:27.4405] [INFO] machine-0: Machine resumed.
+[14:19:27.4482] [INFO] machine-0: Machine paused.
 0x00000000
-[14:10:47.2388] [INFO] machine-0: Machine resumed.
-[14:10:47.2391] [INFO] machine-0: Machine paused.
+[14:19:27.4493] [INFO] machine-0: Machine resumed.
+[14:19:27.4572] [INFO] machine-0: Machine paused.
+[14:19:27.4620] [INFO] machine-0: Machine resumed.
+0[14:19:27.4652] [INFO] machine-0: Machine paused.
+x00000100
 0x00000100
-[14:10:47.2400] [INFO] machine-0: Machine resumed.
-[14:10:47.2401] [INFO] machine-0: Machine paused.
-0x00000100
-[14:10:47.2408] [INFO] machine-0: Machine resumed.
-[14:10:47.2409] [INFO] machine-0: Machine paused.
+[14:19:27.4666] [INFO] machine-0: Machine resumed.
+[14:19:27.4732] [INFO] machine-0: Machine paused.
+[14:19:27.4745] [INFO] machine-0: Machine resumed.
 0x00000100
 T4 CEN=0, MOE=0, OC1M forced active (0101): IDR_A
-[14:10:47.2417] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x58. Tags: Output compare 1 preload enable (OC1PE) (0x1).
 0x00000100
 T5 OC1M forced inactive (0100): IDR_A
+[14:19:27.4812] [INFO] machine-0: Machine paused.
+[14:19:27.4834] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x58. Tags: Output compare 1 preload enable (OC1PE) (0x1).
 0x00000000
-T6 forced act[14:10:47.2421] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x48. Tags: Output compare 1 preload enable (OC1PE) (0x1).
-ive, CC1E=0: IDR_A
-[14:10:47.2426] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x58. Tags: Output compare 1 preload enable (OC1PE) (0x1).
-0x00000100
-T7 idle high as CCR1 = ARR+1 = 50, PWM1, CC1E, CEN: IDR_A at 4 instants 13 us apart
-[14:10:47.2432] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
-[14:10:47.2441] [INFO] machine-0: Machine resumed.
-[14:10:47.2441] [INFO] machine-0: Machine paused.
-0x00000100
-[14:10:47.2449] [INFO] machine-0: Machine resumed.
-[14:10:47.2450] [INFO] machine-0: Machine paused.
-0x00000100
-[14:10:47.2457] [INFO] machine-0: Machine resumed.
-[14:10:47.2458] [INFO] machine-0: Machine paused.
-0x00000100
-[14:10:47.2465] [INFO] machine-0: Machine resumed.
-[14:10:47.2467] [INFO] machine-0: Machine paused.
+T6 forced active, CC1E=0: IDR_A
 0x00000100
 TIMER-END
+[14:19:27.4915] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x48. Tags: Output compare 1 preload enable (OC1PE) (0x1).
+[14:19:27.4933] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x58. Tags: Output compare 1 preload enable (OC1PE) (0x1).
 Renode is quitting
-[14:10:47.2742] [INFO] machine-0: Disposed.
+[14:19:27.6575] [INFO] machine-0: Disposed.
 === timer exit 0 ===
 === adc ===
-[14:10:48.1070] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:29.9926] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/adc.resc;  quit
-[14:10:48.1240] [INFO] Including script(s): /repo/spike/1211/twin/adc.resc
-[14:10:48.1305] [INFO] System bus created.
-[14:10:48.7177] [INFO] Pseudorandom Number Generator was created with seed: 52805034
-[14:10:48.9797] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:30.0588] [INFO] Including script(s): /repo/spike/1211/twin/adc.resc
+[14:19:30.0878] [INFO] System bus created.
+[14:19:31.3493] [INFO] Pseudorandom Number Generator was created with seed: 1506023988
+[14:19:31.8221] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
 A0 ADC1_CR at reset (RM0433: DEEPPWD 1, 0x20000000)
 0x0FC00000
 A1 ISR after ADEN (ADRDY bit 0)
 0x00001001
 A2 no value set on channel 5: ADSTART, run 1 ms, ISR, DR
-[14:10:49.0502] [INFO] machine-0: Machine started.
-[14:10:49.0635] [INFO] machine-0: Machine paused.
+[14:19:31.9598] [INFO] machine-0: Machine started.
+[14:19:31.9814] [INFO] machine-0: Machine paused.
 0x0000100F
 0x00000000
 A3 the script sets channel 5 to 1.65 V (1650000 uV): ADSTART, run 1 ms, ISR, DR
-[14:10:49.0966] [INFO] machine-0: Machine resumed.
-[14:10:49.0967] [INFO] machine-0: Machine paused.
+[14:19:32.0365] [INFO] machine-0: Machine resumed.
+[14:19:32.0367] [INFO] machine-0: Machine paused.
 0x0000100F
 0x00008000
 A4 channel 5 GetVoltage
 0x00192D50
 ADC-END
 Renode is quitting
-[14:10:49.1298] [INFO] machine-0: Disposed.
+[14:19:32.0832] [INFO] machine-0: Disposed.
 === adc exit 0 ===
 === adc23 ===
-[14:10:49.9244] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:33.1147] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/adc23.resc;  quit
-[14:10:49.9415] [INFO] Including script(s): /repo/spike/1211/twin/adc23.resc
-[14:10:49.9480] [INFO] System bus created.
-[14:10:50.5318] [INFO] Pseudorandom Number Generator was created with seed: 1523766487
-[14:10:50.7879] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:33.1383] [INFO] Including script(s): /repo/spike/1211/twin/adc23.resc
+[14:19:33.1486] [INFO] System bus created.
+[14:19:33.8569] [INFO] Pseudorandom Number Generator was created with seed: 869284668
+[14:19:34.1417] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
 A5 ADC3 (stock adc3 at 0x58026000): PF3 = ADC3_INP5 (DS12117 p65); set 0.825 V, enable, PCSEL 5, SQ1 5, ADSTART, DR
-[14:10:50.8842] [INFO] machine-0: Machine started.
-[14:10:50.8966] [INFO] machine-0: Machine paused.
+[14:19:34.2473] [INFO] machine-0: Machine started.
+[14:19:34.2606] [INFO] machine-0: Machine paused.
 0x0000100F
 0x00004000
 A6 ADC2 (RM0433: ADC2 at 0x40022100, inside adcM1S2's window): write ADC2_CR 0x10000000, read ADC2_CR, ADC2_ISR, ADC1_CR
 0x00000000
 0x00000000
-[14:10:50.9016] [WARNING] adcM1S2: Unhandled read from offset 0x100.
+[14:19:34.2664] [WARNING] adcM1S2: Unhandled read from offset 0x100.
 0x0FC00000
 ADC23-END
 Renode is quitting
-[14:10:50.9289] [INFO] machine-0: Disposed.
+[14:19:34.2963] [INFO] machine-0: Disposed.
 === adc23 exit 0 ===
 === order ===
-[14:10:51.7336] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:35.2323] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/order.resc;  quit
-[14:10:51.7499] [INFO] Including script(s): /repo/spike/1211/twin/order.resc
-[14:10:51.7564] [INFO] System bus created.
-[14:10:52.3277] [INFO] Pseudorandom Number Generator was created with seed: 990309012
-[14:10:52.5649] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:35.2509] [INFO] Including script(s): /repo/spike/1211/twin/order.resc
+[14:19:35.2584] [INFO] System bus created.
+[14:19:35.9431] [INFO] Pseudorandom Number Generator was created with seed: 1756838776
+[14:19:36.2345] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
 O1 the generator's order (svd-hal board.rs L3272-3290), CCR1 = 25: PSC, ARR, CCR1, CCMR1, CCMR2, CCER, BDTR, EGR; IDR_A after each of CCER, BDTR, EGR
-[14:10:52.5824] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
+[14:19:36.2543] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
 0x00000000
-[14:10:52.5863] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
+[14:19:36.2589] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
 0x00000000
 0x00000000
 O2 CR1 = ARPE|CEN, then IDR_A at 3 instants 7 us apart
 0x00000000
-[14:10:52.6397] [INFO] machine-0: Machine started.
-[14:10:52.6512] [INFO] machine-0: Machine paused.
+[14:19:36.3181] [INFO] machine-0: Machine started.
+[14:19:36.3345] [INFO] machine-0: Machine paused.
 0x00000000
-[14:10:52.6526] [INFO] machine-0: Machine resumed.
-[14:10:52.6536] [INFO] machine-0: Machine paused.
+[14:19:36.3359] [INFO] machine-0: Machine resumed.
+[14:19:36.3368] [INFO] machine-0: Machine paused.
 0x00000000
 ORDER-END
 Renode is quitting
-[14:10:52.6801] [INFO] machine-0: Disposed.
+[14:19:36.3724] [INFO] machine-0: Disposed.
 === order exit 0 ===
 === high ===
-[14:10:53.4833] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+[14:19:37.2675] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
 Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
 
 (monitor) include @/repo/spike/1211/twin/high.resc;  quit
-[14:10:53.5003] [INFO] Including script(s): /repo/spike/1211/twin/high.resc
-[14:10:53.5067] [INFO] System bus created.
-[14:10:54.0994] [INFO] Pseudorandom Number Generator was created with seed: 1611853167
-[14:10:54.3433] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
+[14:19:37.2855] [INFO] Including script(s): /repo/spike/1211/twin/high.resc
+[14:19:37.2928] [INFO] System bus created.
+[14:19:37.9175] [INFO] Pseudorandom Number Generator was created with seed: 290181055
+[14:19:38.1737] [WARNING] cpu: Patching PC 0x8000008 for Thumb mode.
 H1 fresh machine, the generator's order, idle high as CCR1 = ARR+1 = 50: IDR_A after EGR (before CEN)
-[14:10:54.3609] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
-[14:10:54.3616] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
+[14:19:38.1924] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
+[14:19:38.1932] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
 0x00000000
 H2 CR1 = ARPE|CEN, IDR_A at 0, 7, 37, 57, 107 us
 0x00000000
-[14:10:54.4190] [INFO] machine-0: Machine started.
-[14:10:54.4305] [INFO] machine-0: Machine paused.
+[14:19:38.2521] [INFO] machine-0: Machine started.
+[14:19:38.2643] [INFO] machine-0: Machine paused.
 0x00000000
-[14:10:54.4319] [INFO] machine-0: Machine resumed.
-[14:10:54.4327] [INFO] machine-0: Machine paused.
+[14:19:38.2656] [INFO] machine-0: Machine resumed.
+[14:19:38.2663] [INFO] machine-0: Machine paused.
 0x00000000
-[14:10:54.4336] [INFO] machine-0: Machine resumed.
-0[14:10:54.4345] [INFO] machine-0: Machine paused.
-x00000100
-[14:10:54.4353] [INFO] machine-0: Machine resumed.
-[14:10:54.4355] [INFO] machine-0: Machine paused.
+[14:19:38.2672] [INFO] machine-0: Machine resumed.
+[14:19:38.2681] [INFO] machine-0: Machine paused.
+0x00000100
+[14:19:38.2689] [INFO] machine-0: Machine resumed.
+[14:19:38.2691] [INFO] machine-0: Machine paused.
 0x00000100
 HIGH-END
 Renode is quitting
-[14:10:54.4626] [INFO] machine-0: Disposed.
+[14:19:38.2982] [INFO] machine-0: Disposed.
 === high exit 0 ===

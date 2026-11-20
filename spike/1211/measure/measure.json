@@ -170,66 +170,42 @@
     {
      "output": "MOTOR1",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR2",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR3",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR4",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     }
    ]
   },
@@ -359,66 +335,42 @@
     {
      "output": "MOTOR1",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR2",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR3",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR4",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     }
    ]
   },
@@ -437,66 +389,42 @@
     {
      "output": "MOTOR1",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR2",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR3",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR4",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     }
    ]
   },
@@ -515,66 +443,42 @@
     {
      "output": "MOTOR1",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR2",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR3",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR4",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     }
    ]
   },
@@ -729,66 +633,42 @@
     {
      "output": "MOTOR1",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR2",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR3",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     },
     {
      "output": "MOTOR4",
      "protocol": "dshot600",
-     "kernel_hz": 64000000,
      "today": {
       "psc": 0,
       "arr": 106,
       "ccr": 40
      },
-     "proposed": {
-      "psc": 0,
-      "arr": 106,
-      "ccr": 40
-     },
-     "same": true
+     "untouched": true
     }
    ]
   },

@@ -115,10 +115,11 @@ def compare(t, rel, moved):
     res = []
     for label, o in t["motor_outputs"].items():
         today = words(o)
-        if o["protocol"] == "pwm":
-            new = proposed(o["pwm"], {"pulse_us": o["pwm"]["pulse_min_us"]}, 1_000_000, k)
-        else:
-            new = today  # DShot: no `pwm`, so no idle and no resolution; its words are not derived from them
+        if o["protocol"] != "pwm":
+            # DShot: `pwm` is null, so no field reaches it; untouched by construction, not compared.
+            res.append({"output": label, "protocol": o["protocol"], "today": today, "untouched": True})
+            continue
+        new = proposed(o["pwm"], {"pulse_us": o["pwm"]["pulse_min_us"]}, 1_000_000, k)
         same = new == today
         res.append({"output": label, "protocol": o["protocol"], "kernel_hz": k, "today": today,
                     "proposed": new, "same": same})

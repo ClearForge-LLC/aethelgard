@@ -64,18 +64,4 @@ echo "T6 forced active, CC1E=0: IDR_A"
 sysbus WriteDoubleWord 0x40010020 0x00000000
 sysbus WriteDoubleWord 0x40010018 0x00000058
 sysbus ReadDoubleWord 0x58020010
-echo "T7 idle high as CCR1 = ARR+1 = 50, PWM1, CC1E, CEN: IDR_A at 4 instants 13 us apart"
-sysbus WriteDoubleWord 0x40010020 0x00000001
-sysbus WriteDoubleWord 0x40010018 0x00000068
-sysbus WriteDoubleWord 0x40010034 50
-sysbus WriteDoubleWord 0x40010014 0x00000001
-sysbus WriteDoubleWord 0x40010000 0x00000081
-emulation RunFor "0.000013"
-sysbus ReadDoubleWord 0x58020010
-emulation RunFor "0.000013"
-sysbus ReadDoubleWord 0x58020010
-emulation RunFor "0.000013"
-sysbus ReadDoubleWord 0x58020010
-emulation RunFor "0.000013"
-sysbus ReadDoubleWord 0x58020010
 echo "TIMER-END"

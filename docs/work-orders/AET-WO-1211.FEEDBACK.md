@@ -351,7 +351,6 @@ The stock platform is `platforms/cpus/stm32h753.repl` → `stm32h7.repl`, pinned
 | O1–O2 | the generator's order with CCR 25: PA8 0 after `CCER`, `BDTR` and `UG`, and 0 at 0, 7 and 37 µs after `CEN` | `OCxREF` high from `UG` (CNT 0 < CCR), MOE set | **the pre-`CEN` window and the first period are not modelled** |
 | H1–H2 | fresh machine, idle high (CCR = ARR + 1 = 50): PA8 0 before `CEN` and at 0, 7, 37 µs; 1 at 57 and 107 µs | held 1 from `UG` | **idle high witnessed after one period only** |
 | T4–T6 | forced active with `CEN` 0, `MOE` 0: PA8 1; forced inactive: 0; forced active with `CC1E` 0: 1 | `MOE` 0 or `CC1E` 0: output disabled, Hi-Z (Table 337, p. 1608) | `MOE`/`CCxE` gating unmodelled (`BDTR` already `ignored-by-model`); the lean avoids forced modes |
-| T7 | (superseded by H1–H2) read 1 throughout, but PA8 was still high from T6's forced write: not clean, kept in the log only | — | — |
 
 **ADC (`STM32H7_ADC.cs` L13–42 → `STM32_ADC_Common.cs`).**
 - 19 channels per instance.
@@ -453,7 +452,11 @@ Specification **20** is `4240a`'s and **21** is `1210`'s: the architect's kickof
 - **`cargo fmt --all -- --check`:** passes.
 - **Clippy and `cargo test --workspace`:** not run. No Rust file changed, so both are `main`'s own (CLAUDE.md: "for a spike-only branch, run what applies and say so"). No test reads `spike/` (4600 §9a's reading of `workspace_shape.rs` still holds).
 - **Adversarial pass:** none, by the work order (nothing is built).
-- **Reduction pass (diff):** see the PR body.
+- **Reduction pass (diff):** −13 net (in the two scripts) · 1 duplicate removed · 1 dead path removed · 0 protected kept · 1 finding below.
+  - **Duplicate:** `twin/timer.resc`'s T7 measured idle high a second time, on a pin T6 had left high. `high.resc` (H1–H2) measures it cleanly, so T7 is gone from the script, the log and §4.
+  - **Dead path:** `measure.py` compared each DShot output's words with themselves (`today` = `today`). It now records them as `untouched` and compares nothing.
+  - **Proof:** both reran in the image after the cut. Six Renode scripts exit 0. Every value that remains is the same as before the cut: G0–G5, T1–T6, A0–A6, O1–O2 and H1–H2 are compared value by value, and Renode's log interleaving is checked by hand at T3/T4. `measure.json` still shows 0 moved.
+  - **Finding:** `twin/run.sh` and `measure/bytes.sh` repeat the container recipe (capped-run, flock, mounts) in about 8 lines each. Folding them into one runner saves about 4 lines but means rerunning both evidence scripts for no change in evidence, so it is left. It would be one deletion if these scripts outlive the ruling.
 - **Scratch left in `~/.cache/aet-1211`:**
   - held documents and pages, kept for the ruling;
   - `target/` and `target-img/`, the CLI builds (removed at close);
