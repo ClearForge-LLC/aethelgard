@@ -59,7 +59,7 @@
 - **Second refit, because the REFIT RULE fired on the merged tree.** Slowest minus fastest shard was 6.7 and 6.3 min on runs 44644135555 and 44647140730, more than 6 minutes on two runs in a row.
   - Shard 3 was slowest both times, by 0.8 and 0.2 min over the next, so roadmap §6's 3-minute clause did not fire.
   - Every row and block was re-weighed by rule 5 from those two runs alone. The heaviest falls were `supply_tier1` 599 → 302, `outline_tier1` 392 → 152 and `attribute_seeded` 479 → 380; `four_layer_fab_tier2` rose 582 → 625. 17 rows under 0.5 s were dropped and 7 added.
-  - The plan is now 627 s per shard at 12, balanced. It is verified by the run on the head that carries it, which the PR body records.
+  - The plan is now 627 s per shard at 12, balanced. Run 44649981160 on its head (`63b11b5b`): `tools` green at 19.1 min, spread 5.5 min (under the 6-minute line), tier 2 190/190, 137 runner-minutes.
 - Local gates at `b9572ce0`: fmt, clippy, and `cargo test --workspace` (2,299 passed, 0 failed). On CI, `gates` is green on every run.
 
 ## `main` merged after 3303b (52a2d62e): the floor moved
