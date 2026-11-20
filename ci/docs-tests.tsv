@@ -1,0 +1,18 @@
+# package<TAB>test target<TAB>literal<TAB>occurrences<TAB>reads|cites (AET-WO-1911 §1.1). Every string literal in a Rust source
+# that names a docs-only path, directory or name (ci/route.sh is_docs), one row per target and literal, with how many times the
+# target's sources name it; `bash ci/route.sh check ci/docs-tests.tsv` refuses, by name, a literal missing here or named more or
+# fewer times, and a row the inventory no longer finds.
+#   reads  the target reads that docs-only file: it runs on a docs-only pull request (ci/route.sh docs-tests)
+#   cites  the literal names a crate-level file of the same name, or cites a document without reading it
+aethelgard-cli	package_licences	LICENSE-APACHE	1	reads
+aethelgard-cli	package_licences	LICENSE-MIT	1	reads
+aethelgard-cli	readme_status	README.md	2	reads
+aethelgard-cli	readme_status	docs/roadmap.md	2	reads
+# mcp_tier1.rs reads crates/aethelgard-cli/README.md (CARGO_MANIFEST_DIR's), not the root's.
+aethelgard-cli	mcp_tier1	README.md	1	cites
+# workspace_shape.rs names README.md and LICENSE-* as files inside each crate's package, never the root's.
+aethelgard-cli	workspace_shape	LICENSE-APACHE	1	cites
+aethelgard-cli	workspace_shape	LICENSE-MIT	1	cites
+aethelgard-cli	workspace_shape	README.md	7	cites
+# readme_versions.rs reads crates/aethelgard-ir/README.md (concat! of CARGO_MANIFEST_DIR and "/README.md").
+aethelgard-ir	readme_versions	/README.md	1	cites

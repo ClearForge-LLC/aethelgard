@@ -176,4 +176,42 @@ refuses "plan: a lock-serialised binary's test with no row" "${py[@]}" assign 4 
 grep -q 'tests/board_tier2.rs v2 has no row' "$tmp/out" && ok "plan: the test is named" || bad "plan: the test is not named"
 printf 'tests/board_tier2.rs\tv1\t100\ntests/board_tier2.rs\tv2\t1\ntests/board_tier2.rs\tshared2\t1\n' >"$tmp/wl.tsv"
 accepts "plan: every lock-serialised test weighed" "${py[@]}" assign 4 "$tmp/wl.tsv" "$tmp/entries.tsv" "$tmp/lk2" 0 /dev/null "tests/board_tier2.rs"
+
+echo "== the shared build (AET-WO-1911 §1.2)"
+# compiled_in: cargo compiled before a test binary ran; a tool's later `Compiling` line is the test's own output.
+printf '    Finished `test` profile\n     Running tests/a.rs (target/debug/deps/a-1)\n   Compiling inside-a-test v0\n' >"$tmp/fresh.log"
+accepts "compiled_in: a fresh build, a test's own Compiling line after Running" "${py[@]}" compiled_in "$tmp/fresh.log"
+printf '   Compiling aethelgard-cli v0.2.0 (/repo/crates/aethelgard-cli)\n    Finished `test` profile\n     Running tests/a.rs (x)\n' >"$tmp/stale.log"
+refuses "compiled_in: a shard that compiles" "${py[@]}" compiled_in "$tmp/stale.log"
+printf '\033[1m\033[32m   Compiling\033[0m aethelgard-cli v0.2.0\n     Running tests/a.rs (x)\n' >"$tmp/color.log"
+refuses "compiled_in: a coloured Compiling line" "${py[@]}" compiled_in "$tmp/color.log"
+grep -q 'this shard compiled' "$tmp/out" && ok "compiled_in: says so" || bad "compiled_in: the reason"
+# pack and unpack, on a scratch repository with its own copy of ci/ and container/IMAGE.
+g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
+mkrepo() { rm -rf "$1"; mkdir -p "$1/ci" "$1/container" "$1/src"; cp "$here/shard.sh" "$here/SHARDS" "$1/ci/"; echo img@sha256:1 >"$1/container/IMAGE"; echo a >"$1/src/a.rs"; echo /target/ >"$1/.gitignore"
+  (cd "$1" && g init -q . && g add -A && g commit -qm a); }
+mkrepo "$tmp/b"
+(cd "$tmp/b" && mkdir -p target/debug/deps target/debug/incremental && echo bin >target/debug/deps/t-1 && echo inc >target/debug/incremental/x && bash ci/shard.sh pack "$tmp/art" >/dev/null) \
+  && ok "pack: target/ packed with its stamp" || bad "pack"
+grep -q '^tree=' "$tmp/art/stamp" && grep -q '^image=img@sha256:1$' "$tmp/art/stamp" && grep -q '^sha256=' "$tmp/art/stamp" && ok "pack: the stamp names the tree, the image and the sha256" || bad "pack: stamp"
+clone() { rm -rf "$tmp/s"; g clone -q "$tmp/b" "$tmp/s"; }
+clone; accepts "unpack: the same tree and image" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
+[ -f "$tmp/s/target/debug/deps/t-1" ] && [ ! -e "$tmp/s/target/debug/incremental" ] && ok "unpack: the binaries, not incremental/" || bad "unpack: contents"
+[ "$(stat -c %Y "$tmp/s/src/a.rs")" = 946684800 ] && [ "$(stat -c %Y "$tmp/s/src")" = 946684800 ] && ok "unpack: sources and directories dated the epoch" || bad "unpack: mtimes"
+[ "$(stat -c %Y "$tmp/s/target/debug/deps/t-1")" != 946684800 ] && ok "unpack: the build keeps its own mtimes" || bad "unpack: build mtimes"
+clone; (cd "$tmp/s" && echo b >src/a.rs && g commit -qam other)
+refuses "unpack: an archive from another tree (a stale binary)" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
+grep -q 'built from another tree or image' "$tmp/out" && ok "unpack: says another tree" || bad "unpack: tree reason"
+clone; (cd "$tmp/s" && echo img@sha256:2 >container/IMAGE && g commit -qam image)
+refuses "unpack: an archive built in another image" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
+clone; cp -r "$tmp/art" "$tmp/art2"; printf 'x' >>"$tmp/art2/target.tar.zst"
+refuses "unpack: an archive that is not its stamp's" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art2'"
+grep -q "is not its stamp's" "$tmp/out" && ok "unpack: says the sha256" || bad "unpack: sha reason"
+(cd "$tmp/b" && echo dirty >src/a.rs && rm -rf "$tmp/art3")
+refuses "pack: from a dirty tree" bash -c "cd '$tmp/b' && bash ci/shard.sh pack '$tmp/art3'"
+(cd "$tmp/b" && git checkout -q src/a.rs)
+clone; echo edited >"$tmp/s/src/a.rs"
+refuses "unpack: over an edited checkout" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
+clone; mkdir -p "$tmp/s/target"
+refuses "unpack: over an existing target/" bash -c "cd '$tmp/s' && bash ci/shard.sh unpack '$tmp/art'"
 exit "$fail"
