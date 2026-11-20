@@ -147,14 +147,16 @@ pub struct NoEsc {
 /// §8.7.2), selected (`RCC_CFGR` reset 0, `SW` = `SWS` = HSI, `TIMPRE` 0,
 /// §8.7.7), every domain prescaler at its reset value 1 (`RCC_D1CFGR`,
 /// `RCC_D2CFGR` and `RCC_D3CFGR` reset 0, "not divided", §8.7.8–§8.7.10).
-/// `hse_hz` is the specification's `mcu.hse_hz`, which is 0 (no crystal).
+/// `hse_hz` is the HSE's frequency in whole Hz, 0 when `mcu.hse` is `null`
+/// (an HSE tree is reachable only from a whole-Hz source, `AET-WO-4240a`).
 /// `vos` is the core's voltage scale (`AET-WO-4240v`): the generated
 /// firmware raises it from the reset `scale3` to `scale2` before any
 /// peripheral runs, and [`crate::vos`] judges every clock at it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedClock {
-    /// `HSI`, the only source this engine builds.
+    /// `HSI`, or `PLL1` from a declared HSE (`AET-WO-4240a`; generated from
+    /// `4240b`).
     pub source: String,
     pub sysclk_hz: u32,
     pub hse_hz: u32,
@@ -169,6 +171,16 @@ pub struct SolvedClock {
     pub timpre: bool,
     /// `PWR_D3CR.VOS`, the core's voltage scale.
     pub vos: crate::vos::Vos,
+    /// The HSE tree (`AET-WO-4240a`): PLL1 from the declared HSE to 64 MHz,
+    /// every prescaler 1, its words and its budget. Absent when the
+    /// specification declares none, and not written back then, so a `null`
+    /// board's topology is the one it was; an explicit `null` is refused.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub hse: Option<crate::clock::SolvedHse>,
 }
 
 impl SolvedClock {
@@ -190,7 +202,17 @@ impl SolvedClock {
             d3ppre: 1,
             timpre: false,
             vos: crate::vos::Vos::Scale2,
+            hse: None,
         }
+    }
+
+    /// The deviation of the source every clock of this tree derives from
+    /// (`AET-WO-4240a` §1.4): the HSE's when one is declared, else the HSI's,
+    /// [`crate::clock::Budget::HSI`].
+    pub fn budget(&self) -> crate::clock::Budget {
+        self.hse
+            .as_ref()
+            .map_or(crate::clock::Budget::HSI, crate::clock::SolvedHse::budget)
     }
 
     /// `rcc_hclk1`: `sys_ck` / `D1CPRE` / `HPRE` (RM0433 Rev 9 Figure 49).
@@ -245,8 +267,8 @@ impl SolvedClock {
     /// foreign run's end (`AET-WO-4400g` §1.2), decoded field by field by
     /// RM0433 Rev 9 ([`RccRegisters::OFFSETS`] cites each register). Only
     /// what a timer's kernel clock depends on is decoded: `D3PPRE` is not
-    /// read and `d3ppre` is left 1. `hse_hz` is the specification's
-    /// `mcu.hse_hz`.
+    /// read and `d3ppre` is left 1. `hse_hz` is the HSE's frequency in whole
+    /// Hz, 0 for none ([`SolvedClock::hse_hz`]).
     ///
     /// Refused by name: a reserved or unclocked selection, a divider RM0433
     /// calls not allowed or a wrong configuration, an HSE with no crystal
@@ -324,6 +346,7 @@ impl SolvedClock {
             // Not read: the specification declares it
             // (`mcu.foreign_clock.vos`, `AET-WO-4240v` D-4).
             vos,
+            hse: None,
         })
     }
 }
@@ -457,7 +480,7 @@ pub enum RccDecodeError {
     )]
     Reserved { field: &'static str, value: u32 },
     #[error(
-        "HSE clocks the system or PLL1, and the specification declares no crystal (`mcu.hse_hz` 0)"
+        "HSE clocks the system or PLL1, and the specification declares no HSE (`mcu.hse` null)"
     )]
     HseUndeclared,
     #[error(
@@ -665,20 +688,6 @@ pub fn solve_timing(
     Ok((narrow(psc), narrow(ticks - 1), narrow(ccr)))
 }
 
-/// HSI's deviation from its nominal 64 MHz at the fastest it can run, in
-/// ppm, rounded up: DS12117 Rev 10 Table 36 (rev Y, p. 128) = Table 133 (rev
-/// V, p. 232): `fHSI` max 64.3 MHz at 3.3 V and 30 °C (+4,688 ppm, rounded
-/// away from zero from 4,687.5), `ΔVDD` +0.03 % (+300), `ΔTEMP` +1 % over
-/// TJ −40 °C to TJmax (+10,000), summed. The junction temperature is not
-/// bounded by any declaration, so the wider row is taken (`AET-WO-4230`).
-/// The serial check reads it; `solve` and `silicon` keep their own copies
-/// (`RUL-20`).
-pub const HSI_FAST_PPM: u32 = 14_984;
-/// HSI's deviation at the slowest it can run, in ppm, rounded up: `fHSI` min
-/// 63.7 MHz (−4,688), `ΔVDD` −0.12 % (−1,200), `ΔTEMP` −2 % (−20,000), the
-/// same tables, summed.
-pub const HSI_SLOW_PPM: u32 = 25_894;
-
 /// What [`check_silicon`] found for one output, in picoseconds where a time
 /// is named (`period_ps` and `high_ps` are floors; the verdict is exact).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -691,8 +700,8 @@ pub struct SiliconTiming {
     pub period_ps: u64,
     /// `CCR` ticks: the high time of PWM mode 1.
     pub high_ps: u64,
-    /// The period and the high time at HSI's slowest and fastest
-    /// ([`HSI_SLOW_PPM`], [`HSI_FAST_PPM`]): the same cycle counts on a
+    /// The period and the high time at the clock source's slowest and
+    /// fastest ([`SolvedClock::budget`]): the same cycle counts on a
     /// kernel clock of `kernel × (1 − slow)` (floored) and
     /// `kernel × (1 + fast)` (ceiled), floors in picoseconds.
     pub period_slowest_ps: u64,
@@ -732,8 +741,9 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
     let tick_ps = ps(psc1);
     let period_ps = ps(arr1 * psc1);
     let high_ps = ps(ccr * psc1);
-    let slow = kernel * u128::from(1_000_000 - HSI_SLOW_PPM) / 1_000_000;
-    let fast = (kernel * u128::from(1_000_000 + HSI_FAST_PPM)).div_ceil(1_000_000);
+    let budget = clock.budget();
+    let slow = kernel * u128::from(1_000_000u32.saturating_sub(budget.slow_ppm)) / 1_000_000;
+    let fast = (kernel * u128::from(1_000_000 + budget.fast_ppm)).div_ceil(1_000_000);
     let ps_at = |cycles: u128, k: u128| {
         u64::try_from(cycles * 1_000_000_000_000 / k.max(1)).unwrap_or(u64::MAX)
     };

@@ -1472,7 +1472,7 @@ fn ready(
         }
         _ => {}
     }
-    if let Err(err) = aethelgard_cli::generate::core_supply_generated(&boot.topology) {
+    if let Err(err) = aethelgard_cli::generate::generable(&boot.topology) {
         return Err(run::Stop {
             code: EXIT_INVALID_SPEC,
             kind: err.kind(),
@@ -2637,7 +2637,10 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
     // `emit`, `simulate` and `verify` refuse it as `CoreSupplyNotGenerated`
     // before any ledger is read. So no package, and no ledger, can rest on its
     // acknowledgements, and they are left unjudged here (adversarial pass A1).
-    if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass {
+    // The same holds for a declared HSE (`HseNotGenerated`, `AET-WO-4240a`).
+    if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass
+        || spec.mcu.hse.is_some()
+    {
         return Ok(());
     }
     let built = aethelgard_svd_hal::pin_table(&spec.mcu.part)
@@ -2814,7 +2817,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         Ok(solved) => solved,
         Err(code) => return code,
     };
-    if let Err(err) = aethelgard_cli::generate::core_supply_generated(&topology) {
+    if let Err(err) = aethelgard_cli::generate::generable(&topology) {
         return emit(
             &Refusal::new(err.kind(), None, err.to_string()),
             EXIT_INVALID_SPEC,

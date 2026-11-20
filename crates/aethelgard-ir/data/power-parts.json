@@ -1,6 +1,12 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "documents": {
+    "ABM8AIG": {
+      "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
+      "revision": "REVISED 06-13-19",
+      "sha256": "96dfa791cd1bc11842f57bdb350da8746536fb0a0f25ba52c0bceafc19a4acc0",
+      "pending": null
+    },
     "SNVSAN3F": {
       "title": "TI LMR33630 datasheet SNVSAN3F",
       "revision": "F (November 2020)",
@@ -141,6 +147,91 @@
     }
   },
   "parts": [
+    {
+      "part": "ABM8AIG-16.000MHZ-12-2Z-T3",
+      "lifecycle": "unread",
+      "symbol": "Crystal:Crystal_GND24",
+      "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "ABM8AIG",
+          "section": "p. 1 Electrical Specifications, Operating Temperature, option blank, -40 to +125 C; p. 2 Operating Temp. blank"
+        }
+      },
+      "kind": {
+        "crystal": {
+          "frequency_hz": {
+            "value": 16000000,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 2 Options and Part Identification, frequency in MHz: 16.000"
+            }
+          },
+          "load_femtofarads": {
+            "value": 12000,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 2 Options and Part Identification, Load Capacitance (pF): 12"
+            }
+          },
+          "tolerance_ppm": {
+            "min": -20,
+            "max": 20,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Frequency Tolerance @ +25 C; p. 2 Freq. Tolerance option 2, +-20 ppm"
+            }
+          },
+          "stability_ppm": {
+            "min": -50,
+            "max": 50,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Frequency Stability over the Operating Temperature (ref. to +25 C); p. 2 Freq. Stability option Z, +-50 ppm"
+            }
+          },
+          "aging_ppm": {
+            "min": -2,
+            "max": 2,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Aging, -2 min, +2 max, @25 C +-3 C First year"
+            }
+          },
+          "aging_hours": {
+            "value": 8760,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Aging, First year (taken as 365 days)"
+            }
+          },
+          "esr_max_milliohms": {
+            "value": 70000,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Equivalent series resistance (R1), max 70 Ohm at 16.000 - 19.999 MHz"
+            }
+          },
+          "c0_max_femtofarads": {
+            "value": 2000,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Shunt capacitance (C0), max 2.0 pF"
+            }
+          },
+          "drive_level_max_microwatts": {
+            "value": 100,
+            "at": {
+              "document": "ABM8AIG",
+              "section": "p. 1 Drive Level, max 100 uW"
+            }
+          }
+        }
+      }
+    },
     {
       "part": "LMR33630ADDA",
       "lifecycle": "active",

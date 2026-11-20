@@ -166,7 +166,7 @@ fn spec(
         "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse_hz: 0, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -271,10 +271,12 @@ fn no_reserved_pin_is_ever_assigned() {
     assert_eq!(pin_of(&t, "B_SDA"), "PF0");
 }
 
-/// `AET-WO-4300a` §1.1: with `mcu.hse_hz` 0 the HSE pins are free, so a bus
-/// whose only pins are PH0/PH1 is placed there (before, it was `NoInstance`).
+/// `AET-WO-4300a` §1.1, `AET-WO-4240a` §1.6: with `mcu.hse` `null` the HSE
+/// pins are free, so a bus whose only pins are PH0/PH1 is placed there. A
+/// crystal reserves both, an external clock `PH0` alone, and a hand pin on
+/// a reserved one is refused by name.
 #[test]
-fn the_hse_pins_are_assigned_when_no_crystal_is_declared() {
+fn the_hse_pins_are_reserved_exactly_as_the_hse_declares() {
     let mut s = spec(vec![i2c("I")], vec![], vec![]);
     let table = table_of(&[("PH0", &[("I2C3_SDA", 4)]), ("PH1", &[("I2C3_SCL", 4)])]);
     let t = solve(&s, &table, HASH).expect("PH0/PH1 are free");
@@ -282,12 +284,29 @@ fn the_hse_pins_are_assigned_when_no_crystal_is_declared() {
         (pin_of(&t, "I_SDA").as_str(), pin_of(&t, "I_SCL").as_str()),
         ("PH0", "PH1")
     );
-    // A crystal is refused by name before the solver runs (`4400` D1).
-    s.mcu.hse_hz = 8_000_000;
-    assert_eq!(
-        solve(&s, &table, HASH).unwrap_err().kind(),
-        "CrystalNotSupported"
-    );
+    let crystal: aethelgard_ir::clock::Hse =
+        serde_json::from_value(serde_json::json!({"crystal": {
+        "part": "ABM8AIG-16.000MHZ-12-2Z-T3", "load_caps_femtofarads": [18000, 18000],
+        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}}))
+        .unwrap();
+    let external: aethelgard_ir::clock::Hse =
+        serde_json::from_value(serde_json::json!({"external": {
+        "hz_num": 8_000_000, "hz_den": 1, "ppm": 50, "source": "a test's declaration"}}))
+        .unwrap();
+    for (hse, reserved) in [
+        (crystal, vec!["PA13", "PA14", "PC14", "PC15", "PH0", "PH1"]),
+        (external, vec!["PA13", "PA14", "PC14", "PC15", "PH0"]),
+    ] {
+        assert_eq!(aethelgard_ir::reserved_pins(Some(&hse)), reserved);
+        s.mcu.hse = Some(hse);
+        assert_eq!(solve(&s, &table, HASH).unwrap_err().kind(), "NoInstance");
+        s.i2c_buses[0].sda.pin = Some("PH0".into());
+        let e = solve(&s, &table, HASH).unwrap_err();
+        assert_eq!(e.kind(), "ReservedPin", "{e}");
+        assert_eq!(e.id(), Some("PH0"));
+        s.i2c_buses[0].sda.pin = None;
+    }
+    assert_eq!(aethelgard_ir::reserved_pins(None), RESERVED_PINS);
 }
 
 #[test]
