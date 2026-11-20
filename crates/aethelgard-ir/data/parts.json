@@ -1,5 +1,5 @@
 {
-  "schema_version": 10,
+  "schema_version": 11,
   "parts": [
     {
       "part": "BME280",
@@ -947,6 +947,570 @@
         "frame": null
       },
       "axes": null
+    }
+  ],
+  "pin_parts": [
+    {
+      "part": "DRV8833PWPR",
+      "bus": "none",
+      "identity": null,
+      "source": {
+        "document": "TI SLVSAR1E DRV8833",
+        "revision": "January 2011, revised July 2015",
+        "sha256": "3e400e333f08f1b93ec99a2d52a6af2a864e88462cc892282208548d9e9f0de4"
+      },
+      "logic_levels": {
+        "vil_max_mv": 700,
+        "vih_min_mv": 2000,
+        "vin_max_mv": 5750,
+        "page": "p. 5 (VDIGIN max 5.75 V); p. 6 (VIL max 0.7 V, VIH min 2 V, all pins but nSLEEP)"
+      },
+      "t_wake_max_us": {
+        "value": 1000,
+        "page": "p. 7, tWAKE max 1 ms"
+      },
+      "enable": "nSLEEP",
+      "mode_strap": null,
+      "pins": {
+        "nSLEEP": {
+          "number": 1,
+          "kind": "enable_input",
+          "active": "high",
+          "pull_down_ohms_typical": 500000,
+          "vil_max_mv": 500,
+          "vih_min_mv": 2500,
+          "page": "p. 3 (active high); p. 6 (nSLEEP VIL max 0.5 V, VIH min 2.5 V, RPD typ 500 kOhm)"
+        },
+        "AOUT1": {
+          "number": 2,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "AISEN": {
+          "number": 3,
+          "kind": "sense_return",
+          "page": "p. 3; p. 4, p. 10"
+        },
+        "AOUT2": {
+          "number": 4,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "BOUT2": {
+          "number": 5,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "BISEN": {
+          "number": 6,
+          "kind": "sense_return",
+          "page": "p. 3; p. 4, p. 10"
+        },
+        "BOUT1": {
+          "number": 7,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "nFAULT": {
+          "number": 8,
+          "kind": "open_drain_output",
+          "vol_max_mv": 500,
+          "vol_test_current_ma": 5,
+          "page": "p. 3; VOL max 0.5 V at IO 5 mA, p. 6: 5 mA is the VOL test current, and no IOD maximum is stated (ruled F6, PR #292)"
+        },
+        "BIN1": {
+          "number": 9,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 150000,
+          "page": "p. 3; RPD typ 150 kOhm, p. 6"
+        },
+        "BIN2": {
+          "number": 10,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 150000,
+          "page": "p. 3; RPD typ 150 kOhm, p. 6"
+        },
+        "VCP": {
+          "number": 11,
+          "kind": "passive",
+          "page": "p. 3"
+        },
+        "VM": {
+          "number": 12,
+          "kind": "supply",
+          "range_mv": [
+            2700,
+            10800
+          ],
+          "page": "p. 3; VM 2.7 to 10.8 V, p. 5"
+        },
+        "GND": {
+          "number": 13,
+          "kind": "ground",
+          "page": "p. 3"
+        },
+        "VINT": {
+          "number": 14,
+          "kind": "passive",
+          "page": "p. 3"
+        },
+        "AIN2": {
+          "number": 15,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 150000,
+          "page": "p. 3; RPD typ 150 kOhm, p. 6"
+        },
+        "AIN1": {
+          "number": 16,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 150000,
+          "page": "p. 3; RPD typ 150 kOhm, p. 6"
+        },
+        "PPAD": {
+          "number": null,
+          "kind": "ground",
+          "page": "p. 3, PowerPAD"
+        }
+      },
+      "modes": [
+        {
+          "name": "in_in",
+          "strap_level": null,
+          "channels": [
+            {
+              "inputs": [
+                "AIN1",
+                "AIN2"
+              ],
+              "outputs": [
+                "AOUT1",
+                "AOUT2"
+              ]
+            },
+            {
+              "inputs": [
+                "BIN1",
+                "BIN2"
+              ],
+              "outputs": [
+                "BOUT1",
+                "BOUT2"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "name": "sleep",
+              "enable": "low",
+              "inputs": [
+                "x",
+                "x"
+              ],
+              "outputs": [
+                "Z",
+                "Z"
+              ],
+              "drives": false
+            },
+            {
+              "name": "coast",
+              "enable": "high",
+              "inputs": [
+                "0",
+                "0"
+              ],
+              "outputs": [
+                "Z",
+                "Z"
+              ],
+              "drives": false
+            },
+            {
+              "name": "reverse",
+              "enable": "high",
+              "inputs": [
+                "0",
+                "1"
+              ],
+              "outputs": [
+                "L",
+                "H"
+              ],
+              "drives": true
+            },
+            {
+              "name": "forward",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "0"
+              ],
+              "outputs": [
+                "H",
+                "L"
+              ],
+              "drives": true
+            },
+            {
+              "name": "brake",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "1"
+              ],
+              "outputs": [
+                "L",
+                "L"
+              ],
+              "drives": false
+            }
+          ],
+          "forbidden": [],
+          "page": "p. 9, Table 1 and Table 2 (xIN1, xIN2); sleep, p. 3 and p. 11; internal dead time, p. 6 note 1 and p. 12"
+        }
+      ]
+    },
+    {
+      "part": "DRV8876PWPR",
+      "bus": "none",
+      "identity": null,
+      "source": {
+        "document": "TI SLVSDS7B DRV8876",
+        "revision": "August 2019, revised November 2019",
+        "sha256": "f96a70b19f582ba2999bc22e0c15adc69385374a9590bf77e2ab0bdf887f6f3e"
+      },
+      "logic_levels": {
+        "vil_max_mv": 700,
+        "vih_min_mv": 1500,
+        "vin_max_mv": 5500,
+        "page": "p. 4 (VIN 0 to 5.5 V, EN/IN1, nSLEEP, PH/IN2); p. 5 (VIL max 0.7 V at VVM < 5 V and 0.8 V at VVM >= 5 V, the lower taken; VIH min 1.5 V)"
+      },
+      "t_wake_max_us": {
+        "value": 1000,
+        "page": "p. 5, tWAKE max 1 ms (VVM > VUVLO, nSLEEP to active)"
+      },
+      "input_pwm_max_hz": {
+        "value": 100000,
+        "page": "p. 4, fPWM max 100 kHz (EN/IN1, PH/IN2)"
+      },
+      "enable": "nSLEEP",
+      "mode_strap": "PMODE",
+      "pins": {
+        "EN/IN1": {
+          "number": 1,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 100000,
+          "page": "p. 3; RPD typ 100 kOhm, p. 5"
+        },
+        "PH/IN2": {
+          "number": 2,
+          "kind": "logic_input",
+          "pull_down_ohms_typical": 100000,
+          "page": "p. 3; RPD typ 100 kOhm, p. 5"
+        },
+        "nSLEEP": {
+          "number": 3,
+          "kind": "enable_input",
+          "active": "high",
+          "pull_down_ohms_typical": 100000,
+          "page": "p. 3 (active high, internal pull-down); RPD typ 100 kOhm, p. 5"
+        },
+        "nFAULT": {
+          "number": 4,
+          "kind": "open_drain_output",
+          "vol_max_mv": 300,
+          "vol_test_current_ma": 5,
+          "iod_max_ma": 5,
+          "pull_up_max_mv": 5500,
+          "page": "p. 3; IOD max 5 mA and VOD max 5.5 V, p. 4; VOL max 0.3 V at IOD 5 mA, p. 6"
+        },
+        "VREF": {
+          "number": 5,
+          "kind": "strap_analog",
+          "range_mv": [
+            0,
+            3600
+          ],
+          "page": "p. 3; VVREF 0 to 3.6 V, p. 4"
+        },
+        "IPROPI": {
+          "number": 6,
+          "kind": "current_output",
+          "ua_per_a_typical": 1000,
+          "output_max_ua": 3000,
+          "error_band_supply_pin": "VM",
+          "error_band_supply_mv": [
+            5500,
+            37000
+          ],
+          "error_band": [
+            {
+              "load_ma": [
+                0,
+                149
+              ],
+              "absolute_ua": 7500,
+              "condition": "AERR, IOUT < 0.15 A, 5.5 V <= VVM <= 37 V, p. 6"
+            },
+            {
+              "load_ma": [
+                150,
+                499
+              ],
+              "percent": 5,
+              "condition": "AERR, 0.15 A <= IOUT < 0.5 A, 5.5 V <= VVM <= 37 V, p. 6"
+            },
+            {
+              "load_ma": [
+                500,
+                2000
+              ],
+              "percent": 4,
+              "condition": "AERR, 0.5 A <= IOUT <= 2 A, PWP, -40 C <= TJ < 125 C, p. 6"
+            },
+            {
+              "load_ma": [
+                500,
+                2000
+              ],
+              "percent": 5,
+              "condition": "AERR, 0.5 A <= IOUT <= 2 A, PWP, 125 C <= TJ <= 150 C, p. 6"
+            }
+          ],
+          "page": "p. 3; A_IPROPI typ 1000 uA/A (typical only), AERR stated for 5.5 V <= VVM <= 37 V only, p. 6; IIPROPI max 3 mA, p. 4"
+        },
+        "IMODE": {
+          "number": 7,
+          "kind": "strap",
+          "high_min_mv": 2500,
+          "resistors": [
+            [
+              18600,
+              21400
+            ],
+            [
+              57600,
+              66400
+            ]
+          ],
+          "page": "p. 3; VQI1 max 0.45 V, RQI2 18.6 to 21.4 kOhm, RQI3 57.6 to 66.4 kOhm, VQI4 min 2.5 V, p. 5; Table 6, p. 13"
+        },
+        "OUT1": {
+          "number": 8,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "PGND": {
+          "number": 9,
+          "kind": "ground",
+          "page": "p. 3"
+        },
+        "OUT2": {
+          "number": 10,
+          "kind": "bridge_output",
+          "page": "p. 3"
+        },
+        "VM": {
+          "number": 11,
+          "kind": "supply",
+          "range_mv": [
+            4500,
+            37000
+          ],
+          "page": "p. 3; VVM 4.5 to 37 V, p. 4"
+        },
+        "VCP": {
+          "number": 12,
+          "kind": "passive",
+          "page": "p. 3"
+        },
+        "CPH": {
+          "number": 13,
+          "kind": "passive",
+          "page": "p. 3"
+        },
+        "CPL": {
+          "number": 14,
+          "kind": "passive",
+          "page": "p. 3"
+        },
+        "GND": {
+          "number": 15,
+          "kind": "ground",
+          "page": "p. 3"
+        },
+        "PMODE": {
+          "number": 16,
+          "kind": "strap",
+          "high_min_mv": 1500,
+          "resistors": [],
+          "page": "p. 3; VTIL max 0.65 V, VTIH min 1.5 V (Hi-Z selects independent half-bridges, which no bridge declares), p. 5; Table 2, p. 10"
+        },
+        "PAD": {
+          "number": null,
+          "kind": "ground",
+          "page": "p. 3, thermal pad"
+        }
+      },
+      "modes": [
+        {
+          "name": "ph_en",
+          "strap_level": "low",
+          "channels": [
+            {
+              "inputs": [
+                "EN/IN1",
+                "PH/IN2"
+              ],
+              "outputs": [
+                "OUT1",
+                "OUT2"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "name": "sleep",
+              "enable": "low",
+              "inputs": [
+                "x",
+                "x"
+              ],
+              "outputs": [
+                "Z",
+                "Z"
+              ],
+              "drives": false
+            },
+            {
+              "name": "brake",
+              "enable": "high",
+              "inputs": [
+                "0",
+                "x"
+              ],
+              "outputs": [
+                "L",
+                "L"
+              ],
+              "drives": false
+            },
+            {
+              "name": "reverse",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "0"
+              ],
+              "outputs": [
+                "L",
+                "H"
+              ],
+              "drives": true
+            },
+            {
+              "name": "forward",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "1"
+              ],
+              "outputs": [
+                "H",
+                "L"
+              ],
+              "drives": true
+            }
+          ],
+          "forbidden": [],
+          "page": "p. 11, Table 3 (PH/EN control); both inputs high is forward"
+        },
+        {
+          "name": "in_in",
+          "strap_level": "high",
+          "channels": [
+            {
+              "inputs": [
+                "EN/IN1",
+                "PH/IN2"
+              ],
+              "outputs": [
+                "OUT1",
+                "OUT2"
+              ]
+            }
+          ],
+          "states": [
+            {
+              "name": "sleep",
+              "enable": "low",
+              "inputs": [
+                "x",
+                "x"
+              ],
+              "outputs": [
+                "Z",
+                "Z"
+              ],
+              "drives": false
+            },
+            {
+              "name": "coast",
+              "enable": "high",
+              "inputs": [
+                "0",
+                "0"
+              ],
+              "outputs": [
+                "Z",
+                "Z"
+              ],
+              "drives": false
+            },
+            {
+              "name": "reverse",
+              "enable": "high",
+              "inputs": [
+                "0",
+                "1"
+              ],
+              "outputs": [
+                "L",
+                "H"
+              ],
+              "drives": true
+            },
+            {
+              "name": "forward",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "0"
+              ],
+              "outputs": [
+                "H",
+                "L"
+              ],
+              "drives": true
+            },
+            {
+              "name": "brake",
+              "enable": "high",
+              "inputs": [
+                "1",
+                "1"
+              ],
+              "outputs": [
+                "L",
+                "L"
+              ],
+              "drives": false
+            }
+          ],
+          "forbidden": [],
+          "page": "p. 11, Table 4 (PWM control); both inputs high is brake; internal dead time, p. 11"
+        }
+      ]
     }
   ]
 }

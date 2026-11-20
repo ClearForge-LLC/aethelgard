@@ -22,6 +22,8 @@ pub mod motor;
 pub mod names;
 pub mod orientation;
 pub mod parts;
+pub mod pin_devices;
+pub mod pin_parts;
 pub mod power;
 pub mod power_parts;
 pub mod serial;
@@ -103,7 +105,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// same rule, merging after `4240a`), optional by the same precedent: absent
 /// is a drawn board, and `false` declares a twin stand-in no board is drawn
 /// from.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 21;
+/// Version 22 adds `pin_devices` (`AET-WO-1211a`, `1211` Q1–Q10 as ruled,
+/// merging after `1210`), optional by `test_points`'s precedent (absent
+/// declares none, and a specification with no driver gains no key), and
+/// requires `pwm.idle` and `pwm.resolution_ps` on every PWM motor output,
+/// with no default; `{"pulse_us": pulse_min_us}` and 1,000,000 restate what
+/// the firmware wrote before, so no solved word of a committed specification
+/// moved.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 22;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -174,6 +183,14 @@ pub struct Specification {
     /// [`Specification::declared_test_points`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     test_points: Vec<bench::TestPoint>,
+    /// Each device with no bus (`AET-WO-1211a`): a driver IC bound to a
+    /// busless parts row, with its GPIO signals, ADC inputs and bridges.
+    /// Absent or empty declares none and is not written back, by
+    /// `test_points`'s precedent, so a specification that declares no driver
+    /// gains no key (`1211` P1c). Private (`RUL-16`): read through
+    /// [`Specification::declared_pin_devices`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pin_devices: Vec<pin_devices::PinDevice>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -507,9 +524,12 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `orientation` (`AET-WO-4400d`), version 11 `foreign_clock`
 /// (`AET-WO-4400g`), version 12 `core_supply` and the clock's `vos`
 /// (`AET-WO-4240v`), version 13 the clock's `hse` (`AET-WO-4240a`: absent
-/// for `mcu.hse` `null`, so such a topology differs only in its version);
-/// an older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 13;
+/// for `mcu.hse` `null`, so such a topology differs only in its version),
+/// version 14 `gpio`'s direction with an output's `initial` or an input's
+/// `pull`, `adc_inputs`, a PWM output's `idle` and `resolution_ps`, and
+/// `pin_devices` (`AET-WO-1211a`: absent when none is declared); an older
+/// file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 14;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -528,8 +548,17 @@ pub struct SolvedTopology {
     pub specification_sha256: String,
     #[serde(deserialize_with = "unique_keys")]
     pub assignments: BTreeMap<String, PinAssignment>,
+    /// Each net on a plain GPIO, with its direction and an output's initial
+    /// level or an input's MCU pull (`AET-WO-1211a`, solved version 14): an
+    /// SPI device's `cs` (an output at `high`) and a pin device's signals.
     #[serde(deserialize_with = "unique_keys")]
-    pub gpio: BTreeMap<String, String>,
+    pub gpio: BTreeMap<String, pin_devices::SolvedGpio>,
+    /// Each ADC input, keyed by net, on its pin with the peripheral and
+    /// channel the solver chose, ADC1 or ADC3 unless pinned (`AET-WO-1211a`,
+    /// `1211` Q8): a pin device's analog inputs and each `power.sense` net,
+    /// which keeps its place in `power` too.
+    #[serde(deserialize_with = "unique_keys")]
+    pub adc_inputs: BTreeMap<String, pin_devices::SolvedAdcInput>,
     #[serde(deserialize_with = "unique_keys")]
     pub i2c_ceilings: BTreeMap<String, u32>,
     #[serde(deserialize_with = "unique_keys")]
@@ -604,6 +633,16 @@ pub struct SolvedTopology {
     /// builds every timer and USART at them instead of at `clock`'s.
     #[serde(deserialize_with = "Option::deserialize")]
     pub foreign_clock: Option<motor::SolvedForeignClock>,
+    /// Each pin device, keyed by reference, with its part (`AET-WO-1211a`).
+    /// Absent when the specification declares none, and not written back
+    /// then, so such a topology gains no key; every crate but the IR refuses
+    /// a topology that carries one, by name, until its work order lands.
+    #[serde(
+        default,
+        deserialize_with = "unique_keys",
+        skip_serializing_if = "BTreeMap::is_empty"
+    )]
+    pub pin_devices: BTreeMap<String, pin_devices::SolvedPinDevice>,
 }
 
 /// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
@@ -1039,7 +1078,9 @@ struct SolvedWire {
     #[serde(deserialize_with = "unique_keys")]
     assignments: BTreeMap<String, PinAssignment>,
     #[serde(deserialize_with = "unique_keys")]
-    gpio: BTreeMap<String, String>,
+    gpio: BTreeMap<String, GpioWire>,
+    #[serde(default, deserialize_with = "unique_keys_some")]
+    adc_inputs: Option<BTreeMap<String, pin_devices::SolvedAdcInput>>,
     #[serde(deserialize_with = "unique_keys")]
     i2c_ceilings: BTreeMap<String, u32>,
     #[serde(default, deserialize_with = "unique_keys_some")]
@@ -1076,6 +1117,18 @@ struct SolvedWire {
     /// Absent under an older version; `null` or a clock under this one.
     #[serde(default, deserialize_with = "present")]
     foreign_clock: Option<Option<motor::SolvedForeignClock>>,
+    #[serde(default, deserialize_with = "unique_keys")]
+    pin_devices: BTreeMap<String, pin_devices::SolvedPinDevice>,
+}
+
+/// A `gpio` entry as written: the directional shape of version 14, or the
+/// bare pin of versions before it, read only so that `validate` refuses the
+/// older file by its version, never by its shape.
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum GpioWire {
+    Solved(pin_devices::SolvedGpio),
+    Pin(String),
 }
 
 /// A key that is present, whatever its value: `null` reads as `Some(None)`.
@@ -1248,11 +1301,35 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     None if !current => None,
                     None => return Err(serde::de::Error::missing_field("foreign_clock")),
                 };
+                // `gpio`'s directional shape and `adc_inputs`, which version
+                // 14 added (`AET-WO-1211a`); an older file's stand-in is
+                // never read.
+                let mut gpio = BTreeMap::new();
+                for (net, g) in w.gpio {
+                    let g = match g {
+                        GpioWire::Solved(g) => g,
+                        GpioWire::Pin(pin) if !current => {
+                            pin_devices::SolvedGpio::output(pin, motor::Level::High)
+                        }
+                        GpioWire::Pin(_) => {
+                            return Err(serde::de::Error::custom(format!(
+                                "gpio.{net} is a bare pin; version {SOLVED_SCHEMA_VERSION} states {{pin, direction, initial | pull}}"
+                            )));
+                        }
+                    };
+                    gpio.insert(net, g);
+                }
+                let adc_inputs = match w.adc_inputs {
+                    Some(m) => m,
+                    None if !current => BTreeMap::new(),
+                    None => return Err(serde::de::Error::missing_field("adc_inputs")),
+                };
                 Ok(SolvedTopology {
                     schema_version: w.schema_version,
                     specification_sha256: w.specification_sha256,
                     assignments: w.assignments,
-                    gpio: w.gpio,
+                    gpio,
+                    adc_inputs,
                     i2c_ceilings: w.i2c_ceilings,
                     i2c_speeds,
                     analog_lines: w.analog_lines,
@@ -1270,6 +1347,7 @@ impl<'de> Deserialize<'de> for SolvedTopology {
                     mcu,
                     pin_speeds,
                     foreign_clock,
+                    pin_devices: w.pin_devices,
                 })
             }
         }
@@ -1327,6 +1405,18 @@ impl PinTable {
             }
         }
         Ok(())
+    }
+}
+
+/// A solved `CCR` of the shape its output's idle gives (`AET-WO-1211a`): 0
+/// for an idle `low`, `ARR + 1` for `high`, else from 1 to below `ARR` (a
+/// pulse idle, and DShot's `0` bit).
+fn ccr_shaped(m: &SolvedMotorOutput) -> bool {
+    match m.pwm.as_ref().map(|p| p.idle) {
+        Some(motor::Idle::Level(motor::Level::Low)) => m.ccr == 0,
+        Some(motor::Idle::Level(motor::Level::High)) => m.ccr == m.arr + 1,
+        Some(motor::Idle::PulseUs(_)) => m.ccr != 0 && m.ccr <= m.arr,
+        None => m.ccr != 0 && m.ccr < m.arr,
     }
 }
 
@@ -2194,6 +2284,14 @@ pub enum IrValidationError {
         output: String,
         reason: &'static str,
     },
+    /// Step 24 (`AET-WO-1211a`): a pin device; the kind is the inner
+    /// refusal's.
+    #[error("{0}")]
+    PinDevice(pin_devices::PinDeviceRefusal),
+    /// Step 13b and step 21 (`AET-WO-1211a`): a PWM output's idle or tick;
+    /// the kind is the inner refusal's.
+    #[error("{0}")]
+    Pwm(motor::PwmRefusal),
     /// Step 21: as [`IrValidationError::MotorTiming`]. Every USART and UART
     /// has one kernel clock on the reset clock.
     #[error(
@@ -2399,6 +2497,8 @@ impl IrValidationError {
             Self::PinCapacitanceBelowI2cCi { .. } => "PinCapacitanceBelowI2cCi",
             Self::PinCapacitanceBelowTypical { .. } => "PinCapacitanceBelowTypical",
             Self::MotorTiming { .. } => "MotorTiming",
+            Self::Pwm(r) => r.kind(),
+            Self::PinDevice(r) => r.kind(),
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
         }
@@ -2419,6 +2519,7 @@ impl IrValidationError {
             | Self::MissingSpiConstraint { bus, .. } => vec![bus.clone()],
             Self::BusCapacitanceOverLimit { net, .. } => vec![net.clone()],
             Self::MotorTiming { output, .. } => vec![output.clone()],
+            Self::Pwm(r) => vec![r.output().to_owned()],
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 vec![port.clone()]
             }
@@ -2584,6 +2685,8 @@ impl IrValidationError {
             | Self::PinCapacitanceBelowI2cCi { id, .. }
             | Self::PinCapacitanceBelowTypical { id, .. } => Some(id),
             Self::MotorTiming { output, .. } => Some(output),
+            Self::Pwm(r) => Some(r.output()),
+            Self::PinDevice(r) => Some(&r.id),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
             }
@@ -2605,6 +2708,7 @@ impl IrValidationError {
     /// `i2c_buses[0].sda.net`.
     pub fn path(&self) -> Option<&str> {
         match self {
+            Self::PinDevice(r) => Some(&r.path),
             Self::InvalidIdentifier { path, .. }
             | Self::LayerTable { path, .. }
             | Self::LayerRole { path, .. }
@@ -2860,7 +2964,7 @@ pub fn is_observer_name(name: &str) -> bool {
         && number.parse::<u32>().is_ok_and(|n| n <= 15)
 }
 
-fn identifier(
+pub(crate) fn identifier(
     kind: IdentifierKind,
     value: &str,
     path: impl FnOnce() -> String,
@@ -2873,7 +2977,7 @@ pub(crate) fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), Ir
     identifier(IdentifierKind::Plain, value, path)
 }
 
-fn optional_identifier(
+pub(crate) fn optional_identifier(
     value: &Option<String>,
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
@@ -2930,6 +3034,13 @@ impl Specification {
         &self.test_points
     }
 
+    /// The devices with no bus, in document order (`AET-WO-1211a`); fenced as
+    /// [`Specification::declared_connectors`] is (`RUL-16`): the solver reads
+    /// them, and every other reader refuses a topology that carries one.
+    pub fn declared_pin_devices(&self) -> &[pin_devices::PinDevice] {
+        &self.pin_devices
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -2962,7 +3073,9 @@ impl Specification {
         // 22 (`AET-WO-1208` §1.2, F1/F5 as ruled on PR #182)
         power::mcu_without_tree(self)?;
         // 23 (`AET-WO-1210`, `AET-WO-1209` §1.1): a drawn board only
-        drawn::pin_capacitance(self, table)
+        drawn::pin_capacitance(self, table)?;
+        // 24 (`AET-WO-1211a`): each pin device
+        pin_devices::validate(self)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset
@@ -3144,9 +3257,19 @@ impl Specification {
         let parts = self
             .i2c_devices
             .iter()
-            .map(|d| (&d.reference, &d.part))
-            .chain(self.spi_devices.iter().map(|d| (&d.reference, &d.part)));
-        for (reference, part) in parts {
+            .enumerate()
+            .map(|(i, d)| (&d.reference, &d.part, format!("i2c_devices[{i}].part")))
+            .chain(
+                self.spi_devices
+                    .iter()
+                    .enumerate()
+                    .map(|(i, d)| (&d.reference, &d.part, format!("spi_devices[{i}].part"))),
+            );
+        for (reference, part, path) in parts {
+            // A busless row is never a bus device's (`AET-WO-1211a`).
+            if let Some(e) = pin_devices::part_without_bus(reference, part, &path) {
+                return Err(e);
+            }
             if part_entry(table, reference, part)?.is_none() {
                 return Err(IrValidationError::PartWithoutRow {
                     reference: reference.clone(),
@@ -3593,7 +3716,8 @@ impl Specification {
                 .iter()
                 .map(|d| d.reference.as_str())
                 .chain(self.spi_devices.iter().map(|d| d.reference.as_str()))
-                .chain(self.connectors.iter().map(|c| c.reference.as_str())),
+                .chain(self.connectors.iter().map(|c| c.reference.as_str()))
+                .chain(pin_devices::references(self)),
         )?;
         // 9
         for device in &self.i2c_devices {
@@ -3654,7 +3778,8 @@ impl Specification {
             .chain(self.spi_devices.iter().map(|d| &d.cs))
             .chain(self.serial_ports.iter().flat_map(|p| [&p.tx, &p.rx]))
             .map(|s| &s.net)
-            .chain(self.motor_outputs.iter().map(|m| &m.label));
+            .chain(self.motor_outputs.iter().map(|m| &m.label))
+            .chain(pin_devices::nets(self));
         for net in signals {
             let folded = net.to_lowercase();
             if !folded_nets.insert(folded.clone()) {
@@ -3871,6 +3996,7 @@ impl Specification {
             signal_identifiers(&p.rx, &format!("{at}.rx"))?;
         }
         connectors::identifiers(self)?;
+        pin_devices::identifiers(self)?;
         for (i, t) in self.test_points.iter().enumerate() {
             plain(&t.net, || format!("test_points[{i}].net"))?;
             identifier(IdentifierKind::Reference, &t.reference, || {
@@ -3891,6 +4017,14 @@ fn motor_shape(m: &MotorOutput) -> Result<(), IrValidationError> {
         (MotorProtocol::Pwm, Some(p)) => {
             if p.rate_hz == 0 {
                 return Err(E::ZeroMotorRate { id: id() });
+            }
+            if p.idle == motor::Idle::PulseUs(0) {
+                return Err(E::Pwm(motor::PwmRefusal::IdleSpelledTwice {
+                    output: id(),
+                    pulse_us: 0,
+                    ccr: "0",
+                    level: "low",
+                }));
             }
             if p.pulse_min_us == 0 || p.pulse_min_us >= p.pulse_max_us {
                 return Err(E::PulseRange {
@@ -4105,9 +4239,21 @@ impl SolvedTopology {
             plain(&a.peripheral, || format!("assignments.{net}.peripheral"))?;
             plain(&a.signal, || format!("assignments.{net}.signal"))?;
         }
-        for (net, pin) in &self.gpio {
+        for (net, g) in &self.gpio {
             plain(net, || format!("gpio.{net}"))?;
-            plain(pin, || format!("gpio.{net}.pin"))?;
+            plain(&g.pin, || format!("gpio.{net}.pin"))?;
+        }
+        for (net, a) in &self.adc_inputs {
+            plain(net, || format!("adc_inputs.{net}"))?;
+            plain(&a.pin, || format!("adc_inputs.{net}.pin"))?;
+            plain(&a.peripheral, || format!("adc_inputs.{net}.peripheral"))?;
+            plain(&a.channel, || format!("adc_inputs.{net}.channel"))?;
+        }
+        for (reference, d) in &self.pin_devices {
+            identifier(IdentifierKind::Reference, reference, || {
+                format!("pin_devices.{reference}")
+            })?;
+            plain(&d.part, || format!("pin_devices.{reference}.part"))?;
         }
         for bus in self.i2c_ceilings.keys() {
             plain(bus, || format!("i2c_ceilings.{bus}"))?;
@@ -4185,12 +4331,14 @@ impl SolvedTopology {
         if let Some(net) = self.gpio.keys().find(|n| self.assignments.contains_key(*n)) {
             return Err(E::NetAssignedTwice { id: net.clone() });
         }
+        pin_devices::validate_solved(self)?;
         let mut pins = BTreeSet::new();
         let all = self
             .assignments
             .values()
             .map(|a| &a.pin)
-            .chain(self.gpio.values());
+            .chain(self.gpio.values().map(|g| &g.pin))
+            .chain(self.adc_inputs.values().map(|a| &a.pin));
         for pin in all {
             if !pins.insert(pin.as_str()) {
                 return Err(E::DuplicatePin { id: pin.clone() });
@@ -4423,7 +4571,7 @@ impl SolvedTopology {
         }
         let mut seen = BTreeSet::new();
         let mut channels = BTreeSet::new();
-        let mut timers: BTreeMap<u32, (MotorProtocol, Option<u32>, u32, u32)> = BTreeMap::new();
+        let mut timers: BTreeMap<u32, (motor::TimerKey, u32, u32)> = BTreeMap::new();
         for (net, m) in &self.motor_outputs {
             let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
             let Some((timer, channel)) = motor::timer_channel(&a.signal) else {
@@ -4443,12 +4591,18 @@ impl SolvedTopology {
                 || m.psc > 0xFFFF
                 || m.arr == 0
                 || m.arr > 0xFFFF
-                || m.ccr == 0
-                || m.ccr >= m.arr
+                || !ccr_shaped(m)
             {
                 return Err(mismatch(net));
             }
-            let key = (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz), m.psc, m.arr);
+            let key = (
+                (
+                    m.protocol,
+                    m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps)),
+                ),
+                m.psc,
+                m.arr,
+            );
             if *timers.entry(timer).or_insert(key) != key {
                 return Err(E::TimerShared {
                     id: format!("TIM{timer}"),

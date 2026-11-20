@@ -43,7 +43,10 @@ fn two_devices() -> (SolvedTopology, aethelgard_ir::PinTable) {
         line.rate_hz = 7_000_000;
     }
     let flash = solved.spi_devices["U4"].clone();
-    solved.gpio.insert("IMU_CS".into(), "PA1".into());
+    solved.gpio.insert(
+        "IMU_CS".into(),
+        aethelgard_ir::pin_devices::SolvedGpio::output("PA1", aethelgard_ir::motor::Level::High),
+    );
     solved.spi_devices.insert(
         "U5".into(),
         SolvedSpiDevice {
@@ -71,7 +74,7 @@ fn once(text: &str, needle: &str) -> usize {
 fn selects_precede_their_bus(solved: &SolvedTopology, main: &str) {
     assert!(!solved.spi_devices.is_empty());
     for (reference, d) in solved.spi_devices_in_order() {
-        let pin = solved.gpio[&d.cs].to_ascii_lowercase();
+        let pin = solved.gpio[&d.cs].pin.to_ascii_lowercase();
         let bus = d.peripheral.to_ascii_lowercase();
         let output = once(main, &format!("let {pin} = gpio"));
         assert!(main[output..].starts_with(&format!(
