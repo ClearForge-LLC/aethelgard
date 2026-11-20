@@ -2051,3 +2051,58 @@ fn each_output_capacitor_is_credited_by_ir_s_own_derivation() {
         ]
     );
 }
+
+/// The MCU row's `io` (`AET-WO-1211e` A1): each family upper-case and once,
+/// a family's supply term above zero, each pin canonical with a structure of
+/// a held family on a page, and at least one pin; each refused by name.
+#[test]
+fn a_malformed_io_row_is_refused() {
+    fn io(t: &mut Value) -> &mut Value {
+        &mut row(t, "STM32H753ZITx")["kind"]["mcu"]["io"]
+    }
+    let cases: [(&str, fn(&mut Value)); 7] = [
+        ("named once", |io| io["families"][1]["family"] = json!("FT")),
+        ("named once", |io| io["families"][1]["family"] = json!("tt")),
+        ("not above zero", |io| {
+            io["families"][0]["above_supply_millivolts"] = json!(0)
+        }),
+        ("io.pins.PA16", |io| {
+            io["pins"]["PA16"] = json!({"structure": "FT", "page": 68})
+        }),
+        ("io.pins.PA1", |io| {
+            io["pins"]["PA1"]["structure"] = json!("XX_h")
+        }),
+        ("io.pins.PA1", |io| io["pins"]["PA1"]["page"] = json!(0)),
+        ("is empty", |io| io["pins"] = json!({})),
+    ];
+    for (says, f) in cases {
+        let r = table_refusal(|t| f(io(t)));
+        assert!(r.contains(says), "`{says}` not in: {r}");
+    }
+}
+
+/// The held rows: 114 I/O pins, 102 FT and 12 TT, each cited on its page
+/// of DS12117 Rev 10 Table 8; FT tolerates `Min(VDD + 4.0 V, 6 V)`, TT 4.0 V.
+#[test]
+fn the_io_rows_are_the_lqfp144_s_pins() {
+    let t = power_parts::table().unwrap();
+    let power_parts::Kind::Mcu(m) = &t.get("STM32H753ZITx").unwrap().kind else {
+        panic!("an mcu row")
+    };
+    let family = |f: &str| m.io.pins.values().filter(|(s, _)| s.starts_with(f)).count();
+    assert_eq!(
+        (m.io.pins.len(), family("FT"), family("TT")),
+        (114, 102, 12)
+    );
+    assert_eq!(
+        m.io.tolerated("PA1", 3135).map(|x| (x.0, x.2)),
+        Some(("FT_ha", 6000))
+    );
+    assert_eq!(m.io.tolerated("PA1", 1805).map(|x| x.2), Some(5805));
+    assert_eq!(
+        m.io.tolerated("PA4", 3135).map(|x| (x.0, x.2)),
+        Some(("TT_a", 4000))
+    );
+    assert!(m.io.pins["PA4"].1.section.starts_with("p. 69, Table 8"));
+    assert_eq!(m.io.floor(3135), 4000);
+}

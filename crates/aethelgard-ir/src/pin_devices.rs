@@ -1008,7 +1008,8 @@ impl<'s> Device<'s> {
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
-                            self.pull_tolerated(s, mcu_hi, &at)?;
+                            // A1 needs nothing here: the MCU's own pull-up is
+                            // on its own supply, so the pin sits at VDD.
                         }
                         (Some(McuPull::Down | McuPull::None), None) => {
                             return Err(self.err(
@@ -1442,26 +1443,33 @@ impl<'s> Device<'s> {
             )),
             (Some(u), Some(b)) => {
                 let pp = crate::power_parts::table()?;
-                let Some(crate::power_parts::Kind::Capacitor(cap)) = pp.get(&b.part).map(|r| &r.kind)
-                else {
-                    return Err(self.err(
-                        K::PassivePartUnknown,
-                        ".bulk.part",
-                        format!("`{}` is not a capacitor row of the power parts table", b.part),
-                    ));
+                // A ceramic or an electrolytic row: each states its rating.
+                let rated = match pp.get(&b.part).map(|r| &r.kind) {
+                    Some(crate::power_parts::Kind::Capacitor(c)) => &c.rated_millivolts,
+                    Some(crate::power_parts::Kind::BulkCapacitor(c)) => &c.rated_millivolts,
+                    _ => {
+                        return Err(self.err(
+                            K::PassivePartUnknown,
+                            ".bulk.part",
+                            format!(
+                                "`{}` is not a capacitor or bulk_capacitor row of the power parts table",
+                                b.part
+                            ),
+                        ));
+                    }
                 };
                 // `supplies` refused a supply pin naming no domain.
                 let id = &self.d.supplies[&u.supply];
                 let hi = crate::maximum_millivolts(self.domain(id, &format!(".supplies.{}", u.supply))?);
-                if cap.rated_millivolts.value <= i64::from(hi) {
+                if rated.value <= i64::from(hi) {
                     return Err(self.err(
                         K::BulkUnderRated,
                         ".bulk.part",
                         format!(
                             "`{}` is rated {} mV ({}), not above `{id}`'s maximum of {hi} mV on `{}`",
                             b.part,
-                            cap.rated_millivolts.value,
-                            pp.cite(&cap.rated_millivolts.at),
+                            rated.value,
+                            pp.cite(&rated.at),
                             u.supply
                         ),
                     ));

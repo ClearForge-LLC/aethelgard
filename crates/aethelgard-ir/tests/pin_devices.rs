@@ -1085,8 +1085,12 @@ fn a_bulk_s_part_reference_and_source_are_judged() {
         &v,
         "PowerPartUnknown",
         "pin_devices[0].bulk.part",
-        "not a capacitor row",
+        "not a capacitor or bulk_capacitor row",
     );
+    // An electrolytic row is a bulk: the Nichicon 47 uF, 50 V.
+    let mut v = d1();
+    device(&mut v)["bulk"]["part"] = json!("UCZ1H470MCL1GS");
+    spec(&v).validate().unwrap();
     let mut v = d1();
     device(&mut v)["bulk"]["reference"] = json!("C1");
     assert_eq!(refused(&v).kind(), "DuplicateReference");
@@ -1108,4 +1112,26 @@ fn bulk_is_a_required_key() {
     device(&mut v).as_object_mut().unwrap().remove("bulk");
     let e = serde_json::from_value::<Specification>(v).unwrap_err();
     assert!(e.to_string().contains("bulk"), "{e}");
+}
+
+/// A pin part's `trip` names a strap_analog reference and a current_output
+/// sense, and its `bulk_unstated` a supply pin (`AET-WO-1211e`); a row
+/// naming any other is refused by name.
+#[test]
+fn a_trip_or_bulk_row_on_the_wrong_pin_is_refused() {
+    for (field, pin, says) in [
+        ("/trip/reference", "IMODE", "`trip`"),
+        ("/trip/sense", "nFAULT", "`trip`"),
+        ("/bulk_unstated/supply", "VCP", "`bulk_unstated`"),
+    ] {
+        let mut doc: Value = serde_json::from_str(PARTS_JSON).unwrap();
+        let rows = doc["pin_parts"].as_array_mut().unwrap();
+        let row = rows
+            .iter_mut()
+            .find(|r| r["part"] == "DRV8876PWPR")
+            .unwrap();
+        *row.pointer_mut(field).unwrap() = json!(pin);
+        let e = parse_parts(&doc.to_string()).unwrap_err();
+        assert!(e.to_string().contains(says), "{field}: {e}");
+    }
 }
