@@ -854,6 +854,15 @@ struct Placed {
     outline: crate::pcb::Rect,
 }
 
+/// Whether [`emit`] routes `spec` by the capacitance ladder (`AET-WO-1314b`):
+/// read from the specification alone, as [`place`] decides it (`ruled` is
+/// [`crate::stack::RingRule::of`]`(spec)` being `Some`), never from a board.
+/// Refused with the field a declared `fab_tolerances` block lacks, as
+/// [`place`] refuses it.
+pub fn ladder_runs(spec: &Specification) -> Result<bool, &'static str> {
+    Ok(crate::stack::RingRule::of(spec)?.is_some())
+}
+
 /// Validates, designs and places, refusing by name as [`emit`] does: the
 /// specification, the via ring rule's inputs and classes
 /// (`FabToleranceUndeclared`, `ViaRingUnheld`), the declared outline
