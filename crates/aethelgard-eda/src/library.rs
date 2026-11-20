@@ -16,7 +16,7 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 52] = [
+const PINS: [(&str, &str); 54] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         "03187d2ed4dca904a6c0379cff9fe3a9fd0e1139b59fb9669db42160ca40cc3f",
@@ -48,6 +48,10 @@ const PINS: [(&str, &str); 52] = [
     (
         "footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
         "c56afb80b84306b4ae3639fdd270987fc47b46ee531bbae036cc2ee25f2cf165",
+    ),
+    (
+        "footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod",
+        "f8b340db7496c435d9ae3726b9a80f37546b1278a4a8079abd0a6327104d4053",
     ),
     (
         "footprints/Package_SO.pretty/TSSOP-14_4.4x5mm_P0.65mm.kicad_mod",
@@ -128,6 +132,10 @@ const PINS: [(&str, &str); 52] = [
     (
         "symbols/Device.kicad_symdir/R.kicad_sym",
         "db1dd3eb60dbcc9e239d107e2d123ee253aefdd841186076e9df39444d4e11c7",
+    ),
+    (
+        "symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym",
+        "cc34d1aa537bf1dcf77c4bda43873c96bdf6b97f0e518869b6ff90402aa3f2fc",
     ),
     (
         "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
@@ -592,7 +600,7 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 15);
+        assert_eq!(sym.matches("(lib ").count(), 16);
         assert_eq!(fp.matches("(lib ").count(), 14);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }

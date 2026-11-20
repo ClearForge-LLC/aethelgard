@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 52] = [
+pub const FILES: [(&str, &[u8]); 54] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -59,6 +59,12 @@ pub const FILES: [(&str, &[u8]); 52] = [
         "footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod"
         ),
     ),
     (
@@ -172,6 +178,12 @@ pub const FILES: [(&str, &[u8]); 52] = [
     (
         "symbols/Device.kicad_symdir/R.kicad_sym",
         include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/R.kicad_sym"),
+    ),
+    (
+        "symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Driver_Motor.kicad_symdir/DRV8833PWP.kicad_sym"
+        ),
     ),
     (
         "symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
