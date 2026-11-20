@@ -100,7 +100,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// external clock (`{"external": {hz_num, hz_den, ppm, source}}`). The key
 /// is required; `hse_hz: 0`, the only value version 19 admitted, still reads
 /// as `null`, so a committed specification moved by its version line alone.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
+/// Version 21 is `AET-WO-1210`'s (`board.drawn`). Version 22 adds
+/// `pin_devices` (`AET-WO-1211a`, `1211` Q1–Q10 as ruled), optional by
+/// `test_points`'s precedent (absent declares none, and a specification with
+/// no driver gains no key), and requires `pwm.idle` and `pwm.resolution_ps`
+/// on every PWM motor output, with no default; `{"pulse_us": pulse_min_us}`
+/// and 1,000,000 restate what the firmware wrote before, so no solved word
+/// of a committed specification moved.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 22;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
