@@ -15,6 +15,7 @@ pub mod board;
 pub mod classes;
 pub mod clock;
 pub mod connectors;
+mod drawn;
 pub mod ds009;
 pub mod electrical;
 pub mod motor;
@@ -98,7 +99,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// external clock (`{"external": {hz_num, hz_den, ppm, source}}`). The key
 /// is required; `hse_hz: 0`, the only value version 19 admitted, still reads
 /// as `null`, so a committed specification moved by its version line alone.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
+/// Version 21 adds `board.drawn` (`AET-WO-1210`, renumbered from 20 by the
+/// same rule, merging after `4240a`), optional by the same precedent: absent
+/// is a drawn board, and `false` declares a twin stand-in no board is drawn
+/// from.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 21;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -2045,6 +2050,31 @@ pub enum IrValidationError {
         table_parts()
     )]
     PartWithoutRow { reference: String, part: String },
+    /// Step 23 (`AET-WO-1210`, `AET-WO-1209` §1.1 rule 1): on a drawn board,
+    /// a device on an SPI line `extract` bounds whose pin capacitance has no
+    /// bound at all; `extract`'s `UnboundedPinCapacitance`, by kind, `id`,
+    /// line and words, before the board is drawn.
+    #[error(
+        "the design puts {reference} ({part}) on {line}, a line the MCU drives, and the parts table cites no maximum for its pin capacitance, nor does `{path}` declare one"
+    )]
+    UnboundedPinCapacitance {
+        path: String,
+        reference: String,
+        part: String,
+        /// The bus's SCK net and the bus, as "`IMU_SCK` of SPI bus `IMU`".
+        line: String,
+    },
+    /// `AET-WO-1210`, `AET-WO-1209` §1.3 rule 3, held by the CLI's
+    /// `validate` with the emitter's set ([`Specification::drawable_parts`]):
+    /// on a drawn board, a device whose part has a row and no emitter arm, so
+    /// `emit` would refuse it (`UnknownPart`).
+    #[error("`{reference}` is a `{part}`: row present, no emitter arm; the emitter draws: {arms}")]
+    PartNotDrawable {
+        path: String,
+        reference: String,
+        part: String,
+        arms: String,
+    },
     /// `AET-WO-4400d`: an orientation is in the board frame, whose x points
     /// to the declared forward edge.
     #[error(
@@ -2349,6 +2379,8 @@ impl IrValidationError {
             Self::LoadNamesNoPart { .. } => "LoadNamesNoPart",
             Self::LoadNamesCountedPart { .. } => "LoadNamesCountedPart",
             Self::PartWithoutRow { .. } => "UnknownPart",
+            Self::UnboundedPinCapacitance { .. } => "UnboundedPinCapacitance",
+            Self::PartNotDrawable { .. } => "PartNotDrawable",
             Self::ForwardUndeclared { .. } => "ForwardUndeclared",
             Self::ImuAxesNotPerpendicular { .. } => "ImuAxesNotPerpendicular",
             Self::OrientationOnNonImu { .. } => "OrientationOnNonImu",
@@ -2554,6 +2586,8 @@ impl IrValidationError {
             Self::LoadNamesNoPart { reference, .. }
             | Self::LoadNamesCountedPart { reference, .. } => Some(reference),
             Self::PartWithoutRow { reference, .. }
+            | Self::UnboundedPinCapacitance { reference, .. }
+            | Self::PartNotDrawable { reference, .. }
             | Self::ForwardUndeclared { reference }
             | Self::ImuAxesNotPerpendicular { reference, .. }
             | Self::OrientationOnNonImu { reference, .. }
@@ -2577,7 +2611,9 @@ impl IrValidationError {
             | Self::ClassBelowMinimum { path, .. }
             | Self::ClassAboveMaximum { path, .. }
             | Self::LoadNamesNoPart { path, .. }
-            | Self::LoadNamesCountedPart { path, .. } => Some(path),
+            | Self::LoadNamesCountedPart { path, .. }
+            | Self::UnboundedPinCapacitance { path, .. }
+            | Self::PartNotDrawable { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -2918,7 +2954,9 @@ impl Specification {
         // 21 (`AET-WO-1207` §1.2, `AET-WO-1208` §1.3)
         self.solve_static()?;
         // 22 (`AET-WO-1208` §1.2, F1/F5 as ruled on PR #182)
-        power::mcu_without_tree(self)
+        power::mcu_without_tree(self)?;
+        // 23 (`AET-WO-1210`, `AET-WO-1209` §1.1): a drawn board only
+        drawn::pin_capacitance(self, table)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset
