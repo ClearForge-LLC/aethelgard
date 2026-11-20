@@ -578,6 +578,65 @@ fn negotiated_error(
         )
 }
 
+/// The file the console rule cites: ArduPilot's
+/// `libraries/AP_SerialManager/AP_SerialManager.cpp` at `Copter-4.7.2`, the
+/// tag every ArduPilot image this repository pins carries (`RUL-21`).
+pub const SERIAL_MANAGER_SOURCE: &str = "ArduPilot libraries/AP_SerialManager/AP_SerialManager.cpp at Copter-4.7.2 (sha256 fe7cfce0…256d9b)";
+
+/// `AP_SerialManager::map_baudrate` ([`SERIAL_MANAGER_SOURCE`] `:737-770`): a
+/// `SERIALn_BAUD` parameter's value as the baud ArduPilot opens the port at.
+/// Transcribed line by line, with ArduPilot's own types (`int32_t` in,
+/// `uint32_t` out).
+// belt-and-suspenders: `aethelgard-hwdef` holds a copy to choose a define and
+// `aethelgard-pincheck` one to judge the built firmware. This one is the
+// specification's rule, and a rule that judges shares no code with the
+// generator or with another judge (`RUL-20`). A test in `aethelgard-cli`
+// holds it equal to `pincheck`'s.
+pub fn map_baudrate(rate: i32) -> u32 {
+    // :739-741, `if (rate <= 0) { rate = 57; }`
+    let rate = if rate <= 0 { 57 } else { rate };
+    match rate {
+        // :742-760, the listed codes
+        1 => 1200,
+        2 => 2400,
+        4 => 4800,
+        9 => 9600,
+        19 => 19_200,
+        38 => 38_400,
+        57 => 57_600,
+        100 => 100_000,
+        111 => 111_100,
+        115 => 115_200,
+        230 => 230_400,
+        256 => 256_000,
+        460 => 460_800,
+        500 => 500_000,
+        921 => 921_600,
+        1500 => 1_500_000,
+        2000 => 2_000_000,
+        // :762-766, above 2000 the value is the baud, `(uint32_t)rate`
+        r if r > 2000 => r.unsigned_abs(),
+        // :768-769, any other value is kbaud, `rate*1000`; here 1 to 2000
+        r => r.unsigned_abs() * 1000,
+    }
+}
+
+/// What ArduPilot's `SERIAL0_BAUD` maps back to when the console is declared
+/// at `baud`, if that is not `baud` itself. ArduPilot opens SERIAL0 at boot
+/// at `DEFAULT_SERIAL0_BAUD` (`init_console`, `:413-424`, the `begin` at
+/// `:419`), and holds the rate in `var_info` only as `DEFAULT_SERIAL0_BAUD/1000`
+/// (`:172`), which [`map_baudrate`] reads back. The console is SERIAL0
+/// (`aethelgard-hwdef` emits it first), and only SERIAL0 stores its define
+/// divided: `1_BAUD` to `9_BAUD` store `DEFAULT_SERIALn_BAUD` as it stands
+/// (`:199`, `:213`, `:227`, `:241`, `:255`, `:271`, `:352`, `:371`, `:390`),
+/// and no role but the console is opened by `init_console`. So the rule is the
+/// console's alone.
+pub fn console_mapped(baud: u32) -> Option<u32> {
+    // `baud / 1000` is at most 4,294,967, inside `int32_t`.
+    let mapped = map_baudrate(i32::try_from(baud / 1000).unwrap_or(i32::MAX));
+    (mapped != baud).then_some(mapped)
+}
+
 /// Step 13c of [`crate::Specification::validate`], each port in document
 /// order: a label unique with case folded; a peripheral that is `null` or one
 /// of [`PERIPHERALS`] exactly (`LPUART1`, in any case, refused by its own
@@ -586,10 +645,11 @@ fn negotiated_error(
 /// repository's rule ([`negotiated_error`]), at a baud
 /// [`CRSF_BAUDS`] does not cite; no contradiction of the role's
 /// published framing ([`contradiction`]); an `rc_crsf` port's
-/// `peer_deviation_ppm` at least the cited spread; and a
+/// `peer_deviation_ppm` at least the cited spread; a
 /// `peer_deviation_source` of `cited` only where it is the cited spread
-/// ([`PeerDeviationSource`]). The nets are step 11's and a constraint on one
-/// step 14's.
+/// ([`PeerDeviationSource`]); and a `console` port's baud one that ArduPilot's
+/// `SERIAL0_BAUD` maps back to ([`console_mapped`], `AET-WO-1213`). The nets
+/// are step 11's and a constraint on one step 14's.
 pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
     use IrValidationError as E;
 
@@ -668,8 +728,22 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
                 cited_ppm: crsf_cited_spread_ppm(),
             });
         }
+        if let Some(mapped) = console_baud_error(port.role, port.framing.baud) {
+            return Err(E::ConsoleBaudNotRoundTrip {
+                id: id(),
+                baud: port.framing.baud,
+                mapped,
+            });
+        }
     }
     Ok(())
+}
+
+/// [`console_mapped`] for a port of `role`: `None` off the console.
+fn console_baud_error(role: SerialRole, baud: u32) -> Option<u32> {
+    (role == SerialRole::Console)
+        .then(|| console_mapped(baud))
+        .flatten()
 }
 
 /// Whether `port`'s `peer_deviation_source` holds: `declared` always; `cited`
@@ -780,6 +854,7 @@ pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidat
             })
             || contradiction(port.role, f, port.negotiated.is_some()).is_some()
             || peer_below_cited(port.role, port.peer_deviation_ppm).is_some()
+            || console_baud_error(port.role, f.baud).is_some()
             || !solved
         {
             return Err(mismatch(label));

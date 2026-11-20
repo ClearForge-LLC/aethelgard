@@ -1821,11 +1821,15 @@ pub enum IrValidationError {
         cited_ppm: u32,
     },
     #[error(
+        "serial port `{id}` is the console at {baud} baud: ArduPilot opens it at boot at DEFAULT_SERIAL0_BAUD (init_console, AP_SerialManager.cpp:419) but holds SERIAL0_BAUD as that rate divided by 1000 (:172), which map_baudrate reads back as {mapped} (:737-770, Copter-4.7.2); declare a baud b with map_baudrate(b / 1000) = b, such as 115200 (AET-WO-1213)"
+    )]
+    ConsoleBaudNotRoundTrip { id: String, baud: u32, mapped: u32 },
+    #[error(
         "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
     )]
     UnjudgedSerialConstraint { id: String },
     #[error(
-        "serial port or net `{id}` disagrees with the solved topology: every assignment on a USART or UART is one port's TX or RX on `<peripheral>_TX` or `_RX` of the port's own peripheral, one of USART1 to UART8, each peripheral once, indices exactly 0..n, the framing's shape valid and not contradicting its role, and the kernel clock, BRR, actual baud and error what `serial` recomputes from the clock"
+        "serial port or net `{id}` disagrees with the solved topology: every assignment on a USART or UART is one port's TX or RX on `<peripheral>_TX` or `_RX` of the port's own peripheral, one of USART1 to UART8, each peripheral once, indices exactly 0..n, the framing's shape valid and not contradicting its role, a console's baud one SERIAL0_BAUD maps back to, and the kernel clock, BRR, actual baud and error what `serial` recomputes from the clock"
     )]
     SerialPortMismatch { id: String },
     #[error(
@@ -2338,6 +2342,7 @@ impl IrValidationError {
             Self::SerialNegotiatedAtCitedBaud { .. } => "SerialNegotiatedAtCitedBaud",
             Self::PeerDeviationBelowCited { .. } => "PeerDeviationBelowCited",
             Self::PeerDeviationNotCited { .. } => "PeerDeviationNotCited",
+            Self::ConsoleBaudNotRoundTrip { .. } => "ConsoleBaudNotRoundTrip",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
@@ -2531,6 +2536,7 @@ impl IrValidationError {
             | Self::SerialNegotiatedAtCitedBaud { id, .. }
             | Self::PeerDeviationBelowCited { id, .. }
             | Self::PeerDeviationNotCited { id, .. }
+            | Self::ConsoleBaudNotRoundTrip { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }
