@@ -503,6 +503,11 @@ fn the_gate_judges_the_crystal_and_names_each_fault() {
         gate(&|p| renet(p, "Y1", "4", "unconnected-(Y1-Pad4)")),
         ["hse_crystal_ground_floating"]
     );
+    // A crystal ground pad on another net, the supply.
+    assert_eq!(
+        gate(&|p| renet(p, "Y1", "2", "VDD_3V3")),
+        ["hse_crystal_ground_floating"]
+    );
     // A capacitor on the wrong net: OSC_OUT's moved to OSC_IN.
     let c_out = cap_on(&base, OSC_OUT);
     assert_eq!(

@@ -1,7 +1,7 @@
 """AET-WO-4240c mutants: one per guard this work order adds (CLAUDE.md global: sized to the diff).
 Each applies one exact replacement to one file, runs the named tests, and restores the file from git.
 Run from the repository root with every change committed (the restore is `git checkout -- FILE`).
-Usage: python3 -I spike/4240c/kit/mutants.py TARGET_DIR OUT_LOG"""
+Usage: python3 -I spike/4240c/kit/mutants.py TARGET_DIR OUT_LOG [M1,M2,...]"""
 import subprocess, sys
 
 TARGET, LOG = sys.argv[1], sys.argv[2]
@@ -20,8 +20,8 @@ M = [
      "let oscillator: Vec<Value> = oscillator.iter().map(oscillator_net).collect();",
      "let oscillator: Vec<Value> = Vec::new();", HSE),
     ("M6 the crystal gap taken as the largest", "crates/aethelgard-eda/src/extract.rs",
-     ".flat_map(|a| on(&mcu).into_iter().map(move |b| crate::loops::gap_nm(a, b)))\n            .min()",
-     ".flat_map(|a| on(&mcu).into_iter().map(move |b| crate::loops::gap_nm(a, b)))\n            .max()", HSE),
+     ".map(move |b| crate::loops::gap_nm(a, b))\n            })\n            .min()",
+     ".map(move |b| crate::loops::gap_nm(a, b))\n            })\n            .max()", HSE),
     ("M7 gate: floating crystal ground passes", "crates/aethelgard-eda/src/support.rs",
      "if n != Some(gnd) {", "if n.is_none() {", HSE),
     ("M8 gate: dielectric not judged", "crates/aethelgard-eda/src/support.rs",
@@ -38,7 +38,8 @@ M = [
     ("M11 emit: external clock drawn as nothing", "crates/aethelgard-eda/src/schematic_hse.rs",
      "Some(Hse::External(_)) => return Err(EmitError::HseSourceNotDrawn),", "Some(Hse::External(_)) => return Ok(None),", HSE),
     ("M12 emit: load capacitor of any dielectric", "crates/aethelgard-eda/src/schematic_hse.rs",
-     "k.dielectric == Dielectric::C0g\n", "k.dielectric != Dielectric::X5r\n", HSE),
+     "k.dielectric == Dielectric::C0g\n", "k.dielectric != Dielectric::X5r\n",
+     ["-p", "aethelgard-eda", "--lib", "schematic::hse"]),
     ("M13 emit: crystal grounds on the oscillator net", "crates/aethelgard-eda/src/schematic_hse.rs",
      "Role::Ground => gnd.clone(),", "Role::Ground => Conn::Net(osc_in.clone()),", HSE),
     ("M14 support group ties OSC pins on every board", "crates/aethelgard-eda/src/schematic_support.rs",
@@ -49,8 +50,11 @@ M = [
      ".filter(|p| !library::private(p))", "", HSE),
 ]
 
+ONLY = sys.argv[3].split(",") if len(sys.argv) > 3 else None
 out = open(LOG, "w")
 for name, path, old, new, args in M:
+    if ONLY and name.split()[0] not in ONLY:
+        continue
     src = open(path).read()
     if src.count(old) != 1:
         out.write(f"{name}: NOT APPLIED ({src.count(old)} matches)\n"); out.flush(); continue

@@ -212,3 +212,71 @@ impl Group {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AT: &str = r#"{"document": "MURATA_GRM188R71C105KA12", "section": "test"}"#;
+
+    /// A tolerance in the table's form.
+    fn tol(form: &str, value: u32) -> Option<String> {
+        Some(format!(r#"{{"{form}": {{"value": {value}, "at": {AT}}}}}"#))
+    }
+
+    /// The embedded table with `rows` added, each a 33 pF capacitor
+    /// `(part, dielectric, footprint, tolerance)`: a value no committed row
+    /// stocks, so only these rows can answer it.
+    fn table(rows: &[(&str, &str, &str, Option<String>)]) -> &'static PowerPartsTable {
+        let mut added = String::new();
+        for (part, dielectric, footprint, tolerance) in rows {
+            let tolerance = tolerance
+                .as_ref()
+                .map_or_else(String::new, |t| format!(r#", "tolerance": {t}"#));
+            added.push_str(&format!(
+                r#"{{"part": "{part}", "lifecycle": "unread", "symbol": "Device:C", "footprint": "{footprint}", "pins": {{}}, "temperature_celsius": {{"min": -55, "max": 125, "at": {AT}}}, "kind": {{"capacitor": {{"rated_picofarads": {{"value": 33, "at": {AT}}}, "rated_millivolts": {{"value": 50000, "at": {AT}}}, "dielectric": "{dielectric}", "dc_bias": null{tolerance}}}}}}},"#
+            ));
+        }
+        let json = power_parts::POWER_PARTS_JSON.replacen(
+            r#""parts": ["#,
+            &format!(r#""parts": [{added}"#),
+            1,
+        );
+        Box::leak(Box::new(power_parts::parse_power_parts(&json).unwrap()))
+    }
+
+    #[test]
+    fn the_load_capacitor_is_c0g_0402_and_within_the_family() {
+        let decoys = [
+            ("A-X7R", "X7R", LOAD_FOOTPRINT, tol("permille", 10)),
+            ("B-NO-TOLERANCE", "C0G", LOAD_FOOTPRINT, None),
+            (
+                "C-0603",
+                "C0G",
+                "Capacitor_SMD:C_0603_1608Metric",
+                tol("permille", 10),
+            ),
+            ("D-FIVE-PERCENT", "C0G", LOAD_FOOTPRINT, tol("permille", 50)),
+            ("E-HALF-PF", "C0G", LOAD_FOOTPRINT, tol("femtofarads", 500)),
+        ];
+        assert!(matches!(
+            load_capacitor(table(&decoys), 33_000),
+            Err(EmitError::LoadCapacitorNoPart {
+                femtofarads: 33_000
+            })
+        ));
+        let mut rows = decoys.to_vec();
+        rows.push(("G-ONE-PERCENT", "C0G", LOAD_FOOTPRINT, tol("permille", 10)));
+        rows.push((
+            "F-QUARTER-PF",
+            "C0G",
+            LOAD_FOOTPRINT,
+            tol("femtofarads", 250),
+        ));
+        // The first by part number.
+        assert_eq!(
+            load_capacitor(table(&rows), 33_000).unwrap().part,
+            "F-QUARTER-PF"
+        );
+    }
+}
