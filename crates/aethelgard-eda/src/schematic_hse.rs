@@ -49,7 +49,6 @@ pub(crate) enum Role {
     Ground,
 }
 
-
 /// `pin`'s package position in `table`, as the symbol numbers it.
 fn position(table: &PinTable, pin: &str) -> Result<String, EmitError> {
     table
@@ -189,7 +188,10 @@ impl Group {
             (self.caps[1], osc_out, pin_out),
         ] {
             let Kind::Capacitor(k) = &row.kind else {
-                return Err(EmitError::Internal(format!("`{}` is not a capacitor", row.part)));
+                return Err(EmitError::Internal(format!(
+                    "`{}` is not a capacitor",
+                    row.part
+                )));
             };
             let pf = u64::try_from(k.rated_picofarads.value)
                 .map_err(|_| EmitError::Internal("a negative capacitance".into()))?;

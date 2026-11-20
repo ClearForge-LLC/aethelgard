@@ -846,8 +846,7 @@ fn crystal(
         let shared = n.is_none_or(|n| {
             n == gnd
                 || spec.voltage_domains.iter().any(|d| d.id == n)
-                || s
-                    .pins
+                || s.pins
                     .values()
                     .flatten()
                     .any(|q| q != pin && netlist.net(mcu, q) == Some(n))
@@ -855,7 +854,10 @@ fn crystal(
         if shared {
             fail(
                 "hse_pin_off_net",
-                format!("{mcu} {group} (pin {pin}) is on {}, not a net of its own", quoted(n)),
+                format!(
+                    "{mcu} {group} (pin {pin}) is on {}, not a net of its own",
+                    quoted(n)
+                ),
             );
             return Ok(());
         }
@@ -866,7 +868,11 @@ fn crystal(
     let found: Vec<&String> = netlist
         .components
         .iter()
-        .filter(|(_, c)| !c.unpopulated && c.value == row.part && c.symbol.as_deref() == Some(row.symbol.as_str()))
+        .filter(|(_, c)| {
+            !c.unpopulated
+                && c.value == row.part
+                && c.symbol.as_deref() == Some(row.symbol.as_str())
+        })
         .map(|(r, _)| r)
         .collect();
     let [y] = found.as_slice() else {
@@ -924,13 +930,11 @@ fn crystal(
             .copied()
             .filter(|r| {
                 let c = &netlist.components[r.as_str()];
-                !c.unpopulated
-                    && c.symbol.as_deref() == Some(CAPACITOR)
-                    && {
-                        let mut pins: Vec<&str> = netlist.pins_of(r).map(|(_, n)| n).collect();
-                        pins.sort_unstable();
-                        pins == [gnd, net] || pins == [net, gnd]
-                    }
+                !c.unpopulated && c.symbol.as_deref() == Some(CAPACITOR) && {
+                    let mut pins: Vec<&str> = netlist.pins_of(r).map(|(_, n)| n).collect();
+                    pins.sort_unstable();
+                    pins == [gnd, net] || pins == [net, gnd]
+                }
             })
             .collect();
         if let Some(r) = on.iter().find(|r| !caps.contains(r)) {

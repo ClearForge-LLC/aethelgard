@@ -42,8 +42,10 @@ fn with_hse(hse: Value) -> Value {
 
 /// `4240a`'s 16 MHz crystal declaration, on the real part, with `caps`.
 fn crystal_with(caps: [u64; 2]) -> Value {
-    with_hse(json!({"crystal": {"part": CRYSTAL, "load_caps_femtofarads": caps,
-        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}}))
+    with_hse(
+        json!({"crystal": {"part": CRYSTAL, "load_caps_femtofarads": caps,
+        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}}),
+    )
 }
 
 fn crystal() -> Value {
@@ -182,7 +184,10 @@ fn the_oscillator_nets_carry_no_via_and_are_reported() {
         ]
     );
     // Copper only: no pin is counted (DS12117 states CIO as typical only).
-    assert!(o.iter().all(|o| o.line.terms.pins == 0 && o.line.pins.is_empty()));
+    assert!(
+        o.iter()
+            .all(|o| o.line.terms.pins == 0 && o.line.pins.is_empty())
+    );
     assert!(o.iter().all(|o| o.refusal().is_none() && o.crystal == "Y1"));
 }
 
@@ -333,8 +338,10 @@ fn a_board_with_no_crystal_reports_no_oscillator() {
 
 #[test]
 fn an_external_clock_and_an_unstocked_load_value_are_refused_by_name() {
-    let external = with_hse(json!({"external": {"hz_num": 8_000_000, "hz_den": 1, "ppm": 50,
-        "source": "a declared bench oscillator (test)"}}));
+    let external = with_hse(
+        json!({"external": {"hz_num": 8_000_000, "hz_den": 1, "ppm": 50,
+        "source": "a declared bench oscillator (test)"}}),
+    );
     let e = emitted(external).unwrap_err();
     assert_eq!((e.kind(), e.id()), ("HseSourceNotDrawn", Some("mcu.hse")));
     let e = emitted(crystal_with([15_000, 15_000])).unwrap_err();

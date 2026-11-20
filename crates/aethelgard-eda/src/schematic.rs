@@ -26,12 +26,12 @@ use crate::sexpr::{self, Sx, mm};
 
 // The power tree's drawing, a child of this module beside it in `src/`
 // (`strict_fence` gives every file of `src/` a role).
+#[path = "schematic_hse.rs"]
+pub mod hse;
 #[path = "schematic_power.rs"]
 mod power;
 #[path = "schematic_support.rs"]
 mod support;
-#[path = "schematic_hse.rs"]
-pub mod hse;
 use aethelgard_ir::power::BATTERY_NET;
 
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).

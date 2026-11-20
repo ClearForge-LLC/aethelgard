@@ -2171,7 +2171,14 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
         // An oscillator net beside a crystal (`AET-WO-4240c` §1.6) right
         // after the stitched ones; on a board with none, every net ties here.
         let oscillator = board.stack.oscillator.iter().any(|o| o == name);
-        (!is_stitched(name), !oscillator, !first, list.len(), at, name.clone())
+        (
+            !is_stitched(name),
+            !oscillator,
+            !first,
+            list.len(),
+            at,
+            name.clone(),
+        )
     });
     let pads: Vec<Vec<PadRef>> = nets.iter().map(|n| pads[n].clone()).collect();
     let order: Vec<usize> = (0..nets.len())
@@ -5320,6 +5327,7 @@ mod tests {
             width_nm: 0,
             classes: vec![],
             pairs: vec![],
+            oscillator: vec![],
             joins: vec![],
             thermal: vec![],
             imus: vec![],

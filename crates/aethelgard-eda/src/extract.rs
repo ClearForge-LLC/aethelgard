@@ -1419,7 +1419,11 @@ pub fn oscillator(
         };
         let gap = on(crystal)
             .iter()
-            .flat_map(|a| on(&mcu).into_iter().map(move |b| crate::loops::gap_nm(a, b)))
+            .flat_map(|a| {
+                on(&mcu)
+                    .into_iter()
+                    .map(move |b| crate::loops::gap_nm(a, b))
+            })
             .min()
             .ok_or_else(|| {
                 refused(
@@ -1429,8 +1433,10 @@ pub fn oscillator(
             })?;
         out.push(Oscillator {
             crystal: (*crystal).clone(),
-            crystal_gap_um: u64::try_from(gap.div_euclid(1000) + i64::from(gap.rem_euclid(1000) != 0))
-                .map_err(|_| overflow(&line.net))?,
+            crystal_gap_um: u64::try_from(
+                gap.div_euclid(1000) + i64::from(gap.rem_euclid(1000) != 0),
+            )
+            .map_err(|_| overflow(&line.net))?,
             line,
         });
     }
