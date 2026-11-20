@@ -1,0 +1,872 @@
+{
+ "rows": [
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/connectors.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 4,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 4,
+    "motor_outputs[].pwm.resolution": 4
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "HB_IN1",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 49,
+      "ccr": 1
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 49,
+      "ccr": 1
+     },
+     "same": true
+    },
+    {
+     "output": "HB_IN2",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 49,
+      "ccr": 1
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 49,
+      "ccr": 1
+     },
+     "same": true
+    },
+    {
+     "output": "SERVO1",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 19999,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 19999,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "SERVO2",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 19999,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 19999,
+      "ccr": 1000
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/four-layer-power.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/four-layer.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/logger-4600.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/motors-dshot600.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 0,
+   "dshot": 4,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 4,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 4,
+    "motor_outputs[].pwm.resolution": 4
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/pair-standin.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 0,
+   "dshot": 4,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 0,
+   "dshot": 4,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+   "schema_version": 19,
+   "outputs": 4,
+   "pwm": 0,
+   "dshot": 4,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   },
+   "solve_exit": 0,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/solve/stress.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/spi-only.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-cli/tests/fixtures/two-bme.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "examples/invalid-zero-domain.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "examples/sentinel-01-ext-bmp581.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "examples/sentinel-01-minimal.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "examples/sentinel-01.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "examples/sentinel-02-bench.json",
+   "schema_version": 19,
+   "outputs": 0,
+   "pwm": 0,
+   "dshot": 0,
+   "gains": {
+    "motor_outputs[].pwm.idle": 0,
+    "motor_outputs[].pwm.resolution": 0
+   }
+  },
+  {
+   "file": "crates/aethelgard-hwdef/tests/fixtures/serial-dshot-9600.topology.json",
+   "solved_topology": true,
+   "schema_version": 12,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "dshot600",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "proposed": {
+      "psc": 0,
+      "arr": 106,
+      "ccr": 40
+     },
+     "same": true
+    }
+   ]
+  },
+  {
+   "file": "crates/aethelgard-svd-hal/tests/ui/motors-pwm/topology.json",
+   "solved_topology": true,
+   "schema_version": 12,
+   "words": [
+    {
+     "output": "MOTOR1",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR2",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR3",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    },
+    {
+     "output": "MOTOR4",
+     "protocol": "pwm",
+     "kernel_hz": 64000000,
+     "today": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "proposed": {
+      "psc": 63,
+      "arr": 2499,
+      "ccr": 1000
+     },
+     "same": true
+    }
+   ]
+  }
+ ],
+ "moved": [],
+ "summary": {
+  "pwm": 8,
+  "dshot": 16
+ }
+}

@@ -1,0 +1,81 @@
+include @/repo/spike/1211/twin/common.resc
+sysbus WriteDoubleWord 0x580244E0 0x000007FF
+# RCC_APB2ENR TIM1EN.
+sysbus WriteDoubleWord 0x580244F0 0x00000001
+# PA8 = TIM1_CH1, AF1 (MODER 10, AFRH nibble 0 = 1).
+sysbus WriteDoubleWord 0x58020000 0x00020000
+sysbus WriteDoubleWord 0x58020024 0x00000001
+# TIM1: PSC 249 (1 µs at the platform's 250 MHz), ARR 49 (50 µs), CCR1 0, CCMR1 PWM1+OC1PE, CCER CC1E, BDTR MOE.
+sysbus WriteDoubleWord 0x40010028 249
+sysbus WriteDoubleWord 0x4001002C 49
+sysbus WriteDoubleWord 0x40010034 0
+sysbus WriteDoubleWord 0x40010018 0x00000068
+sysbus WriteDoubleWord 0x40010020 0x00000001
+sysbus WriteDoubleWord 0x40010044 0x00008000
+echo "T1 PA8 before CEN, PWM1 CCR1=0: IDR_A"
+sysbus ReadDoubleWord 0x58020010
+sysbus WriteDoubleWord 0x40010014 0x00000001
+sysbus WriteDoubleWord 0x40010000 0x00000081
+echo "T2 CCR1=0 running: IDR_A at 8 instants 7 us apart"
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+echo "T3 CCR1=25 running: IDR_A at 8 instants 7 us apart"
+sysbus WriteDoubleWord 0x40010034 25
+emulation RunFor "0.0001"
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+echo "T4 CEN=0, MOE=0, OC1M forced active (0101): IDR_A"
+sysbus WriteDoubleWord 0x40010000 0x00000080
+sysbus WriteDoubleWord 0x40010044 0x00000000
+sysbus WriteDoubleWord 0x40010018 0x00000058
+sysbus ReadDoubleWord 0x58020010
+echo "T5 OC1M forced inactive (0100): IDR_A"
+sysbus WriteDoubleWord 0x40010018 0x00000048
+sysbus ReadDoubleWord 0x58020010
+echo "T6 forced active, CC1E=0: IDR_A"
+sysbus WriteDoubleWord 0x40010020 0x00000000
+sysbus WriteDoubleWord 0x40010018 0x00000058
+sysbus ReadDoubleWord 0x58020010
+echo "T7 idle high as CCR1 = ARR+1 = 50, PWM1, CC1E, CEN: IDR_A at 4 instants 13 us apart"
+sysbus WriteDoubleWord 0x40010020 0x00000001
+sysbus WriteDoubleWord 0x40010018 0x00000068
+sysbus WriteDoubleWord 0x40010034 50
+sysbus WriteDoubleWord 0x40010014 0x00000001
+sysbus WriteDoubleWord 0x40010000 0x00000081
+emulation RunFor "0.000013"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000013"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000013"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000013"
+sysbus ReadDoubleWord 0x58020010
+echo "TIMER-END"

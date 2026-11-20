@@ -1,0 +1,27 @@
+include @/repo/spike/1211/twin/common.resc
+sysbus WriteDoubleWord 0x580244E0 0x000007FF
+sysbus WriteDoubleWord 0x580244F0 0x00000001
+sysbus WriteDoubleWord 0x58020000 0x00020000
+sysbus WriteDoubleWord 0x58020024 0x00000001
+echo "H1 fresh machine, the generator's order, idle high as CCR1 = ARR+1 = 50: IDR_A after EGR (before CEN)"
+sysbus WriteDoubleWord 0x40010028 249
+sysbus WriteDoubleWord 0x4001002C 49
+sysbus WriteDoubleWord 0x40010034 50
+sysbus WriteDoubleWord 0x40010018 0x00000068
+sysbus WriteDoubleWord 0x4001001C 0x00000000
+sysbus WriteDoubleWord 0x40010020 0x00000001
+sysbus WriteDoubleWord 0x40010044 0x00008000
+sysbus WriteDoubleWord 0x40010014 0x00000001
+sysbus ReadDoubleWord 0x58020010
+echo "H2 CR1 = ARPE|CEN, IDR_A at 0, 7, 37, 57, 107 us"
+sysbus WriteDoubleWord 0x40010000 0x00000081
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000030"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000020"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000050"
+sysbus ReadDoubleWord 0x58020010
+echo "HIGH-END"
