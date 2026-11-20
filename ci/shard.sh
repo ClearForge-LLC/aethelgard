@@ -403,6 +403,25 @@ run() {
     set -e
   fi
   for log in "$out/test-ws.log" "$out/test-bridge.log"; do [ ! -e "$log" ] || compiled_in "$log"; done
+  # AET-WO-1913 THROWAWAY (reverted before READY; REFIT RULE 1): after the shard's own tests, each name
+  # spike/1913/alone.tsv gives this shard runs alone, one invocation and one thread each; its libtest `finished in` is its
+  # alone time. `@tests/X.rs` runs that binary whole in one invocation (a colocated block, its own threads).
+  # The list is read whole first (mapfile): a loop fed by `< <(...)` leaks its descriptor to the sandboxed CLI (1912).
+  grep -m1 'model name' /proc/cpuinfo || true
+  local name alone_names bin
+  mapfile -t alone_names < <(awk -F'\t' -v k="$k" '!/^#/ && $1 == k { print $2 }' "$here/../spike/1913/alone.tsv")
+  for name in "${alone_names[@]}"; do
+    echo "ALONE $name"
+    set +e
+    case $name in
+      @*) bin=${name#@tests/}
+        cargo test --workspace "${FEATURES[@]}" --test "${bin%.rs}" </dev/null 2>&1 | tee -a "$out/alone.log"
+        [ "${PIPESTATUS[0]}" -eq 0 ] || status=1 ;;
+      *) cargo test --workspace "${FEATURES[@]}" -- --exact "$name" --test-threads=1 </dev/null 2>&1 | tee -a "$out/alone.log"
+        [ "${PIPESTATUS[0]}" -eq 0 ] || status=1 ;;
+    esac
+    set -e
+  done
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
