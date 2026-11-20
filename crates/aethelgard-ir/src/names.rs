@@ -135,11 +135,18 @@ pub fn mcu_reference(spec: &Specification) -> String {
         .expect("a finite specification leaves some U<n> free")
 }
 
+/// The two oscillator nets the emitter draws beside a declared crystal
+/// (`AET-WO-4240c`): `<mcu>_OSC_IN` on `PH0`, then `<mcu>_OSC_OUT` on `PH1`.
+pub fn oscillator_nets(mcu: &str) -> [String; 2] {
+    [format!("{mcu}_OSC_IN"), format!("{mcu}_OSC_OUT")]
+}
+
 /// Every net the schematic emitter names for itself, for `spec`: `GND`, the
 /// battery net when a power tree is declared, the MCU's support nets as its
 /// power-parts row draws them (`NRST`, `SWDIO`, `SWCLK` and `BOOT0` for each
 /// group the row has, `BOOT0` drawn only when a connector or test point
-/// carries it (`AET-WO-1312`), and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), each
+/// carries it (`AET-WO-1312`), and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), the
+/// [`oscillator_nets`] beside a declared crystal (`AET-WO-4240c`), each
 /// device's [`device_nets`], each buck's [`BUCK_NETS`], and each crossing's
 /// four translated lines. The emitter refuses to name a net this list lacks.
 pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
@@ -161,6 +168,9 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         }
         let mcu = mcu_reference(spec);
         out.extend((1..=m.support.group("VCAP").len()).map(|n| format!("{mcu}_VCAP{n}")));
+    }
+    if let Some(crate::clock::Hse::Crystal(_)) = &spec.mcu.hse {
+        out.extend(oscillator_nets(&mcu_reference(spec)));
     }
     let devices = spec
         .declared_i2c_devices()

@@ -150,7 +150,7 @@
     {
       "part": "ABM8AIG-16.000MHZ-12-2Z-T3",
       "lifecycle": "unread",
-      "symbol": "Crystal:Crystal_GND24",
+      "symbol": "Device:Crystal_GND24",
       "footprint": "Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm",
       "pins": {},
       "temperature_celsius": {
