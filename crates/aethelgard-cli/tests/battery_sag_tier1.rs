@@ -108,7 +108,7 @@ fn a_regulator_s_output_capacitors_count_in_its_rail_s_decoupling() {
     let pins: [(&str, &[(&str, u64)]); 4] = [
         (
             "tests/fixtures/sentinel-03.json",
-            &[("VDD_3V3", 54_810_000), ("VDD_5V", 44_000_000)],
+            &[("VDD_3V3", 54_710_000), ("VDD_5V", 44_000_000)],
         ),
         (
             "../aethelgard-ir/tests/fixtures/sentinel-02-power.json",

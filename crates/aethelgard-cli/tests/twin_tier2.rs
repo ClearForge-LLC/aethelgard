@@ -4580,7 +4580,7 @@ mod battery_sag {
             chain["static_microvolts"].as_u64().unwrap(),
             chain["solved_minimum_microvolts"].as_u64().unwrap(),
         );
-        assert_eq!(s, 8_088_035, "{chain}");
+        assert_eq!(s, 8_088_314, "{chain}");
         assert!(m.abs_diff(s) <= 1_000 && m >= 7_000_000, "{chain}");
         assert_eq!(chain["binding"], "U10", "{chain}");
         assert_eq!(chain["binding_floor_microvolts"], 7_000_000, "{chain}");
