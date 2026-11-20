@@ -79,7 +79,7 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 15. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 17. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
@@ -102,8 +102,13 @@ healthy path R, each battery-fed sink's power and floors, the capacitance on
 `VBAT`, the static operating point, the deck's solved minimum and the binding
 floor), re-judged in replay by `battery::check_battery_sag` from its own
 fields, and the overrides' tags 6 (`battery_sag`) and 7 (`rail_out_of_band`);
-the golden trace's bytes changed in the version byte only. An older trace is
-refused by name (`event::TRACE_VERSION`), never read under version 15's rules. The mirror record
+the golden trace's bytes changed in the version byte only. Version 16
+(`AET-WO-3305`) narrowed kind 13's `absent` to its own step's addresses.
+Version 17 (`AET-WO-2305`) added kind 32, a droop's recovery bound read from
+the same boot run first with no reset, and moved kind 19's probe from a fixed
+100 µs to the release, its nudge and that bound; the golden trace's bytes
+changed in the version byte only. An older trace is refused by name
+(`event::TRACE_VERSION`), never read under version 17's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -215,7 +220,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 16 | `analog.rail_declared` (`AET-WO-2301`) | the droop's own values (`domain`, `floor_millivolts`, `start_ns`, `fall_ns`, `hold_ns`, `rise_ns`, `source_milliohms`, `load_milliamps`, `bor_level`), then the domain's `nominal_millivolts` and `tolerance_permille` and the emitter's `decoupling_picofarads`: everything the rail is computed from |
 | 17 | `analog.rail_crossing_computed` | `domain`, `level` (`VBOR3_falling`…), `microvolts`, `at_ps`, `falling`: one crossing ngspice computed |
 | 18 | `bridge.reset_rendered` | `at_ns`, `released`, `[cause…]` (sorted threshold names), `rendering` (the monitor recipe that stood in for the supervisor: the model's rendering, never a measured reset) |
-| 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the first identity read's witness lines since the release (`[line…]?`), read at the recovery bound after a release |
+| 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the first identity read's witness lines since the release (`[line…]?`), read at the release, its nudge and kind 32's bound (`power::probe_ns`); the lines must begin with the first device's identity read and continue only with that device's own later steps (`power::witness_recovers`, `AET-WO-2305`) |
 | 20 | expected counts | `[[kind, count]…]` (sorted, unique), only when the scenario declares `expect_counts` |
 | 21 | an SPI step's read (`AET-WO-4200`, kind 12's analogue) | `reference`, `peripheral`, `select`, `address` (its multiplexer address), `step`, `write` (bytes), `width`, `expected`, `mask`, `observed?`, `status?` |
 | 22 | an SPI step's witness (kind 13's analogue) | `peripheral`, `reference`, `device`, `step`, `[expected line…]`, `[observed line…]?`, `[unrouted line…]`: the multiplexer's lines inside the step's chip-select window, attribution's evidence, never a witness |
@@ -227,6 +232,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
 | 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
 | 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32: exactly kind 11's registers of the timer, in its order, each at its address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's is cleared by the stop), `cr1_after?` |
+| 32 | a droop's recovery bound (`AET-WO-2305`) | `boot_word_ns?` (the instant the same boot, run first with no reset, wrote its boot word, counted from 0; absent when it wrote none or its log was not read whole), `margin_ns` (exactly `power::RECOVERY_MARGIN_NS`, one quantum), `bound_ns?` (exactly `boot_word_ns` + `margin_ns`, absent with it): archived before the boot beside kind 16, once exactly when the droop releases a reset |
 
 Kinds 5 to 9, 15, 16, 20, 23, 24, 25 and 27 are at virtual time 0, decided
 before the boot (`Record::before_boot`); 17 to 19 at their own time
@@ -336,8 +342,10 @@ refuses:
   not crossed exactly once falling and once rising, within 10 R·C of the
   source's ramps, when the declared rail floor is below it, or crossed when it
   is not; resets that are not `power::schedule` of the crossings with their
-  fixed renderings; not one observation per release at the recovery bound (a
-  boot killed before its reads has none); an observation whose readings are
+  fixed renderings; kind 32 not archived once exactly when a reset is
+  released, or a probe past the run; not one observation per release at its
+  probe (a boot killed before its reads, or a droop with no bound, has
+  none); an observation whose readings are
   not the boot's own; `brownout_reset` (info), `brownout_unrecovered` (error)
   or `rail_below_tolerance` (info) counts that the records do not give;
 - a broken join (`AET-WO-3100` R2, extended by its adversarial pass): solved buses not sorted by unique bus; two solved buses sharing a net, a pin or a controller; two devices at one address on one bus; a second kind 7 or 8 for one line, a second kind 12 for one device, or a second kind 13 for one device or one controller; a

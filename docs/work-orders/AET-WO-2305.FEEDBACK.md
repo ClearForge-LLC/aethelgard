@@ -174,3 +174,13 @@ The branch's CLI against `main` at `416a6dd3`. Both have the same patch and the 
   - With `droop-bor3` (2.4 V, hold 600 µs, its expectation written before any run), the rail is covered by a droop that crosses VBOR3. It recovers at 40,871,280 ns under its 39,227,180 ns bound, and the test's assertion stands as before (the ledger's 280 rows).
 - **F2 · The predictions' misses** (above): BOR level 0 renders no reset at 3.1 V; `spi-only`'s first check is SPI; the logger's first check is U20, not U10. The judge's first check is the image's first, and each board's differs.
 - **F3 · Close to `INV-07`** (inferred). A bound read from the generated firmware's own undisturbed boot is computed from the artifact under test. It judges that a droop leaves the bring-up as it was, not that the bring-up is fast enough. What caps it is the margin and the boot judge's own checks on the undisturbed boot. No declared requirement bounds a bring-up's length today.
+- **F4 · The probe and the first serial injection share an instant** (measured).
+  - The bound is the undisturbed boot word + one quantum, and the composition injects a port's first frame byte at the recovered boot word + one quantum (`AET-WO-2302` D4).
+  - On a board whose recovered boot equals its undisturbed one, both land on the same 10 ns. On Sentinel-01 minimal that is 1,357,400 ns, in kind 19 and as kind 29's injection instant.
+  - Harmless as measured: the probe's monitor reads run at the `RunFor` boundary before the core runs the injection, and every serial witness on the re-judged boards is unchanged.
+  - A later change to either bound or margin would separate them. Named so it is not a surprise.
+- **F5 · The narrowed witness (§1.3) is exercised only where the first device is on I2C with later steps** (the logger's U20, Sentinel-03's U7). On `spi-only` the first device is the SPI flash, whose one step is all its lines. No committed board puts a scripted SPI device with later steps first. The rule is bus-blind (`witness_recovers` takes the steps' lines), so this is a residual of coverage, not of logic.
+- **F6 · Documents outside the fence that this changes** (for the architect):
+  - `docs/roadmap.md` §7.1, the row for `dshot600-droop` on the Sentinel-02 shape (`2303` F11, `4600` F1, `4202` F1): done by this work order.
+  - `crates/aethelgard-cli/README.md` documents neither kind 32 nor `RecoveryBoundPastRun`.
+  - I updated `crates/aethelgard-chaos/README.md`'s version rule (it still said 15, so `3305`'s 16 had not reached it), kind 19's row, a new kind 32 row and the replay rule. That is documentation of the record the ruling added. The table has never had a kind 31 row (`2304b`); I added none.
